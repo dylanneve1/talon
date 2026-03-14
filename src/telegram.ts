@@ -24,18 +24,102 @@ export function splitMessage(text: string, max: number): string[] {
 }
 
 /**
- * Detect if text contains Markdown that Telegram can render.
- * Conservative — only returns true when there's clear formatting.
+ * Escape HTML special characters for Telegram HTML parse mode.
+ * Must be applied to all text that is NOT inside an HTML tag.
  */
-export function containsTelegramMarkdown(text: string): boolean {
-  // Bold, italic, code, links
-  return /\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\([^)]+\)/.test(text);
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 /**
- * Escape characters that break Telegram Markdown parsing when the
- * text isn't intended to be Markdown.
+ * Convert Claude's Markdown output to Telegram-safe HTML.
+ *
+ * Handles: bold, italic, inline code, fenced code blocks, links.
+ * Escapes HTML entities in non-formatted text.
  */
-export function escapeTelegramMarkdown(text: string): string {
-  return text.replace(/([_*\[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
+export function markdownToTelegramHtml(text: string): string {
+  // Step 1: Extract fenced code blocks to avoid processing their contents.
+  // We replace them with placeholders and restore after all inline processing.
+  const codeBlocks: string[] = [];
+  let processed = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang: string, code: string) => {
+    const escaped = escapeHtml(code.replace(/\n$/, ""));
+    const langAttr = lang ? ` class="language-${escapeHtml(lang)}"` : "";
+    const placeholder = `\x00CODEBLOCK${codeBlocks.length}\x00`;
+    codeBlocks.push(`<pre><code${langAttr}>${escaped}</code></pre>`);
+    return placeholder;
+  });
+
+  // Step 2: Extract inline code spans to protect them from further processing.
+  const inlineCode: string[] = [];
+  processed = processed.replace(/`([^`\n]+)`/g, (_match, code: string) => {
+    const placeholder = `\x00INLINECODE${inlineCode.length}\x00`;
+    inlineCode.push(`<code>${escapeHtml(code)}</code>`);
+    return placeholder;
+  });
+
+  // Step 3: Escape HTML in remaining plain text (before applying formatting).
+  // We need to avoid escaping our placeholders.
+  processed = processed.replace(/[^`\x00]+/g, (segment) => escapeHtml(segment));
+
+  // Step 4: Apply inline formatting.
+  // Bold: **text**
+  processed = processed.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  // Italic: *text* (not preceded by another *)
+  processed = processed.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
+  // Italic: _text_ (surrounded by non-word or start/end)
+  processed = processed.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
+  // Links: [text](url)
+  processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  // Strikethrough: ~~text~~
+  processed = processed.replace(/~~(.+?)~~/g, "<s>$1</s>");
+
+  // Step 5: Restore inline code spans.
+  for (let i = 0; i < inlineCode.length; i++) {
+    processed = processed.replace(`\x00INLINECODE${i}\x00`, inlineCode[i]);
+  }
+
+  // Step 6: Restore fenced code blocks.
+  for (let i = 0; i < codeBlocks.length; i++) {
+    processed = processed.replace(`\x00CODEBLOCK${i}\x00`, codeBlocks[i]);
+  }
+
+  return processed;
+}
+
+/**
+ * Map common SDK/API error messages to user-friendly strings.
+ */
+export function friendlyError(err: Error | string): string {
+  const msg = typeof err === "string" ? err : err.message;
+
+  if (/rate.?limit|429|too many requests/i.test(msg)) {
+    const retryMatch = msg.match(/retry.?after[:\s]*(\d+)/i);
+    const wait = retryMatch ? ` Try again in ${retryMatch[1]} seconds.` : " Try again in a minute.";
+    return `Rate limited.${wait}`;
+  }
+
+  if (/context.*length|too.*long|token.*limit|overflow/i.test(msg)) {
+    return "Message too long for context window. Try /reset to start a fresh session.";
+  }
+
+  if (/session|expired|invalid.*resume/i.test(msg)) {
+    return msg; // Already handled by agent.ts with a clear message.
+  }
+
+  if (/authentication|unauthorized|401|api.?key/i.test(msg)) {
+    return "Authentication error. The bot operator needs to check the API key.";
+  }
+
+  if (/overloaded|503|capacity/i.test(msg)) {
+    return "Claude is currently overloaded. Try again in a moment.";
+  }
+
+  if (/network|ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(msg)) {
+    return "Network error. Try again shortly.";
+  }
+
+  return "Something went wrong. Try /reset if this persists.";
 }
