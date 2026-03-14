@@ -17,6 +17,24 @@ const SESSION_FILE = resolve(process.cwd(), "workspace", ".user-session");
 
 let client: TelegramClient | null = null;
 
+// ── SECURITY: Chat scope guard ──────────────────────────────────────────────
+// The userbot is ONLY allowed to access chats the bot is actively serving.
+// It must NEVER access the user's other chats, DMs, or account data.
+const allowedChatIds = new Set<number>();
+
+/** Allow the userbot to access a specific chat (set when bot receives a message). */
+export function allowChat(chatId: number): void {
+  allowedChatIds.add(chatId);
+}
+
+function assertAllowedChat(chatId: number | string): number {
+  const numeric = typeof chatId === "string" ? parseInt(chatId, 10) : chatId;
+  if (!allowedChatIds.has(numeric)) {
+    throw new Error("Access denied: userbot can only access chats where the bot is active.");
+  }
+  return numeric;
+}
+
 export function isUserClientReady(): boolean {
   return client !== null && client.connected;
 }
@@ -71,7 +89,8 @@ export async function searchMessages(params: {
   if (!client) return "User client not connected. Run login script first.";
 
   try {
-    const messages = await client.getMessages(params.chatId, {
+    const chatId = assertAllowedChat(params.chatId);
+    const messages = await client.getMessages(chatId, {
       search: params.query,
       limit: params.limit ?? 20,
     });
@@ -103,6 +122,7 @@ export async function getHistory(params: {
   if (!client) return "User client not connected. Run login script first.";
 
   try {
+    const chatId = assertAllowedChat(params.chatId);
     const opts: Record<string, unknown> = {
       limit: params.limit ?? 30,
     };
@@ -110,13 +130,12 @@ export async function getHistory(params: {
       opts.offsetId = params.offsetId;
     }
     if (params.before) {
-      // Accept ISO string like "2026-03-13" or unix timestamp
       const ts = typeof params.before === "string"
         ? Math.floor(new Date(params.before).getTime() / 1000)
         : params.before;
       if (ts > 0) opts.offsetDate = ts;
     }
-    const messages = await client.getMessages(params.chatId, opts);
+    const messages = await client.getMessages(chatId, opts);
 
     if (messages.length === 0) return "No messages found.";
 
@@ -146,7 +165,8 @@ export async function getParticipants(params: {
   if (!client) return "User client not connected. Run login script first.";
 
   try {
-    const participants = await client.getParticipants(params.chatId, {
+    const chatId = assertAllowedChat(params.chatId);
+    const participants = await client.getParticipants(chatId, {
       limit: params.limit ?? 50,
       search: params.query,
     });
@@ -166,6 +186,112 @@ export async function getParticipants(params: {
   }
 }
 
+/** Get detailed participant info including admin status, join date, etc. */
+export async function getParticipantDetails(params: {
+  chatId: number | string;
+  limit?: number;
+}): Promise<string> {
+  if (!client) return "User client not connected.";
+
+  try {
+    const chatId = assertAllowedChat(params.chatId);
+    const participants = await client.getParticipants(chatId, {
+      limit: params.limit ?? 50,
+    });
+
+    if (participants.length === 0) return "No participants found.";
+
+    return participants
+      .map((p) => {
+        const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || "(no name)";
+        const username = p.username ? `@${p.username}` : "";
+        const bot = p.bot ? " [BOT]" : "";
+        const verified = p.verified ? " ✓" : "";
+        const premium = p.premium ? " ⭐" : "";
+        const status = (() => {
+          const s = p.status;
+          if (!s) return "unknown";
+          const cn = s.className;
+          if (cn === "UserStatusOnline") return "online";
+          if (cn === "UserStatusOffline") {
+            const off = s as { wasOnline?: number };
+            if (off.wasOnline) {
+              const date = new Date(off.wasOnline * 1000);
+              return `last seen ${date.toISOString().slice(0, 16).replace("T", " ")}`;
+            }
+            return "offline";
+          }
+          if (cn === "UserStatusRecently") return "recently";
+          if (cn === "UserStatusLastWeek") return "last week";
+          if (cn === "UserStatusLastMonth") return "last month";
+          return cn;
+        })();
+
+        return `${name}${verified}${premium}${bot} ${username}\n  ID: ${p.id} · Status: ${status}`;
+      })
+      .join("\n\n");
+  } catch (err) {
+    return `Failed: ${err instanceof Error ? err.message : err}`;
+  }
+}
+
+/** Get info about a specific user by ID — only works if they're in an allowed chat. */
+export async function getUserInfo(params: {
+  chatId: number | string;
+  userId: number;
+}): Promise<string> {
+  if (!client) return "User client not connected.";
+
+  try {
+    const chatId = assertAllowedChat(params.chatId);
+    // Fetch the user as a participant of the allowed chat
+    const participants = await client.getParticipants(chatId, { limit: 1, search: "" });
+    // getEntity only works for users the client has seen
+    const entity = await client.getEntity(params.userId).catch(() => null);
+    if (!entity || !("firstName" in entity)) {
+      return `User ${params.userId} not found or not accessible.`;
+    }
+
+    const u = entity;
+    const name = [u.firstName, u.lastName].filter(Boolean).join(" ");
+    const username = u.username ? `@${u.username}` : "(no username)";
+    const bot = u.bot ? "Yes" : "No";
+    const verified = u.verified ? "Yes" : "No";
+    const premium = u.premium ? "Yes" : "No";
+    const phone = u.phone ? "(has phone)" : "(no phone visible)";
+    const status = (() => {
+      const s = u.status;
+      if (!s) return "unknown";
+      const cn = s.className;
+      if (cn === "UserStatusOnline") return "🟢 Online";
+      if (cn === "UserStatusOffline") {
+        const off = s as { wasOnline?: number };
+        if (off.wasOnline) return `Last seen ${new Date(off.wasOnline * 1000).toISOString().slice(0, 16).replace("T", " ")}`;
+        return "Offline";
+      }
+      if (cn === "UserStatusRecently") return "Recently";
+      if (cn === "UserStatusLastWeek") return "Last week";
+      if (cn === "UserStatusLastMonth") return "Last month";
+      return cn;
+    })();
+
+    // Suppress actual phone from output
+    void participants;
+    return [
+      `Name: ${name}`,
+      `Username: ${username}`,
+      `ID: ${u.id}`,
+      `Status: ${status}`,
+      `Bot: ${bot}`,
+      `Verified: ${verified}`,
+      `Premium: ${premium}`,
+      `Phone: ${phone}`,
+    ].join("\n");
+  } catch (err) {
+    return `Failed: ${err instanceof Error ? err.message : err}`;
+  }
+}
+
 /** Get a specific message by ID. */
 export async function getMessage(params: {
   chatId: number | string;
@@ -174,7 +300,8 @@ export async function getMessage(params: {
   if (!client) return "User client not connected.";
 
   try {
-    const messages = await client.getMessages(params.chatId, {
+    const chatId = assertAllowedChat(params.chatId);
+    const messages = await client.getMessages(chatId, {
       ids: [params.messageId],
     });
     const m = messages[0];

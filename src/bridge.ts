@@ -14,6 +14,8 @@ import {
   searchMessages as userbotSearch,
   getHistory as userbotHistory,
   getParticipants as userbotParticipants,
+  getParticipantDetails as userbotParticipantDetails,
+  getUserInfo as userbotGetUserInfo,
   getMessage as userbotGetMessage,
 } from "./userbot.js";
 
@@ -376,13 +378,22 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 
     case "list_known_users": {
       console.log(`[bridge] list_known_users`);
-      // Prefer userbot for real participant list
       if (isUserClientReady()) {
-        const text = await userbotParticipants({ chatId, limit: Number(body.limit ?? 50), query: body.query as string | undefined });
+        const text = await userbotParticipantDetails({ chatId, limit: Number(body.limit ?? 50) });
         return { ok: true, text };
       }
       const text = getKnownUsers(String(chatId));
       return { ok: true, text };
+    }
+
+    case "get_member_info": {
+      const userId = Number(body.user_id);
+      console.log(`[bridge] get_member_info user=${userId}`);
+      if (isUserClientReady()) {
+        const text = await userbotGetUserInfo({ chatId, userId });
+        return { ok: true, text };
+      }
+      return { ok: false, error: "User client not connected. Member info requires user session." };
     }
 
     case "read_history": {

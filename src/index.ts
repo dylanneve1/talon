@@ -10,7 +10,7 @@ import {
 import { splitMessage, markdownToTelegramHtml, friendlyError } from "./telegram.js";
 import { startBridge, setBridgeContext, clearBridgeContext, getBridgeMessageCount } from "./bridge.js";
 import { pushMessage, clearHistory } from "./history.js";
-import { initUserClient } from "./userbot.js";
+import { initUserClient, allowChat } from "./userbot.js";
 import {
   writeFileSync,
   readFileSync,
@@ -456,6 +456,9 @@ bot.on("message", (ctx, next) => {
   const senderId = ctx.from?.id ?? 0;
   const msgId = ctx.message.message_id;
   const replyToMsgId = ctx.message.reply_to_message?.message_id;
+
+  // Register this chat as allowed for userbot access (scope guard)
+  allowChat(ctx.chat.id);
   const timestamp = ctx.message.date * 1000;
 
   if ("text" in ctx.message && ctx.message.text) {

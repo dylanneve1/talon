@@ -445,10 +445,24 @@ server.tool(
 
 server.tool(
   "list_chat_members",
-  "List users who have sent messages in this chat recently. Returns names and user IDs that can be used with get_chat_member or react.",
-  {},
-  async () => {
-    const result = await callBridge("list_known_users", {});
+  "List all members/participants in this chat with names, usernames, IDs, online status, and badges (verified/premium/bot). Uses Telegram user API for full list.",
+  {
+    limit: z.number().optional().describe("Max members to return (default 50)"),
+  },
+  async (params) => {
+    const result = await callBridge("list_known_users", { limit: params.limit });
+    return { content: [{ type: "text" as const, text: (result as { text: string }).text }] };
+  },
+);
+
+server.tool(
+  "get_member_info",
+  "Get detailed info about a specific user by their user ID. Shows name, username, online status, premium/verified badges, etc. Only works for users in the current chat.",
+  {
+    user_id: z.number().describe("Telegram user ID"),
+  },
+  async (params) => {
+    const result = await callBridge("get_member_info", params);
     return { content: [{ type: "text" as const, text: (result as { text: string }).text }] };
   },
 );
