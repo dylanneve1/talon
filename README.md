@@ -1,38 +1,50 @@
 # Talon
 
-A minimal Telegram bot powered by the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript). Claude handles everything — tools, session management, compaction, context — Talon just wires it to Telegram.
+A minimal Telegram bot powered by the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript). Claude handles tools, sessions, compaction, and context. Talon wires it to Telegram.
 
-## What it does
+## Features
 
-- **DMs**: Responds to all direct messages
-- **Groups**: Responds when mentioned (`@bot`) or replied to
-- **Sessions**: Conversations persist across messages via the SDK's built-in session management
-- **Tools**: The SDK's full tool suite (file read/write, exec, web search) is available
-- **Context**: 1M token context window with automatic compaction
+**Input**
+- Text messages (DM and group)
+- Photos with captions (saved to workspace, analyzed by Claude)
+- Documents/files (saved to workspace, readable by Claude)
+- Voice messages (saved as OGG)
+- Forwarded messages (origin context preserved)
+- Reply context (quoted message included)
+
+**Output**
+- Streaming responses (message edits in real-time)
+- Markdown → Telegram HTML formatting (bold, italic, code blocks, links)
+- File attachments (workspace files created by Claude sent back)
+- Smart message splitting for long responses
+
+**Sessions**
+- Persistent conversations via Claude SDK session management
+- Sessions survive bot restarts (disk-backed session map)
+- Automatic context compaction at 1M tokens
+- Stale session recovery (auto-reset on expired sessions)
+
+**Groups**
+- Mention (`@bot`) or reply to activate
+- Ignores unrelated messages
+- Sender names included in prompts
 
 ## Setup
 
 ```bash
-# Clone
 git clone https://github.com/dylanneve1/talon.git
 cd talon
-
-# Install
 npm install
 
-# Configure
 cp .env.example .env
-# Edit .env with your Telegram bot token from @BotFather
+# Add your Telegram bot token from @BotFather
 
-# Run
 npm start
 ```
 
-Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be installed and authenticated (`claude` CLI must be available in PATH).
+Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be installed and authenticated.
 
 ## Configuration
-
-All config via environment variables or `.env`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -40,6 +52,7 @@ All config via environment variables or `.env`:
 | `TALON_MODEL` | `claude-sonnet-4-6` | Claude model ID |
 | `TALON_SYSTEM_PROMPT` | _(built-in)_ | Custom system prompt |
 | `TALON_MAX_THINKING_TOKENS` | `10000` | Thinking budget per turn |
+| `TALON_MAX_MESSAGE_LENGTH` | `4000` | Max chars before splitting |
 | `TALON_VERBOSE` | `false` | Detailed logging |
 
 ## Commands
@@ -47,30 +60,33 @@ All config via environment variables or `.env`:
 | Command | Description |
 |---------|-------------|
 | `/start` | Introduction |
-| `/reset` | Clear session, start fresh |
-| `/status` | Show model, session, uptime |
+| `/reset` | Clear session |
+| `/status` | Model, session, uptime |
 
 ## Architecture
 
 ```
-Telegram ← grammy → Talon → Claude Agent SDK → Claude API
-                       ↕
-                   sessions.json (chat→session mapping)
-                   workspace/ (SDK session files)
+Telegram ←→ grammY ←→ Talon ←→ Claude Agent SDK ←→ Claude API
+                        ↕
+                    workspace/
+                    ├── sessions.json    (chat → session ID map)
+                    ├── uploads/         (photos, documents, voice)
+                    └── ...              (files created by Claude)
 ```
 
-Talon is intentionally thin. The Claude Agent SDK handles:
-- Conversation history and JSONL persistence
-- Automatic context compaction when approaching limits
-- Tool execution (file I/O, shell commands, web search)
+Talon is intentionally thin. The Claude Agent SDK manages:
+- Conversation history (JSONL persistence)
+- Automatic context compaction
+- Tool execution (file I/O, shell, web search)
 - Session resume across restarts
-- Prompt caching for fast responses
+- Prompt caching
 
-Talon handles:
-- Telegram bot protocol (polling, message routing)
+Talon manages:
+- Telegram protocol (polling, message routing, formatting)
 - Group mention/reply filtering
-- Chat → SDK session ID mapping
-- Message splitting for Telegram's 4096 char limit
+- Chat → SDK session mapping
+- Media download/upload
+- Streaming response display
 
 ## License
 
