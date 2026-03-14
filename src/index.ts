@@ -678,6 +678,54 @@ bot.on("message:voice", async (ctx) => {
   }
 });
 
+bot.on("message:sticker", async (ctx) => {
+  if (!shouldHandleInGroup(ctx)) return;
+
+  const chatId = String(ctx.chat.id);
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+  const sender = getSenderName(ctx.from);
+
+  const typing = setInterval(() => {
+    bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
+  }, 4000);
+  await bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
+
+  try {
+    const sticker = ctx.message.sticker;
+    const emoji = sticker.emoji || "";
+    const setName = sticker.set_name || "";
+
+    const prompt = [
+      `User sent a sticker: ${emoji}`,
+      `Sticker file_id: ${sticker.file_id}`,
+      setName ? `Sticker set: ${setName}` : "",
+      sticker.is_animated ? "(animated)" : sticker.is_video ? "(video sticker)" : "",
+      "You can send this sticker back using the send_sticker tool with the file_id above.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await processAndReply(
+      chatId,
+      ctx.chat.id,
+      ctx.message.message_id,
+      ctx.message.message_id,
+      prompt,
+      sender,
+      isGroup,
+    );
+  } catch (err) {
+    console.error(`[${chatId}] Sticker error:`, err instanceof Error ? err.message : err);
+    await sendHtml(
+      ctx.chat.id,
+      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
+      ctx.message.message_id,
+    );
+  } finally {
+    clearInterval(typing);
+  }
+});
+
 bot.on("message:video", async (ctx) => {
   if (!shouldHandleInGroup(ctx)) return;
 
