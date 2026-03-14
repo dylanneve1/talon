@@ -76,6 +76,11 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 
 // ── Send helpers ─────────────────────────────────────────────────────────────
 
+function replyParams(body: BridgeAction): { message_id: number } | undefined {
+  const replyTo = body.reply_to ?? body.reply_to_message_id;
+  return typeof replyTo === "number" && replyTo > 0 ? { message_id: replyTo } : undefined;
+}
+
 async function sendText(bot: Bot, chatId: number, text: string, replyTo?: number): Promise<number> {
   if (text.length > TELEGRAM_MAX_TEXT) {
     throw new Error(`Message too long (${text.length} chars, max ${TELEGRAM_MAX_TEXT}). Split into shorter messages.`);
@@ -181,7 +186,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         const stat = statSync(filePath);
         if (stat.size > 49 * 1024 * 1024) return { ok: false, error: "File too large (max 49MB)" };
         const data = readFileSync(filePath);
-        const sent = await withRetry(() => bot.api.sendDocument(chatId, new InputFileClass!(data, basename(filePath)), { caption }));
+        const sent = await withRetry(() => bot.api.sendDocument(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
         return { ok: true, message_id: sent.message_id };
       }
 
@@ -191,7 +196,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         console.log(`[bridge] send_photo: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const data = readFileSync(filePath);
-        const sent = await withRetry(() => bot.api.sendPhoto(chatId, new InputFileClass!(data, basename(filePath)), { caption }));
+        const sent = await withRetry(() => bot.api.sendPhoto(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
         return { ok: true, message_id: sent.message_id };
       }
 
@@ -199,7 +204,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         const fileId = String(body.file_id ?? "");
         console.log(`[bridge] send_sticker`);
         messagesSentViaBridge++;
-        const sent = await bot.api.sendSticker(chatId, fileId);
+        const sent = await bot.api.sendSticker(chatId, fileId, { reply_parameters: replyParams(body) });
         return { ok: true, message_id: sent.message_id };
       }
 
@@ -209,7 +214,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         console.log(`[bridge] send_video: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const data = readFileSync(filePath);
-        const sent = await withRetry(() => bot.api.sendVideo(chatId, new InputFileClass!(data, basename(filePath)), { caption }));
+        const sent = await withRetry(() => bot.api.sendVideo(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
         return { ok: true, message_id: sent.message_id };
       }
 
@@ -219,7 +224,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         console.log(`[bridge] send_animation: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const data = readFileSync(filePath);
-        const sent = await withRetry(() => bot.api.sendAnimation(chatId, new InputFileClass!(data, basename(filePath)), { caption }));
+        const sent = await withRetry(() => bot.api.sendAnimation(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
         return { ok: true, message_id: sent.message_id };
       }
 
@@ -229,7 +234,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         console.log(`[bridge] send_voice: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const data = readFileSync(filePath);
-        const sent = await withRetry(() => bot.api.sendVoice(chatId, new InputFileClass!(data, basename(filePath)), { caption }));
+        const sent = await withRetry(() => bot.api.sendVoice(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
         return { ok: true, message_id: sent.message_id };
       }
 
