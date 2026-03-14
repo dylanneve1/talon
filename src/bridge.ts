@@ -100,7 +100,19 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       const msgId = Number(body.message_id);
       const emoji = String(body.emoji ?? "👍");
       console.log(`[bridge] react msg=${msgId} emoji=${emoji}`);
-      await bot.api.setMessageReaction(chatId, msgId, [{ type: "emoji", emoji: emoji as "👍" }]);
+      messagesSentViaBridge++; // Count so we don't send "(no response)"
+      try {
+        await bot.api.setMessageReaction(chatId, msgId, [{ type: "emoji", emoji: emoji as "👍" }]);
+      } catch {
+        // Some emojis aren't valid Telegram reactions — try 👍 as fallback
+        try {
+          await bot.api.setMessageReaction(chatId, msgId, [{ type: "emoji", emoji: "👍" }]);
+          console.log(`[bridge] react fallback to 👍 (original "${emoji}" was invalid)`);
+        } catch (e2) {
+          console.error(`[bridge] react failed entirely:`, e2 instanceof Error ? e2.message : e2);
+          return { ok: false, error: `Reaction failed. "${emoji}" may not be a valid Telegram reaction.` };
+        }
+      }
       return { ok: true };
     }
 

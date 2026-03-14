@@ -41,10 +41,10 @@ server.tool(
 
 server.tool(
   "react",
-  "Add an emoji reaction to a message in the current chat.",
+  "Add an emoji reaction to a message. Valid Telegram reactions: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷 🤷‍♂ 🤷‍♀ 😡",
   {
     message_id: z.number().describe("ID of the message to react to"),
-    emoji: z.string().describe("Emoji to react with (e.g. 👍, ❤️, 🔥, 😂, 🎉, 👀)"),
+    emoji: z.string().describe("Emoji reaction (must be from the valid list above)"),
   },
   async (params) => {
     const result = await callBridge("react", params);
