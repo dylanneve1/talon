@@ -6,9 +6,10 @@ import {
   resetSession,
   getSessionInfo,
   getActiveSessionCount,
+  flushSessions,
 } from "./sessions.js";
 import { splitMessage, markdownToTelegramHtml, friendlyError } from "./telegram.js";
-import { startBridge, setBridgeContext, clearBridgeContext, getBridgeMessageCount } from "./bridge.js";
+import { startBridge, stopBridge, setBridgeContext, clearBridgeContext, getBridgeMessageCount } from "./bridge.js";
 import { pushMessage, clearHistory } from "./history.js";
 import { initUserClient, allowChat } from "./userbot.js";
 import {
@@ -111,6 +112,11 @@ bot.command("status", async (ctx) => {
   const totalPrompt = u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
   const cacheHitPct = totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
 
+  // Response time stats
+  const avgResponseMs = info.turns > 0 && u.totalResponseMs ? Math.round(u.totalResponseMs / info.turns) : 0;
+  const lastResponseMs = u.lastResponseMs || 0;
+  const fastestMs = u.fastestResponseMs || 0;
+
   const lines = [
     "<b>🦅 Talon</b>",
     "",
@@ -124,6 +130,11 @@ bot.command("status", async (ctx) => {
     `   Cache read: ${formatTokenCount(u.totalCacheRead)} (${cacheHitPct}% hit)`,
     `   Cache write: ${formatTokenCount(u.totalCacheWrite)}`,
     `   Est. cost: $${u.estimatedCostUsd.toFixed(4)}`,
+    "",
+    `⏱️ <b>Response time</b>`,
+    `   Last: ${lastResponseMs ? formatDuration(lastResponseMs) : "—"}`,
+    `   Average: ${avgResponseMs ? formatDuration(avgResponseMs) : "—"}`,
+    `   Fastest: ${fastestMs ? formatDuration(fastestMs) : "—"}`,
     "",
     `🧵 <b>Session:</b> ${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "…</code>" : "<i>(new)</i>"}`,
     `   Turns: ${info.turns} · Age: ${sessionAge}`,
@@ -296,6 +307,7 @@ async function processAndReply(
   prompt: string,
   senderName: string,
   isGroup: boolean,
+  senderUsername?: string,
 ): Promise<void> {
   // Set bridge context so MCP tools can call Telegram actions in this chat
   setBridgeContext(numericChatId, bot, InputFile);
@@ -385,9 +397,16 @@ async function processAndReply(
     }
   };
 
+  // In DMs, prepend user metadata so Claude knows who it's talking to
+  let enrichedPrompt = prompt;
+  if (!isGroup && senderName) {
+    const userTag = senderUsername ? ` (@${senderUsername})` : "";
+    enrichedPrompt = `[DM from ${senderName}${userTag}]\n${prompt}`;
+  }
+
   const result = await handleMessage({
     chatId: String(chatId),
-    text: prompt,
+    text: enrichedPrompt,
     senderName,
     isGroup,
     messageId,
@@ -489,6 +508,7 @@ bot.on("message:text", async (ctx) => {
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
 
   const typing = setInterval(() => {
     bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
@@ -513,6 +533,7 @@ bot.on("message:text", async (ctx) => {
       prompt,
       sender,
       isGroup,
+      senderUsername,
     );
   } catch (err) {
     console.error(`[${chatId}] Error:`, err instanceof Error ? err.message : err);
@@ -532,6 +553,7 @@ bot.on("message:photo", async (ctx) => {
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
 
   const typing = setInterval(() => {
     bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
@@ -572,6 +594,7 @@ bot.on("message:photo", async (ctx) => {
       prompt,
       sender,
       isGroup,
+      senderUsername,
     );
   } catch (err) {
     console.error(`[${chatId}] Photo error:`, err instanceof Error ? err.message : err);
@@ -591,6 +614,7 @@ bot.on("message:document", async (ctx) => {
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
 
   const typing = setInterval(() => {
     bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
@@ -639,6 +663,7 @@ bot.on("message:document", async (ctx) => {
       prompt,
       sender,
       isGroup,
+      senderUsername,
     );
   } catch (err) {
     console.error(`[${chatId}] Doc error:`, err instanceof Error ? err.message : err);
@@ -658,6 +683,7 @@ bot.on("message:voice", async (ctx) => {
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
 
   const typing = setInterval(() => {
     bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
@@ -683,6 +709,7 @@ bot.on("message:voice", async (ctx) => {
       prompt,
       sender,
       isGroup,
+      senderUsername,
     );
   } catch (err) {
     console.error(`[${chatId}] Voice error:`, err instanceof Error ? err.message : err);
@@ -702,6 +729,7 @@ bot.on("message:sticker", async (ctx) => {
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
 
   const typing = setInterval(() => {
     bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
@@ -731,6 +759,7 @@ bot.on("message:sticker", async (ctx) => {
       prompt,
       sender,
       isGroup,
+      senderUsername,
     );
   } catch (err) {
     console.error(`[${chatId}] Sticker error:`, err instanceof Error ? err.message : err);
@@ -750,6 +779,7 @@ bot.on("message:video", async (ctx) => {
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
 
   const typing = setInterval(() => {
     bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
@@ -788,6 +818,7 @@ bot.on("message:video", async (ctx) => {
       prompt,
       sender,
       isGroup,
+      senderUsername,
     );
   } catch (err) {
     console.error(`[${chatId}] Video error:`, err instanceof Error ? err.message : err);
@@ -807,6 +838,7 @@ bot.on("message:animation", async (ctx) => {
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
 
   const typing = setInterval(() => {
     bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
@@ -845,6 +877,7 @@ bot.on("message:animation", async (ctx) => {
       prompt,
       sender,
       isGroup,
+      senderUsername,
     );
   } catch (err) {
     console.error(`[${chatId}] Animation error:`, err instanceof Error ? err.message : err);
@@ -924,13 +957,60 @@ function formatTimeAgo(ts: number): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+// ── Graceful shutdown ────────────────────────────────────────────────────────
+
+let shuttingDown = false;
+
+async function gracefulShutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`\n[shutdown] ${signal} received, shutting down gracefully...`);
+  try {
+    // Stop accepting new messages
+    await bot.stop();
+    console.log("[shutdown] Bot disconnected");
+  } catch (err) {
+    console.error("[shutdown] Bot stop error:", err instanceof Error ? err.message : err);
+  }
+  try {
+    await stopBridge();
+    console.log("[shutdown] Bridge stopped");
+  } catch (err) {
+    console.error("[shutdown] Bridge stop error:", err instanceof Error ? err.message : err);
+  }
+  flushSessions();
+  console.log("[shutdown] Sessions saved");
+  process.exit(0);
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+process.on("uncaughtException", (err) => {
+  console.error("[fatal] Uncaught exception:", err);
+  flushSessions();
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[warning] Unhandled rejection:", reason instanceof Error ? reason.message : reason);
+  // Don't exit — log and continue
+});
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
-startBridge(19876);
-console.log("Starting Talon...");
-bot.catch((err) => {
-  console.error("Bot error:", err.message ?? err);
-});
-bot.start({
-  onStart: (info) => console.log(`Talon running as @${info.username}`),
+async function main(): Promise<void> {
+  const bridgePort = await startBridge(19876);
+  console.log(`Starting Talon... (bridge port: ${bridgePort})`);
+  bot.catch((err) => {
+    console.error("Bot error:", err.message ?? err);
+  });
+  await bot.start({
+    onStart: (info) => console.log(`Talon running as @${info.username}`),
+  });
+}
+
+main().catch((err) => {
+  console.error("Fatal startup error:", err);
+  process.exit(1);
 });

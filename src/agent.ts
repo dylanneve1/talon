@@ -1,6 +1,7 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { TalonConfig } from "./config.js";
 import { getSession, incrementTurns, recordUsage, setSessionId } from "./sessions.js";
+import { getBridgePort } from "./bridge.js";
 import { readdirSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 
@@ -122,7 +123,7 @@ export async function handleMessage(
       "telegram-tools": {
         command: "node",
         args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "mcp-telegram.ts")],
-        env: { TALON_BRIDGE_URL: "http://127.0.0.1:19876" },
+        env: { TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}` },
       },
     },
   };
@@ -235,9 +236,10 @@ export async function handleMessage(
   }
 
   // Persist session and usage
+  const durationMs = Date.now() - t0;
   if (newSessionId) setSessionId(chatId, newSessionId);
   incrementTurns(chatId);
-  recordUsage(chatId, { inputTokens, outputTokens, cacheRead, cacheWrite });
+  recordUsage(chatId, { inputTokens, outputTokens, cacheRead, cacheWrite, durationMs });
 
   // The remaining currentBlockText is the final response text
   allResponseText += currentBlockText;
@@ -246,7 +248,6 @@ export async function handleMessage(
   const afterFiles = snapshotWorkspace(config.workspace);
   const newFiles = detectNewFiles(beforeFiles, afterFiles, config.workspace);
 
-  const durationMs = Date.now() - t0;
   const totalPrompt = inputTokens + cacheRead + cacheWrite;
   const cacheHitPct = totalPrompt > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
 

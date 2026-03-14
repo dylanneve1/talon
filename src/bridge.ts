@@ -7,7 +7,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
-import { markdownToTelegramHtml } from "./telegram.js";
+import { markdownToTelegramHtml, splitMessage } from "./telegram.js";
 import { getRecentFormatted, searchHistory, getMessagesByUser, getKnownUsers } from "./history.js";
 import {
   isUserClientReady,
@@ -29,6 +29,118 @@ let botInstance: Bot | null = null;
 let InputFileClass: typeof GrammyInputFile | null = null;
 let messagesSentViaBridge = 0;
 const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();
+
+// ── Rate limiter (per-chat, 20 messages/minute) ──────────────────────────────
+
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 20;
+
+type RateLimitBucket = {
+  timestamps: number[];
+  queue: Array<{ resolve: (v: unknown) => void; fn: () => Promise<unknown> }>;
+  draining: boolean;
+};
+
+const rateLimitBuckets = new Map<number, RateLimitBucket>();
+
+function getRateBucket(chatId: number): RateLimitBucket {
+  let bucket = rateLimitBuckets.get(chatId);
+  if (!bucket) {
+    bucket = { timestamps: [], queue: [], draining: false };
+    rateLimitBuckets.set(chatId, bucket);
+  }
+  return bucket;
+}
+
+function pruneTimestamps(bucket: RateLimitBucket): void {
+  const cutoff = Date.now() - RATE_LIMIT_WINDOW_MS;
+  while (bucket.timestamps.length > 0 && bucket.timestamps[0] < cutoff) {
+    bucket.timestamps.shift();
+  }
+}
+
+async function drainQueue(chatId: number): Promise<void> {
+  const bucket = getRateBucket(chatId);
+  if (bucket.draining) return;
+  bucket.draining = true;
+  while (bucket.queue.length > 0) {
+    pruneTimestamps(bucket);
+    if (bucket.timestamps.length < RATE_LIMIT_MAX) {
+      const item = bucket.queue.shift()!;
+      bucket.timestamps.push(Date.now());
+      try {
+        const result = await item.fn();
+        item.resolve(result);
+      } catch (err) {
+        item.resolve({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      }
+    } else {
+      // Wait until the oldest timestamp expires
+      const waitMs = bucket.timestamps[0] + RATE_LIMIT_WINDOW_MS - Date.now() + 50;
+      await new Promise((r) => setTimeout(r, Math.max(50, waitMs)));
+    }
+  }
+  bucket.draining = false;
+}
+
+async function rateLimited<T>(chatId: number, fn: () => Promise<T>): Promise<T> {
+  const bucket = getRateBucket(chatId);
+  pruneTimestamps(bucket);
+  if (bucket.timestamps.length < RATE_LIMIT_MAX && bucket.queue.length === 0) {
+    bucket.timestamps.push(Date.now());
+    return fn();
+  }
+  // Queue the call
+  console.log(`[bridge] Rate limited chat=${chatId}, queueing message (${bucket.queue.length + 1} in queue)`);
+  return new Promise<T>((resolve) => {
+    bucket.queue.push({ resolve: resolve as (v: unknown) => void, fn: fn as () => Promise<unknown> });
+    drainQueue(chatId);
+  });
+}
+
+// ── Retry helper for Telegram API calls ──────────────────────────────────────
+
+const RETRYABLE_CODES = new Set([429, 500, 502, 503]);
+const MAX_RETRIES = 3;
+
+async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      // Extract HTTP status code from error
+      const statusMatch = msg.match(/(\d{3})/);
+      const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+
+      // Don't retry on 400 (bad request) or 403 (forbidden)
+      if (status === 400 || status === 403) throw err;
+
+      // Only retry on known retryable codes
+      if (!RETRYABLE_CODES.has(status) && attempt > 0) throw err;
+
+      if (attempt < MAX_RETRIES) {
+        // For 429, respect retry_after if present
+        let delayMs = Math.min(1000 * Math.pow(2, attempt), 10_000);
+        if (status === 429) {
+          const retryAfterMatch = msg.match(/retry.?after[:\s]*(\d+)/i);
+          if (retryAfterMatch) {
+            delayMs = parseInt(retryAfterMatch[1], 10) * 1000;
+          }
+        }
+        console.log(`[bridge] Retry ${attempt + 1}/${MAX_RETRIES} after ${delayMs}ms (status=${status})`);
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw lastError;
+}
+
+// ── Message length validation ────────────────────────────────────────────────
+
+const TELEGRAM_MAX_LENGTH = 4096;
 
 export function setBridgeContext(chatId: number, bot: Bot, inputFile: typeof GrammyInputFile): void {
   activeChatId = chatId;
@@ -58,42 +170,67 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
   switch (body.action) {
     case "send_message": {
       const text = String(body.text ?? "");
-      const html = markdownToTelegramHtml(text);
       const replyTo = typeof body.reply_to_message_id === "number" ? body.reply_to_message_id : undefined;
       console.log(`[bridge] send_message${replyTo ? ` reply_to=${replyTo}` : ""}: ${text.slice(0, 80)}`);
       messagesSentViaBridge++;
-      try {
-        const sent = await bot.api.sendMessage(chatId, html, {
-          parse_mode: "HTML",
-          reply_parameters: replyTo ? { message_id: replyTo } : undefined,
-        });
-        return { ok: true, message_id: sent.message_id };
-      } catch {
-        const sent = await bot.api.sendMessage(chatId, text, {
-          reply_parameters: replyTo ? { message_id: replyTo } : undefined,
-        });
-        return { ok: true, message_id: sent.message_id };
+
+      // Split long messages into chunks
+      const chunks = splitMessage(text, TELEGRAM_MAX_LENGTH);
+      let lastMsgId: number | undefined;
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const html = markdownToTelegramHtml(chunk);
+        const replyParam = i === 0 && replyTo ? { message_id: replyTo } : undefined;
+        lastMsgId = await rateLimited(chatId, () =>
+          withRetry(async () => {
+            try {
+              const sent = await bot.api.sendMessage(chatId, html, {
+                parse_mode: "HTML",
+                reply_parameters: replyParam,
+              });
+              return sent.message_id;
+            } catch {
+              const sent = await bot.api.sendMessage(chatId, chunk, {
+                reply_parameters: replyParam,
+              });
+              return sent.message_id;
+            }
+          }),
+        );
       }
+      return { ok: true, message_id: lastMsgId };
     }
 
     case "reply_to": {
       const msgId = Number(body.message_id);
       const text = String(body.text ?? "");
-      const html = markdownToTelegramHtml(text);
       console.log(`[bridge] reply_to msg=${msgId}: ${text.slice(0, 80)}`);
       messagesSentViaBridge++;
-      try {
-        const sent = await bot.api.sendMessage(chatId, html, {
-          parse_mode: "HTML",
-          reply_parameters: { message_id: msgId },
-        });
-        return { ok: true, message_id: sent.message_id };
-      } catch {
-        const sent = await bot.api.sendMessage(chatId, text, {
-          reply_parameters: { message_id: msgId },
-        });
-        return { ok: true, message_id: sent.message_id };
+
+      const chunks = splitMessage(text, TELEGRAM_MAX_LENGTH);
+      let lastMsgId: number | undefined;
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const html = markdownToTelegramHtml(chunk);
+        const replyParam = i === 0 ? { message_id: msgId } : undefined;
+        lastMsgId = await rateLimited(chatId, () =>
+          withRetry(async () => {
+            try {
+              const sent = await bot.api.sendMessage(chatId, html, {
+                parse_mode: "HTML",
+                reply_parameters: replyParam,
+              });
+              return sent.message_id;
+            } catch {
+              const sent = await bot.api.sendMessage(chatId, chunk, {
+                reply_parameters: replyParam,
+              });
+              return sent.message_id;
+            }
+          }),
+        );
       }
+      return { ok: true, message_id: lastMsgId };
     }
 
     case "react": {
@@ -102,12 +239,12 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       console.log(`[bridge] react msg=${msgId} emoji=${emoji}`);
       messagesSentViaBridge++; // Count so we don't send "(no response)"
       try {
-        await bot.api.setMessageReaction(chatId, msgId, [{ type: "emoji", emoji: emoji as "👍" }]);
+        await withRetry(() => bot.api.setMessageReaction(chatId, msgId, [{ type: "emoji", emoji: emoji as "👍" }]));
       } catch {
-        // Some emojis aren't valid Telegram reactions — try 👍 as fallback
+        // Some emojis aren't valid Telegram reactions — try thumbs-up as fallback
         try {
           await bot.api.setMessageReaction(chatId, msgId, [{ type: "emoji", emoji: "👍" }]);
-          console.log(`[bridge] react fallback to 👍 (original "${emoji}" was invalid)`);
+          console.log(`[bridge] react fallback to thumbs-up (original "${emoji}" was invalid)`);
         } catch (e2) {
           console.error(`[bridge] react failed entirely:`, e2 instanceof Error ? e2.message : e2);
           return { ok: false, error: `Reaction failed. "${emoji}" may not be a valid Telegram reaction.` };
@@ -118,14 +255,20 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 
     case "edit_message": {
       const msgId = Number(body.message_id);
-      const text = String(body.text ?? "");
+      let text = String(body.text ?? "");
+      // Telegram edit_message has the same 4096 char limit — truncate if needed
+      if (text.length > TELEGRAM_MAX_LENGTH) {
+        text = text.slice(0, TELEGRAM_MAX_LENGTH - 3) + "...";
+      }
       console.log(`[bridge] edit msg=${msgId}: ${text.slice(0, 80)}`);
       const html = markdownToTelegramHtml(text);
-      try {
-        await bot.api.editMessageText(chatId, msgId, html, { parse_mode: "HTML" });
-      } catch {
-        await bot.api.editMessageText(chatId, msgId, text);
-      }
+      await withRetry(async () => {
+        try {
+          await bot.api.editMessageText(chatId, msgId, html, { parse_mode: "HTML" });
+        } catch {
+          await bot.api.editMessageText(chatId, msgId, text);
+        }
+      });
       return { ok: true };
     }
 
@@ -151,9 +294,9 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       const stat = statSync(filePath);
       if (stat.size > 49 * 1024 * 1024) throw new Error("File too large (max 49MB)");
       const data = readFileSync(filePath);
-      const sent = await bot.api.sendDocument(chatId, new InputFileClass(data, basename(filePath)), {
-        caption,
-      });
+      const sent = await rateLimited(chatId, () =>
+        withRetry(() => bot.api.sendDocument(chatId, new InputFileClass!(data, basename(filePath)), { caption })),
+      );
       return { ok: true, message_id: sent.message_id };
     }
 
@@ -163,9 +306,9 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       console.log(`[bridge] send_photo: ${basename(filePath)}`);
       messagesSentViaBridge++;
       const data = readFileSync(filePath);
-      const sent = await bot.api.sendPhoto(chatId, new InputFileClass(data, basename(filePath)), {
-        caption,
-      });
+      const sent = await rateLimited(chatId, () =>
+        withRetry(() => bot.api.sendPhoto(chatId, new InputFileClass!(data, basename(filePath)), { caption })),
+      );
       return { ok: true, message_id: sent.message_id };
     }
 
@@ -468,11 +611,23 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 }
 
 let server: ReturnType<typeof createServer> | null = null;
+let activePort = 0;
 
-export function startBridge(port = 19876): void {
-  if (server) return;
+/** The port the bridge is actually listening on. */
+export function getBridgePort(): number {
+  return activePort;
+}
 
-  server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
+/**
+ * Start the HTTP bridge. If the requested port is busy, try up to
+ * MAX_PORT_RETRIES consecutive ports before giving up.
+ */
+const MAX_PORT_RETRIES = 5;
+
+export function startBridge(port = 19876): Promise<number> {
+  if (server) return Promise.resolve(activePort);
+
+  const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     if (req.method !== "POST" || req.url !== "/action") {
       res.writeHead(404);
       res.end("Not found");
@@ -495,7 +650,42 @@ export function startBridge(port = 19876): void {
     }
   });
 
-  server.listen(port, "127.0.0.1", () => {
-    console.log(`[bridge] Telegram action bridge on :${port}`);
+  return new Promise<number>((resolve, reject) => {
+    let attempt = 0;
+    const tryPort = (p: number) => {
+      httpServer.once("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "EADDRINUSE" && attempt < MAX_PORT_RETRIES) {
+          attempt++;
+          const next = p + 1;
+          console.log(`[bridge] Port ${p} busy, trying ${next}...`);
+          httpServer.removeAllListeners("error");
+          tryPort(next);
+        } else {
+          reject(err);
+        }
+      });
+      httpServer.listen(p, "127.0.0.1", () => {
+        server = httpServer;
+        activePort = p;
+        console.log(`[bridge] Telegram action bridge on :${p}`);
+        resolve(p);
+      });
+    };
+    tryPort(port);
+  });
+}
+
+/** Gracefully stop the bridge HTTP server. */
+export function stopBridge(): Promise<void> {
+  return new Promise((resolve) => {
+    if (!server) {
+      resolve();
+      return;
+    }
+    server.close(() => {
+      server = null;
+      activePort = 0;
+      resolve();
+    });
   });
 }

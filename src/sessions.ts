@@ -18,6 +18,12 @@ type SessionUsage = {
   lastPromptTokens: number;
   /** Estimated cost in USD. */
   estimatedCostUsd: number;
+  /** Total response time in ms (for averaging). */
+  totalResponseMs: number;
+  /** Last response time in ms. */
+  lastResponseMs: number;
+  /** Fastest response time in ms. */
+  fastestResponseMs: number;
 };
 
 type SessionState = {
@@ -44,6 +50,8 @@ function ensureDir(filePath: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
+const STALE_SESSION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 export function loadSessions(): void {
   try {
     if (existsSync(STORE_FILE)) {
@@ -51,6 +59,20 @@ export function loadSessions(): void {
     }
   } catch {
     store = {};
+  }
+  // Prune sessions inactive for >7 days
+  const now = Date.now();
+  let pruned = 0;
+  for (const [chatId, session] of Object.entries(store)) {
+    if (session.lastActive && now - session.lastActive > STALE_SESSION_MS) {
+      delete store[chatId];
+      pruned++;
+    }
+  }
+  if (pruned > 0) {
+    console.log(`[sessions] Pruned ${pruned} stale session(s) (inactive >7 days)`);
+    dirty = true;
+    saveSessions();
   }
 }
 
@@ -75,6 +97,9 @@ const emptyUsage = (): SessionUsage => ({
   totalCacheWrite: 0,
   lastPromptTokens: 0,
   estimatedCostUsd: 0,
+  totalResponseMs: 0,
+  lastResponseMs: 0,
+  fastestResponseMs: 0,
 });
 
 export function getSession(chatId: string): SessionState {
@@ -84,9 +109,12 @@ export function getSession(chatId: string): SessionState {
     session = { sessionId: undefined, turns: 0, lastActive: now, createdAt: now, usage: emptyUsage() };
     store[chatId] = session;
   }
-  // Migrate old sessions without usage
+  // Migrate old sessions without usage or missing fields
   if (!session.usage) session.usage = emptyUsage();
   if (!session.createdAt) session.createdAt = session.lastActive;
+  if (session.usage.totalResponseMs === undefined) session.usage.totalResponseMs = 0;
+  if (session.usage.lastResponseMs === undefined) session.usage.lastResponseMs = 0;
+  if (session.usage.fastestResponseMs === undefined) session.usage.fastestResponseMs = 0;
   return session;
 }
 
@@ -105,7 +133,7 @@ export function incrementTurns(chatId: string): void {
 
 export function recordUsage(
   chatId: string,
-  turn: { inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number },
+  turn: { inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number; durationMs?: number },
 ): void {
   const session = getSession(chatId);
   session.usage.totalInputTokens += turn.inputTokens;
@@ -117,6 +145,15 @@ export function recordUsage(
   // Rough cost estimate (Sonnet 4.6 pricing: $3/M input, $15/M output, $0.30/M cache read)
   session.usage.estimatedCostUsd +=
     (turn.inputTokens * 3 + turn.cacheWrite * 3.75 + turn.cacheRead * 0.3 + turn.outputTokens * 15) / 1_000_000;
+  // Response time tracking
+  if (turn.durationMs && turn.durationMs > 0) {
+    session.usage.totalResponseMs = (session.usage.totalResponseMs || 0) + turn.durationMs;
+    session.usage.lastResponseMs = turn.durationMs;
+    const current = session.usage.fastestResponseMs || Infinity;
+    if (turn.durationMs < current) {
+      session.usage.fastestResponseMs = turn.durationMs;
+    }
+  }
   dirty = true;
 }
 
@@ -149,7 +186,11 @@ export function getActiveSessionCount(): number {
   return Object.keys(store).length;
 }
 
-// Flush on exit
+// Flush on exit (signal handlers are in index.ts for graceful shutdown)
 process.on("exit", saveSessions);
-process.on("SIGINT", () => { saveSessions(); process.exit(0); });
-process.on("SIGTERM", () => { saveSessions(); process.exit(0); });
+
+/** Force-save sessions to disk immediately. */
+export function flushSessions(): void {
+  dirty = true;
+  saveSessions();
+}
