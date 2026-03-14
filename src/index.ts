@@ -31,6 +31,7 @@ import {
   stopProactiveTimer,
 } from "./proactive.js";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { initWorkspace } from "./workspace.js";
 import {
   startWatchdog,
   stopWatchdog,
@@ -56,15 +57,12 @@ import {
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
 const config = loadConfig();
+const workspace = initWorkspace(config.workspace);
 loadSessions();
 loadChatSettings();
 initAgent(config);
 
 const bot = new Bot(config.botToken);
-
-if (!existsSync(config.workspace)) {
-  mkdirSync(config.workspace, { recursive: true });
-}
 
 // Initialize GramJS user client for full history access (optional)
 const apiId = parseInt(process.env.TALON_API_ID || "", 10);

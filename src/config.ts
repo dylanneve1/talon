@@ -62,11 +62,21 @@ function loadSystemPrompt(): string {
   const memory = readOptionalFile(resolve(base, "workspace", "memory", "memory.md"));
   if (memory) parts.push(`## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: workspace/memory/memory.md\n\n${memory}`);
 
-  // Daily logs for continuity
-  parts.push(`## Daily Logs\n\nBrief interaction summaries are saved at workspace/logs/YYYY-MM-DD.md. You can read these files to review past activity and maintain continuity across sessions.`);
+  // Workspace structure
+  parts.push(`## Workspace
+
+Your workspace is organized into directories:
+- \`workspace/memory/\` — persistent memory (memory.md). Update when you learn important things.
+- \`workspace/logs/\` — daily interaction logs (YYYY-MM-DD.md). Read for past activity.
+- \`workspace/uploads/\` — files received from Telegram (photos, docs, voice).
+- \`workspace/files/\` — files you create for sending back to users.
+- \`workspace/scripts/\` — scripts you create (.py, .js, .sh, etc.).
+- \`workspace/data/\` — data files you create (.csv, .json, .xml, etc.).
+
+When creating files, put them in the right directory. Use \`workspace/files/\` for general files to send back.`);
 
   // Today's date for temporal awareness
-  parts.push(`\n## Current Date\n${new Date().toISOString().slice(0, 10)}`);
+  parts.push(`## Current Date\n${new Date().toISOString().slice(0, 10)}`);
 
   return parts.join("\n\n---\n\n");
 }

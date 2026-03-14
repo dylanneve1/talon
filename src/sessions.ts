@@ -43,7 +43,13 @@ type SessionState = {
 
 type SessionStore = Record<string, SessionState>;
 
-const STORE_FILE = resolve(process.cwd(), "workspace", "sessions.json");
+// Try sessions/ subdir first, fall back to root for backward compat
+const sessionsDir = resolve(process.cwd(), "workspace", "sessions");
+const STORE_FILE = existsSync(resolve(sessionsDir, "sessions.json"))
+  ? resolve(sessionsDir, "sessions.json")
+  : existsSync(resolve(process.cwd(), "workspace", "sessions.json"))
+    ? resolve(process.cwd(), "workspace", "sessions.json")
+    : resolve(sessionsDir, "sessions.json");
 let store: SessionStore = {};
 let dirty = false;
 
