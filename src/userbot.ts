@@ -36,7 +36,7 @@ function assertAllowedChat(chatId: number | string): number {
 }
 
 export function isUserClientReady(): boolean {
-  return client !== null && client.connected;
+  return client !== null && !!client.connected;
 }
 
 export async function initUserClient(params: {
@@ -139,8 +139,8 @@ export async function getHistory(params: {
 
     if (messages.length === 0) return "No messages found.";
 
-    return messages
-      .toReversed()
+    return [...messages]
+      .reverse()
       .map((m) => {
         const date = new Date(m.date * 1000).toISOString().slice(0, 16).replace("T", " ");
         const sender = m.sender && "firstName" in m.sender

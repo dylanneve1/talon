@@ -589,10 +589,10 @@ export async function handleTextMessage(ctx: Context, bot: Bot, config: TalonCon
 export async function handlePhotoMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const photos = (ctx.message as Record<string, unknown>).photo as Array<{ file_id: string; file_unique_id: string }>;
+  const photos = (ctx.message as unknown as Record<string, unknown>).photo as Array<{ file_id: string; file_unique_id: string }>;
   if (!photos) return;
   const bestPhoto = photos[photos.length - 1];
-  const caption = (ctx.message as Record<string, unknown>).caption as string || "";
+  const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
 
   await handleMediaMessage(ctx, bot, config, {
     type: "photo",
@@ -609,7 +609,7 @@ export async function handlePhotoMessage(ctx: Context, bot: Bot, config: TalonCo
 export async function handleDocumentMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const doc = (ctx.message as Record<string, unknown>).document as {
+  const doc = (ctx.message as unknown as Record<string, unknown>).document as {
     file_id: string;
     file_unique_id: string;
     file_name?: string;
@@ -619,7 +619,7 @@ export async function handleDocumentMessage(ctx: Context, bot: Bot, config: Talo
   if (!doc) return;
 
   const fileName = doc.file_name || `doc_${doc.file_unique_id}`;
-  const caption = (ctx.message as Record<string, unknown>).caption as string || "";
+  const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
 
   await handleMediaMessage(ctx, bot, config, {
     type: "document",
@@ -638,7 +638,7 @@ export async function handleDocumentMessage(ctx: Context, bot: Bot, config: Talo
 export async function handleVoiceMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const voice = (ctx.message as Record<string, unknown>).voice as {
+  const voice = (ctx.message as unknown as Record<string, unknown>).voice as {
     file_id: string;
     file_unique_id: string;
     duration: number;
@@ -664,7 +664,7 @@ export async function handleStickerMessage(ctx: Context, bot: Bot, config: Talon
   const sender = getSenderName(ctx.from);
   const senderUsername = ctx.from?.username;
 
-  const sticker = (ctx.message as Record<string, unknown>).sticker as {
+  const sticker = (ctx.message as unknown as Record<string, unknown>).sticker as {
     file_id: string;
     emoji?: string;
     set_name?: string;
@@ -699,7 +699,7 @@ export async function handleStickerMessage(ctx: Context, bot: Bot, config: Talon
 export async function handleVideoMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const video = (ctx.message as Record<string, unknown>).video as {
+  const video = (ctx.message as unknown as Record<string, unknown>).video as {
     file_id: string;
     file_unique_id: string;
     file_name?: string;
@@ -710,7 +710,7 @@ export async function handleVideoMessage(ctx: Context, bot: Bot, config: TalonCo
   if (!video) return;
 
   const fileName = video.file_name || `video_${video.file_unique_id}.mp4`;
-  const caption = (ctx.message as Record<string, unknown>).caption as string || "";
+  const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
 
   await handleMediaMessage(ctx, bot, config, {
     type: "video",
@@ -727,7 +727,7 @@ export async function handleVideoMessage(ctx: Context, bot: Bot, config: TalonCo
 export async function handleAnimationMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const anim = (ctx.message as Record<string, unknown>).animation as {
+  const anim = (ctx.message as unknown as Record<string, unknown>).animation as {
     file_id: string;
     file_unique_id: string;
     file_name?: string;
@@ -736,7 +736,7 @@ export async function handleAnimationMessage(ctx: Context, bot: Bot, config: Tal
   if (!anim) return;
 
   const fileName = anim.file_name || `animation_${anim.file_unique_id}.mp4`;
-  const caption = (ctx.message as Record<string, unknown>).caption as string || "";
+  const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
 
   await handleMediaMessage(ctx, bot, config, {
     type: "animation",

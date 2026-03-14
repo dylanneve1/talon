@@ -169,7 +169,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "unpin_message": {
         const msgId = body.message_id ? Number(body.message_id) : undefined;
         console.log(`[bridge] unpin${msgId ? ` msg=${msgId}` : " latest"}`);
-        await bot.api.unpinChatMessage(chatId, msgId ? { message_id: msgId } : undefined);
+        await bot.api.unpinChatMessage(chatId, msgId as never);
         return { ok: true };
       }
 
@@ -319,7 +319,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         const emoji = (body.emoji as string) || "🎲";
         console.log(`[bridge] send_dice: ${emoji}`);
         messagesSentViaBridge++;
-        const sent = await bot.api.sendDice(chatId, { emoji: emoji as "🎲" });
+        const sent = await bot.api.sendDice(chatId, emoji as never);
         return { ok: true, message_id: sent.message_id, value: sent.dice?.value };
       }
 
