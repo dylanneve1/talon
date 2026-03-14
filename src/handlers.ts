@@ -460,9 +460,8 @@ export async function processAndReply(
           await sendHtml(bot, numericChatId, markdownToTelegramHtml(chunk), replyToId);
         }
       }
-    } else if (!streamMsgId) {
-      await sendHtml(bot, numericChatId, "<i>(no response)</i>", replyToId);
     }
+    // No "(no response)" fallback — if Claude used tools or had nothing to say, silence is fine.
   } else if (streamMsgId) {
     try {
       await bot.api.deleteMessage(numericChatId, streamMsgId);
