@@ -17,15 +17,23 @@ type BridgeAction = {
 let activeChatId: number | null = null;
 let botInstance: Bot | null = null;
 let InputFileClass: typeof GrammyInputFile | null = null;
+let messagesSentViaBridge = 0;
 
 export function setBridgeContext(chatId: number, bot: Bot, inputFile: typeof GrammyInputFile): void {
   activeChatId = chatId;
   botInstance = bot;
   InputFileClass = inputFile;
+  messagesSentViaBridge = 0;
 }
 
 export function clearBridgeContext(): void {
   activeChatId = null;
+  messagesSentViaBridge = 0;
+}
+
+/** Number of messages/files sent via bridge tools during the current turn. */
+export function getBridgeMessageCount(): number {
+  return messagesSentViaBridge;
 }
 
 async function handleAction(body: BridgeAction): Promise<unknown> {
@@ -40,6 +48,8 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       const text = String(body.text ?? "");
       const html = markdownToTelegramHtml(text);
       const replyTo = typeof body.reply_to_message_id === "number" ? body.reply_to_message_id : undefined;
+      console.log(`[bridge] send_message${replyTo ? ` reply_to=${replyTo}` : ""}: ${text.slice(0, 80)}`);
+      messagesSentViaBridge++;
       try {
         const sent = await bot.api.sendMessage(chatId, html, {
           parse_mode: "HTML",
@@ -58,6 +68,8 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       const msgId = Number(body.message_id);
       const text = String(body.text ?? "");
       const html = markdownToTelegramHtml(text);
+      console.log(`[bridge] reply_to msg=${msgId}: ${text.slice(0, 80)}`);
+      messagesSentViaBridge++;
       try {
         const sent = await bot.api.sendMessage(chatId, html, {
           parse_mode: "HTML",
@@ -75,6 +87,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
     case "react": {
       const msgId = Number(body.message_id);
       const emoji = String(body.emoji ?? "👍");
+      console.log(`[bridge] react msg=${msgId} emoji=${emoji}`);
       await bot.api.setMessageReaction(chatId, msgId, [{ type: "emoji", emoji: emoji as "👍" }]);
       return { ok: true };
     }
@@ -82,6 +95,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
     case "edit_message": {
       const msgId = Number(body.message_id);
       const text = String(body.text ?? "");
+      console.log(`[bridge] edit msg=${msgId}: ${text.slice(0, 80)}`);
       const html = markdownToTelegramHtml(text);
       try {
         await bot.api.editMessageText(chatId, msgId, html, { parse_mode: "HTML" });
@@ -93,12 +107,14 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 
     case "delete_message": {
       const msgId = Number(body.message_id);
+      console.log(`[bridge] delete msg=${msgId}`);
       await bot.api.deleteMessage(chatId, msgId);
       return { ok: true };
     }
 
     case "pin_message": {
       const msgId = Number(body.message_id);
+      console.log(`[bridge] pin msg=${msgId}`);
       await bot.api.pinChatMessage(chatId, msgId);
       return { ok: true };
     }
@@ -106,6 +122,8 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
     case "send_file": {
       const filePath = String(body.file_path ?? "");
       const caption = body.caption ? String(body.caption) : undefined;
+      console.log(`[bridge] send_file: ${basename(filePath)}`);
+      messagesSentViaBridge++;
       const stat = statSync(filePath);
       if (stat.size > 49 * 1024 * 1024) throw new Error("File too large (max 49MB)");
       const data = readFileSync(filePath);
@@ -118,6 +136,8 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
     case "send_photo": {
       const filePath = String(body.file_path ?? "");
       const caption = body.caption ? String(body.caption) : undefined;
+      console.log(`[bridge] send_photo: ${basename(filePath)}`);
+      messagesSentViaBridge++;
       const data = readFileSync(filePath);
       const sent = await bot.api.sendPhoto(chatId, new InputFileClass(data, basename(filePath)), {
         caption,

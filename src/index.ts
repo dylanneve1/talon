@@ -8,7 +8,7 @@ import {
   getActiveSessionCount,
 } from "./sessions.js";
 import { splitMessage, markdownToTelegramHtml, friendlyError } from "./telegram.js";
-import { startBridge, setBridgeContext, clearBridgeContext } from "./bridge.js";
+import { startBridge, setBridgeContext, clearBridgeContext, getBridgeMessageCount } from "./bridge.js";
 import {
   writeFileSync,
   readFileSync,
@@ -373,47 +373,54 @@ async function processAndReply(
 
   clearTimeout(streamTimer);
 
-  // Send the final text (whatever wasn't already sent via onTextBlock)
-  const finalText = result.text;
-  if (finalText) {
-    if (streamMsgId) {
-      // Edit the streaming message with final content
-      const chunks = splitMessage(finalText, config.maxMessageLength);
-      const firstHtml = markdownToTelegramHtml(chunks[0]);
-      try {
-        await bot.api.editMessageText(numericChatId, streamMsgId, firstHtml, {
-          parse_mode: "HTML",
-        });
-      } catch {
+  const bridgeSent = getBridgeMessageCount();
+
+  // If Claude sent messages via MCP tools, don't duplicate with text output.
+  // Only send final text if no bridge messages were sent.
+  if (bridgeSent === 0) {
+    const finalText = result.text;
+    if (finalText) {
+      if (streamMsgId) {
+        const chunks = splitMessage(finalText, config.maxMessageLength);
+        const firstHtml = markdownToTelegramHtml(chunks[0]);
         try {
-          await bot.api.editMessageText(numericChatId, streamMsgId, chunks[0]);
+          await bot.api.editMessageText(numericChatId, streamMsgId, firstHtml, {
+            parse_mode: "HTML",
+          });
         } catch {
-          // ignore
+          try {
+            await bot.api.editMessageText(numericChatId, streamMsgId, chunks[0]);
+          } catch {
+            // ignore
+          }
+        }
+        for (let i = 1; i < chunks.length; i++) {
+          await sendHtml(numericChatId, markdownToTelegramHtml(chunks[i]), replyToId);
+        }
+      } else {
+        const chunks = splitMessage(finalText, config.maxMessageLength);
+        for (const chunk of chunks) {
+          await sendHtml(numericChatId, markdownToTelegramHtml(chunk), replyToId);
         }
       }
-      for (let i = 1; i < chunks.length; i++) {
-        await sendHtml(
-          numericChatId,
-          markdownToTelegramHtml(chunks[i]),
-          replyToId,
-        );
-      }
-    } else {
-      const chunks = splitMessage(finalText, config.maxMessageLength);
-      for (const chunk of chunks) {
-        await sendHtml(
-          numericChatId,
-          markdownToTelegramHtml(chunk),
-          replyToId,
-        );
-      }
+    } else if (!streamMsgId) {
+      await sendHtml(numericChatId, "<i>(no response)</i>", replyToId);
     }
-  } else if (!streamMsgId) {
-    await sendHtml(numericChatId, "<i>(no response)</i>", replyToId);
+  } else if (streamMsgId) {
+    // Clean up streaming placeholder if bridge handled delivery
+    try {
+      await bot.api.deleteMessage(numericChatId, streamMsgId);
+    } catch {
+      // ignore
+    }
   }
 
-  // Send new files
-  await sendNewFiles(numericChatId, result.newFiles);
+  clearBridgeContext();
+
+  // Send new files (only if not already sent via bridge tools)
+  if (bridgeSent === 0) {
+    await sendNewFiles(numericChatId, result.newFiles);
+  }
 }
 
 // ── Message handlers ─────────────────────────────────────────────────────────
