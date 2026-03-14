@@ -32,7 +32,40 @@ if (!existsSync(config.workspace)) {
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 bot.command("start", (ctx) =>
-  ctx.reply("Talon here. Send a message or mention me in a group."),
+  ctx.reply(
+    "🦅 <b>Talon</b> — Claude-powered Telegram assistant.\n\n" +
+      "Send a message, photo, document, or voice note.\n" +
+      "In groups, mention me or reply to my messages.\n\n" +
+      "/status — session info &amp; usage\n" +
+      "/reset — clear session\n" +
+      "/help — all commands",
+    { parse_mode: "HTML" },
+  ),
+);
+
+bot.command("help", (ctx) =>
+  ctx.reply(
+    [
+      "🦅 <b>Talon Commands</b>",
+      "",
+      "/status — model, context, usage, cost",
+      "/reset — clear session, start fresh",
+      "/help — this message",
+      "",
+      "<b>Supported input:</b>",
+      "• Text messages",
+      "• Photos (with optional caption)",
+      "• Documents/files (PDF, code, etc.)",
+      "• Voice messages",
+      "• Forwarded messages",
+      "• Reply context",
+      "",
+      "<b>Groups:</b> mention @" + escapeHtml(ctx.me.username ?? "bot") + " or reply to activate",
+      "",
+      "<b>Files:</b> ask me to create a file and I'll send it as an attachment",
+    ].join("\n"),
+    { parse_mode: "HTML" },
+  ),
 );
 
 bot.command("reset", async (ctx) => {
@@ -42,14 +75,42 @@ bot.command("reset", async (ctx) => {
 
 bot.command("status", async (ctx) => {
   const info = getSessionInfo(String(ctx.chat.id));
+  const u = info.usage;
   const uptime = formatDuration(process.uptime() * 1000);
+  const sessionAge = info.createdAt ? formatDuration(Date.now() - info.createdAt) : "—";
+  const lastSeen = info.lastActive ? formatTimeAgo(info.lastActive) : "never";
+
+  // Context usage bar
+  const contextMax = 1_000_000;
+  const contextUsed = u.lastPromptTokens;
+  const contextPct = contextMax > 0 ? Math.min(100, Math.round((contextUsed / contextMax) * 100)) : 0;
+  const barLen = 20;
+  const filled = Math.round((contextPct / 100) * barLen);
+  const contextBar = "█".repeat(filled) + "░".repeat(barLen - filled);
+
+  // Cache hit rate
+  const totalPrompt = u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
+  const cacheHitPct = totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
+
   const lines = [
     "<b>🦅 Talon</b>",
-    `Model: <code>${escapeHtml(config.model)}</code>`,
-    `Session: ${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "…</code>" : "<i>(new)</i>"}`,
-    `Turns: ${info.turns}`,
-    `Active sessions: ${getActiveSessionCount()}`,
-    `Uptime: ${uptime}`,
+    "",
+    `🧠 <b>Model:</b> <code>${escapeHtml(config.model)}</code>`,
+    `📚 <b>Context:</b> ${formatTokenCount(contextUsed)}/${formatTokenCount(contextMax)} (${contextPct}%)`,
+    `<code>${contextBar}</code>`,
+    "",
+    `🧮 <b>Session usage</b>`,
+    `   Input: ${formatTokenCount(u.totalInputTokens)} tokens`,
+    `   Output: ${formatTokenCount(u.totalOutputTokens)} tokens`,
+    `   Cache read: ${formatTokenCount(u.totalCacheRead)} (${cacheHitPct}% hit)`,
+    `   Cache write: ${formatTokenCount(u.totalCacheWrite)}`,
+    `   Est. cost: $${u.estimatedCostUsd.toFixed(4)}`,
+    "",
+    `🧵 <b>Session:</b> ${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "…</code>" : "<i>(new)</i>"}`,
+    `   Turns: ${info.turns} · Age: ${sessionAge}`,
+    `   Last active: ${lastSeen}`,
+    "",
+    `⚙️ Active sessions: ${getActiveSessionCount()} · Uptime: ${uptime}`,
   ];
   await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
 });
@@ -573,6 +634,20 @@ function formatDuration(ms: number): string {
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function formatTimeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
 // ── Start ────────────────────────────────────────────────────────────────────

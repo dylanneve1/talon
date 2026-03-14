@@ -1,6 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { TalonConfig } from "./config.js";
-import { getSession, incrementTurns, setSessionId } from "./sessions.js";
+import { getSession, incrementTurns, recordUsage, setSessionId } from "./sessions.js";
 import { readdirSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 
@@ -223,9 +223,10 @@ export async function handleMessage(
     throw err;
   }
 
-  // Persist session
+  // Persist session and usage
   if (newSessionId) setSessionId(chatId, newSessionId);
   incrementTurns(chatId);
+  recordUsage(chatId, { inputTokens, outputTokens, cacheRead, cacheWrite });
 
   // The remaining currentBlockText is the final response text
   allResponseText += currentBlockText;

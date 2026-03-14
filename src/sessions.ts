@@ -9,6 +9,17 @@ import { resolve, dirname } from "node:path";
  * Sessions are persisted to disk so they survive restarts.
  */
 
+type SessionUsage = {
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheRead: number;
+  totalCacheWrite: number;
+  /** Last turn's prompt tokens (context size snapshot). */
+  lastPromptTokens: number;
+  /** Estimated cost in USD. */
+  estimatedCostUsd: number;
+};
+
 type SessionState = {
   /** Claude SDK server-side session ID. */
   sessionId: string | undefined;
@@ -16,6 +27,10 @@ type SessionState = {
   turns: number;
   /** Last activity timestamp. */
   lastActive: number;
+  /** Created timestamp. */
+  createdAt: number;
+  /** Cumulative usage stats. */
+  usage: SessionUsage;
 };
 
 type SessionStore = Record<string, SessionState>;
@@ -53,12 +68,25 @@ function saveSessions(): void {
 // Auto-save every 10 seconds if dirty
 setInterval(saveSessions, 10_000);
 
+const emptyUsage = (): SessionUsage => ({
+  totalInputTokens: 0,
+  totalOutputTokens: 0,
+  totalCacheRead: 0,
+  totalCacheWrite: 0,
+  lastPromptTokens: 0,
+  estimatedCostUsd: 0,
+});
+
 export function getSession(chatId: string): SessionState {
   let session = store[chatId];
   if (!session) {
-    session = { sessionId: undefined, turns: 0, lastActive: Date.now() };
+    const now = Date.now();
+    session = { sessionId: undefined, turns: 0, lastActive: now, createdAt: now, usage: emptyUsage() };
     store[chatId] = session;
   }
+  // Migrate old sessions without usage
+  if (!session.usage) session.usage = emptyUsage();
+  if (!session.createdAt) session.createdAt = session.lastActive;
   return session;
 }
 
@@ -75,22 +103,45 @@ export function incrementTurns(chatId: string): void {
   dirty = true;
 }
 
+export function recordUsage(
+  chatId: string,
+  turn: { inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number },
+): void {
+  const session = getSession(chatId);
+  session.usage.totalInputTokens += turn.inputTokens;
+  session.usage.totalOutputTokens += turn.outputTokens;
+  session.usage.totalCacheRead += turn.cacheRead;
+  session.usage.totalCacheWrite += turn.cacheWrite;
+  // Snapshot: prompt tokens = input + cache_read + cache_write for this turn
+  session.usage.lastPromptTokens = turn.inputTokens + turn.cacheRead + turn.cacheWrite;
+  // Rough cost estimate (Sonnet 4.6 pricing: $3/M input, $15/M output, $0.30/M cache read)
+  session.usage.estimatedCostUsd +=
+    (turn.inputTokens * 3 + turn.cacheWrite * 3.75 + turn.cacheRead * 0.3 + turn.outputTokens * 15) / 1_000_000;
+  dirty = true;
+}
+
 export function resetSession(chatId: string): void {
   delete store[chatId];
   dirty = true;
   saveSessions();
 }
 
-export function getSessionInfo(chatId: string): {
+export type SessionInfo = {
   sessionId: string | undefined;
   turns: number;
   lastActive: number;
-} {
+  createdAt: number;
+  usage: SessionUsage;
+};
+
+export function getSessionInfo(chatId: string): SessionInfo {
   const session = store[chatId];
   return {
     sessionId: session?.sessionId,
     turns: session?.turns ?? 0,
     lastActive: session?.lastActive ?? 0,
+    createdAt: session?.createdAt ?? 0,
+    usage: session?.usage ?? emptyUsage(),
   };
 }
 
