@@ -92,19 +92,31 @@ export async function searchMessages(params: {
   }
 }
 
-/** Get message history from a chat. */
+/** Get message history from a chat. Supports going back in time via offsetDate or offsetId. */
 export async function getHistory(params: {
   chatId: number | string;
   limit?: number;
   offsetId?: number;
+  /** ISO date string or unix timestamp to start fetching from (goes backward from this point). */
+  before?: string | number;
 }): Promise<string> {
   if (!client) return "User client not connected. Run login script first.";
 
   try {
-    const messages = await client.getMessages(params.chatId, {
+    const opts: Record<string, unknown> = {
       limit: params.limit ?? 30,
-      offsetId: params.offsetId,
-    });
+    };
+    if (params.offsetId) {
+      opts.offsetId = params.offsetId;
+    }
+    if (params.before) {
+      // Accept ISO string like "2026-03-13" or unix timestamp
+      const ts = typeof params.before === "string"
+        ? Math.floor(new Date(params.before).getTime() / 1000)
+        : params.before;
+      if (ts > 0) opts.offsetDate = ts;
+    }
+    const messages = await client.getMessages(params.chatId, opts);
 
     if (messages.length === 0) return "No messages found.";
 

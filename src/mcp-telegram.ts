@@ -389,12 +389,18 @@ server.tool(
 
 server.tool(
   "read_chat_history",
-  "Read recent messages from the current chat. Returns the last N messages with sender names, timestamps, and message IDs you can use with reply_to or react.",
+  "Read messages from the current chat. Can go back days/weeks using the 'before' parameter. Returns messages with sender names, timestamps, and message IDs.",
   {
-    limit: z.number().optional().describe("Number of recent messages to return (default 20, max 50)"),
+    limit: z.number().optional().describe("Number of messages to return (default 30, max 100)"),
+    before: z.string().optional().describe("Fetch messages BEFORE this date/time (ISO format, e.g. '2026-03-13' or '2026-03-13T15:00'). Omit for most recent."),
+    offset_id: z.number().optional().describe("Fetch messages before this message ID (for pagination)"),
   },
   async (params) => {
-    const result = await callBridge("read_history", { limit: params.limit ?? 20 });
+    const result = await callBridge("read_history", {
+      limit: params.limit ?? 30,
+      before: params.before,
+      offset_id: params.offset_id,
+    });
     return { content: [{ type: "text" as const, text: (result as { text: string }).text }] };
   },
 );

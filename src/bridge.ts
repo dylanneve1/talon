@@ -389,7 +389,12 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       const limit = Math.min(100, Number(body.limit ?? 30));
       // Prefer userbot for real Telegram history
       if (isUserClientReady()) {
-        const text = await userbotHistory({ chatId, limit, offsetId: body.offset_id as number | undefined });
+        const text = await userbotHistory({
+          chatId,
+          limit,
+          offsetId: body.offset_id as number | undefined,
+          before: body.before as string | number | undefined,
+        });
         return { ok: true, text };
       }
       const text = getRecentFormatted(String(chatId), limit);
