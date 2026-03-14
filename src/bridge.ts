@@ -146,6 +146,113 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       return { ok: true, message_id: sent.message_id };
     }
 
+    case "send_poll": {
+      const question = String(body.question ?? "");
+      const options = (body.options as string[]) ?? [];
+      console.log(`[bridge] send_poll: "${question}" (${options.length} options)`);
+      messagesSentViaBridge++;
+      const sent = await bot.api.sendPoll(chatId, question, options.map(o => ({ text: o })), {
+        is_anonymous: body.is_anonymous as boolean | undefined,
+        allows_multiple_answers: body.allows_multiple_answers as boolean | undefined,
+        type: body.type as "regular" | "quiz" | undefined,
+        correct_option_id: body.correct_option_id as number | undefined,
+        explanation: body.explanation as string | undefined,
+      });
+      return { ok: true, message_id: sent.message_id };
+    }
+
+    case "send_location": {
+      const lat = Number(body.latitude);
+      const lon = Number(body.longitude);
+      console.log(`[bridge] send_location: ${lat},${lon}`);
+      messagesSentViaBridge++;
+      const sent = await bot.api.sendLocation(chatId, lat, lon);
+      return { ok: true, message_id: sent.message_id };
+    }
+
+    case "send_contact": {
+      const phone = String(body.phone_number ?? "");
+      const firstName = String(body.first_name ?? "");
+      const lastName = body.last_name ? String(body.last_name) : undefined;
+      console.log(`[bridge] send_contact: ${firstName} ${phone}`);
+      messagesSentViaBridge++;
+      const sent = await bot.api.sendContact(chatId, phone, firstName, { last_name: lastName });
+      return { ok: true, message_id: sent.message_id };
+    }
+
+    case "send_dice": {
+      const emoji = (body.emoji as string) || "🎲";
+      console.log(`[bridge] send_dice: ${emoji}`);
+      messagesSentViaBridge++;
+      const sent = await bot.api.sendDice(chatId, { emoji: emoji as "🎲" });
+      return { ok: true, message_id: sent.message_id, value: sent.dice?.value };
+    }
+
+    case "forward_message": {
+      const msgId = Number(body.message_id);
+      const toChatId = body.to_chat_id ? Number(body.to_chat_id) : chatId;
+      console.log(`[bridge] forward msg=${msgId} to=${toChatId}`);
+      const sent = await bot.api.forwardMessage(toChatId, chatId, msgId);
+      return { ok: true, message_id: sent.message_id };
+    }
+
+    case "unpin_message": {
+      const msgId = body.message_id ? Number(body.message_id) : undefined;
+      console.log(`[bridge] unpin${msgId ? ` msg=${msgId}` : " latest"}`);
+      if (msgId) {
+        await bot.api.unpinChatMessage(chatId, { message_id: msgId });
+      } else {
+        await bot.api.unpinChatMessage(chatId);
+      }
+      return { ok: true };
+    }
+
+    case "get_chat_info": {
+      console.log(`[bridge] get_chat_info`);
+      const chat = await bot.api.getChat(chatId);
+      const count = await bot.api.getChatMemberCount(chatId).catch(() => null);
+      return {
+        ok: true,
+        id: chat.id,
+        type: chat.type,
+        title: "title" in chat ? chat.title : undefined,
+        username: "username" in chat ? chat.username : undefined,
+        description: "description" in chat ? chat.description : undefined,
+        member_count: count,
+      };
+    }
+
+    case "get_chat_member": {
+      const userId = Number(body.user_id);
+      console.log(`[bridge] get_chat_member user=${userId}`);
+      const member = await bot.api.getChatMember(chatId, userId);
+      return {
+        ok: true,
+        status: member.status,
+        user: {
+          id: member.user.id,
+          first_name: member.user.first_name,
+          last_name: member.user.last_name,
+          username: member.user.username,
+          is_bot: member.user.is_bot,
+        },
+      };
+    }
+
+    case "set_chat_title": {
+      const title = String(body.title ?? "");
+      console.log(`[bridge] set_chat_title: "${title}"`);
+      await bot.api.setChatTitle(chatId, title);
+      return { ok: true };
+    }
+
+    case "set_chat_description": {
+      const desc = String(body.description ?? "");
+      console.log(`[bridge] set_chat_description`);
+      await bot.api.setChatDescription(chatId, desc);
+      return { ok: true };
+    }
+
     case "read_history": {
       const limit = Math.min(50, Number(body.limit ?? 20));
       const text = getRecentFormatted(String(chatId), limit);

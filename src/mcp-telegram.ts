@@ -128,6 +128,136 @@ server.tool(
   },
 );
 
+// ── Polls & rich content ─────────────────────────────────────────────────────
+
+server.tool(
+  "send_poll",
+  "Create a poll in the chat.",
+  {
+    question: z.string().describe("Poll question (1-300 chars)"),
+    options: z.array(z.string()).describe("Poll options (2-10 choices)"),
+    is_anonymous: z.boolean().optional().describe("Anonymous poll (default true)"),
+    allows_multiple_answers: z.boolean().optional().describe("Allow multiple answers"),
+    type: z.enum(["regular", "quiz"]).optional().describe("Poll type (default regular)"),
+    correct_option_id: z.number().optional().describe("Correct answer index (required for quiz)"),
+    explanation: z.string().optional().describe("Explanation shown after quiz answer"),
+  },
+  async (params) => {
+    const result = await callBridge("send_poll", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "send_location",
+  "Send a location pin to the chat.",
+  {
+    latitude: z.number().describe("Latitude"),
+    longitude: z.number().describe("Longitude"),
+  },
+  async (params) => {
+    const result = await callBridge("send_location", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "send_contact",
+  "Share a contact card in the chat.",
+  {
+    phone_number: z.string().describe("Phone number"),
+    first_name: z.string().describe("First name"),
+    last_name: z.string().optional().describe("Last name"),
+  },
+  async (params) => {
+    const result = await callBridge("send_contact", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "send_dice",
+  "Send an animated dice/emoji. Returns a random value.",
+  {
+    emoji: z.enum(["🎲", "🎯", "🏀", "⚽", "🎳", "🎰"]).optional().describe("Dice emoji (default 🎲)"),
+  },
+  async (params) => {
+    const result = await callBridge("send_dice", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "forward_message",
+  "Forward a message from this chat to another chat or back to this chat.",
+  {
+    message_id: z.number().describe("Message ID to forward"),
+    to_chat_id: z.number().optional().describe("Target chat ID (omit to forward within same chat)"),
+  },
+  async (params) => {
+    const result = await callBridge("forward_message", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "unpin_message",
+  "Unpin a message in the chat.",
+  {
+    message_id: z.number().optional().describe("Message ID to unpin (omit to unpin the most recent pin)"),
+  },
+  async (params) => {
+    const result = await callBridge("unpin_message", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "get_chat_info",
+  "Get information about the current chat (title, type, member count, description, etc.).",
+  {},
+  async () => {
+    const result = await callBridge("get_chat_info", {});
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "get_chat_member",
+  "Get information about a specific user in the chat.",
+  {
+    user_id: z.number().describe("User ID to look up"),
+  },
+  async (params) => {
+    const result = await callBridge("get_chat_member", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.tool(
+  "set_chat_title",
+  "Change the chat title (requires admin privileges).",
+  {
+    title: z.string().describe("New chat title"),
+  },
+  async (params) => {
+    const result = await callBridge("set_chat_title", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "set_chat_description",
+  "Change the chat description (requires admin privileges).",
+  {
+    description: z.string().describe("New description (0-255 chars)"),
+  },
+  async (params) => {
+    const result = await callBridge("set_chat_description", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
 // ── Chat history tools ───────────────────────────────────────────────────────
 
 server.tool(
