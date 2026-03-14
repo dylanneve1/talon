@@ -1,0 +1,17 @@
+{
+  "name": "telegram-claude-agent",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --import tsx src/index.ts",
+    "dev": "node --import tsx --watch src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.76",
+    "grammy": "^1.41.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
