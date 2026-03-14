@@ -255,6 +255,53 @@ server.tool(
   },
 );
 
+// ── Advanced messaging ───────────────────────────────────────────────────────
+
+server.tool(
+  "copy_message",
+  "Copy a message to the same or another allowed chat (like forwarding but without the 'Forwarded from' header).",
+  {
+    message_id: z.number().describe("Message ID to copy"),
+  },
+  async (params) => {
+    const result = await callBridge("copy_message", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "answer_callback",
+  "Show a notification or alert to the user who pressed an inline button. Use after receiving a '[Button pressed]' event.",
+  {
+    text: z.string().optional().describe("Notification text to show"),
+    show_alert: z.boolean().optional().describe("Show as a popup alert instead of a toast (default false)"),
+  },
+  async (params) => {
+    const result = await callBridge("answer_callback", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "get_chat_admins",
+  "Get a list of administrators in the current chat with their titles and permissions.",
+  {},
+  async () => {
+    const result = await callBridge("get_chat_admins", {});
+    return { content: [{ type: "text" as const, text: (result as { text?: string }).text ?? JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "get_chat_member_count",
+  "Get the total number of members in the current chat.",
+  {},
+  async () => {
+    const result = await callBridge("get_chat_member_count", {});
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
 // ── Polls & rich content ─────────────────────────────────────────────────────
 
 server.tool(
