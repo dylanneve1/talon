@@ -128,6 +128,133 @@ server.tool(
   },
 );
 
+// ── Stickers, video, voice, animation ────────────────────────────────────────
+
+server.tool(
+  "send_sticker",
+  "Send a sticker to the chat by its file_id. You can find sticker file_ids in chat history when users send stickers.",
+  {
+    file_id: z.string().describe("Telegram file_id of the sticker"),
+  },
+  async (params) => {
+    const result = await callBridge("send_sticker", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "send_video",
+  "Send a video file from the workspace.",
+  {
+    file_path: z.string().describe("Path to the video file in the workspace"),
+    caption: z.string().optional().describe("Optional caption"),
+  },
+  async (params) => {
+    const result = await callBridge("send_video", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "send_animation",
+  "Send a GIF/animation file from the workspace.",
+  {
+    file_path: z.string().describe("Path to the GIF/animation file in the workspace"),
+    caption: z.string().optional().describe("Optional caption"),
+  },
+  async (params) => {
+    const result = await callBridge("send_animation", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "send_voice",
+  "Send an audio file as a Telegram voice message. The file should be in OGG format for best results.",
+  {
+    file_path: z.string().describe("Path to the audio file (OGG preferred)"),
+    caption: z.string().optional().describe("Optional caption"),
+  },
+  async (params) => {
+    const result = await callBridge("send_voice", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+// ── Inline keyboard buttons ─────────────────────────────────────────────────
+
+server.tool(
+  "send_message_with_buttons",
+  "Send a message with inline keyboard buttons. Buttons can be URLs (open a link) or callback buttons (trigger a callback when pressed). When a user presses a callback button, you'll receive the callback_data as a new message.",
+  {
+    text: z.string().describe("Message text (supports Markdown)"),
+    rows: z.array(
+      z.array(
+        z.object({
+          text: z.string().describe("Button label"),
+          url: z.string().optional().describe("URL to open when pressed"),
+          callback_data: z.string().optional().describe("Data sent back when pressed (max 64 bytes)"),
+        }),
+      ),
+    ).describe("Array of button rows. Each row is an array of buttons."),
+  },
+  async (params) => {
+    const result = await callBridge("send_message_with_buttons", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+// ── Chat actions ─────────────────────────────────────────────────────────────
+
+server.tool(
+  "send_chat_action",
+  "Show a chat action indicator (e.g. 'typing...', 'uploading photo...') to the user. Useful during long-running operations.",
+  {
+    chat_action: z.enum([
+      "typing",
+      "upload_photo",
+      "upload_document",
+      "upload_video",
+      "record_voice",
+      "record_video",
+      "find_location",
+      "upload_voice_note",
+      "upload_video_note",
+    ]).describe("Action type to display"),
+  },
+  async (params) => {
+    const result = await callBridge("send_chat_action", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+// ── Scheduling ───────────────────────────────────────────────────────────────
+
+server.tool(
+  "schedule_message",
+  "Schedule a message to be sent after a delay. Returns a schedule_id that can be used to cancel it.",
+  {
+    text: z.string().describe("Message text to send (supports Markdown)"),
+    delay_seconds: z.number().describe("Delay in seconds before sending (1-3600)"),
+  },
+  async (params) => {
+    const result = await callBridge("schedule_message", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
+  "cancel_scheduled",
+  "Cancel a previously scheduled message by its schedule_id.",
+  {
+    schedule_id: z.string().describe("The schedule_id returned by schedule_message"),
+  },
+  async (params) => {
+    const result = await callBridge("cancel_scheduled", params);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  },
+);
+
 // ── Polls & rich content ─────────────────────────────────────────────────────
 
 server.tool(

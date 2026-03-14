@@ -11,8 +11,10 @@ export type HistoryMessage = {
   text: string;
   replyToMsgId?: number;
   timestamp: number;
-  /** Whether this message was a photo/doc/voice (description only). */
-  mediaType?: "photo" | "document" | "voice" | "sticker";
+  /** Whether this message was a photo/doc/voice/video/animation (description only). */
+  mediaType?: "photo" | "document" | "voice" | "sticker" | "video" | "animation";
+  /** Telegram file_id for stickers, so Claude can reuse them. */
+  stickerFileId?: string;
 };
 
 const MAX_HISTORY_PER_CHAT = 500;
@@ -45,8 +47,9 @@ export function clearHistory(chatId: string): void {
 function formatMessage(m: HistoryMessage): string {
   const replyTag = m.replyToMsgId ? ` (replying to msg:${m.replyToMsgId})` : "";
   const mediaTag = m.mediaType ? ` [${m.mediaType}]` : "";
+  const stickerTag = m.stickerFileId ? ` (sticker_file_id: ${m.stickerFileId})` : "";
   const time = new Date(m.timestamp).toISOString().slice(11, 16);
-  return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}: ${m.text}`;
+  return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}${stickerTag}: ${m.text}`;
 }
 
 /** Get recent N messages formatted. */

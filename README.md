@@ -9,14 +9,51 @@ A minimal Telegram bot powered by the [Claude Agent SDK](https://github.com/anth
 - Photos with captions (saved to workspace, analyzed by Claude)
 - Documents/files (saved to workspace, readable by Claude)
 - Voice messages (saved as OGG)
+- Videos (saved to workspace)
+- GIFs/animations (saved to workspace)
+- Stickers (file_id captured for reuse)
 - Forwarded messages (origin context preserved)
 - Reply context (quoted message included)
+- Inline keyboard callback data (button presses forwarded to Claude)
 
-**Output**
+**Output & Tools (28 MCP tools)**
 - Streaming responses (message edits in real-time)
-- Markdown → Telegram HTML formatting (bold, italic, code blocks, links)
-- File attachments (workspace files created by Claude sent back)
+- Markdown to Telegram HTML formatting (bold, italic, code blocks, links, strikethrough)
+- Automatic typing indicator during processing
 - Smart message splitting for long responses
+
+| Tool | Description |
+|------|-------------|
+| `send_message` | Send a text message with optional reply-to |
+| `send_message_with_buttons` | Send a message with inline keyboard (URL or callback buttons) |
+| `reply_to` | Reply to a specific message by ID |
+| `react` | Add emoji reaction to a message |
+| `edit_message` | Edit a previously sent message |
+| `delete_message` | Delete a message |
+| `pin_message` | Pin a message |
+| `unpin_message` | Unpin a message |
+| `forward_message` | Forward a message to another chat |
+| `send_file` | Send a workspace file as a document |
+| `send_photo` | Send an image inline |
+| `send_video` | Send a video from workspace |
+| `send_animation` | Send a GIF/animation from workspace |
+| `send_voice` | Send an OGG file as a voice message |
+| `send_sticker` | Send a sticker by file_id |
+| `send_poll` | Create a poll or quiz |
+| `send_location` | Send a location pin |
+| `send_contact` | Share a contact card |
+| `send_dice` | Send an animated dice/emoji |
+| `send_chat_action` | Show typing/uploading/recording indicator |
+| `schedule_message` | Send a message after a delay |
+| `cancel_scheduled` | Cancel a scheduled message |
+| `read_chat_history` | Read recent messages with metadata |
+| `search_chat_history` | Search messages by keyword |
+| `get_user_messages` | Get messages from a specific user |
+| `list_chat_members` | List known users in the chat |
+| `get_chat_info` | Get chat title, type, member count |
+| `get_chat_member` | Get info about a specific user |
+| `set_chat_title` | Change the chat title (admin) |
+| `set_chat_description` | Change the chat description (admin) |
 
 **Sessions**
 - Persistent conversations via Claude SDK session management
@@ -66,11 +103,13 @@ Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be ins
 ## Architecture
 
 ```
-Telegram ←→ grammY ←→ Talon ←→ Claude Agent SDK ←→ Claude API
-                        ↕
+Telegram <-> grammY <-> Talon <-> Claude Agent SDK <-> Claude API
+                        |
+                   MCP bridge (localhost:19876)
+                        |
                     workspace/
-                    ├── sessions.json    (chat → session ID map)
-                    ├── uploads/         (photos, documents, voice)
+                    ├── sessions.json    (chat -> session ID map)
+                    ├── uploads/         (photos, documents, voice, video, GIFs)
                     └── ...              (files created by Claude)
 ```
 
@@ -84,9 +123,13 @@ Talon is intentionally thin. The Claude Agent SDK manages:
 Talon manages:
 - Telegram protocol (polling, message routing, formatting)
 - Group mention/reply filtering
-- Chat → SDK session mapping
-- Media download/upload
+- Chat to SDK session mapping
+- Media download/upload (photos, videos, GIFs, voice, documents, stickers)
 - Streaming response display
+- Typing indicator auto-management
+- Inline keyboard button handling
+- Message scheduling
+- MCP tool bridge for 28+ Telegram actions
 
 ## License
 

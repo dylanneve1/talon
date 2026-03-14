@@ -19,6 +19,7 @@ let activeChatId: number | null = null;
 let botInstance: Bot | null = null;
 let InputFileClass: typeof GrammyInputFile | null = null;
 let messagesSentViaBridge = 0;
+const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();
 
 export function setBridgeContext(chatId: number, bot: Bot, inputFile: typeof GrammyInputFile): void {
   activeChatId = chatId;
@@ -39,11 +40,12 @@ export function getBridgeMessageCount(): number {
 
 async function handleAction(body: BridgeAction): Promise<unknown> {
   if (!botInstance || !activeChatId || !InputFileClass) {
-    throw new Error("No active chat context");
+    return { ok: false, error: "No active chat context" };
   }
   const chatId = activeChatId;
   const bot = botInstance;
 
+  try {
   switch (body.action) {
     case "send_message": {
       const text = String(body.text ?? "");
@@ -188,6 +190,118 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       return { ok: true, message_id: sent.message_id, value: sent.dice?.value };
     }
 
+    case "send_sticker": {
+      const fileId = String(body.file_id ?? "");
+      console.log(`[bridge] send_sticker: ${fileId.slice(0, 40)}`);
+      messagesSentViaBridge++;
+      const sent = await bot.api.sendSticker(chatId, fileId);
+      return { ok: true, message_id: sent.message_id };
+    }
+
+    case "send_video": {
+      const filePath = String(body.file_path ?? "");
+      const caption = body.caption ? String(body.caption) : undefined;
+      console.log(`[bridge] send_video: ${basename(filePath)}`);
+      messagesSentViaBridge++;
+      const data = readFileSync(filePath);
+      const sent = await bot.api.sendVideo(chatId, new InputFileClass(data, basename(filePath)), {
+        caption,
+      });
+      return { ok: true, message_id: sent.message_id };
+    }
+
+    case "send_animation": {
+      const filePath = String(body.file_path ?? "");
+      const caption = body.caption ? String(body.caption) : undefined;
+      console.log(`[bridge] send_animation: ${basename(filePath)}`);
+      messagesSentViaBridge++;
+      const data = readFileSync(filePath);
+      const sent = await bot.api.sendAnimation(chatId, new InputFileClass(data, basename(filePath)), {
+        caption,
+      });
+      return { ok: true, message_id: sent.message_id };
+    }
+
+    case "send_voice": {
+      const filePath = String(body.file_path ?? "");
+      const caption = body.caption ? String(body.caption) : undefined;
+      console.log(`[bridge] send_voice: ${basename(filePath)}`);
+      messagesSentViaBridge++;
+      const data = readFileSync(filePath);
+      const sent = await bot.api.sendVoice(chatId, new InputFileClass(data, basename(filePath)), {
+        caption,
+      });
+      return { ok: true, message_id: sent.message_id };
+    }
+
+    case "send_message_with_buttons": {
+      const text = String(body.text ?? "");
+      const html = markdownToTelegramHtml(text);
+      const rows = body.rows as Array<Array<{ text: string; url?: string; callback_data?: string }>>;
+      console.log(`[bridge] send_message_with_buttons: ${text.slice(0, 60)}`);
+      messagesSentViaBridge++;
+      const inlineKeyboard = rows.map((row) =>
+        row.map((btn) => {
+          if (btn.url) return { text: btn.text, url: btn.url };
+          return { text: btn.text, callback_data: btn.callback_data ?? btn.text };
+        }),
+      );
+      try {
+        const sent = await bot.api.sendMessage(chatId, html, {
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: inlineKeyboard },
+        });
+        return { ok: true, message_id: sent.message_id };
+      } catch {
+        const sent = await bot.api.sendMessage(chatId, text, {
+          reply_markup: { inline_keyboard: inlineKeyboard },
+        });
+        return { ok: true, message_id: sent.message_id };
+      }
+    }
+
+    case "send_chat_action": {
+      const action = String(body.chat_action ?? "typing");
+      console.log(`[bridge] send_chat_action: ${action}`);
+      await bot.api.sendChatAction(chatId, action as "typing");
+      return { ok: true };
+    }
+
+    case "schedule_message": {
+      const text = String(body.text ?? "");
+      const delaySec = Math.max(1, Math.min(3600, Number(body.delay_seconds ?? 60)));
+      const scheduleId = `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      console.log(`[bridge] schedule_message: "${text.slice(0, 40)}" in ${delaySec}s (${scheduleId})`);
+      const timer = setTimeout(async () => {
+        try {
+          const html = markdownToTelegramHtml(text);
+          try {
+            await bot.api.sendMessage(chatId, html, { parse_mode: "HTML" });
+          } catch {
+            await bot.api.sendMessage(chatId, text);
+          }
+          console.log(`[bridge] scheduled message sent: ${scheduleId}`);
+        } catch (err) {
+          console.error(`[bridge] scheduled message failed (${scheduleId}):`, err);
+        }
+        scheduledMessages.delete(scheduleId);
+      }, delaySec * 1000);
+      scheduledMessages.set(scheduleId, timer);
+      return { ok: true, schedule_id: scheduleId, delay_seconds: delaySec };
+    }
+
+    case "cancel_scheduled": {
+      const scheduleId = String(body.schedule_id ?? "");
+      console.log(`[bridge] cancel_scheduled: ${scheduleId}`);
+      const timer = scheduledMessages.get(scheduleId);
+      if (timer) {
+        clearTimeout(timer);
+        scheduledMessages.delete(scheduleId);
+        return { ok: true, cancelled: true };
+      }
+      return { ok: false, error: `Schedule ${scheduleId} not found or already sent` };
+    }
+
     case "forward_message": {
       const msgId = Number(body.message_id);
       const toChatId = body.to_chat_id ? Number(body.to_chat_id) : chatId;
@@ -280,7 +394,12 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
     }
 
     default:
-      throw new Error(`Unknown action: ${body.action}`);
+      return { ok: false, error: `Unknown action: ${body.action}` };
+  }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[bridge] Action "${body.action}" failed: ${errMsg}`);
+    return { ok: false, error: `${body.action} failed: ${errMsg}` };
   }
 }
 

@@ -285,6 +285,12 @@ async function processAndReply(
   // Set bridge context so MCP tools can call Telegram actions in this chat
   setBridgeContext(numericChatId, bot, InputFile);
 
+  // Auto-manage typing indicator: send immediately and keep alive every 4s
+  await bot.api.sendChatAction(numericChatId, "typing").catch(() => {});
+  const typingTimer = setInterval(() => {
+    bot.api.sendChatAction(numericChatId, "typing").catch(() => {});
+  }, 4000);
+
   let streamMsgId: number | undefined;
   let lastEditedText = "";
   let streamStarted = false;
@@ -375,6 +381,7 @@ async function processAndReply(
   });
 
   clearTimeout(streamTimer);
+  clearInterval(typingTimer);
 
   const bridgeSent = getBridgeMessageCount();
 
@@ -446,7 +453,11 @@ bot.on("message", (ctx, next) => {
   } else if ("voice" in ctx.message && ctx.message.voice) {
     pushMessage(chatId, { msgId, senderId, senderName: sender, text: "(voice message)", replyToMsgId, timestamp, mediaType: "voice" });
   } else if ("sticker" in ctx.message && ctx.message.sticker) {
-    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.sticker.emoji || "(sticker)", replyToMsgId, timestamp, mediaType: "sticker" });
+    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.sticker.emoji || "(sticker)", replyToMsgId, timestamp, mediaType: "sticker", stickerFileId: ctx.message.sticker.file_id });
+  } else if ("video" in ctx.message && ctx.message.video) {
+    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.caption || "(video)", replyToMsgId, timestamp, mediaType: "video" });
+  } else if ("animation" in ctx.message && ctx.message.animation) {
+    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.caption || "(GIF)", replyToMsgId, timestamp, mediaType: "animation" });
   }
 
   return next();
@@ -662,6 +673,157 @@ bot.on("message:voice", async (ctx) => {
       escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
       ctx.message.message_id,
     );
+  } finally {
+    clearInterval(typing);
+  }
+});
+
+bot.on("message:video", async (ctx) => {
+  if (!shouldHandleInGroup(ctx)) return;
+
+  const chatId = String(ctx.chat.id);
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+  const sender = getSenderName(ctx.from);
+
+  const typing = setInterval(() => {
+    bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
+  }, 4000);
+  await bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
+
+  try {
+    const video = ctx.message.video;
+    const fileName = video.file_name || `video_${video.file_unique_id}.mp4`;
+    const savedPath = await downloadTelegramFile(video.file_id, fileName);
+
+    const caption = ctx.message.caption || "";
+    const fwdCtx = getForwardContext(
+      ctx.message as Parameters<typeof getForwardContext>[0],
+    );
+    const replyCtx = getReplyContext(
+      ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
+      ctx.me.id,
+    );
+
+    const prompt = [
+      fwdCtx,
+      replyCtx,
+      `User sent a video: "${fileName}" (${video.duration}s, ${video.width}x${video.height}).`,
+      `Saved to: ${savedPath}`,
+      caption ? `Caption: ${caption}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await processAndReply(
+      chatId,
+      ctx.chat.id,
+      ctx.message.message_id,
+      ctx.message.message_id,
+      prompt,
+      sender,
+      isGroup,
+    );
+  } catch (err) {
+    console.error(`[${chatId}] Video error:`, err instanceof Error ? err.message : err);
+    await sendHtml(
+      ctx.chat.id,
+      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
+      ctx.message.message_id,
+    );
+  } finally {
+    clearInterval(typing);
+  }
+});
+
+bot.on("message:animation", async (ctx) => {
+  if (!shouldHandleInGroup(ctx)) return;
+
+  const chatId = String(ctx.chat.id);
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+  const sender = getSenderName(ctx.from);
+
+  const typing = setInterval(() => {
+    bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
+  }, 4000);
+  await bot.api.sendChatAction(ctx.chat.id, "typing").catch(() => {});
+
+  try {
+    const anim = ctx.message.animation;
+    const fileName = anim.file_name || `animation_${anim.file_unique_id}.mp4`;
+    const savedPath = await downloadTelegramFile(anim.file_id, fileName);
+
+    const caption = ctx.message.caption || "";
+    const fwdCtx = getForwardContext(
+      ctx.message as Parameters<typeof getForwardContext>[0],
+    );
+    const replyCtx = getReplyContext(
+      ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
+      ctx.me.id,
+    );
+
+    const prompt = [
+      fwdCtx,
+      replyCtx,
+      `User sent a GIF/animation: "${fileName}" (${anim.duration}s).`,
+      `Saved to: ${savedPath}`,
+      caption ? `Caption: ${caption}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    await processAndReply(
+      chatId,
+      ctx.chat.id,
+      ctx.message.message_id,
+      ctx.message.message_id,
+      prompt,
+      sender,
+      isGroup,
+    );
+  } catch (err) {
+    console.error(`[${chatId}] Animation error:`, err instanceof Error ? err.message : err);
+    await sendHtml(
+      ctx.chat.id,
+      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
+      ctx.message.message_id,
+    );
+  } finally {
+    clearInterval(typing);
+  }
+});
+
+// ── Callback query handler (inline keyboard buttons) ─────────────────────────
+
+bot.on("callback_query:data", async (ctx) => {
+  const chatId = String(ctx.chat?.id ?? ctx.from.id);
+  const numericChatId = ctx.chat?.id ?? ctx.from.id;
+  const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
+  const sender = getSenderName(ctx.from);
+  const callbackData = ctx.callbackQuery.data;
+
+  // Acknowledge the callback immediately
+  await ctx.answerCallbackQuery().catch(() => {});
+
+  const typing = setInterval(() => {
+    bot.api.sendChatAction(numericChatId, "typing").catch(() => {});
+  }, 4000);
+  await bot.api.sendChatAction(numericChatId, "typing").catch(() => {});
+
+  try {
+    const prompt = `[Button pressed] User clicked inline button with callback data: "${callbackData}"`;
+    const replyToId = ctx.callbackQuery.message?.message_id ?? 0;
+
+    await processAndReply(
+      chatId,
+      numericChatId,
+      replyToId,
+      replyToId,
+      prompt,
+      sender,
+      isGroup,
+    );
+  } catch (err) {
+    console.error(`[${chatId}] Callback error:`, err instanceof Error ? err.message : err);
   } finally {
     clearInterval(typing);
   }
