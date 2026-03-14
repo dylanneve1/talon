@@ -2,6 +2,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { TalonConfig } from "./config.js";
 import { getSession, incrementTurns, recordUsage, setSessionId } from "./sessions.js";
 import { getBridgePort } from "./bridge.js";
+import { getChatSettings } from "./chat-settings.js";
 import { readdirSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 
@@ -110,14 +111,19 @@ export async function handleMessage(
 
   const beforeFiles = snapshotWorkspace(config.workspace);
 
+  // Per-chat settings override global config
+  const chatSettings = getChatSettings(chatId);
+  const activeModel = chatSettings.model ?? config.model;
+  const activeThinking = chatSettings.maxThinkingTokens ?? config.maxThinkingTokens;
+
   const options: Record<string, unknown> = {
-    model: config.model,
+    model: activeModel,
     systemPrompt: config.systemPrompt,
     cwd: config.workspace,
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
     betas: ["context-1m-2025-08-07"],
-    maxThinkingTokens: config.maxThinkingTokens,
+    maxThinkingTokens: activeThinking,
     // MCP server providing Telegram action tools (send_message, react, reply_to, etc.)
     mcpServers: {
       "telegram-tools": {

@@ -34,23 +34,38 @@ function loadEnvFile(): void {
   }
 }
 
+function readOptionalFile(path: string): string {
+  try {
+    if (existsSync(path)) return readFileSync(path, "utf-8").trim();
+  } catch { /* ignore */ }
+  return "";
+}
+
 function loadSystemPrompt(): string {
-  // Priority: env var > custom file > default prompt file
   if (process.env.TALON_SYSTEM_PROMPT) {
     return process.env.TALON_SYSTEM_PROMPT;
   }
 
-  const customPath = resolve(process.cwd(), "prompts", "custom.md");
-  if (existsSync(customPath)) {
-    return readFileSync(customPath, "utf-8").trim();
-  }
+  const base = process.cwd();
+  const parts: string[] = [];
 
-  const defaultPath = resolve(process.cwd(), "prompts", "default.md");
-  if (existsSync(defaultPath)) {
-    return readFileSync(defaultPath, "utf-8").trim();
-  }
+  // Soul — personality and identity
+  const soul = readOptionalFile(resolve(base, "prompts", "soul.md"));
+  if (soul) parts.push(soul);
 
-  return "You are a helpful AI assistant.";
+  // Custom prompt overrides default
+  const custom = readOptionalFile(resolve(base, "prompts", "custom.md"));
+  const defaultPrompt = readOptionalFile(resolve(base, "prompts", "default.md"));
+  parts.push(custom || defaultPrompt || "You are a helpful AI assistant.");
+
+  // Memory — persistent facts and context
+  const memory = readOptionalFile(resolve(base, "workspace", "memory", "memory.md"));
+  if (memory) parts.push(`## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: workspace/memory/memory.md\n\n${memory}`);
+
+  // Today's date for temporal awareness
+  parts.push(`\n## Current Date\n${new Date().toISOString().slice(0, 10)}`);
+
+  return parts.join("\n\n---\n\n");
 }
 
 export function loadConfig(): TalonConfig {
