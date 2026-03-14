@@ -28,6 +28,7 @@ let activeChatId: number | null = null;
 let botInstance: Bot | null = null;
 let InputFileClass: typeof GrammyInputFile | null = null;
 let messagesSentViaBridge = 0;
+let bridgeLocked = false;
 const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();
 
 const TELEGRAM_MAX_TEXT = 4096;
@@ -37,11 +38,17 @@ export function setBridgeContext(chatId: number, bot: Bot, inputFile: typeof Gra
   botInstance = bot;
   InputFileClass = inputFile;
   messagesSentViaBridge = 0;
+  bridgeLocked = true;
+}
+
+export function isBridgeBusy(): boolean {
+  return bridgeLocked;
 }
 
 export function clearBridgeContext(): void {
   activeChatId = null;
   messagesSentViaBridge = 0;
+  bridgeLocked = false;
 }
 
 export function getBridgeMessageCount(): number {

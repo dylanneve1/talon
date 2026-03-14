@@ -10,6 +10,7 @@ import { getSession, setSessionId } from "./sessions.js";
 import { getBridgePort } from "./bridge.js";
 import { resolve } from "node:path";
 import { setChatProactive, getRegisteredProactiveChats, getChatSettings } from "./chat-settings.js";
+import { isBridgeBusy } from "./bridge.js";
 import { getRecentHistory, getLatestMessageId } from "./history.js";
 import { log, logError } from "./log.js";
 
@@ -96,6 +97,10 @@ export function stopProactiveTimer(): void {
 
 async function runProactiveCheck(): Promise<void> {
   if (!config || !bridgeSetContext || !bridgeClearContext || !botInstance) return;
+  if (isBridgeBusy()) {
+    log("proactive", "Skipping check — bridge is busy processing a message");
+    return;
+  }
 
   for (const chatId of registeredChats) {
     if (!isProactiveEnabled(chatId)) continue;
