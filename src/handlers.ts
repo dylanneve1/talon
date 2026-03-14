@@ -22,6 +22,8 @@ import {
 import { resolve, basename } from "node:path";
 import { handleMessage } from "./agent.js";
 import { appendDailyLog } from "./daily-log.js";
+import { getRecentBySenderId } from "./history.js";
+import { recordMessageProcessed, recordError } from "./watchdog.js";
 
 // ── Shared utilities ─────────────────────────────────────────────────────────
 
@@ -133,6 +135,7 @@ type QueuedMessage = {
   messageId: number;
   senderName: string;
   senderUsername?: string;
+  senderId?: number;
   isGroup: boolean;
 };
 
@@ -217,13 +220,16 @@ async function flushQueue(chatId: string): Promise<void> {
       last.senderName,
       last.isGroup,
       last.senderUsername,
+      last.senderId,
     );
+    recordMessageProcessed();
   } catch (err) {
     const errObj = err instanceof Error ? err : new Error(String(err));
     const ts = new Date().toISOString();
     const chatType = last.isGroup ? "group" : "DM";
     const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
     console.error(`[${ts}] [${chatId}] [${chatType}] [${last.senderName}] Error: ${errObj.message} | prompt: "${promptPreview}"`);
+    recordError(errObj.message);
 
     // Retry once for transient errors
     if (isTransientError(errObj)) {
@@ -241,6 +247,7 @@ async function flushQueue(chatId: string): Promise<void> {
           last.senderName,
           last.isGroup,
           last.senderUsername,
+          last.senderId,
         );
         return;
       } catch (retryErr) {
@@ -339,6 +346,7 @@ export async function processAndReply(
   senderName: string,
   isGroup: boolean,
   senderUsername?: string,
+  senderId?: number,
 ): Promise<void> {
   // Set bridge context so MCP tools can call Telegram actions in this chat
   setBridgeContext(numericChatId, bot, InputFile);
@@ -352,21 +360,41 @@ export async function processAndReply(
   let streamMsgId: number | undefined;
   let lastEditedText = "";
   let streamStarted = false;
+  let isThinking = false;
+  let hasTextStarted = false;
 
   const streamTimer = setTimeout(() => {
     streamStarted = true;
   }, 2000);
 
-  const onStreamDelta = async (accumulated: string) => {
+  const onStreamDelta = async (accumulated: string, phase?: "thinking" | "text") => {
     if (!streamStarted) return;
     try {
+      // Track phase transitions
+      if (phase === "thinking" && !isThinking) {
+        isThinking = true;
+        hasTextStarted = false;
+      } else if (phase === "text" && !hasTextStarted) {
+        hasTextStarted = true;
+        isThinking = false;
+      }
+
+      // Choose cursor based on phase
+      const cursor = isThinking && !hasTextStarted ? " \uD83D\uDCAD" : " \u258D";
+
       const display =
         accumulated.length > 3900
           ? accumulated.slice(0, 3900) + "\u2026"
           : accumulated;
 
+      // During thinking phase with no text yet, show thinking indicator
+      const displayText = isThinking && !hasTextStarted && !display.trim()
+        ? "\uD83D\uDCAD thinking..."
+        : display;
+
       if (!streamMsgId) {
-        const html = markdownToTelegramHtml(display + " \u258D");
+        const content = displayText + cursor;
+        const html = markdownToTelegramHtml(content);
         try {
           const sent = await bot.api.sendMessage(numericChatId, html, {
             parse_mode: "HTML",
@@ -374,14 +402,15 @@ export async function processAndReply(
           });
           streamMsgId = sent.message_id;
         } catch {
-          const sent = await bot.api.sendMessage(numericChatId, display + " \u258D", {
+          const sent = await bot.api.sendMessage(numericChatId, content, {
             reply_parameters: { message_id: replyToId },
           });
           streamMsgId = sent.message_id;
         }
-        lastEditedText = display;
-      } else if (display.length - lastEditedText.length >= 60) {
-        const html = markdownToTelegramHtml(display + " \u258D");
+        lastEditedText = displayText;
+      } else if (displayText.length - lastEditedText.length >= 60 || (hasTextStarted && isThinking !== (lastEditedText === "\uD83D\uDCAD thinking..."))) {
+        const content = displayText + cursor;
+        const html = markdownToTelegramHtml(content);
         try {
           await bot.api.editMessageText(numericChatId, streamMsgId, html, {
             parse_mode: "HTML",
@@ -391,13 +420,13 @@ export async function processAndReply(
             await bot.api.editMessageText(
               numericChatId,
               streamMsgId,
-              display + " \u258D",
+              content,
             );
           } catch {
             // Rate limited, skip
           }
         }
-        lastEditedText = display;
+        lastEditedText = displayText;
       }
     } catch {
       // Non-critical
@@ -427,10 +456,24 @@ export async function processAndReply(
   };
 
   // In DMs, prepend user metadata so Claude knows who it's talking to
+  // In groups, include sender's recent messages for conversation threading
   let enrichedPrompt = prompt;
   if (!isGroup && senderName) {
     const userTag = senderUsername ? ` (@${senderUsername})` : "";
     enrichedPrompt = `[DM from ${senderName}${userTag}]\n${prompt}`;
+  } else if (isGroup && senderId) {
+    // Pull the sender's last 5 messages for conversation continuity in groups
+    const recentMsgs = getRecentBySenderId(String(chatId), senderId, 5);
+    if (recentMsgs.length > 1) {
+      // Exclude the current message (last one) since it's already in the prompt
+      const priorMsgs = recentMsgs.slice(0, -1);
+      if (priorMsgs.length > 0) {
+        const contextLines = priorMsgs
+          .map((m) => `  [${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.text.slice(0, 200)}`)
+          .join("\n");
+        enrichedPrompt = `[${senderName}'s recent messages in this group:\n${contextLines}]\n\n${prompt}`;
+      }
+    }
   }
 
   const result = await handleMessage({
@@ -557,6 +600,7 @@ async function handleMediaMessage(
       messageId: ctx.message.message_id,
       senderName: sender,
       senderUsername,
+      senderId: ctx.from?.id,
       isGroup,
     });
   } catch (err) {
@@ -596,6 +640,7 @@ export async function handleTextMessage(ctx: Context, bot: Bot, config: TalonCon
     messageId: ctx.message.message_id,
     senderName: sender,
     senderUsername,
+    senderId: ctx.from?.id,
     isGroup,
   });
 }
@@ -608,13 +653,17 @@ export async function handlePhotoMessage(ctx: Context, bot: Bot, config: TalonCo
   const bestPhoto = photos[photos.length - 1];
   const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
 
+  // Determine extension from Telegram's file path if available
+  const photoFile = await bot.api.getFile(bestPhoto.file_id).catch(() => null);
+  const ext = photoFile?.file_path?.split(".").pop() ?? "jpg";
+
   await handleMediaMessage(ctx, bot, config, {
     type: "photo",
     fileId: bestPhoto.file_id,
-    fileName: `photo_${bestPhoto.file_unique_id}.jpg`,
+    fileName: `photo_${bestPhoto.file_unique_id}.${ext}`,
     promptLines: [
       "User sent a photo saved to: ${savedPath}",
-      "Read and analyze this image file.",
+      "Read and analyze this image using the Read tool — you can view images directly.",
     ],
     caption,
   });
@@ -706,6 +755,7 @@ export async function handleStickerMessage(ctx: Context, bot: Bot, config: Talon
     messageId: ctx.message.message_id,
     senderName: sender,
     senderUsername,
+    senderId: ctx.from?.id,
     isGroup,
   });
 }

@@ -1,8 +1,9 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { TalonConfig } from "./config.js";
-import { getSession, incrementTurns, recordUsage, setSessionId } from "./sessions.js";
+import { getSession, incrementTurns, recordUsage, setSessionId, setLastBotMessageId } from "./sessions.js";
 import { getBridgePort } from "./bridge.js";
 import { getChatSettings } from "./chat-settings.js";
+import { getRecentHistory } from "./history.js";
 import { readdirSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 
@@ -17,8 +18,9 @@ export type HandleMessageParams = {
   messageId?: number;
   /** Called when a new text block is completed (for multi-message delivery). */
   onTextBlock?: (text: string) => Promise<void>;
-  /** Called periodically with accumulated text for streaming edits. */
-  onStreamDelta?: (accumulated: string) => void;
+  /** Called periodically with accumulated text for streaming edits.
+   *  Phase is "thinking" during thinking deltas and "text" during text deltas. */
+  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
 };
 
 export type HandleMessageResult = {
@@ -152,7 +154,24 @@ export async function handleMessage(
   }
 
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
-  const prompt = isGroup ? `[${senderName}]${msgIdHint}: ${text}` : `${text}${msgIdHint}`;
+
+  // Session continuity: on the first turn after a restart (session exists but turns=0),
+  // prepend the last 3 messages from history so Claude has context
+  let continuityPrefix = "";
+  if (session.sessionId && session.turns === 0) {
+    const recentMsgs = getRecentHistory(chatId, 3);
+    if (recentMsgs.length > 0) {
+      const contextLines = recentMsgs.map((m) => {
+        const time = new Date(m.timestamp).toISOString().slice(11, 16);
+        return `[${time}] ${m.senderName}: ${m.text.slice(0, 300)}`;
+      }).join("\n");
+      continuityPrefix = `[Session resumed — recent conversation context:\n${contextLines}]\n\n`;
+    }
+  }
+
+  const prompt = isGroup
+    ? `${continuityPrefix}[${senderName}]${msgIdHint}: ${text}`
+    : `${continuityPrefix}${text}${msgIdHint}`;
   console.log(`[${chatId}] ← ${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`);
 
   const qi = query({ prompt, options: options as never });
@@ -181,17 +200,24 @@ export async function handleMessage(
         newSessionId = msg.session_id;
       }
 
-      // Stream text deltas
+      // Stream text deltas and thinking deltas
       if (type === "stream_event" && onStreamDelta) {
         const event = msg.event as Record<string, unknown> | undefined;
         if (event?.type === "content_block_delta") {
           const delta = event.delta as Record<string, unknown> | undefined;
-          if (delta?.type === "text_delta" && typeof delta.text === "string") {
+          if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+            // Thinking phase: notify but don't accumulate text
+            const now = Date.now();
+            if (now - lastStreamUpdate >= STREAM_INTERVAL) {
+              lastStreamUpdate = now;
+              onStreamDelta(currentBlockText, "thinking");
+            }
+          } else if (delta?.type === "text_delta" && typeof delta.text === "string") {
             currentBlockText += delta.text;
             const now = Date.now();
             if (now - lastStreamUpdate >= STREAM_INTERVAL) {
               lastStreamUpdate = now;
-              onStreamDelta(currentBlockText);
+              onStreamDelta(currentBlockText, "text");
             }
           }
         }

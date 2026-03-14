@@ -37,6 +37,8 @@ type SessionState = {
   createdAt: number;
   /** Cumulative usage stats. */
   usage: SessionUsage;
+  /** ID of the last message sent by the bot in this chat. */
+  lastBotMessageId?: number;
 };
 
 type SessionStore = Record<string, SessionState>;
@@ -155,6 +157,16 @@ export function recordUsage(
     }
   }
   dirty = true;
+}
+
+export function setLastBotMessageId(chatId: string, messageId: number): void {
+  const session = getSession(chatId);
+  session.lastBotMessageId = messageId;
+  dirty = true;
+}
+
+export function getLastBotMessageId(chatId: string): number | undefined {
+  return store[chatId]?.lastBotMessageId;
 }
 
 export function resetSession(chatId: string): void {

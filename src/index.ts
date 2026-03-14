@@ -32,6 +32,14 @@ import {
 } from "./proactive.js";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import {
+  startWatchdog,
+  stopWatchdog,
+  getTotalMessagesProcessed,
+  getUptimeMs,
+  getRecentErrors,
+  getHealthStatus,
+} from "./watchdog.js";
+import {
   handleTextMessage,
   handlePhotoMessage,
   handleDocumentMessage,
@@ -79,7 +87,7 @@ bot.command("start", (ctx) =>
     [
       "<b>Talon</b>",
       "",
-      "Claude-powered Telegram assistant with 33+ tools.",
+      "Claude-powered Telegram assistant with 19 tools.",
       "",
       "Send a message, photo, doc, or voice note.",
       "In groups, @mention or reply to activate.",
@@ -369,9 +377,52 @@ bot.command("admin", async (ctx) => {
       return;
     }
 
+    case "stats": {
+      const health = getHealthStatus();
+      const uptime = formatDuration(health.uptimeMs);
+      const sessions = getAllSessions();
+      const totalCost = sessions.reduce((sum, s) => sum + s.info.usage.estimatedCostUsd, 0);
+      const totalTurns = sessions.reduce((sum, s) => sum + s.info.turns, 0);
+      const memUsage = process.memoryUsage();
+      const heapMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
+      const rssMB = (memUsage.rss / 1024 / 1024).toFixed(1);
+
+      const lines = [
+        "<b>Talon Stats</b>",
+        "",
+        `<b>Uptime:</b> ${uptime}`,
+        `<b>Messages processed:</b> ${health.totalMessagesProcessed}`,
+        `<b>Active sessions:</b> ${sessions.length}`,
+        `<b>Total turns:</b> ${totalTurns}`,
+        `<b>Total cost:</b> $${totalCost.toFixed(4)}`,
+        `<b>Last message:</b> ${health.msSinceLastMessage < 60000 ? "just now" : formatDuration(health.msSinceLastMessage) + " ago"}`,
+        "",
+        `<b>Memory:</b> heap ${heapMB}MB / rss ${rssMB}MB`,
+        `<b>Recent errors:</b> ${health.recentErrorCount}`,
+      ];
+      await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+      return;
+    }
+
+    case "errors": {
+      const errors = getRecentErrors(5);
+      if (errors.length === 0) {
+        await ctx.reply("No recent errors.");
+        return;
+      }
+      const lines = errors.map((e) => {
+        const time = new Date(e.timestamp).toISOString().slice(11, 19);
+        return `<code>[${time}]</code> ${escapeHtml(e.message.slice(0, 200))}`;
+      });
+      await ctx.reply(`<b>Recent Errors (${errors.length})</b>\n\n` + lines.join("\n\n"), { parse_mode: "HTML" });
+      return;
+    }
+
     default:
       await ctx.reply(
         "<b>/admin commands</b>\n\n" +
+        "  /admin stats — uptime, messages, cost, memory\n" +
+        "  /admin errors — last 5 errors\n" +
         "  /admin chats — list all active chats\n" +
         "  /admin broadcast &lt;text&gt; — send to all chats\n" +
         "  /admin kill &lt;chatId&gt; — reset a chat session\n" +
@@ -723,6 +774,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
     console.error("[shutdown] Bot stop error:", err instanceof Error ? err.message : err);
   }
   stopProactiveTimer();
+  stopWatchdog();
   try {
     await stopBridge();
     console.log("[shutdown] Bridge stopped");
@@ -779,6 +831,9 @@ async function main(): Promise<void> {
   if (process.env.TALON_PROACTIVE !== "0") {
     startProactiveTimer();
   }
+
+  // Start health monitoring
+  startWatchdog();
 
   bot.catch((err) => {
     console.error("Bot error:", err.message ?? err);

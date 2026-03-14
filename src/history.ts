@@ -126,6 +126,14 @@ function formatTimeAgo(ts: number): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+/** Get recent messages from a specific sender by ID. */
+export function getRecentBySenderId(chatId: string, senderId: number, limit = 5): HistoryMessage[] {
+  const history = chatHistories.get(chatId);
+  if (!history) return [];
+  const matches = history.filter((m) => m.senderId === senderId);
+  return matches.slice(-limit);
+}
+
 /** Get the latest message ID in a chat's history buffer. */
 export function getLatestMessageId(chatId: string): number | undefined {
   const history = chatHistories.get(chatId);

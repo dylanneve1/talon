@@ -29,6 +29,33 @@ export function loadChatSettings(): void {
   } catch {
     store = {};
   }
+  // Migrate legacy maxThinkingTokens → effort
+  let migrated = 0;
+  for (const [chatId, settings] of Object.entries(store)) {
+    const raw = settings as Record<string, unknown>;
+    if ("maxThinkingTokens" in raw && !settings.effort) {
+      const tokens = Number(raw.maxThinkingTokens);
+      let effort: EffortLevel;
+      if (tokens === 0) effort = "off";
+      else if (tokens <= 2000) effort = "low";
+      else if (tokens <= 8000) effort = "medium";
+      else if (tokens <= 16000) effort = "high";
+      else effort = "max";
+      settings.effort = effort;
+      delete raw.maxThinkingTokens;
+      migrated++;
+      console.log(`[chat-settings] Migrated chat ${chatId}: maxThinkingTokens=${tokens} → effort=${effort}`);
+    } else if ("maxThinkingTokens" in raw) {
+      // Has effort already, just clean up the old field
+      delete raw.maxThinkingTokens;
+      migrated++;
+    }
+  }
+  if (migrated > 0) {
+    dirty = true;
+    save();
+    console.log(`[chat-settings] Migrated ${migrated} chat(s) from maxThinkingTokens to effort`);
+  }
 }
 
 function save(): void {
