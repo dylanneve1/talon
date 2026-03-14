@@ -217,8 +217,16 @@ bot.command("proactive", async (ctx) => {
   if (!arg || arg === "status") {
     const enabled = isProactiveEnabled(cid);
     await ctx.reply(
-      `Proactive mode: <b>${enabled ? "on" : "off"}</b>\n\nWhen on, I'll periodically check the chat and respond if I have something to add.\n\n<code>/proactive on</code> · <code>/proactive off</code>`,
-      { parse_mode: "HTML" },
+      `<b>Proactive:</b> ${enabled ? "on" : "off"}\nPeriodically checks chat and responds if there's something to add.`,
+      {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [[
+            { text: enabled ? "• On" : "On", callback_data: "proactive:on" },
+            { text: !enabled ? "• Off" : "Off", callback_data: "proactive:off" },
+          ]],
+        },
+      },
     );
     return;
   }
@@ -335,6 +343,34 @@ bot.on("callback_query:data", async (ctx) => {
   const cid = String(ctx.chat?.id ?? ctx.from.id);
 
   // Handle settings callbacks directly
+  if (data.startsWith("proactive:")) {
+    const val = data.slice(10);
+    if (val === "on") {
+      enableProactive(cid);
+      registerChatForProactive(cid);
+      await ctx.answerCallbackQuery({ text: "Proactive: on" });
+    } else {
+      disableProactive(cid);
+      await ctx.answerCallbackQuery({ text: "Proactive: off" });
+    }
+    const enabled = isProactiveEnabled(cid);
+    try {
+      await ctx.editMessageText(
+        `<b>Proactive:</b> ${enabled ? "on" : "off"}\nPeriodically checks chat and responds if there's something to add.`,
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [[
+              { text: enabled ? "• On" : "On", callback_data: "proactive:on" },
+              { text: !enabled ? "• Off" : "Off", callback_data: "proactive:off" },
+            ]],
+          },
+        },
+      );
+    } catch { /* unchanged */ }
+    return;
+  }
+
   if (data.startsWith("effort:")) {
     const level = data.slice(7);
     if (level === "adaptive") {
