@@ -8,6 +8,7 @@ import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "./telegram.js";
+import { getRecentFormatted, searchHistory, getMessagesByUser } from "./history.js";
 
 type BridgeAction = {
   action: string;
@@ -143,6 +144,26 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         caption,
       });
       return { ok: true, message_id: sent.message_id };
+    }
+
+    case "read_history": {
+      const limit = Math.min(50, Number(body.limit ?? 20));
+      const text = getRecentFormatted(String(chatId), limit);
+      return { ok: true, text };
+    }
+
+    case "search_history": {
+      const query = String(body.query ?? "");
+      const limit = Math.min(50, Number(body.limit ?? 20));
+      const text = searchHistory(String(chatId), query, limit);
+      return { ok: true, text };
+    }
+
+    case "get_user_messages": {
+      const userName = String(body.user_name ?? "");
+      const limit = Math.min(50, Number(body.limit ?? 20));
+      const text = getMessagesByUser(String(chatId), userName, limit);
+      return { ok: true, text };
     }
 
     default:

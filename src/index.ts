@@ -9,7 +9,7 @@ import {
 } from "./sessions.js";
 import { splitMessage, markdownToTelegramHtml, friendlyError } from "./telegram.js";
 import { startBridge, setBridgeContext, clearBridgeContext, getBridgeMessageCount } from "./bridge.js";
-import { pushMessage, formatHistoryContext, clearHistory } from "./history.js";
+import { pushMessage, clearHistory } from "./history.js";
 import {
   writeFileSync,
   readFileSync,
@@ -364,13 +364,9 @@ async function processAndReply(
     }
   };
 
-  // In groups, prepend recent chat history so Claude has full context
-  const historyCtx = isGroup ? formatHistoryContext(String(chatId)) : "";
-  const fullPrompt = historyCtx ? `${historyCtx}\n\n${prompt}` : prompt;
-
   const result = await handleMessage({
     chatId: String(chatId),
-    text: fullPrompt,
+    text: prompt,
     senderName,
     isGroup,
     messageId,

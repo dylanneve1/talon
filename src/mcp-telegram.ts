@@ -128,6 +128,46 @@ server.tool(
   },
 );
 
+// ── Chat history tools ───────────────────────────────────────────────────────
+
+server.tool(
+  "read_chat_history",
+  "Read recent messages from the current chat. Returns the last N messages with sender names, timestamps, and message IDs you can use with reply_to or react.",
+  {
+    limit: z.number().optional().describe("Number of recent messages to return (default 20, max 50)"),
+  },
+  async (params) => {
+    const result = await callBridge("read_history", { limit: params.limit ?? 20 });
+    return { content: [{ type: "text" as const, text: (result as { text: string }).text }] };
+  },
+);
+
+server.tool(
+  "search_chat_history",
+  "Search chat history for messages matching a keyword or phrase. Searches message text and sender names.",
+  {
+    query: z.string().describe("Search query (case-insensitive)"),
+    limit: z.number().optional().describe("Max results (default 20)"),
+  },
+  async (params) => {
+    const result = await callBridge("search_history", params);
+    return { content: [{ type: "text" as const, text: (result as { text: string }).text }] };
+  },
+);
+
+server.tool(
+  "get_user_messages",
+  "Get recent messages from a specific user in this chat.",
+  {
+    user_name: z.string().describe("User's name (partial match, case-insensitive)"),
+    limit: z.number().optional().describe("Max results (default 20)"),
+  },
+  async (params) => {
+    const result = await callBridge("get_user_messages", params);
+    return { content: [{ type: "text" as const, text: (result as { text: string }).text }] };
+  },
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

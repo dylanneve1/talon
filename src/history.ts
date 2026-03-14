@@ -15,7 +15,7 @@ export type HistoryMessage = {
   mediaType?: "photo" | "document" | "voice" | "sticker";
 };
 
-const MAX_HISTORY_PER_CHAT = 100;
+const MAX_HISTORY_PER_CHAT = 500;
 
 const chatHistories = new Map<string, HistoryMessage[]>();
 
@@ -42,23 +42,66 @@ export function clearHistory(chatId: string): void {
   chatHistories.delete(chatId);
 }
 
-/**
- * Format recent history as context for Claude's prompt.
- * Includes message IDs so Claude can reference/reply to specific messages.
- */
-export function formatHistoryContext(chatId: string, limit = 30): string {
+function formatMessage(m: HistoryMessage): string {
+  const replyTag = m.replyToMsgId ? ` (replying to msg:${m.replyToMsgId})` : "";
+  const mediaTag = m.mediaType ? ` [${m.mediaType}]` : "";
+  const time = new Date(m.timestamp).toISOString().slice(11, 16);
+  return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}: ${m.text}`;
+}
+
+/** Get recent N messages formatted. */
+export function getRecentFormatted(chatId: string, limit = 20): string {
   const messages = getRecentHistory(chatId, limit);
-  if (messages.length === 0) return "";
+  if (messages.length === 0) return "No messages in history.";
+  return messages.map(formatMessage).join("\n");
+}
 
-  const lines = messages.map((m) => {
-    const replyTag = m.replyToMsgId ? ` (replying to msg:${m.replyToMsgId})` : "";
-    const mediaTag = m.mediaType ? ` [${m.mediaType}]` : "";
-    return `[msg:${m.msgId}] ${m.senderName}${replyTag}${mediaTag}: ${m.text}`;
-  });
-
-  return (
-    "--- Recent chat history (use msg IDs with reply_to_message_id or react) ---\n" +
-    lines.join("\n") +
-    "\n--- End history ---"
+/** Search history by keyword (case-insensitive). */
+export function searchHistory(chatId: string, query: string, limit = 20): string {
+  const history = chatHistories.get(chatId);
+  if (!history || history.length === 0) return "No messages in history.";
+  const lower = query.toLowerCase();
+  const matches = history.filter(
+    (m) =>
+      m.text.toLowerCase().includes(lower) ||
+      m.senderName.toLowerCase().includes(lower),
   );
+  if (matches.length === 0) return `No messages matching "${query}".`;
+  return matches.slice(-limit).map(formatMessage).join("\n");
+}
+
+/** Get messages from a specific user. */
+export function getMessagesByUser(chatId: string, userName: string, limit = 20): string {
+  const history = chatHistories.get(chatId);
+  if (!history || history.length === 0) return "No messages in history.";
+  const lower = userName.toLowerCase();
+  const matches = history.filter((m) => m.senderName.toLowerCase().includes(lower));
+  if (matches.length === 0) return `No messages from "${userName}".`;
+  return matches.slice(-limit).map(formatMessage).join("\n");
+}
+
+/** Get a specific message by ID. */
+export function getMessageById(chatId: string, msgId: number): string {
+  const history = chatHistories.get(chatId);
+  if (!history) return "No messages in history.";
+  const msg = history.find((m) => m.msgId === msgId);
+  if (!msg) return `Message ${msgId} not found in recent history.`;
+  return formatMessage(msg);
+}
+
+/** Get history stats. */
+export function getHistoryStats(chatId: string): {
+  totalMessages: number;
+  uniqueUsers: number;
+  oldestTimestamp: number;
+  newestTimestamp: number;
+} {
+  const history = chatHistories.get(chatId) ?? [];
+  const users = new Set(history.map((m) => m.senderId));
+  return {
+    totalMessages: history.length,
+    uniqueUsers: users.size,
+    oldestTimestamp: history[0]?.timestamp ?? 0,
+    newestTimestamp: history[history.length - 1]?.timestamp ?? 0,
+  };
 }
