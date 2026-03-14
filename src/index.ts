@@ -9,6 +9,7 @@ import {
 } from "./sessions.js";
 import { splitMessage, markdownToTelegramHtml, friendlyError } from "./telegram.js";
 import { startBridge, setBridgeContext, clearBridgeContext, getBridgeMessageCount } from "./bridge.js";
+import { pushMessage, formatHistoryContext, clearHistory } from "./history.js";
 import {
   writeFileSync,
   readFileSync,
@@ -70,7 +71,9 @@ bot.command("help", (ctx) =>
 );
 
 bot.command("reset", async (ctx) => {
-  resetSession(String(ctx.chat.id));
+  const cid = String(ctx.chat.id);
+  resetSession(cid);
+  clearHistory(cid);
   await ctx.reply("Session cleared.");
 });
 
@@ -361,9 +364,13 @@ async function processAndReply(
     }
   };
 
+  // In groups, prepend recent chat history so Claude has full context
+  const historyCtx = isGroup ? formatHistoryContext(String(chatId)) : "";
+  const fullPrompt = historyCtx ? `${historyCtx}\n\n${prompt}` : prompt;
+
   const result = await handleMessage({
     chatId: String(chatId),
-    text: prompt,
+    text: fullPrompt,
     senderName,
     isGroup,
     messageId,
@@ -422,6 +429,32 @@ async function processAndReply(
     await sendNewFiles(numericChatId, result.newFiles);
   }
 }
+
+// ── History capture (runs for ALL messages, before handlers) ─────────────────
+
+bot.on("message", (ctx, next) => {
+  const chatId = String(ctx.chat.id);
+  const sender = getSenderName(ctx.from);
+  const senderId = ctx.from?.id ?? 0;
+  const msgId = ctx.message.message_id;
+  const replyToMsgId = ctx.message.reply_to_message?.message_id;
+  const timestamp = ctx.message.date * 1000;
+
+  if ("text" in ctx.message && ctx.message.text) {
+    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.text, replyToMsgId, timestamp });
+  } else if ("photo" in ctx.message && ctx.message.photo) {
+    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.caption || "(photo)", replyToMsgId, timestamp, mediaType: "photo" });
+  } else if ("document" in ctx.message && ctx.message.document) {
+    const name = ctx.message.document.file_name || "file";
+    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.caption || `(sent ${name})`, replyToMsgId, timestamp, mediaType: "document" });
+  } else if ("voice" in ctx.message && ctx.message.voice) {
+    pushMessage(chatId, { msgId, senderId, senderName: sender, text: "(voice message)", replyToMsgId, timestamp, mediaType: "voice" });
+  } else if ("sticker" in ctx.message && ctx.message.sticker) {
+    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.sticker.emoji || "(sticker)", replyToMsgId, timestamp, mediaType: "sticker" });
+  }
+
+  return next();
+});
 
 // ── Message handlers ─────────────────────────────────────────────────────────
 
