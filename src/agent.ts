@@ -114,7 +114,20 @@ export async function handleMessage(
   // Per-chat settings override global config
   const chatSettings = getChatSettings(chatId);
   const activeModel = chatSettings.model ?? config.model;
-  const activeThinking = chatSettings.maxThinkingTokens ?? config.maxThinkingTokens;
+  const activeEffort = chatSettings.effort ?? "adaptive";
+
+  // Map effort level to SDK thinking + effort options
+  // SDK supports: thinking: {type: "adaptive"/"enabled"/"disabled"}, effort: "low"/"medium"/"high"/"max"
+  const thinkingConfig = (() => {
+    switch (activeEffort) {
+      case "off": return { thinking: { type: "disabled" as const } };
+      case "low": return { thinking: { type: "adaptive" as const }, effort: "low" as const };
+      case "medium": return { thinking: { type: "adaptive" as const }, effort: "medium" as const };
+      case "high": return { thinking: { type: "adaptive" as const }, effort: "high" as const };
+      case "max": return { thinking: { type: "adaptive" as const }, effort: "max" as const };
+      default: return { thinking: { type: "adaptive" as const } }; // adaptive default
+    }
+  })();
 
   const options: Record<string, unknown> = {
     model: activeModel,
@@ -123,7 +136,7 @@ export async function handleMessage(
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
     betas: ["context-1m-2025-08-07"],
-    maxThinkingTokens: activeThinking,
+    ...thinkingConfig,
     // MCP server providing Telegram action tools (send_message, react, reply_to, etc.)
     mcpServers: {
       "telegram-tools": {

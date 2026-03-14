@@ -15,9 +15,10 @@ import {
   loadChatSettings,
   getChatSettings,
   setChatModel,
-  setChatThinking,
+  setChatEffort,
   resolveModelName,
-  THINKING_PRESETS,
+  EFFORT_LEVELS,
+  type EffortLevel,
 } from "./chat-settings.js";
 import {
   initProactive,
@@ -135,23 +136,22 @@ bot.command("model", async (ctx) => {
 
   if (!arg) {
     const current = settings.model ?? config.model;
-    await ctx.reply(
-      [
-        `<b>Current model:</b> <code>${escapeHtml(current)}</code>`,
-        settings.model ? "(per-chat override)" : "(global default)",
-        "",
-        "<b>Usage:</b> <code>/model sonnet</code>",
-        "",
-        "<b>Available:</b>",
-        "  <code>sonnet</code> — claude-sonnet-4-6",
-        "  <code>opus</code> — claude-opus-4-6",
-        "  <code>haiku</code> — claude-haiku-4-5",
-        "  Or any full model ID",
-        "",
-        "<code>/model reset</code> — use global default",
-      ].join("\n"),
-      { parse_mode: "HTML" },
-    );
+    const isModel = (id: string) => current.includes(id);
+    await ctx.reply(`<b>Model:</b> <code>${escapeHtml(current)}</code>\nSelect a model:`, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: isModel("sonnet") ? "• Sonnet 4.6" : "Sonnet 4.6", callback_data: "model:sonnet" },
+            { text: isModel("opus") ? "• Opus 4.6" : "Opus 4.6", callback_data: "model:opus" },
+          ],
+          [
+            { text: isModel("haiku") ? "• Haiku 4.5" : "Haiku 4.5", callback_data: "model:haiku" },
+            { text: "Reset to default", callback_data: "model:reset" },
+          ],
+        ],
+      },
+    });
     return;
   }
 
@@ -174,51 +174,40 @@ bot.command("effort", async (ctx) => {
   const settings = getChatSettings(cid);
 
   if (!arg) {
-    const current = settings.maxThinkingTokens ?? config.maxThinkingTokens;
-    const presetName = Object.entries(THINKING_PRESETS).find(([, v]) => v === current)?.[0] ?? "custom";
-    await ctx.reply(
-      [
-        `<b>Current effort:</b> ${presetName} (${current.toLocaleString()} thinking tokens)`,
-        settings.maxThinkingTokens !== undefined ? "(per-chat override)" : "(global default)",
-        "",
-        "<b>Usage:</b> <code>/effort high</code>",
-        "",
-        "<b>Presets:</b>",
-        "  <code>off</code> — no thinking (fastest)",
-        "  <code>low</code> — 2k tokens",
-        "  <code>medium</code> — 8k tokens",
-        "  <code>high</code> — 16k tokens",
-        "  <code>max</code> — 32k tokens",
-        "",
-        "<code>/effort reset</code> — use global default",
-      ].join("\n"),
-      { parse_mode: "HTML" },
-    );
+    const current = settings.effort ?? "adaptive";
+    await ctx.reply(`<b>Effort:</b> ${current}\nSelect a level:`, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: current === "off" ? "• Off" : "Off", callback_data: "effort:off" },
+            { text: current === "low" ? "• Low" : "Low", callback_data: "effort:low" },
+            { text: current === "medium" ? "• Med" : "Med", callback_data: "effort:medium" },
+          ],
+          [
+            { text: current === "high" ? "• High" : "High", callback_data: "effort:high" },
+            { text: current === "max" ? "• Max" : "Max", callback_data: "effort:max" },
+            { text: current === "adaptive" ? "• Auto" : "Auto", callback_data: "effort:adaptive" },
+          ],
+        ],
+      },
+    });
     return;
   }
 
-  if (arg === "reset" || arg === "default") {
-    setChatThinking(cid, undefined);
-    const defaultPreset = Object.entries(THINKING_PRESETS).find(([, v]) => v === config.maxThinkingTokens)?.[0] ?? "custom";
-    await ctx.reply(`Effort reset to default: ${defaultPreset} (${config.maxThinkingTokens.toLocaleString()} tokens)`, { parse_mode: "HTML" });
+  if (arg === "reset" || arg === "default" || arg === "adaptive") {
+    setChatEffort(cid, undefined);
+    await ctx.reply("Effort reset to <b>adaptive</b> (Claude decides when to think)", { parse_mode: "HTML" });
     return;
   }
 
-  const preset = THINKING_PRESETS[arg];
-  if (preset !== undefined) {
-    setChatThinking(cid, preset);
-    await ctx.reply(`Effort set to <b>${arg}</b> (${preset.toLocaleString()} thinking tokens)`, { parse_mode: "HTML" });
+  if (EFFORT_LEVELS.includes(arg as EffortLevel)) {
+    setChatEffort(cid, arg as EffortLevel);
+    await ctx.reply(`Effort set to <b>${arg}</b>`, { parse_mode: "HTML" });
     return;
   }
 
-  const num = parseInt(arg, 10);
-  if (!isNaN(num) && num >= 0 && num <= 128000) {
-    setChatThinking(cid, num);
-    await ctx.reply(`Thinking tokens set to ${num.toLocaleString()}`, { parse_mode: "HTML" });
-    return;
-  }
-
-  await ctx.reply("Unknown preset. Use: off, low, medium, high, max, or a number (0-128000).");
+  await ctx.reply("Unknown level. Use: off, low, medium, high, max, or adaptive.");
 });
 
 bot.command("proactive", async (ctx) => {
@@ -258,8 +247,7 @@ bot.command("status", async (ctx) => {
   const sessionAge = info.createdAt ? formatDuration(Date.now() - info.createdAt) : "\u2014";
   const chatSets = getChatSettings(cid);
   const activeModel = chatSets.model ?? config.model;
-  const activeThinking = chatSets.maxThinkingTokens ?? config.maxThinkingTokens;
-  const effortName = Object.entries(THINKING_PRESETS).find(([, v]) => v === activeThinking)?.[0] ?? `${activeThinking}`;
+  const effortName = chatSets.effort ?? "adaptive";
 
   // Context usage bar
   const contextMax = 1_000_000;
@@ -342,7 +330,81 @@ bot.on("message:voice", (ctx) => handleVoiceMessage(ctx, bot, config));
 bot.on("message:sticker", (ctx) => handleStickerMessage(ctx, bot, config));
 bot.on("message:video", (ctx) => handleVideoMessage(ctx, bot, config));
 bot.on("message:animation", (ctx) => handleAnimationMessage(ctx, bot, config));
-bot.on("callback_query:data", (ctx) => handleCallbackQuery(ctx, bot, config));
+bot.on("callback_query:data", async (ctx) => {
+  const data = ctx.callbackQuery.data;
+  const cid = String(ctx.chat?.id ?? ctx.from.id);
+
+  // Handle settings callbacks directly
+  if (data.startsWith("effort:")) {
+    const level = data.slice(7);
+    if (level === "adaptive") {
+      setChatEffort(cid, undefined);
+      await ctx.answerCallbackQuery({ text: "Effort: adaptive" });
+    } else if (EFFORT_LEVELS.includes(level as EffortLevel)) {
+      setChatEffort(cid, level as EffortLevel);
+      await ctx.answerCallbackQuery({ text: `Effort: ${level}` });
+    }
+    // Update the inline keyboard to show selection
+    const current = getChatSettings(cid).effort ?? "adaptive";
+    try {
+      await ctx.editMessageText(`<b>Effort:</b> ${current}`, {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: current === "off" ? "• Off" : "Off", callback_data: "effort:off" },
+              { text: current === "low" ? "• Low" : "Low", callback_data: "effort:low" },
+              { text: current === "medium" ? "• Med" : "Med", callback_data: "effort:medium" },
+            ],
+            [
+              { text: current === "high" ? "• High" : "High", callback_data: "effort:high" },
+              { text: current === "max" ? "• Max" : "Max", callback_data: "effort:max" },
+              { text: current === "adaptive" ? "• Auto" : "Auto", callback_data: "effort:adaptive" },
+            ],
+          ],
+        },
+      });
+    } catch { /* message unchanged */ }
+    return;
+  }
+
+  if (data.startsWith("model:")) {
+    const model = data.slice(6);
+    if (model === "reset") {
+      setChatModel(cid, undefined);
+      resetSession(cid);
+      await ctx.answerCallbackQuery({ text: `Model: ${config.model} (default)` });
+    } else {
+      const resolved = resolveModelName(model);
+      setChatModel(cid, resolved);
+      resetSession(cid);
+      await ctx.answerCallbackQuery({ text: `Model: ${resolved}. Session reset.` });
+    }
+    const current = getChatSettings(cid).model ?? config.model;
+    const isModel = (id: string) => current.includes(id);
+    try {
+      await ctx.editMessageText(`<b>Model:</b> <code>${escapeHtml(current)}</code>`, {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: isModel("sonnet") ? "• Sonnet 4.6" : "Sonnet 4.6", callback_data: "model:sonnet" },
+              { text: isModel("opus") ? "• Opus 4.6" : "Opus 4.6", callback_data: "model:opus" },
+            ],
+            [
+              { text: isModel("haiku") ? "• Haiku 4.5" : "Haiku 4.5", callback_data: "model:haiku" },
+              { text: "Reset to default", callback_data: "model:reset" },
+            ],
+          ],
+        },
+      });
+    } catch { /* message unchanged */ }
+    return;
+  }
+
+  // Forward other callbacks to Claude
+  handleCallbackQuery(ctx, bot, config);
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

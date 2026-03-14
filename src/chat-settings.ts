@@ -6,11 +6,13 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
+export type EffortLevel = "off" | "low" | "medium" | "high" | "max";
+
 export type ChatSettings = {
   /** Model override for this chat. */
   model?: string;
-  /** Max thinking tokens override. */
-  maxThinkingTokens?: number;
+  /** Effort level override (maps to SDK thinking + effort options). */
+  effort?: EffortLevel;
 };
 
 const STORE_FILE = resolve(process.cwd(), "workspace", "chat-settings.json");
@@ -57,25 +59,19 @@ export function setChatModel(chatId: string, model: string | undefined): void {
   save();
 }
 
-export function setChatThinking(chatId: string, tokens: number | undefined): void {
+export function setChatEffort(chatId: string, effort: EffortLevel | undefined): void {
   if (!store[chatId]) store[chatId] = {};
-  if (tokens) {
-    store[chatId].maxThinkingTokens = tokens;
+  if (effort) {
+    store[chatId].effort = effort;
   } else {
-    delete store[chatId].maxThinkingTokens;
+    delete store[chatId].effort;
   }
   dirty = true;
   save();
 }
 
-/** Named thinking presets. */
-export const THINKING_PRESETS: Record<string, number> = {
-  off: 0,
-  low: 2000,
-  medium: 8000,
-  high: 16000,
-  max: 32000,
-};
+/** Valid effort levels. */
+export const EFFORT_LEVELS: EffortLevel[] = ["off", "low", "medium", "high", "max"];
 
 /** Known model aliases. */
 export const MODEL_ALIASES: Record<string, string> = {
