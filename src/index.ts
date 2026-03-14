@@ -469,11 +469,14 @@ async function main(): Promise<void> {
   console.log(`Starting Talon... (bridge port: ${bridgePort})`);
 
   // Register bot commands with Telegram (clears any stale commands from previous implementations)
+  // Force-clear then re-register commands so Telegram picks up changes immediately
+  await bot.api.deleteMyCommands();
   await bot.api.setMyCommands([
     { command: "start", description: "Introduction" },
     { command: "status", description: "Session info, usage, and stats" },
     { command: "model", description: "Show or change model" },
     { command: "effort", description: "Set thinking effort level" },
+    { command: "proactive", description: "Toggle proactive check-ins" },
     { command: "reset", description: "Clear session and start fresh" },
     { command: "help", description: "All commands and features" },
   ]);
