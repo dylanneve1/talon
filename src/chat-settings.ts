@@ -5,6 +5,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
+import { log } from "./log.js";
 
 export type EffortLevel = "off" | "low" | "medium" | "high" | "max";
 
@@ -49,7 +50,7 @@ export function loadChatSettings(): void {
       settings.effort = effort;
       delete raw.maxThinkingTokens;
       migrated++;
-      console.log(`[chat-settings] Migrated chat ${chatId}: maxThinkingTokens=${tokens} → effort=${effort}`);
+      log("settings", `Migrated chat ${chatId}: maxThinkingTokens=${tokens} to effort=${effort}`);
     } else if ("maxThinkingTokens" in raw) {
       // Has effort already, just clean up the old field
       delete raw.maxThinkingTokens;
@@ -59,7 +60,7 @@ export function loadChatSettings(): void {
   if (migrated > 0) {
     dirty = true;
     save();
-    console.log(`[chat-settings] Migrated ${migrated} chat(s) from maxThinkingTokens to effort`);
+    log("settings", `Migrated ${migrated} chat(s) from maxThinkingTokens to effort`);
   }
 }
 

@@ -12,10 +12,14 @@ import { TelegramClient, Api } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
+import { log, logError, logWarn } from "./log.js";
 
 const SESSION_FILE = resolve(process.cwd(), "workspace", ".user-session");
 
 let client: TelegramClient | null = null;
+let reconnectTimer: ReturnType<typeof setInterval> | null = null;
+let storedApiId = 0;
+let storedApiHash = "";
 
 // ── SECURITY: Chat scope guard ──────────────────────────────────────────────
 // The userbot is ONLY allowed to access chats the bot is actively serving.
@@ -44,6 +48,8 @@ export async function initUserClient(params: {
   apiHash: string;
 }): Promise<boolean> {
   const { apiId, apiHash } = params;
+  storedApiId = apiId;
+  storedApiHash = apiHash;
 
   // Load saved session
   let sessionString = "";
@@ -60,7 +66,7 @@ export async function initUserClient(params: {
     await client.connect();
 
     if (!await client.isUserAuthorized()) {
-      console.log("[userbot] Not authorized — run the login script first.");
+      log("userbot", "Not authorized -- run the login script first.");
       client = null;
       return false;
     }
@@ -71,12 +77,82 @@ export async function initUserClient(params: {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileSync(SESSION_FILE, newSession);
 
-    console.log("[userbot] Connected and authorized.");
+    log("userbot", "Connected and authorized.");
+
+    // Start periodic connection health check
+    startConnectionMonitor();
+
     return true;
   } catch (err) {
-    console.error("[userbot] Connection failed:", err instanceof Error ? err.message : err);
+    logError("userbot", "Connection failed", err);
     client = null;
     return false;
+  }
+}
+
+/** Gracefully disconnect the GramJS user client. */
+export async function disconnectUserClient(): Promise<void> {
+  stopConnectionMonitor();
+  if (client) {
+    try {
+      await client.disconnect();
+      log("userbot", "Disconnected.");
+    } catch (err) {
+      logError("userbot", "Disconnect error", err);
+    }
+    client = null;
+  }
+}
+
+// ── Connection monitoring ────────────────────────────────────────────────────
+
+const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+function startConnectionMonitor(): void {
+  if (reconnectTimer) return;
+  reconnectTimer = setInterval(async () => {
+    if (!client) return;
+    if (client.connected) return;
+
+    logWarn("userbot", "Connection lost, attempting reconnect...");
+    try {
+      await client.connect();
+      if (await client.isUserAuthorized()) {
+        log("userbot", "Reconnected successfully.");
+      } else {
+        logWarn("userbot", "Reconnected but not authorized.");
+      }
+    } catch (err) {
+      logError("userbot", "Reconnect failed", err);
+      // Try a full re-init on next check
+      if (storedApiId && storedApiHash) {
+        try {
+          client = null;
+          let sessionString = "";
+          if (existsSync(SESSION_FILE)) {
+            sessionString = readFileSync(SESSION_FILE, "utf-8").trim();
+          }
+          const session = new StringSession(sessionString);
+          client = new TelegramClient(session, storedApiId, storedApiHash, {
+            connectionRetries: 5,
+          });
+          await client.connect();
+          if (await client.isUserAuthorized()) {
+            log("userbot", "Full re-init reconnect succeeded.");
+          }
+        } catch (retryErr) {
+          logError("userbot", "Full re-init reconnect failed", retryErr);
+          client = null;
+        }
+      }
+    }
+  }, CHECK_INTERVAL_MS);
+}
+
+function stopConnectionMonitor(): void {
+  if (reconnectTimer) {
+    clearInterval(reconnectTimer);
+    reconnectTimer = null;
   }
 }
 
@@ -206,8 +282,8 @@ export async function getParticipantDetails(params: {
         const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || "(no name)";
         const username = p.username ? `@${p.username}` : "";
         const bot = p.bot ? " [BOT]" : "";
-        const verified = p.verified ? " ✓" : "";
-        const premium = p.premium ? " ⭐" : "";
+        const verified = p.verified ? " [verified]" : "";
+        const premium = p.premium ? " [premium]" : "";
         const status = (() => {
           const s = p.status;
           if (!s) return "unknown";
@@ -227,7 +303,7 @@ export async function getParticipantDetails(params: {
           return cn;
         })();
 
-        return `${name}${verified}${premium}${bot} ${username}\n  ID: ${p.id} · Status: ${status}`;
+        return `${name}${verified}${premium}${bot} ${username}\n  ID: ${p.id} | Status: ${status}`;
       })
       .join("\n\n");
   } catch (err) {
@@ -235,7 +311,7 @@ export async function getParticipantDetails(params: {
   }
 }
 
-/** Get info about a specific user by ID — only works if they're in an allowed chat. */
+/** Get info about a specific user by ID -- only works if they're in an allowed chat. */
 export async function getUserInfo(params: {
   chatId: number | string;
   userId: number;
@@ -263,7 +339,7 @@ export async function getUserInfo(params: {
       const s = u.status;
       if (!s) return "unknown";
       const cn = s.className;
-      if (cn === "UserStatusOnline") return "🟢 Online";
+      if (cn === "UserStatusOnline") return "Online";
       if (cn === "UserStatusOffline") {
         const off = s as { wasOnline?: number };
         if (off.wasOnline) return `Last seen ${new Date(off.wasOnline * 1000).toISOString().slice(0, 16).replace("T", " ")}`;

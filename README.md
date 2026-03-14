@@ -1,5 +1,10 @@
 # Talon
 
+[![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Claude](https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-D97706)](https://github.com/anthropics/claude-agent-sdk-typescript)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A Telegram bot powered by the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript). Claude handles tools, sessions, compaction, and context. Talon wires it to Telegram.
 
 ## Quick Start
@@ -41,7 +46,7 @@ Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be ins
 
 | Tool | Description |
 |------|-------------|
-| `send` | Unified send tool — text, photos, videos, files, voice, stickers, polls, locations, contacts, dice, GIFs. Supports replies, buttons, and scheduling. |
+| `send` | Unified send tool -- text, photos, videos, files, voice, stickers, polls, locations, contacts, dice, GIFs. Supports replies, buttons, and scheduling. |
 | `react` | Add emoji reaction to a message |
 | `edit_message` | Edit a previously sent message |
 | `delete_message` | Delete a message |
@@ -61,7 +66,7 @@ Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be ins
 
 **Personality & Memory**
 - Configurable personality via `prompts/soul.md`
-- Persistent memory system (`workspace/memory/memory.md`) — Claude updates it naturally during conversations
+- Persistent memory system (`workspace/memory/memory.md`) -- Claude updates it naturally during conversations
 - Daily interaction logs (`workspace/logs/YYYY-MM-DD.md`) for continuity across sessions
 - Session continuity: recent messages prepended on restart so Claude doesn't lose context
 
@@ -85,9 +90,11 @@ Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be ins
 - Conversation threading: sender's recent messages included for context
 
 **Monitoring**
+- Consistent structured logging: `[HH:MM:SS] [component] message`
 - Watchdog: warns if no messages processed for 10 minutes
 - Error tracking: last 20 errors stored for admin review
 - Health check: uptime, message count, error count
+- GramJS connection monitor with automatic reconnection
 
 ## Commands
 
@@ -95,7 +102,8 @@ Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) to be ins
 |---------|-------------|
 | `/start` | Introduction |
 | `/settings` | View and change all chat settings (model, effort, proactive) |
-| `/status` | Session info, usage, context window, and stats |
+| `/status` | Session info, usage, context window, workspace size, and stats |
+| `/ping` | Health check with latency, component status, and uptime |
 | `/model` | Show or change model (sonnet, opus, haiku) |
 | `/effort` | Set thinking effort level (off, low, medium, high, max, adaptive) |
 | `/proactive` | Toggle proactive check-ins (on/off) |
@@ -119,7 +127,7 @@ Admin commands are restricted to the bot owner.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TALON_BOT_TOKEN` | — | Telegram bot token (required) |
+| `TALON_BOT_TOKEN` | -- | Telegram bot token (required) |
 | `TALON_MODEL` | `claude-sonnet-4-6` | Claude model ID |
 | `TALON_SYSTEM_PROMPT` | _(built-in)_ | Custom system prompt override |
 | `TALON_WORKSPACE` | `./workspace` | Workspace directory for files and sessions |
@@ -127,24 +135,28 @@ Admin commands are restricted to the bot owner.
 | `TALON_VERBOSE` | `false` | Detailed logging |
 | `TALON_PROACTIVE` | `1` | Enable proactive check-ins (set to `0` to disable) |
 | `TALON_PROACTIVE_INTERVAL_MS` | `3600000` | Proactive check interval (ms) |
-| `TALON_API_ID` | — | Telegram API ID for full history access (optional) |
-| `TALON_API_HASH` | — | Telegram API hash for full history access (optional) |
+| `TALON_API_ID` | -- | Telegram API ID for full history access (optional) |
+| `TALON_API_HASH` | -- | Telegram API hash for full history access (optional) |
 
 ## Architecture
 
 ```
-Telegram <-> grammY <-> Talon <-> Claude Agent SDK <-> Claude API
+Telegram <-> grammy <-> Talon <-> Claude Agent SDK <-> Claude API
                         |   |
                    MCP bridge     watchdog
                   (localhost:19876)
                         |
                     workspace/
-                    ├── sessions.json        (chat -> session ID map)
-                    ├── chat-settings.json   (per-chat model/effort/proactive)
-                    ├── memory/memory.md     (persistent memory)
-                    ├── logs/YYYY-MM-DD.md   (daily interaction logs)
-                    ├── uploads/             (photos, documents, voice, video, GIFs)
-                    └── ...                  (files created by Claude)
+                    +-- sessions/
+                    |   +-- sessions.json
+                    |   +-- chat-settings.json
+                    +-- memory/memory.md
+                    +-- logs/YYYY-MM-DD.md
+                    +-- uploads/
+                    +-- files/
+                    +-- scripts/
+                    +-- data/
+                    +-- .user-session
 ```
 
 **Talon is intentionally thin.** The Claude Agent SDK manages:
@@ -166,7 +178,7 @@ Telegram <-> grammY <-> Talon <-> Claude Agent SDK <-> Claude API
 - MCP tool bridge for 19 Telegram action tools
 - Per-chat settings (model, effort, proactive mode)
 - Persistent memory and daily logs
-- Health monitoring and error tracking
+- Health monitoring, structured logging, and error tracking
 
 ## License
 

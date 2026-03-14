@@ -11,7 +11,7 @@ import {
 } from "./sessions.js";
 import { startBridge, stopBridge, setBridgeContext, clearBridgeContext } from "./bridge.js";
 import { pushMessage, clearHistory } from "./history.js";
-import { initUserClient, allowChat } from "./userbot.js";
+import { initUserClient, allowChat, disconnectUserClient, isUserClientReady } from "./userbot.js";
 import {
   loadChatSettings,
   getChatSettings,
@@ -30,15 +30,13 @@ import {
   startProactiveTimer,
   stopProactiveTimer,
 } from "./proactive.js";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { initWorkspace } from "./workspace.js";
+import { readFileSync } from "node:fs";
+import { initWorkspace, getWorkspaceDiskUsage } from "./workspace.js";
 import {
   startWatchdog,
   stopWatchdog,
-  getTotalMessagesProcessed,
-  getUptimeMs,
-  getRecentErrors,
   getHealthStatus,
+  getRecentErrors,
 } from "./watchdog.js";
 import {
   handleTextMessage,
@@ -53,11 +51,12 @@ import {
   getSenderName,
   escapeHtml,
 } from "./handlers.js";
+import { log, logError, logWarn } from "./log.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
 const config = loadConfig();
-const workspace = initWorkspace(config.workspace);
+initWorkspace(config.workspace);
 loadSessions();
 loadChatSettings();
 initAgent(config);
@@ -69,13 +68,13 @@ const apiId = parseInt(process.env.TALON_API_ID || "", 10);
 const apiHash = process.env.TALON_API_HASH || "";
 if (apiId && apiHash) {
   initUserClient({ apiId, apiHash }).then((ok) => {
-    if (ok) console.log("[userbot] Full Telegram history access enabled.");
-    else console.log("[userbot] Not authorized. Run: npx tsx src/login.ts");
+    if (ok) log("userbot", "Full Telegram history access enabled.");
+    else log("userbot", "Not authorized. Run: npx tsx src/login.ts");
   }).catch((err) => {
-    console.error("[userbot] Init failed:", err instanceof Error ? err.message : err);
+    logError("userbot", "Init failed", err);
   });
 } else {
-  console.log("[userbot] TALON_API_ID/TALON_API_HASH not set — using in-memory history only.");
+  log("userbot", "TALON_API_ID/TALON_API_HASH not set -- using in-memory history only.");
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────────
@@ -99,18 +98,19 @@ bot.command("start", (ctx) =>
 bot.command("help", (ctx) =>
   ctx.reply(
     [
-      "<b>Talon — Help</b>",
+      "<b>Talon -- Help</b>",
       "",
       "<b>Settings</b>",
-      "  /settings — view and change all chat settings",
-      "  /model — show or change model (sonnet, opus, haiku)",
-      "  /effort — set thinking effort (off, low, medium, high, max)",
-      "  /proactive — toggle periodic check-ins (on/off)",
+      "  /settings -- view and change all chat settings",
+      "  /model -- show or change model (sonnet, opus, haiku)",
+      "  /effort -- set thinking effort (off, low, medium, high, max)",
+      "  /proactive -- toggle periodic check-ins (on/off)",
       "",
       "<b>Session</b>",
-      "  /status — session info, usage, and stats",
-      "  /reset — clear session and start fresh",
-      "  /help — this message",
+      "  /status -- session info, usage, and stats",
+      "  /ping -- health check with latency",
+      "  /reset -- clear session and start fresh",
+      "  /help -- this message",
       "",
       "<b>Input</b>",
       "  Text, photos, documents, voice notes, videos, GIFs, stickers, forwarded messages, reply context",
@@ -141,6 +141,32 @@ bot.command("reset", async (ctx) => {
   await ctx.reply("Session cleared.");
 });
 
+bot.command("ping", async (ctx) => {
+  const start = Date.now();
+  const sent = await ctx.reply("...");
+  const latency = Date.now() - start;
+
+  const bridgeOk = true; // Bridge is local, always up if bot is running
+  const userbotOk = isUserClientReady();
+  const uptime = formatDuration(process.uptime() * 1000);
+
+  const statusLine = [
+    `Bridge: ${bridgeOk ? "\u2713" : "\u2717"}`,
+    `Userbot: ${userbotOk ? "\u2713" : "\u2717"}`,
+    `Uptime: ${uptime}`,
+  ].join(" | ");
+
+  try {
+    await bot.api.editMessageText(
+      ctx.chat.id,
+      sent.message_id,
+      `Pong! ${latency}ms\n${statusLine}`,
+    );
+  } catch {
+    // ignore edit failure
+  }
+});
+
 bot.command("model", async (ctx) => {
   const cid = String(ctx.chat.id);
   const arg = ctx.match?.trim();
@@ -154,11 +180,11 @@ bot.command("model", async (ctx) => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: isModel("sonnet") ? "• Sonnet 4.6" : "Sonnet 4.6", callback_data: "model:sonnet" },
-            { text: isModel("opus") ? "• Opus 4.6" : "Opus 4.6", callback_data: "model:opus" },
+            { text: isModel("sonnet") ? "\u2713 Sonnet 4.6" : "Sonnet 4.6", callback_data: "model:sonnet" },
+            { text: isModel("opus") ? "\u2713 Opus 4.6" : "Opus 4.6", callback_data: "model:opus" },
           ],
           [
-            { text: isModel("haiku") ? "• Haiku 4.5" : "Haiku 4.5", callback_data: "model:haiku" },
+            { text: isModel("haiku") ? "\u2713 Haiku 4.5" : "Haiku 4.5", callback_data: "model:haiku" },
             { text: "Reset to default", callback_data: "model:reset" },
           ],
         ],
@@ -192,14 +218,14 @@ bot.command("effort", async (ctx) => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: current === "off" ? "• Off" : "Off", callback_data: "effort:off" },
-            { text: current === "low" ? "• Low" : "Low", callback_data: "effort:low" },
-            { text: current === "medium" ? "• Med" : "Med", callback_data: "effort:medium" },
+            { text: current === "off" ? "\u2713 Off" : "Off", callback_data: "effort:off" },
+            { text: current === "low" ? "\u2713 Low" : "Low", callback_data: "effort:low" },
+            { text: current === "medium" ? "\u2713 Med" : "Med", callback_data: "effort:medium" },
           ],
           [
-            { text: current === "high" ? "• High" : "High", callback_data: "effort:high" },
-            { text: current === "max" ? "• Max" : "Max", callback_data: "effort:max" },
-            { text: current === "adaptive" ? "• Auto" : "Auto", callback_data: "effort:adaptive" },
+            { text: current === "high" ? "\u2713 High" : "High", callback_data: "effort:high" },
+            { text: current === "max" ? "\u2713 Max" : "Max", callback_data: "effort:max" },
+            { text: current === "adaptive" ? "\u2713 Auto" : "Auto", callback_data: "effort:adaptive" },
           ],
         ],
       },
@@ -234,8 +260,8 @@ bot.command("proactive", async (ctx) => {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [[
-            { text: enabled ? "• On" : "On", callback_data: "proactive:on" },
-            { text: !enabled ? "• Off" : "Off", callback_data: "proactive:off" },
+            { text: enabled ? "\u2713 On" : "On", callback_data: "proactive:on" },
+            { text: !enabled ? "\u2713 Off" : "Off", callback_data: "proactive:off" },
           ]],
         },
       },
@@ -265,38 +291,51 @@ bot.command("settings", async (ctx) => {
   const activeModel = chatSets.model ?? config.model;
   const effortName = chatSets.effort ?? "adaptive";
   const proactiveOn = isProactiveEnabled(cid);
-  const isModel = (id: string) => activeModel.includes(id);
 
-  const lines = [
-    "<b>Settings</b>",
-    "",
-    `<b>Model:</b> <code>${escapeHtml(activeModel)}</code>`,
-    `<b>Effort:</b> ${effortName}`,
-    `<b>Proactive:</b> ${proactiveOn ? "on" : "off"}`,
-  ];
-
-  await ctx.reply(lines.join("\n"), {
+  await ctx.reply(renderSettingsText(activeModel, effortName, proactiveOn), {
     parse_mode: "HTML",
     reply_markup: {
-      inline_keyboard: [
-        [
-          { text: isModel("sonnet") ? "* Sonnet" : "Sonnet", callback_data: "settings:model:sonnet" },
-          { text: isModel("opus") ? "* Opus" : "Opus", callback_data: "settings:model:opus" },
-          { text: isModel("haiku") ? "* Haiku" : "Haiku", callback_data: "settings:model:haiku" },
-        ],
-        [
-          { text: effortName === "low" ? "* Low" : "Low", callback_data: "settings:effort:low" },
-          { text: effortName === "medium" ? "* Med" : "Med", callback_data: "settings:effort:medium" },
-          { text: effortName === "high" ? "* High" : "High", callback_data: "settings:effort:high" },
-          { text: effortName === "adaptive" ? "* Auto" : "Auto", callback_data: "settings:effort:adaptive" },
-        ],
-        [
-          { text: proactiveOn ? "Proactive: ON" : "Proactive: OFF", callback_data: `settings:proactive:${proactiveOn ? "off" : "on"}` },
-        ],
-      ],
+      inline_keyboard: renderSettingsKeyboard(activeModel, effortName, proactiveOn),
     },
   });
 });
+
+// ── Settings panel helpers ───────────────────────────────────────────────────
+
+function renderSettingsText(model: string, effort: string, proactive: boolean): string {
+  return [
+    "<b>Settings</b>",
+    "",
+    `<b>Model:</b> <code>${escapeHtml(model)}</code>`,
+    `<b>Effort:</b> ${effort}`,
+    `<b>Proactive:</b> ${proactive ? "on" : "off"}`,
+  ].join("\n");
+}
+
+function renderSettingsKeyboard(
+  model: string,
+  effort: string,
+  proactive: boolean,
+): Array<Array<{ text: string; callback_data: string }>> {
+  const isModel = (id: string) => model.includes(id);
+  return [
+    [
+      { text: isModel("sonnet") ? "\u2713 Sonnet" : "Sonnet", callback_data: "settings:model:sonnet" },
+      { text: isModel("opus") ? "\u2713 Opus" : "Opus", callback_data: "settings:model:opus" },
+      { text: isModel("haiku") ? "\u2713 Haiku" : "Haiku", callback_data: "settings:model:haiku" },
+    ],
+    [
+      { text: effort === "low" ? "\u2713 Low" : "Low", callback_data: "settings:effort:low" },
+      { text: effort === "medium" ? "\u2713 Med" : "Med", callback_data: "settings:effort:medium" },
+      { text: effort === "high" ? "\u2713 High" : "High", callback_data: "settings:effort:high" },
+      { text: effort === "adaptive" ? "\u2713 Auto" : "Auto", callback_data: "settings:effort:adaptive" },
+    ],
+    [
+      { text: proactive ? "Proactive: ON" : "Proactive: OFF", callback_data: `settings:proactive:${proactive ? "off" : "on"}` },
+      { text: "Done", callback_data: "settings:done" },
+    ],
+  ];
+}
 
 // ── Admin commands (Dylan only, user_id 352042062) ──────────────────────────
 
@@ -419,12 +458,12 @@ bot.command("admin", async (ctx) => {
     default:
       await ctx.reply(
         "<b>/admin commands</b>\n\n" +
-        "  /admin stats — uptime, messages, cost, memory\n" +
-        "  /admin errors — last 5 errors\n" +
-        "  /admin chats — list all active chats\n" +
-        "  /admin broadcast &lt;text&gt; — send to all chats\n" +
-        "  /admin kill &lt;chatId&gt; — reset a chat session\n" +
-        "  /admin logs — last 20 lines of /tmp/talon.log",
+        "  /admin stats -- uptime, messages, cost, memory\n" +
+        "  /admin errors -- last 5 errors\n" +
+        "  /admin chats -- list all active chats\n" +
+        "  /admin broadcast &lt;text&gt; -- send to all chats\n" +
+        "  /admin kill &lt;chatId&gt; -- reset a chat session\n" +
+        "  /admin logs -- last 20 lines of /tmp/talon.log",
         { parse_mode: "HTML" },
       );
   }
@@ -439,6 +478,7 @@ bot.command("status", async (ctx) => {
   const chatSets = getChatSettings(cid);
   const activeModel = chatSets.model ?? config.model;
   const effortName = chatSets.effort ?? "adaptive";
+  const proactiveOn = isProactiveEnabled(cid);
 
   // Context window size depends on model
   const contextMax = activeModel.includes("haiku") ? 200_000 : 1_000_000;
@@ -457,6 +497,10 @@ bot.command("status", async (ctx) => {
   const lastResponseMs = u.lastResponseMs || 0;
   const fastestMs = u.fastestResponseMs || 0;
 
+  // Workspace disk usage
+  const diskBytes = getWorkspaceDiskUsage(config.workspace);
+  const diskStr = formatBytes(diskBytes);
+
   const lines = [
     `<b>Talon</b> \u00B7 <code>${escapeHtml(activeModel)}</code> \u00B7 effort: ${effortName}`,
     "",
@@ -472,7 +516,9 @@ bot.command("status", async (ctx) => {
     `  Read ${formatTokenCount(u.totalCacheRead)}  Write ${formatTokenCount(u.totalCacheWrite)}`,
     `  Input ${formatTokenCount(u.totalInputTokens)}  Output ${formatTokenCount(u.totalOutputTokens)}`,
     "",
-    `<b>Session</b>   ${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "\u2026</code>" : "<i>(new)</i>"} \u00B7 ${sessionAge} old`,
+    `<b>Proactive</b>  ${proactiveOn ? "on" : "off"}`,
+    `<b>Workspace</b>  ${diskStr}`,
+    `<b>Session</b>   ${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "...</code>" : "<i>(new)</i>"} \u00B7 ${sessionAge} old`,
     `<b>Uptime</b>    ${uptime} \u00B7 ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
   ];
   await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
@@ -521,6 +567,7 @@ bot.on("message:voice", (ctx) => handleVoiceMessage(ctx, bot, config));
 bot.on("message:sticker", (ctx) => handleStickerMessage(ctx, bot, config));
 bot.on("message:video", (ctx) => handleVideoMessage(ctx, bot, config));
 bot.on("message:animation", (ctx) => handleAnimationMessage(ctx, bot, config));
+
 // ── Edited message handler ──────────────────────────────────────────────────
 
 bot.on("edited_message:text", async (ctx) => {
@@ -558,7 +605,7 @@ bot.on("edited_message:text", async (ctx) => {
       senderUsername,
     );
   } catch (err) {
-    console.error(`[${new Date().toISOString()}] [${chatId}] Edit handler error:`, err instanceof Error ? err.message : err);
+    logError("bot", `[${chatId}] Edit handler error`, err);
   }
 });
 
@@ -571,6 +618,17 @@ bot.on("callback_query:data", async (ctx) => {
     const parts = data.split(":");
     const category = parts[1];
     const value = parts[2];
+
+    // Handle "Done" button -- delete the settings message
+    if (category === "done") {
+      await ctx.answerCallbackQuery({ text: "Done" });
+      try {
+        await ctx.deleteMessage();
+      } catch {
+        // might not have permission to delete
+      }
+      return;
+    }
 
     if (category === "model") {
       if (value === "reset") {
@@ -604,36 +662,12 @@ bot.on("callback_query:data", async (ctx) => {
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
     const proactiveOn = isProactiveEnabled(cid);
-    const isModel = (id: string) => activeModel.includes(id);
-
-    const lines = [
-      "<b>Settings</b>",
-      "",
-      `<b>Model:</b> <code>${escapeHtml(activeModel)}</code>`,
-      `<b>Effort:</b> ${effortName}`,
-      `<b>Proactive:</b> ${proactiveOn ? "on" : "off"}`,
-    ];
 
     try {
-      await ctx.editMessageText(lines.join("\n"), {
+      await ctx.editMessageText(renderSettingsText(activeModel, effortName, proactiveOn), {
         parse_mode: "HTML",
         reply_markup: {
-          inline_keyboard: [
-            [
-              { text: isModel("sonnet") ? "* Sonnet" : "Sonnet", callback_data: "settings:model:sonnet" },
-              { text: isModel("opus") ? "* Opus" : "Opus", callback_data: "settings:model:opus" },
-              { text: isModel("haiku") ? "* Haiku" : "Haiku", callback_data: "settings:model:haiku" },
-            ],
-            [
-              { text: effortName === "low" ? "* Low" : "Low", callback_data: "settings:effort:low" },
-              { text: effortName === "medium" ? "* Med" : "Med", callback_data: "settings:effort:medium" },
-              { text: effortName === "high" ? "* High" : "High", callback_data: "settings:effort:high" },
-              { text: effortName === "adaptive" ? "* Auto" : "Auto", callback_data: "settings:effort:adaptive" },
-            ],
-            [
-              { text: proactiveOn ? "Proactive: ON" : "Proactive: OFF", callback_data: `settings:proactive:${proactiveOn ? "off" : "on"}` },
-            ],
-          ],
+          inline_keyboard: renderSettingsKeyboard(activeModel, effortName, proactiveOn),
         },
       });
     } catch { /* message unchanged */ }
@@ -659,8 +693,8 @@ bot.on("callback_query:data", async (ctx) => {
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [[
-              { text: enabled ? "• On" : "On", callback_data: "proactive:on" },
-              { text: !enabled ? "• Off" : "Off", callback_data: "proactive:off" },
+              { text: enabled ? "\u2713 On" : "On", callback_data: "proactive:on" },
+              { text: !enabled ? "\u2713 Off" : "Off", callback_data: "proactive:off" },
             ]],
           },
         },
@@ -686,14 +720,14 @@ bot.on("callback_query:data", async (ctx) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: current === "off" ? "• Off" : "Off", callback_data: "effort:off" },
-              { text: current === "low" ? "• Low" : "Low", callback_data: "effort:low" },
-              { text: current === "medium" ? "• Med" : "Med", callback_data: "effort:medium" },
+              { text: current === "off" ? "\u2713 Off" : "Off", callback_data: "effort:off" },
+              { text: current === "low" ? "\u2713 Low" : "Low", callback_data: "effort:low" },
+              { text: current === "medium" ? "\u2713 Med" : "Med", callback_data: "effort:medium" },
             ],
             [
-              { text: current === "high" ? "• High" : "High", callback_data: "effort:high" },
-              { text: current === "max" ? "• Max" : "Max", callback_data: "effort:max" },
-              { text: current === "adaptive" ? "• Auto" : "Auto", callback_data: "effort:adaptive" },
+              { text: current === "high" ? "\u2713 High" : "High", callback_data: "effort:high" },
+              { text: current === "max" ? "\u2713 Max" : "Max", callback_data: "effort:max" },
+              { text: current === "adaptive" ? "\u2713 Auto" : "Auto", callback_data: "effort:adaptive" },
             ],
           ],
         },
@@ -722,11 +756,11 @@ bot.on("callback_query:data", async (ctx) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: isModel("sonnet") ? "• Sonnet 4.6" : "Sonnet 4.6", callback_data: "model:sonnet" },
-              { text: isModel("opus") ? "• Opus 4.6" : "Opus 4.6", callback_data: "model:opus" },
+              { text: isModel("sonnet") ? "\u2713 Sonnet 4.6" : "Sonnet 4.6", callback_data: "model:sonnet" },
+              { text: isModel("opus") ? "\u2713 Opus 4.6" : "Opus 4.6", callback_data: "model:opus" },
             ],
             [
-              { text: isModel("haiku") ? "• Haiku 4.5" : "Haiku 4.5", callback_data: "model:haiku" },
+              { text: isModel("haiku") ? "\u2713 Haiku 4.5" : "Haiku 4.5", callback_data: "model:haiku" },
               { text: "Reset to default", callback_data: "model:reset" },
             ],
           ],
@@ -757,6 +791,13 @@ function formatTokenCount(n: number): string {
   return String(n);
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
+  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 
 let shuttingDown = false;
@@ -764,23 +805,29 @@ let shuttingDown = false;
 async function gracefulShutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`\n[shutdown] ${signal} received, shutting down gracefully...`);
+  log("shutdown", `${signal} received, shutting down gracefully...`);
   try {
     await bot.stop();
-    console.log("[shutdown] Bot disconnected");
+    log("shutdown", "Bot disconnected");
   } catch (err) {
-    console.error("[shutdown] Bot stop error:", err instanceof Error ? err.message : err);
+    logError("shutdown", "Bot stop error", err);
   }
   stopProactiveTimer();
   stopWatchdog();
   try {
-    await stopBridge();
-    console.log("[shutdown] Bridge stopped");
+    await disconnectUserClient();
+    log("shutdown", "User client disconnected");
   } catch (err) {
-    console.error("[shutdown] Bridge stop error:", err instanceof Error ? err.message : err);
+    logError("shutdown", "User client disconnect error", err);
+  }
+  try {
+    await stopBridge();
+    log("shutdown", "Bridge stopped");
+  } catch (err) {
+    logError("shutdown", "Bridge stop error", err);
   }
   flushSessions();
-  console.log("[shutdown] Sessions saved");
+  log("shutdown", "Sessions saved");
   process.exit(0);
 }
 
@@ -788,35 +835,35 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 process.on("uncaughtException", (err) => {
-  console.error("[fatal] Uncaught exception:", err);
+  logError("bot", "Uncaught exception", err);
   flushSessions();
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
-  console.error("[warning] Unhandled rejection:", reason instanceof Error ? reason.message : reason);
+  logWarn("bot", `Unhandled rejection: ${reason instanceof Error ? reason.message : reason}`);
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   const bridgePort = await startBridge(19876);
-  console.log(`Starting Talon... (bridge port: ${bridgePort})`);
+  log("bot", `Starting Talon... (bridge port: ${bridgePort})`);
 
-  // Register bot commands with Telegram (clears any stale commands from previous implementations)
-  // Force-clear then re-register commands so Telegram picks up changes immediately
+  // Register bot commands with Telegram
   await bot.api.deleteMyCommands();
   await bot.api.setMyCommands([
     { command: "start", description: "Introduction" },
     { command: "settings", description: "View and change all chat settings" },
     { command: "status", description: "Session info, usage, and stats" },
+    { command: "ping", description: "Health check with latency" },
     { command: "model", description: "Show or change model" },
     { command: "effort", description: "Set thinking effort level" },
     { command: "proactive", description: "Toggle proactive check-ins" },
     { command: "reset", description: "Clear session and start fresh" },
     { command: "help", description: "All commands and features" },
   ]);
-  console.log("[commands] Registered bot commands with Telegram");
+  log("commands", "Registered bot commands with Telegram");
 
   // Initialize proactive engagement
   initProactive({
@@ -834,14 +881,14 @@ async function main(): Promise<void> {
   startWatchdog();
 
   bot.catch((err) => {
-    console.error("Bot error:", err.message ?? err);
+    logError("bot", "Unhandled bot error", err);
   });
   await bot.start({
-    onStart: (info) => console.log(`Talon running as @${info.username}`),
+    onStart: (info) => log("bot", `Talon running as @${info.username}`),
   });
 }
 
 main().catch((err) => {
-  console.error("Fatal startup error:", err);
+  logError("bot", "Fatal startup error", err);
   process.exit(1);
 });

@@ -11,6 +11,7 @@ import { getBridgePort } from "./bridge.js";
 import { resolve } from "node:path";
 import { setChatProactive, getRegisteredProactiveChats, getChatSettings } from "./chat-settings.js";
 import { getRecentHistory, getLatestMessageId } from "./history.js";
+import { log, logError } from "./log.js";
 
 let config: TalonConfig | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -43,7 +44,7 @@ export function initProactive(params: {
     registeredChats.add(chatId);
   }
   if (registeredChats.size > 0) {
-    console.log(`[proactive] Loaded ${registeredChats.size} registered chat(s) from settings`);
+    log("proactive", `Loaded ${registeredChats.size} registered chat(s) from settings`);
   }
 }
 
@@ -78,10 +79,10 @@ export function startProactiveTimer(intervalMs?: number): void {
   const ms = intervalMs ?? (envMs > 0 ? envMs : DEFAULT_INTERVAL_MS);
   if (ms <= 0) return;
 
-  console.log(`[proactive] Timer started: every ${Math.round(ms / 60000)}m`);
+  log("proactive", `Timer started: every ${Math.round(ms / 60000)}m`);
   timer = setInterval(() => {
     runProactiveCheck().catch((err) => {
-      console.error("[proactive] Check failed:", err instanceof Error ? err.message : err);
+      logError("proactive", "Check failed", err);
     });
   }, ms);
 }
@@ -192,9 +193,9 @@ async function runProactiveCheck(): Promise<void> {
 
       if (newSessionId) setSessionId(chatId, newSessionId);
 
-      console.log(`[proactive] Checked chat ${chatId} (${unreadMessages.length} new msgs)`);
+      log("proactive", `Checked chat ${chatId} (${unreadMessages.length} new msgs)`);
     } catch (err) {
-      console.error(`[proactive] Chat ${chatId} failed:`, err instanceof Error ? err.message : err);
+      logError("proactive", `Chat ${chatId} failed`, err);
     } finally {
       bridgeClearContext?.();
     }

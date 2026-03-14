@@ -1,7 +1,9 @@
 /**
- * Watchdog — tracks bot health and recent errors.
+ * Watchdog -- tracks bot health and recent errors.
  * Monitors message processing activity and bridge HTTP server responsiveness.
  */
+
+import { logWarn } from "./log.js";
 
 // ── Message processing tracking ──────────────────────────────────────────────
 
@@ -60,7 +62,7 @@ export function startWatchdog(): void {
     const elapsed = Date.now() - lastProcessedAt;
     if (totalMessagesProcessed > 0 && elapsed > INACTIVITY_WARN_MS) {
       const mins = Math.round(elapsed / 60000);
-      console.warn(`[watchdog] No messages processed for ${mins} minutes (last activity: ${new Date(lastProcessedAt).toISOString()})`);
+      logWarn("watchdog", `No messages processed for ${mins} minutes`);
     }
   }, 60_000); // Check every minute
 }

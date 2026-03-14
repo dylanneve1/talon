@@ -6,6 +6,7 @@ import { getChatSettings } from "./chat-settings.js";
 import { getRecentHistory } from "./history.js";
 import { readdirSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
+import { log, logError, logWarn } from "./log.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,12 +48,18 @@ export function initAgent(cfg: TalonConfig): void {
 
 // ── Workspace file tracking ──────────────────────────────────────────────────
 
+/** Only scan directories that contain user-facing output files. */
+const SCAN_SUBDIRS = ["files", "scripts", "data"];
+
 function snapshotWorkspace(dir: string): Map<string, number> {
   const snapshot = new Map<string, number>();
-  try {
-    scanDir(dir, dir, snapshot);
-  } catch {
-    // workspace might not exist yet
+  for (const sub of SCAN_SUBDIRS) {
+    const subDir = join(dir, sub);
+    try {
+      scanDir(dir, subDir, snapshot);
+    } catch {
+      // subdirectory might not exist yet
+    }
   }
   return snapshot;
 }
@@ -172,7 +179,7 @@ export async function handleMessage(
   const prompt = isGroup
     ? `${continuityPrefix}[${senderName}]${msgIdHint}: ${text}`
     : `${continuityPrefix}${text}${msgIdHint}`;
-  console.log(`[${chatId}] ← ${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`);
+  log("agent", `[${chatId}] <- ${text.slice(0, 120)}${text.length > 120 ? "..." : ""}`);
 
   const qi = query({ prompt, options: options as never });
 
@@ -271,12 +278,12 @@ export async function handleMessage(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     if (/session|expired|invalid|resume/i.test(errMsg)) {
-      console.warn(`[${chatId}] Stale session, clearing: ${errMsg.slice(0, 100)}`);
+      logWarn("agent", `[${chatId}] Stale session, clearing: ${errMsg.slice(0, 100)}`);
       const { resetSession } = await import("./sessions.js");
       resetSession(chatId);
       throw new Error("Session expired. Send your message again to start fresh.");
     }
-    console.error(`[${chatId}] SDK error: ${errMsg}`);
+    logError("agent", `[${chatId}] SDK error: ${errMsg}`);
     throw err;
   }
 
@@ -296,8 +303,8 @@ export async function handleMessage(
   const totalPrompt = inputTokens + cacheRead + cacheWrite;
   const cacheHitPct = totalPrompt > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
 
-  console.log(
-    `[${chatId}] → ${allResponseText.slice(0, 80)}${allResponseText.length > 80 ? "…" : ""} ` +
+  log("agent",
+    `[${chatId}] -> ${allResponseText.slice(0, 80)}${allResponseText.length > 80 ? "..." : ""} ` +
       `(${durationMs}ms, in=${inputTokens} out=${outputTokens} cache=${cacheHitPct}%` +
       `${toolCalls > 0 ? ` tools=${toolCalls}` : ""}` +
       `${newFiles.length > 0 ? ` files=${newFiles.length}` : ""})`,

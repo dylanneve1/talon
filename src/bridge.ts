@@ -17,6 +17,7 @@ import {
   getUserInfo as userbotGetUserInfo,
   getMessage as userbotGetMessage,
 } from "./userbot.js";
+import { log, logError } from "./log.js";
 
 type BridgeAction = {
   action: string;
@@ -66,7 +67,7 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
           const retryMatch = msg.match(/retry.?after[:\s]*(\d+)/i);
           if (retryMatch) delayMs = parseInt(retryMatch[1], 10) * 1000;
         }
-        console.log(`[bridge] Retry ${attempt + 1}/3 after ${delayMs}ms`);
+        log("bridge", `Retry ${attempt + 1}/3 after ${delayMs}ms`);
         await new Promise((r) => setTimeout(r, delayMs));
       }
     }
@@ -110,7 +111,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "send_message": {
         const text = String(body.text ?? "");
         const replyTo = typeof body.reply_to_message_id === "number" ? body.reply_to_message_id : undefined;
-        console.log(`[bridge] send_message${replyTo ? ` reply_to=${replyTo}` : ""}: ${text.slice(0, 80)}`);
+        log("bridge", `send_message${replyTo ? ` reply_to=${replyTo}` : ""}: ${text.slice(0, 80)}`);
         messagesSentViaBridge++;
         const msgId = await withRetry(() => sendText(bot, chatId, text, replyTo));
         return { ok: true, message_id: msgId };
@@ -119,7 +120,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "reply_to": {
         const msgId = Number(body.message_id);
         const text = String(body.text ?? "");
-        console.log(`[bridge] reply_to msg=${msgId}: ${text.slice(0, 80)}`);
+        log("bridge", `reply_to msg=${msgId}: ${text.slice(0, 80)}`);
         messagesSentViaBridge++;
         const sentId = await withRetry(() => sendText(bot, chatId, text, msgId));
         return { ok: true, message_id: sentId };
@@ -128,7 +129,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "react": {
         const msgId = Number(body.message_id);
         const emoji = String(body.emoji ?? "👍");
-        console.log(`[bridge] react msg=${msgId} emoji=${emoji}`);
+        log("bridge", `react msg=${msgId} emoji=${emoji}`);
         messagesSentViaBridge++;
         try {
           await withRetry(() => bot.api.setMessageReaction(chatId, msgId, [{ type: "emoji", emoji: emoji as "👍" }]));
@@ -148,7 +149,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         if (text.length > TELEGRAM_MAX_TEXT) {
           return { ok: false, error: `Text too long (${text.length} chars, max ${TELEGRAM_MAX_TEXT})` };
         }
-        console.log(`[bridge] edit msg=${msgId}: ${text.slice(0, 80)}`);
+        log("bridge", `edit msg=${msgId}: ${text.slice(0, 80)}`);
         const html = markdownToTelegramHtml(text);
         await withRetry(async () => {
           try { await bot.api.editMessageText(chatId, msgId, html, { parse_mode: "HTML" }); }
@@ -159,21 +160,21 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 
       case "delete_message": {
         const msgId = Number(body.message_id);
-        console.log(`[bridge] delete msg=${msgId}`);
+        log("bridge", `delete msg=${msgId}`);
         await bot.api.deleteMessage(chatId, msgId);
         return { ok: true };
       }
 
       case "pin_message": {
         const msgId = Number(body.message_id);
-        console.log(`[bridge] pin msg=${msgId}`);
+        log("bridge", `pin msg=${msgId}`);
         await bot.api.pinChatMessage(chatId, msgId);
         return { ok: true };
       }
 
       case "unpin_message": {
         const msgId = body.message_id ? Number(body.message_id) : undefined;
-        console.log(`[bridge] unpin${msgId ? ` msg=${msgId}` : " latest"}`);
+        log("bridge", `unpin${msgId ? ` msg=${msgId}` : " latest"}`);
         await bot.api.unpinChatMessage(chatId, msgId as never);
         return { ok: true };
       }
@@ -181,7 +182,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "send_file": {
         const filePath = String(body.file_path ?? "");
         const caption = body.caption ? String(body.caption) : undefined;
-        console.log(`[bridge] send_file: ${basename(filePath)}`);
+        log("bridge", `send_file: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const stat = statSync(filePath);
         if (stat.size > 49 * 1024 * 1024) return { ok: false, error: "File too large (max 49MB)" };
@@ -193,7 +194,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "send_photo": {
         const filePath = String(body.file_path ?? "");
         const caption = body.caption ? String(body.caption) : undefined;
-        console.log(`[bridge] send_photo: ${basename(filePath)}`);
+        log("bridge", `send_photo: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const data = readFileSync(filePath);
         const sent = await withRetry(() => bot.api.sendPhoto(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
@@ -202,7 +203,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 
       case "send_sticker": {
         const fileId = String(body.file_id ?? "");
-        console.log(`[bridge] send_sticker`);
+        log("bridge", `send_sticker`);
         messagesSentViaBridge++;
         const sent = await bot.api.sendSticker(chatId, fileId, { reply_parameters: replyParams(body) });
         return { ok: true, message_id: sent.message_id };
@@ -211,7 +212,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "send_video": {
         const filePath = String(body.file_path ?? "");
         const caption = body.caption ? String(body.caption) : undefined;
-        console.log(`[bridge] send_video: ${basename(filePath)}`);
+        log("bridge", `send_video: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const data = readFileSync(filePath);
         const sent = await withRetry(() => bot.api.sendVideo(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
@@ -221,7 +222,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "send_animation": {
         const filePath = String(body.file_path ?? "");
         const caption = body.caption ? String(body.caption) : undefined;
-        console.log(`[bridge] send_animation: ${basename(filePath)}`);
+        log("bridge", `send_animation: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const data = readFileSync(filePath);
         const sent = await withRetry(() => bot.api.sendAnimation(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
@@ -231,7 +232,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "send_voice": {
         const filePath = String(body.file_path ?? "");
         const caption = body.caption ? String(body.caption) : undefined;
-        console.log(`[bridge] send_voice: ${basename(filePath)}`);
+        log("bridge", `send_voice: ${basename(filePath)}`);
         messagesSentViaBridge++;
         const data = readFileSync(filePath);
         const sent = await withRetry(() => bot.api.sendVoice(chatId, new InputFileClass!(data, basename(filePath)), { caption, reply_parameters: replyParams(body) }));
@@ -245,7 +246,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         }
         const html = markdownToTelegramHtml(text);
         const rows = body.rows as Array<Array<{ text: string; url?: string; callback_data?: string }>>;
-        console.log(`[bridge] send_message_with_buttons: ${text.slice(0, 60)}`);
+        log("bridge", `send_message_with_buttons: ${text.slice(0, 60)}`);
         messagesSentViaBridge++;
         const keyboard = rows.map((row) =>
           row.map((btn) => btn.url ? { text: btn.text, url: btn.url } : { text: btn.text, callback_data: btn.callback_data ?? btn.text }),
@@ -261,7 +262,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 
       case "send_chat_action": {
         const action = String(body.chat_action ?? "typing");
-        console.log(`[bridge] send_chat_action: ${action}`);
+        log("bridge", `send_chat_action: ${action}`);
         await bot.api.sendChatAction(chatId, action as "typing");
         return { ok: true };
       }
@@ -270,10 +271,10 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         const text = String(body.text ?? "");
         const delaySec = Math.max(1, Math.min(3600, Number(body.delay_seconds ?? 60)));
         const scheduleId = `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        console.log(`[bridge] schedule_message: "${text.slice(0, 40)}" in ${delaySec}s`);
+        log("bridge", `schedule_message: "${text.slice(0, 40)}" in ${delaySec}s`);
         const timer = setTimeout(async () => {
           try { await sendText(bot, chatId, text); }
-          catch (err) { console.error(`[bridge] scheduled send failed:`, err); }
+          catch (err) { logError("bridge", `scheduled send failed:`, err); }
           scheduledMessages.delete(scheduleId);
         }, delaySec * 1000);
         scheduledMessages.set(scheduleId, timer);
@@ -294,7 +295,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "send_poll": {
         const question = String(body.question ?? "");
         const options = (body.options as string[]) ?? [];
-        console.log(`[bridge] send_poll: "${question}" (${options.length} options)`);
+        log("bridge", `send_poll: "${question}" (${options.length} options)`);
         messagesSentViaBridge++;
         const sent = await bot.api.sendPoll(chatId, question, options.map(o => ({ text: o })), {
           is_anonymous: body.is_anonymous as boolean | undefined,
@@ -307,14 +308,14 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       }
 
       case "send_location": {
-        console.log(`[bridge] send_location`);
+        log("bridge", `send_location`);
         messagesSentViaBridge++;
         const sent = await bot.api.sendLocation(chatId, Number(body.latitude), Number(body.longitude));
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_contact": {
-        console.log(`[bridge] send_contact`);
+        log("bridge", `send_contact`);
         messagesSentViaBridge++;
         const sent = await bot.api.sendContact(chatId, String(body.phone_number), String(body.first_name), { last_name: body.last_name as string | undefined });
         return { ok: true, message_id: sent.message_id };
@@ -322,7 +323,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 
       case "send_dice": {
         const emoji = (body.emoji as string) || "🎲";
-        console.log(`[bridge] send_dice: ${emoji}`);
+        log("bridge", `send_dice: ${emoji}`);
         messagesSentViaBridge++;
         const sent = await bot.api.sendDice(chatId, emoji as never);
         return { ok: true, message_id: sent.message_id, value: sent.dice?.value };
@@ -331,14 +332,14 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       case "forward_message": {
         const msgId = Number(body.message_id);
         const toChatId = body.to_chat_id ? Number(body.to_chat_id) : chatId;
-        console.log(`[bridge] forward msg=${msgId}`);
+        log("bridge", `forward msg=${msgId}`);
         const sent = await bot.api.forwardMessage(toChatId, chatId, msgId);
         return { ok: true, message_id: sent.message_id };
       }
 
       case "copy_message": {
         const msgId = Number(body.message_id);
-        console.log(`[bridge] copy msg=${msgId}`);
+        log("bridge", `copy msg=${msgId}`);
         const sent = await bot.api.copyMessage(chatId, chatId, msgId);
         return { ok: true, message_id: sent.message_id };
       }
@@ -442,7 +443,7 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
     }
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    console.error(`[bridge] "${body.action}" failed: ${errMsg}`);
+    logError("bridge", `"${body.action}" failed: ${errMsg}`);
     return { ok: false, error: `${body.action}: ${errMsg}` };
   }
 }
@@ -494,7 +495,7 @@ export function startBridge(port = 19876): Promise<number> {
       httpServer.listen(p, "127.0.0.1", () => {
         server = httpServer;
         activePort = p;
-        console.log(`[bridge] Telegram action bridge on :${p}`);
+        log("bridge", `Telegram action bridge on :${p}`);
         resolve(p);
       });
     };

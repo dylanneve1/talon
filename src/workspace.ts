@@ -3,8 +3,9 @@
  * Ensures a clean, organized workspace on startup.
  */
 
-import { existsSync, mkdirSync, renameSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync, readdirSync, statSync } from "node:fs";
 import { resolve, join, extname } from "node:path";
+import { log } from "./log.js";
 
 export type WorkspaceDirs = {
   root: string;
@@ -64,11 +65,37 @@ function migrateFileIfNeeded(rootDir: string, filename: string, targetDir: strin
   if (existsSync(oldPath) && !existsSync(newPath)) {
     try {
       renameSync(oldPath, newPath);
-      console.log(`[workspace] Migrated ${filename} → sessions/`);
+      log("workspace", `Migrated ${filename} to sessions/`);
     } catch {
       // Non-fatal
     }
   }
+}
+
+/** Calculate total disk usage of the workspace directory in bytes. */
+export function getWorkspaceDiskUsage(root: string): number {
+  let total = 0;
+  function walk(dir: string): void {
+    try {
+      const entries = readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.isFile()) {
+          try {
+            total += statSync(full).size;
+          } catch {
+            // skip inaccessible files
+          }
+        }
+      }
+    } catch {
+      // skip inaccessible dirs
+    }
+  }
+  walk(root);
+  return total;
 }
 
 const SYSTEM_DIRS = new Set(["memory", "logs", "uploads", "files", "sessions", "scripts", "data"]);
@@ -105,7 +132,7 @@ function migrateStaleFiles(rootDir: string, dirs: WorkspaceDirs): void {
       }
     }
     if (migrated > 0) {
-      console.log(`[workspace] Migrated ${migrated} file(s) from root to organized dirs`);
+      log("workspace", `Migrated ${migrated} file(s) from root to organized dirs`);
     }
   } catch {
     // Non-fatal

@@ -24,6 +24,7 @@ import { handleMessage } from "./agent.js";
 import { appendDailyLog } from "./daily-log.js";
 import { getRecentBySenderId } from "./history.js";
 import { recordMessageProcessed, recordError } from "./watchdog.js";
+import { log, logError } from "./log.js";
 
 // ── Shared utilities ─────────────────────────────────────────────────────────
 
@@ -225,15 +226,14 @@ async function flushQueue(chatId: string): Promise<void> {
     recordMessageProcessed();
   } catch (err) {
     const errObj = err instanceof Error ? err : new Error(String(err));
-    const ts = new Date().toISOString();
     const chatType = last.isGroup ? "group" : "DM";
     const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
-    console.error(`[${ts}] [${chatId}] [${chatType}] [${last.senderName}] Error: ${errObj.message} | prompt: "${promptPreview}"`);
+    logError("bot", `[${chatId}] [${chatType}] [${last.senderName}] Error: ${errObj.message} | prompt: "${promptPreview}"`);
     recordError(errObj.message);
 
     // Retry once for transient errors
     if (isTransientError(errObj)) {
-      console.log(`[${ts}] [${chatId}] Retrying after transient error...`);
+      log("bot", `[${chatId}] Retrying after transient error...`);
       try {
         await new Promise((r) => setTimeout(r, 2000));
         await processAndReply(
@@ -252,7 +252,7 @@ async function flushQueue(chatId: string): Promise<void> {
         return;
       } catch (retryErr) {
         const retryErrObj = retryErr instanceof Error ? retryErr : new Error(String(retryErr));
-        console.error(`[${new Date().toISOString()}] [${chatId}] [${chatType}] Retry failed:`, retryErrObj.message);
+        logError("bot", `[${chatId}] [${chatType}] Retry failed: ${retryErrObj.message}`);
         await sendHtml(
           bot,
           numericChatId,
@@ -284,8 +284,8 @@ function isTransientError(err: Error): boolean {
 
 // ── Response delivery ────────────────────────────────────────────────────────
 
-const SKIP_DIRS = ["/uploads/", "/.claude/", "/node_modules/", "/logs/"];
-const SKIP_NAMES = new Set(["sessions.json", "chat-settings.json"]);
+const SKIP_DIRS = ["/uploads/", "/.claude/", "/node_modules/", "/logs/", "/sessions/", "/memory/"];
+const SKIP_NAMES = new Set(["sessions.json", "chat-settings.json", "memory.md"]);
 
 async function sendNewFiles(
   bot: Bot,
@@ -302,10 +302,10 @@ async function sendNewFiles(
       const stat = statSync(filePath);
       if (stat.size > 49 * 1024 * 1024 || stat.size === 0) continue;
 
-      console.log(`[file] Sending ${name} (${stat.size} bytes)`);
+      log("bot", `Sending file ${name} (${stat.size} bytes)`);
       await bot.api.sendDocument(chatId, new InputFile(readFileSync(filePath), name));
     } catch (err) {
-      console.error(`[file] Failed to send ${name}:`, err);
+      logError("bot", `Failed to send file ${name}`, err);
     }
   }
 }
@@ -604,8 +604,7 @@ async function handleMediaMessage(
       isGroup,
     });
   } catch (err) {
-    const ts = new Date().toISOString();
-    console.error(`[${ts}] [${chatId}] ${media.type} error (${sender}):`, err instanceof Error ? err.message : err);
+    logError("bot", `[${chatId}] ${media.type} error (${sender}): ${err instanceof Error ? err.message : err}`);
     await sendHtml(
       bot,
       ctx.chat.id,
@@ -844,6 +843,6 @@ export async function handleCallbackQuery(ctx: Context, bot: Bot, config: TalonC
       isGroup,
     );
   } catch (err) {
-    console.error(`[${new Date().toISOString()}] [${chatId}] Callback error (${sender}):`, err instanceof Error ? err.message : err);
+    logError("bot", `[${chatId}] Callback error (${sender}): ${err instanceof Error ? err.message : err}`);
   }
 }

@@ -5,6 +5,7 @@
 
 import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { logError } from "./log.js";
 
 const LOGS_DIR = resolve(process.cwd(), "workspace", "logs");
 
@@ -29,7 +30,7 @@ export function appendDailyLog(chatName: string, summary: string): void {
     const entry = `## ${timeStr} -- [${chatName}]\n- ${summary}\n\n`;
     appendFileSync(logFile, entry);
   } catch (err) {
-    console.error("[daily-log] Failed to write:", err instanceof Error ? err.message : err);
+    logError("bot", "Daily log write failed", err);
   }
 }
 
