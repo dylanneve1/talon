@@ -13,6 +13,8 @@ export type ChatSettings = {
   model?: string;
   /** Effort level override (maps to SDK thinking + effort options). */
   effort?: EffortLevel;
+  /** Whether proactive check-ins are enabled for this chat. */
+  proactive?: boolean;
 };
 
 const STORE_FILE = resolve(process.cwd(), "workspace", "chat-settings.json");
@@ -68,6 +70,24 @@ export function setChatEffort(chatId: string, effort: EffortLevel | undefined): 
   }
   dirty = true;
   save();
+}
+
+export function setChatProactive(chatId: string, enabled: boolean | undefined): void {
+  if (!store[chatId]) store[chatId] = {};
+  if (enabled !== undefined) {
+    store[chatId].proactive = enabled;
+  } else {
+    delete store[chatId].proactive;
+  }
+  dirty = true;
+  save();
+}
+
+/** Get all chat IDs that have proactive enabled in settings. */
+export function getRegisteredProactiveChats(): string[] {
+  return Object.entries(store)
+    .filter(([, s]) => s.proactive === true)
+    .map(([id]) => id);
 }
 
 /** Valid effort levels. */

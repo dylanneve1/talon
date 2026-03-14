@@ -93,10 +93,14 @@ bot.command("help", (ctx) =>
     [
       "<b>Talon — Help</b>",
       "",
-      "<b>Commands</b>",
-      "  /status — session info, usage, and stats",
+      "<b>Settings</b>",
+      "  /settings — view and change all chat settings",
       "  /model — show or change model (sonnet, opus, haiku)",
       "  /effort — set thinking effort (off, low, medium, high, max)",
+      "  /proactive — toggle periodic check-ins (on/off)",
+      "",
+      "<b>Session</b>",
+      "  /status — session info, usage, and stats",
       "  /reset — clear session and start fresh",
       "  /help — this message",
       "",
@@ -247,6 +251,45 @@ bot.command("proactive", async (ctx) => {
   await ctx.reply("Use: /proactive on, /proactive off, or /proactive status");
 });
 
+bot.command("settings", async (ctx) => {
+  const cid = String(ctx.chat.id);
+  const chatSets = getChatSettings(cid);
+  const activeModel = chatSets.model ?? config.model;
+  const effortName = chatSets.effort ?? "adaptive";
+  const proactiveOn = isProactiveEnabled(cid);
+  const isModel = (id: string) => activeModel.includes(id);
+
+  const lines = [
+    "<b>Settings</b>",
+    "",
+    `<b>Model:</b> <code>${escapeHtml(activeModel)}</code>`,
+    `<b>Effort:</b> ${effortName}`,
+    `<b>Proactive:</b> ${proactiveOn ? "on" : "off"}`,
+  ];
+
+  await ctx.reply(lines.join("\n"), {
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: isModel("sonnet") ? "* Sonnet" : "Sonnet", callback_data: "settings:model:sonnet" },
+          { text: isModel("opus") ? "* Opus" : "Opus", callback_data: "settings:model:opus" },
+          { text: isModel("haiku") ? "* Haiku" : "Haiku", callback_data: "settings:model:haiku" },
+        ],
+        [
+          { text: effortName === "low" ? "* Low" : "Low", callback_data: "settings:effort:low" },
+          { text: effortName === "medium" ? "* Med" : "Med", callback_data: "settings:effort:medium" },
+          { text: effortName === "high" ? "* High" : "High", callback_data: "settings:effort:high" },
+          { text: effortName === "adaptive" ? "* Auto" : "Auto", callback_data: "settings:effort:adaptive" },
+        ],
+        [
+          { text: proactiveOn ? "Proactive: ON" : "Proactive: OFF", callback_data: `settings:proactive:${proactiveOn ? "off" : "on"}` },
+        ],
+      ],
+    },
+  });
+});
+
 bot.command("status", async (ctx) => {
   const cid = String(ctx.chat.id);
   const info = getSessionInfo(cid);
@@ -341,6 +384,80 @@ bot.on("message:animation", (ctx) => handleAnimationMessage(ctx, bot, config));
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
   const cid = String(ctx.chat?.id ?? ctx.from.id);
+
+  // Handle unified /settings callbacks
+  if (data.startsWith("settings:")) {
+    const parts = data.split(":");
+    const category = parts[1];
+    const value = parts[2];
+
+    if (category === "model") {
+      if (value === "reset") {
+        setChatModel(cid, undefined);
+        resetSession(cid);
+      } else {
+        const resolved = resolveModelName(value);
+        setChatModel(cid, resolved);
+        resetSession(cid);
+      }
+      await ctx.answerCallbackQuery({ text: `Model: ${getChatSettings(cid).model ?? config.model}` });
+    } else if (category === "effort") {
+      if (value === "adaptive") {
+        setChatEffort(cid, undefined);
+      } else if (EFFORT_LEVELS.includes(value as EffortLevel)) {
+        setChatEffort(cid, value as EffortLevel);
+      }
+      await ctx.answerCallbackQuery({ text: `Effort: ${getChatSettings(cid).effort ?? "adaptive"}` });
+    } else if (category === "proactive") {
+      if (value === "on") {
+        enableProactive(cid);
+        registerChatForProactive(cid);
+      } else {
+        disableProactive(cid);
+      }
+      await ctx.answerCallbackQuery({ text: `Proactive: ${value}` });
+    }
+
+    // Re-render the settings panel
+    const chatSets = getChatSettings(cid);
+    const activeModel = chatSets.model ?? config.model;
+    const effortName = chatSets.effort ?? "adaptive";
+    const proactiveOn = isProactiveEnabled(cid);
+    const isModel = (id: string) => activeModel.includes(id);
+
+    const lines = [
+      "<b>Settings</b>",
+      "",
+      `<b>Model:</b> <code>${escapeHtml(activeModel)}</code>`,
+      `<b>Effort:</b> ${effortName}`,
+      `<b>Proactive:</b> ${proactiveOn ? "on" : "off"}`,
+    ];
+
+    try {
+      await ctx.editMessageText(lines.join("\n"), {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: isModel("sonnet") ? "* Sonnet" : "Sonnet", callback_data: "settings:model:sonnet" },
+              { text: isModel("opus") ? "* Opus" : "Opus", callback_data: "settings:model:opus" },
+              { text: isModel("haiku") ? "* Haiku" : "Haiku", callback_data: "settings:model:haiku" },
+            ],
+            [
+              { text: effortName === "low" ? "* Low" : "Low", callback_data: "settings:effort:low" },
+              { text: effortName === "medium" ? "* Med" : "Med", callback_data: "settings:effort:medium" },
+              { text: effortName === "high" ? "* High" : "High", callback_data: "settings:effort:high" },
+              { text: effortName === "adaptive" ? "* Auto" : "Auto", callback_data: "settings:effort:adaptive" },
+            ],
+            [
+              { text: proactiveOn ? "Proactive: ON" : "Proactive: OFF", callback_data: `settings:proactive:${proactiveOn ? "off" : "on"}` },
+            ],
+          ],
+        },
+      });
+    } catch { /* message unchanged */ }
+    return;
+  }
 
   // Handle settings callbacks directly
   if (data.startsWith("proactive:")) {
@@ -509,6 +626,7 @@ async function main(): Promise<void> {
   await bot.api.deleteMyCommands();
   await bot.api.setMyCommands([
     { command: "start", description: "Introduction" },
+    { command: "settings", description: "View and change all chat settings" },
     { command: "status", description: "Session info, usage, and stats" },
     { command: "model", description: "Show or change model" },
     { command: "effort", description: "Set thinking effort level" },

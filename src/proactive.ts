@@ -9,11 +9,10 @@ import type { TalonConfig } from "./config.js";
 import { getSession, setSessionId } from "./sessions.js";
 import { getBridgePort } from "./bridge.js";
 import { resolve } from "node:path";
-import { setChatModel } from "./chat-settings.js";
+import { setChatProactive, getRegisteredProactiveChats, getChatSettings } from "./chat-settings.js";
 
 let config: TalonConfig | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
-const disabledChats = new Set<string>();
 const registeredChats = new Set<string>();
 
 // Store a reference to setBridgeContext so we can set context for proactive actions
@@ -34,22 +33,37 @@ export function initProactive(params: {
   bridgeClearContext = params.clearBridgeContext;
   botInstance = params.bot;
   inputFileClass = params.inputFile;
+
+  // Load persisted proactive registrations from chat settings
+  for (const chatId of getRegisteredProactiveChats()) {
+    registeredChats.add(chatId);
+  }
+  if (registeredChats.size > 0) {
+    console.log(`[proactive] Loaded ${registeredChats.size} registered chat(s) from settings`);
+  }
 }
 
 export function registerChatForProactive(chatId: string): void {
   registeredChats.add(chatId);
+  // Persist: mark as proactive-enabled unless explicitly disabled
+  const settings = getChatSettings(chatId);
+  if (settings.proactive === undefined) {
+    setChatProactive(chatId, true);
+  }
 }
 
 export function disableProactive(chatId: string): void {
-  disabledChats.add(chatId);
+  setChatProactive(chatId, false);
 }
 
 export function enableProactive(chatId: string): void {
-  disabledChats.delete(chatId);
+  setChatProactive(chatId, true);
 }
 
 export function isProactiveEnabled(chatId: string): boolean {
-  return !disabledChats.has(chatId);
+  const settings = getChatSettings(chatId);
+  // Default to true if not explicitly set (registered chats are enabled by default)
+  return settings.proactive !== false;
 }
 
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -79,7 +93,7 @@ async function runProactiveCheck(): Promise<void> {
   if (!config || !bridgeSetContext || !bridgeClearContext || !botInstance) return;
 
   for (const chatId of registeredChats) {
-    if (disabledChats.has(chatId)) continue;
+    if (!isProactiveEnabled(chatId)) continue;
 
     const numericChatId = parseInt(chatId, 10);
     if (isNaN(numericChatId)) continue;

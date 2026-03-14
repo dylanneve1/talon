@@ -21,6 +21,7 @@ import {
 } from "node:fs";
 import { resolve, basename } from "node:path";
 import { handleMessage } from "./agent.js";
+import { appendDailyLog } from "./daily-log.js";
 
 // ── Shared utilities ─────────────────────────────────────────────────────────
 
@@ -124,10 +125,146 @@ export async function downloadTelegramFile(
   return destPath;
 }
 
+// ── Message queue (debounce rapid-fire messages per chat) ─────────────────────
+
+type QueuedMessage = {
+  prompt: string;
+  replyToId: number;
+  messageId: number;
+  senderName: string;
+  senderUsername?: string;
+  isGroup: boolean;
+};
+
+const messageQueues = new Map<string, {
+  messages: QueuedMessage[];
+  timer: ReturnType<typeof setTimeout>;
+  bot: Bot;
+  config: TalonConfig;
+  numericChatId: number;
+}>();
+
+const DEBOUNCE_MS = 500;
+
+/**
+ * Enqueue a message for processing. If another message arrives within DEBOUNCE_MS,
+ * they are concatenated and sent as a single query to avoid duplicate SDK spawns.
+ */
+function enqueueMessage(
+  bot: Bot,
+  config: TalonConfig,
+  chatId: string,
+  numericChatId: number,
+  msg: QueuedMessage,
+): void {
+  const existing = messageQueues.get(chatId);
+  if (existing) {
+    existing.messages.push(msg);
+    clearTimeout(existing.timer);
+    existing.timer = setTimeout(() => flushQueue(chatId), DEBOUNCE_MS);
+    return;
+  }
+
+  const entry = {
+    messages: [msg],
+    timer: setTimeout(() => flushQueue(chatId), DEBOUNCE_MS),
+    bot,
+    config,
+    numericChatId,
+  };
+  messageQueues.set(chatId, entry);
+}
+
+async function flushQueue(chatId: string): Promise<void> {
+  const entry = messageQueues.get(chatId);
+  if (!entry) return;
+  messageQueues.delete(chatId);
+
+  const { messages, bot, config, numericChatId } = entry;
+  if (messages.length === 0) return;
+
+  // Use last message's metadata for reply context
+  const last = messages[messages.length - 1];
+
+  // Concatenate prompts (with newlines between them if multiple)
+  const combinedPrompt = messages.length === 1
+    ? messages[0].prompt
+    : messages.map((m) => m.prompt).join("\n\n");
+
+  const logSummary = combinedPrompt.slice(0, 80).replace(/\n/g, " ");
+  appendDailyLog(last.senderName, logSummary);
+
+  try {
+    await processAndReply(
+      bot,
+      config,
+      chatId,
+      numericChatId,
+      last.replyToId,
+      last.messageId,
+      combinedPrompt,
+      last.senderName,
+      last.isGroup,
+      last.senderUsername,
+    );
+  } catch (err) {
+    const errObj = err instanceof Error ? err : new Error(String(err));
+    console.error(`[${chatId}] Error:`, errObj.message);
+
+    // Retry once for transient errors
+    if (isTransientError(errObj)) {
+      console.log(`[${chatId}] Retrying after transient error...`);
+      try {
+        await new Promise((r) => setTimeout(r, 2000));
+        await processAndReply(
+          bot,
+          config,
+          chatId,
+          numericChatId,
+          last.replyToId,
+          last.messageId,
+          combinedPrompt,
+          last.senderName,
+          last.isGroup,
+          last.senderUsername,
+        );
+        return;
+      } catch (retryErr) {
+        const retryErrObj = retryErr instanceof Error ? retryErr : new Error(String(retryErr));
+        console.error(`[${chatId}] Retry failed:`, retryErrObj.message);
+        await sendHtml(
+          bot,
+          numericChatId,
+          escapeHtml(friendlyError(retryErrObj)),
+          last.replyToId,
+        );
+        return;
+      }
+    }
+
+    await sendHtml(
+      bot,
+      numericChatId,
+      escapeHtml(friendlyError(errObj)),
+      last.replyToId,
+    );
+  }
+}
+
+/** Check if an error is transient and worth retrying. */
+function isTransientError(err: Error): boolean {
+  const msg = err.message;
+  // Transient: overloaded, network issues, 503, 429
+  if (/overloaded|503|capacity|network|ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(msg)) return true;
+  // Rate limit with short retry window
+  if (/rate.?limit|429|too many requests/i.test(msg)) return true;
+  return false;
+}
+
 // ── Response delivery ────────────────────────────────────────────────────────
 
-const SKIP_DIRS = ["/uploads/", "/.claude/", "/node_modules/"];
-const SKIP_NAMES = new Set(["sessions.json"]);
+const SKIP_DIRS = ["/uploads/", "/.claude/", "/node_modules/", "/logs/"];
+const SKIP_NAMES = new Set(["sessions.json", "chat-settings.json"]);
 
 async function sendNewFiles(
   bot: Bot,
@@ -341,6 +478,85 @@ export async function processAndReply(
   }
 }
 
+// ── Shared media handler ──────────────────────────────────────────────────────
+
+type MediaDescriptor = {
+  /** Human-readable media type for prompt (e.g. "photo", "video", "voice message"). */
+  type: string;
+  /** File ID to download from Telegram. */
+  fileId: string;
+  /** File name for saving locally. */
+  fileName: string;
+  /** Extra prompt lines describing the media. */
+  promptLines: string[];
+  /** Caption from the message, if any. */
+  caption?: string;
+  /** Optional file size check (reject if too large). */
+  fileSize?: number;
+};
+
+/**
+ * Shared handler for all downloadable media types (photo, document, voice, video, animation).
+ * Extracts forward/reply context, downloads the file, builds a prompt, and enqueues.
+ */
+async function handleMediaMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+  media: MediaDescriptor,
+): Promise<void> {
+  if (!ctx.message || !ctx.chat) return;
+
+  const chatId = String(ctx.chat.id);
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+  const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
+
+  try {
+    // File size check
+    if (media.fileSize && media.fileSize > 20 * 1024 * 1024) {
+      await sendHtml(bot, ctx.chat.id, "File too large (max 20MB).", ctx.message.message_id);
+      return;
+    }
+
+    const savedPath = await downloadTelegramFile(bot, config, media.fileId, media.fileName);
+
+    const fwdCtx = getForwardContext(
+      ctx.message as Parameters<typeof getForwardContext>[0],
+    );
+    const replyCtx = getReplyContext(
+      ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
+      ctx.me.id,
+    );
+
+    const promptParts = [
+      fwdCtx,
+      replyCtx,
+      ...media.promptLines.map((l) => l.replace("${savedPath}", savedPath)),
+      media.caption ? `Caption: ${media.caption}` : "",
+    ].filter(Boolean);
+
+    const prompt = promptParts.join("\n");
+
+    enqueueMessage(bot, config, chatId, ctx.chat.id, {
+      prompt,
+      replyToId: ctx.message.message_id,
+      messageId: ctx.message.message_id,
+      senderName: sender,
+      senderUsername,
+      isGroup,
+    });
+  } catch (err) {
+    console.error(`[${chatId}] ${media.type} error:`, err instanceof Error ? err.message : err);
+    await sendHtml(
+      bot,
+      ctx.chat.id,
+      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
+      ctx.message.message_id,
+    );
+  }
+}
+
 // ── Message handlers ─────────────────────────────────────────────────────────
 
 export async function handleTextMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
@@ -351,218 +567,93 @@ export async function handleTextMessage(ctx: Context, bot: Bot, config: TalonCon
   const sender = getSenderName(ctx.from);
   const senderUsername = ctx.from?.username;
 
-  try {
-    const replyCtx = getReplyContext(
-      ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
-      ctx.me.id,
-    );
-    const fwdCtx = getForwardContext(
-      ctx.message as Parameters<typeof getForwardContext>[0],
-    );
-    const prompt = fwdCtx + replyCtx + (ctx.message.text ?? "");
+  const replyCtx = getReplyContext(
+    ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
+    ctx.me.id,
+  );
+  const fwdCtx = getForwardContext(
+    ctx.message as Parameters<typeof getForwardContext>[0],
+  );
+  const prompt = fwdCtx + replyCtx + (ctx.message.text ?? "");
 
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      ctx.chat.id,
-      ctx.message.message_id,
-      ctx.message.message_id,
-      prompt,
-      sender,
-      isGroup,
-      senderUsername,
-    );
-  } catch (err) {
-    console.error(`[${chatId}] Error:`, err instanceof Error ? err.message : err);
-    await sendHtml(
-      bot,
-      ctx.chat.id,
-      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
-      ctx.message.message_id,
-    );
-  }
+  enqueueMessage(bot, config, chatId, ctx.chat.id, {
+    prompt,
+    replyToId: ctx.message.message_id,
+    messageId: ctx.message.message_id,
+    senderName: sender,
+    senderUsername,
+    isGroup,
+  });
 }
 
 export async function handlePhotoMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const chatId = String(ctx.chat.id);
-  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-  const sender = getSenderName(ctx.from);
-  const senderUsername = ctx.from?.username;
+  const photos = (ctx.message as Record<string, unknown>).photo as Array<{ file_id: string; file_unique_id: string }>;
+  if (!photos) return;
+  const bestPhoto = photos[photos.length - 1];
+  const caption = (ctx.message as Record<string, unknown>).caption as string || "";
 
-  try {
-    const photos = (ctx.message as Record<string, unknown>).photo as Array<{ file_id: string; file_unique_id: string }>;
-    if (!photos) return;
-    const bestPhoto = photos[photos.length - 1];
-    const savedPath = await downloadTelegramFile(
-      bot,
-      config,
-      bestPhoto.file_id,
-      `photo_${bestPhoto.file_unique_id}.jpg`,
-    );
-
-    const caption = (ctx.message as Record<string, unknown>).caption as string || "";
-    const fwdCtx = getForwardContext(
-      ctx.message as Parameters<typeof getForwardContext>[0],
-    );
-    const replyCtx = getReplyContext(
-      ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
-      ctx.me.id,
-    );
-
-    const prompt = [
-      fwdCtx,
-      replyCtx,
-      `User sent a photo saved to: ${savedPath}`,
-      `Read and analyze this image file.`,
-      caption ? `Caption: ${caption}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      ctx.chat.id,
-      ctx.message.message_id,
-      ctx.message.message_id,
-      prompt,
-      sender,
-      isGroup,
-      senderUsername,
-    );
-  } catch (err) {
-    console.error(`[${chatId}] Photo error:`, err instanceof Error ? err.message : err);
-    await sendHtml(
-      bot,
-      ctx.chat.id,
-      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
-      ctx.message.message_id,
-    );
-  }
+  await handleMediaMessage(ctx, bot, config, {
+    type: "photo",
+    fileId: bestPhoto.file_id,
+    fileName: `photo_${bestPhoto.file_unique_id}.jpg`,
+    promptLines: [
+      "User sent a photo saved to: ${savedPath}",
+      "Read and analyze this image file.",
+    ],
+    caption,
+  });
 }
 
 export async function handleDocumentMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const chatId = String(ctx.chat.id);
-  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-  const sender = getSenderName(ctx.from);
-  const senderUsername = ctx.from?.username;
+  const doc = (ctx.message as Record<string, unknown>).document as {
+    file_id: string;
+    file_unique_id: string;
+    file_name?: string;
+    file_size?: number;
+    mime_type?: string;
+  };
+  if (!doc) return;
 
-  try {
-    const doc = (ctx.message as Record<string, unknown>).document as {
-      file_id: string;
-      file_unique_id: string;
-      file_name?: string;
-      file_size?: number;
-      mime_type?: string;
-    };
-    if (!doc) return;
+  const fileName = doc.file_name || `doc_${doc.file_unique_id}`;
+  const caption = (ctx.message as Record<string, unknown>).caption as string || "";
 
-    if (doc.file_size && doc.file_size > 20 * 1024 * 1024) {
-      await sendHtml(bot, ctx.chat.id, "File too large (max 20MB).", ctx.message.message_id);
-      return;
-    }
-
-    const fileName = doc.file_name || `doc_${doc.file_unique_id}`;
-    const savedPath = await downloadTelegramFile(bot, config, doc.file_id, fileName);
-
-    const caption = (ctx.message as Record<string, unknown>).caption as string || "";
-    const fwdCtx = getForwardContext(
-      ctx.message as Parameters<typeof getForwardContext>[0],
-    );
-    const replyCtx = getReplyContext(
-      ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
-      ctx.me.id,
-    );
-
-    const prompt = [
-      fwdCtx,
-      replyCtx,
+  await handleMediaMessage(ctx, bot, config, {
+    type: "document",
+    fileId: doc.file_id,
+    fileName,
+    fileSize: doc.file_size,
+    promptLines: [
       `User sent a document: "${fileName}" (${doc.mime_type || "unknown"}).`,
-      `Saved to: ${savedPath}`,
-      `Read and process this file.`,
-      caption ? `Caption: ${caption}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      ctx.chat.id,
-      ctx.message.message_id,
-      ctx.message.message_id,
-      prompt,
-      sender,
-      isGroup,
-      senderUsername,
-    );
-  } catch (err) {
-    console.error(`[${chatId}] Doc error:`, err instanceof Error ? err.message : err);
-    await sendHtml(
-      bot,
-      ctx.chat.id,
-      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
-      ctx.message.message_id,
-    );
-  }
+      "Saved to: ${savedPath}",
+      "Read and process this file.",
+    ],
+    caption,
+  });
 }
 
 export async function handleVoiceMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const chatId = String(ctx.chat.id);
-  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-  const sender = getSenderName(ctx.from);
-  const senderUsername = ctx.from?.username;
+  const voice = (ctx.message as Record<string, unknown>).voice as {
+    file_id: string;
+    file_unique_id: string;
+    duration: number;
+  };
+  if (!voice) return;
 
-  try {
-    const voice = (ctx.message as Record<string, unknown>).voice as {
-      file_id: string;
-      file_unique_id: string;
-      duration: number;
-    };
-    if (!voice) return;
-
-    const savedPath = await downloadTelegramFile(
-      bot,
-      config,
-      voice.file_id,
-      `voice_${voice.file_unique_id}.ogg`,
-    );
-
-    const prompt = [
+  await handleMediaMessage(ctx, bot, config, {
+    type: "voice",
+    fileId: voice.file_id,
+    fileName: `voice_${voice.file_unique_id}.ogg`,
+    promptLines: [
       `User sent a voice message (${voice.duration}s).`,
-      `Audio file saved to: ${savedPath}`,
-    ].join("\n");
-
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      ctx.chat.id,
-      ctx.message.message_id,
-      ctx.message.message_id,
-      prompt,
-      sender,
-      isGroup,
-      senderUsername,
-    );
-  } catch (err) {
-    console.error(`[${chatId}] Voice error:`, err instanceof Error ? err.message : err);
-    await sendHtml(
-      bot,
-      ctx.chat.id,
-      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
-      ctx.message.message_id,
-    );
-  }
+      "Audio file saved to: ${savedPath}",
+    ],
+  });
 }
 
 export async function handleStickerMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
@@ -573,176 +664,90 @@ export async function handleStickerMessage(ctx: Context, bot: Bot, config: Talon
   const sender = getSenderName(ctx.from);
   const senderUsername = ctx.from?.username;
 
-  try {
-    const sticker = (ctx.message as Record<string, unknown>).sticker as {
-      file_id: string;
-      emoji?: string;
-      set_name?: string;
-      is_animated?: boolean;
-      is_video?: boolean;
-    };
-    if (!sticker) return;
+  const sticker = (ctx.message as Record<string, unknown>).sticker as {
+    file_id: string;
+    emoji?: string;
+    set_name?: string;
+    is_animated?: boolean;
+    is_video?: boolean;
+  };
+  if (!sticker) return;
 
-    const emoji = sticker.emoji || "";
-    const setName = sticker.set_name || "";
+  const emoji = sticker.emoji || "";
+  const setName = sticker.set_name || "";
 
-    const prompt = [
-      `User sent a sticker: ${emoji}`,
-      `Sticker file_id: ${sticker.file_id}`,
-      setName ? `Sticker set: ${setName}` : "",
-      sticker.is_animated ? "(animated)" : sticker.is_video ? "(video sticker)" : "",
-      "You can send this sticker back using the send_sticker tool with the file_id above.",
-    ]
-      .filter(Boolean)
-      .join("\n");
+  const prompt = [
+    `User sent a sticker: ${emoji}`,
+    `Sticker file_id: ${sticker.file_id}`,
+    setName ? `Sticker set: ${setName}` : "",
+    sticker.is_animated ? "(animated)" : sticker.is_video ? "(video sticker)" : "",
+    "You can send this sticker back using the send_sticker tool with the file_id above.",
+  ]
+    .filter(Boolean)
+    .join("\n");
 
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      ctx.chat.id,
-      ctx.message.message_id,
-      ctx.message.message_id,
-      prompt,
-      sender,
-      isGroup,
-      senderUsername,
-    );
-  } catch (err) {
-    console.error(`[${chatId}] Sticker error:`, err instanceof Error ? err.message : err);
-    await sendHtml(
-      bot,
-      ctx.chat.id,
-      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
-      ctx.message.message_id,
-    );
-  }
+  enqueueMessage(bot, config, chatId, ctx.chat.id, {
+    prompt,
+    replyToId: ctx.message.message_id,
+    messageId: ctx.message.message_id,
+    senderName: sender,
+    senderUsername,
+    isGroup,
+  });
 }
 
 export async function handleVideoMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const chatId = String(ctx.chat.id);
-  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-  const sender = getSenderName(ctx.from);
-  const senderUsername = ctx.from?.username;
+  const video = (ctx.message as Record<string, unknown>).video as {
+    file_id: string;
+    file_unique_id: string;
+    file_name?: string;
+    duration: number;
+    width: number;
+    height: number;
+  };
+  if (!video) return;
 
-  try {
-    const video = (ctx.message as Record<string, unknown>).video as {
-      file_id: string;
-      file_unique_id: string;
-      file_name?: string;
-      duration: number;
-      width: number;
-      height: number;
-    };
-    if (!video) return;
+  const fileName = video.file_name || `video_${video.file_unique_id}.mp4`;
+  const caption = (ctx.message as Record<string, unknown>).caption as string || "";
 
-    const fileName = video.file_name || `video_${video.file_unique_id}.mp4`;
-    const savedPath = await downloadTelegramFile(bot, config, video.file_id, fileName);
-
-    const caption = (ctx.message as Record<string, unknown>).caption as string || "";
-    const fwdCtx = getForwardContext(
-      ctx.message as Parameters<typeof getForwardContext>[0],
-    );
-    const replyCtx = getReplyContext(
-      ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
-      ctx.me.id,
-    );
-
-    const prompt = [
-      fwdCtx,
-      replyCtx,
+  await handleMediaMessage(ctx, bot, config, {
+    type: "video",
+    fileId: video.file_id,
+    fileName,
+    promptLines: [
       `User sent a video: "${fileName}" (${video.duration}s, ${video.width}x${video.height}).`,
-      `Saved to: ${savedPath}`,
-      caption ? `Caption: ${caption}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      ctx.chat.id,
-      ctx.message.message_id,
-      ctx.message.message_id,
-      prompt,
-      sender,
-      isGroup,
-      senderUsername,
-    );
-  } catch (err) {
-    console.error(`[${chatId}] Video error:`, err instanceof Error ? err.message : err);
-    await sendHtml(
-      bot,
-      ctx.chat.id,
-      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
-      ctx.message.message_id,
-    );
-  }
+      "Saved to: ${savedPath}",
+    ],
+    caption,
+  });
 }
 
 export async function handleAnimationMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const chatId = String(ctx.chat.id);
-  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-  const sender = getSenderName(ctx.from);
-  const senderUsername = ctx.from?.username;
+  const anim = (ctx.message as Record<string, unknown>).animation as {
+    file_id: string;
+    file_unique_id: string;
+    file_name?: string;
+    duration: number;
+  };
+  if (!anim) return;
 
-  try {
-    const anim = (ctx.message as Record<string, unknown>).animation as {
-      file_id: string;
-      file_unique_id: string;
-      file_name?: string;
-      duration: number;
-    };
-    if (!anim) return;
+  const fileName = anim.file_name || `animation_${anim.file_unique_id}.mp4`;
+  const caption = (ctx.message as Record<string, unknown>).caption as string || "";
 
-    const fileName = anim.file_name || `animation_${anim.file_unique_id}.mp4`;
-    const savedPath = await downloadTelegramFile(bot, config, anim.file_id, fileName);
-
-    const caption = (ctx.message as Record<string, unknown>).caption as string || "";
-    const fwdCtx = getForwardContext(
-      ctx.message as Parameters<typeof getForwardContext>[0],
-    );
-    const replyCtx = getReplyContext(
-      ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
-      ctx.me.id,
-    );
-
-    const prompt = [
-      fwdCtx,
-      replyCtx,
+  await handleMediaMessage(ctx, bot, config, {
+    type: "animation",
+    fileId: anim.file_id,
+    fileName,
+    promptLines: [
       `User sent a GIF/animation: "${fileName}" (${anim.duration}s).`,
-      `Saved to: ${savedPath}`,
-      caption ? `Caption: ${caption}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      ctx.chat.id,
-      ctx.message.message_id,
-      ctx.message.message_id,
-      prompt,
-      sender,
-      isGroup,
-      senderUsername,
-    );
-  } catch (err) {
-    console.error(`[${chatId}] Animation error:`, err instanceof Error ? err.message : err);
-    await sendHtml(
-      bot,
-      ctx.chat.id,
-      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
-      ctx.message.message_id,
-    );
-  }
+      "Saved to: ${savedPath}",
+    ],
+    caption,
+  });
 }
 
 export async function handleCallbackQuery(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
@@ -760,6 +765,8 @@ export async function handleCallbackQuery(ctx: Context, bot: Bot, config: TalonC
   try {
     const prompt = `[Button pressed] User clicked inline button with callback data: "${callbackData}"`;
     const replyToId = ctx.callbackQuery.message?.message_id ?? 0;
+
+    appendDailyLog(sender, `Button: ${callbackData}`);
 
     await processAndReply(
       bot,

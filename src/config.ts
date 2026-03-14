@@ -62,6 +62,9 @@ function loadSystemPrompt(): string {
   const memory = readOptionalFile(resolve(base, "workspace", "memory", "memory.md"));
   if (memory) parts.push(`## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: workspace/memory/memory.md\n\n${memory}`);
 
+  // Daily logs for continuity
+  parts.push(`## Daily Logs\n\nBrief interaction summaries are saved at workspace/logs/YYYY-MM-DD.md. You can read these files to review past activity and maintain continuity across sessions.`);
+
   // Today's date for temporal awareness
   parts.push(`\n## Current Date\n${new Date().toISOString().slice(0, 10)}`);
 
