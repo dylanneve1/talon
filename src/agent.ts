@@ -11,6 +11,8 @@ export type HandleMessageParams = {
   text: string;
   senderName: string;
   isGroup?: boolean;
+  /** Telegram message ID of the user's message (for reply_to / react tools). */
+  messageId?: number;
   /** Called when a new text block is completed (for multi-message delivery). */
   onTextBlock?: (text: string) => Promise<void>;
   /** Called periodically with accumulated text for streaming edits. */
@@ -115,13 +117,22 @@ export async function handleMessage(
     allowDangerouslySkipPermissions: true,
     betas: ["context-1m-2025-08-07"],
     maxThinkingTokens: config.maxThinkingTokens,
+    // MCP server providing Telegram action tools (send_message, react, reply_to, etc.)
+    mcpServers: {
+      "telegram-tools": {
+        command: "node",
+        args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "mcp-telegram.ts")],
+        env: { TALON_BRIDGE_URL: "http://127.0.0.1:19876" },
+      },
+    },
   };
 
   if (session.sessionId) {
     options.resume = session.sessionId;
   }
 
-  const prompt = isGroup ? `[${senderName}]: ${text}` : text;
+  const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
+  const prompt = isGroup ? `[${senderName}]${msgIdHint}: ${text}` : `${text}${msgIdHint}`;
   console.log(`[${chatId}] ← ${text.slice(0, 120)}${text.length > 120 ? "…" : ""}`);
 
   const qi = query({ prompt, options: options as never });

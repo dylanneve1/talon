@@ -8,6 +8,7 @@ import {
   getActiveSessionCount,
 } from "./sessions.js";
 import { splitMessage, markdownToTelegramHtml, friendlyError } from "./telegram.js";
+import { startBridge, setBridgeContext, clearBridgeContext } from "./bridge.js";
 import {
   writeFileSync,
   readFileSync,
@@ -270,13 +271,17 @@ async function sendHtml(
  * 4. Any workspace files created during the turn are sent as attachments.
  */
 async function processAndReply(
-  chatId: number,
+  chatId: string | number,
   numericChatId: number,
   replyToId: number,
+  messageId: number,
   prompt: string,
   senderName: string,
   isGroup: boolean,
 ): Promise<void> {
+  // Set bridge context so MCP tools can call Telegram actions in this chat
+  setBridgeContext(numericChatId, bot, InputFile);
+
   let streamMsgId: number | undefined;
   let lastEditedText = "";
   let streamStarted = false;
@@ -357,10 +362,11 @@ async function processAndReply(
   };
 
   const result = await handleMessage({
-    chatId,
+    chatId: String(chatId),
     text: prompt,
     senderName,
     isGroup,
+    messageId,
     onTextBlock,
     onStreamDelta,
   });
@@ -438,6 +444,7 @@ bot.on("message:text", async (ctx) => {
       chatId,
       ctx.chat.id,
       ctx.message.message_id,
+      ctx.message.message_id,
       prompt,
       sender,
       isGroup,
@@ -495,6 +502,7 @@ bot.on("message:photo", async (ctx) => {
     await processAndReply(
       chatId,
       ctx.chat.id,
+      ctx.message.message_id,
       ctx.message.message_id,
       prompt,
       sender,
@@ -562,6 +570,7 @@ bot.on("message:document", async (ctx) => {
       chatId,
       ctx.chat.id,
       ctx.message.message_id,
+      ctx.message.message_id,
       prompt,
       sender,
       isGroup,
@@ -604,6 +613,7 @@ bot.on("message:voice", async (ctx) => {
     await processAndReply(
       chatId,
       ctx.chat.id,
+      ctx.message.message_id,
       ctx.message.message_id,
       prompt,
       sender,
@@ -652,6 +662,7 @@ function formatTimeAgo(ts: number): string {
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
+startBridge(19876);
 console.log("Starting Talon...");
 bot.catch((err) => {
   console.error("Bot error:", err.message ?? err);
