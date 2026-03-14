@@ -6,6 +6,7 @@ import {
   resetSession,
   getSessionInfo,
   getActiveSessionCount,
+  getAllSessions,
   flushSessions,
 } from "./sessions.js";
 import { startBridge, stopBridge, setBridgeContext, clearBridgeContext } from "./bridge.js";
@@ -29,7 +30,7 @@ import {
   startProactiveTimer,
   stopProactiveTimer,
 } from "./proactive.js";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import {
   handleTextMessage,
   handlePhotoMessage,
@@ -39,6 +40,7 @@ import {
   handleVideoMessage,
   handleAnimationMessage,
   handleCallbackQuery,
+  processAndReply,
   getSenderName,
   escapeHtml,
 } from "./handlers.js";
@@ -290,6 +292,95 @@ bot.command("settings", async (ctx) => {
   });
 });
 
+// ── Admin commands (Dylan only, user_id 352042062) ──────────────────────────
+
+const ADMIN_USER_ID = 352042062;
+
+bot.command("admin", async (ctx) => {
+  if (ctx.from?.id !== ADMIN_USER_ID) {
+    await ctx.reply("Not authorized.");
+    return;
+  }
+
+  const args = (ctx.match ?? "").trim();
+  const [subcommand, ...rest] = args.split(/\s+/);
+
+  switch (subcommand) {
+    case "chats": {
+      const sessions = getAllSessions();
+      if (sessions.length === 0) {
+        await ctx.reply("No active sessions.");
+        return;
+      }
+      const lines = sessions.map((s) => {
+        const age = s.info.lastActive
+          ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago`
+          : "unknown";
+        const sid = s.info.sessionId ? s.info.sessionId.slice(0, 8) : "none";
+        return `<code>${s.chatId}</code> | ${s.info.turns} turns | ${age} | $${s.info.usage.estimatedCostUsd.toFixed(3)} | sid:${sid}`;
+      });
+      await ctx.reply(`<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n"), { parse_mode: "HTML" });
+      return;
+    }
+
+    case "broadcast": {
+      const text = rest.join(" ");
+      if (!text) {
+        await ctx.reply("Usage: /admin broadcast <text>");
+        return;
+      }
+      const sessions = getAllSessions();
+      let sent = 0;
+      for (const s of sessions) {
+        const numericId = parseInt(s.chatId, 10);
+        if (isNaN(numericId)) continue;
+        try {
+          await bot.api.sendMessage(numericId, text);
+          sent++;
+        } catch {
+          // Chat might have blocked the bot
+        }
+      }
+      await ctx.reply(`Broadcast sent to ${sent}/${sessions.length} chats.`);
+      return;
+    }
+
+    case "kill": {
+      const targetChatId = rest[0];
+      if (!targetChatId) {
+        await ctx.reply("Usage: /admin kill <chatId>");
+        return;
+      }
+      resetSession(targetChatId);
+      clearHistory(targetChatId);
+      await ctx.reply(`Session for chat ${targetChatId} has been reset.`);
+      return;
+    }
+
+    case "logs": {
+      try {
+        const logContent = readFileSync("/tmp/talon.log", "utf-8");
+        const lines = logContent.trim().split("\n");
+        const last20 = lines.slice(-20).join("\n");
+        await ctx.reply(`<pre>${escapeHtml(last20.slice(0, 3800))}</pre>`, { parse_mode: "HTML" });
+      } catch {
+        await ctx.reply("Could not read /tmp/talon.log");
+      }
+      return;
+    }
+
+    default:
+      await ctx.reply(
+        "<b>/admin commands</b>\n\n" +
+        "  /admin chats — list all active chats\n" +
+        "  /admin broadcast &lt;text&gt; — send to all chats\n" +
+        "  /admin kill &lt;chatId&gt; — reset a chat session\n" +
+        "  /admin logs — last 20 lines of /tmp/talon.log",
+        { parse_mode: "HTML" },
+      );
+  }
+});
+
 bot.command("status", async (ctx) => {
   const cid = String(ctx.chat.id);
   const info = getSessionInfo(cid);
@@ -300,8 +391,8 @@ bot.command("status", async (ctx) => {
   const activeModel = chatSets.model ?? config.model;
   const effortName = chatSets.effort ?? "adaptive";
 
-  // Context usage bar
-  const contextMax = 1_000_000;
+  // Context window size depends on model
+  const contextMax = activeModel.includes("haiku") ? 200_000 : 1_000_000;
   const contextUsed = u.lastPromptTokens;
   const contextPct = contextMax > 0 ? Math.min(100, Math.round((contextUsed / contextMax) * 100)) : 0;
   const barLen = 20;
@@ -381,6 +472,47 @@ bot.on("message:voice", (ctx) => handleVoiceMessage(ctx, bot, config));
 bot.on("message:sticker", (ctx) => handleStickerMessage(ctx, bot, config));
 bot.on("message:video", (ctx) => handleVideoMessage(ctx, bot, config));
 bot.on("message:animation", (ctx) => handleAnimationMessage(ctx, bot, config));
+// ── Edited message handler ──────────────────────────────────────────────────
+
+bot.on("edited_message:text", async (ctx) => {
+  if (!ctx.editedMessage || !ctx.chat) return;
+  const chatId = String(ctx.chat.id);
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+
+  // In groups, only handle if bot is mentioned or replied to
+  if (isGroup) {
+    const text = ctx.editedMessage.text || "";
+    const botUser = ctx.me.username;
+    const mentioned = botUser && text.toLowerCase().includes(`@${botUser.toLowerCase()}`);
+    const repliedToBot = ctx.editedMessage.reply_to_message?.from?.id === ctx.me.id;
+    if (!mentioned && !repliedToBot) return;
+  }
+
+  const sender = getSenderName(ctx.from);
+  const senderUsername = ctx.from?.username;
+  const msgId = ctx.editedMessage.message_id;
+  const newText = ctx.editedMessage.text || "";
+
+  const prompt = `[Message edited] User edited msg:${msgId} to: "${newText}"`;
+
+  try {
+    await processAndReply(
+      bot,
+      config,
+      chatId,
+      ctx.chat.id,
+      msgId,
+      msgId,
+      prompt,
+      sender,
+      isGroup,
+      senderUsername,
+    );
+  } catch (err) {
+    console.error(`[${new Date().toISOString()}] [${chatId}] Edit handler error:`, err instanceof Error ? err.message : err);
+  }
+});
+
 bot.on("callback_query:data", async (ctx) => {
   const data = ctx.callbackQuery.data;
   const cid = String(ctx.chat?.id ?? ctx.from.id);

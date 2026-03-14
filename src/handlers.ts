@@ -142,6 +142,7 @@ const messageQueues = new Map<string, {
   bot: Bot;
   config: TalonConfig;
   numericChatId: number;
+  queuedReactionMsgIds: number[];
 }>();
 
 const DEBOUNCE_MS = 500;
@@ -149,6 +150,7 @@ const DEBOUNCE_MS = 500;
 /**
  * Enqueue a message for processing. If another message arrives within DEBOUNCE_MS,
  * they are concatenated and sent as a single query to avoid duplicate SDK spawns.
+ * Queued messages get a hourglass reaction to indicate they've been seen.
  */
 function enqueueMessage(
   bot: Bot,
@@ -160,6 +162,9 @@ function enqueueMessage(
   const existing = messageQueues.get(chatId);
   if (existing) {
     existing.messages.push(msg);
+    // Show hourglass reaction on the queued message to indicate it's been seen
+    bot.api.setMessageReaction(numericChatId, msg.messageId, [{ type: "emoji", emoji: "\u23F3" as "\uD83D\uDC4D" }]).catch(() => {});
+    existing.queuedReactionMsgIds.push(msg.messageId);
     clearTimeout(existing.timer);
     existing.timer = setTimeout(() => flushQueue(chatId), DEBOUNCE_MS);
     return;
@@ -171,6 +176,7 @@ function enqueueMessage(
     bot,
     config,
     numericChatId,
+    queuedReactionMsgIds: [] as number[],
   };
   messageQueues.set(chatId, entry);
 }
@@ -180,8 +186,13 @@ async function flushQueue(chatId: string): Promise<void> {
   if (!entry) return;
   messageQueues.delete(chatId);
 
-  const { messages, bot, config, numericChatId } = entry;
+  const { messages, bot, config, numericChatId, queuedReactionMsgIds } = entry;
   if (messages.length === 0) return;
+
+  // Clear hourglass reactions on queued messages now that we're processing
+  for (const msgId of queuedReactionMsgIds) {
+    bot.api.setMessageReaction(numericChatId, msgId, []).catch(() => {});
+  }
 
   // Use last message's metadata for reply context
   const last = messages[messages.length - 1];
@@ -209,11 +220,14 @@ async function flushQueue(chatId: string): Promise<void> {
     );
   } catch (err) {
     const errObj = err instanceof Error ? err : new Error(String(err));
-    console.error(`[${chatId}] Error:`, errObj.message);
+    const ts = new Date().toISOString();
+    const chatType = last.isGroup ? "group" : "DM";
+    const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
+    console.error(`[${ts}] [${chatId}] [${chatType}] [${last.senderName}] Error: ${errObj.message} | prompt: "${promptPreview}"`);
 
     // Retry once for transient errors
     if (isTransientError(errObj)) {
-      console.log(`[${chatId}] Retrying after transient error...`);
+      console.log(`[${ts}] [${chatId}] Retrying after transient error...`);
       try {
         await new Promise((r) => setTimeout(r, 2000));
         await processAndReply(
@@ -231,7 +245,7 @@ async function flushQueue(chatId: string): Promise<void> {
         return;
       } catch (retryErr) {
         const retryErrObj = retryErr instanceof Error ? retryErr : new Error(String(retryErr));
-        console.error(`[${chatId}] Retry failed:`, retryErrObj.message);
+        console.error(`[${new Date().toISOString()}] [${chatId}] [${chatType}] Retry failed:`, retryErrObj.message);
         await sendHtml(
           bot,
           numericChatId,
@@ -546,7 +560,8 @@ async function handleMediaMessage(
       isGroup,
     });
   } catch (err) {
-    console.error(`[${chatId}] ${media.type} error:`, err instanceof Error ? err.message : err);
+    const ts = new Date().toISOString();
+    console.error(`[${ts}] [${chatId}] ${media.type} error (${sender}):`, err instanceof Error ? err.message : err);
     await sendHtml(
       bot,
       ctx.chat.id,
@@ -779,6 +794,6 @@ export async function handleCallbackQuery(ctx: Context, bot: Bot, config: TalonC
       isGroup,
     );
   } catch (err) {
-    console.error(`[${chatId}] Callback error:`, err instanceof Error ? err.message : err);
+    console.error(`[${new Date().toISOString()}] [${chatId}] Callback error (${sender}):`, err instanceof Error ? err.message : err);
   }
 }

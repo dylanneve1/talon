@@ -186,6 +186,24 @@ export function getActiveSessionCount(): number {
   return Object.keys(store).length;
 }
 
+/** Get all chat IDs with active sessions and their info. */
+export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
+  return Object.entries(store).map(([chatId, session]) => ({
+    chatId,
+    info: {
+      sessionId: session.sessionId,
+      turns: session.turns,
+      lastActive: session.lastActive,
+      createdAt: session.createdAt,
+      usage: session.usage ?? {
+        totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0,
+        totalCacheWrite: 0, lastPromptTokens: 0, estimatedCostUsd: 0,
+        totalResponseMs: 0, lastResponseMs: 0, fastestResponseMs: 0,
+      },
+    },
+  }));
+}
+
 // Flush on exit (signal handlers are in index.ts for graceful shutdown)
 process.on("exit", saveSessions);
 
