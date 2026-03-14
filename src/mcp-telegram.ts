@@ -270,19 +270,6 @@ server.tool(
 );
 
 server.tool(
-  "answer_callback",
-  "Show a notification or alert to the user who pressed an inline button. Use after receiving a '[Button pressed]' event.",
-  {
-    text: z.string().optional().describe("Notification text to show"),
-    show_alert: z.boolean().optional().describe("Show as a popup alert instead of a toast (default false)"),
-  },
-  async (params) => {
-    const result = await callBridge("answer_callback", params);
-    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
-  },
-);
-
-server.tool(
   "get_chat_admins",
   "Get a list of administrators in the current chat with their titles and permissions.",
   {},
