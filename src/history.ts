@@ -89,6 +89,40 @@ export function getMessageById(chatId: string, msgId: number): string {
   return formatMessage(msg);
 }
 
+/** List known users from chat history (name + ID). */
+export function getKnownUsers(chatId: string): string {
+  const history = chatHistories.get(chatId);
+  if (!history || history.length === 0) return "No users seen yet.";
+  const users = new Map<number, { name: string; lastSeen: number; messageCount: number }>();
+  for (const m of history) {
+    const existing = users.get(m.senderId);
+    if (!existing || m.timestamp > existing.lastSeen) {
+      users.set(m.senderId, {
+        name: m.senderName,
+        lastSeen: m.timestamp,
+        messageCount: (existing?.messageCount ?? 0) + 1,
+      });
+    } else {
+      existing.messageCount++;
+    }
+  }
+  const lines = [...users.entries()]
+    .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
+    .map(([id, u]) => {
+      const ago = formatTimeAgo(u.lastSeen);
+      return `${u.name} (user_id: ${id}) — ${u.messageCount} msgs, last seen ${ago}`;
+    });
+  return lines.join("\n");
+}
+
+function formatTimeAgo(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
 /** Get history stats. */
 export function getHistoryStats(chatId: string): {
   totalMessages: number;

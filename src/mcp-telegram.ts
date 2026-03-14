@@ -298,6 +298,16 @@ server.tool(
   },
 );
 
+server.tool(
+  "list_chat_members",
+  "List users who have sent messages in this chat recently. Returns names and user IDs that can be used with get_chat_member or react.",
+  {},
+  async () => {
+    const result = await callBridge("list_known_users", {});
+    return { content: [{ type: "text" as const, text: (result as { text: string }).text }] };
+  },
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

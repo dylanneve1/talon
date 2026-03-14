@@ -8,7 +8,7 @@ import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "./telegram.js";
-import { getRecentFormatted, searchHistory, getMessagesByUser } from "./history.js";
+import { getRecentFormatted, searchHistory, getMessagesByUser, getKnownUsers } from "./history.js";
 
 type BridgeAction = {
   action: string;
@@ -251,6 +251,12 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
       console.log(`[bridge] set_chat_description`);
       await bot.api.setChatDescription(chatId, desc);
       return { ok: true };
+    }
+
+    case "list_known_users": {
+      console.log(`[bridge] list_known_users`);
+      const text = getKnownUsers(String(chatId));
+      return { ok: true, text };
     }
 
     case "read_history": {
