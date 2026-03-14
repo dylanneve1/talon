@@ -9,6 +9,13 @@ import { basename } from "node:path";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "./telegram.js";
 import { getRecentFormatted, searchHistory, getMessagesByUser, getKnownUsers } from "./history.js";
+import {
+  isUserClientReady,
+  searchMessages as userbotSearch,
+  getHistory as userbotHistory,
+  getParticipants as userbotParticipants,
+  getMessage as userbotGetMessage,
+} from "./userbot.js";
 
 type BridgeAction = {
   action: string;
@@ -369,19 +376,34 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
 
     case "list_known_users": {
       console.log(`[bridge] list_known_users`);
+      // Prefer userbot for real participant list
+      if (isUserClientReady()) {
+        const text = await userbotParticipants({ chatId, limit: Number(body.limit ?? 50), query: body.query as string | undefined });
+        return { ok: true, text };
+      }
       const text = getKnownUsers(String(chatId));
       return { ok: true, text };
     }
 
     case "read_history": {
-      const limit = Math.min(50, Number(body.limit ?? 20));
+      const limit = Math.min(100, Number(body.limit ?? 30));
+      // Prefer userbot for real Telegram history
+      if (isUserClientReady()) {
+        const text = await userbotHistory({ chatId, limit, offsetId: body.offset_id as number | undefined });
+        return { ok: true, text };
+      }
       const text = getRecentFormatted(String(chatId), limit);
       return { ok: true, text };
     }
 
     case "search_history": {
       const query = String(body.query ?? "");
-      const limit = Math.min(50, Number(body.limit ?? 20));
+      const limit = Math.min(100, Number(body.limit ?? 20));
+      // Prefer userbot for real Telegram search
+      if (isUserClientReady()) {
+        const text = await userbotSearch({ chatId, query, limit });
+        return { ok: true, text };
+      }
       const text = searchHistory(String(chatId), query, limit);
       return { ok: true, text };
     }
@@ -389,8 +411,22 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
     case "get_user_messages": {
       const userName = String(body.user_name ?? "");
       const limit = Math.min(50, Number(body.limit ?? 20));
+      // Userbot search by name
+      if (isUserClientReady()) {
+        const text = await userbotSearch({ chatId, query: userName, limit });
+        return { ok: true, text };
+      }
       const text = getMessagesByUser(String(chatId), userName, limit);
       return { ok: true, text };
+    }
+
+    case "get_message_by_id": {
+      const msgId = Number(body.message_id);
+      if (isUserClientReady()) {
+        const text = await userbotGetMessage({ chatId, messageId: msgId });
+        return { ok: true, text };
+      }
+      return { ok: false, error: "User client not connected. Message lookup by ID requires user session." };
     }
 
     default:

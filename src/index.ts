@@ -10,6 +10,7 @@ import {
 import { splitMessage, markdownToTelegramHtml, friendlyError } from "./telegram.js";
 import { startBridge, setBridgeContext, clearBridgeContext, getBridgeMessageCount } from "./bridge.js";
 import { pushMessage, clearHistory } from "./history.js";
+import { initUserClient } from "./userbot.js";
 import {
   writeFileSync,
   readFileSync,
@@ -29,6 +30,20 @@ const bot = new Bot(config.botToken);
 
 if (!existsSync(config.workspace)) {
   mkdirSync(config.workspace, { recursive: true });
+}
+
+// Initialize GramJS user client for full history access (optional)
+const apiId = parseInt(process.env.TALON_API_ID || "", 10);
+const apiHash = process.env.TALON_API_HASH || "";
+if (apiId && apiHash) {
+  initUserClient({ apiId, apiHash }).then((ok) => {
+    if (ok) console.log("[userbot] Full Telegram history access enabled.");
+    else console.log("[userbot] Not authorized. Run: npx tsx src/login.ts");
+  }).catch((err) => {
+    console.error("[userbot] Init failed:", err instanceof Error ? err.message : err);
+  });
+} else {
+  console.log("[userbot] TALON_API_ID/TALON_API_HASH not set — using in-memory history only.");
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────────

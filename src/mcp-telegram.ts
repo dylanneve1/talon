@@ -426,6 +426,18 @@ server.tool(
 );
 
 server.tool(
+  "get_message_by_id",
+  "Retrieve a specific message by its ID. Useful for getting full context of a message referenced in history.",
+  {
+    message_id: z.number().describe("Message ID to retrieve"),
+  },
+  async (params) => {
+    const result = await callBridge("get_message_by_id", params);
+    return { content: [{ type: "text" as const, text: (result as { text?: string; error?: string }).text ?? (result as { error?: string }).error ?? JSON.stringify(result) }] };
+  },
+);
+
+server.tool(
   "list_chat_members",
   "List users who have sent messages in this chat recently. Returns names and user IDs that can be used with get_chat_member or react.",
   {},

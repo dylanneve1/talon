@@ -10,6 +10,8 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.76",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "grammy": "^1.41.1",
+    "input": "^1.0.1",
+    "telegram": "^2.26.22",
     "zod": "^4.3.6"
   },
   "devDependencies": {
