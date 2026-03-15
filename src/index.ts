@@ -132,7 +132,7 @@ async function main(): Promise<void> {
 
   if (process.env.TALON_PULSE !== "0") startPulseTimer();
   startCronTimer();
-  startWatchdog();
+  startWatchdog(config.workspace);
   startUploadCleanup(config.workspace);
 
   await frontend.start();

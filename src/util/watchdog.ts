@@ -3,6 +3,8 @@
  * Monitors message processing activity and bridge HTTP server responsiveness.
  */
 
+import { existsSync, mkdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { logWarn } from "./log.js";
 
 // ── Message processing tracking ──────────────────────────────────────────────
@@ -55,7 +57,7 @@ export function getRecentErrors(limit = 5): ErrorRecord[] {
 const INACTIVITY_WARN_MS = 10 * 60 * 1000; // 10 minutes
 let watchdogTimer: ReturnType<typeof setInterval> | null = null;
 
-export function startWatchdog(): void {
+export function startWatchdog(workspaceDir?: string): void {
   if (watchdogTimer) return;
 
   watchdogTimer = setInterval(() => {
@@ -63,6 +65,12 @@ export function startWatchdog(): void {
     if (totalMessagesProcessed > 0 && elapsed > INACTIVITY_WARN_MS) {
       const mins = Math.round(elapsed / 60000);
       logWarn("watchdog", `No messages processed for ${mins} minutes`);
+    }
+
+    // Ensure workspace still exists (might have been deleted externally)
+    if (workspaceDir && !existsSync(workspaceDir)) {
+      logWarn("watchdog", "Workspace directory missing — recreating");
+      try { mkdirSync(workspaceDir, { recursive: true }); } catch { /* ignore */ }
     }
   }, 60_000); // Check every minute
 }
