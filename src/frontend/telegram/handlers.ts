@@ -197,10 +197,15 @@ function isUserRateLimited(senderId: number): boolean {
 
   timestamps.push(now);
 
-  // Cap the map to prevent memory growth from many unique users
-  if (userMessageTimestamps.size > 10_000) {
-    const oldest = userMessageTimestamps.keys().next().value;
-    if (oldest !== undefined) userMessageTimestamps.delete(oldest);
+  // Evict stale entries — remove users who haven't messaged in 10+ minutes
+  if (userMessageTimestamps.size > 5_000) {
+    const cutoff = now - 10 * 60_000;
+    for (const [userId, ts] of userMessageTimestamps) {
+      if (ts.length === 0 || ts[ts.length - 1] < cutoff) {
+        userMessageTimestamps.delete(userId);
+      }
+      if (userMessageTimestamps.size <= 2_500) break; // evict down to half
+    }
   }
 
   return false;

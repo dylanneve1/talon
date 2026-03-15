@@ -98,6 +98,20 @@ function isDue(job: CronJob, now: Date): boolean {
   }
 }
 
+const CRON_JOB_TIMEOUT_MS = 5 * 60_000; // 5-minute max per job
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
 async function executeJob(job: CronJob): Promise<void> {
   if (!deps) return;
 
@@ -108,22 +122,25 @@ async function executeJob(job: CronJob): Promise<void> {
   }
 
   if (job.type === "message") {
-    // Simple message send — no AI involved
     await deps.sendMessage(numericChatId, job.content);
     return;
   }
 
-  // type === "query" — run through dispatcher with full tool access
+  // type === "query" — run through dispatcher with full tool access, timeout-protected
   const prompt =
     `[System: CRON JOB "${job.name}" (schedule: ${job.schedule}). ` +
     `Execute the task. Be concise and action-oriented.]\n\n${job.content}`;
 
-  await execute({
-    chatId: job.chatId,
-    numericChatId,
-    prompt,
-    senderName: "Cron",
-    isGroup: false,
-    source: "cron",
-  });
+  await withTimeout(
+    execute({
+      chatId: job.chatId,
+      numericChatId,
+      prompt,
+      senderName: "Cron",
+      isGroup: false,
+      source: "cron",
+    }),
+    CRON_JOB_TIMEOUT_MS,
+    `Cron job "${job.name}"`,
+  );
 }

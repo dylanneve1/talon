@@ -11,7 +11,10 @@ const envSchema = z.object({
   maxThinkingTokens: z.number().int().min(0).default(10000),
   maxMessageLength: z.number().int().min(100).default(4000),
   verbose: z.boolean().default(false),
-  concurrency: z.number().int().min(1).max(20).default(3),
+  // Default 1: bridge context is global, so concurrent queries to different
+  // chats would route tools to the wrong chat. Safe to increase only if all
+  // concurrent queries target the same chat.
+  concurrency: z.number().int().min(1).max(20).default(1),
 });
 
 export type TalonConfig = z.infer<typeof envSchema> & {

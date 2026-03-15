@@ -120,6 +120,7 @@ export async function handleMessage(
         ],
         env: {
           TALON_BRIDGE_URL: `http://127.0.0.1:${bridgePortFn()}`,
+          TALON_CHAT_ID: chatId,
         },
       },
     },

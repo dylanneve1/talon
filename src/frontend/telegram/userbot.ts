@@ -25,9 +25,19 @@ let storedApiHash = "";
 // The userbot is ONLY allowed to access chats the bot is actively serving.
 // It must NEVER access the user's other chats, DMs, or account data.
 const allowedChatIds = new Set<number>();
+const MAX_ALLOWED_CHATS = 5_000;
 
 /** Allow the userbot to access a specific chat (set when bot receives a message). */
 export function allowChat(chatId: number): void {
+  if (allowedChatIds.size >= MAX_ALLOWED_CHATS) {
+    // Evict oldest entries (first inserted) to prevent unbounded growth
+    const iter = allowedChatIds.values();
+    for (let i = 0; i < 500; i++) {
+      const val = iter.next();
+      if (val.done) break;
+      allowedChatIds.delete(val.value);
+    }
+  }
   allowedChatIds.add(chatId);
 }
 

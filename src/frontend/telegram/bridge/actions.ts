@@ -648,6 +648,14 @@ export async function handleAction(body: BridgeAction): Promise<unknown> {
     return { ok: false, error: "No active chat context" };
   }
 
+  // Verify the requesting subprocess is authorized for this chat
+  // Prevents race conditions where concurrent queries stomp each other's context
+  const requestChatId = body._chatId ? String(body._chatId) : null;
+  if (requestChatId && requestChatId !== String(activeChatId)) {
+    logError("bridge", `Chat mismatch: request=${requestChatId} active=${activeChatId} action=${body.action}`);
+    return { ok: false, error: "Chat context mismatch — query may have been preempted" };
+  }
+
   try {
     const result =
       (await handleMessaging(body, botInstance, activeChatId)) ??

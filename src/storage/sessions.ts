@@ -2,6 +2,7 @@ import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
 import { resolve, dirname } from "node:path";
 import { log, logError } from "../util/log.js";
+import { recordError } from "../util/watchdog.js";
 
 /**
  * Session manager — maps Telegram chat IDs to Claude SDK session IDs.
@@ -78,6 +79,7 @@ function saveSessions(): void {
     dirty = false;
   } catch (err) {
     logError("sessions", "Failed to persist sessions", err);
+    recordError(`Session save failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
