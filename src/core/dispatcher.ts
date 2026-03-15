@@ -10,13 +10,14 @@
  */
 
 import PQueue from "p-queue";
+import { randomBytes } from "node:crypto";
 import type {
   QueryBackend,
   ContextManager,
   ExecuteParams,
   ExecuteResult,
 } from "./types.js";
-import { log } from "../util/log.js";
+import { log, logDebug } from "../util/log.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -65,7 +66,9 @@ export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
 
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   const { backend, context, sendTyping, onActivity } = deps!;
+  const reqId = randomBytes(4).toString("hex");
 
+  logDebug("dispatcher", `[${reqId}] ${params.source} chat=${params.chatId} queued`);
   context.acquire(params.numericChatId);
 
   let typingTimer: ReturnType<typeof setInterval> | undefined;
@@ -86,6 +89,8 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
     });
 
     onActivity();
+
+    logDebug("dispatcher", `[${reqId}] completed in ${result.durationMs}ms (in=${result.inputTokens} out=${result.outputTokens})`);
 
     return {
       ...result,

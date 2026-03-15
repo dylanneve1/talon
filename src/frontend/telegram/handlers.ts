@@ -33,10 +33,15 @@ function trackDmUser(
   senderUsername?: string,
 ): void {
   if (knownDmUsers.has(senderId)) return;
-  // Cap the set to prevent unbounded memory growth; clearing is safe since
-  // this is just a first-time-DM dedup set (worst case: a re-log of a known user)
+  // Evict oldest 10% when cap reached (Set maintains insertion order)
   if (knownDmUsers.size >= KNOWN_DM_USERS_CAP) {
-    knownDmUsers.clear();
+    const evictCount = Math.floor(KNOWN_DM_USERS_CAP * 0.1);
+    const iter = knownDmUsers.values();
+    for (let i = 0; i < evictCount; i++) {
+      const val = iter.next();
+      if (val.done) break;
+      knownDmUsers.delete(val.value);
+    }
   }
   knownDmUsers.add(senderId);
   const tag = senderUsername ? ` (@${senderUsername})` : "";
