@@ -33,26 +33,37 @@ export function setBridgeBotToken(token: string): void {
   botToken = token;
 }
 
+/** Track how many callers hold the context for the same chat. */
+let bridgeRefCount = 0;
+
 export function setBridgeContext(
   chatId: number,
   bot: Bot,
   inputFile: typeof GrammyInputFile,
 ): void {
+  if (activeChatId === chatId) {
+    // Same chat — just bump ref count, don't reset state
+    bridgeRefCount++;
+    return;
+  }
   activeChatId = chatId;
   botInstance = bot;
   InputFileClass = inputFile;
   messagesSentViaBridge = 0;
   bridgeLocked = true;
   bridgeOwner = String(chatId);
+  bridgeRefCount = 1;
 }
 
 export function isBridgeBusy(): boolean {
   return bridgeLocked;
 }
 
-/** Clear bridge context. Only clears if the given chatId owns it. */
+/** Clear bridge context. Only clears when all callers for this chat have released. */
 export function clearBridgeContext(chatId?: number | string): void {
   if (chatId !== undefined && bridgeOwner !== String(chatId)) return;
+  bridgeRefCount = Math.max(0, bridgeRefCount - 1);
+  if (bridgeRefCount > 0) return; // Other callers still active for this chat
   activeChatId = null;
   messagesSentViaBridge = 0;
   bridgeLocked = false;
