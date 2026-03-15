@@ -82,6 +82,7 @@ async function runCronTick(): Promise<void> {
     if (isBridgeBusy()) break;
 
     try {
+      log("cron", `Executing "${job.name}" [${job.id}] (${job.type}) in chat ${job.chatId}`);
       await executeJob(job);
       recordCronRun(job.id);
       appendDailyLog("Cron", `Ran "${job.name}" (${job.type}) in chat ${job.chatId}`);
@@ -188,6 +189,6 @@ async function executeJob(job: CronJob): Promise<void> {
   } catch (err) {
     logError("cron", `Query job "${job.name}" failed`, err);
   } finally {
-    bridgeClearContext?.();
+    bridgeClearContext?.(numericChatId);
   }
 }

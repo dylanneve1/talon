@@ -24,12 +24,23 @@ export type HistoryMessage = {
 };
 
 const MAX_HISTORY_PER_CHAT = 500;
+const MAX_CHAT_COUNT = 1000;
 
 const chatHistories = new Map<string, HistoryMessage[]>();
 
 export function pushMessage(chatId: string, msg: HistoryMessage): void {
   let history = chatHistories.get(chatId);
   if (!history) {
+    // Evict oldest chats if the map has grown too large
+    if (chatHistories.size >= MAX_CHAT_COUNT) {
+      const evictCount = Math.floor(MAX_CHAT_COUNT * 0.1); // Remove oldest 10%
+      const iter = chatHistories.keys();
+      for (let i = 0; i < evictCount; i++) {
+        const oldest = iter.next();
+        if (oldest.done) break;
+        chatHistories.delete(oldest.value);
+      }
+    }
     history = [];
     chatHistories.set(chatId, history);
   }

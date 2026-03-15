@@ -141,6 +141,13 @@ export async function downloadTelegramFile(
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`Download failed: ${resp.status}`);
 
+  // Guard against excessively large files (50MB limit)
+  const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
+  const contentLength = resp.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > MAX_DOWNLOAD_BYTES) {
+    throw new Error(`File too large (${Math.round(parseInt(contentLength, 10) / 1024 / 1024)}MB, max 50MB)`);
+  }
+
   const buffer = Buffer.from(await resp.arrayBuffer());
   const uploadsDir = resolve(config.workspace, "uploads");
   if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
@@ -225,7 +232,9 @@ async function flushQueue(chatId: string): Promise<void> {
 
   // Clear hourglass reactions on queued messages now that we're processing
   for (const msgId of queuedReactionMsgIds) {
-    bot.api.setMessageReaction(numericChatId, msgId, []).catch(() => {});
+    bot.api.setMessageReaction(numericChatId, msgId, []).catch((err) => {
+      logWarn("bot", `Failed to clear reaction on msg ${msgId}: ${err instanceof Error ? err.message : err}`);
+    });
   }
 
   // Use last message's metadata for reply context
@@ -385,200 +394,202 @@ export async function processAndReply(
     streamStarted = true;
   }, 2000);
 
-  const onStreamDelta = async (
-    accumulated: string,
-    phase?: "thinking" | "text",
-  ) => {
-    if (!streamStarted) return;
-    try {
-      // Track phase transitions
-      if (phase === "thinking" && !isThinking) {
-        isThinking = true;
-        hasTextStarted = false;
-      } else if (phase === "text" && !hasTextStarted) {
-        hasTextStarted = true;
-        isThinking = false;
-      }
-
-      // Choose cursor based on phase
-      const cursor =
-        isThinking && !hasTextStarted ? " \uD83D\uDCAD" : " \u258D";
-
-      const display =
-        accumulated.length > 3900
-          ? accumulated.slice(0, 3900) + "\u2026"
-          : accumulated;
-
-      // During thinking phase with no text yet, show thinking indicator
-      const displayText =
-        isThinking && !hasTextStarted && !display.trim()
-          ? "\uD83D\uDCAD thinking..."
-          : display;
-
-      // Detect transition from thinking to text — force update
-      const wasThinking = lastEditedText === "\uD83D\uDCAD thinking...";
-      const transitionToText = wasThinking && hasTextStarted;
-
-      if (!streamMsgId) {
-        const content = displayText + cursor;
-        const html = markdownToTelegramHtml(content);
-        try {
-          const sent = await bot.api.sendMessage(numericChatId, html, {
-            parse_mode: "HTML",
-            reply_parameters: { message_id: replyToId },
-          });
-          streamMsgId = sent.message_id;
-        } catch {
-          const sent = await bot.api.sendMessage(numericChatId, content, {
-            reply_parameters: { message_id: replyToId },
-          });
-          streamMsgId = sent.message_id;
+  try {
+    const onStreamDelta = async (
+      accumulated: string,
+      phase?: "thinking" | "text",
+    ) => {
+      if (!streamStarted) return;
+      try {
+        // Track phase transitions
+        if (phase === "thinking" && !isThinking) {
+          isThinking = true;
+          hasTextStarted = false;
+        } else if (phase === "text" && !hasTextStarted) {
+          hasTextStarted = true;
+          isThinking = false;
         }
-        lastEditedText = displayText;
-      } else if (
-        transitionToText ||
-        displayText.length - lastEditedText.length >= 60
-      ) {
-        const content = displayText + cursor;
-        const html = markdownToTelegramHtml(content);
+
+        // Choose cursor based on phase
+        const cursor =
+          isThinking && !hasTextStarted ? " \uD83D\uDCAD" : " \u258D";
+
+        const display =
+          accumulated.length > 3900
+            ? accumulated.slice(0, 3900) + "\u2026"
+            : accumulated;
+
+        // During thinking phase with no text yet, show thinking indicator
+        const displayText =
+          isThinking && !hasTextStarted && !display.trim()
+            ? "\uD83D\uDCAD thinking..."
+            : display;
+
+        // Detect transition from thinking to text — force update
+        const wasThinking = lastEditedText === "\uD83D\uDCAD thinking...";
+        const transitionToText = wasThinking && hasTextStarted;
+
+        if (!streamMsgId) {
+          const content = displayText + cursor;
+          const html = markdownToTelegramHtml(content);
+          try {
+            const sent = await bot.api.sendMessage(numericChatId, html, {
+              parse_mode: "HTML",
+              reply_parameters: { message_id: replyToId },
+            });
+            streamMsgId = sent.message_id;
+          } catch {
+            const sent = await bot.api.sendMessage(numericChatId, content, {
+              reply_parameters: { message_id: replyToId },
+            });
+            streamMsgId = sent.message_id;
+          }
+          lastEditedText = displayText;
+        } else if (
+          transitionToText ||
+          displayText.length - lastEditedText.length >= 60
+        ) {
+          const content = displayText + cursor;
+          const html = markdownToTelegramHtml(content);
+          try {
+            await bot.api.editMessageText(numericChatId, streamMsgId, html, {
+              parse_mode: "HTML",
+            });
+          } catch {
+            try {
+              await bot.api.editMessageText(numericChatId, streamMsgId, content);
+            } catch (e) {
+              logWarn("bot", `Stream edit failed (rate limited): ${e instanceof Error ? e.message : e}`);
+            }
+          }
+          lastEditedText = displayText;
+        }
+      } catch (err) {
+        logWarn("bot", `Stream delta handler error: ${err instanceof Error ? err.message : err}`);
+      }
+    };
+
+    // Multi-message: send intermediate text blocks immediately
+    const onTextBlock = async (text: string) => {
+      if (streamMsgId) {
+        const html = markdownToTelegramHtml(text);
         try {
           await bot.api.editMessageText(numericChatId, streamMsgId, html, {
             parse_mode: "HTML",
           });
         } catch {
           try {
-            await bot.api.editMessageText(numericChatId, streamMsgId, content);
+            await bot.api.editMessageText(numericChatId, streamMsgId, text);
           } catch (e) {
-            logWarn("bot", `Stream edit failed (rate limited): ${e instanceof Error ? e.message : e}`);
+            logWarn("bot", `Text block edit failed: ${e instanceof Error ? e.message : e}`);
           }
         }
-        lastEditedText = displayText;
-      }
-    } catch (err) {
-      logWarn("bot", `Stream delta handler error: ${err instanceof Error ? err.message : err}`);
-    }
-  };
-
-  // Multi-message: send intermediate text blocks immediately
-  const onTextBlock = async (text: string) => {
-    if (streamMsgId) {
-      const html = markdownToTelegramHtml(text);
-      try {
-        await bot.api.editMessageText(numericChatId, streamMsgId, html, {
-          parse_mode: "HTML",
-        });
-      } catch {
-        try {
-          await bot.api.editMessageText(numericChatId, streamMsgId, text);
-        } catch (e) {
-          logWarn("bot", `Text block edit failed: ${e instanceof Error ? e.message : e}`);
-        }
-      }
-      streamMsgId = undefined;
-      lastEditedText = "";
-    } else {
-      await sendHtml(
-        bot,
-        numericChatId,
-        markdownToTelegramHtml(text),
-        replyToId,
-      );
-    }
-  };
-
-  // In DMs, prepend user metadata so Claude knows who it's talking to
-  // In groups, include sender's recent messages for conversation threading
-  let enrichedPrompt = prompt;
-  if (!isGroup && senderName) {
-    const userTag = senderUsername ? ` (@${senderUsername})` : "";
-    enrichedPrompt = `[DM from ${senderName}${userTag}]\n${prompt}`;
-    // Track first-time DM users
-    if (senderId) trackDmUser(senderId, senderName, senderUsername);
-  } else if (isGroup && senderId) {
-    // Pull the sender's last 5 messages for conversation continuity in groups
-    const recentMsgs = getRecentBySenderId(String(chatId), senderId, 5);
-    if (recentMsgs.length > 1) {
-      // Exclude the current message (last one) since it's already in the prompt
-      const priorMsgs = recentMsgs.slice(0, -1);
-      if (priorMsgs.length > 0) {
-        const contextLines = priorMsgs
-          .map(
-            (m) =>
-              `  [${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.text.slice(0, 200)}`,
-          )
-          .join("\n");
-        enrichedPrompt = `[${senderName}'s recent messages in this group:\n${contextLines}]\n\n${prompt}`;
-      }
-    }
-  }
-
-  const result = await handleMessage({
-    chatId: String(chatId),
-    text: enrichedPrompt,
-    senderName,
-    isGroup,
-    messageId,
-    onTextBlock,
-    onStreamDelta,
-  });
-
-  clearTimeout(streamTimer);
-  clearInterval(typingTimer);
-
-  const bridgeSent = getBridgeMessageCount();
-
-  if (bridgeSent === 0) {
-    const finalText = result.text;
-    if (finalText) {
-      if (streamMsgId) {
-        const chunks = splitMessage(finalText, config.maxMessageLength);
-        const firstHtml = markdownToTelegramHtml(chunks[0]);
-        try {
-          await bot.api.editMessageText(numericChatId, streamMsgId, firstHtml, {
-            parse_mode: "HTML",
-          });
-        } catch {
-          try {
-            await bot.api.editMessageText(
-              numericChatId,
-              streamMsgId,
-              chunks[0],
-            );
-          } catch (e) {
-            logWarn("bot", `Final message edit failed: ${e instanceof Error ? e.message : e}`);
-          }
-        }
-        for (let i = 1; i < chunks.length; i++) {
-          await sendHtml(
-            bot,
-            numericChatId,
-            markdownToTelegramHtml(chunks[i]),
-            replyToId,
-          );
-        }
+        streamMsgId = undefined;
+        lastEditedText = "";
       } else {
-        const chunks = splitMessage(finalText, config.maxMessageLength);
-        for (const chunk of chunks) {
-          await sendHtml(
-            bot,
-            numericChatId,
-            markdownToTelegramHtml(chunk),
-            replyToId,
-          );
+        await sendHtml(
+          bot,
+          numericChatId,
+          markdownToTelegramHtml(text),
+          replyToId,
+        );
+      }
+    };
+
+    // In DMs, prepend user metadata so Claude knows who it's talking to
+    // In groups, include sender's recent messages for conversation threading
+    let enrichedPrompt = prompt;
+    if (!isGroup && senderName) {
+      const userTag = senderUsername ? ` (@${senderUsername})` : "";
+      enrichedPrompt = `[DM from ${senderName}${userTag}]\n${prompt}`;
+      // Track first-time DM users
+      if (senderId) trackDmUser(senderId, senderName, senderUsername);
+    } else if (isGroup && senderId) {
+      // Pull the sender's last 5 messages for conversation continuity in groups
+      const recentMsgs = getRecentBySenderId(String(chatId), senderId, 5);
+      if (recentMsgs.length > 1) {
+        // Exclude the current message (last one) since it's already in the prompt
+        const priorMsgs = recentMsgs.slice(0, -1);
+        if (priorMsgs.length > 0) {
+          const contextLines = priorMsgs
+            .map(
+              (m) =>
+                `  [${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.text.slice(0, 200)}`,
+            )
+            .join("\n");
+          enrichedPrompt = `[${senderName}'s recent messages in this group:\n${contextLines}]\n\n${prompt}`;
         }
       }
     }
-    // No "(no response)" fallback — if Claude used tools or had nothing to say, silence is fine.
-  } else if (streamMsgId) {
-    try {
-      await bot.api.deleteMessage(numericChatId, streamMsgId);
-    } catch (err) {
-      logWarn("bot", `Failed to delete stream message: ${err instanceof Error ? err.message : err}`);
-    }
-  }
 
-  clearBridgeContext(numericChatId);
-  resetPulseTimer(); // Bot just talked — restart the pulse timer
+    const result = await handleMessage({
+      chatId: String(chatId),
+      text: enrichedPrompt,
+      senderName,
+      isGroup,
+      messageId,
+      onTextBlock,
+      onStreamDelta,
+    });
+
+    const bridgeSent = getBridgeMessageCount();
+
+    if (bridgeSent === 0) {
+      const finalText = result.text;
+      if (finalText) {
+        if (streamMsgId) {
+          const chunks = splitMessage(finalText, config.maxMessageLength);
+          const firstHtml = markdownToTelegramHtml(chunks[0]);
+          try {
+            await bot.api.editMessageText(numericChatId, streamMsgId, firstHtml, {
+              parse_mode: "HTML",
+            });
+          } catch {
+            try {
+              await bot.api.editMessageText(
+                numericChatId,
+                streamMsgId,
+                chunks[0],
+              );
+            } catch (e) {
+              logWarn("bot", `Final message edit failed: ${e instanceof Error ? e.message : e}`);
+            }
+          }
+          for (let i = 1; i < chunks.length; i++) {
+            await sendHtml(
+              bot,
+              numericChatId,
+              markdownToTelegramHtml(chunks[i]),
+              replyToId,
+            );
+          }
+        } else {
+          const chunks = splitMessage(finalText, config.maxMessageLength);
+          for (const chunk of chunks) {
+            await sendHtml(
+              bot,
+              numericChatId,
+              markdownToTelegramHtml(chunk),
+              replyToId,
+            );
+          }
+        }
+      }
+      // No "(no response)" fallback — if Claude used tools or had nothing to say, silence is fine.
+    } else if (streamMsgId) {
+      try {
+        await bot.api.deleteMessage(numericChatId, streamMsgId);
+      } catch (err) {
+        logWarn("bot", `Failed to delete stream message: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    resetPulseTimer(); // Bot just talked — restart the pulse timer
+  } finally {
+    clearTimeout(streamTimer);
+    clearInterval(typingTimer);
+    clearBridgeContext(numericChatId);
+  }
 }
 
 // ── Shared media handler ──────────────────────────────────────────────────────

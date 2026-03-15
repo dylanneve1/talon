@@ -44,6 +44,7 @@ export function setBridgeContext(
   if (activeChatId === chatId) {
     // Same chat — just bump ref count, don't reset state
     bridgeRefCount++;
+    log("bridge", `Context ref++ for chat ${chatId} (refCount=${bridgeRefCount})`);
     return;
   }
   activeChatId = chatId;
@@ -53,6 +54,7 @@ export function setBridgeContext(
   bridgeLocked = true;
   bridgeOwner = String(chatId);
   bridgeRefCount = 1;
+  log("bridge", `Context set for chat ${chatId} (refCount=1)`);
 }
 
 export function isBridgeBusy(): boolean {
@@ -61,9 +63,16 @@ export function isBridgeBusy(): boolean {
 
 /** Clear bridge context. Only clears when all callers for this chat have released. */
 export function clearBridgeContext(chatId?: number | string): void {
-  if (chatId !== undefined && bridgeOwner !== String(chatId)) return;
+  if (chatId !== undefined && bridgeOwner !== String(chatId)) {
+    log("bridge", `Context clear skipped: caller=${chatId} owner=${bridgeOwner}`);
+    return;
+  }
   bridgeRefCount = Math.max(0, bridgeRefCount - 1);
-  if (bridgeRefCount > 0) return; // Other callers still active for this chat
+  if (bridgeRefCount > 0) {
+    log("bridge", `Context ref-- for chat ${chatId ?? "?"} (refCount=${bridgeRefCount})`);
+    return; // Other callers still active for this chat
+  }
+  log("bridge", `Context cleared for chat ${chatId ?? "?"} (refCount=0)`);
   activeChatId = null;
   messagesSentViaBridge = 0;
   bridgeLocked = false;
