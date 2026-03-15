@@ -2,21 +2,21 @@
  * Pulse — conversation-aware engagement.
  *
  * Every N minutes (default 5), checks for new messages in registered chats.
- * If there are new messages, feeds them to Claude to decide whether to respond.
- * Claude can respond, react, or stay silent.
+ * If there are new messages, passes them as a turn in the existing chat session
+ * so Claude can decide whether to respond. Uses the same session, model, and
+ * cache as regular messages — no separate subprocess or system prompt.
  */
 
-import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { Bot } from "grammy";
 import type { TalonConfig } from "../util/config.js";
-import { getSession, setSessionId } from "../storage/sessions.js";
-import { getBridgePort, isBridgeBusy } from "../bridge/server.js";
-import { resolve } from "node:path";
+import { isBridgeBusy, setBridgeContext, clearBridgeContext } from "../bridge/server.js";
 import {
   setChatPulse,
   getRegisteredPulseChats,
   getChatSettings,
 } from "../storage/chat-settings.js";
 import { getRecentHistory, getLatestMessageId } from "../storage/history.js";
+import { handleMessage } from "./agent.js";
 import { log, logError } from "../util/log.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -26,12 +26,11 @@ let timer: ReturnType<typeof setInterval> | null = null;
 const registeredChats = new Set<string>();
 const lastCheckMessageId = new Map<string, number>();
 
-let bridgeSetContext: ((chatId: number, bot: unknown, inputFile: unknown) => void) | null = null;
-let bridgeClearContext: ((chatId?: number | string) => void) | null = null;
-let botInstance: unknown = null;
+let botInstance: Bot | null = null;
 let inputFileClass: unknown = null;
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+let activeIntervalMs = DEFAULT_INTERVAL_MS;
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -43,9 +42,7 @@ export function initPulse(params: {
   inputFile: unknown;
 }): void {
   config = params.config;
-  bridgeSetContext = params.setBridgeContext;
-  bridgeClearContext = params.clearBridgeContext;
-  botInstance = params.bot;
+  botInstance = params.bot as Bot;
   inputFileClass = params.inputFile;
 
   for (const chatId of getRegisteredPulseChats()) {
@@ -58,7 +55,6 @@ export function initPulse(params: {
 
 export function registerChat(chatId: string): void {
   registeredChats.add(chatId);
-  // Don't auto-enable — pulse must be explicitly turned on via /pulse on
 }
 
 export function enablePulse(chatId: string): void {
@@ -71,7 +67,7 @@ export function disablePulse(chatId: string): void {
 }
 
 export function isPulseEnabled(chatId: string): boolean {
-  return getChatSettings(chatId).pulse === true; // off by default, must be explicitly enabled
+  return getChatSettings(chatId).pulse === true;
 }
 
 export function startPulseTimer(intervalMs?: number): void {
@@ -87,10 +83,8 @@ export function startPulseTimer(intervalMs?: number): void {
   }, ms);
 }
 
-let activeIntervalMs = DEFAULT_INTERVAL_MS;
-
-/** Reset the pulse timer — call this when the bot sends a message so it
- *  doesn't redundantly check in right after an active conversation. */
+/** Reset the pulse timer — call when bot sends a message to avoid
+ *  redundant check-ins during active conversation. */
 export function resetPulseTimer(): void {
   if (!timer) return;
   clearInterval(timer);
@@ -109,7 +103,7 @@ export function stopPulseTimer(): void {
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 async function runPulse(): Promise<void> {
-  if (!config || !bridgeSetContext || !bridgeClearContext || !botInstance) return;
+  if (!config || !botInstance) return;
   if (isBridgeBusy()) return;
 
   for (const chatId of registeredChats) {
@@ -119,7 +113,7 @@ async function runPulse(): Promise<void> {
 }
 
 async function pulseChat(chatId: string): Promise<void> {
-  if (!config || !bridgeSetContext || !bridgeClearContext || !botInstance) return;
+  if (!config || !botInstance) return;
   if (isBridgeBusy()) return;
 
   const numericChatId = parseInt(chatId, 10);
@@ -138,7 +132,7 @@ async function pulseChat(chatId: string): Promise<void> {
     : recent;
   if (unread.length === 0) return;
 
-  // Mark as checked
+  // Mark as checked before running
   lastCheckMessageId.set(chatId, latestMsgId);
 
   const summary = unread
@@ -150,56 +144,27 @@ async function pulseChat(chatId: string): Promise<void> {
     .join("\n");
 
   try {
-    bridgeSetContext(numericChatId, botInstance, inputFileClass);
+    // Set bridge context + show typing indicator
+    setBridgeContext(numericChatId, botInstance as never, inputFileClass as never);
+    await (botInstance as Bot).api.sendChatAction(numericChatId, "typing").catch(() => {});
 
-    const session = getSession(chatId);
-    const chatSettings = getChatSettings(chatId);
+    // Run as a regular turn in the chat's session — same model, same cache
+    const prompt =
+      `[System: Pulse check — ${unread.length} new message(s) since last check. ` +
+      `Read them and decide if you want to jump in. Stay silent if nothing to add. ` +
+      `Don't announce yourself.]\n\n${summary}`;
 
-    const options: Record<string, unknown> = {
-      model: chatSettings.model ?? config.model,
-      systemPrompt:
-        config.systemPrompt +
-        "\n\n## PULSE MODE\n" +
-        "You're reading along in a chat. Below are recent messages you haven't seen.\n" +
-        "Jump in ONLY if you have something genuinely useful, funny, or interesting to add.\n" +
-        "Most of the time, stay silent. You're a participant, not a responder.\n" +
-        "Don't announce yourself. Don't say 'I noticed...' or 'I saw...'. Just talk naturally.\n" +
-        "A reaction (emoji) is often better than a message.",
-      cwd: config.workspace,
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
-      betas: ["context-1m-2025-08-07"],
-      thinking: { type: "adaptive" as const },
-      effort: "low" as const,
-      mcpServers: {
-        "telegram-tools": {
-          command: "node",
-          args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "../bridge/tools.ts")],
-          env: { TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}` },
-        },
-      },
-    };
-
-    if (session.sessionId) options.resume = session.sessionId;
-
-    const qi = query({
-      prompt: `${unread.length} new message(s):\n\n${summary}`,
-      options: options as never,
+    await handleMessage({
+      chatId,
+      text: prompt,
+      senderName: "System",
+      isGroup: true,
     });
 
-    let newSessionId: string | undefined;
-    for await (const message of qi) {
-      const msg = message as Record<string, unknown>;
-      if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
-        newSessionId = msg.session_id;
-      }
-    }
-
-    if (newSessionId) setSessionId(chatId, newSessionId);
     log("pulse", `Checked ${chatId} (${unread.length} new msgs)`);
   } catch (err) {
     logError("pulse", `Chat ${chatId} failed`, err);
   } finally {
-    bridgeClearContext?.(numericChatId);
+    clearBridgeContext(numericChatId);
   }
 }
