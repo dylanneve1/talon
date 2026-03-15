@@ -139,7 +139,7 @@ async function pulseChat(chatId: string): Promise<void> {
     .map((m) => {
       const time = new Date(m.timestamp).toISOString().slice(11, 16);
       const media = m.mediaType ? ` [${m.mediaType}]` : "";
-      return `[${time}] ${m.senderName}${media}: ${m.text.slice(0, 200)}`;
+      return `[msg:${m.msgId} ${time}] ${m.senderName}${media}: ${m.text.slice(0, 200)}`;
     })
     .join("\n");
 
