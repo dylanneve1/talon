@@ -23,13 +23,10 @@ import {
   type EffortLevel,
 } from "../storage/chat-settings.js";
 import {
-  registerChatForProactive,
-  disableProactive,
-  enableProactive,
-  isProactiveEnabled,
-  startPerChatTimer,
-  stopPerChatTimer,
-  getDefaultIntervalMs,
+  registerChat,
+  disablePulse,
+  enablePulse,
+  isPulseEnabled,
 } from "../agent/proactive.js";
 import { isUserClientReady } from "../telegram/userbot.js";
 import { getWorkspaceDiskUsage } from "../util/workspace.js";
@@ -76,7 +73,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         "  /settings -- view and change all chat settings",
         "  /model -- show or change model (sonnet, opus, haiku)",
         "  /effort -- set thinking effort (off, low, medium, high, max)",
-        "  /proactive -- toggle periodic check-ins (on/off)",
+        "  /pulse -- toggle periodic check-ins (on/off)",
         "",
         "<b>Session</b>",
         "  /status -- session info, usage, and stats",
@@ -277,30 +274,35 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     );
   });
 
-  bot.command("proactive", async (ctx) => {
+  bot.command("pulse", async (ctx) => {
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim().toLowerCase();
 
     if (!arg || arg === "status") {
-      const enabled = isProactiveEnabled(cid);
+      const enabled = isPulseEnabled(cid);
       const chatSets = getChatSettings(cid);
-      const intervalMs = chatSets.proactiveIntervalMs ?? getDefaultIntervalMs();
-      const intervalStr = formatDuration(intervalMs);
+      const cooldownMs = chatSets.proactiveIntervalMs ?? 15 * 60 * 1000;
+      const cooldownStr = formatDuration(cooldownMs);
       await ctx.reply(
-        `<b>Proactive:</b> ${enabled ? "on" : "off"}\n<b>Interval:</b> ${intervalStr}\nPeriodically checks chat and responds if there's something to add.`,
+        [
+          `<b>🔔 Pulse:</b> ${enabled ? "on" : "off"}`,
+          `<b>Cooldown:</b> ${cooldownStr} between responses`,
+          "",
+          "Reads along and jumps in when there's something to add.",
+        ].join("\n"),
         {
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
               [
-                {
-                  text: enabled ? "\u2713 On" : "On",
-                  callback_data: "proactive:on",
-                },
-                {
-                  text: !enabled ? "\u2713 Off" : "Off",
-                  callback_data: "proactive:off",
-                },
+                { text: enabled ? "✓ On" : "On", callback_data: "pulse:on" },
+                { text: !enabled ? "✓ Off" : "Off", callback_data: "pulse:off" },
+              ],
+              [
+                { text: cooldownMs <= 5 * 60 * 1000 ? "✓ 5m" : "5m", callback_data: "pulse:cooldown:5" },
+                { text: cooldownMs === 15 * 60 * 1000 ? "✓ 15m" : "15m", callback_data: "pulse:cooldown:15" },
+                { text: cooldownMs === 30 * 60 * 1000 ? "✓ 30m" : "30m", callback_data: "pulse:cooldown:30" },
+                { text: cooldownMs >= 60 * 60 * 1000 ? "✓ 1h" : "1h", callback_data: "pulse:cooldown:60" },
               ],
             ],
           },
@@ -310,27 +312,25 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     }
 
     if (arg === "on" || arg === "enable") {
-      enableProactive(cid);
-      registerChatForProactive(cid);
-      await ctx.reply("Proactive mode enabled. I'll check in periodically.");
+      enablePulse(cid);
+      registerChat(cid);
+      await ctx.reply("🔔 Pulse enabled.");
       return;
     }
 
     if (arg === "off" || arg === "disable") {
-      disableProactive(cid);
-      stopPerChatTimer(cid);
-      await ctx.reply("Proactive mode disabled.");
+      disablePulse(cid);
+      await ctx.reply("🔔 Pulse disabled.");
       return;
     }
 
     const intervalMs = parseInterval(arg);
     if (intervalMs && intervalMs >= 5 * 60 * 1000) {
       setChatProactiveInterval(cid, intervalMs);
-      enableProactive(cid);
-      registerChatForProactive(cid);
-      startPerChatTimer(cid, intervalMs);
+      enablePulse(cid);
+      registerChat(cid);
       await ctx.reply(
-        `Proactive interval set to <b>${formatDuration(intervalMs)}</b> for this chat.`,
+        `🔔 Pulse cooldown set to <b>${formatDuration(intervalMs)}</b>`,
         { parse_mode: "HTML" },
       );
       return;
@@ -342,7 +342,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     }
 
     await ctx.reply(
-      "Use: /proactive on, /proactive off, /proactive 30m, /proactive 2h",
+      "Use: /pulse on, /pulse off, /pulse 30m, /pulse 2h",
     );
   });
 
@@ -351,7 +351,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const chatSets = getChatSettings(cid);
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
-    const proactiveOn = isProactiveEnabled(cid);
+    const proactiveOn = isPulseEnabled(cid);
 
     await ctx.reply(
       renderSettingsText(
@@ -557,7 +557,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const chatSets = getChatSettings(cid);
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
-    const proactiveOn = isProactiveEnabled(cid);
+    const proactiveOn = isPulseEnabled(cid);
 
     const contextMax = activeModel.includes("haiku") ? 200_000 : 1_000_000;
     const contextUsed = u.lastPromptTokens;

@@ -5,6 +5,7 @@
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../util/config.js";
 import { resetSession } from "../storage/sessions.js";
+import { formatDuration } from "./helpers.js";
 import {
   getChatSettings,
   setChatModel,
@@ -14,10 +15,10 @@ import {
   type EffortLevel,
 } from "../storage/chat-settings.js";
 import {
-  registerChatForProactive,
-  disableProactive,
-  enableProactive,
-  isProactiveEnabled,
+  registerChat,
+  disablePulse,
+  enablePulse,
+  isPulseEnabled,
 } from "../agent/proactive.js";
 import {
   handleCallbackQuery,
@@ -123,10 +124,10 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
         });
       } else if (category === "proactive") {
         if (value === "on") {
-          enableProactive(cid);
-          registerChatForProactive(cid);
+          enablePulse(cid);
+          registerChat(cid);
         } else {
-          disableProactive(cid);
+          disablePulse(cid);
         }
         await ctx.answerCallbackQuery({ text: `Proactive: ${value}` });
       }
@@ -134,7 +135,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       const chatSets = getChatSettings(cid);
       const activeModel = chatSets.model ?? config.model;
       const effortName = chatSets.effort ?? "adaptive";
-      const proactiveOn = isProactiveEnabled(cid);
+      const proactiveOn = isPulseEnabled(cid);
 
       try {
         await ctx.editMessageText(
@@ -161,42 +162,55 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       return;
     }
 
-    // Handle proactive callbacks
-    if (data.startsWith("proactive:")) {
-      const val = data.slice(10);
+    // Handle pulse callbacks
+    if (data.startsWith("pulse:")) {
+      const val = data.slice(6); // "pulse:".length = 6
       if (val === "on") {
-        enableProactive(cid);
-        registerChatForProactive(cid);
-        await ctx.answerCallbackQuery({ text: "Proactive: on" });
-      } else {
-        disableProactive(cid);
-        await ctx.answerCallbackQuery({ text: "Proactive: off" });
+        enablePulse(cid);
+        registerChat(cid);
+        await ctx.answerCallbackQuery({ text: "Pulse: on" });
+      } else if (val === "off") {
+        disablePulse(cid);
+        await ctx.answerCallbackQuery({ text: "Pulse: off" });
+      } else if (val.startsWith("cooldown:")) {
+        const minutes = parseInt(val.slice(9), 10);
+        if (minutes > 0) {
+          const { setChatProactiveInterval } = await import("../storage/chat-settings.js");
+          setChatProactiveInterval(cid, minutes * 60 * 1000);
+          await ctx.answerCallbackQuery({ text: `Cooldown: ${minutes}m` });
+        }
       }
-      const enabled = isProactiveEnabled(cid);
+      // Re-render pulse panel
+      const enabled = isPulseEnabled(cid);
+      const { getChatSettings: getSettings } = await import("../storage/chat-settings.js");
+      const cooldownMs = getSettings(cid).proactiveIntervalMs ?? 15 * 60 * 1000;
       try {
         await ctx.editMessageText(
-          `<b>Proactive:</b> ${enabled ? "on" : "off"}\nPeriodically checks chat and responds if there's something to add.`,
+          [
+            `<b>🔔 Pulse:</b> ${enabled ? "on" : "off"}`,
+            `<b>Cooldown:</b> ${formatDuration(cooldownMs)} between responses`,
+            "",
+            "Reads along and jumps in when there's something to add.",
+          ].join("\n"),
           {
             parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [
                 [
-                  {
-                    text: enabled ? "\u2713 On" : "On",
-                    callback_data: "proactive:on",
-                  },
-                  {
-                    text: !enabled ? "\u2713 Off" : "Off",
-                    callback_data: "proactive:off",
-                  },
+                  { text: enabled ? "✓ On" : "On", callback_data: "pulse:on" },
+                  { text: !enabled ? "✓ Off" : "Off", callback_data: "pulse:off" },
+                ],
+                [
+                  { text: cooldownMs <= 5 * 60 * 1000 ? "✓ 5m" : "5m", callback_data: "pulse:cooldown:5" },
+                  { text: cooldownMs === 15 * 60 * 1000 ? "✓ 15m" : "15m", callback_data: "pulse:cooldown:15" },
+                  { text: cooldownMs === 30 * 60 * 1000 ? "✓ 30m" : "30m", callback_data: "pulse:cooldown:30" },
+                  { text: cooldownMs >= 60 * 60 * 1000 ? "✓ 1h" : "1h", callback_data: "pulse:cooldown:60" },
                 ],
               ],
             },
           },
         );
-      } catch {
-        /* unchanged */
-      }
+      } catch { /* unchanged */ }
       return;
     }
 

@@ -21,9 +21,9 @@ import {
   disconnectUserClient,
 } from "./telegram/userbot.js";
 import {
-  initProactive,
-  startProactiveTimer,
-  stopProactiveTimer,
+  initPulse,
+  startPulseTimer,
+  stopPulseTimer,
 } from "./agent/proactive.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { registerCommands } from "./bot/commands.js";
@@ -77,7 +77,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   log("shutdown", `${signal} received, shutting down gracefully...`);
   try { await bot.stop(); log("shutdown", "Bot disconnected"); }
   catch (err) { logError("shutdown", "Bot stop error", err); }
-  stopProactiveTimer();
+  stopPulseTimer();
   stopWatchdog();
   try { await disconnectUserClient(); log("shutdown", "User client disconnected"); }
   catch (err) { logError("shutdown", "User client disconnect error", err); }
@@ -118,13 +118,13 @@ async function main(): Promise<void> {
     { command: "ping", description: "Health check with latency" },
     { command: "model", description: "Show or change model" },
     { command: "effort", description: "Set thinking effort level" },
-    { command: "proactive", description: "Toggle proactive check-ins" },
+    { command: "pulse", description: "Conversation engagement settings" },
     { command: "reset", description: "Clear session and start fresh" },
     { command: "help", description: "All commands and features" },
   ]);
   log("commands", "Registered bot commands with Telegram");
 
-  initProactive({
+  initPulse({
     config,
     setBridgeContext: setBridgeContext as (
       chatId: number,
@@ -135,8 +135,8 @@ async function main(): Promise<void> {
     bot,
     inputFile: InputFile,
   });
-  if (process.env.TALON_PROACTIVE !== "0") {
-    startProactiveTimer();
+  if (process.env.TALON_PULSE !== "0") {
+    startPulseTimer();
   }
 
   startWatchdog();

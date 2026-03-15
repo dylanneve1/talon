@@ -3,7 +3,7 @@
  */
 
 import { escapeHtml } from "./handlers.js";
-import { getDefaultIntervalMs } from "../agent/proactive.js";
+const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Parse a duration string like "30m", "2h", "1h30m" into milliseconds. */
 export function parseInterval(input: string): number | null {
@@ -45,7 +45,7 @@ export function renderSettingsText(
 ): string {
   const intervalStr = proactiveIntervalMs
     ? formatDuration(proactiveIntervalMs)
-    : formatDuration(getDefaultIntervalMs());
+    : formatDuration(DEFAULT_PULSE_INTERVAL_MS);
   return [
     "<b>\uD83E\uDD85 Settings</b>",
     "",

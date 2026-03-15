@@ -7,7 +7,7 @@ import type { Bot } from "grammy";
 import type { TalonConfig } from "../util/config.js";
 import { pushMessage } from "../storage/history.js";
 import { allowChat } from "../telegram/userbot.js";
-import { registerChatForProactive } from "../agent/proactive.js";
+import { registerChat } from "../agent/proactive.js";
 import { getSenderName } from "./handlers.js";
 import {
   handleTextMessage,
@@ -28,9 +28,9 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
     const msgId = ctx.message.message_id;
     const replyToMsgId = ctx.message.reply_to_message?.message_id;
 
-    // Register this chat for userbot + proactive access
+    // Register this chat for userbot + pulse access
     allowChat(ctx.chat.id);
-    registerChatForProactive(chatId);
+    registerChat(chatId);
     const timestamp = ctx.message.date * 1000;
 
     if ("text" in ctx.message && ctx.message.text) {

@@ -6,7 +6,7 @@ export type LogComponent =
   | "bot"
   | "bridge"
   | "agent"
-  | "proactive"
+  | "pulse"
   | "userbot"
   | "users"
   | "watchdog"
