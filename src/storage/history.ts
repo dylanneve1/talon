@@ -1,8 +1,16 @@
 /**
  * Group message history buffer. Stores recent messages from all users
  * so Claude has full conversation context even for messages that didn't
- * trigger the bot. Messages are kept in memory with a configurable cap.
+ * trigger the bot.
+ *
+ * Persisted to disk — survives restarts so pulse, search, and group
+ * threading context don't lose state.
  */
+
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import writeFileAtomic from "write-file-atomic";
+import { log, logError } from "../util/log.js";
 
 export type HistoryMessage = {
   msgId: number;
@@ -11,7 +19,6 @@ export type HistoryMessage = {
   text: string;
   replyToMsgId?: number;
   timestamp: number;
-  /** Whether this message was a photo/doc/voice/video/animation (description only). */
   mediaType?:
     | "photo"
     | "document"
@@ -19,21 +26,70 @@ export type HistoryMessage = {
     | "sticker"
     | "video"
     | "animation";
-  /** Telegram file_id for stickers, so Claude can reuse them. */
   stickerFileId?: string;
 };
 
 const MAX_HISTORY_PER_CHAT = 500;
 const MAX_CHAT_COUNT = 1000;
+const STORE_FILE = resolve(process.cwd(), "workspace", "history.json");
 
 const chatHistories = new Map<string, HistoryMessage[]>();
+let dirty = false;
+
+// ── Persistence ─────────────────────────────────────────────────────────────
+
+export function loadHistory(): void {
+  try {
+    if (existsSync(STORE_FILE)) {
+      const raw = JSON.parse(readFileSync(STORE_FILE, "utf-8")) as Record<
+        string,
+        HistoryMessage[]
+      >;
+      for (const [chatId, messages] of Object.entries(raw)) {
+        // Only load recent messages (cap per chat)
+        const trimmed = messages.slice(-MAX_HISTORY_PER_CHAT);
+        chatHistories.set(chatId, trimmed);
+      }
+      log("sessions", `Loaded history for ${chatHistories.size} chat(s)`);
+    }
+  } catch {
+    // Start fresh on parse error
+  }
+}
+
+function saveHistory(): void {
+  if (!dirty) return;
+  try {
+    const dir = dirname(STORE_FILE);
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const obj: Record<string, HistoryMessage[]> = {};
+    for (const [chatId, messages] of chatHistories) {
+      obj[chatId] = messages;
+    }
+    writeFileAtomic.sync(STORE_FILE, JSON.stringify(obj) + "\n");
+    dirty = false;
+  } catch (err) {
+    logError("sessions", "Failed to persist history", err);
+  }
+}
+
+// Auto-save every 30 seconds (less frequent than sessions since history is larger)
+const autoSaveTimer = setInterval(saveHistory, 30_000);
+process.on("exit", saveHistory);
+
+export function flushHistory(): void {
+  clearInterval(autoSaveTimer);
+  dirty = true;
+  saveHistory();
+}
+
+// ── Core operations ─────────────────────────────────────────────────────────
 
 export function pushMessage(chatId: string, msg: HistoryMessage): void {
   let history = chatHistories.get(chatId);
   if (!history) {
-    // Evict oldest chats if the map has grown too large
     if (chatHistories.size >= MAX_CHAT_COUNT) {
-      const evictCount = Math.floor(MAX_CHAT_COUNT * 0.1); // Remove oldest 10%
+      const evictCount = Math.floor(MAX_CHAT_COUNT * 0.1);
       const iter = chatHistories.keys();
       for (let i = 0; i < evictCount; i++) {
         const oldest = iter.next();
@@ -45,10 +101,10 @@ export function pushMessage(chatId: string, msg: HistoryMessage): void {
     chatHistories.set(chatId, history);
   }
   history.push(msg);
-  // Trim to max
   if (history.length > MAX_HISTORY_PER_CHAT) {
     history.splice(0, history.length - MAX_HISTORY_PER_CHAT);
   }
+  dirty = true;
 }
 
 export function getRecentHistory(chatId: string, limit = 50): HistoryMessage[] {
@@ -59,7 +115,10 @@ export function getRecentHistory(chatId: string, limit = 50): HistoryMessage[] {
 
 export function clearHistory(chatId: string): void {
   chatHistories.delete(chatId);
+  dirty = true;
 }
+
+// ── Formatted queries ───────────────────────────────────────────────────────
 
 function formatMessage(m: HistoryMessage): string {
   const replyTag = m.replyToMsgId ? ` (replying to msg:${m.replyToMsgId})` : "";
@@ -71,14 +130,12 @@ function formatMessage(m: HistoryMessage): string {
   return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}${stickerTag}: ${m.text}`;
 }
 
-/** Get recent N messages formatted. */
 export function getRecentFormatted(chatId: string, limit = 20): string {
   const messages = getRecentHistory(chatId, limit);
   if (messages.length === 0) return "No messages in history.";
   return messages.map(formatMessage).join("\n");
 }
 
-/** Search history by keyword (case-insensitive). */
 export function searchHistory(
   chatId: string,
   query: string,
@@ -96,7 +153,6 @@ export function searchHistory(
   return matches.slice(-limit).map(formatMessage).join("\n");
 }
 
-/** Get messages from a specific user. */
 export function getMessagesByUser(
   chatId: string,
   userName: string,
@@ -112,7 +168,6 @@ export function getMessagesByUser(
   return matches.slice(-limit).map(formatMessage).join("\n");
 }
 
-/** Get a specific message by ID. */
 export function getMessageById(chatId: string, msgId: number): string {
   const history = chatHistories.get(chatId);
   if (!history) return "No messages in history.";
@@ -121,7 +176,6 @@ export function getMessageById(chatId: string, msgId: number): string {
   return formatMessage(msg);
 }
 
-/** List known users from chat history (name + ID). */
 export function getKnownUsers(chatId: string): string {
   const history = chatHistories.get(chatId);
   if (!history || history.length === 0) return "No users seen yet.";
@@ -158,7 +212,6 @@ function formatTimeAgo(ts: number): string {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
-/** Get recent messages from a specific sender by ID. */
 export function getRecentBySenderId(
   chatId: string,
   senderId: number,
@@ -170,14 +223,12 @@ export function getRecentBySenderId(
   return matches.slice(-limit);
 }
 
-/** Get the latest message ID in a chat's history buffer. */
 export function getLatestMessageId(chatId: string): number | undefined {
   const history = chatHistories.get(chatId);
   if (!history || history.length === 0) return undefined;
   return history[history.length - 1].msgId;
 }
 
-/** Get history stats. */
 export function getHistoryStats(chatId: string): {
   totalMessages: number;
   uniqueUsers: number;

@@ -12,6 +12,8 @@ import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { classify } from "../../../core/errors.js";
 import { getQueueSize } from "../../../core/dispatcher.js";
+import { getHealthStatus } from "../../../util/watchdog.js";
+import { getActiveSessionCount } from "../../../storage/sessions.js";
 import { log, logError } from "../../../util/log.js";
 import { handleAction } from "./actions.js";
 
@@ -187,12 +189,19 @@ export function startBridge(port = 19876): Promise<number> {
     async (req: IncomingMessage, res: ServerResponse) => {
       // Health check endpoint
       if (req.method === "GET" && req.url === "/health") {
+        const watchdog = getHealthStatus();
         const health = {
           ok: true,
           uptime: Math.round(process.uptime()),
           memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
           bridge: { active: bridgeLocked, chatId: activeChatId },
           queue: getQueueSize(),
+          sessions: getActiveSessionCount(),
+          messages: watchdog.totalMessagesProcessed,
+          errors: watchdog.recentErrorCount,
+          lastActivity: watchdog.msSinceLastMessage < 60000
+            ? "just now"
+            : `${Math.round(watchdog.msSinceLastMessage / 60000)}m ago`,
         };
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(health));

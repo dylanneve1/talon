@@ -13,6 +13,7 @@ import { initAgent, handleMessage } from "./backend/claude-sdk/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
+import { loadHistory, flushHistory } from "./storage/history.js";
 import { initDispatcher, getQueueSize } from "./core/dispatcher.js";
 import {
   initPulse,
@@ -37,6 +38,7 @@ initWorkspace(config.workspace);
 loadSessions();
 loadChatSettings();
 loadCronJobs();
+loadHistory();
 
 // ── Create frontend (swap this line for a different platform) ────────────────
 
@@ -96,6 +98,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   flushSessions();
   flushChatSettings();
   flushCronJobs();
+  flushHistory();
   log("shutdown", "State saved");
   process.exit(0);
 }
@@ -108,6 +111,7 @@ process.on("uncaughtException", (err) => {
   flushSessions();
   flushChatSettings();
   flushCronJobs();
+  flushHistory();
   process.exit(1);
 });
 
