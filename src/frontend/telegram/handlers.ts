@@ -890,6 +890,58 @@ export async function handleAnimationMessage(
   });
 }
 
+export async function handleAudioMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
+
+  const audio = ctx.message.audio;
+  if (!audio) return;
+
+  const title = audio.title || audio.file_name || "audio";
+  const performer = audio.performer ? ` by ${audio.performer}` : "";
+  const fileName = audio.file_name || `audio_${audio.file_unique_id}.mp3`;
+  const caption = ctx.message.caption || "";
+
+  await handleMediaMessage(ctx, bot, config, {
+    type: "audio",
+    fileId: audio.file_id,
+    fileName,
+    fileSize: audio.file_size,
+    promptLines: [
+      `User sent an audio file: "${title}"${performer} (${audio.duration}s).`,
+      "Saved to: ${savedPath}",
+    ],
+    caption,
+  });
+}
+
+export async function handleVideoNoteMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
+
+  const videoNote = ctx.message.video_note;
+  if (!videoNote) return;
+
+  await handleMediaMessage(ctx, bot, config, {
+    type: "video note",
+    fileId: videoNote.file_id,
+    fileName: `videonote_${videoNote.file_unique_id}.mp4`,
+    fileSize: videoNote.file_size,
+    promptLines: [
+      `User sent a round video note (${videoNote.duration}s).`,
+      "Saved to: ${savedPath}",
+    ],
+  });
+}
+
 export async function handleCallbackQuery(
   ctx: Context,
   bot: Bot,

@@ -15,6 +15,10 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
 }));
 
+vi.mock("write-file-atomic", () => ({
+  default: { sync: vi.fn() },
+}));
+
 import type { CronJob } from "../storage/cron-store.js";
 
 const {

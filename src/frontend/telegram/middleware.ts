@@ -17,6 +17,8 @@ import {
   handleStickerMessage,
   handleVideoMessage,
   handleAnimationMessage,
+  handleAudioMessage,
+  handleVideoNoteMessage,
 } from "./handlers.js";
 
 export function registerMiddleware(bot: Bot, config: TalonConfig): void {
@@ -106,6 +108,46 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         timestamp,
         mediaType: "animation",
       });
+    } else if ("audio" in ctx.message && ctx.message.audio) {
+      const title = ctx.message.audio.title || ctx.message.audio.file_name || "audio";
+      pushMessage(chatId, {
+        msgId,
+        senderId,
+        senderName: sender,
+        text: ctx.message.caption || `(audio: ${title})`,
+        replyToMsgId,
+        timestamp,
+        mediaType: "document", // treat audio like documents in history
+      });
+    } else if ("video_note" in ctx.message && ctx.message.video_note) {
+      pushMessage(chatId, {
+        msgId,
+        senderId,
+        senderName: sender,
+        text: "(video note)",
+        replyToMsgId,
+        timestamp,
+        mediaType: "video",
+      });
+    } else if ("location" in ctx.message && ctx.message.location) {
+      pushMessage(chatId, {
+        msgId,
+        senderId,
+        senderName: sender,
+        text: `(shared location: ${ctx.message.location.latitude}, ${ctx.message.location.longitude})`,
+        replyToMsgId,
+        timestamp,
+      });
+    } else if ("contact" in ctx.message && ctx.message.contact) {
+      const name = [ctx.message.contact.first_name, ctx.message.contact.last_name].filter(Boolean).join(" ");
+      pushMessage(chatId, {
+        msgId,
+        senderId,
+        senderName: sender,
+        text: `(shared contact: ${name})`,
+        replyToMsgId,
+        timestamp,
+      });
     }
 
     return next();
@@ -119,4 +161,6 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
   bot.on("message:sticker", (ctx) => handleStickerMessage(ctx, bot, config));
   bot.on("message:video", (ctx) => handleVideoMessage(ctx, bot, config));
   bot.on("message:animation", (ctx) => handleAnimationMessage(ctx, bot, config));
+  bot.on("message:audio", (ctx) => handleAudioMessage(ctx, bot, config));
+  bot.on("message:video_note", (ctx) => handleVideoNoteMessage(ctx, bot, config));
 }
