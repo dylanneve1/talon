@@ -1,0 +1,23 @@
+[Unit]
+Description=Talon — Claude-powered Telegram bot
+After=network.target
+
+[Service]
+Type=simple
+User=dylan
+WorkingDirectory=/home/dylan/telegram-claude-agent
+ExecStart=/usr/bin/node --import tsx src/index.ts
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=80%
+
+# Environment
+EnvironmentFile=-/home/dylan/telegram-claude-agent/.env
+
+[Install]
+WantedBy=multi-user.target
