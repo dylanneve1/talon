@@ -391,6 +391,7 @@ type StreamState = {
   started: boolean;
   isThinking: boolean;
   hasTextStarted: boolean;
+  editing: boolean; // mutex: prevents concurrent edits to same message
 };
 
 function createStreamCallbacks(
@@ -403,7 +404,8 @@ function createStreamCallbacks(
     accumulated: string,
     phase?: "thinking" | "text",
   ) => {
-    if (!state.started) return;
+    if (!state.started || state.editing) return;
+    state.editing = true;
     try {
       if (phase === "thinking" && !state.isThinking) {
         state.isThinking = true;
@@ -464,10 +466,14 @@ function createStreamCallbacks(
       }
     } catch (err) {
       logWarn("bot", `Stream delta error: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      state.editing = false;
     }
   };
 
   const onTextBlock = async (text: string) => {
+    state.editing = true;
+    try {
     if (state.msgId) {
       const html = markdownToTelegramHtml(text);
       try {
@@ -485,6 +491,9 @@ function createStreamCallbacks(
       state.lastEditedText = "";
     } else {
       await sendHtml(bot, chatId, markdownToTelegramHtml(text), replyToId);
+    }
+    } finally {
+      state.editing = false;
     }
   };
 
@@ -536,6 +545,7 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
     started: false,
     isThinking: false,
     hasTextStarted: false,
+    editing: false,
   };
   const streamTimer = setTimeout(() => { stream.started = true; }, 2000);
 

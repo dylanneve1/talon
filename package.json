@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.76",
+    "@grammyjs/auto-retry": "^2.0.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "croner": "^10.0.1",
     "grammy": "^1.41.1",

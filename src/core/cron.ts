@@ -98,7 +98,7 @@ function isDue(job: CronJob, now: Date): boolean {
   }
 }
 
-const CRON_JOB_TIMEOUT_MS = 5 * 60_000; // 5-minute max per job
+const CRON_JOB_TIMEOUT_MS = 30 * 60_000; // 30-minute max per job
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;

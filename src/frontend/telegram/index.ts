@@ -9,6 +9,7 @@
  */
 
 import { Bot, InputFile } from "grammy";
+import { autoRetry } from "@grammyjs/auto-retry";
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
 import {
@@ -54,6 +55,8 @@ export type TelegramFrontend = {
 
 export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
   const bot = new Bot(config.botToken);
+  // Auto-retry on Telegram 429 (flood wait) — respects retry_after header
+  bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
   setBridgeBotToken(config.botToken);
 
   const context: ContextManager = {
