@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 // Mock the log module
 vi.mock("../util/log.js", () => ({
@@ -14,6 +14,8 @@ const {
   getRecentErrors,
   getHealthStatus,
   getUptimeMs,
+  startWatchdog,
+  stopWatchdog,
 } = await import("../util/watchdog.js");
 
 describe("watchdog", () => {
@@ -107,6 +109,40 @@ describe("watchdog", () => {
   describe("getUptimeMs", () => {
     it("returns a positive number", () => {
       expect(getUptimeMs()).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  describe("startWatchdog / stopWatchdog", () => {
+    afterEach(() => {
+      stopWatchdog();
+    });
+
+    it("startWatchdog does not throw", () => {
+      expect(() => startWatchdog()).not.toThrow();
+    });
+
+    it("stopWatchdog does not throw when not started", () => {
+      expect(() => stopWatchdog()).not.toThrow();
+    });
+
+    it("startWatchdog is idempotent (calling twice is safe)", () => {
+      startWatchdog();
+      expect(() => startWatchdog()).not.toThrow();
+      stopWatchdog();
+    });
+
+    it("stopWatchdog clears the timer", () => {
+      startWatchdog();
+      stopWatchdog();
+      // Calling stopWatchdog again should be a no-op
+      expect(() => stopWatchdog()).not.toThrow();
+    });
+
+    it("can restart after stopping", () => {
+      startWatchdog();
+      stopWatchdog();
+      expect(() => startWatchdog()).not.toThrow();
+      stopWatchdog();
     });
   });
 });

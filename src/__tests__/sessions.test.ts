@@ -15,6 +15,8 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
 }));
 
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+
 // We need to import these functions after mocks are set up
 const {
   getSession,
@@ -26,6 +28,10 @@ const {
   setLastBotMessageId,
   getLastBotMessageId,
   getActiveSessionCount,
+  setSessionName,
+  getAllSessions,
+  loadSessions,
+  flushSessions,
 } = await import("../storage/sessions.js");
 
 describe("sessions", () => {
@@ -237,6 +243,255 @@ describe("sessions", () => {
       const chatId = "test-set-sid";
       setSessionId(chatId, "abc-123");
       expect(getSession(chatId).sessionId).toBe("abc-123");
+    });
+  });
+
+  describe("recordUsage with model pricing", () => {
+    it("applies haiku pricing for haiku model", () => {
+      const chatId = "test-haiku-pricing";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        model: "claude-haiku-4-5",
+      });
+      // Haiku input: $0.8/M
+      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(0.8, 1);
+    });
+
+    it("applies opus pricing for opus model", () => {
+      const chatId = "test-opus-pricing";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        model: "claude-opus-4-6",
+      });
+      // Opus input: $15/M
+      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(15, 1);
+    });
+
+    it("applies sonnet pricing by default (no model)", () => {
+      const chatId = "test-sonnet-pricing-default";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      });
+      // Sonnet input: $3/M
+      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(3, 1);
+    });
+
+    it("calculates output cost correctly", () => {
+      const chatId = "test-output-cost";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 0,
+        outputTokens: 1_000_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+        model: "claude-sonnet-4-6",
+      });
+      // Sonnet output: $15/M
+      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(15, 1);
+    });
+
+    it("calculates cache read cost correctly", () => {
+      const chatId = "test-cache-read-cost";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 1_000_000,
+        cacheWrite: 0,
+        model: "claude-sonnet-4-6",
+      });
+      // Sonnet cacheRead: $0.3/M
+      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(0.3, 2);
+    });
+
+    it("calculates cache write cost correctly", () => {
+      const chatId = "test-cache-write-cost";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 1_000_000,
+        model: "claude-sonnet-4-6",
+      });
+      // Sonnet cacheWrite: $3.75/M
+      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(3.75, 2);
+    });
+
+    it("tracks lastModel", () => {
+      const chatId = "test-last-model";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        model: "claude-opus-4-6",
+      });
+
+      expect(getSession(chatId).lastModel).toBe("claude-opus-4-6");
+    });
+
+    it("updates fastestResponseMs correctly across turns", () => {
+      const chatId = "test-fastest-response";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        durationMs: 2000,
+      });
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        durationMs: 500,
+      });
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        durationMs: 1000,
+      });
+
+      const usage = getSession(chatId).usage;
+      expect(usage.fastestResponseMs).toBe(500);
+      expect(usage.lastResponseMs).toBe(1000);
+      expect(usage.totalResponseMs).toBe(3500);
+    });
+  });
+
+  describe("setSessionName", () => {
+    it("persists session name", () => {
+      const chatId = "test-set-name";
+      getSession(chatId);
+      setSessionName(chatId, "My Test Session");
+      expect(getSession(chatId).sessionName).toBe("My Test Session");
+    });
+
+    it("updates existing name", () => {
+      const chatId = "test-update-name";
+      getSession(chatId);
+      setSessionName(chatId, "First Name");
+      setSessionName(chatId, "Second Name");
+      expect(getSession(chatId).sessionName).toBe("Second Name");
+    });
+
+    it("is reflected in getSessionInfo", () => {
+      const chatId = "test-name-in-info";
+      setSessionId(chatId, "sid-name");
+      setSessionName(chatId, "Named Session");
+      const info = getSessionInfo(chatId);
+      expect(info.sessionName).toBe("Named Session");
+    });
+  });
+
+  describe("setLastBotMessageId", () => {
+    it("persists bot message ID", () => {
+      const chatId = "test-set-bot-msg-id";
+      getSession(chatId);
+      setLastBotMessageId(chatId, 999);
+      expect(getLastBotMessageId(chatId)).toBe(999);
+    });
+
+    it("updates existing bot message ID", () => {
+      const chatId = "test-update-bot-msg";
+      getSession(chatId);
+      setLastBotMessageId(chatId, 100);
+      setLastBotMessageId(chatId, 200);
+      expect(getLastBotMessageId(chatId)).toBe(200);
+    });
+  });
+
+  describe("getAllSessions", () => {
+    it("returns all active sessions", () => {
+      const id1 = "test-all-sessions-1";
+      const id2 = "test-all-sessions-2";
+      getSession(id1);
+      getSession(id2);
+      setSessionId(id1, "sid-1");
+      setSessionId(id2, "sid-2");
+
+      const all = getAllSessions();
+      const chatIds = all.map((s) => s.chatId);
+      expect(chatIds).toContain(id1);
+      expect(chatIds).toContain(id2);
+    });
+
+    it("returns correct info structure for each session", () => {
+      const id = "test-all-sessions-info";
+      setSessionId(id, "sid-info");
+      incrementTurns(id);
+
+      const all = getAllSessions();
+      const entry = all.find((s) => s.chatId === id);
+      expect(entry).toBeDefined();
+      expect(entry!.info.sessionId).toBe("sid-info");
+      expect(entry!.info.turns).toBe(1);
+      expect(entry!.info.usage).toBeDefined();
+      expect(entry!.info.usage.totalInputTokens).toBe(0);
+    });
+  });
+
+  describe("loadSessions", () => {
+    it("handles missing file gracefully", () => {
+      vi.mocked(existsSync).mockReturnValueOnce(false);
+      expect(() => loadSessions()).not.toThrow();
+    });
+
+    it("handles corrupt JSON gracefully", () => {
+      vi.mocked(existsSync).mockReturnValueOnce(true);
+      vi.mocked(readFileSync).mockReturnValueOnce("not valid json");
+      expect(() => loadSessions()).not.toThrow();
+    });
+  });
+
+  describe("flushSessions", () => {
+    it("triggers a write", () => {
+      vi.mocked(writeFileSync).mockClear();
+      flushSessions();
+      expect(vi.mocked(writeFileSync)).toHaveBeenCalled();
+    });
+  });
+
+  describe("getActiveSessionCount", () => {
+    it("returns the number of tracked sessions", () => {
+      // Create a session so count is at least 1
+      getSession("test-count-session");
+      const count = getActiveSessionCount();
+      expect(count).toBeGreaterThan(0);
+      expect(typeof count).toBe("number");
+    });
+
+    it("increases when new sessions are created", () => {
+      const before = getActiveSessionCount();
+      getSession("test-count-new-" + Math.random());
+      expect(getActiveSessionCount()).toBe(before + 1);
     });
   });
 });
