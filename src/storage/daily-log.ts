@@ -3,11 +3,12 @@
  * Claude can reference these via the Read tool for continuity across sessions.
  */
 
-import { existsSync, mkdirSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, readdirSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
-import { logError } from "../util/log.js";
+import { log as logInfo, logError } from "../util/log.js";
 
 const LOGS_DIR = resolve(process.cwd(), "workspace", "logs");
+const MAX_LOG_DAYS = 30; // Keep last 30 days of logs
 
 function ensureLogsDir(): void {
   if (!existsSync(LOGS_DIR)) {
@@ -37,4 +38,28 @@ export function appendDailyLog(chatName: string, summary: string): void {
 /** Get the path to the logs directory (for system prompt reference). */
 export function getLogsDir(): string {
   return LOGS_DIR;
+}
+
+/** Remove daily logs older than MAX_LOG_DAYS. Called on startup. */
+export function cleanupOldLogs(): void {
+  try {
+    if (!existsSync(LOGS_DIR)) return;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - MAX_LOG_DAYS);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+    let deleted = 0;
+    for (const file of readdirSync(LOGS_DIR)) {
+      // Log files are named YYYY-MM-DD.md
+      if (file.endsWith(".md") && file < cutoffStr) {
+        try {
+          unlinkSync(resolve(LOGS_DIR, file));
+          deleted++;
+        } catch { /* skip */ }
+      }
+    }
+    if (deleted > 0) {
+      logInfo("workspace", `Cleaned up ${deleted} old daily log(s)`);
+    }
+  } catch { /* skip */ }
 }
