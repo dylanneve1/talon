@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { log, logError } from "./log.js";
+import { log, logError } from "../util/log.js";
 
 /**
  * Session manager — maps Telegram chat IDs to Claude SDK session IDs.

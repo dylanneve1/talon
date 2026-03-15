@@ -5,7 +5,7 @@
 
 import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { logError } from "./log.js";
+import { logError } from "../util/log.js";
 
 const LOGS_DIR = resolve(process.cwd(), "workspace", "logs");
 

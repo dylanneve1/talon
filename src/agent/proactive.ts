@@ -5,18 +5,17 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { TalonConfig } from "./config.js";
-import { getSession, setSessionId } from "./sessions.js";
-import { getBridgePort } from "./bridge.js";
+import type { TalonConfig } from "../util/config.js";
+import { getSession, setSessionId } from "../storage/sessions.js";
+import { getBridgePort, isBridgeBusy } from "../bridge/server.js";
 import { resolve } from "node:path";
 import {
   setChatProactive,
   getRegisteredProactiveChats,
   getChatSettings,
-} from "./chat-settings.js";
-import { isBridgeBusy } from "./bridge.js";
-import { getRecentHistory, getLatestMessageId } from "./history.js";
-import { log, logError } from "./log.js";
+} from "../storage/chat-settings.js";
+import { getRecentHistory, getLatestMessageId } from "../storage/history.js";
+import { log, logError } from "../util/log.js";
 
 let config: TalonConfig | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -214,7 +213,7 @@ async function runProactiveCheckForChat(chatId: string): Promise<boolean> {
           args: [
             "--import",
             "tsx",
-            resolve(import.meta.dirname ?? ".", "mcp-telegram.ts"),
+            resolve(import.meta.dirname ?? ".", "../bridge/tools.ts"),
           ],
           env: {
             TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}`,

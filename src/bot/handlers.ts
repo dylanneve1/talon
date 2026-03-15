@@ -4,25 +4,25 @@
  */
 
 import type { Bot, Context } from "grammy";
-import type { TalonConfig } from "./config.js";
+import type { TalonConfig } from "../util/config.js";
 import {
   splitMessage,
   markdownToTelegramHtml,
   friendlyError,
-} from "./telegram.js";
+} from "../telegram/formatting.js";
 import {
   setBridgeContext,
   clearBridgeContext,
   getBridgeMessageCount,
-} from "./bridge.js";
+} from "../bridge/server.js";
 import { InputFile } from "grammy";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { handleMessage } from "./agent.js";
-import { appendDailyLog } from "./daily-log.js";
-import { getRecentBySenderId } from "./history.js";
-import { recordMessageProcessed, recordError } from "./watchdog.js";
-import { log, logError } from "./log.js";
+import { handleMessage } from "../agent/agent.js";
+import { appendDailyLog } from "../storage/daily-log.js";
+import { getRecentBySenderId } from "../storage/history.js";
+import { recordMessageProcessed, recordError } from "../util/watchdog.js";
+import { log, logError } from "../util/log.js";
 
 // ── First-time DM user tracking ──────────────────────────────────────────────
 

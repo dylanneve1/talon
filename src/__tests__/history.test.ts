@@ -6,7 +6,7 @@ import {
   getMessagesByUser,
   clearHistory,
   type HistoryMessage,
-} from "../history.js";
+} from "../storage/history.js";
 
 function makeMsg(
   overrides: Partial<HistoryMessage> & { msgId: number },

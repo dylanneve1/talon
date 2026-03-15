@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 // Mock log module
-vi.mock("../log.js", () => ({
+vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
@@ -22,7 +22,7 @@ const {
   resolveModelName,
   EFFORT_LEVELS,
   MODEL_ALIASES,
-} = await import("../chat-settings.js");
+} = await import("../storage/chat-settings.js");
 
 describe("chat-settings", () => {
   describe("getChatSettings", () => {

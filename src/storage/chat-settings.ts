@@ -5,7 +5,7 @@
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { log } from "./log.js";
+import { log } from "../util/log.js";
 
 export type EffortLevel = "off" | "low" | "medium" | "high" | "max";
 

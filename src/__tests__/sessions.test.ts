@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Mock the log module before importing sessions
-vi.mock("../log.js", () => ({
+vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
@@ -26,7 +26,7 @@ const {
   setLastBotMessageId,
   getLastBotMessageId,
   getActiveSessionCount,
-} = await import("../sessions.js");
+} = await import("../storage/sessions.js");
 
 describe("sessions", () => {
   beforeEach(() => {

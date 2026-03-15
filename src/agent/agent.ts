@@ -1,5 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { TalonConfig } from "./config.js";
+import type { TalonConfig } from "../util/config.js";
 import {
   getSession,
   incrementTurns,
@@ -7,12 +7,12 @@ import {
   setSessionId,
   setLastBotMessageId,
   setSessionName,
-} from "./sessions.js";
-import { getBridgePort } from "./bridge.js";
-import { getChatSettings } from "./chat-settings.js";
-import { getRecentHistory } from "./history.js";
+} from "../storage/sessions.js";
+import { getBridgePort } from "../bridge/server.js";
+import { getChatSettings } from "../storage/chat-settings.js";
+import { getRecentHistory } from "../storage/history.js";
 import { resolve } from "node:path";
-import { log, logError, logWarn } from "./log.js";
+import { log, logError, logWarn } from "../util/log.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -114,7 +114,7 @@ export async function handleMessage(
         args: [
           "--import",
           "tsx",
-          resolve(import.meta.dirname ?? ".", "mcp-telegram.ts"),
+          resolve(import.meta.dirname ?? ".", "../bridge/tools.ts"),
         ],
         env: {
           TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}`,
@@ -267,7 +267,7 @@ export async function handleMessage(
         "agent",
         `[${chatId}] Stale session, clearing: ${errMsg.slice(0, 100)}`,
       );
-      const { resetSession } = await import("./sessions.js");
+      const { resetSession } = await import("../storage/sessions.js");
       resetSession(chatId);
       throw new Error(
         "Session expired. Send your message again to start fresh.",

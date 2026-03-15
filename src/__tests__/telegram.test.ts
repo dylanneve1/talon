@@ -3,7 +3,7 @@ import {
   markdownToTelegramHtml,
   splitMessage,
   friendlyError,
-} from "../telegram.js";
+} from "../telegram/formatting.js";
 
 describe("markdownToTelegramHtml", () => {
   it("converts bold markdown to <b> tags", () => {
