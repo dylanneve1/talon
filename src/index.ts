@@ -9,9 +9,19 @@ import {
   getAllSessions,
   flushSessions,
 } from "./sessions.js";
-import { startBridge, stopBridge, setBridgeContext, clearBridgeContext } from "./bridge.js";
+import {
+  startBridge,
+  stopBridge,
+  setBridgeContext,
+  clearBridgeContext,
+} from "./bridge.js";
 import { pushMessage, clearHistory } from "./history.js";
-import { initUserClient, allowChat, disconnectUserClient, isUserClientReady } from "./userbot.js";
+import {
+  initUserClient,
+  allowChat,
+  disconnectUserClient,
+  isUserClientReady,
+} from "./userbot.js";
 import {
   loadChatSettings,
   getChatSettings,
@@ -67,14 +77,19 @@ const bot = new Bot(config.botToken);
 const apiId = parseInt(process.env.TALON_API_ID || "", 10);
 const apiHash = process.env.TALON_API_HASH || "";
 if (apiId && apiHash) {
-  initUserClient({ apiId, apiHash }).then((ok) => {
-    if (ok) log("userbot", "Full Telegram history access enabled.");
-    else log("userbot", "Not authorized. Run: npx tsx src/login.ts");
-  }).catch((err) => {
-    logError("userbot", "Init failed", err);
-  });
+  initUserClient({ apiId, apiHash })
+    .then((ok) => {
+      if (ok) log("userbot", "Full Telegram history access enabled.");
+      else log("userbot", "Not authorized. Run: npx tsx src/login.ts");
+    })
+    .catch((err) => {
+      logError("userbot", "Init failed", err);
+    });
 } else {
-  log("userbot", "TALON_API_ID/TALON_API_HASH not set -- using in-memory history only.");
+  log(
+    "userbot",
+    "TALON_API_ID/TALON_API_HASH not set -- using in-memory history only.",
+  );
 }
 
 // ── Commands ─────────────────────────────────────────────────────────────────
@@ -125,7 +140,9 @@ bot.command("help", (ctx) =>
       "  Read history, search messages, list members, get chat info, manage titles and descriptions.",
       "",
       "<b>Groups</b>",
-      "  Mention @" + escapeHtml(ctx.me.username ?? "bot") + " or reply to activate.",
+      "  Mention @" +
+        escapeHtml(ctx.me.username ?? "bot") +
+        " or reply to activate.",
       "",
       "<b>Files</b>",
       "  Ask me to create a file and I'll send it as an attachment.",
@@ -175,27 +192,42 @@ bot.command("model", async (ctx) => {
   if (!arg) {
     const current = settings.model ?? config.model;
     const isModel = (id: string) => current.includes(id);
-    await ctx.reply(`<b>Model:</b> <code>${escapeHtml(current)}</code>\nSelect a model:`, {
-      parse_mode: "HTML",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: isModel("sonnet") ? "\u2713 Sonnet 4.6" : "Sonnet 4.6", callback_data: "model:sonnet" },
-            { text: isModel("opus") ? "\u2713 Opus 4.6" : "Opus 4.6", callback_data: "model:opus" },
+    await ctx.reply(
+      `<b>Model:</b> <code>${escapeHtml(current)}</code>\nSelect a model:`,
+      {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: isModel("sonnet") ? "\u2713 Sonnet 4.6" : "Sonnet 4.6",
+                callback_data: "model:sonnet",
+              },
+              {
+                text: isModel("opus") ? "\u2713 Opus 4.6" : "Opus 4.6",
+                callback_data: "model:opus",
+              },
+            ],
+            [
+              {
+                text: isModel("haiku") ? "\u2713 Haiku 4.5" : "Haiku 4.5",
+                callback_data: "model:haiku",
+              },
+              { text: "Reset to default", callback_data: "model:reset" },
+            ],
           ],
-          [
-            { text: isModel("haiku") ? "\u2713 Haiku 4.5" : "Haiku 4.5", callback_data: "model:haiku" },
-            { text: "Reset to default", callback_data: "model:reset" },
-          ],
-        ],
+        },
       },
-    });
+    );
     return;
   }
 
   if (arg === "reset" || arg === "default") {
     setChatModel(cid, undefined);
-    await ctx.reply(`Model reset to default: <code>${escapeHtml(config.model)}</code>`, { parse_mode: "HTML" });
+    await ctx.reply(
+      `Model reset to default: <code>${escapeHtml(config.model)}</code>`,
+      { parse_mode: "HTML" },
+    );
     return;
   }
 
@@ -203,7 +235,10 @@ bot.command("model", async (ctx) => {
   setChatModel(cid, model);
   // Reset session since model change invalidates the SDK session
   resetSession(cid);
-  await ctx.reply(`Model set to <code>${escapeHtml(model)}</code>. Session reset.`, { parse_mode: "HTML" });
+  await ctx.reply(
+    `Model set to <code>${escapeHtml(model)}</code>. Session reset.`,
+    { parse_mode: "HTML" },
+  );
 });
 
 bot.command("effort", async (ctx) => {
@@ -218,14 +253,32 @@ bot.command("effort", async (ctx) => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: current === "off" ? "\u2713 Off" : "Off", callback_data: "effort:off" },
-            { text: current === "low" ? "\u2713 Low" : "Low", callback_data: "effort:low" },
-            { text: current === "medium" ? "\u2713 Med" : "Med", callback_data: "effort:medium" },
+            {
+              text: current === "off" ? "\u2713 Off" : "Off",
+              callback_data: "effort:off",
+            },
+            {
+              text: current === "low" ? "\u2713 Low" : "Low",
+              callback_data: "effort:low",
+            },
+            {
+              text: current === "medium" ? "\u2713 Med" : "Med",
+              callback_data: "effort:medium",
+            },
           ],
           [
-            { text: current === "high" ? "\u2713 High" : "High", callback_data: "effort:high" },
-            { text: current === "max" ? "\u2713 Max" : "Max", callback_data: "effort:max" },
-            { text: current === "adaptive" ? "\u2713 Auto" : "Auto", callback_data: "effort:adaptive" },
+            {
+              text: current === "high" ? "\u2713 High" : "High",
+              callback_data: "effort:high",
+            },
+            {
+              text: current === "max" ? "\u2713 Max" : "Max",
+              callback_data: "effort:max",
+            },
+            {
+              text: current === "adaptive" ? "\u2713 Auto" : "Auto",
+              callback_data: "effort:adaptive",
+            },
           ],
         ],
       },
@@ -235,7 +288,10 @@ bot.command("effort", async (ctx) => {
 
   if (arg === "reset" || arg === "default" || arg === "adaptive") {
     setChatEffort(cid, undefined);
-    await ctx.reply("Effort reset to <b>adaptive</b> (Claude decides when to think)", { parse_mode: "HTML" });
+    await ctx.reply(
+      "Effort reset to <b>adaptive</b> (Claude decides when to think)",
+      { parse_mode: "HTML" },
+    );
     return;
   }
 
@@ -245,7 +301,9 @@ bot.command("effort", async (ctx) => {
     return;
   }
 
-  await ctx.reply("Unknown level. Use: off, low, medium, high, max, or adaptive.");
+  await ctx.reply(
+    "Unknown level. Use: off, low, medium, high, max, or adaptive.",
+  );
 });
 
 bot.command("proactive", async (ctx) => {
@@ -259,10 +317,18 @@ bot.command("proactive", async (ctx) => {
       {
         parse_mode: "HTML",
         reply_markup: {
-          inline_keyboard: [[
-            { text: enabled ? "\u2713 On" : "On", callback_data: "proactive:on" },
-            { text: !enabled ? "\u2713 Off" : "Off", callback_data: "proactive:off" },
-          ]],
+          inline_keyboard: [
+            [
+              {
+                text: enabled ? "\u2713 On" : "On",
+                callback_data: "proactive:on",
+              },
+              {
+                text: !enabled ? "\u2713 Off" : "Off",
+                callback_data: "proactive:off",
+              },
+            ],
+          ],
         },
       },
     );
@@ -295,14 +361,22 @@ bot.command("settings", async (ctx) => {
   await ctx.reply(renderSettingsText(activeModel, effortName, proactiveOn), {
     parse_mode: "HTML",
     reply_markup: {
-      inline_keyboard: renderSettingsKeyboard(activeModel, effortName, proactiveOn),
+      inline_keyboard: renderSettingsKeyboard(
+        activeModel,
+        effortName,
+        proactiveOn,
+      ),
     },
   });
 });
 
 // ── Settings panel helpers ───────────────────────────────────────────────────
 
-function renderSettingsText(model: string, effort: string, proactive: boolean): string {
+function renderSettingsText(
+  model: string,
+  effort: string,
+  proactive: boolean,
+): string {
   return [
     "<b>Settings</b>",
     "",
@@ -320,18 +394,42 @@ function renderSettingsKeyboard(
   const isModel = (id: string) => model.includes(id);
   return [
     [
-      { text: isModel("sonnet") ? "\u2713 Sonnet" : "Sonnet", callback_data: "settings:model:sonnet" },
-      { text: isModel("opus") ? "\u2713 Opus" : "Opus", callback_data: "settings:model:opus" },
-      { text: isModel("haiku") ? "\u2713 Haiku" : "Haiku", callback_data: "settings:model:haiku" },
+      {
+        text: isModel("sonnet") ? "\u2713 Sonnet" : "Sonnet",
+        callback_data: "settings:model:sonnet",
+      },
+      {
+        text: isModel("opus") ? "\u2713 Opus" : "Opus",
+        callback_data: "settings:model:opus",
+      },
+      {
+        text: isModel("haiku") ? "\u2713 Haiku" : "Haiku",
+        callback_data: "settings:model:haiku",
+      },
     ],
     [
-      { text: effort === "low" ? "\u2713 Low" : "Low", callback_data: "settings:effort:low" },
-      { text: effort === "medium" ? "\u2713 Med" : "Med", callback_data: "settings:effort:medium" },
-      { text: effort === "high" ? "\u2713 High" : "High", callback_data: "settings:effort:high" },
-      { text: effort === "adaptive" ? "\u2713 Auto" : "Auto", callback_data: "settings:effort:adaptive" },
+      {
+        text: effort === "low" ? "\u2713 Low" : "Low",
+        callback_data: "settings:effort:low",
+      },
+      {
+        text: effort === "medium" ? "\u2713 Med" : "Med",
+        callback_data: "settings:effort:medium",
+      },
+      {
+        text: effort === "high" ? "\u2713 High" : "High",
+        callback_data: "settings:effort:high",
+      },
+      {
+        text: effort === "adaptive" ? "\u2713 Auto" : "Auto",
+        callback_data: "settings:effort:adaptive",
+      },
     ],
     [
-      { text: proactive ? "Proactive: ON" : "Proactive: OFF", callback_data: `settings:proactive:${proactive ? "off" : "on"}` },
+      {
+        text: proactive ? "Proactive: ON" : "Proactive: OFF",
+        callback_data: `settings:proactive:${proactive ? "off" : "on"}`,
+      },
       { text: "Done", callback_data: "settings:done" },
     ],
   ];
@@ -364,7 +462,10 @@ bot.command("admin", async (ctx) => {
         const sid = s.info.sessionId ? s.info.sessionId.slice(0, 8) : "none";
         return `<code>${s.chatId}</code> | ${s.info.turns} turns | ${age} | $${s.info.usage.estimatedCostUsd.toFixed(3)} | sid:${sid}`;
       });
-      await ctx.reply(`<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n"), { parse_mode: "HTML" });
+      await ctx.reply(
+        `<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n"),
+        { parse_mode: "HTML" },
+      );
       return;
     }
 
@@ -407,7 +508,9 @@ bot.command("admin", async (ctx) => {
         const logContent = readFileSync("/tmp/talon.log", "utf-8");
         const lines = logContent.trim().split("\n");
         const last20 = lines.slice(-20).join("\n");
-        await ctx.reply(`<pre>${escapeHtml(last20.slice(0, 3800))}</pre>`, { parse_mode: "HTML" });
+        await ctx.reply(`<pre>${escapeHtml(last20.slice(0, 3800))}</pre>`, {
+          parse_mode: "HTML",
+        });
       } catch {
         await ctx.reply("Could not read /tmp/talon.log");
       }
@@ -418,7 +521,10 @@ bot.command("admin", async (ctx) => {
       const health = getHealthStatus();
       const uptime = formatDuration(health.uptimeMs);
       const sessions = getAllSessions();
-      const totalCost = sessions.reduce((sum, s) => sum + s.info.usage.estimatedCostUsd, 0);
+      const totalCost = sessions.reduce(
+        (sum, s) => sum + s.info.usage.estimatedCostUsd,
+        0,
+      );
       const totalTurns = sessions.reduce((sum, s) => sum + s.info.turns, 0);
       const memUsage = process.memoryUsage();
       const heapMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
@@ -451,19 +557,22 @@ bot.command("admin", async (ctx) => {
         const time = new Date(e.timestamp).toISOString().slice(11, 19);
         return `<code>[${time}]</code> ${escapeHtml(e.message.slice(0, 200))}`;
       });
-      await ctx.reply(`<b>Recent Errors (${errors.length})</b>\n\n` + lines.join("\n\n"), { parse_mode: "HTML" });
+      await ctx.reply(
+        `<b>Recent Errors (${errors.length})</b>\n\n` + lines.join("\n\n"),
+        { parse_mode: "HTML" },
+      );
       return;
     }
 
     default:
       await ctx.reply(
         "<b>/admin commands</b>\n\n" +
-        "  /admin stats -- uptime, messages, cost, memory\n" +
-        "  /admin errors -- last 5 errors\n" +
-        "  /admin chats -- list all active chats\n" +
-        "  /admin broadcast &lt;text&gt; -- send to all chats\n" +
-        "  /admin kill &lt;chatId&gt; -- reset a chat session\n" +
-        "  /admin logs -- last 20 lines of /tmp/talon.log",
+          "  /admin stats -- uptime, messages, cost, memory\n" +
+          "  /admin errors -- last 5 errors\n" +
+          "  /admin chats -- list all active chats\n" +
+          "  /admin broadcast &lt;text&gt; -- send to all chats\n" +
+          "  /admin kill &lt;chatId&gt; -- reset a chat session\n" +
+          "  /admin logs -- last 20 lines of /tmp/talon.log",
         { parse_mode: "HTML" },
       );
   }
@@ -474,7 +583,9 @@ bot.command("status", async (ctx) => {
   const info = getSessionInfo(cid);
   const u = info.usage;
   const uptime = formatDuration(process.uptime() * 1000);
-  const sessionAge = info.createdAt ? formatDuration(Date.now() - info.createdAt) : "\u2014";
+  const sessionAge = info.createdAt
+    ? formatDuration(Date.now() - info.createdAt)
+    : "\u2014";
   const chatSets = getChatSettings(cid);
   const activeModel = chatSets.model ?? config.model;
   const effortName = chatSets.effort ?? "adaptive";
@@ -483,17 +594,24 @@ bot.command("status", async (ctx) => {
   // Context window size depends on model
   const contextMax = activeModel.includes("haiku") ? 200_000 : 1_000_000;
   const contextUsed = u.lastPromptTokens;
-  const contextPct = contextMax > 0 ? Math.min(100, Math.round((contextUsed / contextMax) * 100)) : 0;
+  const contextPct =
+    contextMax > 0
+      ? Math.min(100, Math.round((contextUsed / contextMax) * 100))
+      : 0;
   const barLen = 20;
   const filled = Math.round((contextPct / 100) * barLen);
   const contextBar = "\u2588".repeat(filled) + "\u2591".repeat(barLen - filled);
 
   // Cache hit rate
   const totalPrompt = u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
-  const cacheHitPct = totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
+  const cacheHitPct =
+    totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
 
   // Response time stats
-  const avgResponseMs = info.turns > 0 && u.totalResponseMs ? Math.round(u.totalResponseMs / info.turns) : 0;
+  const avgResponseMs =
+    info.turns > 0 && u.totalResponseMs
+      ? Math.round(u.totalResponseMs / info.turns)
+      : 0;
   const lastResponseMs = u.lastResponseMs || 0;
   const fastestMs = u.fastestResponseMs || 0;
 
@@ -539,20 +657,76 @@ bot.on("message", (ctx, next) => {
   const timestamp = ctx.message.date * 1000;
 
   if ("text" in ctx.message && ctx.message.text) {
-    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.text, replyToMsgId, timestamp });
+    pushMessage(chatId, {
+      msgId,
+      senderId,
+      senderName: sender,
+      text: ctx.message.text,
+      replyToMsgId,
+      timestamp,
+    });
   } else if ("photo" in ctx.message && ctx.message.photo) {
-    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.caption || "(photo)", replyToMsgId, timestamp, mediaType: "photo" });
+    pushMessage(chatId, {
+      msgId,
+      senderId,
+      senderName: sender,
+      text: ctx.message.caption || "(photo)",
+      replyToMsgId,
+      timestamp,
+      mediaType: "photo",
+    });
   } else if ("document" in ctx.message && ctx.message.document) {
     const name = ctx.message.document.file_name || "file";
-    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.caption || `(sent ${name})`, replyToMsgId, timestamp, mediaType: "document" });
+    pushMessage(chatId, {
+      msgId,
+      senderId,
+      senderName: sender,
+      text: ctx.message.caption || `(sent ${name})`,
+      replyToMsgId,
+      timestamp,
+      mediaType: "document",
+    });
   } else if ("voice" in ctx.message && ctx.message.voice) {
-    pushMessage(chatId, { msgId, senderId, senderName: sender, text: "(voice message)", replyToMsgId, timestamp, mediaType: "voice" });
+    pushMessage(chatId, {
+      msgId,
+      senderId,
+      senderName: sender,
+      text: "(voice message)",
+      replyToMsgId,
+      timestamp,
+      mediaType: "voice",
+    });
   } else if ("sticker" in ctx.message && ctx.message.sticker) {
-    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.sticker.emoji || "(sticker)", replyToMsgId, timestamp, mediaType: "sticker", stickerFileId: ctx.message.sticker.file_id });
+    pushMessage(chatId, {
+      msgId,
+      senderId,
+      senderName: sender,
+      text: ctx.message.sticker.emoji || "(sticker)",
+      replyToMsgId,
+      timestamp,
+      mediaType: "sticker",
+      stickerFileId: ctx.message.sticker.file_id,
+    });
   } else if ("video" in ctx.message && ctx.message.video) {
-    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.caption || "(video)", replyToMsgId, timestamp, mediaType: "video" });
+    pushMessage(chatId, {
+      msgId,
+      senderId,
+      senderName: sender,
+      text: ctx.message.caption || "(video)",
+      replyToMsgId,
+      timestamp,
+      mediaType: "video",
+    });
   } else if ("animation" in ctx.message && ctx.message.animation) {
-    pushMessage(chatId, { msgId, senderId, senderName: sender, text: ctx.message.caption || "(GIF)", replyToMsgId, timestamp, mediaType: "animation" });
+    pushMessage(chatId, {
+      msgId,
+      senderId,
+      senderName: sender,
+      text: ctx.message.caption || "(GIF)",
+      replyToMsgId,
+      timestamp,
+      mediaType: "animation",
+    });
   }
 
   return next();
@@ -579,8 +753,10 @@ bot.on("edited_message:text", async (ctx) => {
   if (isGroup) {
     const text = ctx.editedMessage.text || "";
     const botUser = ctx.me.username;
-    const mentioned = botUser && text.toLowerCase().includes(`@${botUser.toLowerCase()}`);
-    const repliedToBot = ctx.editedMessage.reply_to_message?.from?.id === ctx.me.id;
+    const mentioned =
+      botUser && text.toLowerCase().includes(`@${botUser.toLowerCase()}`);
+    const repliedToBot =
+      ctx.editedMessage.reply_to_message?.from?.id === ctx.me.id;
     if (!mentioned && !repliedToBot) return;
   }
 
@@ -639,14 +815,18 @@ bot.on("callback_query:data", async (ctx) => {
         setChatModel(cid, resolved);
         resetSession(cid);
       }
-      await ctx.answerCallbackQuery({ text: `Model: ${getChatSettings(cid).model ?? config.model}` });
+      await ctx.answerCallbackQuery({
+        text: `Model: ${getChatSettings(cid).model ?? config.model}`,
+      });
     } else if (category === "effort") {
       if (value === "adaptive") {
         setChatEffort(cid, undefined);
       } else if (EFFORT_LEVELS.includes(value as EffortLevel)) {
         setChatEffort(cid, value as EffortLevel);
       }
-      await ctx.answerCallbackQuery({ text: `Effort: ${getChatSettings(cid).effort ?? "adaptive"}` });
+      await ctx.answerCallbackQuery({
+        text: `Effort: ${getChatSettings(cid).effort ?? "adaptive"}`,
+      });
     } else if (category === "proactive") {
       if (value === "on") {
         enableProactive(cid);
@@ -664,13 +844,22 @@ bot.on("callback_query:data", async (ctx) => {
     const proactiveOn = isProactiveEnabled(cid);
 
     try {
-      await ctx.editMessageText(renderSettingsText(activeModel, effortName, proactiveOn), {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: renderSettingsKeyboard(activeModel, effortName, proactiveOn),
+      await ctx.editMessageText(
+        renderSettingsText(activeModel, effortName, proactiveOn),
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: renderSettingsKeyboard(
+              activeModel,
+              effortName,
+              proactiveOn,
+            ),
+          },
         },
-      });
-    } catch { /* message unchanged */ }
+      );
+    } catch {
+      /* message unchanged */
+    }
     return;
   }
 
@@ -692,14 +881,24 @@ bot.on("callback_query:data", async (ctx) => {
         {
           parse_mode: "HTML",
           reply_markup: {
-            inline_keyboard: [[
-              { text: enabled ? "\u2713 On" : "On", callback_data: "proactive:on" },
-              { text: !enabled ? "\u2713 Off" : "Off", callback_data: "proactive:off" },
-            ]],
+            inline_keyboard: [
+              [
+                {
+                  text: enabled ? "\u2713 On" : "On",
+                  callback_data: "proactive:on",
+                },
+                {
+                  text: !enabled ? "\u2713 Off" : "Off",
+                  callback_data: "proactive:off",
+                },
+              ],
+            ],
           },
         },
       );
-    } catch { /* unchanged */ }
+    } catch {
+      /* unchanged */
+    }
     return;
   }
 
@@ -720,19 +919,39 @@ bot.on("callback_query:data", async (ctx) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: current === "off" ? "\u2713 Off" : "Off", callback_data: "effort:off" },
-              { text: current === "low" ? "\u2713 Low" : "Low", callback_data: "effort:low" },
-              { text: current === "medium" ? "\u2713 Med" : "Med", callback_data: "effort:medium" },
+              {
+                text: current === "off" ? "\u2713 Off" : "Off",
+                callback_data: "effort:off",
+              },
+              {
+                text: current === "low" ? "\u2713 Low" : "Low",
+                callback_data: "effort:low",
+              },
+              {
+                text: current === "medium" ? "\u2713 Med" : "Med",
+                callback_data: "effort:medium",
+              },
             ],
             [
-              { text: current === "high" ? "\u2713 High" : "High", callback_data: "effort:high" },
-              { text: current === "max" ? "\u2713 Max" : "Max", callback_data: "effort:max" },
-              { text: current === "adaptive" ? "\u2713 Auto" : "Auto", callback_data: "effort:adaptive" },
+              {
+                text: current === "high" ? "\u2713 High" : "High",
+                callback_data: "effort:high",
+              },
+              {
+                text: current === "max" ? "\u2713 Max" : "Max",
+                callback_data: "effort:max",
+              },
+              {
+                text: current === "adaptive" ? "\u2713 Auto" : "Auto",
+                callback_data: "effort:adaptive",
+              },
             ],
           ],
         },
       });
-    } catch { /* message unchanged */ }
+    } catch {
+      /* message unchanged */
+    }
     return;
   }
 
@@ -741,32 +960,50 @@ bot.on("callback_query:data", async (ctx) => {
     if (model === "reset") {
       setChatModel(cid, undefined);
       resetSession(cid);
-      await ctx.answerCallbackQuery({ text: `Model: ${config.model} (default)` });
+      await ctx.answerCallbackQuery({
+        text: `Model: ${config.model} (default)`,
+      });
     } else {
       const resolved = resolveModelName(model);
       setChatModel(cid, resolved);
       resetSession(cid);
-      await ctx.answerCallbackQuery({ text: `Model: ${resolved}. Session reset.` });
+      await ctx.answerCallbackQuery({
+        text: `Model: ${resolved}. Session reset.`,
+      });
     }
     const current = getChatSettings(cid).model ?? config.model;
     const isModel = (id: string) => current.includes(id);
     try {
-      await ctx.editMessageText(`<b>Model:</b> <code>${escapeHtml(current)}</code>`, {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            [
-              { text: isModel("sonnet") ? "\u2713 Sonnet 4.6" : "Sonnet 4.6", callback_data: "model:sonnet" },
-              { text: isModel("opus") ? "\u2713 Opus 4.6" : "Opus 4.6", callback_data: "model:opus" },
+      await ctx.editMessageText(
+        `<b>Model:</b> <code>${escapeHtml(current)}</code>`,
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: isModel("sonnet") ? "\u2713 Sonnet 4.6" : "Sonnet 4.6",
+                  callback_data: "model:sonnet",
+                },
+                {
+                  text: isModel("opus") ? "\u2713 Opus 4.6" : "Opus 4.6",
+                  callback_data: "model:opus",
+                },
+              ],
+              [
+                {
+                  text: isModel("haiku") ? "\u2713 Haiku 4.5" : "Haiku 4.5",
+                  callback_data: "model:haiku",
+                },
+                { text: "Reset to default", callback_data: "model:reset" },
+              ],
             ],
-            [
-              { text: isModel("haiku") ? "\u2713 Haiku 4.5" : "Haiku 4.5", callback_data: "model:haiku" },
-              { text: "Reset to default", callback_data: "model:reset" },
-            ],
-          ],
+          },
         },
-      });
-    } catch { /* message unchanged */ }
+      );
+    } catch {
+      /* message unchanged */
+    }
     return;
   }
 
@@ -841,7 +1078,10 @@ process.on("uncaughtException", (err) => {
 });
 
 process.on("unhandledRejection", (reason) => {
-  logWarn("bot", `Unhandled rejection: ${reason instanceof Error ? reason.message : reason}`);
+  logWarn(
+    "bot",
+    `Unhandled rejection: ${reason instanceof Error ? reason.message : reason}`,
+  );
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────
@@ -868,7 +1108,11 @@ async function main(): Promise<void> {
   // Initialize proactive engagement
   initProactive({
     config,
-    setBridgeContext: setBridgeContext as (chatId: number, bot: unknown, inputFile: unknown) => void,
+    setBridgeContext: setBridgeContext as (
+      chatId: number,
+      bot: unknown,
+      inputFile: unknown,
+    ) => void,
     clearBridgeContext,
     bot,
     inputFile: InputFile,

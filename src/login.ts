@@ -24,8 +24,10 @@ if (existsSync(envPath)) {
     if (eq <= 0) continue;
     const key = trimmed.slice(0, eq).trim();
     let value = trimmed.slice(eq + 1).trim();
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
       value = value.slice(1, -1);
     }
     if (!process.env[key]) process.env[key] = value;
@@ -39,7 +41,9 @@ const apiHash = process.env.TALON_API_HASH || "";
 
 if (!apiId || !apiHash) {
   console.error("Set TALON_API_ID and TALON_API_HASH in .env");
-  console.error("Get them from https://my.telegram.org → API development tools");
+  console.error(
+    "Get them from https://my.telegram.org → API development tools",
+  );
   process.exit(1);
 }
 

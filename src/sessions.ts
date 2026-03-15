@@ -115,15 +115,24 @@ export function getSession(chatId: string): SessionState {
   let session = store[chatId];
   if (!session) {
     const now = Date.now();
-    session = { sessionId: undefined, turns: 0, lastActive: now, createdAt: now, usage: emptyUsage() };
+    session = {
+      sessionId: undefined,
+      turns: 0,
+      lastActive: now,
+      createdAt: now,
+      usage: emptyUsage(),
+    };
     store[chatId] = session;
   }
   // Migrate old sessions without usage or missing fields
   if (!session.usage) session.usage = emptyUsage();
   if (!session.createdAt) session.createdAt = session.lastActive;
-  if (session.usage.totalResponseMs === undefined) session.usage.totalResponseMs = 0;
-  if (session.usage.lastResponseMs === undefined) session.usage.lastResponseMs = 0;
-  if (session.usage.fastestResponseMs === undefined) session.usage.fastestResponseMs = 0;
+  if (session.usage.totalResponseMs === undefined)
+    session.usage.totalResponseMs = 0;
+  if (session.usage.lastResponseMs === undefined)
+    session.usage.lastResponseMs = 0;
+  if (session.usage.fastestResponseMs === undefined)
+    session.usage.fastestResponseMs = 0;
   return session;
 }
 
@@ -142,7 +151,13 @@ export function incrementTurns(chatId: string): void {
 
 export function recordUsage(
   chatId: string,
-  turn: { inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number; durationMs?: number },
+  turn: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheRead: number;
+    cacheWrite: number;
+    durationMs?: number;
+  },
 ): void {
   const session = getSession(chatId);
   session.usage.totalInputTokens += turn.inputTokens;
@@ -150,13 +165,19 @@ export function recordUsage(
   session.usage.totalCacheRead += turn.cacheRead;
   session.usage.totalCacheWrite += turn.cacheWrite;
   // Snapshot: prompt tokens = input + cache_read + cache_write for this turn
-  session.usage.lastPromptTokens = turn.inputTokens + turn.cacheRead + turn.cacheWrite;
+  session.usage.lastPromptTokens =
+    turn.inputTokens + turn.cacheRead + turn.cacheWrite;
   // Rough cost estimate (Sonnet 4.6 pricing: $3/M input, $15/M output, $0.30/M cache read)
   session.usage.estimatedCostUsd +=
-    (turn.inputTokens * 3 + turn.cacheWrite * 3.75 + turn.cacheRead * 0.3 + turn.outputTokens * 15) / 1_000_000;
+    (turn.inputTokens * 3 +
+      turn.cacheWrite * 3.75 +
+      turn.cacheRead * 0.3 +
+      turn.outputTokens * 15) /
+    1_000_000;
   // Response time tracking
   if (turn.durationMs && turn.durationMs > 0) {
-    session.usage.totalResponseMs = (session.usage.totalResponseMs || 0) + turn.durationMs;
+    session.usage.totalResponseMs =
+      (session.usage.totalResponseMs || 0) + turn.durationMs;
     session.usage.lastResponseMs = turn.durationMs;
     const current = session.usage.fastestResponseMs || Infinity;
     if (turn.durationMs < current) {
@@ -215,9 +236,15 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
       lastActive: session.lastActive,
       createdAt: session.createdAt,
       usage: session.usage ?? {
-        totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0,
-        totalCacheWrite: 0, lastPromptTokens: 0, estimatedCostUsd: 0,
-        totalResponseMs: 0, lastResponseMs: 0, fastestResponseMs: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+        lastPromptTokens: 0,
+        estimatedCostUsd: 0,
+        totalResponseMs: 0,
+        lastResponseMs: 0,
+        fastestResponseMs: 0,
       },
     },
   }));

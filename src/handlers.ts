@@ -5,7 +5,11 @@
 
 import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "./config.js";
-import { splitMessage, markdownToTelegramHtml, friendlyError } from "./telegram.js";
+import {
+  splitMessage,
+  markdownToTelegramHtml,
+  friendlyError,
+} from "./telegram.js";
 import {
   setBridgeContext,
   clearBridgeContext,
@@ -43,8 +47,7 @@ export function shouldHandleInGroup(ctx: {
   const botUser = ctx.me.username;
   const mentioned =
     botUser && text.toLowerCase().includes(`@${botUser.toLowerCase()}`);
-  const repliedToBot =
-    ctx.message?.reply_to_message?.from?.id === ctx.me.id;
+  const repliedToBot = ctx.message?.reply_to_message?.from?.id === ctx.me.id;
   return !!(mentioned || repliedToBot);
 }
 
@@ -102,7 +105,10 @@ export function getForwardContext(msg: {
 }
 
 export function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 export async function downloadTelegramFile(
@@ -140,14 +146,17 @@ type QueuedMessage = {
   isGroup: boolean;
 };
 
-const messageQueues = new Map<string, {
-  messages: QueuedMessage[];
-  timer: ReturnType<typeof setTimeout>;
-  bot: Bot;
-  config: TalonConfig;
-  numericChatId: number;
-  queuedReactionMsgIds: number[];
-}>();
+const messageQueues = new Map<
+  string,
+  {
+    messages: QueuedMessage[];
+    timer: ReturnType<typeof setTimeout>;
+    bot: Bot;
+    config: TalonConfig;
+    numericChatId: number;
+    queuedReactionMsgIds: number[];
+  }
+>();
 
 const DEBOUNCE_MS = 500;
 
@@ -167,7 +176,11 @@ function enqueueMessage(
   if (existing) {
     existing.messages.push(msg);
     // Show hourglass reaction on the queued message to indicate it's been seen
-    bot.api.setMessageReaction(numericChatId, msg.messageId, [{ type: "emoji", emoji: "\u23F3" as "\uD83D\uDC4D" }]).catch(() => {});
+    bot.api
+      .setMessageReaction(numericChatId, msg.messageId, [
+        { type: "emoji", emoji: "\u23F3" as "\uD83D\uDC4D" },
+      ])
+      .catch(() => {});
     existing.queuedReactionMsgIds.push(msg.messageId);
     clearTimeout(existing.timer);
     existing.timer = setTimeout(() => flushQueue(chatId), DEBOUNCE_MS);
@@ -202,9 +215,10 @@ async function flushQueue(chatId: string): Promise<void> {
   const last = messages[messages.length - 1];
 
   // Concatenate prompts (with newlines between them if multiple)
-  const combinedPrompt = messages.length === 1
-    ? messages[0].prompt
-    : messages.map((m) => m.prompt).join("\n\n");
+  const combinedPrompt =
+    messages.length === 1
+      ? messages[0].prompt
+      : messages.map((m) => m.prompt).join("\n\n");
 
   const logSummary = combinedPrompt.slice(0, 80).replace(/\n/g, " ");
   appendDailyLog(last.senderName, logSummary);
@@ -228,7 +242,10 @@ async function flushQueue(chatId: string): Promise<void> {
     const errObj = err instanceof Error ? err : new Error(String(err));
     const chatType = last.isGroup ? "group" : "DM";
     const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
-    logError("bot", `[${chatId}] [${chatType}] [${last.senderName}] Error: ${errObj.message} | prompt: "${promptPreview}"`);
+    logError(
+      "bot",
+      `[${chatId}] [${chatType}] [${last.senderName}] Error: ${errObj.message} | prompt: "${promptPreview}"`,
+    );
     recordError(errObj.message);
 
     // Retry once for transient errors
@@ -251,8 +268,12 @@ async function flushQueue(chatId: string): Promise<void> {
         );
         return;
       } catch (retryErr) {
-        const retryErrObj = retryErr instanceof Error ? retryErr : new Error(String(retryErr));
-        logError("bot", `[${chatId}] [${chatType}] Retry failed: ${retryErrObj.message}`);
+        const retryErrObj =
+          retryErr instanceof Error ? retryErr : new Error(String(retryErr));
+        logError(
+          "bot",
+          `[${chatId}] [${chatType}] Retry failed: ${retryErrObj.message}`,
+        );
         await sendHtml(
           bot,
           numericChatId,
@@ -276,7 +297,12 @@ async function flushQueue(chatId: string): Promise<void> {
 function isTransientError(err: Error): boolean {
   const msg = err.message;
   // Transient: overloaded, network issues, 503, 429
-  if (/overloaded|503|capacity|network|ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(msg)) return true;
+  if (
+    /overloaded|503|capacity|network|ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(
+      msg,
+    )
+  )
+    return true;
   // Rate limit with short retry window
   if (/rate.?limit|429|too many requests/i.test(msg)) return true;
   return false;
@@ -284,8 +310,19 @@ function isTransientError(err: Error): boolean {
 
 // ── Response delivery ────────────────────────────────────────────────────────
 
-const SKIP_DIRS = ["/uploads/", "/.claude/", "/node_modules/", "/logs/", "/sessions/", "/memory/"];
-const SKIP_NAMES = new Set(["sessions.json", "chat-settings.json", "memory.md"]);
+const SKIP_DIRS = [
+  "/uploads/",
+  "/.claude/",
+  "/node_modules/",
+  "/logs/",
+  "/sessions/",
+  "/memory/",
+];
+const SKIP_NAMES = new Set([
+  "sessions.json",
+  "chat-settings.json",
+  "memory.md",
+]);
 
 async function sendNewFiles(
   bot: Bot,
@@ -303,7 +340,10 @@ async function sendNewFiles(
       if (stat.size > 49 * 1024 * 1024 || stat.size === 0) continue;
 
       log("bot", `Sending file ${name} (${stat.size} bytes)`);
-      await bot.api.sendDocument(chatId, new InputFile(readFileSync(filePath), name));
+      await bot.api.sendDocument(
+        chatId,
+        new InputFile(readFileSync(filePath), name),
+      );
     } catch (err) {
       logError("bot", `Failed to send file ${name}`, err);
     }
@@ -367,7 +407,10 @@ export async function processAndReply(
     streamStarted = true;
   }, 2000);
 
-  const onStreamDelta = async (accumulated: string, phase?: "thinking" | "text") => {
+  const onStreamDelta = async (
+    accumulated: string,
+    phase?: "thinking" | "text",
+  ) => {
     if (!streamStarted) return;
     try {
       // Track phase transitions
@@ -380,7 +423,8 @@ export async function processAndReply(
       }
 
       // Choose cursor based on phase
-      const cursor = isThinking && !hasTextStarted ? " \uD83D\uDCAD" : " \u258D";
+      const cursor =
+        isThinking && !hasTextStarted ? " \uD83D\uDCAD" : " \u258D";
 
       const display =
         accumulated.length > 3900
@@ -388,9 +432,10 @@ export async function processAndReply(
           : accumulated;
 
       // During thinking phase with no text yet, show thinking indicator
-      const displayText = isThinking && !hasTextStarted && !display.trim()
-        ? "\uD83D\uDCAD thinking..."
-        : display;
+      const displayText =
+        isThinking && !hasTextStarted && !display.trim()
+          ? "\uD83D\uDCAD thinking..."
+          : display;
 
       if (!streamMsgId) {
         const content = displayText + cursor;
@@ -408,7 +453,11 @@ export async function processAndReply(
           streamMsgId = sent.message_id;
         }
         lastEditedText = displayText;
-      } else if (displayText.length - lastEditedText.length >= 60 || (hasTextStarted && isThinking !== (lastEditedText === "\uD83D\uDCAD thinking..."))) {
+      } else if (
+        displayText.length - lastEditedText.length >= 60 ||
+        (hasTextStarted &&
+          isThinking !== (lastEditedText === "\uD83D\uDCAD thinking..."))
+      ) {
         const content = displayText + cursor;
         const html = markdownToTelegramHtml(content);
         try {
@@ -417,11 +466,7 @@ export async function processAndReply(
           });
         } catch {
           try {
-            await bot.api.editMessageText(
-              numericChatId,
-              streamMsgId,
-              content,
-            );
+            await bot.api.editMessageText(numericChatId, streamMsgId, content);
           } catch {
             // Rate limited, skip
           }
@@ -451,7 +496,12 @@ export async function processAndReply(
       streamMsgId = undefined;
       lastEditedText = "";
     } else {
-      await sendHtml(bot, numericChatId, markdownToTelegramHtml(text), replyToId);
+      await sendHtml(
+        bot,
+        numericChatId,
+        markdownToTelegramHtml(text),
+        replyToId,
+      );
     }
   };
 
@@ -469,7 +519,10 @@ export async function processAndReply(
       const priorMsgs = recentMsgs.slice(0, -1);
       if (priorMsgs.length > 0) {
         const contextLines = priorMsgs
-          .map((m) => `  [${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.text.slice(0, 200)}`)
+          .map(
+            (m) =>
+              `  [${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.text.slice(0, 200)}`,
+          )
           .join("\n");
         enrichedPrompt = `[${senderName}'s recent messages in this group:\n${contextLines}]\n\n${prompt}`;
       }
@@ -503,18 +556,32 @@ export async function processAndReply(
           });
         } catch {
           try {
-            await bot.api.editMessageText(numericChatId, streamMsgId, chunks[0]);
+            await bot.api.editMessageText(
+              numericChatId,
+              streamMsgId,
+              chunks[0],
+            );
           } catch {
             // ignore
           }
         }
         for (let i = 1; i < chunks.length; i++) {
-          await sendHtml(bot, numericChatId, markdownToTelegramHtml(chunks[i]), replyToId);
+          await sendHtml(
+            bot,
+            numericChatId,
+            markdownToTelegramHtml(chunks[i]),
+            replyToId,
+          );
         }
       } else {
         const chunks = splitMessage(finalText, config.maxMessageLength);
         for (const chunk of chunks) {
-          await sendHtml(bot, numericChatId, markdownToTelegramHtml(chunk), replyToId);
+          await sendHtml(
+            bot,
+            numericChatId,
+            markdownToTelegramHtml(chunk),
+            replyToId,
+          );
         }
       }
     }
@@ -571,11 +638,21 @@ async function handleMediaMessage(
   try {
     // File size check
     if (media.fileSize && media.fileSize > 20 * 1024 * 1024) {
-      await sendHtml(bot, ctx.chat.id, "File too large (max 20MB).", ctx.message.message_id);
+      await sendHtml(
+        bot,
+        ctx.chat.id,
+        "File too large (max 20MB).",
+        ctx.message.message_id,
+      );
       return;
     }
 
-    const savedPath = await downloadTelegramFile(bot, config, media.fileId, media.fileName);
+    const savedPath = await downloadTelegramFile(
+      bot,
+      config,
+      media.fileId,
+      media.fileName,
+    );
 
     const fwdCtx = getForwardContext(
       ctx.message as Parameters<typeof getForwardContext>[0],
@@ -604,11 +681,16 @@ async function handleMediaMessage(
       isGroup,
     });
   } catch (err) {
-    logError("bot", `[${chatId}] ${media.type} error (${sender}): ${err instanceof Error ? err.message : err}`);
+    logError(
+      "bot",
+      `[${chatId}] ${media.type} error (${sender}): ${err instanceof Error ? err.message : err}`,
+    );
     await sendHtml(
       bot,
       ctx.chat.id,
-      escapeHtml(friendlyError(err instanceof Error ? err : new Error(String(err)))),
+      escapeHtml(
+        friendlyError(err instanceof Error ? err : new Error(String(err))),
+      ),
       ctx.message.message_id,
     );
   }
@@ -616,7 +698,11 @@ async function handleMediaMessage(
 
 // ── Message handlers ─────────────────────────────────────────────────────────
 
-export async function handleTextMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
+export async function handleTextMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
   const chatId = String(ctx.chat.id);
@@ -644,13 +730,20 @@ export async function handleTextMessage(ctx: Context, bot: Bot, config: TalonCon
   });
 }
 
-export async function handlePhotoMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
+export async function handlePhotoMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const photos = (ctx.message as unknown as Record<string, unknown>).photo as Array<{ file_id: string; file_unique_id: string }>;
+  const photos = (ctx.message as unknown as Record<string, unknown>)
+    .photo as Array<{ file_id: string; file_unique_id: string }>;
   if (!photos) return;
   const bestPhoto = photos[photos.length - 1];
-  const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
+  const caption =
+    ((ctx.message as unknown as Record<string, unknown>).caption as string) ||
+    "";
 
   // Determine extension from Telegram's file path if available
   const photoFile = await bot.api.getFile(bestPhoto.file_id).catch(() => null);
@@ -668,7 +761,11 @@ export async function handlePhotoMessage(ctx: Context, bot: Bot, config: TalonCo
   });
 }
 
-export async function handleDocumentMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
+export async function handleDocumentMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
   const doc = (ctx.message as unknown as Record<string, unknown>).document as {
@@ -681,7 +778,9 @@ export async function handleDocumentMessage(ctx: Context, bot: Bot, config: Talo
   if (!doc) return;
 
   const fileName = doc.file_name || `doc_${doc.file_unique_id}`;
-  const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
+  const caption =
+    ((ctx.message as unknown as Record<string, unknown>).caption as string) ||
+    "";
 
   await handleMediaMessage(ctx, bot, config, {
     type: "document",
@@ -697,7 +796,11 @@ export async function handleDocumentMessage(ctx: Context, bot: Bot, config: Talo
   });
 }
 
-export async function handleVoiceMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
+export async function handleVoiceMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
   const voice = (ctx.message as unknown as Record<string, unknown>).voice as {
@@ -718,7 +821,11 @@ export async function handleVoiceMessage(ctx: Context, bot: Bot, config: TalonCo
   });
 }
 
-export async function handleStickerMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
+export async function handleStickerMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
   const chatId = String(ctx.chat.id);
@@ -726,7 +833,8 @@ export async function handleStickerMessage(ctx: Context, bot: Bot, config: Talon
   const sender = getSenderName(ctx.from);
   const senderUsername = ctx.from?.username;
 
-  const sticker = (ctx.message as unknown as Record<string, unknown>).sticker as {
+  const sticker = (ctx.message as unknown as Record<string, unknown>)
+    .sticker as {
     file_id: string;
     emoji?: string;
     set_name?: string;
@@ -742,7 +850,11 @@ export async function handleStickerMessage(ctx: Context, bot: Bot, config: Talon
     `User sent a sticker: ${emoji}`,
     `Sticker file_id: ${sticker.file_id}`,
     setName ? `Sticker set: ${setName}` : "",
-    sticker.is_animated ? "(animated)" : sticker.is_video ? "(video sticker)" : "",
+    sticker.is_animated
+      ? "(animated)"
+      : sticker.is_video
+        ? "(video sticker)"
+        : "",
     "You can send this sticker back using the send_sticker tool with the file_id above.",
   ]
     .filter(Boolean)
@@ -759,7 +871,11 @@ export async function handleStickerMessage(ctx: Context, bot: Bot, config: Talon
   });
 }
 
-export async function handleVideoMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
+export async function handleVideoMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
   const video = (ctx.message as unknown as Record<string, unknown>).video as {
@@ -773,7 +889,9 @@ export async function handleVideoMessage(ctx: Context, bot: Bot, config: TalonCo
   if (!video) return;
 
   const fileName = video.file_name || `video_${video.file_unique_id}.mp4`;
-  const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
+  const caption =
+    ((ctx.message as unknown as Record<string, unknown>).caption as string) ||
+    "";
 
   await handleMediaMessage(ctx, bot, config, {
     type: "video",
@@ -787,10 +905,15 @@ export async function handleVideoMessage(ctx: Context, bot: Bot, config: TalonCo
   });
 }
 
-export async function handleAnimationMessage(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
+export async function handleAnimationMessage(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
 
-  const anim = (ctx.message as unknown as Record<string, unknown>).animation as {
+  const anim = (ctx.message as unknown as Record<string, unknown>)
+    .animation as {
     file_id: string;
     file_unique_id: string;
     file_name?: string;
@@ -799,7 +922,9 @@ export async function handleAnimationMessage(ctx: Context, bot: Bot, config: Tal
   if (!anim) return;
 
   const fileName = anim.file_name || `animation_${anim.file_unique_id}.mp4`;
-  const caption = (ctx.message as unknown as Record<string, unknown>).caption as string || "";
+  const caption =
+    ((ctx.message as unknown as Record<string, unknown>).caption as string) ||
+    "";
 
   await handleMediaMessage(ctx, bot, config, {
     type: "animation",
@@ -813,7 +938,11 @@ export async function handleAnimationMessage(ctx: Context, bot: Bot, config: Tal
   });
 }
 
-export async function handleCallbackQuery(ctx: Context, bot: Bot, config: TalonConfig): Promise<void> {
+export async function handleCallbackQuery(
+  ctx: Context,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
 
   const chatId = String(ctx.chat?.id ?? ctx.from?.id);
@@ -843,6 +972,9 @@ export async function handleCallbackQuery(ctx: Context, bot: Bot, config: TalonC
       isGroup,
     );
   } catch (err) {
-    logError("bot", `[${chatId}] Callback error (${sender}): ${err instanceof Error ? err.message : err}`);
+    logError(
+      "bot",
+      `[${chatId}] Callback error (${sender}): ${err instanceof Error ? err.message : err}`,
+    );
   }
 }

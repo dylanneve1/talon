@@ -3,7 +3,13 @@
  * Ensures a clean, organized workspace on startup.
  */
 
-import { existsSync, mkdirSync, renameSync, readdirSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  renameSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { resolve, join, extname } from "node:path";
 import { log } from "./log.js";
 
@@ -59,7 +65,11 @@ export function initWorkspace(root: string): WorkspaceDirs {
   return dirs;
 }
 
-function migrateFileIfNeeded(rootDir: string, filename: string, targetDir: string): void {
+function migrateFileIfNeeded(
+  rootDir: string,
+  filename: string,
+  targetDir: string,
+): void {
   const oldPath = resolve(rootDir, filename);
   const newPath = resolve(targetDir, filename);
   if (existsSync(oldPath) && !existsSync(newPath)) {
@@ -98,7 +108,15 @@ export function getWorkspaceDiskUsage(root: string): number {
   return total;
 }
 
-const SYSTEM_DIRS = new Set(["memory", "logs", "uploads", "files", "sessions", "scripts", "data"]);
+const SYSTEM_DIRS = new Set([
+  "memory",
+  "logs",
+  "uploads",
+  "files",
+  "sessions",
+  "scripts",
+  "data",
+]);
 const SYSTEM_FILES = new Set([".user-session"]);
 
 function migrateStaleFiles(rootDir: string, dirs: WorkspaceDirs): void {
@@ -106,7 +124,11 @@ function migrateStaleFiles(rootDir: string, dirs: WorkspaceDirs): void {
     const entries = readdirSync(rootDir, { withFileTypes: true });
     let migrated = 0;
     for (const entry of entries) {
-      if (entry.isDirectory() && (SYSTEM_DIRS.has(entry.name) || entry.name.startsWith("."))) continue;
+      if (
+        entry.isDirectory() &&
+        (SYSTEM_DIRS.has(entry.name) || entry.name.startsWith("."))
+      )
+        continue;
       if (entry.isDirectory()) continue; // Don't migrate unknown directories
       if (SYSTEM_FILES.has(entry.name)) continue;
       if (entry.name.startsWith(".")) continue;
@@ -116,9 +138,15 @@ function migrateStaleFiles(rootDir: string, dirs: WorkspaceDirs): void {
 
       // Route to appropriate directory
       let targetDir: string;
-      if ([".py", ".js", ".ts", ".sh", ".bash", ".rb", ".go", ".rs"].includes(ext)) {
+      if (
+        [".py", ".js", ".ts", ".sh", ".bash", ".rb", ".go", ".rs"].includes(ext)
+      ) {
         targetDir = dirs.scripts;
-      } else if ([".csv", ".json", ".xml", ".yaml", ".yml", ".sql", ".toml"].includes(ext)) {
+      } else if (
+        [".csv", ".json", ".xml", ".yaml", ".yml", ".sql", ".toml"].includes(
+          ext,
+        )
+      ) {
         targetDir = dirs.data;
       } else {
         targetDir = dirs.files;
@@ -132,7 +160,10 @@ function migrateStaleFiles(rootDir: string, dirs: WorkspaceDirs): void {
       }
     }
     if (migrated > 0) {
-      log("workspace", `Migrated ${migrated} file(s) from root to organized dirs`);
+      log(
+        "workspace",
+        `Migrated ${migrated} file(s) from root to organized dirs`,
+      );
     }
   } catch {
     // Non-fatal

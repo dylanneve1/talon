@@ -9,7 +9,11 @@ import type { TalonConfig } from "./config.js";
 import { getSession, setSessionId } from "./sessions.js";
 import { getBridgePort } from "./bridge.js";
 import { resolve } from "node:path";
-import { setChatProactive, getRegisteredProactiveChats, getChatSettings } from "./chat-settings.js";
+import {
+  setChatProactive,
+  getRegisteredProactiveChats,
+  getChatSettings,
+} from "./chat-settings.js";
 import { isBridgeBusy } from "./bridge.js";
 import { getRecentHistory, getLatestMessageId } from "./history.js";
 import { log, logError } from "./log.js";
@@ -22,7 +26,9 @@ const registeredChats = new Set<string>();
 const lastProactiveCheckMessageId = new Map<string, number>();
 
 // Store a reference to setBridgeContext so we can set context for proactive actions
-let bridgeSetContext: ((chatId: number, bot: unknown, inputFile: unknown) => void) | null = null;
+let bridgeSetContext:
+  | ((chatId: number, bot: unknown, inputFile: unknown) => void)
+  | null = null;
 let bridgeClearContext: (() => void) | null = null;
 let botInstance: unknown = null;
 let inputFileClass: unknown = null;
@@ -45,7 +51,10 @@ export function initProactive(params: {
     registeredChats.add(chatId);
   }
   if (registeredChats.size > 0) {
-    log("proactive", `Loaded ${registeredChats.size} registered chat(s) from settings`);
+    log(
+      "proactive",
+      `Loaded ${registeredChats.size} registered chat(s) from settings`,
+    );
   }
 }
 
@@ -96,7 +105,8 @@ export function stopProactiveTimer(): void {
 }
 
 async function runProactiveCheck(): Promise<void> {
-  if (!config || !bridgeSetContext || !bridgeClearContext || !botInstance) return;
+  if (!config || !bridgeSetContext || !bridgeClearContext || !botInstance)
+    return;
   if (isBridgeBusy()) {
     log("proactive", "Skipping check — bridge is busy processing a message");
     return;
@@ -151,7 +161,8 @@ async function runProactiveCheck(): Promise<void> {
 
       const options: Record<string, unknown> = {
         model: activeModel,
-        systemPrompt: config.systemPrompt +
+        systemPrompt:
+          config.systemPrompt +
           "\n\n## PROACTIVE MODE\n" +
           "You are checking in on a chat. Below are recent unread messages.\n" +
           "If there's something interesting you can add to, react to a message or send a brief response.\n" +
@@ -167,8 +178,14 @@ async function runProactiveCheck(): Promise<void> {
         mcpServers: {
           "telegram-tools": {
             command: "node",
-            args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "mcp-telegram.ts")],
-            env: { TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}` },
+            args: [
+              "--import",
+              "tsx",
+              resolve(import.meta.dirname ?? ".", "mcp-telegram.ts"),
+            ],
+            env: {
+              TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}`,
+            },
           },
         },
       };
@@ -191,14 +208,21 @@ async function runProactiveCheck(): Promise<void> {
 
       for await (const message of qi) {
         const msg = message as Record<string, unknown>;
-        if (msg.type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
+        if (
+          msg.type === "system" &&
+          msg.subtype === "init" &&
+          typeof msg.session_id === "string"
+        ) {
           newSessionId = msg.session_id;
         }
       }
 
       if (newSessionId) setSessionId(chatId, newSessionId);
 
-      log("proactive", `Checked chat ${chatId} (${unreadMessages.length} new msgs)`);
+      log(
+        "proactive",
+        `Checked chat ${chatId} (${unreadMessages.length} new msgs)`,
+      );
     } catch (err) {
       logError("proactive", `Chat ${chatId} failed`, err);
     } finally {

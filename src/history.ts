@@ -12,7 +12,13 @@ export type HistoryMessage = {
   replyToMsgId?: number;
   timestamp: number;
   /** Whether this message was a photo/doc/voice/video/animation (description only). */
-  mediaType?: "photo" | "document" | "voice" | "sticker" | "video" | "animation";
+  mediaType?:
+    | "photo"
+    | "document"
+    | "voice"
+    | "sticker"
+    | "video"
+    | "animation";
   /** Telegram file_id for stickers, so Claude can reuse them. */
   stickerFileId?: string;
 };
@@ -47,7 +53,9 @@ export function clearHistory(chatId: string): void {
 function formatMessage(m: HistoryMessage): string {
   const replyTag = m.replyToMsgId ? ` (replying to msg:${m.replyToMsgId})` : "";
   const mediaTag = m.mediaType ? ` [${m.mediaType}]` : "";
-  const stickerTag = m.stickerFileId ? ` (sticker_file_id: ${m.stickerFileId})` : "";
+  const stickerTag = m.stickerFileId
+    ? ` (sticker_file_id: ${m.stickerFileId})`
+    : "";
   const time = new Date(m.timestamp).toISOString().slice(11, 16);
   return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}${stickerTag}: ${m.text}`;
 }
@@ -60,7 +68,11 @@ export function getRecentFormatted(chatId: string, limit = 20): string {
 }
 
 /** Search history by keyword (case-insensitive). */
-export function searchHistory(chatId: string, query: string, limit = 20): string {
+export function searchHistory(
+  chatId: string,
+  query: string,
+  limit = 20,
+): string {
   const history = chatHistories.get(chatId);
   if (!history || history.length === 0) return "No messages in history.";
   const lower = query.toLowerCase();
@@ -74,11 +86,17 @@ export function searchHistory(chatId: string, query: string, limit = 20): string
 }
 
 /** Get messages from a specific user. */
-export function getMessagesByUser(chatId: string, userName: string, limit = 20): string {
+export function getMessagesByUser(
+  chatId: string,
+  userName: string,
+  limit = 20,
+): string {
   const history = chatHistories.get(chatId);
   if (!history || history.length === 0) return "No messages in history.";
   const lower = userName.toLowerCase();
-  const matches = history.filter((m) => m.senderName.toLowerCase().includes(lower));
+  const matches = history.filter((m) =>
+    m.senderName.toLowerCase().includes(lower),
+  );
   if (matches.length === 0) return `No messages from "${userName}".`;
   return matches.slice(-limit).map(formatMessage).join("\n");
 }
@@ -96,7 +114,10 @@ export function getMessageById(chatId: string, msgId: number): string {
 export function getKnownUsers(chatId: string): string {
   const history = chatHistories.get(chatId);
   if (!history || history.length === 0) return "No users seen yet.";
-  const users = new Map<number, { name: string; lastSeen: number; messageCount: number }>();
+  const users = new Map<
+    number,
+    { name: string; lastSeen: number; messageCount: number }
+  >();
   for (const m of history) {
     const existing = users.get(m.senderId);
     if (!existing || m.timestamp > existing.lastSeen) {
@@ -127,7 +148,11 @@ function formatTimeAgo(ts: number): string {
 }
 
 /** Get recent messages from a specific sender by ID. */
-export function getRecentBySenderId(chatId: string, senderId: number, limit = 5): HistoryMessage[] {
+export function getRecentBySenderId(
+  chatId: string,
+  senderId: number,
+  limit = 5,
+): HistoryMessage[] {
   const history = chatHistories.get(chatId);
   if (!history) return [];
   const matches = history.filter((m) => m.senderId === senderId);

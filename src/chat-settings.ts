@@ -50,7 +50,10 @@ export function loadChatSettings(): void {
       settings.effort = effort;
       delete raw.maxThinkingTokens;
       migrated++;
-      log("settings", `Migrated chat ${chatId}: maxThinkingTokens=${tokens} to effort=${effort}`);
+      log(
+        "settings",
+        `Migrated chat ${chatId}: maxThinkingTokens=${tokens} to effort=${effort}`,
+      );
     } else if ("maxThinkingTokens" in raw) {
       // Has effort already, just clean up the old field
       delete raw.maxThinkingTokens;
@@ -60,7 +63,10 @@ export function loadChatSettings(): void {
   if (migrated > 0) {
     dirty = true;
     save();
-    log("settings", `Migrated ${migrated} chat(s) from maxThinkingTokens to effort`);
+    log(
+      "settings",
+      `Migrated ${migrated} chat(s) from maxThinkingTokens to effort`,
+    );
   }
 }
 
@@ -94,7 +100,10 @@ export function setChatModel(chatId: string, model: string | undefined): void {
   save();
 }
 
-export function setChatEffort(chatId: string, effort: EffortLevel | undefined): void {
+export function setChatEffort(
+  chatId: string,
+  effort: EffortLevel | undefined,
+): void {
   if (!store[chatId]) store[chatId] = {};
   if (effort) {
     store[chatId].effort = effort;
@@ -105,7 +114,10 @@ export function setChatEffort(chatId: string, effort: EffortLevel | undefined): 
   save();
 }
 
-export function setChatProactive(chatId: string, enabled: boolean | undefined): void {
+export function setChatProactive(
+  chatId: string,
+  enabled: boolean | undefined,
+): void {
   if (!store[chatId]) store[chatId] = {};
   if (enabled !== undefined) {
     store[chatId].proactive = enabled;
@@ -124,7 +136,13 @@ export function getRegisteredProactiveChats(): string[] {
 }
 
 /** Valid effort levels. */
-export const EFFORT_LEVELS: EffortLevel[] = ["off", "low", "medium", "high", "max"];
+export const EFFORT_LEVELS: EffortLevel[] = [
+  "off",
+  "low",
+  "medium",
+  "high",
+  "max",
+];
 
 /** Known model aliases. */
 export const MODEL_ALIASES: Record<string, string> = {

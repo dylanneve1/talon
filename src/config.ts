@@ -37,7 +37,9 @@ function loadEnvFile(): void {
 function readOptionalFile(path: string): string {
   try {
     if (existsSync(path)) return readFileSync(path, "utf-8").trim();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return "";
 }
 
@@ -55,12 +57,19 @@ function loadSystemPrompt(): string {
 
   // Custom prompt overrides default
   const custom = readOptionalFile(resolve(base, "prompts", "custom.md"));
-  const defaultPrompt = readOptionalFile(resolve(base, "prompts", "default.md"));
+  const defaultPrompt = readOptionalFile(
+    resolve(base, "prompts", "default.md"),
+  );
   parts.push(custom || defaultPrompt || "You are a helpful AI assistant.");
 
   // Memory — persistent facts and context
-  const memory = readOptionalFile(resolve(base, "workspace", "memory", "memory.md"));
-  if (memory) parts.push(`## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: workspace/memory/memory.md\n\n${memory}`);
+  const memory = readOptionalFile(
+    resolve(base, "workspace", "memory", "memory.md"),
+  );
+  if (memory)
+    parts.push(
+      `## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: workspace/memory/memory.md\n\n${memory}`,
+    );
 
   // Workspace structure
   parts.push(`## Workspace
@@ -84,18 +93,31 @@ When creating files, put them in the right directory. Use \`workspace/files/\` f
 export function loadConfig(): TalonConfig {
   loadEnvFile();
 
-  const botToken = process.env.TALON_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "";
+  const botToken =
+    process.env.TALON_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "";
   if (!botToken) {
-    throw new Error("Missing bot token. Set TALON_BOT_TOKEN in .env or environment.");
+    throw new Error(
+      "Missing bot token. Set TALON_BOT_TOKEN in .env or environment.",
+    );
   }
 
   return {
     botToken,
     model: process.env.TALON_MODEL || "claude-sonnet-4-6",
     systemPrompt: loadSystemPrompt(),
-    workspace: resolve(process.env.TALON_WORKSPACE || process.cwd(), "workspace"),
-    maxThinkingTokens: parseInt(process.env.TALON_MAX_THINKING_TOKENS || "10000", 10),
-    maxMessageLength: parseInt(process.env.TALON_MAX_MESSAGE_LENGTH || "4000", 10),
-    verbose: process.env.TALON_VERBOSE === "1" || process.env.TALON_VERBOSE === "true",
+    workspace: resolve(
+      process.env.TALON_WORKSPACE || process.cwd(),
+      "workspace",
+    ),
+    maxThinkingTokens: parseInt(
+      process.env.TALON_MAX_THINKING_TOKENS || "10000",
+      10,
+    ),
+    maxMessageLength: parseInt(
+      process.env.TALON_MAX_MESSAGE_LENGTH || "4000",
+      10,
+    ),
+    verbose:
+      process.env.TALON_VERBOSE === "1" || process.env.TALON_VERBOSE === "true",
   };
 }

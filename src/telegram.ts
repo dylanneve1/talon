@@ -44,13 +44,16 @@ export function markdownToTelegramHtml(text: string): string {
   // Step 1: Extract fenced code blocks to avoid processing their contents.
   // We replace them with placeholders and restore after all inline processing.
   const codeBlocks: string[] = [];
-  let processed = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang: string, code: string) => {
-    const escaped = escapeHtml(code.replace(/\n$/, ""));
-    const langAttr = lang ? ` class="language-${escapeHtml(lang)}"` : "";
-    const placeholder = `\x00CODEBLOCK${codeBlocks.length}\x00`;
-    codeBlocks.push(`<pre><code${langAttr}>${escaped}</code></pre>`);
-    return placeholder;
-  });
+  let processed = text.replace(
+    /```(\w*)\n([\s\S]*?)```/g,
+    (_match, lang: string, code: string) => {
+      const escaped = escapeHtml(code.replace(/\n$/, ""));
+      const langAttr = lang ? ` class="language-${escapeHtml(lang)}"` : "";
+      const placeholder = `\x00CODEBLOCK${codeBlocks.length}\x00`;
+      codeBlocks.push(`<pre><code${langAttr}>${escaped}</code></pre>`);
+      return placeholder;
+    },
+  );
 
   // Step 2: Extract inline code spans to protect them from further processing.
   const inlineCode: string[] = [];
@@ -68,11 +71,17 @@ export function markdownToTelegramHtml(text: string): string {
   // Bold: **text**
   processed = processed.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
   // Italic: *text* (not preceded by another *)
-  processed = processed.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<i>$1</i>");
+  processed = processed.replace(
+    /(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g,
+    "<i>$1</i>",
+  );
   // Italic: _text_ (surrounded by non-word or start/end)
   processed = processed.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
   // Links: [text](url)
-  processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+  processed = processed.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    '<a href="$2">$1</a>',
+  );
   // Strikethrough: ~~text~~
   processed = processed.replace(/~~(.+?)~~/g, "<s>$1</s>");
 
@@ -97,7 +106,9 @@ export function friendlyError(err: Error | string): string {
 
   if (/rate.?limit|429|too many requests/i.test(msg)) {
     const retryMatch = msg.match(/retry.?after[:\s]*(\d+)/i);
-    const wait = retryMatch ? ` Try again in ${retryMatch[1]} seconds.` : " Try again in a minute.";
+    const wait = retryMatch
+      ? ` Try again in ${retryMatch[1]} seconds.`
+      : " Try again in a minute.";
     return `Rate limited.${wait}`;
   }
 

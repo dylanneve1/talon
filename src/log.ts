@@ -25,7 +25,11 @@ export function log(component: LogComponent, message: string): void {
   console.log(`[${timestamp()}] [${component}] ${message}`);
 }
 
-export function logError(component: LogComponent, message: string, err?: unknown): void {
+export function logError(
+  component: LogComponent,
+  message: string,
+  err?: unknown,
+): void {
   const errStr = err instanceof Error ? err.message : err ? String(err) : "";
   const suffix = errStr ? `: ${errStr}` : "";
   console.error(`[${timestamp()}] [${component}] ${message}${suffix}`);

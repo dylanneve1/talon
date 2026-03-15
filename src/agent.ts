@@ -1,6 +1,12 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { TalonConfig } from "./config.js";
-import { getSession, incrementTurns, recordUsage, setSessionId, setLastBotMessageId } from "./sessions.js";
+import {
+  getSession,
+  incrementTurns,
+  recordUsage,
+  setSessionId,
+  setLastBotMessageId,
+} from "./sessions.js";
 import { getBridgePort } from "./bridge.js";
 import { getChatSettings } from "./chat-settings.js";
 import { getRecentHistory } from "./history.js";
@@ -112,9 +118,11 @@ function detectNewFiles(
 export async function handleMessage(
   params: HandleMessageParams,
 ): Promise<HandleMessageResult> {
-  if (!config) throw new Error("Agent not initialized. Call initAgent() first.");
+  if (!config)
+    throw new Error("Agent not initialized. Call initAgent() first.");
 
-  const { chatId, text, senderName, isGroup, onTextBlock, onStreamDelta } = params;
+  const { chatId, text, senderName, isGroup, onTextBlock, onStreamDelta } =
+    params;
   const session = getSession(chatId);
   const t0 = Date.now();
 
@@ -129,12 +137,30 @@ export async function handleMessage(
   // SDK supports: thinking: {type: "adaptive"/"enabled"/"disabled"}, effort: "low"/"medium"/"high"/"max"
   const thinkingConfig = (() => {
     switch (activeEffort) {
-      case "off": return { thinking: { type: "disabled" as const } };
-      case "low": return { thinking: { type: "adaptive" as const }, effort: "low" as const };
-      case "medium": return { thinking: { type: "adaptive" as const }, effort: "medium" as const };
-      case "high": return { thinking: { type: "adaptive" as const }, effort: "high" as const };
-      case "max": return { thinking: { type: "adaptive" as const }, effort: "max" as const };
-      default: return { thinking: { type: "adaptive" as const } }; // adaptive default
+      case "off":
+        return { thinking: { type: "disabled" as const } };
+      case "low":
+        return {
+          thinking: { type: "adaptive" as const },
+          effort: "low" as const,
+        };
+      case "medium":
+        return {
+          thinking: { type: "adaptive" as const },
+          effort: "medium" as const,
+        };
+      case "high":
+        return {
+          thinking: { type: "adaptive" as const },
+          effort: "high" as const,
+        };
+      case "max":
+        return {
+          thinking: { type: "adaptive" as const },
+          effort: "max" as const,
+        };
+      default:
+        return { thinking: { type: "adaptive" as const } }; // adaptive default
     }
   })();
 
@@ -150,8 +176,14 @@ export async function handleMessage(
     mcpServers: {
       "telegram-tools": {
         command: "node",
-        args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "mcp-telegram.ts")],
-        env: { TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}` },
+        args: [
+          "--import",
+          "tsx",
+          resolve(import.meta.dirname ?? ".", "mcp-telegram.ts"),
+        ],
+        env: {
+          TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}`,
+        },
       },
     },
   };
@@ -168,10 +200,12 @@ export async function handleMessage(
   if (session.sessionId && session.turns === 0) {
     const recentMsgs = getRecentHistory(chatId, 3);
     if (recentMsgs.length > 0) {
-      const contextLines = recentMsgs.map((m) => {
-        const time = new Date(m.timestamp).toISOString().slice(11, 16);
-        return `[${time}] ${m.senderName}: ${m.text.slice(0, 300)}`;
-      }).join("\n");
+      const contextLines = recentMsgs
+        .map((m) => {
+          const time = new Date(m.timestamp).toISOString().slice(11, 16);
+          return `[${time}] ${m.senderName}: ${m.text.slice(0, 300)}`;
+        })
+        .join("\n");
       continuityPrefix = `[Session resumed — recent conversation context:\n${contextLines}]\n\n`;
     }
   }
@@ -179,7 +213,10 @@ export async function handleMessage(
   const prompt = isGroup
     ? `${continuityPrefix}[${senderName}]${msgIdHint}: ${text}`
     : `${continuityPrefix}${text}${msgIdHint}`;
-  log("agent", `[${chatId}] <- ${text.slice(0, 120)}${text.length > 120 ? "..." : ""}`);
+  log(
+    "agent",
+    `[${chatId}] <- ${text.slice(0, 120)}${text.length > 120 ? "..." : ""}`,
+  );
 
   const qi = query({ prompt, options: options as never });
 
@@ -203,7 +240,11 @@ export async function handleMessage(
       const type = msg.type as string;
 
       // Session ID capture
-      if (type === "system" && msg.subtype === "init" && typeof msg.session_id === "string") {
+      if (
+        type === "system" &&
+        msg.subtype === "init" &&
+        typeof msg.session_id === "string"
+      ) {
         newSessionId = msg.session_id;
       }
 
@@ -212,14 +253,20 @@ export async function handleMessage(
         const event = msg.event as Record<string, unknown> | undefined;
         if (event?.type === "content_block_delta") {
           const delta = event.delta as Record<string, unknown> | undefined;
-          if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+          if (
+            delta?.type === "thinking_delta" &&
+            typeof delta.thinking === "string"
+          ) {
             // Thinking phase: notify but don't accumulate text
             const now = Date.now();
             if (now - lastStreamUpdate >= STREAM_INTERVAL) {
               lastStreamUpdate = now;
               onStreamDelta(currentBlockText, "thinking");
             }
-          } else if (delta?.type === "text_delta" && typeof delta.text === "string") {
+          } else if (
+            delta?.type === "text_delta" &&
+            typeof delta.text === "string"
+          ) {
             currentBlockText += delta.text;
             const now = Date.now();
             if (now - lastStreamUpdate >= STREAM_INTERVAL) {
@@ -270,7 +317,11 @@ export async function handleMessage(
           cacheWrite = usage.cache_creation_input_tokens ?? 0;
         }
         // If we still have unsent text and no streaming captured it
-        if (!allResponseText && !currentBlockText && typeof msg.result === "string") {
+        if (
+          !allResponseText &&
+          !currentBlockText &&
+          typeof msg.result === "string"
+        ) {
           currentBlockText = msg.result;
         }
       }
@@ -278,10 +329,15 @@ export async function handleMessage(
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
     if (/session|expired|invalid|resume/i.test(errMsg)) {
-      logWarn("agent", `[${chatId}] Stale session, clearing: ${errMsg.slice(0, 100)}`);
+      logWarn(
+        "agent",
+        `[${chatId}] Stale session, clearing: ${errMsg.slice(0, 100)}`,
+      );
       const { resetSession } = await import("./sessions.js");
       resetSession(chatId);
-      throw new Error("Session expired. Send your message again to start fresh.");
+      throw new Error(
+        "Session expired. Send your message again to start fresh.",
+      );
     }
     logError("agent", `[${chatId}] SDK error: ${errMsg}`);
     throw err;
@@ -291,7 +347,13 @@ export async function handleMessage(
   const durationMs = Date.now() - t0;
   if (newSessionId) setSessionId(chatId, newSessionId);
   incrementTurns(chatId);
-  recordUsage(chatId, { inputTokens, outputTokens, cacheRead, cacheWrite, durationMs });
+  recordUsage(chatId, {
+    inputTokens,
+    outputTokens,
+    cacheRead,
+    cacheWrite,
+    durationMs,
+  });
 
   // The remaining currentBlockText is the final response text
   allResponseText += currentBlockText;
@@ -301,9 +363,11 @@ export async function handleMessage(
   const newFiles = detectNewFiles(beforeFiles, afterFiles, config.workspace);
 
   const totalPrompt = inputTokens + cacheRead + cacheWrite;
-  const cacheHitPct = totalPrompt > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
+  const cacheHitPct =
+    totalPrompt > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
 
-  log("agent",
+  log(
+    "agent",
     `[${chatId}] -> ${allResponseText.slice(0, 80)}${allResponseText.length > 80 ? "..." : ""} ` +
       `(${durationMs}ms, in=${inputTokens} out=${outputTokens} cache=${cacheHitPct}%` +
       `${toolCalls > 0 ? ` tools=${toolCalls}` : ""}` +

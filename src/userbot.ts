@@ -34,7 +34,9 @@ export function allowChat(chatId: number): void {
 function assertAllowedChat(chatId: number | string): number {
   const numeric = typeof chatId === "string" ? parseInt(chatId, 10) : chatId;
   if (!allowedChatIds.has(numeric)) {
-    throw new Error("Access denied: userbot can only access chats where the bot is active.");
+    throw new Error(
+      "Access denied: userbot can only access chats where the bot is active.",
+    );
   }
   return numeric;
 }
@@ -65,7 +67,7 @@ export async function initUserClient(params: {
   try {
     await client.connect();
 
-    if (!await client.isUserAuthorized()) {
+    if (!(await client.isUserAuthorized())) {
       log("userbot", "Not authorized -- run the login script first.");
       client = null;
       return false;
@@ -175,10 +177,14 @@ export async function searchMessages(params: {
 
     return messages
       .map((m) => {
-        const date = new Date(m.date * 1000).toISOString().slice(0, 16).replace("T", " ");
-        const sender = m.sender && "firstName" in m.sender
-          ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
-          : "Unknown";
+        const date = new Date(m.date * 1000)
+          .toISOString()
+          .slice(0, 16)
+          .replace("T", " ");
+        const sender =
+          m.sender && "firstName" in m.sender
+            ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
+            : "Unknown";
         return `[msg:${m.id} ${date}] ${sender}: ${m.text || "(media)"}`;
       })
       .join("\n");
@@ -206,9 +212,10 @@ export async function getHistory(params: {
       opts.offsetId = params.offsetId;
     }
     if (params.before) {
-      const ts = typeof params.before === "string"
-        ? Math.floor(new Date(params.before).getTime() / 1000)
-        : params.before;
+      const ts =
+        typeof params.before === "string"
+          ? Math.floor(new Date(params.before).getTime() / 1000)
+          : params.before;
       if (ts > 0) opts.offsetDate = ts;
     }
     const messages = await client.getMessages(chatId, opts);
@@ -218,11 +225,17 @@ export async function getHistory(params: {
     return [...messages]
       .reverse()
       .map((m) => {
-        const date = new Date(m.date * 1000).toISOString().slice(0, 16).replace("T", " ");
-        const sender = m.sender && "firstName" in m.sender
-          ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
-          : "Unknown";
-        const replyTag = m.replyTo?.replyToMsgId ? ` (reply to msg:${m.replyTo.replyToMsgId})` : "";
+        const date = new Date(m.date * 1000)
+          .toISOString()
+          .slice(0, 16)
+          .replace("T", " ");
+        const sender =
+          m.sender && "firstName" in m.sender
+            ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
+            : "Unknown";
+        const replyTag = m.replyTo?.replyToMsgId
+          ? ` (reply to msg:${m.replyTo.replyToMsgId})`
+          : "";
         const mediaTag = m.media ? ` [${m.media.className}]` : "";
         return `[msg:${m.id} ${date}] ${sender}${replyTag}${mediaTag}: ${m.text || "(media)"}`;
       })
@@ -279,7 +292,8 @@ export async function getParticipantDetails(params: {
 
     return participants
       .map((p) => {
-        const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || "(no name)";
+        const name =
+          [p.firstName, p.lastName].filter(Boolean).join(" ") || "(no name)";
         const username = p.username ? `@${p.username}` : "";
         const bot = p.bot ? " [BOT]" : "";
         const verified = p.verified ? " [verified]" : "";
@@ -321,7 +335,10 @@ export async function getUserInfo(params: {
   try {
     const chatId = assertAllowedChat(params.chatId);
     // Fetch the user as a participant of the allowed chat
-    const participants = await client.getParticipants(chatId, { limit: 1, search: "" });
+    const participants = await client.getParticipants(chatId, {
+      limit: 1,
+      search: "",
+    });
     // getEntity only works for users the client has seen
     const entity = await client.getEntity(params.userId).catch(() => null);
     if (!entity || !("firstName" in entity)) {
@@ -342,7 +359,8 @@ export async function getUserInfo(params: {
       if (cn === "UserStatusOnline") return "Online";
       if (cn === "UserStatusOffline") {
         const off = s as { wasOnline?: number };
-        if (off.wasOnline) return `Last seen ${new Date(off.wasOnline * 1000).toISOString().slice(0, 16).replace("T", " ")}`;
+        if (off.wasOnline)
+          return `Last seen ${new Date(off.wasOnline * 1000).toISOString().slice(0, 16).replace("T", " ")}`;
         return "Offline";
       }
       if (cn === "UserStatusRecently") return "Recently";
@@ -383,11 +401,17 @@ export async function getMessage(params: {
     const m = messages[0];
     if (!m) return `Message ${params.messageId} not found.`;
 
-    const date = new Date(m.date * 1000).toISOString().slice(0, 16).replace("T", " ");
-    const sender = m.sender && "firstName" in m.sender
-      ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
-      : "Unknown";
-    const replyTag = m.replyTo?.replyToMsgId ? `\nReply to: msg:${m.replyTo.replyToMsgId}` : "";
+    const date = new Date(m.date * 1000)
+      .toISOString()
+      .slice(0, 16)
+      .replace("T", " ");
+    const sender =
+      m.sender && "firstName" in m.sender
+        ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
+        : "Unknown";
+    const replyTag = m.replyTo?.replyToMsgId
+      ? `\nReply to: msg:${m.replyTo.replyToMsgId}`
+      : "";
     const mediaTag = m.media ? `\nMedia: ${m.media.className}` : "";
     return `[msg:${m.id} ${date}] ${sender}${replyTag}${mediaTag}\n${m.text || "(no text)"}`;
   } catch (err) {
