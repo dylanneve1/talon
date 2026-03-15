@@ -172,6 +172,40 @@ const messageQueues = new Map<
 const DEBOUNCE_MS = 500;
 const MAX_QUEUED_PER_CHAT = 20;
 
+// ── Per-user rate limiting ──────────────────────────────────────────────────
+
+const userMessageTimestamps = new Map<number, number[]>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
+const RATE_LIMIT_MAX_MESSAGES = 15; // max 15 messages per minute per user
+
+function isUserRateLimited(senderId: number): boolean {
+  const now = Date.now();
+  let timestamps = userMessageTimestamps.get(senderId);
+  if (!timestamps) {
+    timestamps = [];
+    userMessageTimestamps.set(senderId, timestamps);
+  }
+
+  // Remove old entries outside the window
+  while (timestamps.length > 0 && timestamps[0] < now - RATE_LIMIT_WINDOW_MS) {
+    timestamps.shift();
+  }
+
+  if (timestamps.length >= RATE_LIMIT_MAX_MESSAGES) {
+    return true;
+  }
+
+  timestamps.push(now);
+
+  // Cap the map to prevent memory growth from many unique users
+  if (userMessageTimestamps.size > 10_000) {
+    const oldest = userMessageTimestamps.keys().next().value;
+    if (oldest !== undefined) userMessageTimestamps.delete(oldest);
+  }
+
+  return false;
+}
+
 /**
  * Enqueue a message for processing. If another message arrives within DEBOUNCE_MS,
  * they are concatenated and sent as a single query to avoid duplicate SDK spawns.
@@ -570,6 +604,7 @@ async function handleMediaMessage(
   media: MediaDescriptor,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat) return;
+  if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
 
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
@@ -643,6 +678,7 @@ export async function handleTextMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
 
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
