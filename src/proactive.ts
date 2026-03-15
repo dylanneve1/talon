@@ -49,6 +49,11 @@ export function initProactive(params: {
   // Load persisted proactive registrations from chat settings
   for (const chatId of getRegisteredProactiveChats()) {
     registeredChats.add(chatId);
+    // Start per-chat timers for chats with custom intervals
+    const chatSettings = getChatSettings(chatId);
+    if (chatSettings.proactiveIntervalMs) {
+      startPerChatTimer(chatId, chatSettings.proactiveIntervalMs);
+    }
   }
   if (registeredChats.size > 0) {
     log(
@@ -83,10 +88,17 @@ export function isProactiveEnabled(chatId: string): boolean {
 
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
+/** Per-chat timers for chats with custom proactive intervals. */
+const perChatTimers = new Map<string, ReturnType<typeof setInterval>>();
+
+export function getDefaultIntervalMs(): number {
+  const envMs = parseInt(process.env.TALON_PROACTIVE_INTERVAL_MS ?? "", 10);
+  return envMs > 0 ? envMs : DEFAULT_INTERVAL_MS;
+}
+
 export function startProactiveTimer(intervalMs?: number): void {
   if (timer) return;
-  const envMs = parseInt(process.env.TALON_PROACTIVE_INTERVAL_MS ?? "", 10);
-  const ms = intervalMs ?? (envMs > 0 ? envMs : DEFAULT_INTERVAL_MS);
+  const ms = intervalMs ?? getDefaultIntervalMs();
   if (ms <= 0) return;
 
   log("proactive", `Timer started: every ${Math.round(ms / 60000)}m`);
@@ -97,10 +109,159 @@ export function startProactiveTimer(intervalMs?: number): void {
   }, ms);
 }
 
+/** Start a per-chat proactive timer with a custom interval. */
+export function startPerChatTimer(chatId: string, intervalMs: number): void {
+  // Clear existing per-chat timer if any
+  const existing = perChatTimers.get(chatId);
+  if (existing) clearInterval(existing);
+
+  const chatTimer = setInterval(() => {
+    runProactiveCheckForChat(chatId).catch((err) => {
+      logError("proactive", `Per-chat check for ${chatId} failed`, err);
+    });
+  }, intervalMs);
+  perChatTimers.set(chatId, chatTimer);
+  log(
+    "proactive",
+    `Per-chat timer for ${chatId}: every ${Math.round(intervalMs / 60000)}m`,
+  );
+}
+
+/** Stop a per-chat proactive timer. */
+export function stopPerChatTimer(chatId: string): void {
+  const existing = perChatTimers.get(chatId);
+  if (existing) {
+    clearInterval(existing);
+    perChatTimers.delete(chatId);
+  }
+}
+
 export function stopProactiveTimer(): void {
   if (timer) {
     clearInterval(timer);
     timer = null;
+  }
+  // Also clear all per-chat timers
+  for (const [chatId, t] of perChatTimers) {
+    clearInterval(t);
+  }
+  perChatTimers.clear();
+}
+
+/** Run a proactive check for a single chat. Returns true if check ran. */
+async function runProactiveCheckForChat(chatId: string): Promise<boolean> {
+  if (!config || !bridgeSetContext || !bridgeClearContext || !botInstance)
+    return false;
+  if (isBridgeBusy()) return false;
+  if (!isProactiveEnabled(chatId)) return false;
+
+  const numericChatId = parseInt(chatId, 10);
+  if (isNaN(numericChatId)) return false;
+
+  // Check for new messages since last proactive check using in-memory buffer
+  const latestMsgId = getLatestMessageId(chatId);
+  const lastCheckedId = lastProactiveCheckMessageId.get(chatId);
+
+  if (latestMsgId === undefined) return false;
+  if (lastCheckedId !== undefined && latestMsgId <= lastCheckedId) return false;
+
+  // Build a summary of unread messages from the in-memory buffer
+  const recentMessages = getRecentHistory(chatId, 10);
+  const unreadMessages = lastCheckedId
+    ? recentMessages.filter((m) => m.msgId > lastCheckedId)
+    : recentMessages;
+
+  if (unreadMessages.length === 0) return false;
+
+  const messageSummary = unreadMessages
+    .map((m) => {
+      const time = new Date(m.timestamp).toISOString().slice(11, 16);
+      const media = m.mediaType ? ` [${m.mediaType}]` : "";
+      return `[${time}] ${m.senderName}${media}: ${m.text.slice(0, 200)}`;
+    })
+    .join("\n");
+
+  // Update the last checked ID before running the check
+  lastProactiveCheckMessageId.set(chatId, latestMsgId);
+
+  try {
+    // Set bridge context for this chat
+    bridgeSetContext(numericChatId, botInstance, inputFileClass);
+
+    const session = getSession(chatId);
+    const chatSettings = getChatSettings(chatId);
+    const activeModel = chatSettings.model ?? config.model;
+
+    const options: Record<string, unknown> = {
+      model: activeModel,
+      systemPrompt:
+        config.systemPrompt +
+        "\n\n## PROACTIVE MODE\n" +
+        "You are checking in on a chat. Below are recent unread messages.\n" +
+        "If there's something interesting you can add to, react to a message or send a brief response.\n" +
+        "If there's nothing to respond to, do nothing — don't force a response.\n" +
+        "Be natural. Don't announce that you're checking in.\n" +
+        "Only respond if you genuinely have something to add.\n" +
+        "You can also use read_chat_history for more context if needed.",
+      cwd: config.workspace,
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+      betas: ["context-1m-2025-08-07"],
+      maxThinkingTokens: 4000,
+      mcpServers: {
+        "telegram-tools": {
+          command: "node",
+          args: [
+            "--import",
+            "tsx",
+            resolve(import.meta.dirname ?? ".", "mcp-telegram.ts"),
+          ],
+          env: {
+            TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}`,
+          },
+        },
+      },
+    };
+
+    if (session.sessionId) {
+      options.resume = session.sessionId;
+    }
+
+    const prompt =
+      `[PROACTIVE CHECK] ${unreadMessages.length} new message(s) since last check:\n\n` +
+      messageSummary +
+      "\n\nDecide if you want to respond to or react to anything. If not, do nothing.";
+
+    const qi = query({
+      prompt,
+      options: options as never,
+    });
+
+    let newSessionId: string | undefined;
+
+    for await (const message of qi) {
+      const msg = message as Record<string, unknown>;
+      if (
+        msg.type === "system" &&
+        msg.subtype === "init" &&
+        typeof msg.session_id === "string"
+      ) {
+        newSessionId = msg.session_id;
+      }
+    }
+
+    if (newSessionId) setSessionId(chatId, newSessionId);
+
+    log(
+      "proactive",
+      `Checked chat ${chatId} (${unreadMessages.length} new msgs)`,
+    );
+    return true;
+  } catch (err) {
+    logError("proactive", `Chat ${chatId} failed`, err);
+    return false;
+  } finally {
+    bridgeClearContext?.();
   }
 }
 
@@ -113,120 +274,10 @@ async function runProactiveCheck(): Promise<void> {
   }
 
   for (const chatId of registeredChats) {
-    if (!isProactiveEnabled(chatId)) continue;
+    // Skip chats with custom per-chat timers (they run on their own schedule)
+    const chatSettings = getChatSettings(chatId);
+    if (chatSettings.proactiveIntervalMs) continue;
 
-    const numericChatId = parseInt(chatId, 10);
-    if (isNaN(numericChatId)) continue;
-
-    // Check for new messages since last proactive check using in-memory buffer
-    const latestMsgId = getLatestMessageId(chatId);
-    const lastCheckedId = lastProactiveCheckMessageId.get(chatId);
-
-    if (latestMsgId === undefined) {
-      // No messages in buffer at all — skip
-      continue;
-    }
-
-    if (lastCheckedId !== undefined && latestMsgId <= lastCheckedId) {
-      // No new messages since last check — skip
-      continue;
-    }
-
-    // Build a summary of unread messages from the in-memory buffer
-    const recentMessages = getRecentHistory(chatId, 10);
-    const unreadMessages = lastCheckedId
-      ? recentMessages.filter((m) => m.msgId > lastCheckedId)
-      : recentMessages;
-
-    if (unreadMessages.length === 0) continue;
-
-    const messageSummary = unreadMessages
-      .map((m) => {
-        const time = new Date(m.timestamp).toISOString().slice(11, 16);
-        const media = m.mediaType ? ` [${m.mediaType}]` : "";
-        return `[${time}] ${m.senderName}${media}: ${m.text.slice(0, 200)}`;
-      })
-      .join("\n");
-
-    // Update the last checked ID before running the check
-    lastProactiveCheckMessageId.set(chatId, latestMsgId);
-
-    try {
-      // Set bridge context for this chat
-      bridgeSetContext(numericChatId, botInstance, inputFileClass);
-
-      const session = getSession(chatId);
-      const chatSettings = getChatSettings(chatId);
-      const activeModel = chatSettings.model ?? config.model;
-
-      const options: Record<string, unknown> = {
-        model: activeModel,
-        systemPrompt:
-          config.systemPrompt +
-          "\n\n## PROACTIVE MODE\n" +
-          "You are checking in on a chat. Below are recent unread messages.\n" +
-          "If there's something interesting you can add to, react to a message or send a brief response.\n" +
-          "If there's nothing to respond to, do nothing — don't force a response.\n" +
-          "Be natural. Don't announce that you're checking in.\n" +
-          "Only respond if you genuinely have something to add.\n" +
-          "You can also use read_chat_history for more context if needed.",
-        cwd: config.workspace,
-        permissionMode: "bypassPermissions",
-        allowDangerouslySkipPermissions: true,
-        betas: ["context-1m-2025-08-07"],
-        maxThinkingTokens: 4000,
-        mcpServers: {
-          "telegram-tools": {
-            command: "node",
-            args: [
-              "--import",
-              "tsx",
-              resolve(import.meta.dirname ?? ".", "mcp-telegram.ts"),
-            ],
-            env: {
-              TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}`,
-            },
-          },
-        },
-      };
-
-      if (session.sessionId) {
-        options.resume = session.sessionId;
-      }
-
-      const prompt =
-        `[PROACTIVE CHECK] ${unreadMessages.length} new message(s) since last check:\n\n` +
-        messageSummary +
-        "\n\nDecide if you want to respond to or react to anything. If not, do nothing.";
-
-      const qi = query({
-        prompt,
-        options: options as never,
-      });
-
-      let newSessionId: string | undefined;
-
-      for await (const message of qi) {
-        const msg = message as Record<string, unknown>;
-        if (
-          msg.type === "system" &&
-          msg.subtype === "init" &&
-          typeof msg.session_id === "string"
-        ) {
-          newSessionId = msg.session_id;
-        }
-      }
-
-      if (newSessionId) setSessionId(chatId, newSessionId);
-
-      log(
-        "proactive",
-        `Checked chat ${chatId} (${unreadMessages.length} new msgs)`,
-      );
-    } catch (err) {
-      logError("proactive", `Chat ${chatId} failed`, err);
-    } finally {
-      bridgeClearContext?.();
-    }
+    await runProactiveCheckForChat(chatId);
   }
 }

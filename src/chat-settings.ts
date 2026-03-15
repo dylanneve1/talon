@@ -16,6 +16,8 @@ export type ChatSettings = {
   effort?: EffortLevel;
   /** Whether proactive check-ins are enabled for this chat. */
   proactive?: boolean;
+  /** Per-chat proactive interval in milliseconds. */
+  proactiveIntervalMs?: number;
 };
 
 const STORE_FILE = resolve(process.cwd(), "workspace", "chat-settings.json");
@@ -118,6 +120,20 @@ export function setChatProactive(
     store[chatId].proactive = enabled;
   } else {
     delete store[chatId].proactive;
+  }
+  dirty = true;
+  save();
+}
+
+export function setChatProactiveInterval(
+  chatId: string,
+  intervalMs: number | undefined,
+): void {
+  if (!store[chatId]) store[chatId] = {};
+  if (intervalMs !== undefined) {
+    store[chatId].proactiveIntervalMs = intervalMs;
+  } else {
+    delete store[chatId].proactiveIntervalMs;
   }
   dirty = true;
   save();

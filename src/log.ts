@@ -8,6 +8,7 @@ export type LogComponent =
   | "agent"
   | "proactive"
   | "userbot"
+  | "users"
   | "watchdog"
   | "workspace"
   | "shutdown"

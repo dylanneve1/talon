@@ -8,6 +8,7 @@ import {
   getActiveSessionCount,
   getAllSessions,
   flushSessions,
+  type SessionInfo,
 } from "./sessions.js";
 import {
   startBridge,
@@ -27,6 +28,7 @@ import {
   getChatSettings,
   setChatModel,
   setChatEffort,
+  setChatProactiveInterval,
   resolveModelName,
   EFFORT_LEVELS,
   type EffortLevel,
@@ -39,6 +41,9 @@ import {
   isProactiveEnabled,
   startProactiveTimer,
   stopProactiveTimer,
+  startPerChatTimer,
+  stopPerChatTimer,
+  getDefaultIntervalMs,
 } from "./proactive.js";
 import { readFileSync } from "node:fs";
 import { initWorkspace, getWorkspaceDiskUsage } from "./workspace.js";
@@ -61,6 +66,7 @@ import {
   getSenderName,
   escapeHtml,
 } from "./handlers.js";
+import { appendDailyLog } from "./daily-log.js";
 import { log, logError, logWarn } from "./log.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
@@ -153,6 +159,22 @@ bot.command("help", (ctx) =>
 
 bot.command("reset", async (ctx) => {
   const cid = String(ctx.chat.id);
+  const info = getSessionInfo(cid);
+
+  // Log session summary before clearing
+  if (info.turns > 0) {
+    const duration = info.createdAt
+      ? formatDuration(Date.now() - info.createdAt)
+      : "unknown";
+    const modelNote =
+      info.turns > 5 && info.lastModel ? ` | model: ${info.lastModel}` : "";
+    const nameNote = info.sessionName ? ` "${info.sessionName}"` : "";
+    appendDailyLog(
+      "System",
+      `Session reset${nameNote}: ${info.turns} turns, ${duration}, $${info.usage.estimatedCostUsd.toFixed(4)}${modelNote}`,
+    );
+  }
+
   resetSession(cid);
   clearHistory(cid);
   await ctx.reply("Session cleared.");
@@ -312,8 +334,11 @@ bot.command("proactive", async (ctx) => {
 
   if (!arg || arg === "status") {
     const enabled = isProactiveEnabled(cid);
+    const chatSets = getChatSettings(cid);
+    const intervalMs = chatSets.proactiveIntervalMs ?? getDefaultIntervalMs();
+    const intervalStr = formatDuration(intervalMs);
     await ctx.reply(
-      `<b>Proactive:</b> ${enabled ? "on" : "off"}\nPeriodically checks chat and responds if there's something to add.`,
+      `<b>Proactive:</b> ${enabled ? "on" : "off"}\n<b>Interval:</b> ${intervalStr}\nPeriodically checks chat and responds if there's something to add.`,
       {
         parse_mode: "HTML",
         reply_markup: {
@@ -344,11 +369,34 @@ bot.command("proactive", async (ctx) => {
 
   if (arg === "off" || arg === "disable") {
     disableProactive(cid);
+    stopPerChatTimer(cid);
     await ctx.reply("Proactive mode disabled.");
     return;
   }
 
-  await ctx.reply("Use: /proactive on, /proactive off, or /proactive status");
+  // Parse interval: "30m", "2h", "1h30m", "45m"
+  const intervalMs = parseInterval(arg);
+  if (intervalMs && intervalMs >= 5 * 60 * 1000) {
+    // Minimum 5 minutes
+    setChatProactiveInterval(cid, intervalMs);
+    enableProactive(cid);
+    registerChatForProactive(cid);
+    startPerChatTimer(cid, intervalMs);
+    await ctx.reply(
+      `Proactive interval set to <b>${formatDuration(intervalMs)}</b> for this chat.`,
+      { parse_mode: "HTML" },
+    );
+    return;
+  }
+
+  if (intervalMs) {
+    await ctx.reply("Minimum interval is 5 minutes.");
+    return;
+  }
+
+  await ctx.reply(
+    "Use: /proactive on, /proactive off, /proactive 30m, /proactive 2h",
+  );
 });
 
 bot.command("settings", async (ctx) => {
@@ -358,16 +406,24 @@ bot.command("settings", async (ctx) => {
   const effortName = chatSets.effort ?? "adaptive";
   const proactiveOn = isProactiveEnabled(cid);
 
-  await ctx.reply(renderSettingsText(activeModel, effortName, proactiveOn), {
-    parse_mode: "HTML",
-    reply_markup: {
-      inline_keyboard: renderSettingsKeyboard(
-        activeModel,
-        effortName,
-        proactiveOn,
-      ),
+  await ctx.reply(
+    renderSettingsText(
+      activeModel,
+      effortName,
+      proactiveOn,
+      chatSets.proactiveIntervalMs,
+    ),
+    {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: renderSettingsKeyboard(
+          activeModel,
+          effortName,
+          proactiveOn,
+        ),
+      },
     },
-  });
+  );
 });
 
 // ── Settings panel helpers ───────────────────────────────────────────────────
@@ -376,13 +432,17 @@ function renderSettingsText(
   model: string,
   effort: string,
   proactive: boolean,
+  proactiveIntervalMs?: number,
 ): string {
+  const intervalStr = proactiveIntervalMs
+    ? formatDuration(proactiveIntervalMs)
+    : formatDuration(getDefaultIntervalMs());
   return [
     "<b>🦅 Settings</b>",
     "",
     `<b>Model:</b> <code>${escapeHtml(model)}</code>`,
     `<b>Effort:</b> ${effort}`,
-    `<b>Proactive:</b> ${proactive ? "on" : "off"}`,
+    `<b>Proactive:</b> ${proactive ? "on" : "off"} (every ${intervalStr})`,
   ].join("\n");
 }
 
@@ -455,15 +515,51 @@ bot.command("admin", async (ctx) => {
         await ctx.reply("No active sessions.");
         return;
       }
+      // Sort by last active (most recent first)
+      sessions.sort(
+        (a, b) => (b.info.lastActive || 0) - (a.info.lastActive || 0),
+      );
+
+      // Fetch chat titles in parallel
+      const chatTitles = new Map<string, string>();
+      await Promise.all(
+        sessions.map(async (s) => {
+          try {
+            const numId = parseInt(s.chatId, 10);
+            if (isNaN(numId)) return;
+            const chat = await bot.api.getChat(numId);
+            const title =
+              "title" in chat
+                ? chat.title
+                : "first_name" in chat
+                  ? (chat.first_name ?? "DM")
+                  : "DM";
+            chatTitles.set(s.chatId, title ?? "Unknown");
+          } catch {
+            // Chat might be inaccessible
+          }
+        }),
+      );
+
       const lines = sessions.map((s) => {
         const age = s.info.lastActive
           ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago`
           : "unknown";
-        const sid = s.info.sessionId ? s.info.sessionId.slice(0, 8) : "none";
-        return `<code>${s.chatId}</code> | ${s.info.turns} turns | ${age} | $${s.info.usage.estimatedCostUsd.toFixed(3)} | sid:${sid}`;
+        const title = chatTitles.get(s.chatId) ?? s.chatId;
+        const chatSettings = getChatSettings(s.chatId);
+        const model = (
+          chatSettings.model ??
+          config.model ??
+          "sonnet"
+        ).replace("claude-", "");
+        const effort = chatSettings.effort ?? "adaptive";
+        return (
+          `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n` +
+          `  ${s.info.turns} turns | ${age} | $${s.info.usage.estimatedCostUsd.toFixed(3)} | ${model} | effort: ${effort}`
+        );
       });
       await ctx.reply(
-        `<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n"),
+        `<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n\n"),
         { parse_mode: "HTML" },
       );
       return;
@@ -628,7 +724,7 @@ bot.command("status", async (ctx) => {
     `<b>Session Stats</b>`,
     `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "\u2014"} \u00B7 avg ${avgResponseMs ? formatDuration(avgResponseMs) : "\u2014"} \u00B7 best ${fastestMs ? formatDuration(fastestMs) : "\u2014"}`,
     `  Turns     ${info.turns}`,
-    `  Cost      $${u.estimatedCostUsd.toFixed(4)}`,
+    `  Cost      $${u.estimatedCostUsd.toFixed(4)}${info.lastModel ? ` (${info.lastModel.replace("claude-", "")})` : ""}`,
     "",
     `<b>Cache</b>     ${cacheHitPct}% hit`,
     `  Read ${formatTokenCount(u.totalCacheRead)}  Write ${formatTokenCount(u.totalCacheWrite)}`,
@@ -636,7 +732,7 @@ bot.command("status", async (ctx) => {
     "",
     `<b>Proactive</b>  ${proactiveOn ? "on" : "off"}`,
     `<b>Workspace</b>  ${diskStr}`,
-    `<b>Session</b>   ${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "...</code>" : "<i>(new)</i>"} \u00B7 ${sessionAge} old`,
+    `<b>Session</b>   ${info.sessionName ? `"${escapeHtml(info.sessionName)}" ` : ""}${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "...</code>" : "<i>(new)</i>"} \u00B7 ${sessionAge} old`,
     `<b>Uptime</b>    ${uptime} \u00B7 ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
   ];
   await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
@@ -845,7 +941,12 @@ bot.on("callback_query:data", async (ctx) => {
 
     try {
       await ctx.editMessageText(
-        renderSettingsText(activeModel, effortName, proactiveOn),
+        renderSettingsText(
+          activeModel,
+          effortName,
+          proactiveOn,
+          chatSets.proactiveIntervalMs,
+        ),
         {
           parse_mode: "HTML",
           reply_markup: {
@@ -1012,6 +1113,16 @@ bot.on("callback_query:data", async (ctx) => {
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Parse a duration string like "30m", "2h", "1h30m" into milliseconds. */
+function parseInterval(input: string): number | null {
+  const match = input.match(/^(?:(\d+)h)?(?:(\d+)m)?$/);
+  if (!match || (!match[1] && !match[2])) return null;
+  const hours = parseInt(match[1] || "0", 10);
+  const minutes = parseInt(match[2] || "0", 10);
+  const ms = (hours * 60 + minutes) * 60 * 1000;
+  return ms > 0 ? ms : null;
+}
 
 function formatDuration(ms: number): string {
   const s = Math.floor(ms / 1000);

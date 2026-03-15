@@ -40,6 +40,10 @@ type SessionState = {
   usage: SessionUsage;
   /** ID of the last message sent by the bot in this chat. */
   lastBotMessageId?: number;
+  /** Descriptive session name derived from first message. */
+  sessionName?: string;
+  /** Model used for this session's cost tracking. */
+  lastModel?: string;
 };
 
 type SessionStore = Record<string, SessionState>;
@@ -143,6 +147,24 @@ export function incrementTurns(chatId: string): void {
   dirty = true;
 }
 
+/** Model-specific pricing ($ per million tokens). */
+const MODEL_PRICING: Record<
+  string,
+  { input: number; output: number; cacheRead: number; cacheWrite: number }
+> = {
+  haiku: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
+  sonnet: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  opus: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
+};
+
+function getPricing(model?: string): (typeof MODEL_PRICING)["sonnet"] {
+  if (!model) return MODEL_PRICING.sonnet;
+  const lower = model.toLowerCase();
+  if (lower.includes("haiku")) return MODEL_PRICING.haiku;
+  if (lower.includes("opus")) return MODEL_PRICING.opus;
+  return MODEL_PRICING.sonnet;
+}
+
 export function recordUsage(
   chatId: string,
   turn: {
@@ -151,6 +173,7 @@ export function recordUsage(
     cacheRead: number;
     cacheWrite: number;
     durationMs?: number;
+    model?: string;
   },
 ): void {
   const session = getSession(chatId);
@@ -161,13 +184,16 @@ export function recordUsage(
   // Snapshot: prompt tokens = input + cache_read + cache_write for this turn
   session.usage.lastPromptTokens =
     turn.inputTokens + turn.cacheRead + turn.cacheWrite;
-  // Rough cost estimate (Sonnet 4.6 pricing: $3/M input, $15/M output, $0.30/M cache read)
+  // Model-aware cost estimate
+  const pricing = getPricing(turn.model);
   session.usage.estimatedCostUsd +=
-    (turn.inputTokens * 3 +
-      turn.cacheWrite * 3.75 +
-      turn.cacheRead * 0.3 +
-      turn.outputTokens * 15) /
+    (turn.inputTokens * pricing.input +
+      turn.cacheWrite * pricing.cacheWrite +
+      turn.cacheRead * pricing.cacheRead +
+      turn.outputTokens * pricing.output) /
     1_000_000;
+  // Track which model was last used
+  if (turn.model) session.lastModel = turn.model;
   // Response time tracking
   if (turn.durationMs && turn.durationMs > 0) {
     session.usage.totalResponseMs =
@@ -178,6 +204,12 @@ export function recordUsage(
       session.usage.fastestResponseMs = turn.durationMs;
     }
   }
+  dirty = true;
+}
+
+export function setSessionName(chatId: string, name: string): void {
+  const session = getSession(chatId);
+  session.sessionName = name;
   dirty = true;
 }
 
@@ -203,6 +235,8 @@ export type SessionInfo = {
   lastActive: number;
   createdAt: number;
   usage: SessionUsage;
+  sessionName?: string;
+  lastModel?: string;
 };
 
 export function getSessionInfo(chatId: string): SessionInfo {
@@ -213,6 +247,8 @@ export function getSessionInfo(chatId: string): SessionInfo {
     lastActive: session?.lastActive ?? 0,
     createdAt: session?.createdAt ?? 0,
     usage: session?.usage ?? emptyUsage(),
+    sessionName: session?.sessionName,
+    lastModel: session?.lastModel,
   };
 }
 

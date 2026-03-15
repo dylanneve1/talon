@@ -6,6 +6,7 @@ import {
   recordUsage,
   setSessionId,
   setLastBotMessageId,
+  setSessionName,
 } from "./sessions.js";
 import { getBridgePort } from "./bridge.js";
 import { getChatSettings } from "./chat-settings.js";
@@ -286,7 +287,22 @@ export async function handleMessage(
     cacheRead,
     cacheWrite,
     durationMs,
+    model: activeModel,
   });
+
+  // Set a descriptive session name from the first message
+  if (session.turns === 0 && text) {
+    // Strip metadata prefixes like [DM from ...] or [Name]:
+    const cleanText = text
+      .replace(/^\[.*?\]\s*/g, "")
+      .replace(/\[msg_id:\d+\]\s*/g, "")
+      .trim();
+    if (cleanText) {
+      const name =
+        cleanText.length > 30 ? cleanText.slice(0, 30) + "..." : cleanText;
+      setSessionName(chatId, name);
+    }
+  }
 
   // The remaining currentBlockText is the final response text
   allResponseText += currentBlockText;

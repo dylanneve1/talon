@@ -24,6 +24,22 @@ import { getRecentBySenderId } from "./history.js";
 import { recordMessageProcessed, recordError } from "./watchdog.js";
 import { log, logError } from "./log.js";
 
+// ── First-time DM user tracking ──────────────────────────────────────────────
+
+const knownDmUsers = new Set<number>();
+
+function trackDmUser(
+  senderId: number,
+  senderName: string,
+  senderUsername?: string,
+): void {
+  if (knownDmUsers.has(senderId)) return;
+  knownDmUsers.add(senderId);
+  const tag = senderUsername ? ` (@${senderUsername})` : "";
+  log("users", `New DM user: ${senderName}${tag} [id:${senderId}]`);
+  appendDailyLog("System", `New DM user: ${senderName}${tag} [id:${senderId}]`);
+}
+
 // ── Shared utilities ─────────────────────────────────────────────────────────
 
 export function shouldHandleInGroup(ctx: {
@@ -391,6 +407,10 @@ export async function processAndReply(
           ? "\uD83D\uDCAD thinking..."
           : display;
 
+      // Detect transition from thinking to text — force update
+      const wasThinking = lastEditedText === "\uD83D\uDCAD thinking...";
+      const transitionToText = wasThinking && hasTextStarted;
+
       if (!streamMsgId) {
         const content = displayText + cursor;
         const html = markdownToTelegramHtml(content);
@@ -408,9 +428,8 @@ export async function processAndReply(
         }
         lastEditedText = displayText;
       } else if (
-        displayText.length - lastEditedText.length >= 60 ||
-        (hasTextStarted &&
-          isThinking !== (lastEditedText === "\uD83D\uDCAD thinking..."))
+        transitionToText ||
+        displayText.length - lastEditedText.length >= 60
       ) {
         const content = displayText + cursor;
         const html = markdownToTelegramHtml(content);
@@ -465,6 +484,8 @@ export async function processAndReply(
   if (!isGroup && senderName) {
     const userTag = senderUsername ? ` (@${senderUsername})` : "";
     enrichedPrompt = `[DM from ${senderName}${userTag}]\n${prompt}`;
+    // Track first-time DM users
+    if (senderId) trackDmUser(senderId, senderName, senderUsername);
   } else if (isGroup && senderId) {
     // Pull the sender's last 5 messages for conversation continuity in groups
     const recentMsgs = getRecentBySenderId(String(chatId), senderId, 5);
