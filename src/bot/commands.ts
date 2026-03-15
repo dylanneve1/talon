@@ -27,7 +27,7 @@ import {
   disablePulse,
   enablePulse,
   isPulseEnabled,
-} from "../agent/proactive.js";
+} from "../agent/pulse.js";
 import { isUserClientReady } from "../telegram/userbot.js";
 import { getWorkspaceDiskUsage } from "../util/workspace.js";
 import {
@@ -280,31 +280,19 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
 
     if (!arg || arg === "status") {
       const enabled = isPulseEnabled(cid);
-      const chatSets = getChatSettings(cid);
-      const cooldownMs = chatSets.proactiveIntervalMs ?? 15 * 60 * 1000;
-      const cooldownStr = formatDuration(cooldownMs);
       await ctx.reply(
         [
           `<b>🔔 Pulse:</b> ${enabled ? "on" : "off"}`,
-          `<b>Cooldown:</b> ${cooldownStr} between responses`,
           "",
-          "Reads along and jumps in when there's something to add.",
+          "Reads along every few minutes and jumps in when there's something to add.",
         ].join("\n"),
         {
           parse_mode: "HTML",
           reply_markup: {
-            inline_keyboard: [
-              [
-                { text: enabled ? "✓ On" : "On", callback_data: "pulse:on" },
-                { text: !enabled ? "✓ Off" : "Off", callback_data: "pulse:off" },
-              ],
-              [
-                { text: cooldownMs <= 5 * 60 * 1000 ? "✓ 5m" : "5m", callback_data: "pulse:cooldown:5" },
-                { text: cooldownMs === 15 * 60 * 1000 ? "✓ 15m" : "15m", callback_data: "pulse:cooldown:15" },
-                { text: cooldownMs === 30 * 60 * 1000 ? "✓ 30m" : "30m", callback_data: "pulse:cooldown:30" },
-                { text: cooldownMs >= 60 * 60 * 1000 ? "✓ 1h" : "1h", callback_data: "pulse:cooldown:60" },
-              ],
-            ],
+            inline_keyboard: [[
+              { text: enabled ? "✓ On" : "On", callback_data: "pulse:on" },
+              { text: !enabled ? "✓ Off" : "Off", callback_data: "pulse:off" },
+            ]],
           },
         },
       );

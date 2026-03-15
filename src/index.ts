@@ -24,7 +24,7 @@ import {
   initPulse,
   startPulseTimer,
   stopPulseTimer,
-} from "./agent/proactive.js";
+} from "./agent/pulse.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { registerCommands } from "./bot/commands.js";
 import { registerMiddleware } from "./bot/middleware.js";

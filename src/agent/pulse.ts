@@ -1,12 +1,9 @@
 /**
  * Pulse — conversation-aware engagement.
  *
- * Checks registered chats every N minutes (default 5) for new messages.
- * If there are new messages since the last check, wakes Claude to read
- * them and decide whether to jump in. Claude can respond, react, or
- * stay silent — most of the time it should stay silent.
- *
- * Not a cron job. A participant who's reading along.
+ * Every N minutes (default 5), checks for new messages in registered chats.
+ * If there are new messages, feeds them to Claude to decide whether to respond.
+ * Claude can respond, react, or stay silent.
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -28,7 +25,6 @@ let config: TalonConfig | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 const registeredChats = new Set<string>();
 const lastCheckMessageId = new Map<string, number>();
-const lastResponseTime = new Map<string, number>();
 
 let bridgeSetContext: ((chatId: number, bot: unknown, inputFile: unknown) => void) | null = null;
 let bridgeClearContext: (() => void) | null = null;
@@ -36,7 +32,6 @@ let botInstance: unknown = null;
 let inputFileClass: unknown = null;
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const DEFAULT_COOLDOWN_MS = 15 * 60 * 1000; // 15 minutes between responses
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
@@ -105,7 +100,7 @@ export function stopPulseTimer(): void {
 
 async function runPulse(): Promise<void> {
   if (!config || !bridgeSetContext || !bridgeClearContext || !botInstance) return;
-  if (isBridgeBusy()) return; // Don't interrupt active conversations
+  if (isBridgeBusy()) return;
 
   for (const chatId of registeredChats) {
     if (!isPulseEnabled(chatId)) continue;
@@ -120,16 +115,11 @@ async function pulseChat(chatId: string): Promise<void> {
   const numericChatId = parseInt(chatId, 10);
   if (isNaN(numericChatId)) return;
 
-  // Check for new messages
+  // Any new messages since last check?
   const latestMsgId = getLatestMessageId(chatId);
   const lastChecked = lastCheckMessageId.get(chatId);
   if (latestMsgId === undefined) return;
   if (lastChecked !== undefined && latestMsgId <= lastChecked) return;
-
-  // Cooldown — don't respond too frequently
-  const lastResponse = lastResponseTime.get(chatId) ?? 0;
-  const cooldownMs = getChatSettings(chatId).proactiveIntervalMs ?? DEFAULT_COOLDOWN_MS;
-  if (Date.now() - lastResponse < cooldownMs) return;
 
   // Get unread messages
   const recent = getRecentHistory(chatId, 15);
@@ -138,7 +128,7 @@ async function pulseChat(chatId: string): Promise<void> {
     : recent;
   if (unread.length === 0) return;
 
-  // Mark as checked before running (prevent re-entry)
+  // Mark as checked
   lastCheckMessageId.set(chatId, latestMsgId);
 
   const summary = unread
@@ -196,8 +186,6 @@ async function pulseChat(chatId: string): Promise<void> {
     }
 
     if (newSessionId) setSessionId(chatId, newSessionId);
-    lastResponseTime.set(chatId, Date.now());
-
     log("pulse", `Checked ${chatId} (${unread.length} new msgs)`);
   } catch (err) {
     logError("pulse", `Chat ${chatId} failed`, err);

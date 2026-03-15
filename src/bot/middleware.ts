@@ -7,7 +7,7 @@ import type { Bot } from "grammy";
 import type { TalonConfig } from "../util/config.js";
 import { pushMessage } from "../storage/history.js";
 import { allowChat } from "../telegram/userbot.js";
-import { registerChat } from "../agent/proactive.js";
+import { registerChat } from "../agent/pulse.js";
 import { getSenderName } from "./handlers.js";
 import {
   handleTextMessage,
