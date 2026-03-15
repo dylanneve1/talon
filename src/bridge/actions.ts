@@ -18,6 +18,10 @@ import {
   getParticipantDetails as userbotParticipantDetails,
   getUserInfo as userbotGetUserInfo,
   getMessage as userbotGetMessage,
+  getChatStats as userbotChatStats,
+  getPinnedMessages as userbotPinnedMessages,
+  getOnlineCount as userbotOnlineCount,
+  saveStickerPack as userbotSaveStickerPack,
 } from "../telegram/userbot.js";
 import { log, logError } from "../util/log.js";
 import {
@@ -534,6 +538,37 @@ export async function handleAction(body: BridgeAction): Promise<unknown> {
         const msgId = Number(body.message_id);
         if (isUserClientReady()) {
           const text = await userbotGetMessage({ chatId, messageId: msgId });
+          return { ok: true, text };
+        }
+        return { ok: false, error: "User client not connected." };
+      }
+
+      case "save_sticker_pack": {
+        const setName = String(body.set_name ?? "");
+        log("bridge", `save_sticker_pack: ${setName}`);
+        const text = await userbotSaveStickerPack({ setName, bot });
+        return { ok: true, text };
+      }
+
+      case "chat_stats": {
+        if (isUserClientReady()) {
+          const text = await userbotChatStats({ chatId, days: body.days as number | undefined });
+          return { ok: true, text };
+        }
+        return { ok: false, error: "User client not connected." };
+      }
+
+      case "get_pinned_messages": {
+        if (isUserClientReady()) {
+          const text = await userbotPinnedMessages({ chatId });
+          return { ok: true, text };
+        }
+        return { ok: false, error: "User client not connected." };
+      }
+
+      case "online_count": {
+        if (isUserClientReady()) {
+          const text = await userbotOnlineCount({ chatId });
           return { ok: true, text };
         }
         return { ok: false, error: "User client not connected." };

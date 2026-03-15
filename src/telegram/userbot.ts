@@ -454,3 +454,176 @@ export async function downloadMessageMedia(params: {
     return `Download failed: ${err instanceof Error ? err.message : err}`;
   }
 }
+
+// ── Sticker pack utilities ────────────────────────────────────────────────────
+
+/** Save a sticker pack's file_ids to workspace for quick reuse. */
+export async function saveStickerPack(params: {
+  setName: string;
+  bot: unknown;
+}): Promise<string> {
+  try {
+    const bot = params.bot as { api: { getStickerSet: (name: string) => Promise<{ title: string; name: string; stickers: Array<{ emoji?: string; file_id: string }> }> } };
+    const stickerSet = await bot.api.getStickerSet(params.setName);
+
+    const stickers = stickerSet.stickers.map((s) => ({
+      emoji: s.emoji ?? "",
+      fileId: s.file_id,
+    }));
+
+    const packData = {
+      name: stickerSet.name,
+      title: stickerSet.title,
+      count: stickers.length,
+      stickers,
+      savedAt: new Date().toISOString(),
+    };
+
+    const dir = resolve(process.cwd(), "workspace", "stickers");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const filePath = resolve(dir, `${stickerSet.name}.json`);
+    writeFileSync(filePath, JSON.stringify(packData, null, 2));
+
+    return `Saved "${stickerSet.title}" (${stickers.length} stickers) to workspace/stickers/${stickerSet.name}.json`;
+  } catch (err) {
+    return `Failed to save sticker pack: ${err instanceof Error ? err.message : err}`;
+  }
+}
+
+// ── Chat statistics & utility ────────────────────────────────────────────────
+
+/** Get detailed chat/group statistics — message counts, top posters, activity. */
+export async function getChatStats(params: {
+  chatId: number | string;
+  days?: number;
+}): Promise<string> {
+  if (!client) return "User client not connected.";
+
+  try {
+    const chatId = assertAllowedChat(params.chatId);
+    const days = params.days ?? 7;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // Get recent messages for stats
+    const messages = await client.getMessages(chatId, {
+      limit: 500,
+      offsetDate: Math.floor(Date.now() / 1000),
+    });
+
+    // Filter to the requested time window
+    const sinceTs = Math.floor(since.getTime() / 1000);
+    const filtered = messages.filter((m) => m.date >= sinceTs);
+
+    if (filtered.length === 0) return `No messages in the last ${days} day(s).`;
+
+    // Count per user
+    const userCounts = new Map<string, { count: number; lastMsg: number }>();
+    let mediaCount = 0;
+    let replyCount = 0;
+
+    for (const m of filtered) {
+      const sender =
+        m.sender && "firstName" in m.sender
+          ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
+          : "Unknown";
+      const existing = userCounts.get(sender) ?? { count: 0, lastMsg: 0 };
+      existing.count++;
+      existing.lastMsg = Math.max(existing.lastMsg, m.date);
+      userCounts.set(sender, existing);
+
+      if (m.media) mediaCount++;
+      if (m.replyTo?.replyToMsgId) replyCount++;
+    }
+
+    // Sort by message count
+    const topUsers = [...userCounts.entries()]
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 10);
+
+    const lines = [
+      `Chat stats (last ${days} day${days > 1 ? "s" : ""}):`,
+      `Total messages: ${filtered.length}`,
+      `Media messages: ${mediaCount}`,
+      `Replies: ${replyCount}`,
+      `Active users: ${userCounts.size}`,
+      "",
+      "Top contributors:",
+      ...topUsers.map(
+        ([name, data], i) => `  ${i + 1}. ${name}: ${data.count} msgs`,
+      ),
+    ];
+
+    return lines.join("\n");
+  } catch (err) {
+    return `Stats failed: ${err instanceof Error ? err.message : err}`;
+  }
+}
+
+/** Get the pinned message(s) in a chat. */
+export async function getPinnedMessages(params: {
+  chatId: number | string;
+}): Promise<string> {
+  if (!client) return "User client not connected.";
+
+  try {
+    const chatId = assertAllowedChat(params.chatId);
+    const result = await client.invoke(
+      new Api.messages.Search({
+        peer: chatId,
+        q: "",
+        filter: new Api.InputMessagesFilterPinned(),
+        minDate: 0,
+        maxDate: 0,
+        offsetId: 0,
+        addOffset: 0,
+        limit: 10,
+        maxId: 0,
+        minId: 0,
+        hash: BigInt(0) as unknown as import("big-integer").BigInteger,
+      }),
+    );
+
+    if (!("messages" in result) || result.messages.length === 0) {
+      return "No pinned messages.";
+    }
+
+    const lines = result.messages.map((m) => {
+      if (!("message" in m)) return `[msg:${m.id}] (no text)`;
+      const date = new Date(m.date * 1000).toISOString().slice(0, 16).replace("T", " ");
+      const text = m.message?.slice(0, 200) ?? "(media only)";
+      return `[msg:${m.id} ${date}] ${text}`;
+    });
+
+    return `Pinned messages (${lines.length}):\n${lines.join("\n")}`;
+  } catch (err) {
+    return `Failed: ${err instanceof Error ? err.message : err}`;
+  }
+}
+
+/** Get online/recently-active member count for a chat. */
+export async function getOnlineCount(params: {
+  chatId: number | string;
+}): Promise<string> {
+  if (!client) return "User client not connected.";
+
+  try {
+    const chatId = assertAllowedChat(params.chatId);
+    const participants = await client.getParticipants(chatId, { limit: 200 });
+
+    let online = 0;
+    let recently = 0;
+    let total = participants.length;
+
+    for (const p of participants) {
+      if (p.bot) continue;
+      const status = p.status?.className;
+      if (status === "UserStatusOnline") online++;
+      else if (status === "UserStatusRecently") recently++;
+    }
+
+    return `Members: ${total} total, ${online} online, ${recently} recently active`;
+  } catch (err) {
+    return `Failed: ${err instanceof Error ? err.message : err}`;
+  }
+}
+

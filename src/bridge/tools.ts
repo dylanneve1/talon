@@ -452,6 +452,43 @@ server.tool(
   async (params) => textResult(await callBridge("delete_cron_job", params)),
 );
 
+server.tool(
+  "save_sticker_pack",
+  "Save a sticker pack's file_ids to workspace for quick reuse. Once saved, you can read the JSON file to find stickers by emoji and send them instantly.",
+  {
+    set_name: z.string().describe("Sticker set name"),
+  },
+  async (params) => textResult(await callBridge("save_sticker_pack", params)),
+);
+
+// ── Chat analytics ───────────────────────────────────────────────────────────
+
+server.tool(
+  "chat_stats",
+  "Get chat activity statistics — message counts, top contributors, media count. Requires userbot.",
+  {
+    days: z
+      .number()
+      .optional()
+      .describe("Number of days to analyze (default 7)"),
+  },
+  async (params) => textResult(await callBridge("chat_stats", params)),
+);
+
+server.tool(
+  "get_pinned_messages",
+  "Get all pinned messages in the current chat.",
+  {},
+  async () => textResult(await callBridge("get_pinned_messages", {})),
+);
+
+server.tool(
+  "online_count",
+  "Get how many members are currently online or recently active.",
+  {},
+  async () => textResult(await callBridge("online_count", {})),
+);
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {
