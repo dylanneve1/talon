@@ -97,7 +97,7 @@ if (apiId && apiHash) {
 bot.command("start", (ctx) =>
   ctx.reply(
     [
-      "<b>Talon</b>",
+      "<b>🦅 Talon</b>",
       "",
       "Claude-powered Telegram assistant with 19 tools.",
       "",
@@ -113,9 +113,9 @@ bot.command("start", (ctx) =>
 bot.command("help", (ctx) =>
   ctx.reply(
     [
-      "<b>Talon -- Help</b>",
+      "<b>🦅 Talon -- Help</b>",
       "",
-      "<b>Settings</b>",
+      "<b>🦅 Settings</b>",
       "  /settings -- view and change all chat settings",
       "  /model -- show or change model (sonnet, opus, haiku)",
       "  /effort -- set thinking effort (off, low, medium, high, max)",
@@ -378,7 +378,7 @@ function renderSettingsText(
   proactive: boolean,
 ): string {
   return [
-    "<b>Settings</b>",
+    "<b>🦅 Settings</b>",
     "",
     `<b>Model:</b> <code>${escapeHtml(model)}</code>`,
     `<b>Effort:</b> ${effort}`,
@@ -531,7 +531,7 @@ bot.command("admin", async (ctx) => {
       const rssMB = (memUsage.rss / 1024 / 1024).toFixed(1);
 
       const lines = [
-        "<b>Talon Stats</b>",
+        "<b>🦅 Talon Stats</b>",
         "",
         `<b>Uptime:</b> ${uptime}`,
         `<b>Messages processed:</b> ${health.totalMessagesProcessed}`,
@@ -620,7 +620,7 @@ bot.command("status", async (ctx) => {
   const diskStr = formatBytes(diskBytes);
 
   const lines = [
-    `<b>Talon</b> \u00B7 <code>${escapeHtml(activeModel)}</code> \u00B7 effort: ${effortName}`,
+    `<b>🦅 Talon</b> \u00B7 <code>${escapeHtml(activeModel)}</code> \u00B7 effort: ${effortName}`,
     "",
     `<b>Context</b>  ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextMax)} (${contextPct}%)`,
     `<code>${contextBar}</code>`,
