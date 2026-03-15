@@ -1,11 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   mkdirSync,
   readFileSync,
+  writeFileSync,
   rmSync,
   existsSync,
   readdirSync,
 } from "node:fs";
+
+// Mock log to prevent pino initialization
+vi.mock("../util/log.js", () => ({
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
+}));
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -102,6 +111,36 @@ describe("daily-log", () => {
       const logsDir = getLogsDir();
       expect(logsDir).toContain("workspace");
       expect(logsDir).toContain("logs");
+    });
+  });
+
+  describe("cleanupOldLogs", () => {
+    it("deletes logs older than 30 days", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+
+      // Create an old log file (40 days ago)
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 40);
+      const oldName = oldDate.toISOString().slice(0, 10) + ".md";
+      writeFileSync(join(LOGS_DIR, oldName), "old log content");
+
+      // Create a recent log file (5 days ago)
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 5);
+      const recentName = recentDate.toISOString().slice(0, 10) + ".md";
+      writeFileSync(join(LOGS_DIR, recentName), "recent log content");
+
+      cleanupOldLogs();
+
+      const remaining = readdirSync(LOGS_DIR);
+      expect(remaining).not.toContain(oldName);
+      expect(remaining).toContain(recentName);
+    });
+
+    it("handles missing logs directory", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      expect(() => cleanupOldLogs()).not.toThrow();
     });
   });
 });
