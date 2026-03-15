@@ -67,7 +67,11 @@ export function loadSessions(): void {
   } catch {
     store = {};
   }
-  // Prune sessions inactive for >7 days
+  pruneStale();
+}
+
+/** Remove sessions inactive for >7 days. */
+function pruneStale(): void {
   const now = Date.now();
   let pruned = 0;
   for (const [chatId, session] of Object.entries(store)) {
@@ -96,6 +100,9 @@ function saveSessions(): void {
 
 // Auto-save every 10 seconds if dirty
 setInterval(saveSessions, 10_000);
+
+// Periodic stale session pruning (every hour)
+setInterval(pruneStale, 60 * 60 * 1000);
 
 const emptyUsage = (): SessionUsage => ({
   totalInputTokens: 0,

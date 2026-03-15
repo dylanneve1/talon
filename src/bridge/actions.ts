@@ -145,7 +145,7 @@ export async function handleAction(body: BridgeAction): Promise<unknown> {
       case "unpin_message": {
         const msgId = body.message_id ? Number(body.message_id) : undefined;
         log("bridge", `unpin${msgId ? ` msg=${msgId}` : " latest"}`);
-        await bot.api.unpinChatMessage(chatId, msgId as never);
+        await bot.api.unpinChatMessage(chatId, msgId);
         return { ok: true };
       }
 
@@ -382,9 +382,12 @@ export async function handleAction(body: BridgeAction): Promise<unknown> {
 
       case "forward_message": {
         const msgId = Number(body.message_id);
-        const toChatId = body.to_chat_id ? Number(body.to_chat_id) : chatId;
+        // Security: reject cross-chat forwards to prevent scope bypass
+        if (body.to_chat_id && Number(body.to_chat_id) !== chatId) {
+          return { ok: false, error: "Cross-chat forwarding is not allowed. Messages can only be forwarded within the active chat." };
+        }
         log("bridge", `forward msg=${msgId}`);
-        const sent = await bot.api.forwardMessage(toChatId, chatId, msgId);
+        const sent = await bot.api.forwardMessage(chatId, chatId, msgId);
         return { ok: true, message_id: sent.message_id };
       }
 

@@ -48,7 +48,7 @@ import {
   renderSettingsKeyboard,
 } from "./helpers.js";
 
-const ADMIN_USER_ID = 352042062;
+const ADMIN_USER_ID = parseInt(process.env.TALON_ADMIN_USER_ID || "352042062", 10);
 
 export function registerCommands(bot: Bot, config: TalonConfig): void {
   bot.command("start", (ctx) =>

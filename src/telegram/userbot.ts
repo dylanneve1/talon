@@ -334,11 +334,8 @@ export async function getUserInfo(params: {
 
   try {
     const chatId = assertAllowedChat(params.chatId);
-    // Fetch the user as a participant of the allowed chat
-    const participants = await client.getParticipants(chatId, {
-      limit: 1,
-      search: "",
-    });
+    // Fetch participants so GramJS caches the user entities for getEntity below
+    await client.getParticipants(chatId, { limit: 1, search: "" });
     // getEntity only works for users the client has seen
     const entity = await client.getEntity(params.userId).catch(() => null);
     if (!entity || !("firstName" in entity)) {
@@ -369,8 +366,6 @@ export async function getUserInfo(params: {
       return cn;
     })();
 
-    // Suppress actual phone from output
-    void participants;
     return [
       `Name: ${name}`,
       `Username: ${username}`,

@@ -4,6 +4,7 @@ import {
   getSession,
   incrementTurns,
   recordUsage,
+  resetSession,
   setSessionId,
   setLastBotMessageId,
   setSessionName,
@@ -267,7 +268,6 @@ export async function handleMessage(
         "agent",
         `[${chatId}] Stale session, clearing: ${errMsg.slice(0, 100)}`,
       );
-      const { resetSession } = await import("../storage/sessions.js");
       resetSession(chatId);
       throw new Error(
         "Session expired. Send your message again to start fresh.",

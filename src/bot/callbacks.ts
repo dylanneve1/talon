@@ -83,8 +83,12 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
     // Handle unified /settings callbacks
     if (data.startsWith("settings:")) {
       const parts = data.split(":");
+      if (!parts[1]) {
+        await ctx.answerCallbackQuery({ text: "Invalid callback data" });
+        return;
+      }
       const category = parts[1];
-      const value = parts[2];
+      const value = parts[2] ?? "";
 
       if (category === "done") {
         await ctx.answerCallbackQuery({ text: "Done" });

@@ -22,11 +22,12 @@ import { handleMessage } from "../agent/agent.js";
 import { appendDailyLog } from "../storage/daily-log.js";
 import { getRecentBySenderId } from "../storage/history.js";
 import { recordMessageProcessed, recordError } from "../util/watchdog.js";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 
 // ── First-time DM user tracking ──────────────────────────────────────────────
 
 const knownDmUsers = new Set<number>();
+const KNOWN_DM_USERS_CAP = 10_000;
 
 function trackDmUser(
   senderId: number,
@@ -34,6 +35,11 @@ function trackDmUser(
   senderUsername?: string,
 ): void {
   if (knownDmUsers.has(senderId)) return;
+  // Cap the set to prevent unbounded memory growth; clearing is safe since
+  // this is just a first-time-DM dedup set (worst case: a re-log of a known user)
+  if (knownDmUsers.size >= KNOWN_DM_USERS_CAP) {
+    knownDmUsers.clear();
+  }
   knownDmUsers.add(senderId);
   const tag = senderUsername ? ` (@${senderUsername})` : "";
   log("users", `New DM user: ${senderName}${tag} [id:${senderId}]`);
@@ -333,7 +339,8 @@ async function sendHtml(
   try {
     const sent = await bot.api.sendMessage(chatId, html, params);
     return sent.message_id;
-  } catch {
+  } catch (err) {
+    logWarn("bot", `HTML send failed, falling back to plain text: ${err instanceof Error ? err.message : err}`);
     const plain = html.replace(/<[^>]+>/g, "");
     const sent = await bot.api.sendMessage(chatId, plain, {
       reply_parameters: replyToId ? { message_id: replyToId } : undefined,
@@ -440,14 +447,14 @@ export async function processAndReply(
         } catch {
           try {
             await bot.api.editMessageText(numericChatId, streamMsgId, content);
-          } catch {
-            // Rate limited, skip
+          } catch (e) {
+            logWarn("bot", `Stream edit failed (rate limited): ${e instanceof Error ? e.message : e}`);
           }
         }
         lastEditedText = displayText;
       }
-    } catch {
-      // Non-critical
+    } catch (err) {
+      logWarn("bot", `Stream delta handler error: ${err instanceof Error ? err.message : err}`);
     }
   };
 
@@ -462,8 +469,8 @@ export async function processAndReply(
       } catch {
         try {
           await bot.api.editMessageText(numericChatId, streamMsgId, text);
-        } catch {
-          // ignore
+        } catch (e) {
+          logWarn("bot", `Text block edit failed: ${e instanceof Error ? e.message : e}`);
         }
       }
       streamMsgId = undefined;
@@ -536,8 +543,8 @@ export async function processAndReply(
               streamMsgId,
               chunks[0],
             );
-          } catch {
-            // ignore
+          } catch (e) {
+            logWarn("bot", `Final message edit failed: ${e instanceof Error ? e.message : e}`);
           }
         }
         for (let i = 1; i < chunks.length; i++) {
@@ -564,8 +571,8 @@ export async function processAndReply(
   } else if (streamMsgId) {
     try {
       await bot.api.deleteMessage(numericChatId, streamMsgId);
-    } catch {
-      // ignore
+    } catch (err) {
+      logWarn("bot", `Failed to delete stream message: ${err instanceof Error ? err.message : err}`);
     }
   }
 
