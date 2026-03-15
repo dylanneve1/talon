@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import writeFileAtomic from "write-file-atomic";
 import { resolve, dirname } from "node:path";
 import { log, logError } from "../util/log.js";
 
@@ -72,7 +73,8 @@ function saveSessions(): void {
   if (!dirty) return;
   try {
     ensureDir(STORE_FILE);
-    writeFileSync(STORE_FILE, JSON.stringify(store, null, 2) + "\n");
+    // Atomic write: writes to temp file then renames — prevents corruption on crash
+    writeFileAtomic.sync(STORE_FILE, JSON.stringify(store, null, 2) + "\n");
     dirty = false;
   } catch (err) {
     logError("sessions", "Failed to persist sessions", err);

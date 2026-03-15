@@ -8,7 +8,7 @@
  */
 
 import { loadConfig } from "./util/config.js";
-import { initWorkspace } from "./util/workspace.js";
+import { initWorkspace, startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
 import { initAgent, handleMessage } from "./backend/claude-sdk/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
@@ -92,6 +92,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   stopPulseTimer();
   stopCronTimer();
   stopWatchdog();
+  stopUploadCleanup();
   flushSessions();
   flushChatSettings();
   flushCronJobs();
@@ -126,6 +127,7 @@ async function main(): Promise<void> {
   if (process.env.TALON_PULSE !== "0") startPulseTimer();
   startCronTimer();
   startWatchdog();
+  startUploadCleanup(config.workspace);
 
   await frontend.start();
 }

@@ -11,6 +11,7 @@ import {
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { classify } from "../../../core/errors.js";
+import { getQueueSize } from "../../../core/dispatcher.js";
 import { log, logError } from "../../../util/log.js";
 import { handleAction } from "./actions.js";
 
@@ -184,6 +185,20 @@ export function startBridge(port = 19876): Promise<number> {
 
   const httpServer = createServer(
     async (req: IncomingMessage, res: ServerResponse) => {
+      // Health check endpoint
+      if (req.method === "GET" && req.url === "/health") {
+        const health = {
+          ok: true,
+          uptime: Math.round(process.uptime()),
+          memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+          bridge: { active: bridgeLocked, chatId: activeChatId },
+          queue: getQueueSize(),
+        };
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(health));
+        return;
+      }
+
       if (req.method !== "POST" || req.url !== "/action") {
         res.writeHead(404);
         res.end("Not found");

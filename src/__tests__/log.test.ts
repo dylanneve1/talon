@@ -1,140 +1,109 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Spy on console methods before importing the module
-const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+// Mock pino before importing log module
+const mockInfo = vi.fn();
+const mockError = vi.fn();
+const mockWarn = vi.fn();
+const mockDebug = vi.fn();
 
-const { log, logError, logWarn } = await import("../util/log.js");
+vi.mock("pino", () => ({
+  default: () => ({
+    info: mockInfo,
+    error: mockError,
+    warn: mockWarn,
+    debug: mockDebug,
+  }),
+}));
+
+const { log, logError, logWarn, logDebug } = await import("../util/log.js");
 
 describe("log", () => {
   beforeEach(() => {
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    warnSpy.mockClear();
-  });
-
-  afterEach(() => {
-    logSpy.mockClear();
-    errorSpy.mockClear();
-    warnSpy.mockClear();
+    mockInfo.mockClear();
+    mockError.mockClear();
+    mockWarn.mockClear();
+    mockDebug.mockClear();
   });
 
   describe("log(component, message)", () => {
-    it("calls console.log with formatted string", () => {
+    it("calls pino.info with component and message", () => {
       log("bot", "started successfully");
-      expect(logSpy).toHaveBeenCalledOnce();
-      const output = logSpy.mock.calls[0][0] as string;
-      expect(output).toContain("[bot]");
-      expect(output).toContain("started successfully");
-    });
-
-    it("includes HH:MM:SS timestamp format", () => {
-      log("agent", "test message");
-      const output = logSpy.mock.calls[0][0] as string;
-      // Timestamp format: [HH:MM:SS]
-      expect(output).toMatch(/^\[\d{2}:\d{2}:\d{2}\]/);
-    });
-
-    it("uses the correct format: [HH:MM:SS] [component] message", () => {
-      log("bridge", "connection open");
-      const output = logSpy.mock.calls[0][0] as string;
-      expect(output).toMatch(
-        /^\[\d{2}:\d{2}:\d{2}\] \[bridge\] connection open$/,
-      );
+      expect(mockInfo).toHaveBeenCalledOnce();
+      expect(mockInfo).toHaveBeenCalledWith({ component: "bot" }, "started successfully");
     });
 
     it("works with all valid component types", () => {
       const components = [
-        "bot",
-        "bridge",
-        "agent",
-        "pulse",
-        "userbot",
-        "users",
-        "watchdog",
-        "workspace",
-        "shutdown",
-        "file",
-        "sessions",
-        "settings",
-        "commands",
-        "cron",
+        "bot", "bridge", "agent", "pulse", "userbot", "users",
+        "watchdog", "workspace", "shutdown", "file", "sessions",
+        "settings", "commands", "cron", "dispatcher",
       ] as const;
       for (const component of components) {
-        logSpy.mockClear();
+        mockInfo.mockClear();
         log(component, "test");
-        expect(logSpy).toHaveBeenCalledOnce();
-        const output = logSpy.mock.calls[0][0] as string;
-        expect(output).toContain(`[${component}]`);
+        expect(mockInfo).toHaveBeenCalledWith({ component }, "test");
       }
     });
   });
 
   describe("logError(component, message, err?)", () => {
-    it("calls console.error with formatted string", () => {
+    it("calls pino.error with component and message", () => {
       logError("bot", "failed to start");
-      expect(errorSpy).toHaveBeenCalledOnce();
-      const output = errorSpy.mock.calls[0][0] as string;
-      expect(output).toContain("[bot]");
-      expect(output).toContain("failed to start");
+      expect(mockError).toHaveBeenCalledOnce();
+      expect(mockError).toHaveBeenCalledWith({ component: "bot" }, "failed to start");
     });
 
-    it("includes HH:MM:SS timestamp format", () => {
-      logError("agent", "error occurred");
-      const output = errorSpy.mock.calls[0][0] as string;
-      expect(output).toMatch(/^\[\d{2}:\d{2}:\d{2}\]/);
-    });
-
-    it("appends Error message when err is an Error", () => {
+    it("includes Error message in context", () => {
       logError("bridge", "request failed", new Error("timeout"));
-      const output = errorSpy.mock.calls[0][0] as string;
-      expect(output).toContain("request failed");
-      expect(output).toContain(": timeout");
+      expect(mockError).toHaveBeenCalledWith(
+        { component: "bridge", err: "timeout" },
+        "request failed",
+      );
     });
 
-    it("appends stringified error when err is a string", () => {
+    it("stringifies non-Error err values", () => {
       logError("sessions", "save failed", "disk full");
-      const output = errorSpy.mock.calls[0][0] as string;
-      expect(output).toContain("save failed");
-      expect(output).toContain(": disk full");
+      expect(mockError).toHaveBeenCalledWith(
+        { component: "sessions", err: "disk full" },
+        "save failed",
+      );
     });
 
-    it("appends stringified error when err is a number", () => {
+    it("handles numeric err values", () => {
       logError("sessions", "exit code", 1);
-      const output = errorSpy.mock.calls[0][0] as string;
-      expect(output).toContain(": 1");
+      expect(mockError).toHaveBeenCalledWith(
+        { component: "sessions", err: "1" },
+        "exit code",
+      );
     });
 
-    it("omits suffix when err is undefined", () => {
+    it("omits err field when err is undefined", () => {
       logError("settings", "something wrong");
-      const output = errorSpy.mock.calls[0][0] as string;
-      expect(output).toMatch(
-        /^\[\d{2}:\d{2}:\d{2}\] \[settings\] something wrong$/,
+      expect(mockError).toHaveBeenCalledWith(
+        { component: "settings" },
+        "something wrong",
       );
     });
   });
 
   describe("logWarn(component, message)", () => {
-    it("calls console.warn with formatted string", () => {
+    it("calls pino.warn with component and message", () => {
       logWarn("watchdog", "inactivity detected");
-      expect(warnSpy).toHaveBeenCalledOnce();
-      const output = warnSpy.mock.calls[0][0] as string;
-      expect(output).toContain("[watchdog]");
-      expect(output).toContain("inactivity detected");
+      expect(mockWarn).toHaveBeenCalledOnce();
+      expect(mockWarn).toHaveBeenCalledWith(
+        { component: "watchdog" },
+        "inactivity detected",
+      );
     });
+  });
 
-    it("includes HH:MM:SS timestamp format", () => {
-      logWarn("pulse", "slow response");
-      const output = warnSpy.mock.calls[0][0] as string;
-      expect(output).toMatch(/^\[\d{2}:\d{2}:\d{2}\]/);
-    });
-
-    it("uses the correct format: [HH:MM:SS] [component] message", () => {
-      logWarn("cron", "job skipped");
-      const output = warnSpy.mock.calls[0][0] as string;
-      expect(output).toMatch(
-        /^\[\d{2}:\d{2}:\d{2}\] \[cron\] job skipped$/,
+  describe("logDebug(component, message)", () => {
+    it("calls pino.debug with component and message", () => {
+      logDebug("agent", "processing query");
+      expect(mockDebug).toHaveBeenCalledOnce();
+      expect(mockDebug).toHaveBeenCalledWith(
+        { component: "agent" },
+        "processing query",
       );
     });
   });

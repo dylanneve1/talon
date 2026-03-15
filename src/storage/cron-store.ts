@@ -3,7 +3,8 @@
  * Same pattern as chat-settings.ts.
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import writeFileAtomic from "write-file-atomic";
 import { resolve, dirname } from "node:path";
 import { Cron } from "croner";
 import { log } from "../util/log.js";
@@ -58,7 +59,7 @@ function save(): void {
   try {
     const dir = dirname(STORE_FILE);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(STORE_FILE, JSON.stringify(store, null, 2) + "\n");
+    writeFileAtomic.sync(STORE_FILE, JSON.stringify(store, null, 2) + "\n");
     dirty = false;
   } catch {
     // Non-fatal

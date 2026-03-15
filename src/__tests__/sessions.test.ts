@@ -15,6 +15,11 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
 }));
 
+const writeFileAtomicSync = vi.fn();
+vi.mock("write-file-atomic", () => ({
+  default: { sync: writeFileAtomicSync },
+}));
+
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 // We need to import these functions after mocks are set up
@@ -472,10 +477,10 @@ describe("sessions", () => {
   });
 
   describe("flushSessions", () => {
-    it("triggers a write", () => {
-      vi.mocked(writeFileSync).mockClear();
+    it("triggers an atomic write", () => {
+      writeFileAtomicSync.mockClear();
       flushSessions();
-      expect(vi.mocked(writeFileSync)).toHaveBeenCalled();
+      expect(writeFileAtomicSync).toHaveBeenCalled();
     });
   });
 
