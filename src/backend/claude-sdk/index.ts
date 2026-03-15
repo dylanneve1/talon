@@ -101,15 +101,14 @@ export async function handleMessage(
     }
   })();
 
-  const options: Record<string, unknown> = {
+  const options = {
     model: activeModel,
     systemPrompt: config.systemPrompt,
     cwd: config.workspace,
-    permissionMode: "bypassPermissions",
+    permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     betas: ["context-1m-2025-08-07"],
     ...thinkingConfig,
-    // MCP server providing Telegram action tools (send_message, react, reply_to, etc.)
     mcpServers: {
       "telegram-tools": {
         command: "node",
@@ -123,11 +122,8 @@ export async function handleMessage(
         },
       },
     },
+    ...(session.sessionId ? { resume: session.sessionId } : {}),
   };
-
-  if (session.sessionId) {
-    options.resume = session.sessionId;
-  }
 
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
 
@@ -155,7 +151,8 @@ export async function handleMessage(
     `[${chatId}] <- ${text.slice(0, 120)}${text.length > 120 ? "..." : ""}`,
   );
 
-  const qi = query({ prompt, options: options as never });
+  // SDK types are not fully exported; cast options at the boundary
+  const qi = query({ prompt, options: options as Parameters<typeof query>[0]["options"] });
 
   let currentBlockText = "";
   let allResponseText = "";
