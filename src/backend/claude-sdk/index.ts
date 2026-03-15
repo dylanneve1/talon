@@ -6,7 +6,6 @@ import {
   recordUsage,
   resetSession,
   setSessionId,
-  setLastBotMessageId,
   setSessionName,
 } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";

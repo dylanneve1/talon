@@ -36,7 +36,7 @@ import {
 } from "../../util/watchdog.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { getAllCronJobs, validateCronExpression } from "../../storage/cron-store.js";
-import { escapeHtml } from "./handlers.js";
+import { escapeHtml } from "./formatting.js";
 import {
   formatDuration,
   formatTokenCount,
@@ -46,7 +46,7 @@ import {
   renderSettingsKeyboard,
 } from "./helpers.js";
 
-const ADMIN_USER_ID = parseInt(process.env.TALON_ADMIN_USER_ID || "352042062", 10);
+const ADMIN_USER_ID = parseInt(process.env.TALON_ADMIN_USER_ID || "", 10) || 0;
 
 export function registerCommands(bot: Bot, config: TalonConfig): void {
   bot.command("start", (ctx) =>

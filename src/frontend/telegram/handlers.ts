@@ -118,9 +118,6 @@ export function getForwardContext(msg: {
   return `[Forwarded from ${from}]\n`;
 }
 
-// Re-export escapeHtml from formatting for backward compatibility
-export { escapeHtml } from "./formatting.js";
-
 export async function downloadTelegramFile(
   bot: Bot,
   config: TalonConfig,
@@ -245,19 +242,16 @@ async function flushQueue(chatId: string): Promise<void> {
   appendDailyLog(last.senderName, logSummary);
 
   try {
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      numericChatId,
-      last.replyToId,
-      last.messageId,
-      combinedPrompt,
-      last.senderName,
-      last.isGroup,
-      last.senderUsername,
-      last.senderId,
-    );
+    await processAndReply({
+      bot, config, chatId, numericChatId,
+      replyToId: last.replyToId,
+      messageId: last.messageId,
+      prompt: combinedPrompt,
+      senderName: last.senderName,
+      isGroup: last.isGroup,
+      senderUsername: last.senderUsername,
+      senderId: last.senderId,
+    });
     recordMessageProcessed();
   } catch (err) {
     const classified = classify(err);
@@ -275,19 +269,16 @@ async function flushQueue(chatId: string): Promise<void> {
       log("bot", `[${chatId}] Retrying after ${classified.reason} (${delayMs}ms)...`);
       try {
         await new Promise((r) => setTimeout(r, delayMs));
-        await processAndReply(
-          bot,
-          config,
-          chatId,
-          numericChatId,
-          last.replyToId,
-          last.messageId,
-          combinedPrompt,
-          last.senderName,
-          last.isGroup,
-          last.senderUsername,
-          last.senderId,
-        );
+        await processAndReply({
+          bot, config, chatId, numericChatId,
+          replyToId: last.replyToId,
+          messageId: last.messageId,
+          prompt: combinedPrompt,
+          senderName: last.senderName,
+          isGroup: last.isGroup,
+          senderUsername: last.senderUsername,
+          senderId: last.senderId,
+        });
         return;
       } catch (retryErr) {
         const retryClassified = classify(retryErr);
@@ -342,19 +333,25 @@ async function sendHtml(
 /**
  * Run the agent and deliver responses with streaming + multi-message support.
  */
-export async function processAndReply(
-  bot: Bot,
-  config: TalonConfig,
-  chatId: string | number,
-  numericChatId: number,
-  replyToId: number,
-  messageId: number,
-  prompt: string,
-  senderName: string,
-  isGroup: boolean,
-  senderUsername?: string,
-  senderId?: number,
-): Promise<void> {
+type ProcessAndReplyParams = {
+  bot: Bot;
+  config: TalonConfig;
+  chatId: string | number;
+  numericChatId: number;
+  replyToId: number;
+  messageId: number;
+  prompt: string;
+  senderName: string;
+  isGroup: boolean;
+  senderUsername?: string;
+  senderId?: number;
+};
+
+export async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
+  const {
+    bot, config, chatId, numericChatId, replyToId, messageId,
+    prompt, senderName, isGroup, senderUsername, senderId,
+  } = params;
   // Streaming state (Telegram-specific UI concern)
   let streamMsgId: number | undefined;
   let lastEditedText = "";
@@ -897,17 +894,14 @@ export async function handleCallbackQuery(
 
     appendDailyLog(sender, `Button: ${callbackData}`);
 
-    await processAndReply(
-      bot,
-      config,
-      chatId,
-      numericChatId,
+    await processAndReply({
+      bot, config, chatId, numericChatId,
       replyToId,
-      replyToId,
+      messageId: replyToId,
       prompt,
-      sender,
+      senderName: sender,
       isGroup,
-    );
+    });
   } catch (err) {
     logError(
       "bot",

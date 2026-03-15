@@ -2,7 +2,7 @@
  * Shared helpers used by commands, callbacks, and the settings panel.
  */
 
-import { escapeHtml } from "./handlers.js";
+import { escapeHtml } from "./formatting.js";
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Parse a duration string like "30m", "2h", "1h30m" into milliseconds. */

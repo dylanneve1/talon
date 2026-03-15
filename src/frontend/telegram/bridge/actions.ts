@@ -597,6 +597,7 @@ export async function handleAction(body: BridgeAction): Promise<unknown> {
 
           const buffer = Buffer.from(await resp.arrayBuffer());
           const ext = file.file_path.split(".").pop() ?? "webp";
+          // SDK runs from workspace dir, so workspace/ is relative to cwd
           const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
           if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
           const filename = `${Date.now()}-sticker.${ext}`;

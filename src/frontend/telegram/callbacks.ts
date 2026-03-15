@@ -20,10 +20,8 @@ import {
   enablePulse,
   isPulseEnabled,
 } from "../../core/pulse.js";
-import {
-  handleCallbackQuery,
-  escapeHtml,
-} from "./handlers.js";
+import { handleCallbackQuery } from "./handlers.js";
+import { escapeHtml } from "./formatting.js";
 import {
   renderSettingsText,
   renderSettingsKeyboard,
