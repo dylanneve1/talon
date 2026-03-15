@@ -137,6 +137,10 @@ export async function downloadTelegramFile(
 
   const safeName = `${Date.now()}-${fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
   const destPath = resolve(uploadsDir, safeName);
+  // Prevent path traversal — ensure resolved path stays within uploads dir
+  if (!destPath.startsWith(resolve(uploadsDir))) {
+    throw new Error("Invalid file name");
+  }
   writeFileSync(destPath, buffer);
   return destPath;
 }

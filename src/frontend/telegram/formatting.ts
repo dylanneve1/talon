@@ -77,10 +77,11 @@ export function markdownToTelegramHtml(text: string): string {
   );
   // Italic: _text_ (surrounded by non-word or start/end)
   processed = processed.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
-  // Links: [text](url)
+  // Links: [text](url) — only allow safe URL schemes
   processed = processed.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2">$1</a>',
+    (_, text, url) =>
+      /^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : text,
   );
   // Strikethrough: ~~text~~
   processed = processed.replace(/~~(.+?)~~/g, "<s>$1</s>");

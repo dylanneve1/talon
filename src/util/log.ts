@@ -16,7 +16,8 @@ export type LogComponent =
   | "sessions"
   | "settings"
   | "commands"
-  | "cron";
+  | "cron"
+  | "dispatcher";
 
 function timestamp(): string {
   const now = new Date();

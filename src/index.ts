@@ -13,7 +13,7 @@ import { initAgent, handleMessage } from "./backend/claude-sdk/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
-import { initDispatcher } from "./core/dispatcher.js";
+import { initDispatcher, getQueueSize } from "./core/dispatcher.js";
 import {
   initPulse,
   startPulseTimer,
@@ -54,6 +54,7 @@ initDispatcher({
   context: frontend.context,
   sendTyping: frontend.sendTyping,
   onActivity: () => resetPulseTimer(),
+  concurrency: config.concurrency,
 });
 
 // ── Initialize schedulers ───────────────────────────────────────────────────
@@ -65,10 +66,28 @@ initCron({ sendMessage: frontend.sendMessage });
 
 let shuttingDown = false;
 
+const SHUTDOWN_TIMEOUT_MS = 15_000;
+
 async function gracefulShutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   log("shutdown", `${signal} received, shutting down gracefully...`);
+
+  // Force exit if shutdown takes too long
+  const forceTimer = setTimeout(() => {
+    logError("shutdown", "Timeout exceeded, forcing exit");
+    process.exit(1);
+  }, SHUTDOWN_TIMEOUT_MS);
+  forceTimer.unref(); // don't keep process alive
+
+  // Wait for in-flight queries to drain
+  const pending = getQueueSize();
+  if (pending > 0) {
+    log("shutdown", `Waiting for ${pending} in-flight queries to drain...`);
+    // Give queries a few seconds to finish, then proceed
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+
   await frontend.stop();
   stopPulseTimer();
   stopCronTimer();
