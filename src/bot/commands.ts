@@ -17,7 +17,7 @@ import {
   getChatSettings,
   setChatModel,
   setChatEffort,
-  setChatProactiveInterval,
+  setChatPulseInterval,
   resolveModelName,
   EFFORT_LEVELS,
   type EffortLevel,
@@ -314,7 +314,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
 
     const intervalMs = parseInterval(arg);
     if (intervalMs && intervalMs >= 5 * 60 * 1000) {
-      setChatProactiveInterval(cid, intervalMs);
+      setChatPulseInterval(cid, intervalMs);
       enablePulse(cid);
       registerChat(cid);
       await ctx.reply(
@@ -339,14 +339,14 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const chatSets = getChatSettings(cid);
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
-    const proactiveOn = isPulseEnabled(cid);
+    const pulseOn = isPulseEnabled(cid);
 
     await ctx.reply(
       renderSettingsText(
         activeModel,
         effortName,
-        proactiveOn,
-        chatSets.proactiveIntervalMs,
+        pulseOn,
+        chatSets.pulseIntervalMs,
       ),
       {
         parse_mode: "HTML",
@@ -354,7 +354,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
           inline_keyboard: renderSettingsKeyboard(
             activeModel,
             effortName,
-            proactiveOn,
+            pulseOn,
           ),
         },
       },
@@ -545,7 +545,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const chatSets = getChatSettings(cid);
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
-    const proactiveOn = isPulseEnabled(cid);
+    const pulseOn = isPulseEnabled(cid);
 
     const contextMax = activeModel.includes("haiku") ? 200_000 : 1_000_000;
     const contextUsed = u.lastPromptTokens;
@@ -586,7 +586,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       `  Read ${formatTokenCount(u.totalCacheRead)}  Write ${formatTokenCount(u.totalCacheWrite)}`,
       `  Input ${formatTokenCount(u.totalInputTokens)}  Output ${formatTokenCount(u.totalOutputTokens)}`,
       "",
-      `<b>Proactive</b>  ${proactiveOn ? "on" : "off"}`,
+      `<b>Pulse</b>  ${pulseOn ? "on" : "off"}`,
       `<b>Workspace</b>  ${diskStr}`,
       `<b>Session</b>   ${info.sessionName ? `"${escapeHtml(info.sessionName)}" ` : ""}${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "...</code>" : "<i>(new)</i>"} \u00B7 ${sessionAge} old`,
       `<b>Uptime</b>    ${uptime} \u00B7 ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,

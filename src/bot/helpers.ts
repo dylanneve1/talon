@@ -41,17 +41,17 @@ export function renderSettingsText(
   model: string,
   effort: string,
   proactive: boolean,
-  proactiveIntervalMs?: number,
+  pulseIntervalMs?: number,
 ): string {
-  const intervalStr = proactiveIntervalMs
-    ? formatDuration(proactiveIntervalMs)
+  const intervalStr = pulseIntervalMs
+    ? formatDuration(pulseIntervalMs)
     : formatDuration(DEFAULT_PULSE_INTERVAL_MS);
   return [
     "<b>\uD83E\uDD85 Settings</b>",
     "",
     `<b>Model:</b> <code>${escapeHtml(model)}</code>`,
     `<b>Effort:</b> ${effort}`,
-    `<b>Proactive:</b> ${proactive ? "on" : "off"} (every ${intervalStr})`,
+    `<b>Pulse:</b> ${proactive ? "on" : "off"} (every ${intervalStr})`,
   ].join("\n");
 }
 
@@ -96,7 +96,7 @@ export function renderSettingsKeyboard(
     ],
     [
       {
-        text: proactive ? "Proactive: ON" : "Proactive: OFF",
+        text: proactive ? "Pulse: ON" : "Pulse: OFF",
         callback_data: `settings:proactive:${proactive ? "off" : "on"}`,
       },
       { text: "Done", callback_data: "settings:done" },

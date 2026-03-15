@@ -14,10 +14,10 @@ export type ChatSettings = {
   model?: string;
   /** Effort level override (maps to SDK thinking + effort options). */
   effort?: EffortLevel;
-  /** Whether proactive check-ins are enabled for this chat. */
-  proactive?: boolean;
-  /** Per-chat proactive interval in milliseconds. */
-  proactiveIntervalMs?: number;
+  /** Whether pulse is enabled for this chat. */
+  pulse?: boolean;
+  /** Per-chat pulse check interval in milliseconds. */
+  pulseIntervalMs?: number;
 };
 
 const STORE_FILE = resolve(process.cwd(), "workspace", "chat-settings.json");
@@ -111,38 +111,38 @@ export function setChatEffort(
   save();
 }
 
-export function setChatProactive(
+export function setChatPulse(
   chatId: string,
   enabled: boolean | undefined,
 ): void {
   if (!store[chatId]) store[chatId] = {};
   if (enabled !== undefined) {
-    store[chatId].proactive = enabled;
+    store[chatId].pulse = enabled;
   } else {
-    delete store[chatId].proactive;
+    delete store[chatId].pulse;
   }
   dirty = true;
   save();
 }
 
-export function setChatProactiveInterval(
+export function setChatPulseInterval(
   chatId: string,
   intervalMs: number | undefined,
 ): void {
   if (!store[chatId]) store[chatId] = {};
   if (intervalMs !== undefined) {
-    store[chatId].proactiveIntervalMs = intervalMs;
+    store[chatId].pulseIntervalMs = intervalMs;
   } else {
-    delete store[chatId].proactiveIntervalMs;
+    delete store[chatId].pulseIntervalMs;
   }
   dirty = true;
   save();
 }
 
-/** Get all chat IDs that have proactive enabled in settings. */
-export function getRegisteredProactiveChats(): string[] {
+/** Get all chat IDs that have pulse enabled in settings. */
+export function getRegisteredPulseChats(): string[] {
   return Object.entries(store)
-    .filter(([, s]) => s.proactive === true)
+    .filter(([, s]) => s.pulse === true)
     .map(([id]) => id);
 }
 

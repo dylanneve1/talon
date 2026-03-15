@@ -129,21 +129,21 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
         } else {
           disablePulse(cid);
         }
-        await ctx.answerCallbackQuery({ text: `Proactive: ${value}` });
+        await ctx.answerCallbackQuery({ text: `Pulse: ${value}` });
       }
 
       const chatSets = getChatSettings(cid);
       const activeModel = chatSets.model ?? config.model;
       const effortName = chatSets.effort ?? "adaptive";
-      const proactiveOn = isPulseEnabled(cid);
+      const pulseOn = isPulseEnabled(cid);
 
       try {
         await ctx.editMessageText(
           renderSettingsText(
             activeModel,
             effortName,
-            proactiveOn,
-            chatSets.proactiveIntervalMs,
+            pulseOn,
+            chatSets.pulseIntervalMs,
           ),
           {
             parse_mode: "HTML",
@@ -151,7 +151,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
               inline_keyboard: renderSettingsKeyboard(
                 activeModel,
                 effortName,
-                proactiveOn,
+                pulseOn,
               ),
             },
           },

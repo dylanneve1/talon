@@ -12,8 +12,8 @@ import { getSession, setSessionId } from "../storage/sessions.js";
 import { getBridgePort, isBridgeBusy } from "../bridge/server.js";
 import { resolve } from "node:path";
 import {
-  setChatProactive,
-  getRegisteredProactiveChats,
+  setChatPulse,
+  getRegisteredPulseChats,
   getChatSettings,
 } from "../storage/chat-settings.js";
 import { getRecentHistory, getLatestMessageId } from "../storage/history.js";
@@ -48,7 +48,7 @@ export function initPulse(params: {
   botInstance = params.bot;
   inputFileClass = params.inputFile;
 
-  for (const chatId of getRegisteredProactiveChats()) {
+  for (const chatId of getRegisteredPulseChats()) {
     registeredChats.add(chatId);
   }
   if (registeredChats.size > 0) {
@@ -58,23 +58,20 @@ export function initPulse(params: {
 
 export function registerChat(chatId: string): void {
   registeredChats.add(chatId);
-  const settings = getChatSettings(chatId);
-  if (settings.proactive === undefined) {
-    setChatProactive(chatId, true);
-  }
+  // Don't auto-enable — pulse must be explicitly turned on via /pulse on
 }
 
 export function enablePulse(chatId: string): void {
-  setChatProactive(chatId, true);
+  setChatPulse(chatId, true);
   registeredChats.add(chatId);
 }
 
 export function disablePulse(chatId: string): void {
-  setChatProactive(chatId, false);
+  setChatPulse(chatId, false);
 }
 
 export function isPulseEnabled(chatId: string): boolean {
-  return getChatSettings(chatId).proactive !== false;
+  return getChatSettings(chatId).pulse === true; // off by default, must be explicitly enabled
 }
 
 export function startPulseTimer(intervalMs?: number): void {

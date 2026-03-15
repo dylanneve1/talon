@@ -28,9 +28,11 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
     const msgId = ctx.message.message_id;
     const replyToMsgId = ctx.message.reply_to_message?.message_id;
 
-    // Register this chat for userbot + pulse access
+    // Register this chat for userbot access
     allowChat(ctx.chat.id);
-    registerChat(chatId);
+    // Only register groups for pulse (DMs don't need it — bot always responds)
+    const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+    if (isGroup) registerChat(chatId);
     const timestamp = ctx.message.date * 1000;
 
     if ("text" in ctx.message && ctx.message.text) {
