@@ -342,6 +342,15 @@ server.tool(
   async (params) => textResult(await callBridge("get_message_by_id", params)),
 );
 
+server.tool(
+  "download_media",
+  "Download a photo, document, or other media from a message by its ID. Saves the file to the workspace and returns the file path so you can read/analyze it. Use this when you see a [photo] or [document] in chat history but don't have the file.",
+  {
+    message_id: z.number().describe("Message ID containing the media to download"),
+  },
+  async (params) => textResult(await callBridge("download_media", params)),
+);
+
 // ── Members ──────────────────────────────────────────────────────────────────
 
 server.tool(

@@ -418,3 +418,67 @@ export async function getMessage(params: {
     return `Failed: ${err instanceof Error ? err.message : err}`;
   }
 }
+
+/** Download media from a message and save to workspace/uploads/. */
+export async function downloadMessageMedia(params: {
+  chatId: number | string;
+  messageId: number;
+}): Promise<string> {
+  if (!client) return "User client not connected.";
+
+  try {
+    const chatId = assertAllowedChat(params.chatId);
+    const messages = await client.getMessages(chatId, {
+      ids: [params.messageId],
+    });
+    const m = messages[0];
+    if (!m) return `Message ${params.messageId} not found.`;
+    if (!m.media) return `Message ${params.messageId} has no media.`;
+
+    // Download the media using GramJS
+    const buffer = await client.downloadMedia(m.media, {}) as Buffer;
+    if (!buffer || buffer.length === 0) return "Download returned empty data.";
+
+    // Determine filename from media type
+    const mediaClass = m.media.className;
+    let ext = ".bin";
+    let prefix = "media";
+    if (mediaClass === "MessageMediaPhoto") {
+      ext = ".jpg";
+      prefix = "photo";
+    } else if (mediaClass === "MessageMediaDocument") {
+      const doc = (m.media as { document?: { mimeType?: string; attributes?: Array<{ fileName?: string }> } }).document;
+      if (doc?.attributes) {
+        for (const attr of doc.attributes) {
+          if (attr.fileName) {
+            prefix = attr.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+            ext = "";
+            break;
+          }
+        }
+      }
+      if (ext !== "" && doc?.mimeType) {
+        const mimeMap: Record<string, string> = {
+          "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
+          "image/webp": ".webp", "video/mp4": ".mp4", "audio/ogg": ".ogg",
+          "audio/mpeg": ".mp3", "application/pdf": ".pdf",
+        };
+        ext = mimeMap[doc.mimeType] ?? ".bin";
+        prefix = ext === ".bin" ? "doc" : ext.slice(1);
+      }
+    }
+
+    // Save to workspace/uploads/
+    const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
+    if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+
+    const filename = `${Date.now()}-msg${params.messageId}-${prefix}${ext}`;
+    const filePath = resolve(uploadsDir, filename);
+    writeFileSync(filePath, buffer);
+
+    log("userbot", `Downloaded media from msg:${params.messageId} → ${filename} (${buffer.length} bytes)`);
+    return `Downloaded to: ${filePath} (${buffer.length} bytes). You can now read/analyze this file.`;
+  } catch (err) {
+    return `Download failed: ${err instanceof Error ? err.message : err}`;
+  }
+}

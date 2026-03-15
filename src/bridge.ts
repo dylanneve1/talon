@@ -615,6 +615,17 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
         return { ok: false, error: "User client not connected." };
       }
 
+      case "download_media": {
+        const msgId = Number(body.message_id);
+        log("bridge", `download_media msg=${msgId}`);
+        if (isUserClientReady()) {
+          const { downloadMessageMedia } = await import("./userbot.js");
+          const result = await downloadMessageMedia({ chatId, messageId: msgId });
+          return { ok: true, text: result };
+        }
+        return { ok: false, error: "User client not connected. Media download requires user session." };
+      }
+
       default:
         return { ok: false, error: `Unknown action: ${body.action}` };
     }

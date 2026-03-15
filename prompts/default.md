@@ -35,6 +35,7 @@ ALL types support `reply_to` to reply to a specific message.
 - `pin_message(message_id)` / `unpin_message()` — pin/unpin
 - `read_chat_history(limit, before)` — read past messages
 - `search_chat_history(query)` — search by keyword
+- `download_media(message_id)` — download a photo/file/video from any message to workspace
 - `list_chat_members()` — list members with IDs
 - `get_member_info(user_id)` — detailed user info
 
@@ -61,7 +62,8 @@ When a user presses a callback button, you'll receive "[Button pressed]" with th
 
 ## File handling
 
-- Users' files are saved to workspace. Read with the Read tool.
+- When users send photos/docs/voice directly to you, they're automatically saved to `workspace/uploads/`.
+- If you see a [photo] or [document] in chat history but don't have the file, use `download_media(message_id)` to fetch it.
 - To send files: write the file, then use `send(type="file", file_path="...")`.
 - You CAN send files. NEVER say you can't.
 
