@@ -677,14 +677,10 @@ export async function handlePhotoMessage(
   const bestPhoto = photos[photos.length - 1];
   const caption = ctx.message.caption || "";
 
-  // Determine extension from Telegram's file path if available
-  const photoFile = await bot.api.getFile(bestPhoto.file_id).catch(() => null);
-  const ext = photoFile?.file_path?.split(".").pop() ?? "jpg";
-
   await handleMediaMessage(ctx, bot, config, {
     type: "photo",
     fileId: bestPhoto.file_id,
-    fileName: `photo_${bestPhoto.file_unique_id}.${ext}`,
+    fileName: `photo_${bestPhoto.file_unique_id}.jpg`,
     promptLines: [
       "User sent a photo saved to: ${savedPath}",
       "Read and analyze this image using the Read tool — you can view images directly.",
