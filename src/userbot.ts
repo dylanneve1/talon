@@ -436,43 +436,20 @@ export async function downloadMessageMedia(params: {
     if (!m.media) return `Message ${params.messageId} has no media.`;
 
     // Download the media using GramJS
-    const buffer = await client.downloadMedia(m.media, {}) as Buffer;
+    const buffer = (await client.downloadMedia(m.media, {})) as Buffer;
     if (!buffer || buffer.length === 0) return "Download returned empty data.";
 
-    // Determine filename from media type
-    const mediaClass = m.media.className;
-    let ext = ".bin";
-    let prefix = "media";
-    if (mediaClass === "MessageMediaPhoto") {
-      ext = ".jpg";
-      prefix = "photo";
-    } else if (mediaClass === "MessageMediaDocument") {
-      const doc = (m.media as { document?: { mimeType?: string; attributes?: Array<{ fileName?: string }> } }).document;
-      if (doc?.attributes) {
-        for (const attr of doc.attributes) {
-          if (attr.fileName) {
-            prefix = attr.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-            ext = "";
-            break;
-          }
-        }
-      }
-      if (ext !== "" && doc?.mimeType) {
-        const mimeMap: Record<string, string> = {
-          "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
-          "image/webp": ".webp", "video/mp4": ".mp4", "audio/ogg": ".ogg",
-          "audio/mpeg": ".mp3", "application/pdf": ".pdf",
-        };
-        ext = mimeMap[doc.mimeType] ?? ".bin";
-        prefix = ext === ".bin" ? "doc" : ext.slice(1);
-      }
-    }
+    // Use the original filename if available, otherwise generate one
+    const doc = (m.media as { document?: { attributes?: Array<{ fileName?: string }> } }).document;
+    const originalName = doc?.attributes?.find((a) => a.fileName)?.fileName;
+    const filename = originalName
+      ? `${Date.now()}-${originalName.replace(/[^a-zA-Z0-9._-]/g, "_")}`
+      : `${Date.now()}-msg${params.messageId}`;
 
     // Save to workspace/uploads/
     const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
     if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 
-    const filename = `${Date.now()}-msg${params.messageId}-${prefix}${ext}`;
     const filePath = resolve(uploadsDir, filename);
     writeFileSync(filePath, buffer);
 
