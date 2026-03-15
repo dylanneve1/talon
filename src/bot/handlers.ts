@@ -15,6 +15,7 @@ import {
   clearBridgeContext,
   getBridgeMessageCount,
 } from "../bridge/server.js";
+import { resetPulseTimer } from "../agent/pulse.js";
 import { InputFile } from "grammy";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -577,6 +578,7 @@ export async function processAndReply(
   }
 
   clearBridgeContext(numericChatId);
+  resetPulseTimer(); // Bot just talked — restart the pulse timer
 }
 
 // ── Shared media handler ──────────────────────────────────────────────────────

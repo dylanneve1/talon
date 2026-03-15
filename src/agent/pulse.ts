@@ -80,10 +80,23 @@ export function startPulseTimer(intervalMs?: number): void {
   const ms = intervalMs ?? (envMs > 0 ? envMs : DEFAULT_INTERVAL_MS);
   if (ms <= 0) return;
 
+  activeIntervalMs = ms;
   log("pulse", `Started: checking every ${Math.round(ms / 60000)}m`);
   timer = setInterval(() => {
     runPulse().catch((err) => logError("pulse", "Check failed", err));
   }, ms);
+}
+
+let activeIntervalMs = DEFAULT_INTERVAL_MS;
+
+/** Reset the pulse timer — call this when the bot sends a message so it
+ *  doesn't redundantly check in right after an active conversation. */
+export function resetPulseTimer(): void {
+  if (!timer) return;
+  clearInterval(timer);
+  timer = setInterval(() => {
+    runPulse().catch((err) => logError("pulse", "Check failed", err));
+  }, activeIntervalMs);
 }
 
 export function stopPulseTimer(): void {
