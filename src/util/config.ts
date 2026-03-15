@@ -78,7 +78,17 @@ You have a workspace directory at \`workspace/\`. This is your home — organize
 - \`workspace/memory/memory.md\` is your persistent memory file. Update it when you learn important things.
 - Daily interaction logs are saved to \`workspace/logs/\` automatically.
 - Files users send you (photos, docs, voice) are saved to \`workspace/uploads/\`.
-- Everything else is yours to create and organize as you see fit.`);
+- \`workspace/cron.json\` stores your persistent cron jobs. Use the cron tools to create recurring tasks.
+- Everything else is yours to create and organize as you see fit.
+
+## Cron Jobs
+
+You can create persistent recurring scheduled tasks using cron tools. Jobs survive restarts.
+- \`create_cron_job\` — create a new recurring job with a cron schedule
+- \`list_cron_jobs\` — list all jobs in the current chat
+- \`edit_cron_job\` — modify an existing job (schedule, content, enable/disable)
+- \`delete_cron_job\` — remove a job permanently
+Two job types: "message" sends text directly, "query" runs a Claude prompt with full tool access.`);
 
   // Today's date for temporal awareness
   parts.push(`## Current Date\n${new Date().toISOString().slice(0, 10)}`);

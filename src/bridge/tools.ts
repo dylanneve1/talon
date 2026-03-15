@@ -395,6 +395,63 @@ server.tool(
   async (params) => textResult(await callBridge("cancel_scheduled", params)),
 );
 
+// ── Cron jobs ────────────────────────────────────────────────────────────────
+
+server.tool(
+  "create_cron_job",
+  `Create a persistent recurring scheduled job. Jobs survive restarts.
+
+Cron format: "minute hour day month weekday" (5 fields)
+Examples:
+  "0 9 * * *"     = every day at 9:00 AM
+  "30 14 * * 1-5" = weekdays at 2:30 PM
+  "*/15 * * * *"  = every 15 minutes
+  "0 0 1 * *"     = first day of every month at midnight
+  "0 8 * * 1"     = every Monday at 8:00 AM
+
+Type "message" sends the content as a text message.
+Type "query" runs the content as a Claude prompt with full tool access (can search, create files, send messages, etc).`,
+  {
+    name: z.string().describe("Human-readable name for the job"),
+    schedule: z.string().describe("Cron expression (5-field: minute hour day month weekday)"),
+    type: z.enum(["message", "query"]).describe("Job type: 'message' sends text, 'query' runs a Claude prompt"),
+    content: z.string().describe("Message text or query prompt"),
+    timezone: z.string().optional().describe("IANA timezone (e.g. 'America/New_York'). Defaults to system timezone."),
+  },
+  async (params) => textResult(await callBridge("create_cron_job", params)),
+);
+
+server.tool(
+  "list_cron_jobs",
+  "List all cron jobs in the current chat with their status, schedule, run count, and next run time.",
+  {},
+  async () => textResult(await callBridge("list_cron_jobs", {})),
+);
+
+server.tool(
+  "edit_cron_job",
+  "Edit an existing cron job. Only provide the fields you want to change.",
+  {
+    job_id: z.string().describe("Job ID to edit"),
+    name: z.string().optional().describe("New name"),
+    schedule: z.string().optional().describe("New cron expression"),
+    type: z.enum(["message", "query"]).optional().describe("New job type"),
+    content: z.string().optional().describe("New content"),
+    enabled: z.boolean().optional().describe("Enable or disable the job"),
+    timezone: z.string().optional().describe("New IANA timezone"),
+  },
+  async (params) => textResult(await callBridge("edit_cron_job", params)),
+);
+
+server.tool(
+  "delete_cron_job",
+  "Delete a cron job permanently.",
+  {
+    job_id: z.string().describe("Job ID to delete"),
+  },
+  async (params) => textResult(await callBridge("delete_cron_job", params)),
+);
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {

@@ -35,6 +35,7 @@ import {
   getRecentErrors,
 } from "../util/watchdog.js";
 import { appendDailyLog } from "../storage/daily-log.js";
+import { getAllCronJobs, validateCronExpression } from "../storage/cron-store.js";
 import { escapeHtml } from "./handlers.js";
 import {
   formatDuration,
@@ -520,6 +521,38 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         return;
       }
 
+      case "cron": {
+        const cronJobs = getAllCronJobs();
+        if (cronJobs.length === 0) {
+          await ctx.reply("No cron jobs configured.");
+          return;
+        }
+
+        const lines = cronJobs.map((j) => {
+          const status = j.enabled ? "\u2713" : "\u2717";
+          const lastRun = j.lastRunAt
+            ? new Date(j.lastRunAt).toISOString().slice(0, 16).replace("T", " ")
+            : "never";
+          const validation = validateCronExpression(j.schedule, j.timezone);
+          const nextRun = validation.next
+            ? new Date(validation.next).toISOString().slice(0, 16).replace("T", " ")
+            : "?";
+          return (
+            `${status} <b>${escapeHtml(j.name)}</b>\n` +
+            `  Chat: <code>${j.chatId}</code>\n` +
+            `  Schedule: <code>${escapeHtml(j.schedule)}</code>${j.timezone ? ` (${escapeHtml(j.timezone)})` : ""}\n` +
+            `  Type: ${j.type} | Runs: ${j.runCount} | Last: ${lastRun}\n` +
+            `  Next: ${nextRun}\n` +
+            `  ID: <code>${j.id}</code>`
+          );
+        });
+        await ctx.reply(
+          `<b>Cron Jobs (${cronJobs.length})</b>\n\n` + lines.join("\n\n"),
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+
       default:
         await ctx.reply(
           "<b>/admin commands</b>\n\n" +
@@ -528,7 +561,8 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
             "  /admin chats -- list all active chats\n" +
             "  /admin broadcast &lt;text&gt; -- send to all chats\n" +
             "  /admin kill &lt;chatId&gt; -- reset a chat session\n" +
-            "  /admin logs -- last 20 lines of /tmp/talon.log",
+            "  /admin logs -- last 20 lines of /tmp/talon.log\n" +
+            "  /admin cron -- list all cron jobs",
           { parse_mode: "HTML" },
         );
     }

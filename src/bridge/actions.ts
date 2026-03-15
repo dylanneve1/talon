@@ -32,6 +32,16 @@ import {
   replyParams,
   sendText,
 } from "./server.js";
+import {
+  addCronJob,
+  getCronJob,
+  getCronJobsForChat,
+  updateCronJob,
+  deleteCronJob,
+  validateCronExpression,
+  generateCronId,
+  type CronJobType,
+} from "../storage/cron-store.js";
 
 type BridgeAction = {
   action: string;
@@ -582,6 +592,119 @@ export async function handleAction(body: BridgeAction): Promise<unknown> {
           return { ok: true, text: result };
         }
         return { ok: false, error: "User client not connected. Media download requires user session." };
+      }
+
+      // ── Cron job management ─────────────────────────────────────────────
+
+      case "create_cron_job": {
+        const name = String(body.name ?? "Unnamed job");
+        const schedule = String(body.schedule ?? "");
+        const jobType = (body.type as CronJobType) ?? "message";
+        const content = String(body.content ?? "");
+        const timezone = body.timezone ? String(body.timezone) : undefined;
+
+        if (!schedule) return { ok: false, error: "Missing schedule expression" };
+        if (!content) return { ok: false, error: "Missing content" };
+
+        const validation = validateCronExpression(schedule, timezone);
+        if (!validation.valid) {
+          return { ok: false, error: `Invalid cron expression: ${validation.error}` };
+        }
+
+        const id = generateCronId();
+        addCronJob({
+          id,
+          chatId: String(chatId),
+          schedule,
+          type: jobType,
+          content,
+          name,
+          enabled: true,
+          createdAt: Date.now(),
+          runCount: 0,
+          timezone,
+        });
+
+        log("bridge", `create_cron_job: "${name}" [${schedule}]`);
+        return {
+          ok: true,
+          text: `Created cron job "${name}" (id: ${id})\nSchedule: ${schedule}\nType: ${jobType}\nNext run: ${validation.next ?? "unknown"}`,
+        };
+      }
+
+      case "list_cron_jobs": {
+        const jobs = getCronJobsForChat(String(chatId));
+        if (jobs.length === 0) {
+          return { ok: true, text: "No cron jobs in this chat." };
+        }
+        const lines = jobs.map((j) => {
+          const status = j.enabled ? "enabled" : "disabled";
+          const lastRun = j.lastRunAt
+            ? new Date(j.lastRunAt).toISOString().slice(0, 16).replace("T", " ")
+            : "never";
+          const validation = validateCronExpression(j.schedule, j.timezone);
+          const nextRun = validation.next
+            ? new Date(validation.next).toISOString().slice(0, 16).replace("T", " ")
+            : "unknown";
+          return [
+            `- ${j.name} (${status})`,
+            `  ID: ${j.id}`,
+            `  Schedule: ${j.schedule}${j.timezone ? ` (${j.timezone})` : ""}`,
+            `  Type: ${j.type}`,
+            `  Content: ${j.content.slice(0, 100)}${j.content.length > 100 ? "..." : ""}`,
+            `  Runs: ${j.runCount} | Last: ${lastRun} | Next: ${nextRun}`,
+          ].join("\n");
+        });
+        return { ok: true, text: `Cron jobs (${jobs.length}):\n\n${lines.join("\n\n")}` };
+      }
+
+      case "edit_cron_job": {
+        const jobId = String(body.job_id ?? "");
+        if (!jobId) return { ok: false, error: "Missing job_id" };
+
+        const job = getCronJob(jobId);
+        if (!job) return { ok: false, error: `Job ${jobId} not found` };
+        if (job.chatId !== String(chatId)) {
+          return { ok: false, error: "Job belongs to a different chat" };
+        }
+
+        const updates: Record<string, unknown> = {};
+        if (body.name !== undefined) updates.name = String(body.name);
+        if (body.content !== undefined) updates.content = String(body.content);
+        if (body.enabled !== undefined) updates.enabled = Boolean(body.enabled);
+        if (body.type !== undefined) updates.type = String(body.type);
+        if (body.timezone !== undefined) updates.timezone = body.timezone ? String(body.timezone) : undefined;
+
+        if (body.schedule !== undefined) {
+          const newSchedule = String(body.schedule);
+          const validation = validateCronExpression(newSchedule, (updates.timezone as string) ?? job.timezone);
+          if (!validation.valid) {
+            return { ok: false, error: `Invalid cron expression: ${validation.error}` };
+          }
+          updates.schedule = newSchedule;
+        }
+
+        const updated = updateCronJob(jobId, updates);
+        log("bridge", `edit_cron_job: ${jobId}`);
+        return {
+          ok: true,
+          text: `Updated job "${updated?.name ?? jobId}". Fields changed: ${Object.keys(updates).join(", ")}`,
+        };
+      }
+
+      case "delete_cron_job": {
+        const jobId = String(body.job_id ?? "");
+        if (!jobId) return { ok: false, error: "Missing job_id" };
+
+        const job = getCronJob(jobId);
+        if (!job) return { ok: false, error: `Job ${jobId} not found` };
+        if (job.chatId !== String(chatId)) {
+          return { ok: false, error: "Job belongs to a different chat" };
+        }
+
+        deleteCronJob(jobId);
+        log("bridge", `delete_cron_job: ${jobId} ("${job.name}")`);
+        return { ok: true, text: `Deleted cron job "${job.name}" (${jobId})` };
       }
 
       default:

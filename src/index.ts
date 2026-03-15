@@ -25,6 +25,12 @@ import {
   startPulseTimer,
   stopPulseTimer,
 } from "./agent/pulse.js";
+import {
+  initCron,
+  startCronTimer,
+  stopCronTimer,
+} from "./agent/cron.js";
+import { loadCronJobs } from "./storage/cron-store.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { registerCommands } from "./bot/commands.js";
 import { registerMiddleware } from "./bot/middleware.js";
@@ -37,6 +43,7 @@ const config = loadConfig();
 initWorkspace(config.workspace);
 loadSessions();
 loadChatSettings();
+loadCronJobs();
 initAgent(config);
 
 const bot = new Bot(config.botToken);
@@ -78,6 +85,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   try { await bot.stop(); log("shutdown", "Bot disconnected"); }
   catch (err) { logError("shutdown", "Bot stop error", err); }
   stopPulseTimer();
+  stopCronTimer();
   stopWatchdog();
   try { await disconnectUserClient(); log("shutdown", "User client disconnected"); }
   catch (err) { logError("shutdown", "User client disconnect error", err); }
@@ -138,6 +146,19 @@ async function main(): Promise<void> {
   if (process.env.TALON_PULSE !== "0") {
     startPulseTimer();
   }
+
+  initCron({
+    config,
+    setBridgeContext: setBridgeContext as (
+      chatId: number,
+      bot: unknown,
+      inputFile: unknown,
+    ) => void,
+    clearBridgeContext,
+    bot,
+    inputFile: InputFile,
+  });
+  startCronTimer();
 
   startWatchdog();
 
