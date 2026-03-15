@@ -71,18 +71,14 @@ function loadSystemPrompt(): string {
       `## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: workspace/memory/memory.md\n\n${memory}`,
     );
 
-  // Workspace structure
+  // Workspace
   parts.push(`## Workspace
 
-Your workspace is organized into directories:
-- \`workspace/memory/\` — persistent memory (memory.md). Update when you learn important things.
-- \`workspace/logs/\` — daily interaction logs (YYYY-MM-DD.md). Read for past activity.
-- \`workspace/uploads/\` — files received from Telegram (photos, docs, voice).
-- \`workspace/files/\` — files you create for sending back to users.
-- \`workspace/scripts/\` — scripts you create (.py, .js, .sh, etc.).
-- \`workspace/data/\` — data files you create (.csv, .json, .xml, etc.).
-
-When creating files, put them in the right directory. Use \`workspace/files/\` for general files to send back.`);
+You have a workspace directory at \`workspace/\`. This is your home — organize it however you want.
+- \`workspace/memory/memory.md\` is your persistent memory file. Update it when you learn important things.
+- Daily interaction logs are saved to \`workspace/logs/\` automatically.
+- Files users send you (photos, docs, voice) are saved to \`workspace/uploads/\`.
+- Everything else is yours to create and organize as you see fit.`);
 
   // Today's date for temporal awareness
   parts.push(`## Current Date\n${new Date().toISOString().slice(0, 10)}`);

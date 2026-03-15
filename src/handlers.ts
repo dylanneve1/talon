@@ -16,14 +16,8 @@ import {
   getBridgeMessageCount,
 } from "./bridge.js";
 import { InputFile } from "grammy";
-import {
-  writeFileSync,
-  readFileSync,
-  statSync,
-  mkdirSync,
-  existsSync,
-} from "node:fs";
-import { resolve, basename } from "node:path";
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { handleMessage } from "./agent.js";
 import { appendDailyLog } from "./daily-log.js";
 import { getRecentBySenderId } from "./history.js";
@@ -310,46 +304,6 @@ function isTransientError(err: Error): boolean {
 
 // ── Response delivery ────────────────────────────────────────────────────────
 
-const SKIP_DIRS = [
-  "/uploads/",
-  "/.claude/",
-  "/node_modules/",
-  "/logs/",
-  "/sessions/",
-  "/memory/",
-];
-const SKIP_NAMES = new Set([
-  "sessions.json",
-  "chat-settings.json",
-  "memory.md",
-]);
-
-async function sendNewFiles(
-  bot: Bot,
-  chatId: number,
-  filePaths: string[],
-): Promise<void> {
-  for (const filePath of filePaths) {
-    const name = basename(filePath);
-    if (SKIP_NAMES.has(name)) continue;
-    if (name.startsWith(".")) continue;
-    if (SKIP_DIRS.some((d) => filePath.includes(d))) continue;
-
-    try {
-      const stat = statSync(filePath);
-      if (stat.size > 49 * 1024 * 1024 || stat.size === 0) continue;
-
-      log("bot", `Sending file ${name} (${stat.size} bytes)`);
-      await bot.api.sendDocument(
-        chatId,
-        new InputFile(readFileSync(filePath), name),
-      );
-    } catch (err) {
-      logError("bot", `Failed to send file ${name}`, err);
-    }
-  }
-}
-
 async function sendHtml(
   bot: Bot,
   chatId: number,
@@ -595,10 +549,6 @@ export async function processAndReply(
   }
 
   clearBridgeContext();
-
-  if (bridgeSent === 0) {
-    await sendNewFiles(bot, numericChatId, result.newFiles);
-  }
 }
 
 // ── Shared media handler ──────────────────────────────────────────────────────

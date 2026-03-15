@@ -10,8 +10,7 @@ import {
 import { getBridgePort } from "./bridge.js";
 import { getChatSettings } from "./chat-settings.js";
 import { getRecentHistory } from "./history.js";
-import { readdirSync, statSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 import { log, logError, logWarn } from "./log.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -39,9 +38,7 @@ export type HandleMessageResult = {
   cacheRead: number;
   cacheWrite: number;
   /** Files created or modified in the workspace during this turn. */
-  newFiles: string[];
   /** Files explicitly sent via the send_file tool. */
-  sentFiles: string[];
 };
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -50,67 +47,6 @@ let config: TalonConfig;
 
 export function initAgent(cfg: TalonConfig): void {
   config = cfg;
-}
-
-// ── Workspace file tracking ──────────────────────────────────────────────────
-
-/** Only scan directories that contain user-facing output files. */
-const SCAN_SUBDIRS = ["files", "scripts", "data"];
-
-function snapshotWorkspace(dir: string): Map<string, number> {
-  const snapshot = new Map<string, number>();
-  for (const sub of SCAN_SUBDIRS) {
-    const subDir = join(dir, sub);
-    try {
-      scanDir(dir, subDir, snapshot);
-    } catch {
-      // subdirectory might not exist yet
-    }
-  }
-  return snapshot;
-}
-
-function scanDir(base: string, dir: string, out: Map<string, number>): void {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    const full = join(dir, entry.name);
-    if (
-      entry.name.startsWith(".") ||
-      entry.name === "node_modules" ||
-      entry.name === "sessions.json"
-    )
-      continue;
-    if (entry.isDirectory()) {
-      scanDir(base, full, out);
-    } else if (entry.isFile()) {
-      try {
-        const st = statSync(full);
-        out.set(full.slice(base.length + 1), st.mtimeMs);
-      } catch {
-        // skip
-      }
-    }
-  }
-}
-
-function detectNewFiles(
-  before: Map<string, number>,
-  after: Map<string, number>,
-  workspace: string,
-): string[] {
-  const newFiles: string[] = [];
-  for (const [rel, mtime] of after) {
-    const prev = before.get(rel);
-    if (prev === undefined || mtime > prev) {
-      newFiles.push(resolve(workspace, rel));
-    }
-  }
-  return newFiles;
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -125,8 +61,6 @@ export async function handleMessage(
     params;
   const session = getSession(chatId);
   const t0 = Date.now();
-
-  const beforeFiles = snapshotWorkspace(config.workspace);
 
   // Per-chat settings override global config
   const chatSettings = getChatSettings(chatId);
@@ -228,7 +162,6 @@ export async function handleMessage(
   let cacheRead = 0;
   let cacheWrite = 0;
   let toolCalls = 0;
-  const sentFiles: string[] = [];
 
   // Streaming throttle
   let lastStreamUpdate = 0;
@@ -358,10 +291,6 @@ export async function handleMessage(
   // The remaining currentBlockText is the final response text
   allResponseText += currentBlockText;
 
-  // Detect new files
-  const afterFiles = snapshotWorkspace(config.workspace);
-  const newFiles = detectNewFiles(beforeFiles, afterFiles, config.workspace);
-
   const totalPrompt = inputTokens + cacheRead + cacheWrite;
   const cacheHitPct =
     totalPrompt > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
@@ -370,8 +299,7 @@ export async function handleMessage(
     "agent",
     `[${chatId}] -> ${allResponseText.slice(0, 80)}${allResponseText.length > 80 ? "..." : ""} ` +
       `(${durationMs}ms, in=${inputTokens} out=${outputTokens} cache=${cacheHitPct}%` +
-      `${toolCalls > 0 ? ` tools=${toolCalls}` : ""}` +
-      `${newFiles.length > 0 ? ` files=${newFiles.length}` : ""})`,
+      `${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`,
   );
 
   return {
@@ -381,7 +309,5 @@ export async function handleMessage(
     outputTokens,
     cacheRead,
     cacheWrite,
-    newFiles,
-    sentFiles,
   };
 }

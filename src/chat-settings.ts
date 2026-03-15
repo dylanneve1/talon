@@ -18,12 +18,7 @@ export type ChatSettings = {
   proactive?: boolean;
 };
 
-const sessionsDir = resolve(process.cwd(), "workspace", "sessions");
-const STORE_FILE = existsSync(resolve(sessionsDir, "chat-settings.json"))
-  ? resolve(sessionsDir, "chat-settings.json")
-  : existsSync(resolve(process.cwd(), "workspace", "chat-settings.json"))
-    ? resolve(process.cwd(), "workspace", "chat-settings.json")
-    : resolve(sessionsDir, "chat-settings.json");
+const STORE_FILE = resolve(process.cwd(), "workspace", "chat-settings.json");
 let store: Record<string, ChatSettings> = {};
 let dirty = false;
 
