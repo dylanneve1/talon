@@ -9,7 +9,6 @@ import {
   setLastBotMessageId,
   setSessionName,
 } from "../../storage/sessions.js";
-import { getBridgePort } from "../../frontend/telegram/bridge/server.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getRecentHistory } from "../../storage/history.js";
 import { resolve } from "node:path";
@@ -46,9 +45,11 @@ export type HandleMessageResult = {
 // ── State ────────────────────────────────────────────────────────────────────
 
 let config: TalonConfig;
+let bridgePortFn: () => number = () => 19876;
 
-export function initAgent(cfg: TalonConfig): void {
+export function initAgent(cfg: TalonConfig, getBridgePort?: () => number): void {
   config = cfg;
+  if (getBridgePort) bridgePortFn = getBridgePort;
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -118,7 +119,7 @@ export async function handleMessage(
           resolve(import.meta.dirname ?? ".", "tools.ts"),
         ],
         env: {
-          TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}`,
+          TALON_BRIDGE_URL: `http://127.0.0.1:${bridgePortFn()}`,
         },
       },
     },

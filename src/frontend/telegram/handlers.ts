@@ -10,18 +10,14 @@ import {
   markdownToTelegramHtml,
   friendlyError,
 } from "./formatting.js";
+import { execute } from "../../core/dispatcher.js";
 import {
-  setBridgeContext,
-  clearBridgeContext,
-  getBridgeMessageCount,
-} from "./bridge/server.js";
-import { resetPulseTimer } from "../../core/pulse.js";
-import { InputFile } from "grammy";
+  enrichDMPrompt,
+  enrichGroupPrompt,
+} from "../../core/prompt-builder.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { handleMessage } from "../../backend/claude-sdk/index.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
-import { getRecentBySenderId } from "../../storage/history.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
 import { log, logError, logWarn } from "../../util/log.js";
 
@@ -375,15 +371,7 @@ export async function processAndReply(
   senderUsername?: string,
   senderId?: number,
 ): Promise<void> {
-  // Set bridge context so MCP tools can call Telegram actions in this chat
-  setBridgeContext(numericChatId, bot, InputFile);
-
-  // Auto-manage typing indicator: send immediately and keep alive every 4s
-  await bot.api.sendChatAction(numericChatId, "typing").catch(() => {});
-  const typingTimer = setInterval(() => {
-    bot.api.sendChatAction(numericChatId, "typing").catch(() => {});
-  }, 4000);
-
+  // Streaming state (Telegram-specific UI concern)
   let streamMsgId: number | undefined;
   let lastEditedText = "";
   let streamStarted = false;
@@ -395,13 +383,13 @@ export async function processAndReply(
   }, 2000);
 
   try {
+    // Telegram-specific streaming callback
     const onStreamDelta = async (
       accumulated: string,
       phase?: "thinking" | "text",
     ) => {
       if (!streamStarted) return;
       try {
-        // Track phase transitions
         if (phase === "thinking" && !isThinking) {
           isThinking = true;
           hasTextStarted = false;
@@ -410,7 +398,6 @@ export async function processAndReply(
           isThinking = false;
         }
 
-        // Choose cursor based on phase
         const cursor =
           isThinking && !hasTextStarted ? " \uD83D\uDCAD" : " \u258D";
 
@@ -419,13 +406,11 @@ export async function processAndReply(
             ? accumulated.slice(0, 3900) + "\u2026"
             : accumulated;
 
-        // During thinking phase with no text yet, show thinking indicator
         const displayText =
           isThinking && !hasTextStarted && !display.trim()
             ? "\uD83D\uDCAD thinking..."
             : display;
 
-        // Detect transition from thinking to text — force update
         const wasThinking = lastEditedText === "\uD83D\uDCAD thinking...";
         const transitionToText = wasThinking && hasTextStarted;
 
@@ -469,7 +454,6 @@ export async function processAndReply(
       }
     };
 
-    // Multi-message: send intermediate text blocks immediately
     const onTextBlock = async (text: string) => {
       if (streamMsgId) {
         const html = markdownToTelegramHtml(text);
@@ -496,45 +480,30 @@ export async function processAndReply(
       }
     };
 
-    // In DMs, prepend user metadata so Claude knows who it's talking to
-    // In groups, include sender's recent messages for conversation threading
+    // Enrich prompt with sender context (platform-agnostic via prompt-builder)
     let enrichedPrompt = prompt;
     if (!isGroup && senderName) {
-      const userTag = senderUsername ? ` (@${senderUsername})` : "";
-      enrichedPrompt = `[DM from ${senderName}${userTag}]\n${prompt}`;
-      // Track first-time DM users
+      enrichedPrompt = enrichDMPrompt(prompt, senderName, senderUsername);
       if (senderId) trackDmUser(senderId, senderName, senderUsername);
     } else if (isGroup && senderId) {
-      // Pull the sender's last 5 messages for conversation continuity in groups
-      const recentMsgs = getRecentBySenderId(String(chatId), senderId, 5);
-      if (recentMsgs.length > 1) {
-        // Exclude the current message (last one) since it's already in the prompt
-        const priorMsgs = recentMsgs.slice(0, -1);
-        if (priorMsgs.length > 0) {
-          const contextLines = priorMsgs
-            .map(
-              (m) =>
-                `  [${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.text.slice(0, 200)}`,
-            )
-            .join("\n");
-          enrichedPrompt = `[${senderName}'s recent messages in this group:\n${contextLines}]\n\n${prompt}`;
-        }
-      }
+      enrichedPrompt = enrichGroupPrompt(prompt, String(chatId), senderId);
     }
 
-    const result = await handleMessage({
+    // Execute through dispatcher (handles bridge context, typing, backend query)
+    const result = await execute({
       chatId: String(chatId),
-      text: enrichedPrompt,
+      numericChatId,
+      prompt: enrichedPrompt,
       senderName,
       isGroup,
       messageId,
-      onTextBlock,
+      source: "message",
       onStreamDelta,
+      onTextBlock,
     });
 
-    const bridgeSent = getBridgeMessageCount();
-
-    if (bridgeSent === 0) {
+    // Deliver final response (Telegram-specific)
+    if (result.bridgeMessageCount === 0) {
       const finalText = result.text;
       if (finalText) {
         if (streamMsgId) {
@@ -575,7 +544,6 @@ export async function processAndReply(
           }
         }
       }
-      // No "(no response)" fallback — if Claude used tools or had nothing to say, silence is fine.
     } else if (streamMsgId) {
       try {
         await bot.api.deleteMessage(numericChatId, streamMsgId);
@@ -583,12 +551,8 @@ export async function processAndReply(
         logWarn("bot", `Failed to delete stream message: ${err instanceof Error ? err.message : err}`);
       }
     }
-
-    resetPulseTimer(); // Bot just talked — restart the pulse timer
   } finally {
     clearTimeout(streamTimer);
-    clearInterval(typingTimer);
-    clearBridgeContext(numericChatId);
   }
 }
 

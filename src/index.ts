@@ -1,12 +1,15 @@
 /**
  * Talon — Claude-powered Telegram bot.
- * Entry point: bootstrap, wire modules, start.
+ * Entry point: composition root that wires all modules together.
+ *
+ * This is the ONLY place where concrete implementations are connected.
+ * Core modules depend on interfaces; this file provides the implementations.
  */
 
 import { Bot, InputFile } from "grammy";
 import { loadConfig } from "./util/config.js";
 import { initWorkspace } from "./util/workspace.js";
-import { initAgent } from "./backend/claude-sdk/index.js";
+import { initAgent, handleMessage } from "./backend/claude-sdk/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings } from "./storage/chat-settings.js";
 import {
@@ -15,15 +18,21 @@ import {
   setBridgeBotToken,
   setBridgeContext,
   clearBridgeContext,
+  isBridgeBusy,
+  getBridgeMessageCount,
+  getBridgePort,
+  sendText as bridgeSendText,
 } from "./frontend/telegram/bridge/server.js";
 import {
   initUserClient,
   disconnectUserClient,
 } from "./frontend/telegram/userbot.js";
+import { initDispatcher } from "./core/dispatcher.js";
 import {
   initPulse,
   startPulseTimer,
   stopPulseTimer,
+  resetPulseTimer,
 } from "./core/pulse.js";
 import {
   initCron,
@@ -36,6 +45,7 @@ import { registerCommands } from "./frontend/telegram/commands.js";
 import { registerMiddleware } from "./frontend/telegram/middleware.js";
 import { registerCallbacks } from "./frontend/telegram/callbacks.js";
 import { log, logError, logWarn } from "./util/log.js";
+import type { ContextManager, QueryBackend } from "./core/types.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -44,10 +54,12 @@ initWorkspace(config.workspace);
 loadSessions();
 loadChatSettings();
 loadCronJobs();
-initAgent(config);
 
 const bot = new Bot(config.botToken);
 setBridgeBotToken(config.botToken);
+
+// Initialize backend with bridge port getter (no frontend imports in backend)
+initAgent(config, getBridgePort);
 
 // Initialize GramJS user client for full history access (optional)
 const apiId = parseInt(process.env.TALON_API_ID || "", 10);
@@ -67,6 +79,40 @@ if (apiId && apiHash) {
     "TALON_API_ID/TALON_API_HASH not set -- using in-memory history only.",
   );
 }
+
+// ── Wire dependency injection ────────────────────────────────────────────────
+
+// Adapt bridge server to ContextManager interface
+const contextManager: ContextManager = {
+  acquire: (chatId: number) => setBridgeContext(chatId, bot, InputFile),
+  release: (chatId: number) => clearBridgeContext(chatId),
+  isBusy: () => isBridgeBusy(),
+  getMessageCount: () => getBridgeMessageCount(),
+};
+
+// Adapt handleMessage to QueryBackend interface
+const backend: QueryBackend = {
+  query: (params) => handleMessage(params),
+};
+
+// Initialize the dispatcher — the single execution path for all AI queries
+initDispatcher({
+  backend,
+  context: contextManager,
+  sendTyping: (chatId: number) =>
+    bot.api.sendChatAction(chatId, "typing").then(() => {}),
+  onActivity: () => resetPulseTimer(),
+});
+
+// Initialize pulse (no params needed — uses dispatcher internally)
+initPulse();
+
+// Initialize cron with injected message sender
+initCron({
+  sendMessage: async (chatId: number, text: string) => {
+    await bridgeSendText(bot as never, chatId, text);
+  },
+});
 
 // ── Register bot handlers ────────────────────────────────────────────────────
 
@@ -132,34 +178,10 @@ async function main(): Promise<void> {
   ]);
   log("commands", "Registered bot commands with Telegram");
 
-  initPulse({
-    config,
-    setBridgeContext: setBridgeContext as (
-      chatId: number,
-      bot: unknown,
-      inputFile: unknown,
-    ) => void,
-    clearBridgeContext,
-    bot,
-    inputFile: InputFile,
-  });
   if (process.env.TALON_PULSE !== "0") {
     startPulseTimer();
   }
-
-  initCron({
-    config,
-    setBridgeContext: setBridgeContext as (
-      chatId: number,
-      bot: unknown,
-      inputFile: unknown,
-    ) => void,
-    clearBridgeContext,
-    bot,
-    inputFile: InputFile,
-  });
   startCronTimer();
-
   startWatchdog();
 
   bot.catch((err) => {

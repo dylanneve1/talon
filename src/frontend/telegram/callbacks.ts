@@ -23,8 +23,6 @@ import {
 import {
   handleCallbackQuery,
   escapeHtml,
-  getSenderName,
-  processAndReply,
 } from "./handlers.js";
 import {
   renderSettingsText,
@@ -33,48 +31,6 @@ import {
 import { logError } from "../../util/log.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
-  // ── Edited message handler ──────────────────────────────────────────────────
-
-  bot.on("edited_message:text", async (ctx) => {
-    if (!ctx.editedMessage || !ctx.chat) return;
-    const chatId = String(ctx.chat.id);
-    const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
-
-    if (isGroup) {
-      const text = ctx.editedMessage.text || "";
-      const botUser = ctx.me.username;
-      const mentioned =
-        botUser && text.toLowerCase().includes(`@${botUser.toLowerCase()}`);
-      const repliedToBot =
-        ctx.editedMessage.reply_to_message?.from?.id === ctx.me.id;
-      if (!mentioned && !repliedToBot) return;
-    }
-
-    const sender = getSenderName(ctx.from);
-    const senderUsername = ctx.from?.username;
-    const msgId = ctx.editedMessage.message_id;
-    const newText = ctx.editedMessage.text || "";
-
-    const prompt = `[Message edited] User edited msg:${msgId} to: "${newText}"`;
-
-    try {
-      await processAndReply(
-        bot,
-        config,
-        chatId,
-        ctx.chat.id,
-        msgId,
-        msgId,
-        prompt,
-        sender,
-        isGroup,
-        senderUsername,
-      );
-    } catch (err) {
-      logError("bot", `[${chatId}] Edit handler error`, err);
-    }
-  });
-
   // ── Callback query handler ──────────────────────────────────────────────────
 
   bot.on("callback_query:data", async (ctx) => {

@@ -1,50 +1,34 @@
 /**
  * Pulse — conversation-aware engagement.
  *
- * Every N minutes (default 5), checks for new messages in registered chats.
- * If there are new messages, passes them as a turn in the existing chat session
- * so Claude can decide whether to respond. Uses the same session, model, and
- * cache as regular messages — no separate subprocess or system prompt.
+ * Every N minutes, checks for new messages in registered chats.
+ * If there are new messages, feeds them to the dispatcher so Claude
+ * can decide whether to respond. Same session, same cache.
+ *
+ * Knows nothing about the backend or frontend — uses the dispatcher.
  */
 
-import type { Bot } from "grammy";
-import type { TalonConfig } from "../util/config.js";
-import { isBridgeBusy, setBridgeContext, clearBridgeContext } from "../frontend/telegram/bridge/server.js";
+import { isBusy, execute } from "./dispatcher.js";
 import {
   setChatPulse,
   getRegisteredPulseChats,
   getChatSettings,
 } from "../storage/chat-settings.js";
 import { getRecentHistory, getLatestMessageId } from "../storage/history.js";
-import { handleMessage } from "../backend/claude-sdk/index.js";
 import { log, logError } from "../util/log.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
-let config: TalonConfig | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 const registeredChats = new Set<string>();
 const lastCheckMessageId = new Map<string, number>();
-
-let botInstance: Bot | null = null;
-let inputFileClass: unknown = null;
 
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 let activeIntervalMs = DEFAULT_INTERVAL_MS;
 
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export function initPulse(params: {
-  config: TalonConfig;
-  setBridgeContext: (chatId: number, bot: unknown, inputFile: unknown) => void;
-  clearBridgeContext: (chatId?: number | string) => void;
-  bot: unknown;
-  inputFile: unknown;
-}): void {
-  config = params.config;
-  botInstance = params.bot as Bot;
-  inputFileClass = params.inputFile;
-
+export function initPulse(): void {
   for (const chatId of getRegisteredPulseChats()) {
     registeredChats.add(chatId);
   }
@@ -103,8 +87,7 @@ export function stopPulseTimer(): void {
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 async function runPulse(): Promise<void> {
-  if (!config || !botInstance) return;
-  if (isBridgeBusy()) return;
+  if (isBusy()) return;
 
   for (const chatId of registeredChats) {
     if (!isPulseEnabled(chatId)) continue;
@@ -113,8 +96,7 @@ async function runPulse(): Promise<void> {
 }
 
 async function pulseChat(chatId: string): Promise<void> {
-  if (!config || !botInstance) return;
-  if (isBridgeBusy()) return;
+  if (isBusy()) return;
 
   const numericChatId = parseInt(chatId, 10);
   if (isNaN(numericChatId)) return;
@@ -144,27 +126,22 @@ async function pulseChat(chatId: string): Promise<void> {
     .join("\n");
 
   try {
-    // Set bridge context + show typing indicator
-    setBridgeContext(numericChatId, botInstance as never, inputFileClass as never);
-    await (botInstance as Bot).api.sendChatAction(numericChatId, "typing").catch(() => {});
-
-    // Run as a regular turn in the chat's session — same model, same cache
     const prompt =
       `[System: Pulse check — ${unread.length} new message(s) since last check. ` +
       `Read them and decide if you want to jump in. Stay silent if nothing to add. ` +
       `Don't announce yourself.]\n\n${summary}`;
 
-    await handleMessage({
+    await execute({
       chatId,
-      text: prompt,
+      numericChatId,
+      prompt,
       senderName: "System",
       isGroup: true,
+      source: "pulse",
     });
 
     log("pulse", `Checked ${chatId} (${unread.length} new msgs)`);
   } catch (err) {
     logError("pulse", `Chat ${chatId} failed`, err);
-  } finally {
-    clearBridgeContext(numericChatId);
   }
 }
