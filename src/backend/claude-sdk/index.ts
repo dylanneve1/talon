@@ -56,6 +56,7 @@ export function initAgent(cfg: TalonConfig, getBridgePort?: () => number): void 
 
 export async function handleMessage(
   params: HandleMessageParams,
+  _retried = false,
 ): Promise<HandleMessageResult> {
   if (!config)
     throw new Error("Agent not initialized. Call initAgent() first.");
@@ -261,12 +262,14 @@ export async function handleMessage(
     }
   } catch (err) {
     const classified = classify(err);
-    if (classified.reason === "session_expired") {
+    if (classified.reason === "session_expired" && !_retried) {
       logWarn(
         "agent",
-        `[${chatId}] Stale session, clearing: ${classified.message.slice(0, 100)}`,
+        `[${chatId}] Stale session, retrying with fresh session`,
       );
       resetSession(chatId);
+      // Auto-retry with fresh session — don't make the user resend
+      return handleMessage(params, true);
     }
     logError("agent", `[${chatId}] SDK error: ${classified.message}`);
     throw classified;
