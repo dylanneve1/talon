@@ -100,37 +100,6 @@ export function markdownToTelegramHtml(text: string): string {
 
 /**
  * Map common SDK/API error messages to user-friendly strings.
+ * Delegates to core/errors.ts for classification.
  */
-export function friendlyError(err: Error | string): string {
-  const msg = typeof err === "string" ? err : err.message;
-
-  if (/rate.?limit|429|too many requests/i.test(msg)) {
-    const retryMatch = msg.match(/retry.?after[:\s]*(\d+)/i);
-    const wait = retryMatch
-      ? ` Try again in ${retryMatch[1]} seconds.`
-      : " Try again in a minute.";
-    return `Rate limited.${wait}`;
-  }
-
-  if (/context.*length|too.*long|token.*limit|overflow/i.test(msg)) {
-    return "Message too long for context window. Try /reset to start a fresh session.";
-  }
-
-  if (/session|expired|invalid.*resume/i.test(msg)) {
-    return msg; // Already handled by agent.ts with a clear message.
-  }
-
-  if (/authentication|unauthorized|401|api.?key/i.test(msg)) {
-    return "Authentication error. The bot operator needs to check the API key.";
-  }
-
-  if (/overloaded|503|capacity/i.test(msg)) {
-    return "Claude is currently overloaded. Try again in a moment.";
-  }
-
-  if (/network|ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(msg)) {
-    return "Network error. Try again shortly.";
-  }
-
-  return "Something went wrong. Try /reset if this persists.";
-}
+export { friendlyMessage as friendlyError } from "../../core/errors.js";

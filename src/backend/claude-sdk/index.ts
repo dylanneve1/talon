@@ -12,6 +12,7 @@ import {
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getRecentHistory } from "../../storage/history.js";
 import { resolve } from "node:path";
+import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -263,19 +264,16 @@ export async function handleMessage(
       }
     }
   } catch (err) {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    if (/session|expired|invalid|resume/i.test(errMsg)) {
+    const classified = classify(err);
+    if (classified.reason === "session_expired") {
       logWarn(
         "agent",
-        `[${chatId}] Stale session, clearing: ${errMsg.slice(0, 100)}`,
+        `[${chatId}] Stale session, clearing: ${classified.message.slice(0, 100)}`,
       );
       resetSession(chatId);
-      throw new Error(
-        "Session expired. Send your message again to start fresh.",
-      );
     }
-    logError("agent", `[${chatId}] SDK error: ${errMsg}`);
-    throw err;
+    logError("agent", `[${chatId}] SDK error: ${classified.message}`);
+    throw classified;
   }
 
   // Persist session and usage

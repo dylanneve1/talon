@@ -8,10 +8,10 @@ import type { TalonConfig } from "../../util/config.js";
 import {
   splitMessage,
   markdownToTelegramHtml,
-  friendlyError,
   escapeHtml,
 } from "./formatting.js";
 import { execute } from "../../core/dispatcher.js";
+import { classify, friendlyMessage } from "../../core/errors.js";
 import {
   enrichDMPrompt,
   enrichGroupPrompt,
@@ -260,20 +260,21 @@ async function flushQueue(chatId: string): Promise<void> {
     );
     recordMessageProcessed();
   } catch (err) {
-    const errObj = err instanceof Error ? err : new Error(String(err));
+    const classified = classify(err);
     const chatType = last.isGroup ? "group" : "DM";
     const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
     logError(
       "bot",
-      `[${chatId}] [${chatType}] [${last.senderName}] Error: ${errObj.message} | prompt: "${promptPreview}"`,
+      `[${chatId}] [${chatType}] [${last.senderName}] ${classified.reason}: ${classified.message} | prompt: "${promptPreview}"`,
     );
-    recordError(errObj.message);
+    recordError(classified.message);
 
-    // Retry once for transient errors
-    if (isTransientError(errObj)) {
-      log("bot", `[${chatId}] Retrying after transient error...`);
+    // Retry once for transient errors (rate_limit, overloaded, network)
+    if (classified.retryable) {
+      const delayMs = classified.retryAfterMs ?? 2000;
+      log("bot", `[${chatId}] Retrying after ${classified.reason} (${delayMs}ms)...`);
       try {
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, delayMs));
         await processAndReply(
           bot,
           config,
@@ -289,16 +290,15 @@ async function flushQueue(chatId: string): Promise<void> {
         );
         return;
       } catch (retryErr) {
-        const retryErrObj =
-          retryErr instanceof Error ? retryErr : new Error(String(retryErr));
+        const retryClassified = classify(retryErr);
         logError(
           "bot",
-          `[${chatId}] [${chatType}] Retry failed: ${retryErrObj.message}`,
+          `[${chatId}] [${chatType}] Retry failed: ${retryClassified.message}`,
         );
         await sendHtml(
           bot,
           numericChatId,
-          escapeHtml(friendlyError(retryErrObj)),
+          escapeHtml(friendlyMessage(retryClassified)),
           last.replyToId,
         );
         return;
@@ -308,25 +308,10 @@ async function flushQueue(chatId: string): Promise<void> {
     await sendHtml(
       bot,
       numericChatId,
-      escapeHtml(friendlyError(errObj)),
+      escapeHtml(friendlyMessage(classified)),
       last.replyToId,
     );
   }
-}
-
-/** Check if an error is transient and worth retrying. */
-function isTransientError(err: Error): boolean {
-  const msg = err.message;
-  // Transient: overloaded, network issues, 503, 429
-  if (
-    /overloaded|503|capacity|network|ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(
-      msg,
-    )
-  )
-    return true;
-  // Rate limit with short retry window
-  if (/rate.?limit|429|too many requests/i.test(msg)) return true;
-  return false;
 }
 
 // ── Response delivery ────────────────────────────────────────────────────────
@@ -642,9 +627,7 @@ async function handleMediaMessage(
     await sendHtml(
       bot,
       ctx.chat.id,
-      escapeHtml(
-        friendlyError(err instanceof Error ? err : new Error(String(err))),
-      ),
+      escapeHtml(friendlyMessage(err)),
       ctx.message.message_id,
     );
   }

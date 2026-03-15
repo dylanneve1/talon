@@ -10,6 +10,7 @@ import {
 } from "node:http";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "../formatting.js";
+import { classify } from "../../../core/errors.js";
 import { log, logError } from "../../../util/log.js";
 import { handleAction } from "./actions.js";
 
@@ -120,17 +121,12 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
       return await fn();
     } catch (err) {
       lastError = err;
-      const msg = err instanceof Error ? err.message : String(err);
-      const statusMatch = msg.match(/(\d{3})/);
-      const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
-      if (status === 400 || status === 403) throw err;
+      const classified = classify(err);
+      // Don't retry client errors
+      if (!classified.retryable) throw err;
       if (attempt < 2) {
-        let delayMs = 1000 * Math.pow(2, attempt);
-        if (status === 429) {
-          const retryMatch = msg.match(/retry.?after[:\s]*(\d+)/i);
-          if (retryMatch) delayMs = parseInt(retryMatch[1], 10) * 1000;
-        }
-        log("bridge", `Retry ${attempt + 1}/3 after ${delayMs}ms`);
+        const delayMs = classified.retryAfterMs ?? 1000 * Math.pow(2, attempt);
+        log("bridge", `Retry ${attempt + 1}/3 (${classified.reason}) after ${delayMs}ms`);
         await new Promise((r) => setTimeout(r, delayMs));
       }
     }
