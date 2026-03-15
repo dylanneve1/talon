@@ -504,24 +504,23 @@ export async function getChatStats(params: {
     const days = params.days ?? 7;
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    // Get recent messages for stats
-    const messages = await client.getMessages(chatId, {
-      limit: 500,
-      offsetDate: Math.floor(Date.now() / 1000),
-    });
-
-    // Filter to the requested time window
+    // Iterate all messages in the time window — no artificial limit
     const sinceTs = Math.floor(since.getTime() / 1000);
-    const filtered = messages.filter((m) => m.date >= sinceTs);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const messages: any[] = [];
+    for await (const m of client.iterMessages(chatId, { offsetDate: Math.floor(Date.now() / 1000) })) {
+      if (m.date < sinceTs) break;
+      messages.push(m);
+    }
 
-    if (filtered.length === 0) return `No messages in the last ${days} day(s).`;
+    if (messages.length === 0) return `No messages in the last ${days} day(s).`;
 
     // Count per user
     const userCounts = new Map<string, { count: number; lastMsg: number }>();
     let mediaCount = 0;
     let replyCount = 0;
 
-    for (const m of filtered) {
+    for (const m of messages) {
       const sender =
         m.sender && "firstName" in m.sender
           ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
@@ -542,7 +541,7 @@ export async function getChatStats(params: {
 
     const lines = [
       `Chat stats (last ${days} day${days > 1 ? "s" : ""}):`,
-      `Total messages: ${filtered.length}`,
+      `Total messages: ${messages.length}`,
       `Media messages: ${mediaCount}`,
       `Replies: ${replyCount}`,
       `Active users: ${userCounts.size}`,
