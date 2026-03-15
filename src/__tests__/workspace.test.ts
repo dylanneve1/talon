@@ -1,8 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { initWorkspace, getWorkspaceDiskUsage } from "../util/workspace.js";
+
+// Mock log to prevent pino initialization issues
+vi.mock("../util/log.js", () => ({
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
+}));
+
+import { initWorkspace, getWorkspaceDiskUsage, cleanupUploads } from "../util/workspace.js";
 
 const TEST_ROOT = join(tmpdir(), `talon-ws-test-${Date.now()}`);
 
@@ -43,5 +52,32 @@ describe("getWorkspaceDiskUsage", () => {
 
   it("returns 0 for non-existent directory", () => {
     expect(getWorkspaceDiskUsage(join(TEST_ROOT, "nope"))).toBe(0);
+  });
+});
+
+describe("cleanupUploads", () => {
+  it("returns 0 if uploads dir doesn't exist", () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    expect(cleanupUploads(TEST_ROOT)).toBe(0);
+  });
+
+  it("deletes files older than maxAgeMs", () => {
+    const uploadsDir = join(TEST_ROOT, "uploads");
+    mkdirSync(uploadsDir, { recursive: true });
+    writeFileSync(join(uploadsDir, "old.jpg"), "data");
+
+    // maxAge=0 means everything is "old"
+    expect(cleanupUploads(TEST_ROOT, 0)).toBe(1);
+    expect(readdirSync(uploadsDir)).toHaveLength(0);
+  });
+
+  it("keeps recent files", () => {
+    const uploadsDir = join(TEST_ROOT, "uploads");
+    mkdirSync(uploadsDir, { recursive: true });
+    writeFileSync(join(uploadsDir, "new.jpg"), "fresh");
+
+    // 1 hour window — just-created file survives
+    expect(cleanupUploads(TEST_ROOT, 3_600_000)).toBe(0);
+    expect(readdirSync(uploadsDir)).toHaveLength(1);
   });
 });
