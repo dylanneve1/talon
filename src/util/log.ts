@@ -8,7 +8,7 @@
  */
 
 import pino from "pino";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, renameSync, unlinkSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
 export type LogComponent =
@@ -35,6 +35,16 @@ const logDir = dirname(LOG_FILE);
 if (!existsSync(logDir)) {
   try { mkdirSync(logDir, { recursive: true }); } catch { /* ignore */ }
 }
+
+// Rotate log file on startup if it exceeds 10MB
+const MAX_LOG_SIZE = 10 * 1024 * 1024;
+try {
+  if (existsSync(LOG_FILE) && statSync(LOG_FILE).size > MAX_LOG_SIZE) {
+    const rotated = `${LOG_FILE}.old`;
+    try { unlinkSync(rotated); } catch { /* ignore */ }
+    renameSync(LOG_FILE, rotated);
+  }
+} catch { /* ignore */ }
 
 const logger = pino({
   level: "trace", // always max verbose for debugging
