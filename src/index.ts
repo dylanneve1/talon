@@ -11,8 +11,8 @@ import { loadConfig } from "./util/config.js";
 import { initWorkspace } from "./util/workspace.js";
 import { initAgent, handleMessage } from "./backend/claude-sdk/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
-import { loadChatSettings } from "./storage/chat-settings.js";
-import { loadCronJobs } from "./storage/cron-store.js";
+import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
+import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
 import { initDispatcher } from "./core/dispatcher.js";
 import {
   initPulse,
@@ -74,7 +74,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
   stopCronTimer();
   stopWatchdog();
   flushSessions();
-  log("shutdown", "Sessions saved");
+  flushChatSettings();
+  flushCronJobs();
+  log("shutdown", "State saved");
   process.exit(0);
 }
 
@@ -84,6 +86,8 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 process.on("uncaughtException", (err) => {
   logError("bot", "Uncaught exception", err);
   flushSessions();
+  flushChatSettings();
+  flushCronJobs();
   process.exit(1);
 });
 

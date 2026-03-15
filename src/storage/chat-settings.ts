@@ -79,8 +79,14 @@ function save(): void {
   }
 }
 
-setInterval(save, 10_000);
+const autoSaveTimer = setInterval(save, 10_000);
 process.on("exit", save);
+
+/** Flush settings to disk and stop the auto-save timer. */
+export function flushChatSettings(): void {
+  clearInterval(autoSaveTimer);
+  save();
+}
 
 export function getChatSettings(chatId: string): ChatSettings {
   return store[chatId] ?? {};

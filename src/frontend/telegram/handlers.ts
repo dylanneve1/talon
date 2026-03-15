@@ -46,22 +46,15 @@ function trackDmUser(
 
 // ── Shared utilities ─────────────────────────────────────────────────────────
 
-export function shouldHandleInGroup(ctx: {
-  chat: { type: string };
-  me: { id: number; username?: string };
-  message?: {
-    text?: string;
-    caption?: string;
-    reply_to_message?: { from?: { id: number } };
-  };
-}): boolean {
+export function shouldHandleInGroup(ctx: Context): boolean {
+  if (!ctx.chat || !ctx.message) return false;
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   if (!isGroup) return true;
-  const text = ctx.message?.text || ctx.message?.caption || "";
+  const text = ctx.message.text || ctx.message.caption || "";
   const botUser = ctx.me.username;
   const mentioned =
     botUser && text.toLowerCase().includes(`@${botUser.toLowerCase()}`);
-  const repliedToBot = ctx.message?.reply_to_message?.from?.id === ctx.me.id;
+  const repliedToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
   return !!(mentioned || repliedToBot);
 }
 
@@ -645,7 +638,7 @@ export async function handleTextMessage(
   bot: Bot,
   config: TalonConfig,
 ): Promise<void> {
-  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
 
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
@@ -677,7 +670,7 @@ export async function handlePhotoMessage(
   bot: Bot,
   config: TalonConfig,
 ): Promise<void> {
-  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
 
   const photos = ctx.message.photo;
   if (!photos?.length) return;
@@ -705,7 +698,7 @@ export async function handleDocumentMessage(
   bot: Bot,
   config: TalonConfig,
 ): Promise<void> {
-  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
 
   const doc = ctx.message.document;
   if (!doc) return;
@@ -732,7 +725,7 @@ export async function handleVoiceMessage(
   bot: Bot,
   config: TalonConfig,
 ): Promise<void> {
-  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
 
   const voice = ctx.message.voice;
   if (!voice) return;
@@ -753,7 +746,7 @@ export async function handleStickerMessage(
   bot: Bot,
   config: TalonConfig,
 ): Promise<void> {
-  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
 
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
@@ -796,7 +789,7 @@ export async function handleVideoMessage(
   bot: Bot,
   config: TalonConfig,
 ): Promise<void> {
-  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
 
   const video = ctx.message.video;
   if (!video) return;
@@ -821,7 +814,7 @@ export async function handleAnimationMessage(
   bot: Bot,
   config: TalonConfig,
 ): Promise<void> {
-  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx as never)) return;
+  if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
 
   const anim = ctx.message.animation;
   if (!anim) return;

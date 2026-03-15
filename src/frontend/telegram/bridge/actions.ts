@@ -325,7 +325,7 @@ async function handleMedia(
     case "send_dice": {
       const emoji = (body.emoji as string) || "\uD83C\uDFB2";
       incrementBridgeMessageCount();
-      const sent = await bot.api.sendDice(chatId, emoji as never);
+      const sent = await bot.api.sendDice(chatId, emoji);
       return { ok: true, message_id: sent.message_id, value: sent.dice?.value };
     }
 

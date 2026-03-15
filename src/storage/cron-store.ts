@@ -65,8 +65,14 @@ function save(): void {
   }
 }
 
-setInterval(save, 10_000);
+const autoSaveTimer = setInterval(save, 10_000);
 process.on("exit", save);
+
+/** Flush cron jobs to disk and stop the auto-save timer. */
+export function flushCronJobs(): void {
+  clearInterval(autoSaveTimer);
+  save();
+}
 
 // ── ID generation ───────────────────────────────────────────────────────────
 

@@ -80,7 +80,7 @@ function saveSessions(): void {
 }
 
 // Auto-save every 10 seconds if dirty
-setInterval(saveSessions, 10_000);
+const autoSaveTimer = setInterval(saveSessions, 10_000);
 
 // Periodic stale session pruning (every hour)
 
@@ -270,8 +270,9 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
 // Flush on exit (signal handlers are in index.ts for graceful shutdown)
 process.on("exit", saveSessions);
 
-/** Force-save sessions to disk immediately. */
+/** Force-save sessions to disk and stop the auto-save timer. */
 export function flushSessions(): void {
+  clearInterval(autoSaveTimer);
   dirty = true;
   saveSessions();
 }
