@@ -38,7 +38,6 @@ ALL types support `reply_to` to reply to a specific message.
 - `download_media(message_id)` — download a photo/file/video from any message to workspace
 - `list_chat_members()` — list members with IDs
 - `get_member_info(user_id)` — detailed user info
-- `chat_stats(days?)` — chat activity stats (top posters, message counts)
 - `online_count()` — how many members are online/recently active
 - `get_pinned_messages()` — list pinned messages
 - `get_sticker_pack(set_name)` — browse stickers in a pack

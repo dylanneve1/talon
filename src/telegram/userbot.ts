@@ -506,12 +506,15 @@ export async function getChatStats(params: {
 
     // Iterate all messages in the time window — no artificial limit
     const sinceTs = Math.floor(since.getTime() / 1000);
+    const MAX_STATS_MESSAGES = 2000;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const messages: any[] = [];
     for await (const m of client.iterMessages(chatId, { offsetDate: Math.floor(Date.now() / 1000) })) {
       if (m.date < sinceTs) break;
       messages.push(m);
+      if (messages.length >= MAX_STATS_MESSAGES) break;
     }
+    const capped = messages.length >= MAX_STATS_MESSAGES;
 
     if (messages.length === 0) return `No messages in the last ${days} day(s).`;
 
@@ -540,8 +543,8 @@ export async function getChatStats(params: {
       .slice(0, 10);
 
     const lines = [
-      `Chat stats (last ${days} day${days > 1 ? "s" : ""}):`,
-      `Total messages: ${messages.length}`,
+      `Chat stats (last ${days} day${days > 1 ? "s" : ""})${capped ? ` (capped at ${MAX_STATS_MESSAGES})` : ""}:`,
+      `Total messages: ${messages.length}${capped ? "+" : ""}`,
       `Media messages: ${mediaCount}`,
       `Replies: ${replyCount}`,
       `Active users: ${userCounts.size}`,

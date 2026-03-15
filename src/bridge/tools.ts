@@ -464,18 +464,6 @@ server.tool(
 // ── Chat analytics ───────────────────────────────────────────────────────────
 
 server.tool(
-  "chat_stats",
-  "Get chat activity statistics — message counts, top contributors, media count. Requires userbot.",
-  {
-    days: z
-      .number()
-      .optional()
-      .describe("Number of days to analyze (default 7)"),
-  },
-  async (params) => textResult(await callBridge("chat_stats", params)),
-);
-
-server.tool(
   "get_pinned_messages",
   "Get all pinned messages in the current chat.",
   {},
