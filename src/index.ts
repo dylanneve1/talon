@@ -6,7 +6,7 @@
 import { Bot, InputFile } from "grammy";
 import { loadConfig } from "./util/config.js";
 import { initWorkspace } from "./util/workspace.js";
-import { initAgent } from "./agent/agent.js";
+import { initAgent } from "./backend/claude-sdk/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings } from "./storage/chat-settings.js";
 import {
@@ -15,26 +15,26 @@ import {
   setBridgeBotToken,
   setBridgeContext,
   clearBridgeContext,
-} from "./bridge/server.js";
+} from "./frontend/telegram/bridge/server.js";
 import {
   initUserClient,
   disconnectUserClient,
-} from "./telegram/userbot.js";
+} from "./frontend/telegram/userbot.js";
 import {
   initPulse,
   startPulseTimer,
   stopPulseTimer,
-} from "./agent/pulse.js";
+} from "./core/pulse.js";
 import {
   initCron,
   startCronTimer,
   stopCronTimer,
-} from "./agent/cron.js";
+} from "./core/cron.js";
 import { loadCronJobs } from "./storage/cron-store.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
-import { registerCommands } from "./bot/commands.js";
-import { registerMiddleware } from "./bot/middleware.js";
-import { registerCallbacks } from "./bot/callbacks.js";
+import { registerCommands } from "./frontend/telegram/commands.js";
+import { registerMiddleware } from "./frontend/telegram/middleware.js";
+import { registerCallbacks } from "./frontend/telegram/callbacks.js";
 import { log, logError, logWarn } from "./util/log.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────

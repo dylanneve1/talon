@@ -8,12 +8,12 @@ vi.mock("../util/log.js", () => ({
 }));
 
 // Mock the actions module (not needed for context tests)
-vi.mock("../bridge/actions.js", () => ({
+vi.mock("../frontend/telegram/bridge/actions.js", () => ({
   handleAction: vi.fn(),
 }));
 
 // Mock formatting
-vi.mock("../telegram/formatting.js", () => ({
+vi.mock("../frontend/telegram/formatting.js", () => ({
   markdownToTelegramHtml: vi.fn((s: string) => s),
 }));
 
@@ -23,7 +23,7 @@ const {
   isBridgeBusy,
   getBridgeMessageCount,
   getActiveChatId,
-} = await import("../bridge/server.js");
+} = await import("../frontend/telegram/bridge/server.js");
 
 /** Minimal fake Bot object (only needs to satisfy the type for context ops). */
 function fakeBot(): any {

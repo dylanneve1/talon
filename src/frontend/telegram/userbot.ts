@@ -12,7 +12,7 @@ import { TelegramClient, Api } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { log, logError, logWarn } from "../util/log.js";
+import { log, logError, logWarn } from "../../util/log.js";
 
 const SESSION_FILE = resolve(process.cwd(), "workspace", ".user-session");
 

@@ -4,13 +4,13 @@
 
 import { readFileSync, statSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { markdownToTelegramHtml } from "../telegram/formatting.js";
+import { markdownToTelegramHtml } from "../formatting.js";
 import {
   getRecentFormatted,
   searchHistory,
   getMessagesByUser,
   getKnownUsers,
-} from "../storage/history.js";
+} from "../../../storage/history.js";
 import {
   isUserClientReady,
   searchMessages as userbotSearch,
@@ -21,8 +21,8 @@ import {
   getPinnedMessages as userbotPinnedMessages,
   getOnlineCount as userbotOnlineCount,
   saveStickerPack as userbotSaveStickerPack,
-} from "../telegram/userbot.js";
-import { log, logError } from "../util/log.js";
+} from "../userbot.js";
+import { log, logError } from "../../../util/log.js";
 import {
   getActiveChatId,
   getBotInstance,
@@ -44,7 +44,7 @@ import {
   validateCronExpression,
   generateCronId,
   type CronJobType,
-} from "../storage/cron-store.js";
+} from "../../../storage/cron-store.js";
 
 type BridgeAction = {
   action: string;
@@ -613,7 +613,7 @@ export async function handleAction(body: BridgeAction): Promise<unknown> {
         const msgId = Number(body.message_id);
         log("bridge", `download_media msg=${msgId}`);
         if (isUserClientReady()) {
-          const { downloadMessageMedia } = await import("../telegram/userbot.js");
+          const { downloadMessageMedia } = await import("../userbot.js");
           const result = await downloadMessageMedia({ chatId, messageId: msgId });
           return { ok: true, text: result };
         }

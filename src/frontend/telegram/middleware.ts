@@ -4,10 +4,10 @@
  */
 
 import type { Bot } from "grammy";
-import type { TalonConfig } from "../util/config.js";
-import { pushMessage } from "../storage/history.js";
-import { allowChat } from "../telegram/userbot.js";
-import { registerChat } from "../agent/pulse.js";
+import type { TalonConfig } from "../../util/config.js";
+import { pushMessage } from "../../storage/history.js";
+import { allowChat } from "./userbot.js";
+import { registerChat } from "../../core/pulse.js";
 import { getSenderName } from "./handlers.js";
 import {
   handleTextMessage,

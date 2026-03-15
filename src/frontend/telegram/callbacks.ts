@@ -3,8 +3,8 @@
  */
 
 import type { Bot } from "grammy";
-import type { TalonConfig } from "../util/config.js";
-import { resetSession } from "../storage/sessions.js";
+import type { TalonConfig } from "../../util/config.js";
+import { resetSession } from "../../storage/sessions.js";
 import { formatDuration } from "./helpers.js";
 import {
   getChatSettings,
@@ -13,13 +13,13 @@ import {
   resolveModelName,
   EFFORT_LEVELS,
   type EffortLevel,
-} from "../storage/chat-settings.js";
+} from "../../storage/chat-settings.js";
 import {
   registerChat,
   disablePulse,
   enablePulse,
   isPulseEnabled,
-} from "../agent/pulse.js";
+} from "../../core/pulse.js";
 import {
   handleCallbackQuery,
   escapeHtml,
@@ -30,7 +30,7 @@ import {
   renderSettingsText,
   renderSettingsKeyboard,
 } from "./helpers.js";
-import { logError } from "../util/log.js";
+import { logError } from "../../util/log.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
   // ── Edited message handler ──────────────────────────────────────────────────

@@ -9,14 +9,14 @@
 
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../util/config.js";
-import { isBridgeBusy, setBridgeContext, clearBridgeContext } from "../bridge/server.js";
+import { isBridgeBusy, setBridgeContext, clearBridgeContext } from "../frontend/telegram/bridge/server.js";
 import {
   setChatPulse,
   getRegisteredPulseChats,
   getChatSettings,
 } from "../storage/chat-settings.js";
 import { getRecentHistory, getLatestMessageId } from "../storage/history.js";
-import { handleMessage } from "./agent.js";
+import { handleMessage } from "../backend/claude-sdk/index.js";
 import { log, logError } from "../util/log.js";
 
 // ── State ────────────────────────────────────────────────────────────────────

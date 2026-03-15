@@ -4,15 +4,15 @@
 
 import type { Bot, Context } from "grammy";
 import { readFileSync } from "node:fs";
-import type { TalonConfig } from "../util/config.js";
+import type { TalonConfig } from "../../util/config.js";
 import {
   resetSession,
   getSessionInfo,
   getActiveSessionCount,
   getAllSessions,
   type SessionInfo,
-} from "../storage/sessions.js";
-import { clearHistory } from "../storage/history.js";
+} from "../../storage/sessions.js";
+import { clearHistory } from "../../storage/history.js";
 import {
   getChatSettings,
   setChatModel,
@@ -21,21 +21,21 @@ import {
   resolveModelName,
   EFFORT_LEVELS,
   type EffortLevel,
-} from "../storage/chat-settings.js";
+} from "../../storage/chat-settings.js";
 import {
   registerChat,
   disablePulse,
   enablePulse,
   isPulseEnabled,
-} from "../agent/pulse.js";
-import { isUserClientReady } from "../telegram/userbot.js";
-import { getWorkspaceDiskUsage } from "../util/workspace.js";
+} from "../../core/pulse.js";
+import { isUserClientReady } from "./userbot.js";
+import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import {
   getHealthStatus,
   getRecentErrors,
-} from "../util/watchdog.js";
-import { appendDailyLog } from "../storage/daily-log.js";
-import { getAllCronJobs, validateCronExpression } from "../storage/cron-store.js";
+} from "../../util/watchdog.js";
+import { appendDailyLog } from "../../storage/daily-log.js";
+import { getAllCronJobs, validateCronExpression } from "../../storage/cron-store.js";
 import { escapeHtml } from "./handlers.js";
 import {
   formatDuration,

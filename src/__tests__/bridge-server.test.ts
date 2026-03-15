@@ -8,7 +8,7 @@ vi.mock("../util/log.js", () => ({
 }));
 
 // Mock the actions module
-vi.mock("../bridge/actions.js", () => ({
+vi.mock("../frontend/telegram/bridge/actions.js", () => ({
   handleAction: vi.fn(async (body: { action: string }) => ({
     ok: true,
     action: body.action,
@@ -16,7 +16,7 @@ vi.mock("../bridge/actions.js", () => ({
 }));
 
 // Mock formatting
-vi.mock("../telegram/formatting.js", () => ({
+vi.mock("../frontend/telegram/formatting.js", () => ({
   markdownToTelegramHtml: vi.fn((s: string) => s),
 }));
 
@@ -35,7 +35,7 @@ const {
   clearBridgeContext,
   getScheduledMessages,
   TELEGRAM_MAX_TEXT,
-} = await import("../bridge/server.js");
+} = await import("../frontend/telegram/bridge/server.js");
 
 /** Minimal fake Bot object. */
 function fakeBot(overrides: Record<string, unknown> = {}): any {
@@ -265,7 +265,7 @@ describe("bridge/server", () => {
     });
 
     it("returns 500 on handler error", async () => {
-      const { handleAction } = await import("../bridge/actions.js");
+      const { handleAction } = await import("../frontend/telegram/bridge/actions.js");
       vi.mocked(handleAction).mockRejectedValueOnce(
         new Error("handler boom"),
       );

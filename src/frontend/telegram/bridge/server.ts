@@ -9,8 +9,8 @@ import {
   type ServerResponse,
 } from "node:http";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
-import { markdownToTelegramHtml } from "../telegram/formatting.js";
-import { log, logError } from "../util/log.js";
+import { markdownToTelegramHtml } from "../formatting.js";
+import { log, logError } from "../../../util/log.js";
 import { handleAction } from "./actions.js";
 
 type BridgeAction = {

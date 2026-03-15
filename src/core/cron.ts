@@ -11,8 +11,8 @@ import { Cron } from "croner";
 import type { TalonConfig } from "../util/config.js";
 import { getSession, setSessionId } from "../storage/sessions.js";
 import { getChatSettings } from "../storage/chat-settings.js";
-import { getBridgePort, isBridgeBusy } from "../bridge/server.js";
-import { sendText } from "../bridge/server.js";
+import { getBridgePort, isBridgeBusy } from "../frontend/telegram/bridge/server.js";
+import { sendText } from "../frontend/telegram/bridge/server.js";
 import {
   getAllCronJobs,
   recordCronRun,
@@ -164,7 +164,7 @@ async function executeJob(job: CronJob): Promise<void> {
       mcpServers: {
         "telegram-tools": {
           command: "node",
-          args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "../bridge/tools.ts")],
+          args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "../backend/claude-sdk/tools.ts")],
           env: { TALON_BRIDGE_URL: `http://127.0.0.1:${getBridgePort() || 19876}` },
         },
       },
