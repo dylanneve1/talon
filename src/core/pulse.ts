@@ -99,7 +99,10 @@ async function pulseChat(chatId: string): Promise<void> {
   if (isBusy()) return;
 
   const numericChatId = parseInt(chatId, 10);
-  if (isNaN(numericChatId)) return;
+  if (isNaN(numericChatId)) {
+    logError("pulse", `Invalid chatId: ${chatId}`);
+    return;
+  }
 
   // Any new messages since last check?
   const latestMsgId = getLatestMessageId(chatId);

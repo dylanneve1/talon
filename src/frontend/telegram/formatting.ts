@@ -27,7 +27,7 @@ export function splitMessage(text: string, max: number): string[] {
  * Escape HTML special characters for Telegram HTML parse mode.
  * Must be applied to all text that is NOT inside an HTML tag.
  */
-function escapeHtml(text: string): string {
+export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

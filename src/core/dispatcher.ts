@@ -49,13 +49,14 @@ export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
 
   context.acquire(params.numericChatId);
 
-  // Typing indicator with 4-second keepalive
-  await sendTyping(params.numericChatId).catch(() => {});
-  const typingTimer = setInterval(() => {
-    sendTyping(params.numericChatId).catch(() => {});
-  }, 4000);
-
+  let typingTimer: ReturnType<typeof setInterval> | undefined;
   try {
+    // Typing indicator with 4-second keepalive
+    await sendTyping(params.numericChatId).catch(() => {});
+    typingTimer = setInterval(() => {
+      sendTyping(params.numericChatId).catch(() => {});
+    }, 4000);
+
     const result = await backend.query({
       chatId: params.chatId,
       text: params.prompt,
@@ -73,7 +74,7 @@ export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
       bridgeMessageCount: context.getMessageCount(),
     };
   } finally {
-    clearInterval(typingTimer);
+    if (typingTimer) clearInterval(typingTimer);
     context.release(params.numericChatId);
   }
 }

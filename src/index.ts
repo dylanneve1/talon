@@ -110,7 +110,7 @@ initPulse();
 // Initialize cron with injected message sender
 initCron({
   sendMessage: async (chatId: number, text: string) => {
-    await bridgeSendText(bot as never, chatId, text);
+    await bridgeSendText(bot, chatId, text);
   },
 });
 

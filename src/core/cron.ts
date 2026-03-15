@@ -102,7 +102,10 @@ async function executeJob(job: CronJob): Promise<void> {
   if (!deps) return;
 
   const numericChatId = parseInt(job.chatId, 10);
-  if (isNaN(numericChatId)) return;
+  if (isNaN(numericChatId)) {
+    logError("cron", `Invalid chatId for job "${job.name}": ${job.chatId}`);
+    return;
+  }
 
   if (job.type === "message") {
     // Simple message send — no AI involved

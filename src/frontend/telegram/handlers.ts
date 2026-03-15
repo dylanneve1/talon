@@ -9,6 +9,7 @@ import {
   splitMessage,
   markdownToTelegramHtml,
   friendlyError,
+  escapeHtml,
 } from "./formatting.js";
 import { execute } from "../../core/dispatcher.js";
 import {
@@ -117,12 +118,8 @@ export function getForwardContext(msg: {
   return `[Forwarded from ${from}]\n`;
 }
 
-export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
+// Re-export escapeHtml from formatting for backward compatibility
+export { escapeHtml } from "./formatting.js";
 
 export async function downloadTelegramFile(
   bot: Bot,
@@ -179,6 +176,7 @@ const messageQueues = new Map<
 >();
 
 const DEBOUNCE_MS = 500;
+const MAX_QUEUED_PER_CHAT = 20;
 
 /**
  * Enqueue a message for processing. If another message arrives within DEBOUNCE_MS,
@@ -194,6 +192,7 @@ function enqueueMessage(
 ): void {
   const existing = messageQueues.get(chatId);
   if (existing) {
+    if (existing.messages.length >= MAX_QUEUED_PER_CHAT) return; // drop excess
     existing.messages.push(msg);
     // Show hourglass reaction on the queued message to indicate it's been seen
     bot.api
