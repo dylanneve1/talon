@@ -8,8 +8,8 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
-import { readFileSync, statSync } from "node:fs";
-import { basename } from "node:path";
+import { readFileSync, statSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "./telegram.js";
 import {
@@ -36,11 +36,16 @@ type BridgeAction = {
 let activeChatId: number | null = null;
 let botInstance: Bot | null = null;
 let InputFileClass: typeof GrammyInputFile | null = null;
+let botToken: string | null = null;
 let messagesSentViaBridge = 0;
 let bridgeLocked = false;
 const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();
 
 const TELEGRAM_MAX_TEXT = 4096;
+
+export function setBridgeBotToken(token: string): void {
+  botToken = token;
+}
 
 export function setBridgeContext(
   chatId: number,
@@ -613,6 +618,49 @@ async function handleAction(body: BridgeAction): Promise<unknown> {
           return { ok: true, text };
         }
         return { ok: false, error: "User client not connected." };
+      }
+
+      case "get_sticker_pack": {
+        const setName = String(body.set_name ?? "");
+        log("bridge", `get_sticker_pack: ${setName}`);
+        try {
+          const stickerSet = await bot.api.getStickerSet(setName);
+          const lines = stickerSet.stickers.map((s, i) => {
+            const emoji = s.emoji ?? "";
+            const type = s.is_animated ? "animated" : s.is_video ? "video" : "static";
+            return `${i + 1}. ${emoji} [${type}] file_id: ${s.file_id}`;
+          });
+          const header = `Sticker pack: "${stickerSet.title}" (${stickerSet.stickers.length} stickers)\nSet name: ${stickerSet.name}`;
+          return { ok: true, text: `${header}\n\n${lines.join("\n")}` };
+        } catch (err) {
+          return { ok: false, error: `Failed to get sticker pack: ${err instanceof Error ? err.message : err}` };
+        }
+      }
+
+      case "download_sticker": {
+        const fileId = String(body.file_id ?? "");
+        log("bridge", `download_sticker`);
+        try {
+          const file = await bot.api.getFile(fileId);
+          if (!file.file_path) return { ok: false, error: "Could not get file path" };
+
+          if (!botToken) return { ok: false, error: "Bot token not set" };
+          const url = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
+          const resp = await fetch(url);
+          if (!resp.ok) return { ok: false, error: `Download failed: ${resp.status}` };
+
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          const ext = file.file_path.split(".").pop() ?? "webp";
+          const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
+          if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+          const filename = `${Date.now()}-sticker.${ext}`;
+          const filePath = resolve(uploadsDir, filename);
+          writeFileSync(filePath, buffer);
+
+          return { ok: true, text: `Downloaded sticker to: ${filePath} (${buffer.length} bytes). You can view it with the Read tool.` };
+        } catch (err) {
+          return { ok: false, error: `Failed: ${err instanceof Error ? err.message : err}` };
+        }
       }
 
       case "download_media": {

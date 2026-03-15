@@ -351,6 +351,24 @@ server.tool(
   async (params) => textResult(await callBridge("download_media", params)),
 );
 
+server.tool(
+  "get_sticker_pack",
+  "Get all stickers in a sticker pack by its name. Returns emoji + file_id for each sticker so you can send them. Use when you see a sticker set name in chat history.",
+  {
+    set_name: z.string().describe("Sticker set name (e.g. 'AnimatedEmojies' or from sticker metadata)"),
+  },
+  async (params) => textResult(await callBridge("get_sticker_pack", params)),
+);
+
+server.tool(
+  "download_sticker",
+  "Download a sticker image to workspace so you can view its contents. Returns the file path.",
+  {
+    file_id: z.string().describe("Sticker file_id from chat history or sticker pack listing"),
+  },
+  async (params) => textResult(await callBridge("download_sticker", params)),
+);
+
 // ── Members ──────────────────────────────────────────────────────────────────
 
 server.tool(

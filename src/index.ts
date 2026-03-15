@@ -13,6 +13,7 @@ import {
 import {
   startBridge,
   stopBridge,
+  setBridgeBotToken,
   setBridgeContext,
   clearBridgeContext,
 } from "./bridge.js";
@@ -78,6 +79,7 @@ loadChatSettings();
 initAgent(config);
 
 const bot = new Bot(config.botToken);
+setBridgeBotToken(config.botToken);
 
 // Initialize GramJS user client for full history access (optional)
 const apiId = parseInt(process.env.TALON_API_ID || "", 10);
