@@ -27,7 +27,7 @@ const registeredChats = new Set<string>();
 const lastCheckMessageId = new Map<string, number>();
 
 let bridgeSetContext: ((chatId: number, bot: unknown, inputFile: unknown) => void) | null = null;
-let bridgeClearContext: (() => void) | null = null;
+let bridgeClearContext: ((chatId?: number | string) => void) | null = null;
 let botInstance: unknown = null;
 let inputFileClass: unknown = null;
 
@@ -38,7 +38,7 @@ const DEFAULT_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 export function initPulse(params: {
   config: TalonConfig;
   setBridgeContext: (chatId: number, bot: unknown, inputFile: unknown) => void;
-  clearBridgeContext: () => void;
+  clearBridgeContext: (chatId?: number | string) => void;
   bot: unknown;
   inputFile: unknown;
 }): void {
@@ -187,6 +187,6 @@ async function pulseChat(chatId: string): Promise<void> {
   } catch (err) {
     logError("pulse", `Chat ${chatId} failed`, err);
   } finally {
-    bridgeClearContext?.();
+    bridgeClearContext?.(numericChatId);
   }
 }

@@ -24,6 +24,7 @@ let InputFileClass: typeof GrammyInputFile | null = null;
 let botToken: string | null = null;
 let messagesSentViaBridge = 0;
 let bridgeLocked = false;
+let bridgeOwner: string | null = null;
 const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();
 
 const TELEGRAM_MAX_TEXT = 4096;
@@ -42,16 +43,20 @@ export function setBridgeContext(
   InputFileClass = inputFile;
   messagesSentViaBridge = 0;
   bridgeLocked = true;
+  bridgeOwner = String(chatId);
 }
 
 export function isBridgeBusy(): boolean {
   return bridgeLocked;
 }
 
-export function clearBridgeContext(): void {
+/** Clear bridge context. Only clears if the given chatId owns it. */
+export function clearBridgeContext(chatId?: number | string): void {
+  if (chatId !== undefined && bridgeOwner !== String(chatId)) return;
   activeChatId = null;
   messagesSentViaBridge = 0;
   bridgeLocked = false;
+  bridgeOwner = null;
 }
 
 export function getBridgeMessageCount(): number {

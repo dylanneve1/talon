@@ -28,7 +28,7 @@ let config: TalonConfig | null = null;
 let timer: ReturnType<typeof setInterval> | null = null;
 
 let bridgeSetContext: ((chatId: number, bot: unknown, inputFile: unknown) => void) | null = null;
-let bridgeClearContext: (() => void) | null = null;
+let bridgeClearContext: ((chatId?: number | string) => void) | null = null;
 let botInstance: unknown = null;
 let inputFileClass: unknown = null;
 
@@ -39,7 +39,7 @@ const TICK_INTERVAL_MS = 60_000; // 60 seconds
 export function initCron(params: {
   config: TalonConfig;
   setBridgeContext: (chatId: number, bot: unknown, inputFile: unknown) => void;
-  clearBridgeContext: () => void;
+  clearBridgeContext: (chatId?: number | string) => void;
   bot: unknown;
   inputFile: unknown;
 }): void {
@@ -134,7 +134,7 @@ async function executeJob(job: CronJob): Promise<void> {
     try {
       await sendText(botInstance as never, numericChatId, job.content);
     } finally {
-      bridgeClearContext();
+      bridgeClearContext(numericChatId);
     }
     return;
   }

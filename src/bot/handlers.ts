@@ -576,7 +576,7 @@ export async function processAndReply(
     }
   }
 
-  clearBridgeContext();
+  clearBridgeContext(numericChatId);
 }
 
 // ── Shared media handler ──────────────────────────────────────────────────────
