@@ -57,7 +57,6 @@ function ensureDir(filePath: string): void {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
-const STALE_SESSION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export function loadSessions(): void {
   try {
@@ -66,24 +65,6 @@ export function loadSessions(): void {
     }
   } catch {
     store = {};
-  }
-  pruneStale();
-}
-
-/** Remove sessions inactive for >7 days. */
-function pruneStale(): void {
-  const now = Date.now();
-  let pruned = 0;
-  for (const [chatId, session] of Object.entries(store)) {
-    if (session.lastActive && now - session.lastActive > STALE_SESSION_MS) {
-      delete store[chatId];
-      pruned++;
-    }
-  }
-  if (pruned > 0) {
-    log("sessions", `Pruned ${pruned} stale session(s) (inactive >7 days)`);
-    dirty = true;
-    saveSessions();
   }
 }
 
@@ -102,7 +83,6 @@ function saveSessions(): void {
 setInterval(saveSessions, 10_000);
 
 // Periodic stale session pruning (every hour)
-setInterval(pruneStale, 60 * 60 * 1000);
 
 const emptyUsage = (): SessionUsage => ({
   totalInputTokens: 0,
