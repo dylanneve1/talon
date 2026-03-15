@@ -1,12 +1,15 @@
 /**
- * Structured logging via pino.
+ * Structured logging via pino — console + file output.
  *
- * Same API surface as before (log, logError, logWarn with component tags)
- * but now outputs structured JSON in production and pretty-prints in dev.
- * Set TALON_LOG_LEVEL=debug|info|warn|error (default: info).
+ * Always runs at trace level (maximum verbosity) for debugging.
+ * Logs to both:
+ *   - stdout (pretty-printed for readability)
+ *   - workspace/talon.log (JSON, append-only, for persistence)
  */
 
 import pino from "pino";
+import { existsSync, mkdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
 
 export type LogComponent =
   | "bot"
@@ -25,22 +28,39 @@ export type LogComponent =
   | "cron"
   | "dispatcher";
 
-const isDev = process.env.NODE_ENV !== "production";
+const LOG_FILE = resolve(process.cwd(), "workspace", "talon.log");
+
+// Ensure workspace dir exists for log file
+const logDir = dirname(LOG_FILE);
+if (!existsSync(logDir)) {
+  try { mkdirSync(logDir, { recursive: true }); } catch { /* ignore */ }
+}
 
 const logger = pino({
-  level: process.env.TALON_LOG_LEVEL || "info",
-  ...(isDev
-    ? {
-        transport: {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            ignore: "pid,hostname",
-            translateTime: "HH:MM:ss",
-          },
+  level: "trace", // always max verbose for debugging
+  transport: {
+    targets: [
+      // Pretty console output
+      {
+        target: "pino-pretty",
+        level: "trace",
+        options: {
+          colorize: true,
+          ignore: "pid,hostname",
+          translateTime: "HH:MM:ss",
         },
-      }
-    : {}),
+      },
+      // JSON file output (append-only)
+      {
+        target: "pino/file",
+        level: "trace",
+        options: {
+          destination: LOG_FILE,
+          mkdir: true,
+        },
+      },
+    ],
+  },
 });
 
 export function log(component: LogComponent, message: string): void {
