@@ -88,12 +88,14 @@ export type HealthStatus = {
 /** Get current health status (exportable for external monitoring). */
 export function getHealthStatus(): HealthStatus {
   const now = Date.now();
+  const msSinceLastMessage = now - lastProcessedAt;
   return {
-    healthy: true, // Bot is running if this returns
+    // Unhealthy if no messages processed for 30+ minutes when we've seen at least one
+    healthy: totalMessagesProcessed === 0 || msSinceLastMessage < 30 * 60_000,
     uptimeMs: now - startTime,
     totalMessagesProcessed,
     lastProcessedAt,
-    msSinceLastMessage: now - lastProcessedAt,
+    msSinceLastMessage,
     recentErrorCount: recentErrors.length,
   };
 }

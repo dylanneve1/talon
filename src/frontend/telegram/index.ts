@@ -124,7 +124,13 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
 
     async start() {
       bot.catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
         logError("bot", "Unhandled bot error", err);
+        // If token is revoked/invalid, there's no point continuing
+        if (/unauthorized|401|not found|404/i.test(msg)) {
+          logError("bot", "Bot token appears invalid — shutting down");
+          process.exit(1);
+        }
       });
       await bot.start({
         onStart: (info) => log("bot", `Talon running as @${info.username}`),

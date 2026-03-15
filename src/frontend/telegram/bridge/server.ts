@@ -191,7 +191,7 @@ export function startBridge(port = 19876): Promise<number> {
       if (req.method === "GET" && req.url === "/health") {
         const watchdog = getHealthStatus();
         const health = {
-          ok: true,
+          ok: watchdog.healthy,
           uptime: Math.round(process.uptime()),
           memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
           bridge: { active: bridgeLocked, chatId: activeChatId },
