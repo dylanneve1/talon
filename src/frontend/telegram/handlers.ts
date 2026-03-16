@@ -469,7 +469,8 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
     started: false,
     editing: false,
   };
-  const streamTimer = setTimeout(() => { stream.started = true; }, 2000);
+  // Wait 1s before starting streaming — avoids flickering on fast responses
+  const streamTimer = setTimeout(() => { stream.started = true; }, 1000);
 
   try {
     const { onStreamDelta, onTextBlock } = createStreamCallbacks(
