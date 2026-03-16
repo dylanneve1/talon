@@ -8,7 +8,7 @@ import {
   setSessionId,
   setSessionName,
 } from "../../storage/sessions.js";
-import { getChatSettings } from "../../storage/chat-settings.js";
+import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { getRecentHistory } from "../../storage/history.js";
 import { resolve } from "node:path";
 import { classify } from "../../core/errors.js";
@@ -264,13 +264,25 @@ export async function handleMessage(
   } catch (err) {
     const classified = classify(err);
     if (classified.reason === "session_expired" && !_retried) {
-      logWarn(
-        "agent",
-        `[${chatId}] Stale session, retrying with fresh session`,
-      );
+      logWarn("agent", `[${chatId}] Stale session, retrying with fresh session`);
       resetSession(chatId);
-      // Auto-retry with fresh session — don't make the user resend
       return handleMessage(params, true);
+    }
+    // Model fallback: if overloaded/timeout, retry with a faster model
+    if (!_retried && classified.retryable && activeModel.includes("opus")) {
+      logWarn("agent", `[${chatId}] ${classified.reason} on opus, falling back to sonnet`);
+      resetSession(chatId);
+      const fallbackSettings = getChatSettings(chatId);
+      const originalModel = fallbackSettings.model;
+      // Temporarily override to sonnet for this retry
+      setChatModel(chatId, "claude-sonnet-4-6");
+      try {
+        const result = await handleMessage(params, true);
+        return result;
+      } finally {
+        // Restore original model setting
+        setChatModel(chatId, originalModel);
+      }
     }
     logError("agent", `[${chatId}] SDK error: ${classified.message}`);
     throw classified;

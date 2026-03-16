@@ -599,6 +599,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const barLen = 20;
     const filled = Math.round((contextPct / 100) * barLen);
     const contextBar = "\u2588".repeat(filled) + "\u2591".repeat(barLen - filled);
+    const contextWarn = contextPct >= 80 ? " \u26A0\uFE0F consider /reset" : "";
 
     const totalPrompt = u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
     const cacheHitPct =
@@ -617,7 +618,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const lines = [
       `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(activeModel)}</code> \u00B7 effort: ${effortName}`,
       "",
-      `<b>Context</b>  ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextMax)} (${contextPct}%)`,
+      `<b>Context</b>  ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextMax)} (${contextPct}%)${contextWarn}`,
       `<code>${contextBar}</code>`,
       "",
       `<b>Session Stats</b>`,

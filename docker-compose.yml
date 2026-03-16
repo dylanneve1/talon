@@ -1,0 +1,13 @@
+services:
+  talon:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./workspace:/app/workspace
+      - ./prompts:/app/prompts
+      # Claude Code sessions (needed for session resume)
+      - ${HOME}/.claude:/root/.claude
+    environment:
+      - NODE_ENV=production
+    mem_limit: 1g
+    cpus: "1.0"
