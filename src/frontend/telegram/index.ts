@@ -98,6 +98,7 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       await bot.api.setMyCommands([
         { command: "start", description: "Introduction" },
         { command: "settings", description: "View and change all chat settings" },
+        { command: "memory", description: "View what Talon remembers" },
         { command: "status", description: "Session info, usage, and stats" },
         { command: "ping", description: "Health check with latency" },
         { command: "model", description: "Show or change model" },
