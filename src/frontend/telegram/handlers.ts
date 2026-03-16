@@ -391,12 +391,10 @@ type ProcessAndReplyParams = {
 // ── Streaming state for Telegram message edits ──────────────────────────────
 
 type StreamState = {
-  msgId: number | undefined;
-  lastEditedText: string;
+  draftId: number;
+  lastSentLength: number;
   started: boolean;
-  isThinking: boolean;
-  hasTextStarted: boolean;
-  editing: boolean; // mutex: prevents concurrent edits to same message
+  editing: boolean;
 };
 
 function createStreamCallbacks(
@@ -407,99 +405,34 @@ function createStreamCallbacks(
 ) {
   const onStreamDelta = async (
     accumulated: string,
-    phase?: "thinking" | "text",
+    _phase?: "thinking" | "text",
   ) => {
     if (!state.started || state.editing) return;
+    // Only send if enough new text accumulated (at least 30 chars)
+    if (accumulated.length - state.lastSentLength < 30) return;
+
     state.editing = true;
     try {
-      if (phase === "thinking" && !state.isThinking) {
-        state.isThinking = true;
-        state.hasTextStarted = false;
-      } else if (phase === "text" && !state.hasTextStarted) {
-        state.hasTextStarted = true;
-        state.isThinking = false;
-      }
+      const display = accumulated.length > 3900
+        ? accumulated.slice(0, 3900) + "\u2026"
+        : accumulated;
 
-      const cursor =
-        state.isThinking && !state.hasTextStarted ? " \uD83D\uDCAD" : " \u258D";
-      const display =
-        accumulated.length > 3900
-          ? accumulated.slice(0, 3900) + "\u2026"
-          : accumulated;
-      const displayText =
-        state.isThinking && !state.hasTextStarted && !display.trim()
-          ? "\uD83D\uDCAD thinking..."
-          : display;
-
-      const wasThinking = state.lastEditedText === "\uD83D\uDCAD thinking...";
-      const transitionToText = wasThinking && state.hasTextStarted;
-
-      if (!state.msgId) {
-        const content = displayText + cursor;
-        const html = markdownToTelegramHtml(content);
-        try {
-          const sent = await bot.api.sendMessage(chatId, html, {
-            parse_mode: "HTML",
-            reply_parameters: { message_id: replyToId },
-          });
-          state.msgId = sent.message_id;
-        } catch {
-          const sent = await bot.api.sendMessage(chatId, content, {
-            reply_parameters: { message_id: replyToId },
-          });
-          state.msgId = sent.message_id;
-        }
-        state.lastEditedText = displayText;
-      } else if (
-        transitionToText ||
-        displayText.length - state.lastEditedText.length >= 60
-      ) {
-        const content = displayText + cursor;
-        const html = markdownToTelegramHtml(content);
-        try {
-          await bot.api.editMessageText(chatId, state.msgId, html, {
-            parse_mode: "HTML",
-          });
-        } catch {
-          try {
-            await bot.api.editMessageText(chatId, state.msgId, content);
-          } catch (e) {
-            logWarn("bot", `Stream edit failed: ${e instanceof Error ? e.message : e}`);
-          }
-        }
-        state.lastEditedText = displayText;
-      }
+      // Use native Telegram streaming draft — animates on client
+      await bot.api.sendMessageDraft(chatId, state.draftId, display);
+      state.lastSentLength = accumulated.length;
     } catch (err) {
-      logWarn("bot", `Stream delta error: ${err instanceof Error ? err.message : err}`);
+      logWarn("bot", `Draft send failed: ${err instanceof Error ? err.message : err}`);
     } finally {
       state.editing = false;
     }
   };
 
   const onTextBlock = async (text: string) => {
-    state.editing = true;
-    try {
-    if (state.msgId) {
-      const html = markdownToTelegramHtml(text);
-      try {
-        await bot.api.editMessageText(chatId, state.msgId, html, {
-          parse_mode: "HTML",
-        });
-      } catch {
-        try {
-          await bot.api.editMessageText(chatId, state.msgId, text);
-        } catch (e) {
-          logWarn("bot", `Text block edit failed: ${e instanceof Error ? e.message : e}`);
-        }
-      }
-      state.msgId = undefined;
-      state.lastEditedText = "";
-    } else {
-      await sendHtml(bot, chatId, markdownToTelegramHtml(text), replyToId);
-    }
-    } finally {
-      state.editing = false;
-    }
+    // Finalize this text block as a real message
+    await sendHtml(bot, chatId, markdownToTelegramHtml(text), replyToId);
+    // Reset draft for next block
+    state.draftId = Math.floor(Math.random() * 2147483647) + 1;
+    state.lastSentLength = 0;
   };
 
   return { onStreamDelta, onTextBlock };
@@ -511,30 +444,10 @@ async function deliverFinalText(
   text: string,
   replyToId: number,
   maxLen: number,
-  streamMsgId?: number,
 ): Promise<void> {
   const chunks = splitMessage(text, maxLen);
-  if (streamMsgId) {
-    // Edit the stream message with final content, send overflow as new messages
-    const firstHtml = markdownToTelegramHtml(chunks[0]);
-    try {
-      await bot.api.editMessageText(chatId, streamMsgId, firstHtml, {
-        parse_mode: "HTML",
-      });
-    } catch {
-      try {
-        await bot.api.editMessageText(chatId, streamMsgId, chunks[0]);
-      } catch (e) {
-        logWarn("bot", `Final edit failed: ${e instanceof Error ? e.message : e}`);
-      }
-    }
-    for (let i = 1; i < chunks.length; i++) {
-      await sendHtml(bot, chatId, markdownToTelegramHtml(chunks[i]), replyToId);
-    }
-  } else {
-    for (const chunk of chunks) {
-      await sendHtml(bot, chatId, markdownToTelegramHtml(chunk), replyToId);
-    }
+  for (const chunk of chunks) {
+    await sendHtml(bot, chatId, markdownToTelegramHtml(chunk), replyToId);
   }
 }
 
@@ -545,11 +458,9 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
   } = params;
 
   const stream: StreamState = {
-    msgId: undefined,
-    lastEditedText: "",
+    draftId: Math.floor(Math.random() * 2147483647) + 1,
+    lastSentLength: 0,
     started: false,
-    isThinking: false,
-    hasTextStarted: false,
     editing: false,
   };
   const streamTimer = setTimeout(() => { stream.started = true; }, 2000);
@@ -580,16 +491,12 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
       onTextBlock,
     });
 
-    // Deliver final response
+    // Deliver final response — send as real message (draft was just a preview)
     if (result.bridgeMessageCount === 0 && result.text) {
       await deliverFinalText(
         bot, numericChatId, result.text, replyToId,
-        config.maxMessageLength, stream.msgId,
+        config.maxMessageLength,
       );
-    } else if (stream.msgId) {
-      await bot.api.deleteMessage(numericChatId, stream.msgId).catch((err) => {
-        logWarn("bot", `Failed to delete stream msg: ${err instanceof Error ? err.message : err}`);
-      });
     }
   } finally {
     clearTimeout(streamTimer);
