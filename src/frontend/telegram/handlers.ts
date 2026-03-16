@@ -607,6 +607,54 @@ async function handleMediaMessage(
 
 // ── Message handlers ─────────────────────────────────────────────────────────
 
+// ── URL enrichment ──────────────────────────────────────────────────────────
+
+const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/g;
+const MAX_PAGE_TEXT = 4000;
+
+async function fetchUrlContent(url: string): Promise<string | null> {
+  try {
+    const resp = await fetch(url, {
+      signal: AbortSignal.timeout(8000),
+      headers: { "User-Agent": "Talon/1.0 (Telegram Bot)" },
+      redirect: "follow",
+    });
+    if (!resp.ok) return null;
+    const contentType = resp.headers.get("content-type") ?? "";
+    if (!contentType.includes("text/html") && !contentType.includes("text/plain")) return null;
+
+    const html = await resp.text();
+    // Strip HTML tags, scripts, styles — extract readable text
+    const text = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (text.length < 50) return null; // too short to be useful
+    return text.slice(0, MAX_PAGE_TEXT);
+  } catch {
+    return null;
+  }
+}
+
+async function enrichWithUrls(text: string): Promise<string> {
+  const urls = text.match(URL_REGEX);
+  if (!urls || urls.length === 0) return text;
+
+  // Fetch up to 2 URLs in parallel
+  const fetches = urls.slice(0, 2).map(async (url) => {
+    const content = await fetchUrlContent(url);
+    return content ? `\n\n[Page content from ${url}]:\n${content}` : "";
+  });
+
+  const results = await Promise.all(fetches);
+  const enrichment = results.filter(Boolean).join("");
+  return enrichment ? text + enrichment : text;
+}
+
+// ── Text message handler ────────────────────────────────────────────────────
+
 export async function handleTextMessage(
   ctx: Context,
   bot: Bot,
@@ -627,7 +675,11 @@ export async function handleTextMessage(
   const fwdCtx = getForwardContext(
     ctx.message as Parameters<typeof getForwardContext>[0],
   );
-  const prompt = fwdCtx + replyCtx + (ctx.message.text ?? "");
+  const rawText = ctx.message.text ?? "";
+
+  // Fetch URL content in background while building prompt
+  const enrichedText = await enrichWithUrls(rawText);
+  const prompt = fwdCtx + replyCtx + enrichedText;
 
   enqueueMessage(bot, config, chatId, ctx.chat.id, {
     prompt,
