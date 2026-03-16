@@ -38,9 +38,11 @@ function output(text: string): void {
   process.stdout.write(text + "\n");
 }
 
+const PROMPT = `  ${pc.green("you")}  `;
+
 /** Re-show the prompt after all output is done */
 function reprompt(): void {
-  if (rl) rl.prompt(true);
+  process.stdout.write(PROMPT);
 }
 
 // ── Spinner ─────────────────────────────────────────────────────────────────
@@ -52,10 +54,11 @@ let spinnerFrame = 0;
 function startSpinner(): void {
   stopSpinner();
   spinnerFrame = 0;
+  // Pause readline so it doesn't overwrite the spinner
+  if (rl) (rl as any).output?.write?.("\x1b[2K\r");
   spinnerTimer = setInterval(() => {
     spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
-    clearLine();
-    process.stdout.write(pc.dim(`  ${SPINNER_FRAMES[spinnerFrame]} thinking...`));
+    process.stdout.write(`\x1b[2K\r${pc.dim(`  ${SPINNER_FRAMES[spinnerFrame]} thinking...`)}`);
   }, 80);
 }
 
@@ -63,7 +66,7 @@ function stopSpinner(): void {
   if (spinnerTimer) {
     clearInterval(spinnerTimer);
     spinnerTimer = null;
-    clearLine();
+    process.stdout.write("\x1b[2K\r");
   }
 }
 
@@ -232,14 +235,14 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
       rl = createInterface({
         input: process.stdin,
         output: process.stdout,
-        prompt: `  ${pc.green("you")}  `,
+        prompt: PROMPT,
       });
 
-      rl.prompt();
+      reprompt();
 
       rl.on("line", async (input) => {
         const text = input.trim();
-        if (!text) { rl!.prompt(); return; }
+        if (!text) { reprompt(); return; }
 
         if (text === "/quit" || text === "/exit") {
           rl!.close();
