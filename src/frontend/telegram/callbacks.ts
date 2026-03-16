@@ -5,7 +5,6 @@
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
 import { resetSession } from "../../storage/sessions.js";
-import { formatDuration } from "./helpers.js";
 import {
   getChatSettings,
   setChatModel,
@@ -26,7 +25,6 @@ import {
   renderSettingsText,
   renderSettingsKeyboard,
 } from "./helpers.js";
-import { logError } from "../../util/log.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
   // ── Callback query handler ──────────────────────────────────────────────────

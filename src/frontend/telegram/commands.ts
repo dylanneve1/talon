@@ -2,7 +2,7 @@
  * All /command handlers for the Telegram bot.
  */
 
-import type { Bot, Context } from "grammy";
+import type { Bot } from "grammy";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { TalonConfig } from "../../util/config.js";
@@ -11,7 +11,6 @@ import {
   getSessionInfo,
   getActiveSessionCount,
   getAllSessions,
-  type SessionInfo,
 } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";
 import {

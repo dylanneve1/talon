@@ -14,7 +14,7 @@ import { classify } from "../../../core/errors.js";
 import { getQueueSize } from "../../../core/dispatcher.js";
 import { getHealthStatus } from "../../../util/watchdog.js";
 import { getActiveSessionCount } from "../../../storage/sessions.js";
-import { log, logError } from "../../../util/log.js";
+import { log } from "../../../util/log.js";
 import { handleAction } from "./actions.js";
 
 type BridgeAction = {
