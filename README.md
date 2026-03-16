@@ -98,21 +98,34 @@ index.ts                    ← composition root (platform-agnostic)
 
 **Key design**: Core knows nothing about Telegram or Claude. Frontend and backend are swappable. All dependencies injected at startup.
 
+## Terminal Chat
+
+```bash
+talon chat           # interactive terminal chat with Claude
+```
+
+Same backend, same sessions, same tools — just a different I/O surface. Animated spinner, emoji reactions, `/reset` and `/help` commands.
+
 ## Production
+
+**Docker**:
+```bash
+docker compose up -d
+```
 
 **Systemd**: Copy `talon.service` to `/etc/systemd/system/`, enable, start.
 
-**Health endpoint**: `GET http://localhost:19876/health` returns JSON with uptime, memory, queue size, session count, errors.
+**Health endpoint**: `GET http://localhost:19876/health` — JSON with uptime, memory, queue, sessions, errors.
 
-**Logging**: Structured JSON via pino to `workspace/talon.log` + console. Always trace level.
+**Logging**: Structured JSON via pino to `workspace/talon.log` + console.
 
-**Safety**: Per-user rate limiting (15/min), API throttling, atomic writes, XSS protection, path traversal guard, bridge context verification, session auto-retry, bot token circuit breaker.
+**Resilience**: Model fallback (Opus → Sonnet on overload), session auto-retry, per-user rate limiting (15/min), API throttling, atomic writes, 15s shutdown timeout with queue drain, bot token circuit breaker.
 
 ## Development
 
 ```bash
 npm run dev          # watch mode
-npm test             # 293 tests
+npm test             # 297 tests
 npm run test:coverage
 npm run typecheck    # tsc --noEmit
 ```
