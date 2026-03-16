@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "lint": "oxlint src/ --ignore-pattern '**/__tests__/**'",
     "format": "prettier --write src/ prompts/",
     "format:check": "prettier --check src/ prompts/"
   },

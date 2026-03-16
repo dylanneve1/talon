@@ -4,7 +4,6 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { logWarn } from "./log.js";
 
 // ── Message processing tracking ──────────────────────────────────────────────

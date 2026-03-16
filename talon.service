@@ -1,11 +1,16 @@
+# Talon systemd service — edit paths before installing.
+# Install: sudo cp talon.service /etc/systemd/system/
+#          sudo systemctl daemon-reload && sudo systemctl enable --now talon
+
 [Unit]
 Description=Talon — Claude-powered Telegram bot
 After=network.target
 
 [Service]
 Type=simple
-User=dylan
-WorkingDirectory=/home/dylan/telegram-claude-agent
+# EDIT: Set your user and working directory
+# User=your-username
+# WorkingDirectory=/path/to/talon
 ExecStart=/usr/bin/node --import tsx src/index.ts
 Restart=on-failure
 RestartSec=10
@@ -15,9 +20,6 @@ StandardError=journal
 # Resource limits
 MemoryMax=1G
 CPUQuota=80%
-
-# Environment
-EnvironmentFile=-/home/dylan/telegram-claude-agent/.env
 
 [Install]
 WantedBy=multi-user.target

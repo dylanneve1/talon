@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
 import { resolve, dirname } from "node:path";
-import { log, logError } from "../util/log.js";
+import { logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 
 /**
