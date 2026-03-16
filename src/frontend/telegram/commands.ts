@@ -102,6 +102,9 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         "<b>Chat</b>",
         "  Read history, search messages, list members, get chat info, manage titles and descriptions.",
         "",
+        "<b>Web</b>",
+        "  Share a URL and Talon automatically reads the page. Ask to summarize, analyze, or discuss.",
+        "",
         "<b>Groups</b>",
         "  Mention @" +
           escapeHtml(ctx.me.username ?? "bot") +
