@@ -520,6 +520,40 @@ async function handleHistory(
       return { ok: false, error: "User client not connected. Media download requires user session." };
     }
 
+    case "fetch_url": {
+      const url = String(body.url ?? "");
+      if (!url) return { ok: false, error: "Missing URL" };
+      if (!/^https?:\/\//i.test(url)) return { ok: false, error: "URL must start with http:// or https://" };
+      try {
+        const resp = await fetch(url, {
+          signal: AbortSignal.timeout(15_000),
+          headers: { "User-Agent": "Talon/1.0 (Telegram Bot)" },
+          redirect: "follow",
+        });
+        if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
+        const contentType = resp.headers.get("content-type") ?? "";
+        if (!contentType.includes("text/html") && !contentType.includes("text/plain") && !contentType.includes("application/json")) {
+          return { ok: false, error: `Unsupported content type: ${contentType.split(";")[0]}` };
+        }
+        const raw = await resp.text();
+        // Strip HTML to extract readable text
+        const text = raw
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (text.length < 20) return { ok: true, text: "(Page has no readable content)" };
+        return { ok: true, text: text.slice(0, 8000) };
+      } catch (err) {
+        return { ok: false, error: `Fetch failed: ${err instanceof Error ? err.message : err}` };
+      }
+    }
+
     default:
       return null;
   }

@@ -62,7 +62,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       [
         "<b>\uD83E\uDD85 Talon</b>",
         "",
-        "Claude-powered Telegram assistant with 29 tools.",
+        "Claude-powered Telegram assistant with 30 tools.",
         "",
         "Send a message, photo, doc, or voice note.",
         "In groups, @mention or reply to activate.",
@@ -104,7 +104,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         "  Read history, search messages, list members, get chat info, manage titles and descriptions.",
         "",
         "<b>Web</b>",
-        "  Share a URL and Talon automatically reads the page. Ask to summarize, analyze, or discuss.",
+        "  Ask Talon to read a URL — it can fetch and summarize web pages.",
         "",
         "<b>Groups</b>",
         "  Mention @" +

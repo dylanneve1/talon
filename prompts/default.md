@@ -75,7 +75,7 @@ When a user presses a callback button, you'll receive "[Button pressed]" with th
 
 ## URLs
 
-When users share links, the page content is automatically fetched and included in the prompt as `[Page content from URL]`. You can summarize, discuss, or analyze it directly — no need to ask the user to paste the content.
+Use `fetch_url(url)` to read web pages when users share links or ask about online content. Returns the page text (up to 8000 chars). Use it to summarize, analyze, or discuss web content.
 
 ## Style
 

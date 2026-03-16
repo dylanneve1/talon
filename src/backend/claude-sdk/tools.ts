@@ -480,6 +480,17 @@ server.tool(
   async () => textResult(await callBridge("online_count", {})),
 );
 
+// ── Web ─────────────────────────────────────────────────────────────────────
+
+server.tool(
+  "fetch_url",
+  "Fetch a web page and return its text content. Use this when a user shares a URL and you want to read, summarize, or discuss the page.",
+  {
+    url: z.string().describe("The URL to fetch"),
+  },
+  async (params) => textResult(await callBridge("fetch_url", params)),
+);
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {
