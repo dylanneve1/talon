@@ -4,6 +4,7 @@
 
 import type { Bot, Context } from "grammy";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { TalonConfig } from "../../util/config.js";
 import {
   resetSession,
@@ -468,15 +469,16 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       }
 
       case "logs": {
+        const logPath = resolve(config.workspace, "talon.log");
         try {
-          const logContent = readFileSync("/tmp/talon.log", "utf-8");
+          const logContent = readFileSync(logPath, "utf-8");
           const lines = logContent.trim().split("\n");
           const last20 = lines.slice(-20).join("\n");
           await ctx.reply(`<pre>${escapeHtml(last20.slice(0, 3800))}</pre>`, {
             parse_mode: "HTML",
           });
         } catch {
-          await ctx.reply("Could not read /tmp/talon.log");
+          await ctx.reply(`Could not read ${logPath}`);
         }
         return;
       }

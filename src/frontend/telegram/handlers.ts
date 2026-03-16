@@ -491,8 +491,11 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
       onTextBlock,
     });
 
-    // Deliver final response — send as real message (draft was just a preview)
-    if (result.bridgeMessageCount === 0 && result.text) {
+    // All responses should go through the send tool.
+    // result.text is only sent as a fallback if NO tools were called at all
+    // AND the text is substantial (not internal monologue like "No response needed").
+    // Short outputs without tool calls are almost always internal reasoning leaks.
+    if (result.bridgeMessageCount === 0 && result.text && result.text.length > 20) {
       await deliverFinalText(
         bot, numericChatId, result.text, replyToId,
         config.maxMessageLength,
