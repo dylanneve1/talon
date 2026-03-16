@@ -185,13 +185,13 @@ export function loadConfig(): TalonConfig {
   // Helpful error on first run
   if (!raw.botToken) {
     if (isFirstRun) {
-      console.log("\n  Welcome to Talon! 🦅\n");
-      console.log(`  Config created at: ${CONFIG_FILE}`);
-      console.log("  Edit it to add your bot token from @BotFather, then restart.\n");
+      console.log("\n  🦅 Welcome to Talon!\n");
+      console.log(`  Run ${"\x1b[36m"}npx tsx src/cli.ts setup${"\x1b[0m"} for guided setup.`);
+      console.log(`  Or edit ${CONFIG_FILE} manually.\n`);
       process.exit(0);
     }
     throw new Error(
-      `Missing bot token. Add "botToken" to ${CONFIG_FILE} or set TALON_BOT_TOKEN.`,
+      `Missing bot token. Run "talon setup" or add "botToken" to ${CONFIG_FILE}.`,
     );
   }
 
