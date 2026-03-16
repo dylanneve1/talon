@@ -600,6 +600,21 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         return;
       }
 
+      case "daily": {
+        const today = new Date().toISOString().slice(0, 10);
+        const logPath = resolve(config.workspace, "logs", `${today}.md`);
+        try {
+          const content = readFileSync(logPath, "utf-8");
+          const lines = content.trim().split("\n").slice(-30).join("\n");
+          await ctx.reply(`<b>Daily log (${today})</b>\n\n<pre>${escapeHtml(lines.slice(0, 3800))}</pre>`, {
+            parse_mode: "HTML",
+          });
+        } catch {
+          await ctx.reply(`No daily log for ${today}.`);
+        }
+        return;
+      }
+
       case "top": {
         const sessions = getAllSessions();
         const sorted = [...sessions]
@@ -633,6 +648,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
             "  /admin stats -- uptime, messages, cost, memory\n" +
             "  /admin errors -- last 5 errors\n" +
             "  /admin chats -- list all active chats\n" +
+            "  /admin daily -- today's interaction log\n" +
             "  /admin top -- top 10 chats by cost\n" +
             "  /admin broadcast &lt;text&gt; -- send to all chats\n" +
             "  /admin kill &lt;chatId&gt; -- reset a chat session\n" +
