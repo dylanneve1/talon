@@ -86,6 +86,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         "",
         "<b>Session</b>",
         "  /status -- session info, usage, and stats",
+        "  /memory -- view what Talon remembers",
         "  /ping -- health check with latency",
         "  /reset -- clear session and start fresh",
         "  /help -- this message",
