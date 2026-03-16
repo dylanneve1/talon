@@ -98,9 +98,3 @@ export function markdownToTelegramHtml(text: string): string {
 
   return processed;
 }
-
-/**
- * Map common SDK/API error messages to user-friendly strings.
- * Delegates to core/errors.ts for classification.
- */
-export { friendlyMessage as friendlyError } from "../../core/errors.js";

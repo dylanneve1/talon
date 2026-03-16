@@ -102,5 +102,3 @@ export function logDebug(component: LogComponent, message: string): void {
   logger.debug({ component }, message);
 }
 
-/** The raw pino instance — for advanced use (child loggers, etc.) */
-export { logger };

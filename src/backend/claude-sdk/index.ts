@@ -14,33 +14,7 @@ import { resolve } from "node:path";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-export type HandleMessageParams = {
-  chatId: string;
-  text: string;
-  senderName: string;
-  isGroup?: boolean;
-  /** Telegram message ID of the user's message (for reply_to / react tools). */
-  messageId?: number;
-  /** Called when a new text block is completed (for multi-message delivery). */
-  onTextBlock?: (text: string) => Promise<void>;
-  /** Called periodically with accumulated text for streaming edits.
-   *  Phase is "thinking" during thinking deltas and "text" during text deltas. */
-  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
-};
-
-export type HandleMessageResult = {
-  /** Final accumulated text (may be empty if all text was sent via onTextBlock). */
-  text: string;
-  durationMs: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheRead: number;
-  cacheWrite: number;
-  /** Files created or modified in the workspace during this turn. */
-  /** Files explicitly sent via the send_file tool. */
-};
+import type { QueryParams, QueryResult } from "../../core/types.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -55,9 +29,9 @@ export function initAgent(cfg: TalonConfig, getBridgePort?: () => number): void 
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 export async function handleMessage(
-  params: HandleMessageParams,
+  params: QueryParams,
   _retried = false,
-): Promise<HandleMessageResult> {
+): Promise<QueryResult> {
   if (!config)
     throw new Error("Agent not initialized. Call initAgent() first.");
 

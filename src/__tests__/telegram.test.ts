@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   markdownToTelegramHtml,
   splitMessage,
-  friendlyError,
 } from "../frontend/telegram/formatting.js";
+import { friendlyMessage as friendlyError } from "../core/errors.js";
 
 describe("markdownToTelegramHtml", () => {
   it("converts bold markdown to <b> tags", () => {
