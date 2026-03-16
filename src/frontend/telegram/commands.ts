@@ -62,7 +62,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       [
         "<b>\uD83E\uDD85 Talon</b>",
         "",
-        "Claude-powered Telegram assistant with 19 tools.",
+        "Claude-powered Telegram assistant with 29 tools.",
         "",
         "Send a message, photo, doc, or voice note.",
         "In groups, @mention or reply to activate.",
