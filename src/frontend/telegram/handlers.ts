@@ -679,7 +679,8 @@ export async function handleTextMessage(
   const prompt = fwdCtx + replyCtx + rawText;
 
   // Start URL fetch in background — will enrich prompt before queue flush
-  const urlPromise = URL_REGEX.test(rawText)
+  // Fire-and-forget: enriches queued message if fetch completes before debounce
+  void (URL_REGEX.test(rawText)
     ? enrichWithUrls(rawText).then((enriched) => {
         // Update the queued message prompt with URL content if still in queue
         const entry = messageQueues.get(chatId);
@@ -688,7 +689,7 @@ export async function handleTextMessage(
           if (msg) msg.prompt = fwdCtx + replyCtx + enriched;
         }
       }).catch(() => {}) // silent failure — URL enrichment is optional
-    : undefined;
+    : undefined);
 
   enqueueMessage(bot, config, chatId, ctx.chat.id, {
     prompt,

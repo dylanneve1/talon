@@ -331,7 +331,7 @@ async function startChat(): Promise<void> {
   process.env.TALON_QUIET = "1";
 
   const { loadConfig } = await import("./util/config.js");
-  const { initWorkspace, startUploadCleanup } = await import("./util/workspace.js");
+  const { initWorkspace } = await import("./util/workspace.js");
   const { initAgent, handleMessage } = await import("./backend/claude-sdk/index.js");
   const { loadSessions, flushSessions } = await import("./storage/sessions.js");
   const { loadChatSettings, flushChatSettings } = await import("./storage/chat-settings.js");
