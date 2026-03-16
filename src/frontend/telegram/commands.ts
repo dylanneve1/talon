@@ -677,7 +677,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         ? Math.round(u.totalResponseMs / info.turns)
         : 0;
     const lastResponseMs = u.lastResponseMs || 0;
-    const fastestMs = u.fastestResponseMs || 0;
+    const fastestMs = u.fastestResponseMs === Infinity ? 0 : (u.fastestResponseMs || 0);
 
     const diskBytes = getWorkspaceDiskUsage(config.workspace);
     const diskStr = formatBytes(diskBytes);

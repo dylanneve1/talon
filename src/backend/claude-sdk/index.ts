@@ -269,19 +269,22 @@ export async function handleMessage(
       return handleMessage(params, true);
     }
     // Model fallback: if overloaded/timeout, retry with a faster model
-    if (!_retried && classified.retryable && activeModel.includes("opus")) {
-      logWarn("agent", `[${chatId}] ${classified.reason} on opus, falling back to sonnet`);
-      resetSession(chatId);
-      const fallbackSettings = getChatSettings(chatId);
-      const originalModel = fallbackSettings.model;
-      // Temporarily override to sonnet for this retry
-      setChatModel(chatId, "claude-sonnet-4-6");
-      try {
-        const result = await handleMessage(params, true);
-        return result;
-      } finally {
-        // Restore original model setting
-        setChatModel(chatId, originalModel);
+    if (!_retried && classified.retryable) {
+      const fallbackModel = activeModel.includes("opus")
+        ? "claude-sonnet-4-6"
+        : activeModel.includes("sonnet")
+          ? "claude-haiku-4-5"
+          : null;
+      if (fallbackModel) {
+        logWarn("agent", `[${chatId}] ${classified.reason}, falling back to ${fallbackModel.replace("claude-", "")}`);
+        resetSession(chatId);
+        const originalModel = getChatSettings(chatId).model;
+        setChatModel(chatId, fallbackModel);
+        try {
+          return await handleMessage(params, true);
+        } finally {
+          setChatModel(chatId, originalModel);
+        }
       }
     }
     logError("agent", `[${chatId}] SDK error: ${classified.message}`);

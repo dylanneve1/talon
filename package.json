@@ -2,6 +2,16 @@
   "name": "talon-telegram-bot",
   "version": "1.0.0",
   "description": "Claude-powered Telegram bot with full tool access, streaming, cron jobs, and group awareness",
+  "author": "Dylan Neve",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dylanneve1/talon.git"
+  },
+  "keywords": ["telegram", "bot", "claude", "ai", "mcp", "agent-sdk", "chatbot"],
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "bin": {
     "talon": "./bin/talon.js"

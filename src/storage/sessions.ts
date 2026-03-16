@@ -97,7 +97,7 @@ const emptyUsage = (): SessionUsage => ({
   estimatedCostUsd: 0,
   totalResponseMs: 0,
   lastResponseMs: 0,
-  fastestResponseMs: 0,
+  fastestResponseMs: Infinity,
 });
 
 export function getSession(chatId: string): SessionState {
@@ -120,8 +120,8 @@ export function getSession(chatId: string): SessionState {
     session.usage.totalResponseMs = 0;
   if (session.usage.lastResponseMs === undefined)
     session.usage.lastResponseMs = 0;
-  if (session.usage.fastestResponseMs === undefined)
-    session.usage.fastestResponseMs = 0;
+  if (session.usage.fastestResponseMs === undefined || session.usage.fastestResponseMs === 0)
+    session.usage.fastestResponseMs = Infinity;
   return session;
 }
 
@@ -265,7 +265,7 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
         estimatedCostUsd: 0,
         totalResponseMs: 0,
         lastResponseMs: 0,
-        fastestResponseMs: 0,
+        fastestResponseMs: Infinity,
       },
     },
   }));

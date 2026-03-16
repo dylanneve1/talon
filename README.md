@@ -5,7 +5,7 @@ Claude-powered Telegram bot with 29 tools, streaming, cron jobs, and group aware
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Claude](https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-D97706)](https://github.com/anthropics/claude-agent-sdk-typescript)
-[![Tests](https://img.shields.io/badge/Tests-293_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-306_passing-brightgreen)]()
 
 ## Quick Start
 

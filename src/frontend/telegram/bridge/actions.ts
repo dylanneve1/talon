@@ -541,6 +541,7 @@ async function handleCron(
 
       if (!schedule) return { ok: false, error: "Missing schedule expression" };
       if (!content) return { ok: false, error: "Missing content" };
+      if (content.length > 10_000) return { ok: false, error: "Content too long (max 10,000 chars)" };
 
       const validation = validateCronExpression(schedule, timezone);
       if (!validation.valid) {
@@ -602,7 +603,7 @@ async function handleCron(
 
       if (body.schedule !== undefined) {
         const newSchedule = String(body.schedule);
-        const validation = validateCronExpression(newSchedule, (updates.timezone as string) ?? job.timezone);
+        const validation = validateCronExpression(newSchedule, (updates.timezone as string | undefined) ?? job.timezone);
         if (!validation.valid) {
           return { ok: false, error: `Invalid cron expression: ${validation.error}` };
         }

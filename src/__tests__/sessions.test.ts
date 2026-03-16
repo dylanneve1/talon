@@ -75,7 +75,7 @@ describe("sessions", () => {
       expect(session.usage.estimatedCostUsd).toBe(0);
       expect(session.usage.totalResponseMs).toBe(0);
       expect(session.usage.lastResponseMs).toBe(0);
-      expect(session.usage.fastestResponseMs).toBe(0);
+      expect(session.usage.fastestResponseMs).toBe(Infinity);
     });
   });
 
