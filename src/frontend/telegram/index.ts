@@ -1,11 +1,9 @@
 /**
  * Telegram frontend factory.
  *
- * Encapsulates everything Telegram-specific: Bot instance, bridge server,
- * command registration, GramJS userbot, graceful shutdown.
- *
- * index.ts calls createTelegramFrontend() and gets back a Frontend interface —
- * no grammy imports leak into the composition root.
+ * Encapsulates everything Telegram-specific: Bot instance, command registration,
+ * GramJS userbot, graceful shutdown. Registers its action handler with the
+ * core gateway so MCP tool calls route to Telegram API.
  */
 
 import { Bot, InputFile } from "grammy";
@@ -14,16 +12,16 @@ import { apiThrottler } from "@grammyjs/transformer-throttler";
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
 import {
-  startBridge,
-  stopBridge,
-  setBridgeBotToken,
-  setBridgeContext,
-  clearBridgeContext,
-  isBridgeBusy,
-  getBridgeMessageCount,
-  getBridgePort,
-  sendText,
-} from "./bridge/server.js";
+  startGateway,
+  stopGateway,
+  setGatewayContext,
+  clearGatewayContext,
+  isGatewayBusy,
+  getGatewayMessageCount,
+  getGatewayPort,
+  setFrontendHandler,
+} from "../../core/gateway.js";
+import { createTelegramActionHandler, sendText } from "./actions.js";
 import {
   initUserClient,
   disconnectUserClient,
@@ -36,19 +34,12 @@ import { log, logError } from "../../util/log.js";
 // ── Frontend interface ──────────────────────────────────────────────────────
 
 export type TelegramFrontend = {
-  /** ContextManager for the dispatcher — manages bridge context lifecycle. */
   context: ContextManager;
-  /** Show typing indicator in a chat. */
   sendTyping: (chatId: number) => Promise<void>;
-  /** Send a plain text message to a chat. */
   sendMessage: (chatId: number, text: string) => Promise<void>;
-  /** Get the bridge port (needed by backend for MCP tool config). */
   getBridgePort: () => number;
-  /** Initialize: start bridge, register handlers, set up userbot. */
   init: () => Promise<void>;
-  /** Start polling for Telegram updates. */
   start: () => Promise<void>;
-  /** Gracefully stop bot, bridge, and userbot. */
   stop: () => Promise<void>;
 };
 
@@ -56,17 +47,14 @@ export type TelegramFrontend = {
 
 export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
   const bot = new Bot(config.botToken);
-  // Proactive throttling — queues outgoing API calls to stay under Telegram rate limits
   bot.api.config.use(apiThrottler());
-  // Reactive retry — catches any 429 errors that slip through, retries with backoff
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
-  setBridgeBotToken(config.botToken);
 
   const context: ContextManager = {
-    acquire: (chatId: number) => setBridgeContext(chatId, bot, InputFile),
-    release: (chatId: number) => clearBridgeContext(chatId),
-    isBusy: () => isBridgeBusy(),
-    getMessageCount: () => getBridgeMessageCount(),
+    acquire: (chatId: number) => setGatewayContext(chatId),
+    release: (chatId: number) => clearGatewayContext(chatId),
+    isBusy: () => isGatewayBusy(),
+    getMessageCount: () => getGatewayMessageCount(),
   };
 
   return {
@@ -79,21 +67,21 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       await sendText(bot, chatId, text);
     },
 
-    getBridgePort: () => getBridgePort(),
+    getBridgePort: () => getGatewayPort(),
 
     async init() {
-      const port = await startBridge(19876);
-      log("bot", `Bridge started on port ${port}`);
+      // Register Telegram action handler with the core gateway
+      setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken));
 
-      // Set admin user ID from config
+      const port = await startGateway(19876);
+      log("bot", `Gateway started on port ${port}`);
+
       setAdminUserId(config.adminUserId);
 
-      // Register bot handlers
       registerCommands(bot, config);
       registerMiddleware(bot, config);
       registerCallbacks(bot, config);
 
-      // Register slash commands with Telegram
       await bot.api.deleteMyCommands();
       await bot.api.setMyCommands([
         { command: "start", description: "Introduction" },
@@ -109,7 +97,6 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       ]);
       log("commands", "Registered bot commands with Telegram");
 
-      // Initialize GramJS user client for full history access (optional)
       const apiId = config.apiId ?? 0;
       const apiHash = config.apiHash ?? "";
       if (apiId && apiHash) {
@@ -118,14 +105,9 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
             if (ok) log("userbot", "Full Telegram history access enabled.");
             else log("userbot", "Not authorized. Run: npx tsx src/login.ts");
           })
-          .catch((err) => {
-            logError("userbot", "Init failed", err);
-          });
+          .catch((err) => logError("userbot", "Init failed", err));
       } else {
-        log(
-          "userbot",
-          "TALON_API_ID/TALON_API_HASH not set -- using in-memory history only.",
-        );
+        log("userbot", "TALON_API_ID/TALON_API_HASH not set -- using in-memory history only.");
       }
     },
 
@@ -133,7 +115,6 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       bot.catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         logError("bot", "Unhandled bot error", err);
-        // If token is revoked/invalid, there's no point continuing
         if (/unauthorized|401|not found|404/i.test(msg)) {
           logError("bot", "Bot token appears invalid — shutting down");
           process.exit(1);
@@ -149,8 +130,8 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       catch (err) { logError("shutdown", "Bot stop error", err); }
       try { await disconnectUserClient(); log("shutdown", "User client disconnected"); }
       catch (err) { logError("shutdown", "User client disconnect error", err); }
-      try { await stopBridge(); log("shutdown", "Bridge stopped"); }
-      catch (err) { logError("shutdown", "Bridge stop error", err); }
+      try { await stopGateway(); log("shutdown", "Gateway stopped"); }
+      catch (err) { logError("shutdown", "Gateway stop error", err); }
     },
   };
 }

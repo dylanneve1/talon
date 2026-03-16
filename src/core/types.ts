@@ -65,3 +65,20 @@ export type ExecuteParams = {
 export type ExecuteResult = QueryResult & {
   bridgeMessageCount: number;
 };
+
+// ── Gateway types ───────────────────────────────────────────────────────────
+
+/** Result from an action handler. */
+export type ActionResult = {
+  ok: boolean;
+  text?: string;
+  error?: string;
+  message_id?: number;
+  [key: string]: unknown;
+};
+
+/** Frontend-specific action handler. Return null if action not recognized. */
+export type FrontendActionHandler = (
+  body: Record<string, unknown>,
+  chatId: number,
+) => Promise<ActionResult | null>;

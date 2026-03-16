@@ -26,7 +26,8 @@ export type LogComponent =
   | "settings"
   | "commands"
   | "cron"
-  | "dispatcher";
+  | "dispatcher"
+  | "gateway";
 
 const LOG_FILE = resolve(process.cwd(), "workspace", "talon.log");
 
