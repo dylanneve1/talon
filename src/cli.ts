@@ -17,7 +17,9 @@ import { existsSync, readFileSync, mkdirSync, watchFile } from "node:fs";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 
-const WORKSPACE = resolve(process.cwd(), "workspace");
+// Resolve paths relative to the package root, not cwd
+const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
+const WORKSPACE = resolve(PKG_ROOT, "workspace");
 const CONFIG_FILE = resolve(WORKSPACE, "talon.json");
 const LOG_FILE = resolve(WORKSPACE, "talon.log");
 const HEALTH_URL = "http://127.0.0.1:19876/health";
@@ -365,6 +367,7 @@ async function mainMenu(): Promise<void> {
   switch (action) {
     case "start":
       console.log(`\n  Starting Talon...\n`);
+      process.chdir(PKG_ROOT);
       await import("./index.js");
       break;
     case "status":
@@ -391,7 +394,7 @@ switch (command) {
   case "status":  showStatus(); break;
   case "config":  viewConfig(); break;
   case "logs":    tailLogs(); break;
-  case "start":   import("./index.js"); break;
+  case "start":   process.chdir(PKG_ROOT); import("./index.js"); break;
   case "--help":
   case "-h":
     printBanner();
