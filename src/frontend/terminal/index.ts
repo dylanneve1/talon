@@ -3,11 +3,10 @@
  *
  * Same architecture as the Telegram frontend: implements the Frontend
  * interface so the dispatcher, backend, pulse, and cron all work
- * unchanged. MCP tool actions print to the terminal instead of
- * calling Telegram API.
+ * unchanged. MCP tool actions print to the terminal.
  */
 
-import { createInterface } from "node:readline";
+import { createInterface, type Interface as ReadlineInterface } from "node:readline";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import pc from "picocolors";
 import type { TalonConfig } from "../../util/config.js";
@@ -21,41 +20,80 @@ let messageCount = 0;
 let busy = false;
 let server: ReturnType<typeof createServer> | null = null;
 let bridgePort = 0;
+let rl: ReadlineInterface | null = null;
 
-// The "chat ID" for the terminal session
 const TERMINAL_CHAT_ID = 1;
 
-// ── Bridge action handler (prints to terminal) ─────────────────────────────
+// ── Terminal output helpers ─────────────────────────────────────────────────
+
+/** Clear current line and write text */
+function clearAndWrite(text: string): void {
+  process.stdout.write("\x1b[2K\r");
+  process.stdout.write(text);
+}
+
+/** Write output, preserving the readline prompt */
+function output(text: string): void {
+  clearAndWrite(text + "\n");
+  if (rl) rl.prompt(true);
+}
+
+// ── Spinner ─────────────────────────────────────────────────────────────────
+
+const SPINNER_FRAMES = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
+let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+let spinnerFrame = 0;
+
+function startSpinner(): void {
+  stopSpinner();
+  spinnerFrame = 0;
+  spinnerTimer = setInterval(() => {
+    spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
+    clearAndWrite(pc.dim(`  ${SPINNER_FRAMES[spinnerFrame]} thinking...`));
+  }, 80);
+}
+
+function stopSpinner(): void {
+  if (spinnerTimer) {
+    clearInterval(spinnerTimer);
+    spinnerTimer = null;
+    clearAndWrite("");
+  }
+}
+
+// ── Bridge action handler ───────────────────────────────────────────────────
 
 function handleTerminalAction(body: Record<string, unknown>): unknown {
   const action = body.action as string;
 
   switch (action) {
     case "send_message": {
+      stopSpinner();
       const text = String(body.text ?? "");
-      console.log(`\n${pc.cyan("  Talon")}  ${text}\n`);
+      output(`${pc.cyan("  Talon")}  ${text}`);
       messageCount++;
       return { ok: true, message_id: Date.now() };
     }
 
     case "react": {
-      const emoji = String(body.emoji ?? "👍");
-      process.stdout.write(`  ${emoji}\n`);
+      stopSpinner();
+      const emoji = String(body.emoji ?? "\uD83D\uDC4D");
+      output(`  ${emoji}`);
       messageCount++;
       return { ok: true };
     }
 
     case "send_message_with_buttons": {
+      stopSpinner();
       const text = String(body.text ?? "");
       const rows = body.rows as Array<Array<{ text: string }>> | undefined;
-      console.log(`\n${pc.cyan("  Talon")}  ${text}`);
+      let out = `${pc.cyan("  Talon")}  ${text}`;
       if (rows) {
         for (const row of rows) {
-          const buttons = row.map((b) => pc.dim(`[${b.text}]`)).join("  ");
-          console.log(`  ${buttons}`);
+          out += "\n  " + row.map((b) => pc.dim(`[${b.text}]`)).join("  ");
         }
       }
-      console.log();
+      output(out);
       messageCount++;
       return { ok: true, message_id: Date.now() };
     }
@@ -70,7 +108,7 @@ function handleTerminalAction(body: Record<string, unknown>): unknown {
       return { ok: true };
 
     case "read_history":
-      return { ok: true, text: "Terminal mode — no chat history available." };
+      return { ok: true, text: "Terminal mode — no chat history." };
 
     case "search_history":
       return { ok: true, text: "Terminal mode — search not available." };
@@ -82,13 +120,13 @@ function handleTerminalAction(body: Record<string, unknown>): unknown {
       return { ok: true, id: TERMINAL_CHAT_ID, type: "private", title: "Terminal" };
 
     default:
-      return { ok: true, text: `Action "${action}" not available in terminal mode.` };
+      return { ok: true, text: `"${action}" not available in terminal mode.` };
   }
 }
 
-// ── Bridge server (same HTTP interface as Telegram bridge) ──────────────────
+// ── Bridge server ───────────────────────────────────────────────────────────
 
-function startTerminalBridge(port = 19876): Promise<number> {
+function startTerminalBridge(port = 19877): Promise<number> {
   return new Promise<number>((resolve, reject) => {
     const httpServer = createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
@@ -97,13 +135,9 @@ function startTerminalBridge(port = 19876): Promise<number> {
           res.end(JSON.stringify({ ok: true, mode: "terminal", uptime: Math.round(process.uptime()) }));
           return;
         }
-
         if (req.method !== "POST" || req.url !== "/action") {
-          res.writeHead(404);
-          res.end("Not found");
-          return;
+          res.writeHead(404); res.end("Not found"); return;
         }
-
         try {
           const chunks: Buffer[] = [];
           for await (const chunk of req) chunks.push(chunk as Buffer);
@@ -163,44 +197,43 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
     context,
 
     sendTyping: async () => {
-      process.stdout.write(pc.dim("  thinking...\r"));
+      startSpinner();
     },
 
     sendMessage: async (_chatId: number, text: string) => {
-      console.log(`\n${pc.cyan("  Talon")}  ${text}\n`);
+      output(`${pc.cyan("  Talon")}  ${text}`);
     },
 
     getBridgePort: () => bridgePort,
 
     async init() {
-      const port = await startTerminalBridge(19877); // different port from Telegram
+      const port = await startTerminalBridge(19877);
       log("bot", `Terminal bridge on port ${port}`);
     },
 
     async start() {
       console.log();
-      console.log(`  ${pc.bold(pc.cyan("🦅 Talon"))}  ${pc.dim("terminal mode")}`);
+      console.log(`  ${pc.bold(pc.cyan("\uD83E\uDD85 Talon"))}  ${pc.dim("terminal mode")}`);
       console.log(`  ${pc.dim("Type a message and press Enter. Ctrl+C to quit.")}`);
-      console.log(`  ${pc.dim("─".repeat(50))}`);
+      console.log(`  ${pc.dim("\u2500".repeat(50))}`);
       console.log();
 
-      const rl = createInterface({
+      const { execute } = await import("../../core/dispatcher.js");
+
+      rl = createInterface({
         input: process.stdin,
         output: process.stdout,
         prompt: `  ${pc.green("you")}  `,
       });
 
-      // Import dispatcher to send messages
-      const { execute } = await import("../../core/dispatcher.js");
-
       rl.prompt();
 
       rl.on("line", async (input) => {
         const text = input.trim();
-        if (!text) { rl.prompt(); return; }
+        if (!text) { rl!.prompt(); return; }
 
         if (text === "/quit" || text === "/exit") {
-          rl.close();
+          rl!.close();
           return;
         }
 
@@ -209,26 +242,20 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           const { clearHistory } = await import("../../storage/history.js");
           resetSession(String(TERMINAL_CHAT_ID));
           clearHistory(String(TERMINAL_CHAT_ID));
-          console.log(`  ${pc.dim("Session cleared.")}\n`);
-          rl.prompt();
+          output(pc.dim("  Session cleared."));
           return;
         }
 
-        if (text === "/status") {
-          try {
-            const resp = await fetch(`http://127.0.0.1:${bridgePort}/health`, {
-              signal: AbortSignal.timeout(1000),
-            });
-            const h = await resp.json() as Record<string, unknown>;
-            console.log(`  ${pc.dim("uptime:")} ${h.uptime}s  ${pc.dim("mode:")} ${h.mode}\n`);
-          } catch {
-            console.log(`  ${pc.dim("health check failed")}\n`);
-          }
-          rl.prompt();
+        if (text === "/help") {
+          output([
+            `  ${pc.dim("/reset")}   Clear session`,
+            `  ${pc.dim("/quit")}    Exit`,
+            `  ${pc.dim("/help")}    This message`,
+          ].join("\n"));
           return;
         }
 
-        messageCount = 0; // reset for this turn
+        messageCount = 0;
 
         try {
           const result = await execute({
@@ -240,15 +267,18 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
             source: "message",
           });
 
-          // If no tools sent messages, print the response directly
+          stopSpinner();
+
           if (messageCount === 0 && result.text && result.text.length > 20) {
-            console.log(`\n${pc.cyan("  Talon")}  ${result.text}\n`);
+            output(`${pc.cyan("  Talon")}  ${result.text}`);
+          } else if (messageCount === 0) {
+            // No response — just re-prompt
+            rl!.prompt(true);
           }
         } catch (err) {
-          console.log(`  ${pc.red("Error:")} ${err instanceof Error ? err.message : err}\n`);
+          stopSpinner();
+          output(`  ${pc.red("Error:")} ${err instanceof Error ? err.message : err}`);
         }
-
-        rl.prompt();
       });
 
       rl.on("close", () => {
@@ -256,7 +286,6 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
         process.exit(0);
       });
 
-      // Keep alive
       await new Promise(() => {});
     },
 
