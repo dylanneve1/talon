@@ -324,6 +324,84 @@ async function tailLogs(): Promise<void> {
   await new Promise(() => {}); // block until Ctrl+C
 }
 
+// ── Doctor ──────────────────────────────────────────────────────────────────
+
+async function runDoctor(): Promise<void> {
+  printBanner();
+  console.log(`  ${pc.bold("Environment check")}\n`);
+
+  let issues = 0;
+
+  // Node version
+  const nodeVersion = process.versions.node;
+  const major = parseInt(nodeVersion.split(".")[0], 10);
+  if (major >= 22) {
+    console.log(`  ${pc.green("\u2713")} Node.js ${nodeVersion}`);
+  } else {
+    console.log(`  ${pc.red("\u2717")} Node.js ${nodeVersion} ${pc.dim("(need >=22)")}`);
+    issues++;
+  }
+
+  // Config file
+  if (existsSync(CONFIG_FILE)) {
+    const config = loadConfig();
+    if (config.botToken) {
+      console.log(`  ${pc.green("\u2713")} Bot token configured`);
+    } else {
+      console.log(`  ${pc.red("\u2717")} Bot token missing in ${pc.dim("talon.json")}`);
+      issues++;
+    }
+    console.log(`  ${pc.green("\u2713")} Config: ${pc.dim(CONFIG_FILE)}`);
+  } else {
+    console.log(`  ${pc.red("\u2717")} No config file ${pc.dim("(run talon setup)")}`);
+    issues++;
+  }
+
+  // Workspace
+  if (existsSync(WORKSPACE)) {
+    console.log(`  ${pc.green("\u2713")} Workspace: ${pc.dim(WORKSPACE)}`);
+  } else {
+    console.log(`  ${pc.yellow("!")} Workspace missing ${pc.dim("(will be created on start)")}`);
+  }
+
+  // Claude Code
+  try {
+    const { execSync } = await import("node:child_process");
+    execSync("which claude", { stdio: "pipe" });
+    console.log(`  ${pc.green("\u2713")} Claude Code installed`);
+  } catch {
+    console.log(`  ${pc.red("\u2717")} Claude Code not found ${pc.dim("(npm i -g @anthropic-ai/claude-code)")}`);
+    issues++;
+  }
+
+  // Log file
+  if (existsSync(LOG_FILE)) {
+    const { statSync } = await import("node:fs");
+    const size = statSync(LOG_FILE).size;
+    const sizeMB = (size / 1024 / 1024).toFixed(1);
+    console.log(`  ${pc.green("\u2713")} Log file: ${sizeMB}MB`);
+  } else {
+    console.log(`  ${pc.dim("-")} No log file yet`);
+  }
+
+  // Bot health
+  try {
+    const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) });
+    if (resp.ok) {
+      console.log(`  ${pc.green("\u2713")} Bot is running`);
+    }
+  } catch {
+    console.log(`  ${pc.dim("-")} Bot is not running`);
+  }
+
+  console.log();
+  if (issues === 0) {
+    console.log(`  ${pc.green("All checks passed.")}\n`);
+  } else {
+    console.log(`  ${pc.yellow(`${issues} issue(s) found.`)}\n`);
+  }
+}
+
 // ── Terminal chat ───────────────────────────────────────────────────────────
 
 async function startChat(): Promise<void> {
@@ -453,6 +531,7 @@ switch (command) {
   case "logs":    tailLogs(); break;
   case "start":   process.chdir(PKG_ROOT); import("./index.js"); break;
   case "chat":    process.chdir(PKG_ROOT); startChat(); break;
+  case "doctor":  runDoctor(); break;
   case "--help":
   case "-h":
     printBanner();
@@ -464,6 +543,7 @@ switch (command) {
     console.log(`    ${pc.cyan("status")}   Show bot health`);
     console.log(`    ${pc.cyan("config")}   View/edit configuration`);
     console.log(`    ${pc.cyan("logs")}     Tail log file`);
+    console.log(`    ${pc.cyan("doctor")}   Validate environment`);
     console.log();
     console.log(`  Run ${pc.cyan("talon")} with no args for interactive menu.\n`);
     break;
