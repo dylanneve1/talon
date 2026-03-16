@@ -25,7 +25,7 @@ vi.mock("../../core/errors.js", () => ({
   friendlyMessage: vi.fn(() => "error"),
 }));
 
-const { shouldHandleInGroup, getSenderName } = await import(
+const { shouldHandleInGroup, getSenderName, getReplyContext, getForwardContext } = await import(
   "../frontend/telegram/handlers.js"
 );
 
@@ -104,5 +104,69 @@ describe("getSenderName", () => {
 
   it("returns 'User' when undefined", () => {
     expect(getSenderName(undefined)).toBe("User");
+  });
+
+  it("returns 'User' when empty names", () => {
+    expect(getSenderName({})).toBe("User");
+  });
+});
+
+describe("getReplyContext", () => {
+  it("returns empty for no reply", () => {
+    expect(getReplyContext(undefined, 999)).toBe("");
+  });
+
+  it("returns empty when replying to bot itself", () => {
+    expect(getReplyContext({ from: { id: 999 }, text: "hi" }, 999)).toBe("");
+  });
+
+  it("includes author and text for reply to others", () => {
+    const result = getReplyContext(
+      { from: { id: 123, first_name: "Alice" }, text: "original message" },
+      999,
+    );
+    expect(result).toContain("Alice");
+    expect(result).toContain("original message");
+    expect(result).toContain("Replying to");
+  });
+
+  it("truncates long reply text to 500 chars", () => {
+    const longText = "x".repeat(600);
+    const result = getReplyContext(
+      { from: { id: 123, first_name: "Bob" }, text: longText },
+      999,
+    );
+    expect(result.length).toBeLessThan(600);
+  });
+});
+
+describe("getForwardContext", () => {
+  it("returns empty for non-forwarded messages", () => {
+    expect(getForwardContext({})).toBe("");
+  });
+
+  it("handles forwarded from user", () => {
+    const result = getForwardContext({
+      forward_origin: {
+        type: "user",
+        sender_user: { first_name: "Charlie", last_name: "D" },
+      },
+    });
+    expect(result).toContain("Charlie D");
+    expect(result).toContain("Forwarded");
+  });
+
+  it("handles forwarded from channel", () => {
+    const result = getForwardContext({
+      forward_origin: { type: "channel", chat: { title: "News" } },
+    });
+    expect(result).toContain("News");
+  });
+
+  it("handles hidden user", () => {
+    const result = getForwardContext({
+      forward_origin: { type: "hidden_user", sender_user_name: "anon" },
+    });
+    expect(result).toContain("anon");
   });
 });
