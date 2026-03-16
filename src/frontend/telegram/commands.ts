@@ -91,7 +91,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         "  /help -- this message",
         "",
         "<b>Input</b>",
-        "  Text, photos, documents, voice notes, videos, GIFs, stickers, forwarded messages, reply context",
+        "  Text, photos, documents, voice notes, audio, videos, GIFs, stickers, video notes, forwarded messages, reply context",
         "",
         "<b>Messaging</b>",
         "  Send, reply, edit, delete, forward, copy, pin/unpin messages. Inline keyboards with callback buttons. Scheduled messages.",
