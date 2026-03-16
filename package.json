@@ -43,6 +43,7 @@
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/transformer-throttler": "^1.2.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@opencode-ai/sdk": "^1.2.27",
     "croner": "^10.0.1",
     "grammy": "^1.41.1",
     "p-queue": "^9.1.0",
