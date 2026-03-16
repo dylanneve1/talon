@@ -120,11 +120,15 @@ export async function disconnectUserClient(): Promise<void> {
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
+let reconnecting = false;
+
 function startConnectionMonitor(): void {
   if (reconnectTimer) return;
   reconnectTimer = setInterval(async () => {
     if (!client) return;
     if (client.connected) return;
+    if (reconnecting) return; // prevent overlapping reconnect attempts
+    reconnecting = true;
 
     logWarn("userbot", "Connection lost, attempting reconnect...");
     try {
@@ -157,6 +161,8 @@ function startConnectionMonitor(): void {
           client = null;
         }
       }
+    } finally {
+      reconnecting = false;
     }
   }, CHECK_INTERVAL_MS);
 }

@@ -57,8 +57,10 @@ export function shouldHandleInGroup(ctx: Context): boolean {
   if (!isGroup) return true;
   const text = ctx.message.text || ctx.message.caption || "";
   const botUser = ctx.me.username;
+  // Word-boundary match — @botname must not be followed by alphanumeric/underscore
   const mentioned =
-    botUser && text.toLowerCase().includes(`@${botUser.toLowerCase()}`);
+    botUser &&
+    new RegExp(`@${botUser}(?![a-zA-Z0-9_])`, "i").test(text);
   const repliedToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
   return !!(mentioned || repliedToBot);
 }
