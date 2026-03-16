@@ -27,6 +27,7 @@ import {
   disablePulse,
   enablePulse,
   isPulseEnabled,
+  getPulseStatus,
 } from "../../core/pulse.js";
 import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
@@ -570,6 +571,32 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         return;
       }
 
+      case "pulse": {
+        const pulseChats = getPulseStatus();
+        if (pulseChats.length === 0) {
+          await ctx.reply("No chats registered for pulse.");
+          return;
+        }
+        const lines = await Promise.all(pulseChats.map(async (p) => {
+          let title = p.chatId;
+          try {
+            const numId = parseInt(p.chatId, 10);
+            if (!isNaN(numId)) {
+              const chat = await bot.api.getChat(numId);
+              title = "title" in chat ? (chat.title ?? p.chatId) : p.chatId;
+            }
+          } catch { /* inaccessible */ }
+          const status = p.enabled ? "\u2713" : "\u2717";
+          const lastCheck = p.lastChecked ? `msg:${p.lastChecked}` : "never";
+          return `${status} ${escapeHtml(title)} (${lastCheck})`;
+        }));
+        await ctx.reply(
+          `<b>Pulse (${pulseChats.length} chats)</b>\n\n` + lines.join("\n"),
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+
       case "top": {
         const sessions = getAllSessions();
         const sorted = [...sessions]
@@ -606,7 +633,8 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
             "  /admin top -- top 10 chats by cost\n" +
             "  /admin broadcast &lt;text&gt; -- send to all chats\n" +
             "  /admin kill &lt;chatId&gt; -- reset a chat session\n" +
-            "  /admin logs -- last 20 lines of /tmp/talon.log\n" +
+            "  /admin pulse -- pulse status per chat\n" +
+            "  /admin logs -- last 20 lines of log\n" +
             "  /admin cron -- list all cron jobs",
           { parse_mode: "HTML" },
         );

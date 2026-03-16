@@ -84,6 +84,19 @@ export function stopPulseTimer(): void {
   }
 }
 
+/** Get pulse status for admin visibility. */
+export function getPulseStatus(): Array<{
+  chatId: string;
+  enabled: boolean;
+  lastChecked: number | undefined;
+}> {
+  return [...registeredChats].map((chatId) => ({
+    chatId,
+    enabled: isPulseEnabled(chatId),
+    lastChecked: lastCheckMessageId.get(chatId),
+  }));
+}
+
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 async function runPulse(): Promise<void> {
