@@ -10,6 +10,7 @@
 
 import { Bot, InputFile } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
+import { apiThrottler } from "@grammyjs/transformer-throttler";
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
 import {
@@ -55,7 +56,9 @@ export type TelegramFrontend = {
 
 export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
   const bot = new Bot(config.botToken);
-  // Auto-retry on Telegram 429 (flood wait) — respects retry_after header
+  // Proactive throttling — queues outgoing API calls to stay under Telegram rate limits
+  bot.api.config.use(apiThrottler());
+  // Reactive retry — catches any 429 errors that slip through, retries with backoff
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
   setBridgeBotToken(config.botToken);
 
