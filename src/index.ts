@@ -9,7 +9,8 @@
 
 import { loadConfig } from "./util/config.js";
 import { initWorkspace, startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
-import { initAgent, handleMessage } from "./backend/claude-sdk/index.js";
+import { initAgent as initClaudeAgent, handleMessage as claudeHandleMessage } from "./backend/claude-sdk/index.js";
+import { initOpenCodeAgent, handleMessage as opencodeHandleMessage, stopOpenCodeServer } from "./backend/opencode/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
@@ -46,10 +47,18 @@ cleanupOldLogs();
 
 const frontend = createTelegramFrontend(config);
 
-// ── Create backend (swap this line for a different AI provider) ──────────────
+// ── Create backend ──────────────────────────────────────────────────────────
 
-initAgent(config, frontend.getBridgePort);
-const backend: QueryBackend = { query: (params) => handleMessage(params) };
+let backend: QueryBackend;
+if (config.backend === "opencode") {
+  initOpenCodeAgent(config, frontend.getBridgePort);
+  backend = { query: (params) => opencodeHandleMessage(params) };
+  log("bot", "Backend: OpenCode");
+} else {
+  initClaudeAgent(config, frontend.getBridgePort);
+  backend = { query: (params) => claudeHandleMessage(params) };
+  log("bot", "Backend: Claude SDK");
+}
 
 // ── Wire dispatcher ─────────────────────────────────────────────────────────
 
@@ -93,6 +102,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }
 
   await frontend.stop();
+  if (config.backend === "opencode") stopOpenCodeServer();
   stopPulseTimer();
   stopCronTimer();
   stopWatchdog();

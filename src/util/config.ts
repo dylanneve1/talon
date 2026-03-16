@@ -7,6 +7,7 @@ import { z } from "zod";
 
 const configSchema = z.object({
   botToken: z.string().min(1, "Missing bot token"),
+  backend: z.enum(["claude", "opencode"]).default("claude"),
   model: z.string().default("claude-sonnet-4-6"),
   maxMessageLength: z.number().int().min(100).default(4000),
   concurrency: z.number().int().min(1).max(20).default(1),

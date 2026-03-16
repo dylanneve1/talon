@@ -410,7 +410,8 @@ async function startChat(): Promise<void> {
 
   const { loadConfig } = await import("./util/config.js");
   const { initWorkspace } = await import("./util/workspace.js");
-  const { initAgent, handleMessage } = await import("./backend/claude-sdk/index.js");
+  const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } = await import("./backend/claude-sdk/index.js");
+  const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } = await import("./backend/opencode/index.js");
   const { loadSessions, flushSessions } = await import("./storage/sessions.js");
   const { loadChatSettings, flushChatSettings } = await import("./storage/chat-settings.js");
   const { loadCronJobs, flushCronJobs } = await import("./storage/cron-store.js");
@@ -429,10 +430,17 @@ async function startChat(): Promise<void> {
   const frontend = createTerminalFrontend(config);
   await frontend.init();
 
-  initAgent(config, frontend.getBridgePort);
+  let queryFn;
+  if (config.backend === "opencode") {
+    initOpenCodeAgent(config, frontend.getBridgePort);
+    queryFn = opencodeHandleMessage;
+  } else {
+    initClaudeAgent(config, frontend.getBridgePort);
+    queryFn = claudeHandleMessage;
+  }
 
   initDispatcher({
-    backend: { query: (params) => handleMessage(params) },
+    backend: { query: (params) => queryFn(params) },
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),
