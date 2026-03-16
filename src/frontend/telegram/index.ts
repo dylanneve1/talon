@@ -109,8 +109,8 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       log("commands", "Registered bot commands with Telegram");
 
       // Initialize GramJS user client for full history access (optional)
-      const apiId = config.apiId ?? parseInt(process.env.TALON_API_ID || "", 10);
-      const apiHash = config.apiHash ?? process.env.TALON_API_HASH ?? "";
+      const apiId = config.apiId ?? 0;
+      const apiHash = config.apiHash ?? "";
       if (apiId && apiHash) {
         initUserClient({ apiId, apiHash })
           .then((ok) => {
