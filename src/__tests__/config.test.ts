@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+// Global mock for write-file-atomic (used by config.ts for talon.json creation)
+vi.mock("write-file-atomic", () => ({
+  default: { sync: vi.fn() },
+}));
+
 // Save original env
 const originalEnv = { ...process.env };
 
@@ -32,11 +37,25 @@ describe("config", () => {
   });
 
   describe("loadConfig", () => {
-    it("throws when bot token is missing", async () => {
-      // Mock fs so .env file doesn't get loaded
+    it("exits gracefully on first run with no bot token", async () => {
+      const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
+      }));
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow("exit");
+      expect(exitSpy).toHaveBeenCalledWith(0);
+      exitSpy.mockRestore();
+    });
+
+    it("throws when config exists but bot token is empty", async () => {
+      vi.doMock("node:fs", () => ({
+        existsSync: vi.fn((path: string) => typeof path === "string" && path.includes("talon.json")),
+        readFileSync: vi.fn(() => JSON.stringify({ botToken: "" })),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -49,6 +68,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -62,6 +82,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -75,6 +96,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -89,6 +111,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -102,6 +125,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -116,6 +140,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -123,58 +148,40 @@ describe("config", () => {
       expect(config.maxMessageLength).toBe(8000);
     });
 
-    it("defaults maxThinkingTokens to 10000", async () => {
+    it("defaults concurrency to 1", async () => {
       process.env.TALON_BOT_TOKEN = "test-token";
 
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
+      }));
+
+      vi.doMock("write-file-atomic", () => ({
+        default: { sync: vi.fn() },
       }));
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.maxThinkingTokens).toBe(10000);
+      expect(config.concurrency).toBe(1);
     });
 
-    it("defaults verbose to false", async () => {
+    it("defaults pulse to true", async () => {
       process.env.TALON_BOT_TOKEN = "test-token";
 
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
+      }));
+
+      vi.doMock("write-file-atomic", () => ({
+        default: { sync: vi.fn() },
       }));
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.verbose).toBe(false);
-    });
-
-    it("sets verbose to true when TALON_VERBOSE=1", async () => {
-      process.env.TALON_BOT_TOKEN = "test-token";
-      process.env.TALON_VERBOSE = "1";
-
-      vi.doMock("node:fs", () => ({
-        existsSync: vi.fn(() => false),
-        readFileSync: vi.fn(() => ""),
-      }));
-
-      const { loadConfig } = await import("../util/config.js");
-      const config = loadConfig();
-      expect(config.verbose).toBe(true);
-    });
-
-    it("sets verbose to true when TALON_VERBOSE=true", async () => {
-      process.env.TALON_BOT_TOKEN = "test-token";
-      process.env.TALON_VERBOSE = "true";
-
-      vi.doMock("node:fs", () => ({
-        existsSync: vi.fn(() => false),
-        readFileSync: vi.fn(() => ""),
-      }));
-
-      const { loadConfig } = await import("../util/config.js");
-      const config = loadConfig();
-      expect(config.verbose).toBe(true);
+      expect(config.pulse).toBe(true);
     });
 
     it("returns a workspace path ending with 'workspace'", async () => {
@@ -183,6 +190,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -196,6 +204,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -210,6 +219,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn(() => false),
         readFileSync: vi.fn(() => ""),
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -231,6 +241,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: existsSyncMock,
         readFileSync: readFileSyncMock,
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -253,6 +264,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: existsSyncMock,
         readFileSync: readFileSyncMock,
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -275,6 +287,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: existsSyncMock,
         readFileSync: readFileSyncMock,
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -297,6 +310,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: existsSyncMock,
         readFileSync: readFileSyncMock,
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -318,6 +332,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: existsSyncMock,
         readFileSync: readFileSyncMock,
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");
@@ -339,6 +354,7 @@ describe("config", () => {
       vi.doMock("node:fs", () => ({
         existsSync: existsSyncMock,
         readFileSync: readFileSyncMock,
+        mkdirSync: vi.fn(),
       }));
 
       const { loadConfig } = await import("../util/config.js");

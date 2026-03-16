@@ -1,27 +1,74 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
-const envSchema = z.object({
-  botToken: z.string().min(1, "Missing bot token. Set TALON_BOT_TOKEN in .env or environment."),
+const configSchema = z.object({
+  botToken: z.string().min(1, "Missing bot token"),
   model: z.string().default("claude-sonnet-4-6"),
-  workspace: z.string(),
-  maxThinkingTokens: z.number().int().min(0).default(10000),
   maxMessageLength: z.number().int().min(100).default(4000),
-  verbose: z.boolean().default(false),
-  // Default 1: bridge context is global, so concurrent queries to different
-  // chats would route tools to the wrong chat. Safe to increase only if all
-  // concurrent queries target the same chat.
+  // Default 1: bridge context is global, concurrent queries to different
+  // chats would route tools to the wrong chat.
   concurrency: z.number().int().min(1).max(20).default(1),
+  // Telegram user API for full history access (optional)
+  apiId: z.number().int().optional(),
+  apiHash: z.string().optional(),
+  // Admin user ID — enables /admin commands
+  adminUserId: z.number().int().optional(),
+  // Pulse settings
+  pulse: z.boolean().default(true),
+  pulseIntervalMs: z.number().int().min(60000).default(300000),
 });
 
-export type TalonConfig = z.infer<typeof envSchema> & {
+export type TalonConfig = z.infer<typeof configSchema> & {
   systemPrompt: string;
+  workspace: string;
 };
 
-// ── .env file loading ───────────────────────────────────────────────────────
+// ── Config file loading ─────────────────────────────────────────────────────
+
+const CONFIG_FILE = resolve(process.cwd(), "workspace", "talon.json");
+
+const DEFAULT_CONFIG = {
+  botToken: "",
+  model: "claude-sonnet-4-6",
+  maxMessageLength: 4000,
+  concurrency: 1,
+  pulse: true,
+  pulseIntervalMs: 300000,
+};
+
+function loadConfigFile(): Record<string, unknown> {
+  try {
+    if (existsSync(CONFIG_FILE)) {
+      return JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
+    }
+  } catch {
+    // Corrupt file — recreate
+  }
+  return {};
+}
+
+/**
+ * First-run onboarding: creates workspace/talon.json with defaults.
+ * Returns true if this is a fresh install (no config existed).
+ */
+function ensureConfigFile(): boolean {
+  const workspace = resolve(process.cwd(), "workspace");
+  if (!existsSync(workspace)) mkdirSync(workspace, { recursive: true });
+  if (!existsSync(CONFIG_FILE)) {
+    writeFileAtomic.sync(
+      CONFIG_FILE,
+      JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n",
+    );
+    return true;
+  }
+  return false;
+}
+
+// ── Legacy .env loading (fallback) ──────────────────────────────────────────
 
 function loadEnvFile(): void {
   const envPath = resolve(process.cwd(), ".env");
@@ -104,27 +151,56 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
 // ── Main loader ─────────────────────────────────────────────────────────────
 
 export function loadConfig(): TalonConfig {
+  // Load .env for backward compatibility
   loadEnvFile();
 
+  // First-run onboarding: create config file with defaults
+  const isFirstRun = ensureConfigFile();
+
+  // Load from talon.json, then fall back to env vars
+  const fileConfig = loadConfigFile();
   const env = process.env;
-  const parsed = envSchema.parse({
-    botToken: env.TALON_BOT_TOKEN || env.TELEGRAM_BOT_TOKEN || "",
-    model: env.TALON_MODEL || undefined,
-    workspace: resolve(env.TALON_WORKSPACE || process.cwd(), "workspace"),
-    maxThinkingTokens: env.TALON_MAX_THINKING_TOKENS
-      ? parseInt(env.TALON_MAX_THINKING_TOKENS, 10)
-      : undefined,
-    maxMessageLength: env.TALON_MAX_MESSAGE_LENGTH
-      ? parseInt(env.TALON_MAX_MESSAGE_LENGTH, 10)
-      : undefined,
-    verbose: env.TALON_VERBOSE === "1" || env.TALON_VERBOSE === "true",
-    concurrency: env.TALON_CONCURRENCY
-      ? parseInt(env.TALON_CONCURRENCY, 10)
-      : undefined,
-  });
+
+  const raw = {
+    botToken:
+      (fileConfig.botToken as string) ||
+      env.TALON_BOT_TOKEN ||
+      env.TELEGRAM_BOT_TOKEN ||
+      "",
+    model: (fileConfig.model as string) || env.TALON_MODEL || undefined,
+    maxMessageLength: (fileConfig.maxMessageLength as number) ??
+      (env.TALON_MAX_MESSAGE_LENGTH ? parseInt(env.TALON_MAX_MESSAGE_LENGTH, 10) : undefined),
+    concurrency: (fileConfig.concurrency as number) ??
+      (env.TALON_CONCURRENCY ? parseInt(env.TALON_CONCURRENCY, 10) : undefined),
+    apiId: (fileConfig.apiId as number) ??
+      (env.TALON_API_ID ? parseInt(env.TALON_API_ID, 10) : undefined),
+    apiHash: (fileConfig.apiHash as string) || env.TALON_API_HASH || undefined,
+    adminUserId: (fileConfig.adminUserId as number) ??
+      (env.TALON_ADMIN_USER_ID ? parseInt(env.TALON_ADMIN_USER_ID, 10) : undefined),
+    pulse: (fileConfig.pulse as boolean) ?? env.TALON_PULSE !== "0",
+    pulseIntervalMs: (fileConfig.pulseIntervalMs as number) ??
+      (env.TALON_PULSE_INTERVAL_MS ? parseInt(env.TALON_PULSE_INTERVAL_MS, 10) : undefined),
+  };
+
+  // Helpful error on first run
+  if (!raw.botToken) {
+    if (isFirstRun) {
+      console.log("\n  Welcome to Talon! 🦅\n");
+      console.log(`  Config created at: ${CONFIG_FILE}`);
+      console.log("  Edit it to add your bot token from @BotFather, then restart.\n");
+      process.exit(0);
+    }
+    throw new Error(
+      `Missing bot token. Add "botToken" to ${CONFIG_FILE} or set TALON_BOT_TOKEN.`,
+    );
+  }
+
+  const parsed = configSchema.parse(raw);
+  const workspace = resolve(process.cwd(), "workspace");
 
   return {
     ...parsed,
+    workspace,
     systemPrompt: loadSystemPrompt(),
   };
 }

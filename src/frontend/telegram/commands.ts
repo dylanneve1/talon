@@ -30,6 +30,7 @@ import {
 } from "../../core/pulse.js";
 import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
+import { getQueueSize } from "../../core/dispatcher.js";
 import {
   getHealthStatus,
   getRecentErrors,
@@ -46,7 +47,13 @@ import {
   renderSettingsKeyboard,
 } from "./helpers.js";
 
-const ADMIN_USER_ID = parseInt(process.env.TALON_ADMIN_USER_ID || "", 10) || 0;
+// Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
+let ADMIN_USER_ID = 0;
+
+/** Set the admin user ID (called from config at startup). */
+export function setAdminUserId(id: number | undefined): void {
+  ADMIN_USER_ID = id ?? 0;
+}
 
 export function registerCommands(bot: Bot, config: TalonConfig): void {
   bot.command("start", (ctx) =>

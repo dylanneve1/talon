@@ -27,7 +27,7 @@ import {
   initUserClient,
   disconnectUserClient,
 } from "./userbot.js";
-import { registerCommands } from "./commands.js";
+import { registerCommands, setAdminUserId } from "./commands.js";
 import { registerMiddleware } from "./middleware.js";
 import { registerCallbacks } from "./callbacks.js";
 import { log, logError } from "../../util/log.js";
@@ -82,6 +82,9 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       const port = await startBridge(19876);
       log("bot", `Bridge started on port ${port}`);
 
+      // Set admin user ID from config
+      setAdminUserId(config.adminUserId);
+
       // Register bot handlers
       registerCommands(bot, config);
       registerMiddleware(bot, config);
@@ -103,8 +106,8 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       log("commands", "Registered bot commands with Telegram");
 
       // Initialize GramJS user client for full history access (optional)
-      const apiId = parseInt(process.env.TALON_API_ID || "", 10);
-      const apiHash = process.env.TALON_API_HASH || "";
+      const apiId = config.apiId ?? parseInt(process.env.TALON_API_ID || "", 10);
+      const apiHash = config.apiHash ?? process.env.TALON_API_HASH ?? "";
       if (apiId && apiHash) {
         initUserClient({ apiId, apiHash })
           .then((ok) => {

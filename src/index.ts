@@ -130,7 +130,7 @@ async function main(): Promise<void> {
   await frontend.init();
   log("bot", "Starting Talon...");
 
-  if (process.env.TALON_PULSE !== "0") startPulseTimer();
+  if (config.pulse) startPulseTimer(config.pulseIntervalMs);
   startCronTimer();
   startWatchdog(config.workspace);
   startUploadCleanup(config.workspace);
