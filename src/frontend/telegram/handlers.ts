@@ -676,10 +676,19 @@ export async function handleTextMessage(
     ctx.message as Parameters<typeof getForwardContext>[0],
   );
   const rawText = ctx.message.text ?? "";
+  const prompt = fwdCtx + replyCtx + rawText;
 
-  // Fetch URL content in background while building prompt
-  const enrichedText = await enrichWithUrls(rawText);
-  const prompt = fwdCtx + replyCtx + enrichedText;
+  // Start URL fetch in background — will enrich prompt before queue flush
+  const urlPromise = URL_REGEX.test(rawText)
+    ? enrichWithUrls(rawText).then((enriched) => {
+        // Update the queued message prompt with URL content if still in queue
+        const entry = messageQueues.get(chatId);
+        if (entry) {
+          const msg = entry.messages.find((m) => m.messageId === ctx.message!.message_id);
+          if (msg) msg.prompt = fwdCtx + replyCtx + enriched;
+        }
+      }).catch(() => {}) // silent failure — URL enrichment is optional
+    : undefined;
 
   enqueueMessage(bot, config, chatId, ctx.chat.id, {
     prompt,
