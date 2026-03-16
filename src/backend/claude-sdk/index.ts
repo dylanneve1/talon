@@ -45,36 +45,14 @@ export async function handleMessage(
   const activeModel = chatSettings.model ?? config.model;
   const activeEffort = chatSettings.effort ?? "adaptive";
 
-  // Map effort level to SDK thinking + effort options
-  // SDK supports: thinking: {type: "adaptive"/"enabled"/"disabled"}, effort: "low"/"medium"/"high"/"max"
-  const thinkingConfig = (() => {
-    switch (activeEffort) {
-      case "off":
-        return { thinking: { type: "disabled" as const } };
-      case "low":
-        return {
-          thinking: { type: "adaptive" as const },
-          effort: "low" as const,
-        };
-      case "medium":
-        return {
-          thinking: { type: "adaptive" as const },
-          effort: "medium" as const,
-        };
-      case "high":
-        return {
-          thinking: { type: "adaptive" as const },
-          effort: "high" as const,
-        };
-      case "max":
-        return {
-          thinking: { type: "adaptive" as const },
-          effort: "max" as const,
-        };
-      default:
-        return { thinking: { type: "adaptive" as const } }; // adaptive default
-    }
-  })();
+  const EFFORT_MAP: Record<string, { thinking: { type: "adaptive" | "disabled" }; effort?: "low" | "medium" | "high" | "max" }> = {
+    off: { thinking: { type: "disabled" } },
+    low: { thinking: { type: "adaptive" }, effort: "low" },
+    medium: { thinking: { type: "adaptive" }, effort: "medium" },
+    high: { thinking: { type: "adaptive" }, effort: "high" },
+    max: { thinking: { type: "adaptive" }, effort: "max" },
+  };
+  const thinkingConfig = EFFORT_MAP[activeEffort] ?? { thinking: { type: "adaptive" as const } };
 
   const options = {
     model: activeModel,
