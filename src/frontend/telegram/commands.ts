@@ -505,6 +505,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
           `<b>Last message:</b> ${health.msSinceLastMessage < 60000 ? "just now" : formatDuration(health.msSinceLastMessage) + " ago"}`,
           "",
           `<b>Memory:</b> heap ${heapMB}MB / rss ${rssMB}MB`,
+          `<b>Queue:</b> ${getQueueSize()} pending`,
           `<b>Recent errors:</b> ${health.recentErrorCount}`,
         ];
         await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
