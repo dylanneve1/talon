@@ -5,7 +5,7 @@ Claude-powered Telegram bot with 29 tools, streaming, cron jobs, and group aware
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Claude](https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-D97706)](https://github.com/anthropics/claude-agent-sdk-typescript)
-[![Tests](https://img.shields.io/badge/Tests-306_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-282_passing-brightgreen)]()
 
 ## Quick Start
 
@@ -27,7 +27,7 @@ Talon connects Telegram to Claude via the Agent SDK. Claude has full tool access
 
 **Output**: Text with Markdown→HTML formatting, photos, files, stickers, polls, inline keyboards, reactions, scheduled messages, dice, locations, contacts.
 
-**AI Features**: Streaming responses, persistent sessions (1M context), session auto-resume across restarts, thinking indicators, per-chat model/effort settings, cron jobs, pulse engagement.
+**AI Features**: Streaming responses, persistent sessions (1M context), session auto-resume across restarts, thinking indicators, per-chat model/effort settings, cron jobs, pulse engagement. Two backends: Claude Agent SDK (default) or OpenCode SDK.
 
 ## Configuration
 
@@ -48,7 +48,8 @@ All config lives in `workspace/talon.json`:
 | Field | Default | Description |
 |-------|---------|-------------|
 | `botToken` | — | Telegram bot token (required) |
-| `model` | `claude-sonnet-4-6` | Claude model (sonnet, opus, haiku) |
+| `backend` | `claude` | AI backend: `claude` or `opencode` |
+| `model` | `claude-sonnet-4-6` | Model ID (provider-specific) |
 | `concurrency` | `1` | Max concurrent AI queries |
 | `pulse` | `true` | Enable periodic group engagement |
 | `pulseIntervalMs` | `300000` | Pulse check interval (5 min) |
@@ -76,27 +77,31 @@ Environment variables (`TALON_BOT_TOKEN`, etc.) work as fallback.
 ## Architecture
 
 ```
-index.ts                    ← composition root (platform-agnostic)
-├── core/                   ← dispatcher, errors, types, pulse, cron
-│   ├── dispatcher.ts       ← p-queue concurrency, bridge lifecycle
-│   ├── errors.ts           ← TalonError classification
-│   └── pulse.ts / cron.ts  ← scheduled execution
-├── backend/claude-sdk/     ← Agent SDK wrapper + MCP tools
-│   ├── index.ts            ← session management, streaming
-│   └── tools.ts            ← 29 MCP tools (subprocess)
-├── frontend/telegram/      ← grammY bot + bridge
-│   ├── index.ts            ← factory (createTelegramFrontend)
-│   ├── handlers.ts         ← message routing, streaming
-│   ├── bridge/             ← HTTP bridge for MCP tool execution
-│   └── commands.ts         ← slash command handlers
-├── storage/                ← atomic JSON persistence
-│   ├── sessions.ts         ← session state + cost tracking
-│   ├── history.ts          ← message buffer (persisted)
-│   └── chat-settings.ts    ← per-chat model/effort/pulse
-└── util/                   ← config, pino logging, watchdog
+index.ts                      ← composition root (platform-agnostic)
+├── core/                     ← gateway, dispatcher, errors, pulse, cron
+│   ├── gateway.ts            ← HTTP action gateway (MCP tools → frontend)
+│   ├── gateway-actions.ts    ← shared actions: cron, fetch_url, history
+│   ├── dispatcher.ts         ← p-queue concurrency, context lifecycle
+│   └── pulse.ts / cron.ts    ← scheduled execution
+├── backend/
+│   ├── claude-sdk/            ← Claude Agent SDK backend
+│   │   ├── index.ts           ← session management, streaming
+│   │   └── tools.ts           ← 30 MCP tools (subprocess)
+│   └── opencode/              ← OpenCode backend (alternative)
+│       └── index.ts           ← session management via OpenCode SDK
+├── frontend/
+│   ├── telegram/              ← Telegram frontend
+│   │   ├── index.ts           ← factory (createTelegramFrontend)
+│   │   ├── actions.ts         ← Telegram-specific action handlers
+│   │   ├── handlers.ts        ← message routing, streaming
+│   │   └── commands.ts        ← slash command handlers
+│   └── terminal/              ← Terminal chat frontend
+│       └── index.ts           ← readline-based chat interface
+├── storage/                   ← atomic JSON persistence
+└── util/                      ← config, pino logging, watchdog
 ```
 
-**Key design**: Core knows nothing about Telegram or Claude. Frontend and backend are swappable. All dependencies injected at startup.
+**Key design**: Core gateway handles shared actions (cron, fetch_url, history) and delegates platform-specific actions to the active frontend. Backends and frontends are swappable via `talon.json`.
 
 ## Terminal Chat
 
@@ -125,7 +130,7 @@ docker compose up -d
 
 ```bash
 npm run dev          # watch mode
-npm test             # 297 tests
+npm test             # 282 tests
 npm run test:coverage
 npm run typecheck    # tsc --noEmit
 ```
