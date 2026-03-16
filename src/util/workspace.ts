@@ -56,7 +56,7 @@ export function cleanupUploads(root: string, maxAgeMs = DEFAULT_MAX_AGE_MS): num
       const filePath = join(uploadsDir, entry.name);
       try {
         const stat = statSync(filePath);
-        if (now - stat.mtimeMs > maxAgeMs) {
+        if (now - stat.mtimeMs >= maxAgeMs) {
           unlinkSync(filePath);
           deleted++;
         }
