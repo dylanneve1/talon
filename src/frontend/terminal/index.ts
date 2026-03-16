@@ -81,7 +81,6 @@ function handleTerminalAction(body: Record<string, unknown>): unknown {
     case "send_message": {
       stopSpinner();
       output(`\n${pc.cyan("  Talon")}  ${String(body.text ?? "")}\n`);
-      reprompt();
       messageCount++;
       return { ok: true, message_id: Date.now() };
     }
@@ -89,7 +88,6 @@ function handleTerminalAction(body: Record<string, unknown>): unknown {
     case "react": {
       stopSpinner();
       output(`\n${pc.cyan("  Talon")}  ${String(body.emoji ?? "\uD83D\uDC4D")}\n`);
-      reprompt();
       messageCount++;
       return { ok: true };
     }
@@ -105,7 +103,6 @@ function handleTerminalAction(body: Record<string, unknown>): unknown {
         }
       }
       output(out + "\n");
-      reprompt();
       messageCount++;
       return { ok: true, message_id: Date.now() };
     }
@@ -214,8 +211,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
 
     sendMessage: async (_chatId: number, text: string) => {
       stopSpinner();
-      output(`${pc.cyan("  Talon")}  ${text}`);
-      reprompt();
+      output(`\n${pc.cyan("  Talon")}  ${text}\n`);
     },
 
     getBridgePort: () => bridgePort,
