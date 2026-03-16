@@ -61,13 +61,14 @@ describe("cleanupUploads", () => {
     expect(cleanupUploads(TEST_ROOT)).toBe(0);
   });
 
-  it("deletes files older than maxAgeMs", () => {
+  it("deletes files older than maxAgeMs", async () => {
     const uploadsDir = join(TEST_ROOT, "uploads");
     mkdirSync(uploadsDir, { recursive: true });
     writeFileSync(join(uploadsDir, "old.jpg"), "data");
 
-    // maxAge=0 means everything is "old"
-    expect(cleanupUploads(TEST_ROOT, 0)).toBe(1);
+    // Wait 10ms so the file has age > 0, then cleanup with maxAge=1
+    await new Promise((r) => setTimeout(r, 10));
+    expect(cleanupUploads(TEST_ROOT, 1)).toBe(1);
     expect(readdirSync(uploadsDir)).toHaveLength(0);
   });
 

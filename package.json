@@ -1,12 +1,18 @@
 {
-  "name": "telegram-claude-agent",
+  "name": "talon-telegram-bot",
   "version": "1.0.0",
+  "description": "Claude-powered Telegram bot with full tool access, streaming, cron jobs, and group awareness",
   "type": "module",
+  "bin": {
+    "talon": "./bin/talon.js"
+  },
   "scripts": {
     "start": "node --import tsx src/index.ts",
     "dev": "node --import tsx --watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
     "format": "prettier --write src/ prompts/",
     "format:check": "prettier --check src/ prompts/"
   },
