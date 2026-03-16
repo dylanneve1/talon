@@ -90,6 +90,23 @@ describe("classify", () => {
     const err = classify(original);
     expect(err.cause).toBe(original);
   });
+
+  it("classifies 500 as retryable server error", () => {
+    const err = classify(new Error("500 Internal Server Error"));
+    expect(err.retryable).toBe(true);
+    expect(err.status).toBe(500);
+  });
+
+  it("classifies 504 as retryable", () => {
+    const err = classify(new Error("504 Gateway Timeout"));
+    expect(err.retryable).toBe(true);
+  });
+
+  it("classifies ENOTFOUND as network error", () => {
+    const err = classify(new Error("ENOTFOUND"));
+    expect(err.reason).toBe("network");
+    expect(err.retryable).toBe(true);
+  });
 });
 
 describe("friendlyMessage", () => {
