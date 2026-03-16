@@ -327,7 +327,9 @@ async function tailLogs(): Promise<void> {
 // ── Terminal chat ───────────────────────────────────────────────────────────
 
 async function startChat(): Promise<void> {
-  // Launch the bot with terminal frontend instead of Telegram
+  // Suppress console logs — terminal frontend owns stdout
+  process.env.TALON_QUIET = "1";
+
   const { loadConfig } = await import("./util/config.js");
   const { initWorkspace, startUploadCleanup } = await import("./util/workspace.js");
   const { initAgent, handleMessage } = await import("./backend/claude-sdk/index.js");

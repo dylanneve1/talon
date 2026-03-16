@@ -46,21 +46,24 @@ try {
   }
 } catch { /* ignore */ }
 
+// TALON_QUIET=1 suppresses console output (used by terminal frontend)
+const quiet = process.env.TALON_QUIET === "1";
+
 const logger = pino({
-  level: "trace", // always max verbose for debugging
+  level: "trace",
   transport: {
     targets: [
-      // Pretty console output
-      {
+      // Console output (disabled in quiet mode)
+      ...(!quiet ? [{
         target: "pino-pretty",
-        level: "trace",
+        level: "trace" as const,
         options: {
           colorize: true,
           ignore: "pid,hostname",
           translateTime: "HH:MM:ss",
         },
-      },
-      // JSON file output (append-only)
+      }] : []),
+      // JSON file output (always active)
       {
         target: "pino/file",
         level: "trace",
