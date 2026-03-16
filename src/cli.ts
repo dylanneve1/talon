@@ -324,6 +324,56 @@ async function tailLogs(): Promise<void> {
   await new Promise(() => {}); // block until Ctrl+C
 }
 
+// ── Terminal chat ───────────────────────────────────────────────────────────
+
+async function startChat(): Promise<void> {
+  // Launch the bot with terminal frontend instead of Telegram
+  const { loadConfig } = await import("./util/config.js");
+  const { initWorkspace, startUploadCleanup } = await import("./util/workspace.js");
+  const { initAgent, handleMessage } = await import("./backend/claude-sdk/index.js");
+  const { loadSessions, flushSessions } = await import("./storage/sessions.js");
+  const { loadChatSettings, flushChatSettings } = await import("./storage/chat-settings.js");
+  const { loadCronJobs, flushCronJobs } = await import("./storage/cron-store.js");
+  const { loadHistory, flushHistory } = await import("./storage/history.js");
+  const { initDispatcher } = await import("./core/dispatcher.js");
+  const { initPulse, resetPulseTimer } = await import("./core/pulse.js");
+  const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
+
+  const config = loadConfig();
+  initWorkspace(config.workspace);
+  loadSessions();
+  loadChatSettings();
+  loadCronJobs();
+  loadHistory();
+
+  const frontend = createTerminalFrontend(config);
+  await frontend.init();
+
+  initAgent(config, frontend.getBridgePort);
+
+  initDispatcher({
+    backend: { query: (params) => handleMessage(params) },
+    context: frontend.context,
+    sendTyping: frontend.sendTyping,
+    onActivity: () => resetPulseTimer(),
+    concurrency: config.concurrency,
+  });
+
+  initPulse();
+
+  // Shutdown handler
+  process.on("SIGINT", () => {
+    flushSessions();
+    flushChatSettings();
+    flushCronJobs();
+    flushHistory();
+    frontend.stop();
+    process.exit(0);
+  });
+
+  await frontend.start();
+}
+
 // ── Main menu ───────────────────────────────────────────────────────────────
 
 async function mainMenu(): Promise<void> {
@@ -354,7 +404,8 @@ async function mainMenu(): Promise<void> {
   const action = await p.select({
     message: `Talon ${statusDot}`,
     options: [
-      ...(!running ? [{ value: "start" as const, label: "Start bot" }] : []),
+      ...(!running ? [{ value: "start" as const, label: "Start Telegram bot" }] : []),
+      { value: "chat", label: "Chat in terminal", hint: "talk to Talon here" },
       { value: "status", label: "Status", hint: "health and stats" },
       { value: "config", label: "Config", hint: "view or edit" },
       { value: "logs", label: "Logs", hint: "tail live" },
@@ -369,6 +420,10 @@ async function mainMenu(): Promise<void> {
       console.log(`\n  Starting Talon...\n`);
       process.chdir(PKG_ROOT);
       await import("./index.js");
+      break;
+    case "chat":
+      process.chdir(PKG_ROOT);
+      await startChat();
       break;
     case "status":
       await showStatus();
@@ -395,16 +450,18 @@ switch (command) {
   case "config":  viewConfig(); break;
   case "logs":    tailLogs(); break;
   case "start":   process.chdir(PKG_ROOT); import("./index.js"); break;
+  case "chat":    process.chdir(PKG_ROOT); startChat(); break;
   case "--help":
   case "-h":
     printBanner();
     console.log("  Usage: talon [command]\n");
     console.log("  Commands:");
     console.log(`    ${pc.cyan("setup")}    Guided setup wizard`);
+    console.log(`    ${pc.cyan("start")}    Start the Telegram bot`);
+    console.log(`    ${pc.cyan("chat")}     Chat with Talon in the terminal`);
     console.log(`    ${pc.cyan("status")}   Show bot health`);
     console.log(`    ${pc.cyan("config")}   View/edit configuration`);
     console.log(`    ${pc.cyan("logs")}     Tail log file`);
-    console.log(`    ${pc.cyan("start")}    Start the bot`);
     console.log();
     console.log(`  Run ${pc.cyan("talon")} with no args for interactive menu.\n`);
     break;
