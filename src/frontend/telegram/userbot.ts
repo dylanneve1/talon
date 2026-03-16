@@ -41,6 +41,11 @@ export function allowChat(chatId: number): void {
   allowedChatIds.add(chatId);
 }
 
+/** Revoke userbot access for a chat (called when bot is removed from group). */
+export function revokeChat(chatId: number): void {
+  allowedChatIds.delete(chatId);
+}
+
 function assertAllowedChat(chatId: number | string): number {
   const numeric = typeof chatId === "string" ? parseInt(chatId, 10) : chatId;
   if (!allowedChatIds.has(numeric)) {

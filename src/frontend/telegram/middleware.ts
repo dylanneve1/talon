@@ -6,8 +6,9 @@
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
 import { pushMessage } from "../../storage/history.js";
-import { allowChat } from "./userbot.js";
+import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/pulse.js";
+import { log } from "../../util/log.js";
 import { getSenderName } from "./handlers.js";
 import {
   handleTextMessage,
@@ -151,6 +152,16 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
     }
 
     return next();
+  });
+
+  // ── Bot removed from group — revoke userbot access ─────────────────────
+  bot.on("my_chat_member", (ctx) => {
+    const newStatus = ctx.myChatMember.new_chat_member.status;
+    if (newStatus === "left" || newStatus === "kicked") {
+      const chatId = ctx.chat.id;
+      revokeChat(chatId);
+      log("bot", `Removed from chat ${chatId} — revoked userbot access`);
+    }
   });
 
   // ── Message handlers (delegated to handlers.ts) ──────────────────────────
