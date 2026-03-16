@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 // Mock the log module before importing cron-store
 vi.mock("../util/log.js", () => ({
@@ -31,7 +31,6 @@ const {
   recordCronRun,
   generateCronId,
   validateCronExpression,
-  loadCronJobs,
 } = await import("../storage/cron-store.js");
 
 function makeCronJob(overrides: Partial<CronJob> = {}): CronJob {

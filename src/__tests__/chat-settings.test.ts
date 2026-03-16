@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { describe, it, expect, vi } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
 
 // Mock log module
 vi.mock("../util/log.js", () => ({

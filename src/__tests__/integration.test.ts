@@ -3,8 +3,8 @@
  * Tests the full query lifecycle without spawning actual SDK processes.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDispatcher, execute, isBusy, getQueueSize } from "../core/dispatcher.js";
+import { describe, it, expect, vi } from "vitest";
+import { initDispatcher, execute } from "../core/dispatcher.js";
 import type { QueryBackend, ContextManager } from "../core/types.js";
 import { TalonError } from "../core/errors.js";
 
@@ -49,7 +49,7 @@ function setup(overrides: { queryResult?: Record<string, unknown>; queryError?: 
 
 describe("integration: dispatcher lifecycle", () => {
   it("full happy path: acquire → type → query → activity → release", async () => {
-    const { backend, context, acquired, released, typingCalls, getActivityCount } = setup();
+    const { backend, acquired, released, typingCalls, getActivityCount } = setup();
 
     const result = await execute({
       chatId: "123",
@@ -156,7 +156,7 @@ describe("integration: dispatcher lifecycle", () => {
     });
 
     // Fire two queries simultaneously
-    const [r1, r2] = await Promise.all([
+    await Promise.all([
       execute({ chatId: "A", numericChatId: 1, prompt: "a", senderName: "U", isGroup: false, source: "message" }),
       execute({ chatId: "B", numericChatId: 2, prompt: "b", senderName: "U", isGroup: false, source: "message" }),
     ]);

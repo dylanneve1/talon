@@ -15,7 +15,7 @@ import { log } from "../../util/log.js";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-let activeChatId: number | null = null;
+let _activeChatId: number | null = null;
 let messageCount = 0;
 let busy = false;
 let server: ReturnType<typeof createServer> | null = null;
@@ -196,8 +196,8 @@ export type TerminalFrontend = {
 
 export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
   const context: ContextManager = {
-    acquire: () => { activeChatId = TERMINAL_CHAT_ID; busy = true; },
-    release: () => { activeChatId = null; busy = false; },
+    acquire: () => { _activeChatId = TERMINAL_CHAT_ID; busy = true; },
+    release: () => { _activeChatId = null; busy = false; },
     isBusy: () => busy,
     getMessageCount: () => messageCount,
   };

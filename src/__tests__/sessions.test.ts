@@ -20,7 +20,7 @@ vi.mock("write-file-atomic", () => ({
   default: { sync: writeFileAtomicSync },
 }));
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 // We need to import these functions after mocks are set up
 const {

@@ -64,7 +64,8 @@ export function markdownToTelegramHtml(text: string): string {
   });
 
   // Step 3: Escape HTML in remaining plain text (before applying formatting).
-  // We need to avoid escaping our placeholders.
+  // Escape HTML in plain text segments (skip placeholders marked with \x00)
+  // oxlint-disable-next-line no-control-regex
   processed = processed.replace(/[^`\x00]+/g, (segment) => escapeHtml(segment));
 
   // Step 4: Apply inline formatting.
