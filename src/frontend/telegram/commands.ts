@@ -600,6 +600,34 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         return;
       }
 
+      case "cost": {
+        const sessions = getAllSessions();
+        const totalCost = sessions.reduce((sum, s) => sum + s.info.usage.estimatedCostUsd, 0);
+        const totalInput = sessions.reduce((sum, s) => sum + s.info.usage.totalInputTokens, 0);
+        const totalOutput = sessions.reduce((sum, s) => sum + s.info.usage.totalOutputTokens, 0);
+        const totalCache = sessions.reduce((sum, s) => sum + s.info.usage.totalCacheRead, 0);
+        const totalTurns = sessions.reduce((sum, s) => sum + s.info.turns, 0);
+        const avgCostPerTurn = totalTurns > 0 ? (totalCost / totalTurns) : 0;
+        const cacheRatio = (totalInput + totalCache) > 0
+          ? Math.round((totalCache / (totalInput + totalCache)) * 100)
+          : 0;
+
+        const lines = [
+          `<b>Cost breakdown</b>`,
+          "",
+          `  <b>Total cost</b>    $${totalCost.toFixed(4)}`,
+          `  <b>Per turn</b>      $${avgCostPerTurn.toFixed(4)} avg`,
+          `  <b>Total turns</b>   ${totalTurns}`,
+          `  <b>Sessions</b>      ${sessions.length}`,
+          "",
+          `  <b>Input tokens</b>  ${(totalInput / 1000).toFixed(1)}K`,
+          `  <b>Output tokens</b> ${(totalOutput / 1000).toFixed(1)}K`,
+          `  <b>Cache hits</b>    ${cacheRatio}%`,
+        ];
+        await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+        return;
+      }
+
       case "daily": {
         const today = new Date().toISOString().slice(0, 10);
         const logPath = resolve(config.workspace, "logs", `${today}.md`);
@@ -648,6 +676,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
             "  /admin stats -- uptime, messages, cost, memory\n" +
             "  /admin errors -- last 5 errors\n" +
             "  /admin chats -- list all active chats\n" +
+            "  /admin cost -- cost breakdown across all chats\n" +
             "  /admin daily -- today's interaction log\n" +
             "  /admin top -- top 10 chats by cost\n" +
             "  /admin broadcast &lt;text&gt; -- send to all chats\n" +
