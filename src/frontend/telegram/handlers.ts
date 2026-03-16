@@ -397,19 +397,22 @@ type StreamState = {
   editing: boolean;
 };
 
+// Probe once at startup whether sendMessageDraft is supported
+let draftsSupported: boolean | null = null;
+
 function createStreamCallbacks(
   bot: Bot,
   chatId: number,
-  replyToId: number,
+  _replyToId: number,
   state: StreamState,
 ) {
   const onStreamDelta = async (
     accumulated: string,
     _phase?: "thinking" | "text",
   ) => {
-    if (!state.started || state.editing) return;
-    // Only send if enough new text accumulated (at least 30 chars)
-    if (accumulated.length - state.lastSentLength < 30) return;
+    // Skip if drafts not supported or not ready
+    if (draftsSupported === false || !state.started || state.editing) return;
+    if (accumulated.length - state.lastSentLength < 40) return;
 
     state.editing = true;
     try {
@@ -417,21 +420,22 @@ function createStreamCallbacks(
         ? accumulated.slice(0, 3900) + "\u2026"
         : accumulated;
 
-      // Use native Telegram streaming draft — animates on client
       await bot.api.sendMessageDraft(chatId, state.draftId, display);
+      if (draftsSupported === null) draftsSupported = true;
       state.lastSentLength = accumulated.length;
-    } catch (err) {
-      logWarn("bot", `Draft send failed: ${err instanceof Error ? err.message : err}`);
+    } catch {
+      // If first attempt fails, disable drafts entirely
+      if (draftsSupported === null) {
+        draftsSupported = false;
+        logWarn("bot", "sendMessageDraft not supported — streaming disabled");
+      }
     } finally {
       state.editing = false;
     }
   };
 
   const onTextBlock = async (text: string) => {
-    // Finalize this text block as a real message
-    await sendHtml(bot, chatId, markdownToTelegramHtml(text), replyToId);
-    // Reset draft for next block
-    state.draftId = Math.floor(Math.random() * 2147483647) + 1;
+    await sendHtml(bot, chatId, markdownToTelegramHtml(text), _replyToId);
     state.lastSentLength = 0;
   };
 
@@ -491,10 +495,8 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
       onTextBlock,
     });
 
-    // All responses should go through the send tool.
-    // result.text is only sent as a fallback if NO tools were called at all
-    // AND the text is substantial (not internal monologue like "No response needed").
-    // Short outputs without tool calls are almost always internal reasoning leaks.
+    // Deliver final response if tools didn't already send one.
+    // Short outputs (<20 chars) without tool calls are internal reasoning leaks.
     if (result.bridgeMessageCount === 0 && result.text && result.text.length > 20) {
       await deliverFinalText(
         bot, numericChatId, result.text, replyToId,
