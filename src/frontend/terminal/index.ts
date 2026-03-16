@@ -83,7 +83,7 @@ function handleTerminalAction(body: Record<string, unknown>): unknown {
 
     case "react": {
       stopSpinner();
-      output(`  ${String(body.emoji ?? "\uD83D\uDC4D")}`);
+      output(`\n${pc.cyan("  Talon")}  ${String(body.emoji ?? "\uD83D\uDC4D")}\n`);
       reprompt();
       messageCount++;
       return { ok: true };
