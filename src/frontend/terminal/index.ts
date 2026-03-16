@@ -257,12 +257,65 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           return;
         }
 
+        if (text.startsWith("/model")) {
+          const { getChatSettings, setChatModel, resolveModelName } = await import("../../storage/chat-settings.js");
+          const { resetSession } = await import("../../storage/sessions.js");
+          const arg = text.slice(7).trim();
+          if (!arg) {
+            const current = getChatSettings(String(TERMINAL_CHAT_ID)).model ?? config.model;
+            output(`\n  ${pc.dim("Model:")} ${current}\n  ${pc.dim("Change:")} /model sonnet | opus | haiku\n`);
+          } else {
+            const resolved = resolveModelName(arg);
+            setChatModel(String(TERMINAL_CHAT_ID), resolved);
+            resetSession(String(TERMINAL_CHAT_ID));
+            output(`\n  ${pc.dim("Model set to")} ${resolved}. ${pc.dim("Session reset.")}\n`);
+          }
+          reprompt();
+          return;
+        }
+
+        if (text.startsWith("/effort")) {
+          const { getChatSettings, setChatEffort } = await import("../../storage/chat-settings.js");
+          const arg = text.slice(8).trim();
+          if (!arg) {
+            const current = getChatSettings(String(TERMINAL_CHAT_ID)).effort ?? "adaptive";
+            output(`\n  ${pc.dim("Effort:")} ${current}\n  ${pc.dim("Change:")} /effort off | low | medium | high | max | adaptive\n`);
+          } else {
+            setChatEffort(String(TERMINAL_CHAT_ID), arg === "adaptive" ? undefined : arg as "off" | "low" | "medium" | "high" | "max");
+            output(`\n  ${pc.dim("Effort set to")} ${arg}\n`);
+          }
+          reprompt();
+          return;
+        }
+
+        if (text === "/status") {
+          const { getSessionInfo } = await import("../../storage/sessions.js");
+          const info = getSessionInfo(String(TERMINAL_CHAT_ID));
+          const u = info.usage;
+          const cacheHit = (u.totalInputTokens + u.totalCacheRead) > 0
+            ? Math.round((u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) * 100)
+            : 0;
+          output([
+            "",
+            `  ${pc.dim("Turns")}  ${info.turns}`,
+            `  ${pc.dim("Cost")}   $${u.estimatedCostUsd.toFixed(4)}`,
+            `  ${pc.dim("Cache")}  ${cacheHit}% hit`,
+            `  ${pc.dim("Input")}  ${u.totalInputTokens} tokens`,
+            `  ${pc.dim("Output")} ${u.totalOutputTokens} tokens`,
+            "",
+          ].join("\n"));
+          reprompt();
+          return;
+        }
+
         if (text === "/help") {
           output([
             "",
-            `  ${pc.dim("/reset")}   Clear session`,
-            `  ${pc.dim("/quit")}    Exit`,
-            `  ${pc.dim("/help")}    This message`,
+            `  ${pc.dim("/model")}    Show or change model`,
+            `  ${pc.dim("/effort")}   Set thinking effort`,
+            `  ${pc.dim("/status")}   Session stats`,
+            `  ${pc.dim("/reset")}    Clear session`,
+            `  ${pc.dim("/quit")}     Exit`,
             "",
           ].join("\n"));
           reprompt();
