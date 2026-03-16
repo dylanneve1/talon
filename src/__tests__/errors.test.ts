@@ -99,11 +99,11 @@ describe("friendlyMessage", () => {
   });
 
   it("returns overloaded message", () => {
-    expect(friendlyMessage(new Error("503"))).toContain("overloaded");
+    expect(friendlyMessage(new Error("503"))).toContain("busy");
   });
 
   it("returns network error message", () => {
-    expect(friendlyMessage(new Error("ECONNREFUSED"))).toContain("Network error");
+    expect(friendlyMessage(new Error("ECONNREFUSED"))).toContain("Connection");
   });
 
   it("returns context length message with /reset", () => {

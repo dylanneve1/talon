@@ -8,7 +8,7 @@
  * Knows nothing about the backend or frontend — uses the dispatcher.
  */
 
-import { isBusy, execute } from "./dispatcher.js";
+import { isBusy, execute, getQueueSize } from "./dispatcher.js";
 import {
   setChatPulse,
   getRegisteredPulseChats,
@@ -87,7 +87,7 @@ export function stopPulseTimer(): void {
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 async function runPulse(): Promise<void> {
-  if (isBusy()) return;
+  if (isBusy() || getQueueSize() > 0) return; // don't pulse while queries are queued
 
   for (const chatId of registeredChats) {
     if (!isPulseEnabled(chatId)) continue;

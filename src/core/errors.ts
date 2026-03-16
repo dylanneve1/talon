@@ -172,16 +172,16 @@ export function classify(err: unknown): TalonError {
 
 const FRIENDLY_MESSAGES: Record<ErrorReason, string> = {
   rate_limit: "Rate limited. Try again in a moment.",
-  overloaded: "Claude is currently overloaded. Try again in a moment.",
-  network: "Network error. Try again shortly.",
-  auth: "Authentication error. The bot operator needs to check the API key.",
+  overloaded: "Claude is busy right now. Retrying with a faster model...",
+  network: "Connection issue. Retrying shortly.",
+  auth: "API key error. Bot operator: check your Claude credentials.",
   context_length:
-    "Message too long for context window. Try /reset to start a fresh session.",
-  session_expired: "Session expired. Send your message again to start fresh.",
-  bad_request: "Something went wrong. Try /reset if this persists.",
+    "Conversation too long for the context window. Use /reset to start fresh.",
+  session_expired: "Session expired. Retrying automatically...",
+  bad_request: "Something went wrong. Try /reset if this keeps happening.",
   forbidden: "Permission denied for this action.",
   telegram_api: "Telegram API error. Try again.",
-  unknown: "Something went wrong. Try /reset if this persists.",
+  unknown: "Something went wrong. Try again or /reset.",
 };
 
 /**

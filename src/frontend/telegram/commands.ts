@@ -441,6 +441,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         }
         const sessions = getAllSessions();
         let sent = 0;
+        let failed = 0;
         for (const s of sessions) {
           const numericId = parseInt(s.chatId, 10);
           if (isNaN(numericId)) continue;
@@ -448,10 +449,10 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
             await bot.api.sendMessage(numericId, text);
             sent++;
           } catch {
-            // Chat might have blocked the bot
+            failed++;
           }
         }
-        await ctx.reply(`Broadcast sent to ${sent}/${sessions.length} chats.`);
+        await ctx.reply(`Broadcast: ${sent} sent, ${failed} failed (${sessions.length} total).`);
         return;
       }
 
@@ -470,10 +471,17 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       case "logs": {
         const logPath = resolve(config.workspace, "talon.log");
         try {
-          const logContent = readFileSync(logPath, "utf-8");
-          const lines = logContent.trim().split("\n");
-          const last20 = lines.slice(-20).join("\n");
-          await ctx.reply(`<pre>${escapeHtml(last20.slice(0, 3800))}</pre>`, {
+          // Read only the last 8KB to avoid OOM on large log files
+          const { statSync, openSync, readSync, closeSync } = await import("node:fs");
+          const stat = statSync(logPath);
+          const readSize = Math.min(8192, stat.size);
+          const buf = Buffer.alloc(readSize);
+          const fd = openSync(logPath, "r");
+          readSync(fd, buf, 0, readSize, Math.max(0, stat.size - readSize));
+          closeSync(fd);
+          const tail = buf.toString("utf-8");
+          const lines = tail.trim().split("\n").slice(-20).join("\n");
+          await ctx.reply(`<pre>${escapeHtml(lines.slice(0, 3800))}</pre>`, {
             parse_mode: "HTML",
           });
         } catch {

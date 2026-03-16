@@ -147,17 +147,17 @@ describe("friendlyError", () => {
 
   it("maps authentication errors", () => {
     const result = friendlyError(new Error("401 Unauthorized"));
-    expect(result).toContain("Authentication error");
+    expect(result).toContain("API key error");
   });
 
   it("maps overloaded errors", () => {
     const result = friendlyError(new Error("503 Service Unavailable"));
-    expect(result).toContain("overloaded");
+    expect(result).toContain("busy");
   });
 
   it("maps network errors", () => {
-    expect(friendlyError(new Error("ECONNREFUSED"))).toContain("Network error");
-    expect(friendlyError(new Error("fetch failed"))).toContain("Network error");
+    expect(friendlyError(new Error("ECONNREFUSED"))).toContain("Connection");
+    expect(friendlyError(new Error("fetch failed"))).toContain("Connection");
   });
 
   it("returns generic message for unknown errors", () => {

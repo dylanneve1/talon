@@ -237,7 +237,7 @@ function enqueueMessage(
     // Show hourglass reaction on the queued message to indicate it's been seen
     bot.api
       .setMessageReaction(numericChatId, msg.messageId, [
-        { type: "emoji", emoji: "\u23F3" as "\uD83D\uDC4D" },
+        { type: "emoji", emoji: "\u23F3" as "\uD83D\uDC4D" /* grammY wants union type */ },
       ])
       .catch(() => {});
     existing.queuedReactionMsgIds.push(msg.messageId);

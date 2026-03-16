@@ -9,7 +9,7 @@
  */
 
 import { Cron } from "croner";
-import { isBusy, execute } from "./dispatcher.js";
+import { isBusy, execute, getQueueSize } from "./dispatcher.js";
 import {
   getAllCronJobs,
   recordCronRun,
@@ -54,7 +54,7 @@ export function stopCronTimer(): void {
 
 async function runCronTick(): Promise<void> {
   if (!deps) return;
-  if (isBusy()) return;
+  if (isBusy() || getQueueSize() > 0) return; // don't run cron while user queries are queued
 
   const now = new Date();
   const jobs = getAllCronJobs();
@@ -87,10 +87,8 @@ function isDue(job: CronJob, now: Date): boolean {
     const nextMinute = Math.floor(next.getTime() / 60_000);
     if (nowMinute !== nextMinute) return false;
 
-    if (job.lastRunAt) {
-      const lastMinute = Math.floor(job.lastRunAt / 60_000);
-      if (lastMinute === nowMinute) return false;
-    }
+    // Prevent duplicate runs — ensure at least 55 seconds since last execution
+    if (job.lastRunAt && now.getTime() - job.lastRunAt < 55_000) return false;
 
     return true;
   } catch {
