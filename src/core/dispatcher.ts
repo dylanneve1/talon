@@ -59,9 +59,11 @@ export function getQueueSize(): number {
 export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
   if (!deps || !queue) throw new Error("Dispatcher not initialized");
 
-  return queue.add(() => executeInner(params), {
-    // p-queue wraps our return type
-  }) as Promise<ExecuteResult>;
+  if (queue.pending > 0) {
+    logDebug("dispatcher", `chat=${params.chatId} queued behind ${queue.pending} active query(s)`);
+  }
+
+  return queue.add(() => executeInner(params)) as Promise<ExecuteResult>;
 }
 
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {

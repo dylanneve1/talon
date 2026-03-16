@@ -48,44 +48,48 @@ describe("shouldHandleInGroup", () => {
     },
   });
 
+  // Cast partial objects to any — we only test the mention/reply logic, not the full Context
+  const ctx = (overrides: Parameters<typeof makeCtx>[0] = {}) =>
+    makeCtx(overrides) as any;
+
   it("returns true for DMs (not a group)", () => {
-    expect(shouldHandleInGroup({ ...makeCtx(), chat: { type: "private" } })).toBe(true);
+    expect(shouldHandleInGroup({ ...ctx(), chat: { type: "private" } })).toBe(true);
   });
 
   it("returns true when bot is mentioned with @", () => {
-    expect(shouldHandleInGroup(makeCtx({ text: "hey @testbot what's up" }))).toBe(true);
+    expect(shouldHandleInGroup(ctx({ text: "hey @testbot what's up" }))).toBe(true);
   });
 
   it("returns true when bot is mentioned case-insensitively", () => {
-    expect(shouldHandleInGroup(makeCtx({ text: "Hey @TestBot!" }))).toBe(true);
+    expect(shouldHandleInGroup(ctx({ text: "Hey @TestBot!" }))).toBe(true);
   });
 
   it("returns false when a different bot is mentioned", () => {
-    expect(shouldHandleInGroup(makeCtx({ text: "hey @testbot123 what's up" }))).toBe(false);
+    expect(shouldHandleInGroup(ctx({ text: "hey @testbot123 what's up" }))).toBe(false);
   });
 
   it("returns false when bot name appears without @", () => {
-    expect(shouldHandleInGroup(makeCtx({ text: "testbot is cool" }))).toBe(false);
+    expect(shouldHandleInGroup(ctx({ text: "testbot is cool" }))).toBe(false);
   });
 
   it("returns true when replying to the bot", () => {
-    expect(shouldHandleInGroup(makeCtx({ replyFromId: 999, botId: 999 }))).toBe(true);
+    expect(shouldHandleInGroup(ctx({ replyFromId: 999, botId: 999 }))).toBe(true);
   });
 
   it("returns false when replying to someone else", () => {
-    expect(shouldHandleInGroup(makeCtx({ replyFromId: 123, botId: 999 }))).toBe(false);
+    expect(shouldHandleInGroup(ctx({ replyFromId: 123, botId: 999 }))).toBe(false);
   });
 
   it("returns false for plain group message without mention or reply", () => {
-    expect(shouldHandleInGroup(makeCtx({ text: "hello everyone" }))).toBe(false);
+    expect(shouldHandleInGroup(ctx({ text: "hello everyone" }))).toBe(false);
   });
 
   it("handles @mention at end of message", () => {
-    expect(shouldHandleInGroup(makeCtx({ text: "what do you think @testbot" }))).toBe(true);
+    expect(shouldHandleInGroup(ctx({ text: "what do you think @testbot" }))).toBe(true);
   });
 
   it("handles @mention with punctuation after", () => {
-    expect(shouldHandleInGroup(makeCtx({ text: "@testbot, help me" }))).toBe(true);
+    expect(shouldHandleInGroup(ctx({ text: "@testbot, help me" }))).toBe(true);
   });
 });
 
