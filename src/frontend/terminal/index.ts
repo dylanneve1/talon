@@ -26,15 +26,20 @@ const TERMINAL_CHAT_ID = 1;
 
 // ── Terminal output helpers ─────────────────────────────────────────────────
 
-/** Clear current line and write text */
-function clearAndWrite(text: string): void {
+/** Clear current line completely */
+function clearLine(): void {
   process.stdout.write("\x1b[2K\r");
-  process.stdout.write(text);
 }
 
-/** Write output, preserving the readline prompt */
+/** Write a line of output without corrupting readline */
 function output(text: string): void {
-  clearAndWrite(text + "\n");
+  // Move to start of line, clear it, write our content
+  clearLine();
+  process.stdout.write(text + "\n");
+}
+
+/** Re-show the prompt after all output is done */
+function reprompt(): void {
   if (rl) rl.prompt(true);
 }
 
@@ -49,7 +54,8 @@ function startSpinner(): void {
   spinnerFrame = 0;
   spinnerTimer = setInterval(() => {
     spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
-    clearAndWrite(pc.dim(`  ${SPINNER_FRAMES[spinnerFrame]} thinking...`));
+    clearLine();
+    process.stdout.write(pc.dim(`  ${SPINNER_FRAMES[spinnerFrame]} thinking...`));
   }, 80);
 }
 
@@ -57,7 +63,7 @@ function stopSpinner(): void {
   if (spinnerTimer) {
     clearInterval(spinnerTimer);
     spinnerTimer = null;
-    clearAndWrite("");
+    clearLine();
   }
 }
 
@@ -69,16 +75,16 @@ function handleTerminalAction(body: Record<string, unknown>): unknown {
   switch (action) {
     case "send_message": {
       stopSpinner();
-      const text = String(body.text ?? "");
-      output(`${pc.cyan("  Talon")}  ${text}`);
+      output(`\n${pc.cyan("  Talon")}  ${String(body.text ?? "")}\n`);
+      reprompt();
       messageCount++;
       return { ok: true, message_id: Date.now() };
     }
 
     case "react": {
       stopSpinner();
-      const emoji = String(body.emoji ?? "\uD83D\uDC4D");
-      output(`  ${emoji}`);
+      output(`  ${String(body.emoji ?? "\uD83D\uDC4D")}`);
+      reprompt();
       messageCount++;
       return { ok: true };
     }
@@ -87,13 +93,14 @@ function handleTerminalAction(body: Record<string, unknown>): unknown {
       stopSpinner();
       const text = String(body.text ?? "");
       const rows = body.rows as Array<Array<{ text: string }>> | undefined;
-      let out = `${pc.cyan("  Talon")}  ${text}`;
+      let out = `\n${pc.cyan("  Talon")}  ${text}`;
       if (rows) {
         for (const row of rows) {
           out += "\n  " + row.map((b) => pc.dim(`[${b.text}]`)).join("  ");
         }
       }
-      output(out);
+      output(out + "\n");
+      reprompt();
       messageCount++;
       return { ok: true, message_id: Date.now() };
     }
@@ -201,7 +208,9 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
     },
 
     sendMessage: async (_chatId: number, text: string) => {
+      stopSpinner();
       output(`${pc.cyan("  Talon")}  ${text}`);
+      reprompt();
     },
 
     getBridgePort: () => bridgePort,
@@ -242,16 +251,20 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           const { clearHistory } = await import("../../storage/history.js");
           resetSession(String(TERMINAL_CHAT_ID));
           clearHistory(String(TERMINAL_CHAT_ID));
-          output(pc.dim("  Session cleared."));
+          output(pc.dim("\n  Session cleared.\n"));
+          reprompt();
           return;
         }
 
         if (text === "/help") {
           output([
+            "",
             `  ${pc.dim("/reset")}   Clear session`,
             `  ${pc.dim("/quit")}    Exit`,
             `  ${pc.dim("/help")}    This message`,
+            "",
           ].join("\n"));
+          reprompt();
           return;
         }
 
@@ -270,14 +283,13 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           stopSpinner();
 
           if (messageCount === 0 && result.text && result.text.length > 20) {
-            output(`${pc.cyan("  Talon")}  ${result.text}`);
-          } else if (messageCount === 0) {
-            // No response — just re-prompt
-            rl!.prompt(true);
+            output(`\n${pc.cyan("  Talon")}  ${result.text}\n`);
           }
+          reprompt();
         } catch (err) {
           stopSpinner();
-          output(`  ${pc.red("Error:")} ${err instanceof Error ? err.message : err}`);
+          output(`\n  ${pc.red("Error:")} ${err instanceof Error ? err.message : err}\n`);
+          reprompt();
         }
       });
 
