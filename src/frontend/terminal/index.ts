@@ -42,7 +42,7 @@ const PROMPT = `  ${pc.green("you")}  `;
 
 /** Re-show the prompt after all output is done */
 function reprompt(): void {
-  process.stdout.write(PROMPT);
+  if (rl) rl.prompt();
 }
 
 // ── Spinner ─────────────────────────────────────────────────────────────────
@@ -54,8 +54,8 @@ let spinnerFrame = 0;
 function startSpinner(): void {
   stopSpinner();
   spinnerFrame = 0;
-  // Pause readline so it doesn't overwrite the spinner
-  if (rl) (rl as any).output?.write?.("\x1b[2K\r");
+  // Pause readline — prevent it from redrawing the prompt over our spinner
+  if (rl) rl.pause();
   spinnerTimer = setInterval(() => {
     spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
     process.stdout.write(`\x1b[2K\r${pc.dim(`  ${SPINNER_FRAMES[spinnerFrame]} thinking...`)}`);
@@ -68,6 +68,8 @@ function stopSpinner(): void {
     spinnerTimer = null;
     process.stdout.write("\x1b[2K\r");
   }
+  // Resume readline
+  if (rl) rl.resume();
 }
 
 // ── Bridge action handler ───────────────────────────────────────────────────
@@ -238,7 +240,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
         prompt: PROMPT,
       });
 
-      reprompt();
+      rl.prompt();
 
       rl.on("line", async (input) => {
         const text = input.trim();
