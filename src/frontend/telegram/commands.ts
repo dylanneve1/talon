@@ -570,12 +570,40 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         return;
       }
 
+      case "top": {
+        const sessions = getAllSessions();
+        const sorted = [...sessions]
+          .sort((a, b) => b.info.usage.estimatedCostUsd - a.info.usage.estimatedCostUsd)
+          .slice(0, 10);
+        if (sorted.length === 0) {
+          await ctx.reply("No sessions yet.");
+          return;
+        }
+        const lines = await Promise.all(sorted.map(async (s) => {
+          let title = s.chatId;
+          try {
+            const numId = parseInt(s.chatId, 10);
+            if (!isNaN(numId)) {
+              const chat = await bot.api.getChat(numId);
+              title = "title" in chat ? (chat.title ?? s.chatId) : "first_name" in chat ? (chat.first_name ?? "DM") : s.chatId;
+            }
+          } catch { /* inaccessible */ }
+          return `  $${s.info.usage.estimatedCostUsd.toFixed(4)}  ${escapeHtml(title)}  (${s.info.turns} turns)`;
+        }));
+        await ctx.reply(
+          `<b>Top ${sorted.length} by cost</b>\n\n` + lines.join("\n"),
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+
       default:
         await ctx.reply(
           "<b>/admin commands</b>\n\n" +
             "  /admin stats -- uptime, messages, cost, memory\n" +
             "  /admin errors -- last 5 errors\n" +
             "  /admin chats -- list all active chats\n" +
+            "  /admin top -- top 10 chats by cost\n" +
             "  /admin broadcast &lt;text&gt; -- send to all chats\n" +
             "  /admin kill &lt;chatId&gt; -- reset a chat session\n" +
             "  /admin logs -- last 20 lines of /tmp/talon.log\n" +
