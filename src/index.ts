@@ -15,6 +15,7 @@ import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
 import { loadHistory, flushHistory } from "./storage/history.js";
+import { loadMediaIndex, flushMediaIndex } from "./storage/media-index.js";
 import { cleanupOldLogs } from "./storage/daily-log.js";
 import { initDispatcher, getQueueSize } from "./core/dispatcher.js";
 import {
@@ -41,6 +42,7 @@ loadSessions();
 loadChatSettings();
 loadCronJobs();
 loadHistory();
+loadMediaIndex();
 cleanupOldLogs();
 
 // ── Create frontend (swap this line for a different platform) ────────────────
@@ -111,6 +113,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   flushChatSettings();
   flushCronJobs();
   flushHistory();
+  flushMediaIndex();
   log("shutdown", "State saved");
   process.exit(0);
 }
@@ -124,6 +127,7 @@ process.on("uncaughtException", (err) => {
   flushChatSettings();
   flushCronJobs();
   flushHistory();
+  flushMediaIndex();
   process.exit(1);
 });
 

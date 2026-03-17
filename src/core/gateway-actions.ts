@@ -13,6 +13,7 @@ import {
   getMessagesByUser,
   getKnownUsers,
 } from "../storage/history.js";
+import { formatMediaIndex } from "../storage/media-index.js";
 import {
   addCronJob,
   getCronJob,
@@ -54,6 +55,9 @@ export async function handleSharedAction(
 
     case "list_known_users":
       return { ok: true, text: getKnownUsers(String(chatId)) };
+
+    case "list_media":
+      return { ok: true, text: formatMediaIndex(String(chatId), Math.min(20, Number(body.limit ?? 10))) };
 
     // ── Web fetch ────────────────────────────────────────────────────────
 

@@ -20,6 +20,7 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { setMessageFilePath } from "../../storage/history.js";
+import { addMedia } from "../../storage/media-index.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
 import { log, logError, logWarn } from "../../util/log.js";
 
@@ -566,8 +567,17 @@ async function handleMediaMessage(
       media.fileName,
     );
 
-    // Store file path in history so Claude can find it later
+    // Store file path in history + media index
     setMessageFilePath(chatId, ctx.message.message_id, savedPath);
+    addMedia({
+      chatId,
+      msgId: ctx.message.message_id,
+      senderName: sender,
+      type: media.type as "photo" | "document" | "voice" | "video" | "animation" | "audio" | "sticker",
+      filePath: savedPath,
+      caption: media.caption,
+      timestamp: Date.now(),
+    });
 
     const fwdCtx = getForwardContext(
       ctx.message as Parameters<typeof getForwardContext>[0],
