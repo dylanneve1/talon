@@ -660,7 +660,7 @@ export async function handlePhotoMessage(
     fileName: `photo_${bestPhoto.file_unique_id}.jpg`,
     promptLines: [
       "User sent a photo saved to: ${savedPath}",
-      "Read and analyze this image using the Read tool — you can view images directly.",
+      "IMPORTANT: Read this file with the Read tool to view it. After viewing, briefly describe what you see in your response — image data does NOT persist between turns, only your text description will.",
     ],
     caption,
   });

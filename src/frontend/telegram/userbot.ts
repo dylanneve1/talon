@@ -470,7 +470,7 @@ export async function downloadMessageMedia(params: {
     writeFileSync(filePath, buffer);
 
     log("userbot", `Downloaded media from msg:${params.messageId} → ${filename} (${buffer.length} bytes)`);
-    return `Downloaded to: ${filePath} (${buffer.length} bytes). You can now read/analyze this file.`;
+    return `Downloaded to: ${filePath} (${buffer.length} bytes). Use the Read tool on this path to view the content.`;
   } catch (err) {
     return `Download failed: ${err instanceof Error ? err.message : err}`;
   }
