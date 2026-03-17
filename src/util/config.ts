@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
@@ -85,6 +85,32 @@ function loadSystemPrompt(): string {
       `## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: workspace/memory/memory.md\n\n${memory}`,
     );
 
+  // Workspace file listing for context
+  const workspaceDir = resolve(base, "workspace");
+  let workspaceFiles = "";
+  try {
+    const listDir = (dir: string, prefix = ""): string[] => {
+      const entries: string[] = [];
+      try {
+        for (const e of readdirSync(dir, { withFileTypes: true })) {
+          if (e.name.startsWith(".") || e.name === "node_modules" || e.name === "talon.log") continue;
+          const full = resolve(dir, e.name);
+          if (e.isDirectory()) {
+            const sub = listDir(full, `${prefix}${e.name}/`);
+            if (sub.length > 0 && sub.length <= 8) entries.push(...sub);
+            else if (sub.length > 8) entries.push(`${prefix}${e.name}/ (${sub.length} files)`);
+          } else {
+            const sz = statSync(full).size;
+            entries.push(`${prefix}${e.name} (${sz < 1024 ? sz + "B" : (sz / 1024).toFixed(0) + "KB"})`);
+          }
+        }
+      } catch { /* skip */ }
+      return entries;
+    };
+    const files = listDir(workspaceDir);
+    if (files.length > 0) workspaceFiles = "\n\nCurrent workspace contents:\n" + files.map((f) => `  ${f}`).join("\n");
+  } catch { /* no workspace yet */ }
+
   parts.push(`## Workspace
 
 You have a workspace directory at \`workspace/\`. This is your home — organize it however you want.
@@ -92,7 +118,7 @@ You have a workspace directory at \`workspace/\`. This is your home — organize
 - Daily interaction logs are saved to \`workspace/logs/\` automatically.
 - Files users send you (photos, docs, voice) are saved to \`workspace/uploads/\`.
 - \`workspace/cron.json\` stores your persistent cron jobs. Use the cron tools to create recurring tasks.
-- Everything else is yours to create and organize as you see fit.
+- Everything else is yours to create and organize as you see fit.${workspaceFiles}
 
 ## Cron Jobs
 

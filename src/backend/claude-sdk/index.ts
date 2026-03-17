@@ -82,10 +82,10 @@ export async function handleMessage(
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
 
   // Session continuity: on the first turn after a restart (session exists but turns=0),
-  // prepend the last 3 messages from history so Claude has context
+  // On first turn after restart, prepend recent messages for continuity
   let continuityPrefix = "";
   if (session.sessionId && session.turns === 0) {
-    const recentMsgs = getRecentHistory(chatId, 3);
+    const recentMsgs = getRecentHistory(chatId, 10);
     if (recentMsgs.length > 0) {
       const contextLines = recentMsgs
         .map((m) => {
