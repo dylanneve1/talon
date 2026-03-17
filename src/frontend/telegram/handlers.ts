@@ -19,6 +19,7 @@ import {
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { appendDailyLog } from "../../storage/daily-log.js";
+import { setMessageFilePath } from "../../storage/history.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
 import { log, logError, logWarn } from "../../util/log.js";
 
@@ -564,6 +565,9 @@ async function handleMediaMessage(
       media.fileId,
       media.fileName,
     );
+
+    // Store file path in history so Claude can find it later
+    setMessageFilePath(chatId, ctx.message.message_id, savedPath);
 
     const fwdCtx = getForwardContext(
       ctx.message as Parameters<typeof getForwardContext>[0],

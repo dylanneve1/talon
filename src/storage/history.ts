@@ -27,6 +27,8 @@ export type HistoryMessage = {
     | "video"
     | "animation";
   stickerFileId?: string;
+  /** Saved file path for downloaded media. */
+  filePath?: string;
 };
 
 const MAX_HISTORY_PER_CHAT = 500;
@@ -113,6 +115,14 @@ export function getRecentHistory(chatId: string, limit = 50): HistoryMessage[] {
   return history.slice(-limit);
 }
 
+/** Update a message's file path after media download. */
+export function setMessageFilePath(chatId: string, msgId: number, filePath: string): void {
+  const history = chatHistories.get(chatId);
+  if (!history) return;
+  const msg = history.find((m) => m.msgId === msgId);
+  if (msg) { msg.filePath = filePath; dirty = true; }
+}
+
 export function clearHistory(chatId: string): void {
   chatHistories.delete(chatId);
   dirty = true;
@@ -126,8 +136,9 @@ function formatMessage(m: HistoryMessage): string {
   const stickerTag = m.stickerFileId
     ? ` (sticker_file_id: ${m.stickerFileId})`
     : "";
+  const fileTag = m.filePath ? ` (file: ${m.filePath})` : "";
   const time = new Date(m.timestamp).toISOString().slice(11, 16);
-  return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}${stickerTag}: ${m.text}`;
+  return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}${stickerTag}${fileTag}: ${m.text}`;
 }
 
 export function getRecentFormatted(chatId: string, limit = 20): string {
