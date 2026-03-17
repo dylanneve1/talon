@@ -70,21 +70,20 @@ export async function handleSharedAction(
         if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
         const ct = resp.headers.get("content-type") ?? "";
 
-        // Images/binary: download and save to workspace
-        if (ct.startsWith("image/")) {
+        // Binary content: download and save to workspace
+        const isText = ct.includes("text/") || ct.includes("application/json");
+        if (!isText) {
           const buffer = Buffer.from(await resp.arrayBuffer());
           if (buffer.length > 20 * 1024 * 1024) return { ok: false, error: "File too large (max 20MB)" };
-          const ext = ct.includes("png") ? "png" : ct.includes("gif") ? "gif" : ct.includes("webp") ? "webp" : "jpg";
+          const ext = ct.includes("png") ? "png" : ct.includes("gif") ? "gif" : ct.includes("webp") ? "webp"
+            : ct.includes("jpeg") || ct.includes("jpg") ? "jpg" : ct.includes("pdf") ? "pdf"
+            : ct.includes("zip") ? "zip" : "bin";
           const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
           if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
           const filePath = resolve(uploadsDir, `${Date.now()}-fetched.${ext}`);
           writeFileSync(filePath, buffer);
-          return { ok: true, text: `Downloaded image (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nYou can send it with send(type="photo", file_path="${filePath}") or view it with the Read tool.` };
-        }
-
-        // Text content: extract readable text
-        if (!ct.includes("text/html") && !ct.includes("text/plain") && !ct.includes("application/json")) {
-          return { ok: false, error: `Unsupported content type: ${ct.split(";")[0]}` };
+          const typeLabel = ct.startsWith("image/") ? "image" : ct.split("/")[1]?.split(";")[0] ?? "file";
+          return { ok: true, text: `Downloaded ${typeLabel} (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nRead it with the Read tool or send it with send(type="file", file_path="${filePath}").` };
         }
         const raw = await resp.text();
         const text = raw

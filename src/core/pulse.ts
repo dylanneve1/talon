@@ -144,8 +144,8 @@ async function pulseChat(chatId: string): Promise<void> {
   try {
     const prompt =
       `[System: Pulse check — ${unread.length} new message(s) since last check. ` +
-      `Read them and decide if you want to jump in. Stay silent if nothing to add. ` +
-      `Don't announce yourself.]\n\n${summary}`;
+      `Read them and decide: respond, react with an emoji, or stay silent. ` +
+      `Don't announce yourself. Reactions are great for simple acknowledgements.]\n\n${summary}`;
 
     await execute({
       chatId,

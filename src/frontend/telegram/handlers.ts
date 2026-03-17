@@ -709,7 +709,7 @@ export async function handleVoiceMessage(
     fileName: `voice_${voice.file_unique_id}.ogg`,
     promptLines: [
       `User sent a voice message (${voice.duration}s).`,
-      "Audio file saved to: ${savedPath}",
+      "Audio saved to: ${savedPath}. You cannot transcribe audio — acknowledge it and respond based on context.",
     ],
   });
 }
