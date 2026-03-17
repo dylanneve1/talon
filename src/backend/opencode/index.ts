@@ -14,6 +14,7 @@ import { getRecentHistory } from "../../storage/history.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 
+
 // ── State ───────────────────────────────────────────────────────────────────
 
 let config: TalonConfig;
@@ -198,6 +199,12 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
     };
   } catch (err) {
     const classified = classify(err);
+    // Session expired — reset and retry once
+    if (classified.reason === "session_expired") {
+      logWarn("agent", `[${chatId}] OpenCode session expired, retrying`);
+      resetSession(chatId);
+      return handleMessage(params);
+    }
     logError("agent", `[${chatId}] OpenCode error: ${classified.message}`);
     throw classified;
   }

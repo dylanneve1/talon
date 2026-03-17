@@ -464,7 +464,7 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
   } = params;
 
   const stream: StreamState = {
-    draftId: Math.floor(Math.random() * 2147483647) + 1,
+    draftId: crypto.getRandomValues(new Uint32Array(1))[0] || 1,
     lastSentLength: 0,
     started: false,
     editing: false,

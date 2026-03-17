@@ -130,9 +130,6 @@ async function pulseChat(chatId: string): Promise<void> {
     : recent;
   if (unread.length === 0) return;
 
-  // Mark as checked before running
-  lastCheckMessageId.set(chatId, latestMsgId);
-
   const summary = unread
     .map((m) => {
       const time = new Date(m.timestamp).toISOString().slice(11, 16);
@@ -156,8 +153,11 @@ async function pulseChat(chatId: string): Promise<void> {
       source: "pulse",
     });
 
+    // Mark as checked AFTER successful execution — if it failed, retry next tick
+    lastCheckMessageId.set(chatId, latestMsgId);
     log("pulse", `Checked ${chatId} (${unread.length} new msgs)`);
   } catch (err) {
     logError("pulse", `Chat ${chatId} failed`, err);
+    // Don't update lastCheckMessageId — messages will be retried next pulse
   }
 }
