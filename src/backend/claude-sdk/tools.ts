@@ -484,7 +484,7 @@ server.tool(
 
 server.tool(
   "fetch_url",
-  "Fetch a web page and return its text content. Use this when a user shares a URL and you want to read, summarize, or discuss the page.",
+  "Fetch a URL — web pages return text content, image URLs are downloaded to workspace. Use to read articles, download images, or fetch any URL.",
   {
     url: z.string().describe("The URL to fetch"),
   },

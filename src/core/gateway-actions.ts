@@ -5,6 +5,8 @@
  * Returns null if the action isn't recognized (so the gateway delegates to the frontend).
  */
 
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   getRecentFormatted,
   searchHistory,
@@ -67,6 +69,20 @@ export async function handleSharedAction(
         });
         if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
         const ct = resp.headers.get("content-type") ?? "";
+
+        // Images/binary: download and save to workspace
+        if (ct.startsWith("image/")) {
+          const buffer = Buffer.from(await resp.arrayBuffer());
+          if (buffer.length > 20 * 1024 * 1024) return { ok: false, error: "File too large (max 20MB)" };
+          const ext = ct.includes("png") ? "png" : ct.includes("gif") ? "gif" : ct.includes("webp") ? "webp" : "jpg";
+          const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
+          if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+          const filePath = resolve(uploadsDir, `${Date.now()}-fetched.${ext}`);
+          writeFileSync(filePath, buffer);
+          return { ok: true, text: `Downloaded image (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nYou can send it with send(type="photo", file_path="${filePath}") or view it with the Read tool.` };
+        }
+
+        // Text content: extract readable text
         if (!ct.includes("text/html") && !ct.includes("text/plain") && !ct.includes("application/json")) {
           return { ok: false, error: `Unsupported content type: ${ct.split(";")[0]}` };
         }
