@@ -17,7 +17,7 @@ import { classify } from "./errors.js";
 import { getQueueSize } from "./dispatcher.js";
 import { getHealthStatus } from "../util/watchdog.js";
 import { getActiveSessionCount } from "../storage/sessions.js";
-import { log, logError } from "../util/log.js";
+import { log, logError, logDebug } from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
 import type { FrontendActionHandler } from "./types.js";
 
@@ -107,23 +107,32 @@ async function handleAction(body: Record<string, unknown>): Promise<unknown> {
     return { ok: false, error: "Chat context mismatch" };
   }
 
+  const action = body.action as string;
+  const t0 = Date.now();
+
   try {
     // Try shared actions first (cron, fetch_url, history)
     const shared = await handleSharedAction(body, chatId);
-    if (shared) return shared;
+    if (shared) {
+      logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`);
+      return shared;
+    }
 
     // Delegate to the active frontend
     if (!frontendHandler) {
       return { ok: false, error: "No frontend handler registered" };
     }
     const result = await frontendHandler(body, chatId);
-    if (result) return result;
+    if (result) {
+      logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
+      return result;
+    }
 
-    return { ok: false, error: `Unknown action: ${body.action}` };
+    return { ok: false, error: `Unknown action: ${action}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    logError("gateway", `"${body.action}" failed: ${msg}`);
-    return { ok: false, error: `${body.action}: ${msg}` };
+    logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
+    return { ok: false, error: `${action}: ${msg}` };
   }
 }
 
