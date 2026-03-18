@@ -421,6 +421,8 @@ async function startChat(): Promise<void> {
   const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
 
   const config = loadConfig();
+  if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
+  if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
   initWorkspace(config.workspace);
   loadSessions();
   loadChatSettings();

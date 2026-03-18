@@ -37,6 +37,11 @@ import type { QueryBackend } from "./core/types.js";
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
 const config = loadConfig();
+
+// Expose search config as env vars for gateway-actions
+if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
+if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
+
 initWorkspace(config.workspace);
 loadSessions();
 loadChatSettings();

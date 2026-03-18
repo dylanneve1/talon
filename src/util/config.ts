@@ -16,6 +16,8 @@ const configSchema = z.object({
   adminUserId: z.number().int().optional(),
   pulse: z.boolean().default(true),
   pulseIntervalMs: z.number().int().min(60000).default(300000),
+  braveApiKey: z.string().optional(),
+  searxngUrl: z.string().default("http://localhost:8080"),
 });
 
 export type TalonConfig = z.infer<typeof configSchema> & {
