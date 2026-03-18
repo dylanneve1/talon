@@ -59,6 +59,29 @@ export async function handleSharedAction(
     case "list_media":
       return { ok: true, text: formatMediaIndex(String(chatId), Math.min(20, Number(body.limit ?? 10))) };
 
+    // ── Web search (SearXNG) ────────────────────────────────────────────
+
+    case "web_search": {
+      const query = String(body.query ?? "");
+      if (!query) return { ok: false, error: "Missing query" };
+      const limit = Math.min(10, Number(body.limit ?? 5));
+      const searxUrl = process.env.SEARXNG_URL || "http://localhost:8080";
+      try {
+        const url = `${searxUrl}/search?q=${encodeURIComponent(query)}&format=json`;
+        const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+        if (!resp.ok) return { ok: false, error: `Search failed: HTTP ${resp.status}` };
+        const data = await resp.json() as { results?: Array<{ title: string; url: string; content: string }> };
+        const results = (data.results ?? []).slice(0, limit);
+        if (results.length === 0) return { ok: true, text: `No results for "${query}".` };
+        const formatted = results.map((r, i) =>
+          `${i + 1}. ${r.title}\n   ${r.url}\n   ${r.content?.slice(0, 200) ?? ""}`
+        ).join("\n\n");
+        return { ok: true, text: `Search results for "${query}":\n\n${formatted}` };
+      } catch (err) {
+        return { ok: false, error: `Search failed: ${err instanceof Error ? err.message : err}` };
+      }
+    }
+
     // ── Web fetch ────────────────────────────────────────────────────────
 
     case "fetch_url": {

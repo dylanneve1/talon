@@ -492,6 +492,16 @@ server.tool(
 // ── Web ─────────────────────────────────────────────────────────────────────
 
 server.tool(
+  "web_search",
+  "Search the web using SearXNG. Returns titles, URLs, and snippets. Use for current events, facts, or finding URLs to fetch.",
+  {
+    query: z.string().describe("Search query"),
+    limit: z.number().optional().describe("Max results (default 5, max 10)"),
+  },
+  async (params) => textResult(await callBridge("web_search", params)),
+);
+
+server.tool(
   "fetch_url",
   "Fetch a URL — web pages return text content, image URLs are downloaded to workspace. Use to read articles, download images, or fetch any URL.",
   {

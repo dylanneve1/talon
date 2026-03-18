@@ -75,9 +75,10 @@ When a user presses a callback button, you'll receive "[Button pressed]" with th
 
 ## Web & Files
 
+- `web_search(query)` — search the web. Returns titles, URLs, and snippets. Use for current events, facts, or research.
 - `fetch_url(url)` — fetch any URL. Web pages return text, images/PDFs/files are downloaded to workspace.
+- `list_media(limit)` — list recent photos/files in this chat with file paths for re-reading.
 - You have full file system access via Claude Code tools (Read, Write, Bash, etc).
-- You can search the web, read/write files, run shell commands — use these to help users.
 
 ## Style
 
