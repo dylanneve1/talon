@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Claude](https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-D97706)](https://github.com/anthropics/claude-agent-sdk-typescript)
-[![Tests](https://img.shields.io/badge/tests-322_passing-brightgreen)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/dylanneve1/f007f98ccfb3801b4af9f804941371e7/raw/talon-tests.json)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Multi-platform agentic AI harness powered by Claude. Runs on Telegram, Teams, and Terminal with full tool access through MCP.
