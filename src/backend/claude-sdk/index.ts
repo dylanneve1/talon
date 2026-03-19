@@ -62,6 +62,14 @@ export async function handleMessage(
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     betas: ["context-1m-2025-08-07"],
+    disallowedTools: [
+      "EnterPlanMode", "ExitPlanMode",
+      "EnterWorktree", "ExitWorktree",
+      "TodoWrite", "TodoRead",
+      "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "TaskOutput", "TaskStop",
+      "AskUserQuestion",
+      "NotebookEdit",
+    ],
     ...thinkingConfig,
     mcpServers: {
       // Only register Telegram tools when Telegram frontend is active
