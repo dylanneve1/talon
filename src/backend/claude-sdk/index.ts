@@ -68,7 +68,6 @@ export async function handleMessage(
       "TodoWrite", "TodoRead",
       "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "TaskOutput", "TaskStop",
       "AskUserQuestion",
-      "NotebookEdit",
     ],
     ...thinkingConfig,
     mcpServers: {
