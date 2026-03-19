@@ -5,7 +5,7 @@
  *   - Color-coded messages with left-border styling
  *   - Tool call visibility (name, params, status)
  *   - Streaming phase indicator (thinking / responding / tool use)
- *   - Session stats in header
+ *   - Session stats after each turn
  */
 
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
@@ -28,8 +28,9 @@ import { log } from "../../util/log.js";
 
 const TERMINAL_CHAT_ID = 1;
 const COLS = Math.min(process.stdout.columns || 100, 120);
-const BAR = pc.dim("│");
-const HLINE = pc.dim("─".repeat(COLS - 2));
+
+// Internal tools that are noise — don't show to user
+const HIDDEN_TOOLS = new Set(["ToolSearch", "TodoRead", "TodoWrite"]);
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ let busy = false;
 let rl: ReadlineInterface | null = null;
 let currentPhase: "idle" | "thinking" | "tool" | "text" = "idle";
 let toolCallCount = 0;
+let hasToolOutput = false; // tracks if we've shown any tool calls this turn
 
 // ── Output helpers ───────────────────────────────────────────────────────────
 
@@ -97,10 +99,9 @@ function startSpinner(label = "thinking"): void {
   spinnerLabel = label;
   spinnerFrame = 0;
   if (rl) rl.pause();
-  process.stdout.write("\n"); // breathing room above spinner
   spinnerTimer = setInterval(() => {
     spinnerFrame = (spinnerFrame + 1) % SPINNER.length;
-    write(`  ${pc.dim(SPINNER[spinnerFrame])}  ${pc.dim(spinnerLabel + "...")}`);
+    write(`    ${pc.dim(SPINNER[spinnerFrame])}  ${pc.dim(spinnerLabel)}`);
   }, 80);
 }
 
@@ -119,21 +120,12 @@ function stopSpinner(): void {
 
 // ── Message rendering ────────────────────────────────────────────────────────
 
-function renderUserMessage(text: string): void {
-  writeln();
-  writeln(`  ${pc.green("▍")} ${pc.bold(pc.green("You"))}`);
-  const wrapped = wrap(text, 4, COLS);
-  for (const line of wrapped.split("\n")) {
-    writeln(`  ${pc.green("▍")} ${line.trimStart()}`);
-  }
-}
-
 function renderAssistantMessage(text: string): void {
   writeln();
   writeln(`  ${pc.cyan("▍")} ${pc.bold(pc.cyan("Talon"))}`);
   const wrapped = wrap(text, 4, COLS);
   for (const line of wrapped.split("\n")) {
-    writeln(`  ${pc.cyan("▍")} ${line.trimStart()}`);
+    writeln(`  ${pc.cyan("▍")}  ${line.trimStart()}`);
   }
 }
 
@@ -147,23 +139,29 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
     cleanName = parts[parts.length - 1];
   }
 
+  // Skip internal/noisy tools
+  if (HIDDEN_TOOLS.has(cleanName)) return;
+
+  // Show tools header on first tool call
+  if (!hasToolOutput) {
+    hasToolOutput = true;
+    writeln();
+  }
+
   // Format tool name for display
   const displayName = cleanName.replace(/_/g, " ");
 
   // Extract the most meaningful parameter to show
   let detail = "";
-  const maxDetail = COLS - displayName.length - 12;
+  const maxDetail = COLS - displayName.length - 16;
 
   // Claude Code built-in tools
   if (input.command) {
-    // Bash: show the command being run
     const cmd = String(input.command);
     detail = cmd.length > maxDetail ? cmd.slice(0, maxDetail - 3) + "..." : cmd;
   } else if (input.file_path) {
-    // Read/Write/Edit: show file path
     detail = String(input.file_path);
   } else if (input.pattern && input.path) {
-    // Grep/Glob: show pattern + path
     detail = `${input.pattern} in ${input.path}`;
   } else if (input.pattern) {
     detail = String(input.pattern);
@@ -188,29 +186,17 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
     }
   }
 
-  const detailStr = detail ? ` ${pc.dim(detail)}` : "";
-  writeln(`  ${pc.yellow("▍")} ${pc.dim("└")} ${pc.yellow(displayName)}${detailStr}`);
-}
-
-function renderToolResult(text: string): void {
-  // Show a compact version of tool results
-  const lines = text.split("\n").filter((l) => l.trim());
-  const preview = lines.slice(0, 3).map((l) => l.slice(0, COLS - 10));
-  for (const line of preview) {
-    writeln(`  ${pc.yellow("▍")}   ${pc.dim(line)}`);
-  }
-  if (lines.length > 3) {
-    writeln(`  ${pc.yellow("▍")}   ${pc.dim(`... ${lines.length - 3} more lines`)}`);
-  }
+  const detailStr = detail ? `  ${pc.dim(detail)}` : "";
+  writeln(`    ${pc.yellow("⚡")} ${pc.yellow(displayName)}${detailStr}`);
 }
 
 function renderSystemMessage(text: string): void {
-  writeln(`  ${pc.dim("▍")} ${pc.dim(text)}`);
+  writeln(`  ${pc.dim(text)}`);
 }
 
 function renderError(text: string): void {
   writeln();
-  writeln(`  ${pc.red("▍")} ${pc.red("Error")}: ${text}`);
+  writeln(`  ${pc.red("✖")} ${pc.red(text)}`);
 }
 
 function renderStats(durationMs: number, inputTokens: number, outputTokens: number, cacheRead: number, tools: number): void {
@@ -218,11 +204,12 @@ function renderStats(durationMs: number, inputTokens: number, outputTokens: numb
   const cacheHit = (inputTokens + cacheRead) > 0 ? Math.round((cacheRead / (inputTokens + cacheRead)) * 100) : 0;
   const parts = [
     `${dur}s`,
-    `${inputTokens + outputTokens} tokens`,
+    `${inputTokens + outputTokens} tok`,
     `${cacheHit}% cache`,
   ];
   if (tools > 0) parts.push(`${tools} tool${tools > 1 ? "s" : ""}`);
-  writeln(`  ${pc.dim("▍")} ${pc.dim(parts.join("  ·  "))}`);
+  writeln();
+  writeln(`  ${pc.dim(parts.join("  ·  "))}`);
 }
 
 // ── Terminal action handler ──────────────────────────────────────────────────
@@ -239,7 +226,7 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
       }
       case "react": {
         stopSpinner();
-        writeln(`  ${pc.cyan("▍")} ${String(body.emoji ?? "👍")}`);
+        writeln(`  ${pc.cyan("▍")}  ${String(body.emoji ?? "👍")}`);
         incrementMessageCount();
         return { ok: true };
       }
@@ -250,7 +237,7 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
         renderAssistantMessage(text);
         if (rows) {
           for (const row of rows) {
-            writeln(`  ${pc.cyan("▍")}   ${row.map((b) => pc.dim(`[${b.text}]`)).join("  ")}`);
+            writeln(`  ${pc.cyan("▍")}    ${row.map((b) => pc.dim(`[${b.text}]`)).join("  ")}`);
           }
         }
         incrementMessageCount();
@@ -289,7 +276,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
 
   return {
     context,
-    sendTyping: async () => { startSpinner(currentPhase === "tool" ? "using tools" : "thinking"); },
+    sendTyping: async () => { startSpinner(currentPhase === "tool" ? "running tools" : "thinking"); },
     sendMessage: async (_chatId: number, text: string) => {
       stopSpinner();
       renderAssistantMessage(text);
@@ -303,18 +290,19 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
     },
 
     async start() {
-      // "claude-opus-4-6" → "Opus 4.6", "claude-sonnet-4-6" → "Sonnet 4.6"
+      // "claude-opus-4-6" → "Opus 4.6"
       const model = config.model
         .replace("claude-", "")
-        .replace(/^(\w+)-(\d+)-(\d+)/, (_, name, maj, min) => `${name.charAt(0).toUpperCase() + name.slice(1)} ${maj}.${min}`);
+        .replace(/^(\w+)-(\d+)-(\d+)/, (_, name: string, maj: string, min: string) =>
+          `${name.charAt(0).toUpperCase() + name.slice(1)} ${maj}.${min}`);
       writeln();
-      writeln(`  ${pc.bold(pc.cyan("Talon"))} ${pc.dim("·")} ${pc.dim(model)}`);
-      writeln(`  ${HLINE}`);
-      writeln(`  ${pc.dim("Type a message. /help for commands. Ctrl+C to quit.")}`);
+      writeln(`  ${pc.bold(pc.cyan("Talon"))}  ${pc.dim(model)}`);
+      writeln(`  ${pc.dim("─".repeat(COLS - 2))}`);
+      writeln();
 
       const { execute } = await import("../../core/dispatcher.js");
 
-      const prompt = `  ${pc.green(">")} `;
+      const prompt = `  ${pc.green("❯")} `;
       rl = createInterface({ input: process.stdin, output: process.stdout, prompt });
       rl.prompt();
 
@@ -333,7 +321,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           } else {
             setChatModel(String(TERMINAL_CHAT_ID), resolveModelName(arg));
             resetSession(String(TERMINAL_CHAT_ID));
-            renderSystemMessage(`Model set to ${resolveModelName(arg)}`);
+            renderSystemMessage(`Model → ${resolveModelName(arg)}`);
           }
           reprompt(); return;
         }
@@ -345,7 +333,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
             renderSystemMessage(`Effort: ${getChatSettings(String(TERMINAL_CHAT_ID)).effort ?? "adaptive"}`);
           } else {
             setChatEffort(String(TERMINAL_CHAT_ID), arg === "adaptive" ? undefined : arg as "off" | "low" | "medium" | "high" | "max");
-            renderSystemMessage(`Effort set to ${arg}`);
+            renderSystemMessage(`Effort → ${arg}`);
           }
           reprompt(); return;
         }
@@ -357,12 +345,8 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           const cacheHit = (u.totalInputTokens + u.totalCacheRead) > 0
             ? Math.round((u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) * 100) : 0;
           writeln();
-          writeln(`  ${pc.dim("▍")} ${pc.bold("Session Stats")}`);
-          writeln(`  ${pc.dim("▍")}   Turns:   ${info.turns}`);
-          writeln(`  ${pc.dim("▍")}   Cost:    $${u.estimatedCostUsd.toFixed(4)}`);
-          writeln(`  ${pc.dim("▍")}   Cache:   ${cacheHit}% hit`);
-          writeln(`  ${pc.dim("▍")}   Input:   ${u.totalInputTokens.toLocaleString()} tokens`);
-          writeln(`  ${pc.dim("▍")}   Output:  ${u.totalOutputTokens.toLocaleString()} tokens`);
+          writeln(`  ${pc.bold("Session")}  turns ${info.turns}  ·  $${u.estimatedCostUsd.toFixed(4)}  ·  ${cacheHit}% cache`);
+          writeln(`  ${pc.dim(`in ${u.totalInputTokens.toLocaleString()}  ·  out ${u.totalOutputTokens.toLocaleString()} tokens`)}`);
           reprompt(); return;
         }
 
@@ -377,18 +361,17 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
 
         if (text === "/help") {
           writeln();
-          writeln(`  ${pc.dim("▍")} ${pc.bold("Commands")}`);
-          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/model")} [name]   Show or change model (opus, sonnet, haiku)`);
-          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/effort")} [lvl]   Set thinking effort (off/low/medium/high/max)`);
-          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/status")}         Session stats (tokens, cost, cache)`);
-          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/reset")}          Clear session and history`);
-          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/quit")}           Exit`);
+          writeln(`  ${pc.cyan("/model")} [name]    ${pc.dim("Switch model (opus, sonnet, haiku)")}`);
+          writeln(`  ${pc.cyan("/effort")} [lvl]    ${pc.dim("Thinking effort (off/low/medium/high/max)")}`);
+          writeln(`  ${pc.cyan("/status")}          ${pc.dim("Session stats")}`);
+          writeln(`  ${pc.cyan("/reset")}           ${pc.dim("Clear session")}`);
+          writeln(`  ${pc.cyan("/quit")}            ${pc.dim("Exit")}`);
           reprompt(); return;
         }
 
         // ── Execute query ──
-        // (readline already echoed the input, no need to repeat it)
         toolCallCount = 0;
+        hasToolOutput = false;
         currentPhase = "thinking";
         startSpinner("thinking");
 
@@ -413,7 +396,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
               stopSpinner();
               currentPhase = "tool";
               renderToolCall(toolName, input);
-              startSpinner("using tools");
+              startSpinner("running tools");
             },
             onTextBlock: async (blockText) => {
               stopSpinner();
@@ -429,9 +412,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
             renderAssistantMessage(result.text);
           }
 
-          // Show execution stats
           renderStats(result.durationMs, result.inputTokens, result.outputTokens, result.cacheRead, toolCallCount);
-
           reprompt();
         } catch (err) {
           stopSpinner();
