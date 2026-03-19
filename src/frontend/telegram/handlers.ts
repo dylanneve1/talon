@@ -141,6 +141,25 @@ export async function downloadTelegramFile(
   }
 
   const buffer = Buffer.from(await resp.arrayBuffer());
+  if (buffer.length === 0) throw new Error("Downloaded file is empty (0 bytes)");
+
+  // Validate image files — prevent saving HTML/garbage as .jpg/.png
+  // (corrupt "images" poison the Claude session permanently on resume)
+  const imageExts = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+  const isImageExt = imageExts.some((ext) => fileName.toLowerCase().endsWith(ext));
+  if (isImageExt) {
+    const m = buffer.subarray(0, 16);
+    const validImage =
+      (m[0] === 0xFF && m[1] === 0xD8) || // JPEG
+      (m[0] === 0x89 && m[1] === 0x50 && m[2] === 0x4E && m[3] === 0x47) || // PNG
+      (m[0] === 0x47 && m[1] === 0x49 && m[2] === 0x46) || // GIF
+      (m[0] === 0x52 && m[1] === 0x49 && m[2] === 0x46 && m[3] === 0x46 &&
+       m[8] === 0x57 && m[9] === 0x45 && m[10] === 0x42 && m[11] === 0x50); // WebP
+    if (!validImage) {
+      throw new Error(`File "${fileName}" has image extension but invalid content — not saving to prevent session corruption`);
+    }
+  }
+
   const uploadsDir = resolve(config.workspace, "uploads");
   if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 

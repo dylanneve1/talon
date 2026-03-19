@@ -138,14 +138,38 @@ export async function handleSharedAction(
         if (!isText) {
           const buffer = Buffer.from(await resp.arrayBuffer());
           if (buffer.length > 20 * 1024 * 1024) return { ok: false, error: "File too large (max 20MB)" };
-          const ext = ct.includes("png") ? "png" : ct.includes("gif") ? "gif" : ct.includes("webp") ? "webp"
-            : ct.includes("jpeg") || ct.includes("jpg") ? "jpg" : ct.includes("pdf") ? "pdf"
-            : ct.includes("zip") ? "zip" : "bin";
+          if (buffer.length === 0) return { ok: false, error: "Empty response (0 bytes)" };
+
+          // Validate magic bytes — prevent saving HTML error pages as images
+          // (servers can return error pages with image content-type headers)
+          const magic = buffer.subarray(0, 16);
+          const isRealImage =
+            (magic[0] === 0xFF && magic[1] === 0xD8) || // JPEG
+            (magic[0] === 0x89 && magic[1] === 0x50 && magic[2] === 0x4E && magic[3] === 0x47) || // PNG
+            (magic[0] === 0x47 && magic[1] === 0x49 && magic[2] === 0x46) || // GIF
+            (magic[0] === 0x52 && magic[1] === 0x49 && magic[2] === 0x46 && magic[3] === 0x46 &&
+             magic[8] === 0x57 && magic[9] === 0x45 && magic[10] === 0x42 && magic[11] === 0x50); // WebP
+
+          // If content-type says image but bytes say otherwise, treat as text
+          if (ct.startsWith("image/") && !isRealImage) {
+            const text = buffer.toString("utf-8")
+              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
+              .replace(/<[^>]+>/g, " ")
+              .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+              .replace(/\s+/g, " ")
+              .trim();
+            return { ok: false, error: `Server returned an error page instead of an image. Content: ${text.slice(0, 500)}` };
+          }
+
+          const ext = isRealImage
+            ? ((magic[0] === 0xFF) ? "jpg" : (magic[0] === 0x89) ? "png" : (magic[0] === 0x47) ? "gif" : "webp")
+            : ct.includes("pdf") ? "pdf" : ct.includes("zip") ? "zip" : "bin";
           const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
           if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
           const filePath = resolve(uploadsDir, `${Date.now()}-fetched.${ext}`);
           writeFileSync(filePath, buffer);
-          const typeLabel = ct.startsWith("image/") ? "image" : ct.split("/")[1]?.split(";")[0] ?? "file";
+          const typeLabel = isRealImage ? "image" : ct.split("/")[1]?.split(";")[0] ?? "file";
           return { ok: true, text: `Downloaded ${typeLabel} (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nRead it with the Read tool or send it with send(type="file", file_path="${filePath}").` };
         }
         const raw = await resp.text();

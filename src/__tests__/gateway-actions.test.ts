@@ -81,6 +81,19 @@ function mockResponse(opts: {
   } as unknown as Response;
 }
 
+/** Create an ArrayBuffer with valid image magic bytes. */
+function imageBuffer(type: "png" | "jpg" | "gif" | "webp", size = 1024): ArrayBuffer {
+  const buf = new ArrayBuffer(Math.max(size, 16));
+  const view = new Uint8Array(buf);
+  switch (type) {
+    case "png":  view.set([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]); break;
+    case "jpg":  view.set([0xFF, 0xD8, 0xFF, 0xE0]); break;
+    case "gif":  view.set([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]); break;
+    case "webp": view.set([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]); break;
+  }
+  return buf;
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("gateway shared actions", () => {
@@ -630,7 +643,7 @@ describe("gateway shared actions", () => {
     // ── Binary download tests ─────────────────────────────────────────────
 
     it("downloads binary PNG file", async () => {
-      const buffer = new ArrayBuffer(1024);
+      const buffer = imageBuffer("png");
       const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
         ok: true,
         contentType: "image/png",
@@ -649,7 +662,7 @@ describe("gateway shared actions", () => {
     });
 
     it("downloads JPEG file", async () => {
-      const buffer = new ArrayBuffer(2048);
+      const buffer = imageBuffer("jpg", 2048);
       const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
         ok: true,
         contentType: "image/jpeg",
@@ -666,7 +679,7 @@ describe("gateway shared actions", () => {
     });
 
     it("downloads GIF file", async () => {
-      const buffer = new ArrayBuffer(512);
+      const buffer = imageBuffer("gif", 512);
       const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
         ok: true,
         contentType: "image/gif",
@@ -681,7 +694,7 @@ describe("gateway shared actions", () => {
     });
 
     it("downloads WebP file", async () => {
-      const buffer = new ArrayBuffer(512);
+      const buffer = imageBuffer("webp", 512);
       const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
         ok: true,
         contentType: "image/webp",
@@ -742,7 +755,7 @@ describe("gateway shared actions", () => {
     });
 
     it("creates uploads directory when it does not exist", async () => {
-      const buffer = new ArrayBuffer(256);
+      const buffer = imageBuffer("png", 256);
       const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
         ok: true,
         contentType: "image/png",
@@ -789,7 +802,7 @@ describe("gateway shared actions", () => {
     });
 
     it("includes send instructions in download response", async () => {
-      const buffer = new ArrayBuffer(1024);
+      const buffer = imageBuffer("png");
       const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
         ok: true,
         contentType: "image/png",
@@ -801,6 +814,36 @@ describe("gateway shared actions", () => {
 
       expect(result?.text).toContain("Read it with the Read tool");
       expect(result?.text).toContain('send(type="file"');
+    });
+
+    it("rejects HTML error page disguised as image (magic byte validation)", async () => {
+      const htmlError = new TextEncoder().encode("<!DOCTYPE html><html><body>Wikimedia Error</body></html>");
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/jpeg",
+        arrayBuffer: htmlError.buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://upload.wikimedia.org/img.jpg" }, 123);
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("error page instead of an image");
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it("rejects empty response", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/png",
+        arrayBuffer: new ArrayBuffer(0),
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/empty.png" }, 123);
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("Empty response");
     });
 
     it("passes User-Agent header in fetch", async () => {
