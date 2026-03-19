@@ -422,7 +422,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           currentPhase = "idle";
 
           // Show final response if not already sent via onTextBlock/action handler
-          if (getGatewayMessageCount(TERMINAL_CHAT_ID) === 0 && result.text?.trim()) {
+          if (result.bridgeMessageCount === 0 && result.text?.trim()) {
             renderAssistantMessage(result.text);
           }
 

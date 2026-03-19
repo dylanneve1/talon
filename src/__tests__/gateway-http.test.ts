@@ -66,7 +66,11 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
-  for (let i = 0; i < 10; i++) clearGatewayContext();
+  // Clear contexts for known test chatIds
+  for (const id of [123, 999]) {
+    clearGatewayContext(id);
+    clearGatewayContext(id);
+  }
   mockFrontendHandler.mockClear();
 });
 
