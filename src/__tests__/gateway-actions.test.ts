@@ -15,33 +15,33 @@ const mockSearchHistory = vi.fn(() => "search results here");
 const mockGetMessagesByUser = vi.fn(() => "user messages here");
 const mockGetKnownUsers = vi.fn(() => "alice, bob");
 vi.mock("../storage/history.js", () => ({
-  getRecentFormatted: (...args: unknown[]) => mockGetRecentFormatted(...args),
-  searchHistory: (...args: unknown[]) => mockSearchHistory(...args),
-  getMessagesByUser: (...args: unknown[]) => mockGetMessagesByUser(...args),
-  getKnownUsers: (...args: unknown[]) => mockGetKnownUsers(...args),
+  getRecentFormatted: mockGetRecentFormatted,
+  searchHistory: mockSearchHistory,
+  getMessagesByUser: mockGetMessagesByUser,
+  getKnownUsers: mockGetKnownUsers,
 }));
 
 const mockFormatMediaIndex = vi.fn(() => "media index here");
 vi.mock("../storage/media-index.js", () => ({
-  formatMediaIndex: (...args: unknown[]) => mockFormatMediaIndex(...args),
+  formatMediaIndex: mockFormatMediaIndex,
 }));
 
 const mockAddCronJob = vi.fn();
 const mockGetCronJob = vi.fn();
-const mockGetCronJobsForChat = vi.fn(() => []);
+const mockGetCronJobsForChat = vi.fn((): any[] => []);
 const mockUpdateCronJob = vi.fn();
 const mockDeleteCronJob = vi.fn();
-const mockValidateCronExpression = vi.fn(() => ({ valid: true, next: "2026-04-01T09:00:00.000Z" }));
+const mockValidateCronExpression = vi.fn((): { valid: boolean; next?: string; error?: string } => ({ valid: true, next: "2026-04-01T09:00:00.000Z" }));
 const mockGenerateCronId = vi.fn(() => "test-id-123");
 
 vi.mock("../storage/cron-store.js", () => ({
-  addCronJob: (...args: unknown[]) => mockAddCronJob(...args),
-  getCronJob: (...args: unknown[]) => mockGetCronJob(...args),
-  getCronJobsForChat: (...args: unknown[]) => mockGetCronJobsForChat(...args),
-  updateCronJob: (...args: unknown[]) => mockUpdateCronJob(...args),
-  deleteCronJob: (...args: unknown[]) => mockDeleteCronJob(...args),
-  validateCronExpression: (...args: unknown[]) => mockValidateCronExpression(...args),
-  generateCronId: () => mockGenerateCronId(),
+  addCronJob: mockAddCronJob,
+  getCronJob: mockGetCronJob,
+  getCronJobsForChat: mockGetCronJobsForChat,
+  updateCronJob: mockUpdateCronJob,
+  deleteCronJob: mockDeleteCronJob,
+  validateCronExpression: mockValidateCronExpression,
+  generateCronId: mockGenerateCronId,
   loadCronJobs: vi.fn(),
 }));
 
@@ -50,9 +50,9 @@ const mockExistsSync = vi.fn(() => true);
 const mockMkdirSync = vi.fn();
 const mockWriteFileSync = vi.fn();
 vi.mock("node:fs", () => ({
-  existsSync: (...args: unknown[]) => mockExistsSync(...args),
-  mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
-  writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
+  existsSync: mockExistsSync,
+  mkdirSync: mockMkdirSync,
+  writeFileSync: mockWriteFileSync,
   readFileSync: vi.fn(),
 }));
 
@@ -1055,7 +1055,7 @@ describe("gateway shared actions", () => {
             timezone: "America/New_York",
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date("2026-04-02T09:00:00Z").getTime() });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date("2026-04-02T09:00:00Z").toISOString() });
 
         const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
 
@@ -1084,7 +1084,7 @@ describe("gateway shared actions", () => {
             runCount: 0,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() + 60000 });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date(Date.now() + 60000).toISOString() });
 
         const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
 
@@ -1149,7 +1149,7 @@ describe("gateway shared actions", () => {
             runCount: 0,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date().toISOString() });
 
         const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
 
@@ -1168,8 +1168,8 @@ describe("gateway shared actions", () => {
             content: "evening", name: "Job B", enabled: false, createdAt: 1700000000000, runCount: 2,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() });
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date().toISOString() });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date().toISOString() });
 
         const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
 
@@ -1185,7 +1185,7 @@ describe("gateway shared actions", () => {
             content: "hi", name: "No TZ", enabled: true, createdAt: 1700000000000, runCount: 0,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date().toISOString() });
 
         const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
 

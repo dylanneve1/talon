@@ -12,9 +12,9 @@ const readFileSyncMock = vi.fn(() => "{}");
 const mkdirSyncMock = vi.fn();
 
 vi.mock("node:fs", () => ({
-  existsSync: (...args: unknown[]) => existsSyncMock(...args),
-  readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
-  mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
+  existsSync: existsSyncMock,
+  readFileSync: readFileSyncMock,
+  mkdirSync: mkdirSyncMock,
 }));
 
 const writeFileSyncMock = vi.fn();

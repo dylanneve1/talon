@@ -13,16 +13,16 @@ const mkdirSyncMock = vi.fn();
 
 // Mock fs to avoid real filesystem side effects
 vi.mock("node:fs", () => ({
-  existsSync: (...args: unknown[]) => existsSyncMock(...args),
-  readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
+  existsSync: existsSyncMock,
+  readFileSync: readFileSyncMock,
   writeFileSync: vi.fn(),
-  mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
+  mkdirSync: mkdirSyncMock,
 }));
 
 const writeFileSyncMock = vi.fn();
 
 vi.mock("write-file-atomic", () => ({
-  default: { sync: (...args: unknown[]) => writeFileSyncMock(...args) },
+  default: { sync: writeFileSyncMock },
 }));
 
 import type { CronJob } from "../storage/cron-store.js";
