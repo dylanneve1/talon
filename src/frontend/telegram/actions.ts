@@ -95,12 +95,12 @@ export function createTelegramActionHandler(
         incrementMessageCount();
         const emoji = String(body.emoji ?? "\uD83D\uDC4D");
         try {
-          await withRetry(() => bot.api.setMessageReaction(chatId, Number(body.message_id), [
+          await withRetry(() => bot.api.setMessageReaction(numChatId, Number(body.message_id), [
             { type: "emoji", emoji: emoji as "\uD83D\uDC4D" },
           ]));
         } catch {
           try {
-            await bot.api.setMessageReaction(chatId, Number(body.message_id), [
+            await bot.api.setMessageReaction(numChatId, Number(body.message_id), [
               { type: "emoji", emoji: "\uD83D\uDC4D" },
             ]);
           } catch (e) { return { ok: false, error: `Reaction failed: ${e instanceof Error ? e.message : e}` }; }
@@ -113,22 +113,22 @@ export function createTelegramActionHandler(
         if (text.length > TELEGRAM_MAX_TEXT) return { ok: false, error: `Text too long (max ${TELEGRAM_MAX_TEXT})` };
         const html = markdownToTelegramHtml(text);
         await withRetry(async () => {
-          try { await bot.api.editMessageText(chatId, Number(body.message_id), html, { parse_mode: "HTML" }); }
-          catch { await bot.api.editMessageText(chatId, Number(body.message_id), text); }
+          try { await bot.api.editMessageText(numChatId, Number(body.message_id), html, { parse_mode: "HTML" }); }
+          catch { await bot.api.editMessageText(numChatId, Number(body.message_id), text); }
         });
         return { ok: true };
       }
 
       case "delete_message":
-        await bot.api.deleteMessage(chatId, Number(body.message_id));
+        await bot.api.deleteMessage(numChatId, Number(body.message_id));
         return { ok: true };
 
       case "pin_message":
-        await bot.api.pinChatMessage(chatId, Number(body.message_id));
+        await bot.api.pinChatMessage(numChatId, Number(body.message_id));
         return { ok: true };
 
       case "unpin_message":
-        await bot.api.unpinChatMessage(chatId, body.message_id ? Number(body.message_id) : undefined);
+        await bot.api.unpinChatMessage(numChatId, body.message_id ? Number(body.message_id) : undefined);
         return { ok: true };
 
       case "forward_message": {
@@ -139,12 +139,12 @@ export function createTelegramActionHandler(
       }
 
       case "copy_message": {
-        const sent = await bot.api.copyMessage(chatId, chatId, Number(body.message_id));
+        const sent = await bot.api.copyMessage(numChatId, numChatId, Number(body.message_id));
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_chat_action":
-        await bot.api.sendChatAction(chatId, String(body.chat_action ?? "typing") as "typing");
+        await bot.api.sendChatAction(numChatId, String(body.chat_action ?? "typing") as "typing");
         return { ok: true };
 
       case "send_message_with_buttons": {
@@ -157,10 +157,10 @@ export function createTelegramActionHandler(
           btn.url ? { text: btn.text, url: btn.url } : { text: btn.text, callback_data: btn.callback_data ?? btn.text },
         ));
         try {
-          const sent = await bot.api.sendMessage(chatId, html, { parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } });
+          const sent = await bot.api.sendMessage(numChatId, html, { parse_mode: "HTML", reply_markup: { inline_keyboard: keyboard } });
           return { ok: true, message_id: sent.message_id };
         } catch {
-          const sent = await bot.api.sendMessage(chatId, text, { reply_markup: { inline_keyboard: keyboard } });
+          const sent = await bot.api.sendMessage(numChatId, text, { reply_markup: { inline_keyboard: keyboard } });
           return { ok: true, message_id: sent.message_id };
         }
       }
@@ -197,24 +197,24 @@ export function createTelegramActionHandler(
         const rp = replyParams(body);
         let sent;
         switch (action) {
-          case "send_file": sent = await withRetry(() => bot.api.sendDocument(chatId, file, { caption, reply_parameters: rp })); break;
-          case "send_photo": sent = await withRetry(() => bot.api.sendPhoto(chatId, file, { caption, reply_parameters: rp })); break;
-          case "send_video": sent = await withRetry(() => bot.api.sendVideo(chatId, file, { caption, reply_parameters: rp })); break;
-          case "send_animation": sent = await withRetry(() => bot.api.sendAnimation(chatId, file, { caption, reply_parameters: rp })); break;
-          default: sent = await withRetry(() => bot.api.sendVoice(chatId, file, { caption, reply_parameters: rp })); break;
+          case "send_file": sent = await withRetry(() => bot.api.sendDocument(numChatId, file, { caption, reply_parameters: rp })); break;
+          case "send_photo": sent = await withRetry(() => bot.api.sendPhoto(numChatId, file, { caption, reply_parameters: rp })); break;
+          case "send_video": sent = await withRetry(() => bot.api.sendVideo(numChatId, file, { caption, reply_parameters: rp })); break;
+          case "send_animation": sent = await withRetry(() => bot.api.sendAnimation(numChatId, file, { caption, reply_parameters: rp })); break;
+          default: sent = await withRetry(() => bot.api.sendVoice(numChatId, file, { caption, reply_parameters: rp })); break;
         }
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_sticker": {
         incrementMessageCount();
-        const sent = await bot.api.sendSticker(chatId, String(body.file_id ?? ""), { reply_parameters: replyParams(body) });
+        const sent = await bot.api.sendSticker(numChatId, String(body.file_id ?? ""), { reply_parameters: replyParams(body) });
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_poll": {
         incrementMessageCount();
-        const sent = await bot.api.sendPoll(chatId, String(body.question ?? ""),
+        const sent = await bot.api.sendPoll(numChatId, String(body.question ?? ""),
           (body.options as string[] ?? []).map((o) => ({ text: o })),
           { is_anonymous: body.is_anonymous as boolean | undefined, allows_multiple_answers: body.allows_multiple_answers as boolean | undefined,
             type: body.type as "regular" | "quiz" | undefined, correct_option_id: body.correct_option_id as number | undefined,
@@ -224,37 +224,37 @@ export function createTelegramActionHandler(
 
       case "send_location": {
         incrementMessageCount();
-        const sent = await bot.api.sendLocation(chatId, Number(body.latitude), Number(body.longitude));
+        const sent = await bot.api.sendLocation(numChatId, Number(body.latitude), Number(body.longitude));
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_contact": {
         incrementMessageCount();
-        const sent = await bot.api.sendContact(chatId, String(body.phone_number), String(body.first_name),
+        const sent = await bot.api.sendContact(numChatId, String(body.phone_number), String(body.first_name),
           { last_name: body.last_name as string | undefined });
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_dice": {
         incrementMessageCount();
-        const sent = await bot.api.sendDice(chatId, (body.emoji as string) || "\uD83C\uDFB2");
+        const sent = await bot.api.sendDice(numChatId, (body.emoji as string) || "\uD83C\uDFB2");
         return { ok: true, message_id: sent.message_id, value: sent.dice?.value };
       }
 
       // ── Chat info ──────────────────────────────────────────────────────
       case "get_chat_info": {
-        const chat = await bot.api.getChat(chatId);
-        const count = await bot.api.getChatMemberCount(chatId).catch(() => null);
+        const chat = await bot.api.getChat(numChatId);
+        const count = await bot.api.getChatMemberCount(numChatId).catch(() => null);
         return { ok: true, id: chat.id, type: chat.type, title: "title" in chat ? chat.title : undefined, member_count: count };
       }
 
       case "get_chat_member": {
-        const m = await bot.api.getChatMember(chatId, Number(body.user_id));
+        const m = await bot.api.getChatMember(numChatId, Number(body.user_id));
         return { ok: true, status: m.status, user: { id: m.user.id, first_name: m.user.first_name, username: m.user.username } };
       }
 
       case "get_chat_admins": {
-        const admins = await bot.api.getChatAdministrators(chatId);
+        const admins = await bot.api.getChatAdministrators(numChatId);
         const text = admins.map((a) => {
           const name = [a.user.first_name, a.user.last_name].filter(Boolean).join(" ");
           const title = "custom_title" in a && a.custom_title ? ` "${a.custom_title}"` : "";
@@ -264,60 +264,60 @@ export function createTelegramActionHandler(
       }
 
       case "get_chat_member_count":
-        return { ok: true, count: await bot.api.getChatMemberCount(chatId) };
+        return { ok: true, count: await bot.api.getChatMemberCount(numChatId) };
 
       case "set_chat_title":
-        await bot.api.setChatTitle(chatId, String(body.title));
+        await bot.api.setChatTitle(numChatId, String(body.title));
         return { ok: true };
 
       case "set_chat_description":
-        await bot.api.setChatDescription(chatId, String(body.description ?? ""));
+        await bot.api.setChatDescription(numChatId, String(body.description ?? ""));
         return { ok: true };
 
       // ── History (userbot-enhanced) ─────────────────────────────────────
       // These OVERRIDE the shared in-memory history when userbot is available
       case "read_history":
         if (isUserClientReady()) {
-          return { ok: true, text: await userbotHistory({ chatId, limit: Math.min(100, Number(body.limit ?? 30)), offsetId: body.offset_id as number | undefined, before: body.before as string | undefined }) };
+          return { ok: true, text: await userbotHistory({ chatId: numChatId, limit: Math.min(100, Number(body.limit ?? 30)), offsetId: body.offset_id as number | undefined, before: body.before as string | undefined }) };
         }
         return null; // fall through to shared handler
 
       case "search_history":
         if (isUserClientReady()) {
-          return { ok: true, text: await userbotSearch({ chatId, query: String(body.query ?? ""), limit: Math.min(100, Number(body.limit ?? 20)) }) };
+          return { ok: true, text: await userbotSearch({ chatId: numChatId, query: String(body.query ?? ""), limit: Math.min(100, Number(body.limit ?? 20)) }) };
         }
         return null;
 
       case "get_user_messages":
         if (isUserClientReady()) {
-          return { ok: true, text: await userbotSearch({ chatId, query: String(body.user_name ?? ""), limit: Math.min(50, Number(body.limit ?? 20)) }) };
+          return { ok: true, text: await userbotSearch({ chatId: numChatId, query: String(body.user_name ?? ""), limit: Math.min(50, Number(body.limit ?? 20)) }) };
         }
         return null;
 
       case "list_known_users":
         if (isUserClientReady()) {
-          return { ok: true, text: await userbotParticipantDetails({ chatId, limit: Number(body.limit ?? 50) }) };
+          return { ok: true, text: await userbotParticipantDetails({ chatId: numChatId, limit: Number(body.limit ?? 50) }) };
         }
         return null;
 
       case "get_member_info":
         if (isUserClientReady()) {
-          return { ok: true, text: await userbotGetUserInfo({ chatId, userId: Number(body.user_id) }) };
+          return { ok: true, text: await userbotGetUserInfo({ chatId: numChatId, userId: Number(body.user_id) }) };
         }
         return { ok: false, error: "User client not connected." };
 
       case "get_message_by_id":
         if (isUserClientReady()) {
-          return { ok: true, text: await userbotGetMessage({ chatId, messageId: Number(body.message_id) }) };
+          return { ok: true, text: await userbotGetMessage({ chatId: numChatId, messageId: Number(body.message_id) }) };
         }
         return { ok: false, error: "User client not connected." };
 
       case "get_pinned_messages":
-        if (isUserClientReady()) return { ok: true, text: await userbotPinnedMessages({ chatId }) };
+        if (isUserClientReady()) return { ok: true, text: await userbotPinnedMessages({ chatId: numChatId }) };
         return { ok: false, error: "User client not connected." };
 
       case "online_count":
-        if (isUserClientReady()) return { ok: true, text: await userbotOnlineCount({ chatId }) };
+        if (isUserClientReady()) return { ok: true, text: await userbotOnlineCount({ chatId: numChatId }) };
         return { ok: false, error: "User client not connected." };
 
       case "save_sticker_pack": {
@@ -349,7 +349,7 @@ export function createTelegramActionHandler(
       case "download_media": {
         if (isUserClientReady()) {
           const { downloadMessageMedia } = await import("./userbot.js");
-          return { ok: true, text: await downloadMessageMedia({ chatId, messageId: Number(body.message_id) }) };
+          return { ok: true, text: await downloadMessageMedia({ chatId: numChatId, messageId: Number(body.message_id) }) };
         }
         return { ok: false, error: "User client not connected." };
       }

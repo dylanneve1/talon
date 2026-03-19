@@ -85,22 +85,35 @@ for (const fe of enabledFrontends) {
 if (frontends.length === 0) throw new Error("No frontends configured");
 
 // Multiplexed frontend — routes by chatId prefix to the correct frontend
+const prefixMap: Array<{ prefix: string; frontend: Frontend }> = enabledFrontends.map((fe, i) => ({
+  prefix: fe === "telegram" ? "tg:" : fe === "teams" ? "teams:" : "terminal",
+  frontend: frontends[i],
+}));
+
+function routeByPrefix(chatId: string): Frontend | undefined {
+  for (const { prefix, frontend: f } of prefixMap) {
+    if (chatId.startsWith(prefix)) return f;
+  }
+  return frontends[0]; // fallback
+}
+
 const frontend: Frontend = frontends.length === 1 ? frontends[0] : {
   context: {
-    acquire: (chatId: string) => { for (const f of frontends) f.context.acquire(chatId); },
-    release: (chatId: string) => { for (const f of frontends) f.context.release(chatId); },
+    acquire: (chatId: string) => { const f = routeByPrefix(chatId); if (f) f.context.acquire(chatId); },
+    release: (chatId: string) => { const f = routeByPrefix(chatId); if (f) f.context.release(chatId); },
     isBusy: () => frontends.some((f) => f.context.isBusy()),
-    getMessageCount: () => frontends.reduce((sum, f) => sum + f.context.getMessageCount(), 0),
+    getMessageCount: () => {
+      // All frontends share the same gateway singleton, so just query once
+      return frontends[0].context.getMessageCount();
+    },
   },
   sendTyping: async (chatId: string) => {
-    for (const f of frontends) {
-      try { await f.sendTyping(chatId); return; } catch { /* wrong frontend for this chatId */ }
-    }
+    const f = routeByPrefix(chatId);
+    if (f) await f.sendTyping(chatId);
   },
   sendMessage: async (chatId: string, text: string) => {
-    for (const f of frontends) {
-      try { await f.sendMessage(chatId, text); return; } catch { /* wrong frontend */ }
-    }
+    const f = routeByPrefix(chatId);
+    if (f) await f.sendMessage(chatId, text);
   },
   getBridgePort: () => frontends[0].getBridgePort(),
   init: async () => { for (const f of frontends) await f.init(); },
@@ -195,15 +208,10 @@ process.on("uncaughtException", (err) => {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
-  // Teams conversation store flushes synchronously in frontend.stop() during graceful shutdown.
-  // In uncaught exception path, the store was already loaded, so import is cached and sync-safe.
-  if (enabledFrontends.includes("teams")) {
-    try {
-      // Dynamic import is cached after first load — this resolves immediately
-      import("./frontend/teams/conversation-store.js").then(({ flushConversationStore }) => {
-        flushConversationStore();
-      }).catch(() => {});
-    } catch { /* best effort */ }
+  // Teams conversation store flush — module was already imported during init,
+  // so we can access it via the cached frontend's stop (which calls flush synchronously)
+  for (const f of frontends) {
+    try { f.stop(); } catch { /* best effort */ }
   }
   process.exit(1);
 });
