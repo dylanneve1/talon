@@ -423,6 +423,13 @@ async function startChat(): Promise<void> {
   const config = loadConfig();
   if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
   if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
+
+  // Load plugins
+  if (config.plugins && config.plugins.length > 0) {
+    const { loadPlugins } = await import("./core/plugin.js");
+    await loadPlugins(config.plugins);
+  }
+
   initWorkspace(config.workspace);
   loadSessions();
   loadChatSettings();

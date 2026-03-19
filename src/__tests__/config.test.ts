@@ -32,21 +32,21 @@ describe("config", () => {
   }
 
   describe("loadConfig", () => {
-    it("exits gracefully on first run with no config", async () => {
-      const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => { throw new Error("exit"); });
+    it("loads config on first run with no config (creates defaults)", async () => {
       mockFs(null); // no config file exists
 
       const { loadConfig } = await import("../util/config.js");
-      expect(() => loadConfig()).toThrow("exit");
-      expect(exitSpy).toHaveBeenCalledWith(0);
-      exitSpy.mockRestore();
+      const config = loadConfig();
+      expect(config.botToken).toBe("");
+      expect(config.model).toBe("claude-sonnet-4-6");
     });
 
-    it("throws when config exists but botToken is empty", async () => {
+    it("loads config with empty botToken", async () => {
       mockFs({ botToken: "" });
 
       const { loadConfig } = await import("../util/config.js");
-      expect(() => loadConfig()).toThrow("Missing bot token");
+      const config = loadConfig();
+      expect(config.botToken).toBe("");
     });
 
     it("loads config from talon.json", async () => {

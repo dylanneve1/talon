@@ -11,7 +11,7 @@ const pluginEntrySchema = z.object({
 });
 
 const configSchema = z.object({
-  botToken: z.string().min(1, "Missing bot token"),
+  botToken: z.string().default(""),
   backend: z.enum(["claude", "opencode"]).default("claude"),
   model: z.string().default("claude-sonnet-4-6"),
   maxMessageLength: z.number().int().min(100).default(4000),
@@ -147,16 +147,6 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
 export function loadConfig(): TalonConfig {
   const isFirstRun = ensureConfigFile();
   const fileConfig = loadConfigFile();
-
-  if (!fileConfig.botToken) {
-    if (isFirstRun) {
-      console.log("\n  🦅 Welcome to Talon!\n");
-      console.log(`  Run ${"\x1b[36m"}talon setup${"\x1b[0m"} for guided setup.`);
-      console.log(`  Or edit ${CONFIG_FILE} manually.\n`);
-      process.exit(0);
-    }
-    throw new Error(`Missing bot token. Run "talon setup" or add "botToken" to ${CONFIG_FILE}.`);
-  }
 
   const parsed = configSchema.parse(fileConfig);
   const workspace = resolve(process.cwd(), "workspace");
