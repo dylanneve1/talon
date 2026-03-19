@@ -143,14 +143,6 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
   // Skip internal/noisy tools
   if (HIDDEN_TOOLS.has(cleanName)) return;
 
-  // Collapse consecutive ToolSearch calls into a silent count
-  if (cleanName === "ToolSearch") {
-    if (lastToolName === "ToolSearch") return; // suppress repeats
-    lastToolName = "ToolSearch";
-  } else {
-    lastToolName = cleanName;
-  }
-
   // Show tools header on first tool call
   if (!hasToolOutput) {
     hasToolOutput = true;
