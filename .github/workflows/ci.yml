@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: read
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -32,37 +29,18 @@ jobs:
         run: npm run lint
 
       - name: Run tests
-        run: |
-          npx vitest run --reporter=json --outputFile=test-results.json 2>&1 || true
-          npx vitest run
+        run: npx vitest run --reporter=verbose --reporter=json --outputFile=test-results.json
 
-      - name: Extract test stats
-        if: always() && github.ref == 'refs/heads/main'
-        id: tests
+      - name: Test summary
+        if: always()
         run: |
           if [ -f test-results.json ]; then
             PASSED=$(node -e "const r=require('./test-results.json'); console.log(r.numPassedTests ?? 0)")
             FAILED=$(node -e "const r=require('./test-results.json'); console.log(r.numFailedTests ?? 0)")
             TOTAL=$(node -e "const r=require('./test-results.json'); console.log(r.numTotalTests ?? 0)")
-            echo "passed=$PASSED" >> $GITHUB_OUTPUT
-            echo "failed=$FAILED" >> $GITHUB_OUTPUT
-            echo "total=$TOTAL" >> $GITHUB_OUTPUT
-            if [ "$FAILED" = "0" ]; then
-              echo "color=brightgreen" >> $GITHUB_OUTPUT
-              echo "label=${PASSED} passing" >> $GITHUB_OUTPUT
-            else
-              echo "color=red" >> $GITHUB_OUTPUT
-              echo "label=${PASSED} passing, ${FAILED} failing" >> $GITHUB_OUTPUT
-            fi
+            echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | Failed | Total |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| $PASSED | $FAILED | $TOTAL |" >> $GITHUB_STEP_SUMMARY
           fi
-
-      - name: Update test badge
-        if: always() && github.ref == 'refs/heads/main' && steps.tests.outputs.label
-        uses: schneegans/dynamic-badges-action@v1.7.0
-        with:
-          auth: ${{ secrets.GIST_TOKEN }}
-          gistID: ${{ vars.BADGE_GIST_ID }}
-          filename: talon-tests.json
-          label: tests
-          message: ${{ steps.tests.outputs.label }}
-          color: ${{ steps.tests.outputs.color }}
