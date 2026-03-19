@@ -19,7 +19,7 @@ import {
   isGatewayBusy,
   getGatewayMessageCount,
   getGatewayPort,
-  setFrontendHandler,
+  addFrontendHandler,
 } from "../../core/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions.js";
 import {
@@ -72,7 +72,7 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
 
     async init() {
       // Register Telegram action handler with the core gateway
-      setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken!));
+      addFrontendHandler("tg:", createTelegramActionHandler(bot, InputFile, config.botToken!));
 
       const port = await startGateway(19876);
       log("bot", `Gateway started on port ${port}`);

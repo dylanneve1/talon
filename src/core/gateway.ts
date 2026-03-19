@@ -28,14 +28,20 @@ let messagesSent = 0;
 let locked = false;
 let owner: string | null = null;
 let refCount = 0;
-let frontendHandler: FrontendActionHandler | null = null;
+const frontendHandlers = new Map<string, FrontendActionHandler>();
 let server: ReturnType<typeof createServer> | null = null;
 let activePort = 0;
 
 // ── Frontend handler registration ───────────────────────────────────────────
 
+/** Register a handler for a specific chatId prefix (e.g., "tg:", "teams:"). */
+export function addFrontendHandler(prefix: string, handler: FrontendActionHandler): void {
+  frontendHandlers.set(prefix, handler);
+}
+
+/** @deprecated Use addFrontendHandler with a prefix. Kept for backward compat. */
 export function setFrontendHandler(handler: FrontendActionHandler): void {
-  frontendHandler = handler;
+  frontendHandlers.set("", handler); // catch-all
 }
 
 // ── Context management (same ref-counting as before) ────────────────────────
@@ -92,6 +98,17 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
+// ── Handler routing ──────────────────────────────────────────────────────────
+
+function getHandlerForChat(chatId: string): FrontendActionHandler | null {
+  // Try prefix-matched handlers first (e.g., "tg:", "teams:")
+  for (const [prefix, handler] of frontendHandlers) {
+    if (prefix && chatId.startsWith(prefix)) return handler;
+  }
+  // Fall back to catch-all (empty prefix) if registered
+  return frontendHandlers.get("") ?? null;
+}
+
 // ── Action dispatch ─────────────────────────────────────────────────────────
 
 async function handleAction(body: Record<string, unknown>): Promise<unknown> {
@@ -118,11 +135,12 @@ async function handleAction(body: Record<string, unknown>): Promise<unknown> {
       return shared;
     }
 
-    // Delegate to the active frontend
-    if (!frontendHandler) {
+    // Delegate to the matching frontend handler (by chatId prefix)
+    const handler = getHandlerForChat(chatId);
+    if (!handler) {
       return { ok: false, error: "No frontend handler registered" };
     }
-    const result = await frontendHandler(body, chatId);
+    const result = await handler(body, chatId);
     if (result) {
       logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
       return result;

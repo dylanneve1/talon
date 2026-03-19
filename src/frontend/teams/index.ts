@@ -22,7 +22,7 @@ import {
   isGatewayBusy,
   getGatewayMessageCount,
   getGatewayPort,
-  setFrontendHandler,
+  addFrontendHandler,
 } from "../../core/gateway.js";
 import { createTeamsActionHandler } from "./actions.js";
 import { createTeamsActivityHandler } from "./handlers.js";
@@ -107,7 +107,7 @@ export function createTeamsFrontend(config: TalonConfig): TeamsFrontend {
       initConversationStore(config.workspace);
 
       // Register Teams action handler with the core gateway
-      setFrontendHandler(createTeamsActionHandler(adapter));
+      addFrontendHandler("teams:", createTeamsActionHandler(adapter));
 
       const port = await startGateway(19876);
       log("teams", `Gateway started on port ${port}`);
@@ -147,9 +147,6 @@ export function createTeamsFrontend(config: TalonConfig): TeamsFrontend {
         });
         httpServer!.once("error", reject);
       });
-
-      // Keep process alive
-      await new Promise(() => {});
     },
 
     async stop() {

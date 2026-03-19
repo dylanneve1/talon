@@ -17,7 +17,7 @@ import {
   clearGatewayContext,
   getGatewayMessageCount,
   getGatewayPort,
-  setFrontendHandler,
+  addFrontendHandler,
   incrementMessageCount,
 } from "../../core/gateway.js";
 import { log } from "../../util/log.js";
@@ -140,7 +140,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
     getBridgePort: () => getGatewayPort(),
 
     async init() {
-      setFrontendHandler(createTerminalActionHandler());
+      addFrontendHandler("terminal", createTerminalActionHandler());
       const port = await startGateway(19877);
       log("bot", `Terminal gateway on port ${port}`);
     },

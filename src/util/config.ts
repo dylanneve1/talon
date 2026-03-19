@@ -12,8 +12,10 @@ const teamsConfigSchema = z.object({
   port: z.number().int().default(3978),
 });
 
+const frontendEnum = z.enum(["telegram", "teams", "terminal"]);
+
 const configSchema = z.object({
-  frontend: z.enum(["telegram", "teams", "terminal"]).default("telegram"),
+  frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
   backend: z.enum(["claude", "opencode"]).default("claude"),
   model: z.string().default("claude-sonnet-4-6"),
@@ -33,6 +35,11 @@ export type TalonConfig = z.infer<typeof configSchema> & {
   systemPrompt: string;
   workspace: string;
 };
+
+/** Normalize frontend config to always be an array. */
+export function getFrontends(config: TalonConfig): string[] {
+  return Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+}
 
 // ── Config file ─────────────────────────────────────────────────────────────
 
@@ -151,23 +158,26 @@ export function loadConfig(): TalonConfig {
   const isFirstRun = ensureConfigFile();
   const fileConfig = loadConfigFile();
 
-  const frontend = (fileConfig.frontend as string) ?? "telegram";
+  const rawFrontend = fileConfig.frontend ?? "telegram";
+  const frontends = Array.isArray(rawFrontend) ? rawFrontend as string[] : [rawFrontend as string];
 
   // Validate per-frontend requirements
-  if (frontend === "telegram" && !fileConfig.botToken) {
-    if (isFirstRun) {
-      console.log("\n  🦅 Welcome to Talon!\n");
-      console.log(`  Run ${"\x1b[36m"}talon setup${"\x1b[0m"} for guided setup.`);
-      console.log(`  Or edit ${CONFIG_FILE} manually.\n`);
-      process.exit(0);
+  for (const fe of frontends) {
+    if (fe === "telegram" && !fileConfig.botToken) {
+      if (isFirstRun) {
+        console.log("\n  🦅 Welcome to Talon!\n");
+        console.log(`  Run ${"\x1b[36m"}talon setup${"\x1b[0m"} for guided setup.`);
+        console.log(`  Or edit ${CONFIG_FILE} manually.\n`);
+        process.exit(0);
+      }
+      throw new Error(`Missing bot token. Run "talon setup" or add "botToken" to ${CONFIG_FILE}.`);
     }
-    throw new Error(`Missing bot token. Run "talon setup" or add "botToken" to ${CONFIG_FILE}.`);
-  }
 
-  if (frontend === "teams") {
-    const teams = fileConfig.teams as Record<string, unknown> | undefined;
-    if (!teams?.clientId || !teams?.clientSecret || !teams?.tenantId) {
-      throw new Error(`Teams frontend requires "teams.clientId", "teams.clientSecret", and "teams.tenantId" in ${CONFIG_FILE}.`);
+    if (fe === "teams") {
+      const teams = fileConfig.teams as Record<string, unknown> | undefined;
+      if (!teams?.clientId || !teams?.clientSecret || !teams?.tenantId) {
+        throw new Error(`Teams frontend requires "teams.clientId", "teams.clientSecret", and "teams.tenantId" in ${CONFIG_FILE}.`);
+      }
     }
   }
 

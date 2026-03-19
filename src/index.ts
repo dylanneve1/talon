@@ -28,7 +28,8 @@ import {
 } from "./core/cron.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
-import type { QueryBackend } from "./core/types.js";
+import type { QueryBackend, ContextManager } from "./core/types.js";
+import { getFrontends } from "./util/config.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -46,24 +47,69 @@ loadHistory();
 loadMediaIndex();
 cleanupOldLogs();
 
-// ── Create frontend (dynamic import — only selected platform's deps required) ─
+// ── Create frontends (dynamic import — only selected platforms' deps required) ─
 
-const frontend = await (async () => {
-  switch (config.frontend) {
+type Frontend = {
+  context: ContextManager;
+  sendTyping: (chatId: string) => Promise<void>;
+  sendMessage: (chatId: string, text: string) => Promise<void>;
+  getBridgePort: () => number;
+  init: () => Promise<void>;
+  start: () => Promise<void>;
+  stop: () => Promise<void>;
+};
+
+const enabledFrontends = getFrontends(config);
+const frontends: Frontend[] = [];
+
+for (const fe of enabledFrontends) {
+  switch (fe) {
     case "teams": {
       const { createTeamsFrontend } = await import("./frontend/teams/index.js");
-      return createTeamsFrontend(config);
+      frontends.push(createTeamsFrontend(config));
+      break;
     }
     case "terminal": {
       const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
-      return createTerminalFrontend(config);
+      frontends.push(createTerminalFrontend(config));
+      break;
     }
     default: {
       const { createTelegramFrontend } = await import("./frontend/telegram/index.js");
-      return createTelegramFrontend(config);
+      frontends.push(createTelegramFrontend(config));
+      break;
     }
   }
-})();
+}
+
+if (frontends.length === 0) throw new Error("No frontends configured");
+
+// Multiplexed frontend — routes by chatId prefix to the correct frontend
+const frontend: Frontend = frontends.length === 1 ? frontends[0] : {
+  context: {
+    acquire: (chatId: string) => { for (const f of frontends) f.context.acquire(chatId); },
+    release: (chatId: string) => { for (const f of frontends) f.context.release(chatId); },
+    isBusy: () => frontends.some((f) => f.context.isBusy()),
+    getMessageCount: () => frontends.reduce((sum, f) => sum + f.context.getMessageCount(), 0),
+  },
+  sendTyping: async (chatId: string) => {
+    for (const f of frontends) {
+      try { await f.sendTyping(chatId); return; } catch { /* wrong frontend for this chatId */ }
+    }
+  },
+  sendMessage: async (chatId: string, text: string) => {
+    for (const f of frontends) {
+      try { await f.sendMessage(chatId, text); return; } catch { /* wrong frontend */ }
+    }
+  },
+  getBridgePort: () => frontends[0].getBridgePort(),
+  init: async () => { for (const f of frontends) await f.init(); },
+  start: async () => {
+    // Start all frontends concurrently (Telegram polls, Teams listens)
+    await Promise.all(frontends.map((f) => f.start()));
+  },
+  stop: async () => { for (const f of frontends) await f.stop(); },
+};
 
 // ── Create backend (dynamic import — only selected backend's deps required) ──
 
@@ -151,7 +197,7 @@ process.on("uncaughtException", (err) => {
   flushMediaIndex();
   // Teams conversation store flushes synchronously in frontend.stop() during graceful shutdown.
   // In uncaught exception path, the store was already loaded, so import is cached and sync-safe.
-  if (config.frontend === "teams") {
+  if (enabledFrontends.includes("teams")) {
     try {
       // Dynamic import is cached after first load — this resolves immediately
       import("./frontend/teams/conversation-store.js").then(({ flushConversationStore }) => {
