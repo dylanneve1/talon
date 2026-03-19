@@ -116,7 +116,7 @@ describe("config", () => {
     it("builds system prompt from prompt files", async () => {
       mockFs(
         { botToken: "test-token" },
-        { "soul.md": "I am Talon.", "default.md": "Be helpful." },
+        { "soul.md": "I am Talon.", "base.md": "Be helpful." },
       );
 
       const { loadConfig } = await import("../util/config.js");

@@ -91,15 +91,14 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
   const soul = readOptionalFile(resolve(base, "prompts", "soul.md"));
   if (soul) parts.push(soul);
 
+  // Load base prompt (shared across all frontends)
   const custom = readOptionalFile(resolve(base, "prompts", "custom.md"));
-  if (frontend === "terminal") {
-    // Terminal mode: skip Telegram-specific tool docs from default.md
-    const terminalPrompt = readOptionalFile(resolve(base, "prompts", "terminal.md"));
-    parts.push(custom || terminalPrompt || "You are Talon, a sharp and helpful AI assistant running in a terminal.\nBe concise and direct. Answer directly, no filler.");
-  } else {
-    const defaultPrompt = readOptionalFile(resolve(base, "prompts", "default.md"));
-    parts.push(custom || defaultPrompt || "You are a helpful AI assistant.");
-  }
+  const basePrompt = readOptionalFile(resolve(base, "prompts", "base.md"));
+  parts.push(custom || basePrompt || "You are Talon, a sharp and helpful AI assistant.");
+
+  // Load frontend-specific prompt
+  const frontendPrompt = readOptionalFile(resolve(base, "prompts", `${frontend ?? "telegram"}.md`));
+  if (frontendPrompt) parts.push(frontendPrompt);
 
   const memory = readOptionalFile(resolve(base, "workspace", "memory", "memory.md"));
   if (memory)
