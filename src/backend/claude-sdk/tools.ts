@@ -464,6 +464,67 @@ server.tool(
   async (params) => textResult(await callBridge("save_sticker_pack", params)),
 );
 
+// ── Sticker pack management ──────────────────────────────────────────────────
+
+server.tool(
+  "create_sticker_set",
+  `Create a new sticker pack owned by a user. The bot will be the creator.
+Sticker images must be PNG/WEBP, max 512x512px for static stickers.
+The set name will automatically get "_by_<botname>" appended if needed.
+
+Example: create_sticker_set(user_id=123, name="cool_pack", title="Cool Stickers", file_path="/path/to/sticker.png", emoji_list=["😎"])`,
+  {
+    user_id: z.number().describe("Telegram user ID who will own the pack"),
+    name: z.string().describe("Short name for the pack (a-z, 0-9, underscores). Will get _by_<botname> appended."),
+    title: z.string().describe("Display title for the pack (1-64 chars)"),
+    file_path: z.string().describe("Path to the sticker image file (PNG/WEBP, 512x512 max)"),
+    emoji_list: z.array(z.string()).optional().describe("Emojis for this sticker (default: ['🎨'])"),
+    format: z.enum(["static", "animated", "video"]).optional().describe("Sticker format (default: static)"),
+  },
+  async (params) => textResult(await callBridge("create_sticker_set", params)),
+);
+
+server.tool(
+  "add_sticker_to_set",
+  "Add a new sticker to an existing sticker pack created by the bot.",
+  {
+    user_id: z.number().describe("Telegram user ID who owns the pack"),
+    name: z.string().describe("Sticker set name (including _by_<botname>)"),
+    file_path: z.string().describe("Path to the sticker image file"),
+    emoji_list: z.array(z.string()).optional().describe("Emojis for this sticker (default: ['🎨'])"),
+    format: z.enum(["static", "animated", "video"]).optional().describe("Sticker format (default: static)"),
+  },
+  async (params) => textResult(await callBridge("add_sticker_to_set", params)),
+);
+
+server.tool(
+  "delete_sticker_from_set",
+  "Remove a specific sticker from a pack by its file_id.",
+  {
+    sticker_file_id: z.string().describe("file_id of the sticker to remove (get from get_sticker_pack)"),
+  },
+  async (params) => textResult(await callBridge("delete_sticker_from_set", params)),
+);
+
+server.tool(
+  "set_sticker_set_title",
+  "Change the title of a sticker pack created by the bot.",
+  {
+    name: z.string().describe("Sticker set name"),
+    title: z.string().describe("New title (1-64 chars)"),
+  },
+  async (params) => textResult(await callBridge("set_sticker_set_title", params)),
+);
+
+server.tool(
+  "delete_sticker_set",
+  "Permanently delete an entire sticker pack created by the bot.",
+  {
+    name: z.string().describe("Sticker set name to delete"),
+  },
+  async (params) => textResult(await callBridge("delete_sticker_set", params)),
+);
+
 // ── Chat analytics ───────────────────────────────────────────────────────────
 
 server.tool(

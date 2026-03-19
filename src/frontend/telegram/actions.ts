@@ -345,6 +345,71 @@ export function createTelegramActionHandler(
         return { ok: true, text: `Downloaded sticker to: ${filePath} (${buffer.length} bytes).` };
       }
 
+      // ── Sticker pack management ──────────────────────────────────────
+      case "create_sticker_set": {
+        const userId = Number(body.user_id);
+        const name = String(body.name ?? "");
+        const title = String(body.title ?? "");
+        const filePath = String(body.file_path ?? "");
+        const emojis = (body.emoji_list as string[]) ?? ["🎨"];
+        const format = (body.format as "static" | "animated" | "video") ?? "static";
+        if (!userId || !name || !title || !filePath) {
+          return { ok: false, error: "Required: user_id, name, title, file_path" };
+        }
+        // Sticker set names must end with _by_<bot_username>
+        const botUsername = bot.botInfo?.username ?? "";
+        const fullName = name.endsWith(`_by_${botUsername}`) ? name : `${name}_by_${botUsername}`;
+        const data = readFileSync(filePath);
+        const sticker = {
+          sticker: new InputFileClass(data, basename(filePath)),
+          format,
+          emoji_list: emojis,
+        };
+        await bot.api.createNewStickerSet(userId, fullName, title, [sticker]);
+        return { ok: true, text: `Created sticker pack "${title}" (${fullName}) with 1 sticker.` };
+      }
+
+      case "add_sticker_to_set": {
+        const userId = Number(body.user_id);
+        const name = String(body.name ?? "");
+        const filePath = String(body.file_path ?? "");
+        const emojis = (body.emoji_list as string[]) ?? ["🎨"];
+        const format = (body.format as "static" | "animated" | "video") ?? "static";
+        if (!userId || !name || !filePath) {
+          return { ok: false, error: "Required: user_id, name, file_path" };
+        }
+        const data = readFileSync(filePath);
+        const sticker = {
+          sticker: new InputFileClass(data, basename(filePath)),
+          format,
+          emoji_list: emojis,
+        };
+        await bot.api.addStickerToSet(userId, name, sticker);
+        return { ok: true, text: `Added sticker to pack "${name}".` };
+      }
+
+      case "delete_sticker_from_set": {
+        const stickerId = String(body.sticker_file_id ?? "");
+        if (!stickerId) return { ok: false, error: "Required: sticker_file_id" };
+        await bot.api.deleteStickerFromSet(stickerId);
+        return { ok: true, text: "Sticker deleted from pack." };
+      }
+
+      case "set_sticker_set_title": {
+        const name = String(body.name ?? "");
+        const title = String(body.title ?? "");
+        if (!name || !title) return { ok: false, error: "Required: name, title" };
+        await bot.api.setStickerSetTitle(name, title);
+        return { ok: true, text: `Pack title updated to "${title}".` };
+      }
+
+      case "delete_sticker_set": {
+        const name = String(body.name ?? "");
+        if (!name) return { ok: false, error: "Required: name" };
+        await bot.api.deleteStickerSet(name);
+        return { ok: true, text: `Deleted sticker pack "${name}".` };
+      }
+
       case "download_media": {
         if (isUserClientReady()) {
           const { downloadMessageMedia } = await import("./userbot.js");
