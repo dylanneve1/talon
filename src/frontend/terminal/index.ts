@@ -166,16 +166,6 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
   } else if (input.pattern) {
     detail = String(input.pattern);
   }
-  // ToolSearch: clean up the query display
-  else if (input.query && cleanName === "ToolSearch") {
-    detail = String(input.query)
-      .replace(/^select:/, "")
-      .replace(/^\+/, "")
-      .replace(/mcp__\w+__/g, "")
-      .replace(/_/g, " ")
-      .replace(/,/g, ", ")
-      .slice(0, maxDetail);
-  }
   // NPUW plugin tools
   else if (input.action) detail = String(input.action);
   else if (input.query) detail = String(input.query).slice(0, maxDetail);
