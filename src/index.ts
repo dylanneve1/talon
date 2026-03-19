@@ -6,7 +6,7 @@
  * are loaded dynamically — only the selected platform's dependencies are required.
  */
 
-import { loadConfig, getFrontends } from "./util/config.js";
+import { loadConfig, getFrontends, rebuildSystemPrompt } from "./util/config.js";
 import { initWorkspace, startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
@@ -40,8 +40,9 @@ if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
 
 // Load plugins (external tool packages)
 if (config.plugins.length > 0) {
-  const { loadPlugins } = await import("./core/plugin.js");
+  const { loadPlugins, getPluginPromptAdditions } = await import("./core/plugin.js");
   await loadPlugins(config.plugins);
+  rebuildSystemPrompt(config, getPluginPromptAdditions());
 }
 
 initWorkspace(config.workspace);
@@ -134,6 +135,11 @@ async function gracefulShutdown(signal: string): Promise<void> {
   if (config.backend === "opencode") {
     const { stopOpenCodeServer } = await import("./backend/opencode/index.js");
     stopOpenCodeServer();
+  }
+  // Destroy plugins (cleanup resources)
+  if (config.plugins.length > 0) {
+    const { destroyPlugins } = await import("./core/plugin.js");
+    await destroyPlugins();
   }
   stopPulseTimer();
   stopCronTimer();

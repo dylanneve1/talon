@@ -314,7 +314,7 @@ async function runDoctor(): Promise<void> {
 
 async function startChat(): Promise<void> {
   process.env.TALON_QUIET = "1";
-  const { loadConfig } = await import("./util/config.js");
+  const { loadConfig: loadCfg, rebuildSystemPrompt } = await import("./util/config.js");
   const { initWorkspace } = await import("./util/workspace.js");
   const { loadSessions, flushSessions } = await import("./storage/sessions.js");
   const { loadChatSettings, flushChatSettings } = await import("./storage/chat-settings.js");
@@ -324,12 +324,13 @@ async function startChat(): Promise<void> {
   const { initPulse, resetPulseTimer } = await import("./core/pulse.js");
   const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
 
-  const config = loadConfig();
+  const config = loadCfg();
   if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
   if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
   if (config.plugins && config.plugins.length > 0) {
-    const { loadPlugins } = await import("./core/plugin.js");
+    const { loadPlugins, getPluginPromptAdditions } = await import("./core/plugin.js");
     await loadPlugins(config.plugins as Array<{ path: string; config?: Record<string, unknown> }>);
+    rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
   initWorkspace(config.workspace);
   loadSessions(); loadChatSettings(); loadCronJobs(); loadHistory();

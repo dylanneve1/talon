@@ -84,7 +84,7 @@ function readOptionalFile(path: string): string {
   return "";
 }
 
-function loadSystemPrompt(frontend?: string): string {
+function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): string {
   const base = process.cwd();
   const parts: string[] = [];
 
@@ -147,6 +147,13 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
 
   parts.push(`## Current Date\n${new Date().toISOString().slice(0, 10)}`);
 
+  // Plugin system prompt contributions (injected by caller)
+  if (pluginPromptAdditions) {
+    for (const addition of pluginPromptAdditions) {
+      parts.push(addition);
+    }
+  }
+
   // Frontend-specific instructions
   if (frontend === "terminal") {
     parts.push(`## Terminal Mode
@@ -195,4 +202,14 @@ export function loadConfig(): TalonConfig {
     workspace,
     systemPrompt: loadSystemPrompt(activeFrontend),
   };
+}
+
+/**
+ * Rebuild the system prompt with plugin additions.
+ * Called after plugins are loaded to inject their prompt contributions.
+ */
+export function rebuildSystemPrompt(config: TalonConfig, pluginAdditions: string[]): void {
+  if (pluginAdditions.length === 0) return;
+  const frontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+  config.systemPrompt = loadSystemPrompt(frontends[0], pluginAdditions);
 }

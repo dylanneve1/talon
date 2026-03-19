@@ -1,10 +1,12 @@
 /**
- * Plugin system — load external tool plugins from local paths.
+ * Plugin system — extensible tool integration for Talon.
  *
- * Plugins provide:
- *   - An MCP server script (spawned as a subprocess alongside tools.ts)
- *   - Gateway action handlers (run in the main process)
- *   - Environment variable mappings for config → subprocess
+ * Design principles:
+ *   - Interface Segregation: plugins implement only what they need
+ *   - Open/Closed: lifecycle hooks allow extension without core changes
+ *   - Dependency Inversion: plugins receive config, don't depend on globals
+ *   - Single Responsibility: loader, registry, and routing are separated
+ *   - Error Isolation: one plugin failing doesn't take down others
  *
  * Plugin config in talon.json:
  *   "plugins": [
@@ -14,112 +16,270 @@
 
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 import type { ActionResult } from "./types.js";
 
-// ── Plugin interface ───────────────────────────────────────────────────────
+// ── Plugin interfaces ──────────────────────────────────────────────────────
 
-/** What a plugin module must export (default export). */
+/** Configuration entry for a plugin in talon.json. */
+export interface PluginEntry {
+  path: string;
+  config?: Record<string, unknown>;
+}
+
+/**
+ * Core plugin interface — only `name` is required.
+ * All other capabilities are optional (Interface Segregation).
+ */
 export interface TalonPlugin {
-  /** Unique plugin name (used as MCP server name). */
-  name: string;
+  /** Unique plugin identifier. Used as MCP server name prefix. */
+  readonly name: string;
 
-  /** Absolute path to the MCP server script (spawned as subprocess). */
-  mcpServerPath: string;
+  /** Human-readable description for status/diagnostics. */
+  readonly description?: string;
 
-  /**
-   * Map plugin config to env vars passed to the MCP subprocess.
-   * These env vars are also set on the main process for action handlers.
-   */
-  getEnvVars(config: Record<string, unknown>): Record<string, string>;
+  /** Semver version string. */
+  readonly version?: string;
 
   /**
-   * Handle a gateway action. Return null if the action is not recognized.
-   * Same contract as handleSharedAction in gateway-actions.ts.
+   * Called once after the plugin is loaded and validated.
+   * Use for one-time setup (connections, caches, etc).
+   * Receives the resolved plugin config.
    */
-  handleAction(
+  init?(config: Record<string, unknown>): Promise<void> | void;
+
+  /**
+   * Called during graceful shutdown. Clean up resources.
+   */
+  destroy?(): Promise<void> | void;
+
+  /**
+   * Absolute path to the MCP server script (spawned as subprocess).
+   * Omit if the plugin only provides action handlers without MCP tools.
+   */
+  mcpServerPath?: string;
+
+  /**
+   * Map plugin config to env vars for the MCP subprocess and action handlers.
+   * Called once at load time. Values are set on process.env for the main
+   * process and passed to the MCP subprocess.
+   */
+  getEnvVars?(config: Record<string, unknown>): Record<string, string>;
+
+  /**
+   * Handle a gateway action. Return null if not recognized.
+   * Actions are tried in plugin load order, first non-null wins.
+   */
+  handleAction?(
     body: Record<string, unknown>,
     chatId: string,
   ): Promise<ActionResult | null>;
+
+  /**
+   * Contribute additional context to the system prompt.
+   * Called during config loading. Return text to append.
+   */
+  getSystemPromptAddition?(config: Record<string, unknown>): string;
+
+  /**
+   * Validate plugin config at load time.
+   * Return an array of error messages, or empty/undefined if valid.
+   */
+  validateConfig?(config: Record<string, unknown>): string[] | undefined;
 }
 
-/** A loaded plugin instance with its config. */
+// ── Plugin registry ────────────────────────────────────────────────────────
+
+/** A loaded and validated plugin instance with its resolved config. */
 export interface LoadedPlugin {
-  plugin: TalonPlugin;
-  config: Record<string, unknown>;
-  envVars: Record<string, string>;
+  readonly plugin: TalonPlugin;
+  readonly config: Record<string, unknown>;
+  readonly envVars: Record<string, string>;
+  readonly path: string;
 }
 
-// ── Plugin state ───────────────────────────────────────────────────────────
+class PluginRegistry {
+  private readonly plugins: LoadedPlugin[] = [];
 
-const loadedPlugins: LoadedPlugin[] = [];
+  get all(): readonly LoadedPlugin[] {
+    return this.plugins;
+  }
+
+  get count(): number {
+    return this.plugins.length;
+  }
+
+  register(loaded: LoadedPlugin): void {
+    // Guard against duplicate names
+    const existing = this.plugins.find((p) => p.plugin.name === loaded.plugin.name);
+    if (existing) {
+      logWarn("plugin", `Duplicate plugin name "${loaded.plugin.name}" — skipping (already loaded from ${existing.path})`);
+      return;
+    }
+    this.plugins.push(loaded);
+  }
+
+  getByName(name: string): LoadedPlugin | undefined {
+    return this.plugins.find((p) => p.plugin.name === name);
+  }
+
+  async destroyAll(): Promise<void> {
+    for (const { plugin } of this.plugins) {
+      try {
+        await plugin.destroy?.();
+      } catch (err) {
+        logError("plugin", `${plugin.name} destroy error: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+}
+
+// Module-level singleton
+const registry = new PluginRegistry();
 
 // ── Loader ─────────────────────────────────────────────────────────────────
 
-export async function loadPlugins(
-  pluginConfigs: Array<{ path: string; config?: Record<string, unknown> }>,
-): Promise<void> {
+/** Candidate entry point paths, checked in order. */
+const ENTRY_CANDIDATES = [
+  "src/index.ts",
+  "dist/index.js",
+  "index.ts",
+  "index.js",
+];
+
+/**
+ * Load and validate plugins from config entries.
+ * Plugins that fail to load are logged and skipped — they don't block others.
+ */
+export async function loadPlugins(pluginConfigs: PluginEntry[]): Promise<void> {
   for (const entry of pluginConfigs) {
     try {
-      const pluginDir = resolve(entry.path);
-
-      // Look for the plugin entry point
-      const candidates = [
-        resolve(pluginDir, "src", "index.ts"),
-        resolve(pluginDir, "dist", "index.js"),
-        resolve(pluginDir, "index.ts"),
-        resolve(pluginDir, "index.js"),
-      ];
-
-      let entryPoint: string | null = null;
-      for (const c of candidates) {
-        if (existsSync(c)) { entryPoint = c; break; }
-      }
-
-      if (!entryPoint) {
-        logError("plugin", `No entry point found in ${pluginDir}`);
-        continue;
-      }
-
-      const mod = await import(entryPoint);
-      const plugin: TalonPlugin = mod.default ?? mod;
-
-      if (!plugin.name || !plugin.mcpServerPath || !plugin.handleAction) {
-        logError("plugin", `Invalid plugin at ${pluginDir}: missing name, mcpServerPath, or handleAction`);
-        continue;
-      }
-
-      const config = entry.config ?? {};
-      const envVars = plugin.getEnvVars(config);
-
-      // Set env vars on main process so action handlers can read them
-      for (const [k, v] of Object.entries(envVars)) {
-        process.env[k] = v;
-      }
-
-      loadedPlugins.push({ plugin, config, envVars });
-      log("plugin", `Loaded: ${plugin.name} from ${pluginDir}`);
+      await loadSinglePlugin(entry);
     } catch (err) {
       logError("plugin", `Failed to load plugin at ${entry.path}: ${err instanceof Error ? err.message : err}`);
     }
   }
 }
 
-// ── Accessors ──────────────────────────────────────────────────────────────
+async function loadSinglePlugin(entry: PluginEntry): Promise<void> {
+  const pluginDir = resolve(entry.path);
 
+  // Resolve entry point
+  const entryPoint = resolveEntryPoint(pluginDir);
+  if (!entryPoint) {
+    logError("plugin", `No entry point found in ${pluginDir} (tried: ${ENTRY_CANDIDATES.join(", ")})`);
+    return;
+  }
+
+  // Import and extract plugin module
+  const mod = await import(entryPoint);
+  const plugin = extractPlugin(mod);
+  if (!plugin) {
+    logError("plugin", `Invalid plugin at ${pluginDir}: must export an object with a "name" property`);
+    return;
+  }
+
+  const config = entry.config ?? {};
+
+  // Validate config if the plugin provides validation
+  const errors = plugin.validateConfig?.(config);
+  if (errors && errors.length > 0) {
+    logError("plugin", `Plugin "${plugin.name}" config validation failed:\n  ${errors.join("\n  ")}`);
+    return;
+  }
+
+  // Resolve env vars
+  const envVars = plugin.getEnvVars?.(config) ?? {};
+
+  // Set env vars on main process for action handlers
+  for (const [k, v] of Object.entries(envVars)) {
+    process.env[k] = v;
+  }
+
+  // Register before init (so other plugins can discover it)
+  const loaded: LoadedPlugin = { plugin, config, envVars, path: pluginDir };
+  registry.register(loaded);
+
+  // Run init hook
+  try {
+    await plugin.init?.(config);
+  } catch (err) {
+    logError("plugin", `Plugin "${plugin.name}" init failed: ${err instanceof Error ? err.message : err}`);
+    // Still registered — tools may work even if init partially failed
+  }
+
+  const version = plugin.version ? ` v${plugin.version}` : "";
+  const desc = plugin.description ? ` — ${plugin.description}` : "";
+  log("plugin", `Loaded: ${plugin.name}${version}${desc}`);
+}
+
+function resolveEntryPoint(pluginDir: string): string | null {
+  for (const candidate of ENTRY_CANDIDATES) {
+    const full = resolve(pluginDir, candidate);
+    if (existsSync(full)) return full;
+  }
+  return null;
+}
+
+function extractPlugin(mod: Record<string, unknown>): TalonPlugin | null {
+  // Support: export default { ... } or module.exports = { ... }
+  const plugin = (mod.default ?? mod) as TalonPlugin;
+  if (!plugin || typeof plugin !== "object" || !plugin.name) return null;
+  return plugin;
+}
+
+// ── Public API ─────────────────────────────────────────────────────────────
+
+/** Get all loaded plugins. */
 export function getLoadedPlugins(): readonly LoadedPlugin[] {
-  return loadedPlugins;
+  return registry.all;
+}
+
+/** Get a plugin by name. */
+export function getPlugin(name: string): LoadedPlugin | undefined {
+  return registry.getByName(name);
+}
+
+/** Number of loaded plugins. */
+export function getPluginCount(): number {
+  return registry.count;
+}
+
+/** Destroy all plugins (called during shutdown). */
+export async function destroyPlugins(): Promise<void> {
+  await registry.destroyAll();
 }
 
 /**
- * Try all loaded plugins for an action. Returns the first non-null result.
- * Called by the gateway after shared actions but before frontend handlers.
+ * Collect system prompt additions from all plugins.
+ * Called during config/prompt assembly.
+ */
+export function getPluginPromptAdditions(): string[] {
+  const additions: string[] = [];
+  for (const { plugin, config } of registry.all) {
+    try {
+      const addition = plugin.getSystemPromptAddition?.(config);
+      if (addition?.trim()) additions.push(addition.trim());
+    } catch (err) {
+      logError("plugin", `${plugin.name} prompt addition error: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return additions;
+}
+
+// ── Action routing ─────────────────────────────────────────────────────────
+
+/**
+ * Route an action through all loaded plugins.
+ * Returns the first non-null result. Errors from individual plugins
+ * are caught and returned as error results — they don't cascade.
  */
 export async function handlePluginAction(
   body: Record<string, unknown>,
   chatId: string,
 ): Promise<ActionResult | null> {
-  for (const { plugin } of loadedPlugins) {
+  for (const { plugin } of registry.all) {
+    if (!plugin.handleAction) continue;
     try {
       const result = await plugin.handleAction(body, chatId);
       if (result) return result;
@@ -131,17 +291,28 @@ export async function handlePluginAction(
   return null;
 }
 
+// ── MCP server config ──────────────────────────────────────────────────────
+
+/** MCP server configuration for the Claude Agent SDK. */
+export interface McpServerConfig {
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+}
+
 /**
- * Build the mcpServers entries for all loaded plugins.
- * Called by the backend when constructing query options.
+ * Build MCP server entries for all plugins that provide an MCP server.
+ * Plugins without `mcpServerPath` are skipped.
  */
 export function getPluginMcpServers(
   bridgeUrl: string,
   chatId: string,
-): Record<string, { command: string; args: string[]; env: Record<string, string> }> {
-  const servers: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {};
+): Record<string, McpServerConfig> {
+  const servers: Record<string, McpServerConfig> = {};
 
-  for (const { plugin, envVars } of loadedPlugins) {
+  for (const { plugin, envVars } of registry.all) {
+    if (!plugin.mcpServerPath) continue;
+
     servers[`${plugin.name}-tools`] = {
       command: process.platform === "win32" ? "npx" : "node",
       args: process.platform === "win32"
