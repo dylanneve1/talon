@@ -40,6 +40,7 @@ let rl: ReadlineInterface | null = null;
 let currentPhase: "idle" | "thinking" | "tool" | "text" = "idle";
 let toolCallCount = 0;
 let hasToolOutput = false; // tracks if we've shown any tool calls this turn
+let lastToolName = ""; // dedup consecutive identical tool names
 
 // ── Output helpers ───────────────────────────────────────────────────────────
 
@@ -142,6 +143,14 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
   // Skip internal/noisy tools
   if (HIDDEN_TOOLS.has(cleanName)) return;
 
+  // Collapse consecutive ToolSearch calls into a silent count
+  if (cleanName === "ToolSearch") {
+    if (lastToolName === "ToolSearch") return; // suppress repeats
+    lastToolName = "ToolSearch";
+  } else {
+    lastToolName = cleanName;
+  }
+
   // Show tools header on first tool call
   if (!hasToolOutput) {
     hasToolOutput = true;
@@ -165,6 +174,16 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
     detail = `${input.pattern} in ${input.path}`;
   } else if (input.pattern) {
     detail = String(input.pattern);
+  }
+  // ToolSearch: clean up the query display
+  else if (input.query && cleanName === "ToolSearch") {
+    detail = String(input.query)
+      .replace(/^select:/, "")
+      .replace(/^\+/, "")
+      .replace(/mcp__\w+__/g, "")
+      .replace(/_/g, " ")
+      .replace(/,/g, ", ")
+      .slice(0, maxDetail);
   }
   // NPUW plugin tools
   else if (input.action) detail = String(input.action);
@@ -388,6 +407,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
         // ── Execute query ──
         toolCallCount = 0;
         hasToolOutput = false;
+        lastToolName = "";
         currentPhase = "thinking";
         startSpinner("thinking");
 
