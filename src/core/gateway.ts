@@ -23,7 +23,7 @@ import type { FrontendActionHandler } from "./types.js";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-let activeChatId: number | null = null;
+let activeChatId: string | null = null;
 let messagesSent = 0;
 let locked = false;
 let owner: string | null = null;
@@ -40,7 +40,7 @@ export function setFrontendHandler(handler: FrontendActionHandler): void {
 
 // ── Context management (same ref-counting as before) ────────────────────────
 
-export function setGatewayContext(chatId: number): void {
+export function setGatewayContext(chatId: string): void {
   if (activeChatId === chatId) {
     refCount++;
     log("gateway", `Context ref++ for chat ${chatId} (refCount=${refCount})`);
@@ -49,13 +49,13 @@ export function setGatewayContext(chatId: number): void {
   activeChatId = chatId;
   messagesSent = 0;
   locked = true;
-  owner = String(chatId);
+  owner = chatId;
   refCount = 1;
   log("gateway", `Context set for chat ${chatId}`);
 }
 
-export function clearGatewayContext(chatId?: number | string): void {
-  if (chatId !== undefined && owner !== String(chatId)) return;
+export function clearGatewayContext(chatId?: string): void {
+  if (chatId !== undefined && owner !== chatId) return;
   refCount = Math.max(0, refCount - 1);
   if (refCount > 0) return;
   log("gateway", `Context cleared for chat ${chatId ?? "?"}`);
@@ -69,7 +69,7 @@ export function isGatewayBusy(): boolean { return locked; }
 export function getGatewayMessageCount(): number { return messagesSent; }
 export function incrementMessageCount(): void { messagesSent++; }
 export function getGatewayPort(): number { return activePort; }
-export function getGatewayChatId(): number | null { return activeChatId; }
+export function getGatewayChatId(): string | null { return activeChatId; }
 
 // ── Retry helper ────────────────────────────────────────────────────────────
 
@@ -102,7 +102,7 @@ async function handleAction(body: Record<string, unknown>): Promise<unknown> {
 
   // Verify chatId matches (prevents cross-chat tool call routing)
   const requestChatId = body._chatId ? String(body._chatId) : null;
-  if (requestChatId && requestChatId !== String(chatId)) {
+  if (requestChatId && requestChatId !== chatId) {
     logError("gateway", `Chat mismatch: request=${requestChatId} active=${chatId} action=${body.action}`);
     return { ok: false, error: "Chat context mismatch" };
   }

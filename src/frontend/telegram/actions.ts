@@ -70,8 +70,9 @@ export function createTelegramActionHandler(
 ) {
   const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();
 
-  return async (body: Record<string, unknown>, chatId: number): Promise<ActionResult | null> => {
+  return async (body: Record<string, unknown>, chatId: string): Promise<ActionResult | null> => {
     const action = body.action as string;
+    const numChatId = Number(chatId);
 
     switch (action) {
       // ── Messaging ─────────────────────────────────────────────────────
@@ -79,14 +80,14 @@ export function createTelegramActionHandler(
         const text = String(body.text ?? "");
         const replyTo = typeof body.reply_to_message_id === "number" ? body.reply_to_message_id : undefined;
         incrementMessageCount();
-        const msgId = await withRetry(() => sendText(bot, chatId, text, replyTo));
+        const msgId = await withRetry(() => sendText(bot, numChatId, text, replyTo));
         return { ok: true, message_id: msgId };
       }
 
       case "reply_to": {
         const msgId = Number(body.message_id);
         incrementMessageCount();
-        const sentId = await withRetry(() => sendText(bot, chatId, String(body.text ?? ""), msgId));
+        const sentId = await withRetry(() => sendText(bot, numChatId, String(body.text ?? ""), msgId));
         return { ok: true, message_id: sentId };
       }
 
@@ -131,9 +132,9 @@ export function createTelegramActionHandler(
         return { ok: true };
 
       case "forward_message": {
-        if (body.to_chat_id && Number(body.to_chat_id) !== chatId)
+        if (body.to_chat_id && Number(body.to_chat_id) !== numChatId)
           return { ok: false, error: "Cross-chat forwarding not allowed." };
-        const sent = await bot.api.forwardMessage(chatId, chatId, Number(body.message_id));
+        const sent = await bot.api.forwardMessage(numChatId, numChatId, Number(body.message_id));
         return { ok: true, message_id: sent.message_id };
       }
 
@@ -169,7 +170,7 @@ export function createTelegramActionHandler(
         const delaySec = Math.max(1, Math.min(3600, Number(body.delay_seconds ?? 60)));
         const scheduleId = `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const timer = setTimeout(async () => {
-          try { await sendText(bot, chatId, text); } catch { /* scheduled send failed */ }
+          try { await sendText(bot, numChatId, text); } catch { /* scheduled send failed */ }
           scheduledMessages.delete(scheduleId);
         }, delaySec * 1000);
         scheduledMessages.set(scheduleId, timer);

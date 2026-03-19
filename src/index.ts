@@ -31,6 +31,8 @@ import {
 } from "./core/cron.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { createTelegramFrontend } from "./frontend/telegram/index.js";
+import { createTerminalFrontend } from "./frontend/terminal/index.js";
+import { createTeamsFrontend } from "./frontend/teams/index.js";
 import { log, logError, logWarn } from "./util/log.js";
 import type { QueryBackend } from "./core/types.js";
 
@@ -50,9 +52,18 @@ loadHistory();
 loadMediaIndex();
 cleanupOldLogs();
 
-// ── Create frontend (swap this line for a different platform) ────────────────
+// ── Create frontend ──────────────────────────────────────────────────────────
 
-const frontend = createTelegramFrontend(config);
+const frontend = (() => {
+  switch (config.frontend) {
+    case "teams":
+      return createTeamsFrontend(config);
+    case "terminal":
+      return createTerminalFrontend(config);
+    default:
+      return createTelegramFrontend(config);
+  }
+})();
 
 // ── Create backend ──────────────────────────────────────────────────────────
 

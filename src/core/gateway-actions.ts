@@ -29,7 +29,7 @@ import type { ActionResult } from "./types.js";
 
 export async function handleSharedAction(
   body: Record<string, unknown>,
-  chatId: number,
+  chatId: string,
 ): Promise<ActionResult | null> {
   const action = body.action as string;
 
@@ -40,24 +40,24 @@ export async function handleSharedAction(
 
     case "read_history": {
       const limit = Math.min(100, Number(body.limit ?? 30));
-      return { ok: true, text: getRecentFormatted(String(chatId), limit) };
+      return { ok: true, text: getRecentFormatted(chatId, limit) };
     }
 
     case "search_history": {
       const limit = Math.min(100, Number(body.limit ?? 20));
-      return { ok: true, text: searchHistory(String(chatId), String(body.query ?? ""), limit) };
+      return { ok: true, text: searchHistory(chatId, String(body.query ?? ""), limit) };
     }
 
     case "get_user_messages": {
       const limit = Math.min(50, Number(body.limit ?? 20));
-      return { ok: true, text: getMessagesByUser(String(chatId), String(body.user_name ?? ""), limit) };
+      return { ok: true, text: getMessagesByUser(chatId, String(body.user_name ?? ""), limit) };
     }
 
     case "list_known_users":
-      return { ok: true, text: getKnownUsers(String(chatId)) };
+      return { ok: true, text: getKnownUsers(chatId) };
 
     case "list_media":
-      return { ok: true, text: formatMediaIndex(String(chatId), Math.min(20, Number(body.limit ?? 10))) };
+      return { ok: true, text: formatMediaIndex(chatId, Math.min(20, Number(body.limit ?? 10))) };
 
     // ── Web search (SearXNG) ────────────────────────────────────────────
 
@@ -173,13 +173,13 @@ export async function handleSharedAction(
       if (!validation.valid) return { ok: false, error: `Invalid cron expression: ${validation.error}` };
 
       const id = generateCronId();
-      addCronJob({ id, chatId: String(chatId), schedule, type: jobType, content, name, enabled: true, createdAt: Date.now(), runCount: 0, timezone });
+      addCronJob({ id, chatId, schedule, type: jobType, content, name, enabled: true, createdAt: Date.now(), runCount: 0, timezone });
       log("gateway", `create_cron_job: "${name}" [${schedule}]`);
       return { ok: true, text: `Created cron job "${name}" (id: ${id})\nSchedule: ${schedule}\nType: ${jobType}\nNext run: ${validation.next ?? "unknown"}` };
     }
 
     case "list_cron_jobs": {
-      const jobs = getCronJobsForChat(String(chatId));
+      const jobs = getCronJobsForChat(chatId);
       if (jobs.length === 0) return { ok: true, text: "No cron jobs in this chat." };
       const lines = jobs.map((j) => {
         const status = j.enabled ? "enabled" : "disabled";
@@ -201,7 +201,7 @@ export async function handleSharedAction(
       if (!jobId) return { ok: false, error: "Missing job_id" };
       const job = getCronJob(jobId);
       if (!job) return { ok: false, error: `Job ${jobId} not found` };
-      if (job.chatId !== String(chatId)) return { ok: false, error: "Job belongs to a different chat" };
+      if (job.chatId !== chatId) return { ok: false, error: "Job belongs to a different chat" };
 
       const updates: Record<string, unknown> = {};
       if (body.name !== undefined) updates.name = String(body.name);
@@ -224,7 +224,7 @@ export async function handleSharedAction(
       if (!jobId) return { ok: false, error: "Missing job_id" };
       const job = getCronJob(jobId);
       if (!job) return { ok: false, error: `Job ${jobId} not found` };
-      if (job.chatId !== String(chatId)) return { ok: false, error: "Job belongs to a different chat" };
+      if (job.chatId !== chatId) return { ok: false, error: "Job belongs to a different chat" };
       deleteCronJob(jobId);
       return { ok: true, text: `Deleted cron job "${job.name}" (${jobId})` };
     }

@@ -5,8 +5,16 @@ import { z } from "zod";
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
+const teamsConfigSchema = z.object({
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+  tenantId: z.string().min(1),
+  port: z.number().int().default(3978),
+});
+
 const configSchema = z.object({
-  botToken: z.string().min(1, "Missing bot token"),
+  frontend: z.enum(["telegram", "teams", "terminal"]).default("telegram"),
+  botToken: z.string().optional(),
   backend: z.enum(["claude", "opencode"]).default("claude"),
   model: z.string().default("claude-sonnet-4-6"),
   maxMessageLength: z.number().int().min(100).default(4000),
@@ -18,6 +26,7 @@ const configSchema = z.object({
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   braveApiKey: z.string().optional(),
   searxngUrl: z.string().default("http://localhost:8080"),
+  teams: teamsConfigSchema.optional(),
 });
 
 export type TalonConfig = z.infer<typeof configSchema> & {
@@ -142,7 +151,10 @@ export function loadConfig(): TalonConfig {
   const isFirstRun = ensureConfigFile();
   const fileConfig = loadConfigFile();
 
-  if (!fileConfig.botToken) {
+  const frontend = (fileConfig.frontend as string) ?? "telegram";
+
+  // Validate per-frontend requirements
+  if (frontend === "telegram" && !fileConfig.botToken) {
     if (isFirstRun) {
       console.log("\n  🦅 Welcome to Talon!\n");
       console.log(`  Run ${"\x1b[36m"}talon setup${"\x1b[0m"} for guided setup.`);
@@ -150,6 +162,13 @@ export function loadConfig(): TalonConfig {
       process.exit(0);
     }
     throw new Error(`Missing bot token. Run "talon setup" or add "botToken" to ${CONFIG_FILE}.`);
+  }
+
+  if (frontend === "teams") {
+    const teams = fileConfig.teams as Record<string, unknown> | undefined;
+    if (!teams?.clientId || !teams?.clientSecret || !teams?.tenantId) {
+      throw new Error(`Teams frontend requires "teams.clientId", "teams.clientSecret", and "teams.tenantId" in ${CONFIG_FILE}.`);
+    }
   }
 
   const parsed = configSchema.parse(fileConfig);

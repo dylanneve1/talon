@@ -24,7 +24,7 @@ import { log, logDebug } from "../util/log.js";
 type DispatcherDeps = {
   backend: QueryBackend;
   context: ContextManager;
-  sendTyping: (chatId: number) => Promise<void>;
+  sendTyping: (chatId: string) => Promise<void>;
   onActivity: () => void;
   /** Max concurrent AI queries (default 3) */
   concurrency?: number;
@@ -71,13 +71,13 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   const reqId = randomBytes(4).toString("hex");
 
   logDebug("dispatcher", `[${reqId}] ${params.source} chat=${params.chatId} queued`);
-  context.acquire(params.numericChatId);
+  context.acquire(params.chatId);
 
   let typingTimer: ReturnType<typeof setInterval> | undefined;
   try {
-    await sendTyping(params.numericChatId).catch(() => {});
+    await sendTyping(params.chatId).catch(() => {});
     typingTimer = setInterval(() => {
-      sendTyping(params.numericChatId).catch(() => {});
+      sendTyping(params.chatId).catch(() => {});
     }, 4000);
 
     const result = await backend.query({
@@ -100,6 +100,6 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
     };
   } finally {
     if (typingTimer) clearInterval(typingTimer);
-    context.release(params.numericChatId);
+    context.release(params.chatId);
   }
 }

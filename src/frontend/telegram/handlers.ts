@@ -173,7 +173,7 @@ const messageQueues = new Map<
     timer: ReturnType<typeof setTimeout>;
     bot: Bot;
     config: TalonConfig;
-    numericChatId: number;
+    chatNumericId: number;
     queuedReactionMsgIds: number[];
   }
 >();
@@ -229,7 +229,7 @@ function enqueueMessage(
   bot: Bot,
   config: TalonConfig,
   chatId: string,
-  numericChatId: number,
+  chatNumericId: number,
   msg: QueuedMessage,
 ): void {
   const existing = messageQueues.get(chatId);
@@ -238,7 +238,7 @@ function enqueueMessage(
     existing.messages.push(msg);
     // Show hourglass reaction on the queued message to indicate it's been seen
     bot.api
-      .setMessageReaction(numericChatId, msg.messageId, [
+      .setMessageReaction(chatNumericId, msg.messageId, [
         { type: "emoji", emoji: "\u23F3" as "\uD83D\uDC4D" /* grammY wants union type */ },
       ])
       .catch(() => {});
@@ -253,7 +253,7 @@ function enqueueMessage(
     timer: setTimeout(() => flushQueue(chatId), DEBOUNCE_MS),
     bot,
     config,
-    numericChatId,
+    chatNumericId,
     queuedReactionMsgIds: [] as number[],
   };
   messageQueues.set(chatId, entry);
@@ -264,12 +264,12 @@ async function flushQueue(chatId: string): Promise<void> {
   if (!entry) return;
   messageQueues.delete(chatId);
 
-  const { messages, bot, config, numericChatId, queuedReactionMsgIds } = entry;
+  const { messages, bot, config, chatNumericId, queuedReactionMsgIds } = entry;
   if (messages.length === 0) return;
 
   // Clear hourglass reactions on queued messages now that we're processing
   for (const msgId of queuedReactionMsgIds) {
-    bot.api.setMessageReaction(numericChatId, msgId, []).catch((err) => {
+    bot.api.setMessageReaction(chatNumericId, msgId, []).catch((err) => {
       logWarn("bot", `Failed to clear reaction on msg ${msgId}: ${err instanceof Error ? err.message : err}`);
     });
   }
@@ -288,7 +288,7 @@ async function flushQueue(chatId: string): Promise<void> {
 
   try {
     await processAndReply({
-      bot, config, chatId, numericChatId,
+      bot, config, chatId,
       replyToId: last.replyToId,
       messageId: last.messageId,
       prompt: combinedPrompt,
@@ -315,7 +315,7 @@ async function flushQueue(chatId: string): Promise<void> {
       try {
         await new Promise((r) => setTimeout(r, delayMs));
         await processAndReply({
-          bot, config, chatId, numericChatId,
+          bot, config, chatId,
           replyToId: last.replyToId,
           messageId: last.messageId,
           prompt: combinedPrompt,
@@ -333,7 +333,7 @@ async function flushQueue(chatId: string): Promise<void> {
         );
         await sendHtml(
           bot,
-          numericChatId,
+          chatNumericId,
           escapeHtml(friendlyMessage(retryClassified)),
           last.replyToId,
         );
@@ -343,7 +343,7 @@ async function flushQueue(chatId: string): Promise<void> {
 
     await sendHtml(
       bot,
-      numericChatId,
+      chatNumericId,
       escapeHtml(friendlyMessage(classified)),
       last.replyToId,
     );
@@ -381,8 +381,7 @@ async function sendHtml(
 type ProcessAndReplyParams = {
   bot: Bot;
   config: TalonConfig;
-  chatId: string | number;
-  numericChatId: number;
+  chatId: string;
   replyToId: number;
   messageId: number;
   prompt: string;
@@ -461,9 +460,10 @@ async function deliverFinalText(
 
 export async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
-    bot, config, chatId, numericChatId, replyToId, messageId,
+    bot, config, chatId, replyToId, messageId,
     prompt, senderName, isGroup, senderUsername, senderId,
   } = params;
+  const numericChatId = Number(chatId);
 
   const stream: StreamState = {
     draftId: crypto.getRandomValues(new Uint32Array(1))[0] || 1,
@@ -489,8 +489,7 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
     }
 
     const result = await execute({
-      chatId: String(chatId),
-      numericChatId,
+      chatId,
       prompt: enrichedPrompt,
       senderName,
       isGroup,
@@ -881,7 +880,6 @@ export async function handleCallbackQuery(
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
 
   const chatId = String(ctx.chat?.id ?? ctx.from?.id);
-  const numericChatId = ctx.chat?.id ?? ctx.from?.id ?? 0;
   const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
   const sender = getSenderName(ctx.from);
   const callbackData = ctx.callbackQuery.data;
@@ -896,7 +894,7 @@ export async function handleCallbackQuery(
     appendDailyLog(sender, `Button: ${callbackData}`);
 
     await processAndReply({
-      bot, config, chatId, numericChatId,
+      bot, config, chatId,
       replyToId,
       messageId: replyToId,
       prompt,

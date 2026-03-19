@@ -3,8 +3,8 @@ import { initDispatcher, execute, isBusy } from "../core/dispatcher.js";
 import type { QueryBackend, ContextManager } from "../core/types.js";
 
 function createMockDeps() {
-  const acquired: number[] = [];
-  const released: number[] = [];
+  const acquired: string[] = [];
+  const released: string[] = [];
 
   const backend: QueryBackend = {
     query: vi.fn(async () => ({
@@ -18,8 +18,8 @@ function createMockDeps() {
   };
 
   const context: ContextManager = {
-    acquire: vi.fn((chatId: number) => { acquired.push(chatId); }),
-    release: vi.fn((chatId: number) => { released.push(chatId); }),
+    acquire: vi.fn((chatId: string) => { acquired.push(chatId); }),
+    release: vi.fn((chatId: string) => { released.push(chatId); }),
     isBusy: vi.fn(() => acquired.length > released.length),
     getMessageCount: vi.fn(() => 0),
   };
@@ -39,7 +39,6 @@ describe("dispatcher", () => {
   it("executes a query and returns result", async () => {
     const result = await execute({
       chatId: "123",
-      numericChatId: 123,
       prompt: "hello",
       senderName: "User",
       isGroup: false,
@@ -56,15 +55,14 @@ describe("dispatcher", () => {
 
     await execute({
       chatId: "456",
-      numericChatId: 456,
       prompt: "test",
       senderName: "User",
       isGroup: false,
       source: "message",
     });
 
-    expect(deps.context.acquire).toHaveBeenCalledWith(456);
-    expect(deps.context.release).toHaveBeenCalledWith(456);
+    expect(deps.context.acquire).toHaveBeenCalledWith("456");
+    expect(deps.context.release).toHaveBeenCalledWith("456");
   });
 
   it("releases context even on error", async () => {
@@ -77,7 +75,6 @@ describe("dispatcher", () => {
     await expect(
       execute({
         chatId: "789",
-        numericChatId: 789,
         prompt: "fail",
         senderName: "User",
         isGroup: false,
@@ -85,7 +82,7 @@ describe("dispatcher", () => {
       }),
     ).rejects.toThrow("boom");
 
-    expect(deps.context.release).toHaveBeenCalledWith(789);
+    expect(deps.context.release).toHaveBeenCalledWith("789");
   });
 
   it("sends typing on execution", async () => {
@@ -94,14 +91,13 @@ describe("dispatcher", () => {
 
     await execute({
       chatId: "111",
-      numericChatId: 111,
       prompt: "hi",
       senderName: "User",
       isGroup: false,
       source: "message",
     });
 
-    expect(deps.sendTyping).toHaveBeenCalledWith(111);
+    expect(deps.sendTyping).toHaveBeenCalledWith("111");
   });
 
   it("calls onActivity after successful query", async () => {
@@ -110,7 +106,6 @@ describe("dispatcher", () => {
 
     await execute({
       chatId: "222",
-      numericChatId: 222,
       prompt: "hi",
       senderName: "User",
       isGroup: false,
@@ -130,7 +125,6 @@ describe("dispatcher", () => {
     await expect(
       execute({
         chatId: "333",
-        numericChatId: 333,
         prompt: "fail",
         senderName: "User",
         isGroup: false,
@@ -149,7 +143,6 @@ describe("dispatcher", () => {
 
     await execute({
       chatId: "444",
-      numericChatId: 444,
       prompt: "stream",
       senderName: "User",
       isGroup: false,

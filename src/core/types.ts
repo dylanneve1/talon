@@ -42,8 +42,8 @@ export interface QueryBackend {
  * can reach the messaging platform.
  */
 export interface ContextManager {
-  acquire(chatId: number): void;
-  release(chatId: number): void;
+  acquire(chatId: string): void;
+  release(chatId: string): void;
   isBusy(): boolean;
   getMessageCount(): number;
 }
@@ -51,7 +51,6 @@ export interface ContextManager {
 /** Parameters for the dispatcher. */
 export type ExecuteParams = {
   chatId: string;
-  numericChatId: number;
   prompt: string;
   senderName: string;
   isGroup: boolean;
@@ -73,12 +72,12 @@ export type ActionResult = {
   ok: boolean;
   text?: string;
   error?: string;
-  message_id?: number;
+  message_id?: number | string;
   [key: string]: unknown;
 };
 
 /** Frontend-specific action handler. Return null if action not recognized. */
 export type FrontendActionHandler = (
   body: Record<string, unknown>,
-  chatId: number,
+  chatId: string,
 ) => Promise<ActionResult | null>;

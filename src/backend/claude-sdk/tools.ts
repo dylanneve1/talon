@@ -46,7 +46,7 @@ const server = new McpServer({ name: "telegram-tools", version: "2.0.0" });
 
 server.tool(
   "send",
-  `Send content to the current Telegram chat. Supports text, photos, videos, files, voice, stickers, polls, locations, contacts, dice, and GIFs.
+  `Send content to the current chat. Supports text, photos, videos, files, voice, stickers, polls, locations, contacts, dice, and GIFs.
 
 Examples:
   Text: send(type="text", text="Hello!")

@@ -24,11 +24,11 @@ import { log } from "../../util/log.js";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
-let _activeChatId: number | null = null;
+let _activeChatId: string | null = null;
 let busy = false;
 let rl: ReadlineInterface | null = null;
 
-const TERMINAL_CHAT_ID = 1;
+const TERMINAL_CHAT_ID = "terminal";
 const PROMPT = `  ${pc.green("you")}  `;
 
 // ── Terminal output helpers ─────────────────────────────────────────────────
@@ -73,7 +73,7 @@ function stopSpinner(): void {
 
 // ── Terminal action handler ─────────────────────────────────────────────────
 
-function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: number) => Promise<ActionResult | null> {
+function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: string) => Promise<ActionResult | null> {
   return async (body) => {
     const action = body.action as string;
     switch (action) {
@@ -103,7 +103,7 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
       case "forward_message": case "copy_message": case "send_chat_action":
         return { ok: true };
       case "get_chat_info":
-        return { ok: true, id: TERMINAL_CHAT_ID, type: "private", title: "Terminal" };
+        return { ok: true, id: 1, type: "private", title: "Terminal" };
       default:
         return null; // let gateway shared actions handle it
     }
@@ -114,8 +114,8 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
 
 export type TerminalFrontend = {
   context: ContextManager;
-  sendTyping: (chatId: number) => Promise<void>;
-  sendMessage: (chatId: number, text: string) => Promise<void>;
+  sendTyping: (chatId: string) => Promise<void>;
+  sendMessage: (chatId: string, text: string) => Promise<void>;
   getBridgePort: () => number;
   init: () => Promise<void>;
   start: () => Promise<void>;
@@ -133,7 +133,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
   return {
     context,
     sendTyping: async () => { startSpinner(); },
-    sendMessage: async (_chatId: number, text: string) => {
+    sendMessage: async (_chatId: string, text: string) => {
       stopSpinner();
       output(`\n${pc.cyan("  Talon")}  ${text}\n`);
     },
@@ -224,7 +224,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
 
         try {
           const result = await execute({
-            chatId: String(TERMINAL_CHAT_ID), numericChatId: TERMINAL_CHAT_ID,
+            chatId: TERMINAL_CHAT_ID,
             prompt: text, senderName: "User", isGroup: false, source: "message",
           });
           stopSpinner();

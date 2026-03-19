@@ -9,9 +9,9 @@ import type { QueryBackend, ContextManager } from "../core/types.js";
 import { TalonError } from "../core/errors.js";
 
 function setup(overrides: { queryResult?: Record<string, unknown>; queryError?: Error } = {}) {
-  const acquired: number[] = [];
-  const released: number[] = [];
-  const typingCalls: number[] = [];
+  const acquired: string[] = [];
+  const released: string[] = [];
+  const typingCalls: string[] = [];
   let activityCount = 0;
 
   const backend: QueryBackend = {
@@ -30,8 +30,8 @@ function setup(overrides: { queryResult?: Record<string, unknown>; queryError?: 
   };
 
   const context: ContextManager = {
-    acquire: vi.fn((id: number) => acquired.push(id)),
-    release: vi.fn((id: number) => released.push(id)),
+    acquire: vi.fn((id: string) => acquired.push(id)),
+    release: vi.fn((id: string) => released.push(id)),
     isBusy: vi.fn(() => acquired.length > released.length),
     getMessageCount: vi.fn(() => 0),
   };
@@ -39,7 +39,7 @@ function setup(overrides: { queryResult?: Record<string, unknown>; queryError?: 
   initDispatcher({
     backend,
     context,
-    sendTyping: vi.fn(async (id: number) => { typingCalls.push(id); }),
+    sendTyping: vi.fn(async (id: string) => { typingCalls.push(id); }),
     onActivity: vi.fn(() => { activityCount++; }),
     concurrency: 1,
   });
@@ -53,7 +53,6 @@ describe("integration: dispatcher lifecycle", () => {
 
     const result = await execute({
       chatId: "123",
-      numericChatId: 123,
       prompt: "hello world",
       senderName: "TestUser",
       isGroup: false,
@@ -65,11 +64,11 @@ describe("integration: dispatcher lifecycle", () => {
     expect(result.bridgeMessageCount).toBe(0);
 
     // Context lifecycle
-    expect(acquired).toEqual([123]);
-    expect(released).toEqual([123]);
+    expect(acquired).toEqual(["123"]);
+    expect(released).toEqual(["123"]);
 
     // Typing was sent
-    expect(typingCalls).toEqual([123]);
+    expect(typingCalls).toEqual(["123"]);
 
     // Activity callback fired
     expect(getActivityCount()).toBe(1);
@@ -91,7 +90,6 @@ describe("integration: dispatcher lifecycle", () => {
     await expect(
       execute({
         chatId: "456",
-        numericChatId: 456,
         prompt: "will fail",
         senderName: "User",
         isGroup: false,
@@ -99,7 +97,7 @@ describe("integration: dispatcher lifecycle", () => {
       }),
     ).rejects.toThrow("SDK crashed");
 
-    expect(released).toEqual([456]);
+    expect(released).toEqual(["456"]);
   });
 
   it("classified error path: TalonError propagated", async () => {
@@ -114,7 +112,6 @@ describe("integration: dispatcher lifecycle", () => {
     try {
       await execute({
         chatId: "789",
-        numericChatId: 789,
         prompt: "will rate limit",
         senderName: "User",
         isGroup: false,
@@ -128,7 +125,7 @@ describe("integration: dispatcher lifecycle", () => {
       expect(te.retryable).toBe(true);
     }
 
-    expect(released).toEqual([789]);
+    expect(released).toEqual(["789"]);
   });
 
   it("sequential execution with concurrency=1", async () => {
@@ -157,8 +154,8 @@ describe("integration: dispatcher lifecycle", () => {
 
     // Fire two queries simultaneously
     await Promise.all([
-      execute({ chatId: "A", numericChatId: 1, prompt: "a", senderName: "U", isGroup: false, source: "message" }),
-      execute({ chatId: "B", numericChatId: 2, prompt: "b", senderName: "U", isGroup: false, source: "message" }),
+      execute({ chatId: "A", prompt: "a", senderName: "U", isGroup: false, source: "message" }),
+      execute({ chatId: "B", prompt: "b", senderName: "U", isGroup: false, source: "message" }),
     ]);
 
     // With concurrency=1, they should execute sequentially
@@ -172,7 +169,6 @@ describe("integration: dispatcher lifecycle", () => {
 
     await execute({
       chatId: "999",
-      numericChatId: 999,
       prompt: "stream test",
       senderName: "User",
       isGroup: true,

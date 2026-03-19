@@ -21,7 +21,7 @@ import { log, logError } from "../util/log.js";
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
 type CronDeps = {
-  sendMessage: (chatId: number, text: string) => Promise<void>;
+  sendMessage: (chatId: string, text: string) => Promise<void>;
 };
 
 let deps: CronDeps | null = null;
@@ -113,14 +113,8 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 async function executeJob(job: CronJob): Promise<void> {
   if (!deps) return;
 
-  const numericChatId = parseInt(job.chatId, 10);
-  if (isNaN(numericChatId)) {
-    logError("cron", `Invalid chatId for job "${job.name}": ${job.chatId}`);
-    return;
-  }
-
   if (job.type === "message") {
-    await deps.sendMessage(numericChatId, job.content);
+    await deps.sendMessage(job.chatId, job.content);
     return;
   }
 
@@ -132,7 +126,6 @@ async function executeJob(job: CronJob): Promise<void> {
   await withTimeout(
     execute({
       chatId: job.chatId,
-      numericChatId,
       prompt,
       senderName: "Cron",
       isGroup: false,

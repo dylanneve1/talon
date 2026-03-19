@@ -35,8 +35,8 @@ import { log, logError } from "../../util/log.js";
 
 export type TelegramFrontend = {
   context: ContextManager;
-  sendTyping: (chatId: number) => Promise<void>;
-  sendMessage: (chatId: number, text: string) => Promise<void>;
+  sendTyping: (chatId: string) => Promise<void>;
+  sendMessage: (chatId: string, text: string) => Promise<void>;
   getBridgePort: () => number;
   init: () => Promise<void>;
   start: () => Promise<void>;
@@ -46,13 +46,14 @@ export type TelegramFrontend = {
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
+  if (!config.botToken) throw new Error("Missing botToken for Telegram frontend");
   const bot = new Bot(config.botToken);
   bot.api.config.use(apiThrottler());
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
 
   const context: ContextManager = {
-    acquire: (chatId: number) => setGatewayContext(chatId),
-    release: (chatId: number) => clearGatewayContext(chatId),
+    acquire: (chatId: string) => setGatewayContext(chatId),
+    release: (chatId: string) => clearGatewayContext(chatId),
     isBusy: () => isGatewayBusy(),
     getMessageCount: () => getGatewayMessageCount(),
   };
@@ -60,18 +61,18 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
   return {
     context,
 
-    sendTyping: (chatId: number) =>
-      bot.api.sendChatAction(chatId, "typing").then(() => {}),
+    sendTyping: (chatId: string) =>
+      bot.api.sendChatAction(Number(chatId), "typing").then(() => {}),
 
-    sendMessage: async (chatId: number, text: string) => {
-      await sendText(bot, chatId, text);
+    sendMessage: async (chatId: string, text: string) => {
+      await sendText(bot, Number(chatId), text);
     },
 
     getBridgePort: () => getGatewayPort(),
 
     async init() {
       // Register Telegram action handler with the core gateway
-      setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken));
+      setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken!));
 
       const port = await startGateway(19876);
       log("bot", `Gateway started on port ${port}`);
