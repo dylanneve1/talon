@@ -29,14 +29,15 @@ const HEALTH_URL = "http://127.0.0.1:19876/health";
 function printBanner(): void {
   console.log();
   console.log(`  ${pc.bold(pc.cyan("🦅 Talon"))}`);
-  console.log(`  ${pc.dim("Claude-powered Telegram bot")}`);
+  console.log(`  ${pc.dim("Agentic AI harness")}`);
   console.log();
 }
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
 type Config = {
-  botToken: string;
+  frontend: string;
+  botToken?: string;
   model: string;
   concurrency: number;
   pulse: boolean;
@@ -45,9 +46,16 @@ type Config = {
   apiId?: number;
   apiHash?: string;
   maxMessageLength: number;
+  teams?: {
+    clientId: string;
+    clientSecret: string;
+    tenantId: string;
+    port?: number;
+  };
 };
 
 const DEFAULTS: Config = {
+  frontend: "telegram",
   botToken: "",
   model: "claude-sonnet-4-6",
   concurrency: 1,
@@ -74,9 +82,16 @@ function saveConfig(config: Config): void {
   writeFileAtomic.sync(CONFIG_FILE, JSON.stringify(clean, null, 2) + "\n");
 }
 
-function maskToken(token: string): string {
+function maskToken(token: string | undefined): string {
   if (!token || token.length < 10) return pc.red("not set");
   return pc.green(token.slice(0, 8) + "..." + token.slice(-4));
+}
+
+function isConfigured(config: Config): boolean {
+  if (config.frontend === "telegram") return !!config.botToken;
+  if (config.frontend === "teams") return !!(config.teams?.clientId && config.teams?.clientSecret && config.teams?.tenantId);
+  if (config.frontend === "terminal") return true;
+  return false;
 }
 
 // ── Setup wizard ────────────────────────────────────────────────────────────
@@ -87,17 +102,115 @@ async function runSetup(): Promise<void> {
 
   const config = loadConfig();
 
-  const botToken = await p.text({
-    message: "Bot token",
-    placeholder: "Paste your token from @BotFather",
-    initialValue: config.botToken || undefined,
-    validate: (v) => {
-      if (!v) return "Token is required";
-      if (!v.includes(":")) return "Invalid format — should contain ':'";
-    },
+  // ── Frontend selection ──
+  const frontend = await p.select({
+    message: "Frontend platform",
+    initialValue: config.frontend || "telegram",
+    options: [
+      { value: "telegram", label: `Telegram  ${pc.dim("— bot via @BotFather")}` },
+      { value: "teams", label: `Teams     ${pc.dim("— Microsoft Teams bot")}` },
+      { value: "terminal", label: `Terminal  ${pc.dim("— local CLI chat")}` },
+    ],
   });
-  if (p.isCancel(botToken)) { p.cancel("Cancelled."); process.exit(0); }
+  if (p.isCancel(frontend)) { p.cancel("Cancelled."); process.exit(0); }
 
+  // ── Telegram-specific ──
+  let botToken: string | undefined;
+  let adminId: string | undefined;
+  let apiId: number | undefined;
+  let apiHash: string | undefined;
+
+  if (frontend === "telegram") {
+    const token = await p.text({
+      message: "Bot token",
+      placeholder: "Paste your token from @BotFather",
+      initialValue: config.botToken || undefined,
+      validate: (v) => {
+        if (!v) return "Token is required";
+        if (!v.includes(":")) return "Invalid format — should contain ':'";
+      },
+    });
+    if (p.isCancel(token)) { p.cancel("Cancelled."); process.exit(0); }
+    botToken = token;
+
+    adminId = await p.text({
+      message: "Your Telegram user ID",
+      placeholder: "optional — message @userinfobot to find yours",
+      initialValue: config.adminUserId ? String(config.adminUserId) : "",
+    }) as string;
+    if (p.isCancel(adminId)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const wantUserbot = await p.confirm({
+      message: "Set up userbot for full history access?",
+      initialValue: !!(config.apiId && config.apiHash),
+    });
+    if (p.isCancel(wantUserbot)) { p.cancel("Cancelled."); process.exit(0); }
+
+    if (wantUserbot) {
+      p.note(
+        "Get these from https://my.telegram.org → API development tools",
+        "Telegram API credentials",
+      );
+
+      const id = await p.text({
+        message: "API ID",
+        placeholder: "12345678",
+        initialValue: config.apiId ? String(config.apiId) : "",
+        validate: (v) => {
+          if (v && isNaN(parseInt(v, 10))) return "Must be a number";
+        },
+      });
+      if (p.isCancel(id)) { p.cancel("Cancelled."); process.exit(0); }
+
+      const hash = await p.text({
+        message: "API Hash",
+        initialValue: config.apiHash || "",
+      });
+      if (p.isCancel(hash)) { p.cancel("Cancelled."); process.exit(0); }
+
+      if (id) apiId = parseInt(id, 10);
+      if (hash) apiHash = hash as string;
+    }
+  }
+
+  // ── Teams-specific ──
+  let teams: Config["teams"] | undefined;
+
+  if (frontend === "teams") {
+    p.note(
+      "Register an app at entra.microsoft.com → App registrations.\n" +
+      "Create an Azure Bot resource (free) and enable the Teams channel.",
+      "Teams credentials",
+    );
+
+    const clientId = await p.text({
+      message: "Application (client) ID",
+      placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      initialValue: config.teams?.clientId || "",
+      validate: (v) => { if (!v) return "Required"; },
+    });
+    if (p.isCancel(clientId)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const clientSecret = await p.text({
+      message: "Client secret",
+      placeholder: "from Certificates & secrets",
+      initialValue: config.teams?.clientSecret || "",
+      validate: (v) => { if (!v) return "Required"; },
+    });
+    if (p.isCancel(clientSecret)) { p.cancel("Cancelled."); process.exit(0); }
+
+    const tenantId = await p.text({
+      message: "Directory (tenant) ID",
+      placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+      initialValue: config.teams?.tenantId || "",
+      validate: (v) => { if (!v) return "Required"; },
+    });
+    if (p.isCancel(tenantId)) { p.cancel("Cancelled."); process.exit(0); }
+
+    teams = { clientId: clientId as string, clientSecret: clientSecret as string, tenantId: tenantId as string };
+  }
+
+  // ── Shared settings ──
   const model = await p.select({
     message: "Default model",
     initialValue: config.model,
@@ -109,56 +222,15 @@ async function runSetup(): Promise<void> {
   });
   if (p.isCancel(model)) { p.cancel("Cancelled."); process.exit(0); }
 
-  const adminId = await p.text({
-    message: "Your Telegram user ID",
-    placeholder: "optional — message @userinfobot to find yours",
-    initialValue: config.adminUserId ? String(config.adminUserId) : "",
-  });
-  if (p.isCancel(adminId)) { p.cancel("Cancelled."); process.exit(0); }
-
-  const pulse = await p.confirm({
+  const pulse = frontend !== "terminal" ? await p.confirm({
     message: "Enable pulse? (periodic group engagement)",
     initialValue: config.pulse,
-  });
+  }) : false;
   if (p.isCancel(pulse)) { p.cancel("Cancelled."); process.exit(0); }
 
-  const wantUserbot = await p.confirm({
-    message: "Set up userbot for full history access?",
-    initialValue: !!(config.apiId && config.apiHash),
-  });
-  if (p.isCancel(wantUserbot)) { p.cancel("Cancelled."); process.exit(0); }
-
-  let apiId: number | undefined;
-  let apiHash: string | undefined;
-
-  if (wantUserbot) {
-    p.note(
-      "Get these from https://my.telegram.org → API development tools",
-      "Telegram API credentials",
-    );
-
-    const id = await p.text({
-      message: "API ID",
-      placeholder: "12345678",
-      initialValue: config.apiId ? String(config.apiId) : "",
-      validate: (v) => {
-        if (v && isNaN(parseInt(v, 10))) return "Must be a number";
-      },
-    });
-    if (p.isCancel(id)) { p.cancel("Cancelled."); process.exit(0); }
-
-    const hash = await p.text({
-      message: "API Hash",
-      initialValue: config.apiHash || "",
-    });
-    if (p.isCancel(hash)) { p.cancel("Cancelled."); process.exit(0); }
-
-    if (id) apiId = parseInt(id, 10);
-    if (hash) apiHash = hash;
-  }
-
   const newConfig: Config = {
-    botToken,
+    frontend: frontend as string,
+    botToken: frontend === "telegram" ? botToken : undefined,
     model: model as string,
     concurrency: config.concurrency,
     pulse: pulse as boolean,
@@ -167,6 +239,7 @@ async function runSetup(): Promise<void> {
     apiId,
     apiHash,
     maxMessageLength: config.maxMessageLength,
+    teams,
   };
 
   const s = p.spinner();
@@ -176,8 +249,14 @@ async function runSetup(): Promise<void> {
 
   p.outro(`Run ${pc.cyan(pc.bold("npm start"))} to launch Talon`);
 
-  if (apiId && apiHash) {
+  if (frontend === "telegram" && apiId && apiHash) {
     console.log(`  ${pc.yellow("!")} Run ${pc.cyan("npx tsx src/login.ts")} to authenticate the userbot first.`);
+    console.log();
+  }
+
+  if (frontend === "teams") {
+    console.log(`  ${pc.yellow("!")} Set your bot's messaging endpoint to ${pc.cyan("https://yourdomain.com/api/messages")}`);
+    console.log(`  ${pc.yellow("!")} Expose port 3978 via HTTPS (nginx, caddy, or ngrok for dev).`);
     console.log();
   }
 }
@@ -212,9 +291,14 @@ async function showStatus(): Promise<void> {
 
   if (existsSync(CONFIG_FILE)) {
     const config = loadConfig();
-    console.log(`  ${pc.dim("Token")}   ${config.botToken ? pc.green("configured") : pc.red("not set")}`);
-    console.log(`  ${pc.dim("Model")}   ${config.model}`);
-    console.log(`  ${pc.dim("Config")}  ${pc.dim(CONFIG_FILE)}`);
+    console.log(`  ${pc.dim("Frontend")} ${config.frontend}`);
+    if (config.frontend === "telegram") {
+      console.log(`  ${pc.dim("Token")}    ${config.botToken ? pc.green("configured") : pc.red("not set")}`);
+    } else if (config.frontend === "teams") {
+      console.log(`  ${pc.dim("Teams")}    ${config.teams?.clientId ? pc.green("configured") : pc.red("not set")}`);
+    }
+    console.log(`  ${pc.dim("Model")}    ${config.model}`);
+    console.log(`  ${pc.dim("Config")}   ${pc.dim(CONFIG_FILE)}`);
     console.log();
     console.log(`  Start with ${pc.cyan("npm start")}`);
   } else {
@@ -247,12 +331,18 @@ async function viewConfig(): Promise<void> {
   p.intro(pc.inverse(" Configuration "));
   console.log();
   console.log(`  ${pc.dim("File")}             ${pc.dim(CONFIG_FILE)}`);
-  console.log(`  ${pc.dim("Bot token")}        ${maskToken(config.botToken)}`);
+  console.log(`  ${pc.dim("Frontend")}         ${config.frontend}`);
+  if (config.frontend === "telegram") {
+    console.log(`  ${pc.dim("Bot token")}        ${maskToken(config.botToken)}`);
+    console.log(`  ${pc.dim("Admin")}            ${config.adminUserId || pc.dim("not set")}`);
+    console.log(`  ${pc.dim("Userbot")}          ${config.apiId ? pc.green("configured") : pc.dim("not set")}`);
+  } else if (config.frontend === "teams") {
+    console.log(`  ${pc.dim("Client ID")}        ${maskToken(config.teams?.clientId)}`);
+    console.log(`  ${pc.dim("Tenant ID")}        ${maskToken(config.teams?.tenantId)}`);
+  }
   console.log(`  ${pc.dim("Model")}            ${config.model}`);
   console.log(`  ${pc.dim("Concurrency")}      ${config.concurrency}`);
   console.log(`  ${pc.dim("Pulse")}            ${config.pulse ? pc.green("on") : pc.dim("off")} ${pc.dim(`(${Math.round(config.pulseIntervalMs / 60000)}m)`)}`);
-  console.log(`  ${pc.dim("Admin")}            ${config.adminUserId || pc.dim("not set")}`);
-  console.log(`  ${pc.dim("Userbot")}          ${config.apiId ? pc.green("configured") : pc.dim("not set")}`);
   console.log(`  ${pc.dim("Max msg length")}   ${config.maxMessageLength}`);
   console.log();
 
@@ -345,10 +435,10 @@ async function runDoctor(): Promise<void> {
   // Config file
   if (existsSync(CONFIG_FILE)) {
     const config = loadConfig();
-    if (config.botToken) {
-      console.log(`  ${pc.green("\u2713")} Bot token configured`);
+    if (isConfigured(config)) {
+      console.log(`  ${pc.green("\u2713")} Frontend: ${config.frontend} (configured)`);
     } else {
-      console.log(`  ${pc.red("\u2717")} Bot token missing in ${pc.dim("talon.json")}`);
+      console.log(`  ${pc.red("\u2717")} Frontend ${config.frontend} not fully configured ${pc.dim("(run talon setup)")}`);
       issues++;
     }
     console.log(`  ${pc.green("\u2713")} Config: ${pc.dim(CONFIG_FILE)}`);
@@ -410,8 +500,6 @@ async function startChat(): Promise<void> {
 
   const { loadConfig } = await import("./util/config.js");
   const { initWorkspace } = await import("./util/workspace.js");
-  const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } = await import("./backend/claude-sdk/index.js");
-  const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } = await import("./backend/opencode/index.js");
   const { loadSessions, flushSessions } = await import("./storage/sessions.js");
   const { loadChatSettings, flushChatSettings } = await import("./storage/chat-settings.js");
   const { loadCronJobs, flushCronJobs } = await import("./storage/cron-store.js");
@@ -434,9 +522,11 @@ async function startChat(): Promise<void> {
 
   let queryFn;
   if (config.backend === "opencode") {
+    const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } = await import("./backend/opencode/index.js");
     initOpenCodeAgent(config, frontend.getBridgePort);
     queryFn = opencodeHandleMessage;
   } else {
+    const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } = await import("./backend/claude-sdk/index.js");
     initClaudeAgent(config, frontend.getBridgePort);
     queryFn = claudeHandleMessage;
   }
@@ -470,10 +560,10 @@ async function mainMenu(): Promise<void> {
   printBanner();
 
   // First run — go straight to setup
-  if (!existsSync(CONFIG_FILE) || !loadConfig().botToken) {
+  if (!existsSync(CONFIG_FILE) || !isConfigured(loadConfig())) {
     p.intro(pc.inverse(" Welcome to Talon "));
     p.note(
-      "Talon is a Claude-powered Telegram bot.\nLet's get you set up in about 60 seconds.",
+      "Talon is an agentic AI harness.\nSupports Telegram, Microsoft Teams, and Terminal.\nLet's get you set up.",
       "First time?",
     );
     await runSetup();
@@ -487,14 +577,17 @@ async function mainMenu(): Promise<void> {
     running = resp.ok;
   } catch { /* not running */ }
 
+  const config = loadConfig();
   const statusDot = running
     ? `${pc.green("●")} running`
     : `${pc.red("●")} stopped`;
 
+  const frontendLabel = config.frontend === "telegram" ? "Telegram" : config.frontend === "teams" ? "Teams" : "Terminal";
+
   const action = await p.select({
-    message: `Talon ${statusDot}`,
+    message: `Talon ${statusDot} ${pc.dim(`(${frontendLabel})`)}`,
     options: [
-      ...(!running ? [{ value: "start" as const, label: "Start Telegram bot" }] : []),
+      ...(!running ? [{ value: "start" as const, label: `Start ${frontendLabel} bot` }] : []),
       { value: "chat", label: "Chat in terminal", hint: "talk to Talon here" },
       { value: "status", label: "Status", hint: "health and stats" },
       { value: "config", label: "Config", hint: "view or edit" },
@@ -548,7 +641,7 @@ switch (command) {
     console.log("  Usage: talon [command]\n");
     console.log("  Commands:");
     console.log(`    ${pc.cyan("setup")}    Guided setup wizard`);
-    console.log(`    ${pc.cyan("start")}    Start the Telegram bot`);
+    console.log(`    ${pc.cyan("start")}    Start the bot`);
     console.log(`    ${pc.cyan("chat")}     Chat with Talon in the terminal`);
     console.log(`    ${pc.cyan("status")}   Show bot health`);
     console.log(`    ${pc.cyan("config")}   View/edit configuration`);
