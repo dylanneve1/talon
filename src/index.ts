@@ -1,16 +1,13 @@
 /**
- * Talon — Claude-powered Telegram bot.
+ * Talon — agentic AI harness.
  * Composition root: loads config, creates frontend + backend, wires dispatcher.
  *
- * This file knows NOTHING about Telegram or Claude SDK specifics.
- * To swap frontends (Discord, CLI) or backends (OpenAI, Ollama),
- * change the imports below — no other file needs to change.
+ * Frontends (Telegram, Terminal) and backends (Claude, OpenCode)
+ * are loaded dynamically — only the selected platform's dependencies are required.
  */
 
-import { loadConfig } from "./util/config.js";
+import { loadConfig, getFrontends } from "./util/config.js";
 import { initWorkspace, startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
-import { initAgent as initClaudeAgent, handleMessage as claudeHandleMessage } from "./backend/claude-sdk/index.js";
-import { initOpenCodeAgent, handleMessage as opencodeHandleMessage, stopOpenCodeServer } from "./backend/opencode/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
@@ -30,9 +27,8 @@ import {
   stopCronTimer,
 } from "./core/cron.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
-import { createTelegramFrontend } from "./frontend/telegram/index.js";
 import { log, logError, logWarn } from "./util/log.js";
-import type { QueryBackend } from "./core/types.js";
+import type { QueryBackend, ContextManager } from "./core/types.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -56,18 +52,41 @@ loadHistory();
 loadMediaIndex();
 cleanupOldLogs();
 
-// ── Create frontend (swap this line for a different platform) ────────────────
+// ── Create frontend (dynamic import — only selected platform's deps required) ─
 
-const frontend = createTelegramFrontend(config);
+type Frontend = {
+  context: ContextManager;
+  sendTyping: (chatId: number) => Promise<void>;
+  sendMessage: (chatId: number, text: string) => Promise<void>;
+  getBridgePort: () => number;
+  init: () => Promise<void>;
+  start: () => Promise<void>;
+  stop: () => Promise<void>;
+};
 
-// ── Create backend ──────────────────────────────────────────────────────────
+const selectedFrontend = getFrontends(config)[0]; // use first configured frontend
+let frontend: Frontend;
+
+if (selectedFrontend === "terminal") {
+  const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
+  frontend = createTerminalFrontend(config);
+  log("bot", "Frontend: Terminal");
+} else {
+  const { createTelegramFrontend } = await import("./frontend/telegram/index.js");
+  frontend = createTelegramFrontend(config);
+  log("bot", "Frontend: Telegram");
+}
+
+// ── Create backend (dynamic import) ──────────────────────────────────────────
 
 let backend: QueryBackend;
 if (config.backend === "opencode") {
+  const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } = await import("./backend/opencode/index.js");
   initOpenCodeAgent(config, frontend.getBridgePort);
   backend = { query: (params) => opencodeHandleMessage(params) };
   log("bot", "Backend: OpenCode");
 } else {
+  const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } = await import("./backend/claude-sdk/index.js");
   initClaudeAgent(config, frontend.getBridgePort);
   backend = { query: (params) => claudeHandleMessage(params) };
   log("bot", "Backend: Claude SDK");
@@ -99,23 +118,23 @@ async function gracefulShutdown(signal: string): Promise<void> {
   shuttingDown = true;
   log("shutdown", `${signal} received, shutting down gracefully...`);
 
-  // Force exit if shutdown takes too long
   const forceTimer = setTimeout(() => {
     logError("shutdown", "Timeout exceeded, forcing exit");
     process.exit(1);
   }, SHUTDOWN_TIMEOUT_MS);
-  forceTimer.unref(); // don't keep process alive
+  forceTimer.unref();
 
-  // Wait for in-flight queries to drain
   const pending = getQueueSize();
   if (pending > 0) {
     log("shutdown", `Waiting for ${pending} in-flight queries to drain...`);
-    // Give queries a few seconds to finish, then proceed
     await new Promise((r) => setTimeout(r, 5000));
   }
 
   await frontend.stop();
-  if (config.backend === "opencode") stopOpenCodeServer();
+  if (config.backend === "opencode") {
+    const { stopOpenCodeServer } = await import("./backend/opencode/index.js");
+    stopOpenCodeServer();
+  }
   stopPulseTimer();
   stopCronTimer();
   stopWatchdog();

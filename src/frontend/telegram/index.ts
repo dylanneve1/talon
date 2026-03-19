@@ -46,7 +46,7 @@ export type TelegramFrontend = {
 // ── Factory ─────────────────────────────────────────────────────────────────
 
 export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
-  const bot = new Bot(config.botToken);
+  const bot = new Bot(config.botToken!);
   bot.api.config.use(apiThrottler());
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
 
@@ -71,7 +71,7 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
 
     async init() {
       // Register Telegram action handler with the core gateway
-      setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken));
+      setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken!));
 
       const port = await startGateway(19876);
       log("bot", `Gateway started on port ${port}`);

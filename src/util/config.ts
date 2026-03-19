@@ -10,8 +10,11 @@ const pluginEntrySchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
 });
 
+const frontendEnum = z.enum(["telegram", "terminal"]);
+
 const configSchema = z.object({
-  botToken: z.string().default(""),
+  frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
+  botToken: z.string().optional(),
   backend: z.enum(["claude", "opencode"]).default("claude"),
   model: z.string().default("claude-sonnet-4-6"),
   maxMessageLength: z.number().int().min(100).default(4000),
@@ -30,6 +33,11 @@ export type TalonConfig = z.infer<typeof configSchema> & {
   systemPrompt: string;
   workspace: string;
 };
+
+/** Normalize frontend config to always be an array. */
+export function getFrontends(config: TalonConfig): string[] {
+  return Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+}
 
 // ── Config file ─────────────────────────────────────────────────────────────
 
@@ -149,6 +157,15 @@ export function loadConfig(): TalonConfig {
   const fileConfig = loadConfigFile();
 
   const parsed = configSchema.parse(fileConfig);
+
+  // Validate per-frontend requirements
+  const frontends = Array.isArray(parsed.frontend) ? parsed.frontend : [parsed.frontend];
+  for (const fe of frontends) {
+    if (fe === "telegram" && !parsed.botToken) {
+      throw new Error(`Telegram frontend requires "botToken" in ${CONFIG_FILE}. Run "talon setup" to configure.`);
+    }
+  }
+
   const workspace = resolve(process.cwd(), "workspace");
 
   return {

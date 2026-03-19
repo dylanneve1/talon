@@ -32,21 +32,20 @@ describe("config", () => {
   }
 
   describe("loadConfig", () => {
-    it("loads config on first run with no config (creates defaults)", async () => {
-      mockFs(null); // no config file exists
+    it("loads config with terminal frontend (no token needed)", async () => {
+      mockFs({ frontend: "terminal" });
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.botToken).toBe("");
+      expect(config.frontend).toBe("terminal");
       expect(config.model).toBe("claude-sonnet-4-6");
     });
 
-    it("loads config with empty botToken", async () => {
-      mockFs({ botToken: "" });
+    it("throws when telegram frontend has no botToken", async () => {
+      mockFs({ frontend: "telegram" });
 
       const { loadConfig } = await import("../util/config.js");
-      const config = loadConfig();
-      expect(config.botToken).toBe("");
+      expect(() => loadConfig()).toThrow("botToken");
     });
 
     it("loads config from talon.json", async () => {
