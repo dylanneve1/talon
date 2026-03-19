@@ -30,7 +30,7 @@ const TERMINAL_CHAT_ID = 1;
 const COLS = Math.min(process.stdout.columns || 100, 120);
 
 // Internal tools that are noise — don't show to user
-const HIDDEN_TOOLS = new Set(["ToolSearch", "TodoRead", "TodoWrite"]);
+const HIDDEN_TOOLS = new Set(["TodoRead", "TodoWrite"]);
 
 // ── State ────────────────────────────────────────────────────────────────────
 
