@@ -165,7 +165,7 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
 // ── Main loader ─────────────────────────────────────────────────────────────
 
 export function loadConfig(): TalonConfig {
-  const isFirstRun = ensureConfigFile();
+  ensureConfigFile();
   const fileConfig = loadConfigFile();
 
   const parsed = configSchema.parse(fileConfig);
