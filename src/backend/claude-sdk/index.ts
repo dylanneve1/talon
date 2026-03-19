@@ -64,18 +64,21 @@ export async function handleMessage(
     betas: ["context-1m-2025-08-07"],
     ...thinkingConfig,
     mcpServers: {
-      "telegram-tools": {
-        command: "node",
-        args: [
-          "--import",
-          "tsx",
-          resolve(import.meta.dirname ?? ".", "tools.ts"),
-        ],
-        env: {
-          TALON_BRIDGE_URL: `http://127.0.0.1:${bridgePortFn()}`,
-          TALON_CHAT_ID: chatId,
+      // Only register Telegram tools when Telegram frontend is active
+      ...((Array.isArray(config.frontend) ? config.frontend : [config.frontend]).includes("telegram") ? {
+        "telegram-tools": {
+          command: "node",
+          args: [
+            "--import",
+            "tsx",
+            resolve(import.meta.dirname ?? ".", "tools.ts"),
+          ],
+          env: {
+            TALON_BRIDGE_URL: `http://127.0.0.1:${bridgePortFn()}`,
+            TALON_CHAT_ID: chatId,
+          },
         },
-      },
+      } : {}),
       ...getPluginMcpServers(`http://127.0.0.1:${bridgePortFn()}`, chatId),
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
