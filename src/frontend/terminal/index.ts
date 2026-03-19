@@ -270,7 +270,10 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
     },
 
     async start() {
-      const model = config.model.replace("claude-", "").replace(/-/g, " ");
+      // "claude-opus-4-6" → "Opus 4.6", "claude-sonnet-4-6" → "Sonnet 4.6"
+      const model = config.model
+        .replace("claude-", "")
+        .replace(/^(\w+)-(\d+)-(\d+)/, (_, name, maj, min) => `${name.charAt(0).toUpperCase() + name.slice(1)} ${maj}.${min}`);
       writeln();
       writeln(`  ${pc.bold(pc.cyan("Talon"))} ${pc.dim("·")} ${pc.dim(model)}`);
       writeln(`  ${HLINE}`);
@@ -389,7 +392,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           currentPhase = "idle";
 
           // Show final response if not already sent via onTextBlock/action handler
-          if (getGatewayMessageCount() === 0 && result.text && result.text.length > 20) {
+          if (getGatewayMessageCount() === 0 && result.text?.trim()) {
             renderAssistantMessage(result.text);
           }
 
