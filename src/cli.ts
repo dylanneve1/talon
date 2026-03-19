@@ -36,7 +36,7 @@ function printBanner(): void {
 // ── Config ──────────────────────────────────────────────────────────────────
 
 type Config = {
-  frontend: string;
+  frontend: string | string[];
   botToken?: string;
   model: string;
   concurrency: number;
@@ -88,10 +88,13 @@ function maskToken(token: string | undefined): string {
 }
 
 function isConfigured(config: Config): boolean {
-  if (config.frontend === "telegram") return !!config.botToken;
-  if (config.frontend === "teams") return !!(config.teams?.clientId && config.teams?.clientSecret && config.teams?.tenantId);
-  if (config.frontend === "terminal") return true;
-  return false;
+  const fes = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+  return fes.every((fe) => {
+    if (fe === "telegram") return !!config.botToken;
+    if (fe === "teams") return !!(config.teams?.clientId && config.teams?.clientSecret && config.teams?.tenantId);
+    if (fe === "terminal") return true;
+    return false;
+  });
 }
 
 // ── Setup wizard ────────────────────────────────────────────────────────────
@@ -102,17 +105,20 @@ async function runSetup(): Promise<void> {
 
   const config = loadConfig();
 
-  // ── Frontend selection ──
-  const frontend = await p.select({
-    message: "Frontend platform",
-    initialValue: config.frontend || "telegram",
+  // ── Frontend selection (space to toggle, enter to confirm) ──
+  const existingFrontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend || "telegram"];
+  const frontendSelection = await p.multiselect({
+    message: "Frontend platforms (space to toggle, enter to confirm)",
+    initialValues: existingFrontends,
     options: [
       { value: "telegram", label: `Telegram  ${pc.dim("— bot via @BotFather")}` },
       { value: "teams", label: `Teams     ${pc.dim("— Microsoft Teams bot")}` },
       { value: "terminal", label: `Terminal  ${pc.dim("— local CLI chat")}` },
     ],
+    required: true,
   });
-  if (p.isCancel(frontend)) { p.cancel("Cancelled."); process.exit(0); }
+  if (p.isCancel(frontendSelection)) { p.cancel("Cancelled."); process.exit(0); }
+  const selectedFrontends = frontendSelection as string[];
 
   // ── Telegram-specific ──
   let botToken: string | undefined;
@@ -120,7 +126,7 @@ async function runSetup(): Promise<void> {
   let apiId: number | undefined;
   let apiHash: string | undefined;
 
-  if (frontend === "telegram") {
+  if (selectedFrontends.includes("telegram")) {
     const token = await p.text({
       message: "Bot token",
       placeholder: "Paste your token from @BotFather",
@@ -176,7 +182,7 @@ async function runSetup(): Promise<void> {
   // ── Teams-specific ──
   let teams: Config["teams"] | undefined;
 
-  if (frontend === "teams") {
+  if (selectedFrontends.includes("teams")) {
     p.note(
       "Register an app at entra.microsoft.com → App registrations.\n" +
       "Create an Azure Bot resource (free) and enable the Teams channel.",
@@ -222,15 +228,15 @@ async function runSetup(): Promise<void> {
   });
   if (p.isCancel(model)) { p.cancel("Cancelled."); process.exit(0); }
 
-  const pulse = frontend !== "terminal" ? await p.confirm({
+  const pulse = !selectedFrontends.every((f) => f === "terminal") ? await p.confirm({
     message: "Enable pulse? (periodic group engagement)",
     initialValue: config.pulse,
   }) : false;
   if (p.isCancel(pulse)) { p.cancel("Cancelled."); process.exit(0); }
 
   const newConfig: Config = {
-    frontend: frontend as string,
-    botToken: frontend === "telegram" ? botToken : undefined,
+    frontend: selectedFrontends.length === 1 ? selectedFrontends[0] : selectedFrontends,
+    botToken: selectedFrontends.includes("telegram") ? botToken : undefined,
     model: model as string,
     concurrency: config.concurrency,
     pulse: pulse as boolean,
@@ -249,12 +255,12 @@ async function runSetup(): Promise<void> {
 
   p.outro(`Run ${pc.cyan(pc.bold("npm start"))} to launch Talon`);
 
-  if (frontend === "telegram" && apiId && apiHash) {
+  if (selectedFrontends.includes("telegram") && apiId && apiHash) {
     console.log(`  ${pc.yellow("!")} Run ${pc.cyan("npx tsx src/login.ts")} to authenticate the userbot first.`);
     console.log();
   }
 
-  if (frontend === "teams") {
+  if (selectedFrontends.includes("teams")) {
     console.log(`  ${pc.yellow("!")} Set your bot's messaging endpoint to ${pc.cyan("https://yourdomain.com/api/messages")}`);
     console.log(`  ${pc.yellow("!")} Expose port 3978 via HTTPS (nginx, caddy, or ngrok for dev).`);
     console.log();
@@ -291,10 +297,12 @@ async function showStatus(): Promise<void> {
 
   if (existsSync(CONFIG_FILE)) {
     const config = loadConfig();
-    console.log(`  ${pc.dim("Frontend")} ${config.frontend}`);
-    if (config.frontend === "telegram") {
+    const statusFes = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+    console.log(`  ${pc.dim("Frontend")} ${statusFes.join(", ")}`);
+    if (statusFes.includes("telegram")) {
       console.log(`  ${pc.dim("Token")}    ${config.botToken ? pc.green("configured") : pc.red("not set")}`);
-    } else if (config.frontend === "teams") {
+    }
+    if (statusFes.includes("teams")) {
       console.log(`  ${pc.dim("Teams")}    ${config.teams?.clientId ? pc.green("configured") : pc.red("not set")}`);
     }
     console.log(`  ${pc.dim("Model")}    ${config.model}`);
@@ -331,12 +339,14 @@ async function viewConfig(): Promise<void> {
   p.intro(pc.inverse(" Configuration "));
   console.log();
   console.log(`  ${pc.dim("File")}             ${pc.dim(CONFIG_FILE)}`);
-  console.log(`  ${pc.dim("Frontend")}         ${config.frontend}`);
-  if (config.frontend === "telegram") {
+  const fes = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+  console.log(`  ${pc.dim("Frontend")}         ${fes.join(", ")}`);
+  if (fes.includes("telegram")) {
     console.log(`  ${pc.dim("Bot token")}        ${maskToken(config.botToken)}`);
     console.log(`  ${pc.dim("Admin")}            ${config.adminUserId || pc.dim("not set")}`);
     console.log(`  ${pc.dim("Userbot")}          ${config.apiId ? pc.green("configured") : pc.dim("not set")}`);
-  } else if (config.frontend === "teams") {
+  }
+  if (fes.includes("teams")) {
     console.log(`  ${pc.dim("Client ID")}        ${maskToken(config.teams?.clientId)}`);
     console.log(`  ${pc.dim("Tenant ID")}        ${maskToken(config.teams?.tenantId)}`);
   }
@@ -582,7 +592,8 @@ async function mainMenu(): Promise<void> {
     ? `${pc.green("●")} running`
     : `${pc.red("●")} stopped`;
 
-  const frontendLabel = config.frontend === "telegram" ? "Telegram" : config.frontend === "teams" ? "Teams" : "Terminal";
+  const menuFes = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+  const frontendLabel = menuFes.map((f) => f === "telegram" ? "Telegram" : f === "teams" ? "Teams" : "Terminal").join(" + ");
 
   const action = await p.select({
     message: `Talon ${statusDot} ${pc.dim(`(${frontendLabel})`)}`,
