@@ -386,7 +386,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
         }
 
         // ── Execute query ──
-        renderUserMessage(text);
+        // (readline already echoed the input, no need to repeat it)
         toolCallCount = 0;
         currentPhase = "thinking";
         startSpinner("thinking");
