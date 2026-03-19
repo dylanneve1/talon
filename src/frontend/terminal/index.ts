@@ -340,6 +340,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
 
         if (text === "/status") {
           const { getSessionInfo } = await import("../../storage/sessions.js");
+          const { getLoadedPlugins } = await import("../../core/plugin.js");
           const info = getSessionInfo(String(TERMINAL_CHAT_ID));
           const u = info.usage;
           const cacheHit = (u.totalInputTokens + u.totalCacheRead) > 0
@@ -347,6 +348,17 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           writeln();
           writeln(`  ${pc.bold("Session")}  turns ${info.turns}  ·  $${u.estimatedCostUsd.toFixed(4)}  ·  ${cacheHit}% cache`);
           writeln(`  ${pc.dim(`in ${u.totalInputTokens.toLocaleString()}  ·  out ${u.totalOutputTokens.toLocaleString()} tokens`)}`);
+          const plugins = getLoadedPlugins();
+          if (plugins.length > 0) {
+            writeln();
+            writeln(`  ${pc.bold("Plugins")}`);
+            for (const p of plugins) {
+              const ver = p.plugin.version ? pc.dim(` v${p.plugin.version}`) : "";
+              const desc = p.plugin.description ? `  ${pc.dim(p.plugin.description)}` : "";
+              const tools = p.plugin.mcpServerPath ? pc.green("mcp") : pc.dim("actions only");
+              writeln(`  ${pc.green("●")} ${p.plugin.name}${ver}  ${tools}${desc}`);
+            }
+          }
           reprompt(); return;
         }
 
