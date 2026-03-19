@@ -323,6 +323,45 @@ describe("teams/actions — createTeamsActionHandler", () => {
     });
   });
 
+  describe("edit_message — no conversation ref", () => {
+    it("returns error when no conversation context", async () => {
+      const result = await handler(
+        { action: "edit_message", message_id: "act-123", text: "edited" },
+        "no-ref-chat",
+      );
+      expect(result!.ok).toBe(false);
+      expect(result!.error).toContain("No conversation context");
+    });
+  });
+
+  describe("delete_message — no conversation ref", () => {
+    it("returns error when no conversation context", async () => {
+      const result = await handler(
+        { action: "delete_message", message_id: "act-456" },
+        "no-ref-chat",
+      );
+      expect(result!.ok).toBe(false);
+      expect(result!.error).toContain("No conversation context");
+    });
+  });
+
+  describe("send_file — file errors", () => {
+    it("rejects missing file_path", async () => {
+      const result = await handler({ action: "send_file" }, "test-chat");
+      expect(result!.ok).toBe(false);
+      expect(result!.error).toContain("Missing file_path");
+    });
+
+    it("returns error for nonexistent file", async () => {
+      const result = await handler(
+        { action: "send_photo", file_path: "/tmp/nonexistent-file-xyz.jpg" },
+        "test-chat",
+      );
+      expect(result!.ok).toBe(false);
+      expect(result!.error).toContain("File error");
+    });
+  });
+
   describe("send_chat_action", () => {
     it("sends typing indicator", async () => {
       const result = await handler({ action: "send_chat_action" }, "test-chat");
@@ -740,7 +779,50 @@ describe("teams/handlers — conversation type detection", () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 9. SENDER ID EXTRACTION
+// 9. STRING ID HASHING — deterministic user ID for history
+// ══════════════════════════════════════════════════════════════════════════════
+
+describe("teams/handlers — string ID hashing", () => {
+  // Replicate the hashStringId function for testing
+  function hashStringId(str: string): number {
+    let hash = 5381;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash);
+  }
+
+  it("produces a positive integer", () => {
+    const id = hashStringId("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+    expect(id).toBeGreaterThan(0);
+    expect(Number.isInteger(id)).toBe(true);
+  });
+
+  it("is deterministic — same input always produces same output", () => {
+    const aadId = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    expect(hashStringId(aadId)).toBe(hashStringId(aadId));
+  });
+
+  it("differentiates different user IDs", () => {
+    const id1 = hashStringId("user-aaa");
+    const id2 = hashStringId("user-bbb");
+    expect(id1).not.toBe(id2);
+  });
+
+  it("handles empty string", () => {
+    const id = hashStringId("");
+    expect(id).toBe(5381); // initial hash value
+  });
+
+  it("handles very long strings", () => {
+    const id = hashStringId("x".repeat(10_000));
+    expect(id).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(id)).toBe(true);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 10. SENDER ID EXTRACTION
 // ══════════════════════════════════════════════════════════════════════════════
 
 describe("teams/handlers — sender ID extraction", () => {
@@ -769,7 +851,7 @@ describe("teams/handlers — sender ID extraction", () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 10. ADAPTIVE CARD CONSTRUCTION
+// 11. ADAPTIVE CARD CONSTRUCTION
 // ══════════════════════════════════════════════════════════════════════════════
 
 describe("teams/actions — adaptive card construction", () => {
@@ -809,7 +891,7 @@ describe("teams/actions — adaptive card construction", () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 11. CONTENT TYPE MAPPING
+// 12. CONTENT TYPE MAPPING
 // ══════════════════════════════════════════════════════════════════════════════
 
 describe("teams/actions — content type mapping", () => {

@@ -33,6 +33,7 @@ import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { createTelegramFrontend } from "./frontend/telegram/index.js";
 import { createTerminalFrontend } from "./frontend/terminal/index.js";
 import { createTeamsFrontend } from "./frontend/teams/index.js";
+import { flushConversationStore } from "./frontend/teams/conversation-store.js";
 import { log, logError, logWarn } from "./util/log.js";
 import type { QueryBackend } from "./core/types.js";
 
@@ -144,6 +145,7 @@ process.on("uncaughtException", (err) => {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
+  if (config.frontend === "teams") flushConversationStore();
   process.exit(1);
 });
 

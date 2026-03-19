@@ -17,6 +17,7 @@ import {
 import { incrementMessageCount } from "../../core/gateway.js";
 import { getConversationReference } from "./conversation-store.js";
 import type { ActionResult } from "../../core/types.js";
+import { logError } from "../../util/log.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -87,28 +88,33 @@ export function createTeamsActionHandler(adapter: BotFrameworkAdapter) {
         const text = String(body.text ?? "");
         const activityId = String(body.message_id ?? "");
         if (!activityId) return { ok: false, error: "Missing message_id" };
-        await withProactiveContext(adapter, chatId, async (ctx) => {
+        const editResult = await withProactiveContext(adapter, chatId, async (ctx) => {
           const activity = MessageFactory.text(text);
           activity.id = activityId;
           await ctx.updateActivity(activity);
+          return true;
         });
+        if (editResult === null) return { ok: false, error: "No conversation context for this chat" };
         return { ok: true };
       }
 
       case "delete_message": {
         const activityId = String(body.message_id ?? "");
         if (!activityId) return { ok: false, error: "Missing message_id" };
-        await withProactiveContext(adapter, chatId, async (ctx) => {
+        const deleteResult = await withProactiveContext(adapter, chatId, async (ctx) => {
           await ctx.deleteActivity(activityId);
+          return true;
         });
+        if (deleteResult === null) return { ok: false, error: "No conversation context for this chat" };
         return { ok: true };
       }
 
-      case "send_chat_action":
+      case "send_chat_action": {
         await withProactiveContext(adapter, chatId, async (ctx) => {
           await ctx.sendActivity({ type: "typing" });
         });
         return { ok: true };
+      }
 
       case "send_message_with_buttons": {
         const text = String(body.text ?? "");
@@ -154,7 +160,7 @@ export function createTeamsActionHandler(adapter: BotFrameworkAdapter) {
             await withProactiveContext(adapter, chatId, async (ctx) => {
               await ctx.sendActivity(MessageFactory.text(text));
             });
-          } catch { /* scheduled send failed */ }
+          } catch (err) { logError("teams", `Scheduled message failed: ${err instanceof Error ? err.message : err}`); }
           scheduledMessages.delete(scheduleId);
         }, delaySec * 1000);
         scheduledMessages.set(scheduleId, timer);
@@ -178,16 +184,22 @@ export function createTeamsActionHandler(adapter: BotFrameworkAdapter) {
       case "send_animation":
       case "send_voice": {
         const filePath = String(body.file_path ?? "");
+        if (!filePath) return { ok: false, error: "Missing file_path" };
         const caption = body.caption ? String(body.caption) : undefined;
         incrementMessageCount();
 
-        if (action === "send_file") {
-          const stat = statSync(filePath);
-          if (stat.size > 49 * 1024 * 1024)
-            return { ok: false, error: "File too large (max 49MB)" };
+        let data: Buffer;
+        try {
+          if (action === "send_file") {
+            const stat = statSync(filePath);
+            if (stat.size > 49 * 1024 * 1024)
+              return { ok: false, error: "File too large (max 49MB)" };
+          }
+          data = readFileSync(filePath);
+        } catch (err) {
+          return { ok: false, error: `File error: ${err instanceof Error ? err.message : err}` };
         }
 
-        const data = readFileSync(filePath);
         const fileName = basename(filePath);
         const base64 = data.toString("base64");
 

@@ -22,6 +22,18 @@ import { saveConversationReference } from "./conversation-store.js";
 import { log, logError } from "../../util/log.js";
 import { splitMessage } from "./formatting.js";
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Deterministic hash of a string to a stable positive integer.
+ *  Needed because Teams uses UUID strings for user IDs but history expects numbers. */
+function hashStringId(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
 // ── Rate limiting ───────────────────────────────────────────────────────────
 
 const userMessageTimestamps = new Map<string, number[]>();
@@ -182,7 +194,7 @@ async function processAndReply(params: ProcessParams): Promise<void> {
   if (!isGroup && senderName) {
     enrichedPrompt = enrichDMPrompt(prompt, senderName);
   } else if (isGroup && senderId) {
-    enrichedPrompt = enrichGroupPrompt(prompt, chatId, Number(senderId) || 0);
+    enrichedPrompt = enrichGroupPrompt(prompt, chatId, hashStringId(senderId));
   }
 
   const onTextBlock = async (text: string) => {
@@ -260,7 +272,7 @@ export function createTeamsActivityHandler(config: TalonConfig): ActivityHandler
     // Push to in-memory history
     pushMessage(conversationId, {
       msgId: Date.now(), // Teams doesn't have numeric message IDs
-      senderId: Number(senderId) || 0,
+      senderId: hashStringId(senderId),
       senderName,
       text,
       timestamp: activity.timestamp ? new Date(activity.timestamp).getTime() : Date.now(),

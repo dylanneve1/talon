@@ -111,6 +111,61 @@ describe("config", () => {
       expect(config.pulse).toBe(false);
       expect(config.pulseIntervalMs).toBe(600000);
     });
+
+    it("loads Teams frontend config", async () => {
+      mockFs({
+        frontend: "teams",
+        teams: { clientId: "app-id", clientSecret: "secret", tenantId: "tenant-id" },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.frontend).toBe("teams");
+      expect(config.teams?.clientId).toBe("app-id");
+      expect(config.teams?.clientSecret).toBe("secret");
+      expect(config.teams?.tenantId).toBe("tenant-id");
+    });
+
+    it("throws when Teams frontend is missing credentials", async () => {
+      mockFs({ frontend: "teams" });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow("teams.clientId");
+    });
+
+    it("throws when Teams frontend has partial credentials", async () => {
+      mockFs({ frontend: "teams", teams: { clientId: "id" } });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow("teams.clientSecret");
+    });
+
+    it("defaults frontend to telegram", async () => {
+      mockFs({ botToken: "test-token" });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.frontend).toBe("telegram");
+    });
+
+    it("allows terminal frontend without botToken", async () => {
+      mockFs({ frontend: "terminal" });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.frontend).toBe("terminal");
+    });
+
+    it("Teams config defaults port to 3978", async () => {
+      mockFs({
+        frontend: "teams",
+        teams: { clientId: "id", clientSecret: "secret", tenantId: "tenant" },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.teams?.port).toBe(3978);
+    });
   });
 
   describe("system prompt", () => {
