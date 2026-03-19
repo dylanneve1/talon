@@ -167,6 +167,60 @@ describe("gateway HTTP server", () => {
     });
   });
 
+  describe("concurrent chat contexts via HTTP", () => {
+    it("handles two chats simultaneously", async () => {
+      setGatewayContext(100);
+      setGatewayContext(200);
+
+      const [r1, r2] = await Promise.all([
+        post({ action: "send_message", _chatId: "100", text: "from chat 100" }),
+        post({ action: "send_message", _chatId: "200", text: "from chat 200" }),
+      ]);
+
+      expect(r1.body.ok).toBe(true);
+      expect(r2.body.ok).toBe(true);
+      expect(mockFrontendHandler).toHaveBeenCalledTimes(2);
+
+      clearGatewayContext(100);
+      clearGatewayContext(200);
+    });
+
+    it("one chat's context doesn't affect another", async () => {
+      setGatewayContext(300);
+      // Chat 400 has no context
+      const { body } = await post({ action: "send_message", _chatId: "400", text: "no context" });
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("No active chat context");
+      // Chat 300 still works
+      const r2 = await post({ action: "send_message", _chatId: "300", text: "still works" });
+      expect(r2.body.ok).toBe(true);
+      clearGatewayContext(300);
+    });
+
+    it("frontend handler error returns error result (doesn't crash server)", async () => {
+      const errorHandler = vi.fn(async () => { throw new Error("handler exploded"); });
+      setFrontendHandler(errorHandler);
+      setGatewayContext(123);
+
+      const { status, body } = await post({ action: "send_message", _chatId: "123", text: "boom" });
+
+      expect(status).toBe(200); // HTTP 200, error in body
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("handler exploded");
+
+      clearGatewayContext(123);
+      setFrontendHandler(mockFrontendHandler); // restore
+    });
+
+    it("request without _chatId is rejected", async () => {
+      setGatewayContext(123);
+      const { body } = await post({ action: "send_message", text: "no chatId" });
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("No active chat context");
+      clearGatewayContext(123);
+    });
+  });
+
   describe("shared actions via HTTP", () => {
     it("fetch_url rejects invalid URLs", async () => {
       setGatewayContext(123);

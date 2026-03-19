@@ -213,6 +213,50 @@ describe("dispatcher", () => {
     expect(order[1]).toBe("start:B");
   });
 
+  it("second query still runs after first query errors (same chat)", async () => {
+    let callCount = 0;
+    const backend: QueryBackend = {
+      query: vi.fn(async () => {
+        callCount++;
+        if (callCount === 1) throw new Error("first fails");
+        return { text: "second ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 };
+      }),
+    };
+
+    initDispatcher({
+      backend,
+      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      sendTyping: async () => {},
+      onActivity: () => {},
+    });
+
+    const p1 = execute({ chatId: "ERR", numericChatId: 1, prompt: "fail", senderName: "U", isGroup: false, source: "message" });
+    const p2 = execute({ chatId: "ERR", numericChatId: 1, prompt: "succeed", senderName: "U", isGroup: false, source: "message" });
+
+    await expect(p1).rejects.toThrow("first fails");
+    const result = await p2;
+    expect(result.text).toBe("second ok");
+  });
+
+  it("activeCount is accurate during errors", async () => {
+    const backend: QueryBackend = {
+      query: vi.fn(async () => { throw new Error("boom"); }),
+    };
+
+    initDispatcher({
+      backend,
+      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      sendTyping: async () => {},
+      onActivity: () => {},
+    });
+
+    await expect(
+      execute({ chatId: "X", numericChatId: 1, prompt: "x", senderName: "U", isGroup: false, source: "message" }),
+    ).rejects.toThrow("boom");
+
+    expect(getActiveCount()).toBe(0); // cleaned up even on error
+  });
+
   it("serializes same-chat queries (FIFO)", async () => {
     const order: string[] = [];
     const backend: QueryBackend = {

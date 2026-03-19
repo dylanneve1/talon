@@ -337,5 +337,108 @@ describe("plugin system", () => {
       // Plugin is registered even if init fails (tools may still work)
       expect(getPluginCount()).toBe(1);
     });
+
+    it("catches destroy errors without crashing", async () => {
+      vi.doMock("node:fs", () => ({
+        existsSync: vi.fn(() => true),
+      }));
+
+      const plugin = createMockPlugin({
+        destroy: () => { throw new Error("destroy crash"); },
+      });
+      vi.doMock("/fake/plugin/src/index.ts", () => ({ default: plugin }));
+
+      const { loadPlugins, destroyPlugins } = await import("../core/plugin.js");
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      // Should not throw
+      await expect(destroyPlugins()).resolves.toBeUndefined();
+    });
+  });
+
+  describe("frontend whitelist", () => {
+    it("skips plugin when frontend whitelist doesn't match", async () => {
+      vi.doMock("node:fs", () => ({
+        existsSync: vi.fn(() => true),
+      }));
+
+      const plugin = createMockPlugin({
+        frontends: ["telegram"], // only for telegram
+      });
+      vi.doMock("/fake/plugin/src/index.ts", () => ({ default: plugin }));
+
+      const { loadPlugins, getPluginCount } = await import("../core/plugin.js");
+      await loadPlugins([{ path: "/fake/plugin" }], ["terminal"]); // active: terminal
+
+      expect(getPluginCount()).toBe(0);
+    });
+
+    it("loads plugin when frontend whitelist matches", async () => {
+      vi.doMock("node:fs", () => ({
+        existsSync: vi.fn(() => true),
+      }));
+
+      const plugin = createMockPlugin({
+        frontends: ["telegram", "terminal"],
+      });
+      vi.doMock("/fake/plugin/src/index.ts", () => ({ default: plugin }));
+
+      const { loadPlugins, getPluginCount } = await import("../core/plugin.js");
+      await loadPlugins([{ path: "/fake/plugin" }], ["terminal"]);
+
+      expect(getPluginCount()).toBe(1);
+    });
+
+    it("loads plugin when no frontend whitelist is specified", async () => {
+      vi.doMock("node:fs", () => ({
+        existsSync: vi.fn(() => true),
+      }));
+
+      const plugin = createMockPlugin(); // no frontends field
+      delete (plugin as Record<string, unknown>).frontends;
+      vi.doMock("/fake/plugin/src/index.ts", () => ({ default: plugin }));
+
+      const { loadPlugins, getPluginCount } = await import("../core/plugin.js");
+      await loadPlugins([{ path: "/fake/plugin" }], ["terminal"]);
+
+      expect(getPluginCount()).toBe(1);
+    });
+  });
+
+  describe("prompt addition error handling", () => {
+    it("catches getSystemPromptAddition errors without crashing", async () => {
+      vi.doMock("node:fs", () => ({
+        existsSync: vi.fn(() => true),
+      }));
+
+      const plugin = createMockPlugin({
+        getSystemPromptAddition: () => { throw new Error("prompt error"); },
+      });
+      vi.doMock("/fake/plugin/src/index.ts", () => ({ default: plugin }));
+
+      const { loadPlugins, getPluginPromptAdditions } = await import("../core/plugin.js");
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      // Should return empty array, not throw
+      const additions = getPluginPromptAdditions();
+      expect(additions).toHaveLength(0);
+    });
+
+    it("skips empty/whitespace prompt additions", async () => {
+      vi.doMock("node:fs", () => ({
+        existsSync: vi.fn(() => true),
+      }));
+
+      const plugin = createMockPlugin({
+        getSystemPromptAddition: () => "   \n  ",
+      });
+      vi.doMock("/fake/plugin/src/index.ts", () => ({ default: plugin }));
+
+      const { loadPlugins, getPluginPromptAdditions } = await import("../core/plugin.js");
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      const additions = getPluginPromptAdditions();
+      expect(additions).toHaveLength(0);
+    });
   });
 });
