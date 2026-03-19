@@ -8,7 +8,7 @@
  */
 
 import pino from "pino";
-import { existsSync, mkdirSync, statSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, statSync, renameSync, unlinkSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 
 export type LogComponent =
@@ -48,8 +48,17 @@ try {
   }
 } catch { /* ignore */ }
 
-// TALON_QUIET=1 suppresses console output (used by terminal frontend)
-const quiet = process.env.TALON_QUIET === "1";
+// Suppress console output for terminal frontend (stdout belongs to the REPL)
+let quiet = process.env.TALON_QUIET === "1";
+if (!quiet) {
+  try {
+    const cfgPath = resolve(process.cwd(), "workspace", "talon.json");
+    if (existsSync(cfgPath)) {
+      const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
+      if (cfg.frontend === "terminal") quiet = true;
+    }
+  } catch { /* ignore */ }
+}
 
 const logger = pino({
   level: "trace",
