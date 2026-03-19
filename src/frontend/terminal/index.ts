@@ -97,9 +97,10 @@ function startSpinner(label = "thinking"): void {
   spinnerLabel = label;
   spinnerFrame = 0;
   if (rl) rl.pause();
+  process.stdout.write("\n"); // breathing room above spinner
   spinnerTimer = setInterval(() => {
     spinnerFrame = (spinnerFrame + 1) % SPINNER.length;
-    write(pc.dim(`  ${SPINNER[spinnerFrame]} ${spinnerLabel}...`));
+    write(`  ${pc.dim(SPINNER[spinnerFrame])}  ${pc.dim(spinnerLabel + "...")}`);
   }, 80);
 }
 
