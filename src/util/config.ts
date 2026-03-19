@@ -92,8 +92,14 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
   if (soul) parts.push(soul);
 
   const custom = readOptionalFile(resolve(base, "prompts", "custom.md"));
-  const defaultPrompt = readOptionalFile(resolve(base, "prompts", "default.md"));
-  parts.push(custom || defaultPrompt || "You are a helpful AI assistant.");
+  if (frontend === "terminal") {
+    // Terminal mode: skip Telegram-specific tool docs from default.md
+    const terminalPrompt = readOptionalFile(resolve(base, "prompts", "terminal.md"));
+    parts.push(custom || terminalPrompt || "You are Talon, a sharp and helpful AI assistant running in a terminal.\nBe concise and direct. Answer directly, no filler.");
+  } else {
+    const defaultPrompt = readOptionalFile(resolve(base, "prompts", "default.md"));
+    parts.push(custom || defaultPrompt || "You are a helpful AI assistant.");
+  }
 
   const memory = readOptionalFile(resolve(base, "workspace", "memory", "memory.md"));
   if (memory)
@@ -152,27 +158,6 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
     for (const addition of pluginPromptAdditions) {
       parts.push(addition);
     }
-  }
-
-  // Frontend-specific instructions
-  if (frontend === "terminal") {
-    parts.push(`## Terminal Mode
-
-You are running in a monospace terminal (CLI), NOT in a messaging app.
-
-**Formatting rules:**
-- Do NOT use Markdown formatting (no **bold**, _italic_, [links](url), or # headings).
-- Use plain text with monospace-friendly formatting: indentation, dashes, pipes, ASCII tables.
-- Use CAPS or --- underlines for emphasis instead of markdown bold/italic.
-- Code blocks are fine — they render naturally in a terminal.
-- Keep lines under 100 characters when possible.
-- Use whitespace and alignment for readability.
-
-**Behavior:**
-- Your output goes directly to stdout — do NOT use the send tool. Just output text normally.
-- You are talking to a single user at a local terminal. No group chat, no message IDs, no reactions.
-- Be direct and concise. Terminal users want fast answers, not walls of text.
-- For structured data, use aligned columns or indented lists, not markdown tables.`);
   }
 
   return parts.join("\n\n---\n\n");
