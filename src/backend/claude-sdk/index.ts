@@ -64,12 +64,10 @@ export async function handleMessage(
     ...thinkingConfig,
     mcpServers: {
       "telegram-tools": {
-        command: "node",
-        args: [
-          "--import",
-          "tsx",
-          resolve(import.meta.dirname ?? ".", "tools.ts"),
-        ],
+        command: process.platform === "win32" ? "npx" : "node",
+        args: process.platform === "win32"
+          ? ["tsx", resolve(import.meta.dirname ?? ".", "tools.ts")]
+          : ["--import", "tsx", resolve(import.meta.dirname ?? ".", "tools.ts")],
         env: {
           TALON_BRIDGE_URL: `http://127.0.0.1:${bridgePortFn()}`,
           TALON_CHAT_ID: chatId,

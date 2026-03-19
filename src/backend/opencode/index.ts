@@ -43,13 +43,17 @@ async function ensureServer(): Promise<OpencodeClient> {
 
   // Register our MCP tools server with OpenCode
   try {
-    const toolsPath = new URL("../claude-sdk/tools.ts", import.meta.url).pathname;
+    let toolsPath = new URL("../claude-sdk/tools.ts", import.meta.url).pathname;
+    // Windows URL.pathname produces "/C:/..." — strip the leading slash
+    if (process.platform === "win32" && toolsPath.startsWith("/")) toolsPath = toolsPath.slice(1);
     await client.mcp.add({
       body: {
         name: "talon-tools",
         config: {
           type: "local" as const,
-          command: ["node", "--import", "tsx", toolsPath],
+          command: process.platform === "win32"
+            ? ["npx", "tsx", toolsPath]
+            : ["node", "--import", "tsx", toolsPath],
           environment: {
             TALON_BRIDGE_URL: `http://127.0.0.1:${gatewayPortFn()}`,
           },
