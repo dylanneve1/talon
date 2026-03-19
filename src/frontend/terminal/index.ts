@@ -176,14 +176,18 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
   else if (input.package_url) detail = String(input.package_url);
   else if (input.build_number) detail = `#${input.build_number}`;
   else if (input.packages) detail = (input.packages as string[]).join(", ");
-  // Fallback: show first string param
+  // Fallback: show all string/number/boolean params compactly
   else {
+    const parts: string[] = [];
     for (const [k, v] of Object.entries(input)) {
-      if (typeof v === "string" && v.length > 0 && k !== "_chatId") {
-        detail = `${k}=${v.length > 50 ? v.slice(0, 50) + "..." : v}`;
-        break;
+      if (k === "_chatId") continue;
+      if (typeof v === "string" && v.length > 0) {
+        parts.push(`${k}=${v.length > 30 ? v.slice(0, 30) + "..." : v}`);
+      } else if (typeof v === "number" || typeof v === "boolean") {
+        parts.push(`${k}=${v}`);
       }
     }
+    detail = parts.join(", ").slice(0, maxDetail);
   }
 
   const detailStr = detail ? `  ${pc.dim(detail)}` : "";
