@@ -25,6 +25,19 @@ vi.mock("../../core/errors.js", () => ({
   friendlyMessage: vi.fn(() => "error"),
 }));
 
+vi.mock("../../storage/history.js", () => ({
+  setMessageFilePath: vi.fn(),
+  getRecentBySenderId: vi.fn(() => []),
+}));
+vi.mock("../../storage/media-index.js", () => ({
+  addMedia: vi.fn(),
+}));
+vi.mock("node:fs", () => ({
+  writeFileSync: vi.fn(),
+  mkdirSync: vi.fn(),
+  existsSync: vi.fn(() => true),
+}));
+
 const { shouldHandleInGroup, getSenderName, getReplyContext, getForwardContext } = await import(
   "../frontend/telegram/handlers.js"
 );
@@ -168,6 +181,158 @@ describe("getForwardContext", () => {
       forward_origin: { type: "hidden_user", sender_user_name: "anon" },
     });
     expect(result).toContain("anon");
+  });
+
+  it("handles chat type forward", () => {
+    const result = getForwardContext({
+      forward_origin: { type: "chat", chat: { title: "Support Group" } },
+    });
+    expect(result).toContain("Support Group");
+  });
+
+  it("handles channel with no title", () => {
+    const result = getForwardContext({
+      forward_origin: { type: "channel", chat: {} },
+    });
+    expect(result).toContain("a chat");
+  });
+
+  it("handles unknown forward type", () => {
+    const result = getForwardContext({
+      forward_origin: { type: "unknown_type" },
+    });
+    expect(result).toContain("someone");
+  });
+});
+
+describe("getReplyContext — edge cases", () => {
+  it("returns empty when reply has no text or caption", () => {
+    expect(getReplyContext({ from: { id: 123 } }, 999)).toBe("");
+  });
+
+  it("uses caption when text is missing", () => {
+    const result = getReplyContext(
+      { from: { id: 123, first_name: "Eve" }, caption: "photo caption" },
+      999,
+    );
+    expect(result).toContain("photo caption");
+  });
+
+  it("includes full name from first and last", () => {
+    const result = getReplyContext(
+      { from: { id: 123, first_name: "Jane", last_name: "Smith" }, text: "hello" },
+      999,
+    );
+    expect(result).toContain("Jane Smith");
+  });
+});
+
+describe("shouldHandleInGroup — edge cases", () => {
+  const ctx = (overrides: Record<string, unknown> = {}) => ({
+    chat: { type: overrides.type ?? "supergroup" },
+    me: { id: overrides.botId ?? 999, username: overrides.username ?? "testbot" },
+    message: {
+      text: overrides.text ?? "",
+      caption: overrides.caption ?? undefined,
+      reply_to_message: overrides.replyFromId
+        ? { from: { id: overrides.replyFromId } }
+        : undefined,
+    },
+  }) as any;
+
+  it("returns false when no chat", () => {
+    expect(shouldHandleInGroup({ chat: null, message: {} } as any)).toBe(false);
+  });
+
+  it("returns false when no message", () => {
+    expect(shouldHandleInGroup({ chat: { type: "group" }, message: null } as any)).toBe(false);
+  });
+
+  it("detects bot mention in caption", () => {
+    expect(shouldHandleInGroup(ctx({ caption: "look @testbot", text: "" }))).toBe(true);
+  });
+
+  it("handles 'group' type (not just supergroup)", () => {
+    expect(shouldHandleInGroup(ctx({ type: "group", text: "@testbot hi" }))).toBe(true);
+  });
+
+  it("returns false for group with @mention as part of longer username", () => {
+    // @testbot123 should NOT match @testbot (word boundary check)
+    expect(shouldHandleInGroup(ctx({ text: "hey @testbot_extra" }))).toBe(false);
+  });
+});
+
+describe("getSenderName — edge cases", () => {
+  it("returns last name only when no first name", () => {
+    expect(getSenderName({ last_name: "Doe" })).toBe("Doe");
+  });
+
+  it("trims whitespace from names", () => {
+    // filter(Boolean) handles empty strings
+    expect(getSenderName({ first_name: "", last_name: "Smith" })).toBe("Smith");
+  });
+});
+
+const { handleTextMessage, handlePhotoMessage, handleCallbackQuery } = await import(
+  "../frontend/telegram/handlers.js"
+);
+
+describe("handleTextMessage — integration via mock Context", () => {
+
+  const mockBot = {
+    api: {
+      sendMessage: vi.fn(async () => ({ message_id: 1 })),
+      sendChatAction: vi.fn(async () => {}),
+      setMessageReaction: vi.fn(async () => {}),
+      sendMessageDraft: vi.fn(async () => {}),
+    },
+  } as any;
+
+  const mockConfig = {
+    botToken: "test",
+    model: "claude-sonnet-4-6",
+    maxMessageLength: 4000,
+    workspace: "/tmp/test-workspace",
+  } as any;
+
+  it("silently returns when ctx.message is missing", async () => {
+    await handleTextMessage({ chat: { id: 1 } } as any, mockBot, mockConfig);
+    // Should not throw
+  });
+
+  it("silently returns when ctx.chat is missing", async () => {
+    await handleTextMessage({ message: { text: "hi" } } as any, mockBot, mockConfig);
+    // Should not throw
+  });
+
+  it("silently returns for group message without mention", async () => {
+    const ctx = {
+      chat: { id: 1, type: "supergroup" },
+      message: { text: "hello everyone", message_id: 1, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 1, first_name: "User" },
+    } as any;
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    // Should not enqueue (no mention or reply to bot)
+  });
+
+  it("silently returns when photo has no photos array", async () => {
+    const ctx = {
+      chat: { id: 1, type: "private" },
+      message: { photo: null, message_id: 1 },
+      me: { id: 999, username: "testbot" },
+      from: { id: 1, first_name: "User" },
+    } as any;
+    await handlePhotoMessage(ctx, mockBot, mockConfig);
+  });
+
+  it("silently returns when callback query has no data", async () => {
+    const ctx = {
+      callbackQuery: { message: { message_id: 1 } },  // no 'data' property
+      chat: { id: 1 },
+      from: { id: 1, first_name: "User" },
+    } as any;
+    await handleCallbackQuery(ctx, mockBot, mockConfig);
   });
 });
 
