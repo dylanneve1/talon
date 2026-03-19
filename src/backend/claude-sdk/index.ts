@@ -36,7 +36,7 @@ export async function handleMessage(
   if (!config)
     throw new Error("Agent not initialized. Call initAgent() first.");
 
-  const { chatId, text, senderName, isGroup, onTextBlock, onStreamDelta } =
+  const { chatId, text, senderName, isGroup, onTextBlock, onStreamDelta, onToolUse } =
     params;
   const session = getSession(chatId);
   const t0 = Date.now();
@@ -180,6 +180,8 @@ export async function handleMessage(
             }
             if (b.type === "tool_use") {
               toolCalls++;
+              const tb = block as { type: string; name?: string; input?: Record<string, unknown> };
+              if (onToolUse && tb.name) onToolUse(tb.name, tb.input ?? {});
               // If there's text before this tool call, send it as a progress message
               if (blockText.trim() && onTextBlock) {
                 await onTextBlock(blockText.trim());

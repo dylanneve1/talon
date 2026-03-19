@@ -88,6 +88,7 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
       messageId: params.messageId,
       onStreamDelta: params.onStreamDelta,
       onTextBlock: params.onTextBlock,
+      onToolUse: params.onToolUse,
     });
 
     onActivity();

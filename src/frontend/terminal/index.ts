@@ -1,9 +1,11 @@
 /**
  * Terminal frontend — interactive CLI chat with Claude.
  *
- * Registers a simple action handler with the core gateway:
- * send_message → print to stdout, react → print emoji.
- * Everything else returns null (handled by gateway shared actions or skipped).
+ * Features:
+ *   - Color-coded messages with left-border styling
+ *   - Tool call visibility (name, params, status)
+ *   - Streaming phase indicator (thinking / responding / tool use)
+ *   - Session stats in header
  */
 
 import { createInterface, type Interface as ReadlineInterface } from "node:readline";
@@ -22,56 +24,175 @@ import {
 } from "../../core/gateway.js";
 import { log } from "../../util/log.js";
 
-// ── State ───────────────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const TERMINAL_CHAT_ID = 1;
+const COLS = Math.min(process.stdout.columns || 100, 120);
+const BAR = pc.dim("│");
+const HLINE = pc.dim("─".repeat(COLS - 2));
+
+// ── State ────────────────────────────────────────────────────────────────────
 
 let _activeChatId: number | null = null;
 let busy = false;
 let rl: ReadlineInterface | null = null;
+let currentPhase: "idle" | "thinking" | "tool" | "text" = "idle";
+let toolCallCount = 0;
 
-const TERMINAL_CHAT_ID = 1;
-const PROMPT = `  ${pc.green("you")}  `;
-
-// ── Terminal output helpers ─────────────────────────────────────────────────
+// ── Output helpers ───────────────────────────────────────────────────────────
 
 function clearLine(): void {
   process.stdout.write("\x1b[2K\r");
 }
 
-function output(text: string): void {
+function write(text: string): void {
+  clearLine();
+  process.stdout.write(text);
+}
+
+function writeln(text = ""): void {
   clearLine();
   process.stdout.write(text + "\n");
 }
 
 function reprompt(): void {
-  if (rl) rl.prompt();
+  if (rl) {
+    process.stdout.write("\n");
+    rl.prompt();
+  }
 }
 
-// ── Spinner ─────────────────────────────────────────────────────────────────
+/** Word-wrap text to fit terminal width, preserving existing newlines. */
+function wrap(text: string, indent: number, maxWidth: number): string {
+  const width = maxWidth - indent;
+  if (width <= 20) return text;
+  const pad = " ".repeat(indent);
+  return text.split("\n").map((line) => {
+    if (line.length <= width) return pad + line;
+    const words = line.split(" ");
+    const wrapped: string[] = [];
+    let current = "";
+    for (const word of words) {
+      if (current.length + word.length + 1 > width && current) {
+        wrapped.push(pad + current);
+        current = word;
+      } else {
+        current = current ? current + " " + word : word;
+      }
+    }
+    if (current) wrapped.push(pad + current);
+    return wrapped.join("\n");
+  }).join("\n");
+}
 
-const SPINNER_FRAMES = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
+// ── Spinner ──────────────────────────────────────────────────────────────────
+
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 let spinnerTimer: ReturnType<typeof setInterval> | null = null;
 let spinnerFrame = 0;
+let spinnerLabel = "thinking";
 
-function startSpinner(): void {
+function startSpinner(label = "thinking"): void {
   stopSpinner();
+  spinnerLabel = label;
   spinnerFrame = 0;
   if (rl) rl.pause();
   spinnerTimer = setInterval(() => {
-    spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
-    process.stdout.write(`\x1b[2K\r${pc.dim(`  ${SPINNER_FRAMES[spinnerFrame]} thinking...`)}`);
+    spinnerFrame = (spinnerFrame + 1) % SPINNER.length;
+    write(pc.dim(`  ${SPINNER[spinnerFrame]} ${spinnerLabel}...`));
   }, 80);
+}
+
+function updateSpinnerLabel(label: string): void {
+  spinnerLabel = label;
 }
 
 function stopSpinner(): void {
   if (spinnerTimer) {
     clearInterval(spinnerTimer);
     spinnerTimer = null;
-    process.stdout.write("\x1b[2K\r");
+    clearLine();
   }
   if (rl) rl.resume();
 }
 
-// ── Terminal action handler ─────────────────────────────────────────────────
+// ── Message rendering ────────────────────────────────────────────────────────
+
+function renderUserMessage(text: string): void {
+  writeln();
+  writeln(`  ${pc.green("▍")} ${pc.bold(pc.green("You"))}`);
+  const wrapped = wrap(text, 4, COLS);
+  for (const line of wrapped.split("\n")) {
+    writeln(`  ${pc.green("▍")} ${line.trimStart()}`);
+  }
+}
+
+function renderAssistantMessage(text: string): void {
+  writeln();
+  writeln(`  ${pc.cyan("▍")} ${pc.bold(pc.cyan("Talon"))}`);
+  const wrapped = wrap(text, 4, COLS);
+  for (const line of wrapped.split("\n")) {
+    writeln(`  ${pc.cyan("▍")} ${line.trimStart()}`);
+  }
+}
+
+function renderToolCall(toolName: string, input: Record<string, unknown>): void {
+  toolCallCount++;
+  // Format tool name nicely
+  const displayName = toolName.replace(/_/g, " ");
+
+  // Extract the most meaningful parameter to show
+  let detail = "";
+  if (input.action) detail = String(input.action);
+  else if (input.query) detail = String(input.query).slice(0, 60);
+  else if (input.url) detail = String(input.url).slice(0, 60);
+  else if (input.text) detail = String(input.text).slice(0, 40);
+  else if (input.type) detail = String(input.type);
+  else if (input.name) detail = String(input.name);
+  else if (input.model) detail = String(input.model);
+  else if (input.package_url) detail = String(input.package_url);
+  else if (input.pattern) detail = String(input.pattern);
+  else if (input.build_number) detail = `#${input.build_number}`;
+  else if (input.packages) detail = (input.packages as string[]).join(", ");
+
+  const detailStr = detail ? pc.dim(` ${detail}`) : "";
+  writeln(`  ${pc.yellow("▍")} ${pc.dim("└")} ${pc.yellow(displayName)}${detailStr}`);
+}
+
+function renderToolResult(text: string): void {
+  // Show a compact version of tool results
+  const lines = text.split("\n").filter((l) => l.trim());
+  const preview = lines.slice(0, 3).map((l) => l.slice(0, COLS - 10));
+  for (const line of preview) {
+    writeln(`  ${pc.yellow("▍")}   ${pc.dim(line)}`);
+  }
+  if (lines.length > 3) {
+    writeln(`  ${pc.yellow("▍")}   ${pc.dim(`... ${lines.length - 3} more lines`)}`);
+  }
+}
+
+function renderSystemMessage(text: string): void {
+  writeln(`  ${pc.dim("▍")} ${pc.dim(text)}`);
+}
+
+function renderError(text: string): void {
+  writeln();
+  writeln(`  ${pc.red("▍")} ${pc.red("Error")}: ${text}`);
+}
+
+function renderStats(durationMs: number, inputTokens: number, outputTokens: number, cacheRead: number, tools: number): void {
+  const dur = (durationMs / 1000).toFixed(1);
+  const cacheHit = (inputTokens + cacheRead) > 0 ? Math.round((cacheRead / (inputTokens + cacheRead)) * 100) : 0;
+  const parts = [
+    `${dur}s`,
+    `${inputTokens + outputTokens} tokens`,
+    `${cacheHit}% cache`,
+  ];
+  if (tools > 0) parts.push(`${tools} tool${tools > 1 ? "s" : ""}`);
+  writeln(`  ${pc.dim("▍")} ${pc.dim(parts.join("  ·  "))}`);
+}
+
+// ── Terminal action handler ──────────────────────────────────────────────────
 
 function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: number) => Promise<ActionResult | null> {
   return async (body) => {
@@ -79,13 +200,13 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
     switch (action) {
       case "send_message": {
         stopSpinner();
-        output(`\n${pc.cyan("  Talon")}  ${String(body.text ?? "")}\n`);
+        renderAssistantMessage(String(body.text ?? ""));
         incrementMessageCount();
         return { ok: true, message_id: Date.now() };
       }
       case "react": {
         stopSpinner();
-        output(`\n${pc.cyan("  Talon")}  ${String(body.emoji ?? "\uD83D\uDC4D")}\n`);
+        writeln(`  ${pc.cyan("▍")} ${String(body.emoji ?? "👍")}`);
         incrementMessageCount();
         return { ok: true };
       }
@@ -93,9 +214,12 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
         stopSpinner();
         const text = String(body.text ?? "");
         const rows = body.rows as Array<Array<{ text: string }>> | undefined;
-        let out = `\n${pc.cyan("  Talon")}  ${text}`;
-        if (rows) for (const row of rows) out += "\n  " + row.map((b) => pc.dim(`[${b.text}]`)).join("  ");
-        output(out + "\n");
+        renderAssistantMessage(text);
+        if (rows) {
+          for (const row of rows) {
+            writeln(`  ${pc.cyan("▍")}   ${row.map((b) => pc.dim(`[${b.text}]`)).join("  ")}`);
+          }
+        }
         incrementMessageCount();
         return { ok: true, message_id: Date.now() };
       }
@@ -105,12 +229,12 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
       case "get_chat_info":
         return { ok: true, id: TERMINAL_CHAT_ID, type: "private", title: "Terminal" };
       default:
-        return null; // let gateway shared actions handle it
+        return null;
     }
   };
 }
 
-// ── Frontend interface ──────────────────────────────────────────────────────
+// ── Frontend interface ───────────────────────────────────────────────────────
 
 export type TerminalFrontend = {
   context: ContextManager;
@@ -132,10 +256,10 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
 
   return {
     context,
-    sendTyping: async () => { startSpinner(); },
+    sendTyping: async () => { startSpinner(currentPhase === "tool" ? "using tools" : "thinking"); },
     sendMessage: async (_chatId: number, text: string) => {
       stopSpinner();
-      output(`\n${pc.cyan("  Talon")}  ${text}\n`);
+      renderAssistantMessage(text);
     },
     getBridgePort: () => getGatewayPort(),
 
@@ -146,15 +270,16 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
     },
 
     async start() {
-      console.log();
-      console.log(`  ${pc.bold(pc.cyan("\uD83E\uDD85 Talon"))}  ${pc.dim("terminal mode")}`);
-      console.log(`  ${pc.dim("Type a message and press Enter. Ctrl+C to quit.")}`);
-      console.log(`  ${pc.dim("\u2500".repeat(50))}`);
-      console.log();
+      const model = config.model.replace("claude-", "").replace(/-/g, " ");
+      writeln();
+      writeln(`  ${pc.bold(pc.cyan("Talon"))} ${pc.dim("·")} ${pc.dim(model)}`);
+      writeln(`  ${HLINE}`);
+      writeln(`  ${pc.dim("Type a message. /help for commands. Ctrl+C to quit.")}`);
 
       const { execute } = await import("../../core/dispatcher.js");
 
-      rl = createInterface({ input: process.stdin, output: process.stdout, prompt: PROMPT });
+      const prompt = `  ${pc.green(">")} `;
+      rl = createInterface({ input: process.stdin, output: process.stdout, prompt });
       rl.prompt();
 
       rl.on("line", async (input) => {
@@ -162,16 +287,17 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
         if (!text) { reprompt(); return; }
         if (text === "/quit" || text === "/exit") { rl!.close(); return; }
 
+        // ── Slash commands ──
         if (text.startsWith("/model")) {
           const { getChatSettings, setChatModel, resolveModelName } = await import("../../storage/chat-settings.js");
           const { resetSession } = await import("../../storage/sessions.js");
           const arg = text.slice(7).trim();
           if (!arg) {
-            output(`\n  ${pc.dim("Model:")} ${getChatSettings(String(TERMINAL_CHAT_ID)).model ?? config.model}\n`);
+            renderSystemMessage(`Model: ${getChatSettings(String(TERMINAL_CHAT_ID)).model ?? config.model}`);
           } else {
             setChatModel(String(TERMINAL_CHAT_ID), resolveModelName(arg));
             resetSession(String(TERMINAL_CHAT_ID));
-            output(`\n  ${pc.dim("Model set to")} ${resolveModelName(arg)}\n`);
+            renderSystemMessage(`Model set to ${resolveModelName(arg)}`);
           }
           reprompt(); return;
         }
@@ -180,10 +306,10 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           const { getChatSettings, setChatEffort } = await import("../../storage/chat-settings.js");
           const arg = text.slice(8).trim();
           if (!arg) {
-            output(`\n  ${pc.dim("Effort:")} ${getChatSettings(String(TERMINAL_CHAT_ID)).effort ?? "adaptive"}\n`);
+            renderSystemMessage(`Effort: ${getChatSettings(String(TERMINAL_CHAT_ID)).effort ?? "adaptive"}`);
           } else {
             setChatEffort(String(TERMINAL_CHAT_ID), arg === "adaptive" ? undefined : arg as "off" | "low" | "medium" | "high" | "max");
-            output(`\n  ${pc.dim("Effort set to")} ${arg}\n`);
+            renderSystemMessage(`Effort set to ${arg}`);
           }
           reprompt(); return;
         }
@@ -194,11 +320,13 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           const u = info.usage;
           const cacheHit = (u.totalInputTokens + u.totalCacheRead) > 0
             ? Math.round((u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) * 100) : 0;
-          output([
-            "", `  ${pc.dim("Turns")}  ${info.turns}`, `  ${pc.dim("Cost")}   $${u.estimatedCostUsd.toFixed(4)}`,
-            `  ${pc.dim("Cache")}  ${cacheHit}% hit`, `  ${pc.dim("Input")}  ${u.totalInputTokens} tokens`,
-            `  ${pc.dim("Output")} ${u.totalOutputTokens} tokens`, "",
-          ].join("\n"));
+          writeln();
+          writeln(`  ${pc.dim("▍")} ${pc.bold("Session Stats")}`);
+          writeln(`  ${pc.dim("▍")}   Turns:   ${info.turns}`);
+          writeln(`  ${pc.dim("▍")}   Cost:    $${u.estimatedCostUsd.toFixed(4)}`);
+          writeln(`  ${pc.dim("▍")}   Cache:   ${cacheHit}% hit`);
+          writeln(`  ${pc.dim("▍")}   Input:   ${u.totalInputTokens.toLocaleString()} tokens`);
+          writeln(`  ${pc.dim("▍")}   Output:  ${u.totalOutputTokens.toLocaleString()} tokens`);
           reprompt(); return;
         }
 
@@ -207,39 +335,83 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           const { clearHistory } = await import("../../storage/history.js");
           resetSession(String(TERMINAL_CHAT_ID));
           clearHistory(String(TERMINAL_CHAT_ID));
-          output(pc.dim("\n  Session cleared.\n"));
+          renderSystemMessage("Session cleared.");
           reprompt(); return;
         }
 
         if (text === "/help") {
-          output([
-            "", `  ${pc.dim("/model")}    Show or change model`, `  ${pc.dim("/effort")}   Set thinking effort`,
-            `  ${pc.dim("/status")}   Session stats`, `  ${pc.dim("/reset")}    Clear session`, `  ${pc.dim("/quit")}     Exit`, "",
-          ].join("\n"));
+          writeln();
+          writeln(`  ${pc.dim("▍")} ${pc.bold("Commands")}`);
+          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/model")} [name]   Show or change model (opus, sonnet, haiku)`);
+          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/effort")} [lvl]   Set thinking effort (off/low/medium/high/max)`);
+          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/status")}         Session stats (tokens, cost, cache)`);
+          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/reset")}          Clear session and history`);
+          writeln(`  ${pc.dim("▍")}   ${pc.cyan("/quit")}           Exit`);
           reprompt(); return;
         }
 
-        // Reset message count for this turn
-        // (gateway tracks via incrementMessageCount)
+        // ── Execute query ──
+        renderUserMessage(text);
+        toolCallCount = 0;
+        currentPhase = "thinking";
+        startSpinner("thinking");
 
         try {
           const result = await execute({
-            chatId: String(TERMINAL_CHAT_ID), numericChatId: TERMINAL_CHAT_ID,
-            prompt: text, senderName: "User", isGroup: false, source: "message",
+            chatId: String(TERMINAL_CHAT_ID),
+            numericChatId: TERMINAL_CHAT_ID,
+            prompt: text,
+            senderName: "User",
+            isGroup: false,
+            source: "message",
+            onStreamDelta: (_accumulated, phase) => {
+              if (phase === "thinking" && currentPhase !== "thinking") {
+                currentPhase = "thinking";
+                updateSpinnerLabel("thinking");
+              } else if (phase === "text" && currentPhase !== "text") {
+                currentPhase = "text";
+                updateSpinnerLabel("responding");
+              }
+            },
+            onToolUse: (toolName, input) => {
+              stopSpinner();
+              currentPhase = "tool";
+              renderToolCall(toolName, input);
+              startSpinner("using tools");
+            },
+            onTextBlock: async (blockText) => {
+              stopSpinner();
+              renderAssistantMessage(blockText);
+            },
           });
+
           stopSpinner();
+          currentPhase = "idle";
+
+          // Show final response if not already sent via onTextBlock/action handler
           if (getGatewayMessageCount() === 0 && result.text && result.text.length > 20) {
-            output(`\n${pc.cyan("  Talon")}  ${result.text}\n`);
+            renderAssistantMessage(result.text);
           }
+
+          // Show execution stats
+          renderStats(result.durationMs, result.inputTokens, result.outputTokens, result.cacheRead, toolCallCount);
+
           reprompt();
         } catch (err) {
           stopSpinner();
-          output(`\n  ${pc.red("Error:")} ${err instanceof Error ? err.message : err}\n`);
+          currentPhase = "idle";
+          renderError(err instanceof Error ? err.message : String(err));
           reprompt();
         }
       });
 
-      rl.on("close", () => { console.log(`\n  ${pc.dim("Goodbye!")}\n`); process.exit(0); });
+      rl.on("close", () => {
+        writeln();
+        writeln(`  ${pc.dim("Goodbye!")}`);
+        writeln();
+        process.exit(0);
+      });
+
       await new Promise(() => {});
     },
 

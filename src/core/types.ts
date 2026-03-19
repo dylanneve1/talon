@@ -17,6 +17,7 @@ export type QueryParams = {
   messageId?: number;
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
+  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
 };
 
 /** Result of a backend AI query. */
@@ -59,6 +60,7 @@ export type ExecuteParams = {
   source: "message" | "pulse" | "cron";
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
+  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
 };
 
 /** What the dispatcher returns after execution. */
