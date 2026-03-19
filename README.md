@@ -4,7 +4,7 @@
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Claude](https://img.shields.io/badge/Claude_Agent_SDK-Anthropic-D97706)](https://github.com/anthropics/claude-agent-sdk-typescript)
-[![Tests](https://img.shields.io/badge/tests-322_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-322_passing-brightgreen)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Multi-platform agentic AI harness powered by Claude. Runs on Telegram, Teams, and Terminal with full tool access through MCP.
@@ -110,25 +110,11 @@ talon doctor    Validate environment
 
 ## Terminal Mode
 
-```
-  Talon  Opus 4.6
-  ──────────────────────────────────────────────
-
-  > check latest CI builds
-
-    → jenkins list builds
-    → list revisions
-
-  ▍ Talon
-  ▍  LATEST CI BUILDS
-  ▍  ...
-
-  14.2s  ·  657 tok  ·  100% cache  ·  3 tools
-
-  >
+```bash
+talon chat    # interactive terminal chat
 ```
 
-Tool calls shown in real-time with parameters. Streaming phase indicators (thinking/responding/using tools).
+Tool calls shown in real-time with parameters. Streaming phase indicators (thinking/responding/using tools). Per-turn stats (duration, tokens, cache hit, tool count).
 
 ## Production
 
