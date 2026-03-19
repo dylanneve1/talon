@@ -329,7 +329,7 @@ async function startChat(): Promise<void> {
   if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
   if (config.plugins && config.plugins.length > 0) {
     const { loadPlugins, getPluginPromptAdditions } = await import("./core/plugin.js");
-    await loadPlugins(config.plugins as Array<{ path: string; config?: Record<string, unknown> }>);
+    await loadPlugins(config.plugins as Array<{ path: string; config?: Record<string, unknown> }>, ["terminal"]);
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
   initWorkspace(config.workspace);

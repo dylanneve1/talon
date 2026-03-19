@@ -41,7 +41,8 @@ if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
 // Load plugins (external tool packages)
 if (config.plugins.length > 0) {
   const { loadPlugins, getPluginPromptAdditions } = await import("./core/plugin.js");
-  await loadPlugins(config.plugins);
+  const frontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+  await loadPlugins(config.plugins, frontends);
   rebuildSystemPrompt(config, getPluginPromptAdditions());
 }
 

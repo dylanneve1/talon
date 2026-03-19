@@ -42,6 +42,13 @@ export interface TalonPlugin {
   readonly version?: string;
 
   /**
+   * Frontend whitelist — which frontends this plugin is active for.
+   * If unset, the plugin is available on all frontends.
+   * Example: ["telegram"] — only loads when Telegram frontend is active.
+   */
+  readonly frontends?: readonly string[];
+
+  /**
    * Called once after the plugin is loaded and validated.
    * Use for one-time setup (connections, caches, etc).
    * Receives the resolved plugin config.
@@ -150,18 +157,20 @@ const ENTRY_CANDIDATES = [
 /**
  * Load and validate plugins from config entries.
  * Plugins that fail to load are logged and skipped — they don't block others.
+ * @param activeFrontends — currently active frontends (e.g. ["terminal"]). Plugins
+ *   with a `frontends` whitelist are skipped if none match.
  */
-export async function loadPlugins(pluginConfigs: PluginEntry[]): Promise<void> {
+export async function loadPlugins(pluginConfigs: PluginEntry[], activeFrontends?: string[]): Promise<void> {
   for (const entry of pluginConfigs) {
     try {
-      await loadSinglePlugin(entry);
+      await loadSinglePlugin(entry, activeFrontends);
     } catch (err) {
       logError("plugin", `Failed to load plugin at ${entry.path}: ${err instanceof Error ? err.message : err}`);
     }
   }
 }
 
-async function loadSinglePlugin(entry: PluginEntry): Promise<void> {
+async function loadSinglePlugin(entry: PluginEntry, activeFrontends?: string[]): Promise<void> {
   const pluginDir = resolve(entry.path);
 
   // Resolve entry point
@@ -177,6 +186,15 @@ async function loadSinglePlugin(entry: PluginEntry): Promise<void> {
   if (!plugin) {
     logError("plugin", `Invalid plugin at ${pluginDir}: must export an object with a "name" property`);
     return;
+  }
+
+  // Check frontend whitelist — skip if plugin specifies frontends and none match
+  if (plugin.frontends && plugin.frontends.length > 0 && activeFrontends) {
+    const match = activeFrontends.some((fe) => plugin.frontends!.includes(fe));
+    if (!match) {
+      log("plugin", `Skipped: ${plugin.name} (requires ${plugin.frontends.join("/")} frontend)`);
+      return;
+    }
   }
 
   const config = entry.config ?? {};
