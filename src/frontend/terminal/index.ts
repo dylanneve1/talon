@@ -40,7 +40,6 @@ let rl: ReadlineInterface | null = null;
 let currentPhase: "idle" | "thinking" | "tool" | "text" = "idle";
 let toolCallCount = 0;
 let hasToolOutput = false; // tracks if we've shown any tool calls this turn
-let lastToolName = ""; // dedup consecutive identical tool names
 
 // ── Output helpers ───────────────────────────────────────────────────────────
 
@@ -399,7 +398,6 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
         // ── Execute query ──
         toolCallCount = 0;
         hasToolOutput = false;
-        lastToolName = "";
         currentPhase = "thinking";
         startSpinner("thinking");
 
