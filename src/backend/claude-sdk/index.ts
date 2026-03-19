@@ -224,6 +224,13 @@ export async function handleMessage(
       resetSession(chatId);
       return handleMessage(params, true);
     }
+    // Context length exceeded — reset session and retry (SDK auto-compaction should prevent
+    // this, but handle it as a safety net for edge cases)
+    if (classified.reason === "context_length" && !_retried) {
+      logWarn("agent", `[${chatId}] Context length exceeded, resetting session and retrying`);
+      resetSession(chatId);
+      return handleMessage(params, true);
+    }
     // Model fallback: if overloaded/timeout, retry with a faster model
     if (!_retried && classified.retryable) {
       const fallbackModel = activeModel.includes("opus")
