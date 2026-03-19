@@ -1,4 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// ── Module mocks (must come before import) ──────────────────────────────────
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
@@ -8,37 +10,487 @@ vi.mock("write-file-atomic", () => ({
   default: { sync: vi.fn() },
 }));
 
-// Mock cron-store
+const mockGetRecentFormatted = vi.fn(() => "history lines here");
+const mockSearchHistory = vi.fn(() => "search results here");
+const mockGetMessagesByUser = vi.fn(() => "user messages here");
+const mockGetKnownUsers = vi.fn(() => "alice, bob");
+vi.mock("../storage/history.js", () => ({
+  getRecentFormatted: (...args: unknown[]) => mockGetRecentFormatted(...args),
+  searchHistory: (...args: unknown[]) => mockSearchHistory(...args),
+  getMessagesByUser: (...args: unknown[]) => mockGetMessagesByUser(...args),
+  getKnownUsers: (...args: unknown[]) => mockGetKnownUsers(...args),
+}));
+
+const mockFormatMediaIndex = vi.fn(() => "media index here");
+vi.mock("../storage/media-index.js", () => ({
+  formatMediaIndex: (...args: unknown[]) => mockFormatMediaIndex(...args),
+}));
+
+const mockAddCronJob = vi.fn();
+const mockGetCronJob = vi.fn();
+const mockGetCronJobsForChat = vi.fn(() => []);
+const mockUpdateCronJob = vi.fn();
+const mockDeleteCronJob = vi.fn();
+const mockValidateCronExpression = vi.fn(() => ({ valid: true, next: "2026-04-01T09:00:00.000Z" }));
+const mockGenerateCronId = vi.fn(() => "test-id-123");
+
 vi.mock("../storage/cron-store.js", () => ({
-  addCronJob: vi.fn(),
-  getCronJob: vi.fn(),
-  getCronJobsForChat: vi.fn(() => []),
-  updateCronJob: vi.fn(),
-  deleteCronJob: vi.fn(),
-  validateCronExpression: vi.fn(() => ({ valid: true, next: new Date().toISOString() })),
-  generateCronId: vi.fn(() => "test-id"),
+  addCronJob: (...args: unknown[]) => mockAddCronJob(...args),
+  getCronJob: (...args: unknown[]) => mockGetCronJob(...args),
+  getCronJobsForChat: (...args: unknown[]) => mockGetCronJobsForChat(...args),
+  updateCronJob: (...args: unknown[]) => mockUpdateCronJob(...args),
+  deleteCronJob: (...args: unknown[]) => mockDeleteCronJob(...args),
+  validateCronExpression: (...args: unknown[]) => mockValidateCronExpression(...args),
+  generateCronId: () => mockGenerateCronId(),
   loadCronJobs: vi.fn(),
+}));
+
+// Mock node:fs for fetch_url binary download path
+const mockExistsSync = vi.fn(() => true);
+const mockMkdirSync = vi.fn();
+const mockWriteFileSync = vi.fn();
+vi.mock("node:fs", () => ({
+  existsSync: (...args: unknown[]) => mockExistsSync(...args),
+  mkdirSync: (...args: unknown[]) => mockMkdirSync(...args),
+  writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
+  readFileSync: vi.fn(),
 }));
 
 const { handleSharedAction } = await import("../core/gateway-actions.js");
 
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Build a minimal mock Response for `fetch`. */
+function mockResponse(opts: {
+  ok?: boolean;
+  status?: number;
+  contentType?: string;
+  body?: string;
+  arrayBuffer?: ArrayBuffer;
+  json?: unknown;
+}): Response {
+  const headers = new Headers();
+  if (opts.contentType) headers.set("content-type", opts.contentType);
+  return {
+    ok: opts.ok ?? true,
+    status: opts.status ?? 200,
+    headers,
+    text: async () => opts.body ?? "",
+    json: async () => opts.json ?? {},
+    arrayBuffer: async () => opts.arrayBuffer ?? new ArrayBuffer(0),
+  } as unknown as Response;
+}
+
+// ── Tests ───────────────────────────────────────────────────────────────────
+
 describe("gateway shared actions", () => {
+  let originalFetch: typeof globalThis.fetch;
+  let originalEnv: NodeJS.ProcessEnv;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    originalEnv = { ...process.env };
+    vi.clearAllMocks();
+    // Reset env vars used by web_search
+    delete process.env.TALON_BRAVE_API_KEY;
+    delete process.env.TALON_SEARXNG_URL;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = originalEnv;
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Unknown actions
+  // ════════════════════════════════════════════════════════════════════════
+
+  describe("unknown actions", () => {
+    it("returns null for unknown actions", async () => {
+      expect(await handleSharedAction({ action: "unknown_thing" }, 123)).toBeNull();
+    });
+
+    it("returns null for empty action", async () => {
+      expect(await handleSharedAction({ action: "" }, 123)).toBeNull();
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // History actions
+  // ════════════════════════════════════════════════════════════════════════
+
+  describe("read_history", () => {
+    it("returns formatted history with default limit", async () => {
+      const result = await handleSharedAction({ action: "read_history" }, 42);
+      expect(result).toEqual({ ok: true, text: "history lines here" });
+      expect(mockGetRecentFormatted).toHaveBeenCalledWith("42", 30);
+    });
+
+    it("passes custom limit", async () => {
+      await handleSharedAction({ action: "read_history", limit: 10 }, 42);
+      expect(mockGetRecentFormatted).toHaveBeenCalledWith("42", 10);
+    });
+
+    it("clamps limit to 100", async () => {
+      await handleSharedAction({ action: "read_history", limit: 500 }, 42);
+      expect(mockGetRecentFormatted).toHaveBeenCalledWith("42", 100);
+    });
+
+    it("clamps limit=200 to 100", async () => {
+      await handleSharedAction({ action: "read_history", limit: 200 }, 42);
+      expect(mockGetRecentFormatted).toHaveBeenCalledWith("42", 100);
+    });
+
+    it("converts chatId to string", async () => {
+      await handleSharedAction({ action: "read_history" }, 999);
+      expect(mockGetRecentFormatted).toHaveBeenCalledWith("999", 30);
+    });
+  });
+
+  describe("search_history", () => {
+    it("returns search results with default limit", async () => {
+      const result = await handleSharedAction({ action: "search_history", query: "hello" }, 42);
+      expect(result).toEqual({ ok: true, text: "search results here" });
+      expect(mockSearchHistory).toHaveBeenCalledWith("42", "hello", 20);
+    });
+
+    it("passes custom limit", async () => {
+      await handleSharedAction({ action: "search_history", query: "test", limit: 5 }, 42);
+      expect(mockSearchHistory).toHaveBeenCalledWith("42", "test", 5);
+    });
+
+    it("clamps limit to 100", async () => {
+      await handleSharedAction({ action: "search_history", query: "test", limit: 999 }, 42);
+      expect(mockSearchHistory).toHaveBeenCalledWith("42", "test", 100);
+    });
+
+    it("uses empty string when query is missing", async () => {
+      await handleSharedAction({ action: "search_history" }, 42);
+      expect(mockSearchHistory).toHaveBeenCalledWith("42", "", 20);
+    });
+  });
+
+  describe("get_user_messages", () => {
+    it("returns user messages with default limit", async () => {
+      const result = await handleSharedAction({ action: "get_user_messages", user_name: "alice" }, 42);
+      expect(result).toEqual({ ok: true, text: "user messages here" });
+      expect(mockGetMessagesByUser).toHaveBeenCalledWith("42", "alice", 20);
+    });
+
+    it("passes custom limit", async () => {
+      await handleSharedAction({ action: "get_user_messages", user_name: "bob", limit: 10 }, 42);
+      expect(mockGetMessagesByUser).toHaveBeenCalledWith("42", "bob", 10);
+    });
+
+    it("clamps limit to 50", async () => {
+      await handleSharedAction({ action: "get_user_messages", user_name: "bob", limit: 200 }, 42);
+      expect(mockGetMessagesByUser).toHaveBeenCalledWith("42", "bob", 50);
+    });
+
+    it("uses empty string when user_name is missing", async () => {
+      await handleSharedAction({ action: "get_user_messages" }, 42);
+      expect(mockGetMessagesByUser).toHaveBeenCalledWith("42", "", 20);
+    });
+  });
+
+  describe("list_known_users", () => {
+    it("returns known users", async () => {
+      const result = await handleSharedAction({ action: "list_known_users" }, 42);
+      expect(result).toEqual({ ok: true, text: "alice, bob" });
+      expect(mockGetKnownUsers).toHaveBeenCalledWith("42");
+    });
+  });
+
+  describe("list_media", () => {
+    it("returns media index with default limit", async () => {
+      const result = await handleSharedAction({ action: "list_media" }, 42);
+      expect(result).toEqual({ ok: true, text: "media index here" });
+      expect(mockFormatMediaIndex).toHaveBeenCalledWith("42", 10);
+    });
+
+    it("passes custom limit", async () => {
+      await handleSharedAction({ action: "list_media", limit: 5 }, 42);
+      expect(mockFormatMediaIndex).toHaveBeenCalledWith("42", 5);
+    });
+
+    it("clamps limit to 20", async () => {
+      await handleSharedAction({ action: "list_media", limit: 100 }, 42);
+      expect(mockFormatMediaIndex).toHaveBeenCalledWith("42", 20);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // web_search
+  // ════════════════════════════════════════════════════════════════════════
+
+  describe("web_search", () => {
+    it("returns error for missing query", async () => {
+      const result = await handleSharedAction({ action: "web_search" }, 123);
+      expect(result).toEqual({ ok: false, error: "Missing query" });
+    });
+
+    it("returns error for empty query string", async () => {
+      const result = await handleSharedAction({ action: "web_search", query: "" }, 123);
+      expect(result).toEqual({ ok: false, error: "Missing query" });
+    });
+
+    it("uses Brave API when key is configured", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-brave-key";
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "application/json",
+        json: {
+          web: {
+            results: [
+              { title: "Result 1", url: "https://example.com/1", description: "Description 1" },
+              { title: "Result 2", url: "https://example.com/2", description: "Description 2" },
+            ],
+          },
+        },
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "test query" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("via Brave");
+      expect(result?.text).toContain("Result 1");
+      expect(result?.text).toContain("https://example.com/1");
+      expect(result?.text).toContain("Description 1");
+      expect(result?.text).toContain("Result 2");
+
+      // Verify Brave API was called correctly
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toContain("api.search.brave.com");
+      expect(url).toContain("q=test%20query");
+      expect(url).toContain("count=5");
+      expect(opts.headers["X-Subscription-Token"]).toBe("test-brave-key");
+    });
+
+    it("respects custom limit for Brave API", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-brave-key";
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        json: { web: { results: [{ title: "R", url: "https://r.com", description: "d" }] } },
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      await handleSharedAction({ action: "web_search", query: "test", limit: 8 }, 123);
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain("count=8");
+    });
+
+    it("clamps search limit to 10", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-brave-key";
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        json: { web: { results: [{ title: "R", url: "https://r.com", description: "d" }] } },
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      await handleSharedAction({ action: "web_search", query: "test", limit: 50 }, 123);
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain("count=10");
+    });
+
+    it("falls back to SearXNG when Brave returns non-ok", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-brave-key";
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(mockResponse({ ok: false, status: 429 }))   // Brave fails
+        .mockResolvedValueOnce(mockResponse({
+          ok: true,
+          json: {
+            results: [
+              { title: "SearX Result", url: "https://searx.example.com", content: "SearX snippet" },
+            ],
+          },
+        }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "fallback test" }, 123);
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("via SearXNG");
+      expect(result?.text).toContain("SearX Result");
+    });
+
+    it("falls back to SearXNG when Brave throws an error", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-brave-key";
+      const mockFetch = vi.fn()
+        .mockRejectedValueOnce(new Error("network error"))  // Brave throws
+        .mockResolvedValueOnce(mockResponse({
+          ok: true,
+          json: {
+            results: [
+              { title: "Fallback", url: "https://fb.com", content: "snippet" },
+            ],
+          },
+        }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "test" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("via SearXNG");
+    });
+
+    it("uses SearXNG directly when no Brave key", async () => {
+      // No TALON_BRAVE_API_KEY set
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        json: {
+          results: [
+            { title: "Direct SearX", url: "https://searx.com/r", content: "content here" },
+          ],
+        },
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "direct" }, 123);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain("localhost:8080");
+      expect(url).toContain("format=json");
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("via SearXNG");
+    });
+
+    it("uses custom SearXNG URL from env", async () => {
+      process.env.TALON_SEARXNG_URL = "http://my-searx:9090";
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        json: { results: [{ title: "T", url: "https://t.com", content: "c" }] },
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      await handleSharedAction({ action: "web_search", query: "custom" }, 123);
+
+      const [url] = mockFetch.mock.calls[0];
+      expect(url).toContain("my-searx:9090");
+    });
+
+    it("returns 'no results' when both providers fail", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-key";
+      const mockFetch = vi.fn()
+        .mockRejectedValueOnce(new Error("brave fail"))
+        .mockRejectedValueOnce(new Error("searx fail"));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "nothing" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toBe('No results for "nothing".');
+    });
+
+    it("returns 'no results' when both return non-ok", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-key";
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(mockResponse({ ok: false, status: 500 }))
+        .mockResolvedValueOnce(mockResponse({ ok: false, status: 503 }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "failing" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toBe('No results for "failing".');
+    });
+
+    it("returns 'no results' when Brave returns empty results array", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-key";
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(mockResponse({ ok: true, json: { web: { results: [] } } }))
+        .mockResolvedValueOnce(mockResponse({ ok: true, json: { results: [] } }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "empty" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toBe('No results for "empty".');
+    });
+
+    it("handles Brave response with missing web field", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-key";
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(mockResponse({ ok: true, json: {} }))   // no web field
+        .mockResolvedValueOnce(mockResponse({
+          ok: true,
+          json: { results: [{ title: "FallbackR", url: "https://f.com", content: "fb" }] },
+        }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "test" }, 123);
+      expect(result?.text).toContain("via SearXNG");
+    });
+
+    it("truncates long snippets to 200 chars", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-key";
+      const longDesc = "A".repeat(500);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        json: { web: { results: [{ title: "Long", url: "https://l.com", description: longDesc }] } },
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "long" }, 123);
+      // The snippet should be sliced to 200 chars
+      expect(result?.text).not.toContain("A".repeat(201));
+      expect(result?.text).toContain("A".repeat(200));
+    });
+
+    it("handles missing description in Brave results", async () => {
+      process.env.TALON_BRAVE_API_KEY = "test-key";
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        json: { web: { results: [{ title: "NoDesc", url: "https://nd.com" }] } },
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "nodesc" }, 123);
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("NoDesc");
+    });
+
+    it("slices SearXNG results to limit", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        json: {
+          results: Array.from({ length: 20 }, (_, i) => ({
+            title: `R${i}`, url: `https://r${i}.com`, content: `c${i}`,
+          })),
+        },
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "web_search", query: "many", limit: 3 }, 123);
+      // Should only contain 3 results (numbered 1-3)
+      expect(result?.text).toContain("1. R0");
+      expect(result?.text).toContain("3. R2");
+      expect(result?.text).not.toContain("4. R3");
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // fetch_url
+  // ════════════════════════════════════════════════════════════════════════
+
   describe("fetch_url", () => {
     it("rejects missing URL", async () => {
       const result = await handleSharedAction({ action: "fetch_url" }, 123);
-      expect(result?.ok).toBe(false);
-      expect(result?.error).toContain("Missing URL");
+      expect(result).toEqual({ ok: false, error: "Missing URL" });
     });
 
-    it("rejects non-http URLs", async () => {
+    it("rejects non-http protocols", async () => {
       const result = await handleSharedAction({ action: "fetch_url", url: "ftp://example.com" }, 123);
       expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("http or https");
     });
 
     it("rejects malformed URLs", async () => {
       const result = await handleSharedAction({ action: "fetch_url", url: "not a url at all" }, 123);
-      expect(result?.ok).toBe(false);
-      expect(result?.error).toContain("Invalid URL");
+      expect(result).toEqual({ ok: false, error: "Invalid URL" });
     });
 
     it("rejects javascript: protocol", async () => {
@@ -50,74 +502,909 @@ describe("gateway shared actions", () => {
       const result = await handleSharedAction({ action: "fetch_url", url: "data:text/html,<h1>hi</h1>" }, 123);
       expect(result?.ok).toBe(false);
     });
+
+    it("fetches text page and strips HTML", async () => {
+      const htmlBody = `<html><head><title>Test</title></head><body>
+        <script>var x = 1;</script>
+        <style>.foo { color: red; }</style>
+        <h1>Hello World</h1>
+        <p>This is a &amp; test with &lt;tags&gt; and &nbsp; entities.</p>
+      </body></html>`;
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "text/html; charset=utf-8",
+        body: htmlBody,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com" }, 123);
+
+      expect(result?.ok).toBe(true);
+      // Script and style content should be stripped
+      expect(result?.text).not.toContain("var x = 1");
+      expect(result?.text).not.toContain("color: red");
+      // HTML tags stripped, entities decoded
+      expect(result?.text).toContain("Hello World");
+      expect(result?.text).toContain("This is a & test with <tags> and");
+    });
+
+    it("returns JSON content as text", async () => {
+      const jsonBody = '{"key": "value", "count": 42}';
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "application/json",
+        body: jsonBody,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://api.example.com/data" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain('"key": "value"');
+    });
+
+    it("truncates large text content to 8000 chars", async () => {
+      const longText = "A".repeat(10000);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "text/plain",
+        body: longText,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/big" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text!.length).toBe(8000);
+    });
+
+    it("returns message for pages with no readable content", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "text/html",
+        body: "<html><body>  </body></html>",
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://empty.com" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toBe("(Page has no readable content)");
+    });
+
+    it("returns HTTP error for non-ok response", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: false,
+        status: 404,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/missing" }, 123);
+
+      expect(result).toEqual({ ok: false, error: "HTTP 404" });
+    });
+
+    it("returns HTTP 500 error", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: false,
+        status: 500,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/error" }, 123);
+
+      expect(result).toEqual({ ok: false, error: "HTTP 500" });
+    });
+
+    it("handles network errors", async () => {
+      const mockFetch = vi.fn().mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://down.example.com" }, 123);
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("Fetch failed: ECONNREFUSED");
+    });
+
+    it("handles timeout errors", async () => {
+      const mockFetch = vi.fn().mockRejectedValueOnce(new Error("The operation was aborted due to timeout"));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://slow.example.com" }, 123);
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("Fetch failed");
+      expect(result?.error).toContain("timeout");
+    });
+
+    it("handles non-Error thrown values", async () => {
+      const mockFetch = vi.fn().mockRejectedValueOnce("string error");
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://weird.example.com" }, 123);
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toBe("Fetch failed: string error");
+    });
+
+    // ── Binary download tests ─────────────────────────────────────────────
+
+    it("downloads binary PNG file", async () => {
+      const buffer = new ArrayBuffer(1024);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/png",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+      mockExistsSync.mockReturnValue(true);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/img.png" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain("Downloaded image");
+      expect(result?.text).toContain("1KB");
+      expect(result?.text).toContain(".png");
+      expect(mockWriteFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it("downloads JPEG file", async () => {
+      const buffer = new ArrayBuffer(2048);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/jpeg",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+      mockExistsSync.mockReturnValue(true);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/photo.jpg" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain(".jpg");
+      expect(result?.text).toContain("image");
+    });
+
+    it("downloads GIF file", async () => {
+      const buffer = new ArrayBuffer(512);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/gif",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/anim.gif" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain(".gif");
+    });
+
+    it("downloads WebP file", async () => {
+      const buffer = new ArrayBuffer(512);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/webp",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/pic.webp" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain(".webp");
+    });
+
+    it("downloads PDF file", async () => {
+      const buffer = new ArrayBuffer(4096);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "application/pdf",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/doc.pdf" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain(".pdf");
+      expect(result?.text).toContain("pdf");
+    });
+
+    it("downloads ZIP file", async () => {
+      const buffer = new ArrayBuffer(8192);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "application/zip",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/archive.zip" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain(".zip");
+    });
+
+    it("uses .bin extension for unknown binary types", async () => {
+      const buffer = new ArrayBuffer(256);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "application/octet-stream",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/data" }, 123);
+
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toContain(".bin");
+    });
+
+    it("creates uploads directory when it does not exist", async () => {
+      const buffer = new ArrayBuffer(256);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/png",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+      mockExistsSync.mockReturnValue(false);
+
+      await handleSharedAction({ action: "fetch_url", url: "https://example.com/img.png" }, 123);
+
+      expect(mockMkdirSync).toHaveBeenCalledWith(expect.stringContaining("uploads"), { recursive: true });
+    });
+
+    it("does not create uploads directory when it exists", async () => {
+      const buffer = new ArrayBuffer(256);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/png",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+      mockExistsSync.mockReturnValue(true);
+
+      await handleSharedAction({ action: "fetch_url", url: "https://example.com/img.png" }, 123);
+
+      expect(mockMkdirSync).not.toHaveBeenCalled();
+    });
+
+    it("rejects files larger than 20MB", async () => {
+      const buffer = new ArrayBuffer(21 * 1024 * 1024); // 21MB
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/png",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/huge.png" }, 123);
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("File too large");
+      expect(result?.error).toContain("20MB");
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+    });
+
+    it("includes send instructions in download response", async () => {
+      const buffer = new ArrayBuffer(1024);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "image/png",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/img.png" }, 123);
+
+      expect(result?.text).toContain("Read it with the Read tool");
+      expect(result?.text).toContain('send(type="file"');
+    });
+
+    it("passes User-Agent header in fetch", async () => {
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "text/html",
+        body: "<p>Content here is enough to pass the 20 char minimum check test</p>",
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      await handleSharedAction({ action: "fetch_url", url: "https://example.com" }, 123);
+
+      expect(mockFetch).toHaveBeenCalledWith("https://example.com", expect.objectContaining({
+        headers: { "User-Agent": "Talon/1.0" },
+        redirect: "follow",
+      }));
+    });
+
+    it("labels non-image binary as content subtype", async () => {
+      const buffer = new ArrayBuffer(512);
+      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
+        ok: true,
+        contentType: "application/pdf",
+        arrayBuffer: buffer,
+      }));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/doc.pdf" }, 123);
+
+      // For non-image types, it uses ct.split("/")[1]?.split(";")[0] => "pdf"
+      expect(result?.text).toContain("Downloaded pdf");
+    });
   });
+
+  // ════════════════════════════════════════════════════════════════════════
+  // Cron CRUD
+  // ════════════════════════════════════════════════════════════════════════
 
   describe("cron CRUD", () => {
-    it("creates a cron job", async () => {
-      const result = await handleSharedAction({
-        action: "create_cron_job",
-        name: "test",
-        schedule: "0 9 * * *",
-        type: "message",
-        content: "Good morning!",
-      }, 123);
-      expect(result?.ok).toBe(true);
-      expect(result?.text).toContain("Created cron job");
+    // ── create_cron_job ─────────────────────────────────────────────────
+
+    describe("create_cron_job", () => {
+      it("creates a cron job with all fields", async () => {
+        const result = await handleSharedAction({
+          action: "create_cron_job",
+          name: "Morning Greeting",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "Good morning!",
+          timezone: "America/New_York",
+        }, 42);
+
+        expect(result?.ok).toBe(true);
+        expect(result?.text).toContain('Created cron job "Morning Greeting"');
+        expect(result?.text).toContain("test-id-123");
+        expect(result?.text).toContain("0 9 * * *");
+        expect(result?.text).toContain("Type: message");
+        expect(mockAddCronJob).toHaveBeenCalledWith(expect.objectContaining({
+          id: "test-id-123",
+          chatId: "42",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "Good morning!",
+          name: "Morning Greeting",
+          enabled: true,
+          timezone: "America/New_York",
+        }));
+      });
+
+      it("uses default name when not provided", async () => {
+        await handleSharedAction({
+          action: "create_cron_job",
+          schedule: "0 9 * * *",
+          content: "hi",
+        }, 42);
+
+        expect(mockAddCronJob).toHaveBeenCalledWith(expect.objectContaining({
+          name: "Unnamed job",
+        }));
+      });
+
+      it("uses default type 'message' when not specified", async () => {
+        await handleSharedAction({
+          action: "create_cron_job",
+          schedule: "*/5 * * * *",
+          content: "ping",
+        }, 42);
+
+        expect(mockAddCronJob).toHaveBeenCalledWith(expect.objectContaining({
+          type: "message",
+        }));
+      });
+
+      it("rejects missing schedule", async () => {
+        const result = await handleSharedAction({
+          action: "create_cron_job",
+          name: "test",
+          content: "hi",
+        }, 123);
+        expect(result).toEqual({ ok: false, error: "Missing schedule expression" });
+      });
+
+      it("rejects missing content", async () => {
+        const result = await handleSharedAction({
+          action: "create_cron_job",
+          name: "test",
+          schedule: "0 9 * * *",
+        }, 123);
+        expect(result).toEqual({ ok: false, error: "Missing content" });
+      });
+
+      it("rejects content over 10,000 chars", async () => {
+        const result = await handleSharedAction({
+          action: "create_cron_job",
+          name: "test",
+          schedule: "0 9 * * *",
+          content: "x".repeat(10001),
+        }, 123);
+        expect(result?.ok).toBe(false);
+        expect(result?.error).toContain("too long");
+        expect(result?.error).toContain("10,000");
+      });
+
+      it("rejects invalid cron expression", async () => {
+        mockValidateCronExpression.mockReturnValueOnce({ valid: false, error: "bad syntax" });
+
+        const result = await handleSharedAction({
+          action: "create_cron_job",
+          name: "test",
+          schedule: "not valid",
+          content: "hi",
+        }, 123);
+
+        expect(result?.ok).toBe(false);
+        expect(result?.error).toContain("Invalid cron expression");
+        expect(result?.error).toContain("bad syntax");
+      });
+
+      it("includes next run time in response", async () => {
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: "2026-04-01T09:00:00.000Z" });
+
+        const result = await handleSharedAction({
+          action: "create_cron_job",
+          schedule: "0 9 * * *",
+          content: "morning",
+        }, 123);
+
+        expect(result?.text).toContain("2026-04-01T09:00:00.000Z");
+      });
+
+      it("shows 'unknown' when next run time is not available", async () => {
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true });
+
+        const result = await handleSharedAction({
+          action: "create_cron_job",
+          schedule: "0 9 * * *",
+          content: "morning",
+        }, 123);
+
+        expect(result?.text).toContain("Next run: unknown");
+      });
+
+      it("passes timezone to validation", async () => {
+        await handleSharedAction({
+          action: "create_cron_job",
+          schedule: "0 9 * * *",
+          content: "hi",
+          timezone: "Europe/London",
+        }, 123);
+
+        expect(mockValidateCronExpression).toHaveBeenCalledWith("0 9 * * *", "Europe/London");
+      });
+
+      it("passes undefined timezone when not specified", async () => {
+        await handleSharedAction({
+          action: "create_cron_job",
+          schedule: "0 9 * * *",
+          content: "hi",
+        }, 123);
+
+        expect(mockValidateCronExpression).toHaveBeenCalledWith("0 9 * * *", undefined);
+      });
     });
 
-    it("rejects cron without schedule", async () => {
-      const result = await handleSharedAction({
-        action: "create_cron_job", name: "test", content: "hi",
-      }, 123);
-      expect(result?.ok).toBe(false);
-      expect(result?.error).toContain("Missing schedule");
+    // ── list_cron_jobs ──────────────────────────────────────────────────
+
+    describe("list_cron_jobs", () => {
+      it("returns 'no cron jobs' when empty", async () => {
+        mockGetCronJobsForChat.mockReturnValue([]);
+
+        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+
+        expect(result).toEqual({ ok: true, text: "No cron jobs in this chat." });
+      });
+
+      it("lists existing jobs with all details", async () => {
+        mockGetCronJobsForChat.mockReturnValue([
+          {
+            id: "job-1",
+            chatId: "42",
+            schedule: "0 9 * * *",
+            type: "message",
+            content: "Good morning!",
+            name: "Morning Greeting",
+            enabled: true,
+            createdAt: 1700000000000,
+            runCount: 5,
+            lastRunAt: 1700086400000,
+            timezone: "America/New_York",
+          },
+        ]);
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date("2026-04-02T09:00:00Z").getTime() });
+
+        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+
+        expect(result?.ok).toBe(true);
+        expect(result?.text).toContain("Cron jobs (1)");
+        expect(result?.text).toContain("Morning Greeting (enabled)");
+        expect(result?.text).toContain("ID: job-1");
+        expect(result?.text).toContain("0 9 * * *");
+        expect(result?.text).toContain("America/New_York");
+        expect(result?.text).toContain("Type: message");
+        expect(result?.text).toContain("Good morning!");
+        expect(result?.text).toContain("Runs: 5");
+      });
+
+      it("shows 'never' for lastRun when not set", async () => {
+        mockGetCronJobsForChat.mockReturnValue([
+          {
+            id: "job-2",
+            chatId: "42",
+            schedule: "*/5 * * * *",
+            type: "query",
+            content: "check status",
+            name: "Status Check",
+            enabled: true,
+            createdAt: 1700000000000,
+            runCount: 0,
+          },
+        ]);
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() + 60000 });
+
+        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+
+        expect(result?.text).toContain("Last: never");
+      });
+
+      it("shows disabled status", async () => {
+        mockGetCronJobsForChat.mockReturnValue([
+          {
+            id: "job-3",
+            chatId: "42",
+            schedule: "0 12 * * *",
+            type: "message",
+            content: "lunch!",
+            name: "Lunch Alert",
+            enabled: false,
+            createdAt: 1700000000000,
+            runCount: 10,
+            lastRunAt: 1700100000000,
+          },
+        ]);
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true });
+
+        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+
+        expect(result?.text).toContain("Lunch Alert (disabled)");
+      });
+
+      it("shows 'unknown' for nextRun when validation returns no next", async () => {
+        mockGetCronJobsForChat.mockReturnValue([
+          {
+            id: "job-4",
+            chatId: "42",
+            schedule: "bad",
+            type: "message",
+            content: "x",
+            name: "Bad Job",
+            enabled: true,
+            createdAt: 1700000000000,
+            runCount: 0,
+          },
+        ]);
+        mockValidateCronExpression.mockReturnValueOnce({ valid: false });
+
+        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+
+        expect(result?.text).toContain("Next: unknown");
+      });
+
+      it("truncates long content to 100 chars with ellipsis", async () => {
+        const longContent = "B".repeat(200);
+        mockGetCronJobsForChat.mockReturnValue([
+          {
+            id: "job-5",
+            chatId: "42",
+            schedule: "0 * * * *",
+            type: "message",
+            content: longContent,
+            name: "Long",
+            enabled: true,
+            createdAt: 1700000000000,
+            runCount: 0,
+          },
+        ]);
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() });
+
+        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+
+        expect(result?.text).toContain("B".repeat(100) + "...");
+        expect(result?.text).not.toContain("B".repeat(101));
+      });
+
+      it("lists multiple jobs", async () => {
+        mockGetCronJobsForChat.mockReturnValue([
+          {
+            id: "j1", chatId: "42", schedule: "0 9 * * *", type: "message",
+            content: "morning", name: "Job A", enabled: true, createdAt: 1700000000000, runCount: 1,
+          },
+          {
+            id: "j2", chatId: "42", schedule: "0 17 * * *", type: "query",
+            content: "evening", name: "Job B", enabled: false, createdAt: 1700000000000, runCount: 2,
+          },
+        ]);
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() });
+
+        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+
+        expect(result?.text).toContain("Cron jobs (2)");
+        expect(result?.text).toContain("Job A");
+        expect(result?.text).toContain("Job B");
+      });
+
+      it("shows no timezone when not set", async () => {
+        mockGetCronJobsForChat.mockReturnValue([
+          {
+            id: "j-tz", chatId: "42", schedule: "0 9 * * *", type: "message",
+            content: "hi", name: "No TZ", enabled: true, createdAt: 1700000000000, runCount: 0,
+          },
+        ]);
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: Date.now() });
+
+        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+
+        // Should show schedule without timezone in parens
+        expect(result?.text).toContain("Schedule: 0 9 * * *");
+        expect(result?.text).not.toContain("Schedule: 0 9 * * * (");
+      });
     });
 
-    it("rejects cron without content", async () => {
-      const result = await handleSharedAction({
-        action: "create_cron_job", name: "test", schedule: "0 9 * * *",
-      }, 123);
-      expect(result?.ok).toBe(false);
-      expect(result?.error).toContain("Missing content");
+    // ── edit_cron_job ───────────────────────────────────────────────────
+
+    describe("edit_cron_job", () => {
+      it("rejects missing job_id", async () => {
+        const result = await handleSharedAction({ action: "edit_cron_job" }, 123);
+        expect(result).toEqual({ ok: false, error: "Missing job_id" });
+      });
+
+      it("rejects non-existent job", async () => {
+        mockGetCronJob.mockReturnValue(undefined);
+
+        const result = await handleSharedAction({ action: "edit_cron_job", job_id: "nonexistent" }, 123);
+
+        expect(result?.ok).toBe(false);
+        expect(result?.error).toContain("not found");
+      });
+
+      it("rejects job from different chat", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-x", chatId: "999", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Other Chat", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+
+        const result = await handleSharedAction({ action: "edit_cron_job", job_id: "job-x" }, 123);
+
+        expect(result?.ok).toBe(false);
+        expect(result?.error).toBe("Job belongs to a different chat");
+      });
+
+      it("updates job name", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e1", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Old Name", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+        mockUpdateCronJob.mockReturnValue({ name: "New Name" });
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e1", name: "New Name",
+        }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(result?.text).toContain("New Name");
+        expect(result?.text).toContain("Fields changed: name");
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e1", { name: "New Name" });
+      });
+
+      it("updates content", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e2", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "old", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+        mockUpdateCronJob.mockReturnValue({ name: "Job" });
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e2", content: "new content",
+        }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e2", { content: "new content" });
+      });
+
+      it("updates enabled flag", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e3", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+        mockUpdateCronJob.mockReturnValue({ name: "Job" });
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e3", enabled: false,
+        }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e3", { enabled: false });
+      });
+
+      it("updates schedule with validation", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e4", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          timezone: "America/New_York",
+        });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: "2026-05-01T12:00:00Z" });
+        mockUpdateCronJob.mockReturnValue({ name: "Job" });
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e4", schedule: "0 12 * * *",
+        }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(mockValidateCronExpression).toHaveBeenCalledWith("0 12 * * *", "America/New_York");
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e4", { schedule: "0 12 * * *" });
+      });
+
+      it("rejects invalid schedule update", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e5", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: false, error: "too many fields" });
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e5", schedule: "bad schedule",
+        }, 123);
+
+        expect(result?.ok).toBe(false);
+        expect(result?.error).toContain("Invalid cron expression");
+        expect(result?.error).toContain("too many fields");
+        expect(mockUpdateCronJob).not.toHaveBeenCalled();
+      });
+
+      it("updates multiple fields at once", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e6", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+        mockUpdateCronJob.mockReturnValue({ name: "Updated" });
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e6",
+          name: "Updated", content: "new", enabled: false, type: "query",
+        }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(result?.text).toContain("Fields changed: name, content, enabled, type");
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e6", {
+          name: "Updated", content: "new", enabled: false, type: "query",
+        });
+      });
+
+      it("updates timezone", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e7", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+        mockUpdateCronJob.mockReturnValue({ name: "Job" });
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e7", timezone: "Europe/Berlin",
+        }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e7", { timezone: "Europe/Berlin" });
+      });
+
+      it("clears timezone when set to empty", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e8", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          timezone: "America/New_York",
+        });
+        mockUpdateCronJob.mockReturnValue({ name: "Job" });
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e8", timezone: "",
+        }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e8", { timezone: undefined });
+      });
+
+      it("uses new timezone for schedule validation when both change", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e9", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          timezone: "America/New_York",
+        });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true });
+        mockUpdateCronJob.mockReturnValue({ name: "Job" });
+
+        await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e9",
+          schedule: "0 12 * * *", timezone: "Asia/Tokyo",
+        }, 123);
+
+        // Should validate with the NEW timezone, not the old one
+        expect(mockValidateCronExpression).toHaveBeenCalledWith("0 12 * * *", "Asia/Tokyo");
+      });
+
+      it("falls back to job timezone when schedule changes but timezone does not", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e10", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          timezone: "US/Pacific",
+        });
+        mockValidateCronExpression.mockReturnValueOnce({ valid: true });
+        mockUpdateCronJob.mockReturnValue({ name: "Job" });
+
+        await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e10", schedule: "30 8 * * 1-5",
+        }, 123);
+
+        expect(mockValidateCronExpression).toHaveBeenCalledWith("30 8 * * 1-5", "US/Pacific");
+      });
+
+      it("uses job_id as fallback name when updateCronJob returns no name", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-e11", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+        mockUpdateCronJob.mockReturnValue(undefined);
+
+        const result = await handleSharedAction({
+          action: "edit_cron_job", job_id: "job-e11", content: "new",
+        }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(result?.text).toContain("job-e11");
+      });
     });
 
-    it("rejects oversized content", async () => {
-      const result = await handleSharedAction({
-        action: "create_cron_job", name: "test", schedule: "0 9 * * *",
-        content: "x".repeat(11000),
-      }, 123);
-      expect(result?.ok).toBe(false);
-      expect(result?.error).toContain("too long");
-    });
+    // ── delete_cron_job ─────────────────────────────────────────────────
 
-    it("lists cron jobs", async () => {
-      const result = await handleSharedAction({ action: "list_cron_jobs" }, 123);
-      expect(result?.ok).toBe(true);
-      expect(result?.text).toContain("No cron jobs");
-    });
-  });
+    describe("delete_cron_job", () => {
+      it("rejects missing job_id", async () => {
+        const result = await handleSharedAction({ action: "delete_cron_job" }, 123);
+        expect(result).toEqual({ ok: false, error: "Missing job_id" });
+      });
 
-  describe("history", () => {
-    it("read_history returns messages", async () => {
-      const result = await handleSharedAction({ action: "read_history" }, 123);
-      expect(result?.ok).toBe(true);
-    });
+      it("rejects non-existent job", async () => {
+        mockGetCronJob.mockReturnValue(undefined);
 
-    it("search_history works", async () => {
-      const result = await handleSharedAction({ action: "search_history", query: "test" }, 123);
-      expect(result?.ok).toBe(true);
-    });
+        const result = await handleSharedAction({ action: "delete_cron_job", job_id: "ghost" }, 123);
 
-    it("list_known_users works", async () => {
-      const result = await handleSharedAction({ action: "list_known_users" }, 123);
-      expect(result?.ok).toBe(true);
-    });
-  });
+        expect(result?.ok).toBe(false);
+        expect(result?.error).toContain("not found");
+      });
 
-  describe("unknown actions", () => {
-    it("returns null for unknown actions", async () => {
-      const result = await handleSharedAction({ action: "unknown_thing" }, 123);
-      expect(result).toBeNull();
+      it("rejects job from different chat", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-d1", chatId: "999", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "Other", enabled: true, createdAt: 1700000000000, runCount: 0,
+        });
+
+        const result = await handleSharedAction({ action: "delete_cron_job", job_id: "job-d1" }, 123);
+
+        expect(result?.ok).toBe(false);
+        expect(result?.error).toBe("Job belongs to a different chat");
+      });
+
+      it("deletes a job successfully", async () => {
+        mockGetCronJob.mockReturnValue({
+          id: "job-d2", chatId: "123", schedule: "0 9 * * *", type: "message",
+          content: "hi", name: "To Delete", enabled: true, createdAt: 1700000000000, runCount: 5,
+        });
+
+        const result = await handleSharedAction({ action: "delete_cron_job", job_id: "job-d2" }, 123);
+
+        expect(result?.ok).toBe(true);
+        expect(result?.text).toContain('Deleted cron job "To Delete"');
+        expect(result?.text).toContain("job-d2");
+        expect(mockDeleteCronJob).toHaveBeenCalledWith("job-d2");
+      });
     });
   });
 });

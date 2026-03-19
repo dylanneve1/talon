@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the log module before importing cron-store
 vi.mock("../util/log.js", () => ({
@@ -7,21 +7,29 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
+const existsSyncMock = vi.fn(() => false);
+const readFileSyncMock = vi.fn(() => "{}");
+const mkdirSyncMock = vi.fn();
+
 // Mock fs to avoid real filesystem side effects
 vi.mock("node:fs", () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => "{}"),
+  existsSync: (...args: unknown[]) => existsSyncMock(...args),
+  readFileSync: (...args: unknown[]) => readFileSyncMock(...args),
   writeFileSync: vi.fn(),
-  mkdirSync: vi.fn(),
+  mkdirSync: (...args: unknown[]) => mkdirSyncMock(...args),
 }));
 
+const writeFileSyncMock = vi.fn();
+
 vi.mock("write-file-atomic", () => ({
-  default: { sync: vi.fn() },
+  default: { sync: (...args: unknown[]) => writeFileSyncMock(...args) },
 }));
 
 import type { CronJob } from "../storage/cron-store.js";
 
 const {
+  loadCronJobs,
+  flushCronJobs,
   addCronJob,
   getCronJob,
   getCronJobsForChat,
@@ -49,6 +57,10 @@ function makeCronJob(overrides: Partial<CronJob> = {}): CronJob {
 }
 
 describe("cron-store", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   describe("addCronJob and getCronJob", () => {
     it("creates a job and it is retrievable", () => {
       const job = makeCronJob({ id: "test-add-1" });
@@ -58,6 +70,33 @@ describe("cron-store", () => {
       expect(retrieved!.id).toBe("test-add-1");
       expect(retrieved!.name).toBe("Morning greeting");
       expect(retrieved!.schedule).toBe("0 9 * * *");
+    });
+
+    it("stores all fields correctly", () => {
+      const job = makeCronJob({
+        id: "test-add-full",
+        chatId: "chat-full",
+        schedule: "30 14 * * 1-5",
+        type: "query",
+        content: "What is the weather?",
+        name: "Weather check",
+        enabled: false,
+        timezone: "Europe/London",
+      });
+      addCronJob(job);
+      const retrieved = getCronJob("test-add-full")!;
+      expect(retrieved.type).toBe("query");
+      expect(retrieved.content).toBe("What is the weather?");
+      expect(retrieved.enabled).toBe(false);
+      expect(retrieved.timezone).toBe("Europe/London");
+      expect(retrieved.schedule).toBe("30 14 * * 1-5");
+    });
+
+    it("overwrites existing job with same id", () => {
+      addCronJob(makeCronJob({ id: "overwrite-1", name: "Original" }));
+      addCronJob(makeCronJob({ id: "overwrite-1", name: "Replaced" }));
+      const retrieved = getCronJob("overwrite-1")!;
+      expect(retrieved.name).toBe("Replaced");
     });
   });
 
@@ -121,6 +160,27 @@ describe("cron-store", () => {
       const result = updateCronJob("nonexistent-update", { name: "nope" });
       expect(result).toBeUndefined();
     });
+
+    it("can update schedule and content", () => {
+      addCronJob(makeCronJob({ id: "update-sched" }));
+      const updated = updateCronJob("update-sched", {
+        schedule: "*/5 * * * *",
+        content: "New content",
+      });
+      expect(updated!.schedule).toBe("*/5 * * * *");
+      expect(updated!.content).toBe("New content");
+    });
+
+    it("can update lastRunAt and runCount", () => {
+      addCronJob(makeCronJob({ id: "update-run" }));
+      const ts = Date.now();
+      const updated = updateCronJob("update-run", {
+        lastRunAt: ts,
+        runCount: 10,
+      });
+      expect(updated!.lastRunAt).toBe(ts);
+      expect(updated!.runCount).toBe(10);
+    });
   });
 
   describe("deleteCronJob", () => {
@@ -137,6 +197,15 @@ describe("cron-store", () => {
     it("returns false for nonexistent job", () => {
       const result = deleteCronJob("nonexistent-delete");
       expect(result).toBe(false);
+    });
+
+    it("job is no longer returned by getCronJobsForChat after deletion", () => {
+      addCronJob(makeCronJob({ id: "del-chat-1", chatId: "del-chat" }));
+      addCronJob(makeCronJob({ id: "del-chat-2", chatId: "del-chat" }));
+      deleteCronJob("del-chat-1");
+      const jobs = getCronJobsForChat("del-chat");
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].id).toBe("del-chat-2");
     });
   });
 
@@ -174,6 +243,15 @@ describe("cron-store", () => {
       const id = generateCronId();
       expect(id.startsWith("cron_")).toBe(true);
     });
+
+    it("contains a timestamp component", () => {
+      const id = generateCronId();
+      const parts = id.split("_");
+      expect(parts.length).toBe(3);
+      const ts = Number(parts[1]);
+      expect(ts).toBeGreaterThan(0);
+      expect(ts).toBeLessThanOrEqual(Date.now());
+    });
   });
 
   describe("validateCronExpression", () => {
@@ -197,6 +275,164 @@ describe("cron-store", () => {
       const result = validateCronExpression("0 9 * * *", "America/New_York");
       expect(result.valid).toBe(true);
       expect(result.next).toBeDefined();
+    });
+
+    it("validates various valid cron patterns", () => {
+      // Every 5 minutes
+      expect(validateCronExpression("*/5 * * * *").valid).toBe(true);
+      // Weekdays at noon
+      expect(validateCronExpression("0 12 * * 1-5").valid).toBe(true);
+      // First day of month at midnight
+      expect(validateCronExpression("0 0 1 * *").valid).toBe(true);
+      // Every hour
+      expect(validateCronExpression("0 * * * *").valid).toBe(true);
+    });
+
+    it("rejects invalid timezone", () => {
+      const result = validateCronExpression("0 9 * * *", "Not/A/Timezone");
+      expect(result.valid).toBe(false);
+      expect(result.error).toBeDefined();
+    });
+
+    it("validates with different valid timezones", () => {
+      expect(validateCronExpression("0 9 * * *", "Europe/London").valid).toBe(true);
+      expect(validateCronExpression("0 9 * * *", "Asia/Tokyo").valid).toBe(true);
+      expect(validateCronExpression("0 9 * * *", "US/Pacific").valid).toBe(true);
+    });
+
+    it("returns no error field on valid expression", () => {
+      const result = validateCronExpression("0 9 * * *");
+      expect(result.error).toBeUndefined();
+    });
+  });
+
+  describe("loadCronJobs", () => {
+    it("loads jobs from object format file", () => {
+      const stored = {
+        "job-1": {
+          id: "job-1",
+          chatId: "chat-1",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "Hello",
+          name: "Greeting",
+          enabled: true,
+          createdAt: 1000,
+          runCount: 5,
+        },
+        "job-2": {
+          id: "job-2",
+          chatId: "chat-2",
+          schedule: "0 12 * * *",
+          type: "query",
+          content: "Status?",
+          name: "Status check",
+          enabled: false,
+          createdAt: 2000,
+          runCount: 0,
+        },
+      };
+      existsSyncMock.mockReturnValue(true);
+      readFileSyncMock.mockReturnValue(JSON.stringify(stored));
+
+      loadCronJobs();
+
+      expect(getCronJob("job-1")).toBeDefined();
+      expect(getCronJob("job-1")!.name).toBe("Greeting");
+      expect(getCronJob("job-2")).toBeDefined();
+      expect(getCronJob("job-2")!.type).toBe("query");
+    });
+
+    it("loads jobs from legacy array format", () => {
+      const stored = [
+        {
+          id: "legacy-1",
+          chatId: "chat-1",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "Hello",
+          name: "Greeting",
+          enabled: true,
+          createdAt: 1000,
+          runCount: 0,
+        },
+        {
+          id: "legacy-2",
+          chatId: "chat-2",
+          schedule: "0 12 * * *",
+          type: "query",
+          content: "Status?",
+          name: "Status check",
+          enabled: true,
+          createdAt: 2000,
+          runCount: 3,
+        },
+      ];
+      existsSyncMock.mockReturnValue(true);
+      readFileSyncMock.mockReturnValue(JSON.stringify(stored));
+
+      loadCronJobs();
+
+      expect(getCronJob("legacy-1")).toBeDefined();
+      expect(getCronJob("legacy-1")!.name).toBe("Greeting");
+      expect(getCronJob("legacy-2")).toBeDefined();
+    });
+
+    it("does nothing when store file does not exist", () => {
+      existsSyncMock.mockReturnValue(false);
+      expect(() => loadCronJobs()).not.toThrow();
+    });
+
+    it("handles JSON parse errors gracefully (resets to empty)", () => {
+      existsSyncMock.mockReturnValue(true);
+      readFileSyncMock.mockReturnValue("not valid json{{{");
+
+      expect(() => loadCronJobs()).not.toThrow();
+    });
+  });
+
+  describe("flushCronJobs", () => {
+    it("writes jobs to disk when dirty", () => {
+      addCronJob(makeCronJob({ id: "flush-1" }));
+
+      existsSyncMock.mockReturnValue(true);
+      flushCronJobs();
+
+      expect(writeFileSyncMock).toHaveBeenCalled();
+      const writtenData = writeFileSyncMock.mock.calls[0][1] as string;
+      const parsed = JSON.parse(writtenData.trim());
+      expect(parsed["flush-1"]).toBeDefined();
+    });
+
+    it("creates workspace directory if it does not exist during addCronJob save", () => {
+      // addCronJob calls save() internally, so we need to set up the mock
+      // before calling addCronJob to catch the mkdir call
+      existsSyncMock.mockReturnValue(false);
+      mkdirSyncMock.mockClear();
+
+      addCronJob(makeCronJob({ id: "flush-mkdir-1" }));
+
+      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), { recursive: true });
+    });
+
+    it("does not write when not dirty", () => {
+      // flushCronJobs calls save() which checks dirty flag.
+      // Since we haven't modified anything since last flush, the writeFileSync
+      // should not be called. But flushCronJobs doesn't set dirty=true like
+      // flushHistory does. Let's verify that behavior.
+      // Actually, looking at the code: flushCronJobs just calls save() directly
+      // without setting dirty=true. So if nothing was modified, it won't write.
+      writeFileSyncMock.mockClear();
+      existsSyncMock.mockReturnValue(true);
+
+      // Load cleans state, then flush immediately should be no-op
+      existsSyncMock.mockReturnValue(false);
+      loadCronJobs();
+      writeFileSyncMock.mockClear();
+      flushCronJobs();
+
+      // After loadCronJobs + no changes, dirty is false, so save() should not write
+      expect(writeFileSyncMock).not.toHaveBeenCalled();
     });
   });
 });

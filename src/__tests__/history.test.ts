@@ -11,6 +11,7 @@ import {
   getMessageById,
   getHistoryStats,
   clearHistory,
+  setMessageFilePath,
   type HistoryMessage,
 } from "../storage/history.js";
 
@@ -60,6 +61,24 @@ describe("history", () => {
       expect(history[0].msgId).toBe(50);
       expect(history[499].msgId).toBe(549);
     });
+
+    it("preserves all optional fields on the message", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({
+        msgId: 1,
+        senderName: "Alice",
+        text: "photo msg",
+        replyToMsgId: 99,
+        mediaType: "photo",
+        stickerFileId: "stk123",
+        filePath: "/tmp/photo.jpg",
+      }));
+      const history = getRecentHistory(id);
+      expect(history[0].replyToMsgId).toBe(99);
+      expect(history[0].mediaType).toBe("photo");
+      expect(history[0].stickerFileId).toBe("stk123");
+      expect(history[0].filePath).toBe("/tmp/photo.jpg");
+    });
   });
 
   describe("getRecentHistory", () => {
@@ -86,6 +105,29 @@ describe("history", () => {
       }
       const history = getRecentHistory(id);
       expect(history).toHaveLength(50);
+    });
+  });
+
+  describe("setMessageFilePath", () => {
+    it("updates filePath on an existing message", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({ msgId: 10, text: "photo" }));
+      setMessageFilePath(id, 10, "/tmp/downloaded.jpg");
+      const history = getRecentHistory(id);
+      expect(history[0].filePath).toBe("/tmp/downloaded.jpg");
+    });
+
+    it("is a no-op for nonexistent chat", () => {
+      // Should not throw
+      expect(() => setMessageFilePath("no-such-chat", 1, "/tmp/x.jpg")).not.toThrow();
+    });
+
+    it("is a no-op for nonexistent message", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({ msgId: 1 }));
+      setMessageFilePath(id, 999, "/tmp/x.jpg");
+      const history = getRecentHistory(id);
+      expect(history[0].filePath).toBeUndefined();
     });
   });
 
@@ -123,6 +165,20 @@ describe("history", () => {
       const result = searchHistory(id, "xyzzy");
       expect(result).toContain("No messages matching");
     });
+
+    it("respects the limit parameter", () => {
+      const id = chatId();
+      for (let i = 0; i < 10; i++) {
+        pushMessage(id, makeMsg({ msgId: i, text: `match ${i}` }));
+      }
+      // All 10 messages match "match", but limit to 3
+      const result = searchHistory(id, "match", 3);
+      // Should contain only the 3 most recent matches
+      const lines = result.split("\n");
+      expect(lines).toHaveLength(3);
+      expect(result).toContain("match 9");
+      expect(result).toContain("match 7");
+    });
   });
 
   describe("getMessagesByUser", () => {
@@ -158,6 +214,16 @@ describe("history", () => {
       const result = getMessagesByUser("empty-chat-users", "anyone");
       expect(result).toContain("No messages in history");
     });
+
+    it("respects the limit parameter", () => {
+      const id = chatId();
+      for (let i = 0; i < 10; i++) {
+        pushMessage(id, makeMsg({ msgId: i, senderName: "Alice", text: `msg ${i}` }));
+      }
+      const result = getMessagesByUser(id, "Alice", 3);
+      const lines = result.split("\n");
+      expect(lines).toHaveLength(3);
+    });
   });
 
   describe("clearHistory", () => {
@@ -180,6 +246,21 @@ describe("history", () => {
       clearHistory(id1);
       expect(getRecentHistory(id1)).toEqual([]);
       expect(getRecentHistory(id2)).toHaveLength(1);
+    });
+
+    it("subsequent operations on cleared chat work correctly", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({ msgId: 1 }));
+      clearHistory(id);
+
+      // Search returns "No messages"
+      expect(searchHistory(id, "anything")).toContain("No messages in history");
+      // getKnownUsers returns "No users"
+      expect(getKnownUsers(id)).toContain("No users seen yet.");
+      // Can push new messages after clearing
+      pushMessage(id, makeMsg({ msgId: 99 }));
+      expect(getRecentHistory(id)).toHaveLength(1);
+      expect(getRecentHistory(id)[0].msgId).toBe(99);
     });
   });
 
@@ -221,6 +302,93 @@ describe("history", () => {
     it("returns 'No users seen yet.' for nonexistent chat", () => {
       const result = getKnownUsers("nonexistent-chat-xyz");
       expect(result).toContain("No users seen yet.");
+    });
+
+    it("shows time ago for users seen minutes ago", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({
+        msgId: 1,
+        senderId: 100,
+        senderName: "Alice",
+        timestamp: Date.now() - 5 * 60_000, // 5 minutes ago
+      }));
+      const result = getKnownUsers(id);
+      expect(result).toContain("5m ago");
+    });
+
+    it("shows time ago for users seen hours ago", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({
+        msgId: 1,
+        senderId: 100,
+        senderName: "Alice",
+        timestamp: Date.now() - 3 * 3_600_000, // 3 hours ago
+      }));
+      const result = getKnownUsers(id);
+      expect(result).toContain("3h ago");
+    });
+
+    it("shows time ago for users seen days ago", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({
+        msgId: 1,
+        senderId: 100,
+        senderName: "Alice",
+        timestamp: Date.now() - 2 * 86_400_000, // 2 days ago
+      }));
+      const result = getKnownUsers(id);
+      expect(result).toContain("2d ago");
+    });
+
+    it("shows 'just now' for users seen less than a minute ago", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({
+        msgId: 1,
+        senderId: 100,
+        senderName: "Alice",
+        timestamp: Date.now() - 10_000, // 10 seconds ago
+      }));
+      const result = getKnownUsers(id);
+      expect(result).toContain("just now");
+    });
+
+    it("sorts users by last seen (most recent first)", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({
+        msgId: 1,
+        senderId: 100,
+        senderName: "OldUser",
+        timestamp: Date.now() - 86_400_000,
+      }));
+      pushMessage(id, makeMsg({
+        msgId: 2,
+        senderId: 200,
+        senderName: "NewUser",
+        timestamp: Date.now() - 60_000,
+      }));
+      const result = getKnownUsers(id);
+      const newIdx = result.indexOf("NewUser");
+      const oldIdx = result.indexOf("OldUser");
+      expect(newIdx).toBeLessThan(oldIdx);
+    });
+
+    it("updates user name to the latest seen name", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({
+        msgId: 1,
+        senderId: 100,
+        senderName: "OldName",
+        timestamp: Date.now() - 60_000,
+      }));
+      pushMessage(id, makeMsg({
+        msgId: 2,
+        senderId: 100,
+        senderName: "NewName",
+        timestamp: Date.now(),
+      }));
+      const result = getKnownUsers(id);
+      expect(result).toContain("NewName");
+      expect(result).not.toContain("OldName");
     });
   });
 
@@ -313,6 +481,7 @@ describe("history", () => {
       expect(result).toContain("Alice");
       expect(result).toContain("Hello there!");
       expect(result).toContain("msg:1");
+      expect(result).toContain("10:30");
     });
 
     it("returns 'No messages in history.' for empty chat", () => {
@@ -367,6 +536,46 @@ describe("history", () => {
 
       const result = getRecentFormatted(id, 5);
       expect(result).toContain("replying to msg:1");
+    });
+
+    it("includes file path tag", () => {
+      const id = chatId();
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 1,
+          senderName: "Bob",
+          text: "a file",
+          filePath: "/tmp/downloaded.pdf",
+        }),
+      );
+
+      const result = getRecentFormatted(id, 5);
+      expect(result).toContain("(file: /tmp/downloaded.pdf)");
+    });
+
+    it("formats multiple messages joined by newlines", () => {
+      const id = chatId();
+      pushMessage(id, makeMsg({ msgId: 1, text: "first", timestamp: 1000000000000 }));
+      pushMessage(id, makeMsg({ msgId: 2, text: "second", timestamp: 1000000060000 }));
+      const result = getRecentFormatted(id, 5);
+      const lines = result.split("\n");
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toContain("first");
+      expect(lines[1]).toContain("second");
+    });
+
+    it("includes all media type variants in tags", () => {
+      const id = chatId();
+      const types: Array<HistoryMessage["mediaType"]> = ["document", "voice", "video", "animation"];
+      types.forEach((type, i) => {
+        pushMessage(id, makeMsg({ msgId: i + 1, text: `media ${type}`, mediaType: type }));
+      });
+      const result = getRecentFormatted(id, 10);
+      expect(result).toContain("[document]");
+      expect(result).toContain("[voice]");
+      expect(result).toContain("[video]");
+      expect(result).toContain("[animation]");
     });
   });
 
