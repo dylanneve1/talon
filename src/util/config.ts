@@ -84,7 +84,7 @@ function readOptionalFile(path: string): string {
   return "";
 }
 
-function loadSystemPrompt(): string {
+function loadSystemPrompt(frontend?: string): string {
   const base = process.cwd();
   const parts: string[] = [];
 
@@ -147,6 +147,27 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
 
   parts.push(`## Current Date\n${new Date().toISOString().slice(0, 10)}`);
 
+  // Frontend-specific instructions
+  if (frontend === "terminal") {
+    parts.push(`## Terminal Mode
+
+You are running in a monospace terminal (CLI), NOT in a messaging app.
+
+**Formatting rules:**
+- Do NOT use Markdown formatting (no **bold**, _italic_, [links](url), or # headings).
+- Use plain text with monospace-friendly formatting: indentation, dashes, pipes, ASCII tables.
+- Use CAPS or --- underlines for emphasis instead of markdown bold/italic.
+- Code blocks are fine — they render naturally in a terminal.
+- Keep lines under 100 characters when possible.
+- Use whitespace and alignment for readability.
+
+**Behavior:**
+- Your output goes directly to stdout — do NOT use the send tool. Just output text normally.
+- You are talking to a single user at a local terminal. No group chat, no message IDs, no reactions.
+- Be direct and concise. Terminal users want fast answers, not walls of text.
+- For structured data, use aligned columns or indented lists, not markdown tables.`);
+  }
+
   return parts.join("\n\n---\n\n");
 }
 
@@ -167,10 +188,11 @@ export function loadConfig(): TalonConfig {
   }
 
   const workspace = resolve(process.cwd(), "workspace");
+  const activeFrontend = frontends[0];
 
   return {
     ...parsed,
     workspace,
-    systemPrompt: loadSystemPrompt(),
+    systemPrompt: loadSystemPrompt(activeFrontend),
   };
 }
