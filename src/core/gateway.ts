@@ -19,6 +19,7 @@ import { getHealthStatus } from "../util/watchdog.js";
 import { getActiveSessionCount } from "../storage/sessions.js";
 import { log, logError, logDebug } from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
+import { handlePluginAction } from "./plugin.js";
 import type { FrontendActionHandler } from "./types.js";
 
 // ── State ───────────────────────────────────────────────────────────────────
@@ -116,6 +117,13 @@ async function handleAction(body: Record<string, unknown>): Promise<unknown> {
     if (shared) {
       logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`);
       return shared;
+    }
+
+    // Try plugin actions (loaded from external plugin packages)
+    const pluginResult = await handlePluginAction(body, String(chatId));
+    if (pluginResult) {
+      logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (plugin)`);
+      return pluginResult;
     }
 
     // Delegate to the active frontend

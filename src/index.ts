@@ -42,6 +42,12 @@ const config = loadConfig();
 if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
 if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
 
+// Load plugins (external tool packages)
+if (config.plugins.length > 0) {
+  const { loadPlugins } = await import("./core/plugin.js");
+  await loadPlugins(config.plugins);
+}
+
 initWorkspace(config.workspace);
 loadSessions();
 loadChatSettings();

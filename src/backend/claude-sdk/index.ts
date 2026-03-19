@@ -12,6 +12,7 @@ import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { getRecentHistory } from "../../storage/history.js";
 import { resolve } from "node:path";
 import { classify } from "../../core/errors.js";
+import { getPluginMcpServers } from "../../core/plugin.js";
 import { log, logError, logWarn } from "../../util/log.js";
 
 import type { QueryParams, QueryResult } from "../../core/types.js";
@@ -75,6 +76,7 @@ export async function handleMessage(
           TALON_CHAT_ID: chatId,
         },
       },
+      ...getPluginMcpServers(`http://127.0.0.1:${bridgePortFn()}`, chatId),
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
   };

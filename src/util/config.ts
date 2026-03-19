@@ -5,6 +5,11 @@ import { z } from "zod";
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
+const pluginEntrySchema = z.object({
+  path: z.string(),
+  config: z.record(z.string(), z.unknown()).optional(),
+});
+
 const configSchema = z.object({
   botToken: z.string().min(1, "Missing bot token"),
   backend: z.enum(["claude", "opencode"]).default("claude"),
@@ -18,6 +23,7 @@ const configSchema = z.object({
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   braveApiKey: z.string().optional(),
   searxngUrl: z.string().default("http://localhost:8080"),
+  plugins: z.array(pluginEntrySchema).default([]),
 });
 
 export type TalonConfig = z.infer<typeof configSchema> & {
