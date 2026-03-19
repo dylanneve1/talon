@@ -72,7 +72,7 @@ export function createTelegramActionHandler(
 
   return async (body: Record<string, unknown>, chatId: string): Promise<ActionResult | null> => {
     const action = body.action as string;
-    const numChatId = Number(chatId);
+    const numChatId = Number(chatId.replace(/^tg:/, ""));
 
     switch (action) {
       // ── Messaging ─────────────────────────────────────────────────────

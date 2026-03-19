@@ -19,7 +19,7 @@ import {
   enablePulse,
   isPulseEnabled,
 } from "../../core/pulse.js";
-import { handleCallbackQuery } from "./handlers.js";
+import { handleCallbackQuery, tgChatId } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
 import {
   renderSettingsText,
@@ -31,7 +31,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
 
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
-    const cid = String(ctx.chat?.id ?? ctx.from.id);
+    const cid = tgChatId(ctx.chat?.id ?? ctx.from.id);
 
     // Handle unified /settings callbacks
     if (data.startsWith("settings:")) {

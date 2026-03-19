@@ -32,6 +32,7 @@ import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
 import { handleAdminCommand } from "./admin.js";
+import { tgChatId } from "./handlers.js";
 import {
   formatDuration,
   formatTokenCount,
@@ -112,7 +113,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
   );
 
   bot.command("reset", async (ctx) => {
-    const cid = String(ctx.chat.id);
+    const cid = tgChatId(ctx.chat.id);
     const info = getSessionInfo(cid);
 
     if (info.turns > 0) {
@@ -160,7 +161,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
   });
 
   bot.command("model", async (ctx) => {
-    const cid = String(ctx.chat.id);
+    const cid = tgChatId(ctx.chat.id);
     const arg = ctx.match?.trim();
     const settings = getChatSettings(cid);
 
@@ -216,7 +217,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
   });
 
   bot.command("effort", async (ctx) => {
-    const cid = String(ctx.chat.id);
+    const cid = tgChatId(ctx.chat.id);
     const arg = ctx.match?.trim().toLowerCase();
     const settings = getChatSettings(cid);
 
@@ -281,7 +282,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
   });
 
   bot.command("pulse", async (ctx) => {
-    const cid = String(ctx.chat.id);
+    const cid = tgChatId(ctx.chat.id);
     const arg = ctx.match?.trim().toLowerCase();
 
     if (!arg || arg === "status") {
@@ -363,7 +364,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
   });
 
   bot.command("settings", async (ctx) => {
-    const cid = String(ctx.chat.id);
+    const cid = tgChatId(ctx.chat.id);
     const chatSets = getChatSettings(cid);
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
@@ -398,7 +399,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
   });
 
   bot.command("status", async (ctx) => {
-    const cid = String(ctx.chat.id);
+    const cid = tgChatId(ctx.chat.id);
     const info = getSessionInfo(cid);
     const u = info.usage;
     const uptime = formatDuration(process.uptime() * 1000);

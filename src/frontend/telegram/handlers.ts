@@ -24,6 +24,12 @@ import { addMedia } from "../../storage/media-index.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
 import { log, logError, logWarn } from "../../util/log.js";
 
+// ── ChatId helpers (namespace Telegram IDs to avoid cross-frontend collisions) ──
+
+const TG_PREFIX = "tg:";
+export function tgChatId(telegramId: number | string): string { return TG_PREFIX + telegramId; }
+export function tgNumericId(chatId: string): number { return Number(chatId.slice(TG_PREFIX.length)); }
+
 // ── First-time DM user tracking ──────────────────────────────────────────────
 
 const knownDmUsers = new Set<number>();
@@ -463,7 +469,7 @@ export async function processAndReply(params: ProcessAndReplyParams): Promise<vo
     bot, config, chatId, replyToId, messageId,
     prompt, senderName, isGroup, senderUsername, senderId,
   } = params;
-  const numericChatId = Number(chatId);
+  const numericChatId = tgNumericId(chatId);
 
   const stream: StreamState = {
     draftId: crypto.getRandomValues(new Uint32Array(1))[0] || 1,
@@ -542,7 +548,7 @@ async function handleMediaMessage(
   if (!ctx.message || !ctx.chat) return;
   if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
 
-  const chatId = String(ctx.chat.id);
+  const chatId = tgChatId(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
   const senderUsername = ctx.from?.username;
@@ -630,7 +636,7 @@ export async function handleTextMessage(
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
   if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
 
-  const chatId = String(ctx.chat.id);
+  const chatId = tgChatId(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
   const senderUsername = ctx.from?.username;
@@ -734,7 +740,7 @@ export async function handleStickerMessage(
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
 
-  const chatId = String(ctx.chat.id);
+  const chatId = tgChatId(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
   const sender = getSenderName(ctx.from);
   const senderUsername = ctx.from?.username;
@@ -879,7 +885,7 @@ export async function handleCallbackQuery(
 ): Promise<void> {
   if (!ctx.callbackQuery || !("data" in ctx.callbackQuery)) return;
 
-  const chatId = String(ctx.chat?.id ?? ctx.from?.id);
+  const chatId = tgChatId(ctx.chat?.id ?? ctx.from?.id ?? 0);
   const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
   const sender = getSenderName(ctx.from);
   const callbackData = ctx.callbackQuery.data;

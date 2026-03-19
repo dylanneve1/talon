@@ -9,7 +9,7 @@ import { pushMessage } from "../../storage/history.js";
 import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/pulse.js";
 import { log } from "../../util/log.js";
-import { getSenderName } from "./handlers.js";
+import { getSenderName, tgChatId } from "./handlers.js";
 import {
   handleTextMessage,
   handlePhotoMessage,
@@ -25,7 +25,7 @@ import {
 export function registerMiddleware(bot: Bot, config: TalonConfig): void {
   // ── History capture (runs for ALL messages, before handlers) ─────────────
   bot.on("message", (ctx, next) => {
-    const chatId = String(ctx.chat.id);
+    const chatId = tgChatId(ctx.chat.id);
     const sender = getSenderName(ctx.from);
     const senderId = ctx.from?.id ?? 0;
     const msgId = ctx.message.message_id;

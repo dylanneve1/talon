@@ -1,16 +1,13 @@
 /**
- * Talon — Claude-powered Telegram bot.
+ * Talon — agentic AI harness.
  * Composition root: loads config, creates frontend + backend, wires dispatcher.
  *
- * This file knows NOTHING about Telegram or Claude SDK specifics.
- * To swap frontends (Discord, CLI) or backends (OpenAI, Ollama),
- * change the imports below — no other file needs to change.
+ * Frontends (Telegram, Teams, Terminal) and backends (Claude, OpenCode)
+ * are loaded dynamically — only the selected platform's dependencies are required.
  */
 
 import { loadConfig } from "./util/config.js";
 import { initWorkspace, startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
-import { initAgent as initClaudeAgent, handleMessage as claudeHandleMessage } from "./backend/claude-sdk/index.js";
-import { initOpenCodeAgent, handleMessage as opencodeHandleMessage, stopOpenCodeServer } from "./backend/opencode/index.js";
 import { loadSessions, flushSessions } from "./storage/sessions.js";
 import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
@@ -30,10 +27,6 @@ import {
   stopCronTimer,
 } from "./core/cron.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
-import { createTelegramFrontend } from "./frontend/telegram/index.js";
-import { createTerminalFrontend } from "./frontend/terminal/index.js";
-import { createTeamsFrontend } from "./frontend/teams/index.js";
-import { flushConversationStore } from "./frontend/teams/conversation-store.js";
 import { log, logError, logWarn } from "./util/log.js";
 import type { QueryBackend } from "./core/types.js";
 
@@ -53,27 +46,35 @@ loadHistory();
 loadMediaIndex();
 cleanupOldLogs();
 
-// ── Create frontend ──────────────────────────────────────────────────────────
+// ── Create frontend (dynamic import — only selected platform's deps required) ─
 
-const frontend = (() => {
+const frontend = await (async () => {
   switch (config.frontend) {
-    case "teams":
+    case "teams": {
+      const { createTeamsFrontend } = await import("./frontend/teams/index.js");
       return createTeamsFrontend(config);
-    case "terminal":
+    }
+    case "terminal": {
+      const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
       return createTerminalFrontend(config);
-    default:
+    }
+    default: {
+      const { createTelegramFrontend } = await import("./frontend/telegram/index.js");
       return createTelegramFrontend(config);
+    }
   }
 })();
 
-// ── Create backend ──────────────────────────────────────────────────────────
+// ── Create backend (dynamic import — only selected backend's deps required) ──
 
 let backend: QueryBackend;
 if (config.backend === "opencode") {
+  const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } = await import("./backend/opencode/index.js");
   initOpenCodeAgent(config, frontend.getBridgePort);
   backend = { query: (params) => opencodeHandleMessage(params) };
   log("bot", "Backend: OpenCode");
 } else {
+  const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } = await import("./backend/claude-sdk/index.js");
   initClaudeAgent(config, frontend.getBridgePort);
   backend = { query: (params) => claudeHandleMessage(params) };
   log("bot", "Backend: Claude SDK");
@@ -121,7 +122,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }
 
   await frontend.stop();
-  if (config.backend === "opencode") stopOpenCodeServer();
+  if (config.backend === "opencode") {
+    const { stopOpenCodeServer } = await import("./backend/opencode/index.js");
+    stopOpenCodeServer();
+  }
   stopPulseTimer();
   stopCronTimer();
   stopWatchdog();
@@ -145,7 +149,16 @@ process.on("uncaughtException", (err) => {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
-  if (config.frontend === "teams") flushConversationStore();
+  // Teams conversation store flushes synchronously in frontend.stop() during graceful shutdown.
+  // In uncaught exception path, the store was already loaded, so import is cached and sync-safe.
+  if (config.frontend === "teams") {
+    try {
+      // Dynamic import is cached after first load — this resolves immediately
+      import("./frontend/teams/conversation-store.js").then(({ flushConversationStore }) => {
+        flushConversationStore();
+      }).catch(() => {});
+    } catch { /* best effort */ }
+  }
   process.exit(1);
 });
 

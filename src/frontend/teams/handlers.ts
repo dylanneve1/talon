@@ -22,6 +22,10 @@ import { saveConversationReference } from "./conversation-store.js";
 import { log, logError } from "../../util/log.js";
 import { splitMessage } from "./formatting.js";
 
+const TEAMS_PREFIX = "teams:";
+function teamsChatId(convId: string): string { return TEAMS_PREFIX + convId; }
+export function teamsConvId(chatId: string): string { return chatId.slice(TEAMS_PREFIX.length); }
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Deterministic hash of a string to a stable positive integer.
@@ -248,10 +252,11 @@ export function createTeamsActivityHandler(config: TalonConfig): ActivityHandler
 
     const senderId = activity.from?.aadObjectId ?? activity.from?.id ?? "unknown";
     const senderName = activity.from?.name ?? "User";
+    const chatId = teamsChatId(conversationId);
 
     if (isUserRateLimited(senderId)) return next();
 
-    // Store conversation reference for proactive messaging
+    // Store conversation reference for proactive messaging (raw convId)
     const ref = TurnContext.getConversationReference(activity);
     saveConversationReference(conversationId, ref);
 
@@ -260,7 +265,7 @@ export function createTeamsActivityHandler(config: TalonConfig): ActivityHandler
     const isGroup = conversationType === "channel" || conversationType === "groupChat";
 
     // Register groups for pulse
-    if (isGroup) registerChat(conversationId);
+    if (isGroup) registerChat(chatId);
 
     // Extract text, stripping bot @mention in channels
     let text = activity.text ?? "";
@@ -270,7 +275,7 @@ export function createTeamsActivityHandler(config: TalonConfig): ActivityHandler
     if (!text.trim()) return next();
 
     // Push to in-memory history
-    pushMessage(conversationId, {
+    pushMessage(chatId, {
       msgId: Date.now(), // Teams doesn't have numeric message IDs
       senderId: hashStringId(senderId),
       senderName,
@@ -279,7 +284,7 @@ export function createTeamsActivityHandler(config: TalonConfig): ActivityHandler
     });
 
     // Enqueue for processing
-    enqueueMessage(config, conversationId, {
+    enqueueMessage(config, chatId, {
       prompt: text,
       senderName,
       senderId,
@@ -294,7 +299,7 @@ export function createTeamsActivityHandler(config: TalonConfig): ActivityHandler
     const conversationId = activity.conversation?.id;
     if (!conversationId) return next();
 
-    // Store reference on any conversation update
+    // Store reference on any conversation update (raw convId)
     const ref = TurnContext.getConversationReference(activity);
     saveConversationReference(conversationId, ref);
 

@@ -62,10 +62,10 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
     context,
 
     sendTyping: (chatId: string) =>
-      bot.api.sendChatAction(Number(chatId), "typing").then(() => {}),
+      bot.api.sendChatAction(Number(chatId.replace(/^tg:/, "")), "typing").then(() => {}),
 
     sendMessage: async (chatId: string, text: string) => {
-      await sendText(bot, Number(chatId), text);
+      await sendText(bot, Number(chatId.replace(/^tg:/, "")), text);
     },
 
     getBridgePort: () => getGatewayPort(),

@@ -78,7 +78,8 @@ export function createTeamsFrontend(config: TalonConfig): TeamsFrontend {
     context,
 
     sendTyping: async (chatId: string) => {
-      const ref = getConversationReference(chatId);
+      const convId = chatId.replace(/^teams:/, "");
+      const ref = getConversationReference(convId);
       if (!ref) return;
       try {
         await adapter.continueConversation(ref, async (ctx) => {
@@ -88,7 +89,8 @@ export function createTeamsFrontend(config: TalonConfig): TeamsFrontend {
     },
 
     sendMessage: async (chatId: string, text: string) => {
-      const ref = getConversationReference(chatId);
+      const convId = chatId.replace(/^teams:/, "");
+      const ref = getConversationReference(convId);
       if (!ref) {
         logError("teams", `No conversation reference for chat ${chatId}`);
         return;

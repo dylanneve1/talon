@@ -19,6 +19,9 @@ import { getConversationReference } from "./conversation-store.js";
 import type { ActionResult } from "../../core/types.js";
 import { logError } from "../../util/log.js";
 
+const TEAMS_PREFIX = "teams:";
+function stripPrefix(chatId: string): string { return chatId.startsWith(TEAMS_PREFIX) ? chatId.slice(TEAMS_PREFIX.length) : chatId; }
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -30,7 +33,7 @@ async function withProactiveContext<T>(
   chatId: string,
   fn: (context: TurnContext) => Promise<T>,
 ): Promise<T | null> {
-  const ref = getConversationReference(chatId);
+  const ref = getConversationReference(stripPrefix(chatId));
   if (!ref) return null;
   let result: T | null = null;
   await adapter.continueConversation(ref, async (context) => {
@@ -233,7 +236,7 @@ export function createTeamsActionHandler(adapter: BotFrameworkAdapter) {
 
       // ── Chat info ─────────────────────────────────────────────────────
       case "get_chat_info": {
-        const ref = getConversationReference(chatId);
+        const ref = getConversationReference(stripPrefix(chatId));
         return {
           ok: true,
           id: chatId,
