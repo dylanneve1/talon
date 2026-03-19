@@ -33,7 +33,22 @@ describe("gateway shared actions", () => {
     it("rejects non-http URLs", async () => {
       const result = await handleSharedAction({ action: "fetch_url", url: "ftp://example.com" }, 123);
       expect(result?.ok).toBe(false);
-      expect(result?.error).toContain("http");
+    });
+
+    it("rejects malformed URLs", async () => {
+      const result = await handleSharedAction({ action: "fetch_url", url: "not a url at all" }, 123);
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("Invalid URL");
+    });
+
+    it("rejects javascript: protocol", async () => {
+      const result = await handleSharedAction({ action: "fetch_url", url: "javascript:alert(1)" }, 123);
+      expect(result?.ok).toBe(false);
+    });
+
+    it("rejects data: protocol", async () => {
+      const result = await handleSharedAction({ action: "fetch_url", url: "data:text/html,<h1>hi</h1>" }, 123);
+      expect(result?.ok).toBe(false);
     });
   });
 
