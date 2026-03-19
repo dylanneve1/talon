@@ -138,24 +138,56 @@ function renderAssistantMessage(text: string): void {
 
 function renderToolCall(toolName: string, input: Record<string, unknown>): void {
   toolCallCount++;
-  // Format tool name nicely
-  const displayName = toolName.replace(/_/g, " ");
+
+  // Strip MCP server prefix: "mcp__npuw-tools__jenkins_list_builds" → "jenkins_list_builds"
+  let cleanName = toolName;
+  if (cleanName.startsWith("mcp__")) {
+    const parts = cleanName.split("__");
+    cleanName = parts[parts.length - 1];
+  }
+
+  // Format tool name for display
+  const displayName = cleanName.replace(/_/g, " ");
 
   // Extract the most meaningful parameter to show
   let detail = "";
-  if (input.action) detail = String(input.action);
-  else if (input.query) detail = String(input.query).slice(0, 60);
-  else if (input.url) detail = String(input.url).slice(0, 60);
-  else if (input.text) detail = String(input.text).slice(0, 40);
+  const maxDetail = COLS - displayName.length - 12;
+
+  // Claude Code built-in tools
+  if (input.command) {
+    // Bash: show the command being run
+    const cmd = String(input.command);
+    detail = cmd.length > maxDetail ? cmd.slice(0, maxDetail - 3) + "..." : cmd;
+  } else if (input.file_path) {
+    // Read/Write/Edit: show file path
+    detail = String(input.file_path);
+  } else if (input.pattern && input.path) {
+    // Grep/Glob: show pattern + path
+    detail = `${input.pattern} in ${input.path}`;
+  } else if (input.pattern) {
+    detail = String(input.pattern);
+  }
+  // NPUW plugin tools
+  else if (input.action) detail = String(input.action);
+  else if (input.query) detail = String(input.query).slice(0, maxDetail);
+  else if (input.url) detail = String(input.url).slice(0, maxDetail);
   else if (input.type) detail = String(input.type);
   else if (input.name) detail = String(input.name);
   else if (input.model) detail = String(input.model);
   else if (input.package_url) detail = String(input.package_url);
-  else if (input.pattern) detail = String(input.pattern);
   else if (input.build_number) detail = `#${input.build_number}`;
   else if (input.packages) detail = (input.packages as string[]).join(", ");
+  // Fallback: show first string param
+  else {
+    for (const [k, v] of Object.entries(input)) {
+      if (typeof v === "string" && v.length > 0 && k !== "_chatId") {
+        detail = `${k}=${v.length > 50 ? v.slice(0, 50) + "..." : v}`;
+        break;
+      }
+    }
+  }
 
-  const detailStr = detail ? pc.dim(` ${detail}`) : "";
+  const detailStr = detail ? ` ${pc.dim(detail)}` : "";
   writeln(`  ${pc.yellow("▍")} ${pc.dim("└")} ${pc.yellow(displayName)}${detailStr}`);
 }
 
