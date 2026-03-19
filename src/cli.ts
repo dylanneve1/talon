@@ -345,7 +345,7 @@ async function startChat(): Promise<void> {
     const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } = await import("./backend/claude-sdk/index.js");
     initClaudeAgent(config, frontend.getBridgePort); queryFn = claudeHandleMessage;
   }
-  initDispatcher({ backend: { query: (params) => queryFn(params) }, context: frontend.context, sendTyping: frontend.sendTyping, onActivity: () => resetPulseTimer(), concurrency: config.concurrency });
+  initDispatcher({ backend: { query: (params) => queryFn(params) }, context: frontend.context, sendTyping: frontend.sendTyping, onActivity: () => resetPulseTimer() });
   initPulse();
   process.on("SIGINT", () => { flushSessions(); flushChatSettings(); flushCronJobs(); flushHistory(); frontend.stop(); process.exit(0); });
   await frontend.start();

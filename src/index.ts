@@ -14,7 +14,7 @@ import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
 import { loadHistory, flushHistory } from "./storage/history.js";
 import { loadMediaIndex, flushMediaIndex } from "./storage/media-index.js";
 import { cleanupOldLogs } from "./storage/daily-log.js";
-import { initDispatcher, getQueueSize } from "./core/dispatcher.js";
+import { initDispatcher, getActiveCount } from "./core/dispatcher.js";
 import {
   initPulse,
   startPulseTimer,
@@ -101,7 +101,6 @@ initDispatcher({
   context: frontend.context,
   sendTyping: frontend.sendTyping,
   onActivity: () => resetPulseTimer(),
-  concurrency: config.concurrency,
 });
 
 // ── Initialize schedulers ───────────────────────────────────────────────────
@@ -126,7 +125,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
   forceTimer.unref();
 
-  const pending = getQueueSize();
+  const pending = getActiveCount();
   if (pending > 0) {
     log("shutdown", `Waiting for ${pending} in-flight queries to drain...`);
     await new Promise((r) => setTimeout(r, 5000));

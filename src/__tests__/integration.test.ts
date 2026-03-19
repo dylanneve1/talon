@@ -32,7 +32,6 @@ function setup(overrides: { queryResult?: Record<string, unknown>; queryError?: 
   const context: ContextManager = {
     acquire: vi.fn((id: number) => acquired.push(id)),
     release: vi.fn((id: number) => released.push(id)),
-    isBusy: vi.fn(() => acquired.length > released.length),
     getMessageCount: vi.fn(() => 0),
   };
 
@@ -41,7 +40,6 @@ function setup(overrides: { queryResult?: Record<string, unknown>; queryError?: 
     context,
     sendTyping: vi.fn(async (id: number) => { typingCalls.push(id); }),
     onActivity: vi.fn(() => { activityCount++; }),
-    concurrency: 1,
   });
 
   return { backend, context, acquired, released, typingCalls, getActivityCount: () => activityCount };
@@ -131,7 +129,7 @@ describe("integration: dispatcher lifecycle", () => {
     expect(released).toEqual([789]);
   });
 
-  it("sequential execution with concurrency=1", async () => {
+  it("cross-chat parallel execution", async () => {
     const order: string[] = [];
     const backend: QueryBackend = {
       query: vi.fn(async (params) => {
@@ -147,12 +145,10 @@ describe("integration: dispatcher lifecycle", () => {
       context: {
         acquire: () => {},
         release: () => {},
-        isBusy: () => false,
         getMessageCount: () => 0,
       },
       sendTyping: async () => {},
       onActivity: () => {},
-      concurrency: 1,
     });
 
     // Fire two queries simultaneously
@@ -161,8 +157,9 @@ describe("integration: dispatcher lifecycle", () => {
       execute({ chatId: "B", numericChatId: 2, prompt: "b", senderName: "U", isGroup: false, source: "message" }),
     ]);
 
-    // With concurrency=1, they should execute sequentially
-    expect(order).toEqual(["start:A", "end:A", "start:B", "end:B"]);
+    // True concurrency — both start before either ends
+    expect(order[0]).toBe("start:A");
+    expect(order[1]).toBe("start:B");
   });
 
   it("stream callbacks are passed through to backend", async () => {

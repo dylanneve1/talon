@@ -45,8 +45,7 @@ export interface QueryBackend {
 export interface ContextManager {
   acquire(chatId: number): void;
   release(chatId: number): void;
-  isBusy(): boolean;
-  getMessageCount(): number;
+  getMessageCount(chatId: number): number;
 }
 
 /** Parameters for the dispatcher. */

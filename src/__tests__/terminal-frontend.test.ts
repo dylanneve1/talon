@@ -110,21 +110,19 @@ describe("terminal frontend — bridge actions", () => {
 });
 
 describe("terminal frontend — context manager", () => {
-  it("tracks busy state correctly", () => {
-    let busy = false;
-    let messageCount = 0;
+  it("tracks acquire/release correctly", () => {
+    let acquired = false;
     const context = {
-      acquire: () => { busy = true; },
-      release: () => { busy = false; },
-      isBusy: () => busy,
-      getMessageCount: () => messageCount,
+      acquire: () => { acquired = true; },
+      release: () => { acquired = false; },
+      getMessageCount: () => 0,
     };
 
-    expect(context.isBusy()).toBe(false);
+    expect(acquired).toBe(false);
     context.acquire();
-    expect(context.isBusy()).toBe(true);
+    expect(acquired).toBe(true);
     context.release();
-    expect(context.isBusy()).toBe(false);
+    expect(acquired).toBe(false);
   });
 
   it("tracks message count", () => {

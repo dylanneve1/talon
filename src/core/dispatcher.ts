@@ -1,15 +1,14 @@
 /**
- * Dispatcher — single execution path for all AI queries.
+ * Dispatcher — execution path for all AI queries.
  *
- * Manages the lifecycle: queue → acquire context → typing → query → release.
- * Uses p-queue for global concurrency control — prevents spawning too many
- * SDK processes simultaneously.
+ * Manages the lifecycle: acquire context → typing → query → release.
+ * True concurrency — every query runs immediately in parallel.
+ * No queue, no artificial limits. The Claude API handles its own rate limiting.
  *
  * Dependencies are injected at startup — this module imports nothing from
  * frontend/ or backend/.
  */
 
-import PQueue from "p-queue";
 import { randomBytes } from "node:crypto";
 import type {
   QueryBackend,
@@ -26,51 +25,66 @@ type DispatcherDeps = {
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   onActivity: () => void;
-  /** Max concurrent AI queries (default 3) */
-  concurrency?: number;
 };
 
 let deps: DispatcherDeps | null = null;
-let queue: PQueue | null = null;
+let activeCount = 0;
+
+// Per-chat promise chains — serializes within a chat, parallel across chats.
+// Prevents two queries from resuming the same Claude session simultaneously.
+const chatChains = new Map<string, Promise<unknown>>();
 
 export function initDispatcher(d: DispatcherDeps): void {
   deps = d;
-  const concurrency = d.concurrency ?? 3;
-  queue = new PQueue({ concurrency });
-  log("dispatcher", `Initialized (concurrency=${concurrency})`);
+  log("dispatcher", "Initialized (per-chat serial, cross-chat parallel)");
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-export function isBusy(): boolean {
-  return deps?.context.isBusy() ?? false;
-}
-
-/** Number of queries currently running + waiting. */
-export function getQueueSize(): number {
-  return queue ? queue.size + queue.pending : 0;
+/** Number of queries currently running. */
+export function getActiveCount(): number {
+  return activeCount;
 }
 
 /**
  * Execute an AI query with full lifecycle management.
- * Queued with global concurrency control. Acquires tool-execution context,
- * manages typing indicator, runs the query, and releases context.
+ * Same-chat queries are serialized (FIFO) to avoid session conflicts.
+ * Different-chat queries run in true parallel.
  */
 export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
-  if (!deps || !queue) throw new Error("Dispatcher not initialized");
+  if (!deps) throw new Error("Dispatcher not initialized");
 
-  if (queue.pending > 0) {
-    logDebug("dispatcher", `chat=${params.chatId} queued behind ${queue.pending} active query(s)`);
+  const { chatId } = params;
+
+  // Chain this query behind any pending query for the same chat.
+  // Use .catch(() => {}) on prev to prevent unhandled rejections —
+  // previous query's error is already handled by its own caller.
+  const prev = chatChains.get(chatId) ?? Promise.resolve();
+  const queued = prev.catch(() => {}).then(() => run(params));
+  chatChains.set(chatId, queued);
+
+  // Clean up chain entry when this is the last in the chain
+  queued.catch(() => {}).finally(() => {
+    if (chatChains.get(chatId) === queued) chatChains.delete(chatId);
+  });
+
+  return queued;
+}
+
+async function run(params: ExecuteParams): Promise<ExecuteResult> {
+  activeCount++;
+  try {
+    return await executeInner(params);
+  } finally {
+    activeCount--;
   }
-
-  return queue.add(() => executeInner(params)) as Promise<ExecuteResult>;
 }
 
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   const { backend, context, sendTyping, onActivity } = deps!;
   const reqId = randomBytes(4).toString("hex");
 
-  logDebug("dispatcher", `[${reqId}] ${params.source} chat=${params.chatId} queued`);
+  logDebug("dispatcher", `[${reqId}] ${params.source} chat=${params.chatId} started (active=${activeCount})`);
   context.acquire(params.numericChatId);
 
   let typingTimer: ReturnType<typeof setInterval> | undefined;
@@ -97,7 +111,7 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
 
     return {
       ...result,
-      bridgeMessageCount: context.getMessageCount(),
+      bridgeMessageCount: context.getMessageCount(params.numericChatId),
     };
   } finally {
     if (typingTimer) clearInterval(typingTimer);

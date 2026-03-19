@@ -14,7 +14,7 @@ import {
 import { clearHistory } from "../../storage/history.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getAllCronJobs, validateCronExpression } from "../../storage/cron-store.js";
-import { getQueueSize } from "../../core/dispatcher.js";
+import { getActiveCount } from "../../core/dispatcher.js";
 import { getPulseStatus } from "../../core/pulse.js";
 import { getHealthStatus, getRecentErrors } from "../../util/watchdog.js";
 import { formatDuration } from "./helpers.js";
@@ -107,7 +107,7 @@ export async function handleAdminCommand(
         `<b>Cost:</b> $${cost.toFixed(4)}`,
         `<b>Last active:</b> ${h.msSinceLastMessage < 60000 ? "now" : formatDuration(h.msSinceLastMessage) + " ago"}`, "",
         `<b>Memory:</b> ${(mem.heapUsed / 1024 / 1024).toFixed(1)}MB heap / ${(mem.rss / 1024 / 1024).toFixed(1)}MB rss`,
-        `<b>Queue:</b> ${getQueueSize()}`,
+        `<b>Queue:</b> ${getActiveCount()}`,
         `<b>Errors:</b> ${h.recentErrorCount}`,
       ].join("\n"), { parse_mode: "HTML" });
       return;

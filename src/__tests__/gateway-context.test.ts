@@ -14,31 +14,36 @@ vi.mock("../core/gateway-actions.js", () => ({
 const {
   setGatewayContext,
   clearGatewayContext,
-  isGatewayBusy,
+  isChatBusy,
   getGatewayMessageCount,
-  getGatewayChatId,
+  incrementMessageCount,
+  getActiveChats,
 } = await import("../core/gateway.js");
 
-describe("gateway context", () => {
+describe("gateway per-chat context", () => {
   beforeEach(() => {
-    for (let i = 0; i < 10; i++) clearGatewayContext();
+    // Clear known test chatIds
+    for (const id of [100, 200, 300, 400, 500, 600, 700, 800, 12345]) {
+      clearGatewayContext(id);
+      clearGatewayContext(id); // double clear in case refCount > 1
+    }
   });
 
-  it("sets context and locks gateway", () => {
+  it("sets context for a chat", () => {
     setGatewayContext(12345);
-    expect(isGatewayBusy()).toBe(true);
-    expect(getGatewayChatId()).toBe(12345);
+    expect(isChatBusy(12345)).toBe(true);
+    expect(getActiveChats()).toBe(1);
   });
 
-  it("returns false when no context set", () => {
-    expect(isGatewayBusy()).toBe(false);
+  it("returns false for unknown chat", () => {
+    expect(isChatBusy(99999)).toBe(false);
   });
 
   it("clears context on release", () => {
     setGatewayContext(200);
     clearGatewayContext(200);
-    expect(isGatewayBusy()).toBe(false);
-    expect(getGatewayChatId()).toBeNull();
+    expect(isChatBusy(200)).toBe(false);
+    expect(getActiveChats()).toBe(0);
   });
 
   it("ref counting: same chat twice needs two clears", () => {
@@ -46,30 +51,61 @@ describe("gateway context", () => {
     setGatewayContext(300); // ref++
 
     clearGatewayContext(300);
-    expect(isGatewayBusy()).toBe(true); // still locked
+    expect(isChatBusy(300)).toBe(true); // still active
 
     clearGatewayContext(300);
-    expect(isGatewayBusy()).toBe(false); // now released
+    expect(isChatBusy(300)).toBe(false); // now released
   });
 
-  it("wrong chatId clear is no-op", () => {
-    setGatewayContext(400);
-    clearGatewayContext(999); // wrong owner
-    expect(isGatewayBusy()).toBe(true);
-    expect(getGatewayChatId()).toBe(400);
+  it("multiple chats can be active simultaneously", () => {
+    setGatewayContext(100);
+    setGatewayContext(200);
+    setGatewayContext(300);
+
+    expect(isChatBusy(100)).toBe(true);
+    expect(isChatBusy(200)).toBe(true);
+    expect(isChatBusy(300)).toBe(true);
+    expect(getActiveChats()).toBe(3);
+
+    clearGatewayContext(200);
+    expect(isChatBusy(100)).toBe(true);
+    expect(isChatBusy(200)).toBe(false);
+    expect(isChatBusy(300)).toBe(true);
+    expect(getActiveChats()).toBe(2);
   });
 
-  it("message count resets on new context", () => {
+  it("message count is per-chat", () => {
     setGatewayContext(500);
-    expect(getGatewayMessageCount()).toBe(0);
+    setGatewayContext(600);
+
+    expect(getGatewayMessageCount(500)).toBe(0);
+    expect(getGatewayMessageCount(600)).toBe(0);
+
+    incrementMessageCount(500);
+    incrementMessageCount(500);
+    incrementMessageCount(600);
+
+    expect(getGatewayMessageCount(500)).toBe(2);
+    expect(getGatewayMessageCount(600)).toBe(1);
   });
 
-  it("different chat replaces context", () => {
+  it("message count resets when context is released and re-acquired", () => {
     setGatewayContext(700);
-    setGatewayContext(800); // replaces
-    expect(getGatewayChatId()).toBe(800);
+    incrementMessageCount(700);
+    expect(getGatewayMessageCount(700)).toBe(1);
 
-    clearGatewayContext(800);
-    expect(isGatewayBusy()).toBe(false);
+    clearGatewayContext(700);
+    setGatewayContext(700);
+    expect(getGatewayMessageCount(700)).toBe(0);
+  });
+
+  it("message count returns 0 for unknown chat", () => {
+    expect(getGatewayMessageCount(99999)).toBe(0);
+  });
+
+  it("clearGatewayContext with no chatId does nothing", () => {
+    setGatewayContext(800);
+    clearGatewayContext();
+    expect(isChatBusy(800)).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDispatcher, execute, isBusy } from "../core/dispatcher.js";
+import { initDispatcher, execute, getActiveCount } from "../core/dispatcher.js";
 import type { QueryBackend, ContextManager } from "../core/types.js";
 
 function createMockDeps() {
@@ -20,7 +20,6 @@ function createMockDeps() {
   const context: ContextManager = {
     acquire: vi.fn((chatId: number) => { acquired.push(chatId); }),
     release: vi.fn((chatId: number) => { released.push(chatId); }),
-    isBusy: vi.fn(() => acquired.length > released.length),
     getMessageCount: vi.fn(() => 0),
   };
 
@@ -163,10 +162,82 @@ describe("dispatcher", () => {
     );
   });
 
-  it("isBusy delegates to context manager", () => {
+  it("tracks active count", async () => {
+    expect(getActiveCount()).toBe(0);
+
     const deps = createMockDeps();
-    (deps.context.isBusy as ReturnType<typeof vi.fn>).mockReturnValue(true);
+    let resolveQuery!: () => void;
+    (deps.backend.query as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise<{ text: string; durationMs: number; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number }>((r) => {
+        resolveQuery = () => r({ text: "", durationMs: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
+      }),
+    );
     initDispatcher(deps);
-    expect(isBusy()).toBe(true);
+
+    const p = execute({ chatId: "555", numericChatId: 555, prompt: "hi", senderName: "U", isGroup: false, source: "message" });
+    // Give it a tick to start
+    await new Promise((r) => setTimeout(r, 10));
+    expect(getActiveCount()).toBe(1);
+
+    resolveQuery();
+    await p;
+    expect(getActiveCount()).toBe(0);
+  });
+
+  it("runs different-chat queries in true parallel", async () => {
+    const order: string[] = [];
+    const backend: QueryBackend = {
+      query: vi.fn(async (params) => {
+        order.push(`start:${params.chatId}`);
+        await new Promise((r) => setTimeout(r, 50));
+        order.push(`end:${params.chatId}`);
+        return { text: "", durationMs: 50, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 };
+      }),
+    };
+
+    initDispatcher({
+      backend,
+      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      sendTyping: async () => {},
+      onActivity: () => {},
+    });
+
+    // Fire two queries for DIFFERENT chats — they should overlap
+    await Promise.all([
+      execute({ chatId: "A", numericChatId: 1, prompt: "a", senderName: "U", isGroup: false, source: "message" }),
+      execute({ chatId: "B", numericChatId: 2, prompt: "b", senderName: "U", isGroup: false, source: "message" }),
+    ]);
+
+    // Both should START before either ENDS (true parallel)
+    expect(order[0]).toBe("start:A");
+    expect(order[1]).toBe("start:B");
+  });
+
+  it("serializes same-chat queries (FIFO)", async () => {
+    const order: string[] = [];
+    const backend: QueryBackend = {
+      query: vi.fn(async (params) => {
+        order.push(`start:${params.text}`);
+        await new Promise((r) => setTimeout(r, 30));
+        order.push(`end:${params.text}`);
+        return { text: "", durationMs: 30, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 };
+      }),
+    };
+
+    initDispatcher({
+      backend,
+      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      sendTyping: async () => {},
+      onActivity: () => {},
+    });
+
+    // Fire two queries for the SAME chat — second must wait
+    await Promise.all([
+      execute({ chatId: "X", numericChatId: 1, prompt: "first", senderName: "U", isGroup: false, source: "message" }),
+      execute({ chatId: "X", numericChatId: 1, prompt: "second", senderName: "U", isGroup: false, source: "message" }),
+    ]);
+
+    // Same chat: first completes before second starts
+    expect(order).toEqual(["start:first", "end:first", "start:second", "end:second"]);
   });
 });

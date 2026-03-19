@@ -16,7 +16,6 @@ import {
   stopGateway,
   setGatewayContext,
   clearGatewayContext,
-  isGatewayBusy,
   getGatewayMessageCount,
   getGatewayPort,
   setFrontendHandler,
@@ -53,8 +52,7 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
   const context: ContextManager = {
     acquire: (chatId: number) => setGatewayContext(chatId),
     release: (chatId: number) => clearGatewayContext(chatId),
-    isBusy: () => isGatewayBusy(),
-    getMessageCount: () => getGatewayMessageCount(),
+    getMessageCount: (chatId: number) => getGatewayMessageCount(chatId),
   };
 
   return {

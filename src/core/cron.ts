@@ -9,7 +9,7 @@
  */
 
 import { Cron } from "croner";
-import { isBusy, execute, getQueueSize } from "./dispatcher.js";
+import { execute, getActiveCount } from "./dispatcher.js";
 import {
   getAllCronJobs,
   recordCronRun,
@@ -54,7 +54,7 @@ export function stopCronTimer(): void {
 
 async function runCronTick(): Promise<void> {
   if (!deps) return;
-  if (isBusy() || getQueueSize() > 0) return; // don't run cron while user queries are queued
+  if (getActiveCount() > 10) return; // safety valve — don't pile on if heavily loaded
 
   const now = new Date();
   const jobs = getAllCronJobs();
@@ -62,7 +62,7 @@ async function runCronTick(): Promise<void> {
   for (const job of jobs) {
     if (!job.enabled) continue;
     if (!isDue(job, now)) continue;
-    if (isBusy()) break;
+    if (getActiveCount() > 10) break;
 
     try {
       log("cron", `Executing "${job.name}" [${job.id}] (${job.type}) in chat ${job.chatId}`);

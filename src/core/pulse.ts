@@ -8,7 +8,7 @@
  * Knows nothing about the backend or frontend — uses the dispatcher.
  */
 
-import { isBusy, execute, getQueueSize } from "./dispatcher.js";
+import { execute, getActiveCount } from "./dispatcher.js";
 import {
   setChatPulse,
   getRegisteredPulseChats,
@@ -100,7 +100,7 @@ export function getPulseStatus(): Array<{
 // ── Core ─────────────────────────────────────────────────────────────────────
 
 async function runPulse(): Promise<void> {
-  if (isBusy() || getQueueSize() > 0) return; // don't pulse while queries are queued
+  if (getActiveCount() > 10) return; // safety valve — don't pile on if heavily loaded
 
   for (const chatId of registeredChats) {
     if (!isPulseEnabled(chatId)) continue;
@@ -109,8 +109,6 @@ async function runPulse(): Promise<void> {
 }
 
 async function pulseChat(chatId: string): Promise<void> {
-  if (isBusy()) return;
-
   const numericChatId = parseInt(chatId, 10);
   if (isNaN(numericChatId)) {
     logError("pulse", `Invalid chatId: ${chatId}`);

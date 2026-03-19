@@ -35,7 +35,6 @@ const HIDDEN_TOOLS = new Set(["TodoRead", "TodoWrite"]);
 // ── State ────────────────────────────────────────────────────────────────────
 
 let _activeChatId: number | null = null;
-let busy = false;
 let rl: ReadlineInterface | null = null;
 let currentPhase: "idle" | "thinking" | "tool" | "text" = "idle";
 let toolCallCount = 0;
@@ -225,13 +224,13 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
       case "send_message": {
         stopSpinner();
         renderAssistantMessage(String(body.text ?? ""));
-        incrementMessageCount();
+        incrementMessageCount(TERMINAL_CHAT_ID);
         return { ok: true, message_id: Date.now() };
       }
       case "react": {
         stopSpinner();
         writeln(`  ${pc.cyan("▍")}  ${String(body.emoji ?? "👍")}`);
-        incrementMessageCount();
+        incrementMessageCount(TERMINAL_CHAT_ID);
         return { ok: true };
       }
       case "send_message_with_buttons": {
@@ -244,7 +243,7 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
             writeln(`  ${pc.cyan("▍")}    ${row.map((b) => pc.dim(`[${b.text}]`)).join("  ")}`);
           }
         }
-        incrementMessageCount();
+        incrementMessageCount(TERMINAL_CHAT_ID);
         return { ok: true, message_id: Date.now() };
       }
       case "edit_message": case "delete_message": case "pin_message": case "unpin_message":
@@ -272,10 +271,9 @@ export type TerminalFrontend = {
 
 export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
   const context: ContextManager = {
-    acquire: () => { _activeChatId = TERMINAL_CHAT_ID; busy = true; setGatewayContext(TERMINAL_CHAT_ID); },
-    release: () => { _activeChatId = null; busy = false; clearGatewayContext(TERMINAL_CHAT_ID); },
-    isBusy: () => busy,
-    getMessageCount: () => getGatewayMessageCount(),
+    acquire: () => { _activeChatId = TERMINAL_CHAT_ID; setGatewayContext(TERMINAL_CHAT_ID); },
+    release: () => { _activeChatId = null; clearGatewayContext(TERMINAL_CHAT_ID); },
+    getMessageCount: (chatId: number) => getGatewayMessageCount(chatId),
   };
 
   return {
@@ -424,7 +422,7 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
           currentPhase = "idle";
 
           // Show final response if not already sent via onTextBlock/action handler
-          if (getGatewayMessageCount() === 0 && result.text?.trim()) {
+          if (getGatewayMessageCount(TERMINAL_CHAT_ID) === 0 && result.text?.trim()) {
             renderAssistantMessage(result.text);
           }
 

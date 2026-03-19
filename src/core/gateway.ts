@@ -14,7 +14,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { classify } from "./errors.js";
-import { getQueueSize } from "./dispatcher.js";
+import { getActiveCount } from "./dispatcher.js";
 import { getHealthStatus } from "../util/watchdog.js";
 import { getActiveSessionCount } from "../storage/sessions.js";
 import { log, logError, logDebug } from "../util/log.js";
@@ -22,13 +22,10 @@ import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "./plugin.js";
 import type { FrontendActionHandler } from "./types.js";
 
-// ── State ───────────────────────────────────────────────────────────────────
+// ── Per-chat context state ───────────────────────────────────────────────────
 
-let activeChatId: number | null = null;
-let messagesSent = 0;
-let locked = false;
-let owner: string | null = null;
-let refCount = 0;
+type ChatContext = { refCount: number; messagesSent: number };
+const chatContexts = new Map<number, ChatContext>();
 let frontendHandler: FrontendActionHandler | null = null;
 let server: ReturnType<typeof createServer> | null = null;
 let activePort = 0;
@@ -39,38 +36,43 @@ export function setFrontendHandler(handler: FrontendActionHandler): void {
   frontendHandler = handler;
 }
 
-// ── Context management (same ref-counting as before) ────────────────────────
+// ── Per-chat context management ─────────────────────────────────────────────
 
 export function setGatewayContext(chatId: number): void {
-  if (activeChatId === chatId) {
-    refCount++;
-    log("gateway", `Context ref++ for chat ${chatId} (refCount=${refCount})`);
-    return;
+  const ctx = chatContexts.get(chatId);
+  if (ctx) {
+    ctx.refCount++;
+    log("gateway", `Context ref++ for chat ${chatId} (refCount=${ctx.refCount})`);
+  } else {
+    chatContexts.set(chatId, { refCount: 1, messagesSent: 0 });
+    log("gateway", `Context acquired for chat ${chatId}`);
   }
-  activeChatId = chatId;
-  messagesSent = 0;
-  locked = true;
-  owner = String(chatId);
-  refCount = 1;
-  log("gateway", `Context set for chat ${chatId}`);
 }
 
 export function clearGatewayContext(chatId?: number | string): void {
-  if (chatId !== undefined && owner !== String(chatId)) return;
-  refCount = Math.max(0, refCount - 1);
-  if (refCount > 0) return;
-  log("gateway", `Context cleared for chat ${chatId ?? "?"}`);
-  activeChatId = null;
-  messagesSent = 0;
-  locked = false;
-  owner = null;
+  if (chatId === undefined) return;
+  const numId = typeof chatId === "number" ? chatId : Number(chatId);
+  const ctx = chatContexts.get(numId);
+  if (!ctx) return;
+  ctx.refCount = Math.max(0, ctx.refCount - 1);
+  if (ctx.refCount <= 0) {
+    chatContexts.delete(numId);
+    log("gateway", `Context released for chat ${numId}`);
+  }
 }
 
-export function isGatewayBusy(): boolean { return locked; }
-export function getGatewayMessageCount(): number { return messagesSent; }
-export function incrementMessageCount(): void { messagesSent++; }
+export function isChatBusy(chatId: number): boolean {
+  return chatContexts.has(chatId);
+}
+export function getGatewayMessageCount(chatId: number): number {
+  return chatContexts.get(chatId)?.messagesSent ?? 0;
+}
+export function incrementMessageCount(chatId: number): void {
+  const ctx = chatContexts.get(chatId);
+  if (ctx) ctx.messagesSent++;
+}
 export function getGatewayPort(): number { return activePort; }
-export function getGatewayChatId(): number | null { return activeChatId; }
+export function getActiveChats(): number { return chatContexts.size; }
 
 // ── Retry helper ────────────────────────────────────────────────────────────
 
@@ -96,16 +98,10 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 // ── Action dispatch ─────────────────────────────────────────────────────────
 
 async function handleAction(body: Record<string, unknown>): Promise<unknown> {
-  const chatId = activeChatId;
-  if (!chatId) {
+  // Route by _chatId from the MCP subprocess request
+  const chatId = body._chatId ? Number(body._chatId) : null;
+  if (!chatId || !chatContexts.has(chatId)) {
     return { ok: false, error: "No active chat context" };
-  }
-
-  // Verify chatId matches (prevents cross-chat tool call routing)
-  const requestChatId = body._chatId ? String(body._chatId) : null;
-  if (requestChatId && requestChatId !== String(chatId)) {
-    logError("gateway", `Chat mismatch: request=${requestChatId} active=${chatId} action=${body.action}`);
-    return { ok: false, error: "Chat context mismatch" };
   }
 
   const action = typeof body.action === "string" ? body.action : "";
@@ -159,8 +155,8 @@ export function startGateway(port = 19876): Promise<number> {
           ok: w.healthy,
           uptime: Math.round(process.uptime()),
           memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-          bridge: { active: locked, chatId: activeChatId },
-          queue: getQueueSize(),
+          bridge: { activeChats: chatContexts.size },
+          queue: getActiveCount(),
           sessions: getActiveSessionCount(),
           messages: w.totalMessagesProcessed,
           errors: w.recentErrorCount,

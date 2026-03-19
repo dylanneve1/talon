@@ -19,7 +19,7 @@ vi.mock("../storage/sessions.js", () => ({
 }));
 
 vi.mock("../core/dispatcher.js", () => ({
-  getQueueSize: vi.fn(() => 0),
+  getActiveCount: vi.fn(() => 0),
 }));
 
 // Mock cron-store for shared actions
@@ -156,12 +156,10 @@ describe("gateway HTTP server", () => {
       clearGatewayContext(123);
     });
 
-    it("rejects mismatched chatId", async () => {
-      setGatewayContext(123);
+    it("rejects unknown chatId (no active context)", async () => {
       const { body } = await post({ action: "send_message", _chatId: "999" });
       expect(body.ok).toBe(false);
-      expect(body.error).toContain("mismatch");
-      clearGatewayContext(123);
+      expect(body.error).toContain("No active chat context");
     });
   });
 
