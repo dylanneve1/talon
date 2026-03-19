@@ -108,7 +108,8 @@ async function handleAction(body: Record<string, unknown>): Promise<unknown> {
     return { ok: false, error: "Chat context mismatch" };
   }
 
-  const action = body.action as string;
+  const action = typeof body.action === "string" ? body.action : "";
+  if (!action) return { ok: false, error: "Missing action" };
   const t0 = Date.now();
 
   try {
@@ -179,7 +180,14 @@ export function startGateway(port = 19876): Promise<number> {
       try {
         const chunks: Buffer[] = [];
         for await (const chunk of req) chunks.push(chunk as Buffer);
-        const body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+        let body: Record<string, unknown>;
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+          return;
+        }
         const result = await handleAction(body);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(result));

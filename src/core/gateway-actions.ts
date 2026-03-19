@@ -116,7 +116,14 @@ export async function handleSharedAction(
     case "fetch_url": {
       const url = String(body.url ?? "");
       if (!url) return { ok: false, error: "Missing URL" };
-      if (!/^https?:\/\//i.test(url)) return { ok: false, error: "URL must start with http:// or https://" };
+      try {
+        const parsed = new URL(url);
+        if (!["http:", "https:"].includes(parsed.protocol)) {
+          return { ok: false, error: "URL must use http or https protocol" };
+        }
+      } catch {
+        return { ok: false, error: "Invalid URL" };
+      }
       try {
         const resp = await fetch(url, {
           signal: AbortSignal.timeout(15_000),

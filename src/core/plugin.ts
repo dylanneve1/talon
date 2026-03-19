@@ -201,8 +201,12 @@ async function loadSinglePlugin(entry: PluginEntry): Promise<void> {
   registry.register(loaded);
 
   // Run init hook
+  const INIT_TIMEOUT = 30_000;
   try {
-    await plugin.init?.(config);
+    await Promise.race([
+      plugin.init?.(config),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("init timeout (30s)")), INIT_TIMEOUT)),
+    ]);
   } catch (err) {
     logError("plugin", `Plugin "${plugin.name}" init failed: ${err instanceof Error ? err.message : err}`);
     // Still registered — tools may work even if init partially failed

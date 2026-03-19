@@ -68,7 +68,7 @@ export function classify(err: unknown): TalonError {
   if (/rate.?limit|429|too many requests/i.test(msg)) {
     const retryMatch = msg.match(/retry.?after[:\s]*(\d+)/i);
     const retryAfterMs = retryMatch
-      ? parseInt(retryMatch[1], 10) * 1000
+      ? Math.min(parseInt(retryMatch[1], 10) * 1000, 300_000)
       : 60_000;
     return new TalonError(msg, {
       reason: "rate_limit",
