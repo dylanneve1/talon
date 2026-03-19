@@ -187,7 +187,7 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
   }
 
   const detailStr = detail ? `  ${pc.dim(detail)}` : "";
-  writeln(`    ${pc.yellow("⚡")} ${pc.yellow(displayName)}${detailStr}`);
+  writeln(`    ${pc.dim("→")} ${pc.yellow(displayName)}${detailStr}`);
 }
 
 function renderSystemMessage(text: string): void {
