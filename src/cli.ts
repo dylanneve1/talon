@@ -322,10 +322,12 @@ async function startChat(): Promise<void> {
   const { flushHistory } = await import("./storage/history.js");
   const { flushMediaIndex } = await import("./storage/media-index.js");
   const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
+  const { Gateway } = await import("./core/gateway.js");
 
   const { config } = await bootstrap({ frontendNames: ["terminal"] });
 
-  const frontend = createTerminalFrontend(config);
+  const gateway = new Gateway();
+  const frontend = createTerminalFrontend(config, gateway);
   await frontend.init();
   await initBackendAndDispatcher(config, frontend);
 

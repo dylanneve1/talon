@@ -12,16 +12,7 @@ import { createInterface, type Interface as ReadlineInterface } from "node:readl
 import pc from "picocolors";
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager, ActionResult } from "../../core/types.js";
-import {
-  startGateway,
-  stopGateway,
-  setGatewayContext,
-  clearGatewayContext,
-  getGatewayMessageCount,
-  getGatewayPort,
-  setFrontendHandler,
-  incrementMessageCount,
-} from "../../core/gateway.js";
+import type { Gateway } from "../../core/gateway.js";
 import { log } from "../../util/log.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -217,20 +208,20 @@ function renderStats(durationMs: number, inputTokens: number, outputTokens: numb
 
 // ── Terminal action handler ──────────────────────────────────────────────────
 
-function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: number) => Promise<ActionResult | null> {
+function createTerminalActionHandler(gateway: Gateway): (body: Record<string, unknown>, chatId: number) => Promise<ActionResult | null> {
   return async (body) => {
     const action = body.action as string;
     switch (action) {
       case "send_message": {
         stopSpinner();
         renderAssistantMessage(String(body.text ?? ""));
-        incrementMessageCount(TERMINAL_CHAT_ID);
+        gateway.incrementMessages(TERMINAL_CHAT_ID);
         return { ok: true, message_id: Date.now() };
       }
       case "react": {
         stopSpinner();
         writeln(`  ${pc.cyan("▍")}  ${String(body.emoji ?? "👍")}`);
-        incrementMessageCount(TERMINAL_CHAT_ID);
+        gateway.incrementMessages(TERMINAL_CHAT_ID);
         return { ok: true };
       }
       case "send_message_with_buttons": {
@@ -243,7 +234,7 @@ function createTerminalActionHandler(): (body: Record<string, unknown>, chatId: 
             writeln(`  ${pc.cyan("▍")}    ${row.map((b) => pc.dim(`[${b.text}]`)).join("  ")}`);
           }
         }
-        incrementMessageCount(TERMINAL_CHAT_ID);
+        gateway.incrementMessages(TERMINAL_CHAT_ID);
         return { ok: true, message_id: Date.now() };
       }
       case "edit_message": case "delete_message": case "pin_message": case "unpin_message":
@@ -269,11 +260,11 @@ export type TerminalFrontend = {
   stop: () => Promise<void>;
 };
 
-export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
+export function createTerminalFrontend(config: TalonConfig, gateway: Gateway): TerminalFrontend {
   const context: ContextManager = {
-    acquire: () => { _activeChatId = TERMINAL_CHAT_ID; setGatewayContext(TERMINAL_CHAT_ID); },
-    release: () => { _activeChatId = null; clearGatewayContext(TERMINAL_CHAT_ID); },
-    getMessageCount: (chatId: number) => getGatewayMessageCount(chatId),
+    acquire: () => { _activeChatId = TERMINAL_CHAT_ID; gateway.setContext(TERMINAL_CHAT_ID); },
+    release: () => { _activeChatId = null; gateway.clearContext(TERMINAL_CHAT_ID); },
+    getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
 
   return {
@@ -283,11 +274,11 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
       stopSpinner();
       renderAssistantMessage(text);
     },
-    getBridgePort: () => getGatewayPort(),
+    getBridgePort: () => gateway.getPort(),
 
     async init() {
-      setFrontendHandler(createTerminalActionHandler());
-      const port = await startGateway(19877);
+      gateway.setFrontendHandler(createTerminalActionHandler(gateway));
+      const port = await gateway.start(19877);
       log("bot", `Terminal gateway on port ${port}`);
     },
 
@@ -446,6 +437,6 @@ export function createTerminalFrontend(config: TalonConfig): TerminalFrontend {
       await new Promise(() => {});
     },
 
-    async stop() { await stopGateway(); },
+    async stop() { await gateway.stop(); },
   };
 }

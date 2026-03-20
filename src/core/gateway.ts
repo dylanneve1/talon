@@ -25,56 +25,8 @@ import type { FrontendActionHandler } from "./types.js";
 // ── Per-chat context state ───────────────────────────────────────────────────
 
 type ChatContext = { refCount: number; messagesSent: number };
-const chatContexts = new Map<number, ChatContext>();
-let frontendHandler: FrontendActionHandler | null = null;
-let server: ReturnType<typeof createServer> | null = null;
-let activePort = 0;
 
-// ── Frontend handler registration ───────────────────────────────────────────
-
-export function setFrontendHandler(handler: FrontendActionHandler): void {
-  frontendHandler = handler;
-}
-
-// ── Per-chat context management ─────────────────────────────────────────────
-
-export function setGatewayContext(chatId: number): void {
-  const ctx = chatContexts.get(chatId);
-  if (ctx) {
-    ctx.refCount++;
-    log("gateway", `Context ref++ for chat ${chatId} (refCount=${ctx.refCount})`);
-  } else {
-    chatContexts.set(chatId, { refCount: 1, messagesSent: 0 });
-    log("gateway", `Context acquired for chat ${chatId}`);
-  }
-}
-
-export function clearGatewayContext(chatId?: number | string): void {
-  if (chatId === undefined) return;
-  const numId = typeof chatId === "number" ? chatId : Number(chatId);
-  const ctx = chatContexts.get(numId);
-  if (!ctx) return;
-  ctx.refCount = Math.max(0, ctx.refCount - 1);
-  if (ctx.refCount <= 0) {
-    chatContexts.delete(numId);
-    log("gateway", `Context released for chat ${numId}`);
-  }
-}
-
-export function isChatBusy(chatId: number): boolean {
-  return chatContexts.has(chatId);
-}
-export function getGatewayMessageCount(chatId: number): number {
-  return chatContexts.get(chatId)?.messagesSent ?? 0;
-}
-export function incrementMessageCount(chatId: number): void {
-  const ctx = chatContexts.get(chatId);
-  if (ctx) ctx.messagesSent++;
-}
-export function getGatewayPort(): number { return activePort; }
-export function getActiveChats(): number { return chatContexts.size; }
-
-// ── Retry helper ────────────────────────────────────────────────────────────
+// ── Retry helper (stateless — standalone export) ─────────────────────────────
 
 export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   let lastError: unknown;
@@ -95,132 +47,193 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
   throw lastError;
 }
 
-// ── Action dispatch ─────────────────────────────────────────────────────────
+// ── Gateway class ────────────────────────────────────────────────────────────
 
-async function handleAction(body: Record<string, unknown>): Promise<unknown> {
-  // Route by _chatId from the MCP subprocess request
-  const chatId = body._chatId ? Number(body._chatId) : null;
-  if (!chatId || !chatContexts.has(chatId)) {
-    return { ok: false, error: "No active chat context" };
+export class Gateway {
+  private chatContexts = new Map<number, ChatContext>();
+  private frontendHandler: FrontendActionHandler | null = null;
+  private server: ReturnType<typeof createServer> | null = null;
+  private port = 0;
+
+  // ── Frontend handler registration ────────────────────────────────────────
+
+  setFrontendHandler(handler: FrontendActionHandler): void {
+    this.frontendHandler = handler;
   }
 
-  const action = typeof body.action === "string" ? body.action : "";
-  if (!action) return { ok: false, error: "Missing action" };
-  const t0 = Date.now();
+  // ── Per-chat context management ──────────────────────────────────────────
 
-  try {
-    // Try shared actions first (cron, fetch_url, history)
-    const shared = await handleSharedAction(body, chatId);
-    if (shared) {
-      logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`);
-      return shared;
+  setContext(chatId: number): void {
+    const ctx = this.chatContexts.get(chatId);
+    if (ctx) {
+      ctx.refCount++;
+      log("gateway", `Context ref++ for chat ${chatId} (refCount=${ctx.refCount})`);
+    } else {
+      this.chatContexts.set(chatId, { refCount: 1, messagesSent: 0 });
+      log("gateway", `Context acquired for chat ${chatId}`);
     }
-
-    // Try plugin actions (loaded from external plugin packages)
-    const pluginResult = await handlePluginAction(body, String(chatId));
-    if (pluginResult) {
-      logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (plugin)`);
-      return pluginResult;
-    }
-
-    // Delegate to the active frontend
-    if (!frontendHandler) {
-      return { ok: false, error: "No frontend handler registered" };
-    }
-    const result = await frontendHandler(body, chatId);
-    if (result) {
-      logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
-      return result;
-    }
-
-    return { ok: false, error: `Unknown action: ${action}` };
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
-    return { ok: false, error: `${action}: ${msg}` };
   }
-}
 
-// ── HTTP server ─────────────────────────────────────────────────────────────
+  clearContext(chatId?: number | string): void {
+    if (chatId === undefined) return;
+    const numId = typeof chatId === "number" ? chatId : Number(chatId);
+    const ctx = this.chatContexts.get(numId);
+    if (!ctx) return;
+    ctx.refCount = Math.max(0, ctx.refCount - 1);
+    if (ctx.refCount <= 0) {
+      this.chatContexts.delete(numId);
+      log("gateway", `Context released for chat ${numId}`);
+    }
+  }
 
-export function startGateway(port = 19876): Promise<number> {
-  if (server) return Promise.resolve(activePort);
+  isChatBusy(chatId: number): boolean {
+    return this.chatContexts.has(chatId);
+  }
 
-  const httpServer = createServer(
-    async (req: IncomingMessage, res: ServerResponse) => {
-      if (req.method === "GET" && req.url === "/health") {
-        const w = getHealthStatus();
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          ok: w.healthy,
-          uptime: Math.round(process.uptime()),
-          memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-          bridge: { activeChats: chatContexts.size },
-          queue: getActiveCount(),
-          sessions: getActiveSessionCount(),
-          messages: w.totalMessagesProcessed,
-          errors: w.recentErrorCount,
-          lastActivity: w.msSinceLastMessage < 60000
-            ? "just now"
-            : `${Math.round(w.msSinceLastMessage / 60000)}m ago`,
-        }));
-        return;
+  getMessageCount(chatId: number): number {
+    return this.chatContexts.get(chatId)?.messagesSent ?? 0;
+  }
+
+  incrementMessages(chatId: number): void {
+    const ctx = this.chatContexts.get(chatId);
+    if (ctx) ctx.messagesSent++;
+  }
+
+  getPort(): number {
+    return this.port;
+  }
+
+  getActiveChats(): number {
+    return this.chatContexts.size;
+  }
+
+  // ── Action dispatch ────────────────────────────────────────────────────────
+
+  private async handleAction(body: Record<string, unknown>): Promise<unknown> {
+    // Route by _chatId from the MCP subprocess request
+    const chatId = body._chatId ? Number(body._chatId) : null;
+    if (!chatId || !this.chatContexts.has(chatId)) {
+      return { ok: false, error: "No active chat context" };
+    }
+
+    const action = typeof body.action === "string" ? body.action : "";
+    if (!action) return { ok: false, error: "Missing action" };
+    const t0 = Date.now();
+
+    try {
+      // Try shared actions first (cron, fetch_url, history)
+      const shared = await handleSharedAction(body, chatId);
+      if (shared) {
+        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`);
+        return shared;
       }
 
-      if (req.method !== "POST" || req.url !== "/action") {
-        res.writeHead(404);
-        res.end("Not found");
-        return;
+      // Try plugin actions (loaded from external plugin packages)
+      const pluginResult = await handlePluginAction(body, String(chatId));
+      if (pluginResult) {
+        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (plugin)`);
+        return pluginResult;
       }
 
-      try {
-        const chunks: Buffer[] = [];
-        for await (const chunk of req) chunks.push(chunk as Buffer);
-        let body: Record<string, unknown>;
-        try {
-          body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-        } catch {
-          res.writeHead(400, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+      // Delegate to the active frontend
+      if (!this.frontendHandler) {
+        return { ok: false, error: "No frontend handler registered" };
+      }
+      const result = await this.frontendHandler(body, chatId);
+      if (result) {
+        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
+        return result;
+      }
+
+      return { ok: false, error: `Unknown action: ${action}` };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
+      return { ok: false, error: `${action}: ${msg}` };
+    }
+  }
+
+  // ── HTTP server ──────────────────────────────────────────────────────────
+
+  async start(port = 19876): Promise<number> {
+    if (this.server) return this.port;
+
+    const httpServer = createServer(
+      async (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === "GET" && req.url === "/health") {
+          const w = getHealthStatus();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            ok: w.healthy,
+            uptime: Math.round(process.uptime()),
+            memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+            bridge: { activeChats: this.chatContexts.size },
+            queue: getActiveCount(),
+            sessions: getActiveSessionCount(),
+            messages: w.totalMessagesProcessed,
+            errors: w.recentErrorCount,
+            lastActivity: w.msSinceLastMessage < 60000
+              ? "just now"
+              : `${Math.round(w.msSinceLastMessage / 60000)}m ago`,
+          }));
           return;
         }
-        const result = await handleAction(body);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(result));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: msg }));
-      }
-    },
-  );
 
-  return new Promise<number>((resolve, reject) => {
-    let attempt = 0;
-    const tryPort = (p: number) => {
-      httpServer.once("error", (err: NodeJS.ErrnoException) => {
-        if (err.code === "EADDRINUSE" && attempt < 5) {
-          attempt++;
-          httpServer.removeAllListeners("error");
-          tryPort(p + 1);
-        } else {
-          reject(err);
+        if (req.method !== "POST" || req.url !== "/action") {
+          res.writeHead(404);
+          res.end("Not found");
+          return;
         }
-      });
-      httpServer.listen(p, "127.0.0.1", () => {
-        server = httpServer;
-        activePort = p;
-        log("gateway", `Action gateway on :${p}`);
-        resolve(p);
-      });
-    };
-    tryPort(port);
-  });
-}
 
-export function stopGateway(): Promise<void> {
-  return new Promise((resolve) => {
-    if (!server) { resolve(); return; }
-    server.close(() => { server = null; activePort = 0; resolve(); });
-  });
+        try {
+          const chunks: Buffer[] = [];
+          for await (const chunk of req) chunks.push(chunk as Buffer);
+          let body: Record<string, unknown>;
+          try {
+            body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+          } catch {
+            res.writeHead(400, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+            return;
+          }
+          const result = await this.handleAction(body);
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: msg }));
+        }
+      },
+    );
+
+    return new Promise<number>((resolve, reject) => {
+      let attempt = 0;
+      const tryPort = (p: number) => {
+        httpServer.once("error", (err: NodeJS.ErrnoException) => {
+          if (err.code === "EADDRINUSE" && attempt < 5) {
+            attempt++;
+            httpServer.removeAllListeners("error");
+            tryPort(p + 1);
+          } else {
+            reject(err);
+          }
+        });
+        httpServer.listen(p, "127.0.0.1", () => {
+          this.server = httpServer;
+          this.port = p;
+          log("gateway", `Action gateway on :${p}`);
+          resolve(p);
+        });
+      };
+      tryPort(port);
+    });
+  }
+
+  async stop(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.server) { resolve(); return; }
+      this.server.close(() => { this.server = null; this.port = 0; resolve(); });
+    });
+  }
 }

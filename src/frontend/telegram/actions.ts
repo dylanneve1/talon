@@ -22,7 +22,8 @@ import {
   getOnlineCount as userbotOnlineCount,
   saveStickerPack as userbotSaveStickerPack,
 } from "./userbot.js";
-import { withRetry, incrementMessageCount } from "../../core/gateway.js";
+import { withRetry } from "../../core/gateway.js";
+import type { Gateway } from "../../core/gateway.js";
 import type { ActionResult } from "../../core/types.js";
 
 const TELEGRAM_MAX_TEXT = 4096;
@@ -68,6 +69,7 @@ export function createTelegramActionHandler(
   bot: Bot,
   InputFileClass: typeof GrammyInputFile,
   botToken: string,
+  gateway: Gateway,
 ) {
   const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -79,20 +81,20 @@ export function createTelegramActionHandler(
       case "send_message": {
         const text = String(body.text ?? "");
         const replyTo = typeof body.reply_to_message_id === "number" ? body.reply_to_message_id : undefined;
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const msgId = await withRetry(() => sendText(bot, chatId, text, replyTo));
         return { ok: true, message_id: msgId };
       }
 
       case "reply_to": {
         const msgId = Number(body.message_id);
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const sentId = await withRetry(() => sendText(bot, chatId, String(body.text ?? ""), msgId));
         return { ok: true, message_id: sentId };
       }
 
       case "react": {
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const emoji = String(body.emoji ?? "\uD83D\uDC4D");
         try {
           await withRetry(() => bot.api.setMessageReaction(chatId, Number(body.message_id), [
@@ -152,7 +154,7 @@ export function createTelegramActionHandler(
         if (text.length > TELEGRAM_MAX_TEXT) return { ok: false, error: `Text too long` };
         const html = markdownToTelegramHtml(text);
         const rows = body.rows as Array<Array<{ text: string; url?: string; callback_data?: string }>>;
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const keyboard = rows.map((row) => row.map((btn) =>
           btn.url ? { text: btn.text, url: btn.url } : { text: btn.text, callback_data: btn.callback_data ?? btn.text },
         ));
@@ -187,7 +189,7 @@ export function createTelegramActionHandler(
       case "send_file": case "send_photo": case "send_video": case "send_animation": case "send_voice": {
         const filePath = String(body.file_path ?? "");
         const caption = body.caption ? String(body.caption) : undefined;
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         if (action === "send_file") {
           const stat = statSync(filePath);
           if (stat.size > 49 * 1024 * 1024) return { ok: false, error: "File too large (max 49MB)" };
@@ -207,13 +209,13 @@ export function createTelegramActionHandler(
       }
 
       case "send_sticker": {
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const sent = await bot.api.sendSticker(chatId, String(body.file_id ?? ""), { reply_parameters: replyParams(body) });
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_poll": {
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const sent = await bot.api.sendPoll(chatId, String(body.question ?? ""),
           (body.options as string[] ?? []).map((o) => ({ text: o })),
           { is_anonymous: body.is_anonymous as boolean | undefined, allows_multiple_answers: body.allows_multiple_answers as boolean | undefined,
@@ -223,20 +225,20 @@ export function createTelegramActionHandler(
       }
 
       case "send_location": {
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const sent = await bot.api.sendLocation(chatId, Number(body.latitude), Number(body.longitude));
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_contact": {
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const sent = await bot.api.sendContact(chatId, String(body.phone_number), String(body.first_name),
           { last_name: body.last_name as string | undefined });
         return { ok: true, message_id: sent.message_id };
       }
 
       case "send_dice": {
-        incrementMessageCount(chatId);
+        gateway.incrementMessages(chatId);
         const sent = await bot.api.sendDice(chatId, (body.emoji as string) || "\uD83C\uDFB2");
         return { ok: true, message_id: sent.message_id, value: sent.dice?.value };
       }

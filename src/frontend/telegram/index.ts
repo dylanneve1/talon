@@ -11,15 +11,7 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
-import {
-  startGateway,
-  stopGateway,
-  setGatewayContext,
-  clearGatewayContext,
-  getGatewayMessageCount,
-  getGatewayPort,
-  setFrontendHandler,
-} from "../../core/gateway.js";
+import type { Gateway } from "../../core/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions.js";
 import {
   initUserClient,
@@ -44,15 +36,15 @@ export type TelegramFrontend = {
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
-export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
+export function createTelegramFrontend(config: TalonConfig, gateway: Gateway): TelegramFrontend {
   const bot = new Bot(config.botToken!);
   bot.api.config.use(apiThrottler());
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
 
   const context: ContextManager = {
-    acquire: (chatId: number) => setGatewayContext(chatId),
-    release: (chatId: number) => clearGatewayContext(chatId),
-    getMessageCount: (chatId: number) => getGatewayMessageCount(chatId),
+    acquire: (chatId: number) => gateway.setContext(chatId),
+    release: (chatId: number) => gateway.clearContext(chatId),
+    getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
 
   return {
@@ -65,13 +57,13 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       await sendText(bot, chatId, text);
     },
 
-    getBridgePort: () => getGatewayPort(),
+    getBridgePort: () => gateway.getPort(),
 
     async init() {
       // Register Telegram action handler with the core gateway
-      setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken!));
+      gateway.setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken!, gateway));
 
-      const port = await startGateway(19876);
+      const port = await gateway.start(19876);
       log("bot", `Gateway started on port ${port}`);
 
       setAdminUserId(config.adminUserId);
@@ -128,7 +120,7 @@ export function createTelegramFrontend(config: TalonConfig): TelegramFrontend {
       catch (err) { logError("shutdown", "Bot stop error", err); }
       try { await disconnectUserClient(); log("shutdown", "User client disconnected"); }
       catch (err) { logError("shutdown", "User client disconnect error", err); }
-      try { await stopGateway(); log("shutdown", "Gateway stopped"); }
+      try { await gateway.stop(); log("shutdown", "Gateway stopped"); }
       catch (err) { logError("shutdown", "Gateway stop error", err); }
     },
   };

@@ -19,24 +19,27 @@ import { startCronTimer, stopCronTimer } from "./core/cron.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
+import { Gateway } from "./core/gateway.js";
 import type { Frontend } from "./bootstrap.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
 const { config } = await bootstrap();
 
-// ── Create frontend (dynamic import — only selected platform's deps required) ─
+// ── Create gateway + frontend ─────────────────────────────────────────────────
+
+const gateway = new Gateway();
 
 const selectedFrontend = getFrontends(config)[0]; // use first configured frontend
 let frontend: Frontend;
 
 if (selectedFrontend === "terminal") {
   const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
-  frontend = createTerminalFrontend(config);
+  frontend = createTerminalFrontend(config, gateway);
   log("bot", "Frontend: Terminal");
 } else {
   const { createTelegramFrontend } = await import("./frontend/telegram/index.js");
-  frontend = createTelegramFrontend(config);
+  frontend = createTelegramFrontend(config, gateway);
   log("bot", "Frontend: Telegram");
 }
 

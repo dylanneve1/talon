@@ -38,14 +38,9 @@ vi.mock("write-file-atomic", () => ({
   default: { sync: vi.fn() },
 }));
 
-const {
-  startGateway,
-  stopGateway,
-  setGatewayContext,
-  clearGatewayContext,
-  setFrontendHandler,
-} = await import("../core/gateway.js");
+import { Gateway } from "../core/gateway.js";
 
+let gateway: Gateway;
 let port: number;
 
 // Mock frontend handler
@@ -57,19 +52,20 @@ const mockFrontendHandler = vi.fn(async (body: Record<string, unknown>) => {
 });
 
 beforeAll(async () => {
-  setFrontendHandler(mockFrontendHandler);
-  port = await startGateway(19899); // test port
+  gateway = new Gateway();
+  gateway.setFrontendHandler(mockFrontendHandler);
+  port = await gateway.start(19899); // test port
 });
 
 afterAll(async () => {
-  await stopGateway();
+  await gateway.stop();
 });
 
 beforeEach(() => {
   // Clear contexts for known test chatIds
   for (const id of [123, 999]) {
-    clearGatewayContext(id);
-    clearGatewayContext(id);
+    gateway.clearContext(id);
+    gateway.clearContext(id);
   }
   mockFrontendHandler.mockClear();
 });
@@ -129,35 +125,35 @@ describe("gateway HTTP server", () => {
     });
 
     it("routes to shared actions (cron)", async () => {
-      setGatewayContext(123);
+      gateway.setContext(123);
       const { body } = await post({ action: "list_cron_jobs", _chatId: "123" });
       expect(body.ok).toBe(true);
-      clearGatewayContext(123);
+      gateway.clearContext(123);
     });
 
     it("routes to frontend handler", async () => {
-      setGatewayContext(123);
+      gateway.setContext(123);
       const { body } = await post({ action: "send_message", _chatId: "123", text: "hello" });
       expect(body.ok).toBe(true);
       expect(body.message_id).toBe(42);
       expect(mockFrontendHandler).toHaveBeenCalled();
-      clearGatewayContext(123);
+      gateway.clearContext(123);
     });
 
     it("returns error for unknown action", async () => {
-      setGatewayContext(123);
+      gateway.setContext(123);
       const { body } = await post({ action: "completely_unknown_action", _chatId: "123" });
       expect(body.ok).toBe(false);
       expect(body.error).toContain("Unknown action");
-      clearGatewayContext(123);
+      gateway.clearContext(123);
     });
 
     it("returns error for missing action field", async () => {
-      setGatewayContext(123);
+      gateway.setContext(123);
       const { body } = await post({ _chatId: "123", text: "no action" });
       expect(body.ok).toBe(false);
       expect(body.error).toContain("Missing action");
-      clearGatewayContext(123);
+      gateway.clearContext(123);
     });
 
     it("rejects unknown chatId (no active context)", async () => {
@@ -169,8 +165,8 @@ describe("gateway HTTP server", () => {
 
   describe("concurrent chat contexts via HTTP", () => {
     it("handles two chats simultaneously", async () => {
-      setGatewayContext(100);
-      setGatewayContext(200);
+      gateway.setContext(100);
+      gateway.setContext(200);
 
       const [r1, r2] = await Promise.all([
         post({ action: "send_message", _chatId: "100", text: "from chat 100" }),
@@ -181,12 +177,12 @@ describe("gateway HTTP server", () => {
       expect(r2.body.ok).toBe(true);
       expect(mockFrontendHandler).toHaveBeenCalledTimes(2);
 
-      clearGatewayContext(100);
-      clearGatewayContext(200);
+      gateway.clearContext(100);
+      gateway.clearContext(200);
     });
 
     it("one chat's context doesn't affect another", async () => {
-      setGatewayContext(300);
+      gateway.setContext(300);
       // Chat 400 has no context
       const { body } = await post({ action: "send_message", _chatId: "400", text: "no context" });
       expect(body.ok).toBe(false);
@@ -194,13 +190,13 @@ describe("gateway HTTP server", () => {
       // Chat 300 still works
       const r2 = await post({ action: "send_message", _chatId: "300", text: "still works" });
       expect(r2.body.ok).toBe(true);
-      clearGatewayContext(300);
+      gateway.clearContext(300);
     });
 
     it("frontend handler error returns error result (doesn't crash server)", async () => {
       const errorHandler = vi.fn(async () => { throw new Error("handler exploded"); });
-      setFrontendHandler(errorHandler);
-      setGatewayContext(123);
+      gateway.setFrontendHandler(errorHandler);
+      gateway.setContext(123);
 
       const { status, body } = await post({ action: "send_message", _chatId: "123", text: "boom" });
 
@@ -208,42 +204,42 @@ describe("gateway HTTP server", () => {
       expect(body.ok).toBe(false);
       expect(body.error).toContain("handler exploded");
 
-      clearGatewayContext(123);
-      setFrontendHandler(mockFrontendHandler); // restore
+      gateway.clearContext(123);
+      gateway.setFrontendHandler(mockFrontendHandler); // restore
     });
 
     it("request without _chatId is rejected", async () => {
-      setGatewayContext(123);
+      gateway.setContext(123);
       const { body } = await post({ action: "send_message", text: "no chatId" });
       expect(body.ok).toBe(false);
       expect(body.error).toContain("No active chat context");
-      clearGatewayContext(123);
+      gateway.clearContext(123);
     });
   });
 
   describe("shared actions via HTTP", () => {
     it("fetch_url rejects invalid URLs", async () => {
-      setGatewayContext(123);
+      gateway.setContext(123);
       const { body } = await post({ action: "fetch_url", _chatId: "123", url: "not-a-url" });
       expect(body.ok).toBe(false);
-      clearGatewayContext(123);
+      gateway.clearContext(123);
     });
 
     it("read_history returns ok", async () => {
-      setGatewayContext(123);
+      gateway.setContext(123);
       const { body } = await post({ action: "read_history", _chatId: "123" });
       expect(body.ok).toBe(true);
-      clearGatewayContext(123);
+      gateway.clearContext(123);
     });
 
     it("create_cron_job works", async () => {
-      setGatewayContext(123);
+      gateway.setContext(123);
       const { body } = await post({
         action: "create_cron_job", _chatId: "123",
         name: "test", schedule: "0 9 * * *", type: "message", content: "hello",
       });
       expect(body.ok).toBe(true);
-      clearGatewayContext(123);
+      gateway.clearContext(123);
     });
   });
 });
