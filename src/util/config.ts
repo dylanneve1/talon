@@ -11,7 +11,7 @@ const pluginEntrySchema = z.object({
   config: z.record(z.string(), z.unknown()).optional(),
 });
 
-const frontendEnum = z.enum(["telegram", "terminal"]);
+const frontendEnum = z.enum(["telegram", "terminal", "teams"]);
 
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
@@ -28,6 +28,12 @@ const configSchema = z.object({
   braveApiKey: z.string().optional(),
   searxngUrl: z.string().default("http://localhost:8080"),
   plugins: z.array(pluginEntrySchema).default([]),
+
+  // Teams frontend (Power Automate webhooks)
+  teamsWebhookUrl: z.string().url().optional(),
+  teamsWebhookSecret: z.string().optional(),
+  teamsWebhookPort: z.number().int().min(1024).max(65535).default(19878),
+  teamsBotDisplayName: z.string().optional(),
 });
 
 export type TalonConfig = z.infer<typeof configSchema> & {
@@ -176,6 +182,9 @@ export function loadConfig(): TalonConfig {
   for (const fe of frontends) {
     if (fe === "telegram" && !parsed.botToken) {
       throw new Error(`Telegram frontend requires "botToken" in ${CONFIG_FILE}. Run "talon setup" to configure.`);
+    }
+    if (fe === "teams" && !parsed.teamsWebhookUrl) {
+      throw new Error(`Teams frontend requires "teamsWebhookUrl" in ${CONFIG_FILE}. Run "talon setup" to configure.`);
     }
   }
 

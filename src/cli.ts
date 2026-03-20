@@ -43,6 +43,11 @@ type Config = {
   apiHash?: string;
   maxMessageLength: number;
   plugins?: unknown[];
+  // Teams
+  teamsWebhookUrl?: string;
+  teamsWebhookSecret?: string;
+  teamsWebhookPort?: number;
+  teamsBotDisplayName?: string;
 };
 
 const DEFAULTS: Config = {
@@ -81,6 +86,7 @@ function isConfigured(config: Config): boolean {
   return fes.every((fe) => {
     if (fe === "telegram") return !!config.botToken;
     if (fe === "terminal") return true;
+    if (fe === "teams") return !!config.teamsWebhookUrl;
     return false;
   });
 }
@@ -100,6 +106,7 @@ async function runSetup(): Promise<void> {
     options: [
       { value: "telegram", label: `Telegram  ${pc.dim("\u2014 bot via @BotFather")}` },
       { value: "terminal", label: `Terminal  ${pc.dim("\u2014 local CLI chat")}` },
+      { value: "teams", label: `Teams     ${pc.dim("\u2014 Microsoft Teams via Power Automate")}` },
     ],
     required: true,
   });
@@ -152,6 +159,61 @@ async function runSetup(): Promise<void> {
     }
   }
 
+  let teamsWebhookUrl: string | undefined;
+  let teamsWebhookSecret: string | undefined;
+  let teamsWebhookPort: number | undefined;
+  let teamsBotDisplayName: string | undefined;
+
+  if (selectedFrontends.includes("teams")) {
+    p.note(
+      "Set up two Power Automate workflows in Teams:\n" +
+      "1. Send: 'Post to a channel when a webhook request is received' — copy the URL below\n" +
+      "2. Receive: 'When a new channel message is added' → HTTP POST to your Talon endpoint",
+      "Teams Setup",
+    );
+
+    const url = await p.text({
+      message: "Power Automate webhook URL (for sending to Teams)",
+      placeholder: "https://prod-XX.westus.logic.azure.com/workflows/...",
+      initialValue: config.teamsWebhookUrl || undefined,
+      validate: (v) => {
+        if (!v) return "Webhook URL is required";
+        try { new URL(v); } catch { return "Must be a valid URL"; }
+      },
+    });
+    if (p.isCancel(url)) { p.cancel("Cancelled."); process.exit(0); }
+    teamsWebhookUrl = url;
+
+    const secret = await p.text({
+      message: "Webhook secret for inbound verification",
+      placeholder: "optional — shared secret to verify incoming webhooks",
+      initialValue: config.teamsWebhookSecret || "",
+    }) as string;
+    if (p.isCancel(secret)) { p.cancel("Cancelled."); process.exit(0); }
+    if (secret) teamsWebhookSecret = secret;
+
+    const port = await p.text({
+      message: "Webhook receiver port",
+      placeholder: "19878",
+      initialValue: config.teamsWebhookPort ? String(config.teamsWebhookPort) : "19878",
+      validate: (v) => {
+        if (!v) return "Port is required";
+        const n = parseInt(v, 10);
+        if (isNaN(n) || n < 1024 || n > 65535) return "Port must be 1024-65535";
+      },
+    });
+    if (p.isCancel(port)) { p.cancel("Cancelled."); process.exit(0); }
+    teamsWebhookPort = parseInt(port as string, 10);
+
+    const botName = await p.text({
+      message: "Bot display name in Teams (for echo loop prevention)",
+      placeholder: "optional — e.g. 'Talon Bot'",
+      initialValue: config.teamsBotDisplayName || "",
+    }) as string;
+    if (p.isCancel(botName)) { p.cancel("Cancelled."); process.exit(0); }
+    if (botName) teamsBotDisplayName = botName;
+  }
+
   const model = await p.select({
     message: "Default model",
     initialValue: config.model,
@@ -180,6 +242,11 @@ async function runSetup(): Promise<void> {
     apiId, apiHash,
     maxMessageLength: config.maxMessageLength,
     plugins: config.plugins,
+    // Teams
+    teamsWebhookUrl: selectedFrontends.includes("teams") ? teamsWebhookUrl : undefined,
+    teamsWebhookSecret: selectedFrontends.includes("teams") ? teamsWebhookSecret : undefined,
+    teamsWebhookPort: selectedFrontends.includes("teams") ? teamsWebhookPort : undefined,
+    teamsBotDisplayName: selectedFrontends.includes("teams") ? teamsBotDisplayName : undefined,
   };
 
   const s = p.spinner();
@@ -222,6 +289,7 @@ async function showStatus(): Promise<void> {
     const fes = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
     console.log(`  ${pc.dim("Frontend")} ${fes.join(", ")}`);
     if (fes.includes("telegram")) console.log(`  ${pc.dim("Token")}    ${config.botToken ? pc.green("configured") : pc.red("not set")}`);
+    if (fes.includes("teams")) console.log(`  ${pc.dim("Teams")}    ${config.teamsWebhookUrl ? pc.green("configured") : pc.red("not set")}`);
     console.log(`  ${pc.dim("Model")}    ${config.model}`);
     console.log(`  ${pc.dim("Config")}   ${pc.dim(CONFIG_FILE)}\n`);
     console.log(`  Start with ${pc.cyan("talon start")} or ${pc.cyan("talon chat")}\n`);
@@ -251,6 +319,12 @@ async function viewConfig(): Promise<void> {
     console.log(`  ${pc.dim("Bot token")}        ${maskToken(config.botToken)}`);
     console.log(`  ${pc.dim("Admin")}            ${config.adminUserId || pc.dim("not set")}`);
     console.log(`  ${pc.dim("Userbot")}          ${config.apiId ? pc.green("configured") : pc.dim("not set")}`);
+  }
+  if (fes.includes("teams")) {
+    console.log(`  ${pc.dim("Teams webhook")}    ${config.teamsWebhookUrl ? pc.green("configured") : pc.red("not set")}`);
+    console.log(`  ${pc.dim("Teams secret")}     ${config.teamsWebhookSecret ? pc.green("set") : pc.dim("not set")}`);
+    console.log(`  ${pc.dim("Teams port")}       ${config.teamsWebhookPort || 19878}`);
+    console.log(`  ${pc.dim("Teams bot name")}   ${config.teamsBotDisplayName || pc.dim("not set")}`);
   }
   console.log(`  ${pc.dim("Model")}            ${config.model}`);
   console.log(`  ${pc.dim("Concurrency")}      ${config.concurrency}`);
@@ -359,7 +433,7 @@ async function mainMenu(): Promise<void> {
   const config = loadConfig();
   const statusDot = running ? `${pc.green("\u25CF")} running` : `${pc.red("\u25CF")} stopped`;
   const fes = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
-  const frontendLabel = fes.map((f) => f === "telegram" ? "Telegram" : "Terminal").join(" + ");
+  const frontendLabel = fes.map((f) => f === "telegram" ? "Telegram" : f === "teams" ? "Teams" : "Terminal").join(" + ");
 
   const action = await p.select({
     message: `Talon ${statusDot} ${pc.dim(`(${frontendLabel})`)}`,
