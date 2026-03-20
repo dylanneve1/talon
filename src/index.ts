@@ -6,65 +6,26 @@
  * are loaded dynamically — only the selected platform's dependencies are required.
  */
 
-import { loadConfig, getFrontends, rebuildSystemPrompt } from "./util/config.js";
-import { initWorkspace, startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
-import { loadSessions, flushSessions } from "./storage/sessions.js";
-import { loadChatSettings, flushChatSettings } from "./storage/chat-settings.js";
-import { loadCronJobs, flushCronJobs } from "./storage/cron-store.js";
-import { loadHistory, flushHistory } from "./storage/history.js";
-import { loadMediaIndex, flushMediaIndex } from "./storage/media-index.js";
-import { cleanupOldLogs } from "./storage/daily-log.js";
-import { initDispatcher, getActiveCount } from "./core/dispatcher.js";
-import {
-  initPulse,
-  startPulseTimer,
-  stopPulseTimer,
-  resetPulseTimer,
-} from "./core/pulse.js";
-import {
-  initCron,
-  startCronTimer,
-  stopCronTimer,
-} from "./core/cron.js";
+import { getFrontends } from "./util/config.js";
+import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
+import { flushSessions } from "./storage/sessions.js";
+import { flushChatSettings } from "./storage/chat-settings.js";
+import { flushCronJobs } from "./storage/cron-store.js";
+import { flushHistory } from "./storage/history.js";
+import { flushMediaIndex } from "./storage/media-index.js";
+import { getActiveCount } from "./core/dispatcher.js";
+import { startPulseTimer, stopPulseTimer } from "./core/pulse.js";
+import { startCronTimer, stopCronTimer } from "./core/cron.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
-import type { QueryBackend, ContextManager } from "./core/types.js";
+import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
+import type { Frontend } from "./bootstrap.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
-const config = loadConfig();
-
-// Expose search config as env vars for gateway-actions
-if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
-if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
-
-// Load plugins (external tool packages)
-if (config.plugins.length > 0) {
-  const { loadPlugins, getPluginPromptAdditions } = await import("./core/plugin.js");
-  const frontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
-  await loadPlugins(config.plugins, frontends);
-  rebuildSystemPrompt(config, getPluginPromptAdditions());
-}
-
-initWorkspace(config.workspace);
-loadSessions();
-loadChatSettings();
-loadCronJobs();
-loadHistory();
-loadMediaIndex();
-cleanupOldLogs();
+const { config } = await bootstrap();
 
 // ── Create frontend (dynamic import — only selected platform's deps required) ─
-
-type Frontend = {
-  context: ContextManager;
-  sendTyping: (chatId: number) => Promise<void>;
-  sendMessage: (chatId: number, text: string) => Promise<void>;
-  getBridgePort: () => number;
-  init: () => Promise<void>;
-  start: () => Promise<void>;
-  stop: () => Promise<void>;
-};
 
 const selectedFrontend = getFrontends(config)[0]; // use first configured frontend
 let frontend: Frontend;
@@ -79,34 +40,9 @@ if (selectedFrontend === "terminal") {
   log("bot", "Frontend: Telegram");
 }
 
-// ── Create backend (dynamic import) ──────────────────────────────────────────
+// ── Create backend + wire dispatcher ─────────────────────────────────────────
 
-let backend: QueryBackend;
-if (config.backend === "opencode") {
-  const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } = await import("./backend/opencode/index.js");
-  initOpenCodeAgent(config, frontend.getBridgePort);
-  backend = { query: (params) => opencodeHandleMessage(params) };
-  log("bot", "Backend: OpenCode");
-} else {
-  const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } = await import("./backend/claude-sdk/index.js");
-  initClaudeAgent(config, frontend.getBridgePort);
-  backend = { query: (params) => claudeHandleMessage(params) };
-  log("bot", "Backend: Claude SDK");
-}
-
-// ── Wire dispatcher ─────────────────────────────────────────────────────────
-
-initDispatcher({
-  backend,
-  context: frontend.context,
-  sendTyping: frontend.sendTyping,
-  onActivity: () => resetPulseTimer(),
-});
-
-// ── Initialize schedulers ───────────────────────────────────────────────────
-
-initPulse();
-initCron({ sendMessage: frontend.sendMessage });
+await initBackendAndDispatcher(config, frontend);
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 

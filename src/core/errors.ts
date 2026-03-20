@@ -56,8 +56,10 @@ export class TalonError extends Error {
 export function classify(err: unknown): TalonError {
   if (err instanceof TalonError) return err;
 
-  const msg =
-    err instanceof Error ? err.message : typeof err === "string" ? err : String(err);
+  let msg: string;
+  if (err instanceof Error) msg = err.message;
+  else if (typeof err === "string") msg = err;
+  else { try { msg = String(err); } catch { msg = "[non-stringifiable error]"; } }
   const cause = err instanceof Error ? err : undefined;
 
   // Extract HTTP status if present

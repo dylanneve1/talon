@@ -314,40 +314,30 @@ async function runDoctor(): Promise<void> {
 
 async function startChat(): Promise<void> {
   process.env.TALON_QUIET = "1";
-  const { loadConfig: loadCfg, rebuildSystemPrompt } = await import("./util/config.js");
-  const { initWorkspace } = await import("./util/workspace.js");
-  const { loadSessions, flushSessions } = await import("./storage/sessions.js");
-  const { loadChatSettings, flushChatSettings } = await import("./storage/chat-settings.js");
-  const { loadCronJobs, flushCronJobs } = await import("./storage/cron-store.js");
-  const { loadHistory, flushHistory } = await import("./storage/history.js");
-  const { initDispatcher } = await import("./core/dispatcher.js");
-  const { initPulse, resetPulseTimer } = await import("./core/pulse.js");
+
+  const { bootstrap, initBackendAndDispatcher } = await import("./bootstrap.js");
+  const { flushSessions } = await import("./storage/sessions.js");
+  const { flushChatSettings } = await import("./storage/chat-settings.js");
+  const { flushCronJobs } = await import("./storage/cron-store.js");
+  const { flushHistory } = await import("./storage/history.js");
+  const { flushMediaIndex } = await import("./storage/media-index.js");
   const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
 
-  const config = loadCfg();
-  if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
-  if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
-  if (config.plugins && config.plugins.length > 0) {
-    const { loadPlugins, getPluginPromptAdditions } = await import("./core/plugin.js");
-    await loadPlugins(config.plugins as Array<{ path: string; config?: Record<string, unknown> }>, ["terminal"]);
-    rebuildSystemPrompt(config, getPluginPromptAdditions());
-  }
-  initWorkspace(config.workspace);
-  loadSessions(); loadChatSettings(); loadCronJobs(); loadHistory();
+  const { config } = await bootstrap({ frontendNames: ["terminal"] });
 
   const frontend = createTerminalFrontend(config);
   await frontend.init();
-  let queryFn;
-  if (config.backend === "opencode") {
-    const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } = await import("./backend/opencode/index.js");
-    initOpenCodeAgent(config, frontend.getBridgePort); queryFn = opencodeHandleMessage;
-  } else {
-    const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } = await import("./backend/claude-sdk/index.js");
-    initClaudeAgent(config, frontend.getBridgePort); queryFn = claudeHandleMessage;
-  }
-  initDispatcher({ backend: { query: (params) => queryFn(params) }, context: frontend.context, sendTyping: frontend.sendTyping, onActivity: () => resetPulseTimer() });
-  initPulse();
-  process.on("SIGINT", () => { flushSessions(); flushChatSettings(); flushCronJobs(); flushHistory(); frontend.stop(); process.exit(0); });
+  await initBackendAndDispatcher(config, frontend);
+
+  process.on("SIGINT", () => {
+    flushSessions();
+    flushChatSettings();
+    flushCronJobs();
+    flushHistory();
+    flushMediaIndex();
+    frontend.stop();
+    process.exit(0);
+  });
   await frontend.start();
 }
 

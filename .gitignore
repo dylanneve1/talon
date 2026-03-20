@@ -5,3 +5,4 @@ workspace/
 *.log
 .env
 coverage/
+.stryker-tmp/

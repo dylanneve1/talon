@@ -32,6 +32,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:mutation": "stryker run",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/ --ignore-pattern '**/__tests__/**'",
     "format": "prettier --write src/ prompts/",
@@ -55,6 +56,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^9.6.0",
+    "@stryker-mutator/typescript-checker": "^9.6.0",
+    "@stryker-mutator/vitest-runner": "^9.6.0",
     "@types/node": "^25.5.0",
     "@types/write-file-atomic": "^4.0.3",
     "@vitest/coverage-v8": "^4.1.0",
