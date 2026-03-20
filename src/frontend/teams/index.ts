@@ -211,11 +211,18 @@ export function createTeamsFrontend(
               const u = info.usage;
               const cacheHit = (u.totalInputTokens + u.totalCacheRead) > 0
                 ? Math.round((u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) * 100) : 0;
+              const { getChatSettings } = await import("../../storage/chat-settings.js");
+              const model = (getChatSettings(talonChatId).model ?? config.model as string).replace("claude-", "");
               const avgMs = info.turns > 0 ? Math.round(u.totalResponseMs / info.turns) : 0;
+              const contextUsed = u.lastPromptTokens;
+              const contextMax = model.includes("opus") ? 1_000_000 : model.includes("sonnet") ? 1_000_000 : 200_000;
+              const contextPct = contextMax > 0 ? Math.round((contextUsed / contextMax) * 100) : 0;
               const statusText = [
                 "**Session**",
                 "",
+                `Model: ${model}`,
                 `Turns: ${info.turns}`,
+                `Context: ${(contextUsed / 1000).toFixed(0)}K / ${(contextMax / 1000).toFixed(0)}K (${contextPct}%)`,
                 `Cache: ${cacheHit}% hit`,
                 `Input: ${u.totalInputTokens.toLocaleString()} tokens`,
                 `Output: ${u.totalOutputTokens.toLocaleString()} tokens`,
