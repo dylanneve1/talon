@@ -519,13 +519,11 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       onTextBlock,
     });
 
-    // Deliver final response if tools didn't already send one.
-    // Short outputs (<20 chars) without tool calls are internal reasoning leaks.
-    if (result.bridgeMessageCount === 0 && result.text && result.text.length > 20) {
-      await deliverFinalText(
-        bot, numericChatId, result.text, replyToId,
-        config.maxMessageLength,
-      );
+    // Only deliver messages sent via the send tool.
+    // Do NOT send fallback text — if Claude chose not to use send,
+    // it's either choosing not to respond or outputting internal reasoning.
+    if (result.bridgeMessageCount === 0 && result.text?.trim()) {
+      log("bot", `Suppressed fallback text (${result.text.length} chars) — no send tool used`);
     }
   } finally {
     clearTimeout(streamTimer);

@@ -278,26 +278,12 @@ export function createTeamsFrontend(
                 log("teams", `  tool: ${toolName}${detail ? ` — ${String(detail).slice(0, 100)}` : ""}`);
               },
             }).then(async (result) => {
-              // If tools didn't already send a message, deliver the final text
+              // Only deliver messages sent via the send_message tool.
+              // Do NOT send fallback text — if Claude chose not to use send_message,
+              // it's either choosing not to respond or outputting internal reasoning
+              // that shouldn't be shown to users.
               if (result.bridgeMessageCount === 0 && result.text?.trim()) {
-                try {
-                  const chunks = splitTeamsMessage(result.text);
-                  for (const chunk of chunks) {
-                    const card = buildAdaptiveCard(chunk);
-                    const resp = await proxyFetch(webhookUrl, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(card),
-                      signal: AbortSignal.timeout(30_000),
-                    });
-                    if (!resp.ok) {
-                      logError("teams", `Webhook send failed: ${resp.status} ${await resp.text().catch(() => "")}`);
-                    }
-                  }
-                  log("teams", `Sent response (${result.text.length} chars)`);
-                } catch (sendErr) {
-                  logError("teams", `Send failed: ${sendErr instanceof Error ? sendErr.message : sendErr}`);
-                }
+                log("teams", `Suppressed fallback text (${result.text.length} chars) — no send_message tool used`);
               }
             }).catch((err) => {
               logError("teams", `execute failed: ${err instanceof Error ? err.message : err}`);
