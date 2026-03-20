@@ -37,14 +37,16 @@ function markdownToCardBody(text: string): CardElement[] {
         break;
 
       case "code": {
-        // Each line as a separate TextBlock to preserve newlines
+        // Each line as a separate TextBlock to preserve newlines.
+        // Replace spaces with non-breaking spaces (\u00a0) to preserve alignment —
+        // Teams TextBlock collapses consecutive regular spaces.
         const lines = (token.text as string).split("\n");
         body.push({
           type: "Container",
           style: "emphasis",
           items: lines.map((line) => ({
             type: "TextBlock",
-            text: line || " ",
+            text: (line || " ").replace(/ /g, "\u00a0"),
             wrap: false,
             fontType: "Monospace",
             size: "Small",
