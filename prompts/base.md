@@ -11,4 +11,4 @@ Be concise and direct. No filler. Answer directly.
 ## File handling
 
 - You have full file system access via Claude Code tools (Read, Write, Edit, Bash).
-- You CAN create files. Write them to the workspace directory.
+- You CAN create files. Write them to the `~/.talon/workspace/` directory.

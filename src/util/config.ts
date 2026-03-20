@@ -2,6 +2,7 @@ import { existsSync, readFileSync, mkdirSync, readdirSync, statSync } from "node
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
+import { dirs, files as pathFiles } from "./paths.js";
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
@@ -41,7 +42,7 @@ export function getFrontends(config: TalonConfig): string[] {
 
 // ── Config file ─────────────────────────────────────────────────────────────
 
-const CONFIG_FILE = resolve(process.cwd(), "workspace", "talon.json");
+const CONFIG_FILE = pathFiles.config;
 
 const DEFAULT_CONFIG = {
   botToken: "",
@@ -66,8 +67,8 @@ function loadConfigFile(): Record<string, unknown> {
  * Returns true if this is a fresh install.
  */
 function ensureConfigFile(): boolean {
-  const workspace = resolve(process.cwd(), "workspace");
-  if (!existsSync(workspace)) mkdirSync(workspace, { recursive: true });
+  if (!existsSync(dirs.root)) mkdirSync(dirs.root, { recursive: true });
+  if (!existsSync(dirs.data)) mkdirSync(dirs.data, { recursive: true });
   if (!existsSync(CONFIG_FILE)) {
     writeFileAtomic.sync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n");
     return true;
@@ -100,14 +101,14 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
   const frontendPrompt = readOptionalFile(resolve(base, "prompts", `${frontend ?? "telegram"}.md`));
   if (frontendPrompt) parts.push(frontendPrompt);
 
-  const memory = readOptionalFile(resolve(base, "workspace", "memory", "memory.md"));
+  const memory = readOptionalFile(pathFiles.memory);
   if (memory)
     parts.push(
-      `## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: workspace/memory/memory.md\n\n${memory}`,
+      `## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: ~/.talon/workspace/memory/memory.md\n\n${memory}`,
     );
 
   // Workspace file listing for context
-  const workspaceDir = resolve(base, "workspace");
+  const workspaceDir = dirs.workspace;
   let workspaceFiles = "";
   try {
     const listDir = (dir: string, prefix = ""): string[] => {
@@ -134,11 +135,11 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
 
   parts.push(`## Workspace
 
-You have a workspace directory at \`workspace/\`. This is your home — organize it however you want.
-- \`workspace/memory/memory.md\` is your persistent memory file. Update it when you learn important things.
-- Daily interaction logs are saved to \`workspace/logs/\` automatically.
-- Files users send you (photos, docs, voice) are saved to \`workspace/uploads/\`.
-- \`workspace/cron.json\` stores your persistent cron jobs. Use the cron tools to create recurring tasks.
+You have a workspace directory at \`~/.talon/workspace/\`. This is your home — organize it however you want.
+- \`~/.talon/workspace/memory/memory.md\` is your persistent memory file. Update it when you learn important things.
+- Daily interaction logs are saved to \`~/.talon/workspace/logs/\` automatically.
+- Files users send you (photos, docs, voice) are saved to \`~/.talon/workspace/uploads/\`.
+- Persistent cron jobs are managed via the cron tools.
 - Everything else is yours to create and organize as you see fit.${workspaceFiles}
 
 ## Cron Jobs
@@ -178,12 +179,11 @@ export function loadConfig(): TalonConfig {
     }
   }
 
-  const workspace = resolve(process.cwd(), "workspace");
   const activeFrontend = frontends[0];
 
   return {
     ...parsed,
-    workspace,
+    workspace: dirs.workspace,
     systemPrompt: loadSystemPrompt(activeFrontend),
   };
 }

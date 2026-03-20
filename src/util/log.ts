@@ -9,7 +9,7 @@
 
 import pino from "pino";
 import { existsSync, readFileSync, mkdirSync, statSync, renameSync, unlinkSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { dirs, files } from "./paths.js";
 
 export type LogComponent =
   | "bot"
@@ -30,12 +30,11 @@ export type LogComponent =
   | "gateway"
   | "plugin";
 
-const LOG_FILE = resolve(process.cwd(), "workspace", "talon.log");
+const LOG_FILE = files.log;
 
-// Ensure workspace dir exists for log file
-const logDir = dirname(LOG_FILE);
-if (!existsSync(logDir)) {
-  try { mkdirSync(logDir, { recursive: true }); } catch { /* ignore */ }
+// Ensure .talon dir exists for log file
+if (!existsSync(dirs.root)) {
+  try { mkdirSync(dirs.root, { recursive: true }); } catch { /* ignore */ }
 }
 
 // Rotate log file on startup if it exceeds 10MB
@@ -52,7 +51,7 @@ try {
 let quiet = process.env.TALON_QUIET === "1";
 if (!quiet) {
   try {
-    const cfgPath = resolve(process.cwd(), "workspace", "talon.json");
+    const cfgPath = files.config;
     if (existsSync(cfgPath)) {
       const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
       if (cfg.frontend === "terminal") quiet = true;

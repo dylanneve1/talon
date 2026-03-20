@@ -8,6 +8,7 @@
 
 import { readFileSync, statSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { basename, resolve } from "node:path";
+import { dirs } from "../../util/paths.js";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "./formatting.js";
 import {
@@ -338,7 +339,7 @@ export function createTelegramActionHandler(
         if (!resp.ok) return { ok: false, error: `Download failed: ${resp.status}` };
         const buffer = Buffer.from(await resp.arrayBuffer());
         const ext = file.file_path.split(".").pop() ?? "webp";
-        const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
+        const uploadsDir = dirs.uploads;
         if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
         const filePath = resolve(uploadsDir, `${Date.now()}-sticker.${ext}`);
         writeFileSync(filePath, buffer);

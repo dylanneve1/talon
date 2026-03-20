@@ -16,7 +16,9 @@ describe("config", () => {
   ) {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn((path: string) => {
-        if (path.includes("talon.json")) return configJson !== null;
+        if (path.includes("config.json") || path.includes("talon.json")) return configJson !== null;
+        // .talon directory checks (root, data)
+        if (path.endsWith(".talon") || path.endsWith("/data")) return true;
         // workspace directory check
         if (path.endsWith("workspace") && workspaceEntries !== undefined) return true;
         if (typeof path === "string") {
@@ -27,7 +29,7 @@ describe("config", () => {
         return false;
       }),
       readFileSync: vi.fn((path: string) => {
-        if (path.includes("talon.json")) return JSON.stringify(configJson ?? {});
+        if (path.includes("config.json") || path.includes("talon.json")) return JSON.stringify(configJson ?? {});
         for (const [key, val] of Object.entries(promptFiles)) {
           if (path.includes(key)) return val;
         }
@@ -484,11 +486,12 @@ describe("config", () => {
       // Simulate a corrupt JSON by having readFileSync throw
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn((path: string) => {
-          if (path.includes("talon.json")) return true;
+          if (path.includes("config.json") || path.includes("talon.json")) return true;
+          if (path.endsWith(".talon") || path.endsWith("/data")) return true;
           return false;
         }),
         readFileSync: vi.fn((path: string) => {
-          if (path.includes("talon.json")) throw new Error("corrupt file");
+          if (path.includes("config.json") || path.includes("talon.json")) throw new Error("corrupt file");
           return "";
         }),
         mkdirSync: vi.fn(),

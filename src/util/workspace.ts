@@ -4,15 +4,102 @@
  * Includes periodic cleanup of old uploads to prevent disk exhaustion.
  */
 
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, rmdirSync, renameSync, statSync, unlinkSync, copyFileSync, cpSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { log } from "./log.js";
+import { dirs } from "./paths.js";
 
-/** Ensure workspace root exists. That's it — Claude manages the rest. */
-export function initWorkspace(root: string): void {
-  if (!existsSync(root)) {
-    mkdirSync(root, { recursive: true });
+// ── Layout migration ────────────────────────────────────────────────────────
+
+/**
+ * Migrate from the old workspace/ layout to the new .talon/ layout.
+ * Only runs if workspace/ exists and .talon/ does not.
+ * Uses renameSync (same filesystem, atomic).
+ */
+export function migrateLayout(): void {
+  const oldRoot = resolve(process.cwd(), "workspace");
+  if (!existsSync(oldRoot) || existsSync(dirs.root)) return;
+
+  log("workspace", "Migrating workspace/ → .talon/ layout");
+
+  // Create target directories
+  mkdirSync(dirs.data, { recursive: true });
+  mkdirSync(dirs.workspace, { recursive: true });
+
+  // File moves: old → new
+  const fileMoves: Array<[string, string]> = [
+    [join(oldRoot, "talon.json"), dirs.root + "/config.json"],
+    [join(oldRoot, "sessions.json"), join(dirs.data, "sessions.json")],
+    [join(oldRoot, "history.json"), join(dirs.data, "history.json")],
+    [join(oldRoot, "chat-settings.json"), join(dirs.data, "chat-settings.json")],
+    [join(oldRoot, "cron.json"), join(dirs.data, "cron.json")],
+    [join(oldRoot, "media-index.json"), join(dirs.data, "media-index.json")],
+    [join(oldRoot, "talon.log"), join(dirs.root, "talon.log")],
+    [join(oldRoot, ".user-session"), join(dirs.root, ".user-session")],
+  ];
+
+  // Move helper — try rename first (fast, same filesystem), fall back to copy+delete
+  const moveFile = (src: string, dst: string) => {
+    try {
+      renameSync(src, dst);
+    } catch {
+      // Cross-filesystem: copy then delete
+      copyFileSync(src, dst);
+      unlinkSync(src);
+    }
+    log("workspace", `Moved ${src} → ${dst}`);
+  };
+
+  for (const [src, dst] of fileMoves) {
+    if (existsSync(src)) moveFile(src, dst);
   }
+
+  // Directory moves: old → new
+  const dirMoves: Array<[string, string]> = [
+    [join(oldRoot, "memory"), join(dirs.workspace, "memory")],
+    [join(oldRoot, "uploads"), join(dirs.workspace, "uploads")],
+    [join(oldRoot, "logs"), join(dirs.workspace, "logs")],
+    [join(oldRoot, "stickers"), join(dirs.workspace, "stickers")],
+  ];
+
+  for (const [src, dst] of dirMoves) {
+    if (existsSync(src)) {
+      try {
+        renameSync(src, dst);
+      } catch {
+        // Cross-filesystem: use cpSync (Node 16+) then rmSync
+        cpSync(src, dst, { recursive: true });
+        rmSync(src, { recursive: true, force: true });
+      }
+      log("workspace", `Moved ${src} → ${dst}`);
+    }
+  }
+
+  // Remove old workspace/ if empty
+  try {
+    const remaining = readdirSync(oldRoot);
+    if (remaining.length === 0) {
+      rmdirSync(oldRoot);
+      log("workspace", "Removed empty workspace/ directory");
+    } else {
+      log("workspace", `Old workspace/ still has ${remaining.length} item(s) — not removed`);
+    }
+  } catch { /* ignore */ }
+
+  log("workspace", "Migration complete");
+}
+
+// ── Workspace init ───────────────────────────────────────────────────────────
+
+/** Ensure workspace directories exist. */
+export function initWorkspace(root: string): void {
+  migrateLayout();
+  // Ensure .talon/ tree exists
+  for (const dir of [dirs.root, dirs.data, dirs.workspace]) {
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  }
+  // Ensure the caller-supplied root exists too (may differ in tests)
+  if (!existsSync(root)) mkdirSync(root, { recursive: true });
 }
 
 /** Calculate total disk usage of the workspace in bytes. */

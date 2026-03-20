@@ -6,8 +6,9 @@
 import { existsSync, mkdirSync, appendFileSync, readdirSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import { log as logInfo, logError } from "../util/log.js";
+import { dirs } from "../util/paths.js";
 
-const LOGS_DIR = resolve(process.cwd(), "workspace", "logs");
+const LOGS_DIR = dirs.logs;
 const MAX_LOG_DAYS = 30; // Keep last 30 days of logs
 
 function ensureLogsDir(): void {

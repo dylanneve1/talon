@@ -13,6 +13,7 @@ import { StringSession } from "telegram/sessions/index.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { createInterface } from "node:readline";
+import { files } from "./util/paths.js";
 
 // Load .env
 const envPath = resolve(process.cwd(), ".env");
@@ -34,7 +35,7 @@ if (existsSync(envPath)) {
   }
 }
 
-const SESSION_FILE = resolve(process.cwd(), "workspace", ".user-session");
+const SESSION_FILE = files.userSession;
 
 const apiId = parseInt(process.env.TALON_API_ID || "", 10);
 const apiHash = process.env.TALON_API_HASH || "";

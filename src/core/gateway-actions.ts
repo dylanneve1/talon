@@ -7,6 +7,7 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { dirs } from "../util/paths.js";
 import {
   getRecentFormatted,
   searchHistory,
@@ -165,7 +166,7 @@ export async function handleSharedAction(
           const ext = isRealImage
             ? ((magic[0] === 0xFF) ? "jpg" : (magic[0] === 0x89) ? "png" : (magic[0] === 0x47) ? "gif" : "webp")
             : ct.includes("pdf") ? "pdf" : ct.includes("zip") ? "zip" : "bin";
-          const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
+          const uploadsDir = dirs.uploads;
           if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
           const filePath = resolve(uploadsDir, `${Date.now()}-fetched.${ext}`);
           writeFileSync(filePath, buffer);

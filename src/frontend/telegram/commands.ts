@@ -4,8 +4,8 @@
 
 import type { Bot } from "grammy";
 import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
 import type { TalonConfig } from "../../util/config.js";
+import { files } from "../../util/paths.js";
 import {
   resetSession,
   getSessionInfo,
@@ -342,7 +342,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
 
   bot.command("memory", async (ctx) => {
     try {
-      const memoryPath = resolve(config.workspace, "memory", "memory.md");
+      const memoryPath = files.memory;
       if (!existsSync(memoryPath)) {
         await ctx.reply("No memory file yet. I'll create one as I learn about you.");
         return;

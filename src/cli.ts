@@ -17,11 +17,11 @@ import pc from "picocolors";
 import { existsSync, readFileSync, mkdirSync, watchFile } from "node:fs";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
+import { dirs, files as pathFiles } from "./util/paths.js";
 
 const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
-const WORKSPACE = resolve(PKG_ROOT, "workspace");
-const CONFIG_FILE = resolve(WORKSPACE, "talon.json");
-const LOG_FILE = resolve(WORKSPACE, "talon.log");
+const CONFIG_FILE = pathFiles.config;
+const LOG_FILE = pathFiles.log;
 const HEALTH_URL = "http://127.0.0.1:19876/health";
 
 function printBanner(): void {
@@ -64,7 +64,7 @@ function loadConfig(): Config {
 }
 
 function saveConfig(config: Config): void {
-  if (!existsSync(WORKSPACE)) mkdirSync(WORKSPACE, { recursive: true });
+  if (!existsSync(dirs.root)) mkdirSync(dirs.root, { recursive: true });
   const clean = Object.fromEntries(
     Object.entries(config).filter(([, v]) => v !== undefined),
   );
@@ -304,7 +304,7 @@ async function runDoctor(): Promise<void> {
     console.log(isConfigured(config) ? `  ${pc.green("\u2713")} Frontend: ${fes.join(", ")} (configured)` : `  ${pc.red("\u2717")} Frontend not fully configured`);
     if (!isConfigured(config)) issues++;
   } else { console.log(`  ${pc.red("\u2717")} No config file`); issues++; }
-  console.log(existsSync(WORKSPACE) ? `  ${pc.green("\u2713")} Workspace: ${pc.dim(WORKSPACE)}` : `  ${pc.yellow("!")} Workspace missing`);
+  console.log(existsSync(dirs.root) ? `  ${pc.green("\u2713")} Workspace: ${pc.dim(dirs.root)}` : `  ${pc.yellow("!")} Workspace missing`);
   try { const { execSync } = await import("node:child_process"); execSync("which claude", { stdio: "pipe" }); console.log(`  ${pc.green("\u2713")} Claude Code installed`); } catch { console.log(`  ${pc.red("\u2717")} Claude Code not found`); issues++; }
   try { const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) }); if (resp.ok) console.log(`  ${pc.green("\u2713")} Bot is running`); } catch { console.log(`  ${pc.dim("-")} Bot is not running`); }
   console.log(issues === 0 ? `\n  ${pc.green("All checks passed.")}\n` : `\n  ${pc.yellow(`${issues} issue(s) found.`)}\n`);

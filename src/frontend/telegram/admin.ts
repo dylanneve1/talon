@@ -4,8 +4,8 @@
 
 import type { Bot, Context } from "grammy";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import type { TalonConfig } from "../../util/config.js";
+import { files, dirs } from "../../util/paths.js";
 import { escapeHtml } from "./formatting.js";
 import {
   resetSession,
@@ -77,7 +77,7 @@ export async function handleAdminCommand(
     }
 
     case "logs": {
-      const logPath = resolve(config.workspace, "talon.log");
+      const logPath = files.log;
       try {
         const { statSync, openSync, readSync, closeSync } = await import("node:fs");
         const stat = statSync(logPath);
@@ -174,7 +174,7 @@ export async function handleAdminCommand(
 
     case "daily": {
       const today = new Date().toISOString().slice(0, 10);
-      const logPath = resolve(config.workspace, "logs", `${today}.md`);
+      const logPath = `${dirs.logs}/${today}.md`;
       try {
         const content = readFileSync(logPath, "utf-8");
         const lines = content.trim().split("\n").slice(-30).join("\n");

@@ -68,7 +68,7 @@ When a user presses a callback button, you'll receive "[Button pressed]" with th
 
 ### File sending
 
-- Files users send you are saved to `workspace/uploads/`.
+- Files users send you are saved to `~/.talon/workspace/uploads/`.
 - If you see a [photo] or [document] in chat history but don't have the file, use `download_media(message_id)`.
 - To send files: write the file, then use `send(type="file", file_path="...")`.
 - You CAN send files. NEVER say you can't.

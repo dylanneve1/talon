@@ -3,13 +3,14 @@
  *
  * Provides fast lookup of recent photos/files by chat, sender, or type.
  * Auto-expires entries older than RETENTION_DAYS.
- * Persisted to workspace/media-index.json.
+ * Persisted to .talon/data/media-index.json.
  */
 
 import { existsSync, readFileSync, mkdirSync, unlinkSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { log } from "../util/log.js";
+import { files } from "../util/paths.js";
 
 export type MediaEntry = {
   id: string;           // unique key: chatId:msgId
@@ -22,7 +23,7 @@ export type MediaEntry = {
   timestamp: number;
 };
 
-const STORE_FILE = resolve(process.cwd(), "workspace", "media-index.json");
+const STORE_FILE = files.mediaIndex;
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 let entries: MediaEntry[] = [];

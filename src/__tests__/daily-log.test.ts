@@ -20,20 +20,20 @@ import { tmpdir } from "node:os";
 
 // Use a unique temp directory for each test run
 const TEST_ROOT = join(tmpdir(), `talon-daily-log-test-${Date.now()}`);
-const LOGS_DIR = join(TEST_ROOT, "workspace", "logs");
+const LOGS_DIR = join(TEST_ROOT, ".talon", "workspace", "logs");
 
-// We need to override process.cwd() so the daily-log module resolves its
-// LOGS_DIR relative to our temp directory. Since the module uses
-// resolve(process.cwd(), "workspace", "logs"), we mock process.cwd.
-const originalCwd = process.cwd;
+// paths.ts uses os.homedir() — mock it to point to our temp directory
+vi.mock("node:os", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return { ...actual, homedir: () => TEST_ROOT };
+});
 
 beforeEach(() => {
-  process.cwd = () => TEST_ROOT;
+  vi.resetModules();
   if (existsSync(TEST_ROOT)) rmSync(TEST_ROOT, { recursive: true });
 });
 
 afterEach(() => {
-  process.cwd = originalCwd;
   if (existsSync(TEST_ROOT)) rmSync(TEST_ROOT, { recursive: true });
 });
 
@@ -101,7 +101,7 @@ describe("daily-log", () => {
       expect(content).toContain("- Did some testing");
     });
 
-    it("uses workspace/logs/ directory", async () => {
+    it("uses .talon/workspace/logs/ directory", async () => {
       const { appendDailyLog, getLogsDir } = await import(
         "../storage/daily-log.js"
       );
@@ -109,7 +109,7 @@ describe("daily-log", () => {
       appendDailyLog("LogDirTest", "checking path");
 
       const logsDir = getLogsDir();
-      expect(logsDir).toContain("workspace");
+      expect(logsDir).toContain(".talon");
       expect(logsDir).toContain("logs");
     });
   });

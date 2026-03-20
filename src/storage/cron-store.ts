@@ -5,9 +5,10 @@
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
 import { Cron } from "croner";
 import { log } from "../util/log.js";
+import { files } from "../util/paths.js";
 
 export type CronJobType = "message" | "query";
 
@@ -30,7 +31,7 @@ export type CronJob = {
   timezone?: string;
 };
 
-const STORE_FILE = resolve(process.cwd(), "workspace", "cron.json");
+const STORE_FILE = files.cron;
 let store: Record<string, CronJob> = {};
 let dirty = false;
 

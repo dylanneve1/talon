@@ -8,9 +8,10 @@
  */
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { log, logError } from "../util/log.js";
+import { files } from "../util/paths.js";
 
 export type HistoryMessage = {
   msgId: number;
@@ -33,7 +34,7 @@ export type HistoryMessage = {
 
 const MAX_HISTORY_PER_CHAT = 500;
 const MAX_CHAT_COUNT = 1000;
-const STORE_FILE = resolve(process.cwd(), "workspace", "history.json");
+const STORE_FILE = files.history;
 
 const chatHistories = new Map<string, HistoryMessage[]>();
 let dirty = false;

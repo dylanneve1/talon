@@ -1,6 +1,7 @@
 node_modules/
 dist/
 workspace/
+.talon/
 *.log
 .env
 coverage/

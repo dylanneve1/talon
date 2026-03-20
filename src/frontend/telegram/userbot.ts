@@ -13,8 +13,9 @@ import { StringSession } from "telegram/sessions/index.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { log, logError, logWarn } from "../../util/log.js";
+import { dirs, files } from "../../util/paths.js";
 
-const SESSION_FILE = resolve(process.cwd(), "workspace", ".user-session");
+const SESSION_FILE = files.userSession;
 
 let client: TelegramClient | null = null;
 let reconnectTimer: ReturnType<typeof setInterval> | null = null;
@@ -432,8 +433,8 @@ export async function downloadMessageMedia(params: {
       ? `${Date.now()}-${originalName.replace(/[^a-zA-Z0-9._-]/g, "_")}`
       : `${Date.now()}-msg${params.messageId}`;
 
-    // Save to workspace/uploads/
-    const uploadsDir = resolve(process.cwd(), "workspace", "uploads");
+    // Save to .talon/workspace/uploads/
+    const uploadsDir = dirs.uploads;
     if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
 
     const filePath = resolve(uploadsDir, filename);
@@ -470,12 +471,12 @@ export async function saveStickerPack(params: {
       savedAt: new Date().toISOString(),
     };
 
-    const dir = resolve(process.cwd(), "workspace", "stickers");
+    const dir = dirs.stickers;
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     const filePath = resolve(dir, `${stickerSet.name}.json`);
     writeFileSync(filePath, JSON.stringify(packData, null, 2));
 
-    return `Saved "${stickerSet.title}" (${stickers.length} stickers) to workspace/stickers/${stickerSet.name}.json`;
+    return `Saved "${stickerSet.title}" (${stickers.length} stickers) to .talon/workspace/stickers/${stickerSet.name}.json`;
   } catch (err) {
     return `Failed to save sticker pack: ${err instanceof Error ? err.message : err}`;
   }

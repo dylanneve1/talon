@@ -5,8 +5,9 @@
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
 import { log } from "../util/log.js";
+import { files } from "../util/paths.js";
 
 export type EffortLevel = "off" | "low" | "medium" | "high" | "max";
 
@@ -21,7 +22,7 @@ export type ChatSettings = {
   pulseIntervalMs?: number;
 };
 
-const STORE_FILE = resolve(process.cwd(), "workspace", "chat-settings.json");
+const STORE_FILE = files.chatSettings;
 let store: Record<string, ChatSettings> = {};
 let dirty = false;
 
@@ -177,5 +178,5 @@ export const MODEL_ALIASES: Record<string, string> = {
 
 export function resolveModelName(input: string): string {
   const lower = input.trim().toLowerCase();
-  return MODEL_ALIASES[lower] ?? input.trim();
+  return Object.hasOwn(MODEL_ALIASES, lower) ? MODEL_ALIASES[lower] : input.trim();
 }

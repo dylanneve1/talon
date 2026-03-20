@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
-import { resolve, dirname } from "node:path";
 import { logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
+import { dirs, files } from "../util/paths.js";
 
 /**
  * Session manager — maps Telegram chat IDs to Claude SDK session IDs.
@@ -50,13 +50,12 @@ type SessionState = {
 
 type SessionStore = Record<string, SessionState>;
 
-const STORE_FILE = resolve(process.cwd(), "workspace", "sessions.json");
+const STORE_FILE = files.sessions;
 let store: SessionStore = {};
 let dirty = false;
 
-function ensureDir(filePath: string): void {
-  const dir = dirname(filePath);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+function ensureDir(): void {
+  if (!existsSync(dirs.data)) mkdirSync(dirs.data, { recursive: true });
 }
 
 
@@ -73,7 +72,7 @@ export function loadSessions(): void {
 function saveSessions(): void {
   if (!dirty) return;
   try {
-    ensureDir(STORE_FILE);
+    ensureDir();
     // Atomic write: writes to temp file then renames — prevents corruption on crash
     writeFileAtomic.sync(STORE_FILE, JSON.stringify(store, null, 2) + "\n");
     dirty = false;
