@@ -48,6 +48,7 @@
     "cheerio": "^1.2.0",
     "croner": "^10.0.1",
     "grammy": "^1.41.1",
+    "marked": "^17.0.5",
     "picocolors": "^1.1.1",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",

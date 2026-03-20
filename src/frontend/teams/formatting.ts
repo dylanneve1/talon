@@ -1,25 +1,113 @@
 /**
- * Teams message formatting — Adaptive Cards + HTML stripping.
+ * Teams message formatting — markdown to Adaptive Cards + HTML stripping.
+ *
+ * Uses `marked` lexer to parse markdown into tokens, then converts each
+ * token to the appropriate Adaptive Card element:
+ *   - Paragraphs/text → TextBlock (with bold/italic markdown, no backticks)
+ *   - Fenced code blocks → monospace TextBlock in emphasis Container
+ *   - Lists → TextBlock with bullet/number prefixes
+ *   - Headings → bold TextBlock
  */
 
 import * as cheerio from "cheerio";
+import { marked } from "marked";
 
 /** Max safe message length for a single Adaptive Card. */
 const MAX_CHUNK = 10_000;
 
+// ── Markdown → Adaptive Card ──────────────────────────────────────────────
+
+type CardElement = Record<string, unknown>;
+
+/**
+ * Convert markdown text to Adaptive Card body elements.
+ */
+function markdownToCardBody(text: string): CardElement[] {
+  const body: CardElement[] = [];
+  const tokens = marked.lexer(text);
+
+  for (const token of tokens) {
+    switch (token.type) {
+      case "heading":
+        body.push({ type: "TextBlock", text: `**${cleanInline(token.text)}**`, wrap: true, size: "Medium", weight: "Bolder" });
+        break;
+
+      case "paragraph":
+        body.push({ type: "TextBlock", text: cleanInline(token.text), wrap: true });
+        break;
+
+      case "code":
+        body.push({
+          type: "Container",
+          style: "emphasis",
+          items: [{ type: "TextBlock", text: token.text, wrap: true, fontType: "Monospace", size: "Small" }],
+        });
+        break;
+
+      case "list": {
+        const listToken = token as Record<string, unknown>;
+        const items = listToken.items as Array<{ text: string }>;
+        const ordered = listToken.ordered as boolean;
+        const lines = items.map((item, i) => {
+          const prefix = ordered ? `${i + 1}. ` : "- ";
+          return prefix + cleanInline(item.text);
+        });
+        body.push({ type: "TextBlock", text: lines.join("\n"), wrap: true });
+        break;
+      }
+
+      case "blockquote": {
+        const bqToken = token as Record<string, unknown>;
+        body.push({
+          type: "Container",
+          style: "emphasis",
+          items: [{ type: "TextBlock", text: cleanInline(String(bqToken.text ?? "")), wrap: true, isSubtle: true }],
+        });
+        break;
+      }
+
+      case "hr":
+        body.push({ type: "TextBlock", text: "───────────────────────────────", wrap: false, isSubtle: true });
+        break;
+
+      case "space":
+        break; // skip whitespace tokens
+
+      default:
+        // Fallback: render as plain text
+        if ("text" in token && typeof token.text === "string" && token.text.trim()) {
+          body.push({ type: "TextBlock", text: cleanInline(token.text), wrap: true });
+        }
+        break;
+    }
+  }
+
+  if (body.length === 0) {
+    body.push({ type: "TextBlock", text: text || " ", wrap: true });
+  }
+
+  return body;
+}
+
+/**
+ * Clean inline markdown for Teams TextBlock compatibility.
+ * Teams supports **bold** and _italic_ but NOT `inline code`.
+ */
+function cleanInline(text: string): string {
+  // Remove inline backticks — Teams doesn't render them
+  return text.replace(/`([^`]+)`/g, "$1");
+}
+
+// ── Public API ────────────────────────────────────────────────────────────
+
 /**
  * Build an Adaptive Card payload for the Power Automate webhook.
- *
- * Fenced code blocks (```) are converted to monospace TextBlocks with
- * a grey background, since Adaptive Card TextBlocks don't support
- * markdown code fences and CodeBlock requires schema v1.6+ which
- * Power Automate webhooks don't support.
  */
 export function buildAdaptiveCard(
   text: string,
   buttons?: Array<{ text: string; url?: string }>,
 ): Record<string, unknown> {
-  const body = buildCardBody(text);
+  const body = markdownToCardBody(text);
 
   const card: Record<string, unknown> = {
     type: "AdaptiveCard",
@@ -49,60 +137,6 @@ export function buildAdaptiveCard(
 }
 
 /**
- * Build card body — splits code blocks into monospace-styled containers.
- */
-function buildCardBody(text: string): Array<Record<string, unknown>> {
-  const body: Array<Record<string, unknown>> = [];
-
-  // Split on fenced code blocks: ```lang\ncode\n```
-  const codeBlockRegex = /```\w*\n([\s\S]*?)```/g;
-  let lastIndex = 0;
-  let match;
-
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    const before = text.slice(lastIndex, match.index).trim();
-    if (before) {
-      body.push({ type: "TextBlock", text: before, wrap: true });
-    }
-
-    // Render code as a monospace TextBlock inside a grey Container
-    const code = match[1].trimEnd();
-    body.push({
-      type: "Container",
-      style: "emphasis",
-      bleed: false,
-      items: [{
-        type: "TextBlock",
-        text: code,
-        wrap: true,
-        fontType: "Monospace",
-        size: "Small",
-      }],
-    });
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  const remaining = text.slice(lastIndex).trim();
-  if (remaining) {
-    body.push({ type: "TextBlock", text: remaining, wrap: true });
-  }
-
-  if (body.length === 0) {
-    body.push({ type: "TextBlock", text: text || " ", wrap: true });
-  }
-
-  // Strip inline backticks from TextBlocks — Teams doesn't render them
-  for (const el of body) {
-    if (el.type === "TextBlock" && typeof el.text === "string") {
-      el.text = (el.text as string).replace(/`([^`]+)`/g, "$1");
-    }
-  }
-
-  return body;
-}
-
-/**
  * Split a long message into chunks that each fit within an Adaptive Card.
  * Splits on paragraph boundaries when possible.
  */
@@ -113,14 +147,11 @@ export function splitTeamsMessage(text: string, maxLen = MAX_CHUNK): string[] {
   let remaining = text;
 
   while (remaining.length > maxLen) {
-    // Try to split on a double newline (paragraph boundary)
     let splitIdx = remaining.lastIndexOf("\n\n", maxLen);
     if (splitIdx < maxLen * 0.3) {
-      // If no good paragraph break, try single newline
       splitIdx = remaining.lastIndexOf("\n", maxLen);
     }
     if (splitIdx < maxLen * 0.3) {
-      // Hard split at maxLen
       splitIdx = maxLen;
     }
     chunks.push(remaining.slice(0, splitIdx).trimEnd());
@@ -132,7 +163,6 @@ export function splitTeamsMessage(text: string, maxLen = MAX_CHUNK): string[] {
 
 /**
  * Strip HTML tags and decode entities from inbound Teams message HTML.
- * Falls back to plain regex if cheerio fails.
  */
 export function stripHtml(html: string): string {
   if (!html || !html.includes("<")) return html;
