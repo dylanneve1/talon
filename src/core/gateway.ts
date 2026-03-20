@@ -24,7 +24,7 @@ import type { FrontendActionHandler } from "./types.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
 
-type ChatContext = { refCount: number; messagesSent: number };
+type ChatContext = { refCount: number; messagesSent: number; stringId?: string };
 
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
@@ -63,15 +63,24 @@ export class Gateway {
 
   // ── Per-chat context management ──────────────────────────────────────────
 
-  setContext(chatId: number): void {
+  setContext(chatId: number, stringId?: string): void {
     const ctx = this.chatContexts.get(chatId);
     if (ctx) {
       ctx.refCount++;
       log("gateway", `Context ref++ for chat ${chatId} (refCount=${ctx.refCount})`);
     } else {
-      this.chatContexts.set(chatId, { refCount: 1, messagesSent: 0 });
-      log("gateway", `Context acquired for chat ${chatId}`);
+      this.chatContexts.set(chatId, { refCount: 1, messagesSent: 0, stringId });
+      log("gateway", `Context acquired for chat ${chatId}${stringId ? ` (${stringId})` : ""}`);
     }
+  }
+
+  /** Find a numeric chatId by its string ID (used for Teams-style non-numeric chat IDs). */
+  private findContextByStringId(stringId: string): number | null {
+    if (!stringId) return null;
+    for (const [numId, ctx] of this.chatContexts) {
+      if (ctx.stringId === stringId) return numId;
+    }
+    return null;
   }
 
   clearContext(chatId?: number | string): void {
@@ -110,9 +119,16 @@ export class Gateway {
   // ── Action dispatch ────────────────────────────────────────────────────────
 
   private async handleAction(body: Record<string, unknown>): Promise<unknown> {
-    // Route by _chatId from the MCP subprocess request
-    const chatId = body._chatId ? Number(body._chatId) : null;
-    if (!chatId || !this.chatContexts.has(chatId)) {
+    // Route by _chatId from the MCP subprocess request.
+    // _chatId may be a string (Teams: "teams_chat_19:...") or numeric string (Telegram: "123456").
+    // The context map is keyed by numeric chatId, so try direct parse first,
+    // then fall back to searching active contexts.
+    const rawChatId = body._chatId ? String(body._chatId) : "";
+    const numericId = Number(rawChatId);
+    const chatId = !isNaN(numericId) && this.chatContexts.has(numericId)
+      ? numericId
+      : this.findContextByStringId(rawChatId);
+    if (!chatId) {
       return { ok: false, error: "No active chat context" };
     }
 

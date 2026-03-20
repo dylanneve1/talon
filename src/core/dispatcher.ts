@@ -85,7 +85,7 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   const reqId = randomBytes(4).toString("hex");
 
   logDebug("dispatcher", `[${reqId}] ${params.source} chat=${params.chatId} started (active=${activeCount})`);
-  context.acquire(params.numericChatId);
+  context.acquire(params.numericChatId, params.chatId);
 
   let typingTimer: ReturnType<typeof setInterval> | undefined;
   try {

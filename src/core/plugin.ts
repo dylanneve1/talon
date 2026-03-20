@@ -332,6 +332,9 @@ export function getPluginMcpServers(
 ): Record<string, McpServerConfig> {
   const servers: Record<string, McpServerConfig> = {};
 
+  // Resolve tsx from Talon's own node_modules (not cwd which may be ~/.talon/workspace/)
+  const tsxPath = resolve(import.meta.dirname ?? ".", "../../node_modules/tsx/dist/esm/index.mjs");
+
   for (const { plugin, envVars } of registry.all) {
     if (!plugin.mcpServerPath) continue;
 
@@ -339,7 +342,7 @@ export function getPluginMcpServers(
       command: process.platform === "win32" ? "npx" : "node",
       args: process.platform === "win32"
         ? ["tsx", plugin.mcpServerPath]
-        : ["--import", "tsx", plugin.mcpServerPath],
+        : ["--import", tsxPath, plugin.mcpServerPath],
       env: {
         TALON_BRIDGE_URL: bridgeUrl,
         TALON_CHAT_ID: chatId,

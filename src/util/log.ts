@@ -28,7 +28,8 @@ export type LogComponent =
   | "cron"
   | "dispatcher"
   | "gateway"
-  | "plugin";
+  | "plugin"
+  | "teams";
 
 const LOG_FILE = files.log;
 
