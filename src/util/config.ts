@@ -34,6 +34,10 @@ const configSchema = z.object({
   teamsWebhookSecret: z.string().optional(),
   teamsWebhookPort: z.number().int().min(1024).max(65535).default(19878),
   teamsBotDisplayName: z.string().optional(),
+  teamsTeamName: z.string().optional(),
+  teamsChannelName: z.string().optional(),
+  teamsChatTopic: z.string().optional(),
+  teamsGraphPollMs: z.number().int().min(5000).default(10000),
 });
 
 export type TalonConfig = z.infer<typeof configSchema> & {

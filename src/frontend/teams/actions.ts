@@ -6,6 +6,7 @@ import type { ActionResult, FrontendActionHandler } from "../../core/types.js";
 import type { Gateway } from "../../core/gateway.js";
 import { buildAdaptiveCard, splitTeamsMessage } from "./formatting.js";
 import { log, logError } from "../../util/log.js";
+import { proxyFetch } from "./proxy-fetch.js";
 
 /**
  * POST an Adaptive Card to the Power Automate workflow webhook URL.
@@ -14,7 +15,7 @@ async function postToTeams(webhookUrl: string, text: string): Promise<void> {
   const chunks = splitTeamsMessage(text);
   for (const chunk of chunks) {
     const card = buildAdaptiveCard(chunk);
-    const resp = await fetch(webhookUrl, {
+    const resp = await proxyFetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(card),
@@ -56,7 +57,7 @@ export function createTeamsActionHandler(
         const buttons = rows?.flat().map((b) => ({ text: b.text, url: b.url }));
         try {
           const card = buildAdaptiveCard(text, buttons);
-          const resp = await fetch(webhookUrl, {
+          const resp = await proxyFetch(webhookUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(card),

@@ -71,21 +71,29 @@ export async function handleMessage(
     ],
     ...thinkingConfig,
     mcpServers: {
-      // Only register Telegram tools when Telegram frontend is active
-      ...((Array.isArray(config.frontend) ? config.frontend : [config.frontend]).includes("telegram") ? {
-        "telegram-tools": {
-          command: "node",
-          args: [
-            "--import",
-            "tsx",
-            resolve(import.meta.dirname ?? ".", "tools.ts"),
-          ],
-          env: {
-            TALON_BRIDGE_URL: `http://127.0.0.1:${bridgePortFn()}`,
-            TALON_CHAT_ID: chatId,
-          },
-        },
-      } : {}),
+      // Register frontend-specific MCP tools based on active frontend
+      ...(() => {
+        const frontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+        const bridgeUrl = `http://127.0.0.1:${bridgePortFn()}`;
+        const env = { TALON_BRIDGE_URL: bridgeUrl, TALON_CHAT_ID: chatId };
+        const servers: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {};
+
+        if (frontends.includes("telegram")) {
+          servers["telegram-tools"] = {
+            command: "node",
+            args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "tools.ts")],
+            env,
+          };
+        }
+        if (frontends.includes("teams")) {
+          servers["teams-tools"] = {
+            command: "node",
+            args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "../../frontend/teams/tools.ts")],
+            env,
+          };
+        }
+        return servers;
+      })(),
       ...getPluginMcpServers(`http://127.0.0.1:${bridgePortFn()}`, chatId),
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
