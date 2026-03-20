@@ -78,7 +78,8 @@ export async function handleMessage(
         const mcpEnv = { TALON_BRIDGE_URL: bridgeUrl, TALON_CHAT_ID: chatId };
         const servers: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {};
         // Resolve tsx from Talon's node_modules (cwd may be ~/.talon/workspace/ which has no node_modules)
-        const tsxImport = resolve(import.meta.dirname ?? ".", "../../node_modules/tsx/dist/esm/index.mjs");
+        // Resolve tsx from the package root (3 levels up from src/backend/claude-sdk/)
+        const tsxImport = resolve(import.meta.dirname ?? ".", "../../../node_modules/tsx/dist/esm/index.mjs");
 
         if (frontends.includes("telegram")) {
           servers["telegram-tools"] = {
