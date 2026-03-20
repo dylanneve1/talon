@@ -4,22 +4,27 @@
 
 import * as cheerio from "cheerio";
 
-/** Max safe message length for a single Adaptive Card TextBlock. */
+/** Max safe message length for a single Adaptive Card. */
 const MAX_CHUNK = 10_000;
 
 /**
  * Build an Adaptive Card payload for the Power Automate webhook.
- * TextBlock renders Markdown natively in Teams.
+ *
+ * Handles code blocks specially — Adaptive Card TextBlocks don't support
+ * fenced code blocks (```), so we split the message into alternating
+ * TextBlock (for prose) and CodeBlock (for code) elements.
  */
 export function buildAdaptiveCard(
   text: string,
   buttons?: Array<{ text: string; url?: string }>,
 ): Record<string, unknown> {
+  const body = buildCardBody(text);
+
   const card: Record<string, unknown> = {
     type: "AdaptiveCard",
     $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-    version: "1.4",
-    body: [{ type: "TextBlock", text, wrap: true }],
+    version: "1.6",
+    body,
   };
 
   if (buttons && buttons.length > 0) {
@@ -40,6 +45,51 @@ export function buildAdaptiveCard(
       },
     ],
   };
+}
+
+/**
+ * Build the card body elements, splitting code blocks into CodeBlock elements
+ * and prose into TextBlock elements.
+ */
+function buildCardBody(text: string): Array<Record<string, unknown>> {
+  const body: Array<Record<string, unknown>> = [];
+
+  // Split on fenced code blocks: ```lang\ncode\n```
+  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    // Text before this code block
+    const before = text.slice(lastIndex, match.index).trim();
+    if (before) {
+      body.push({ type: "TextBlock", text: before, wrap: true });
+    }
+
+    // The code block itself
+    const language = match[1] || "plaintext";
+    const code = match[2].trimEnd();
+    body.push({
+      type: "CodeBlock",
+      language,
+      codeSnippet: code,
+    });
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Remaining text after last code block (or all text if no code blocks)
+  const remaining = text.slice(lastIndex).trim();
+  if (remaining) {
+    body.push({ type: "TextBlock", text: remaining, wrap: true });
+  }
+
+  // Fallback: if nothing was added (empty text), add empty TextBlock
+  if (body.length === 0) {
+    body.push({ type: "TextBlock", text: text || " ", wrap: true });
+  }
+
+  return body;
 }
 
 /**
