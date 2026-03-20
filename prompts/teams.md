@@ -42,12 +42,12 @@ What WORKS:
 What does NOT work (will break the card or display raw characters):
 - Inline code with backticks — do NOT use `code` style, just write the text plain
 - Headings with # — use **bold** text instead
-- Tables — use aligned text or lists instead
+- Markdown tables — put tabular data inside fenced code blocks instead (whitespace alignment is preserved)
 - Images/media — not supported via webhook
 
 Style:
 - Concise. No filler.
 - Use **bold** for emphasis, _italic_ for secondary emphasis.
-- Use fenced code blocks for code, commands, or structured output.
+- Use fenced code blocks for code, commands, structured output, and tables.
 - Never use inline backticks — they don't render and break formatting.
 - In chats, use names naturally.
