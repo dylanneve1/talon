@@ -481,6 +481,45 @@ describe("config", () => {
     });
   });
 
+  describe("zod validation boundaries", () => {
+    it("rejects concurrency above max 20", async () => {
+      mockFs({ frontend: "terminal", concurrency: 25 });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow();
+    });
+
+    it("rejects concurrency below min 1", async () => {
+      mockFs({ frontend: "terminal", concurrency: 0 });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow();
+    });
+
+    it("rejects maxMessageLength below min 100", async () => {
+      mockFs({ frontend: "terminal", maxMessageLength: 50 });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow();
+    });
+
+    it("default model is exactly claude-sonnet-4-6", async () => {
+      mockFs({ frontend: "terminal" });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.model).toBe("claude-sonnet-4-6");
+    });
+
+    it("default pulse is exactly true", async () => {
+      mockFs({ frontend: "terminal" });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.pulse).toBe(true);
+    });
+  });
+
   describe("loadConfigFile edge cases", () => {
     it("handles corrupt talon.json gracefully", async () => {
       // Simulate a corrupt JSON by having readFileSync throw

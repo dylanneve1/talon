@@ -257,6 +257,102 @@ describe("dispatcher", () => {
     expect(getActiveCount()).toBe(0); // cleaned up even on error
   });
 
+  it("cleans up chatChains after queries complete (no map leak)", async () => {
+    const backend: QueryBackend = {
+      query: vi.fn(async () => ({
+        text: "ok",
+        durationMs: 10,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      })),
+    };
+
+    initDispatcher({
+      backend,
+      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      sendTyping: async () => {},
+      onActivity: () => {},
+    });
+
+    // Execute queries for two different chats
+    await execute({
+      chatId: "cleanup-A",
+      numericChatId: 100,
+      prompt: "a",
+      senderName: "U",
+      isGroup: false,
+      source: "message",
+    });
+    await execute({
+      chatId: "cleanup-B",
+      numericChatId: 200,
+      prompt: "b",
+      senderName: "U",
+      isGroup: false,
+      source: "message",
+    });
+
+    // After both complete, activeCount should be 0 (chains cleaned up)
+    expect(getActiveCount()).toBe(0);
+
+    // Execute another query for the same chatId — should work fine (no stale chain)
+    const result = await execute({
+      chatId: "cleanup-A",
+      numericChatId: 100,
+      prompt: "c",
+      senderName: "U",
+      isGroup: false,
+      source: "message",
+    });
+    expect(result.text).toBe("ok");
+  });
+
+  it("calls sendTyping at least once during execution", async () => {
+    const deps = createMockDeps();
+    let resolveQuery!: () => void;
+    (deps.backend.query as ReturnType<typeof vi.fn>).mockImplementation(
+      () =>
+        new Promise<{
+          text: string;
+          durationMs: number;
+          inputTokens: number;
+          outputTokens: number;
+          cacheRead: number;
+          cacheWrite: number;
+        }>((r) => {
+          resolveQuery = () =>
+            r({
+              text: "done",
+              durationMs: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+            });
+        }),
+    );
+    initDispatcher(deps);
+
+    const p = execute({
+      chatId: "typing-test",
+      numericChatId: 777,
+      prompt: "hi",
+      senderName: "U",
+      isGroup: false,
+      source: "message",
+    });
+
+    // Wait for the initial sendTyping call
+    await new Promise((r) => setTimeout(r, 50));
+    expect(deps.sendTyping).toHaveBeenCalledWith(777);
+    expect(deps.sendTyping.mock.calls.length).toBeGreaterThanOrEqual(1);
+
+    resolveQuery();
+    await p;
+  });
+
   it("serializes same-chat queries (FIFO)", async () => {
     const order: string[] = [];
     const backend: QueryBackend = {

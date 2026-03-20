@@ -115,6 +115,42 @@ describe("chat-settings", () => {
     });
   });
 
+  describe("resolveModelName — exhaustive alias coverage", () => {
+    it("resolves all base aliases correctly", () => {
+      expect(resolveModelName("sonnet")).toBe("claude-sonnet-4-6");
+      expect(resolveModelName("opus")).toBe("claude-opus-4-6");
+      expect(resolveModelName("haiku")).toBe("claude-haiku-4-5");
+    });
+
+    it("resolves all dot-separated version aliases", () => {
+      expect(resolveModelName("sonnet-4.6")).toBe("claude-sonnet-4-6");
+      expect(resolveModelName("opus-4.6")).toBe("claude-opus-4-6");
+      expect(resolveModelName("haiku-4.5")).toBe("claude-haiku-4-5");
+    });
+
+    it("resolves all dash-separated version aliases", () => {
+      expect(resolveModelName("sonnet-4-6")).toBe("claude-sonnet-4-6");
+      expect(resolveModelName("opus-4-6")).toBe("claude-opus-4-6");
+      expect(resolveModelName("haiku-4-5")).toBe("claude-haiku-4-5");
+    });
+
+    it("passes through completely unknown model names unchanged", () => {
+      expect(resolveModelName("gpt-4")).toBe("gpt-4");
+      expect(resolveModelName("llama-3")).toBe("llama-3");
+      expect(resolveModelName("mistral-large")).toBe("mistral-large");
+    });
+
+    it("passes through full claude model names unchanged (not aliases)", () => {
+      expect(resolveModelName("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
+      expect(resolveModelName("claude-opus-4-6")).toBe("claude-opus-4-6");
+      expect(resolveModelName("claude-haiku-4-5")).toBe("claude-haiku-4-5");
+    });
+
+    it("preserves original casing for unknown models", () => {
+      expect(resolveModelName("MyCustomModel")).toBe("MyCustomModel");
+    });
+  });
+
   describe("EFFORT_LEVELS", () => {
     it("contains all valid levels", () => {
       expect(EFFORT_LEVELS).toEqual(["off", "low", "medium", "high", "max"]);

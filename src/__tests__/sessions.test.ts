@@ -484,6 +484,98 @@ describe("sessions", () => {
     });
   });
 
+  describe("cost calculation math", () => {
+    it("calculates multi-component cost correctly (input + output + cache)", () => {
+      const chatId = "test-cost-math";
+      getSession(chatId);
+
+      // Use exact token counts to verify the formula:
+      // cost = (input * pricing.input + cacheWrite * pricing.cacheWrite +
+      //         cacheRead * pricing.cacheRead + output * pricing.output) / 1_000_000
+      // Sonnet: input=$3/M, output=$15/M, cacheRead=$0.3/M, cacheWrite=$3.75/M
+      recordUsage(chatId, {
+        inputTokens: 500_000,   // 500k * 3 / 1M = $1.50
+        outputTokens: 100_000,  // 100k * 15 / 1M = $1.50
+        cacheRead: 200_000,     // 200k * 0.3 / 1M = $0.06
+        cacheWrite: 100_000,    // 100k * 3.75 / 1M = $0.375
+        model: "claude-sonnet-4-6",
+      });
+
+      const usage = getSession(chatId).usage;
+      // Total: 1.50 + 1.50 + 0.06 + 0.375 = $3.435
+      expect(usage.estimatedCostUsd).toBeCloseTo(3.435, 3);
+    });
+
+    it("accumulates cost across multiple recordUsage calls", () => {
+      const chatId = "test-cost-accum";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 1_000_000,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      });
+      // Sonnet input: $3
+      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(3, 2);
+
+      recordUsage(chatId, {
+        inputTokens: 0,
+        outputTokens: 1_000_000,
+        cacheRead: 0,
+        cacheWrite: 0,
+      });
+      // + Sonnet output: $15. Total: $18
+      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(18, 2);
+    });
+  });
+
+  describe("cache hit rate tracking", () => {
+    it("tracks cache read tokens across multiple turns", () => {
+      const chatId = "test-cache-track-read";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 500,
+        cacheWrite: 200,
+      });
+      recordUsage(chatId, {
+        inputTokens: 150,
+        outputTokens: 75,
+        cacheRead: 800,
+        cacheWrite: 100,
+      });
+
+      const usage = getSession(chatId).usage;
+      expect(usage.totalCacheRead).toBe(1300);
+      expect(usage.totalCacheWrite).toBe(300);
+    });
+  });
+
+  describe("resetSession clears state", () => {
+    it("after reset, sessionId is undefined and turns is 0", () => {
+      const chatId = "test-reset-clear";
+      setSessionId(chatId, "some-session");
+      incrementTurns(chatId);
+      incrementTurns(chatId);
+      incrementTurns(chatId);
+
+      expect(getSession(chatId).sessionId).toBe("some-session");
+      expect(getSession(chatId).turns).toBe(3);
+
+      resetSession(chatId);
+
+      // getSession creates a fresh session, so check defaults
+      const fresh = getSession(chatId);
+      expect(fresh.sessionId).toBeUndefined();
+      expect(fresh.turns).toBe(0);
+      expect(fresh.usage.estimatedCostUsd).toBe(0);
+      expect(fresh.usage.totalInputTokens).toBe(0);
+    });
+  });
+
   describe("getActiveSessionCount", () => {
     it("returns the number of tracked sessions", () => {
       // Create a session so count is at least 1

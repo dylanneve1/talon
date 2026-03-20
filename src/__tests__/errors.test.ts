@@ -107,6 +107,82 @@ describe("classify", () => {
     expect(err.reason).toBe("network");
     expect(err.retryable).toBe(true);
   });
+
+  // Mutant killers: rate.?limit regex — .? allows optional char between rate and limit
+  it("matches 'rate limit' with space (rate.?limit regex)", () => {
+    const err = classify(new Error("rate limit exceeded"));
+    expect(err.reason).toBe("rate_limit");
+  });
+
+  it("matches 'ratelimit' without space (rate.?limit regex)", () => {
+    const err = classify(new Error("ratelimit exceeded"));
+    expect(err.reason).toBe("rate_limit");
+  });
+
+  // Mutant killers: retry.?after regex — .? allows optional char between retry and after
+  it("extracts retry-after with no separator (retryafter60)", () => {
+    const err = classify(new Error("ratelimit retryafter60"));
+    expect(err.reason).toBe("rate_limit");
+    expect(err.retryAfterMs).toBe(60_000);
+  });
+
+  it("extracts retry-after with hyphen separator (retry-after: 60)", () => {
+    const err = classify(new Error("rate limit hit, retry-after: 60"));
+    expect(err.reason).toBe("rate_limit");
+    expect(err.retryAfterMs).toBe(60_000);
+  });
+
+  // Mutant killers: status ?? 429 — default status when no status code in message
+  it("defaults to status 429 when rate limit message has no status code", () => {
+    const err = classify(new Error("rate limit exceeded, please slow down"));
+    expect(err.reason).toBe("rate_limit");
+    expect(err.status).toBe(429);
+  });
+
+  it("uses extracted status instead of 429 default when status present", () => {
+    // "503" would match overloaded first, so use a message that hits rate_limit with a non-429 status
+    const err = classify(new Error("rate limit hit, error 200 ok"));
+    expect(err.reason).toBe("rate_limit");
+    expect(err.status).toBe(200);
+  });
+
+  // Mutant killers: overloaded/503/capacity branch
+  it("classifies 'overloaded' keyword as overloaded", () => {
+    const err = classify(new Error("API is overloaded"));
+    expect(err.reason).toBe("overloaded");
+    expect(err.retryable).toBe(true);
+  });
+
+  it("classifies 'capacity' keyword as overloaded", () => {
+    const err = classify(new Error("at capacity, try again later"));
+    expect(err.reason).toBe("overloaded");
+    expect(err.retryable).toBe(true);
+  });
+
+  // Mutant killers: status ?? 503 for overloaded branch
+  it("defaults to status 503 when overloaded message has no status code", () => {
+    const err = classify(new Error("server is overloaded please wait"));
+    expect(err.reason).toBe("overloaded");
+    expect(err.status).toBe(503);
+  });
+
+  it("uses extracted status instead of 503 default for overloaded", () => {
+    // "503" is in the message so status would be 503 anyway — use a message with overloaded keyword + different status
+    const err = classify(new Error("overloaded, returned 502"));
+    expect(err.reason).toBe("overloaded");
+    expect(err.status).toBe(502);
+  });
+
+  // Mutant killers: context.*length regex — .* allows any chars between context and length
+  it("matches 'context length exceeded' (space between context and length)", () => {
+    const err = classify(new Error("context length exceeded"));
+    expect(err.reason).toBe("context_length");
+  });
+
+  it("matches 'context_length_exceeded' (underscore between context and length)", () => {
+    const err = classify(new Error("context_length_exceeded"));
+    expect(err.reason).toBe("context_length");
+  });
 });
 
 describe("friendlyMessage", () => {
