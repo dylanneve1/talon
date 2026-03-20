@@ -400,6 +400,15 @@ async function startChat(): Promise<void> {
 
   const { config } = await bootstrap({ frontendNames: ["terminal"] });
 
+  // Override frontend for the backend — talon chat always uses terminal,
+  // regardless of what the config file says. This prevents the backend from
+  // spawning telegram-tools or teams-tools MCP servers and ensures the
+  // system prompt loads terminal.md instead of teams.md/telegram.md.
+  (config as Record<string, unknown>).frontend = "terminal";
+  const { rebuildSystemPrompt } = await import("./util/config.js");
+  const { getPluginPromptAdditions } = await import("./core/plugin.js");
+  rebuildSystemPrompt(config, getPluginPromptAdditions());
+
   const gateway = new Gateway();
   const frontend = createTerminalFrontend(config, gateway);
   await frontend.init();
