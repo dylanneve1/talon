@@ -217,18 +217,30 @@ export function createTeamsFrontend(
               const contextUsed = u.lastPromptTokens;
               const contextMax = model.includes("opus") ? 1_000_000 : model.includes("sonnet") ? 1_000_000 : 200_000;
               const contextPct = contextMax > 0 ? Math.round((contextUsed / contextMax) * 100) : 0;
-              const statusText = [
-                "**Session**",
-                "",
-                `Model: ${model}`,
-                `Turns: ${info.turns}`,
-                `Context: ${(contextUsed / 1000).toFixed(0)}K / ${(contextMax / 1000).toFixed(0)}K (${contextPct}%)`,
-                `Cache: ${cacheHit}% hit`,
-                `Input: ${u.totalInputTokens.toLocaleString()} tokens`,
-                `Output: ${u.totalOutputTokens.toLocaleString()} tokens`,
-                `Avg response: ${avgMs > 0 ? (avgMs / 1000).toFixed(1) + "s" : "—"}`,
-              ].join("\n");
-              const card = buildAdaptiveCard(statusText);
+              const card = {
+                type: "message",
+                attachments: [{
+                  contentType: "application/vnd.microsoft.card.adaptive",
+                  contentUrl: null,
+                  content: {
+                    type: "AdaptiveCard",
+                    $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+                    version: "1.4",
+                    body: [
+                      { type: "TextBlock", text: "**Session**", wrap: true, size: "Medium", weight: "Bolder" },
+                      { type: "FactSet", facts: [
+                        { title: "Model", value: model },
+                        { title: "Turns", value: String(info.turns) },
+                        { title: "Context", value: `${(contextUsed / 1000).toFixed(0)}K / ${(contextMax / 1000).toFixed(0)}K (${contextPct}%)` },
+                        { title: "Cache", value: `${cacheHit}% hit` },
+                        { title: "Input", value: `${u.totalInputTokens.toLocaleString()} tokens` },
+                        { title: "Output", value: `${u.totalOutputTokens.toLocaleString()} tokens` },
+                        { title: "Avg response", value: avgMs > 0 ? `${(avgMs / 1000).toFixed(1)}s` : "—" },
+                      ]},
+                    ],
+                  },
+                }],
+              };
               await proxyFetch(webhookUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
