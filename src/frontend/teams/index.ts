@@ -58,7 +58,7 @@ export function createTeamsFrontend(
   let polling = false;
 
   const context: ContextManager = {
-    acquire: (chatId: number) => gateway.setContext(chatId),
+    acquire: (chatId: number, stringId?: string) => gateway.setContext(chatId, stringId),
     release: (chatId: number) => gateway.clearContext(chatId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };

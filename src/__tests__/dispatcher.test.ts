@@ -62,7 +62,7 @@ describe("dispatcher", () => {
       source: "message",
     });
 
-    expect(deps.context.acquire).toHaveBeenCalledWith(456);
+    expect(deps.context.acquire).toHaveBeenCalledWith(456, "456");
     expect(deps.context.release).toHaveBeenCalledWith(456);
   });
 

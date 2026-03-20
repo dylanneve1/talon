@@ -43,7 +43,7 @@ export interface QueryBackend {
  * can reach the messaging platform.
  */
 export interface ContextManager {
-  acquire(chatId: number): void;
+  acquire(chatId: number, stringId?: string): void;
   release(chatId: number): void;
   getMessageCount(chatId: number): number;
 }
