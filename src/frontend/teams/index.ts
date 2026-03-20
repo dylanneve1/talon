@@ -211,7 +211,16 @@ export function createTeamsFrontend(
               const u = info.usage;
               const cacheHit = (u.totalInputTokens + u.totalCacheRead) > 0
                 ? Math.round((u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) * 100) : 0;
-              const statusText = `**Session** turns: ${info.turns} · ${cacheHit}% cache\n\nin: ${u.totalInputTokens.toLocaleString()} · out: ${u.totalOutputTokens.toLocaleString()} tokens`;
+              const avgMs = info.turns > 0 ? Math.round(u.totalResponseMs / info.turns) : 0;
+              const statusText = [
+                "**Session**",
+                "",
+                `Turns: ${info.turns}`,
+                `Cache: ${cacheHit}% hit`,
+                `Input: ${u.totalInputTokens.toLocaleString()} tokens`,
+                `Output: ${u.totalOutputTokens.toLocaleString()} tokens`,
+                `Avg response: ${avgMs > 0 ? (avgMs / 1000).toFixed(1) + "s" : "—"}`,
+              ].join("\n");
               const card = buildAdaptiveCard(statusText);
               await proxyFetch(webhookUrl, {
                 method: "POST",
