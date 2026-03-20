@@ -10,9 +10,10 @@ const MAX_CHUNK = 10_000;
 /**
  * Build an Adaptive Card payload for the Power Automate webhook.
  *
- * Handles code blocks specially — Adaptive Card TextBlocks don't support
- * fenced code blocks (```), so we split the message into alternating
- * TextBlock (for prose) and CodeBlock (for code) elements.
+ * Fenced code blocks (```) are converted to monospace TextBlocks with
+ * a grey background, since Adaptive Card TextBlocks don't support
+ * markdown code fences and CodeBlock requires schema v1.6+ which
+ * Power Automate webhooks don't support.
  */
 export function buildAdaptiveCard(
   text: string,
@@ -23,7 +24,7 @@ export function buildAdaptiveCard(
   const card: Record<string, unknown> = {
     type: "AdaptiveCard",
     $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-    version: "1.6",
+    version: "1.4",
     body,
   };
 
@@ -48,43 +49,45 @@ export function buildAdaptiveCard(
 }
 
 /**
- * Build the card body elements, splitting code blocks into CodeBlock elements
- * and prose into TextBlock elements.
+ * Build card body — splits code blocks into monospace-styled containers.
  */
 function buildCardBody(text: string): Array<Record<string, unknown>> {
   const body: Array<Record<string, unknown>> = [];
 
   // Split on fenced code blocks: ```lang\ncode\n```
-  const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```\w*\n([\s\S]*?)```/g;
   let lastIndex = 0;
   let match;
 
   while ((match = codeBlockRegex.exec(text)) !== null) {
-    // Text before this code block
     const before = text.slice(lastIndex, match.index).trim();
     if (before) {
       body.push({ type: "TextBlock", text: before, wrap: true });
     }
 
-    // The code block itself
-    const language = match[1] || "plaintext";
-    const code = match[2].trimEnd();
+    // Render code as a monospace TextBlock inside a grey Container
+    const code = match[1].trimEnd();
     body.push({
-      type: "CodeBlock",
-      language,
-      codeSnippet: code,
+      type: "Container",
+      style: "emphasis",
+      bleed: false,
+      items: [{
+        type: "TextBlock",
+        text: code,
+        wrap: true,
+        fontType: "Monospace",
+        size: "Small",
+      }],
     });
 
     lastIndex = match.index + match[0].length;
   }
 
-  // Remaining text after last code block (or all text if no code blocks)
   const remaining = text.slice(lastIndex).trim();
   if (remaining) {
     body.push({ type: "TextBlock", text: remaining, wrap: true });
   }
 
-  // Fallback: if nothing was added (empty text), add empty TextBlock
   if (body.length === 0) {
     body.push({ type: "TextBlock", text: text || " ", wrap: true });
   }
