@@ -45,6 +45,7 @@
     "@grammyjs/transformer-throttler": "^1.2.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@opencode-ai/sdk": "^1.2.27",
+    "cheerio": "^1.2.0",
     "croner": "^10.0.1",
     "grammy": "^1.41.1",
     "picocolors": "^1.1.1",

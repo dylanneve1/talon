@@ -7,6 +7,7 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import * as cheerio from "cheerio";
 import { dirs } from "../util/paths.js";
 import {
   getRecentFormatted,
@@ -27,6 +28,16 @@ import {
 } from "../storage/cron-store.js";
 import { log } from "../util/log.js";
 import type { ActionResult } from "./types.js";
+
+/** Extract readable text from HTML using cheerio (proper DOM parser). */
+function extractText(html: string, maxLength = 8000): string {
+  const $ = cheerio.load(html);
+  // Remove non-content elements
+  $("script, style, noscript, iframe, svg, nav, footer, header").remove();
+  // Get text content, normalize whitespace
+  const text = $("body").text().replace(/\s+/g, " ").trim();
+  return text.slice(0, maxLength);
+}
 
 export async function handleSharedAction(
   body: Record<string, unknown>,
@@ -153,14 +164,8 @@ export async function handleSharedAction(
 
           // If content-type says image but bytes say otherwise, treat as text
           if (ct.startsWith("image/") && !isRealImage) {
-            const text = buffer.toString("utf-8")
-              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-              .replace(/<[^>]+>/g, " ")
-              .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-              .replace(/\s+/g, " ")
-              .trim();
-            return { ok: false, error: `Server returned an error page instead of an image. Content: ${text.slice(0, 500)}` };
+            const text = extractText(buffer.toString("utf-8"), 500);
+            return { ok: false, error: `Server returned an error page instead of an image. Content: ${text}` };
           }
 
           const ext = isRealImage
@@ -174,15 +179,9 @@ export async function handleSharedAction(
           return { ok: true, text: `Downloaded ${typeLabel} (${(buffer.length / 1024).toFixed(0)}KB) to: ${filePath}\nRead it with the Read tool or send it with send(type="file", file_path="${filePath}").` };
         }
         const raw = await resp.text();
-        const text = raw
-          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-          .replace(/\s+/g, " ")
-          .trim();
+        const text = extractText(raw);
         if (text.length < 20) return { ok: true, text: "(Page has no readable content)" };
-        return { ok: true, text: text.slice(0, 8000) };
+        return { ok: true, text };
       } catch (err) {
         return { ok: false, error: `Fetch failed: ${err instanceof Error ? err.message : err}` };
       }
