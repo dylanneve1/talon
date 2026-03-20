@@ -7,7 +7,7 @@
 
 // ── Error reasons ───────────────────────────────────────────────────────────
 
-export type ErrorReason =
+type ErrorReason =
   | "rate_limit"
   | "overloaded"
   | "network"

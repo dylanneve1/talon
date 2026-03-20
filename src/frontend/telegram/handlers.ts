@@ -120,7 +120,7 @@ export function getForwardContext(msg: {
   return `[Forwarded from ${from}]\n`;
 }
 
-export async function downloadTelegramFile(
+async function downloadTelegramFile(
   bot: Bot,
   config: TalonConfig,
   fileId: string,
@@ -478,7 +478,7 @@ async function deliverFinalText(
   }
 }
 
-export async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
+async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
     bot, config, chatId, numericChatId, replyToId, messageId,
     prompt, senderName, isGroup, senderUsername, senderId,

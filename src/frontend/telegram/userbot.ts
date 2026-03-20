@@ -266,36 +266,6 @@ export async function getHistory(params: {
   }
 }
 
-/** List participants in a group/supergroup. */
-export async function getParticipants(params: {
-  chatId: number | string;
-  limit?: number;
-  query?: string;
-}): Promise<string> {
-  if (!client) return "User client not connected. Run login script first.";
-
-  try {
-    const chatId = assertAllowedChat(params.chatId);
-    const participants = await client.getParticipants(chatId, {
-      limit: params.limit ?? 50,
-      search: params.query,
-    });
-
-    if (participants.length === 0) return "No participants found.";
-
-    return participants
-      .map((p) => {
-        const name = [p.firstName, p.lastName].filter(Boolean).join(" ");
-        const username = p.username ? ` @${p.username}` : "";
-        const bot = p.bot ? " [bot]" : "";
-        return `${name}${username}${bot} (id: ${p.id})`;
-      })
-      .join("\n");
-  } catch (err) {
-    return `Participants failed: ${err instanceof Error ? err.message : err}`;
-  }
-}
-
 /** Get detailed participant info including admin status, join date, etc. */
 export async function getParticipantDetails(params: {
   chatId: number | string;
