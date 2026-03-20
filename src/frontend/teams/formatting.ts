@@ -92,6 +92,13 @@ function buildCardBody(text: string): Array<Record<string, unknown>> {
     body.push({ type: "TextBlock", text: text || " ", wrap: true });
   }
 
+  // Strip inline backticks from TextBlocks — Teams doesn't render them
+  for (const el of body) {
+    if (el.type === "TextBlock" && typeof el.text === "string") {
+      el.text = (el.text as string).replace(/`([^`]+)`/g, "$1");
+    }
+  }
+
   return body;
 }
 
