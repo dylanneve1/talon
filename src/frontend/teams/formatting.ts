@@ -36,13 +36,23 @@ function markdownToCardBody(text: string): CardElement[] {
         body.push({ type: "TextBlock", text: cleanInline(token.text), wrap: true });
         break;
 
-      case "code":
+      case "code": {
+        // Each line as a separate TextBlock to preserve newlines
+        const lines = (token.text as string).split("\n");
         body.push({
           type: "Container",
           style: "emphasis",
-          items: [{ type: "TextBlock", text: token.text, wrap: true, fontType: "Monospace", size: "Small" }],
+          items: lines.map((line) => ({
+            type: "TextBlock",
+            text: line || " ",
+            wrap: false,
+            fontType: "Monospace",
+            size: "Small",
+            spacing: "None",
+          })),
         });
         break;
+      }
 
       case "list": {
         const listToken = token as Record<string, unknown>;
