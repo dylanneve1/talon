@@ -75,21 +75,23 @@ export async function handleMessage(
       ...(() => {
         const frontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
         const bridgeUrl = `http://127.0.0.1:${bridgePortFn()}`;
-        const env = { TALON_BRIDGE_URL: bridgeUrl, TALON_CHAT_ID: chatId };
+        const mcpEnv = { TALON_BRIDGE_URL: bridgeUrl, TALON_CHAT_ID: chatId };
         const servers: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {};
+        // Resolve tsx from Talon's node_modules (cwd may be ~/.talon/workspace/ which has no node_modules)
+        const tsxImport = resolve(import.meta.dirname ?? ".", "../../node_modules/tsx/dist/esm/index.mjs");
 
         if (frontends.includes("telegram")) {
           servers["telegram-tools"] = {
             command: "node",
-            args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "tools.ts")],
-            env,
+            args: ["--import", tsxImport, resolve(import.meta.dirname ?? ".", "tools.ts")],
+            env: mcpEnv,
           };
         }
         if (frontends.includes("teams")) {
           servers["teams-tools"] = {
             command: "node",
-            args: ["--import", "tsx", resolve(import.meta.dirname ?? ".", "../../frontend/teams/tools.ts")],
-            env,
+            args: ["--import", tsxImport, resolve(import.meta.dirname ?? ".", "../../frontend/teams/tools.ts")],
+            env: mcpEnv,
           };
         }
         return servers;
