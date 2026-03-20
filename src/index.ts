@@ -24,7 +24,13 @@ import type { Frontend } from "./bootstrap.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
+import { writeFileSync, unlinkSync } from "node:fs";
+import { files as pathFiles } from "./util/paths.js";
+
 const { config } = await bootstrap();
+
+// Write PID file for daemon management
+try { writeFileSync(pathFiles.pid, String(process.pid)); } catch { /* ok */ }
 
 // ── Create gateway + frontend ─────────────────────────────────────────────────
 
@@ -93,6 +99,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
+  try { unlinkSync(pathFiles.pid); } catch { /* ok */ }
   log("shutdown", "State saved");
   process.exit(0);
 }

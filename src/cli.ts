@@ -14,7 +14,7 @@
 
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { existsSync, readFileSync, mkdirSync, watchFile } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, watchFile, writeFileSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { dirs, files as pathFiles } from "./util/paths.js";
@@ -447,7 +447,8 @@ async function mainMenu(): Promise<void> {
   const action = await p.select({
     message: `Talon ${statusDot} ${pc.dim(`(${frontendLabel})`)}`,
     options: [
-      ...(!running ? [{ value: "start" as const, label: `Start ${frontendLabel}` }] : []),
+      ...(!running ? [{ value: "start" as const, label: `Start ${frontendLabel}`, hint: "background daemon" }] : []),
+      ...(running ? [{ value: "restart" as const, label: "Restart" }, { value: "stop" as const, label: "Stop" }] : []),
       { value: "chat", label: "Chat in terminal", hint: "talk to Talon here" },
       { value: "status", label: "Status", hint: "health and stats" },
       { value: "config", label: "Config", hint: "view or edit" },
@@ -457,13 +458,88 @@ async function mainMenu(): Promise<void> {
   });
   if (p.isCancel(action)) process.exit(0);
   switch (action) {
-    case "start": console.log(`\n  Starting Talon...\n`); process.chdir(PKG_ROOT); await import("./index.js"); break;
+    case "start": await daemonStart(); break;
+    case "stop": daemonStop(); break;
+    case "restart": await daemonRestart(); break;
     case "chat": process.chdir(PKG_ROOT); await startChat(); break;
     case "status": await showStatus(); break;
     case "config": await viewConfig(); break;
     case "logs": await tailLogs(); break;
     case "setup": await runSetup(); break;
   }
+}
+
+// ── Daemon management ───────────────────────────────────────────────────────
+
+const PID_FILE = pathFiles.pid;
+
+function readPid(): number | null {
+  try {
+    if (existsSync(PID_FILE)) {
+      const pid = parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
+      if (!isNaN(pid) && pid > 0) return pid;
+    }
+  } catch { /* corrupt */ }
+  return null;
+}
+
+function isProcessRunning(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
+async function daemonStart(): Promise<void> {
+  const existingPid = readPid();
+  if (existingPid && isProcessRunning(existingPid)) {
+    console.log(`  ${pc.yellow("!")} Talon is already running (PID ${existingPid})`);
+    console.log(`  Use ${pc.cyan("talon restart")} to restart, or ${pc.cyan("talon stop")} to stop.\n`);
+    return;
+  }
+
+  const { spawn } = await import("node:child_process");
+  const entryScript = resolve(PKG_ROOT, "src", "index.ts");
+
+  // Spawn detached process with stdio piped to /dev/null
+  const child = spawn("node", ["--import", "tsx", entryScript], {
+    cwd: PKG_ROOT,
+    detached: true,
+    stdio: "ignore",
+    env: { ...process.env },
+  });
+
+  child.unref();
+
+  if (child.pid) {
+    if (!existsSync(dirs.root)) mkdirSync(dirs.root, { recursive: true });
+    writeFileSync(PID_FILE, String(child.pid));
+    console.log(`  ${pc.green("●")} Talon started (PID ${child.pid})`);
+    console.log(`  ${pc.dim("Logs:")} talon logs`);
+    console.log(`  ${pc.dim("Stop:")} talon stop\n`);
+  } else {
+    console.log(`  ${pc.red("✖")} Failed to start Talon\n`);
+  }
+}
+
+function daemonStop(): boolean {
+  const pid = readPid();
+  if (!pid || !isProcessRunning(pid)) {
+    console.log(`  ${pc.dim("●")} Talon is not running\n`);
+    try { unlinkSync(PID_FILE); } catch { /* ok */ }
+    return false;
+  }
+
+  process.kill(pid, "SIGTERM");
+  console.log(`  ${pc.red("●")} Talon stopped (PID ${pid})`);
+  try { unlinkSync(PID_FILE); } catch { /* ok */ }
+  return true;
+}
+
+async function daemonRestart(): Promise<void> {
+  const was = daemonStop();
+  if (was) {
+    // Wait for graceful shutdown
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  await daemonStart();
 }
 
 // ── Entry point ─────────────────────────────────────────────────────────────
@@ -474,20 +550,26 @@ switch (command) {
   case "status":  showStatus(); break;
   case "config":  viewConfig(); break;
   case "logs":    tailLogs(); break;
-  case "start":   process.chdir(PKG_ROOT); import("./index.js"); break;
+  case "start":   printBanner(); await daemonStart(); break;
+  case "stop":    printBanner(); daemonStop(); break;
+  case "restart": printBanner(); await daemonRestart(); break;
+  case "run":     process.chdir(PKG_ROOT); import("./index.js"); break;
   case "chat":    process.chdir(PKG_ROOT); startChat(); break;
   case "doctor":  runDoctor(); break;
   case "--help": case "-h":
     printBanner();
     console.log("  Usage: talon [command]\n");
     console.log("  Commands:");
-    console.log(`    ${pc.cyan("setup")}    Guided setup wizard`);
-    console.log(`    ${pc.cyan("start")}    Start the bot`);
-    console.log(`    ${pc.cyan("chat")}     Chat with Talon in the terminal`);
-    console.log(`    ${pc.cyan("status")}   Show bot health`);
-    console.log(`    ${pc.cyan("config")}   View/edit configuration`);
-    console.log(`    ${pc.cyan("logs")}     Tail log file`);
-    console.log(`    ${pc.cyan("doctor")}   Validate environment`);
+    console.log(`    ${pc.cyan("setup")}      Guided setup wizard`);
+    console.log(`    ${pc.cyan("start")}      Start as background daemon`);
+    console.log(`    ${pc.cyan("stop")}       Stop the daemon`);
+    console.log(`    ${pc.cyan("restart")}    Restart the daemon`);
+    console.log(`    ${pc.cyan("run")}        Run in foreground (attached)`);
+    console.log(`    ${pc.cyan("chat")}       Terminal chat mode`);
+    console.log(`    ${pc.cyan("status")}     Show bot health`);
+    console.log(`    ${pc.cyan("config")}     View/edit configuration`);
+    console.log(`    ${pc.cyan("logs")}       Tail log file`);
+    console.log(`    ${pc.cyan("doctor")}     Validate environment`);
     console.log();
     console.log(`  Run ${pc.cyan("talon")} with no args for interactive menu.\n`);
     break;

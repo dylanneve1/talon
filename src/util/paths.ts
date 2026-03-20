@@ -67,4 +67,6 @@ export const files = {
   memory: resolve(TALON_ROOT, "workspace", "memory", "memory.md"),
   /** Telegram userbot session: ~/.talon/.user-session */
   userSession: resolve(TALON_ROOT, ".user-session"),
+  /** PID file for daemon mode: ~/.talon/talon.pid */
+  pid: resolve(TALON_ROOT, "talon.pid"),
 } as const;
