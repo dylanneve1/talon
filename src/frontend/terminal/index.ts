@@ -339,7 +339,7 @@ export function createTerminalFrontend(config: TalonConfig, gateway: Gateway): T
           const cacheHit = (u.totalInputTokens + u.totalCacheRead) > 0
             ? Math.round((u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) * 100) : 0;
           writeln();
-          writeln(`  ${pc.bold("Session")}  turns ${info.turns}  ·  $${u.estimatedCostUsd.toFixed(4)}  ·  ${cacheHit}% cache`);
+          writeln(`  ${pc.bold("Session")}  turns ${info.turns}  ·  ${cacheHit}% cache`);
           writeln(`  ${pc.dim(`in ${u.totalInputTokens.toLocaleString()}  ·  out ${u.totalOutputTokens.toLocaleString()} tokens`)}`);
           const plugins = getLoadedPlugins();
           if (plugins.length > 0) {

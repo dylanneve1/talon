@@ -47,7 +47,7 @@ export async function handleAdminCommand(
         const age = s.info.lastActive ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago` : "?";
         const title = titles.get(s.chatId) ?? s.chatId;
         const model = (getChatSettings(s.chatId).model ?? config.model).replace("claude-", "");
-        return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | $${s.info.usage.estimatedCostUsd.toFixed(3)} | ${model}`;
+        return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | ${model}`;
       });
       await ctx.reply(`<b>Active chats (${sessions.length})</b>\n\n` + lines.join("\n\n"), { parse_mode: "HTML" });
       return;
@@ -95,7 +95,6 @@ export async function handleAdminCommand(
     case "stats": {
       const h = getHealthStatus();
       const sessions = getAllSessions();
-      const cost = sessions.reduce((s, x) => s + x.info.usage.estimatedCostUsd, 0);
       const turns = sessions.reduce((s, x) => s + x.info.turns, 0);
       const mem = process.memoryUsage();
       await ctx.reply([
@@ -104,7 +103,6 @@ export async function handleAdminCommand(
         `<b>Messages:</b> ${h.totalMessagesProcessed}`,
         `<b>Sessions:</b> ${sessions.length}`,
         `<b>Turns:</b> ${turns}`,
-        `<b>Cost:</b> $${cost.toFixed(4)}`,
         `<b>Last active:</b> ${h.msSinceLastMessage < 60000 ? "now" : formatDuration(h.msSinceLastMessage) + " ago"}`, "",
         `<b>Memory:</b> ${(mem.heapUsed / 1024 / 1024).toFixed(1)}MB heap / ${(mem.rss / 1024 / 1024).toFixed(1)}MB rss`,
         `<b>Queue:</b> ${getActiveCount()}`,
@@ -152,26 +150,6 @@ export async function handleAdminCommand(
       return;
     }
 
-    case "cost": {
-      const sessions = getAllSessions();
-      const cost = sessions.reduce((s, x) => s + x.info.usage.estimatedCostUsd, 0);
-      const input = sessions.reduce((s, x) => s + x.info.usage.totalInputTokens, 0);
-      const output = sessions.reduce((s, x) => s + x.info.usage.totalOutputTokens, 0);
-      const cache = sessions.reduce((s, x) => s + x.info.usage.totalCacheRead, 0);
-      const turns = sessions.reduce((s, x) => s + x.info.turns, 0);
-      const cacheRatio = (input + cache) > 0 ? Math.round((cache / (input + cache)) * 100) : 0;
-      await ctx.reply([
-        `<b>Cost breakdown</b>`, "",
-        `  <b>Total</b>   $${cost.toFixed(4)}`,
-        `  <b>Per turn</b> $${turns > 0 ? (cost / turns).toFixed(4) : "0"} avg`,
-        `  <b>Turns</b>   ${turns} across ${sessions.length} sessions`, "",
-        `  <b>Input</b>   ${(input / 1000).toFixed(1)}K tokens`,
-        `  <b>Output</b>  ${(output / 1000).toFixed(1)}K tokens`,
-        `  <b>Cache</b>   ${cacheRatio}% hit rate`,
-      ].join("\n"), { parse_mode: "HTML" });
-      return;
-    }
-
     case "daily": {
       const today = new Date().toISOString().slice(0, 10);
       const logPath = `${dirs.logs}/${today}.md`;
@@ -183,34 +161,13 @@ export async function handleAdminCommand(
       return;
     }
 
-    case "top": {
-      const sessions = getAllSessions();
-      const sorted = [...sessions].sort((a, b) => b.info.usage.estimatedCostUsd - a.info.usage.estimatedCostUsd).slice(0, 10);
-      if (sorted.length === 0) { await ctx.reply("No sessions."); return; }
-      const lines = await Promise.all(sorted.map(async (s) => {
-        let title = s.chatId;
-        try {
-          const id = parseInt(s.chatId, 10);
-          if (!isNaN(id)) {
-            const chat = await bot.api.getChat(id);
-            title = "title" in chat ? (chat.title ?? s.chatId) : "first_name" in chat ? (chat.first_name ?? "DM") : s.chatId;
-          }
-        } catch { /* skip */ }
-        return `  $${s.info.usage.estimatedCostUsd.toFixed(4)}  ${escapeHtml(title)}  (${s.info.turns} turns)`;
-      }));
-      await ctx.reply(`<b>Top ${sorted.length} by cost</b>\n\n` + lines.join("\n"), { parse_mode: "HTML" });
-      return;
-    }
-
     default:
       await ctx.reply([
         "<b>/admin commands</b>", "",
-        "  stats    uptime, messages, cost, memory",
+        "  stats    uptime, messages, memory",
         "  errors   last 5 errors",
         "  chats    list all active chats",
-        "  cost     cost breakdown",
         "  daily    today's interaction log",
-        "  top      top 10 chats by cost",
         "  pulse    pulse status per chat",
         "  cron     list all cron jobs",
         "  broadcast &lt;text&gt;  send to all chats",

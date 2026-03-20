@@ -124,7 +124,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       const nameNote = info.sessionName ? ` "${info.sessionName}"` : "";
       appendDailyLog(
         "System",
-        `Session reset${nameNote}: ${info.turns} turns, ${duration}, $${info.usage.estimatedCostUsd.toFixed(4)}${modelNote}`,
+        `Session reset${nameNote}: ${info.turns} turns, ${duration}${modelNote}`,
       );
     }
 
@@ -443,8 +443,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       "",
       `<b>Session Stats</b>`,
       `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "\u2014"} \u00B7 avg ${avgResponseMs ? formatDuration(avgResponseMs) : "\u2014"} \u00B7 best ${fastestMs ? formatDuration(fastestMs) : "\u2014"}`,
-      `  Turns     ${info.turns}`,
-      `  Cost      $${u.estimatedCostUsd.toFixed(4)}${info.lastModel ? ` (${info.lastModel.replace("claude-", "")})` : ""}`,
+      `  Turns     ${info.turns}${info.lastModel ? ` (${info.lastModel.replace("claude-", "")})` : ""}`,
       "",
       `<b>Cache</b>     ${cacheHitPct}% hit`,
       `  Read ${formatTokenCount(u.totalCacheRead)}  Write ${formatTokenCount(u.totalCacheWrite)}`,
