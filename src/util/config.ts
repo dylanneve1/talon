@@ -206,7 +206,6 @@ export function loadConfig(): TalonConfig {
  * Called after plugins are loaded to inject their prompt contributions.
  */
 export function rebuildSystemPrompt(config: TalonConfig, pluginAdditions: string[]): void {
-  if (pluginAdditions.length === 0) return;
   const frontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
-  config.systemPrompt = loadSystemPrompt(frontends[0], pluginAdditions);
+  config.systemPrompt = loadSystemPrompt(frontends[0], pluginAdditions.length > 0 ? pluginAdditions : undefined);
 }
