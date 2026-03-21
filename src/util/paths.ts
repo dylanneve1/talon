@@ -65,6 +65,8 @@ export const files = {
   mediaIndex: resolve(TALON_ROOT, "data", "media-index.json"),
   /** Persistent memory: ~/.talon/workspace/memory/memory.md */
   memory: resolve(TALON_ROOT, "workspace", "memory", "memory.md"),
+  /** Self-bootstrapping identity: ~/.talon/workspace/identity.md */
+  identity: resolve(TALON_ROOT, "workspace", "identity.md"),
   /** Telegram userbot session: ~/.talon/.user-session */
   userSession: resolve(TALON_ROOT, ".user-session"),
   /** PID file for daemon mode: ~/.talon/talon.pid */

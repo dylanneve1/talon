@@ -4,10 +4,20 @@
  * Includes periodic cleanup of old uploads to prevent disk exhaustion.
  */
 
-import { existsSync, mkdirSync, readdirSync, rmdirSync, renameSync, statSync, unlinkSync, copyFileSync, cpSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmdirSync, renameSync, statSync, unlinkSync, copyFileSync, cpSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { log } from "./log.js";
-import { dirs } from "./paths.js";
+import { dirs, files as pathFiles } from "./paths.js";
+
+const IDENTITY_SEED = `# Identity
+
+<!-- This file defines who you are. It's empty because you're new here. -->
+<!-- On your first conversation, ask the user to help you fill this in: -->
+<!--   - What should I be called? -->
+<!--   - Who are you? Who created me? -->
+<!--   - What will I be used for? -->
+<!-- Then write your identity here using the Write tool. Keep it concise. -->
+`;
 
 // ── Layout migration ────────────────────────────────────────────────────────
 
@@ -100,6 +110,11 @@ export function initWorkspace(root: string): void {
   }
   // Ensure the caller-supplied root exists too (may differ in tests)
   if (!existsSync(root)) mkdirSync(root, { recursive: true });
+
+  // Seed identity.md for new workspaces
+  if (!existsSync(pathFiles.identity)) {
+    writeFileSync(pathFiles.identity, IDENTITY_SEED);
+  }
 }
 
 /** Calculate total disk usage of the workspace in bytes. */

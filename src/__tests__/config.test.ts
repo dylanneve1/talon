@@ -287,7 +287,7 @@ describe("config", () => {
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.systemPrompt).toContain("You are Talon, a sharp and helpful AI assistant.");
+      expect(config.systemPrompt).toContain("You are a sharp and helpful AI assistant.");
     });
 
     it("custom.md overrides base.md", async () => {

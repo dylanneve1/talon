@@ -101,13 +101,17 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
   const base = process.cwd();
   const parts: string[] = [];
 
+  // Identity — self-bootstrapping, maintained by the bot via conversation
+  const identity = readOptionalFile(pathFiles.identity);
+  if (identity) parts.push(`## Identity\n\n${identity}`);
+
   const soul = readOptionalFile(resolve(base, "prompts", "soul.md"));
   if (soul) parts.push(soul);
 
   // Load base prompt (shared across all frontends)
   const custom = readOptionalFile(resolve(base, "prompts", "custom.md"));
   const basePrompt = readOptionalFile(resolve(base, "prompts", "base.md"));
-  parts.push(custom || basePrompt || "You are Talon, a sharp and helpful AI assistant.");
+  parts.push(custom || basePrompt || "You are a sharp and helpful AI assistant.");
 
   // Load frontend-specific prompt
   const frontendPrompt = readOptionalFile(resolve(base, "prompts", `${frontend ?? "telegram"}.md`));
