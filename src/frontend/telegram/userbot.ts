@@ -14,6 +14,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { log, logError, logWarn } from "../../util/log.js";
 import { dirs, files } from "../../util/paths.js";
+import { formatSmartTimestamp } from "../../util/time.js";
 
 const SESSION_FILE = files.userSession;
 
@@ -199,10 +200,7 @@ export async function searchMessages(params: {
 
     return messages
       .map((m) => {
-        const date = new Date(m.date * 1000)
-          .toISOString()
-          .slice(0, 16)
-          .replace("T", " ");
+        const date = formatSmartTimestamp(m.date * 1000);
         const sender =
           m.sender && "firstName" in m.sender
             ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
@@ -247,10 +245,7 @@ export async function getHistory(params: {
     return [...messages]
       .reverse()
       .map((m) => {
-        const date = new Date(m.date * 1000)
-          .toISOString()
-          .slice(0, 16)
-          .replace("T", " ");
+        const date = formatSmartTimestamp(m.date * 1000);
         const sender =
           m.sender && "firstName" in m.sender
             ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
@@ -298,8 +293,7 @@ export async function getParticipantDetails(params: {
           if (cn === "UserStatusOffline") {
             const off = s as { wasOnline?: number };
             if (off.wasOnline) {
-              const date = new Date(off.wasOnline * 1000);
-              return `last seen ${date.toISOString().slice(0, 16).replace("T", " ")}`;
+              return `last seen ${formatSmartTimestamp(off.wasOnline * 1000)}`;
             }
             return "offline";
           }
@@ -349,7 +343,7 @@ export async function getUserInfo(params: {
       if (cn === "UserStatusOffline") {
         const off = s as { wasOnline?: number };
         if (off.wasOnline)
-          return `Last seen ${new Date(off.wasOnline * 1000).toISOString().slice(0, 16).replace("T", " ")}`;
+          return `Last seen ${formatSmartTimestamp(off.wasOnline * 1000)}`;
         return "Offline";
       }
       if (cn === "UserStatusRecently") return "Recently";
@@ -388,10 +382,7 @@ export async function getMessage(params: {
     const m = messages[0];
     if (!m) return `Message ${params.messageId} not found.`;
 
-    const date = new Date(m.date * 1000)
-      .toISOString()
-      .slice(0, 16)
-      .replace("T", " ");
+    const date = formatSmartTimestamp(m.date * 1000);
     const sender =
       m.sender && "firstName" in m.sender
         ? [m.sender.firstName, m.sender.lastName].filter(Boolean).join(" ")
@@ -515,7 +506,7 @@ export async function getPinnedMessages(params: {
 
     const lines = result.messages.map((m) => {
       if (!("message" in m)) return `[msg:${m.id}] (no text)`;
-      const date = new Date(m.date * 1000).toISOString().slice(0, 16).replace("T", " ");
+      const date = formatSmartTimestamp(m.date * 1000);
       const text = m.message?.slice(0, 200) ?? "(media only)";
       return `[msg:${m.id} ${date}] ${text}`;
     });
