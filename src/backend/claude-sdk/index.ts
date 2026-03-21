@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 import { classify } from "../../core/errors.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
 import { log, logError, logWarn } from "../../util/log.js";
+import { formatSmartTimestamp, formatFullDatetime } from "../../util/time.js";
 
 import type { QueryParams, QueryResult } from "../../core/types.js";
 
@@ -103,6 +104,7 @@ export async function handleMessage(
   };
 
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
+  const nowTag = `[${formatFullDatetime()}]`;
 
   // Session continuity: on the first turn after a restart (session exists but turns=0),
   // On first turn after restart, prepend recent messages for continuity
@@ -112,7 +114,7 @@ export async function handleMessage(
     if (recentMsgs.length > 0) {
       const contextLines = recentMsgs
         .map((m) => {
-          const time = new Date(m.timestamp).toISOString().slice(11, 16);
+          const time = formatSmartTimestamp(m.timestamp);
           return `[${time}] ${m.senderName}: ${m.text.slice(0, 300)}`;
         })
         .join("\n");
@@ -121,8 +123,8 @@ export async function handleMessage(
   }
 
   const prompt = isGroup
-    ? `${continuityPrefix}[${senderName}]${msgIdHint}: ${text}`
-    : `${continuityPrefix}${text}${msgIdHint}`;
+    ? `${continuityPrefix}${nowTag} [${senderName}]${msgIdHint}: ${text}`
+    : `${continuityPrefix}${nowTag}${msgIdHint} ${text}`;
   log(
     "agent",
     `[${chatId}] <- ${text.slice(0, 120)}${text.length > 120 ? "..." : ""}`,

@@ -16,6 +16,7 @@ import {
 } from "../storage/chat-settings.js";
 import { getRecentHistory, getLatestMessageId } from "../storage/history.js";
 import { log, logError } from "../util/log.js";
+import { formatSmartTimestamp } from "../util/time.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -130,7 +131,7 @@ async function pulseChat(chatId: string): Promise<void> {
 
   const summary = unread
     .map((m) => {
-      const time = new Date(m.timestamp).toISOString().slice(11, 16);
+      const time = formatSmartTimestamp(m.timestamp);
       const media = m.mediaType ? ` [${m.mediaType}]` : "";
       return `[msg:${m.msgId} ${time}] ${m.senderName}${media}: ${m.text.slice(0, 200)}`;
     })

@@ -4,6 +4,7 @@
  */
 
 import { getRecentBySenderId } from "../storage/history.js";
+import { formatSmartTimestamp } from "../util/time.js";
 
 /**
  * Enrich a DM prompt with sender metadata.
@@ -35,7 +36,7 @@ export function enrichGroupPrompt(
   const contextLines = priorMsgs
     .map(
       (m) =>
-        `  [${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.text.slice(0, 200)}`,
+        `  [${formatSmartTimestamp(m.timestamp)}] ${m.text.slice(0, 200)}`,
     )
     .join("\n");
   return `[${senderName}'s recent messages in this group:\n${contextLines}]\n\n${prompt}`;

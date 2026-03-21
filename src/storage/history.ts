@@ -12,6 +12,7 @@ import { dirname } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { log, logError } from "../util/log.js";
 import { files } from "../util/paths.js";
+import { formatSmartTimestamp } from "../util/time.js";
 
 export type HistoryMessage = {
   msgId: number;
@@ -138,7 +139,7 @@ function formatMessage(m: HistoryMessage): string {
     ? ` (sticker_file_id: ${m.stickerFileId})`
     : "";
   const fileTag = m.filePath ? ` (file: ${m.filePath})` : "";
-  const time = new Date(m.timestamp).toISOString().slice(11, 16);
+  const time = formatSmartTimestamp(m.timestamp);
   return `[msg:${m.msgId} ${time}] ${m.senderName}${replyTag}${mediaTag}${stickerTag}${fileTag}: ${m.text}`;
 }
 

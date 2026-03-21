@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
+import { setTimezone, formatFullDatetime } from "./time.js";
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ const configSchema = z.object({
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   braveApiKey: z.string().optional(),
   searxngUrl: z.string().default("http://localhost:8080"),
+  timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
   // Teams frontend (Power Automate webhooks)
@@ -161,7 +163,7 @@ You can create persistent recurring scheduled tasks using cron tools. Jobs survi
 - \`delete_cron_job\` — remove a job permanently
 Two job types: "message" sends text directly, "query" runs a Claude prompt with full tool access.`);
 
-  parts.push(`## Current Date\n${new Date().toISOString().slice(0, 10)}`);
+  parts.push(`## Current Date & Time\n${formatFullDatetime()}`);
 
   // Plugin system prompt contributions (injected by caller)
   if (pluginPromptAdditions) {
@@ -180,6 +182,9 @@ export function loadConfig(): TalonConfig {
   const fileConfig = loadConfigFile();
 
   const parsed = configSchema.parse(fileConfig);
+
+  // Apply timezone globally before building the system prompt
+  setTimezone(parsed.timezone);
 
   // Validate per-frontend requirements
   const frontends = Array.isArray(parsed.frontend) ? parsed.frontend : [parsed.frontend];
