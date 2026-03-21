@@ -46,7 +46,7 @@ const server = new McpServer({ name: "telegram-tools", version: "2.0.0" });
 
 server.tool(
   "send",
-  `Send content to the current Telegram chat. Supports text, photos, videos, files, voice, stickers, polls, locations, contacts, dice, and GIFs.
+  `Send content to the current Telegram chat. Supports text, photos, videos, files, audio, voice, stickers, polls, locations, contacts, dice, and GIFs.
 
 Examples:
   Text: send(type="text", text="Hello!")
@@ -54,6 +54,7 @@ Examples:
   With buttons: send(type="text", text="Pick one", buttons=[[{"text":"A","callback_data":"a"}]])
   Photo: send(type="photo", file_path="/path/to/img.jpg", caption="Look!")
   File: send(type="file", file_path="/path/to/report.pdf")
+  Audio: send(type="audio", file_path="/path/to/song.mp3", title="Song Name", performer="Artist")
   Poll: send(type="poll", question="Best language?", options=["Rust","Go","TS"])
   Dice: send(type="dice")
   Location: send(type="location", latitude=37.7749, longitude=-122.4194)
@@ -66,6 +67,7 @@ Examples:
         "file",
         "video",
         "voice",
+        "audio",
         "animation",
         "sticker",
         "poll",
@@ -110,6 +112,8 @@ Examples:
     phone_number: z.string().optional().describe("Contact phone"),
     first_name: z.string().optional().describe("Contact first name"),
     last_name: z.string().optional().describe("Contact last name"),
+    title: z.string().optional().describe("Audio title (for type=audio)"),
+    performer: z.string().optional().describe("Audio performer/artist (for type=audio)"),
     emoji: z.string().optional().describe("Dice emoji (🎲🎯🏀⚽🎳🎰)"),
     delay_seconds: z
       .number()
@@ -170,6 +174,16 @@ Examples:
           await callBridge("send_voice", {
             file_path: params.file_path,
             caption: params.caption,
+            reply_to: params.reply_to,
+          }),
+        );
+      case "audio":
+        return textResult(
+          await callBridge("send_audio", {
+            file_path: params.file_path,
+            caption: params.caption,
+            title: params.title,
+            performer: params.performer,
             reply_to: params.reply_to,
           }),
         );

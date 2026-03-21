@@ -186,7 +186,7 @@ export function createTelegramActionHandler(
       }
 
       // ── Media ──────────────────────────────────────────────────────────
-      case "send_file": case "send_photo": case "send_video": case "send_animation": case "send_voice": {
+      case "send_file": case "send_photo": case "send_video": case "send_animation": case "send_voice": case "send_audio": {
         const filePath = String(body.file_path ?? "");
         const caption = body.caption ? String(body.caption) : undefined;
         gateway.incrementMessages(chatId);
@@ -203,6 +203,7 @@ export function createTelegramActionHandler(
           case "send_photo": sent = await withRetry(() => bot.api.sendPhoto(chatId, file, { caption, reply_parameters: rp })); break;
           case "send_video": sent = await withRetry(() => bot.api.sendVideo(chatId, file, { caption, reply_parameters: rp })); break;
           case "send_animation": sent = await withRetry(() => bot.api.sendAnimation(chatId, file, { caption, reply_parameters: rp })); break;
+          case "send_audio": sent = await withRetry(() => bot.api.sendAudio(chatId, file, { caption, reply_parameters: rp, title: body.title as string | undefined, performer: body.performer as string | undefined })); break;
           default: sent = await withRetry(() => bot.api.sendVoice(chatId, file, { caption, reply_parameters: rp })); break;
         }
         return { ok: true, message_id: sent.message_id };
