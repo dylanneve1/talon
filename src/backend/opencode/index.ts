@@ -104,7 +104,7 @@ async function ensureSession(oc: OpencodeClient, chatId: string): Promise<string
 
 // ── Main handler ────────────────────────────────────────────────────────────
 
-export async function handleMessage(params: QueryParams): Promise<QueryResult> {
+export async function handleMessage(params: QueryParams, _retried = false): Promise<QueryResult> {
   if (!config) throw new Error("OpenCode agent not initialized");
 
   const { chatId, text, senderName, isGroup, onTextBlock } = params;
@@ -200,10 +200,10 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   } catch (err) {
     const classified = classify(err);
     // Session expired — reset and retry once
-    if (classified.reason === "session_expired") {
+    if (classified.reason === "session_expired" && !_retried) {
       logWarn("agent", `[${chatId}] OpenCode session expired, retrying`);
       resetSession(chatId);
-      return handleMessage(params);
+      return handleMessage(params, true);
     }
     logError("agent", `[${chatId}] OpenCode error: ${classified.message}`);
     throw classified;

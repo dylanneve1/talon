@@ -399,7 +399,9 @@ describe("cron-store", () => {
       flushCronJobs();
 
       expect(writeFileSyncMock).toHaveBeenCalled();
-      const writtenData = writeFileSyncMock.mock.calls[0][1] as string;
+      // Last write call is the actual data (earlier calls may be .bak backups)
+      const lastCall = writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
+      const writtenData = lastCall[1] as string;
       const parsed = JSON.parse(writtenData.trim());
       expect(parsed["flush-1"]).toBeDefined();
     });

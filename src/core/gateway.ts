@@ -85,7 +85,10 @@ export class Gateway {
 
   clearContext(chatId?: number | string): void {
     if (chatId === undefined) return;
-    const numId = typeof chatId === "number" ? chatId : Number(chatId);
+    const parsed = typeof chatId === "number" ? chatId : Number(chatId);
+    // For non-numeric IDs (e.g. Teams "19:abc..."), Number() returns NaN — look up by string
+    const numId = !isNaN(parsed) ? parsed : this.findContextByStringId(String(chatId));
+    if (numId === null) return;
     const ctx = this.chatContexts.get(numId);
     if (!ctx) return;
     ctx.refCount = Math.max(0, ctx.refCount - 1);

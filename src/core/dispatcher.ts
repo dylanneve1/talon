@@ -57,11 +57,13 @@ export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
   const { chatId } = params;
 
   // Chain this query behind any pending query for the same chat.
+  // Atomic get-or-insert: read and replace in one step to prevent
+  // two concurrent calls both seeing the same `prev`.
+  const prev = chatChains.get(chatId) ?? Promise.resolve();
   // Use .catch(() => {}) on prev to prevent unhandled rejections —
   // previous query's error is already handled by its own caller.
-  const prev = chatChains.get(chatId) ?? Promise.resolve();
   const queued = prev.catch(() => {}).then(() => run(params));
-  chatChains.set(chatId, queued);
+  chatChains.set(chatId, queued); // must happen before any await
 
   // Clean up chain entry when this is the last in the chain
   queued.catch(() => {}).finally(() => {

@@ -15,6 +15,10 @@ COPY prompts/ prompts/
 COPY bin/ bin/
 COPY tsconfig.json ./
 
+# Run as non-root user
+RUN useradd -m -u 1000 talon && chown -R talon:talon /app
+USER talon
+
 # Workspace persisted via volume
 VOLUME /app/workspace
 

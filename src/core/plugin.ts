@@ -245,9 +245,18 @@ function resolveEntryPoint(pluginDir: string): string | null {
 
 function extractPlugin(mod: Record<string, unknown>): TalonPlugin | null {
   // Support: export default { ... } or module.exports = { ... }
-  const plugin = (mod.default ?? mod) as TalonPlugin;
-  if (!plugin || typeof plugin !== "object" || !plugin.name) return null;
-  return plugin;
+  const candidate = mod.default ?? mod;
+  if (!candidate || typeof candidate !== "object") return null;
+  const plugin = candidate as Record<string, unknown>;
+  // Validate required field types
+  if (typeof plugin.name !== "string" || !plugin.name) return null;
+  // Validate optional fields are the right types if present
+  if (plugin.handleAction !== undefined && typeof plugin.handleAction !== "function") return null;
+  if (plugin.init !== undefined && typeof plugin.init !== "function") return null;
+  if (plugin.getSystemPromptAddition !== undefined && typeof plugin.getSystemPromptAddition !== "function") return null;
+  if (plugin.mcpServerPath !== undefined && typeof plugin.mcpServerPath !== "string") return null;
+  if (plugin.frontends !== undefined && !Array.isArray(plugin.frontends)) return null;
+  return candidate as TalonPlugin;
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────

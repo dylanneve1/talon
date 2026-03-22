@@ -204,10 +204,14 @@ export async function handleMessage(
             if (b.type === "tool_use") {
               toolCalls++;
               const tb = block as { type: string; name?: string; input?: Record<string, unknown> };
-              if (onToolUse && tb.name) onToolUse(tb.name, tb.input ?? {});
+              if (onToolUse && tb.name) {
+                try { onToolUse(tb.name, tb.input ?? {}); } catch { /* non-fatal */ }
+              }
               // If there's text before this tool call, send it as a progress message
               if (blockText.trim() && onTextBlock) {
-                await onTextBlock(blockText.trim());
+                try {
+                  await onTextBlock(blockText.trim());
+                } catch { /* non-fatal — don't abort the stream loop */ }
                 allResponseText += blockText;
                 blockText = "";
                 currentBlockText = "";

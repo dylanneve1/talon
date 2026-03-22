@@ -47,7 +47,15 @@ export function loadCronJobs(): void {
       }
     }
   } catch {
-    store = {};
+    // Primary corrupt — try backup
+    const bakFile = STORE_FILE + ".bak";
+    try {
+      if (existsSync(bakFile)) {
+        const raw = JSON.parse(readFileSync(bakFile, "utf-8"));
+        store = Array.isArray(raw) ? Object.fromEntries(raw.map((j: CronJob) => [j.id, j])) : raw;
+        log("cron", "Loaded from backup (primary was corrupt)");
+      }
+    } catch { /* backup also corrupt */ }
   }
   const count = Object.keys(store).length;
   if (count > 0) {
@@ -60,7 +68,11 @@ function save(): void {
   try {
     const dir = dirname(STORE_FILE);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileAtomic.sync(STORE_FILE, JSON.stringify(store, null, 2) + "\n");
+    const data = JSON.stringify(store, null, 2) + "\n";
+    if (existsSync(STORE_FILE)) {
+      try { writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE)); } catch { /* best effort */ }
+    }
+    writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch {
     // Non-fatal

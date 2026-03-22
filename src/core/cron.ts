@@ -90,6 +90,10 @@ function isDue(job: CronJob, now: Date): boolean {
     // Prevent duplicate runs — ensure at least 55 seconds since last execution
     if (job.lastRunAt && now.getTime() - job.lastRunAt < 55_000) return false;
 
+    // Guard against backward clock jumps (NTP sync, etc.) — if last run is in the
+    // future, skip until the clock catches up
+    if (job.lastRunAt && job.lastRunAt > now.getTime()) return false;
+
     return true;
   } catch {
     return false;
@@ -113,8 +117,8 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 async function executeJob(job: CronJob): Promise<void> {
   if (!deps) return;
 
-  const numericChatId = parseInt(job.chatId, 10);
-  if (isNaN(numericChatId)) {
+  const numericChatId = Number(job.chatId);
+  if (!Number.isFinite(numericChatId)) {
     logError("cron", `Invalid chatId for job "${job.name}": ${job.chatId}`);
     return;
   }

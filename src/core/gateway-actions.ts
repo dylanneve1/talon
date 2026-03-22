@@ -146,7 +146,8 @@ export async function handleSharedAction(
         const ct = resp.headers.get("content-type") ?? "";
 
         // Binary content: download and save to workspace
-        const isText = ct.includes("text/") || ct.includes("application/json");
+        const mimeType = ct.split(";")[0].trim().toLowerCase();
+        const isText = mimeType.startsWith("text/") || mimeType === "application/json";
         if (!isText) {
           const buffer = Buffer.from(await resp.arrayBuffer());
           if (buffer.length > 20 * 1024 * 1024) return { ok: false, error: "File too large (max 20MB)" };

@@ -57,7 +57,19 @@ export function loadHistory(): void {
       log("sessions", `Loaded history for ${chatHistories.size} chat(s)`);
     }
   } catch {
-    // Start fresh on parse error
+    // Primary file corrupt — try backup
+    const bakFile = STORE_FILE + ".bak";
+    try {
+      if (existsSync(bakFile)) {
+        const raw = JSON.parse(readFileSync(bakFile, "utf-8")) as Record<string, HistoryMessage[]>;
+        for (const [chatId, messages] of Object.entries(raw)) {
+          chatHistories.set(chatId, messages.slice(-MAX_HISTORY_PER_CHAT));
+        }
+        logError("sessions", "Loaded history from backup (primary was corrupt)");
+        return;
+      }
+    } catch { /* backup also corrupt */ }
+    logError("sessions", "History data corrupt and no valid backup — starting fresh");
   }
 }
 
@@ -70,7 +82,12 @@ function saveHistory(): void {
     for (const [chatId, messages] of chatHistories) {
       obj[chatId] = messages;
     }
-    writeFileAtomic.sync(STORE_FILE, JSON.stringify(obj) + "\n");
+    const data = JSON.stringify(obj) + "\n";
+    // Write backup of current file before overwriting
+    if (existsSync(STORE_FILE)) {
+      try { writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE)); } catch { /* best effort */ }
+    }
+    writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch (err) {
     logError("sessions", "Failed to persist history", err);
@@ -100,6 +117,8 @@ export function pushMessage(chatId: string, msg: HistoryMessage): void {
         if (oldest.done) break;
         chatHistories.delete(oldest.value);
       }
+      // Mark dirty so evicted chats are removed from disk on next save
+      dirty = true;
     }
     history = [];
     chatHistories.set(chatId, history);

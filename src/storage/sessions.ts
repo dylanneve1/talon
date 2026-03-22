@@ -65,6 +65,16 @@ export function loadSessions(): void {
       store = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
     }
   } catch {
+    // Primary file corrupt — try backup
+    const bakFile = STORE_FILE + ".bak";
+    try {
+      if (existsSync(bakFile)) {
+        store = JSON.parse(readFileSync(bakFile, "utf-8"));
+        logError("sessions", "Loaded from backup (primary was corrupt)");
+        return;
+      }
+    } catch { /* backup also corrupt */ }
+    logError("sessions", "Session data corrupt and no valid backup — starting fresh");
     store = {};
   }
 }
@@ -73,8 +83,13 @@ function saveSessions(): void {
   if (!dirty) return;
   try {
     ensureDir();
+    const data = JSON.stringify(store, null, 2) + "\n";
+    // Write backup of current file before overwriting
+    if (existsSync(STORE_FILE)) {
+      try { writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE)); } catch { /* best effort */ }
+    }
     // Atomic write: writes to temp file then renames — prevents corruption on crash
-    writeFileAtomic.sync(STORE_FILE, JSON.stringify(store, null, 2) + "\n");
+    writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch (err) {
     logError("sessions", "Failed to persist sessions", err);

@@ -32,7 +32,14 @@ export function loadChatSettings(): void {
       store = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
     }
   } catch {
-    store = {};
+    // Primary corrupt — try backup
+    const bakFile = STORE_FILE + ".bak";
+    try {
+      if (existsSync(bakFile)) {
+        store = JSON.parse(readFileSync(bakFile, "utf-8"));
+        log("settings", "Loaded from backup (primary was corrupt)");
+      }
+    } catch { /* backup also corrupt */ }
   }
   // Migrate legacy maxThinkingTokens → effort
   let migrated = 0;
@@ -74,7 +81,11 @@ function save(): void {
   try {
     const dir = dirname(STORE_FILE);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileAtomic.sync(STORE_FILE, JSON.stringify(store, null, 2) + "\n");
+    const data = JSON.stringify(store, null, 2) + "\n";
+    if (existsSync(STORE_FILE)) {
+      try { writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE)); } catch { /* best effort */ }
+    }
+    writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch {
     // Non-fatal
@@ -94,12 +105,20 @@ export function getChatSettings(chatId: string): ChatSettings {
   return store[chatId] ?? {};
 }
 
+function cleanupEmpty(chatId: string): void {
+  const s = store[chatId];
+  if (s && !s.model && !s.effort && s.pulse === undefined && s.pulseIntervalMs === undefined) {
+    delete store[chatId];
+  }
+}
+
 export function setChatModel(chatId: string, model: string | undefined): void {
   if (!store[chatId]) store[chatId] = {};
   if (model) {
     store[chatId].model = model;
   } else {
     delete store[chatId].model;
+    cleanupEmpty(chatId);
   }
   dirty = true;
   save();
@@ -114,6 +133,7 @@ export function setChatEffort(
     store[chatId].effort = effort;
   } else {
     delete store[chatId].effort;
+    cleanupEmpty(chatId);
   }
   dirty = true;
   save();
@@ -128,6 +148,7 @@ export function setChatPulse(
     store[chatId].pulse = enabled;
   } else {
     delete store[chatId].pulse;
+    cleanupEmpty(chatId);
   }
   dirty = true;
   save();
@@ -142,6 +163,7 @@ export function setChatPulseInterval(
     store[chatId].pulseIntervalMs = intervalMs;
   } else {
     delete store[chatId].pulseIntervalMs;
+    cleanupEmpty(chatId);
   }
   dirty = true;
   save();
