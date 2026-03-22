@@ -111,6 +111,11 @@ export function initWorkspace(root: string): void {
   // Ensure the caller-supplied root exists too (may differ in tests)
   if (!existsSync(root)) mkdirSync(root, { recursive: true });
 
+  // Ensure subdirectories exist (memory, uploads, logs, stickers)
+  for (const sub of [dirs.memory, dirs.uploads, dirs.logs, dirs.stickers]) {
+    if (!existsSync(sub)) mkdirSync(sub, { recursive: true });
+  }
+
   // Seed identity.md for new workspaces
   if (!existsSync(pathFiles.identity)) {
     writeFileSync(pathFiles.identity, IDENTITY_SEED);

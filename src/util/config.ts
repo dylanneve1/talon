@@ -4,6 +4,7 @@ import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
 import { setTimezone, formatFullDatetime } from "./time.js";
+import { logWarn } from "./log.js";
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
@@ -105,12 +106,16 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
   const identity = readOptionalFile(pathFiles.identity);
   if (identity) parts.push(`## Identity\n\n${identity}`);
 
-  const soul = readOptionalFile(resolve(base, "prompts", "soul.md"));
+  const soulPath = resolve(base, "prompts", "soul.md");
+  const soul = readOptionalFile(soulPath);
   if (soul) parts.push(soul);
+  else logWarn("config", `Core prompt file missing: ${soulPath}`);
 
   // Load base prompt (shared across all frontends)
   const custom = readOptionalFile(resolve(base, "prompts", "custom.md"));
-  const basePrompt = readOptionalFile(resolve(base, "prompts", "base.md"));
+  const basePath = resolve(base, "prompts", "base.md");
+  const basePrompt = readOptionalFile(basePath);
+  if (!custom && !basePrompt) logWarn("config", `Core prompt file missing: ${basePath}`);
   parts.push(custom || basePrompt || "You are a sharp and helpful AI assistant.");
 
   // Load frontend-specific prompt

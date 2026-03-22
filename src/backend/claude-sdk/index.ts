@@ -12,7 +12,8 @@ import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { getRecentHistory } from "../../storage/history.js";
 import { resolve } from "node:path";
 import { classify } from "../../core/errors.js";
-import { getPluginMcpServers } from "../../core/plugin.js";
+import { getPluginMcpServers, getPluginPromptAdditions } from "../../core/plugin.js";
+import { rebuildSystemPrompt } from "../../util/config.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { formatSmartTimestamp, formatFullDatetime } from "../../util/time.js";
 
@@ -41,6 +42,12 @@ export async function handleMessage(
     params;
   const session = getSession(chatId);
   const t0 = Date.now();
+
+  // Rebuild system prompt on first turn of a new/reset session so identity,
+  // memory, and workspace listing are fresh
+  if (session.turns === 0) {
+    rebuildSystemPrompt(config, getPluginPromptAdditions());
+  }
 
   // Per-chat settings override global config
   const chatSettings = getChatSettings(chatId);

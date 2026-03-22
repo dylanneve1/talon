@@ -285,6 +285,13 @@ server.tool(
   async (params) => textResult(await callBridge("unpin_message", params)),
 );
 
+server.tool(
+  "stop_poll",
+  "Stop an active poll and get the final results. Returns vote counts for each option.",
+  { message_id: z.number().describe("Message ID of the poll to stop") },
+  async (params) => textResult(await callBridge("stop_poll", params)),
+);
+
 // ── Chat info ────────────────────────────────────────────────────────────────
 
 server.tool(

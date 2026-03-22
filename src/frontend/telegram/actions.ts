@@ -414,6 +414,14 @@ export function createTelegramActionHandler(
         return { ok: true, text: `Deleted sticker pack "${name}".` };
       }
 
+      case "stop_poll": {
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "Required: message_id" };
+        const poll = await bot.api.stopPoll(chatId, msgId);
+        const results = poll.options.map((o) => `  ${o.text}: ${o.voter_count} vote${o.voter_count === 1 ? "" : "s"}`).join("\n");
+        return { ok: true, text: `Poll closed: "${poll.question}"\nTotal voters: ${poll.total_voter_count}\n\nResults:\n${results}` };
+      }
+
       case "download_media": {
         if (isUserClientReady()) {
           const { downloadMessageMedia } = await import("./userbot.js");
