@@ -260,39 +260,6 @@ export async function handleSharedAction(
       return { ok: true, text: `Deleted cron job "${job.name}" (${jobId})` };
     }
 
-    // ── Currency conversion ────────────────────────────────────────────
-
-    case "convert_currency": {
-      const amount = Number(body.amount ?? 1);
-      const from = String(body.from ?? "").toUpperCase();
-      const to = String(body.to ?? "").toUpperCase();
-      if (!from) return { ok: false, error: "Missing 'from' currency code (e.g. USD)" };
-      if (!to) return { ok: false, error: "Missing 'to' currency code (e.g. EUR)" };
-      if (isNaN(amount) || amount <= 0) return { ok: false, error: "Invalid amount" };
-
-      try {
-        // frankfurter.app — free, no API key, ECB rates, reliable
-        const resp = await fetch(
-          `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(from)}&symbols=${encodeURIComponent(to)}`,
-          { signal: AbortSignal.timeout(8_000) },
-        );
-        if (!resp.ok) {
-          const errBody = await resp.text().catch(() => "");
-          return { ok: false, error: `Currency API error: ${resp.status} ${errBody.slice(0, 200)}` };
-        }
-        const data = await resp.json() as { base: string; date: string; rates: Record<string, number> };
-        const rate = data.rates[to];
-        if (rate === undefined) return { ok: false, error: `Unknown currency: ${to}` };
-        const converted = amount * rate;
-        return {
-          ok: true,
-          text: `${amount.toLocaleString()} ${from} = ${converted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })} ${to}\nRate: 1 ${from} = ${rate} ${to} (ECB, ${data.date})`,
-        };
-      } catch (err) {
-        return { ok: false, error: `Currency conversion failed: ${err instanceof Error ? err.message : err}` };
-      }
-    }
-
     default:
       return null; // not a shared action — delegate to frontend
   }

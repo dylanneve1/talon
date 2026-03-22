@@ -564,30 +564,6 @@ server.tool(
   async (params) => textResult(await callBridge("list_media", { limit: params.limit })),
 );
 
-// ── Currency ────────────────────────────────────────────────────────────────
-
-server.tool(
-  "convert_currency",
-  `Convert between currencies using live ECB exchange rates.
-
-Examples:
-  convert_currency(amount=100, from="USD", to="EUR")
-  convert_currency(amount=1, from="BTC", to="USD")  — crypto not supported, ECB fiat only
-  convert_currency(from="GBP", to="ZAR")  — defaults to amount=1
-
-Supports all major fiat currencies: USD, EUR, GBP, JPY, CHF, CAD, AUD, NZD, SEK, NOK, DKK, PLN, CZK, HUF, RON, BGN, HRK, ISK, TRY, BRL, CNY, HKD, IDR, ILS, INR, KRW, MXN, MYR, PHP, SGD, THB, ZAR.`,
-  {
-    amount: z.number().optional().describe("Amount to convert (default: 1)"),
-    from: z.string().describe("Source currency code (e.g. USD, EUR, GBP)"),
-    to: z.string().describe("Target currency code (e.g. EUR, ZAR, JPY)"),
-  },
-  async (params) => textResult(await callBridge("convert_currency", {
-    amount: params.amount ?? 1,
-    from: params.from,
-    to: params.to,
-  })),
-);
-
 // ── Web ─────────────────────────────────────────────────────────────────────
 
 server.tool(
