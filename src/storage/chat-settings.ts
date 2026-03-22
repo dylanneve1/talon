@@ -20,6 +20,8 @@ export type ChatSettings = {
   pulse?: boolean;
   /** Per-chat pulse check interval in milliseconds. */
   pulseIntervalMs?: number;
+  /** Last message ID checked by pulse (persisted to avoid reprocessing on restart). */
+  pulseLastCheckMsgId?: number;
 };
 
 const STORE_FILE = files.chatSettings;
@@ -107,9 +109,21 @@ export function getChatSettings(chatId: string): ChatSettings {
 
 function cleanupEmpty(chatId: string): void {
   const s = store[chatId];
-  if (s && !s.model && !s.effort && s.pulse === undefined && s.pulseIntervalMs === undefined) {
+  if (s && !s.model && !s.effort && s.pulse === undefined && s.pulseIntervalMs === undefined && s.pulseLastCheckMsgId === undefined) {
     delete store[chatId];
   }
+}
+
+export function setPulseLastCheckMsgId(chatId: string, msgId: number | undefined): void {
+  if (!store[chatId]) store[chatId] = {};
+  if (msgId !== undefined) {
+    store[chatId].pulseLastCheckMsgId = msgId;
+  } else {
+    delete store[chatId].pulseLastCheckMsgId;
+    cleanupEmpty(chatId);
+  }
+  dirty = true;
+  // Don't force-save on every pulse check — let the auto-save interval handle it
 }
 
 export function setChatModel(chatId: string, model: string | undefined): void {

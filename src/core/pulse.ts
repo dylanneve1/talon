@@ -13,6 +13,7 @@ import {
   setChatPulse,
   getRegisteredPulseChats,
   getChatSettings,
+  setPulseLastCheckMsgId,
 } from "../storage/chat-settings.js";
 import { getRecentHistory, getLatestMessageId } from "../storage/history.js";
 import { log, logError } from "../util/log.js";
@@ -32,6 +33,11 @@ let activeIntervalMs = DEFAULT_INTERVAL_MS;
 export function initPulse(): void {
   for (const chatId of getRegisteredPulseChats()) {
     registeredChats.add(chatId);
+    // Restore persisted last-check message ID to avoid reprocessing on restart
+    const settings = getChatSettings(chatId);
+    if (settings.pulseLastCheckMsgId !== undefined) {
+      lastCheckMessageId.set(chatId, settings.pulseLastCheckMsgId);
+    }
   }
   if (registeredChats.size > 0) {
     log("pulse", `Loaded ${registeredChats.size} registered chat(s)`);
@@ -49,6 +55,12 @@ export function enablePulse(chatId: string): void {
 
 export function disablePulse(chatId: string): void {
   setChatPulse(chatId, false);
+}
+
+/** Clear pulse checkpoint for a chat (call on /reset to avoid stale state). */
+export function resetPulseCheckpoint(chatId: string): void {
+  lastCheckMessageId.delete(chatId);
+  setPulseLastCheckMsgId(chatId, undefined);
 }
 
 export function isPulseEnabled(chatId: string): boolean {
@@ -154,6 +166,7 @@ async function pulseChat(chatId: string): Promise<void> {
 
     // Mark as checked AFTER successful execution — if it failed, retry next tick
     lastCheckMessageId.set(chatId, latestMsgId);
+    setPulseLastCheckMsgId(chatId, latestMsgId);
     log("pulse", `Checked ${chatId} (${unread.length} new msgs)`);
   } catch (err) {
     logError("pulse", `Chat ${chatId} failed`, err);

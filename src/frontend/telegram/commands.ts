@@ -26,12 +26,14 @@ import {
   disablePulse,
   enablePulse,
   isPulseEnabled,
+  resetPulseCheckpoint,
 } from "../../core/pulse.js";
 import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
 import { handleAdminCommand } from "./admin.js";
+import { getLoadedPlugins } from "../../core/plugin.js";
 import {
   formatDuration,
   formatTokenCount,
@@ -82,6 +84,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         "  /memory -- view what Talon remembers",
         "  /ping -- health check with latency",
         "  /reset -- clear session and start fresh",
+        "  /plugins -- list loaded plugins",
         "  /help -- this message",
         "",
         "<b>Input</b>",
@@ -130,6 +133,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
 
     resetSession(cid);
     clearHistory(cid);
+    resetPulseCheckpoint(cid);
     await ctx.reply("Session cleared.");
   });
 
@@ -455,5 +459,24 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       `<b>Uptime</b>    ${uptime} \u00B7 ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
     ];
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+  });
+
+  bot.command("plugins", async (ctx) => {
+    const plugins = getLoadedPlugins();
+    if (plugins.length === 0) {
+      await ctx.reply("No plugins loaded.");
+      return;
+    }
+    const lines = plugins.map((p) => {
+      const ver = p.plugin.version ? ` v${p.plugin.version}` : "";
+      const desc = p.plugin.description ? ` — ${p.plugin.description}` : "";
+      const mcp = p.plugin.mcpServerPath ? " [MCP]" : "";
+      const fe = p.plugin.frontends?.length ? ` (${p.plugin.frontends.join(", ")})` : "";
+      return `• <b>${escapeHtml(p.plugin.name)}</b>${ver}${mcp}${fe}${desc}`;
+    });
+    await ctx.reply(
+      `<b>Plugins (${plugins.length})</b>\n\n${lines.join("\n")}`,
+      { parse_mode: "HTML" },
+    );
   });
 }
