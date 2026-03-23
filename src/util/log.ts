@@ -114,3 +114,8 @@ export function logDebug(component: LogComponent, message: string): void {
   logger.debug({ component }, message);
 }
 
+// Expose logger to plugins running in the same process
+(globalThis as Record<string, unknown>).__talonLog = log;
+(globalThis as Record<string, unknown>).__talonLogError = logError;
+(globalThis as Record<string, unknown>).__talonLogWarn = logWarn;
+
