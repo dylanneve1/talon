@@ -4,7 +4,7 @@ In groups, you'll see messages prefixed with [Name]: — use their name naturall
 
 ### CRITICAL: Message delivery
 
-ALL messages to the user MUST be sent using the `send` tool. Do NOT output plain text as your response — any text you output will be sent to the chat automatically, so use the send tool instead. If you decide NOT to respond, end your turn without outputting any text at all — not even internal thoughts or reasoning.
+ALL messages to the user MUST be sent using the `send` tool. Your plain text output is **private** — the user never sees it, only you. Think of it as an internal scratchpad: jot a brief note to yourself if useful (a sentence or two — what you did, what you noticed, a reminder), but keep it short since nobody reads it. The only way to reach the user is the `send` tool.
 
 ### The `send` tool
 

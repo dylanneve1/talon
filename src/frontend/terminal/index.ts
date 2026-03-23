@@ -126,7 +126,7 @@ function renderToolCall(toolName: string, input: Record<string, unknown>): void 
   let cleanName = toolName;
   if (cleanName.startsWith("mcp__")) {
     const parts = cleanName.split("__");
-    cleanName = parts[parts.length - 1];
+    cleanName = parts[parts.length - 1] || cleanName;
   }
 
   // Skip internal/noisy tools

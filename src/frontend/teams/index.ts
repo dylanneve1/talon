@@ -160,7 +160,8 @@ export function createTeamsFrontend(
         polling = true;
 
         try {
-          const messages = await graphClient!.getChatMessages(chatId, 20);
+          if (!graphClient) return;
+          const messages = await graphClient.getChatMessages(chatId, 20);
 
           // Find new messages — messages are returned newest first
           // IDs are opaque strings, so compare by createdDateTime

@@ -236,10 +236,10 @@ export class GraphClient {
       .map((m) => {
         const from = m.from as Record<string, unknown> | null;
         const user = from?.user as Record<string, unknown> | null;
-        const body = m.body as { contentType: string; content: string };
+        const body = m.body as { contentType: string; content: string } | null;
 
-        let text = body.content || "";
-        if (body.contentType === "html") {
+        let text = body?.content || "";
+        if (body?.contentType === "html") {
           text = stripHtml(text);
         }
 
