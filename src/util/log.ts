@@ -29,7 +29,8 @@ export type LogComponent =
   | "dispatcher"
   | "gateway"
   | "plugin"
-  | "teams";
+  | "teams"
+  | "config";
 
 const LOG_FILE = files.log;
 

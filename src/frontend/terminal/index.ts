@@ -113,9 +113,9 @@ function stopSpinner(): void {
 function renderAssistantMessage(text: string): void {
   writeln();
   writeln(`  ${pc.cyan("▍")} ${pc.bold(pc.cyan("Talon"))}`);
-  const wrapped = wrap(text, 4, COLS);
+  const wrapped = wrap(text, 2, COLS);
   for (const line of wrapped.split("\n")) {
-    writeln(`  ${pc.cyan("▍")}  ${line.trimStart()}`);
+    writeln(`  ${pc.cyan("▍")}${line}`);
   }
 }
 
