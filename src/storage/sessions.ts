@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
-import { logError } from "../util/log.js";
+import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { dirs, files } from "../util/paths.js";
 
@@ -229,9 +229,13 @@ export function getLastBotMessageId(chatId: string): number | undefined {
 }
 
 export function resetSession(chatId: string): void {
+  const session = store[chatId];
+  const turns = session?.turns ?? 0;
+  const name = session?.sessionName;
   delete store[chatId];
   dirty = true;
   saveSessions();
+  log("sessions", `[${chatId}] Reset${name ? ` "${name}"` : ""} (${turns} turns)`);
 }
 
 export type SessionInfo = {

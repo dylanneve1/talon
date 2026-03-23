@@ -233,7 +233,7 @@ describe("config", () => {
     it("builds system prompt from prompt files", async () => {
       mockFs(
         { botToken: "test-token" },
-        { "soul.md": "I am Talon.", "base.md": "Be helpful." },
+        { "identity.md": "I am Talon.", "base.md": "Be helpful." },
       );
 
       const { loadConfig } = await import("../util/config.js");
@@ -302,19 +302,19 @@ describe("config", () => {
       expect(config.systemPrompt).not.toContain("Default base prompt.");
     });
 
-    it("loads soul.md as the first section", async () => {
+    it("loads identity.md as the first section", async () => {
       mockFs(
         { frontend: "terminal" },
-        { "soul.md": "Soul identity section.", "base.md": "Base instructions." },
+        { "identity.md": "Identity section.", "base.md": "Base instructions." },
       );
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      // soul.md should come before base.md in the prompt
-      const soulIdx = config.systemPrompt.indexOf("Soul identity section.");
+      // identity.md should come before base.md in the prompt
+      const identityIdx = config.systemPrompt.indexOf("Identity section.");
       const baseIdx = config.systemPrompt.indexOf("Base instructions.");
-      expect(soulIdx).toBeGreaterThanOrEqual(0);
-      expect(baseIdx).toBeGreaterThan(soulIdx);
+      expect(identityIdx).toBeGreaterThanOrEqual(0);
+      expect(baseIdx).toBeGreaterThan(identityIdx);
     });
 
     it("includes memory.md in persistent memory section", async () => {

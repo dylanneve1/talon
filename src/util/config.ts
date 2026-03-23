@@ -107,12 +107,14 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
 
   const loaded: string[] = [];
 
-  // Identity — self-bootstrapping, maintained by the bot via conversation
-  const identity = readOptionalFile(pathFiles.identity);
-  if (identity) { parts.push(`## Identity\n\n${identity}`); loaded.push("identity"); }
-
-  const soul = readOptionalFile(resolve(promptDir, "soul.md"));
-  if (soul) { parts.push(soul); loaded.push("soul"); }
+  // Identity — static personality from prompts/identity.md + dynamic config from ~/.talon/workspace/identity.md
+  const identityPrompt = readOptionalFile(resolve(promptDir, "identity.md"));
+  const identityUser = readOptionalFile(pathFiles.identity);
+  if (identityPrompt || identityUser) {
+    const identityParts = [identityPrompt, identityUser].filter(Boolean);
+    parts.push(`## Identity\n\n${identityParts.join("\n\n")}`);
+    loaded.push("identity");
+  }
 
   // Load base prompt (shared across all frontends)
   const custom = readOptionalFile(resolve(promptDir, "custom.md"));
