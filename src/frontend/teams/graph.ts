@@ -64,6 +64,7 @@ export type ChatMessage = {
   chatId: string;
   createdDateTime: string;
   messageType: string;
+  edited: boolean;
 };
 
 // ── Token storage ────────────────────────────────────────────────────────────
@@ -251,6 +252,7 @@ export class GraphClient {
           chatId,
           createdDateTime: m.createdDateTime as string,
           messageType: m.messageType as string,
+          edited: m.lastEditedDateTime != null,
         };
       });
   }

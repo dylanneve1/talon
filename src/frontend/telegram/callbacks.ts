@@ -4,7 +4,7 @@
 
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
-import { resetSession } from "../../storage/sessions.js";
+
 import {
   getChatSettings,
   setChatModel,
@@ -56,11 +56,9 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       if (category === "model") {
         if (value === "reset") {
           setChatModel(cid, undefined);
-          resetSession(cid);
         } else {
           const resolved = resolveModelName(value);
           setChatModel(cid, resolved);
-          resetSession(cid);
         }
         await ctx.answerCallbackQuery({
           text: `Model: ${getChatSettings(cid).model ?? config.model}`,
@@ -201,16 +199,14 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       const model = data.slice(6);
       if (model === "reset") {
         setChatModel(cid, undefined);
-        resetSession(cid);
         await ctx.answerCallbackQuery({
           text: `Model: ${config.model} (default)`,
         });
       } else {
         const resolved = resolveModelName(model);
         setChatModel(cid, resolved);
-        resetSession(cid);
         await ctx.answerCallbackQuery({
-          text: `Model: ${resolved}. Session reset.`,
+          text: `Model: ${resolved}`,
         });
       }
       const current = getChatSettings(cid).model ?? config.model;

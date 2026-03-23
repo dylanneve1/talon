@@ -25,7 +25,7 @@ describe("teams formatting", () => {
       expect(attachment.contentType).toBe("application/vnd.microsoft.card.adaptive");
       const content = attachment.content as Record<string, unknown>;
       expect(content.type).toBe("AdaptiveCard");
-      expect(content.version).toBe("1.4");
+      expect(content.version).toBe("1.5");
       const body = content.body as Array<Record<string, unknown>>;
       expect(body[0].text).toBe("Hello Teams!");
       expect(body[0].wrap).toBe(true);

@@ -44,6 +44,10 @@ export const dirs = {
   memory: resolve(TALON_ROOT, "workspace", "memory"),
   /** Sticker packs: ~/.talon/workspace/stickers/ */
   stickers: resolve(TALON_ROOT, "workspace", "stickers"),
+  /** Prompt files: ~/.talon/prompts/ */
+  prompts: resolve(TALON_ROOT, "prompts"),
+  /** Per-chat message traces: ~/.talon/data/traces/ */
+  traces: resolve(TALON_ROOT, "data", "traces"),
 } as const;
 
 // ── Files ──────────────────────────────────────────────────────────────────

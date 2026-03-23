@@ -13,7 +13,7 @@ import { getChatSettings } from "../../storage/chat-settings.js";
 import { getRecentHistory } from "../../storage/history.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
-
+import { traceMessage } from "../../util/trace.js";
 
 // ── State ───────────────────────────────────────────────────────────────────
 
@@ -138,7 +138,8 @@ export async function handleMessage(params: QueryParams, _retried = false): Prom
     ? `${continuityPrefix}[${senderName}]${msgIdHint}: ${text}`
     : `${continuityPrefix}${text}${msgIdHint}`;
 
-  log("agent", `[${chatId}] <- ${text.slice(0, 120)}${text.length > 120 ? "..." : ""}`);
+  log("agent", `[${chatId}] <- (${text.length} chars)`);
+  traceMessage(chatId, "in", text, { senderName, isGroup });
 
   try {
     const resp = await oc.session.prompt({
@@ -187,7 +188,8 @@ export async function handleMessage(params: QueryParams, _retried = false): Prom
       }
     }
 
-    log("agent", `[${chatId}] -> ${responseText.slice(0, 80)}${responseText.length > 80 ? "..." : ""} (${durationMs}ms${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`);
+    log("agent", `[${chatId}] -> (${durationMs}ms${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`);
+    traceMessage(chatId, "out", responseText, { durationMs, toolCalls });
 
     return {
       text: responseText.trim(),

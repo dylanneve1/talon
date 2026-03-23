@@ -111,14 +111,28 @@ export function initWorkspace(root: string): void {
   // Ensure the caller-supplied root exists too (may differ in tests)
   if (!existsSync(root)) mkdirSync(root, { recursive: true });
 
-  // Ensure subdirectories exist (memory, uploads, logs, stickers)
-  for (const sub of [dirs.memory, dirs.uploads, dirs.logs, dirs.stickers]) {
+  // Ensure subdirectories exist
+  for (const sub of [dirs.memory, dirs.uploads, dirs.logs, dirs.stickers, dirs.prompts, dirs.traces]) {
     if (!existsSync(sub)) mkdirSync(sub, { recursive: true });
   }
 
   // Seed identity.md for new workspaces
   if (!existsSync(pathFiles.identity)) {
     writeFileSync(pathFiles.identity, IDENTITY_SEED);
+  }
+
+  // Seed prompt files from the package into ~/.talon/prompts/
+  // Only copies files that don't already exist — user edits are preserved.
+  const packagePrompts = resolve(process.cwd(), "prompts");
+  if (existsSync(packagePrompts)) {
+    for (const file of readdirSync(packagePrompts)) {
+      if (!file.endsWith(".md")) continue;
+      const dst = join(dirs.prompts, file);
+      if (!existsSync(dst)) {
+        copyFileSync(join(packagePrompts, file), dst);
+        log("workspace", `Seeded prompt: ${file}`);
+      }
+    }
   }
 }
 

@@ -307,13 +307,11 @@ export function createTerminalFrontend(config: TalonConfig, gateway: Gateway): T
         // ── Slash commands ──
         if (text.startsWith("/model")) {
           const { getChatSettings, setChatModel, resolveModelName } = await import("../../storage/chat-settings.js");
-          const { resetSession } = await import("../../storage/sessions.js");
           const arg = text.slice(7).trim();
           if (!arg) {
             renderSystemMessage(`Model: ${getChatSettings(String(TERMINAL_CHAT_ID)).model ?? config.model}`);
           } else {
             setChatModel(String(TERMINAL_CHAT_ID), resolveModelName(arg));
-            resetSession(String(TERMINAL_CHAT_ID));
             renderSystemMessage(`Model → ${resolveModelName(arg)}`);
           }
           reprompt(); return;

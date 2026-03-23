@@ -34,18 +34,19 @@ Messages render as Adaptive Cards. The formatting engine is NOT standard Markdow
 What WORKS:
 - **bold** and _italic_
 - [links](https://example.com)
-- Fenced code blocks (triple backticks) — these render as monospace text in a grey box
+- Fenced code blocks (triple backticks) — render as monospace in a grey box
+- Markdown tables (| header | ... | with |---|---| separator) — render as native grid tables
 - Numbered and bulleted lists
 
-What does NOT work (will break the card or display raw characters):
+What does NOT work:
 - Inline code with backticks — do NOT use `code` style, just write the text plain
 - Headings with # — use **bold** text instead
-- Markdown tables — put tabular data inside fenced code blocks instead (whitespace alignment is preserved)
 - Images/media — not supported via webhook
 
 Style:
 - Concise. No filler.
 - Use **bold** for emphasis, _italic_ for secondary emphasis.
-- Use fenced code blocks for code, commands, structured output, and tables.
+- Use markdown tables for structured/tabular data — they render as proper grid tables.
+- Use fenced code blocks for code, commands, and structured output.
 - Never use inline backticks — they don't render and break formatting.
 - In chats, use names naturally.

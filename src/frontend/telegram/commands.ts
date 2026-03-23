@@ -212,9 +212,8 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
 
     const model = resolveModelName(arg);
     setChatModel(cid, model);
-    resetSession(cid);
     await ctx.reply(
-      `Model set to <code>${escapeHtml(model)}</code>. Session reset.`,
+      `Model set to <code>${escapeHtml(model)}</code>.`,
       { parse_mode: "HTML" },
     );
   });

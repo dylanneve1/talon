@@ -4,7 +4,8 @@ import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
 import { setTimezone, formatFullDatetime } from "./time.js";
-import { logWarn } from "./log.js";
+import { log } from "./log.js";
+
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
@@ -98,35 +99,46 @@ function readOptionalFile(path: string): string {
   return "";
 }
 
+let lastLoggedPromptKey = "";
+
 function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): string {
-  const base = process.cwd();
+  const promptDir = dirs.prompts;
   const parts: string[] = [];
+
+  const loaded: string[] = [];
 
   // Identity — self-bootstrapping, maintained by the bot via conversation
   const identity = readOptionalFile(pathFiles.identity);
-  if (identity) parts.push(`## Identity\n\n${identity}`);
+  if (identity) { parts.push(`## Identity\n\n${identity}`); loaded.push("identity"); }
 
-  const soulPath = resolve(base, "prompts", "soul.md");
-  const soul = readOptionalFile(soulPath);
-  if (soul) parts.push(soul);
-  else logWarn("config", `Core prompt file missing: ${soulPath}`);
+  const soul = readOptionalFile(resolve(promptDir, "soul.md"));
+  if (soul) { parts.push(soul); loaded.push("soul"); }
 
   // Load base prompt (shared across all frontends)
-  const custom = readOptionalFile(resolve(base, "prompts", "custom.md"));
-  const basePath = resolve(base, "prompts", "base.md");
-  const basePrompt = readOptionalFile(basePath);
-  if (!custom && !basePrompt) logWarn("config", `Core prompt file missing: ${basePath}`);
-  parts.push(custom || basePrompt || "You are a sharp and helpful AI assistant.");
+  const custom = readOptionalFile(resolve(promptDir, "custom.md"));
+  const basePrompt = readOptionalFile(resolve(promptDir, "base.md"));
+  if (custom) { parts.push(custom); loaded.push("custom"); }
+  else if (basePrompt) { parts.push(basePrompt); loaded.push("base"); }
+  else parts.push("You are a sharp and helpful AI assistant.");
 
   // Load frontend-specific prompt
-  const frontendPrompt = readOptionalFile(resolve(base, "prompts", `${frontend ?? "telegram"}.md`));
-  if (frontendPrompt) parts.push(frontendPrompt);
+  const frontendFile = `${frontend ?? "telegram"}.md`;
+  const frontendPrompt = readOptionalFile(resolve(promptDir, frontendFile));
+  if (frontendPrompt) { parts.push(frontendPrompt); loaded.push(frontendFile.replace(".md", "")); }
 
   const memory = readOptionalFile(pathFiles.memory);
-  if (memory)
+  if (memory) {
     parts.push(
       `## Persistent Memory\n\nThe following is your memory file. Reference it naturally. Update it via the Write tool when you learn important new information.\nFile: ~/.talon/workspace/memory/memory.md\n\n${memory}`,
     );
+    loaded.push("memory");
+  }
+
+  const loadedKey = loaded.join(" + ");
+  if (loadedKey && loadedKey !== lastLoggedPromptKey) {
+    log("config", `System prompt: ${loadedKey}`);
+    lastLoggedPromptKey = loadedKey;
+  }
 
   // Workspace file listing for context
   const workspaceDir = dirs.workspace;

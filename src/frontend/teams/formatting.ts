@@ -5,6 +5,7 @@
  * token to the appropriate Adaptive Card element:
  *   - Paragraphs/text → TextBlock (with bold/italic markdown, no backticks)
  *   - Fenced code blocks → monospace TextBlock in emphasis Container
+ *   - Tables → native Table element (Adaptive Cards v1.5)
  *   - Lists → TextBlock with bullet/number prefixes
  *   - Headings → bold TextBlock
  */
@@ -68,6 +69,38 @@ function markdownToCardBody(text: string): CardElement[] {
         break;
       }
 
+      case "table": {
+        const tableToken = token as Record<string, unknown>;
+        const header = tableToken.header as Array<{ text: string }>;
+        const rows = tableToken.rows as Array<Array<{ text: string }>>;
+
+        const headerRow = {
+          type: "TableRow",
+          style: "accent",
+          cells: header.map((cell) => ({
+            type: "TableCell",
+            items: [{ type: "TextBlock", text: cleanInline(cell.text), weight: "Bolder", wrap: true }],
+          })),
+        };
+
+        const dataRows = rows.map((row) => ({
+          type: "TableRow",
+          cells: row.map((cell) => ({
+            type: "TableCell",
+            items: [{ type: "TextBlock", text: cleanInline(cell.text), wrap: true }],
+          })),
+        }));
+
+        body.push({
+          type: "Table",
+          gridStyle: "accent",
+          firstRowAsHeader: true,
+          columns: header.map(() => ({ width: 1 })),
+          rows: [headerRow, ...dataRows],
+        });
+        break;
+      }
+
       case "blockquote": {
         const bqToken = token as Record<string, unknown>;
         body.push({
@@ -124,7 +157,7 @@ export function buildAdaptiveCard(
   const card: Record<string, unknown> = {
     type: "AdaptiveCard",
     $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-    version: "1.4",
+    version: "1.5",
     body,
   };
 

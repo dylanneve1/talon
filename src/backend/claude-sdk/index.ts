@@ -15,6 +15,7 @@ import { classify } from "../../core/errors.js";
 import { getPluginMcpServers, getPluginPromptAdditions } from "../../core/plugin.js";
 import { rebuildSystemPrompt } from "../../util/config.js";
 import { log, logError, logWarn } from "../../util/log.js";
+import { traceMessage } from "../../util/trace.js";
 import { formatSmartTimestamp, formatFullDatetime } from "../../util/time.js";
 
 import type { QueryParams, QueryResult } from "../../core/types.js";
@@ -132,10 +133,8 @@ export async function handleMessage(
   const prompt = isGroup
     ? `${continuityPrefix}${nowTag} [${senderName}]${msgIdHint}: ${text}`
     : `${continuityPrefix}${nowTag}${msgIdHint} ${text}`;
-  log(
-    "agent",
-    `[${chatId}] <- ${text.slice(0, 120)}${text.length > 120 ? "..." : ""}`,
-  );
+  log("agent", `[${chatId}] <- (${text.length} chars)`);
+  traceMessage(chatId, "in", text, { senderName, isGroup });
 
   // SDK types are not fully exported; cast options at the boundary
   const qi = query({ prompt, options: options as Parameters<typeof query>[0]["options"] });
@@ -324,10 +323,13 @@ export async function handleMessage(
 
   log(
     "agent",
-    `[${chatId}] -> ${allResponseText.slice(0, 80)}${allResponseText.length > 80 ? "..." : ""} ` +
-      `(${durationMs}ms, in=${inputTokens} out=${outputTokens} cache=${cacheHitPct}%` +
+    `[${chatId}] -> (${durationMs}ms, in=${inputTokens} out=${outputTokens} cache=${cacheHitPct}%` +
       `${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`,
   );
+  traceMessage(chatId, "out", allResponseText, {
+    durationMs, inputTokens, outputTokens, cacheRead, cacheWrite, toolCalls,
+    model: activeModel,
+  });
 
   return {
     text: allResponseText.trim(),

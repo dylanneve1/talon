@@ -178,6 +178,7 @@ export function createTeamsFrontend(
           // Process in chronological order (oldest first)
           for (const msg of newMessages.reverse()) {
             if (!msg.text.trim()) continue;
+            if (msg.edited) continue;
 
             // Skip bot/workflow messages by display name (echo loop prevention).
             // We do NOT filter by user ID — the authenticated user also sends
