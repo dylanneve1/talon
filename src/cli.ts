@@ -395,10 +395,13 @@ async function runDoctor(): Promise<void> {
     const { execSync } = await import("node:child_process");
     const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
     if (doctorConfig?.claudeBinary) {
-      if (existsSync(doctorConfig.claudeBinary)) {
+      // Check if it's a PATH command or an absolute/relative file path
+      const cmd = process.platform === "win32" ? "where" : "which";
+      try {
+        execSync(`${cmd} ${doctorConfig.claudeBinary}`, { stdio: "pipe" });
         console.log(`  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`);
-      } else {
-        console.log(`  ${pc.red("\u2717")} Claude Code binary not found at ${pc.dim(doctorConfig.claudeBinary)}`);
+      } catch {
+        console.log(`  ${pc.red("\u2717")} Claude Code binary not found: ${pc.dim(doctorConfig.claudeBinary)}`);
         issues++;
       }
     } else {
@@ -525,7 +528,9 @@ async function daemonStart(): Promise<void> {
   const entryScript = resolve(PKG_ROOT, "src", "index.ts");
 
   // Spawn detached process with stdio piped to /dev/null
-  const child = spawn("npx", ["tsx", entryScript], {
+  // Use node with tsx's ESM loader to avoid .cmd wrapper issues on Windows
+  const tsxImport = resolve(PKG_ROOT, "node_modules", "tsx", "dist", "esm", "index.mjs");
+  const child = spawn(process.execPath, ["--import", tsxImport, entryScript], {
     cwd: PKG_ROOT,
     detached: true,
     stdio: "ignore",
