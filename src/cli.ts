@@ -34,6 +34,7 @@ function printBanner(): void {
 type Config = {
   frontend: string | string[];
   botToken?: string;
+  claudeBinary?: string;
   model: string;
   concurrency: number;
   pulse: boolean;
@@ -231,9 +232,19 @@ async function runSetup(): Promise<void> {
   }) : false;
   if (p.isCancel(pulse)) { p.cancel("Cancelled."); process.exit(0); }
 
+  // ── Claude binary path ──
+  const claudeBinaryInput = await p.text({
+    message: "Claude Code binary path",
+    placeholder: "leave empty for default (claude)",
+    initialValue: config.claudeBinary || "",
+  });
+  if (p.isCancel(claudeBinaryInput)) { p.cancel("Cancelled."); process.exit(0); }
+  const claudeBinary = (claudeBinaryInput as string).trim() || undefined;
+
   const newConfig: Config = {
     frontend: selectedFrontends.length === 1 ? selectedFrontends[0] : selectedFrontends,
     botToken: selectedFrontends.includes("telegram") ? botToken : undefined,
+    claudeBinary,
     model: model as string,
     concurrency: config.concurrency,
     pulse: pulse as boolean,
@@ -326,6 +337,7 @@ async function viewConfig(): Promise<void> {
     console.log(`  ${pc.dim("Teams port")}       ${config.teamsWebhookPort || 19878}`);
     console.log(`  ${pc.dim("Teams bot name")}   ${config.teamsBotDisplayName || pc.dim("not set")}`);
   }
+  if (config.claudeBinary) console.log(`  ${pc.dim("Claude binary")}    ${pc.green(config.claudeBinary)}`);
   console.log(`  ${pc.dim("Model")}            ${config.model}`);
   console.log(`  ${pc.dim("Concurrency")}      ${config.concurrency}`);
   console.log(`  ${pc.dim("Pulse")}            ${config.pulse ? pc.green("on") : pc.dim("off")} ${pc.dim(`(${Math.round(config.pulseIntervalMs / 60000)}m)`)}`);
@@ -379,7 +391,21 @@ async function runDoctor(): Promise<void> {
     if (!isConfigured(config)) issues++;
   } else { console.log(`  ${pc.red("\u2717")} No config file`); issues++; }
   console.log(existsSync(dirs.root) ? `  ${pc.green("\u2713")} Workspace: ${pc.dim(dirs.root)}` : `  ${pc.yellow("!")} Workspace missing`);
-  try { const { execSync } = await import("node:child_process"); execSync(process.platform === "win32" ? "where claude" : "which claude", { stdio: "pipe" }); console.log(`  ${pc.green("\u2713")} Claude Code installed`); } catch { console.log(`  ${pc.red("\u2717")} Claude Code not found`); issues++; }
+  try {
+    const { execSync } = await import("node:child_process");
+    const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
+    if (doctorConfig?.claudeBinary) {
+      if (existsSync(doctorConfig.claudeBinary)) {
+        console.log(`  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`);
+      } else {
+        console.log(`  ${pc.red("\u2717")} Claude Code binary not found at ${pc.dim(doctorConfig.claudeBinary)}`);
+        issues++;
+      }
+    } else {
+      execSync(process.platform === "win32" ? "where claude" : "which claude", { stdio: "pipe" });
+      console.log(`  ${pc.green("\u2713")} Claude Code installed`);
+    }
+  } catch { console.log(`  ${pc.red("\u2717")} Claude Code not found`); issues++; }
   try { const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) }); if (resp.ok) console.log(`  ${pc.green("\u2713")} Bot is running`); } catch { console.log(`  ${pc.dim("-")} Bot is not running`); }
   console.log(issues === 0 ? `\n  ${pc.green("All checks passed.")}\n` : `\n  ${pc.yellow(`${issues} issue(s) found.`)}\n`);
 }

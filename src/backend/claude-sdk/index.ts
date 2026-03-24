@@ -77,6 +77,7 @@ export async function handleMessage(
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     betas: ["context-1m-2025-08-07"],
+    ...(config.claudeBinary ? { pathToClaudeCodeExecutable: config.claudeBinary } : {}),
     disallowedTools: [
       "EnterPlanMode", "ExitPlanMode",
       "EnterWorktree", "ExitWorktree",
