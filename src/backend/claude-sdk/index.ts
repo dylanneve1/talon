@@ -24,12 +24,6 @@ let bridgePortFn: () => number = () => 19876;
 export function initAgent(cfg: TalonConfig, getBridgePort?: () => number): void {
   config = cfg;
   if (getBridgePort) bridgePortFn = getBridgePort;
-
-  // The Agent SDK spawns an embedded Claude Code subprocess.
-  // If CLAUDECODE is set (e.g. running from a Claude Code terminal),
-  // the subprocess refuses to start with a nested-session error that
-  // gets swallowed — causing an infinite hang on Windows.
-  delete process.env.CLAUDECODE;
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -67,7 +61,6 @@ export async function handleMessage(
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     betas: ["context-1m-2025-08-07"],
-    ...(config.claudeBinary ? { pathToClaudeCodeExecutable: config.claudeBinary } : {}),
     ...thinkingConfig,
     mcpServers: {
       "telegram-tools": {
@@ -111,7 +104,6 @@ export async function handleMessage(
   );
 
   // SDK types are not fully exported; cast options at the boundary
-  log("agent", `[${chatId}] spawning SDK query (model=${activeModel}, resume=${!!session.sessionId})`);
   const qi = query({ prompt, options: options as Parameters<typeof query>[0]["options"] });
 
   let currentBlockText = "";
@@ -122,7 +114,6 @@ export async function handleMessage(
   let cacheRead = 0;
   let cacheWrite = 0;
   let toolCalls = 0;
-  let eventCount = 0;
 
   // Streaming throttle
   let lastStreamUpdate = 0;
@@ -132,10 +123,6 @@ export async function handleMessage(
     for await (const message of qi) {
       const msg = message as Record<string, unknown>;
       const type = msg.type as string;
-      eventCount++;
-      if (type !== "stream_event") {
-        log("agent", `[${chatId}] SDK event #${eventCount}: ${type}${msg.subtype ? `/${msg.subtype}` : ""}`);
-      }
 
       // Session ID capture
       if (

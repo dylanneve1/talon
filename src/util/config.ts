@@ -18,7 +18,6 @@ const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
   backend: z.enum(["claude", "opencode"]).default("claude"),
-  claudeBinary: z.string().optional(),
   model: z.string().default("claude-sonnet-4-6"),
   maxMessageLength: z.number().int().min(100).default(4000),
   concurrency: z.number().int().min(1).max(20).default(1),
