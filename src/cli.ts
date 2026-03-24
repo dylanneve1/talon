@@ -38,6 +38,7 @@ function printBanner(): void {
 type Config = {
   frontend: string | string[];
   botToken?: string;
+  claudeBinary?: string;
   model: string;
   concurrency: number;
   pulse: boolean;
@@ -234,9 +235,19 @@ async function runSetup(): Promise<void> {
   }) : false;
   if (p.isCancel(pulse)) { p.cancel("Cancelled."); process.exit(0); }
 
+  // ── Claude binary path ──
+  const claudeBinaryInput = await p.text({
+    message: "Claude Code binary path",
+    placeholder: "leave empty for default (claude)",
+    initialValue: config.claudeBinary || "",
+  });
+  if (p.isCancel(claudeBinaryInput)) { p.cancel("Cancelled."); process.exit(0); }
+  const claudeBinary = (claudeBinaryInput as string).trim() || undefined;
+
   const newConfig: Config = {
     frontend: selectedFrontends.length === 1 ? selectedFrontends[0] : selectedFrontends,
     botToken: selectedFrontends.includes("telegram") ? botToken : undefined,
+    claudeBinary,
     model: model as string,
     concurrency: config.concurrency,
     pulse: pulse as boolean,
@@ -349,6 +360,9 @@ async function viewConfig(): Promise<void> {
   if (fes.includes("teams")) {
     console.log(`  ${pc.dim("Client ID")}        ${maskToken(config.teams?.clientId)}`);
     console.log(`  ${pc.dim("Tenant ID")}        ${maskToken(config.teams?.tenantId)}`);
+  }
+  if (config.claudeBinary) {
+    console.log(`  ${pc.dim("Claude binary")}    ${pc.green(config.claudeBinary)}`);
   }
   console.log(`  ${pc.dim("Model")}            ${config.model}`);
   console.log(`  ${pc.dim("Concurrency")}      ${config.concurrency}`);
@@ -467,8 +481,19 @@ async function runDoctor(): Promise<void> {
   // Claude Code
   try {
     const { execSync } = await import("node:child_process");
-    execSync("which claude", { stdio: "pipe" });
-    console.log(`  ${pc.green("\u2713")} Claude Code installed`);
+    const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
+    if (doctorConfig?.claudeBinary) {
+      const { existsSync: pathExists } = await import("node:fs");
+      if (pathExists(doctorConfig.claudeBinary)) {
+        console.log(`  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`);
+      } else {
+        console.log(`  ${pc.red("\u2717")} Claude Code binary not found at ${pc.dim(doctorConfig.claudeBinary)}`);
+        issues++;
+      }
+    } else {
+      execSync(process.platform === "win32" ? "where claude" : "which claude", { stdio: "pipe" });
+      console.log(`  ${pc.green("\u2713")} Claude Code installed`);
+    }
   } catch {
     console.log(`  ${pc.red("\u2717")} Claude Code not found ${pc.dim("(npm i -g @anthropic-ai/claude-code)")}`);
     issues++;
