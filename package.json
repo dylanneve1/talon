@@ -25,10 +25,10 @@
     "talon": "./bin/talon.js"
   },
   "scripts": {
-    "start": "node --import tsx src/index.ts",
-    "cli": "node --import tsx src/cli.ts",
-    "setup": "node --import tsx src/cli.ts setup",
-    "dev": "node --import tsx --watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "cli": "tsx src/cli.ts",
+    "setup": "tsx src/cli.ts setup",
+    "dev": "tsx --watch src/index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

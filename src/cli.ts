@@ -379,7 +379,7 @@ async function runDoctor(): Promise<void> {
     if (!isConfigured(config)) issues++;
   } else { console.log(`  ${pc.red("\u2717")} No config file`); issues++; }
   console.log(existsSync(dirs.root) ? `  ${pc.green("\u2713")} Workspace: ${pc.dim(dirs.root)}` : `  ${pc.yellow("!")} Workspace missing`);
-  try { const { execSync } = await import("node:child_process"); execSync("which claude", { stdio: "pipe" }); console.log(`  ${pc.green("\u2713")} Claude Code installed`); } catch { console.log(`  ${pc.red("\u2717")} Claude Code not found`); issues++; }
+  try { const { execSync } = await import("node:child_process"); execSync(process.platform === "win32" ? "where claude" : "which claude", { stdio: "pipe" }); console.log(`  ${pc.green("\u2713")} Claude Code installed`); } catch { console.log(`  ${pc.red("\u2717")} Claude Code not found`); issues++; }
   try { const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) }); if (resp.ok) console.log(`  ${pc.green("\u2713")} Bot is running`); } catch { console.log(`  ${pc.dim("-")} Bot is not running`); }
   console.log(issues === 0 ? `\n  ${pc.green("All checks passed.")}\n` : `\n  ${pc.yellow(`${issues} issue(s) found.`)}\n`);
 }
@@ -499,7 +499,7 @@ async function daemonStart(): Promise<void> {
   const entryScript = resolve(PKG_ROOT, "src", "index.ts");
 
   // Spawn detached process with stdio piped to /dev/null
-  const child = spawn("node", ["--import", "tsx", entryScript], {
+  const child = spawn("npx", ["tsx", entryScript], {
     cwd: PKG_ROOT,
     detached: true,
     stdio: "ignore",

@@ -77,6 +77,16 @@ export function loadSessions(): void {
     logError("sessions", "Session data corrupt and no valid backup — starting fresh");
     store = {};
   }
+  // SDK sessions don't survive process restarts — the embedded Claude Code
+  // subprocess is gone.  Clear stale session IDs so we don't try to resume
+  // a dead session (which causes the SDK to hang silently on Windows).
+  for (const session of Object.values(store)) {
+    if (session.sessionId) {
+      session.sessionId = undefined;
+      session.turns = 0;
+      dirty = true;
+    }
+  }
 }
 
 function saveSessions(): void {

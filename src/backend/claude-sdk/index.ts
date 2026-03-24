@@ -28,6 +28,12 @@ let bridgePortFn: () => number = () => 19876;
 export function initAgent(cfg: TalonConfig, getBridgePort?: () => number): void {
   config = cfg;
   if (getBridgePort) bridgePortFn = getBridgePort;
+
+  // The Agent SDK spawns an embedded Claude Code subprocess.
+  // If CLAUDECODE is set (e.g. running from a Claude Code terminal),
+  // the subprocess refuses to start with a nested-session error that
+  // gets swallowed — causing an infinite hang on Windows.
+  delete process.env.CLAUDECODE;
 }
 
 // ── Main handler ─────────────────────────────────────────────────────────────
@@ -92,15 +98,19 @@ export async function handleMessage(
 
         if (frontends.includes("telegram")) {
           servers["telegram-tools"] = {
-            command: "node",
-            args: ["--import", tsxImport, resolve(import.meta.dirname ?? ".", "tools.ts")],
+            command: process.platform === "win32" ? "npx" : "node",
+            args: process.platform === "win32"
+              ? ["tsx", resolve(import.meta.dirname ?? ".", "tools.ts")]
+              : ["--import", tsxImport, resolve(import.meta.dirname ?? ".", "tools.ts")],
             env: mcpEnv,
           };
         }
         if (frontends.includes("teams")) {
           servers["teams-tools"] = {
-            command: "node",
-            args: ["--import", tsxImport, resolve(import.meta.dirname ?? ".", "../../frontend/teams/tools.ts")],
+            command: process.platform === "win32" ? "npx" : "node",
+            args: process.platform === "win32"
+              ? ["tsx", resolve(import.meta.dirname ?? ".", "../../frontend/teams/tools.ts")]
+              : ["--import", tsxImport, resolve(import.meta.dirname ?? ".", "../../frontend/teams/tools.ts")],
             env: mcpEnv,
           };
         }
