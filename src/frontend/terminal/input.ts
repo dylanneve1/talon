@@ -1,183 +1,244 @@
 /**
- * Terminal input handler — readline wrapper with paste detection.
+ * Terminal input — raw stdin mode with bracketed paste detection.
  *
- * Paste detection: when multiple "line" events fire within 50ms (as happens
- * during paste), they're buffered and submitted as a single message.
+ * No readline. We handle all input ourselves:
+ *   - Raw mode for full keyboard control
+ *   - Bracketed paste mode (\x1b[200~ ... \x1b[201~) for paste detection
+ *   - Long/multi-line pastes collapsed into [Pasted ~N lines]
+ *   - Backspace on a paste clears the whole thing
+ *   - Ctrl+C to exit, Ctrl+U to clear line
  *
- * Long pastes (>50 chars or multi-line) are collapsed into a compact
- * [Pasted N lines (X chars)] indicator. Backspace deletes the whole paste.
- * Like Claude Code's paste behavior.
+ * This is how Claude Code, OpenCode, and Codex CLI handle input.
  */
 
-import {
-  createInterface,
-  type Interface as ReadlineInterface,
-} from "node:readline";
+import { emitKeypressEvents } from "node:readline";
 import pc from "picocolors";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type InputHandler = {
-  readonly rl: ReadlineInterface;
   onLine(callback: (text: string) => void): void;
   prompt(): void;
   waitForInput(): Promise<string>;
   close(): void;
+  pause(): void;
+  resume(): void;
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const PASTE_DEBOUNCE_MS = 50;
-const PASTE_COLLAPSE_THRESHOLD = 50; // chars — collapse pastes longer than this
+const PASTE_COLLAPSE_LINES = 3;
+const PASTE_COLLAPSE_CHARS = 150;
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 export function createInput(promptStr: string): InputHandler {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: promptStr,
-  });
-
   let lineCallback: ((text: string) => void) | null = null;
-  let pasteLines: string[] = [];
-  let pasteTimer: ReturnType<typeof setTimeout> | null = null;
   let pendingResolve: ((value: string) => void) | null = null;
+  let paused = false;
 
-  // Pending paste state — when a paste is collapsed into [Pasted ...],
-  // the full text is stored here. Next Enter submits it, backspace clears it.
-  let pendingPasteText: string | null = null;
+  // Input buffer
+  let buffer = "";
 
-  /** Erase N visual lines upward (for clearing wrapped readline echo). */
-  function eraseLines(count: number): void {
-    for (let i = 0; i < count; i++) {
-      process.stdout.write("\x1b[2K"); // clear line
-      if (i < count - 1) process.stdout.write("\x1b[A"); // move up
+  // Paste state
+  let inBracketedPaste = false;
+  let pasteContent = "";
+  let hasPendingPaste = false; // paste collapsed, waiting for Enter/Backspace
+  let pendingPasteText = ""; // the full paste text
+
+  // ── Drawing ──
+
+  function redrawLine(): void {
+    let display: string;
+    if (hasPendingPaste) {
+      const lines = pendingPasteText.split("\n").length;
+      const label =
+        lines > 1
+          ? `[Pasted ~${lines} lines]`
+          : `[Pasted ${pendingPasteText.length} chars]`;
+      display = `${promptStr}${pc.dim(label)}`;
+    } else {
+      display = `${promptStr}${buffer}`;
     }
-    process.stdout.write("\r"); // return to column 0
+    process.stdout.write(`\x1b[2K\r${display}`);
   }
 
-  /** Show the paste indicator, clearing any echoed text first. */
-  function showPasteIndicator(text: string): void {
-    const lines = text.split("\n").length;
-    const chars = text.length;
-    const label =
-      lines > 1
-        ? `[Pasted ${lines} lines (${chars} chars)]`
-        : `[Pasted ${chars} chars]`;
+  function submit(text: string): void {
+    buffer = "";
+    hasPendingPaste = false;
+    pendingPasteText = "";
+    process.stdout.write("\n");
 
-    // Calculate how many visual lines readline echoed (prompt + text wrapping)
-    const termCols = process.stdout.columns || 80;
-    const promptLen = 4; // "  ❯ " visible length
-    let visualLines = 0;
-    for (const line of text.split("\n")) {
-      visualLines += Math.max(
-        1,
-        Math.ceil((line.length + promptLen) / termCols),
-      );
-    }
-    eraseLines(visualLines);
-
-    process.stdout.write(`${promptStr}${pc.dim(label)}`);
-  }
-
-  rl.on("line", (raw) => {
-    // If we had a pending paste and the user just pressed Enter (empty line),
-    // submit the pending paste text.
-    if (pendingPasteText !== null && raw === "") {
-      const text = pendingPasteText;
-      pendingPasteText = null;
-      if (pendingResolve) {
-        const resolve = pendingResolve;
-        pendingResolve = null;
-        resolve(text);
-      } else if (lineCallback) {
-        lineCallback(text);
-      }
+    if (pendingResolve) {
+      const resolve = pendingResolve;
+      pendingResolve = null;
+      resolve(text);
       return;
     }
-
-    // If we had a pending paste but user typed something new, discard the
-    // pending paste and treat this as fresh input.
-    if (pendingPasteText !== null) {
-      pendingPasteText = null;
-    }
-
-    pasteLines.push(raw);
-
-    if (pasteTimer) {
-      clearTimeout(pasteTimer);
-    } else {
-      // First line — hide prompt so subsequent pasted lines don't show ❯
-      rl.setPrompt("");
-    }
-
-    pasteTimer = setTimeout(() => {
-      const text = pasteLines.join("\n").trim();
-      pasteLines = [];
-      pasteTimer = null;
-      rl.setPrompt(promptStr);
-
-      if (!text) return;
-
-      const isMultiLine = text.includes("\n");
-      const isLong = text.length > PASTE_COLLAPSE_THRESHOLD;
-
-      if (isMultiLine || isLong) {
-        // Collapse: clear the echoed mess and show a compact indicator.
-        // Store the full text — Enter submits, backspace clears.
-        pendingPasteText = text;
-        showPasteIndicator(text);
-        // Don't submit yet — wait for Enter to confirm.
-        return;
-      }
-
-      // Short single-line input — submit immediately (normal behavior).
-      if (pendingResolve) {
-        const resolve = pendingResolve;
-        pendingResolve = null;
-        resolve(text);
-        return;
-      }
-
-      if (lineCallback) lineCallback(text);
-    }, PASTE_DEBOUNCE_MS);
-  });
-
-  // Handle keypress for backspace-to-clear-paste
-  if (process.stdin.isTTY) {
-    process.stdin.on("keypress", (_ch: string, key: { name?: string }) => {
-      if (!key) return;
-      if (pendingPasteText !== null && key.name === "backspace") {
-        // Clear the whole paste
-        pendingPasteText = null;
-        eraseLines(1);
-        rl.setPrompt(promptStr);
-        process.stdout.write(promptStr);
-      }
-    });
+    if (lineCallback) lineCallback(text);
   }
 
-  return {
-    rl,
+  // ── Raw mode setup ──
 
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+  }
+  process.stdin.resume();
+  emitKeypressEvents(process.stdin);
+
+  // Enable bracketed paste mode
+  process.stdout.write("\x1b[?2004h");
+
+  process.stdin.on(
+    "keypress",
+    (
+      str: string | undefined,
+      key: {
+        name?: string;
+        ctrl?: boolean;
+        meta?: boolean;
+        shift?: boolean;
+        sequence?: string;
+      },
+    ) => {
+      if (paused) return;
+
+      const seq = key?.sequence ?? str ?? "";
+
+      // ── Bracketed paste detection ──
+      if (seq.includes("\x1b[200~")) {
+        inBracketedPaste = true;
+        pasteContent = seq.replace("\x1b[200~", "");
+        return;
+      }
+      if (inBracketedPaste) {
+        if (seq.includes("\x1b[201~")) {
+          // End of paste
+          pasteContent += seq.replace("\x1b[201~", "");
+          inBracketedPaste = false;
+
+          const text = pasteContent;
+          pasteContent = "";
+          const lineCount = text.split("\n").length;
+
+          if (
+            lineCount >= PASTE_COLLAPSE_LINES ||
+            text.length > PASTE_COLLAPSE_CHARS
+          ) {
+            // Collapse into indicator
+            hasPendingPaste = true;
+            pendingPasteText = text;
+            buffer = "";
+            redrawLine();
+          } else {
+            // Short paste — inline it
+            buffer += text.replace(/\n/g, " ");
+            redrawLine();
+          }
+        } else {
+          pasteContent += seq;
+        }
+        return;
+      }
+
+      // ── Normal key handling ──
+
+      // Ctrl+C — exit
+      if (key?.ctrl && key.name === "c") {
+        process.stdout.write("\n");
+        // Disable bracketed paste before exit
+        process.stdout.write("\x1b[?2004l");
+        if (process.stdin.isTTY) process.stdin.setRawMode(false);
+        process.exit(0);
+      }
+
+      // Ctrl+U — clear line
+      if (key?.ctrl && key.name === "u") {
+        buffer = "";
+        hasPendingPaste = false;
+        pendingPasteText = "";
+        redrawLine();
+        return;
+      }
+
+      // Enter — submit
+      if (key?.name === "return") {
+        if (hasPendingPaste) {
+          submit(pendingPasteText);
+        } else if (buffer.trim()) {
+          submit(buffer);
+        } else {
+          // Empty enter — just redraw prompt
+          process.stdout.write("\n");
+          redrawLine();
+        }
+        return;
+      }
+
+      // Backspace
+      if (key?.name === "backspace") {
+        if (hasPendingPaste) {
+          // Clear entire paste
+          hasPendingPaste = false;
+          pendingPasteText = "";
+          buffer = "";
+          redrawLine();
+        } else if (buffer.length > 0) {
+          buffer = buffer.slice(0, -1);
+          redrawLine();
+        }
+        return;
+      }
+
+      // Ignore special keys (arrows, function keys, etc.)
+      if (key?.name && key.name.length > 1 && !key.ctrl) return;
+      if (key?.ctrl || key?.meta) return;
+
+      // Regular character
+      if (str && str.length > 0 && !str.startsWith("\x1b")) {
+        if (hasPendingPaste) {
+          // Typing after a paste replaces it
+          hasPendingPaste = false;
+          pendingPasteText = "";
+          buffer = str;
+        } else {
+          buffer += str;
+        }
+        redrawLine();
+      }
+    },
+  );
+
+  return {
     onLine(callback) {
       lineCallback = callback;
     },
 
     prompt() {
-      rl.prompt();
+      paused = false;
+      redrawLine();
     },
 
     waitForInput(): Promise<string> {
       return new Promise((resolve) => {
         pendingResolve = resolve;
-        rl.prompt();
+        paused = false;
+        redrawLine();
       });
     },
 
+    pause() {
+      paused = true;
+    },
+
+    resume() {
+      paused = false;
+    },
+
     close() {
-      rl.close();
+      process.stdout.write("\x1b[?2004l"); // disable bracketed paste
+      if (process.stdin.isTTY) process.stdin.setRawMode(false);
+      process.stdin.pause();
     },
   };
 }

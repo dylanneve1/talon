@@ -164,16 +164,13 @@ export function createTerminalFrontend(
       clearCommands();
       registerBuiltinCommands();
 
-      // ── Readline control ──
-      // Only this file touches rl.pause/resume. Renderer never does.
-
       function pauseInput(): void {
-        input.rl.pause();
+        input.pause();
       }
 
       function reprompt(): void {
         renderer.writeln(); // blank line before prompt
-        input.rl.resume();
+        input.resume();
         input.prompt();
       }
 
@@ -205,7 +202,13 @@ export function createTerminalFrontend(
         reprompt,
         initNewChat,
         waitForInput: () => input.waitForInput(),
-        close: () => input.close(),
+        close: () => {
+          renderer.writeln();
+          renderer.writeln(`  ${pc.dim("Goodbye!")}`);
+          renderer.writeln();
+          input.close();
+          process.exit(0);
+        },
       };
 
       input.onLine(async (text) => {
@@ -278,13 +281,6 @@ export function createTerminalFrontend(
           renderer.writeError(err instanceof Error ? err.message : String(err));
           reprompt();
         }
-      });
-
-      input.rl.on("close", () => {
-        renderer.writeln();
-        renderer.writeln(`  ${pc.dim("Goodbye!")}`);
-        renderer.writeln();
-        process.exit(0);
       });
 
       input.prompt();
