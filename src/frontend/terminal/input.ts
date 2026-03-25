@@ -1,9 +1,8 @@
 /**
  * Terminal input — raw stdin with manual key parsing.
  *
- * No readline, no emitKeypressEvents. We read raw data from stdin and
- * parse keys + escape sequences ourselves. This gives us full control
- * over bracketed paste detection and avoids all readline/keypress bugs.
+ * No readline, no emitKeypressEvents. Raw data from stdin, parsed manually.
+ * Bracketed paste mode for proper paste detection.
  */
 
 import pc from "picocolors";
@@ -23,7 +22,6 @@ export type InputHandler = {
 
 const PASTE_COLLAPSE_LINES = 3;
 const PASTE_COLLAPSE_CHARS = 150;
-
 const PASTE_START = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 
@@ -34,52 +32,66 @@ export function createInput(promptStr: string): InputHandler {
   let pendingResolve: ((value: string) => void) | null = null;
   let paused = false;
 
-  // Input buffer
+  // The full input is: buffer + (optional collapsed paste attachment)
+  // buffer    = text the user has typed (visible, editable)
+  // pastePart = collapsed paste content (shown as dim [Pasted ...] tag after buffer)
+  // Backspace when cursor is at end of buffer+paste removes the paste first.
   let buffer = "";
+  let pastePart: string | null = null; // non-null = paste attached
 
-  // Paste state
+  // Bracketed paste accumulation
   let inPaste = false;
-  let pasteBuffer = "";
-  let pendingPaste: string | null = null; // collapsed paste awaiting Enter/Backspace
+  let pasteAccum = "";
 
   // ── Drawing ──
 
   function redraw(): void {
-    let display: string;
-    if (pendingPaste !== null) {
-      const lines = pendingPaste.split("\n").length;
-      const label =
+    let display = `${promptStr}${buffer}`;
+    if (pastePart !== null) {
+      const lines = pastePart.split("\n").length;
+      const tag =
         lines > 1
           ? `[Pasted ~${lines} lines]`
-          : `[Pasted ${pendingPaste.length} chars]`;
-      display = `${promptStr}${pc.dim(label)}`;
-    } else {
-      display = `${promptStr}${buffer}`;
+          : `[Pasted ${pastePart.length} chars]`;
+      display += ` ${pc.dim(tag)}`;
     }
     process.stdout.write(`\x1b[2K\r${display}`);
   }
 
-  function submit(text: string): void {
-    // For collapsed paste: prepend any text typed before the paste
-    const full = prePasteBuffer ? prePasteBuffer + "\n" + text : text;
+  function getFullText(): string {
+    if (pastePart !== null) {
+      return buffer ? `${buffer}\n${pastePart}` : pastePart;
+    }
+    return buffer;
+  }
+
+  function submit(): void {
+    const text = getFullText();
     buffer = "";
-    pendingPaste = null;
-    prePasteBuffer = "";
+    pastePart = null;
     process.stdout.write("\n");
 
     if (pendingResolve) {
       const resolve = pendingResolve;
       pendingResolve = null;
-      resolve(full);
+      resolve(text);
       return;
     }
-    if (lineCallback) lineCallback(full);
+    if (lineCallback) lineCallback(text);
   }
 
-  function clearPaste(): void {
-    pendingPaste = null;
-    buffer = prePasteBuffer;
-    prePasteBuffer = "";
+  function handlePasteComplete(text: string): void {
+    const lineCount = text.split("\n").length;
+    if (
+      lineCount >= PASTE_COLLAPSE_LINES ||
+      text.length > PASTE_COLLAPSE_CHARS
+    ) {
+      // Collapse — attach to current buffer (buffer stays as-is)
+      pastePart = text;
+    } else {
+      // Short paste — inline into buffer
+      buffer += text.replace(/\n/g, " ");
+    }
     redraw();
   }
 
@@ -90,67 +102,61 @@ export function createInput(promptStr: string): InputHandler {
   }
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
-
-  // Enable bracketed paste
-  process.stdout.write("\x1b[?2004h");
+  process.stdout.write("\x1b[?2004h"); // enable bracketed paste
 
   process.stdin.on("data", (chunk: string) => {
     if (paused) return;
 
-    // ── Bracketed paste handling ──
-    // Check if this chunk contains paste markers
+    // ── Bracketed paste ──
     if (chunk.includes(PASTE_START)) {
       inPaste = true;
-      // Content may follow the start marker in the same chunk
-      pasteBuffer = chunk.split(PASTE_START).slice(1).join(PASTE_START);
-      // Check if end marker is also in this chunk (small paste)
-      if (pasteBuffer.includes(PASTE_END)) {
-        const text = pasteBuffer.split(PASTE_END)[0]!;
+      pasteAccum = chunk.split(PASTE_START).slice(1).join(PASTE_START);
+      if (pasteAccum.includes(PASTE_END)) {
+        const text = pasteAccum.split(PASTE_END)[0]!;
         inPaste = false;
-        pasteBuffer = "";
+        pasteAccum = "";
         handlePasteComplete(text);
       }
       return;
     }
-
     if (inPaste) {
       if (chunk.includes(PASTE_END)) {
-        pasteBuffer += chunk.split(PASTE_END)[0]!;
-        const text = pasteBuffer;
+        pasteAccum += chunk.split(PASTE_END)[0]!;
+        const text = pasteAccum;
         inPaste = false;
-        pasteBuffer = "";
+        pasteAccum = "";
         handlePasteComplete(text);
       } else {
-        pasteBuffer += chunk;
+        pasteAccum += chunk;
       }
       return;
     }
 
-    // ── Normal input — process each byte/char ──
+    // ── Normal input ──
     for (let i = 0; i < chunk.length; i++) {
       const ch = chunk[i]!;
       const code = chunk.charCodeAt(i);
 
-      // Ctrl+C (0x03)
+      // Ctrl+C
       if (code === 0x03) {
-        process.stdout.write("\n");
-        process.stdout.write("\x1b[?2004l");
+        process.stdout.write("\n\x1b[?2004l");
         if (process.stdin.isTTY) process.stdin.setRawMode(false);
         process.exit(0);
       }
 
-      // Ctrl+U (0x15) — clear line
+      // Ctrl+U — clear everything
       if (code === 0x15) {
-        clearPaste();
+        buffer = "";
+        pastePart = null;
+        redraw();
         continue;
       }
 
-      // Enter (0x0D \r or 0x0A \n)
+      // Enter
       if (code === 0x0d || code === 0x0a) {
-        if (pendingPaste !== null) {
-          submit(pendingPaste);
-        } else if (buffer.trim()) {
-          submit(buffer);
+        const text = getFullText();
+        if (text.trim()) {
+          submit();
         } else {
           process.stdout.write("\n");
           redraw();
@@ -158,10 +164,12 @@ export function createInput(promptStr: string): InputHandler {
         continue;
       }
 
-      // Backspace (0x7F or 0x08)
+      // Backspace
       if (code === 0x7f || code === 0x08) {
-        if (pendingPaste !== null) {
-          clearPaste();
+        if (pastePart !== null) {
+          // Remove the paste attachment, keep buffer
+          pastePart = null;
+          redraw();
         } else if (buffer.length > 0) {
           buffer = buffer.slice(0, -1);
           redraw();
@@ -169,73 +177,39 @@ export function createInput(promptStr: string): InputHandler {
         continue;
       }
 
-      // Escape sequence — skip until end
+      // Escape sequence — skip
       if (code === 0x1b) {
-        // Consume the rest of the escape sequence
         if (i + 1 < chunk.length && chunk[i + 1] === "[") {
-          i += 2; // skip \x1b[
-          while (i < chunk.length && chunk.charCodeAt(i) < 0x40) i++; // params
-          // i now points at the final byte — the loop increment skips it
+          i += 2;
+          while (i < chunk.length && chunk.charCodeAt(i) < 0x40) i++;
         }
         continue;
       }
 
-      // Tab (0x09) — insert spaces or ignore
+      // Tab
       if (code === 0x09) {
-        if (pendingPaste !== null) continue;
         buffer += "  ";
         redraw();
         continue;
       }
 
-      // Ignore other control chars
+      // Other control chars — ignore
       if (code < 0x20) continue;
 
-      // Regular printable character
-      if (pendingPaste !== null) {
-        // Typing after paste: restore pre-paste text + new char
-        pendingPaste = null;
-        buffer = prePasteBuffer + ch;
-        prePasteBuffer = "";
-      } else {
-        buffer += ch;
-      }
+      // Printable character — always appends to buffer
+      buffer += ch;
       redraw();
     }
   });
-
-  // Buffer saved before a collapsed paste, restored on backspace
-  let prePasteBuffer = "";
-
-  function handlePasteComplete(text: string): void {
-    const lineCount = text.split("\n").length;
-    if (
-      lineCount >= PASTE_COLLAPSE_LINES ||
-      text.length > PASTE_COLLAPSE_CHARS
-    ) {
-      // Collapse — save current buffer so backspace can restore it
-      prePasteBuffer = buffer;
-      pendingPaste = text;
-      buffer = "";
-      redraw();
-    } else {
-      // Short paste — append inline to existing buffer
-      buffer += text.replace(/\n/g, " ");
-      pendingPaste = null;
-      redraw();
-    }
-  }
 
   return {
     onLine(callback) {
       lineCallback = callback;
     },
-
     prompt() {
       paused = false;
       redraw();
     },
-
     waitForInput(): Promise<string> {
       return new Promise((resolve) => {
         pendingResolve = resolve;
@@ -243,15 +217,12 @@ export function createInput(promptStr: string): InputHandler {
         redraw();
       });
     },
-
     pause() {
       paused = true;
     },
-
     resume() {
       paused = false;
     },
-
     close() {
       process.stdout.write("\x1b[?2004l");
       if (process.stdin.isTTY) process.stdin.setRawMode(false);
