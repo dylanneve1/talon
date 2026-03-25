@@ -16,11 +16,13 @@ vi.mock("picocolors", () => ({
     red: (s: string) => s,
     bold: (s: string) => s,
     underline: (s: string) => s,
+    yellow: (s: string) => s,
   },
 }));
 
 describe("terminal frontend — bridge actions", () => {
-  // Inline the action handler logic for testing without starting HTTP server
+  // Inline the action handler logic for testing without starting HTTP server.
+  // This mirrors the switch statement in createActionHandler.
   function handleTerminalAction(body: Record<string, unknown>): unknown {
     const action = body.action as string;
     switch (action) {
@@ -38,27 +40,28 @@ describe("terminal frontend — bridge actions", () => {
       case "copy_message":
       case "send_chat_action":
         return { ok: true };
-      case "read_history":
-        return { ok: true, text: "Terminal mode — no chat history." };
-      case "search_history":
-        return { ok: true, text: "Terminal mode — search not available." };
-      case "list_known_users":
-        return { ok: true, text: "Terminal user" };
       case "get_chat_info":
-        return { ok: true, id: 1, type: "private", title: "Terminal" };
+        // Now returns dynamic numeric ID; test the shape
+        return { ok: true, id: 12345, type: "private", title: "Terminal" };
       default:
-        return { ok: true, text: `"${action}" not available in terminal mode.` };
+        return null;
     }
   }
 
   it("send_message returns ok with message_id", () => {
-    const result = handleTerminalAction({ action: "send_message", text: "hello" }) as Record<string, unknown>;
+    const result = handleTerminalAction({
+      action: "send_message",
+      text: "hello",
+    }) as Record<string, unknown>;
     expect(result.ok).toBe(true);
     expect(result.message_id).toBeDefined();
   });
 
   it("react returns ok", () => {
-    const result = handleTerminalAction({ action: "react", emoji: "👍" }) as Record<string, unknown>;
+    const result = handleTerminalAction({
+      action: "react",
+      emoji: "👍",
+    }) as Record<string, unknown>;
     expect(result.ok).toBe(true);
   });
 
@@ -73,48 +76,48 @@ describe("terminal frontend — bridge actions", () => {
   });
 
   it("edit/delete/pin/forward all return ok", () => {
-    for (const action of ["edit_message", "delete_message", "pin_message", "unpin_message", "forward_message", "copy_message", "send_chat_action"]) {
-      const result = handleTerminalAction({ action }) as Record<string, unknown>;
+    for (const action of [
+      "edit_message",
+      "delete_message",
+      "pin_message",
+      "unpin_message",
+      "forward_message",
+      "copy_message",
+      "send_chat_action",
+    ]) {
+      const result = handleTerminalAction({ action }) as Record<
+        string,
+        unknown
+      >;
       expect(result.ok).toBe(true);
     }
   });
 
-  it("read_history returns terminal mode message", () => {
-    const result = handleTerminalAction({ action: "read_history" }) as Record<string, unknown>;
-    expect(result.ok).toBe(true);
-    expect(result.text).toContain("Terminal mode");
-  });
-
-  it("search_history returns not available", () => {
-    const result = handleTerminalAction({ action: "search_history", query: "test" }) as Record<string, unknown>;
-    expect(result.text).toContain("not available");
-  });
-
-  it("get_chat_info returns terminal chat info", () => {
-    const result = handleTerminalAction({ action: "get_chat_info" }) as Record<string, unknown>;
-    expect(result.id).toBe(1);
+  it("get_chat_info returns terminal chat info shape", () => {
+    const result = handleTerminalAction({
+      action: "get_chat_info",
+    }) as Record<string, unknown>;
+    expect(typeof result.id).toBe("number");
     expect(result.type).toBe("private");
     expect(result.title).toBe("Terminal");
   });
 
-  it("unknown action returns graceful message", () => {
-    const result = handleTerminalAction({ action: "some_weird_action" }) as Record<string, unknown>;
-    expect(result.ok).toBe(true);
-    expect(result.text).toContain("not available in terminal mode");
-  });
-
-  it("list_known_users returns terminal user", () => {
-    const result = handleTerminalAction({ action: "list_known_users" }) as Record<string, unknown>;
-    expect(result.text).toContain("Terminal user");
+  it("unknown action returns null for fallback handling", () => {
+    const result = handleTerminalAction({ action: "some_weird_action" });
+    expect(result).toBeNull();
   });
 });
 
-describe("terminal frontend — context manager", () => {
+describe("terminal frontend — context manager pattern", () => {
   it("tracks acquire/release correctly", () => {
     let acquired = false;
     const context = {
-      acquire: () => { acquired = true; },
-      release: () => { acquired = false; },
+      acquire: () => {
+        acquired = true;
+      },
+      release: () => {
+        acquired = false;
+      },
       getMessageCount: () => 0,
     };
 
@@ -132,7 +135,7 @@ describe("terminal frontend — context manager", () => {
     expect(getCount()).toBe(0);
     count++;
     expect(getCount()).toBe(1);
-    count = 0; // reset between turns
+    count = 0;
     expect(getCount()).toBe(0);
   });
 });

@@ -92,11 +92,8 @@ export function registerBuiltinCommands(): void {
     argHint: "[name]",
     description: "Switch model (opus, sonnet, haiku)",
     async handler(args, ctx) {
-      const {
-        getChatSettings,
-        setChatModel,
-        resolveModelName,
-      } = await import("../../storage/chat-settings.js");
+      const { getChatSettings, setChatModel, resolveModelName } =
+        await import("../../storage/chat-settings.js");
       if (!args) {
         ctx.renderer.writeSystem(
           `Model: ${getChatSettings(ctx.chatId()).model ?? ctx.config.model}`,
@@ -114,9 +111,8 @@ export function registerBuiltinCommands(): void {
     argHint: "[lvl]",
     description: "Thinking effort (off/low/medium/high/max)",
     async handler(args, ctx) {
-      const { getChatSettings, setChatEffort } = await import(
-        "../../storage/chat-settings.js"
-      );
+      const { getChatSettings, setChatEffort } =
+        await import("../../storage/chat-settings.js");
       if (!args) {
         ctx.renderer.writeSystem(
           `Effort: ${getChatSettings(ctx.chatId()).effort ?? "adaptive"}`,
@@ -253,9 +249,8 @@ export function registerBuiltinCommands(): void {
     argHint: "[name]",
     description: "Name the current session",
     async handler(args, ctx) {
-      const { getSessionInfo, setSessionName } = await import(
-        "../../storage/sessions.js"
-      );
+      const { getSessionInfo, setSessionName } =
+        await import("../../storage/sessions.js");
       if (!args) {
         const info = getSessionInfo(ctx.chatId());
         ctx.renderer.writeSystem(
@@ -280,7 +275,9 @@ export function registerBuiltinCommands(): void {
         if (cmd.name === "help") continue; // show help last
         const nameStr = `/${cmd.name}`;
         const argStr = cmd.argHint ? ` ${cmd.argHint}` : "";
-        const pad = " ".repeat(Math.max(1, 16 - nameStr.length - argStr.length));
+        const pad = " ".repeat(
+          Math.max(1, 16 - nameStr.length - argStr.length),
+        );
         ctx.renderer.writeln(
           `  ${pc.cyan(nameStr)}${pc.dim(argStr)}${pad}${pc.dim(cmd.description)}`,
         );

@@ -109,9 +109,7 @@ export function extractToolDetail(
 ): string {
   if (input.command) {
     const src = String(input.description || input.command);
-    return src.length > maxDetail
-      ? src.slice(0, maxDetail - 3) + "..."
-      : src;
+    return src.length > maxDetail ? src.slice(0, maxDetail - 3) + "..." : src;
   }
   if (input.file_path) return String(input.file_path);
   if (input.pattern && input.path) return `${input.pattern} in ${input.path}`;
@@ -131,9 +129,7 @@ export function extractToolDetail(
   for (const [k, v] of Object.entries(input)) {
     if (k === "_chatId") continue;
     if (typeof v === "string" && v.length > 0) {
-      parts.push(
-        `${k}=${v.length > 30 ? v.slice(0, 30) + "..." : v}`,
-      );
+      parts.push(`${k}=${v.length > 30 ? v.slice(0, 30) + "..." : v}`);
     } else if (typeof v === "number" || typeof v === "boolean") {
       parts.push(`${k}=${v}`);
     }

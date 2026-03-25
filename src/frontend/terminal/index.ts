@@ -35,7 +35,10 @@ function initNewChat(chatId?: string): void {
 function createActionHandler(
   gateway: Gateway,
   renderer: ReturnType<typeof createRenderer>,
-): (body: Record<string, unknown>, chatId: number) => Promise<ActionResult | null> {
+): (
+  body: Record<string, unknown>,
+  chatId: number,
+) => Promise<ActionResult | null> {
   return async (body) => {
     const action = body.action as string;
     switch (action) {
@@ -47,18 +50,14 @@ function createActionHandler(
       }
       case "react": {
         renderer.stopSpinner();
-        renderer.writeln(
-          `  ${pc.cyan("▍")}  ${String(body.emoji ?? "👍")}`,
-        );
+        renderer.writeln(`  ${pc.cyan("▍")}  ${String(body.emoji ?? "👍")}`);
         gateway.incrementMessages(terminalNumericId);
         return { ok: true };
       }
       case "send_message_with_buttons": {
         renderer.stopSpinner();
         renderer.renderAssistantMessage(String(body.text ?? ""));
-        const rows = body.rows as
-          | Array<Array<{ text: string }>>
-          | undefined;
+        const rows = body.rows as Array<Array<{ text: string }>> | undefined;
         if (rows) {
           for (const row of rows) {
             renderer.writeln(
@@ -274,9 +273,7 @@ export function createTerminalFrontend(
         } catch (err) {
           renderer.stopSpinner(input.rl);
           currentPhase = "idle";
-          renderer.writeError(
-            err instanceof Error ? err.message : String(err),
-          );
+          renderer.writeError(err instanceof Error ? err.message : String(err));
           cmdCtx.reprompt();
         }
       });
