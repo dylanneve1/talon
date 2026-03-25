@@ -33,6 +33,7 @@ export type Renderer = {
   writeError(text: string): void;
 
   // Messages
+  renderUserMessage(text: string): void;
   renderAssistantMessage(text: string): void;
   renderToolCall(toolName: string, input: Record<string, unknown>): void;
   renderStats(
@@ -177,6 +178,15 @@ export function createRenderer(cols?: number): Renderer {
 
   // ── Message rendering ──
 
+  function renderUserMessage(text: string): void {
+    writeln();
+    writeln(`  ${pc.green("▍")} ${pc.bold(pc.green("You"))}`);
+    const wrapped = wrap(text, 2, COLS);
+    for (const line of wrapped.split("\n")) {
+      writeln(`  ${pc.green("▍")}${line}`);
+    }
+  }
+
   function renderAssistantMessage(text: string): void {
     writeln();
     writeln(`  ${pc.cyan("▍")} ${pc.bold(pc.cyan("Talon"))}`);
@@ -242,6 +252,7 @@ export function createRenderer(cols?: number): Renderer {
   ): void {
     stopSpinner(rl);
     if (rl) rl.pause();
+    writeln(); // padding before spinner
     spinner = ora({
       text: label,
       indent: 4,
@@ -256,7 +267,6 @@ export function createRenderer(cols?: number): Renderer {
   function stopSpinner(rl?: ReadlineInterface | null): void {
     if (spinner) {
       spinner.stop();
-      // ora leaves the cursor on the spinner line — clear it
       process.stdout.write("\x1b[2K\r");
       spinner = null;
     }
@@ -298,6 +308,7 @@ export function createRenderer(cols?: number): Renderer {
     writeln,
     writeSystem,
     writeError,
+    renderUserMessage,
     renderAssistantMessage,
     renderToolCall,
     renderStats,

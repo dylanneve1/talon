@@ -174,32 +174,27 @@ export function createTerminalFrontend(
         close: () => input.close(),
       };
 
-      function updateStatusBar(extra?: {
-        inputTokens?: number;
-        outputTokens?: number;
-        cacheRead?: number;
-      }): void {
-        // Lazily import to avoid circular deps at module load
-        import("../../storage/sessions.js").then(({ getSessionInfo }) => {
-          const info = getSessionInfo(terminalChatId);
-          const u = info.usage;
-          const inTok = u.totalInputTokens + (extra?.inputTokens ?? 0);
-          const outTok = u.totalOutputTokens + (extra?.outputTokens ?? 0);
-          const cacheRead = u.totalCacheRead + (extra?.cacheRead ?? 0);
-          const cacheHit =
-            inTok + cacheRead > 0
-              ? Math.round((cacheRead / (inTok + cacheRead)) * 100)
-              : 0;
-          const barInfo: StatusBarInfo = {
-            model: modelDisplay,
-            sessionName: info.sessionName,
-            turns: info.turns,
-            inputTokens: inTok,
-            outputTokens: outTok,
-            cacheHitPct: cacheHit,
-            costUsd: u.estimatedCostUsd,
-          };
-          renderer.updateStatusBar(barInfo);
+      // Import eagerly so updateStatusBar is synchronous
+      const { getSessionInfo } = await import("../../storage/sessions.js");
+
+      function updateStatusBar(): void {
+        const info = getSessionInfo(terminalChatId);
+        const u = info.usage;
+        const cacheHit =
+          u.totalInputTokens + u.totalCacheRead > 0
+            ? Math.round(
+                (u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) *
+                  100,
+              )
+            : 0;
+        renderer.updateStatusBar({
+          model: modelDisplay,
+          sessionName: info.sessionName,
+          turns: info.turns,
+          inputTokens: u.totalInputTokens,
+          outputTokens: u.totalOutputTokens,
+          cacheHitPct: cacheHit,
+          costUsd: u.estimatedCostUsd,
         });
       }
 
@@ -214,6 +209,9 @@ export function createTerminalFrontend(
           updateStatusBar();
           return;
         }
+
+        // Echo user message into chat area
+        renderer.renderUserMessage(text);
 
         // Execute AI query
         toolCallCount = 0;
