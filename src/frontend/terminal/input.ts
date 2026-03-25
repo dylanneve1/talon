@@ -186,6 +186,9 @@ export function createInput(promptStr: string): InputHandler {
         continue;
       }
 
+      // When paste is attached, ignore all other input (Enter/Backspace handled above)
+      if (pastePart !== null) continue;
+
       // Tab
       if (code === 0x09) {
         buffer += "  ";
@@ -196,7 +199,7 @@ export function createInput(promptStr: string): InputHandler {
       // Other control chars — ignore
       if (code < 0x20) continue;
 
-      // Printable character — always appends to buffer
+      // Printable character
       buffer += ch;
       redraw();
     }
