@@ -191,7 +191,15 @@ export function createInput(promptStr: string): InputHandler {
       }
 
       // Ignore special keys (arrows, function keys, etc.)
-      if (key?.name && key.name.length > 1 && !key.ctrl) return;
+      // Allow space and tab through (they have multi-char key.name)
+      if (
+        key?.name &&
+        key.name.length > 1 &&
+        key.name !== "space" &&
+        key.name !== "tab" &&
+        !key.ctrl
+      )
+        return;
       if (key?.ctrl || key?.meta) return;
 
       // Regular character
