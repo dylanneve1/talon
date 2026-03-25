@@ -118,9 +118,14 @@ class PluginRegistry {
 
   register(loaded: LoadedPlugin): void {
     // Guard against duplicate names
-    const existing = this.plugins.find((p) => p.plugin.name === loaded.plugin.name);
+    const existing = this.plugins.find(
+      (p) => p.plugin.name === loaded.plugin.name,
+    );
     if (existing) {
-      logWarn("plugin", `Duplicate plugin name "${loaded.plugin.name}" — skipping (already loaded from ${existing.path})`);
+      logWarn(
+        "plugin",
+        `Duplicate plugin name "${loaded.plugin.name}" — skipping (already loaded from ${existing.path})`,
+      );
       return;
     }
     this.plugins.push(loaded);
@@ -135,7 +140,10 @@ class PluginRegistry {
       try {
         await plugin.destroy?.();
       } catch (err) {
-        logError("plugin", `${plugin.name} destroy error: ${err instanceof Error ? err.message : err}`);
+        logError(
+          "plugin",
+          `${plugin.name} destroy error: ${err instanceof Error ? err.message : err}`,
+        );
       }
     }
   }
@@ -143,6 +151,13 @@ class PluginRegistry {
 
 // Module-level singleton
 const registry = new PluginRegistry();
+
+/** Internal deps — exposed as an object so tests can replace properties.
+ *  Direct function exports can't be mocked for internal callers in ESM. */
+export const _deps = {
+  importModule: async (path: string): Promise<Record<string, unknown>> =>
+    import(path),
+};
 
 // ── Loader ─────────────────────────────────────────────────────────────────
 
@@ -160,31 +175,46 @@ const ENTRY_CANDIDATES = [
  * @param activeFrontends — currently active frontends (e.g. ["terminal"]). Plugins
  *   with a `frontends` whitelist are skipped if none match.
  */
-export async function loadPlugins(pluginConfigs: PluginEntry[], activeFrontends?: string[]): Promise<void> {
+export async function loadPlugins(
+  pluginConfigs: PluginEntry[],
+  activeFrontends?: string[],
+): Promise<void> {
   for (const entry of pluginConfigs) {
     try {
       await loadSinglePlugin(entry, activeFrontends);
     } catch (err) {
-      logError("plugin", `Failed to load plugin at ${entry.path}: ${err instanceof Error ? err.message : err}`);
+      logError(
+        "plugin",
+        `Failed to load plugin at ${entry.path}: ${err instanceof Error ? err.message : err}`,
+      );
     }
   }
 }
 
-async function loadSinglePlugin(entry: PluginEntry, activeFrontends?: string[]): Promise<void> {
+async function loadSinglePlugin(
+  entry: PluginEntry,
+  activeFrontends?: string[],
+): Promise<void> {
   const pluginDir = resolve(entry.path);
 
   // Resolve entry point
   const entryPoint = resolveEntryPoint(pluginDir);
   if (!entryPoint) {
-    logError("plugin", `No entry point found in ${pluginDir} (tried: ${ENTRY_CANDIDATES.join(", ")})`);
+    logError(
+      "plugin",
+      `No entry point found in ${pluginDir} (tried: ${ENTRY_CANDIDATES.join(", ")})`,
+    );
     return;
   }
 
   // Import and extract plugin module
-  const mod = await import(entryPoint);
+  const mod = await _deps.importModule(entryPoint);
   const plugin = extractPlugin(mod);
   if (!plugin) {
-    logError("plugin", `Invalid plugin at ${pluginDir}: must export an object with a "name" property`);
+    logError(
+      "plugin",
+      `Invalid plugin at ${pluginDir}: must export an object with a "name" property`,
+    );
     return;
   }
 
@@ -192,7 +222,10 @@ async function loadSinglePlugin(entry: PluginEntry, activeFrontends?: string[]):
   if (plugin.frontends && plugin.frontends.length > 0 && activeFrontends) {
     const match = activeFrontends.some((fe) => plugin.frontends!.includes(fe));
     if (!match) {
-      log("plugin", `Skipped: ${plugin.name} (requires ${plugin.frontends.join("/")} frontend)`);
+      log(
+        "plugin",
+        `Skipped: ${plugin.name} (requires ${plugin.frontends.join("/")} frontend)`,
+      );
       return;
     }
   }
@@ -202,7 +235,10 @@ async function loadSinglePlugin(entry: PluginEntry, activeFrontends?: string[]):
   // Validate config if the plugin provides validation
   const errors = plugin.validateConfig?.(config);
   if (errors && errors.length > 0) {
-    logError("plugin", `Plugin "${plugin.name}" config validation failed:\n  ${errors.join("\n  ")}`);
+    logError(
+      "plugin",
+      `Plugin "${plugin.name}" config validation failed:\n  ${errors.join("\n  ")}`,
+    );
     return;
   }
 
@@ -223,10 +259,15 @@ async function loadSinglePlugin(entry: PluginEntry, activeFrontends?: string[]):
   try {
     await Promise.race([
       plugin.init?.(config),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("init timeout (30s)")), INIT_TIMEOUT)),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("init timeout (30s)")), INIT_TIMEOUT),
+      ),
     ]);
   } catch (err) {
-    logError("plugin", `Plugin "${plugin.name}" init failed: ${err instanceof Error ? err.message : err}`);
+    logError(
+      "plugin",
+      `Plugin "${plugin.name}" init failed: ${err instanceof Error ? err.message : err}`,
+    );
     // Still registered — tools may work even if init partially failed
   }
 
@@ -251,11 +292,25 @@ function extractPlugin(mod: Record<string, unknown>): TalonPlugin | null {
   // Validate required field types
   if (typeof plugin.name !== "string" || !plugin.name) return null;
   // Validate optional fields are the right types if present
-  if (plugin.handleAction !== undefined && typeof plugin.handleAction !== "function") return null;
-  if (plugin.init !== undefined && typeof plugin.init !== "function") return null;
-  if (plugin.getSystemPromptAddition !== undefined && typeof plugin.getSystemPromptAddition !== "function") return null;
-  if (plugin.mcpServerPath !== undefined && typeof plugin.mcpServerPath !== "string") return null;
-  if (plugin.frontends !== undefined && !Array.isArray(plugin.frontends)) return null;
+  if (
+    plugin.handleAction !== undefined &&
+    typeof plugin.handleAction !== "function"
+  )
+    return null;
+  if (plugin.init !== undefined && typeof plugin.init !== "function")
+    return null;
+  if (
+    plugin.getSystemPromptAddition !== undefined &&
+    typeof plugin.getSystemPromptAddition !== "function"
+  )
+    return null;
+  if (
+    plugin.mcpServerPath !== undefined &&
+    typeof plugin.mcpServerPath !== "string"
+  )
+    return null;
+  if (plugin.frontends !== undefined && !Array.isArray(plugin.frontends))
+    return null;
   return candidate as TalonPlugin;
 }
 
@@ -292,7 +347,10 @@ export function getPluginPromptAdditions(): string[] {
       const addition = plugin.getSystemPromptAddition?.(config);
       if (addition?.trim()) additions.push(addition.trim());
     } catch (err) {
-      logError("plugin", `${plugin.name} prompt addition error: ${err instanceof Error ? err.message : err}`);
+      logError(
+        "plugin",
+        `${plugin.name} prompt addition error: ${err instanceof Error ? err.message : err}`,
+      );
     }
   }
   return additions;
@@ -315,8 +373,14 @@ export async function handlePluginAction(
       const result = await plugin.handleAction(body, chatId);
       if (result) return result;
     } catch (err) {
-      logError("plugin", `${plugin.name} action error: ${err instanceof Error ? err.message : err}`);
-      return { ok: false, error: `Plugin ${plugin.name}: ${err instanceof Error ? err.message : err}` };
+      logError(
+        "plugin",
+        `${plugin.name} action error: ${err instanceof Error ? err.message : err}`,
+      );
+      return {
+        ok: false,
+        error: `Plugin ${plugin.name}: ${err instanceof Error ? err.message : err}`,
+      };
     }
   }
   return null;
@@ -342,16 +406,20 @@ export function getPluginMcpServers(
   const servers: Record<string, McpServerConfig> = {};
 
   // Resolve tsx from Talon's own node_modules (not cwd which may be ~/.talon/workspace/)
-  const tsxPath = resolve(import.meta.dirname ?? ".", "../../node_modules/tsx/dist/esm/index.mjs");
+  const tsxPath = resolve(
+    import.meta.dirname ?? ".",
+    "../../node_modules/tsx/dist/esm/index.mjs",
+  );
 
   for (const { plugin, envVars } of registry.all) {
     if (!plugin.mcpServerPath) continue;
 
     servers[`${plugin.name}-tools`] = {
       command: process.platform === "win32" ? "npx" : "node",
-      args: process.platform === "win32"
-        ? ["tsx", plugin.mcpServerPath]
-        : ["--import", tsxPath, plugin.mcpServerPath],
+      args:
+        process.platform === "win32"
+          ? ["tsx", plugin.mcpServerPath]
+          : ["--import", tsxPath, plugin.mcpServerPath],
       env: {
         TALON_BRIDGE_URL: bridgeUrl,
         TALON_CHAT_ID: chatId,
