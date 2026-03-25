@@ -8,11 +8,11 @@
  * No Azure AD app registration, no Bot Framework, no admin consent.
  */
 
-import { createHash } from "node:crypto";
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/gateway.js";
 import { log, logError } from "../../util/log.js";
+import { deriveNumericChatId } from "../../util/chat-id.js";
 import { createTeamsActionHandler } from "./actions.js";
 import { splitTeamsMessage, buildAdaptiveCard } from "./formatting.js";
 import { initGraphClient, type GraphClient, type ChatMessage } from "./graph.js";
@@ -29,16 +29,6 @@ export type TeamsFrontend = {
   start: () => Promise<void>;
   stop: () => Promise<void>;
 };
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Derive a stable 32-bit numeric chat ID from the Graph chat ID string.
- */
-function deriveNumericChatId(chatId: string): number {
-  const hash = createHash("sha256").update(chatId).digest();
-  return hash.readUInt32BE(0);
-}
 
 // ── Frontend factory ─────────────────────────────────────────────────────────
 
@@ -276,7 +266,7 @@ export function createTeamsFrontend(
                 if (phase) log("teams", `  phase: ${phase}`);
               },
               onToolUse: (toolName, input) => {
-                const detail = (input.command ?? input.action ?? input.query ?? input.url ?? input.name ?? "") as string;
+                const detail = (input.description ?? input.command ?? input.action ?? input.query ?? input.url ?? input.name ?? "") as string;
                 log("teams", `  tool: ${toolName}${detail ? ` — ${String(detail).slice(0, 100)}` : ""}`);
               },
             }).then(async (result) => {

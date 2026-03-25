@@ -295,6 +295,8 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
         lastResponseMs: 0,
         fastestResponseMs: Infinity,
       },
+      sessionName: session.sessionName,
+      lastModel: session.lastModel,
     },
   }));
 }
