@@ -1,8 +1,10 @@
 /**
  * Terminal input handler — readline wrapper with paste detection.
  *
- * Paste detection uses a 15ms debounce: pasted multi-line content fires
- * rapid "line" events that get buffered and submitted as a single message.
+ * Paste detection: when multiple "line" events fire within 50ms (as happens
+ * during paste), they're buffered and submitted as a single message.
+ * The prompt is hidden after the first line so pasted content doesn't show
+ * duplicate ❯ prefixes.
  */
 
 import {
@@ -14,19 +16,15 @@ import {
 
 export type InputHandler = {
   readonly rl: ReadlineInterface;
-  /** Register the main line callback (only one at a time). */
   onLine(callback: (text: string) => void): void;
-  /** Show the prompt. */
   prompt(): void;
-  /** Wait for a single line of input (for interactive follow-ups like /resume). */
   waitForInput(): Promise<string>;
-  /** Tear down. */
   close(): void;
 };
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-const PASTE_DEBOUNCE_MS = 15;
+const PASTE_DEBOUNCE_MS = 50;
 
 export function createInput(promptStr: string): InputHandler {
   const rl = createInterface({
@@ -42,13 +40,21 @@ export function createInput(promptStr: string): InputHandler {
 
   rl.on("line", (raw) => {
     pasteLines.push(raw);
-    if (pasteTimer) clearTimeout(pasteTimer);
+
+    if (pasteTimer) {
+      // Continuation of a paste — timer already running
+      clearTimeout(pasteTimer);
+    } else {
+      // First line — hide prompt so subsequent pasted lines don't show ❯
+      rl.setPrompt("");
+    }
+
     pasteTimer = setTimeout(() => {
       const text = pasteLines.join("\n").trim();
       pasteLines = [];
       pasteTimer = null;
+      rl.setPrompt(promptStr); // restore prompt
 
-      // If waitForInput() is pending, resolve it
       if (pendingResolve) {
         const resolve = pendingResolve;
         pendingResolve = null;
