@@ -204,9 +204,6 @@ export function createTerminalFrontend(
         });
       }
 
-      // Initial status bar paint
-      updateStatusBar();
-
       input.onLine(async (text) => {
         if (!text) {
           cmdCtx.reprompt();

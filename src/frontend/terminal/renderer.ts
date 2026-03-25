@@ -290,35 +290,12 @@ export function createRenderer(cols?: number): Renderer {
   }
 
   // ── Status bar ──
-
-  function getRows(): number {
-    return process.stdout.rows || 24;
-  }
+  // Renders as a dim line above the prompt. No scroll regions or cursor
+  // repositioning — those conflict with readline and break on resize
+  // (especially on Windows PowerShell). Simple and reliable.
 
   function initStatusBar(): void {
-    if (!process.stdout.isTTY) return;
     statusBarActive = true;
-    // Reserve bottom line via scroll region
-    const rows = getRows();
-    rawWrite(`\x1b[1;${rows - 1}r`); // scroll region = rows 1 to N-1
-    drawStatusBar();
-    process.stdout.on("resize", handleResize);
-  }
-
-  function handleResize(): void {
-    if (!statusBarActive) return;
-    const rows = getRows();
-    rawWrite(`\x1b[1;${rows - 1}r`);
-    drawStatusBar();
-  }
-
-  function drawStatusBar(): void {
-    if (!statusBarActive) return;
-    const rows = getRows();
-    // Save cursor, move to bottom row, write content, restore cursor
-    const content = statusBarContent || "";
-    const padded = content + " ".repeat(Math.max(0, COLS - content.length));
-    rawWrite(`\x1b[s\x1b[${rows};1H\x1b[7m${padded}\x1b[27m\x1b[u`);
   }
 
   function updateStatusBar(info: StatusBarInfo): void {
@@ -332,18 +309,18 @@ export function createRenderer(cols?: number): Renderer {
       `${info.cacheHitPct}% cache`,
     );
     if (info.costUsd > 0) parts.push(`$${info.costUsd.toFixed(2)}`);
-    statusBarContent = `  ${parts.join("  ·  ")}`;
+    statusBarContent = parts.join("  ·  ");
     drawStatusBar();
   }
 
+  function drawStatusBar(): void {
+    if (!statusBarActive || !statusBarContent) return;
+    writeln(`  ${pc.dim("─".repeat(COLS - 4))}`);
+    writeln(`  ${pc.dim(statusBarContent)}`);
+  }
+
   function destroyStatusBar(): void {
-    if (!statusBarActive) return;
     statusBarActive = false;
-    process.stdout.removeListener("resize", handleResize);
-    // Restore full scroll region and clear the bottom line
-    rawWrite("\x1b[r");
-    const rows = getRows();
-    rawWrite(`\x1b[${rows};1H\x1b[2K`);
   }
 
   return {
