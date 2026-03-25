@@ -48,11 +48,16 @@ export function createInput(promptStr: string): InputHandler {
   // the full text is stored here. Next Enter submits it, backspace clears it.
   let pendingPasteText: string | null = null;
 
-  function clearCurrentLine(): void {
-    process.stdout.write("\x1b[2K\r");
+  /** Erase N visual lines upward (for clearing wrapped readline echo). */
+  function eraseLines(count: number): void {
+    for (let i = 0; i < count; i++) {
+      process.stdout.write("\x1b[2K"); // clear line
+      if (i < count - 1) process.stdout.write("\x1b[A"); // move up
+    }
+    process.stdout.write("\r"); // return to column 0
   }
 
-  /** Show the paste indicator on the prompt line. */
+  /** Show the paste indicator, clearing any echoed text first. */
   function showPasteIndicator(text: string): void {
     const lines = text.split("\n").length;
     const chars = text.length;
@@ -60,7 +65,19 @@ export function createInput(promptStr: string): InputHandler {
       lines > 1
         ? `[Pasted ${lines} lines (${chars} chars)]`
         : `[Pasted ${chars} chars]`;
-    clearCurrentLine();
+
+    // Calculate how many visual lines readline echoed (prompt + text wrapping)
+    const termCols = process.stdout.columns || 80;
+    const promptLen = 4; // "  ❯ " visible length
+    let visualLines = 0;
+    for (const line of text.split("\n")) {
+      visualLines += Math.max(
+        1,
+        Math.ceil((line.length + promptLen) / termCols),
+      );
+    }
+    eraseLines(visualLines);
+
     process.stdout.write(`${promptStr}${pc.dim(label)}`);
   }
 
@@ -134,7 +151,7 @@ export function createInput(promptStr: string): InputHandler {
       if (pendingPasteText !== null && key.name === "backspace") {
         // Clear the whole paste
         pendingPasteText = null;
-        clearCurrentLine();
+        eraseLines(1);
         rl.setPrompt(promptStr);
         process.stdout.write(promptStr);
       }
