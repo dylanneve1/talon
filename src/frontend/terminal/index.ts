@@ -1,5 +1,11 @@
 /**
  * Terminal frontend — slim orchestrator wiring renderer, commands, and input.
+ *
+ * Readline lifecycle:
+ *   - rl starts active (prompt shown)
+ *   - User presses Enter → rl.pause() immediately → processing begins
+ *   - Processing finishes → all output written → rl.resume() + rl.prompt()
+ *   - Renderer NEVER touches readline. Only this file does.
  */
 
 import pc from "picocolors";
@@ -11,7 +17,7 @@ import {
   deriveNumericChatId,
   generateTerminalChatId,
 } from "../../util/chat-id.js";
-import { createRenderer, type StatusBarInfo } from "./renderer.js";
+import { createRenderer } from "./renderer.js";
 import { createInput } from "./input.js";
 import {
   registerBuiltinCommands,
@@ -137,7 +143,6 @@ export function createTerminalFrontend(
     async start() {
       initNewChat();
 
-      // "claude-opus-4-6" → "Opus 4.6"
       const modelDisplay = config.model
         .replace("claude-", "")
         .replace(
@@ -146,36 +151,31 @@ export function createTerminalFrontend(
             `${name.charAt(0).toUpperCase() + name.slice(1)} ${maj}.${min}`,
         );
 
-      renderer.initStatusBar();
       renderer.writeln();
       renderer.writeln(
         `  ${pc.bold(pc.cyan("Talon"))}  ${pc.dim(modelDisplay)}`,
       );
       renderer.writeln(`  ${pc.dim("─".repeat(renderer.cols - 2))}`);
-      renderer.writeln();
 
       const { execute } = await import("../../core/dispatcher.js");
+      const { getSessionInfo } = await import("../../storage/sessions.js");
       const input = createInput(`  ${pc.green("❯")} `);
 
-      // Command registry
       clearCommands();
       registerBuiltinCommands();
 
-      const cmdCtx: CommandContext = {
-        chatId: () => terminalChatId,
-        config,
-        renderer,
-        reprompt: () => {
-          process.stdout.write("\n");
-          input.prompt();
-        },
-        initNewChat,
-        waitForInput: () => input.waitForInput(),
-        close: () => input.close(),
-      };
+      // ── Readline control ──
+      // Only this file touches rl.pause/resume. Renderer never does.
 
-      // Import eagerly so updateStatusBar is synchronous
-      const { getSessionInfo } = await import("../../storage/sessions.js");
+      function pauseInput(): void {
+        input.rl.pause();
+      }
+
+      function reprompt(): void {
+        renderer.writeln(); // blank line before prompt
+        input.rl.resume();
+        input.prompt();
+      }
 
       function updateStatusBar(): void {
         const info = getSessionInfo(terminalChatId);
@@ -198,22 +198,33 @@ export function createTerminalFrontend(
         });
       }
 
+      const cmdCtx: CommandContext = {
+        chatId: () => terminalChatId,
+        config,
+        renderer,
+        reprompt,
+        initNewChat,
+        waitForInput: () => input.waitForInput(),
+        close: () => input.close(),
+      };
+
       input.onLine(async (text) => {
         if (!text) {
-          cmdCtx.reprompt();
+          reprompt();
           return;
         }
 
-        // Try slash commands first
+        // Slash commands — these handle their own reprompt
         if (await tryRunCommand(text, cmdCtx)) {
           updateStatusBar();
           return;
         }
 
-        // Execute AI query
+        // ── AI query ──
+        pauseInput(); // readline off until we're done
         toolCallCount = 0;
         currentPhase = "thinking";
-        renderer.startSpinner("thinking", input.rl);
+        renderer.startSpinner("thinking");
 
         try {
           const result = await execute({
@@ -233,19 +244,19 @@ export function createTerminalFrontend(
               }
             },
             onToolUse: (toolName, toolInput) => {
-              renderer.stopSpinner(input.rl);
+              renderer.stopSpinner();
               currentPhase = "tool";
               toolCallCount++;
               renderer.renderToolCall(toolName, toolInput);
-              renderer.startSpinner("running tools", input.rl);
+              renderer.startSpinner("running tools");
             },
             onTextBlock: async (blockText) => {
-              renderer.stopSpinner(input.rl);
+              renderer.stopSpinner();
               renderer.renderAssistantMessage(blockText);
             },
           });
 
-          renderer.stopSpinner(input.rl);
+          renderer.stopSpinner();
           currentPhase = "idle";
 
           if (result.bridgeMessageCount === 0 && result.text?.trim()) {
@@ -260,17 +271,16 @@ export function createTerminalFrontend(
             toolCallCount,
           );
           updateStatusBar();
-          cmdCtx.reprompt();
+          reprompt(); // readline back on, show prompt
         } catch (err) {
-          renderer.stopSpinner(input.rl);
+          renderer.stopSpinner();
           currentPhase = "idle";
           renderer.writeError(err instanceof Error ? err.message : String(err));
-          cmdCtx.reprompt();
+          reprompt();
         }
       });
 
       input.rl.on("close", () => {
-        renderer.destroyStatusBar();
         renderer.writeln();
         renderer.writeln(`  ${pc.dim("Goodbye!")}`);
         renderer.writeln();
@@ -282,7 +292,6 @@ export function createTerminalFrontend(
     },
 
     async stop() {
-      renderer.destroyStatusBar();
       await gateway.stop();
     },
   };

@@ -1,11 +1,11 @@
 /**
  * Terminal renderer — minimal, clean output.
  *
- * No frameworks, no ANSI tricks, no scroll regions.
+ * The renderer NEVER touches readline. It only writes to stdout.
+ * The caller (index.ts) is responsible for pausing/resuming readline.
  * Spinner uses atomic \r overwrite — single write call, zero flicker.
  */
 
-import type { Interface as ReadlineInterface } from "node:readline";
 import pc from "picocolors";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -34,12 +34,10 @@ export type Renderer = {
     cacheRead: number,
     tools: number,
   ): void;
-  startSpinner(label?: string, rl?: ReadlineInterface | null): void;
+  startSpinner(label?: string): void;
   updateSpinnerLabel(label: string): void;
-  stopSpinner(rl?: ReadlineInterface | null): void;
-  initStatusBar(): void;
+  stopSpinner(): void;
   updateStatusBar(info: StatusBarInfo): void;
-  destroyStatusBar(): void;
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -139,8 +137,8 @@ export function createRenderer(cols?: number): Renderer {
   let spinnerLabel = "thinking";
   let spinnerLineLen = 0;
   let hasToolOutput = false;
-  let statusActive = false;
-  let statusContent = "";
+
+  // ── Output primitives ──
 
   function writeln(text = ""): void {
     process.stdout.write(`\x1b[2K\r${text}\n`);
@@ -154,6 +152,8 @@ export function createRenderer(cols?: number): Renderer {
     writeln();
     writeln(`  ${pc.red("✖")} ${pc.red(text)}`);
   }
+
+  // ── Messages ──
 
   function renderAssistantMessage(text: string): void {
     writeln();
@@ -199,17 +199,14 @@ export function createRenderer(cols?: number): Renderer {
     hasToolOutput = false;
   }
 
-  // ── Spinner: atomic \r overwrite, zero flicker ──
+  // ── Spinner ──
+  // Pure stdout. Never touches readline.
 
-  function startSpinner(
-    label = "thinking",
-    rl?: ReadlineInterface | null,
-  ): void {
-    stopSpinner(rl);
+  function startSpinner(label = "thinking"): void {
+    stopSpinner();
     spinnerLabel = label;
     spinnerFrame = 0;
     spinnerLineLen = 0;
-    if (rl) rl.pause();
     spinnerTimer = setInterval(() => {
       spinnerFrame = (spinnerFrame + 1) % FRAMES.length;
       const line = `    ${pc.dim(FRAMES[spinnerFrame]!)}  ${pc.dim(spinnerLabel)}`;
@@ -226,24 +223,18 @@ export function createRenderer(cols?: number): Renderer {
     spinnerLabel = label;
   }
 
-  function stopSpinner(rl?: ReadlineInterface | null): void {
+  function stopSpinner(): void {
     if (spinnerTimer) {
       clearInterval(spinnerTimer);
       spinnerTimer = null;
       process.stdout.write("\x1b[2K\r");
       spinnerLineLen = 0;
     }
-    if (rl) rl.resume();
   }
 
-  // ── Status line: single dim line, rendered inline ──
-
-  function initStatusBar(): void {
-    statusActive = true;
-  }
+  // ── Status line ──
 
   function updateStatusBar(info: StatusBarInfo): void {
-    if (!statusActive) return;
     const p = [info.model];
     if (info.sessionName) p.push(`"${info.sessionName}"`);
     p.push(
@@ -252,12 +243,7 @@ export function createRenderer(cols?: number): Renderer {
       `${info.cacheHitPct}% cache`,
     );
     if (info.costUsd > 0) p.push(`$${info.costUsd.toFixed(2)}`);
-    statusContent = p.join("  ·  ");
-    writeln(`  ${pc.dim(statusContent)}`);
-  }
-
-  function destroyStatusBar(): void {
-    statusActive = false;
+    writeln(`  ${pc.dim(p.join("  ·  "))}`);
   }
 
   return {
@@ -271,8 +257,6 @@ export function createRenderer(cols?: number): Renderer {
     startSpinner,
     updateSpinnerLabel,
     stopSpinner,
-    initStatusBar,
     updateStatusBar,
-    destroyStatusBar,
   };
 }
