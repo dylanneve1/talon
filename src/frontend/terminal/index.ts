@@ -146,9 +146,7 @@ export function createTerminalFrontend(
             `${name.charAt(0).toUpperCase() + name.slice(1)} ${maj}.${min}`,
         );
 
-      // Enter fullscreen and set up status bar first
       renderer.initStatusBar();
-
       renderer.writeln();
       renderer.writeln(
         `  ${pc.bold(pc.cyan("Talon"))}  ${pc.dim(modelDisplay)}`,

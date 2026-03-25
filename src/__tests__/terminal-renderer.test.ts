@@ -13,6 +13,15 @@ vi.mock("picocolors", () => ({
   },
 }));
 
+// Mock ora spinner
+vi.mock("ora", () => ({
+  default: () => ({
+    start: vi.fn().mockReturnThis(),
+    stop: vi.fn().mockReturnThis(),
+    text: "",
+  }),
+}));
+
 import {
   wrap,
   formatTimeAgo,

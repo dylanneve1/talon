@@ -1,15 +1,16 @@
 /**
- * Terminal renderer — fullscreen TUI with sticky status bar.
+ * Terminal renderer — output formatting, spinner (via ora), and status line.
  *
- * Uses alternate screen buffer for clean fullscreen experience.
- * Scroll region reserves the bottom line for a sticky status bar.
- * Content scrolls above; status bar stays pinned.
+ * No alternate screen buffers. No scroll regions. No cursor repositioning.
+ * Just clean output that works reliably on every terminal including PowerShell.
  *
- * Flicker-free spinner via single-write \r overwrite.
+ * Spinner is handled by `ora` — battle-tested, cross-platform, flicker-free.
+ * Status line renders as a single dim line above the prompt.
  */
 
 import type { Interface as ReadlineInterface } from "node:readline";
 import pc from "picocolors";
+import ora, { type Ora } from "ora";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,12 +43,12 @@ export type Renderer = {
     tools: number,
   ): void;
 
-  // Spinner
+  // Spinner (via ora)
   startSpinner(label?: string, rl?: ReadlineInterface | null): void;
   updateSpinnerLabel(label: string): void;
   stopSpinner(rl?: ReadlineInterface | null): void;
 
-  // Screen & status bar
+  // Status line
   initStatusBar(): void;
   updateStatusBar(info: StatusBarInfo): void;
   destroyStatusBar(): void;
@@ -55,16 +56,7 @@ export type Renderer = {
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const HIDDEN_TOOLS = new Set(["TodoRead", "TodoWrite"]);
-
-// ANSI escape sequences
-const ESC = "\x1b";
-const ALT_SCREEN_ON = `${ESC}[?1049h`;
-const ALT_SCREEN_OFF = `${ESC}[?1049l`;
-const CURSOR_SHOW = `${ESC}[?25h`;
-const SAVE_CURSOR = `${ESC}[s`;
-const RESTORE_CURSOR = `${ESC}[u`;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -135,7 +127,6 @@ export function extractToolDetail(
   if (input.build_number) return `#${input.build_number}`;
   if (input.packages) return (input.packages as string[]).join(", ");
 
-  // Fallback: show all string/number/boolean params compactly
   const parts: string[] = [];
   for (const [k, v] of Object.entries(input)) {
     if (k === "_chatId") continue;
@@ -161,62 +152,18 @@ export function cleanToolName(name: string): string {
 
 export function createRenderer(cols?: number): Renderer {
   const COLS = cols ?? Math.min(process.stdout.columns || 100, 120);
-  const isTTY = process.stdout.isTTY ?? false;
 
-  // Spinner state
-  let spinnerTimer: ReturnType<typeof setInterval> | null = null;
-  let spinnerFrame = 0;
-  let spinnerLabel = "thinking";
-  let lastSpinnerLen = 0;
+  // Spinner (ora instance, created lazily)
+  let spinner: Ora | null = null;
 
-  // Status bar state
+  // Status line state
   let statusBarActive = false;
   let statusBarContent = "";
 
-  // ── Screen management ──
-
-  function getRows(): number {
-    return process.stdout.rows || 24;
-  }
-
-  function getCols(): number {
-    return process.stdout.columns || 80;
-  }
-
-  /** Set scroll region so content scrolls above the status bar. */
-  function setScrollRegion(): void {
-    if (!isTTY) return;
-    const rows = getRows();
-    // Rows 1..(rows-1) scroll; row `rows` is reserved for status bar
-    rawWrite(`${ESC}[1;${rows - 1}r`);
-    // Move cursor back into scroll region
-    rawWrite(`${ESC}[${rows - 1};1H`);
-  }
-
   // ── Output primitives ──
 
-  function rawWrite(text: string): void {
-    process.stdout.write(text);
-  }
-
-  /** Overwrite current line without flicker (single atomic write). */
-  function overwriteLine(text: string): void {
-    const pad =
-      lastSpinnerLen > text.length
-        ? " ".repeat(lastSpinnerLen - text.length)
-        : "";
-    lastSpinnerLen = text.length;
-    rawWrite(`\r${text}${pad}`);
-  }
-
-  function clearLine(): void {
-    rawWrite(`${ESC}[2K\r`);
-    lastSpinnerLen = 0;
-  }
-
   function writeln(text = ""): void {
-    clearLine();
-    rawWrite(text + "\n");
+    process.stdout.write(`\x1b[2K\r${text}\n`);
   }
 
   function writeSystem(text: string): void {
@@ -287,69 +234,39 @@ export function createRenderer(cols?: number): Renderer {
     resetToolOutput();
   }
 
-  // ── Spinner ──
+  // ── Spinner (via ora) ──
 
   function startSpinner(
     label = "thinking",
     rl?: ReadlineInterface | null,
   ): void {
     stopSpinner(rl);
-    spinnerLabel = label;
-    spinnerFrame = 0;
-    lastSpinnerLen = 0;
     if (rl) rl.pause();
-    spinnerTimer = setInterval(() => {
-      spinnerFrame = (spinnerFrame + 1) % SPINNER_FRAMES.length;
-      overwriteLine(
-        `    ${pc.dim(SPINNER_FRAMES[spinnerFrame]!)}  ${pc.dim(spinnerLabel)}`,
-      );
-    }, 80);
+    spinner = ora({
+      text: label,
+      indent: 4,
+      spinner: "dots",
+    }).start();
   }
 
   function updateSpinnerLabel(label: string): void {
-    spinnerLabel = label;
+    if (spinner) spinner.text = label;
   }
 
   function stopSpinner(rl?: ReadlineInterface | null): void {
-    if (spinnerTimer) {
-      clearInterval(spinnerTimer);
-      spinnerTimer = null;
-      clearLine();
-      lastSpinnerLen = 0;
+    if (spinner) {
+      spinner.stop();
+      // ora leaves the cursor on the spinner line — clear it
+      process.stdout.write("\x1b[2K\r");
+      spinner = null;
     }
     if (rl) rl.resume();
   }
 
-  // ── Status bar (sticky bottom line) ──
-
-  function drawStatusBar(): void {
-    if (!statusBarActive || !isTTY) return;
-    const rows = getRows();
-    const termCols = getCols();
-    const content = statusBarContent || "";
-    // Pad to full terminal width for solid background
-    const padded = ` ${content}${" ".repeat(Math.max(0, termCols - content.length - 1))}`;
-    // Save cursor, move to last row, draw in reverse video, restore cursor
-    rawWrite(
-      `${SAVE_CURSOR}${ESC}[${rows};1H${ESC}[7m${padded}${ESC}[27m${RESTORE_CURSOR}`,
-    );
-  }
-
-  function handleResize(): void {
-    if (!statusBarActive) return;
-    setScrollRegion();
-    drawStatusBar();
-  }
+  // ── Status line (single dim line above prompt) ──
 
   function initStatusBar(): void {
-    if (!isTTY) return;
     statusBarActive = true;
-    // Enter alternate screen buffer for clean fullscreen
-    rawWrite(ALT_SCREEN_ON);
-    rawWrite(CURSOR_SHOW);
-    setScrollRegion();
-    drawStatusBar();
-    process.stdout.on("resize", handleResize);
   }
 
   function updateStatusBar(info: StatusBarInfo): void {
@@ -364,16 +281,16 @@ export function createRenderer(cols?: number): Renderer {
     );
     if (info.costUsd > 0) parts.push(`$${info.costUsd.toFixed(2)}`);
     statusBarContent = parts.join("  ·  ");
-    drawStatusBar();
+    drawStatusLine();
+  }
+
+  function drawStatusLine(): void {
+    if (!statusBarActive || !statusBarContent) return;
+    writeln(`  ${pc.dim(statusBarContent)}`);
   }
 
   function destroyStatusBar(): void {
-    if (!statusBarActive) return;
     statusBarActive = false;
-    process.stdout.removeListener("resize", handleResize);
-    // Restore scroll region and leave alternate screen
-    rawWrite(`${ESC}[r`);
-    rawWrite(ALT_SCREEN_OFF);
   }
 
   return {
