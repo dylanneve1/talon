@@ -210,9 +210,6 @@ export function createTerminalFrontend(
           return;
         }
 
-        // Echo user message into chat area
-        renderer.renderUserMessage(text);
-
         // Execute AI query
         toolCallCount = 0;
         currentPhase = "thinking";
