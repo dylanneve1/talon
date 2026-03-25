@@ -1,8 +1,11 @@
 /**
- * Terminal renderer — all output formatting, spinner, and status bar.
+ * Terminal renderer — fullscreen TUI with sticky status bar.
  *
- * Flicker-free spinner using single-write \r overwrite (no clear-then-redraw).
- * Persistent status bar via ANSI scroll region on the bottom terminal line.
+ * Uses alternate screen buffer for clean fullscreen experience.
+ * Scroll region reserves the bottom line for a sticky status bar.
+ * Content scrolls above; status bar stays pinned.
+ *
+ * Flicker-free spinner via single-write \r overwrite.
  */
 
 import type { Interface as ReadlineInterface } from "node:readline";
@@ -44,7 +47,7 @@ export type Renderer = {
   updateSpinnerLabel(label: string): void;
   stopSpinner(rl?: ReadlineInterface | null): void;
 
-  // Status bar
+  // Screen & status bar
   initStatusBar(): void;
   updateStatusBar(info: StatusBarInfo): void;
   destroyStatusBar(): void;
@@ -54,6 +57,14 @@ export type Renderer = {
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const HIDDEN_TOOLS = new Set(["TodoRead", "TodoWrite"]);
+
+// ANSI escape sequences
+const ESC = "\x1b";
+const ALT_SCREEN_ON = `${ESC}[?1049h`;
+const ALT_SCREEN_OFF = `${ESC}[?1049l`;
+const CURSOR_SHOW = `${ESC}[?25h`;
+const SAVE_CURSOR = `${ESC}[s`;
+const RESTORE_CURSOR = `${ESC}[u`;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -150,6 +161,7 @@ export function cleanToolName(name: string): string {
 
 export function createRenderer(cols?: number): Renderer {
   const COLS = cols ?? Math.min(process.stdout.columns || 100, 120);
+  const isTTY = process.stdout.isTTY ?? false;
 
   // Spinner state
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
@@ -161,6 +173,26 @@ export function createRenderer(cols?: number): Renderer {
   let statusBarActive = false;
   let statusBarContent = "";
 
+  // ── Screen management ──
+
+  function getRows(): number {
+    return process.stdout.rows || 24;
+  }
+
+  function getCols(): number {
+    return process.stdout.columns || 80;
+  }
+
+  /** Set scroll region so content scrolls above the status bar. */
+  function setScrollRegion(): void {
+    if (!isTTY) return;
+    const rows = getRows();
+    // Rows 1..(rows-1) scroll; row `rows` is reserved for status bar
+    rawWrite(`${ESC}[1;${rows - 1}r`);
+    // Move cursor back into scroll region
+    rawWrite(`${ESC}[${rows - 1};1H`);
+  }
+
   // ── Output primitives ──
 
   function rawWrite(text: string): void {
@@ -169,7 +201,6 @@ export function createRenderer(cols?: number): Renderer {
 
   /** Overwrite current line without flicker (single atomic write). */
   function overwriteLine(text: string): void {
-    // Pad with spaces to erase any leftover characters from the previous write
     const pad =
       lastSpinnerLen > text.length
         ? " ".repeat(lastSpinnerLen - text.length)
@@ -179,7 +210,7 @@ export function createRenderer(cols?: number): Renderer {
   }
 
   function clearLine(): void {
-    rawWrite("\x1b[2K\r");
+    rawWrite(`${ESC}[2K\r`);
     lastSpinnerLen = 0;
   }
 
@@ -289,13 +320,36 @@ export function createRenderer(cols?: number): Renderer {
     if (rl) rl.resume();
   }
 
-  // ── Status bar ──
-  // Renders as a dim line above the prompt. No scroll regions or cursor
-  // repositioning — those conflict with readline and break on resize
-  // (especially on Windows PowerShell). Simple and reliable.
+  // ── Status bar (sticky bottom line) ──
+
+  function drawStatusBar(): void {
+    if (!statusBarActive || !isTTY) return;
+    const rows = getRows();
+    const termCols = getCols();
+    const content = statusBarContent || "";
+    // Pad to full terminal width for solid background
+    const padded = ` ${content}${" ".repeat(Math.max(0, termCols - content.length - 1))}`;
+    // Save cursor, move to last row, draw in reverse video, restore cursor
+    rawWrite(
+      `${SAVE_CURSOR}${ESC}[${rows};1H${ESC}[7m${padded}${ESC}[27m${RESTORE_CURSOR}`,
+    );
+  }
+
+  function handleResize(): void {
+    if (!statusBarActive) return;
+    setScrollRegion();
+    drawStatusBar();
+  }
 
   function initStatusBar(): void {
+    if (!isTTY) return;
     statusBarActive = true;
+    // Enter alternate screen buffer for clean fullscreen
+    rawWrite(ALT_SCREEN_ON);
+    rawWrite(CURSOR_SHOW);
+    setScrollRegion();
+    drawStatusBar();
+    process.stdout.on("resize", handleResize);
   }
 
   function updateStatusBar(info: StatusBarInfo): void {
@@ -313,14 +367,13 @@ export function createRenderer(cols?: number): Renderer {
     drawStatusBar();
   }
 
-  function drawStatusBar(): void {
-    if (!statusBarActive || !statusBarContent) return;
-    writeln(`  ${pc.dim("─".repeat(COLS - 4))}`);
-    writeln(`  ${pc.dim(statusBarContent)}`);
-  }
-
   function destroyStatusBar(): void {
+    if (!statusBarActive) return;
     statusBarActive = false;
+    process.stdout.removeListener("resize", handleResize);
+    // Restore scroll region and leave alternate screen
+    rawWrite(`${ESC}[r`);
+    rawWrite(ALT_SCREEN_OFF);
   }
 
   return {

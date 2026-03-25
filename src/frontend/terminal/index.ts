@@ -145,15 +145,16 @@ export function createTerminalFrontend(
           (_, name: string, maj: string, min: string) =>
             `${name.charAt(0).toUpperCase() + name.slice(1)} ${maj}.${min}`,
         );
+
+      // Enter fullscreen and set up status bar first
+      renderer.initStatusBar();
+
       renderer.writeln();
       renderer.writeln(
         `  ${pc.bold(pc.cyan("Talon"))}  ${pc.dim(modelDisplay)}`,
       );
       renderer.writeln(`  ${pc.dim("─".repeat(renderer.cols - 2))}`);
       renderer.writeln();
-
-      // Status bar
-      renderer.initStatusBar();
 
       const { execute } = await import("../../core/dispatcher.js");
       const input = createInput(`  ${pc.green("❯")} `);
