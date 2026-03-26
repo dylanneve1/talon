@@ -129,8 +129,9 @@ export function cleanToolName(name: string): string {
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
-export function createRenderer(cols?: number): Renderer {
+export function createRenderer(cols?: number, displayName = "Talon"): Renderer {
   const COLS = cols ?? Math.min(process.stdout.columns || 100, 120);
+  const botName = displayName;
 
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
   let spinnerFrame = 0;
@@ -157,7 +158,7 @@ export function createRenderer(cols?: number): Renderer {
 
   function renderAssistantMessage(text: string): void {
     writeln();
-    writeln(`  ${pc.cyan("▍")} ${pc.bold(pc.cyan("Talon"))}`);
+    writeln(`  ${pc.cyan("▍")} ${pc.bold(pc.cyan(botName))}`);
     for (const line of wrap(text, 2, COLS).split("\n")) {
       writeln(`  ${pc.cyan("▍")}${line}`);
     }

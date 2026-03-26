@@ -111,7 +111,7 @@ export function createTerminalFrontend(
   config: TalonConfig,
   gateway: Gateway,
 ): TerminalFrontend {
-  const renderer = createRenderer();
+  const renderer = createRenderer(undefined, config.botDisplayName);
   let currentPhase: "idle" | "thinking" | "tool" | "text" = "idle";
   let toolCallCount = 0;
 
@@ -153,7 +153,7 @@ export function createTerminalFrontend(
 
       renderer.writeln();
       renderer.writeln(
-        `  ${pc.bold(pc.cyan("Talon"))}  ${pc.dim(modelDisplay)}`,
+        `  ${pc.bold(pc.cyan(config.botDisplayName))}  ${pc.dim(modelDisplay)}`,
       );
       renderer.writeln(`  ${pc.dim("─".repeat(renderer.cols - 2))}`);
 

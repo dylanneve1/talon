@@ -34,6 +34,9 @@ const configSchema = z.object({
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
+  // Display name shown in terminal UI (defaults to "Talon")
+  botDisplayName: z.string().default("Talon"),
+
   // Teams frontend (Power Automate webhooks)
   teamsWebhookUrl: z.string().url().optional(),
   teamsWebhookSecret: z.string().optional(),
