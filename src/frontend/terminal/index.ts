@@ -116,7 +116,7 @@ export function createTerminalFrontend(
   let toolCallCount = 0;
 
   const context: ContextManager = {
-    acquire: () => gateway.setContext(terminalNumericId),
+    acquire: () => gateway.setContext(terminalNumericId, terminalChatId),
     release: () => gateway.clearContext(terminalNumericId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
