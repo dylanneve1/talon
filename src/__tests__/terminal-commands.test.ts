@@ -37,6 +37,21 @@ vi.mock("../storage/chat-settings.js", () => ({
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+const mockGetSession = vi.fn((_chatId: string): any => ({
+  turns: 0,
+  sessionName: undefined,
+  usage: {
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCacheRead: 0,
+    totalCacheWrite: 0,
+    lastPromptTokens: 0,
+    estimatedCostUsd: 0,
+    totalResponseMs: 0,
+    lastResponseMs: 0,
+    fastestResponseMs: Infinity,
+  },
+}));
 const mockGetSessionInfo = vi.fn((_chatId: string): any => ({
   turns: 0,
   usage: {
@@ -55,6 +70,7 @@ const mockSetSessionName = vi.fn();
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockGetAllSessions = vi.fn((): any[] => []);
 vi.mock("../storage/sessions.js", () => ({
+  getSession: (chatId: string) => mockGetSession(chatId),
   getSessionInfo: (chatId: string) => mockGetSessionInfo(chatId),
   setSessionName: (chatId: string, name: string) =>
     mockSetSessionName(chatId, name),
@@ -257,21 +273,9 @@ describe("built-in commands", () => {
 
   describe("/rename", () => {
     it("shows current name when session has one", async () => {
-      mockGetSessionInfo.mockReturnValueOnce({
-        sessionName: "my session",
-        turns: 0,
-        usage: {
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          totalCacheRead: 0,
-          totalCacheWrite: 0,
-          lastPromptTokens: 0,
-          estimatedCostUsd: 0,
-          totalResponseMs: 0,
-          lastResponseMs: 0,
-          fastestResponseMs: Infinity,
-        },
-      });
+      mockGetSession.mockReturnValueOnce({ sessionName: "my session" });
+      // Second call inside handler also returns the same
+      mockGetSession.mockReturnValueOnce({ sessionName: "my session" });
       const ctx = makeMockContext();
       await tryRunCommand("/rename", ctx);
       expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
@@ -280,20 +284,8 @@ describe("built-in commands", () => {
     });
 
     it("shows 'no name' when session is unnamed", async () => {
-      mockGetSessionInfo.mockReturnValueOnce({
-        turns: 0,
-        usage: {
-          totalInputTokens: 0,
-          totalOutputTokens: 0,
-          totalCacheRead: 0,
-          totalCacheWrite: 0,
-          lastPromptTokens: 0,
-          estimatedCostUsd: 0,
-          totalResponseMs: 0,
-          lastResponseMs: 0,
-          fastestResponseMs: Infinity,
-        },
-      });
+      mockGetSession.mockReturnValueOnce({ sessionName: undefined });
+      mockGetSession.mockReturnValueOnce({ sessionName: undefined });
       const ctx = makeMockContext();
       await tryRunCommand("/rename", ctx);
       expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(

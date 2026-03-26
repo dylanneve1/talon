@@ -219,7 +219,6 @@ export function createTerminalFrontend(
 
         // Slash commands — these handle their own reprompt
         if (await tryRunCommand(text, cmdCtx)) {
-          updateStatusBar();
           return;
         }
 

@@ -93,7 +93,7 @@ export function createInput(promptStr: string): InputHandler {
     if (prevRows > 1) {
       process.stdout.write(`\x1b[${prevRows - 1}A`); // move up
     }
-    process.stdout.write(`\r\x1b[J${display}`); // col 0, clear to EOS, write
+    process.stdout.write(`\r\x1b[J${display}\x1b[?25h`); // col 0, clear to EOS, write, show cursor
 
     prevRows = Math.max(1, Math.ceil(visLen / cols));
   }

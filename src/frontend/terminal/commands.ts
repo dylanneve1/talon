@@ -249,13 +249,15 @@ export function registerBuiltinCommands(): void {
     argHint: "[name]",
     description: "Name the current session",
     async handler(args, ctx) {
-      const { getSessionInfo, setSessionName } =
+      const { getSession, setSessionName } =
         await import("../../storage/sessions.js");
+      // Ensure session exists in store (auto-creates if needed)
+      getSession(ctx.chatId());
       if (!args) {
-        const info = getSessionInfo(ctx.chatId());
+        const session = getSession(ctx.chatId());
         ctx.renderer.writeSystem(
-          info.sessionName
-            ? `Session name: "${info.sessionName}"`
+          session.sessionName
+            ? `Session name: "${session.sessionName}"`
             : "Session has no name.",
         );
       } else {

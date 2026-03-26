@@ -58,7 +58,6 @@ function ensureDir(): void {
   if (!existsSync(dirs.data)) mkdirSync(dirs.data, { recursive: true });
 }
 
-
 export function loadSessions(): void {
   try {
     if (existsSync(STORE_FILE)) {
@@ -73,17 +72,22 @@ export function loadSessions(): void {
         logError("sessions", "Loaded from backup (primary was corrupt)");
         return;
       }
-    } catch { /* backup also corrupt */ }
-    logError("sessions", "Session data corrupt and no valid backup — starting fresh");
+    } catch {
+      /* backup also corrupt */
+    }
+    logError(
+      "sessions",
+      "Session data corrupt and no valid backup — starting fresh",
+    );
     store = {};
   }
   // SDK sessions don't survive process restarts — the embedded Claude Code
   // subprocess is gone.  Clear stale session IDs so we don't try to resume
   // a dead session (which causes the SDK to hang silently on Windows).
+  // Keep turns/usage intact — they're historical data used by /resume.
   for (const session of Object.values(store)) {
     if (session.sessionId) {
       session.sessionId = undefined;
-      session.turns = 0;
       dirty = true;
     }
   }
@@ -96,14 +100,20 @@ function saveSessions(): void {
     const data = JSON.stringify(store, null, 2) + "\n";
     // Write backup of current file before overwriting
     if (existsSync(STORE_FILE)) {
-      try { writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE)); } catch { /* best effort */ }
+      try {
+        writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE));
+      } catch {
+        /* best effort */
+      }
     }
     // Atomic write: writes to temp file then renames — prevents corruption on crash
     writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch (err) {
     logError("sessions", "Failed to persist sessions", err);
-    recordError(`Session save failed: ${err instanceof Error ? err.message : err}`);
+    recordError(
+      `Session save failed: ${err instanceof Error ? err.message : err}`,
+    );
   }
 }
 
@@ -144,7 +154,10 @@ export function getSession(chatId: string): SessionState {
     session.usage.totalResponseMs = 0;
   if (session.usage.lastResponseMs === undefined)
     session.usage.lastResponseMs = 0;
-  if (session.usage.fastestResponseMs === undefined || session.usage.fastestResponseMs === 0)
+  if (
+    session.usage.fastestResponseMs === undefined ||
+    session.usage.fastestResponseMs === 0
+  )
     session.usage.fastestResponseMs = Infinity;
   return session;
 }
@@ -245,7 +258,10 @@ export function resetSession(chatId: string): void {
   delete store[chatId];
   dirty = true;
   saveSessions();
-  log("sessions", `[${chatId}] Reset${name ? ` "${name}"` : ""} (${turns} turns)`);
+  log(
+    "sessions",
+    `[${chatId}] Reset${name ? ` "${name}"` : ""} (${turns} turns)`,
+  );
 }
 
 export type SessionInfo = {

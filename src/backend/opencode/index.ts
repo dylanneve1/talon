@@ -8,7 +8,14 @@
 import { createOpencode, type OpencodeClient } from "@opencode-ai/sdk";
 import type { TalonConfig } from "../../util/config.js";
 import type { QueryParams, QueryResult } from "../../core/types.js";
-import { getSession, incrementTurns, recordUsage, setSessionId, setSessionName, resetSession } from "../../storage/sessions.js";
+import {
+  getSession,
+  incrementTurns,
+  recordUsage,
+  setSessionId,
+  setSessionName,
+  resetSession,
+} from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getRecentHistory } from "../../storage/history.js";
 import { classify } from "../../core/errors.js";
@@ -22,7 +29,10 @@ let client: OpencodeClient | null = null;
 let serverHandle: { url: string; close(): void } | null = null;
 let gatewayPortFn: () => number = () => 19876;
 
-export function initOpenCodeAgent(cfg: TalonConfig, getGatewayPort?: () => number): void {
+export function initOpenCodeAgent(
+  cfg: TalonConfig,
+  getGatewayPort?: () => number,
+): void {
   config = cfg;
   if (getGatewayPort) gatewayPortFn = getGatewayPort;
 }
@@ -43,7 +53,8 @@ async function ensureServer(): Promise<OpencodeClient> {
 
   // Register our MCP tools server with OpenCode
   try {
-    const toolsPath = new URL("../claude-sdk/tools.ts", import.meta.url).pathname;
+    const toolsPath = new URL("../claude-sdk/tools.ts", import.meta.url)
+      .pathname;
     await client.mcp.add({
       body: {
         name: "talon-tools",
@@ -58,7 +69,10 @@ async function ensureServer(): Promise<OpencodeClient> {
     });
     log("agent", "Registered talon-tools MCP server with OpenCode");
   } catch (err) {
-    logWarn("agent", `MCP registration failed (tools may not be available): ${err instanceof Error ? err.message : err}`);
+    logWarn(
+      "agent",
+      `MCP registration failed (tools may not be available): ${err instanceof Error ? err.message : err}`,
+    );
   }
 
   return client;
@@ -75,7 +89,10 @@ export function stopOpenCodeServer(): void {
 
 // ── Session management ──────────────────────────────────────────────────────
 
-async function ensureSession(oc: OpencodeClient, chatId: string): Promise<string> {
+async function ensureSession(
+  oc: OpencodeClient,
+  chatId: string,
+): Promise<string> {
   const session = getSession(chatId);
 
   if (session.sessionId) {
@@ -84,7 +101,10 @@ async function ensureSession(oc: OpencodeClient, chatId: string): Promise<string
       await oc.session.get({ path: { id: session.sessionId } });
       return session.sessionId;
     } catch {
-      logWarn("agent", `[${chatId}] Session ${session.sessionId} expired, creating new`);
+      logWarn(
+        "agent",
+        `[${chatId}] Session ${session.sessionId} expired, creating new`,
+      );
       resetSession(chatId);
     }
   }
@@ -104,7 +124,10 @@ async function ensureSession(oc: OpencodeClient, chatId: string): Promise<string
 
 // ── Main handler ────────────────────────────────────────────────────────────
 
-export async function handleMessage(params: QueryParams, _retried = false): Promise<QueryResult> {
+export async function handleMessage(
+  params: QueryParams,
+  _retried = false,
+): Promise<QueryResult> {
   if (!config) throw new Error("OpenCode agent not initialized");
 
   const { chatId, text, senderName, isGroup, onTextBlock } = params;
@@ -114,9 +137,11 @@ export async function handleMessage(params: QueryParams, _retried = false): Prom
   const activeModel = chatSettings.model ?? config.model;
 
   // Resolve provider and model ID
-  const providerID = activeModel.includes("gpt") ? "openai"
-    : activeModel.includes("gemini") ? "google"
-    : "anthropic";
+  const providerID = activeModel.includes("gpt")
+    ? "openai"
+    : activeModel.includes("gemini")
+      ? "google"
+      : "anthropic";
   const modelID = activeModel;
 
   const oc = await ensureServer();
@@ -126,10 +151,15 @@ export async function handleMessage(params: QueryParams, _retried = false): Prom
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
   let continuityPrefix = "";
   const session = getSession(chatId);
-  if (session.turns === 0) {
+  if (!session.sessionId && session.turns > 0) {
     const recent = getRecentHistory(chatId, 3);
     if (recent.length > 0) {
-      const ctx = recent.map((m) => `[${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.senderName}: ${m.text.slice(0, 300)}`).join("\n");
+      const ctx = recent
+        .map(
+          (m) =>
+            `[${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.senderName}: ${m.text.slice(0, 300)}`,
+        )
+        .join("\n");
       continuityPrefix = `[Session resumed — recent context:\n${ctx}]\n\n`;
     }
   }
@@ -182,13 +212,22 @@ export async function handleMessage(params: QueryParams, _retried = false): Prom
     });
 
     if (session.turns === 0 && text) {
-      const cleanText = text.replace(/^\[.*?\]\s*/g, "").replace(/\[msg_id:\d+\]\s*/g, "").trim();
+      const cleanText = text
+        .replace(/^\[.*?\]\s*/g, "")
+        .replace(/\[msg_id:\d+\]\s*/g, "")
+        .trim();
       if (cleanText) {
-        setSessionName(chatId, cleanText.length > 30 ? cleanText.slice(0, 30) + "..." : cleanText);
+        setSessionName(
+          chatId,
+          cleanText.length > 30 ? cleanText.slice(0, 30) + "..." : cleanText,
+        );
       }
     }
 
-    log("agent", `[${chatId}] -> (${durationMs}ms${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`);
+    log(
+      "agent",
+      `[${chatId}] -> (${durationMs}ms${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`,
+    );
     traceMessage(chatId, "out", responseText, { durationMs, toolCalls });
 
     return {

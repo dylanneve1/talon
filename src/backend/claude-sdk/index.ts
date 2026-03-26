@@ -12,7 +12,10 @@ import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { getRecentHistory } from "../../storage/history.js";
 import { resolve } from "node:path";
 import { classify } from "../../core/errors.js";
-import { getPluginMcpServers, getPluginPromptAdditions } from "../../core/plugin.js";
+import {
+  getPluginMcpServers,
+  getPluginPromptAdditions,
+} from "../../core/plugin.js";
 import { rebuildSystemPrompt } from "../../util/config.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -25,7 +28,10 @@ import type { QueryParams, QueryResult } from "../../core/types.js";
 let config: TalonConfig;
 let bridgePortFn: () => number = () => 19876;
 
-export function initAgent(cfg: TalonConfig, getBridgePort?: () => number): void {
+export function initAgent(
+  cfg: TalonConfig,
+  getBridgePort?: () => number,
+): void {
   config = cfg;
   if (getBridgePort) bridgePortFn = getBridgePort;
 
@@ -45,8 +51,15 @@ export async function handleMessage(
   if (!config)
     throw new Error("Agent not initialized. Call initAgent() first.");
 
-  const { chatId, text, senderName, isGroup, onTextBlock, onStreamDelta, onToolUse } =
-    params;
+  const {
+    chatId,
+    text,
+    senderName,
+    isGroup,
+    onTextBlock,
+    onStreamDelta,
+    onToolUse,
+  } = params;
   const session = getSession(chatId);
   const t0 = Date.now();
 
@@ -61,14 +74,22 @@ export async function handleMessage(
   const activeModel = chatSettings.model ?? config.model;
   const activeEffort = chatSettings.effort ?? "adaptive";
 
-  const EFFORT_MAP: Record<string, { thinking: { type: "adaptive" | "disabled" }; effort?: "low" | "medium" | "high" | "max" }> = {
+  const EFFORT_MAP: Record<
+    string,
+    {
+      thinking: { type: "adaptive" | "disabled" };
+      effort?: "low" | "medium" | "high" | "max";
+    }
+  > = {
     off: { thinking: { type: "disabled" } },
     low: { thinking: { type: "adaptive" }, effort: "low" },
     medium: { thinking: { type: "adaptive" }, effort: "medium" },
     high: { thinking: { type: "adaptive" }, effort: "high" },
     max: { thinking: { type: "adaptive" }, effort: "max" },
   };
-  const thinkingConfig = EFFORT_MAP[activeEffort] ?? { thinking: { type: "adaptive" as const } };
+  const thinkingConfig = EFFORT_MAP[activeEffort] ?? {
+    thinking: { type: "adaptive" as const },
+  };
 
   const options = {
     model: activeModel,
@@ -77,41 +98,78 @@ export async function handleMessage(
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     betas: ["context-1m-2025-08-07"],
-    ...(config.claudeBinary ? { pathToClaudeCodeExecutable: config.claudeBinary } : {}),
+    ...(config.claudeBinary
+      ? { pathToClaudeCodeExecutable: config.claudeBinary }
+      : {}),
     disallowedTools: [
-      "EnterPlanMode", "ExitPlanMode",
-      "EnterWorktree", "ExitWorktree",
-      "TodoWrite", "TodoRead",
-      "TaskCreate", "TaskUpdate", "TaskGet", "TaskList", "TaskOutput", "TaskStop",
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "EnterWorktree",
+      "ExitWorktree",
+      "TodoWrite",
+      "TodoRead",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskGet",
+      "TaskList",
+      "TaskOutput",
+      "TaskStop",
       "AskUserQuestion",
     ],
     ...thinkingConfig,
     mcpServers: {
       // Register frontend-specific MCP tools based on active frontend
       ...(() => {
-        const frontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
+        const frontends = Array.isArray(config.frontend)
+          ? config.frontend
+          : [config.frontend];
         const bridgeUrl = `http://127.0.0.1:${bridgePortFn()}`;
         const mcpEnv = { TALON_BRIDGE_URL: bridgeUrl, TALON_CHAT_ID: chatId };
-        const servers: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {};
+        const servers: Record<
+          string,
+          { command: string; args: string[]; env: Record<string, string> }
+        > = {};
         // Resolve tsx from Talon's node_modules (cwd may be ~/.talon/workspace/ which has no node_modules)
         // Resolve tsx from the package root (3 levels up from src/backend/claude-sdk/)
-        const tsxImport = resolve(import.meta.dirname ?? ".", "../../../node_modules/tsx/dist/esm/index.mjs");
+        const tsxImport = resolve(
+          import.meta.dirname ?? ".",
+          "../../../node_modules/tsx/dist/esm/index.mjs",
+        );
 
         if (frontends.includes("telegram")) {
           servers["telegram-tools"] = {
             command: process.platform === "win32" ? "npx" : "node",
-            args: process.platform === "win32"
-              ? ["tsx", resolve(import.meta.dirname ?? ".", "tools.ts")]
-              : ["--import", tsxImport, resolve(import.meta.dirname ?? ".", "tools.ts")],
+            args:
+              process.platform === "win32"
+                ? ["tsx", resolve(import.meta.dirname ?? ".", "tools.ts")]
+                : [
+                    "--import",
+                    tsxImport,
+                    resolve(import.meta.dirname ?? ".", "tools.ts"),
+                  ],
             env: mcpEnv,
           };
         }
         if (frontends.includes("teams")) {
           servers["teams-tools"] = {
             command: process.platform === "win32" ? "npx" : "node",
-            args: process.platform === "win32"
-              ? ["tsx", resolve(import.meta.dirname ?? ".", "../../frontend/teams/tools.ts")]
-              : ["--import", tsxImport, resolve(import.meta.dirname ?? ".", "../../frontend/teams/tools.ts")],
+            args:
+              process.platform === "win32"
+                ? [
+                    "tsx",
+                    resolve(
+                      import.meta.dirname ?? ".",
+                      "../../frontend/teams/tools.ts",
+                    ),
+                  ]
+                : [
+                    "--import",
+                    tsxImport,
+                    resolve(
+                      import.meta.dirname ?? ".",
+                      "../../frontend/teams/tools.ts",
+                    ),
+                  ],
             env: mcpEnv,
           };
         }
@@ -125,10 +183,10 @@ export async function handleMessage(
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
   const nowTag = `[${formatFullDatetime()}]`;
 
-  // Session continuity: on the first turn after a restart (session exists but turns=0),
-  // On first turn after restart, prepend recent messages for continuity
+  // Session continuity: when resuming a session that has history but no active
+  // SDK session (after restart or /resume), prepend recent messages for context.
   let continuityPrefix = "";
-  if (session.sessionId && session.turns === 0) {
+  if (!session.sessionId && session.turns > 0) {
     const recentMsgs = getRecentHistory(chatId, 10);
     if (recentMsgs.length > 0) {
       const contextLines = recentMsgs
@@ -148,7 +206,10 @@ export async function handleMessage(
   traceMessage(chatId, "in", text, { senderName, isGroup });
 
   // SDK types are not fully exported; cast options at the boundary
-  const qi = query({ prompt, options: options as Parameters<typeof query>[0]["options"] });
+  const qi = query({
+    prompt,
+    options: options as Parameters<typeof query>[0]["options"],
+  });
 
   let currentBlockText = "";
   let allResponseText = "";
@@ -220,15 +281,25 @@ export async function handleMessage(
             }
             if (b.type === "tool_use") {
               toolCalls++;
-              const tb = block as { type: string; name?: string; input?: Record<string, unknown> };
+              const tb = block as {
+                type: string;
+                name?: string;
+                input?: Record<string, unknown>;
+              };
               if (onToolUse && tb.name) {
-                try { onToolUse(tb.name, tb.input ?? {}); } catch { /* non-fatal */ }
+                try {
+                  onToolUse(tb.name, tb.input ?? {});
+                } catch {
+                  /* non-fatal */
+                }
               }
               // If there's text before this tool call, send it as a progress message
               if (blockText.trim() && onTextBlock) {
                 try {
                   await onTextBlock(blockText.trim());
-                } catch { /* non-fatal — don't abort the stream loop */ }
+                } catch {
+                  /* non-fatal — don't abort the stream loop */
+                }
                 allResponseText += blockText;
                 blockText = "";
                 currentBlockText = "";
@@ -264,14 +335,20 @@ export async function handleMessage(
   } catch (err) {
     const classified = classify(err);
     if (classified.reason === "session_expired" && !_retried) {
-      logWarn("agent", `[${chatId}] Stale session, retrying with fresh session`);
+      logWarn(
+        "agent",
+        `[${chatId}] Stale session, retrying with fresh session`,
+      );
       resetSession(chatId);
       return handleMessage(params, true);
     }
     // Context length exceeded — reset session and retry (SDK auto-compaction should prevent
     // this, but handle it as a safety net for edge cases)
     if (classified.reason === "context_length" && !_retried) {
-      logWarn("agent", `[${chatId}] Context length exceeded, resetting session and retrying`);
+      logWarn(
+        "agent",
+        `[${chatId}] Context length exceeded, resetting session and retrying`,
+      );
       resetSession(chatId);
       return handleMessage(params, true);
     }
@@ -283,7 +360,10 @@ export async function handleMessage(
           ? "claude-haiku-4-5"
           : null;
       if (fallbackModel) {
-        logWarn("agent", `[${chatId}] ${classified.reason}, falling back to ${fallbackModel.replace("claude-", "")}`);
+        logWarn(
+          "agent",
+          `[${chatId}] ${classified.reason}, falling back to ${fallbackModel.replace("claude-", "")}`,
+        );
         resetSession(chatId);
         const originalModel = getChatSettings(chatId).model;
         setChatModel(chatId, fallbackModel);
@@ -338,7 +418,12 @@ export async function handleMessage(
       `${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`,
   );
   traceMessage(chatId, "out", allResponseText, {
-    durationMs, inputTokens, outputTokens, cacheRead, cacheWrite, toolCalls,
+    durationMs,
+    inputTokens,
+    outputTokens,
+    cacheRead,
+    cacheWrite,
+    toolCalls,
     model: activeModel,
   });
 
