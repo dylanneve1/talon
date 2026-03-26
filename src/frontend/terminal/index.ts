@@ -174,27 +174,6 @@ export function createTerminalFrontend(
         input.prompt();
       }
 
-      function updateStatusBar(): void {
-        const info = getSessionInfo(terminalChatId);
-        const u = info.usage;
-        const cacheHit =
-          u.totalInputTokens + u.totalCacheRead > 0
-            ? Math.round(
-                (u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) *
-                  100,
-              )
-            : 0;
-        renderer.updateStatusBar({
-          model: modelDisplay,
-          sessionName: info.sessionName,
-          turns: info.turns,
-          inputTokens: u.totalInputTokens,
-          outputTokens: u.totalOutputTokens,
-          cacheHitPct: cacheHit,
-          costUsd: u.estimatedCostUsd,
-        });
-      }
-
       const cmdCtx: CommandContext = {
         chatId: () => terminalChatId,
         config,
@@ -265,14 +244,24 @@ export function createTerminalFrontend(
             renderer.renderAssistantMessage(result.text);
           }
 
-          renderer.renderStats(
-            result.durationMs,
-            result.inputTokens,
-            result.outputTokens,
-            result.cacheRead,
-            toolCallCount,
-          );
-          updateStatusBar();
+          const info = getSessionInfo(terminalChatId);
+          const u = info.usage;
+          const cacheHit =
+            u.totalInputTokens + u.totalCacheRead > 0
+              ? Math.round(
+                  (u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) *
+                    100,
+                )
+              : 0;
+          renderer.renderStatusLine(result.durationMs, toolCallCount, {
+            model: modelDisplay,
+            sessionName: info.sessionName,
+            turns: info.turns,
+            inputTokens: u.totalInputTokens,
+            outputTokens: u.totalOutputTokens,
+            cacheHitPct: cacheHit,
+            costUsd: u.estimatedCostUsd,
+          });
           reprompt(); // readline back on, show prompt
         } catch (err) {
           renderer.stopSpinner();

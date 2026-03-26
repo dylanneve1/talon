@@ -231,23 +231,41 @@ describe("createRenderer", () => {
     expect(text).not.toContain("mcp__");
   });
 
-  it("renderStats shows duration and tokens", () => {
+  it("renderStatusLine shows duration, model, turns, tokens, cache, and tools", () => {
     const r = createRenderer(80);
-    r.renderStats(1500, 100, 50, 80, 3);
+    r.renderStatusLine(1500, 3, {
+      model: "Sonnet 4.6",
+      turns: 2,
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheHitPct: 44,
+      costUsd: 0,
+    });
     const text = output.join("");
     expect(text).toContain("1.5s");
+    expect(text).toContain("Sonnet 4.6");
+    expect(text).toContain("2 turns");
     expect(text).toContain("150 tok");
-    expect(text).toContain("cache");
+    expect(text).toContain("44% cache");
     expect(text).toContain("3 tools");
   });
 
-  it("renderStats pluralizes tool count correctly", () => {
+  it("renderStatusLine pluralizes tool count correctly", () => {
     const r = createRenderer(80);
 
     output = [];
-    r.renderStats(1000, 10, 5, 0, 1);
+    r.renderStatusLine(1000, 1, {
+      model: "Sonnet 4.6",
+      turns: 1,
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheHitPct: 0,
+      costUsd: 0,
+    });
     expect(output.join("")).toContain("1 tool");
     expect(output.join("")).not.toContain("1 tools");
+    expect(output.join("")).toContain("1 turn");
+    expect(output.join("")).not.toContain("1 turns");
   });
 
   it("uses the provided column width", () => {

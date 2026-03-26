@@ -27,17 +27,14 @@ export type Renderer = {
   writeError(text: string): void;
   renderAssistantMessage(text: string): void;
   renderToolCall(toolName: string, input: Record<string, unknown>): void;
-  renderStats(
+  renderStatusLine(
     durationMs: number,
-    inputTokens: number,
-    outputTokens: number,
-    cacheRead: number,
     tools: number,
+    info: StatusBarInfo,
   ): void;
   startSpinner(label?: string): void;
   updateSpinnerLabel(label: string): void;
   stopSpinner(): void;
-  updateStatusBar(info: StatusBarInfo): void;
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -182,18 +179,21 @@ export function createRenderer(cols?: number, displayName = "Talon"): Renderer {
     );
   }
 
-  function renderStats(
+  function renderStatusLine(
     ms: number,
-    inTok: number,
-    outTok: number,
-    cache: number,
     tools: number,
+    info: StatusBarInfo,
   ): void {
     const p = [
       `${(ms / 1000).toFixed(1)}s`,
-      `${inTok + outTok} tok`,
-      `${inTok + cache > 0 ? Math.round((cache / (inTok + cache)) * 100) : 0}% cache`,
+      info.model,
     ];
+    if (info.sessionName) p.push(`"${info.sessionName}"`);
+    p.push(
+      `${info.turns} turn${info.turns !== 1 ? "s" : ""}`,
+      `${fmtTok(info.inputTokens + info.outputTokens)} tok`,
+      `${info.cacheHitPct}% cache`,
+    );
     if (tools > 0) p.push(`${tools} tool${tools > 1 ? "s" : ""}`);
     writeln();
     writeln(`  ${pc.dim(p.join("  ·  "))}`);
@@ -233,19 +233,6 @@ export function createRenderer(cols?: number, displayName = "Talon"): Renderer {
     }
   }
 
-  // ── Status line ──
-
-  function updateStatusBar(info: StatusBarInfo): void {
-    const p = [info.model];
-    if (info.sessionName) p.push(`"${info.sessionName}"`);
-    p.push(
-      `${info.turns} turn${info.turns !== 1 ? "s" : ""}`,
-      `${fmtTok(info.inputTokens + info.outputTokens)} tok`,
-      `${info.cacheHitPct}% cache`,
-    );
-    writeln(`  ${pc.dim(p.join("  ·  "))}`);
-  }
-
   return {
     cols: COLS,
     writeln,
@@ -253,10 +240,9 @@ export function createRenderer(cols?: number, displayName = "Talon"): Renderer {
     writeError,
     renderAssistantMessage,
     renderToolCall,
-    renderStats,
+    renderStatusLine,
     startSpinner,
     updateSpinnerLabel,
     stopSpinner,
-    updateStatusBar,
   };
 }
