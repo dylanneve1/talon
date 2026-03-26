@@ -1,8 +1,9 @@
 /**
  * Terminal input — raw stdin with manual key parsing.
  *
- * No readline, no emitKeypressEvents. Raw data from stdin, parsed manually.
- * Bracketed paste mode for proper paste detection.
+ * Input is a list of parts: text segments and collapsed paste blocks.
+ * You can type, paste, type more, paste again. Backspace removes from the end.
+ * Enter submits everything. Ctrl+U clears all.
  */
 
 import pc from "picocolors";
@@ -18,6 +19,10 @@ export type InputHandler = {
   resume(): void;
 };
 
+type TextPart = { type: "text"; content: string };
+type PastePart = { type: "paste"; content: string };
+type Part = TextPart | PastePart;
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const PASTE_COLLAPSE_LINES = 3;
@@ -32,43 +37,63 @@ export function createInput(promptStr: string): InputHandler {
   let pendingResolve: ((value: string) => void) | null = null;
   let paused = false;
 
-  // The full input is: buffer + (optional collapsed paste attachment)
-  // buffer    = text the user has typed (visible, editable)
-  // pastePart = collapsed paste content (shown as dim [Pasted ...] tag after buffer)
-  // Backspace when cursor is at end of buffer+paste removes the paste first.
-  let buffer = "";
-  let pastePart: string | null = null; // non-null = paste attached
+  // Input is an ordered list of parts
+  let parts: Part[] = [{ type: "text", content: "" }];
 
   // Bracketed paste accumulation
   let inPaste = false;
   let pasteAccum = "";
 
+  // ── Helpers ──
+
+  function lastPart(): Part {
+    return parts[parts.length - 1]!;
+  }
+
+  /** Ensure the last part is a text part (for typing into). */
+  function ensureTrailingText(): TextPart {
+    const last = lastPart();
+    if (last.type === "text") return last;
+    const t: TextPart = { type: "text", content: "" };
+    parts.push(t);
+    return t;
+  }
+
+  function pasteTag(p: PastePart): string {
+    const lines = p.content.split("\n").length;
+    return lines > 1
+      ? `[Pasted ~${lines} lines]`
+      : `[Pasted ${p.content.length} chars]`;
+  }
+
   // ── Drawing ──
 
   function redraw(): void {
-    let display = `${promptStr}${buffer}`;
-    if (pastePart !== null) {
-      const lines = pastePart.split("\n").length;
-      const tag =
-        lines > 1
-          ? `[Pasted ~${lines} lines]`
-          : `[Pasted ${pastePart.length} chars]`;
-      display += ` ${pc.dim(tag)}`;
+    let display = promptStr;
+    for (const p of parts) {
+      if (p.type === "text") {
+        display += p.content;
+      } else {
+        display += pc.dim(pasteTag(p));
+      }
     }
     process.stdout.write(`\x1b[2K\r${display}`);
   }
 
   function getFullText(): string {
-    if (pastePart !== null) {
-      return buffer ? `${buffer}\n${pastePart}` : pastePart;
-    }
-    return buffer;
+    return parts
+      .map((p) => p.content)
+      .join("\n")
+      .trim();
+  }
+
+  function clear(): void {
+    parts = [{ type: "text", content: "" }];
   }
 
   function submit(): void {
     const text = getFullText();
-    buffer = "";
-    pastePart = null;
+    clear();
     process.stdout.write("\n");
 
     if (pendingResolve) {
@@ -86,11 +111,36 @@ export function createInput(promptStr: string): InputHandler {
       lineCount >= PASTE_COLLAPSE_LINES ||
       text.length > PASTE_COLLAPSE_CHARS
     ) {
-      // Collapse — attach to current buffer (buffer stays as-is)
-      pastePart = text;
+      // Collapse into a paste part
+      parts.push({ type: "paste", content: text });
     } else {
-      // Short paste — inline into buffer
-      buffer += text.replace(/\n/g, " ");
+      // Short paste — inline into current text part
+      ensureTrailingText().content += text.replace(/\n/g, " ");
+    }
+    redraw();
+  }
+
+  function handleBackspace(): void {
+    const last = lastPart();
+    if (last.type === "text" && last.content.length > 0) {
+      // Delete last char from text
+      last.content = last.content.slice(0, -1);
+    } else if (
+      last.type === "text" &&
+      last.content === "" &&
+      parts.length > 1
+    ) {
+      // Empty trailing text — remove it, then remove the paste before it
+      parts.pop();
+      parts.pop();
+      // Ensure we always have at least one text part
+      if (parts.length === 0) parts.push({ type: "text", content: "" });
+      ensureTrailingText();
+    } else if (last.type === "paste") {
+      // Remove the paste block
+      parts.pop();
+      if (parts.length === 0) parts.push({ type: "text", content: "" });
+      ensureTrailingText();
     }
     redraw();
   }
@@ -102,7 +152,7 @@ export function createInput(promptStr: string): InputHandler {
   }
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
-  process.stdout.write("\x1b[?2004h"); // enable bracketed paste
+  process.stdout.write("\x1b[?2004h");
 
   process.stdin.on("data", (chunk: string) => {
     if (paused) return;
@@ -112,20 +162,18 @@ export function createInput(promptStr: string): InputHandler {
       inPaste = true;
       pasteAccum = chunk.split(PASTE_START).slice(1).join(PASTE_START);
       if (pasteAccum.includes(PASTE_END)) {
-        const text = pasteAccum.split(PASTE_END)[0]!;
         inPaste = false;
+        handlePasteComplete(pasteAccum.split(PASTE_END)[0]!);
         pasteAccum = "";
-        handlePasteComplete(text);
       }
       return;
     }
     if (inPaste) {
       if (chunk.includes(PASTE_END)) {
         pasteAccum += chunk.split(PASTE_END)[0]!;
-        const text = pasteAccum;
         inPaste = false;
+        handlePasteComplete(pasteAccum);
         pasteAccum = "";
-        handlePasteComplete(text);
       } else {
         pasteAccum += chunk;
       }
@@ -137,25 +185,23 @@ export function createInput(promptStr: string): InputHandler {
       const ch = chunk[i]!;
       const code = chunk.charCodeAt(i);
 
-      // Ctrl+C
       if (code === 0x03) {
+        // Ctrl+C
         process.stdout.write("\n\x1b[?2004l");
         if (process.stdin.isTTY) process.stdin.setRawMode(false);
         process.exit(0);
       }
 
-      // Ctrl+U — clear everything
       if (code === 0x15) {
-        buffer = "";
-        pastePart = null;
+        // Ctrl+U
+        clear();
         redraw();
         continue;
       }
 
-      // Enter
       if (code === 0x0d || code === 0x0a) {
-        const text = getFullText();
-        if (text.trim()) {
+        // Enter
+        if (getFullText()) {
           submit();
         } else {
           process.stdout.write("\n");
@@ -164,21 +210,14 @@ export function createInput(promptStr: string): InputHandler {
         continue;
       }
 
-      // Backspace
       if (code === 0x7f || code === 0x08) {
-        if (pastePart !== null) {
-          // Remove the paste attachment, keep buffer
-          pastePart = null;
-          redraw();
-        } else if (buffer.length > 0) {
-          buffer = buffer.slice(0, -1);
-          redraw();
-        }
+        // Backspace
+        handleBackspace();
         continue;
       }
 
-      // Escape sequence — skip
       if (code === 0x1b) {
+        // Escape sequence — skip
         if (i + 1 < chunk.length && chunk[i + 1] === "[") {
           i += 2;
           while (i < chunk.length && chunk.charCodeAt(i) < 0x40) i++;
@@ -186,21 +225,17 @@ export function createInput(promptStr: string): InputHandler {
         continue;
       }
 
-      // When paste is attached, ignore all other input (Enter/Backspace handled above)
-      if (pastePart !== null) continue;
-
-      // Tab
       if (code === 0x09) {
-        buffer += "  ";
+        // Tab
+        ensureTrailingText().content += "  ";
         redraw();
         continue;
       }
 
-      // Other control chars — ignore
       if (code < 0x20) continue;
 
-      // Printable character
-      buffer += ch;
+      // Printable char
+      ensureTrailingText().content += ch;
       redraw();
     }
   });
