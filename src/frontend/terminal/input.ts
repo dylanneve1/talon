@@ -67,24 +67,35 @@ export function createInput(promptStr: string): InputHandler {
   }
 
   // ── Drawing ──
-  // Save cursor at prompt start. On each redraw, restore to that position,
-  // clear everything below, and rewrite. Wrapping is handled by the terminal.
+  // Track how many visual rows the last render occupied.
+  // Move up to the first row, clear to end of screen, rewrite.
 
-  function savePromptPos(): void {
-    process.stdout.write("\x1b[s"); // save cursor position
-  }
+  let prevRows = 1;
 
   function redraw(): void {
+    const cols = process.stdout.columns || 80;
+
+    // Build display string and measure visible length (strip ANSI)
     let display = promptStr;
+    let visLen = 4; // "  ❯ " = 4 visible chars
     for (const p of parts) {
       if (p.type === "text") {
         display += p.content;
+        visLen += p.content.length;
       } else {
-        display += pc.dim(pasteTag(p));
+        const tag = pasteTag(p);
+        display += pc.dim(tag);
+        visLen += tag.length;
       }
     }
-    // Restore cursor to prompt start, clear from there to end of screen, rewrite
-    process.stdout.write(`\x1b[u\x1b[J${display}`);
+
+    // Move cursor to start of the previous render, clear to end of screen
+    if (prevRows > 1) {
+      process.stdout.write(`\x1b[${prevRows - 1}A`); // move up
+    }
+    process.stdout.write(`\r\x1b[J${display}`); // col 0, clear to EOS, write
+
+    prevRows = Math.max(1, Math.ceil(visLen / cols));
   }
 
   function getFullText(): string {
@@ -253,14 +264,14 @@ export function createInput(promptStr: string): InputHandler {
     },
     prompt() {
       paused = false;
-      savePromptPos();
+      prevRows = 1; // fresh prompt = 1 row
       redraw();
     },
     waitForInput(): Promise<string> {
       return new Promise((resolve) => {
         pendingResolve = resolve;
         paused = false;
-        savePromptPos();
+        prevRows = 1;
         redraw();
       });
     },
