@@ -68,16 +68,38 @@ export function createInput(promptStr: string): InputHandler {
 
   // ── Drawing ──
 
+  let prevVisualLines = 0; // how many terminal rows the last redraw occupied
+
   function redraw(): void {
+    // Build visible text (no ANSI) to measure wrap, and display text (with ANSI)
+    let visible = promptStr.replace(/\x1b\[[0-9;]*m/g, "");
     let display = promptStr;
     for (const p of parts) {
       if (p.type === "text") {
+        visible += p.content;
         display += p.content;
       } else {
-        display += pc.dim(pasteTag(p));
+        const tag = pasteTag(p);
+        visible += tag;
+        display += pc.dim(tag);
       }
     }
-    process.stdout.write(`\x1b[2K\r${display}`);
+
+    // Erase all lines from the previous redraw
+    const cols = process.stdout.columns || 80;
+    if (prevVisualLines > 1) {
+      // Move up to the first line and clear each one
+      process.stdout.write(`\x1b[${prevVisualLines - 1}A`);
+    }
+    for (let i = 0; i < prevVisualLines; i++) {
+      process.stdout.write("\x1b[2K"); // clear line
+      if (i < prevVisualLines - 1) process.stdout.write("\x1b[B"); // move down
+    }
+    // If no previous lines, just clear current
+    if (prevVisualLines <= 1) process.stdout.write("\x1b[2K");
+
+    process.stdout.write(`\r${display}`);
+    prevVisualLines = Math.max(1, Math.ceil(visible.length / cols));
   }
 
   function getFullText(): string {
