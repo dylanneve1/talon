@@ -235,10 +235,17 @@ export function createInput(promptStr: string): InputHandler {
       }
 
       if (code === 0x1b) {
-        // Escape sequence — skip
         if (i + 1 < chunk.length && chunk[i + 1] === "[") {
+          // ANSI escape sequence (arrows, etc.) — skip
           i += 2;
           while (i < chunk.length && chunk.charCodeAt(i) < 0x40) i++;
+        } else if (pendingResolve) {
+          // Bare Escape during waitForInput — cancel
+          const resolve = pendingResolve;
+          pendingResolve = null;
+          clear();
+          process.stdout.write("\n");
+          resolve("");
         }
         continue;
       }
