@@ -67,64 +67,24 @@ export function createInput(promptStr: string): InputHandler {
   }
 
   // ── Drawing ──
-  // Single line only — if content exceeds terminal width, truncate from left
-  // so the cursor (end of input) stays visible. No wrapping, no multi-line mess.
+  // Save cursor at prompt start. On each redraw, restore to that position,
+  // clear everything below, and rewrite. Wrapping is handled by the terminal.
+
+  function savePromptPos(): void {
+    process.stdout.write("\x1b[s"); // save cursor position
+  }
 
   function redraw(): void {
-    const cols = process.stdout.columns || 80;
-    const promptVis = 4; // "  ❯ " visible width
-
-    // Build the visible content (no ANSI) and the display content (with ANSI)
-    const segments: { vis: string; display: string }[] = [];
+    let display = promptStr;
     for (const p of parts) {
       if (p.type === "text") {
-        segments.push({ vis: p.content, display: p.content });
+        display += p.content;
       } else {
-        const tag = pasteTag(p);
-        segments.push({ vis: tag, display: pc.dim(tag) });
+        display += pc.dim(pasteTag(p));
       }
     }
-
-    let vis = segments.map((s) => s.vis).join("");
-    let display = segments.map((s) => s.display).join("");
-
-    // Truncate from the left if too long
-    const maxContent = cols - promptVis - 1; // leave 1 char margin
-    if (vis.length > maxContent) {
-      // Find how much to chop — work backwards through segments
-      const ellipsis = "…";
-      let chop = vis.length - maxContent + 1; // +1 for ellipsis
-      let truncDisplay = "";
-      let truncVis = "";
-
-      // Build from the end, skipping chopped chars
-      for (let i = segments.length - 1; i >= 0; i--) {
-        const seg = segments[i]!;
-        if (chop <= 0) {
-          truncVis = seg.vis + truncVis;
-          truncDisplay = seg.display + truncDisplay;
-        } else if (chop < seg.vis.length) {
-          // Partial chop from this segment
-          if (seg.vis === seg.display) {
-            // Text segment — chop visible chars
-            truncVis = seg.vis.slice(chop) + truncVis;
-            truncDisplay = seg.display.slice(chop) + truncDisplay;
-          } else {
-            // Paste tag — keep or drop entirely
-            truncVis = truncVis;
-            truncDisplay = truncDisplay;
-          }
-          chop = 0;
-        } else {
-          chop -= seg.vis.length;
-        }
-      }
-
-      vis = ellipsis + truncVis;
-      display = ellipsis + truncDisplay;
-    }
-
-    process.stdout.write(`\x1b[2K\r${promptStr}${display}`);
+    // Restore cursor to prompt start, clear from there to end of screen, rewrite
+    process.stdout.write(`\x1b[u\x1b[J${display}`);
   }
 
   function getFullText(): string {
@@ -293,12 +253,14 @@ export function createInput(promptStr: string): InputHandler {
     },
     prompt() {
       paused = false;
+      savePromptPos();
       redraw();
     },
     waitForInput(): Promise<string> {
       return new Promise((resolve) => {
         pendingResolve = resolve;
         paused = false;
+        savePromptPos();
         redraw();
       });
     },
