@@ -225,7 +225,7 @@ export function registerBuiltinCommands(): void {
       }
       ctx.renderer.writeln();
       ctx.renderer.writeln(
-        `  ${pc.dim("Enter number to resume (or Enter to cancel):")}`,
+        `  ${pc.dim("Enter number to resume (Esc to cancel):")}`,
       );
 
       const input = await ctx.waitForInput();
