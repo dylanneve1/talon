@@ -242,7 +242,6 @@ export function createRenderer(cols?: number): Renderer {
       `${fmtTok(info.inputTokens + info.outputTokens)} tok`,
       `${info.cacheHitPct}% cache`,
     );
-    if (info.costUsd > 0) p.push(`$${info.costUsd.toFixed(2)}`);
     writeln(`  ${pc.dim(p.join("  ·  "))}`);
   }
 
