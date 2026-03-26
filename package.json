@@ -1,7 +1,7 @@
 {
-  "name": "talon-telegram-bot",
+  "name": "talon",
   "version": "1.0.0",
-  "description": "Claude-powered Telegram bot with full tool access, streaming, cron jobs, and group awareness",
+  "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
   "author": "Dylan Neve",
   "license": "MIT",
   "repository": {
