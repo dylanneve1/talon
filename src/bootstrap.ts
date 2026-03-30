@@ -105,6 +105,14 @@ export async function initBackendAndDispatcher(
     initOpenCodeAgent(config, frontend.getBridgePort);
     backend = { query: (params) => opencodeHandleMessage(params) };
     log("bot", "Backend: OpenCode");
+  } else if (config.backend === "openrouter") {
+    const {
+      initOpenRouterAgent,
+      handleMessage: openrouterHandleMessage,
+    } = await import("./backend/openrouter/index.js");
+    initOpenRouterAgent(config, frontend.getBridgePort);
+    backend = { query: (params) => openrouterHandleMessage(params) };
+    log("bot", "Backend: OpenRouter");
   } else {
     const {
       initAgent: initClaudeAgent,

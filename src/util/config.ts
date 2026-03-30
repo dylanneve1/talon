@@ -19,7 +19,7 @@ const frontendEnum = z.enum(["telegram", "terminal", "teams"]);
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
-  backend: z.enum(["claude", "opencode"]).default("claude"),
+  backend: z.enum(["claude", "opencode", "openrouter"]).default("claude"),
   claudeBinary: z.string().optional(),
   model: z.string().default("claude-sonnet-4-6"),
   maxMessageLength: z.number().int().min(100).default(4000),
@@ -33,6 +33,11 @@ const configSchema = z.object({
   searxngUrl: z.string().default("http://localhost:8080"),
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
+
+  // OpenRouter backend settings
+  openrouterApiKey: z.string().optional(),
+  openrouterModel: z.string().default("openai/gpt-4.1-mini"),
+  openrouterBaseUrl: z.string().default("https://openrouter.ai/api/v1"),
 
   // Display name shown in terminal UI (defaults to "Talon")
   botDisplayName: z.string().default("Talon"),
