@@ -386,6 +386,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
             activeModel,
             effortName,
             pulseOn,
+            config.backend,
           ),
         },
       },

@@ -59,23 +59,48 @@ export function renderSettingsKeyboard(
   model: string,
   effort: string,
   proactive: boolean,
+  backend?: string,
 ): Array<Array<{ text: string; callback_data: string }>> {
   const isModel = (id: string) => model.includes(id);
+
+  let modelRows: Array<Array<{ text: string; callback_data: string }>>;
+
+  if (backend === "openrouter") {
+    const orModels = [
+      { id: "qwen/qwen3.6-plus-preview:free", label: "Qwen 3.6+" },
+      { id: "google/gemini-2.5-flash:free", label: "Gemini" },
+      { id: "deepseek/deepseek-chat-v3-0324:free", label: "DeepSeek" },
+      { id: "openai/gpt-4.1-mini", label: "GPT-4.1" },
+    ];
+    modelRows = [];
+    for (let i = 0; i < orModels.length; i += 2) {
+      const row = orModels.slice(i, i + 2).map((m) => ({
+        text: isModel(m.id) ? `\u2713 ${m.label}` : m.label,
+        callback_data: `settings:model:${m.id}`,
+      }));
+      modelRows.push(row);
+    }
+  } else {
+    modelRows = [
+      [
+        {
+          text: isModel("sonnet") ? "\u2713 Sonnet" : "Sonnet",
+          callback_data: "settings:model:sonnet",
+        },
+        {
+          text: isModel("opus") ? "\u2713 Opus" : "Opus",
+          callback_data: "settings:model:opus",
+        },
+        {
+          text: isModel("haiku") ? "\u2713 Haiku" : "Haiku",
+          callback_data: "settings:model:haiku",
+        },
+      ],
+    ];
+  }
+
   return [
-    [
-      {
-        text: isModel("sonnet") ? "\u2713 Sonnet" : "Sonnet",
-        callback_data: "settings:model:sonnet",
-      },
-      {
-        text: isModel("opus") ? "\u2713 Opus" : "Opus",
-        callback_data: "settings:model:opus",
-      },
-      {
-        text: isModel("haiku") ? "\u2713 Haiku" : "Haiku",
-        callback_data: "settings:model:haiku",
-      },
-    ],
+    ...modelRows,
     [
       {
         text: effort === "low" ? "\u2713 Low" : "Low",
