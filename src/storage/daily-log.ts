@@ -18,10 +18,10 @@ function ensureLogsDir(): void {
 }
 
 /**
- * Append a brief entry to today's daily log.
- * Format: ## HH:MM -- [chatName/userName]\n- summary\n
+ * Append a user message entry to today's daily log.
+ * Format: ## HH:MM -- [chatName/userName]\nmessage text\n
  */
-export function appendDailyLog(chatName: string, summary: string): void {
+export function appendDailyLog(chatName: string, text: string): void {
   try {
     ensureLogsDir();
     const now = new Date();
@@ -29,10 +29,29 @@ export function appendDailyLog(chatName: string, summary: string): void {
     const timeStr = now.toTimeString().slice(0, 5); // HH:MM
     const logFile = resolve(LOGS_DIR, `${dateStr}.md`);
 
-    const entry = `## ${timeStr} -- [${chatName}]\n- ${summary}\n\n`;
+    const entry = `## ${timeStr} -- [${chatName}]\n${text}\n\n`;
     appendFileSync(logFile, entry);
   } catch (err) {
     logError("bot", "Daily log write failed", err);
+  }
+}
+
+/**
+ * Append a bot response entry to today's daily log.
+ * Format: ## HH:MM -- [botName]\nresponse text\n
+ */
+export function appendDailyLogResponse(botName: string, text: string): void {
+  try {
+    ensureLogsDir();
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    const timeStr = now.toTimeString().slice(0, 5); // HH:MM
+    const logFile = resolve(LOGS_DIR, `${dateStr}.md`);
+
+    const entry = `## ${timeStr} -- [${botName}]\n${text}\n\n`;
+    appendFileSync(logFile, entry);
+  } catch (err) {
+    logError("bot", "Daily log response write failed", err);
   }
 }
 

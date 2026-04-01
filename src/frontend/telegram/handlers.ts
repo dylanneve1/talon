@@ -18,7 +18,7 @@ import {
 } from "../../core/prompt-builder.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { appendDailyLog } from "../../storage/daily-log.js";
+import { appendDailyLog, appendDailyLogResponse } from "../../storage/daily-log.js";
 import { setMessageFilePath } from "../../storage/history.js";
 import { addMedia } from "../../storage/media-index.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
@@ -302,8 +302,7 @@ async function flushQueue(chatId: string): Promise<void> {
       ? messages[0].prompt
       : messages.map((m) => m.prompt).join("\n\n");
 
-  const logSummary = combinedPrompt.slice(0, 80).replace(/\n/g, " ");
-  appendDailyLog(last.senderName, logSummary);
+  appendDailyLog(last.senderName, combinedPrompt);
 
   try {
     await processAndReply({
@@ -517,6 +516,11 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       source: "message",
       onStreamDelta,
       onTextBlock,
+      onToolUse: (toolName, input) => {
+        if (toolName === "send" && input.type === "text" && typeof input.text === "string") {
+          appendDailyLogResponse("Talon", input.text);
+        }
+      },
     });
 
     // Only deliver messages sent via the send tool.

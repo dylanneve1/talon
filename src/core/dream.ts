@@ -112,12 +112,17 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 
 ### Stage 2 — Gather
 - Read each new log file
+- Each log file uses this format:
+  - User messages appear as `## HH:MM -- [Username]` followed by the full message text
+  - Bot responses appear as `## HH:MM -- [Talon]` followed by what was sent
+  - System entries (e.g. new users) appear as `## HH:MM -- [System]`
 - Extract any new information:
   - User facts, preferences, personality traits
   - Project names, technical details, URLs, file paths
   - Notable events or conversations
   - Corrections to previously held beliefs
   - Operational patterns (e.g. who stays up late, who prefers what tools)
+  - Project context changes inferred from the conversation (e.g. new repos, shifted priorities)
 - Be selective — only extract genuinely new or updated information
 
 ### Stage 3 — Consolidate
