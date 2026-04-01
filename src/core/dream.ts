@@ -11,11 +11,12 @@
  * It does NOT use the main dispatcher (no chat session, no typing indicator).
  */
 
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import writeFileAtomic from "write-file-atomic";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
 
@@ -33,6 +34,7 @@ export type DreamState = {
 const DREAM_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const DREAM_STATE_FILE = pathFiles.dreamState;
 const DREAM_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute max
+const DREAM_LOGS_DIR = resolve(dirs.logs, "dreams");
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -87,9 +89,9 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
   log("dream", `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`);
 
   try {
-    await runDreamAgent(state?.last_run ?? 0);
+    const dreamLogPath = await runDreamAgent(state?.last_run ?? 0);
     writeDreamState({ last_run: Date.now(), status: "idle" });
-    log("dream", `Memory consolidation complete (${trigger})`);
+    log("dream", `Memory consolidation complete (${trigger}), log: ${dreamLogPath}`);
   } catch (err) {
     logError("dream", `Memory consolidation failed (${trigger})`, err);
     writeDreamState({ last_run: Date.now(), status: "idle" });
@@ -101,10 +103,10 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
 
 // ── Dream agent ──────────────────────────────────────────────────────────────
 
-async function runDreamAgent(lastRunTimestamp: number): Promise<void> {
+async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
   if (!configRef) {
     logWarn("dream", "Dream agent not initialized — skipping");
-    return;
+    return "";
   }
 
   const lastRunIso = lastRunTimestamp > 0
@@ -132,6 +134,12 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<void> {
 
   const model = configRef.dreamModel ?? configRef.model ?? "claude-sonnet-4-6";
   const workspace = configRef.workspace ?? dirs.workspace;
+
+  // Set up dream log file
+  const dreamLogFile = createDreamLogFile();
+  appendDreamLog(dreamLogFile, `# Dream Run — ${new Date().toISOString()}\n`);
+  appendDreamLog(dreamLogFile, `**Trigger:** last_run=${lastRunIso}, model=${model}\n`);
+  appendDreamLog(dreamLogFile, `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`);
 
   const options = {
     model,
@@ -171,11 +179,95 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<void> {
       prompt,
       options: options as Parameters<typeof query>[0]["options"],
     });
-    // Drain the stream — we don't need the output, just completion
-    for await (const _ of qi) { /* consume */ }
+    for await (const msg of qi) {
+      logDreamMessage(dreamLogFile, msg);
+    }
+    appendDreamLog(dreamLogFile, `\n---\n**Dream completed at ${new Date().toISOString()}**\n`);
   })();
 
-  await Promise.race([agentPromise, timeoutPromise]);
+  try {
+    await Promise.race([agentPromise, timeoutPromise]);
+  } catch (err) {
+    appendDreamLog(dreamLogFile, `\n---\n**Dream FAILED at ${new Date().toISOString()}:** ${err}\n`);
+    throw err;
+  }
+
+  return dreamLogFile;
+}
+
+// ── Dream logging helpers ─────────────────────────────────────────────────
+
+function createDreamLogFile(): string {
+  if (!existsSync(DREAM_LOGS_DIR)) {
+    mkdirSync(DREAM_LOGS_DIR, { recursive: true });
+  }
+  const now = new Date();
+  const ts = now.toISOString().replace(/[:.]/g, "-").slice(0, 19); // 2026-04-01T21-30-00
+  return resolve(DREAM_LOGS_DIR, `dream-${ts}.md`);
+}
+
+function appendDreamLog(logFile: string, text: string): void {
+  try {
+    appendFileSync(logFile, text);
+  } catch (err) {
+    logError("dream", "Failed to write dream log", err);
+  }
+}
+
+function logDreamMessage(logFile: string, msg: SDKMessage): void {
+  try {
+    const ts = new Date().toISOString().slice(11, 19); // HH:MM:SS
+
+    switch (msg.type) {
+      case "assistant": {
+        // Extract text content from the assistant message
+        const textBlocks = msg.message.content
+          .filter((b) => b.type === "text")
+          .map((b) => "text" in b ? (b as { text: string }).text : "");
+        const toolUseBlocks = msg.message.content
+          .filter((b) => b.type === "tool_use")
+          .map((b) => {
+            const tu = b as { name: string; input: unknown };
+            return `**Tool call:** \`${tu.name}\`\n\`\`\`json\n${JSON.stringify(tu.input, null, 2)}\n\`\`\``;
+          });
+
+        if (textBlocks.length > 0) {
+          appendDreamLog(logFile, `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`);
+        }
+        if (toolUseBlocks.length > 0) {
+          appendDreamLog(logFile, `\n${toolUseBlocks.join("\n\n")}\n`);
+        }
+        break;
+      }
+      case "result": {
+        // Final result of the dream agent run
+        const result = "result" in msg ? (msg as { result: string }).result : JSON.stringify(msg);
+        const truncated = result.length > 2000 ? result.slice(0, 2000) + "\n... (truncated)" : result;
+        appendDreamLog(logFile, `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`);
+        break;
+      }
+      case "system": {
+        appendDreamLog(logFile, `\n### [${ts}] System (${msg.subtype})\n`);
+        break;
+      }
+      case "user": {
+        // Tool results come back as user messages
+        if (msg.tool_use_result != null) {
+          const raw = typeof msg.tool_use_result === "string"
+            ? msg.tool_use_result
+            : JSON.stringify(msg.tool_use_result, null, 2);
+          const truncated = raw.length > 2000 ? raw.slice(0, 2000) + "\n... (truncated)" : raw;
+          appendDreamLog(logFile, `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`);
+        }
+        break;
+      }
+      default:
+        // Skip stream_event and other noisy message types
+        break;
+    }
+  } catch {
+    // Don't let logging errors break the dream
+  }
 }
 
 // ── State helpers ────────────────────────────────────────────────────────────

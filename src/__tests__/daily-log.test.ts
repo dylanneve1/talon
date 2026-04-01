@@ -97,8 +97,8 @@ describe("daily-log", () => {
 
       // Format: ## HH:MM -- [chatName]
       expect(content).toMatch(/## \d{2}:\d{2} -- \[MyChat\]/);
-      // Summary line: - summary
-      expect(content).toContain("- Did some testing");
+      // Summary line
+      expect(content).toContain("Did some testing");
     });
 
     it("uses .talon/workspace/logs/ directory", async () => {

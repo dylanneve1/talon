@@ -39,12 +39,12 @@
     "format:check": "prettier --check src/ prompts/"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.76",
-    "@clack/prompts": "^1.1.0",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.89",
+    "@clack/prompts": "^1.2.0",
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/transformer-throttler": "^1.2.1",
-    "@modelcontextprotocol/sdk": "^1.27.1",
-    "@opencode-ai/sdk": "^1.2.27",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opencode-ai/sdk": "^1.3.13",
     "big-integer": "^1.6.52",
     "cheerio": "^1.2.0",
     "croner": "^10.0.1",
@@ -55,7 +55,7 @@
     "pino-pretty": "^13.1.3",
     "telegram": "^2.26.22",
     "tsx": "^4.21.0",
-    "undici": "^7.24.5",
+    "undici": "^7.24.7",
     "write-file-atomic": "^7.0.1",
     "zod": "^4.3.6"
   },
@@ -65,11 +65,11 @@
     "@stryker-mutator/vitest-runner": "^9.6.0",
     "@types/node": "^25.5.0",
     "@types/write-file-atomic": "^4.0.3",
-    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/coverage-v8": "^4.1.2",
     "fast-check": "^4.6.0",
-    "oxlint": "^1.55.0",
+    "oxlint": "^1.58.0",
     "prettier": "^3.8.1",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
   }
 }
