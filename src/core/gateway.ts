@@ -140,11 +140,14 @@ export class Gateway {
     const t0 = Date.now();
 
     try {
-      // Try shared actions first (cron, fetch_url, history)
-      const shared = await handleSharedAction(body, chatId);
-      if (shared) {
-        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`);
-        return shared;
+      // Try frontend first — it has richer implementations (e.g. userbot history)
+      // and falls back to null when it can't handle the action.
+      if (this.frontendHandler) {
+        const result = await this.frontendHandler(body, chatId);
+        if (result) {
+          logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
+          return result;
+        }
       }
 
       // Try plugin actions (loaded from external plugin packages)
@@ -154,14 +157,11 @@ export class Gateway {
         return pluginResult;
       }
 
-      // Delegate to the active frontend
-      if (!this.frontendHandler) {
-        return { ok: false, error: "No frontend handler registered" };
-      }
-      const result = await this.frontendHandler(body, chatId);
-      if (result) {
-        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
-        return result;
+      // Shared actions last — provides in-memory fallbacks for history, cron, etc.
+      const shared = await handleSharedAction(body, chatId);
+      if (shared) {
+        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`);
+        return shared;
       }
 
       return { ok: false, error: `Unknown action: ${action}` };
