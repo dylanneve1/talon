@@ -6,3 +6,4 @@ workspace/
 .env
 coverage/
 .stryker-tmp/
+package-lock.json
