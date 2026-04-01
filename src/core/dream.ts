@@ -12,7 +12,8 @@
  */
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import writeFileAtomic from "write-file-atomic";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
@@ -55,34 +56,15 @@ export function initDream(cfg: {
  * Returns immediately — any dream work is fire-and-forget in the background.
  */
 export function maybeStartDream(): void {
-  if (dreaming) return; // already running
+  if (dreaming) return;
 
   const state = readDreamState();
-
-  // Check if it's been long enough since the last dream
   const now = Date.now();
   const elapsed = now - (state?.last_run ?? 0);
   if (elapsed < DREAM_INTERVAL_MS) return;
 
-  // Claim the lock immediately to prevent duplicate dreams
-  dreaming = true;
-  writeDreamState({ last_run: now, status: "running" });
-  log("dream", `Triggering memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`);
-
-  // Fire and forget — runs in the background
-  runDreamAgent(state?.last_run ?? 0)
-    .then(() => {
-      writeDreamState({ last_run: Date.now(), status: "idle" });
-      log("dream", "Memory consolidation complete");
-    })
-    .catch((err) => {
-      logError("dream", "Memory consolidation failed", err);
-      // Reset status so the next invocation can retry
-      writeDreamState({ last_run: Date.now(), status: "idle" });
-    })
-    .finally(() => {
-      dreaming = false;
-    });
+  // Fire and forget
+  executeDream("auto").catch(() => {});
 }
 
 /**
@@ -92,22 +74,26 @@ export function maybeStartDream(): void {
  */
 export async function forceDream(): Promise<void> {
   if (dreaming) throw new Error("Dream already running");
+  await executeDream("forced");
+}
 
+/** Shared dream execution — claims lock, runs agent, releases lock. */
+async function executeDream(trigger: "auto" | "forced"): Promise<void> {
   const state = readDreamState();
   const now = Date.now();
 
   dreaming = true;
   writeDreamState({ last_run: now, status: "running" });
-  log("dream", `Force-triggering memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`);
+  log("dream", `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`);
 
   try {
     await runDreamAgent(state?.last_run ?? 0);
     writeDreamState({ last_run: Date.now(), status: "idle" });
-    log("dream", "Memory consolidation complete (forced)");
+    log("dream", `Memory consolidation complete (${trigger})`);
   } catch (err) {
-    logError("dream", "Memory consolidation failed (forced)", err);
+    logError("dream", `Memory consolidation failed (${trigger})`, err);
     writeDreamState({ last_run: Date.now(), status: "idle" });
-    throw err;
+    if (trigger === "forced") throw err;
   } finally {
     dreaming = false;
   }
@@ -129,47 +115,20 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<void> {
   const memoryFile = pathFiles.memory;
   const dreamStateFile = DREAM_STATE_FILE;
 
-  const prompt = `You are Talon's background memory consolidation agent. Your job is to update the persistent memory file with new information learned from recent interaction logs.
+  // Load prompt template from prompts/dream.md and interpolate variables
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+  const promptPath = resolve(projectRoot, "prompts/dream.md");
 
-You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). Do NOT attempt to use any Telegram, MCP, or messaging tools.
-
-## Your 4-stage task
-
-### Stage 1 — Orient
-- Read \`${dreamStateFile}\` to confirm \`last_run\` timestamp
-- List log files in \`${logsDir}/\` that are dated on or after \`${lastRunIso}\`
-- If there are no new log files, update dream_state.json status to "idle" and stop
-
-### Stage 2 — Gather
-- Read each new log file
-- Each log file uses this format:
-  - User messages appear as \`## HH:MM -- [Username]\` followed by the full message text
-  - Bot responses appear as \`## HH:MM -- [Talon]\` followed by what was sent
-  - System entries (e.g. new users) appear as \`## HH:MM -- [System]\`
-- Extract any new information:
-  - User facts, preferences, personality traits
-  - Project names, technical details, URLs, file paths
-  - Notable events or conversations
-  - Corrections to previously held beliefs
-  - Operational patterns (e.g. who stays up late, who prefers what tools)
-  - Project context changes inferred from the conversation (e.g. new repos, shifted priorities)
-- Be selective — only extract genuinely new or updated information
-
-### Stage 3 — Consolidate
-- Read the current memory file at \`${memoryFile}\`
-- Merge new information into the appropriate sections
-- Update existing entries if new info contradicts or extends them
-- Add new entries where appropriate
-- Keep entries concise and factual — no padding, no narrative
-- Preserve all existing structure and sections
-
-### Stage 4 — Prune
-- Remove entries that have been explicitly contradicted
-- Remove entries that are clearly stale or irrelevant
-- Do NOT remove entries just because they're old — only remove if wrong or superseded
-- Write the updated memory.md back to \`${memoryFile}\`
-
-When done, your final action is to write \`{ "last_run": <current_unix_ms>, "status": "idle" }\` to \`${dreamStateFile}\`.`;
+  let prompt: string;
+  try {
+    prompt = readFileSync(promptPath, "utf-8")
+      .replace(/\{\{dreamStateFile\}\}/g, dreamStateFile)
+      .replace(/\{\{logsDir\}\}/g, logsDir)
+      .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
+      .replace(/\{\{memoryFile\}\}/g, memoryFile);
+  } catch {
+    throw new Error(`Failed to read dream prompt from ${promptPath}`);
+  }
 
   const model = configRef.dreamModel ?? configRef.model ?? "claude-sonnet-4-6";
   const workspace = configRef.workspace ?? dirs.workspace;
