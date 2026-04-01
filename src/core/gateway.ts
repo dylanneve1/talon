@@ -13,6 +13,7 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import pRetry, { AbortError } from "p-retry";
 import { classify } from "./errors.js";
 import { getActiveCount } from "./dispatcher.js";
 import { getHealthStatus } from "../util/watchdog.js";
@@ -28,23 +29,39 @@ type ChatContext = { refCount: number; messagesSent: number; stringId?: string }
 
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
+/**
+ * Retry a function up to 3 times with classified error inspection.
+ * Non-retryable errors (auth, bad_request, context_length) are thrown immediately.
+ * Uses p-retry for proper exponential backoff with jitter.
+ */
 export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastError = err;
-      const classified = classify(err);
-      if (!classified.retryable) throw err;
-      if (attempt < 2) {
-        const delayMs = classified.retryAfterMs ?? 1000 * Math.pow(2, attempt);
-        log("gateway", `Retry ${attempt + 1}/3 (${classified.reason}) after ${delayMs}ms`);
-        await new Promise((r) => setTimeout(r, delayMs));
+  return pRetry(
+    async (attempt) => {
+      try {
+        return await fn();
+      } catch (err) {
+        const classified = classify(err);
+        if (!classified.retryable) {
+          // Wrap in AbortError to prevent further retries
+          throw new AbortError(classified);
+        }
+        const delayMs = classified.retryAfterMs ?? 1000 * Math.pow(2, attempt - 1);
+        log("gateway", `Retry ${attempt}/3 (${classified.reason}) after ${delayMs}ms`);
+        throw classified; // rethrow to trigger p-retry delay
       }
-    }
-  }
-  throw lastError;
+    },
+    {
+      retries: 2, // 3 total attempts
+      minTimeout: 1000,
+      maxTimeout: 60_000,
+      factor: 2,
+      onFailedAttempt: (err) => {
+        if (err.retriesLeft === 0) {
+          logError("gateway", `All retries exhausted: ${err.message}`);
+        }
+      },
+    },
+  );
 }
 
 // ── Gateway class ────────────────────────────────────────────────────────────
