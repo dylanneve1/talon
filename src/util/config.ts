@@ -22,6 +22,7 @@ const configSchema = z.object({
   backend: z.enum(["claude", "opencode"]).default("claude"),
   claudeBinary: z.string().optional(),
   model: z.string().default("claude-sonnet-4-6"),
+  dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)
   maxMessageLength: z.number().int().min(100).default(4000),
   concurrency: z.number().int().min(1).max(20).default(1),
   apiId: z.number().int().optional(),

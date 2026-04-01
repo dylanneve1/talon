@@ -36,10 +36,12 @@ const DREAM_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute max
 // ── State ────────────────────────────────────────────────────────────────────
 
 let dreaming = false; // in-process guard (one dream at a time)
-let configRef: { model?: string; claudeBinary?: string; workspace?: string } | null = null;
+let configRef: { model?: string; dreamModel?: string; claudeBinary?: string; workspace?: string } | null = null;
 
 export function initDream(cfg: {
   model?: string;
+  /** Override model used specifically for dream consolidation (e.g. haiku for cost savings). Falls back to main model. */
+  dreamModel?: string;
   claudeBinary?: string;
   workspace?: string;
 }): void {
@@ -141,7 +143,7 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 
 When done, your final action is to write \`{ "last_run": <current_unix_ms>, "status": "idle" }\` to \`${dreamStateFile}\`.`;
 
-  const model = configRef.model ?? "claude-sonnet-4-6";
+  const model = configRef.dreamModel ?? configRef.model ?? "claude-sonnet-4-6";
   const workspace = configRef.workspace ?? dirs.workspace;
 
   const options = {

@@ -127,6 +127,7 @@ export async function initBackendAndDispatcher(
   initCron({ sendMessage: frontend.sendMessage });
   initDream({
     model: config.model,
+    dreamModel: config.dreamModel,
     claudeBinary: config.claudeBinary,
     workspace: config.workspace,
   });
