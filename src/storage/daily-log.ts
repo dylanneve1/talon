@@ -19,9 +19,12 @@ function ensureLogsDir(): void {
 
 /**
  * Append a user message entry to today's daily log.
- * Format: ## HH:MM -- [chatName/userName]\nmessage text\n
+ * Format: ## HH:MM -- [chatTitle/userName]\nmessage text\n
+ * @param chatName - Display name of the sender (or "System")
+ * @param text - Message content
+ * @param chatContext - Optional chat context (group title, username, etc.)
  */
-export function appendDailyLog(chatName: string, text: string): void {
+export function appendDailyLog(chatName: string, text: string, chatContext?: { chatTitle?: string; username?: string }): void {
   try {
     ensureLogsDir();
     const now = new Date();
@@ -29,7 +32,8 @@ export function appendDailyLog(chatName: string, text: string): void {
     const timeStr = now.toTimeString().slice(0, 5); // HH:MM
     const logFile = resolve(LOGS_DIR, `${dateStr}.md`);
 
-    const entry = `## ${timeStr} -- [${chatName}]\n${text}\n\n`;
+    const label = formatLabel(chatName, chatContext);
+    const entry = `## ${timeStr} -- [${label}]\n${text}\n\n`;
     appendFileSync(logFile, entry);
   } catch (err) {
     logError("bot", "Daily log write failed", err);
@@ -38,9 +42,9 @@ export function appendDailyLog(chatName: string, text: string): void {
 
 /**
  * Append a bot response entry to today's daily log.
- * Format: ## HH:MM -- [botName]\nresponse text\n
+ * Format: ## HH:MM -- [botName] in chatTitle\nresponse text\n
  */
-export function appendDailyLogResponse(botName: string, text: string): void {
+export function appendDailyLogResponse(botName: string, text: string, chatContext?: { chatTitle?: string }): void {
   try {
     ensureLogsDir();
     const now = new Date();
@@ -48,11 +52,19 @@ export function appendDailyLogResponse(botName: string, text: string): void {
     const timeStr = now.toTimeString().slice(0, 5); // HH:MM
     const logFile = resolve(LOGS_DIR, `${dateStr}.md`);
 
-    const entry = `## ${timeStr} -- [${botName}]\n${text}\n\n`;
+    const label = chatContext?.chatTitle ? `${botName} in ${chatContext.chatTitle}` : botName;
+    const entry = `## ${timeStr} -- [${label}]\n${text}\n\n`;
     appendFileSync(logFile, entry);
   } catch (err) {
     logError("bot", "Daily log response write failed", err);
   }
+}
+
+/** Format a log label with optional chat title and username. */
+function formatLabel(name: string, ctx?: { chatTitle?: string; username?: string }): string {
+  const userPart = ctx?.username ? `${name} (@${ctx.username})` : name;
+  if (ctx?.chatTitle) return `${userPart} in ${ctx.chatTitle}`;
+  return userPart;
 }
 
 /** Get the path to the logs directory (for system prompt reference). */

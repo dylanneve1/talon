@@ -183,6 +183,7 @@ type QueuedMessage = {
   senderUsername?: string;
   senderId?: number;
   isGroup: boolean;
+  chatTitle?: string;
 };
 
 const messageQueues = new Map<
@@ -302,7 +303,8 @@ async function flushQueue(chatId: string): Promise<void> {
       ? messages[0].prompt
       : messages.map((m) => m.prompt).join("\n\n");
 
-  appendDailyLog(last.senderName, combinedPrompt);
+  const chatContext = { chatTitle: last.chatTitle, username: last.senderUsername };
+  appendDailyLog(last.senderName, combinedPrompt, chatContext);
 
   try {
     await processAndReply({
@@ -314,6 +316,7 @@ async function flushQueue(chatId: string): Promise<void> {
       isGroup: last.isGroup,
       senderUsername: last.senderUsername,
       senderId: last.senderId,
+      chatTitle: last.chatTitle,
     });
     recordMessageProcessed();
   } catch (err) {
@@ -341,6 +344,7 @@ async function flushQueue(chatId: string): Promise<void> {
           isGroup: last.isGroup,
           senderUsername: last.senderUsername,
           senderId: last.senderId,
+          chatTitle: last.chatTitle,
         });
         return;
       } catch (retryErr) {
@@ -408,6 +412,7 @@ type ProcessAndReplyParams = {
   isGroup: boolean;
   senderUsername?: string;
   senderId?: number;
+  chatTitle?: string;
 };
 
 // ── Streaming state for Telegram message edits ──────────────────────────────
@@ -480,7 +485,7 @@ async function deliverFinalText(
 async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
     bot, config, chatId, numericChatId, replyToId, messageId,
-    prompt, senderName, isGroup, senderUsername, senderId,
+    prompt, senderName, isGroup, senderUsername, senderId, chatTitle,
   } = params;
 
   const stream: StreamState = {
@@ -518,7 +523,7 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       onTextBlock,
       onToolUse: (toolName, input) => {
         if (toolName === "send" && input.type === "text" && typeof input.text === "string") {
-          appendDailyLogResponse("Talon", input.text);
+          appendDailyLogResponse("Talon", input.text, { chatTitle });
         }
       },
     });
@@ -625,6 +630,7 @@ async function handleMediaMessage(
       senderUsername,
       senderId: ctx.from?.id,
       isGroup,
+      chatTitle: isGroup ? (ctx.chat as { title?: string }).title : undefined,
     });
   } catch (err) {
     logError(
@@ -674,6 +680,7 @@ export async function handleTextMessage(
     senderUsername,
     senderId: ctx.from?.id,
     isGroup,
+    chatTitle: isGroup ? (ctx.chat as { title?: string }).title : undefined,
   });
 }
 
@@ -789,6 +796,7 @@ export async function handleStickerMessage(
     senderUsername,
     senderId: ctx.from?.id,
     isGroup,
+    chatTitle: isGroup ? (ctx.chat as { title?: string }).title : undefined,
   });
 }
 
@@ -914,7 +922,8 @@ export async function handleCallbackQuery(
     const prompt = `[Button pressed] User clicked inline button with callback data: "${callbackData}"`;
     const replyToId = ctx.callbackQuery.message?.message_id ?? 0;
 
-    appendDailyLog(sender, `Button: ${callbackData}`);
+    const chatTitle = isGroup ? (ctx.chat as { title?: string })?.title : undefined;
+    appendDailyLog(sender, `Button: ${callbackData}`, { chatTitle });
 
     await processAndReply({
       bot, config, chatId, numericChatId,
@@ -923,6 +932,7 @@ export async function handleCallbackQuery(
       prompt,
       senderName: sender,
       isGroup,
+      chatTitle,
     });
   } catch (err) {
     logError(
