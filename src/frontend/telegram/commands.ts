@@ -4,6 +4,9 @@
 
 import type { Bot } from "grammy";
 import { readFileSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { resolve, dirname } from "node:path";
 import type { TalonConfig } from "../../util/config.js";
 import { files } from "../../util/paths.js";
 import {
@@ -28,6 +31,7 @@ import {
   isPulseEnabled,
   resetPulseCheckpoint,
 } from "../../core/pulse.js";
+import { forceDream } from "../../core/dream.js";
 import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
@@ -82,8 +86,10 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         "<b>Session</b>",
         "  /status -- session info, usage, and stats",
         "  /memory -- view what Talon remembers",
+        "  /dream -- force memory consolidation now",
         "  /ping -- health check with latency",
         "  /reset -- clear session and start fresh",
+        "  /restart -- restart the bot process",
         "  /plugins -- list loaded plugins",
         "  /help -- this message",
         "",
@@ -458,6 +464,62 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       `<b>Uptime</b>    ${uptime} \u00B7 ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
     ];
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+  });
+
+  bot.command("dream", async (ctx) => {
+    if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
+      await ctx.reply("Not authorized.");
+      return;
+    }
+    const sent = await ctx.reply("🌙 Dream mode starting...");
+    const start = Date.now();
+    // Fire-and-forget — don't await, so grammY can keep processing other updates
+    forceDream()
+      .then(async () => {
+        const elapsed = formatDuration(Date.now() - start);
+        await bot.api.editMessageText(
+          ctx.chat.id,
+          sent.message_id,
+          `🌙 Dream complete — memory consolidated in ${elapsed}.`,
+        );
+      })
+      .catch(async (err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        await bot.api.editMessageText(
+          ctx.chat.id,
+          sent.message_id,
+          `🌙 Dream failed: ${escapeHtml(msg)}`,
+          { parse_mode: "HTML" },
+        );
+      });
+  });
+
+  bot.command("restart", async (ctx) => {
+    if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
+      await ctx.reply("Not authorized.");
+      return;
+    }
+    await ctx.reply("♻️ Restarting...");
+
+    setTimeout(() => {
+      // Try `talon restart` (handles daemon stop+start cleanly).
+      // Fall back to the local bin if talon isn't on PATH globally.
+      const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+      const localBin = resolve(projectRoot, "bin/talon.js");
+
+      const trySpawn = (cmd: string, args: string[]): Promise<void> =>
+        new Promise((res, rej) => {
+          const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
+          child.on("error", rej);
+          child.on("spawn", () => { child.unref(); res(); });
+        });
+
+      // Try global first, then local bin, then just exit (let process manager restart)
+      trySpawn("talon", ["restart"])
+        .catch(() => trySpawn(process.execPath, [localBin, "restart"]))
+        .catch(() => {})
+        .finally(() => process.exit(0));
+    }, 500);
   });
 
   bot.command("plugins", async (ctx) => {

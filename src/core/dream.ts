@@ -85,6 +85,34 @@ export function maybeStartDream(): void {
     });
 }
 
+/**
+ * Force a dream run immediately, regardless of the 12-hour interval.
+ * Returns a promise that resolves when the dream completes (or rejects on failure).
+ * Throws if a dream is already running.
+ */
+export async function forceDream(): Promise<void> {
+  if (dreaming) throw new Error("Dream already running");
+
+  const state = readDreamState();
+  const now = Date.now();
+
+  dreaming = true;
+  writeDreamState({ last_run: now, status: "running" });
+  log("dream", `Force-triggering memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`);
+
+  try {
+    await runDreamAgent(state?.last_run ?? 0);
+    writeDreamState({ last_run: Date.now(), status: "idle" });
+    log("dream", "Memory consolidation complete (forced)");
+  } catch (err) {
+    logError("dream", "Memory consolidation failed (forced)", err);
+    writeDreamState({ last_run: Date.now(), status: "idle" });
+    throw err;
+  } finally {
+    dreaming = false;
+  }
+}
+
 // ── Dream agent ──────────────────────────────────────────────────────────────
 
 async function runDreamAgent(lastRunTimestamp: number): Promise<void> {
@@ -115,9 +143,9 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 ### Stage 2 — Gather
 - Read each new log file
 - Each log file uses this format:
-  - User messages appear as `## HH:MM -- [Username]` followed by the full message text
-  - Bot responses appear as `## HH:MM -- [Talon]` followed by what was sent
-  - System entries (e.g. new users) appear as `## HH:MM -- [System]`
+  - User messages appear as \`## HH:MM -- [Username]\` followed by the full message text
+  - Bot responses appear as \`## HH:MM -- [Talon]\` followed by what was sent
+  - System entries (e.g. new users) appear as \`## HH:MM -- [System]\`
 - Extract any new information:
   - User facts, preferences, personality traits
   - Project names, technical details, URLs, file paths
