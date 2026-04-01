@@ -50,8 +50,9 @@ try {
   }
 } catch { /* ignore */ }
 
-// Detect if running as a bun compiled binary (pino-pretty can't be bundled)
-const isBunBinary = import.meta.path.startsWith("/$bunfs/");
+// Detect if running as a bun compiled binary (pino-pretty can't be bundled).
+// import.meta.path is Bun-specific — undefined in Node.js/Vitest, so guard with ?.
+const isBunBinary = (import.meta as { path?: string }).path?.startsWith("/$bunfs/") ?? false;
 
 // Suppress console output for terminal frontend (stdout belongs to the REPL)
 let quiet = process.env.TALON_QUIET === "1";
