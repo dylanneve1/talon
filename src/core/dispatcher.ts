@@ -17,6 +17,7 @@ import type {
   ExecuteResult,
 } from "./types.js";
 import { log, logDebug } from "../util/log.js";
+import { maybeStartDream } from "./dream.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -85,6 +86,9 @@ async function run(params: ExecuteParams): Promise<ExecuteResult> {
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   const { backend, context, sendTyping, onActivity } = deps!;
   const reqId = randomBytes(4).toString("hex");
+
+  // Dream check — fire-and-forget background memory consolidation if due
+  maybeStartDream();
 
   logDebug("dispatcher", `[${reqId}] ${params.source} chat=${params.chatId} started (active=${activeCount})`);
   context.acquire(params.numericChatId, params.chatId);

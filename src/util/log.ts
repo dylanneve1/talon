@@ -26,6 +26,7 @@ export type LogComponent =
   | "settings"
   | "commands"
   | "cron"
+  | "dream"
   | "dispatcher"
   | "gateway"
   | "plugin"

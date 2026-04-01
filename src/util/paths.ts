@@ -75,4 +75,6 @@ export const files = {
   userSession: resolve(TALON_ROOT, ".user-session"),
   /** PID file for daemon mode: ~/.talon/talon.pid */
   pid: resolve(TALON_ROOT, "talon.pid"),
+  /** Dream mode state: ~/.talon/workspace/memory/dream_state.json */
+  dreamState: resolve(TALON_ROOT, "workspace", "memory", "dream_state.json"),
 } as const;
