@@ -8,6 +8,7 @@ import writeFileAtomic from "write-file-atomic";
 import { dirname } from "node:path";
 import { log } from "../util/log.js";
 import { files } from "../util/paths.js";
+import { registerCleanup } from "../util/cleanup-registry.js";
 
 export type EffortLevel = "off" | "low" | "medium" | "high" | "max";
 
@@ -95,7 +96,7 @@ function save(): void {
 }
 
 const autoSaveTimer = setInterval(save, 10_000);
-process.on("exit", save);
+registerCleanup(save);
 
 /** Flush settings to disk and stop the auto-save timer. */
 export function flushChatSettings(): void {

@@ -9,6 +9,7 @@ import { dirname } from "node:path";
 import { Cron } from "croner";
 import { log } from "../util/log.js";
 import { files } from "../util/paths.js";
+import { registerCleanup } from "../util/cleanup-registry.js";
 
 export type CronJobType = "message" | "query";
 
@@ -80,7 +81,7 @@ function save(): void {
 }
 
 const autoSaveTimer = setInterval(save, 10_000);
-process.on("exit", save);
+registerCleanup(save);
 
 /** Flush cron jobs to disk and stop the auto-save timer. */
 export function flushCronJobs(): void {

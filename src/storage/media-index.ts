@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
+import { registerCleanup } from "../util/cleanup-registry.js";
 import writeFileAtomic from "write-file-atomic";
 import { log } from "../util/log.js";
 import { files } from "../util/paths.js";
@@ -52,7 +53,7 @@ function save(): void {
 }
 
 const autoSaveTimer = setInterval(save, 30_000);
-process.on("exit", save);
+registerCleanup(save);
 
 export function flushMediaIndex(): void {
   clearInterval(autoSaveTimer);

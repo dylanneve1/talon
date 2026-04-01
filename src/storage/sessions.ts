@@ -3,6 +3,7 @@ import writeFileAtomic from "write-file-atomic";
 import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { dirs, files } from "../util/paths.js";
+import { registerCleanup } from "../util/cleanup-registry.js";
 
 /**
  * Session manager — maps Telegram chat IDs to Claude SDK session IDs.
@@ -318,7 +319,7 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
 }
 
 // Flush on exit (signal handlers are in index.ts for graceful shutdown)
-process.on("exit", saveSessions);
+registerCleanup(saveSessions);
 
 /** Force-save sessions to disk and stop the auto-save timer. */
 export function flushSessions(): void {

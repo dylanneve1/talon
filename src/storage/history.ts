@@ -13,6 +13,7 @@ import writeFileAtomic from "write-file-atomic";
 import { log, logError } from "../util/log.js";
 import { files } from "../util/paths.js";
 import { formatSmartTimestamp } from "../util/time.js";
+import { registerCleanup } from "../util/cleanup-registry.js";
 
 export type HistoryMessage = {
   msgId: number;
@@ -96,7 +97,7 @@ function saveHistory(): void {
 
 // Auto-save every 30 seconds (less frequent than sessions since history is larger)
 const autoSaveTimer = setInterval(saveHistory, 30_000);
-process.on("exit", saveHistory);
+registerCleanup(saveHistory);
 
 export function flushHistory(): void {
   clearInterval(autoSaveTimer);
