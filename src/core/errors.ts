@@ -93,7 +93,7 @@ export function classify(err: unknown): TalonError {
   }
 
   // Network errors
-  if (/network|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|fetch failed/i.test(msg)) {
+  if (/network|ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|ENOTFOUND|fetch failed|connection reset/i.test(msg)) {
     return new TalonError(msg, {
       reason: "network",
       retryable: true,
