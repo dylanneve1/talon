@@ -50,6 +50,9 @@ try {
   }
 } catch { /* ignore */ }
 
+// Detect if running as a bun compiled binary (pino-pretty can't be bundled)
+const isBunBinary = import.meta.path.startsWith("/$bunfs/");
+
 // Suppress console output for terminal frontend (stdout belongs to the REPL)
 let quiet = process.env.TALON_QUIET === "1";
 if (!quiet) {
@@ -66,8 +69,8 @@ const logger = pino({
   level: "trace",
   transport: {
     targets: [
-      // Console output (disabled in quiet mode)
-      ...(!quiet ? [{
+      // Console output (disabled in quiet mode or compiled binary)
+      ...(!quiet && !isBunBinary ? [{
         target: "pino-pretty",
         level: "trace" as const,
         options: {

@@ -129,18 +129,21 @@ describe("getReplyContext", () => {
     expect(getReplyContext(undefined, 999)).toBe("");
   });
 
-  it("returns empty when replying to bot itself", () => {
-    expect(getReplyContext({ from: { id: 999 }, text: "hi" }, 999)).toBe("");
+  it("includes 'bot' as author when replying to bot itself", () => {
+    const result = getReplyContext({ from: { id: 999 }, text: "hi" }, 999);
+    expect(result).toContain("bot");
+    expect(result).toContain("hi");
   });
 
-  it("includes author and text for reply to others", () => {
+  it("includes author, text, and message_id for reply to others", () => {
     const result = getReplyContext(
-      { from: { id: 123, first_name: "Alice" }, text: "original message" },
+      { message_id: 42, from: { id: 123, first_name: "Alice" }, text: "original message" },
       999,
     );
     expect(result).toContain("Alice");
     expect(result).toContain("original message");
     expect(result).toContain("Replying to");
+    expect(result).toContain("msg_id:42");
   });
 
   it("truncates long reply text to 500 chars", () => {
@@ -206,8 +209,18 @@ describe("getForwardContext", () => {
 });
 
 describe("getReplyContext — edge cases", () => {
-  it("returns empty when reply has no text or caption", () => {
+  it("returns empty when reply has no text, caption, media, or message_id", () => {
     expect(getReplyContext({ from: { id: 123 } }, 999)).toBe("");
+  });
+
+  it("includes message_id and media type even without text", () => {
+    const result = getReplyContext(
+      { message_id: 100, from: { id: 123, first_name: "Dan" }, photo: [{}] as unknown[] },
+      999,
+    );
+    expect(result).toContain("msg_id:100");
+    expect(result).toContain("[photo]");
+    expect(result).toContain("Dan");
   });
 
   it("uses caption when text is missing", () => {

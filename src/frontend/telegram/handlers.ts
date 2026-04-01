@@ -78,20 +78,74 @@ export function getSenderName(
 export function getReplyContext(
   replyMsg:
     | {
+        message_id?: number;
         from?: { id: number; first_name?: string; last_name?: string };
         text?: string;
         caption?: string;
+        photo?: unknown[];
+        document?: unknown;
+        video?: unknown;
+        voice?: unknown;
+        audio?: unknown;
+        sticker?: unknown;
+        animation?: unknown;
       }
     | undefined,
   botId: number,
 ): string {
-  if (!replyMsg || replyMsg.from?.id === botId) return "";
+  if (!replyMsg) return "";
+
+  const author = replyMsg.from?.id === botId
+    ? "bot"
+    : [replyMsg.from?.first_name, replyMsg.from?.last_name]
+        .filter(Boolean)
+        .join(" ") || "User";
   const text = replyMsg.text || replyMsg.caption || "";
-  if (!text) return "";
-  const author = [replyMsg.from?.first_name, replyMsg.from?.last_name]
-    .filter(Boolean)
-    .join(" ");
-  return `[Replying to ${author}: "${text.slice(0, 500)}"]\n\n`;
+  const msgIdTag = replyMsg.message_id ? ` msg_id:${replyMsg.message_id}` : "";
+
+  // Detect media type
+  const mediaType = replyMsg.photo ? "photo"
+    : replyMsg.video ? "video"
+    : replyMsg.document ? "document"
+    : replyMsg.voice ? "voice"
+    : replyMsg.audio ? "audio"
+    : replyMsg.sticker ? "sticker"
+    : replyMsg.animation ? "animation"
+    : null;
+  const mediaPart = mediaType ? ` [${mediaType}]` : "";
+
+  // Build context — always include if there's a message_id (even if no text)
+  const textPart = text ? `: "${text.slice(0, 500)}"` : "";
+
+  if (!textPart && !mediaPart && !msgIdTag) return "";
+
+  return `[Replying to ${author}${textPart}${mediaPart}${msgIdTag}]\n\n`;
+}
+
+/**
+ * If the replied-to message contains a photo, download it and return a prompt
+ * line pointing to the saved file so Claude can see it. Returns "" if no photo.
+ */
+async function downloadReplyPhoto(
+  replyMsg: { photo?: { file_id: string; file_unique_id: string; width?: number; height?: number }[] } | undefined,
+  bot: Bot,
+  config: TalonConfig,
+): Promise<string> {
+  if (!replyMsg?.photo?.length) return "";
+  try {
+    // Pick the largest photo size (last in array)
+    const bestPhoto = replyMsg.photo[replyMsg.photo.length - 1];
+    const savedPath = await downloadTelegramFile(
+      bot,
+      config,
+      bestPhoto.file_id,
+      `reply_photo_${bestPhoto.file_unique_id}.jpg`,
+    );
+    return `[Replied-to message contains a photo saved to: ${savedPath} — read it to view]\n`;
+  } catch (err) {
+    logWarn("bot", `Failed to download reply photo: ${err instanceof Error ? err.message : err}`);
+    return "";
+  }
 }
 
 export function getForwardContext(msg: {
@@ -612,10 +666,16 @@ async function handleMediaMessage(
       ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
       ctx.me.id,
     );
+    const replyPhotoCtx = await downloadReplyPhoto(
+      ctx.message.reply_to_message as Parameters<typeof downloadReplyPhoto>[0],
+      bot,
+      config,
+    );
 
     const promptParts = [
       fwdCtx,
       replyCtx,
+      replyPhotoCtx,
       ...media.promptLines.map((l) => l.replace("${savedPath}", savedPath)),
       media.caption ? `Caption: ${media.caption}` : "",
     ].filter(Boolean);
@@ -667,10 +727,15 @@ export async function handleTextMessage(
     ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
     ctx.me.id,
   );
+  const replyPhotoCtx = await downloadReplyPhoto(
+    ctx.message.reply_to_message as Parameters<typeof downloadReplyPhoto>[0],
+    bot,
+    config,
+  );
   const fwdCtx = getForwardContext(
     ctx.message as Parameters<typeof getForwardContext>[0],
   );
-  const prompt = fwdCtx + replyCtx + (ctx.message.text ?? "");
+  const prompt = fwdCtx + replyCtx + replyPhotoCtx + (ctx.message.text ?? "");
 
   enqueueMessage(bot, config, chatId, ctx.chat.id, {
     prompt,

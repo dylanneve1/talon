@@ -108,6 +108,12 @@ process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 process.on("uncaughtException", (err) => {
+  // EPIPE errors from network sockets (e.g. Telegram MTProto) are transient —
+  // gramjs will reconnect; crashing the process here is wrong.
+  if ((err as NodeJS.ErrnoException).code === "EPIPE") {
+    logWarn("bot", `Suppressed transient EPIPE error: ${err.message}`);
+    return;
+  }
   logError("bot", "Uncaught exception", err);
   flushSessions();
   flushChatSettings();
