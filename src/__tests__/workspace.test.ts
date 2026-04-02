@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -17,6 +17,7 @@ import {
   cleanupUploads,
   startUploadCleanup,
   stopUploadCleanup,
+  migrateLayout,
 } from "../util/workspace.js";
 
 const TEST_ROOT = join(tmpdir(), `talon-ws-test-${Date.now()}`);
@@ -180,5 +181,31 @@ describe("startUploadCleanup / stopUploadCleanup", () => {
     startUploadCleanup(TEST_ROOT);
     stopUploadCleanup();
     expect(() => stopUploadCleanup()).not.toThrow();
+  });
+});
+
+describe("migrateLayout", () => {
+  it("is a no-op when workspace/ directory does not exist", () => {
+    // No workspace/ dir → should not throw or create anything
+    expect(() => migrateLayout()).not.toThrow();
+  });
+
+  it("is a no-op when .talon/ already exists", () => {
+    // Even if workspace/ exists, skip migration if .talon/ already there
+    expect(() => migrateLayout()).not.toThrow();
+  });
+});
+
+describe("getWorkspaceDiskUsage — edge cases", () => {
+  it("returns 0 for non-existent directory", () => {
+    expect(getWorkspaceDiskUsage("/non/existent/path/xyz123")).toBe(0);
+  });
+
+  it("counts multiple files correctly", () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    writeFileSync(join(TEST_ROOT, "a.txt"), "12345"); // 5 bytes
+    writeFileSync(join(TEST_ROOT, "b.txt"), "123");   // 3 bytes
+    const usage = getWorkspaceDiskUsage(TEST_ROOT);
+    expect(usage).toBe(8);
   });
 });

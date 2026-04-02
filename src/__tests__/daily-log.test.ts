@@ -143,4 +143,65 @@ describe("daily-log", () => {
       expect(() => cleanupOldLogs()).not.toThrow();
     });
   });
+
+  describe("appendDailyLogResponse", () => {
+    it("writes bot response with chat title context", async () => {
+      const { appendDailyLogResponse, getLogsDir } = await import(
+        "../storage/daily-log.js"
+      );
+      appendDailyLogResponse("Talon", "Here is the weather.", { chatTitle: "MyGroup" });
+      const logsDir = getLogsDir();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
+      expect(content).toContain("Talon in MyGroup");
+      expect(content).toContain("Here is the weather.");
+    });
+
+    it("writes bot response without chat title", async () => {
+      const { appendDailyLogResponse, getLogsDir } = await import(
+        "../storage/daily-log.js"
+      );
+      appendDailyLogResponse("Talon", "Standalone response");
+      const logsDir = getLogsDir();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
+      expect(content).toContain("[Talon]");
+      expect(content).toContain("Standalone response");
+    });
+
+    it("formats response with ## HH:MM -- [label] header", async () => {
+      const { appendDailyLogResponse, getLogsDir } = await import(
+        "../storage/daily-log.js"
+      );
+      appendDailyLogResponse("BotName", "response text");
+      const logsDir = getLogsDir();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
+      expect(content).toMatch(/## \d{2}:\d{2} -- \[BotName\]/);
+    });
+  });
+
+  describe("appendDailyLog — chat context labels", () => {
+    it("includes username in label", async () => {
+      const { appendDailyLog, getLogsDir } = await import(
+        "../storage/daily-log.js"
+      );
+      appendDailyLog("Alice", "hello", { username: "alice_tg" });
+      const logsDir = getLogsDir();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
+      expect(content).toContain("Alice (@alice_tg)");
+    });
+
+    it("includes chat title and username together", async () => {
+      const { appendDailyLog, getLogsDir } = await import(
+        "../storage/daily-log.js"
+      );
+      appendDailyLog("Bob", "test message", { chatTitle: "DevGroup", username: "bob_dev" });
+      const logsDir = getLogsDir();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
+      expect(content).toContain("Bob (@bob_dev) in DevGroup");
+    });
+  });
 });
