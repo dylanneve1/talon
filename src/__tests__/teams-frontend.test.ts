@@ -128,6 +128,17 @@ describe("teams formatting", () => {
       expect(body[0]!.type).toBe("TextBlock");
     });
 
+    it("skips default-case token with no text property (line 123 FALSE branch)", () => {
+      // A link reference definition produces a 'def' token with no `.text` property
+      // → falls into default: case → `"text" in token` is false → condition FALSE → skipped
+      // body ends up empty → fallback TextBlock is added
+      const card = buildAdaptiveCard("[ref]: http://example.com");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      expect(body.length).toBeGreaterThanOrEqual(1);
+      expect(body[0]!.type).toBe("TextBlock");
+    });
+
     it("renders heading with bold styling", () => {
       const card = buildAdaptiveCard("## Section Title");
       const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;

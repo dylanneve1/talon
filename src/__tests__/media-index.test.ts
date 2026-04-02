@@ -287,3 +287,32 @@ describe("media-index", () => {
     });
   });
 });
+
+// ── save dirty=false early return ─────────────────────────────────────────
+
+describe("media-index — save dirty=false early return (line 46 TRUE branch)", () => {
+  it("does not write when auto-save fires with dirty=false", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    const wfaMock = vi.fn();
+    vi.doMock("../util/log.js", () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn() }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false), mkdirSync: vi.fn(), readFileSync: vi.fn(() => "[]"), unlinkSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: wfaMock } }));
+    vi.doMock("../util/paths.js", () => ({
+      files: { media: "/fake/media.json" }, dirs: {},
+    }));
+    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+    vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
+
+    // Fresh import: dirty=false (nothing modified yet)
+    await import("../storage/media-index.js");
+
+    // Advance 31 seconds → auto-save timer fires → save() with dirty=false → early return
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(wfaMock).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+});

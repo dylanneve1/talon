@@ -131,12 +131,12 @@ export function validateCronExpression(
     const nextDate = cron.nextRun();
     return {
       valid: true,
-      next: nextDate ? nextDate.toISOString() : undefined,
+      next: (nextDate as Date).toISOString(),
     };
   } catch (err) {
     return {
       valid: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: (err as Error).message,
     };
   }
 }

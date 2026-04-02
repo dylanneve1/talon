@@ -45,6 +45,14 @@ describe("wrap", () => {
   it("returns text as-is if width too narrow", () => {
     expect(wrap("test", 70, 80)).toBe("test");
   });
+
+  it("skips final cur push when cur is empty (line 66 FALSE branch)", () => {
+    // A line of all spaces: length > width, but all split words are empty strings
+    // → cur never accumulates → `if (cur)` at end is false → no trailing push
+    const result = wrap(" ".repeat(26), 0, 25);
+    // Should produce an empty string (no content words to push)
+    expect(result).toBe("");
+  });
 });
 
 // ── formatTimeAgo ────────────────────────────────────────────────────────────
@@ -126,6 +134,13 @@ describe("extractToolDetail", () => {
 
   it("skips _chatId in fallback", () => {
     expect(extractToolDetail({ _chatId: "1", foo: "bar" }, 80)).toBe("foo=bar");
+  });
+
+  it("truncates string values longer than 30 chars in fallback (line 112 TRUE branch)", () => {
+    // v.length > 30 → `v.slice(0, 30) + "..."` branch
+    const longVal = "a".repeat(35);
+    const result = extractToolDetail({ custom: longVal }, 80);
+    expect(result).toBe(`custom=${"a".repeat(30)}...`);
   });
 
   it("returns empty string for empty input", () => {

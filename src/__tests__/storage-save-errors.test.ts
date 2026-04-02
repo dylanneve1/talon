@@ -130,6 +130,49 @@ describe("chat-settings — save failure logs error", () => {
   });
 });
 
+describe("chat-settings — non-Error thrown in save (line 96 FALSE branch)", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("records error with String(err) when non-Error is thrown", async () => {
+    const recordErrorMock = vi.fn();
+
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/watchdog.js", () => ({
+      recordError: recordErrorMock,
+    }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => true),
+      readFileSync: vi.fn(() => "{}"),
+      mkdirSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({
+      default: {
+        sync: vi.fn(() => { throw "plain string chat-settings error"; }),
+      },
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: { chatSettings: "/fake/chat-settings.json" },
+      dirs: { root: "/fake/.talon" },
+    }));
+    vi.doMock("../util/cleanup-registry.js", () => ({
+      registerCleanup: vi.fn(),
+    }));
+
+    const { setChatModel } = await import("../storage/chat-settings.js");
+    setChatModel("chat-nonError", "claude-opus-4-6");
+
+    expect(recordErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining("plain string chat-settings error"),
+    );
+  });
+});
+
 // ── sessions save failure ─────────────────────────────────────────────────
 
 describe("sessions — save failure logs error", () => {

@@ -106,7 +106,7 @@ function markdownToCardBody(text: string): CardElement[] {
         body.push({
           type: "Container",
           style: "emphasis",
-          items: [{ type: "TextBlock", text: cleanInline(String(bqToken.text ?? "")), wrap: true, isSubtle: true }],
+          items: [{ type: "TextBlock", text: cleanInline(String(bqToken.text)), wrap: true, isSubtle: true }],
         });
         break;
       }

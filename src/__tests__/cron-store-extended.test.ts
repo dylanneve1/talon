@@ -523,6 +523,45 @@ describe("loadCronJobs — corrupt primary tries backup", () => {
     expect(getCronJob("bak-ext-job")!.name).toBe("Backup job");
   });
 
+  it("does not throw when primary corrupt and backup does not exist (line 56 FALSE branch)", () => {
+    // primary exists but corrupt; backup file does not exist → existsSync(bakFile) = false
+    existsSyncMock
+      .mockReturnValueOnce(true)   // primary existsSync
+      .mockReturnValueOnce(false); // backup existsSync → FALSE branch
+    readFileSyncMock.mockReturnValueOnce("{{{ not json }}}");
+
+    expect(() => loadCronJobs()).not.toThrow();
+  });
+
+  it("loads backup in array format when primary is corrupt (line 58 TRUE branch)", () => {
+    const legacyArray = [
+      {
+        id: "bak-arr-1",
+        chatId: "bak-chat",
+        schedule: "0 6 * * *",
+        type: "message" as const,
+        content: "From array backup",
+        name: "Array backup job",
+        enabled: true,
+        createdAt: 1000,
+        runCount: 0,
+      },
+    ];
+
+    // primary exists but corrupt; backup exists with array (legacy) format
+    existsSyncMock
+      .mockReturnValueOnce(true)   // primary existsSync
+      .mockReturnValueOnce(true);  // backup existsSync
+    readFileSyncMock
+      .mockReturnValueOnce("{{{ not json }}}")      // primary read
+      .mockReturnValueOnce(JSON.stringify(legacyArray)); // backup read (array)
+
+    loadCronJobs();
+
+    expect(getCronJob("bak-arr-1")).toBeDefined();
+    expect(getCronJob("bak-arr-1")!.name).toBe("Array backup job");
+  });
+
   it("does not throw when both primary and backup are corrupt", () => {
     existsSyncMock
       .mockReturnValueOnce(true)   // primary exists

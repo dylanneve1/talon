@@ -384,6 +384,22 @@ describe("chat-settings — flushChatSettings", () => {
   });
 });
 
+describe("chat-settings — cleanupEmpty keeps entry when other fields remain (line 115 FALSE branch)", () => {
+  it("does not delete entry when effort is still set after clearing model", () => {
+    const chatId = `cleanup-keep-entry-${Date.now()}`;
+    // Set both model and effort
+    setChatModel(chatId, "claude-sonnet-4-6");
+    setChatEffort(chatId, "high");
+    expect(getChatSettings(chatId).model).toBe("claude-sonnet-4-6");
+    expect(getChatSettings(chatId).effort).toBe("high");
+
+    // Clear model only — effort still set → cleanupEmpty condition is FALSE → entry kept
+    setChatModel(chatId, undefined);
+    expect(getChatSettings(chatId).effort).toBe("high");
+    expect(getChatSettings(chatId).model).toBeUndefined();
+  });
+});
+
 describe("chat-settings — backup recovery on corrupt primary", () => {
   it("loads from backup when primary JSON is corrupt", async () => {
     const { loadChatSettings, getChatSettings } = await import("../storage/chat-settings.js");

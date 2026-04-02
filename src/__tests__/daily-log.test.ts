@@ -142,6 +142,22 @@ describe("daily-log", () => {
       const { cleanupOldLogs } = await import("../storage/daily-log.js");
       expect(() => cleanupOldLogs()).not.toThrow();
     });
+
+    it("does not log when no files are deleted (line 93 FALSE branch: deleted=0)", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+
+      // Only a recent file — not old enough to be deleted
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 5);
+      const recentName = recentDate.toISOString().slice(0, 10) + ".md";
+      writeFileSync(join(LOGS_DIR, recentName), "recent content");
+
+      cleanupOldLogs();
+
+      // File should still be present (not deleted)
+      expect(readdirSync(LOGS_DIR)).toContain(recentName);
+    });
   });
 
   describe("appendDailyLogResponse", () => {

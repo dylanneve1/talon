@@ -604,3 +604,64 @@ describe("flushHistory", () => {
     expect(bakCall).toBeDefined();
   });
 });
+
+// ── saveHistory dirty=false early return ─────────────────────────────────
+
+describe("history — saveHistory dirty=false early return (line 79 TRUE branch)", () => {
+  it("does not write when auto-save fires with dirty=false", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+    const wfaMock = vi.fn();
+    vi.doMock("../util/log.js", () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }));
+    vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false), mkdirSync: vi.fn(), readFileSync: vi.fn(() => "{}"),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: wfaMock } }));
+    vi.doMock("../util/paths.js", () => ({
+      files: { history: "/fake/history.json" },
+      dirs: {},
+    }));
+    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+
+    // Fresh import: dirty=false (nothing modified yet)
+    await import("../storage/history.js");
+
+    // Advance 31 seconds → auto-save timer fires → saveHistory() with dirty=false → early return
+    await vi.advanceTimersByTimeAsync(31_000);
+    expect(wfaMock).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+  });
+});
+
+// ── saveHistory non-Error thrown ──────────────────────────────────────────
+
+describe("history — non-Error thrown in saveHistory (line 96 FALSE branch)", () => {
+  it("records error with String(err) when non-Error is thrown", async () => {
+    vi.resetModules();
+    const recordErrorMock = vi.fn();
+    vi.doMock("../util/log.js", () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }));
+    vi.doMock("../util/watchdog.js", () => ({ recordError: recordErrorMock }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false), mkdirSync: vi.fn(), readFileSync: vi.fn(() => "{}"),
+    }));
+    vi.doMock("write-file-atomic", () => ({
+      default: { sync: vi.fn(() => { throw "plain string history error"; }) },
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: { history: "/fake/history.json" }, dirs: {},
+    }));
+    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+
+    const { pushMessage, flushHistory } = await import("../storage/history.js");
+    pushMessage("chat-err", {
+      msgId: 1, senderId: 1, senderName: "Bob", text: "test", timestamp: Date.now(),
+    });
+    expect(() => flushHistory()).not.toThrow();
+
+    expect(recordErrorMock).toHaveBeenCalledWith(
+      expect.stringContaining("plain string history error"),
+    );
+  });
+});

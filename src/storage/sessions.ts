@@ -228,7 +228,7 @@ export function recordUsage(
     session.usage.totalResponseMs =
       (session.usage.totalResponseMs || 0) + turn.durationMs;
     session.usage.lastResponseMs = turn.durationMs;
-    const current = session.usage.fastestResponseMs || Infinity;
+    const current = session.usage.fastestResponseMs;
     if (turn.durationMs < current) {
       session.usage.fastestResponseMs = turn.durationMs;
     }

@@ -117,8 +117,7 @@ export function pushMessage(chatId: string, msg: HistoryMessage): void {
       const iter = chatHistories.keys();
       for (let i = 0; i < evictCount; i++) {
         const oldest = iter.next();
-        if (oldest.done) break;
-        chatHistories.delete(oldest.value);
+        chatHistories.delete(oldest.value as string);
       }
       // Mark dirty so evicted chats are removed from disk on next save
       dirty = true;

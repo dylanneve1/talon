@@ -1451,3 +1451,94 @@ describe("gateway shared actions", () => {
     });
   });
 });
+
+// ── Additional branch coverage for fetch_url and web_search ──────────────
+
+describe("gateway-actions — additional branch coverage", () => {
+  let originalFetch: typeof globalThis.fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    delete process.env.TALON_BRAVE_API_KEY;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("rejects fetch_url when Content-Length header exceeds 20MB (line 152 TRUE branch)", async () => {
+    // Build a response that has a Content-Length header > 20MB
+    const headers = new Headers();
+    headers.set("content-type", "text/html");
+    headers.set("content-length", String(25 * 1024 * 1024)); // 25MB
+    const bigResponse = {
+      ok: true, status: 200,
+      headers,
+      text: async () => "some text",
+      json: async () => ({}),
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(bigResponse));
+
+    const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/huge.html" }, 123);
+
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("too large");
+  });
+
+  it("uses empty string when content-type header is absent in fetch_url (line 146 FALSE branch)", async () => {
+    // Response with no content-type header and binary content → falls through to binary path
+    // ct="" → mimeType="" → isText=false → binary download
+    const noCtHeaders = new Headers(); // no content-type
+    const buf = new ArrayBuffer(16);
+    const view = new Uint8Array(buf);
+    view[0] = 0x25; // not a known image magic byte → ext = "bin"
+    const noCtResponse = {
+      ok: true, status: 200,
+      headers: noCtHeaders,
+      text: async () => "",
+      json: async () => ({}),
+      arrayBuffer: async () => buf,
+    } as unknown as Response;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(noCtResponse));
+
+    const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/unknown" }, 123);
+    // Should succeed (downloaded as bin), covering ct ?? "" right side and ct.split("/")[1] ?? "file" right side
+    expect(result?.ok).toBe(true);
+  });
+
+  it("handles search result with missing content field (line 113 r.content ?? '' branch)", async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200,
+      headers: new Headers(),
+      json: async () => ({
+        results: [{ title: "Result", url: "https://example.com", content: undefined }],
+      }),
+      text: async () => "",
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response);
+    vi.stubGlobal("fetch", mockFetch);
+    process.env.TALON_SEARXNG_URL = "http://localhost:8080";
+
+    const result = await handleSharedAction({ action: "web_search", query: "test" }, 123);
+    expect(result?.ok).toBe(true);
+    // snippet should be "" (from ?? "")
+    expect(result?.text).toBeDefined();
+  });
+
+  it("handles search response with no results array (line 113 data.results ?? [] branch)", async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true, status: 200,
+      headers: new Headers(),
+      json: async () => ({ /* no results property */ }),
+      text: async () => "",
+      arrayBuffer: async () => new ArrayBuffer(0),
+    } as unknown as Response);
+    vi.stubGlobal("fetch", mockFetch);
+    process.env.TALON_SEARXNG_URL = "http://localhost:8080";
+
+    const result = await handleSharedAction({ action: "web_search", query: "empty" }, 123);
+    expect(result?.ok).toBe(true);
+    expect(result?.text).toContain("No results for");
+  });
+});
