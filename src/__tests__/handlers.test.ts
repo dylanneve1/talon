@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const executeMock = vi.hoisted(() => vi.fn());
 
@@ -415,6 +415,108 @@ describe("handleTextMessage — integration via mock Context", () => {
     expect(callArg.prompt).toContain("first message");
     expect(callArg.prompt).toContain("second message");
   }, 3000);
+});
+
+describe("handlePhotoMessage — downloads and enqueues photo", () => {
+  let restoreFetch: () => void;
+
+  beforeEach(() => {
+    // Mock bot.api.getFile for file download
+    mockBot.api.getFile = vi.fn(async () => ({ file_path: "photos/test.jpg" }));
+    // Create a minimal valid JPEG buffer (FF D8 header = JPEG magic bytes)
+    const jpegBuf = new Uint8Array(104);
+    jpegBuf[0] = 0xFF;
+    jpegBuf[1] = 0xD8;
+    const mockFetch = vi.fn(async () => ({
+      ok: true,
+      headers: { get: (_name: string) => null },
+      arrayBuffer: async () => jpegBuf.buffer,
+    }));
+    restoreFetch = () => {};
+    vi.stubGlobal("fetch", mockFetch);
+
+    executeMock.mockResolvedValue({
+      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("downloads photo and enqueues message", async () => {
+    const chatId = 54321;
+    const ctx = {
+      chat: { id: chatId, type: "private" },
+      message: {
+        message_id: 500,
+        photo: [
+          { file_id: "small_id", file_unique_id: "small_uniq", width: 100, height: 100 },
+          { file_id: "large_id", file_unique_id: "large_uniq", width: 800, height: 600 },
+        ],
+        caption: "Look at this!",
+        reply_to_message: null,
+      },
+      me: { id: 999, username: "testbot" },
+      from: { id: 50, first_name: "Nina" },
+    } as any;
+
+    const before = executeMock.mock.calls.length;
+    await handlePhotoMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    const calls = executeMock.mock.calls.slice(before).filter((c) => {
+      const arg = c[0] as { chatId: string };
+      return arg.chatId === String(chatId);
+    });
+    expect(calls.length).toBe(1);
+    const arg = calls[0][0] as { prompt: string };
+    expect(arg.prompt).toContain("photo");
+  }, 3000);
+
+  it("returns error via bot API when file download fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404 })));
+    const ctx = {
+      chat: { id: 54322, type: "private" },
+      message: {
+        message_id: 501,
+        photo: [{ file_id: "bad_id", file_unique_id: "bad_uniq", width: 100, height: 100 }],
+        reply_to_message: null,
+      },
+      me: { id: 999, username: "testbot" },
+      from: { id: 51, first_name: "Oscar" },
+    } as any;
+
+    await handlePhotoMessage(ctx, mockBot, mockConfig);
+    // Should call sendMessage with error text
+    expect(mockBot.api.sendMessage).toHaveBeenCalled();
+  });
+
+  it("rejects oversized document files", async () => {
+    const ctx = {
+      chat: { id: 54323, type: "private" },
+      message: {
+        message_id: 502,
+        document: {
+          file_id: "big_doc",
+          file_unique_id: "big_uniq",
+          file_name: "huge.pdf",
+          file_size: 30 * 1024 * 1024, // 30MB > 20MB limit
+          mime_type: "application/pdf",
+        },
+        reply_to_message: null,
+      },
+      me: { id: 999, username: "testbot" },
+      from: { id: 52, first_name: "Paula" },
+    } as any;
+
+    await handleDocumentMessage(ctx, mockBot, mockConfig);
+    expect(mockBot.api.sendMessage).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining("large"),
+      expect.anything(),
+    );
+  });
 });
 
 describe("handleCallbackQuery — processes button press", () => {

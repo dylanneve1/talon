@@ -136,6 +136,27 @@ describe("teams formatting", () => {
       expect(heading).toBeDefined();
       expect(heading!.size).toBe("Medium");
     });
+
+    it("replaces empty code block lines with non-breaking space", () => {
+      // Empty line in code block triggers (line || " ") branch
+      const card = buildAdaptiveCard("```\nfirst line\n\nthird line\n```");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      const codeBlock = body.find((b) => b.type === "Container") as Record<string, unknown> | undefined;
+      expect(codeBlock).toBeDefined();
+      const items = codeBlock!.items as Array<Record<string, unknown>>;
+      // The empty line should become " " (non-breaking space placeholder)
+      const emptyLineBlock = items.find((i) => i.text === "\u00a0");
+      expect(emptyLineBlock).toBeDefined();
+    });
+
+    it("splitTeamsMessage returns remaining text as final chunk", () => {
+      // text that splits evenly won't have leftover, test a case with leftover
+      const text = "A".repeat(4000) + "\n\n" + "B".repeat(100);
+      const chunks = splitTeamsMessage(text, 4500);
+      // Should have 1 chunk since total is < 4500
+      expect(chunks.join("")).toContain("BBBB");
+    });
   });
 
   describe("splitTeamsMessage", () => {

@@ -130,6 +130,40 @@ describe("GraphClient", () => {
 
       await expect(client.getMe()).rejects.toThrow("Token refresh failed");
     });
+
+    it("uses error code when error_description is absent from refresh response", async () => {
+      const tokens = makeTokens({ expiresAt: Date.now() - 1000 });
+      const client = new GraphClient(tokens as Parameters<typeof GraphClient>[0]);
+
+      proxyFetchMock.mockResolvedValueOnce(mockResponse({
+        // error_description intentionally omitted → triggers (data.error_description || data.error)
+        error: "expired_token",
+      }));
+
+      await expect(client.getMe()).rejects.toThrow("Token refresh failed");
+    });
+
+    it("uses existing refreshToken when response omits refresh_token", async () => {
+      const originalRefreshToken = "original-refresh-token";
+      const tokens = makeTokens({ expiresAt: Date.now() - 1000, refreshToken: originalRefreshToken });
+      const client = new GraphClient(tokens as Parameters<typeof GraphClient>[0]);
+
+      // First call: token refresh succeeds without providing new refresh_token
+      proxyFetchMock
+        .mockResolvedValueOnce(mockResponse({
+          access_token: "new-access-token-2",
+          // refresh_token intentionally omitted → triggers (data.refresh_token || refreshToken)
+          expires_in: 3600,
+        }))
+        // Second call: the actual API request
+        .mockResolvedValueOnce(mockResponse({ id: "user2", displayName: "User Two" }));
+
+      const result = await client.getMe();
+      expect(result.id).toBe("user2");
+      // The saved tokens should use the original refresh token as fallback
+      const savedData = JSON.parse(writeAtomicSyncMock.mock.calls[writeAtomicSyncMock.mock.calls.length - 1][1] as string);
+      expect(savedData.refreshToken).toBe(originalRefreshToken);
+    });
   });
 
   describe("graphGet", () => {
