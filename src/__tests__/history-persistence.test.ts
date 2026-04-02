@@ -170,3 +170,32 @@ describe("history persistence", () => {
     });
   });
 });
+
+describe("history — non-Error throw coverage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("saveHistory covers String(err) when writeFileAtomic throws a non-Error", async () => {
+    const { logError } = await import("../util/log.js");
+    vi.mocked(logError).mockClear();
+
+    const id = `flush-non-error-${Date.now()}`;
+    pushMessage(id, {
+      msgId: 1,
+      senderId: 1,
+      senderName: "TestUser",
+      text: "test non-error throw",
+      timestamp: Date.now(),
+    });
+
+    existsSyncMock.mockReturnValue(false); // no backup attempt
+    // Throw a plain string (non-Error) to cover `err instanceof Error ? ... : err`
+    writeFileSyncMock.mockImplementation(() => { throw "disk quota string"; }); // eslint-disable-line @typescript-eslint/no-throw-literal
+
+    expect(() => flushHistory()).not.toThrow();
+    expect(vi.mocked(logError)).toHaveBeenCalled();
+
+    writeFileSyncMock.mockReset();
+  });
+});
