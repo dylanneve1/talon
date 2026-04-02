@@ -469,3 +469,51 @@ describe("graph module exports", () => {
     expect(typeof graph.deviceCodeAuth).toBe("function");
   });
 });
+
+describe("teams actions — non-Error throw coverage", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+    vi.doMock("../core/plugin.js", () => ({ handlePluginAction: vi.fn(async () => null) }));
+    vi.doMock("../storage/cron-store.js", () => ({
+      addCronJob: vi.fn(), getCronJob: vi.fn(), getCronJobsForChat: vi.fn(() => []),
+      updateCronJob: vi.fn(), deleteCronJob: vi.fn(), recordCronRun: vi.fn(),
+      validateCronExpression: vi.fn(() => ({ valid: true, next: "" })),
+      generateCronId: vi.fn(() => "id"), loadCronJobs: vi.fn(),
+    }));
+  });
+
+  it("send_message covers String(err) branch when postToTeams throws a non-Error", async () => {
+    // Mock postToTeams (via proxyFetch) to throw a plain string, not an Error instance
+    vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
+      proxyFetch: vi.fn(async () => { throw "non-error webhook failure"; }), // eslint-disable-line @typescript-eslint/no-throw-literal
+    }));
+
+    const { Gateway } = await import("../core/gateway.js");
+    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const gateway = new Gateway();
+    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+
+    const result = await handler({ action: "send_message", text: "test" }, 123);
+    expect(result?.ok).toBe(false);
+    // Error was non-Error (string) → String(err) used → error message is the string itself
+    expect(result?.error).toContain("non-error webhook failure");
+  });
+
+  it("send_message_with_buttons covers String(err) branch when proxyFetch throws a non-Error", async () => {
+    vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
+      proxyFetch: vi.fn(async () => { throw "non-error button failure"; }), // eslint-disable-line @typescript-eslint/no-throw-literal
+    }));
+
+    const { Gateway } = await import("../core/gateway.js");
+    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const gateway = new Gateway();
+    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+
+    const result = await handler({ action: "send_message_with_buttons", text: "click me", rows: [[{ text: "OK" }]] }, 123);
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("non-error button failure");
+  });
+});
