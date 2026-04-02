@@ -544,6 +544,141 @@ describe("dream error paths", () => {
     );
   });
 
+  it("runDreamAgent uses non-zero lastRunTimestamp when state has last_run > 0 (line 112 TRUE branch)", async () => {
+    const appendFileSyncMock = vi.fn();
+    const lastRun = Date.now() - 3_600_000; // 1 hour ago
+    const stateJson = JSON.stringify({ last_run: lastRun, status: "idle" });
+
+    vi.doMock("node:fs", () => {
+      const readFileSyncFn = vi.fn()
+        .mockReturnValueOnce(stateJson)   // readDreamState reads dream_state.json
+        .mockReturnValue("dream prompt"); // subsequent calls: prompt file
+      return {
+        existsSync: vi.fn(() => true),
+        readFileSync: readFileSyncFn,
+        mkdirSync: vi.fn(),
+        appendFileSync: appendFileSyncMock,
+      };
+    });
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {}),
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6", workspace: "/fake/ws" });
+    await mod.forceDream();
+
+    const logOutput = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    // TRUE branch: lastRunTimestamp > 0 → ISO string used instead of "beginning of time"
+    expect(logOutput).toContain(new Date(lastRun).toISOString());
+    expect(logOutput).not.toContain("beginning of time");
+  });
+
+  it("runDreamAgent includes pathToClaudeCodeExecutable when claudeBinary set, and uses dreamModel (lines 135+150 TRUE branches)", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "dream prompt"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+    const queryMock = vi.fn(async function* () {});
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({ query: queryMock }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({
+      model: "claude-sonnet-4-6",
+      dreamModel: "claude-haiku-4-5",
+      claudeBinary: "/usr/local/bin/claude",
+      workspace: "/fake/ws",
+    });
+    await mod.forceDream();
+
+    expect(queryMock).toHaveBeenCalled();
+    const callArgs = queryMock.mock.calls[0][0] as { options: Record<string, unknown> };
+    // dreamModel TRUE branch (line 135): haiku model used instead of sonnet
+    expect(callArgs.options).toHaveProperty("model", "claude-haiku-4-5");
+    // claudeBinary TRUE branch (line 150): pathToClaudeCodeExecutable spread in
+    expect(callArgs.options).toHaveProperty("pathToClaudeCodeExecutable", "/usr/local/bin/claude");
+  });
+
+  it("assistant block with type='text' but no 'text' property maps to empty string (line 226 FALSE branch)", async () => {
+    const appendFileSyncMock = vi.fn();
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "dream prompt"),
+      mkdirSync: vi.fn(),
+      appendFileSync: appendFileSyncMock,
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {
+        // type="text" but no "text" property — covers `"text" in b` FALSE branch
+        yield { type: "assistant", message: { content: [{ type: "text" }] } };
+      }),
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6", workspace: "/fake/ws" });
+    await mod.forceDream();
+
+    // textBlocks = [""] (empty string from false branch), length > 0 → Assistant block logged
+    const logOutput = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(logOutput).toContain("Assistant");
+  });
+
   it("agent crash causes forceDream to reject with failure log entry", async () => {
     const appendFileSyncMock = vi.fn();
     vi.doMock("../util/log.js", () => ({
@@ -581,5 +716,134 @@ describe("dream error paths", () => {
     await expect(mod.forceDream()).rejects.toThrow("agent crashed unexpectedly");
     const logOutput = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
     expect(logOutput).toContain("Dream FAILED");
+  });
+
+  it("maybeStartDream returns early when dreaming=true (line 61 TRUE branch)", async () => {
+    let resolveQuery!: () => void;
+    const queryPromise = new Promise<void>((resolve) => { resolveQuery = resolve; });
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "dream prompt"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {
+        await queryPromise; // suspend until we release
+      }),
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6", workspace: "/fake/ws" });
+
+    // forceDream sets dreaming=true synchronously before its first await
+    const dreamPromise = mod.forceDream();
+    // dreaming is now true — maybeStartDream should hit the `if (dreaming) return` guard
+    mod.maybeStartDream();
+    // Release the suspended query so forceDream can finish
+    resolveQuery();
+    await dreamPromise;
+  });
+
+  it("auto-triggered dream failure swallows error (line 98 FALSE branch: trigger !== 'forced')", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => { throw new Error("prompt missing for auto dream"); }),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    const logErrorMock = vi.fn();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: logErrorMock, logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {}),
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6", workspace: "/fake/ws" });
+
+    // maybeStartDream fires auto dream (elapsed > 12h since state is null)
+    mod.maybeStartDream();
+    // Give the async fire-and-forget dream time to run and fail
+    await new Promise((r) => setTimeout(r, 50));
+
+    // trigger === "auto" → error is NOT re-thrown (FALSE branch of if trigger==="forced")
+    // logError should have been called with the failure
+    expect(logErrorMock).toHaveBeenCalledWith(
+      "dream",
+      expect.stringContaining("Memory consolidation failed"),
+      expect.any(Error),
+    );
+  });
+
+  it("model defaults to 'claude-sonnet-4-6' when neither dreamModel nor model set (line 135 FALSE??FALSE branch)", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "dream prompt"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+    const queryMock = vi.fn(async function* () {});
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({ query: queryMock }));
+
+    const mod = await import("../core/dream.js");
+    // No model or dreamModel → falls through to "claude-sonnet-4-6" literal default
+    mod.initDream({ workspace: "/fake/ws" });
+    await mod.forceDream();
+
+    const callArgs = queryMock.mock.calls[0][0] as { options: Record<string, unknown> };
+    expect(callArgs.options).toHaveProperty("model", "claude-sonnet-4-6");
   });
 });
