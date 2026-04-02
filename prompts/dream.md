@@ -5,9 +5,8 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 ## Your 4-stage task
 
 ### Stage 1 — Orient
-- Read `{{dreamStateFile}}` to confirm `last_run` timestamp
 - List log files in `{{logsDir}}/` that are dated on or after `{{lastRunIso}}`
-- If there are no new log files, update dream_state.json status to "idle" and stop
+- If there are no new log files, stop — the system will handle state updates
 
 ### Stage 2 — Gather
 - Read each new log file
@@ -38,4 +37,4 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 - Do NOT remove entries just because they're old — only remove if wrong or superseded
 - Write the updated memory.md back to `{{memoryFile}}`
 
-When done, your final action is to write `{ "last_run": <current_unix_ms>, "status": "idle" }` to `{{dreamStateFile}}`.
+When done with memory consolidation, stop. The system handles all dream_state.json updates.
