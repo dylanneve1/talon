@@ -463,6 +463,37 @@ describe("cron-store — additional branch coverage", () => {
     expect(vi.mocked(logError)).toHaveBeenCalled();
   });
 
+  it("loadCronJobs loads from backup when primary file is corrupt", async () => {
+    const backupJob = {
+      "backup-job-1": {
+        id: "backup-job-1",
+        chatId: "chat-bak",
+        schedule: "0 9 * * *",
+        type: "message",
+        content: "From backup",
+        name: "Backup Job",
+        enabled: true,
+        createdAt: 1000,
+        runCount: 0,
+      },
+    };
+
+    // First existsSync call: primary file exists
+    // Second existsSync call (inside catch): backup file exists
+    existsSyncMock
+      .mockReturnValueOnce(true)   // STORE_FILE exists
+      .mockReturnValueOnce(true);  // bakFile exists
+
+    readFileSyncMock
+      .mockReturnValueOnce("not valid json{{{")          // primary is corrupt
+      .mockReturnValueOnce(JSON.stringify(backupJob));   // backup is valid
+
+    loadCronJobs();
+
+    expect(getCronJob("backup-job-1")).toBeDefined();
+    expect(getCronJob("backup-job-1")!.content).toBe("From backup");
+  });
+
   it("loadCronJobs with invalid timezone clears it and logs", async () => {
     const { log } = await import("../util/log.js");
     const stored = {

@@ -1176,6 +1176,31 @@ describe("processAndReply — onToolUse callback triggers appendDailyLogResponse
   }, 3000);
 });
 
+describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", () => {
+  it("calls sendMessage when execute invokes onTextBlock", async () => {
+    const sendMsgCount = () => (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
+      const onTextBlock = params.onTextBlock as (text: string) => Promise<void>;
+      await onTextBlock?.("**Bold response**");
+      return { text: "", durationMs: 5, inputTokens: 1, outputTokens: 2, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 1 };
+    });
+
+    const before = sendMsgCount();
+    const ctx = {
+      chat: { id: 96002, type: "private" },
+      message: { text: "test onTextBlock", message_id: 951, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 93, first_name: "Yuki" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    expect(sendMsgCount()).toBeGreaterThan(before);
+  }, 3000);
+});
+
 describe("sendHtml — falls back to plain text on HTML send failure", () => {
   it("sends plain text when HTML mode fails", async () => {
     executeMock.mockResolvedValue({
