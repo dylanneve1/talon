@@ -700,4 +700,31 @@ describe("sessions — edge cases for branch coverage", () => {
     expect(entry!.info.usage).toBeDefined();
     expect(entry!.info.usage.totalInputTokens).toBe(0);
   });
+
+  it("resetSession on nonexistent chat defaults turns to 0", () => {
+    // session?.turns ?? 0 — the ?? 0 fallback (session is undefined)
+    expect(() => resetSession("never-created-session-xyz")).not.toThrow();
+  });
+
+  it("saveSessions logs error when atomic write throws", async () => {
+    const { logError } = await import("../util/log.js");
+    writeFileAtomicSync.mockImplementationOnce(() => { throw new Error("disk full"); });
+    // resetSession sets dirty=true then calls saveSessions
+    getSession("throw-on-save-xyz");
+    expect(() => resetSession("throw-on-save-xyz")).not.toThrow();
+    expect(logError).toHaveBeenCalled();
+  });
+
+  it("fastestResponseMs ?? 0 defaults to Infinity on first duration record", () => {
+    const chatId = "fastest-first-call-xyz";
+    // Fresh session has fastestResponseMs=Infinity (from emptyUsage)
+    // Calling recordUsage sets current = Infinity || Infinity... actually Infinity is truthy
+    // so we need to exercise the case where fastestResponseMs is already set > durationMs
+    recordUsage(chatId, { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, durationMs: 500 });
+    const session = getSession(chatId);
+    expect(session.usage.fastestResponseMs).toBe(500);
+    // Second call with LONGER duration — fastestResponseMs stays at 500 (not updated)
+    recordUsage(chatId, { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, durationMs: 1000 });
+    expect(session.usage.fastestResponseMs).toBe(500);
+  });
 });

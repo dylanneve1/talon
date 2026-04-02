@@ -436,3 +436,59 @@ describe("cron-store", () => {
     });
   });
 });
+
+describe("cron-store — additional branch coverage", () => {
+  it("loadCronJobs with count=0 (empty store) does not log", async () => {
+    const { log } = await import("../util/log.js");
+    vi.mocked(log).mockClear();
+
+    // File exists but has no jobs — count = 0, no log call
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue("{}");
+    loadCronJobs();
+
+    // log should not be called for empty store (count > 0 check is false)
+    expect(vi.mocked(log)).not.toHaveBeenCalledWith("cron", expect.stringContaining("Loaded"));
+  });
+
+  it("save() logs error when writeFileAtomic throws", async () => {
+    const { logError } = await import("../util/log.js");
+    vi.mocked(logError).mockClear();
+
+    existsSyncMock.mockReturnValue(false);
+    writeFileSyncMock.mockImplementationOnce(() => { throw new Error("io error"); });
+
+    // addCronJob sets dirty=true and calls save()
+    expect(() => addCronJob(makeCronJob({ id: "save-fail-1" }))).not.toThrow();
+    expect(vi.mocked(logError)).toHaveBeenCalled();
+  });
+
+  it("loadCronJobs with invalid timezone clears it and logs", async () => {
+    const { log } = await import("../util/log.js");
+    const stored = {
+      "tz-invalid-1": {
+        id: "tz-invalid-1",
+        chatId: "chat-tz",
+        schedule: "0 9 * * *",
+        type: "message",
+        content: "Hello",
+        name: "TZ test",
+        enabled: true,
+        createdAt: 1000,
+        runCount: 0,
+        timezone: "Not/A/Real/Timezone",
+      },
+    };
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(JSON.stringify(stored));
+
+    loadCronJobs();
+
+    const job = getCronJob("tz-invalid-1");
+    expect(job).toBeDefined();
+    // timezone was invalid — should be cleared
+    expect(job!.timezone).toBeUndefined();
+    // log should mention invalid timezone
+    expect(vi.mocked(log)).toHaveBeenCalledWith("cron", expect.stringContaining("invalid timezone"));
+  });
+});
