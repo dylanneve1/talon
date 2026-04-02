@@ -407,6 +407,25 @@ describe("config", () => {
       expect(config.systemPrompt).toContain("smalldir/a.txt");
       expect(config.systemPrompt).toContain("smalldir/b.txt");
     });
+
+    it("omits empty subdirectory from listing (line 163 FALSE branch: sub.length=0)", async () => {
+      // A directory entry with no children → listDir returns [] → sub.length=0
+      // → `else if (sub.length > 8)` is FALSE → omitted from listing
+      mockFs(
+        { frontend: "terminal" },
+        {},
+        [
+          { name: "emptydir", isDir: true }, // no children → sub.length = 0
+          { name: "notes.txt", isDir: false, size: 100 },
+        ],
+      );
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      // The empty subdirectory should NOT appear in listing
+      expect(config.systemPrompt).not.toContain("emptydir");
+      expect(config.systemPrompt).toContain("notes.txt");
+    });
   });
 
   describe("getFrontends", () => {
