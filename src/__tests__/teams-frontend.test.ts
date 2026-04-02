@@ -216,6 +216,53 @@ describe("teams actions", () => {
     const result = await handler({ action: "totally_unknown" }, 123);
     expect(result).toBeNull();
   });
+
+  it("send_message_with_buttons posts card with buttons to webhook", async () => {
+    vi.resetModules();
+    vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
+      proxyFetch: vi.fn(async () => ({ ok: true, status: 200 })),
+    }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+    vi.doMock("../core/plugin.js", () => ({ handlePluginAction: vi.fn(async () => null) }));
+
+    const { Gateway } = await import("../core/gateway.js");
+    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const gateway = new Gateway();
+    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+
+    const result = await handler({
+      action: "send_message_with_buttons",
+      text: "Choose an option",
+      rows: [[{ text: "Option A", url: "https://example.com" }, { text: "Option B" }]],
+    }, 123);
+    expect(result?.ok).toBe(true);
+  });
+
+  it("send_message_with_buttons handles webhook failure", async () => {
+    vi.resetModules();
+    vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
+      proxyFetch: vi.fn(async () => ({ ok: false, status: 503 })),
+    }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+    vi.doMock("../core/plugin.js", () => ({ handlePluginAction: vi.fn(async () => null) }));
+
+    const { Gateway } = await import("../core/gateway.js");
+    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const gateway = new Gateway();
+    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+
+    const result = await handler({
+      action: "send_message_with_buttons",
+      text: "Click one",
+      rows: [[{ text: "Fail" }]],
+    }, 123);
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toBeDefined();
+  });
 });
 
 // ── Test proxy-fetch ────────────────────────────────────────────────────────

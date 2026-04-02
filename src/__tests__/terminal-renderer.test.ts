@@ -272,6 +272,36 @@ describe("createRenderer", () => {
     const r = createRenderer(40);
     expect(r.cols).toBe(40);
   });
+
+  it("formats million-range token counts with M suffix", () => {
+    const r = createRenderer(80);
+    output = [];
+    r.renderStatusLine(5000, 1, {
+      model: "Sonnet",
+      turns: 1,
+      inputTokens: 1_500_000,
+      outputTokens: 500_000,
+      cacheHitPct: 0,
+      costUsd: 0,
+    });
+    // 2,000,000 tokens → 2.0M
+    expect(output.join("")).toContain("2.0M tok");
+  });
+
+  it("formats thousand-range token counts with k suffix", () => {
+    const r = createRenderer(80);
+    output = [];
+    r.renderStatusLine(2000, 1, {
+      model: "Sonnet",
+      turns: 1,
+      inputTokens: 5_000,
+      outputTokens: 3_500,
+      cacheHitPct: 0,
+      costUsd: 0,
+    });
+    // 8,500 tokens → 8.5k
+    expect(output.join("")).toContain("8.5k tok");
+  });
 });
 
 // Need to import afterEach for cleanup
