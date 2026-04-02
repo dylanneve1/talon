@@ -73,6 +73,18 @@ export function formatSmartTimestamp(ts: number): string {
 }
 
 /**
+ * Human-readable relative age: "just now", "5m ago", "3h ago", "2d ago".
+ * Used for user-facing displays where a precise timestamp isn't needed.
+ */
+export function formatRelativeAge(ts: number): string {
+  const diff = Date.now() - ts;
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+/**
  * Full datetime for system prompt injection.
  * Example: "2026-03-21 14:32 (Europe/Warsaw, Fri)"
  */

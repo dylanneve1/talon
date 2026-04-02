@@ -244,13 +244,11 @@ describe("cron-store", () => {
       expect(id.startsWith("cron_")).toBe(true);
     });
 
-    it("contains a timestamp component", () => {
+    it("contains a UUID component after the prefix", () => {
       const id = generateCronId();
-      const parts = id.split("_");
-      expect(parts.length).toBe(3);
-      const ts = Number(parts[1]);
-      expect(ts).toBeGreaterThan(0);
-      expect(ts).toBeLessThanOrEqual(Date.now());
+      // Format: "cron_<uuid>" — uuid is 36 chars including hyphens
+      const uuid = id.slice("cron_".length);
+      expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     });
   });
 

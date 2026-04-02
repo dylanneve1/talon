@@ -4,6 +4,7 @@
  */
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import writeFileAtomic from "write-file-atomic";
 import { dirname } from "node:path";
 import { Cron } from "croner";
@@ -58,9 +59,30 @@ export function loadCronJobs(): void {
       }
     } catch { /* backup also corrupt */ }
   }
+  // Validate and strip invalid IANA timezone strings so Cron() doesn't throw at runtime
+  let invalidTz = 0;
+  for (const job of Object.values(store)) {
+    if (job.timezone && !isValidTimezone(job.timezone)) {
+      log("cron", `Job "${job.name}" has invalid timezone "${job.timezone}" — clearing`);
+      job.timezone = undefined;
+      dirty = true;
+      invalidTz++;
+    }
+  }
+
   const count = Object.keys(store).length;
   if (count > 0) {
-    log("cron", `Loaded ${count} cron job(s)`);
+    log("cron", `Loaded ${count} cron job(s)${invalidTz > 0 ? ` (cleared ${invalidTz} invalid timezone(s))` : ""}`);
+  }
+}
+
+/** Check if an IANA timezone string is valid using the Intl API. */
+export function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -91,8 +113,9 @@ export function flushCronJobs(): void {
 
 // ── ID generation ───────────────────────────────────────────────────────────
 
+/** Generate a collision-free cron job ID using the platform's CSPRNG. */
 export function generateCronId(): string {
-  return `cron_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return `cron_${randomUUID()}`;
 }
 
 // ── Validation ──────────────────────────────────────────────────────────────

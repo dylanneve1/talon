@@ -189,25 +189,17 @@ describe("generateCronId", () => {
     }
   });
 
-  it("produces IDs with three underscore-separated parts", () => {
+  it("produces IDs in cron_<uuid> format", () => {
     const id = generateCronId();
-    const parts = id.split("_");
-    expect(parts).toHaveLength(3);
+    const uuid = id.slice("cron_".length);
+    expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
-  it("second part is a numeric timestamp close to now", () => {
-    const before = Date.now();
+  it("UUID part is version 4 (random)", () => {
     const id = generateCronId();
-    const after = Date.now();
-    const ts = Number(id.split("_")[1]);
-    expect(ts).toBeGreaterThanOrEqual(before);
-    expect(ts).toBeLessThanOrEqual(after);
-  });
-
-  it("third part contains only lowercase alphanumeric characters", () => {
-    const id = generateCronId();
-    const suffix = id.split("_")[2];
-    expect(suffix).toMatch(/^[a-z0-9]+$/);
+    const uuid = id.slice("cron_".length);
+    // Version 4 UUID: 13th char is '4'
+    expect(uuid[14]).toBe("4");
   });
 
   it("produces 100 unique IDs across rapid calls", () => {

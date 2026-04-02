@@ -12,7 +12,7 @@ import { dirname } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { log, logError } from "../util/log.js";
 import { files } from "../util/paths.js";
-import { formatSmartTimestamp } from "../util/time.js";
+import { formatSmartTimestamp, formatRelativeAge } from "../util/time.js";
 import { registerCleanup } from "../util/cleanup-registry.js";
 
 export type HistoryMessage = {
@@ -231,19 +231,12 @@ export function getKnownUsers(chatId: string): string {
   const lines = [...users.entries()]
     .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
     .map(([id, u]) => {
-      const ago = formatTimeAgo(u.lastSeen);
+      const ago = formatRelativeAge(u.lastSeen);
       return `${u.name} (user_id: ${id}) — ${u.messageCount} msgs, last seen ${ago}`;
     });
   return lines.join("\n");
 }
 
-function formatTimeAgo(ts: number): string {
-  const diff = Date.now() - ts;
-  if (diff < 60_000) return "just now";
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
-  return `${Math.floor(diff / 86_400_000)}d ago`;
-}
 
 export function getRecentBySenderId(
   chatId: string,
