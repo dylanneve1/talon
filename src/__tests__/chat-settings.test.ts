@@ -16,6 +16,11 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
 }));
 
+// Mock write-file-atomic to prevent writes to the real production file
+vi.mock("write-file-atomic", () => ({
+  default: { sync: vi.fn() },
+}));
+
 const {
   getChatSettings,
   setChatModel,
