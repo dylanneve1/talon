@@ -30,8 +30,6 @@ export function enrichGroupPrompt(
   if (recentMsgs.length <= 1) return prompt;
 
   const priorMsgs = recentMsgs.slice(0, -1);
-  if (priorMsgs.length === 0) return prompt;
-
   const senderName = priorMsgs[0].senderName;
   const contextLines = priorMsgs
     .map(

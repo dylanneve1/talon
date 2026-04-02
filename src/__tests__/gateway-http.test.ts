@@ -281,6 +281,60 @@ describe("gateway routes to plugin handler", () => {
   });
 });
 
+// ── Additional branch coverage ────────────────────────────────────────────
+
+describe("gateway — no frontend handler falls through to shared actions (line 162 FALSE branch)", () => {
+  it("routes to shared action when frontendHandler is null", async () => {
+    // Clear frontend handler — FALSE branch of `if (this.frontendHandler)`
+    gateway.setFrontendHandler(null);
+    gateway.setContext(123);
+
+    // read_history is a shared action that should still work
+    const { body } = await post({ action: "read_history", _chatId: "123" });
+    expect(body.ok).toBe(true);
+
+    gateway.clearContext(123);
+    gateway.setFrontendHandler(mockFrontendHandler); // restore
+  });
+});
+
+describe("gateway — non-Error thrown in handleAction catch (line 186 FALSE branch)", () => {
+  it("returns error with String(err) when handler throws a non-Error", async () => {
+    const stringThrowHandler = vi.fn(async () => { throw "plain string gateway error"; });
+    gateway.setFrontendHandler(stringThrowHandler);
+    gateway.setContext(123);
+
+    const { body } = await post({ action: "send_message", _chatId: "123", text: "test" });
+    expect(body.ok).toBe(false);
+    expect(String(body.error)).toContain("plain string gateway error");
+
+    gateway.clearContext(123);
+    gateway.setFrontendHandler(mockFrontendHandler); // restore
+  });
+});
+
+describe("gateway — start() called twice returns same port (line 195 TRUE branch)", () => {
+  it("returns port without restarting when already running", async () => {
+    // gateway is already started — calling start() again should return same port immediately
+    const secondPort = await gateway.start();
+    expect(secondPort).toBe(port);
+  });
+});
+
+describe("gateway health endpoint — old activity shows minutes ago (line 211 FALSE branch)", () => {
+  it("shows 'Xm ago' when msSinceLastMessage >= 60000", async () => {
+    const { getHealthStatus } = await import("../util/watchdog.js");
+    (getHealthStatus as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      healthy: true, totalMessagesProcessed: 5, recentErrorCount: 0,
+      msSinceLastMessage: 5 * 60_000, // 5 minutes ago → > 60000
+    });
+
+    const resp = await fetch(`http://127.0.0.1:${port}/health`);
+    const data = await resp.json() as Record<string, unknown>;
+    expect(data.lastActivity).toMatch(/m ago$/);
+  });
+});
+
 // ── Port retry (EADDRINUSE) ───────────────────────────────────────────────
 
 describe("gateway port retry — EADDRINUSE", () => {
