@@ -25,6 +25,8 @@ import { log, logError, logWarn } from "../util/log.js";
 export type DreamState = {
   /** Unix millisecond timestamp of the last completed dream run. */
   last_run: number;
+  /** Human-readable ISO timestamp of the last completed dream run. */
+  last_run_at?: string;
   /** "idle" when no dream is running, "running" while one is active. */
   status: "idle" | "running";
 };
@@ -288,7 +290,8 @@ function writeDreamState(state: DreamState): void {
   try {
     const dir = resolve(DREAM_STATE_FILE, "..");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileAtomic.sync(DREAM_STATE_FILE, JSON.stringify(state, null, 2) + "\n");
+    const enriched: DreamState = { ...state, last_run_at: new Date(state.last_run).toISOString() };
+    writeFileAtomic.sync(DREAM_STATE_FILE, JSON.stringify(enriched, null, 2) + "\n");
   } catch (err) {
     logError("dream", "Failed to write dream state", err);
   }
