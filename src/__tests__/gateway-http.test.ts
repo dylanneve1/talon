@@ -245,6 +245,24 @@ describe("shared actions via HTTP", () => {
   });
 });
 
+// ── Plugin action route coverage ─────────────────────────────────────────────
+
+describe("gateway routes to plugin handler", () => {
+  it("returns plugin result when handlePluginAction returns non-null", async () => {
+    const { handlePluginAction } = await import("../core/plugin.js");
+    (handlePluginAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ok: true, result: "from plugin" });
+
+    gateway.setContext(123);
+    const { body } = await post({ action: "plugin_specific_action", _chatId: "123" });
+    expect(body.ok).toBe(true);
+    expect(body.result).toBe("from plugin");
+    gateway.clearContext(123);
+
+    // Restore to always-null for subsequent tests
+    (handlePluginAction as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+  });
+});
+
 // ── Port retry (EADDRINUSE) ───────────────────────────────────────────────
 
 describe("gateway port retry — EADDRINUSE", () => {
