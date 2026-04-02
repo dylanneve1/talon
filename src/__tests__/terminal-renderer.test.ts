@@ -148,6 +148,31 @@ describe("extractToolDetail", () => {
     // Empty string value (v.length === 0) is skipped by the `v.length > 0` check
     expect(extractToolDetail({ empty: "", valid: "value" }, 80)).toBe("valid=value");
   });
+
+  it("skips object/null values in fallback (neither string nor number/boolean)", () => {
+    // Object values don't match either string or number/boolean conditions → skipped
+    expect(extractToolDetail({ obj: { nested: "val" }, num: 42 }, 80)).toBe("num=42");
+  });
+
+  it("extracts query field", () => {
+    expect(extractToolDetail({ query: "search term" }, 80)).toBe("search term");
+  });
+
+  it("extracts url field", () => {
+    expect(extractToolDetail({ url: "https://example.com" }, 80)).toBe("https://example.com");
+  });
+
+  it("extracts type field", () => {
+    expect(extractToolDetail({ type: "message" }, 80)).toBe("message");
+  });
+
+  it("extracts name field", () => {
+    expect(extractToolDetail({ name: "my-tool" }, 80)).toBe("my-tool");
+  });
+
+  it("extracts model field", () => {
+    expect(extractToolDetail({ model: "claude-sonnet-4-6" }, 80)).toBe("claude-sonnet-4-6");
+  });
 });
 
 // ── cleanToolName ────────────────────────────────────────────────────────────
