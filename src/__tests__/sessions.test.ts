@@ -727,4 +727,24 @@ describe("sessions — edge cases for branch coverage", () => {
     recordUsage(chatId, { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, durationMs: 1000 });
     expect(session.usage.fastestResponseMs).toBe(500);
   });
+
+  it("fastestResponseMs || Infinity uses Infinity when fastestResponseMs is 0", () => {
+    const chatId = "fastest-zero-fallback-xyz";
+    // Start fresh, then manually force fastestResponseMs to 0 (simulates old persisted data
+    // that slipped through migration), then call recordUsage — covers `|| Infinity` branch
+    const session = getSession(chatId);
+    session.usage.fastestResponseMs = 0; // falsy → `0 || Infinity` picks right side
+    recordUsage(chatId, { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, durationMs: 999 });
+    // current was Infinity (from || Infinity), 999 < Infinity → fastestResponseMs = 999
+    expect(session.usage.fastestResponseMs).toBe(999);
+  });
+
+  it("saveSessions logs error with non-Error object thrown by writeFileAtomic", async () => {
+    const { logError } = await import("../util/log.js");
+    // Throw a plain string instead of an Error to cover the `err instanceof Error ? ... : err` false branch
+    writeFileAtomicSync.mockImplementationOnce(() => { throw "plain string error"; }); // eslint-disable-line @typescript-eslint/no-throw-literal
+    getSession("throw-string-on-save-xyz");
+    expect(() => resetSession("throw-string-on-save-xyz")).not.toThrow();
+    expect(logError).toHaveBeenCalled();
+  });
 });

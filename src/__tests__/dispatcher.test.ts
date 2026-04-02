@@ -475,6 +475,89 @@ describe("typing indicator — error handling", () => {
   });
 });
 
+describe("typing indicator — non-Error throws", () => {
+  it("logs warning with String(err) when sendTyping throws a non-Error (initial call)", async () => {
+    vi.resetModules();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logDebug: vi.fn(), logWarn: vi.fn(), logError: vi.fn(),
+    }));
+    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
+
+    const { initDispatcher, execute } = await import("../core/dispatcher.js");
+    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<typeof vi.fn>;
+
+    initDispatcher({
+      backend: {
+        query: vi.fn(async () => ({ text: "ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 })),
+      },
+      context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
+      // Throw a plain string (non-Error) to hit the `String(err)` branch at line 99
+      sendTyping: vi.fn(async () => { throw "plain string typing error"; }), // eslint-disable-line @typescript-eslint/no-throw-literal
+      onActivity: vi.fn(),
+    });
+
+    await execute({
+      chatId: "typing-non-error-chat",
+      numericChatId: 1001,
+      prompt: "test",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+    });
+
+    expect(logWarn).toHaveBeenCalledWith(
+      "dispatcher",
+      expect.stringContaining("plain string typing error"),
+    );
+  });
+
+  it("logs warning with String(err) when sendTyping interval throws a non-Error", async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logDebug: vi.fn(), logWarn: vi.fn(), logError: vi.fn(),
+    }));
+    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
+
+    const { initDispatcher, execute } = await import("../core/dispatcher.js");
+    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<typeof vi.fn>;
+
+    let callCount = 0;
+    let resolveQuery!: (v: { text: string; durationMs: number; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number }) => void;
+
+    initDispatcher({
+      backend: { query: vi.fn(() => new Promise((r) => { resolveQuery = r; })) },
+      context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
+      // First call OK, subsequent calls throw a non-Error string (covers line 103 String(err) branch)
+      sendTyping: vi.fn(async () => {
+        callCount++;
+        if (callCount > 1) throw "non-error interval typing failure"; // eslint-disable-line @typescript-eslint/no-throw-literal
+      }),
+      onActivity: vi.fn(),
+    });
+
+    const p = execute({
+      chatId: "interval-non-error-chat",
+      numericChatId: 1002,
+      prompt: "test",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+    });
+
+    await vi.advanceTimersByTimeAsync(4100);
+    resolveQuery({ text: "ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
+    await p;
+
+    expect(logWarn).toHaveBeenCalledWith(
+      "dispatcher",
+      expect.stringContaining("interval failed"),
+    );
+
+    vi.useRealTimers();
+  });
+});
+
 describe("dispatcher — uninitialized guard", () => {
   it("throws when execute is called before initDispatcher", async () => {
     vi.resetModules();

@@ -215,6 +215,24 @@ describe("gateway HTTP server", () => {
       expect(body.error).toContain("No active chat context");
       gateway.clearContext(123);
     });
+
+    it("returns 500 when handleAction result cannot be JSON-serialized", async () => {
+      // Make frontendHandler return a circular reference so JSON.stringify throws
+      const circular: Record<string, unknown> = {};
+      circular["self"] = circular;
+      const circularHandler = vi.fn(async () => circular);
+      gateway.setFrontendHandler(circularHandler);
+      gateway.setContext(123);
+
+      const { status, body } = await post({ action: "send_message", _chatId: "123", text: "boom" });
+
+      expect(status).toBe(500);
+      expect(body.ok).toBe(false);
+      expect(body.error).toBeTruthy();
+
+      gateway.clearContext(123);
+      gateway.setFrontendHandler(mockFrontendHandler); // restore
+    });
   });
 
 
