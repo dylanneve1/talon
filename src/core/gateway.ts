@@ -233,9 +233,11 @@ export class Gateway {
             return;
           }
           const result = await this.handleAction(body);
+          const json = JSON.stringify(result);
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(result));
+          res.end(json);
         } catch (err) {
+          if (res.headersSent) return;
           const msg = err instanceof Error ? err.message : String(err);
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: false, error: msg }));
