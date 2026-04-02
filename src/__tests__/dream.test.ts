@@ -35,7 +35,8 @@ vi.mock("write-file-atomic", () => ({
 }));
 
 // Mock the agent SDK so runDreamAgent doesn't actually spawn Claude
-const queryMock = vi.fn(async function* () {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const queryMock = vi.fn<() => AsyncGenerator<any>>(async function* () {
   // Yield nothing — simulates a clean run
 });
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
