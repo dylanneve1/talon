@@ -11,6 +11,7 @@ import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { log, logError } from "../util/log.js";
+import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { formatSmartTimestamp, formatRelativeAge } from "../util/time.js";
 import { registerCleanup } from "../util/cleanup-registry.js";
@@ -91,7 +92,8 @@ function saveHistory(): void {
     writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch (err) {
-    logError("sessions", "Failed to persist history", err);
+    logError("history", "Failed to persist history", err);
+    recordError(`History save failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
