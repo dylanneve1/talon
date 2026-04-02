@@ -40,15 +40,18 @@ vi.mock("node:fs", () => ({
 vi.mock("../frontend/teams/proxy-fetch.js", () => ({
   proxyFetch: (...args: unknown[]) => proxyFetchMock(...args),
 }));
-vi.mock("cheerio", () => ({
-  default: {},
-  load: vi.fn(() => () => ({ text: () => "stripped text" })),
-}));
+vi.mock("cheerio", () => {
+  const dollarFn = Object.assign(vi.fn(), { text: () => "stripped text" });
+  return {
+    default: {},
+    load: vi.fn(() => dollarFn),
+  };
+});
 vi.mock("marked", () => ({
   marked: { lexer: vi.fn(() => []) },
 }));
 
-import { GraphClient, initGraphClient } from "../frontend/teams/graph.js";
+import { GraphClient, initGraphClient, deviceCodeAuth } from "../frontend/teams/graph.js";
 
 // ── Helper: make a mock JSON response ────────────────────────────────────────
 
@@ -364,6 +367,151 @@ describe("loadTokens (via initGraphClient)", () => {
     await vi.advanceTimersByTimeAsync(1100);
     const client = await promise;
     expect(client).toBeInstanceOf(GraphClient);
+    vi.useRealTimers();
+  });
+});
+
+// ── deviceCodeAuth polling paths ─────────────────────────────────────────────
+
+describe("deviceCodeAuth polling edge cases", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    existsSyncMock.mockReturnValue(false);
+    mkdirSyncMock.mockReturnValue(undefined);
+  });
+
+  it("handles authorization_pending then succeeds", async () => {
+    vi.useFakeTimers();
+    proxyFetchMock
+      .mockResolvedValueOnce(mockResponse({
+        device_code: "dc-pending",
+        user_code: "AAA-000",
+        verification_uri: "https://microsoft.com/devicelogin",
+        expires_in: 300,
+        interval: 1,
+        message: "Sign in",
+      }))
+      .mockResolvedValueOnce(mockResponse({ error: "authorization_pending" }))
+      .mockResolvedValueOnce(mockResponse({
+        access_token: "final-token",
+        refresh_token: "final-refresh",
+        expires_in: 3600,
+      }));
+
+    const promise = deviceCodeAuth();
+    await vi.advanceTimersByTimeAsync(1100);
+    await vi.advanceTimersByTimeAsync(1100);
+    const tokens = await promise;
+    expect(tokens.accessToken).toBe("final-token");
+    vi.useRealTimers();
+  });
+
+  it("handles slow_down response (waits extra 5s before continuing)", async () => {
+    vi.useFakeTimers();
+    proxyFetchMock
+      .mockResolvedValueOnce(mockResponse({
+        device_code: "dc-slow",
+        user_code: "BBB-111",
+        verification_uri: "https://microsoft.com/devicelogin",
+        expires_in: 300,
+        interval: 1,
+        message: "Sign in",
+      }))
+      .mockResolvedValueOnce(mockResponse({ error: "slow_down" }))
+      .mockResolvedValueOnce(mockResponse({
+        access_token: "slow-down-token",
+        refresh_token: "slow-down-refresh",
+        expires_in: 3600,
+      }));
+
+    const promise = deviceCodeAuth();
+    await vi.advanceTimersByTimeAsync(1100);
+    await vi.advanceTimersByTimeAsync(5100);
+    await vi.advanceTimersByTimeAsync(1100);
+    const tokens = await promise;
+    expect(tokens.accessToken).toBe("slow-down-token");
+    vi.useRealTimers();
+  });
+
+  it("throws on permanent auth error (access_denied)", async () => {
+    vi.useFakeTimers();
+    proxyFetchMock
+      .mockResolvedValueOnce(mockResponse({
+        device_code: "dc-err",
+        user_code: "CCC-222",
+        verification_uri: "https://microsoft.com/devicelogin",
+        expires_in: 300,
+        interval: 1,
+        message: "Sign in",
+      }))
+      .mockResolvedValueOnce(mockResponse({
+        error: "access_denied",
+        error_description: "The user declined to authorize",
+      }));
+
+    const promise = deviceCodeAuth();
+    // Attach rejection handler BEFORE advancing timers to avoid unhandled rejection
+    const check = expect(promise).rejects.toThrow("Auth failed");
+    await vi.advanceTimersByTimeAsync(1100);
+    await check;
+    vi.useRealTimers();
+  });
+});
+
+// ── getChatMessages HTML content type ─────────────────────────────────────────
+
+describe("getChatMessages — HTML content", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    existsSyncMock.mockReturnValue(true);
+  });
+
+  it("strips HTML when contentType is html", async () => {
+    const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+    proxyFetchMock.mockResolvedValue(mockResponse({
+      value: [{
+        id: "html-msg",
+        messageType: "message",
+        from: { user: { id: "u5", displayName: "Carol" } },
+        body: { contentType: "html", content: "<p>Hello <b>Teams</b>!</p>" },
+        createdDateTime: "2026-01-01T13:00:00Z",
+        lastEditedDateTime: null,
+      }],
+    }));
+
+    const messages = await client.getChatMessages("chat1");
+    // stripHtml should have been invoked (mocked to return "stripped text")
+    expect(messages[0]!.text).toBe("stripped text");
+  });
+});
+
+describe("deviceCodeAuth — timeout path", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    existsSyncMock.mockReturnValue(false);
+  });
+
+  it("throws when device code auth deadline expires", async () => {
+    vi.useFakeTimers();
+    proxyFetchMock
+      // device code request
+      .mockResolvedValueOnce(mockResponse({
+        device_code: "dc-to",
+        user_code: "DDD-333",
+        verification_uri: "https://microsoft.com/devicelogin",
+        expires_in: 5, // 5-second deadline
+        interval: 1,
+        message: "Sign in",
+      }))
+      // Always return authorization_pending — loop runs until deadline
+      .mockResolvedValue(mockResponse({ error: "authorization_pending" }));
+
+    const promise = deviceCodeAuth();
+    // Attach handler first to avoid unhandled rejection
+    const check = expect(promise).rejects.toThrow("Device code auth timed out");
+    // Advance past the 5-second deadline
+    await vi.advanceTimersByTimeAsync(6100);
+    await check;
     vi.useRealTimers();
   });
 });
