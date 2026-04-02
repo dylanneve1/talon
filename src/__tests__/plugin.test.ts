@@ -315,3 +315,60 @@ describe("plugin system", () => {
     });
   });
 });
+
+describe("extractPlugin — invalid optional field types", () => {
+  // All tests use _deps.importModule injection (same pattern as the main describe block)
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("rejects plugin when init is not a function", async () => {
+    const plugin = { name: "bad-init", init: "not-a-function" };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-init" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("rejects plugin when getSystemPromptAddition is not a function", async () => {
+    const plugin = { name: "bad-gsp", getSystemPromptAddition: 42 };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-gsp" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("rejects plugin when mcpServerPath is not a string", async () => {
+    const plugin = { name: "bad-mcp", mcpServerPath: 99 };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-mcp" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("rejects plugin when frontends is not an array", async () => {
+    const plugin = { name: "bad-frontends", frontends: "telegram" };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-frontends" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("getLoadedPlugins returns all loaded plugins", async () => {
+    const plugin = {
+      name: "good-plugin",
+      handleAction: async () => null,
+    };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/good-p" }]);
+    const loaded = mod.getLoadedPlugins();
+    expect(loaded.length).toBeGreaterThanOrEqual(1);
+    expect(loaded.some((l) => l.plugin.name === "good-plugin")).toBe(true);
+  });
+});

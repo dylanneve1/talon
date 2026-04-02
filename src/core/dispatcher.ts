@@ -16,7 +16,7 @@ import type {
   ExecuteParams,
   ExecuteResult,
 } from "./types.js";
-import { log, logDebug } from "../util/log.js";
+import { log, logDebug, logWarn } from "../util/log.js";
 import { maybeStartDream } from "./dream.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
@@ -95,9 +95,13 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
 
   let typingTimer: ReturnType<typeof setInterval> | undefined;
   try {
-    await sendTyping(params.numericChatId).catch(() => {});
+    await sendTyping(params.numericChatId).catch((err: unknown) => {
+      logWarn("dispatcher", `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`);
+    });
     typingTimer = setInterval(() => {
-      sendTyping(params.numericChatId).catch(() => {});
+      sendTyping(params.numericChatId).catch((err: unknown) => {
+        logWarn("dispatcher", `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`);
+      });
     }, 4000);
 
     const result = await backend.query({

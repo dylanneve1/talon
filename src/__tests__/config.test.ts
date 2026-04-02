@@ -544,3 +544,32 @@ describe("config", () => {
     });
   });
 });
+
+describe("loadConfig — teams webhook validation", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("throws when teams frontend has no teamsWebhookUrl", async () => {
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn((path: string) => {
+        if (path.includes("config.json")) return true;
+        return false;
+      }),
+      readFileSync: vi.fn(() => JSON.stringify({
+        frontend: "teams",
+        // teamsWebhookUrl intentionally omitted
+      })),
+      mkdirSync: vi.fn(),
+      readdirSync: vi.fn(() => []),
+      statSync: vi.fn(() => ({ size: 0 })),
+    }));
+
+    const { loadConfig } = await import("../util/config.js");
+    expect(() => loadConfig()).toThrow("teamsWebhookUrl");
+  });
+});
