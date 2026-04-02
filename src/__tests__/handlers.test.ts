@@ -1,35 +1,38 @@
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("../../core/dispatcher.js", () => ({
-  execute: vi.fn(),
+const executeMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../core/dispatcher.js", () => ({
+  execute: executeMock,
 }));
-vi.mock("../../core/prompt-builder.js", () => ({
+vi.mock("../core/prompt-builder.js", () => ({
   enrichDMPrompt: vi.fn((p: string) => p),
   enrichGroupPrompt: vi.fn((p: string) => p),
 }));
-vi.mock("../../storage/daily-log.js", () => ({
+vi.mock("../storage/daily-log.js", () => ({
   appendDailyLog: vi.fn(),
+  appendDailyLogResponse: vi.fn(),
 }));
-vi.mock("../../util/watchdog.js", () => ({
+vi.mock("../util/watchdog.js", () => ({
   recordMessageProcessed: vi.fn(),
   recordError: vi.fn(),
 }));
-vi.mock("../../util/log.js", () => ({
+vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
   logDebug: vi.fn(),
 }));
-vi.mock("../../core/errors.js", () => ({
-  classify: vi.fn((e: unknown) => e),
-  friendlyMessage: vi.fn(() => "error"),
+vi.mock("../core/errors.js", () => ({
+  classify: vi.fn((e: unknown) => ({ reason: "error", message: String(e), retryable: false })),
+  friendlyMessage: vi.fn(() => "An error occurred"),
 }));
 
-vi.mock("../../storage/history.js", () => ({
+vi.mock("../storage/history.js", () => ({
   setMessageFilePath: vi.fn(),
   getRecentBySenderId: vi.fn(() => []),
 }));
-vi.mock("../../storage/media-index.js", () => ({
+vi.mock("../storage/media-index.js", () => ({
   addMedia: vi.fn(),
 }));
 vi.mock("node:fs", () => ({
@@ -347,5 +350,66 @@ describe("handleTextMessage — integration via mock Context", () => {
     } as any;
     await handleCallbackQuery(ctx, mockBot, mockConfig);
   });
+
+  it("enqueues and processes a DM message via flushQueue", async () => {
+    executeMock.mockResolvedValue({
+      text: "hello back",
+      durationMs: 50,
+      inputTokens: 5,
+      outputTokens: 10,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
+    });
+
+    const ctx = {
+      chat: { id: 12345, type: "private" },
+      message: { text: "hello", message_id: 100, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 42, first_name: "Alice" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+
+    // Wait for real 500ms debounce plus buffer for async processing
+    await new Promise((r) => setTimeout(r, 700));
+
+    expect(executeMock).toHaveBeenCalled();
+  }, 3000);
+
+  it("enqueues multiple DM messages within debounce window — concatenates them", async () => {
+    executeMock.mockResolvedValue({
+      text: "concatenated response",
+      durationMs: 30,
+      inputTokens: 3,
+      outputTokens: 5,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
+    });
+
+    const chatId = 77777 + Math.floor(Math.random() * 1000); // unique id to avoid state sharing
+    const makeCtx = (text: string, msgId: number) => ({
+      chat: { id: chatId, type: "private" },
+      message: { text, message_id: msgId, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 55, first_name: "Carol" },
+    } as any);
+
+    const before = executeMock.mock.calls.length;
+    await handleTextMessage(makeCtx("first message", 301), mockBot, mockConfig);
+    await handleTextMessage(makeCtx("second message", 302), mockBot, mockConfig);
+
+    await new Promise((r) => setTimeout(r, 700));
+
+    const newCalls = executeMock.mock.calls.slice(before).filter((c) => {
+      const arg = c[0] as { chatId: string };
+      return arg.chatId === String(chatId);
+    });
+    expect(newCalls.length).toBe(1);
+    const callArg = newCalls[0][0] as { prompt: string };
+    expect(callArg.prompt).toContain("first message");
+    expect(callArg.prompt).toContain("second message");
+  }, 3000);
 });
 
