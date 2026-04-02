@@ -145,12 +145,20 @@ export async function handleSharedAction(
         if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
         const ct = resp.headers.get("content-type") ?? "";
 
+        // Reject oversized responses before downloading the body.
+        // The Content-Length header is advisory but saves bandwidth when present.
+        const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
+        const contentLength = resp.headers.get("content-length");
+        if (contentLength && Number(contentLength) > MAX_BYTES) {
+          return { ok: false, error: `File too large (${(Number(contentLength) / 1024 / 1024).toFixed(0)}MB, max 20MB)` };
+        }
+
         // Binary content: download and save to workspace
         const mimeType = ct.split(";")[0].trim().toLowerCase();
         const isText = mimeType.startsWith("text/") || mimeType === "application/json";
         if (!isText) {
           const buffer = Buffer.from(await resp.arrayBuffer());
-          if (buffer.length > 20 * 1024 * 1024) return { ok: false, error: "File too large (max 20MB)" };
+          if (buffer.length > MAX_BYTES) return { ok: false, error: "File too large (max 20MB)" };
           if (buffer.length === 0) return { ok: false, error: "Empty response (0 bytes)" };
 
           // Validate magic bytes — prevent saving HTML error pages as images
