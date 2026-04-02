@@ -392,14 +392,14 @@ describe("typing indicator — interval error handling", () => {
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const { logWarn } = await import("../util/log.js") as { logWarn: ReturnType<typeof vi.fn> };
+    const { logWarn } = await import("../util/log.js") as unknown as { logWarn: ReturnType<typeof vi.fn> };
 
     let typingCallCount = 0;
     let resolveQuery!: (v: { text: string; durationMs: number; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number }) => void;
 
     initDispatcher({
       backend: {
-        query: vi.fn(() => new Promise((r) => { resolveQuery = r; })),
+        query: vi.fn(() => new Promise((r) => { resolveQuery = r; })) as never,
       },
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {
@@ -526,7 +526,7 @@ describe("typing indicator — non-Error throws", () => {
     let resolveQuery!: (v: { text: string; durationMs: number; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number }) => void;
 
     initDispatcher({
-      backend: { query: vi.fn(() => new Promise((r) => { resolveQuery = r; })) },
+      backend: { query: vi.fn(() => new Promise((r) => { resolveQuery = r; })) as never },
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // First call OK, subsequent calls throw a non-Error string (covers line 103 String(err) branch)
       sendTyping: vi.fn(async () => {

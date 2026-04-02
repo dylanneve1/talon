@@ -392,7 +392,7 @@ describe("extractPlugin — invalid optional field types", () => {
       log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
     mod._deps.importModule = async () => { throw new Error("module load failed"); };
     await mod.loadPlugins([{ path: "/fake/throw-plugin" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -415,7 +415,7 @@ describe("extractPlugin — invalid optional field types", () => {
       log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
     // Throw a plain string (non-Error) — covers String(err) branch
     mod._deps.importModule = async () => { throw "plain string load error"; };
     await mod.loadPlugins([{ path: "/fake/non-error-throw" }]);
@@ -429,7 +429,7 @@ describe("extractPlugin — invalid optional field types", () => {
       log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
     const plugin = {
       name: "init-non-error",
       init: () => { throw "plain string init error"; },
@@ -474,7 +474,7 @@ describe("extractPlugin — invalid optional field types", () => {
       log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
     const plugin = {
       name: "destroy-non-error",
       destroy: () => { throw "plain string destroy error"; },
@@ -492,7 +492,7 @@ describe("extractPlugin — invalid optional field types", () => {
       log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
     const plugin = {
       name: "prompt-non-error",
       getSystemPromptAddition: () => { throw "plain string prompt error"; },
@@ -510,7 +510,7 @@ describe("extractPlugin — invalid optional field types", () => {
       log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
     const plugin = {
       name: "action-non-error",
       handleAction: async () => { throw "plain string action error"; },

@@ -85,7 +85,7 @@ describe("GraphClient", () => {
   describe("ensureValidToken", () => {
     it("returns existing token when not expired", async () => {
       const tokens = makeTokens(); // expires 1h from now
-      const client = new GraphClient(tokens as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(tokens as ConstructorParameters<typeof GraphClient>[0]);
 
       proxyFetchMock.mockResolvedValue(mockResponse({ id: "user1", displayName: "Alice" }));
       const result = await client.getMe();
@@ -99,7 +99,7 @@ describe("GraphClient", () => {
 
     it("refreshes token when expired", async () => {
       const tokens = makeTokens({ expiresAt: Date.now() - 1000 }); // already expired
-      const client = new GraphClient(tokens as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(tokens as ConstructorParameters<typeof GraphClient>[0]);
 
       // First call: refresh token endpoint
       // Second call: the actual graphGet
@@ -121,7 +121,7 @@ describe("GraphClient", () => {
 
     it("throws when token refresh fails", async () => {
       const tokens = makeTokens({ expiresAt: Date.now() - 1000 });
-      const client = new GraphClient(tokens as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(tokens as ConstructorParameters<typeof GraphClient>[0]);
 
       proxyFetchMock.mockResolvedValueOnce(mockResponse({
         error: "invalid_grant",
@@ -133,7 +133,7 @@ describe("GraphClient", () => {
 
     it("uses error code when error_description is absent from refresh response", async () => {
       const tokens = makeTokens({ expiresAt: Date.now() - 1000 });
-      const client = new GraphClient(tokens as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(tokens as ConstructorParameters<typeof GraphClient>[0]);
 
       proxyFetchMock.mockResolvedValueOnce(mockResponse({
         // error_description intentionally omitted → triggers (data.error_description || data.error)
@@ -146,7 +146,7 @@ describe("GraphClient", () => {
     it("uses existing refreshToken when response omits refresh_token", async () => {
       const originalRefreshToken = "original-refresh-token";
       const tokens = makeTokens({ expiresAt: Date.now() - 1000, refreshToken: originalRefreshToken });
-      const client = new GraphClient(tokens as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(tokens as ConstructorParameters<typeof GraphClient>[0]);
 
       // First call: token refresh succeeds without providing new refresh_token
       proxyFetchMock
@@ -168,7 +168,7 @@ describe("GraphClient", () => {
 
   describe("graphGet", () => {
     it("throws on non-ok HTTP response", async () => {
-      const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
       proxyFetchMock.mockResolvedValue(mockResponse({ error: "Unauthorized" }, false, 401));
       await expect(client.getMe()).rejects.toThrow("Graph API");
       await expect(client.getMe()).rejects.toThrow("401");
@@ -177,7 +177,7 @@ describe("GraphClient", () => {
 
   describe("getMe", () => {
     it("returns user id and displayName", async () => {
-      const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
       proxyFetchMock.mockResolvedValue(mockResponse({ id: "abc123", displayName: "Bob Smith" }));
       const me = await client.getMe();
       expect(me.id).toBe("abc123");
@@ -187,7 +187,7 @@ describe("GraphClient", () => {
 
   describe("listChats", () => {
     it("returns chats array with id, topic, chatType", async () => {
-      const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
       proxyFetchMock.mockResolvedValue(mockResponse({
         value: [
           { id: "chat1", topic: "Team discussion", chatType: "group" },
@@ -204,7 +204,7 @@ describe("GraphClient", () => {
 
   describe("getChatMessages", () => {
     it("filters only 'message' type messages", async () => {
-      const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
       proxyFetchMock.mockResolvedValue(mockResponse({
         value: [
           {
@@ -234,7 +234,7 @@ describe("GraphClient", () => {
     });
 
     it("marks message as edited when lastEditedDateTime is set", async () => {
-      const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
       proxyFetchMock.mockResolvedValue(mockResponse({
         value: [{
           id: "msg3",
@@ -250,7 +250,7 @@ describe("GraphClient", () => {
     });
 
     it("handles null from/user gracefully", async () => {
-      const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
       proxyFetchMock.mockResolvedValue(mockResponse({
         value: [{
           id: "msg4",
@@ -269,14 +269,14 @@ describe("GraphClient", () => {
 
   describe("stored config helpers", () => {
     it("returns undefined for unset chatId/chatTopic/userId", () => {
-      const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
       expect(client.getStoredChatId()).toBeUndefined();
       expect(client.getStoredChatTopic()).toBeUndefined();
       expect(client.getStoredUserId()).toBeUndefined();
     });
 
     it("saveChatConfig stores and returns config", () => {
-      const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
       client.saveChatConfig("chat-abc", "My Team", "user-xyz");
       expect(client.getStoredChatId()).toBe("chat-abc");
       expect(client.getStoredChatTopic()).toBe("My Team");
@@ -584,7 +584,7 @@ describe("getChatMessages — HTML content", () => {
   });
 
   it("strips HTML when contentType is html", async () => {
-    const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+    const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
     proxyFetchMock.mockResolvedValue(mockResponse({
       value: [{
         id: "html-msg",
@@ -602,7 +602,7 @@ describe("getChatMessages — HTML content", () => {
   });
 
   it("uses empty string when body content is null/empty", async () => {
-    const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+    const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
     proxyFetchMock.mockResolvedValue(mockResponse({
       value: [{
         id: "empty-body-msg",
@@ -619,7 +619,7 @@ describe("getChatMessages — HTML content", () => {
   });
 
   it("handles null body gracefully", async () => {
-    const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+    const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
     proxyFetchMock.mockResolvedValue(mockResponse({
       value: [{
         id: "null-body-msg",

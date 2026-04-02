@@ -630,7 +630,7 @@ describe("dream error paths", () => {
     await mod.forceDream();
 
     expect(queryMock).toHaveBeenCalled();
-    const callArgs = queryMock.mock.calls[0][0] as { options: Record<string, unknown> };
+    const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as { options: Record<string, unknown> };
     // dreamModel TRUE branch (line 135): haiku model used instead of sonnet
     expect(callArgs.options).toHaveProperty("model", "claude-haiku-4-5");
     // claudeBinary TRUE branch (line 150): pathToClaudeCodeExecutable spread in
@@ -843,7 +843,7 @@ describe("dream error paths", () => {
     mod.initDream({ workspace: "/fake/ws" });
     await mod.forceDream();
 
-    const callArgs = queryMock.mock.calls[0][0] as { options: Record<string, unknown> };
+    const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as { options: Record<string, unknown> };
     expect(callArgs.options).toHaveProperty("model", "claude-sonnet-4-6");
   });
 });

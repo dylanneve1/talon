@@ -57,7 +57,7 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
       factor: 2,
       onFailedAttempt: (err) => {
         if (err.retriesLeft === 0) {
-          logError("gateway", `All retries exhausted: ${err.message}`);
+          logError("gateway", `All retries exhausted: ${err.error.message}`);
         }
       },
     },
@@ -74,7 +74,7 @@ export class Gateway {
 
   // ── Frontend handler registration ────────────────────────────────────────
 
-  setFrontendHandler(handler: FrontendActionHandler): void {
+  setFrontendHandler(handler: FrontendActionHandler | null): void {
     this.frontendHandler = handler;
   }
 

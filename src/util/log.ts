@@ -22,6 +22,7 @@ export type LogComponent =
   | "workspace"
   | "shutdown"
   | "file"
+  | "history"
   | "sessions"
   | "settings"
   | "commands"

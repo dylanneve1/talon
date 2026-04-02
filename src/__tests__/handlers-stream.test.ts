@@ -108,7 +108,7 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
     vi.resetModules();
     // Fresh import gives us draftsSupported === null
     const handlers = await import("../frontend/telegram/handlers.js");
-    handleTextMessage = handlers.handleTextMessage;
+    handleTextMessage = handlers.handleTextMessage as unknown as (ctx: unknown, bot: unknown, config: unknown) => Promise<void>;
 
     const dispatcher = await import("../core/dispatcher.js");
     executeMock = dispatcher.execute as ReturnType<typeof vi.fn>;

@@ -220,7 +220,7 @@ describe("gateway HTTP server", () => {
       // Make frontendHandler return a circular reference so JSON.stringify throws
       const circular: Record<string, unknown> = {};
       circular["self"] = circular;
-      const circularHandler = vi.fn(async () => circular);
+      const circularHandler = vi.fn(async () => circular) as unknown as import("../core/types.js").FrontendActionHandler;
       gateway.setFrontendHandler(circularHandler);
       gateway.setContext(123);
 
