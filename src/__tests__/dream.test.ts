@@ -7,7 +7,7 @@
  * spawning a real Claude agent in CI.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -20,12 +20,13 @@ vi.mock("../util/log.js", () => ({
 const existsSyncMock = vi.fn(() => false);
 const readFileSyncMock = vi.fn(() => "null");
 const mkdirSyncMock = vi.fn();
+const appendFileSyncMock = vi.fn();
 
 vi.mock("node:fs", () => ({
   existsSync: existsSyncMock,
   readFileSync: readFileSyncMock,
   mkdirSync: mkdirSyncMock,
-  appendFileSync: vi.fn(),
+  appendFileSync: appendFileSyncMock,
 }));
 
 const writeAtomicSyncMock = vi.fn();
@@ -34,10 +35,11 @@ vi.mock("write-file-atomic", () => ({
 }));
 
 // Mock the agent SDK so runDreamAgent doesn't actually spawn Claude
+const queryMock = vi.fn(async function* () {
+  // Yield nothing — simulates a clean run
+});
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: vi.fn(async function* () {
-    // Yield nothing — simulates a clean run
-  }),
+  query: queryMock,
 }));
 
 vi.mock("../util/paths.js", () => ({
@@ -260,58 +262,42 @@ describe("readDreamState — edge cases", () => {
 // ── logDreamMessage coverage — all switch cases ───────────────────────────────
 
 describe("logDreamMessage — processes all message types", () => {
+  // Use the top-level hoisted vi.mock mocks (queryMock, appendFileSyncMock, etc.)
+  // instead of vi.doMock + vi.resetModules to avoid flaky module cache issues in CI.
+
   beforeEach(() => {
-    vi.resetModules();
+    appendFileSyncMock.mockClear();
+    existsSyncMock.mockReturnValue(false);
+    readFileSyncMock.mockReturnValue("dream prompt template");
+    writeAtomicSyncMock.mockClear();
+    initDream({ model: "claude-sonnet-4-6", workspace: "/fake/ws" });
   });
 
-  async function setupWithMessages(messages: unknown[]) {
-    const appendFileSyncMock = vi.fn();
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false),
-      readFileSync: vi.fn(() => "dream prompt template"),
-      mkdirSync: vi.fn(),
-      appendFileSync: appendFileSyncMock,
-    }));
-    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
-    vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
-    }));
-    vi.doMock("../util/paths.js", () => ({
-      files: {
-        dreamState: "/fake/.talon/data/dream_state.json",
-        memory: "/fake/.talon/workspace/memory/memory.md",
-        log: "/fake/.talon/talon.log",
-      },
-      dirs: {
-        root: "/fake/.talon",
-        logs: "/fake/.talon/workspace/logs",
-        workspace: "/fake/.talon/workspace",
-        data: "/fake/.talon/data",
-        memory: "/fake/.talon/workspace/memory",
-      },
-    }));
-    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
-      query: vi.fn(async function* () {
-        for (const msg of messages) yield msg;
-      }),
-    }));
-    const mod = await import("../core/dream.js");
-    mod.initDream({ model: "claude-sonnet-4-6", workspace: "/fake/ws" });
-    return { mod, appendFileSyncMock };
+  afterEach(() => {
+    // Reset query mock to default (yield nothing) so other tests aren't affected
+    queryMock.mockImplementation(async function* () {});
+  });
+
+  function setupQuery(messages: unknown[]) {
+    queryMock.mockImplementation(async function* () {
+      for (const msg of messages) yield msg;
+    });
+  }
+
+  function getLogOutput(): string {
+    return appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
   }
 
   it("processes assistant message with text content blocks", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       { type: "assistant", message: { content: [{ type: "text", text: "I am analyzing..." }] } },
     ]);
-    await mod.forceDream();
-    // appendFileSync should have been called with content containing the assistant text
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("I am analyzing...");
+    await forceDream();
+    expect(getLogOutput()).toContain("I am analyzing...");
   });
 
   it("processes assistant message with tool_use content blocks", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       {
         type: "assistant",
         message: {
@@ -321,104 +307,95 @@ describe("logDreamMessage — processes all message types", () => {
         },
       },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("Read");
-    expect(calls).toContain("Tool call:");
+    await forceDream();
+    const output = getLogOutput();
+    expect(output).toContain("Read");
+    expect(output).toContain("Tool call:");
   });
 
   it("processes result message", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       { type: "result", subtype: "success", result: "Memory consolidated successfully." },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("Memory consolidated successfully.");
-    expect(calls).toContain("Result");
+    await forceDream();
+    const output = getLogOutput();
+    expect(output).toContain("Memory consolidated successfully.");
+    expect(output).toContain("Result");
   });
 
   it("processes result message with truncation for long results", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       { type: "result", subtype: "success", result: "X".repeat(3000) },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("... (truncated)");
+    await forceDream();
+    expect(getLogOutput()).toContain("... (truncated)");
   });
 
   it("processes system message", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       { type: "system", subtype: "init" },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("System");
+    await forceDream();
+    expect(getLogOutput()).toContain("System");
   });
 
   it("processes user message with string tool_use_result", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       { type: "user", tool_use_result: "tool ran successfully" },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("tool ran successfully");
+    await forceDream();
+    expect(getLogOutput()).toContain("tool ran successfully");
   });
 
   it("processes user message with object tool_use_result", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       { type: "user", tool_use_result: { output: "file contents", truncated: false } },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("file contents");
+    await forceDream();
+    expect(getLogOutput()).toContain("file contents");
   });
 
   it("processes user message with long tool_use_result (truncation)", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       { type: "user", tool_use_result: "Y".repeat(3000) },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("... (truncated)");
+    await forceDream();
+    expect(getLogOutput()).toContain("... (truncated)");
   });
 
   it("skips stream_event messages (default case)", async () => {
-    const { mod } = await setupWithMessages([
+    setupQuery([
       { type: "stream_event", event: { type: "content_block_delta" } },
     ]);
-    // Should complete without errors
-    await expect(mod.forceDream()).resolves.toBeUndefined();
+    await expect(forceDream()).resolves.toBeUndefined();
   });
 
   it("result message without 'result' field falls back to JSON.stringify", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       // Intentionally omit 'result' field — covers JSON.stringify(msg) branch
       { type: "result", subtype: "success" },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    // JSON.stringify({type:"result",subtype:"success"}) should appear in the output
-    expect(calls).toContain("result");
+    await forceDream();
+    expect(getLogOutput()).toContain("result");
   });
 
   it("user message without tool_use_result is silently skipped", async () => {
-    // Covers the false branch of `if (msg.tool_use_result != null)`
-    const { mod } = await setupWithMessages([
+    setupQuery([
       { type: "user" }, // no tool_use_result field
     ]);
-    await expect(mod.forceDream()).resolves.toBeUndefined();
+    await expect(forceDream()).resolves.toBeUndefined();
   });
 
   it("processes multiple message types in sequence", async () => {
-    const { mod, appendFileSyncMock } = await setupWithMessages([
+    setupQuery([
       { type: "system", subtype: "init" },
       { type: "assistant", message: { content: [{ type: "text", text: "Analyzing logs." }] } },
       { type: "result", subtype: "success", result: "Done." },
     ]);
-    await mod.forceDream();
-    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
-    expect(calls).toContain("Analyzing logs.");
-    expect(calls).toContain("Done.");
+    await forceDream();
+    const output = getLogOutput();
+    expect(output).toContain("Analyzing logs.");
+    expect(output).toContain("Done.");
   });
 });
 
