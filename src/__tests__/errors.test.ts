@@ -52,6 +52,13 @@ describe("classify", () => {
     expect(err.retryable).toBe(false);
   });
 
+  it("classifies auth errors without status code — covers L128 ?? 401 fallback", () => {
+    // "authentication failed" has no numeric status → status=undefined → status ?? 401 = 401
+    const err = classify(new Error("authentication failed"));
+    expect(err.reason).toBe("auth");
+    expect(err.status).toBe(401);
+  });
+
   it("classifies 400 as bad_request", () => {
     const err = classify(new Error("400 Bad Request"));
     expect(err.reason).toBe("bad_request");
