@@ -1046,6 +1046,37 @@ describe("flushQueue — retryable error path", () => {
   }, 3000);
 });
 
+describe("flushQueue — retryable error, successful retry (line 403 return)", () => {
+  it("returns after successful retry without sending error message", async () => {
+    const { classify } = await import("../core/errors.js");
+
+    const successResult = { text: "", durationMs: 5, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
+    // First execute call throws (retryable), second SUCCEEDS → covers line 403 `return`
+    executeMock
+      .mockRejectedValueOnce(new Error("overloaded"))
+      .mockResolvedValueOnce(successResult);
+
+    (classify as ReturnType<typeof vi.fn>)
+      .mockReturnValueOnce({ reason: "overloaded", message: "overloaded", retryable: true, retryAfterMs: 10 });
+
+    const sendMsgCountBefore = (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    const ctx = {
+      chat: { id: 95010, type: "private" },
+      message: { text: "retry success test", message_id: 905, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 91, first_name: "Vera" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    // Retry succeeded — no error message should have been sent
+    const sendMsgCountAfter = (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+    expect(sendMsgCountAfter).toBe(sendMsgCountBefore); // no additional sendMessage call
+  }, 3000);
+});
+
 describe("downloadTelegramFile — content-length too large", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

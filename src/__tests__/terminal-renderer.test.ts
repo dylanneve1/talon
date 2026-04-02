@@ -131,6 +131,23 @@ describe("extractToolDetail", () => {
   it("returns empty string for empty input", () => {
     expect(extractToolDetail({}, 80)).toBe("");
   });
+
+  it("extracts package_url", () => {
+    expect(extractToolDetail({ package_url: "https://pkg.example.com/lib" }, 80)).toBe(
+      "https://pkg.example.com/lib",
+    );
+  });
+
+  it("extracts packages array", () => {
+    expect(extractToolDetail({ packages: ["lodash", "express"] }, 80)).toBe(
+      "lodash, express",
+    );
+  });
+
+  it("skips empty string values in fallback", () => {
+    // Empty string value (v.length === 0) is skipped by the `v.length > 0` check
+    expect(extractToolDetail({ empty: "", valid: "value" }, 80)).toBe("valid=value");
+  });
 });
 
 // ── cleanToolName ────────────────────────────────────────────────────────────
