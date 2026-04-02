@@ -640,3 +640,28 @@ describe("sessions — migration of legacy field formats", () => {
     expect(session.usage.fastestResponseMs).toBe(Infinity);
   });
 });
+
+describe("sessions — loadSessions backup recovery", () => {
+  it("loads from backup when primary is corrupt", () => {
+    vi.mocked(existsSync)
+      .mockReturnValueOnce(true)  // primary exists
+      .mockReturnValueOnce(true); // backup exists
+    vi.mocked(readFileSync)
+      .mockReturnValueOnce("{not valid json}")  // primary corrupt
+      .mockReturnValueOnce(JSON.stringify({ "backup-chat": { sessionId: "bak-sid", turns: 7, lastActive: 1, createdAt: 1, usage: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0, totalCacheWrite: 0, lastPromptTokens: 0, estimatedCostUsd: 0, totalResponseMs: 0, lastResponseMs: 0, fastestResponseMs: Infinity } } }));
+    loadSessions();
+    const s = getSession("backup-chat");
+    expect(s.turns).toBe(7);
+  });
+
+  it("starts fresh when both primary and backup are corrupt", () => {
+    vi.mocked(existsSync)
+      .mockReturnValueOnce(true)  // primary exists
+      .mockReturnValueOnce(true); // backup exists
+    vi.mocked(readFileSync)
+      .mockReturnValueOnce("BAD PRIMARY")
+      .mockReturnValueOnce("BAD BACKUP");
+    // Should not throw
+    expect(() => loadSessions()).not.toThrow();
+  });
+});

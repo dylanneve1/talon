@@ -386,3 +386,22 @@ describe("TalonError — construction and properties", () => {
     expect(err.stack).toContain("TalonError");
   });
 });
+
+// ── Line 128: auth status fallback ──────────────────────────────────────────
+
+describe("classify — auth without HTTP status in message", () => {
+  it("uses 401 as default status when 'authentication' in message has no numeric status", () => {
+    const err = classify(new Error("authentication failed"));
+    expect(err.reason).toBe("auth");
+    expect(err.status).toBe(401);
+    expect(err.retryable).toBe(false);
+  });
+
+  it("auth pattern takes priority over status code for 'unauthorized' message", () => {
+    // 'unauthorized' matches auth regex before 403 status check is reached
+    const err = classify(new Error("unauthorized: 403 Forbidden"));
+    expect(err.reason).toBe("auth");
+    expect(err.status).toBe(403); // extracted numeric status overrides default 401
+    expect(err.retryable).toBe(false);
+  });
+});

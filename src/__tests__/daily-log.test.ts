@@ -205,3 +205,47 @@ describe("daily-log", () => {
     });
   });
 });
+
+describe("daily-log — error resilience", () => {
+  it("appendDailyLog does not throw when write fails (e.g. permissions)", async () => {
+    vi.resetModules();
+    // Mock node:fs to make appendFileSync throw
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => true),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(() => { throw new Error("EPERM: permission denied"); }),
+      readdirSync: vi.fn(() => []),
+      unlinkSync: vi.fn(),
+    }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+    vi.doMock("node:os", async (importOriginal) => {
+      const actual = await importOriginal() as Record<string, unknown>;
+      return { ...actual, homedir: () => TEST_ROOT };
+    });
+    const { appendDailyLog } = await import("../storage/daily-log.js");
+    // Should swallow the error, not throw
+    expect(() => appendDailyLog("Test", "message")).not.toThrow();
+  });
+
+  it("appendDailyLogResponse does not throw when write fails", async () => {
+    vi.resetModules();
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => true),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(() => { throw new Error("EROFS: read-only file system"); }),
+      readdirSync: vi.fn(() => []),
+      unlinkSync: vi.fn(),
+    }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+    vi.doMock("node:os", async (importOriginal) => {
+      const actual = await importOriginal() as Record<string, unknown>;
+      return { ...actual, homedir: () => TEST_ROOT };
+    });
+    const { appendDailyLogResponse } = await import("../storage/daily-log.js");
+    expect(() => appendDailyLogResponse("Bot", "response")).not.toThrow();
+  });
+});
