@@ -592,3 +592,51 @@ describe("sessions", () => {
     });
   });
 });
+
+describe("sessions — migration of legacy field formats", () => {
+  it("adds missing usage object to legacy session", () => {
+    // Simulate a session loaded without usage (old format)
+    // We do this by calling loadSessions with a mocked file that has no usage field
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({ "migrate-chat-1": { sessionId: undefined, turns: 5, lastActive: 1000, createdAt: 1000 } }),
+    );
+    loadSessions();
+    const session = getSession("migrate-chat-1");
+    expect(session.usage).toBeDefined();
+    expect(session.usage.totalInputTokens).toBe(0);
+    expect(session.usage.fastestResponseMs).toBe(Infinity);
+  });
+
+  it("fixes missing createdAt by using lastActive", () => {
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({
+        "migrate-chat-2": {
+          sessionId: undefined, turns: 3, lastActive: 9999999,
+          usage: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0, totalCacheWrite: 0,
+            lastPromptTokens: 0, estimatedCostUsd: 0, totalResponseMs: 0, lastResponseMs: 0, fastestResponseMs: Infinity },
+        },
+      }),
+    );
+    loadSessions();
+    const session = getSession("migrate-chat-2");
+    expect(session.createdAt).toBe(9999999);
+  });
+
+  it("fixes fastestResponseMs of 0 to Infinity", () => {
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({
+        "migrate-chat-3": {
+          sessionId: undefined, turns: 2, lastActive: 1000, createdAt: 1000,
+          usage: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0, totalCacheWrite: 0,
+            lastPromptTokens: 0, estimatedCostUsd: 0, totalResponseMs: 0, lastResponseMs: 0, fastestResponseMs: 0 },
+        },
+      }),
+    );
+    loadSessions();
+    const session = getSession("migrate-chat-3");
+    expect(session.usage.fastestResponseMs).toBe(Infinity);
+  });
+});
