@@ -523,19 +523,6 @@ function createStreamCallbacks(
   return { onStreamDelta, onTextBlock };
 }
 
-async function deliverFinalText(
-  bot: Bot,
-  chatId: number,
-  text: string,
-  replyToId: number,
-  maxLen: number,
-): Promise<void> {
-  const chunks = splitMessage(text, maxLen);
-  for (const chunk of chunks) {
-    await sendHtml(bot, chatId, markdownToTelegramHtml(chunk), replyToId);
-  }
-}
-
 async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
     bot, config, chatId, numericChatId, replyToId, messageId,

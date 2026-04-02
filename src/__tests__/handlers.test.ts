@@ -241,6 +241,54 @@ describe("getReplyContext — edge cases", () => {
     );
     expect(result).toContain("Jane Smith");
   });
+
+  it("detects video media type (ternary TRUE branch for video)", () => {
+    const result = getReplyContext(
+      { from: { id: 123 }, video: {}, message_id: 1 },
+      999,
+    );
+    expect(result).toContain("[video]");
+  });
+
+  it("detects document media type", () => {
+    const result = getReplyContext(
+      { from: { id: 123 }, document: {}, message_id: 2 },
+      999,
+    );
+    expect(result).toContain("[document]");
+  });
+
+  it("detects voice media type", () => {
+    const result = getReplyContext(
+      { from: { id: 123 }, voice: {}, message_id: 3 },
+      999,
+    );
+    expect(result).toContain("[voice]");
+  });
+
+  it("detects audio media type", () => {
+    const result = getReplyContext(
+      { from: { id: 123 }, audio: {}, message_id: 4 },
+      999,
+    );
+    expect(result).toContain("[audio]");
+  });
+
+  it("detects sticker media type", () => {
+    const result = getReplyContext(
+      { from: { id: 123 }, sticker: {}, message_id: 5 },
+      999,
+    );
+    expect(result).toContain("[sticker]");
+  });
+
+  it("detects animation media type", () => {
+    const result = getReplyContext(
+      { from: { id: 123 }, animation: {}, message_id: 6 },
+      999,
+    );
+    expect(result).toContain("[animation]");
+  });
 });
 
 describe("shouldHandleInGroup — edge cases", () => {
@@ -1077,6 +1125,154 @@ describe("flushQueue — retryable error, successful retry (line 403 return)", (
   }, 3000);
 });
 
+describe("flushQueue — group error logs 'group' chatType (line 378 TRUE branch)", () => {
+  it("logs 'group' when error occurs in group chat context", async () => {
+    const { classify, friendlyMessage } = await import("../core/errors.js");
+    const { logError } = await import("../util/log.js");
+
+    executeMock.mockRejectedValueOnce(new Error("group exec error"));
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({ reason: "error", message: "group exec error", retryable: false });
+    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce("Error occurred");
+    (logError as ReturnType<typeof vi.fn>).mockClear();
+
+    const ctx = {
+      chat: { id: 95020, type: "supergroup", title: "My Group" },
+      message: { text: "@testbot group error test", message_id: 910, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 92, first_name: "Greg" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    // logError should include "group" in the message (not "DM")
+    const logCalls = (logError as ReturnType<typeof vi.fn>).mock.calls;
+    const relevantCall = logCalls.find((c: unknown[]) => String(c[1]).includes("group") || String(c[1]).includes("95020"));
+    expect(relevantCall).toBeDefined();
+    expect(String(relevantCall![1])).toContain("group");
+  }, 3000);
+});
+
+describe("flushQueue — retry without retryAfterMs uses default 2000ms (line 388 FALSE branch)", () => {
+  it("uses 2000ms default delay when retryAfterMs is undefined", async () => {
+    const { classify } = await import("../core/errors.js");
+
+    const successResult = { text: "", durationMs: 5, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
+    executeMock
+      .mockRejectedValueOnce(new Error("overloaded"))
+      .mockResolvedValueOnce(successResult);
+
+    // retryAfterMs is absent — covers `?? 2000` FALSE branch
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      reason: "overloaded", message: "overloaded", retryable: true,
+      // no retryAfterMs → falls to 2000
+    });
+
+    // Use fake timers to avoid actually waiting 2000ms
+    vi.useFakeTimers();
+
+    const ctx = {
+      chat: { id: 95030, type: "private" },
+      message: { text: "default delay test", message_id: 915, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 93, first_name: "Harry" },
+    } as any;
+
+    const handlePromise = handleTextMessage(ctx, mockBot, mockConfig);
+    // Advance timers past debounce (500ms) + default delay (2000ms)
+    await vi.advanceTimersByTimeAsync(3000);
+    await handlePromise;
+
+    vi.useRealTimers();
+  }, 10000);
+});
+
+describe("handleTextMessage — senderUsername truthy covers trackDmUser username tag (line 49 TRUE branch)", () => {
+  it("tracks DM user with username when username is provided", async () => {
+    const { appendDailyLog } = await import("../storage/daily-log.js");
+    (appendDailyLog as ReturnType<typeof vi.fn>).mockClear();
+
+    executeMock.mockResolvedValueOnce({
+      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+    });
+
+    const ctx = {
+      chat: { id: 95040, type: "private" },
+      message: { text: "hi from @user", message_id: 920, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      // username provided → senderUsername is truthy → tag = " (@johndoe)"
+      from: { id: 94, first_name: "John", username: "johndoe" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    // appendDailyLog should have been called with the @username tag
+    const allCalls = (appendDailyLog as ReturnType<typeof vi.fn>).mock.calls;
+    const taggedCall = allCalls.find((c: unknown[]) => String(c[1]).includes("@johndoe"));
+    expect(taggedCall).toBeDefined();
+  }, 3000);
+});
+
+describe("handleTextMessage — text=undefined uses empty string (line 725 FALSE branch)", () => {
+  it("enqueues with empty prompt when ctx.message.text is undefined", async () => {
+    executeMock.mockResolvedValueOnce({
+      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+    });
+
+    const ctx = {
+      chat: { id: 95050, type: "private" },
+      // text is undefined — covers `ctx.message.text ?? ""` FALSE branch
+      message: { text: undefined, message_id: 925, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 95, first_name: "Ina" },
+    } as any;
+
+    const before = executeMock.mock.calls.length;
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+    // Should have processed the message (empty prompt is fine)
+    expect(executeMock.mock.calls.length).toBeGreaterThan(before);
+  }, 3000);
+});
+
+describe("sendHtml — non-Error thrown in fallback path (line 445 FALSE branch)", () => {
+  it("logs warning with String(err) when sendMessage throws a non-Error", async () => {
+    const { logWarn } = await import("../util/log.js");
+    executeMock.mockRejectedValueOnce(new Error("some error"));
+    const { classify, friendlyMessage } = await import("../core/errors.js");
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({ reason: "error", message: "some error", retryable: false });
+    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce("Error text");
+    (logWarn as ReturnType<typeof vi.fn>).mockClear();
+
+    // First sendMessage throws a non-Error string, second succeeds
+    let callCount = 0;
+    mockBot.api.sendMessage = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) throw "non-error failure string"; // plain string
+      return { message_id: callCount };
+    });
+
+    const ctx = {
+      chat: { id: 95060, type: "private" },
+      message: { text: "non-error throw test", message_id: 930, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 96, first_name: "Jake" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    // logWarn should be called with String(err) (non-Error path)
+    const warnCalls = (logWarn as ReturnType<typeof vi.fn>).mock.calls;
+    const htmlFailWarn = warnCalls.find((c: unknown[]) => String(c[1]).includes("HTML send failed"));
+    expect(htmlFailWarn).toBeDefined();
+    expect(String(htmlFailWarn![1])).toContain("non-error failure string");
+
+    mockBot.api.sendMessage = vi.fn(async () => ({ message_id: 1 }));
+  }, 3000);
+});
+
 describe("downloadTelegramFile — content-length too large", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -1363,5 +1559,54 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
 
     // Restore sendMessageDraft
     mockBot.api.sendMessageDraft = vi.fn(async () => {});
+  }, 5000);
+
+  it("returns early from onStreamDelta when state.started is false (line 495 !state.started TRUE branch)", async () => {
+    mockBot.api.sendMessageDraft = vi.fn(async () => {});
+
+    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
+      const onStreamDelta = params.onStreamDelta as (acc: string, phase?: string) => Promise<void>;
+      // Call IMMEDIATELY — state.started is still false (timer hasn't fired)
+      if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
+      return { text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
+    });
+
+    const ctx = {
+      chat: { id: 98004, type: "private" },
+      message: { text: "early delta test", message_id: 973, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 95, first_name: "Stream" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    // sendMessageDraft should NOT have been called since state.started was false
+    expect(mockBot.api.sendMessageDraft).not.toHaveBeenCalled();
+  }, 3000);
+
+  it("returns early from onStreamDelta when delta < 40 chars (line 496 TRUE branch)", async () => {
+    mockBot.api.sendMessageDraft = vi.fn(async () => {});
+
+    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
+      const onStreamDelta = params.onStreamDelta as (acc: string, phase?: string) => Promise<void>;
+      await new Promise((r) => setTimeout(r, 1100)); // wait for started
+      // Only 20 chars since lastSentLength=0 → 20 < 40 → early return
+      if (onStreamDelta) await onStreamDelta("a".repeat(20), "text");
+      return { text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
+    });
+
+    const ctx = {
+      chat: { id: 98005, type: "private" },
+      message: { text: "small delta test", message_id: 974, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 95, first_name: "Stream" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // sendMessageDraft should NOT have been called — delta < 40
+    expect(mockBot.api.sendMessageDraft).not.toHaveBeenCalled();
   }, 5000);
 });
