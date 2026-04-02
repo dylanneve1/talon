@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, readFileSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -207,5 +207,32 @@ describe("getWorkspaceDiskUsage — edge cases", () => {
     writeFileSync(join(TEST_ROOT, "b.txt"), "123");   // 3 bytes
     const usage = getWorkspaceDiskUsage(TEST_ROOT);
     expect(usage).toBe(8);
+  });
+
+  it("skips symlinks — entry.isFile() FALSE branch (L147)", () => {
+    mkdirSync(TEST_ROOT, { recursive: true });
+    writeFileSync(join(TEST_ROOT, "real.txt"), "hello"); // 5 bytes
+    // symlink: isDirectory()=false, isFile()=false → skipped by walk
+    symlinkSync(join(TEST_ROOT, "real.txt"), join(TEST_ROOT, "link.txt"));
+    const usage = getWorkspaceDiskUsage(TEST_ROOT);
+    // Only real.txt counts (5 bytes); symlink is not counted
+    expect(usage).toBe(5);
+  });
+});
+
+describe("startUploadCleanup — setInterval callback (function coverage)", () => {
+  it("fires periodic cleanup via setInterval arrow function", () => {
+    vi.useFakeTimers();
+    mkdirSync(TEST_ROOT, { recursive: true });
+    mkdirSync(join(TEST_ROOT, "uploads"), { recursive: true });
+    writeFileSync(join(TEST_ROOT, "uploads", "file.jpg"), "data");
+
+    startUploadCleanup(TEST_ROOT);
+    // Advance past CLEANUP_INTERVAL_MS (1 hour) to fire the setInterval callback
+    vi.advanceTimersByTime(60 * 60 * 1000 + 1);
+    stopUploadCleanup();
+
+    vi.useRealTimers();
+    // Just verify no error was thrown — the arrow function was exercised
   });
 });
