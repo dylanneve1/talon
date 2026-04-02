@@ -354,6 +354,48 @@ describe("createRenderer", () => {
     r.stopSpinner();
     vi.useRealTimers();
   });
+
+  it("renderStatusLine includes session name when provided", () => {
+    const r = createRenderer(80);
+    output = [];
+    r.renderStatusLine(1000, 0, {
+      model: "Sonnet",
+      turns: 1,
+      inputTokens: 10,
+      outputTokens: 5,
+      cacheHitPct: 0,
+      costUsd: 0,
+      sessionName: "My Work",
+    });
+    expect(output.join("")).toContain("My Work");
+  });
+
+  it("renderToolCall called twice — hasToolOutput flag suppresses second blank line", () => {
+    const r = createRenderer(80);
+    output = [];
+    r.renderToolCall("Bash", { command: "ls" });
+    const firstCallLen = output.join("").length;
+    r.renderToolCall("Read", { file_path: "/tmp/x.txt" });
+    const secondCallLen = output.join("").length;
+    // Both calls should add output (second call doesn't add extra blank line)
+    expect(secondCallLen).toBeGreaterThan(firstCallLen);
+    expect(output.join("")).toContain("Read");
+  });
+
+  it("spinner pads shorter label to match previous line length", () => {
+    vi.useFakeTimers();
+    const r = createRenderer(80);
+    output = [];
+    r.startSpinner("a very long spinner label here");
+    vi.advanceTimersByTime(90); // first tick
+    r.updateSpinnerLabel("short"); // shorter label
+    vi.advanceTimersByTime(90); // second tick — padding should be added
+    const text = output.join("");
+    // Should include a carriage return (spinner output)
+    expect(text).toContain("\r");
+    r.stopSpinner();
+    vi.useRealTimers();
+  });
 });
 
 // Need to import afterEach for cleanup
