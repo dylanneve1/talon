@@ -847,3 +847,104 @@ describe("dream error paths", () => {
     expect(callArgs.options).toHaveProperty("model", "claude-sonnet-4-6");
   });
 });
+
+describe("runDreamAgent — timeout arrow fn fires after DREAM_TIMEOUT_MS", () => {
+  it("covers the setTimeout reject callback via fake timers (10-minute dream timeout)", async () => {
+    vi.resetModules();
+    vi.useFakeTimers();
+
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "null"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+    // query never resolves — so the 10-minute timeout wins the race
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {
+        await new Promise(() => {}); // never yields
+      }),
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6" });
+
+    const dreamPromise = mod.forceDream().catch(() => {});
+    // Advance past DREAM_TIMEOUT_MS (10 minutes) to fire the setTimeout reject callback
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+    await dreamPromise;
+
+    vi.useRealTimers();
+  });
+});
+
+describe("maybeStartDream — () => {} catch callback on executeDream rejection", () => {
+  it("fires the catch callback silently when executeDream('auto') rejects", async () => {
+    vi.resetModules();
+
+    // Make log throw on first call — that call is at L89 (before the try block)
+    // in executeDream, which causes the async function to reject.
+    const logMock = vi.fn(() => { throw new Error("log forced fail"); });
+    vi.doMock("../util/log.js", () => ({
+      log: logMock,
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "null"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {}),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6" });
+
+    // existsSync returns false → state null → elapsed = now >> 12h → executeDream fires
+    // log throws before the try block → executeDream("auto") rejects
+    // .catch(() => {}) swallows the rejection silently
+    expect(() => mod.maybeStartDream()).not.toThrow();
+
+    // Flush microtasks so the .catch(() => {}) callback fires
+    await new Promise((r) => setTimeout(r, 0));
+    // No uncaught rejection — the () => {} catch callback covered
+  });
+});

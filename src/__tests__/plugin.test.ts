@@ -280,6 +280,24 @@ describe("plugin system", () => {
 
       await expect(destroyPlugins()).resolves.toBeUndefined();
     });
+
+    it("covers init timeout arrow fn — inner setTimeout reject callback fires after 30s", async () => {
+      vi.useFakeTimers();
+      // Plugin with init that never resolves — forces the 30s timeout to win the race
+      const plugin = createMockPlugin({ init: () => new Promise(() => {}) });
+      vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+      const mod = await import("../core/plugin.js");
+      mod._deps.importModule = async () => ({ default: plugin });
+
+      const loadPromise = mod.loadPlugins([{ path: "/fake/plugin" }]);
+      // Advance past INIT_TIMEOUT (30_000ms) so the setTimeout reject callback fires
+      await vi.advanceTimersByTimeAsync(30_001);
+      await loadPromise;
+
+      vi.useRealTimers();
+      // Plugin still registers despite timeout (error is caught)
+      expect(mod.getPluginCount()).toBeGreaterThan(0);
+    });
   });
 
   describe("frontend whitelist", () => {

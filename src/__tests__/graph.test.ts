@@ -173,6 +173,18 @@ describe("GraphClient", () => {
       await expect(client.getMe()).rejects.toThrow("Graph API");
       await expect(client.getMe()).rejects.toThrow("401");
     });
+
+    it("covers () => '' catch callback when resp.text() throws on non-ok response", async () => {
+      const client = new GraphClient(makeTokens() as ConstructorParameters<typeof GraphClient>[0]);
+      proxyFetchMock.mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: vi.fn(async () => { throw new Error("body read failed"); }),
+        json: vi.fn(async () => ({})),
+      });
+      // resp.text() throws → catch(() => "") fires → body = ""
+      await expect(client.getMe()).rejects.toThrow("Graph API /me");
+    });
   });
 
   describe("getMe", () => {

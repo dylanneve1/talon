@@ -527,4 +527,25 @@ describe("teams actions — non-Error throw coverage", () => {
     expect(result?.ok).toBe(false);
     expect(result?.error).toContain("non-error button failure");
   });
+
+  it("covers () => '' catch callback when resp.text() throws on webhook failure", async () => {
+    // When resp.ok is false AND resp.text() throws, the catch(() => "") callback fires
+    vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
+      proxyFetch: vi.fn(async () => ({
+        ok: false,
+        status: 500,
+        text: async () => { throw new Error("body read failed"); },
+      })),
+    }));
+
+    const { Gateway } = await import("../core/gateway.js");
+    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const gateway = new Gateway();
+    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+
+    const result = await handler({ action: "send_message", text: "test" }, 123);
+    expect(result?.ok).toBe(false);
+    // body fell back to "" so error message ends with "500 "
+    expect(result?.error).toContain("500");
+  });
 });
