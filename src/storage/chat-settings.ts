@@ -6,7 +6,8 @@
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import writeFileAtomic from "write-file-atomic";
 import { dirname } from "node:path";
-import { log } from "../util/log.js";
+import { log, logError } from "../util/log.js";
+import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { registerCleanup } from "../util/cleanup-registry.js";
 
@@ -90,8 +91,9 @@ function save(): void {
     }
     writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
-  } catch {
-    // Non-fatal
+  } catch (err) {
+    logError("settings", "Failed to persist chat settings", err);
+    recordError(`Settings save failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 
