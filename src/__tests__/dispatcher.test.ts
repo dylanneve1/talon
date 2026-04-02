@@ -381,3 +381,45 @@ describe("dispatcher", () => {
     expect(order).toEqual(["start:first", "end:first", "start:second", "end:second"]);
   });
 });
+
+describe("typing indicator — error handling", () => {
+  it("logs warning when sendTyping rejects (initial call)", async () => {
+    vi.resetModules();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logDebug: vi.fn(),
+      logWarn: vi.fn(),
+      logError: vi.fn(),
+    }));
+    vi.doMock("./dream.js", () => ({ maybeStartDream: vi.fn() }));
+    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
+
+    const { initDispatcher, execute } = await import("../core/dispatcher.js");
+    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<typeof vi.fn>;
+
+    const backend = {
+      query: vi.fn(async () => ({ text: "ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 })),
+    };
+
+    initDispatcher({
+      backend,
+      context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
+      sendTyping: vi.fn(async () => { throw new Error("typing API error"); }),
+      onActivity: vi.fn(),
+    });
+
+    await execute({
+      chatId: "typing-err-chat",
+      numericChatId: 999,
+      prompt: "test",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+    });
+
+    expect(logWarn).toHaveBeenCalledWith(
+      "dispatcher",
+      expect.stringContaining("sendTyping failed"),
+    );
+  });
+});

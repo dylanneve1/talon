@@ -365,3 +365,56 @@ describe("built-in commands", () => {
     });
   });
 });
+
+describe("/status command", () => {
+  beforeEach(() => {
+    clearCommands();
+    registerBuiltinCommands();
+  });
+
+  it("displays session stats without plugins", async () => {
+    mockGetSessionInfo.mockReturnValueOnce({
+      turns: 5,
+      sessionName: undefined,
+      usage: {
+        totalInputTokens: 1000,
+        totalOutputTokens: 500,
+        totalCacheRead: 200,
+        totalCacheWrite: 0,
+        lastPromptTokens: 100,
+        estimatedCostUsd: 0.01,
+        totalResponseMs: 5000,
+        lastResponseMs: 1000,
+        fastestResponseMs: 500,
+      },
+    });
+    const ctx = makeMockContext();
+    await tryRunCommand("/status", ctx);
+    expect(ctx.renderer.writeln).toHaveBeenCalled();
+    expect(ctx.reprompt).toHaveBeenCalled();
+  });
+
+  it("displays session name when set", async () => {
+    mockGetSessionInfo.mockReturnValueOnce({
+      turns: 3,
+      sessionName: "My Work Session",
+      usage: {
+        totalInputTokens: 500,
+        totalOutputTokens: 200,
+        totalCacheRead: 100,
+        totalCacheWrite: 0,
+        lastPromptTokens: 50,
+        estimatedCostUsd: 0.005,
+        totalResponseMs: 2000,
+        lastResponseMs: 500,
+        fastestResponseMs: 300,
+      },
+    });
+    const ctx = makeMockContext();
+    await tryRunCommand("/status", ctx);
+    // Should mention the session name
+    const calls = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls.flat();
+    const output = calls.join(" ");
+    expect(output).toContain("My Work Session");
+  });
+});
