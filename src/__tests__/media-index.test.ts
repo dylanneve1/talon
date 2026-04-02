@@ -273,5 +273,17 @@ describe("media-index", () => {
 
       expect(() => flushMediaIndex()).not.toThrow();
     });
+
+    it("autoSave timer skips write when nothing has changed (dirty=false)", async () => {
+      vi.useFakeTimers();
+      existsSyncMock.mockReturnValue(true);
+      // Don't add any media — dirty starts false after module load
+      // Advance past the 30s autoSave interval to fire save() without dirty being set
+      await vi.advanceTimersByTimeAsync(31_000);
+      // save() should have been called by the interval but returned early (dirty=false)
+      // The key assertion: no write was performed
+      expect(writeFileSyncMock).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
   });
 });

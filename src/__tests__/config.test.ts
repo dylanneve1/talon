@@ -479,6 +479,17 @@ describe("config", () => {
       expect(config.systemPrompt).toContain("Terminal mode active.");
       expect(config.systemPrompt).toContain("Do special things.");
     });
+
+    it("uses telegram as default frontend when config.frontend is undefined", async () => {
+      mockFs({ frontend: "terminal" });
+
+      const { loadConfig, rebuildSystemPrompt } = await import("../util/config.js");
+      const config = loadConfig();
+      // Force frontend to undefined to trigger the ?? "telegram" fallback on line 132
+      (config as Record<string, unknown>).frontend = undefined;
+      // Should not throw — uses telegram as default frontend file
+      expect(() => rebuildSystemPrompt(config, [])).not.toThrow();
+    });
   });
 
   describe("zod validation boundaries", () => {

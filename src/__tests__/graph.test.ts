@@ -458,6 +458,89 @@ describe("deviceCodeAuth polling edge cases", () => {
   });
 });
 
+// ── deviceCodeAuth — branch coverage ─────────────────────────────────────────
+
+describe("deviceCodeAuth — branch coverage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    existsSyncMock.mockReturnValue(false);
+    mkdirSyncMock.mockReturnValue(undefined);
+  });
+
+  it("uses default interval (5s) when response omits interval field", async () => {
+    vi.useFakeTimers();
+    proxyFetchMock
+      .mockResolvedValueOnce(mockResponse({
+        device_code: "dc-noint",
+        user_code: "ZZZ-999",
+        verification_uri: "https://microsoft.com/devicelogin",
+        expires_in: 300,
+        // interval intentionally omitted → triggers (dcResp.interval || 5)
+        message: "Sign in",
+      }))
+      .mockResolvedValueOnce(mockResponse({
+        access_token: "default-interval-token",
+        refresh_token: "ri",
+        expires_in: 3600,
+      }));
+
+    const promise = deviceCodeAuth();
+    // Default interval is 5s
+    await vi.advanceTimersByTimeAsync(5100);
+    const tokens = await promise;
+    expect(tokens.accessToken).toBe("default-interval-token");
+    vi.useRealTimers();
+  });
+
+  it("uses empty string when refresh_token is absent", async () => {
+    vi.useFakeTimers();
+    proxyFetchMock
+      .mockResolvedValueOnce(mockResponse({
+        device_code: "dc-norefresh",
+        user_code: "YYY-888",
+        verification_uri: "https://microsoft.com/devicelogin",
+        expires_in: 300,
+        interval: 1,
+        message: "Sign in",
+      }))
+      .mockResolvedValueOnce(mockResponse({
+        access_token: "no-refresh-token",
+        // refresh_token intentionally omitted → triggers (tokenResp.refresh_token || "")
+        expires_in: 3600,
+      }));
+
+    const promise = deviceCodeAuth();
+    await vi.advanceTimersByTimeAsync(1100);
+    const tokens = await promise;
+    expect(tokens.accessToken).toBe("no-refresh-token");
+    expect(tokens.refreshToken).toBe("");
+    vi.useRealTimers();
+  });
+
+  it("uses error code when error_description is absent", async () => {
+    vi.useFakeTimers();
+    proxyFetchMock
+      .mockResolvedValueOnce(mockResponse({
+        device_code: "dc-noerrdesc",
+        user_code: "XXX-777",
+        verification_uri: "https://microsoft.com/devicelogin",
+        expires_in: 300,
+        interval: 1,
+        message: "Sign in",
+      }))
+      .mockResolvedValueOnce(mockResponse({
+        // error_description omitted → triggers (tokenResp.error_description || tokenResp.error)
+        error: "invalid_grant",
+      }));
+
+    const promise = deviceCodeAuth();
+    const check = expect(promise).rejects.toThrow("Auth failed: invalid_grant");
+    await vi.advanceTimersByTimeAsync(1100);
+    await check;
+    vi.useRealTimers();
+  });
+});
+
 // ── getChatMessages HTML content type ─────────────────────────────────────────
 
 describe("getChatMessages — HTML content", () => {
@@ -482,6 +565,40 @@ describe("getChatMessages — HTML content", () => {
     const messages = await client.getChatMessages("chat1");
     // stripHtml should have been invoked (mocked to return "stripped text")
     expect(messages[0]!.text).toBe("stripped text");
+  });
+
+  it("uses empty string when body content is null/empty", async () => {
+    const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+    proxyFetchMock.mockResolvedValue(mockResponse({
+      value: [{
+        id: "empty-body-msg",
+        messageType: "message",
+        from: { user: { id: "u6", displayName: "Dave" } },
+        body: { contentType: "text", content: "" }, // empty content → triggers || ""
+        createdDateTime: "2026-01-01T14:00:00Z",
+        lastEditedDateTime: null,
+      }],
+    }));
+
+    const messages = await client.getChatMessages("chat1");
+    expect(messages[0]!.text).toBe("");
+  });
+
+  it("handles null body gracefully", async () => {
+    const client = new GraphClient(makeTokens() as Parameters<typeof GraphClient>[0]);
+    proxyFetchMock.mockResolvedValue(mockResponse({
+      value: [{
+        id: "null-body-msg",
+        messageType: "message",
+        from: { user: { id: "u7", displayName: "Eve" } },
+        body: null, // null body → triggers body?.content || ""
+        createdDateTime: "2026-01-01T15:00:00Z",
+        lastEditedDateTime: null,
+      }],
+    }));
+
+    const messages = await client.getChatMessages("chat1");
+    expect(messages[0]!.text).toBe("");
   });
 });
 

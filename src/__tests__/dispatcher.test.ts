@@ -474,3 +474,19 @@ describe("typing indicator — error handling", () => {
     );
   });
 });
+
+describe("dispatcher — uninitialized guard", () => {
+  it("throws when execute is called before initDispatcher", async () => {
+    vi.resetModules();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logDebug: vi.fn(), logWarn: vi.fn(), logError: vi.fn(),
+    }));
+    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
+
+    const { execute } = await import("../core/dispatcher.js");
+    // deps is null because initDispatcher was never called in this fresh module
+    await expect(
+      execute({ chatId: "x", numericChatId: 1, prompt: "hi", senderName: "U", isGroup: false, source: "message" }),
+    ).rejects.toThrow("Dispatcher not initialized");
+  });
+});

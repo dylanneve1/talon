@@ -335,6 +335,74 @@ describe("teams actions", () => {
   });
 });
 
+// ── Formatting default token type (branch coverage) ───────────────────────
+
+describe("teams formatting — default token type", () => {
+  it("renders raw HTML block via default case", () => {
+    // Raw HTML block generates an 'html' token with a text property,
+    // which falls into the default: case of the switch in markdownToCardBody
+    const card = buildAdaptiveCard("<div>some raw HTML content</div>");
+    const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+    const body = content.body as Array<Record<string, unknown>>;
+    expect(body.length).toBeGreaterThan(0);
+  });
+
+  it("stripHtml falls back to regex when cheerio throws", async () => {
+    vi.resetModules();
+    vi.doMock("cheerio", () => ({
+      default: {},
+      load: vi.fn(() => { throw new Error("cheerio unavailable"); }),
+    }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+
+    const { stripHtml: stripHtmlFresh } = await import("../frontend/teams/formatting.js");
+    const result = stripHtmlFresh("<p>Hello <b>world</b></p>");
+    expect(result).toBe("Hello world");
+  });
+});
+
+// ── teams actions branch coverage ─────────────────────────────────────────
+
+describe("teams actions — branch coverage", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("send_message with undefined text uses empty string fallback", async () => {
+    const { Gateway } = await import("../core/gateway.js");
+    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const gateway = new Gateway();
+    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+
+    // text is undefined → triggers body.text ?? ""
+    const result = await handler({ action: "send_message" }, 123);
+    expect(result?.ok).toBe(true); // empty text → no-op
+  });
+
+  it("send_message_with_buttons with undefined text uses empty string fallback", async () => {
+    vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
+      proxyFetch: vi.fn(async () => ({ ok: true, status: 200 })),
+    }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+    vi.doMock("../core/plugin.js", () => ({ handlePluginAction: vi.fn(async () => null) }));
+
+    const { Gateway } = await import("../core/gateway.js");
+    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const gateway = new Gateway();
+    gateway.setContext(123);
+    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+
+    // text is undefined → triggers body.text ?? ""
+    const result = await handler({ action: "send_message_with_buttons", rows: [[{ text: "OK" }]] }, 123);
+    expect(result?.ok).toBe(true);
+    gateway.clearContext(123);
+  });
+});
+
 // ── Test proxy-fetch ────────────────────────────────────────────────────────
 
 describe("proxy-fetch", () => {
