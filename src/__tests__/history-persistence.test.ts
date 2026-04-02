@@ -150,7 +150,7 @@ describe("history persistence", () => {
       );
     });
 
-    it("handles write errors gracefully", () => {
+    it("handles write errors gracefully (line 96 TRUE branch: Error thrown on data write)", () => {
       const id = `flush-err-${Date.now()}`;
       pushMessage(id, {
         msgId: 1,
@@ -160,7 +160,8 @@ describe("history persistence", () => {
         timestamp: Date.now(),
       });
 
-      existsSyncMock.mockReturnValue(true);
+      // existsSync=false skips the .bak write so the Error is thrown on the actual data write
+      existsSyncMock.mockReturnValue(false);
       writeFileSyncMock.mockImplementationOnce(() => {
         throw new Error("disk full");
       });

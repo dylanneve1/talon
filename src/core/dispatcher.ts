@@ -124,7 +124,7 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
       bridgeMessageCount: context.getMessageCount(params.numericChatId),
     };
   } finally {
-    if (typingTimer) clearInterval(typingTimer);
+    clearInterval(typingTimer);
     context.release(params.numericChatId);
   }
 }

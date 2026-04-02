@@ -407,7 +407,7 @@ export function getPluginMcpServers(
 
   // Resolve tsx from Talon's own node_modules (not cwd which may be ~/.talon/workspace/)
   const tsxPath = resolve(
-    import.meta.dirname ?? ".",
+    import.meta.dirname,
     "../../node_modules/tsx/dist/esm/index.mjs",
   );
 

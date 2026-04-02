@@ -194,6 +194,24 @@ describe("plugin system", () => {
       const servers = getPluginMcpServers("http://localhost:19876", "chat1");
       expect(Object.keys(servers)).toHaveLength(0);
     });
+
+    it("uses npx command and tsx args on win32 platform (line 418/420 TRUE branch)", async () => {
+      const plugin = createMockPlugin({ mcpServerPath: "/fake/tools.ts" });
+      const { loadPlugins, getPluginMcpServers } = await setup(plugin);
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      // Temporarily override process.platform to simulate Windows
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+      try {
+        const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+        expect(servers["test-plugin-tools"].command).toBe("npx");
+        const args = servers["test-plugin-tools"].args as string[];
+        expect(args[0]).toBe("tsx");
+      } finally {
+        Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+      }
+    });
   });
 
   describe("system prompt additions", () => {
@@ -442,9 +460,10 @@ describe("extractPlugin — invalid optional field types", () => {
       log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    // default export is null — candidate = null → typeof null === 'object' but !null → return null
-    mod._deps.importModule = async () => ({ default: null });
-    await mod.loadPlugins([{ path: "/fake/null-default" }]);
+    // default export is a number — candidate = 42, typeof 42 !== "object" → return null
+    // Note: { default: null } would NOT work because null ?? mod evaluates to mod (not null)
+    mod._deps.importModule = async () => ({ default: 42 } as unknown as Record<string, unknown>);
+    await mod.loadPlugins([{ path: "/fake/non-object-default" }]);
     expect(mod.getPluginCount()).toBe(0);
   });
 
