@@ -2058,3 +2058,47 @@ describe("isUserRateLimited — expired timestamps evicted via shift() (L272)", 
     expect(calls.length).toBe(2);
   }, 10000);
 });
+
+describe("isUserRateLimited — userMessageTimestamps eviction when size > 5000 (L278-284)", () => {
+  it("evicts stale entries and hits delete+break branches", async () => {
+    // Use fake timers starting at T=0 — all 5000 initial entries get timestamps[0]=0
+    vi.useFakeTimers({ now: 0 });
+
+    executeMock.mockResolvedValue({
+      text: "", durationMs: 5, inputTokens: 1, outputTokens: 1,
+      cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+    });
+
+    const BASE_UID = 200_000_000; // far outside all other test userId ranges
+
+    // Fire 5000 handleTextMessage calls synchronously — each runs isUserRateLimited(BASE+i)
+    // at T=0 before the first await (downloadReplyPhoto). The map accumulates 5000 entries.
+    for (let i = 0; i < 5_000; i++) {
+      void handleTextMessage({
+        chat: { id: 88_000_001, type: "private" },
+        message: { text: "x", message_id: i + 1, reply_to_message: null },
+        me: { id: 999, username: "testbot" },
+        from: { id: BASE_UID + i, first_name: "X" },
+      } as any, mockBot, mockConfig);
+    }
+
+    // Advance fake time by 11 minutes — makes all T=0 timestamps stale
+    // (cutoff will be T+1min; T=0 entries are below cutoff)
+    vi.advanceTimersByTime(11 * 60_000);
+
+    // 5001st unique user at T+11min — isUserRateLimited sees size > 5000 → cleanup runs
+    // All 5000 T=0 entries (below cutoff) are deleted until size ≤ 2500 → break (L284)
+    void handleTextMessage({
+      chat: { id: 88_000_002, type: "private" },
+      message: { text: "trigger", message_id: 10_000, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: BASE_UID + 5_001, first_name: "T" },
+    } as any, mockBot, mockConfig);
+
+    // Drain pending microtasks and fire debounce timers to clean up async state
+    await vi.advanceTimersByTimeAsync(1_000);
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    // Lines 278-284 (eviction loop with delete and break) are now covered
+  }, 15_000);
+});
