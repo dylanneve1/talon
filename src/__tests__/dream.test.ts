@@ -240,3 +240,311 @@ describe("readDreamState — edge cases", () => {
     expect(queryMock).not.toHaveBeenCalled();
   });
 });
+
+// ── logDreamMessage coverage — all switch cases ───────────────────────────────
+
+describe("logDreamMessage — processes all message types", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  async function setupWithMessages(messages: unknown[]) {
+    const appendFileSyncMock = vi.fn();
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "dream prompt template"),
+      mkdirSync: vi.fn(),
+      appendFileSync: appendFileSyncMock,
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {
+        for (const msg of messages) yield msg;
+      }),
+    }));
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6", workspace: "/fake/ws" });
+    return { mod, appendFileSyncMock };
+  }
+
+  it("processes assistant message with text content blocks", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      { type: "assistant", message: { content: [{ type: "text", text: "I am analyzing..." }] } },
+    ]);
+    await mod.forceDream();
+    // appendFileSync should have been called with content containing the assistant text
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("I am analyzing...");
+  });
+
+  it("processes assistant message with tool_use content blocks", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", name: "Read", input: { file_path: "/tmp/test.md" } },
+          ],
+        },
+      },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("Read");
+    expect(calls).toContain("Tool call:");
+  });
+
+  it("processes result message", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      { type: "result", subtype: "success", result: "Memory consolidated successfully." },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("Memory consolidated successfully.");
+    expect(calls).toContain("Result");
+  });
+
+  it("processes result message with truncation for long results", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      { type: "result", subtype: "success", result: "X".repeat(3000) },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("... (truncated)");
+  });
+
+  it("processes system message", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      { type: "system", subtype: "init" },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("System");
+  });
+
+  it("processes user message with string tool_use_result", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      { type: "user", tool_use_result: "tool ran successfully" },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("tool ran successfully");
+  });
+
+  it("processes user message with object tool_use_result", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      { type: "user", tool_use_result: { output: "file contents", truncated: false } },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("file contents");
+  });
+
+  it("processes user message with long tool_use_result (truncation)", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      { type: "user", tool_use_result: "Y".repeat(3000) },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("... (truncated)");
+  });
+
+  it("skips stream_event messages (default case)", async () => {
+    const { mod } = await setupWithMessages([
+      { type: "stream_event", event: { type: "content_block_delta" } },
+    ]);
+    // Should complete without errors
+    await expect(mod.forceDream()).resolves.toBeUndefined();
+  });
+
+  it("processes multiple message types in sequence", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      { type: "system", subtype: "init" },
+      { type: "assistant", message: { content: [{ type: "text", text: "Analyzing logs." }] } },
+      { type: "result", subtype: "success", result: "Done." },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(calls).toContain("Analyzing logs.");
+    expect(calls).toContain("Done.");
+  });
+});
+
+describe("dream error paths", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("logError when writeDreamState throws (writeFileAtomic.sync fails)", async () => {
+    const logErrorMock = vi.fn();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: logErrorMock, logWarn: vi.fn(),
+    }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "dream prompt"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({
+      default: { sync: vi.fn(() => { throw new Error("disk full"); }) },
+    }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {}),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6" });
+    // writeDreamState throwing should not crash forceDream (error is swallowed)
+    await expect(mod.forceDream()).resolves.toBeUndefined();
+    expect(logErrorMock).toHaveBeenCalledWith("dream", "Failed to write dream state", expect.any(Error));
+  });
+
+  it("logError when appendFileSync throws in appendDreamLog", async () => {
+    const logErrorMock = vi.fn();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: logErrorMock, logWarn: vi.fn(),
+    }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "dream prompt"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(() => { throw new Error("append failed"); }),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {}),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6" });
+    // appendFileSync throws, but appendDreamLog catches it
+    await expect(mod.forceDream()).resolves.toBeUndefined();
+    expect(logErrorMock).toHaveBeenCalledWith("dream", "Failed to write dream log", expect.any(Error));
+  });
+
+  it("forceDream rethrows when runDreamAgent fails (prompt file unreadable)", async () => {
+    const logErrorMock = vi.fn();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: logErrorMock, logWarn: vi.fn(),
+    }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false), // readDreamState returns null (no read needed)
+      readFileSync: vi.fn(() => { throw new Error("ENOENT: prompt file missing"); }),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {}),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6" });
+    // forceDream rethrows when runDreamAgent throws (trigger === "forced")
+    await expect(mod.forceDream()).rejects.toThrow("Failed to read dream prompt");
+    expect(logErrorMock).toHaveBeenCalledWith(
+      "dream",
+      expect.stringContaining("Memory consolidation failed"),
+      expect.any(Error),
+    );
+  });
+
+  it("agent crash causes forceDream to reject with failure log entry", async () => {
+    const appendFileSyncMock = vi.fn();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+    }));
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "dream prompt"),
+      mkdirSync: vi.fn(),
+      appendFileSync: appendFileSyncMock,
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: vi.fn(async function* () {
+        throw new Error("agent crashed unexpectedly");
+      }),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+      },
+    }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({ model: "claude-sonnet-4-6" });
+    await expect(mod.forceDream()).rejects.toThrow("agent crashed unexpectedly");
+    const logOutput = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    expect(logOutput).toContain("Dream FAILED");
+  });
+});

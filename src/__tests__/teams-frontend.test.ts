@@ -66,6 +66,76 @@ describe("teams formatting", () => {
       const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
       expect(content.actions).toBeUndefined();
     });
+
+    it("renders fenced code block as monospace Container", () => {
+      const card = buildAdaptiveCard("```\nconst x = 1;\nconst y = 2;\n```");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      const codeBlock = body.find((b) => b.type === "Container");
+      expect(codeBlock).toBeDefined();
+      const items = codeBlock!.items as Array<Record<string, unknown>>;
+      expect(items.some((i) => i.fontType === "Monospace")).toBe(true);
+    });
+
+    it("renders unordered list as TextBlock with dashes", () => {
+      const card = buildAdaptiveCard("- item one\n- item two\n- item three");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      const listBlock = body.find((b) => typeof b.text === "string" && (b.text as string).includes("- item one"));
+      expect(listBlock).toBeDefined();
+    });
+
+    it("renders ordered list with numeric prefixes", () => {
+      const card = buildAdaptiveCard("1. first\n2. second\n3. third");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      const listBlock = body.find((b) => typeof b.text === "string" && (b.text as string).includes("1. first"));
+      expect(listBlock).toBeDefined();
+    });
+
+    it("renders markdown table as Table element", () => {
+      const tableMarkdown = "| Header A | Header B |\n| --- | --- |\n| Row 1A | Row 1B |\n| Row 2A | Row 2B |";
+      const card = buildAdaptiveCard(tableMarkdown);
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      const tableBlock = body.find((b) => b.type === "Table");
+      expect(tableBlock).toBeDefined();
+      expect(tableBlock!.firstRowAsHeader).toBe(true);
+    });
+
+    it("renders blockquote as emphasis Container", () => {
+      const card = buildAdaptiveCard("> This is a quote");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      const bqBlock = body.find((b) => b.type === "Container" && b.style === "emphasis");
+      expect(bqBlock).toBeDefined();
+    });
+
+    it("renders horizontal rule as separator TextBlock", () => {
+      const card = buildAdaptiveCard("Above\n\n---\n\nBelow");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      const hrBlock = body.find((b) => typeof b.text === "string" && (b.text as string).includes("───"));
+      expect(hrBlock).toBeDefined();
+    });
+
+    it("falls back to TextBlock when body would be empty", () => {
+      // A text with only whitespace results in space tokens → empty body → fallback
+      const card = buildAdaptiveCard("   \n\n   ");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      expect(body.length).toBeGreaterThanOrEqual(1);
+      expect(body[0]!.type).toBe("TextBlock");
+    });
+
+    it("renders heading with bold styling", () => {
+      const card = buildAdaptiveCard("## Section Title");
+      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const body = content.body as Array<Record<string, unknown>>;
+      const heading = body.find((b) => b.weight === "Bolder");
+      expect(heading).toBeDefined();
+      expect(heading!.size).toBe("Medium");
+    });
   });
 
   describe("splitTeamsMessage", () => {
