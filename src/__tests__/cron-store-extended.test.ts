@@ -539,3 +539,61 @@ describe("loadCronJobs — corrupt primary tries backup", () => {
     expect(() => loadCronJobs()).not.toThrow();
   });
 });
+
+// ── loadCronJobs — timezone validation ────────────────────────────────────
+
+describe("loadCronJobs — invalid timezone stripping", () => {
+  beforeEach(() => existsSyncMock.mockReset().mockReturnValue(false));
+
+  it("strips invalid timezone from loaded job", async () => {
+    const { isValidTimezone } = await import("../storage/cron-store.js");
+    const jobWithBadTz: Record<string, unknown> = {
+      "tz-bad-id": {
+        id: "tz-bad-id", chatId: "99", schedule: "0 * * * *",
+        type: "message", content: "hi", name: "TZ Test",
+        enabled: true, createdAt: Date.now(), runCount: 0,
+        timezone: "Not/A_Real_Zone",
+      },
+    };
+    existsSyncMock.mockReturnValueOnce(true).mockReturnValue(false);
+    readFileSyncMock.mockReturnValueOnce(JSON.stringify(jobWithBadTz));
+    loadCronJobs();
+    const job = getCronJob("tz-bad-id");
+    expect(job).toBeDefined();
+    expect(job!.timezone).toBeUndefined();
+  });
+
+  it("preserves valid timezone on load", async () => {
+    const jobWithGoodTz: Record<string, unknown> = {
+      "tz-good-id": {
+        id: "tz-good-id", chatId: "99", schedule: "0 * * * *",
+        type: "message", content: "hi", name: "TZ Good",
+        enabled: true, createdAt: Date.now(), runCount: 0,
+        timezone: "Europe/Warsaw",
+      },
+    };
+    existsSyncMock.mockReturnValueOnce(true).mockReturnValue(false);
+    readFileSyncMock.mockReturnValueOnce(JSON.stringify(jobWithGoodTz));
+    loadCronJobs();
+    const job = getCronJob("tz-good-id");
+    expect(job).toBeDefined();
+    expect(job!.timezone).toBe("Europe/Warsaw");
+  });
+});
+
+describe("isValidTimezone", () => {
+  it("returns true for valid IANA timezones", async () => {
+    const { isValidTimezone } = await import("../storage/cron-store.js");
+    expect(isValidTimezone("UTC")).toBe(true);
+    expect(isValidTimezone("America/New_York")).toBe(true);
+    expect(isValidTimezone("Europe/Warsaw")).toBe(true);
+    expect(isValidTimezone("Asia/Tokyo")).toBe(true);
+  });
+
+  it("returns false for invalid timezone strings", async () => {
+    const { isValidTimezone } = await import("../storage/cron-store.js");
+    expect(isValidTimezone("Not/Real")).toBe(false);
+    expect(isValidTimezone("")).toBe(false);
+    expect(isValidTimezone("BadString")).toBe(false);
+  });
+});

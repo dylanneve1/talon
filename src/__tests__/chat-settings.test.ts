@@ -335,3 +335,42 @@ describe("chat-settings", () => {
     });
   });
 });
+
+describe("chat-settings — setPulseLastCheckMsgId", () => {
+  it("sets pulseLastCheckMsgId when msgId is provided", async () => {
+    const { setPulseLastCheckMsgId, getChatSettings } = await import("../storage/chat-settings.js");
+    setPulseLastCheckMsgId("pulse-check-1", 42);
+    expect(getChatSettings("pulse-check-1").pulseLastCheckMsgId).toBe(42);
+  });
+
+  it("clears pulseLastCheckMsgId when undefined is passed", async () => {
+    const { setPulseLastCheckMsgId, getChatSettings } = await import("../storage/chat-settings.js");
+    setPulseLastCheckMsgId("pulse-check-2", 100);
+    setPulseLastCheckMsgId("pulse-check-2", undefined);
+    expect(getChatSettings("pulse-check-2").pulseLastCheckMsgId).toBeUndefined();
+  });
+
+  it("removes empty settings object after all fields cleared", async () => {
+    const { setPulseLastCheckMsgId, getChatSettings } = await import("../storage/chat-settings.js");
+    // Set only pulseLastCheckMsgId (no model, effort, pulse, pulseIntervalMs)
+    setPulseLastCheckMsgId("pulse-cleanup-1", 99);
+    setPulseLastCheckMsgId("pulse-cleanup-1", undefined);
+    // cleanupEmpty should have removed the settings object
+    expect(getChatSettings("pulse-cleanup-1")).toEqual({});
+  });
+});
+
+describe("chat-settings — migration of has-effort + maxThinkingTokens", () => {
+  it("cleans up maxThinkingTokens when effort already set", async () => {
+    const { loadChatSettings, getChatSettings } = await import("../storage/chat-settings.js");
+    const { existsSync, readFileSync } = await import("node:fs");
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    vi.mocked(readFileSync).mockReturnValueOnce(JSON.stringify({
+      "migrate-has-effort": { effort: "high", maxThinkingTokens: 16000 },
+    }));
+    loadChatSettings();
+    const s = getChatSettings("migrate-has-effort");
+    expect(s.effort).toBe("high");
+    expect((s as Record<string, unknown>).maxThinkingTokens).toBeUndefined();
+  });
+});
