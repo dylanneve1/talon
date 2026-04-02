@@ -289,27 +289,31 @@ describe("getSenderName — edge cases", () => {
   });
 });
 
-const { handleTextMessage, handlePhotoMessage, handleCallbackQuery } = await import(
-  "../frontend/telegram/handlers.js"
-);
+const {
+  handleTextMessage, handlePhotoMessage, handleCallbackQuery,
+  handleStickerMessage, handleVoiceMessage, handleVideoMessage,
+  handleDocumentMessage, handleAudioMessage, handleVideoNoteMessage,
+  handleAnimationMessage,
+} = await import("../frontend/telegram/handlers.js");
+
+// Shared mock objects used across all handler integration tests
+const mockBot = {
+  api: {
+    sendMessage: vi.fn(async () => ({ message_id: 1 })),
+    sendChatAction: vi.fn(async () => {}),
+    setMessageReaction: vi.fn(async () => {}),
+    sendMessageDraft: vi.fn(async () => {}),
+  },
+} as any;
+
+const mockConfig = {
+  botToken: "test",
+  model: "claude-sonnet-4-6",
+  maxMessageLength: 4000,
+  workspace: "/tmp/test-workspace",
+} as any;
 
 describe("handleTextMessage — integration via mock Context", () => {
-
-  const mockBot = {
-    api: {
-      sendMessage: vi.fn(async () => ({ message_id: 1 })),
-      sendChatAction: vi.fn(async () => {}),
-      setMessageReaction: vi.fn(async () => {}),
-      sendMessageDraft: vi.fn(async () => {}),
-    },
-  } as any;
-
-  const mockConfig = {
-    botToken: "test",
-    model: "claude-sonnet-4-6",
-    maxMessageLength: 4000,
-    workspace: "/tmp/test-workspace",
-  } as any;
 
   it("silently returns when ctx.message is missing", async () => {
     await handleTextMessage({ chat: { id: 1 } } as any, mockBot, mockConfig);
@@ -411,5 +415,190 @@ describe("handleTextMessage — integration via mock Context", () => {
     expect(callArg.prompt).toContain("first message");
     expect(callArg.prompt).toContain("second message");
   }, 3000);
+});
+
+describe("handleCallbackQuery — processes button press", () => {
+  it("calls execute when callbackQuery has data", async () => {
+    executeMock.mockResolvedValue({
+      text: "response",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
+    });
+
+    const ctx = {
+      callbackQuery: { data: "button_option_a", message: { message_id: 50 } },
+      chat: { id: 555, type: "private" },
+      from: { id: 10, first_name: "Dave" },
+      answerCallbackQuery: vi.fn(async () => {}),
+    } as any;
+
+    const before = executeMock.mock.calls.length;
+    await handleCallbackQuery(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBeGreaterThan(before);
+    const arg = executeMock.mock.calls[executeMock.mock.calls.length - 1][0] as { prompt: string };
+    expect(arg.prompt).toContain("button_option_a");
+  });
+
+  it("returns early when callbackQuery has no data", async () => {
+    const ctx = {
+      callbackQuery: { message: { message_id: 51 } }, // no data
+      chat: { id: 556 },
+      from: { id: 11, first_name: "Eve" },
+    } as any;
+    const before = executeMock.mock.calls.length;
+    await handleCallbackQuery(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBe(before);
+  });
+});
+
+describe("handleVoiceMessage/handleVideoMessage/handleDocumentMessage/handleAudioMessage — early returns", () => {
+  it("handleVoiceMessage returns early when no voice data", async () => {
+    const ctx = {
+      chat: { id: 888, type: "private" },
+      message: { message_id: 10, voice: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 30, first_name: "Hank" },
+    } as any;
+    const before = executeMock.mock.calls.length;
+    await handleVoiceMessage(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBe(before);
+  });
+
+  it("handleVideoMessage returns early when no video data", async () => {
+    const ctx = {
+      chat: { id: 889, type: "private" },
+      message: { message_id: 11, video: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 31, first_name: "Iris" },
+    } as any;
+    const before = executeMock.mock.calls.length;
+    await handleVideoMessage(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBe(before);
+  });
+
+  it("handleDocumentMessage returns early when no document", async () => {
+    const ctx = {
+      chat: { id: 890, type: "private" },
+      message: { message_id: 12, document: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 32, first_name: "Jack" },
+    } as any;
+    const before = executeMock.mock.calls.length;
+    await handleDocumentMessage(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBe(before);
+  });
+
+  it("handleAudioMessage returns early when no audio", async () => {
+    const ctx = {
+      chat: { id: 891, type: "private" },
+      message: { message_id: 13, audio: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 33, first_name: "Kate" },
+    } as any;
+    const before = executeMock.mock.calls.length;
+    await handleAudioMessage(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBe(before);
+  });
+
+  it("handleAnimationMessage returns early when no animation", async () => {
+    const ctx = {
+      chat: { id: 892, type: "private" },
+      message: { message_id: 14, animation: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 34, first_name: "Liam" },
+    } as any;
+    const before = executeMock.mock.calls.length;
+    await handleAnimationMessage(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBe(before);
+  });
+
+  it("handleVideoNoteMessage returns early when no video_note", async () => {
+    const ctx = {
+      chat: { id: 893, type: "private" },
+      message: { message_id: 15, video_note: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 35, first_name: "Mia" },
+    } as any;
+    const before = executeMock.mock.calls.length;
+    await handleVideoNoteMessage(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBe(before);
+  });
+});
+
+describe("rate limiting — isUserRateLimited via handleTextMessage", () => {
+  it("blocks message after RATE_LIMIT_MAX_MESSAGES (15) messages from same user", async () => {
+    const userId = 99999; // unique user ID for this test
+    const makeCtx = (i: number) => ({
+      chat: { id: 11111 + i, type: "private" }, // different chat each time to avoid queue conflicts
+      message: { text: `message ${i}`, message_id: 1000 + i, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: userId, first_name: "RateLimitUser" },
+    } as any);
+
+    // Send 15 messages — all should be enqueued
+    for (let i = 0; i < 15; i++) {
+      await handleTextMessage(makeCtx(i), mockBot, mockConfig);
+    }
+
+    // 16th message should be rate limited (return early without enqueuing)
+    const before = executeMock.mock.calls.length;
+    await handleTextMessage(makeCtx(15), mockBot, mockConfig);
+
+    // Wait to confirm no debounce fires for the 16th chat
+    await new Promise((r) => setTimeout(r, 50));
+    // The 16th message's chatId never appeared in the queue, so execute won't be called for it
+    const rateLimitedCalls = executeMock.mock.calls.filter((c) => {
+      const arg = c[0] as { chatId: string };
+      return arg.chatId === String(11111 + 15);
+    });
+    expect(rateLimitedCalls.length).toBe(0);
+  }, 3000);
+});
+
+describe("handleStickerMessage — enqueues sticker prompt", () => {
+  it("enqueues a sticker message", async () => {
+    executeMock.mockResolvedValue({
+      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+    });
+    const ctx = {
+      chat: { id: 66666, type: "private" },
+      message: {
+        message_id: 200,
+        sticker: { file_id: "sticker123", emoji: "😀", set_name: "AnimatedEmoji", is_animated: false, is_video: false },
+        reply_to_message: null,
+      },
+      me: { id: 999, username: "testbot" },
+      from: { id: 20, first_name: "Frank" },
+    } as any;
+
+    const before = executeMock.mock.calls.length;
+    await handleStickerMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    const calls = executeMock.mock.calls.slice(before).filter((c) => {
+      const arg = c[0] as { chatId: string };
+      return arg.chatId === "66666";
+    });
+    expect(calls.length).toBe(1);
+    const arg = calls[0][0] as { prompt: string };
+    expect(arg.prompt).toContain("sticker");
+    expect(arg.prompt).toContain("sticker123");
+  }, 3000);
+
+  it("returns early when no sticker in message", async () => {
+    const ctx = {
+      chat: { id: 777, type: "private" },
+      message: { message_id: 300, sticker: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 21, first_name: "Grace" },
+    } as any;
+    const before = executeMock.mock.calls.length;
+    await handleStickerMessage(ctx, mockBot, mockConfig);
+    expect(executeMock.mock.calls.length).toBe(before);
+  });
 });
 
