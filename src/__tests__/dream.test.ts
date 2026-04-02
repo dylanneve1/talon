@@ -222,6 +222,22 @@ describe("readDreamState — edge cases", () => {
     expect(() => maybeFresh()).not.toThrow();
   });
 
+  it("maybeStartDream treats non-numeric last_run as stale (readDreamState returns null)", async () => {
+    // Covers `if (typeof parsed.last_run !== "number") return null`
+    const invalidState = { last_run: "not-a-number", status: "idle" };
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => true),
+      readFileSync: vi.fn(() => JSON.stringify(invalidState)),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+
+    const { initDream: initFresh, maybeStartDream: maybeFresh } = await import("../core/dream.js");
+    initFresh({ model: "claude-sonnet-4-6" });
+    // non-numeric last_run → readDreamState returns null → treated as very old → dream fires
+    expect(() => maybeFresh()).not.toThrow();
+  });
+
   it("maybeStartDream skips when state has last_run within interval", async () => {
     const recentState = { last_run: Date.now() - 60_000, status: "idle" };
     vi.doMock("node:fs", () => ({
@@ -371,6 +387,25 @@ describe("logDreamMessage — processes all message types", () => {
       { type: "stream_event", event: { type: "content_block_delta" } },
     ]);
     // Should complete without errors
+    await expect(mod.forceDream()).resolves.toBeUndefined();
+  });
+
+  it("result message without 'result' field falls back to JSON.stringify", async () => {
+    const { mod, appendFileSyncMock } = await setupWithMessages([
+      // Intentionally omit 'result' field — covers JSON.stringify(msg) branch
+      { type: "result", subtype: "success" },
+    ]);
+    await mod.forceDream();
+    const calls = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    // JSON.stringify({type:"result",subtype:"success"}) should appear in the output
+    expect(calls).toContain("result");
+  });
+
+  it("user message without tool_use_result is silently skipped", async () => {
+    // Covers the false branch of `if (msg.tool_use_result != null)`
+    const { mod } = await setupWithMessages([
+      { type: "user" }, // no tool_use_result field
+    ]);
     await expect(mod.forceDream()).resolves.toBeUndefined();
   });
 
