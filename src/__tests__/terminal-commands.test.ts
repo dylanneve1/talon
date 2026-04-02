@@ -364,6 +364,36 @@ describe("built-in commands", () => {
       expect(ctx.initNewChat).not.toHaveBeenCalled();
       expect(ctx.renderer.writeSystem).toHaveBeenCalledWith("Cancelled.");
     });
+
+    it("shows turn count when session has no name (false ternary branch)", async () => {
+      // Selected session has no sessionName → shows "(N turns)" instead of '"name"'
+      mockGetAllSessions.mockReturnValueOnce([
+        {
+          chatId: "t_unnamed_session",
+          info: { turns: 3, lastActive: Date.now(), sessionName: undefined },
+        },
+      ]);
+      const ctx = makeMockContext({
+        waitForInput: vi.fn().mockResolvedValue("1"),
+      });
+      await tryRunCommand("/resume", ctx);
+      expect(ctx.initNewChat).toHaveBeenCalledWith("t_unnamed_session");
+      expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
+        expect.stringContaining("3 turns"),
+      );
+    });
+  });
+
+  describe("/model — ?? fallback to config.model", () => {
+    it("shows config model when getChatSettings has no model set", async () => {
+      // Default mockGetChatSettings returns {} (no model) → triggers ?? ctx.config.model
+      mockGetChatSettings.mockReturnValueOnce({});
+      const ctx = makeMockContext();
+      await tryRunCommand("/model", ctx);
+      expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
+        expect.stringContaining("claude-sonnet-4-6"),
+      );
+    });
   });
 });
 
