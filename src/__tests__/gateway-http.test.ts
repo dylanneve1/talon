@@ -244,3 +244,29 @@ describe("shared actions via HTTP", () => {
     });
   });
 });
+
+// ── Port retry (EADDRINUSE) ───────────────────────────────────────────────
+
+describe("gateway port retry — EADDRINUSE", () => {
+  it("rejects when all retry attempts are exhausted (6 consecutive ports in use)", async () => {
+    // The retry logic allows attempt 0-4 (5 retries), trying ports p, p+1, …, p+5
+    // Block all 6 consecutive ports so every attempt fails → should reject
+    const blockers: Array<import("node:http").Server> = [];
+    for (let p = 19950; p <= 19955; p++) {
+      const { createServer } = await import("node:http");
+      const s = createServer();
+      await new Promise<void>((resolve) => s.listen(p, "127.0.0.1", resolve));
+      blockers.push(s);
+    }
+
+    try {
+      const gw = new Gateway();
+      gw.setFrontendHandler(async () => null);
+      await expect(gw.start(19950)).rejects.toThrow();
+    } finally {
+      for (const s of blockers) {
+        await new Promise<void>((resolve) => s.close(() => resolve()));
+      }
+    }
+  });
+});
