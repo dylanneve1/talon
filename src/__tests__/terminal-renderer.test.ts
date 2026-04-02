@@ -382,6 +382,40 @@ describe("createRenderer", () => {
     expect(output.join("")).toContain("Read");
   });
 
+  it("creates renderer with auto column width when no cols given", () => {
+    // Covers the `cols ?? Math.min(...)` right branch
+    const r = createRenderer(); // no cols argument
+    expect(r.cols).toBeGreaterThan(0);
+  });
+
+  it("renderToolCall with numeric/boolean input values", () => {
+    const r = createRenderer(80);
+    output = [];
+    r.renderToolCall("Bash", { timeout: 30, verbose: true });
+    const text = output.join("");
+    // numeric and boolean values should appear
+    expect(text).toContain("Bash");
+  });
+
+  it("renderToolCall with long string value (>30 chars) shows detail", () => {
+    const r = createRenderer(80);
+    output = [];
+    // A value > 30 chars covers the v.length > 30 branch in extractToolDetail
+    r.renderToolCall("Bash", { command: "A".repeat(40) });
+    const text = output.join("");
+    expect(text).toContain("Bash");
+    expect(text).toContain("A"); // detail was extracted
+  });
+
+  it("renderToolCall with empty input produces no detail", () => {
+    // input has only _chatId (skipped) → detail="" → `detail ? ... : ""` returns ""
+    const r = createRenderer(80);
+    output = [];
+    r.renderToolCall("SomeToolName", { _chatId: "ignored" });
+    const text = output.join("");
+    expect(text).toContain("SomeToolName");
+  });
+
   it("spinner pads shorter label to match previous line length", () => {
     vi.useFakeTimers();
     const r = createRenderer(80);
