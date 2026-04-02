@@ -302,6 +302,58 @@ describe("createRenderer", () => {
     // 8,500 tokens → 8.5k
     expect(output.join("")).toContain("8.5k tok");
   });
+
+  it("startSpinner writes to stdout on each tick", () => {
+    vi.useFakeTimers();
+    const r = createRenderer(80);
+    output = [];
+    r.startSpinner("loading");
+    vi.advanceTimersByTime(100);
+    // At least one frame written
+    expect(output.join("")).toContain("\r");
+    r.stopSpinner();
+    vi.useRealTimers();
+  });
+
+  it("stopSpinner clears the line", () => {
+    vi.useFakeTimers();
+    const r = createRenderer(80);
+    output = [];
+    r.startSpinner("working");
+    r.stopSpinner();
+    expect(output.join("")).toContain("\x1b[2K\r");
+    vi.useRealTimers();
+  });
+
+  it("stopSpinner is safe to call when not running", () => {
+    const r = createRenderer(80);
+    output = [];
+    expect(() => r.stopSpinner()).not.toThrow();
+  });
+
+  it("updateSpinnerLabel changes the displayed label", () => {
+    vi.useFakeTimers();
+    const r = createRenderer(80);
+    output = [];
+    r.startSpinner("initial");
+    r.updateSpinnerLabel("updated");
+    vi.advanceTimersByTime(100);
+    expect(output.join("")).toContain("updated");
+    r.stopSpinner();
+    vi.useRealTimers();
+  });
+
+  it("startSpinner stops any previous spinner before starting", () => {
+    vi.useFakeTimers();
+    const r = createRenderer(80);
+    r.startSpinner("first");
+    output = [];
+    r.startSpinner("second"); // should stop first and start new one
+    vi.advanceTimersByTime(100);
+    expect(output.join("")).toContain("second");
+    r.stopSpinner();
+    vi.useRealTimers();
+  });
 });
 
 // Need to import afterEach for cleanup

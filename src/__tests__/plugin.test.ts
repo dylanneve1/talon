@@ -358,6 +358,38 @@ describe("extractPlugin — invalid optional field types", () => {
     expect(mod.getPluginCount()).toBe(0);
   });
 
+  it("rejects plugin when handleAction is defined but not a function", async () => {
+    const plugin = { name: "bad-handle", handleAction: "not-a-function" };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-handle" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("catches and logs error when importModule throws", async () => {
+    vi.resetModules();
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+    }));
+    const mod = await import("../core/plugin.js");
+    const { logError } = await import("../util/log.js") as { logError: ReturnType<typeof vi.fn> };
+    mod._deps.importModule = async () => { throw new Error("module load failed"); };
+    await mod.loadPlugins([{ path: "/fake/throw-plugin" }]);
+    expect(mod.getPluginCount()).toBe(0);
+    expect(logError).toHaveBeenCalledWith("plugin", expect.stringContaining("Failed to load plugin"));
+  });
+
+  it("default _deps.importModule can import real modules", async () => {
+    vi.resetModules();
+    const mod = await import("../core/plugin.js");
+    // Exercise the default importModule implementation (line 159) by importing a built-in
+    const result = await mod._deps.importModule("node:path");
+    expect(result).toBeDefined();
+    expect(typeof (result as Record<string, unknown>).join).toBe("function");
+  });
+
   it("getLoadedPlugins returns all loaded plugins", async () => {
     const plugin = {
       name: "good-plugin",

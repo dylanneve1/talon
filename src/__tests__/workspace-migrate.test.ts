@@ -120,6 +120,40 @@ describe("migrateLayout", () => {
     }
   });
 
+  it("falls back to copy+delete when renameSync throws (cross-filesystem simulation)", async () => {
+    mkdirSync(OLD_WORKSPACE, { recursive: true });
+    writeFileSync(join(OLD_WORKSPACE, "sessions.json"), '{"chat1":{}}');
+    const memDir = join(OLD_WORKSPACE, "memory");
+    mkdirSync(memDir);
+    writeFileSync(join(memDir, "notes.md"), "# notes");
+
+    const originalCwd = process.cwd;
+    process.cwd = () => TEST_ROOT;
+
+    // Override renameSync to simulate cross-device link error
+    vi.doMock("node:fs", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs")>();
+      return {
+        ...actual,
+        renameSync: vi.fn(() => {
+          throw Object.assign(new Error("EXDEV: cross-device link not permitted"), { code: "EXDEV" });
+        }),
+      };
+    });
+
+    try {
+      const { migrateLayout } = await import("../util/workspace.js");
+      migrateLayout();
+
+      // File was copied via copyFileSync fallback (line 57)
+      expect(existsSync(join(NEW_ROOT, "data", "sessions.json"))).toBe(true);
+      // Directory was copied via cpSync fallback (line 81)
+      expect(existsSync(join(NEW_ROOT, "workspace", "memory", "notes.md"))).toBe(true);
+    } finally {
+      process.cwd = originalCwd;
+    }
+  });
+
   it("leaves workspace/ when non-migration files remain after migration", async () => {
     mkdirSync(OLD_WORKSPACE, { recursive: true });
     // A file that is NOT in the migration list

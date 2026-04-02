@@ -382,6 +382,57 @@ describe("dispatcher", () => {
   });
 });
 
+describe("typing indicator — interval error handling", () => {
+  it("logs warning when sendTyping interval callback rejects", async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(), logDebug: vi.fn(), logWarn: vi.fn(), logError: vi.fn(),
+    }));
+    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
+
+    const { initDispatcher, execute } = await import("../core/dispatcher.js");
+    const { logWarn } = await import("../util/log.js") as { logWarn: ReturnType<typeof vi.fn> };
+
+    let typingCallCount = 0;
+    let resolveQuery!: (v: { text: string; durationMs: number; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number }) => void;
+
+    initDispatcher({
+      backend: {
+        query: vi.fn(() => new Promise((r) => { resolveQuery = r; })),
+      },
+      context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
+      sendTyping: vi.fn(async () => {
+        typingCallCount++;
+        if (typingCallCount > 1) throw new Error("interval typing API error");
+      }),
+      onActivity: vi.fn(),
+    });
+
+    const p = execute({
+      chatId: "interval-err",
+      numericChatId: 888,
+      prompt: "test",
+      senderName: "U",
+      isGroup: false,
+      source: "message",
+    });
+
+    // Let the initial sendTyping call run, then trigger the 4000ms interval
+    await vi.advanceTimersByTimeAsync(4100);
+
+    resolveQuery({ text: "ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
+    await p;
+
+    expect(logWarn).toHaveBeenCalledWith(
+      "dispatcher",
+      expect.stringContaining("interval failed"),
+    );
+
+    vi.useRealTimers();
+  });
+});
+
 describe("typing indicator — error handling", () => {
   it("logs warning when sendTyping rejects (initial call)", async () => {
     vi.resetModules();
