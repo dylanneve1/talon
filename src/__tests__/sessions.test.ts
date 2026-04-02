@@ -665,3 +665,39 @@ describe("sessions — loadSessions backup recovery", () => {
     expect(() => loadSessions()).not.toThrow();
   });
 });
+
+describe("sessions — edge cases for branch coverage", () => {
+  it("resetSession includes session name in log when name is set", () => {
+    const chatId = "reset-named-session";
+    getSession(chatId);
+    setSessionName(chatId, "Work Chat");
+    // Does not throw; covers the `name ? ` "${name}"` branch in resetSession
+    expect(() => resetSession(chatId)).not.toThrow();
+    // Session should be gone
+    const fresh = getSession(chatId);
+    expect(fresh.turns).toBe(0);
+  });
+
+  it("getAllSessions falls back to empty usage for sessions without usage field", () => {
+    // Directly inject a session without usage to cover the ?? branch (line 304)
+    // The store is accessed via loadSessions with a raw mock
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({
+        "no-usage-chat": {
+          sessionId: undefined,
+          turns: 3,
+          lastActive: 1_000_000,
+          createdAt: 1_000_000,
+          // usage deliberately omitted to trigger the ?? fallback
+        },
+      }),
+    );
+    loadSessions();
+    const all = getAllSessions();
+    const entry = all.find((s) => s.chatId === "no-usage-chat");
+    expect(entry).toBeDefined();
+    expect(entry!.info.usage).toBeDefined();
+    expect(entry!.info.usage.totalInputTokens).toBe(0);
+  });
+});

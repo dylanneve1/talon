@@ -374,3 +374,30 @@ describe("chat-settings — migration of has-effort + maxThinkingTokens", () => 
     expect((s as Record<string, unknown>).maxThinkingTokens).toBeUndefined();
   });
 });
+
+describe("chat-settings — flushChatSettings", () => {
+  it("does not throw when called", async () => {
+    const { flushChatSettings, setChatModel } = await import("../storage/chat-settings.js");
+    // Make dirty first so save() runs
+    setChatModel("flush-test", "claude-opus-4-6");
+    expect(() => flushChatSettings()).not.toThrow();
+  });
+});
+
+describe("chat-settings — backup recovery on corrupt primary", () => {
+  it("loads from backup when primary JSON is corrupt", async () => {
+    const { loadChatSettings, getChatSettings } = await import("../storage/chat-settings.js");
+    vi.mocked(existsSync)
+      .mockReturnValueOnce(true)  // primary exists
+      .mockReturnValueOnce(true); // backup exists
+    vi.mocked(readFileSync)
+      .mockReturnValueOnce("{ INVALID JSON")  // primary corrupt
+      .mockReturnValueOnce(JSON.stringify({
+        "backup-settings-chat": { model: "claude-sonnet-4-6", effort: "medium" },
+      }));
+    loadChatSettings();
+    const s = getChatSettings("backup-settings-chat");
+    expect(s.model).toBe("claude-sonnet-4-6");
+    expect(s.effort).toBe("medium");
+  });
+});

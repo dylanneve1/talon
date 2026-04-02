@@ -217,7 +217,8 @@ describe("gateway HTTP server", () => {
     });
   });
 
-  describe("shared actions via HTTP", () => {
+
+describe("shared actions via HTTP", () => {
     it("fetch_url rejects invalid URLs", async () => {
       gateway.setContext(123);
       const { body } = await post({ action: "fetch_url", _chatId: "123", url: "not-a-url" });
