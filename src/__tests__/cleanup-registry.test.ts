@@ -7,7 +7,9 @@ import { registerCleanup } from "../util/cleanup-registry.js";
 describe("cleanup-registry", () => {
   it("registered handler is called when the exit event fires", () => {
     let called = false;
-    registerCleanup(() => { called = true; });
+    registerCleanup(() => {
+      called = true;
+    });
     process.emit("exit", 0);
     expect(called).toBe(true);
   });
@@ -25,8 +27,12 @@ describe("cleanup-registry", () => {
 
   it("handler that throws does not prevent subsequent handlers from running", () => {
     let afterCalled = false;
-    registerCleanup(() => { throw new Error("boom"); });
-    registerCleanup(() => { afterCalled = true; });
+    registerCleanup(() => {
+      throw new Error("boom");
+    });
+    registerCleanup(() => {
+      afterCalled = true;
+    });
     expect(() => process.emit("exit", 0)).not.toThrow();
     expect(afterCalled).toBe(true);
   });

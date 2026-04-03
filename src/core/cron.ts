@@ -65,10 +65,16 @@ async function runCronTick(): Promise<void> {
     if (getActiveCount() > 10) break;
 
     try {
-      log("cron", `Executing "${job.name}" [${job.id}] (${job.type}) in chat ${job.chatId}`);
+      log(
+        "cron",
+        `Executing "${job.name}" [${job.id}] (${job.type}) in chat ${job.chatId}`,
+      );
       await executeJob(job);
       recordCronRun(job.id);
-      appendDailyLog("Cron", `Ran "${job.name}" (${job.type}) in chat ${job.chatId}`);
+      appendDailyLog(
+        "Cron",
+        `Ran "${job.name}" (${job.type}) in chat ${job.chatId}`,
+      );
       log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
     } catch (err) {
       logError("cron", `Job "${job.name}" [${job.id}] failed`, err);
@@ -79,7 +85,9 @@ async function runCronTick(): Promise<void> {
 function isDue(job: CronJob, now: Date): boolean {
   try {
     const oneMinuteAgo = new Date(now.getTime() - 60_000);
-    const cron = new Cron(job.schedule, { timezone: job.timezone ?? undefined });
+    const cron = new Cron(job.schedule, {
+      timezone: job.timezone ?? undefined,
+    });
     const next = cron.nextRun(oneMinuteAgo);
     if (!next) return false;
 
@@ -102,10 +110,17 @@ function isDue(job: CronJob, now: Date): boolean {
 
 const CRON_JOB_TIMEOUT_MS = 10 * 60_000; // 10-minute max per job
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+async function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
   });
   try {
     return await Promise.race([promise, timeout]);

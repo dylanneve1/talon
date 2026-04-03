@@ -155,7 +155,9 @@ describe("validateCronExpression", () => {
   });
 
   it("valid expression with Europe/Warsaw timezone is accepted", () => {
-    expect(validateCronExpression("30 8 * * *", "Europe/Warsaw").valid).toBe(true);
+    expect(validateCronExpression("30 8 * * *", "Europe/Warsaw").valid).toBe(
+      true,
+    );
   });
 
   it("valid expression with Asia/Tokyo timezone is accepted", () => {
@@ -192,7 +194,9 @@ describe("generateCronId", () => {
   it("produces IDs in cron_<uuid> format", () => {
     const id = generateCronId();
     const uuid = id.slice("cron_".length);
-    expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(uuid).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 
   it("UUID part is version 4 (random)", () => {
@@ -303,7 +307,9 @@ describe("getCronJobsForChat", () => {
 describe("updateCronJob", () => {
   it("updates individual fields and returns the updated job", () => {
     const id = uniqueId();
-    addCronJob(makeJob({ id, name: "Old name", enabled: true, schedule: "0 9 * * *" }));
+    addCronJob(
+      makeJob({ id, name: "Old name", enabled: true, schedule: "0 9 * * *" }),
+    );
 
     const result = updateCronJob(id, { name: "New name", enabled: false });
     expect(result).toBeDefined();
@@ -321,13 +327,18 @@ describe("updateCronJob", () => {
   });
 
   it("returns undefined for a non-existent ID", () => {
-    expect(updateCronJob("no-such-id-ext", { name: "irrelevant" })).toBeUndefined();
+    expect(
+      updateCronJob("no-such-id-ext", { name: "irrelevant" }),
+    ).toBeUndefined();
   });
 
   it("can update schedule and content simultaneously", () => {
     const id = uniqueId();
     addCronJob(makeJob({ id }));
-    const result = updateCronJob(id, { schedule: "*/10 * * * *", content: "updated content" });
+    const result = updateCronJob(id, {
+      schedule: "*/10 * * * *",
+      content: "updated content",
+    });
     expect(result!.schedule).toBe("*/10 * * * *");
     expect(result!.content).toBe("updated content");
   });
@@ -512,10 +523,10 @@ describe("loadCronJobs — corrupt primary tries backup", () => {
 
     // primary exists but is corrupt; backup exists and is valid
     existsSyncMock
-      .mockReturnValueOnce(true)   // primary existsSync
-      .mockReturnValueOnce(true);  // backup existsSync
+      .mockReturnValueOnce(true) // primary existsSync
+      .mockReturnValueOnce(true); // backup existsSync
     readFileSyncMock
-      .mockReturnValueOnce("{{{ not json }}}")  // primary read
+      .mockReturnValueOnce("{{{ not json }}}") // primary read
       .mockReturnValueOnce(JSON.stringify(backup)); // backup read
 
     expect(() => loadCronJobs()).not.toThrow();
@@ -526,7 +537,7 @@ describe("loadCronJobs — corrupt primary tries backup", () => {
   it("does not throw when primary corrupt and backup does not exist (line 56 FALSE branch)", () => {
     // primary exists but corrupt; backup file does not exist → existsSync(bakFile) = false
     existsSyncMock
-      .mockReturnValueOnce(true)   // primary existsSync
+      .mockReturnValueOnce(true) // primary existsSync
       .mockReturnValueOnce(false); // backup existsSync → FALSE branch
     readFileSyncMock.mockReturnValueOnce("{{{ not json }}}");
 
@@ -550,10 +561,10 @@ describe("loadCronJobs — corrupt primary tries backup", () => {
 
     // primary exists but corrupt; backup exists with array (legacy) format
     existsSyncMock
-      .mockReturnValueOnce(true)   // primary existsSync
-      .mockReturnValueOnce(true);  // backup existsSync
+      .mockReturnValueOnce(true) // primary existsSync
+      .mockReturnValueOnce(true); // backup existsSync
     readFileSyncMock
-      .mockReturnValueOnce("{{{ not json }}}")      // primary read
+      .mockReturnValueOnce("{{{ not json }}}") // primary read
       .mockReturnValueOnce(JSON.stringify(legacyArray)); // backup read (array)
 
     loadCronJobs();
@@ -564,8 +575,8 @@ describe("loadCronJobs — corrupt primary tries backup", () => {
 
   it("does not throw when both primary and backup are corrupt", () => {
     existsSyncMock
-      .mockReturnValueOnce(true)   // primary exists
-      .mockReturnValueOnce(true);  // backup exists
+      .mockReturnValueOnce(true) // primary exists
+      .mockReturnValueOnce(true); // backup exists
     readFileSyncMock
       .mockReturnValueOnce("BAD JSON PRIMARY")
       .mockReturnValueOnce("BAD JSON BACKUP");
@@ -588,9 +599,15 @@ describe("loadCronJobs — invalid timezone stripping", () => {
     const { isValidTimezone } = await import("../storage/cron-store.js");
     const jobWithBadTz: Record<string, unknown> = {
       "tz-bad-id": {
-        id: "tz-bad-id", chatId: "99", schedule: "0 * * * *",
-        type: "message", content: "hi", name: "TZ Test",
-        enabled: true, createdAt: Date.now(), runCount: 0,
+        id: "tz-bad-id",
+        chatId: "99",
+        schedule: "0 * * * *",
+        type: "message",
+        content: "hi",
+        name: "TZ Test",
+        enabled: true,
+        createdAt: Date.now(),
+        runCount: 0,
         timezone: "Not/A_Real_Zone",
       },
     };
@@ -605,9 +622,15 @@ describe("loadCronJobs — invalid timezone stripping", () => {
   it("preserves valid timezone on load", async () => {
     const jobWithGoodTz: Record<string, unknown> = {
       "tz-good-id": {
-        id: "tz-good-id", chatId: "99", schedule: "0 * * * *",
-        type: "message", content: "hi", name: "TZ Good",
-        enabled: true, createdAt: Date.now(), runCount: 0,
+        id: "tz-good-id",
+        chatId: "99",
+        schedule: "0 * * * *",
+        type: "message",
+        content: "hi",
+        name: "TZ Good",
+        enabled: true,
+        createdAt: Date.now(),
+        runCount: 0,
         timezone: "Europe/Warsaw",
       },
     };

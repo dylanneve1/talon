@@ -110,7 +110,8 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         mediaType: "animation",
       });
     } else if ("audio" in ctx.message && ctx.message.audio) {
-      const title = ctx.message.audio.title || ctx.message.audio.file_name || "audio";
+      const title =
+        ctx.message.audio.title || ctx.message.audio.file_name || "audio";
       pushMessage(chatId, {
         msgId,
         senderId,
@@ -140,7 +141,12 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
         timestamp,
       });
     } else if ("contact" in ctx.message && ctx.message.contact) {
-      const name = [ctx.message.contact.first_name, ctx.message.contact.last_name].filter(Boolean).join(" ");
+      const name = [
+        ctx.message.contact.first_name,
+        ctx.message.contact.last_name,
+      ]
+        .filter(Boolean)
+        .join(" ");
       pushMessage(chatId, {
         msgId,
         senderId,
@@ -171,7 +177,11 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
   bot.on("message:voice", (ctx) => handleVoiceMessage(ctx, bot, config));
   bot.on("message:sticker", (ctx) => handleStickerMessage(ctx, bot, config));
   bot.on("message:video", (ctx) => handleVideoMessage(ctx, bot, config));
-  bot.on("message:animation", (ctx) => handleAnimationMessage(ctx, bot, config));
+  bot.on("message:animation", (ctx) =>
+    handleAnimationMessage(ctx, bot, config),
+  );
   bot.on("message:audio", (ctx) => handleAudioMessage(ctx, bot, config));
-  bot.on("message:video_note", (ctx) => handleVideoNoteMessage(ctx, bot, config));
+  bot.on("message:video_note", (ctx) =>
+    handleVideoNoteMessage(ctx, bot, config),
+  );
 }

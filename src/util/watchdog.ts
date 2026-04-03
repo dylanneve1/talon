@@ -69,7 +69,11 @@ export function startWatchdog(workspaceDir?: string): void {
     // Ensure workspace still exists (might have been deleted externally)
     if (workspaceDir && !existsSync(workspaceDir)) {
       logWarn("watchdog", "Workspace directory missing — recreating");
-      try { mkdirSync(workspaceDir, { recursive: true }); } catch { /* ignore */ }
+      try {
+        mkdirSync(workspaceDir, { recursive: true });
+      } catch {
+        /* ignore */
+      }
     }
   }, 60_000); // Check every minute
 }

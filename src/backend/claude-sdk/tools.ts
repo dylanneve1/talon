@@ -113,7 +113,10 @@ Examples:
     first_name: z.string().optional().describe("Contact first name"),
     last_name: z.string().optional().describe("Contact last name"),
     title: z.string().optional().describe("Audio title (for type=audio)"),
-    performer: z.string().optional().describe("Audio performer/artist (for type=audio)"),
+    performer: z
+      .string()
+      .optional()
+      .describe("Audio performer/artist (for type=audio)"),
     emoji: z.string().optional().describe("Dice emoji (🎲🎯🏀⚽🎳🎰)"),
     delay_seconds: z
       .number()
@@ -370,7 +373,9 @@ server.tool(
   "download_media",
   "Download a photo, document, or other media from a message by its ID. Saves the file to the workspace and returns the file path so you can read/analyze it. Use this when you see a [photo] or [document] in chat history but don't have the file.",
   {
-    message_id: z.number().describe("Message ID containing the media to download"),
+    message_id: z
+      .number()
+      .describe("Message ID containing the media to download"),
   },
   async (params) => textResult(await callBridge("download_media", params)),
 );
@@ -379,7 +384,11 @@ server.tool(
   "get_sticker_pack",
   "Get all stickers in a sticker pack by its name. Returns emoji + file_id for each sticker so you can send them. Use when you see a sticker set name in chat history.",
   {
-    set_name: z.string().describe("Sticker set name (e.g. 'AnimatedEmojies' or from sticker metadata)"),
+    set_name: z
+      .string()
+      .describe(
+        "Sticker set name (e.g. 'AnimatedEmojies' or from sticker metadata)",
+      ),
   },
   async (params) => textResult(await callBridge("get_sticker_pack", params)),
 );
@@ -388,7 +397,9 @@ server.tool(
   "download_sticker",
   "Download a sticker image to workspace so you can view its contents. Returns the file path.",
   {
-    file_id: z.string().describe("Sticker file_id from chat history or sticker pack listing"),
+    file_id: z
+      .string()
+      .describe("Sticker file_id from chat history or sticker pack listing"),
   },
   async (params) => textResult(await callBridge("download_sticker", params)),
 );
@@ -437,10 +448,19 @@ Type "message" sends the content as a text message.
 Type "query" runs the content as a Claude prompt with full tool access (can search, create files, send messages, etc).`,
   {
     name: z.string().describe("Human-readable name for the job"),
-    schedule: z.string().describe("Cron expression (5-field: minute hour day month weekday)"),
-    type: z.enum(["message", "query"]).describe("Job type: 'message' sends text, 'query' runs a Claude prompt"),
+    schedule: z
+      .string()
+      .describe("Cron expression (5-field: minute hour day month weekday)"),
+    type: z
+      .enum(["message", "query"])
+      .describe("Job type: 'message' sends text, 'query' runs a Claude prompt"),
     content: z.string().describe("Message text or query prompt"),
-    timezone: z.string().optional().describe("IANA timezone (e.g. 'America/New_York'). Defaults to system timezone."),
+    timezone: z
+      .string()
+      .optional()
+      .describe(
+        "IANA timezone (e.g. 'America/New_York'). Defaults to system timezone.",
+      ),
   },
   async (params) => textResult(await callBridge("create_cron_job", params)),
 );
@@ -496,11 +516,23 @@ The set name will automatically get "_by_<botname>" appended if needed.
 Example: create_sticker_set(user_id=123, name="cool_pack", title="Cool Stickers", file_path="/path/to/sticker.png", emoji_list=["😎"])`,
   {
     user_id: z.number().describe("Telegram user ID who will own the pack"),
-    name: z.string().describe("Short name for the pack (a-z, 0-9, underscores). Will get _by_<botname> appended."),
+    name: z
+      .string()
+      .describe(
+        "Short name for the pack (a-z, 0-9, underscores). Will get _by_<botname> appended.",
+      ),
     title: z.string().describe("Display title for the pack (1-64 chars)"),
-    file_path: z.string().describe("Path to the sticker image file (PNG/WEBP, 512x512 max)"),
-    emoji_list: z.array(z.string()).optional().describe("Emojis for this sticker (default: ['🎨'])"),
-    format: z.enum(["static", "animated", "video"]).optional().describe("Sticker format (default: static)"),
+    file_path: z
+      .string()
+      .describe("Path to the sticker image file (PNG/WEBP, 512x512 max)"),
+    emoji_list: z
+      .array(z.string())
+      .optional()
+      .describe("Emojis for this sticker (default: ['🎨'])"),
+    format: z
+      .enum(["static", "animated", "video"])
+      .optional()
+      .describe("Sticker format (default: static)"),
   },
   async (params) => textResult(await callBridge("create_sticker_set", params)),
 );
@@ -512,8 +544,14 @@ server.tool(
     user_id: z.number().describe("Telegram user ID who owns the pack"),
     name: z.string().describe("Sticker set name (including _by_<botname>)"),
     file_path: z.string().describe("Path to the sticker image file"),
-    emoji_list: z.array(z.string()).optional().describe("Emojis for this sticker (default: ['🎨'])"),
-    format: z.enum(["static", "animated", "video"]).optional().describe("Sticker format (default: static)"),
+    emoji_list: z
+      .array(z.string())
+      .optional()
+      .describe("Emojis for this sticker (default: ['🎨'])"),
+    format: z
+      .enum(["static", "animated", "video"])
+      .optional()
+      .describe("Sticker format (default: static)"),
   },
   async (params) => textResult(await callBridge("add_sticker_to_set", params)),
 );
@@ -522,9 +560,12 @@ server.tool(
   "delete_sticker_from_set",
   "Remove a specific sticker from a pack by its file_id.",
   {
-    sticker_file_id: z.string().describe("file_id of the sticker to remove (get from get_sticker_pack)"),
+    sticker_file_id: z
+      .string()
+      .describe("file_id of the sticker to remove (get from get_sticker_pack)"),
   },
-  async (params) => textResult(await callBridge("delete_sticker_from_set", params)),
+  async (params) =>
+    textResult(await callBridge("delete_sticker_from_set", params)),
 );
 
 server.tool(
@@ -534,7 +575,8 @@ server.tool(
     name: z.string().describe("Sticker set name"),
     title: z.string().describe("New title (1-64 chars)"),
   },
-  async (params) => textResult(await callBridge("set_sticker_set_title", params)),
+  async (params) =>
+    textResult(await callBridge("set_sticker_set_title", params)),
 );
 
 server.tool(
@@ -566,9 +608,13 @@ server.tool(
   "list_media",
   "List recent photos, documents, and other media in the current chat with file paths. Use this to find a previously sent photo or file to re-read or reference.",
   {
-    limit: z.number().optional().describe("Number of entries (default 10, max 20)"),
+    limit: z
+      .number()
+      .optional()
+      .describe("Number of entries (default 10, max 20)"),
   },
-  async (params) => textResult(await callBridge("list_media", { limit: params.limit })),
+  async (params) =>
+    textResult(await callBridge("list_media", { limit: params.limit })),
 );
 
 // ── Web ─────────────────────────────────────────────────────────────────────

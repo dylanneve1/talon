@@ -14,11 +14,18 @@ import { log } from "../util/log.js";
 import { files } from "../util/paths.js";
 
 export type MediaEntry = {
-  id: string;           // unique key: chatId:msgId
+  id: string; // unique key: chatId:msgId
   chatId: string;
   msgId: number;
   senderName: string;
-  type: "photo" | "document" | "voice" | "video" | "animation" | "audio" | "sticker";
+  type:
+    | "photo"
+    | "document"
+    | "voice"
+    | "video"
+    | "animation"
+    | "audio"
+    | "sticker";
   filePath: string;
   caption?: string;
   timestamp: number;
@@ -37,7 +44,9 @@ export function loadMediaIndex(): void {
     if (existsSync(STORE_FILE)) {
       entries = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
     }
-  } catch { entries = []; }
+  } catch {
+    entries = [];
+  }
   // Purge expired on load
   purgeExpired();
 }
@@ -49,7 +58,9 @@ function save(): void {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileAtomic.sync(STORE_FILE, JSON.stringify(entries) + "\n");
     dirty = false;
-  } catch { /* non-fatal */ }
+  } catch {
+    /* non-fatal */
+  }
 }
 
 const autoSaveTimer = setInterval(save, 30_000);
@@ -81,7 +92,11 @@ export function getRecentMedia(chatId: string, limit = 10): MediaEntry[] {
 }
 
 /** Get all media matching a type in a chat. */
-export function getMediaByType(chatId: string, type: MediaEntry["type"], limit = 10): MediaEntry[] {
+export function getMediaByType(
+  chatId: string,
+  type: MediaEntry["type"],
+  limit = 10,
+): MediaEntry[] {
   return entries
     .filter((e) => e.chatId === chatId && e.type === type)
     .sort((a, b) => b.timestamp - a.timestamp)
@@ -92,11 +107,16 @@ export function getMediaByType(chatId: string, type: MediaEntry["type"], limit =
 export function formatMediaIndex(chatId: string, limit = 10): string {
   const media = getRecentMedia(chatId, limit);
   if (media.length === 0) return "No recent media in this chat.";
-  return media.map((m) => {
-    const time = new Date(m.timestamp).toISOString().slice(0, 16).replace("T", " ");
-    const cap = m.caption ? ` "${m.caption.slice(0, 50)}"` : "";
-    return `[${m.type}] msg:${m.msgId} by ${m.senderName} at ${time}${cap}\n  file: ${m.filePath}`;
-  }).join("\n");
+  return media
+    .map((m) => {
+      const time = new Date(m.timestamp)
+        .toISOString()
+        .slice(0, 16)
+        .replace("T", " ");
+      const cap = m.caption ? ` "${m.caption.slice(0, 50)}"` : "";
+      return `[${m.type}] msg:${m.msgId} by ${m.senderName} at ${time}${cap}\n  file: ${m.filePath}`;
+    })
+    .join("\n");
 }
 
 // ── Expiry ──────────────────────────────────────────────────────────────────
@@ -107,7 +127,11 @@ function purgeExpired(): void {
   entries = entries.filter((e) => {
     if (e.timestamp >= cutoff) return true;
     // Delete the file too
-    try { if (existsSync(e.filePath)) unlinkSync(e.filePath); } catch { /* skip */ }
+    try {
+      if (existsSync(e.filePath)) unlinkSync(e.filePath);
+    } catch {
+      /* skip */
+    }
     return false;
   });
   if (entries.length < before) {

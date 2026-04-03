@@ -27,7 +27,10 @@ describe("log.ts — module-level initialization branches", () => {
   it("creates .talon dir when it does not exist (line 39 TRUE branch)", async () => {
     vi.doMock("../util/paths.js", () => ({
       dirs: { root: "/fake/.talon" },
-      files: { log: "/fake/.talon/talon.log", config: "/fake/.talon/config.json" },
+      files: {
+        log: "/fake/.talon/talon.log",
+        config: "/fake/.talon/config.json",
+      },
     }));
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false), // root dir doesn't exist
@@ -38,19 +41,29 @@ describe("log.ts — module-level initialization branches", () => {
       readFileSync: vi.fn(() => "{}"),
     }));
     vi.doMock("pino", () => ({
-      default: () => ({ info: mockLogFn, error: mockLogFn, warn: mockLogFn, debug: mockLogFn }),
+      default: () => ({
+        info: mockLogFn,
+        error: mockLogFn,
+        warn: mockLogFn,
+        debug: mockLogFn,
+      }),
     }));
 
     await import("../util/log.js");
 
     // mkdirSync should have been called to create the missing root dir
-    expect(mockMkdirSync).toHaveBeenCalledWith("/fake/.talon", { recursive: true });
+    expect(mockMkdirSync).toHaveBeenCalledWith("/fake/.talon", {
+      recursive: true,
+    });
   });
 
   it("rotates log file when it exceeds 10MB (line 46 TRUE branch)", async () => {
     vi.doMock("../util/paths.js", () => ({
       dirs: { root: "/fake/.talon" },
-      files: { log: "/fake/.talon/talon.log", config: "/fake/.talon/config.json" },
+      files: {
+        log: "/fake/.talon/talon.log",
+        config: "/fake/.talon/config.json",
+      },
     }));
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true), // both root dir and log file exist
@@ -61,7 +74,12 @@ describe("log.ts — module-level initialization branches", () => {
       readFileSync: vi.fn(() => "{}"),
     }));
     vi.doMock("pino", () => ({
-      default: () => ({ info: mockLogFn, error: mockLogFn, warn: mockLogFn, debug: mockLogFn }),
+      default: () => ({
+        info: mockLogFn,
+        error: mockLogFn,
+        warn: mockLogFn,
+        debug: mockLogFn,
+      }),
     }));
 
     await import("../util/log.js");
@@ -77,7 +95,10 @@ describe("log.ts — module-level initialization branches", () => {
     process.env.TALON_QUIET = "1";
     vi.doMock("../util/paths.js", () => ({
       dirs: { root: "/fake/.talon" },
-      files: { log: "/fake/.talon/talon.log", config: "/fake/.talon/config.json" },
+      files: {
+        log: "/fake/.talon/talon.log",
+        config: "/fake/.talon/config.json",
+      },
     }));
     const readFileSyncMock = vi.fn(() => "{}");
     vi.doMock("node:fs", () => ({
@@ -89,14 +110,19 @@ describe("log.ts — module-level initialization branches", () => {
       readFileSync: readFileSyncMock,
     }));
     vi.doMock("pino", () => ({
-      default: () => ({ info: mockLogFn, error: mockLogFn, warn: mockLogFn, debug: mockLogFn }),
+      default: () => ({
+        info: mockLogFn,
+        error: mockLogFn,
+        warn: mockLogFn,
+        debug: mockLogFn,
+      }),
     }));
 
     await import("../util/log.js");
 
     // When TALON_QUIET=1, quiet=true before `if (!quiet)` — readFileSync for config never called
-    const configCalls = readFileSyncMock.mock.calls.filter(
-      (c: unknown[]) => String(c[0]).includes("config"),
+    const configCalls = readFileSyncMock.mock.calls.filter((c: unknown[]) =>
+      String(c[0]).includes("config"),
     );
     expect(configCalls).toHaveLength(0);
   });

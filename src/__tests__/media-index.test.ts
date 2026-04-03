@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../util/log.js", () => ({
-  log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
 }));
 
 const existsSyncMock = vi.fn(() => false);
@@ -22,7 +25,14 @@ vi.mock("write-file-atomic", () => ({
   default: { sync: (...args: unknown[]) => writeFileSyncMock(...args) },
 }));
 
-const { addMedia, getRecentMedia, getMediaByType, formatMediaIndex, loadMediaIndex, flushMediaIndex } = await import("../storage/media-index.js");
+const {
+  addMedia,
+  getRecentMedia,
+  getMediaByType,
+  formatMediaIndex,
+  loadMediaIndex,
+  flushMediaIndex,
+} = await import("../storage/media-index.js");
 
 describe("media-index", () => {
   beforeEach(() => {
@@ -35,8 +45,12 @@ describe("media-index", () => {
   it("adds and retrieves media", () => {
     const cid = `add-${Date.now()}`;
     addMedia({
-      chatId: cid, msgId: 1, senderName: "Alice", type: "photo",
-      filePath: "/tmp/photo.jpg", timestamp: Date.now(),
+      chatId: cid,
+      msgId: 1,
+      senderName: "Alice",
+      type: "photo",
+      filePath: "/tmp/photo.jpg",
+      timestamp: Date.now(),
     });
     const media = getRecentMedia(cid);
     expect(media).toHaveLength(1);
@@ -50,9 +64,30 @@ describe("media-index", () => {
 
   it("filters by type", () => {
     const cid = `type-${Date.now()}`;
-    addMedia({ chatId: cid, msgId: 1, senderName: "A", type: "photo", filePath: "/a.jpg", timestamp: Date.now() });
-    addMedia({ chatId: cid, msgId: 2, senderName: "A", type: "document", filePath: "/b.pdf", timestamp: Date.now() });
-    addMedia({ chatId: cid, msgId: 3, senderName: "A", type: "photo", filePath: "/c.jpg", timestamp: Date.now() });
+    addMedia({
+      chatId: cid,
+      msgId: 1,
+      senderName: "A",
+      type: "photo",
+      filePath: "/a.jpg",
+      timestamp: Date.now(),
+    });
+    addMedia({
+      chatId: cid,
+      msgId: 2,
+      senderName: "A",
+      type: "document",
+      filePath: "/b.pdf",
+      timestamp: Date.now(),
+    });
+    addMedia({
+      chatId: cid,
+      msgId: 3,
+      senderName: "A",
+      type: "photo",
+      filePath: "/c.jpg",
+      timestamp: Date.now(),
+    });
 
     expect(getMediaByType(cid, "photo")).toHaveLength(2);
     expect(getMediaByType(cid, "document")).toHaveLength(1);
@@ -60,8 +95,22 @@ describe("media-index", () => {
 
   it("deduplicates by chatId:msgId", () => {
     const chatId = `dedup-${Date.now()}`;
-    addMedia({ chatId, msgId: 1, senderName: "A", type: "photo", filePath: "/a.jpg", timestamp: 1000 });
-    addMedia({ chatId, msgId: 1, senderName: "A", type: "photo", filePath: "/b.jpg", timestamp: 2000 });
+    addMedia({
+      chatId,
+      msgId: 1,
+      senderName: "A",
+      type: "photo",
+      filePath: "/a.jpg",
+      timestamp: 1000,
+    });
+    addMedia({
+      chatId,
+      msgId: 1,
+      senderName: "A",
+      type: "photo",
+      filePath: "/b.jpg",
+      timestamp: 2000,
+    });
 
     const media = getRecentMedia(chatId);
     expect(media).toHaveLength(1);
@@ -69,7 +118,15 @@ describe("media-index", () => {
   });
 
   it("formats index as text", () => {
-    addMedia({ chatId: "456", msgId: 10, senderName: "Bob", type: "photo", filePath: "/photo.jpg", caption: "sunset", timestamp: Date.now() });
+    addMedia({
+      chatId: "456",
+      msgId: 10,
+      senderName: "Bob",
+      type: "photo",
+      filePath: "/photo.jpg",
+      caption: "sunset",
+      timestamp: Date.now(),
+    });
     const text = formatMediaIndex("456");
     expect(text).toContain("photo");
     expect(text).toContain("Bob");
@@ -83,14 +140,35 @@ describe("media-index", () => {
 
   it("limits results", () => {
     for (let i = 0; i < 15; i++) {
-      addMedia({ chatId: "789", msgId: i, senderName: "C", type: "photo", filePath: `/p${i}.jpg`, timestamp: Date.now() + i });
+      addMedia({
+        chatId: "789",
+        msgId: i,
+        senderName: "C",
+        type: "photo",
+        filePath: `/p${i}.jpg`,
+        timestamp: Date.now() + i,
+      });
     }
     expect(getRecentMedia("789", 5)).toHaveLength(5);
   });
 
   it("returns newest first", () => {
-    addMedia({ chatId: "100", msgId: 1, senderName: "A", type: "photo", filePath: "/old.jpg", timestamp: 1000 });
-    addMedia({ chatId: "100", msgId: 2, senderName: "A", type: "photo", filePath: "/new.jpg", timestamp: 2000 });
+    addMedia({
+      chatId: "100",
+      msgId: 1,
+      senderName: "A",
+      type: "photo",
+      filePath: "/old.jpg",
+      timestamp: 1000,
+    });
+    addMedia({
+      chatId: "100",
+      msgId: 2,
+      senderName: "A",
+      type: "photo",
+      filePath: "/new.jpg",
+      timestamp: 2000,
+    });
 
     const media = getRecentMedia("100");
     expect(media[0].filePath).toBe("/new.jpg");
@@ -99,9 +177,24 @@ describe("media-index", () => {
   describe("addMedia with all media types", () => {
     it("supports all media type variants", () => {
       const cid = `types-${Date.now()}`;
-      const types = ["photo", "document", "voice", "video", "animation", "audio", "sticker"] as const;
+      const types = [
+        "photo",
+        "document",
+        "voice",
+        "video",
+        "animation",
+        "audio",
+        "sticker",
+      ] as const;
       types.forEach((type, i) => {
-        addMedia({ chatId: cid, msgId: i + 1, senderName: "User", type, filePath: `/tmp/${type}.bin`, timestamp: Date.now() + i });
+        addMedia({
+          chatId: cid,
+          msgId: i + 1,
+          senderName: "User",
+          type,
+          filePath: `/tmp/${type}.bin`,
+          timestamp: Date.now() + i,
+        });
       });
       const media = getRecentMedia(cid, 20);
       expect(media).toHaveLength(7);
@@ -111,14 +204,29 @@ describe("media-index", () => {
 
     it("supports caption field", () => {
       const cid = `cap-${Date.now()}`;
-      addMedia({ chatId: cid, msgId: 1, senderName: "User", type: "photo", filePath: "/a.jpg", caption: "My caption", timestamp: Date.now() });
+      addMedia({
+        chatId: cid,
+        msgId: 1,
+        senderName: "User",
+        type: "photo",
+        filePath: "/a.jpg",
+        caption: "My caption",
+        timestamp: Date.now(),
+      });
       const media = getRecentMedia(cid);
       expect(media[0].caption).toBe("My caption");
     });
 
     it("generates correct id from chatId:msgId", () => {
       const cid = `id-${Date.now()}`;
-      addMedia({ chatId: cid, msgId: 42, senderName: "User", type: "photo", filePath: "/a.jpg", timestamp: Date.now() });
+      addMedia({
+        chatId: cid,
+        msgId: 42,
+        senderName: "User",
+        type: "photo",
+        filePath: "/a.jpg",
+        timestamp: Date.now(),
+      });
       const media = getRecentMedia(cid);
       expect(media[0].id).toBe(`${cid}:42`);
     });
@@ -127,7 +235,14 @@ describe("media-index", () => {
   describe("formatMediaIndex output format", () => {
     it("includes timestamp in readable format", () => {
       const ts = new Date("2025-03-15T14:30:00Z").getTime();
-      addMedia({ chatId: "fmt-1", msgId: 1, senderName: "Alice", type: "document", filePath: "/doc.pdf", timestamp: ts });
+      addMedia({
+        chatId: "fmt-1",
+        msgId: 1,
+        senderName: "Alice",
+        type: "document",
+        filePath: "/doc.pdf",
+        timestamp: ts,
+      });
       const text = formatMediaIndex("fmt-1");
       expect(text).toContain("2025-03-15 14:30");
       expect(text).toContain("[document]");
@@ -138,7 +253,15 @@ describe("media-index", () => {
 
     it("truncates long captions at 50 characters", () => {
       const longCaption = "A".repeat(100);
-      addMedia({ chatId: "fmt-2", msgId: 1, senderName: "Bob", type: "photo", filePath: "/p.jpg", caption: longCaption, timestamp: Date.now() });
+      addMedia({
+        chatId: "fmt-2",
+        msgId: 1,
+        senderName: "Bob",
+        type: "photo",
+        filePath: "/p.jpg",
+        caption: longCaption,
+        timestamp: Date.now(),
+      });
       const text = formatMediaIndex("fmt-2");
       // Caption should be truncated to 50 chars
       expect(text).toContain(`"${"A".repeat(50)}"`);
@@ -146,7 +269,14 @@ describe("media-index", () => {
     });
 
     it("omits caption when not provided", () => {
-      addMedia({ chatId: "fmt-3", msgId: 1, senderName: "Bob", type: "photo", filePath: "/p.jpg", timestamp: Date.now() });
+      addMedia({
+        chatId: "fmt-3",
+        msgId: 1,
+        senderName: "Bob",
+        type: "photo",
+        filePath: "/p.jpg",
+        timestamp: Date.now(),
+      });
       const text = formatMediaIndex("fmt-3");
       // Should not contain empty quotes
       expect(text).not.toContain('""');
@@ -154,7 +284,14 @@ describe("media-index", () => {
 
     it("respects limit parameter", () => {
       for (let i = 0; i < 20; i++) {
-        addMedia({ chatId: "fmt-4", msgId: i, senderName: "C", type: "photo", filePath: `/p${i}.jpg`, timestamp: Date.now() + i });
+        addMedia({
+          chatId: "fmt-4",
+          msgId: i,
+          senderName: "C",
+          type: "photo",
+          filePath: `/p${i}.jpg`,
+          timestamp: Date.now() + i,
+        });
       }
       const text = formatMediaIndex("fmt-4", 3);
       // Each entry has 2 lines (info + file path), so 3 entries
@@ -166,22 +303,50 @@ describe("media-index", () => {
   describe("getMediaByType", () => {
     it("returns empty array when no entries match type", () => {
       const cid = `type-none-${Date.now()}`;
-      addMedia({ chatId: cid, msgId: 1, senderName: "A", type: "photo", filePath: "/a.jpg", timestamp: Date.now() });
+      addMedia({
+        chatId: cid,
+        msgId: 1,
+        senderName: "A",
+        type: "photo",
+        filePath: "/a.jpg",
+        timestamp: Date.now(),
+      });
       expect(getMediaByType(cid, "voice")).toHaveLength(0);
     });
 
     it("respects limit parameter", () => {
       const cid = `type-limit-${Date.now()}`;
       for (let i = 0; i < 15; i++) {
-        addMedia({ chatId: cid, msgId: i, senderName: "A", type: "photo", filePath: `/p${i}.jpg`, timestamp: Date.now() + i });
+        addMedia({
+          chatId: cid,
+          msgId: i,
+          senderName: "A",
+          type: "photo",
+          filePath: `/p${i}.jpg`,
+          timestamp: Date.now() + i,
+        });
       }
       expect(getMediaByType(cid, "photo", 5)).toHaveLength(5);
     });
 
     it("returns newest first", () => {
       const cid = `type-order-${Date.now()}`;
-      addMedia({ chatId: cid, msgId: 1, senderName: "A", type: "voice", filePath: "/old.ogg", timestamp: 1000 });
-      addMedia({ chatId: cid, msgId: 2, senderName: "A", type: "voice", filePath: "/new.ogg", timestamp: 2000 });
+      addMedia({
+        chatId: cid,
+        msgId: 1,
+        senderName: "A",
+        type: "voice",
+        filePath: "/old.ogg",
+        timestamp: 1000,
+      });
+      addMedia({
+        chatId: cid,
+        msgId: 2,
+        senderName: "A",
+        type: "voice",
+        filePath: "/new.ogg",
+        timestamp: 2000,
+      });
       const result = getMediaByType(cid, "voice");
       expect(result[0].filePath).toBe("/new.ogg");
     });
@@ -190,8 +355,24 @@ describe("media-index", () => {
   describe("loadMediaIndex", () => {
     it("loads entries from existing file", () => {
       const stored = [
-        { id: "load-1:1", chatId: "load-1", msgId: 1, senderName: "Alice", type: "photo", filePath: "/a.jpg", timestamp: Date.now() },
-        { id: "load-1:2", chatId: "load-1", msgId: 2, senderName: "Bob", type: "document", filePath: "/b.pdf", timestamp: Date.now() },
+        {
+          id: "load-1:1",
+          chatId: "load-1",
+          msgId: 1,
+          senderName: "Alice",
+          type: "photo",
+          filePath: "/a.jpg",
+          timestamp: Date.now(),
+        },
+        {
+          id: "load-1:2",
+          chatId: "load-1",
+          msgId: 2,
+          senderName: "Bob",
+          type: "document",
+          filePath: "/b.pdf",
+          timestamp: Date.now(),
+        },
       ];
       existsSyncMock.mockReturnValue(true);
       readFileSyncMock.mockReturnValue(JSON.stringify(stored));
@@ -214,8 +395,24 @@ describe("media-index", () => {
       const oldTimestamp = Date.now() - 8 * 24 * 60 * 60 * 1000; // 8 days ago (expired)
       const recentTimestamp = Date.now() - 1000; // 1 second ago (fresh)
       const stored = [
-        { id: "purge:1", chatId: "purge", msgId: 1, senderName: "A", type: "photo", filePath: "/old.jpg", timestamp: oldTimestamp },
-        { id: "purge:2", chatId: "purge", msgId: 2, senderName: "A", type: "photo", filePath: "/new.jpg", timestamp: recentTimestamp },
+        {
+          id: "purge:1",
+          chatId: "purge",
+          msgId: 1,
+          senderName: "A",
+          type: "photo",
+          filePath: "/old.jpg",
+          timestamp: oldTimestamp,
+        },
+        {
+          id: "purge:2",
+          chatId: "purge",
+          msgId: 2,
+          senderName: "A",
+          type: "photo",
+          filePath: "/new.jpg",
+          timestamp: recentTimestamp,
+        },
       ];
       existsSyncMock.mockReturnValue(true);
       readFileSyncMock.mockReturnValue(JSON.stringify(stored));
@@ -230,7 +427,15 @@ describe("media-index", () => {
     it("deletes expired media files from disk during purge", () => {
       const oldTimestamp = Date.now() - 8 * 24 * 60 * 60 * 1000;
       const stored = [
-        { id: "del:1", chatId: "del", msgId: 1, senderName: "A", type: "photo", filePath: "/expired.jpg", timestamp: oldTimestamp },
+        {
+          id: "del:1",
+          chatId: "del",
+          msgId: 1,
+          senderName: "A",
+          type: "photo",
+          filePath: "/expired.jpg",
+          timestamp: oldTimestamp,
+        },
       ];
       // existsSync: first call for STORE_FILE=true, then for filePath during purge=true
       existsSyncMock.mockReturnValue(true);
@@ -244,7 +449,14 @@ describe("media-index", () => {
 
   describe("flushMediaIndex", () => {
     it("writes entries to disk", () => {
-      addMedia({ chatId: "flush-1", msgId: 1, senderName: "A", type: "photo", filePath: "/a.jpg", timestamp: Date.now() });
+      addMedia({
+        chatId: "flush-1",
+        msgId: 1,
+        senderName: "A",
+        type: "photo",
+        filePath: "/a.jpg",
+        timestamp: Date.now(),
+      });
 
       existsSyncMock.mockReturnValue(true);
       flushMediaIndex();
@@ -257,19 +469,37 @@ describe("media-index", () => {
     });
 
     it("creates workspace directory if it does not exist", () => {
-      addMedia({ chatId: "flush-2", msgId: 1, senderName: "A", type: "photo", filePath: "/a.jpg", timestamp: Date.now() });
+      addMedia({
+        chatId: "flush-2",
+        msgId: 1,
+        senderName: "A",
+        type: "photo",
+        filePath: "/a.jpg",
+        timestamp: Date.now(),
+      });
 
       existsSyncMock.mockReturnValue(false);
       flushMediaIndex();
 
-      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), { recursive: true });
+      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), {
+        recursive: true,
+      });
     });
 
     it("handles write errors gracefully", () => {
-      addMedia({ chatId: "flush-3", msgId: 1, senderName: "A", type: "photo", filePath: "/a.jpg", timestamp: Date.now() });
+      addMedia({
+        chatId: "flush-3",
+        msgId: 1,
+        senderName: "A",
+        type: "photo",
+        filePath: "/a.jpg",
+        timestamp: Date.now(),
+      });
 
       existsSyncMock.mockReturnValue(true);
-      writeFileSyncMock.mockImplementationOnce(() => { throw new Error("disk full"); });
+      writeFileSyncMock.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
 
       expect(() => flushMediaIndex()).not.toThrow();
     });
@@ -295,15 +525,26 @@ describe("media-index — save dirty=false early return (line 46 TRUE branch)", 
     vi.resetModules();
     vi.useFakeTimers();
     const wfaMock = vi.fn();
-    vi.doMock("../util/log.js", () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn() }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
+    }));
     vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false), mkdirSync: vi.fn(), readFileSync: vi.fn(() => "[]"), unlinkSync: vi.fn(),
+      existsSync: vi.fn(() => false),
+      mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => "[]"),
+      unlinkSync: vi.fn(),
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: wfaMock } }));
     vi.doMock("../util/paths.js", () => ({
-      files: { media: "/fake/media.json" }, dirs: {},
+      files: { media: "/fake/media.json" },
+      dirs: {},
     }));
-    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+    vi.doMock("../util/cleanup-registry.js", () => ({
+      registerCleanup: vi.fn(),
+    }));
     vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
 
     // Fresh import: dirty=false (nothing modified yet)

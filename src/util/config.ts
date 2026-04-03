@@ -1,11 +1,16 @@
-import { existsSync, readFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
 import { setTimezone, formatFullDatetime } from "./time.js";
 import { log } from "./log.js";
-
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
@@ -77,7 +82,9 @@ function loadConfigFile(): Record<string, unknown> {
     if (existsSync(CONFIG_FILE)) {
       return JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
     }
-  } catch { /* corrupt — will be recreated */ }
+  } catch {
+    /* corrupt — will be recreated */
+  }
   return {};
 }
 
@@ -89,7 +96,10 @@ function ensureConfigFile(): boolean {
   if (!existsSync(dirs.root)) mkdirSync(dirs.root, { recursive: true });
   if (!existsSync(dirs.data)) mkdirSync(dirs.data, { recursive: true });
   if (!existsSync(CONFIG_FILE)) {
-    writeFileAtomic.sync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n");
+    writeFileAtomic.sync(
+      CONFIG_FILE,
+      JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n",
+    );
     return true;
   }
   return false;
@@ -100,13 +110,18 @@ function ensureConfigFile(): boolean {
 function readOptionalFile(path: string): string {
   try {
     if (existsSync(path)) return readFileSync(path, "utf-8").trim();
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return "";
 }
 
 let lastLoggedPromptKey = "";
 
-function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): string {
+function loadSystemPrompt(
+  frontend?: string,
+  pluginPromptAdditions?: string[],
+): string {
   const promptDir = dirs.prompts;
   const parts: string[] = [];
 
@@ -124,14 +139,21 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
   // Load base prompt (shared across all frontends)
   const custom = readOptionalFile(resolve(promptDir, "custom.md"));
   const basePrompt = readOptionalFile(resolve(promptDir, "base.md"));
-  if (custom) { parts.push(custom); loaded.push("custom"); }
-  else if (basePrompt) { parts.push(basePrompt); loaded.push("base"); }
-  else parts.push("You are a sharp and helpful AI assistant.");
+  if (custom) {
+    parts.push(custom);
+    loaded.push("custom");
+  } else if (basePrompt) {
+    parts.push(basePrompt);
+    loaded.push("base");
+  } else parts.push("You are a sharp and helpful AI assistant.");
 
   // Load frontend-specific prompt
   const frontendFile = `${frontend ?? "telegram"}.md`;
   const frontendPrompt = readOptionalFile(resolve(promptDir, frontendFile));
-  if (frontendPrompt) { parts.push(frontendPrompt); loaded.push(frontendFile.replace(".md", "")); }
+  if (frontendPrompt) {
+    parts.push(frontendPrompt);
+    loaded.push(frontendFile.replace(".md", ""));
+  }
 
   const memory = readOptionalFile(pathFiles.memory);
   if (memory) {
@@ -155,23 +177,38 @@ function loadSystemPrompt(frontend?: string, pluginPromptAdditions?: string[]): 
       const entries: string[] = [];
       try {
         for (const e of readdirSync(dir, { withFileTypes: true })) {
-          if (e.name.startsWith(".") || e.name === "node_modules" || e.name === "talon.log") continue;
+          if (
+            e.name.startsWith(".") ||
+            e.name === "node_modules" ||
+            e.name === "talon.log"
+          )
+            continue;
           const full = resolve(dir, e.name);
           if (e.isDirectory()) {
             const sub = listDir(full, `${prefix}${e.name}/`);
             if (sub.length > 0 && sub.length <= 8) entries.push(...sub);
-            else if (sub.length > 8) entries.push(`${prefix}${e.name}/ (${sub.length} files)`);
+            else if (sub.length > 8)
+              entries.push(`${prefix}${e.name}/ (${sub.length} files)`);
           } else {
             const sz = statSync(full).size;
-            entries.push(`${prefix}${e.name} (${sz < 1024 ? sz + "B" : (sz / 1024).toFixed(0) + "KB"})`);
+            entries.push(
+              `${prefix}${e.name} (${sz < 1024 ? sz + "B" : (sz / 1024).toFixed(0) + "KB"})`,
+            );
           }
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
       return entries;
     };
     const files = listDir(workspaceDir);
-    if (files.length > 0) workspaceFiles = "\n\nCurrent workspace contents:\n" + files.map((f) => `  ${f}`).join("\n");
-  } catch { /* no workspace yet */ }
+    if (files.length > 0)
+      workspaceFiles =
+        "\n\nCurrent workspace contents:\n" +
+        files.map((f) => `  ${f}`).join("\n");
+  } catch {
+    /* no workspace yet */
+  }
 
   parts.push(`## Workspace
 
@@ -215,13 +252,19 @@ export function loadConfig(): TalonConfig {
   setTimezone(parsed.timezone);
 
   // Validate per-frontend requirements
-  const frontends = Array.isArray(parsed.frontend) ? parsed.frontend : [parsed.frontend];
+  const frontends = Array.isArray(parsed.frontend)
+    ? parsed.frontend
+    : [parsed.frontend];
   for (const fe of frontends) {
     if (fe === "telegram" && !parsed.botToken) {
-      throw new Error(`Telegram frontend requires "botToken" in ${CONFIG_FILE}. Run "talon setup" to configure.`);
+      throw new Error(
+        `Telegram frontend requires "botToken" in ${CONFIG_FILE}. Run "talon setup" to configure.`,
+      );
     }
     if (fe === "teams" && !parsed.teamsWebhookUrl) {
-      throw new Error(`Teams frontend requires "teamsWebhookUrl" in ${CONFIG_FILE}. Run "talon setup" to configure.`);
+      throw new Error(
+        `Teams frontend requires "teamsWebhookUrl" in ${CONFIG_FILE}. Run "talon setup" to configure.`,
+      );
     }
   }
 
@@ -238,7 +281,15 @@ export function loadConfig(): TalonConfig {
  * Rebuild the system prompt with plugin additions.
  * Called after plugins are loaded to inject their prompt contributions.
  */
-export function rebuildSystemPrompt(config: TalonConfig, pluginAdditions: string[]): void {
-  const frontends = Array.isArray(config.frontend) ? config.frontend : [config.frontend];
-  config.systemPrompt = loadSystemPrompt(frontends[0], pluginAdditions.length > 0 ? pluginAdditions : undefined);
+export function rebuildSystemPrompt(
+  config: TalonConfig,
+  pluginAdditions: string[],
+): void {
+  const frontends = Array.isArray(config.frontend)
+    ? config.frontend
+    : [config.frontend];
+  config.systemPrompt = loadSystemPrompt(
+    frontends[0],
+    pluginAdditions.length > 0 ? pluginAdditions : undefined,
+  );
 }

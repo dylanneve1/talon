@@ -24,7 +24,7 @@ beforeEach(() => {
   mkdirSync(TEST_ROOT, { recursive: true });
 
   vi.doMock("node:os", async (importOriginal) => {
-    const actual = await importOriginal() as Record<string, unknown>;
+    const actual = (await importOriginal()) as Record<string, unknown>;
     return { ...actual, homedir: () => TEST_ROOT };
   });
   vi.doMock("../util/log.js", () => ({
@@ -60,7 +60,7 @@ describe("migrateLayout", () => {
   it("migrates files from workspace/ to .talon/ layout", async () => {
     mkdirSync(OLD_WORKSPACE, { recursive: true });
     writeFileSync(join(OLD_WORKSPACE, "sessions.json"), '{"chat1":{}}');
-    writeFileSync(join(OLD_WORKSPACE, "history.json"), '{}');
+    writeFileSync(join(OLD_WORKSPACE, "history.json"), "{}");
     writeFileSync(join(OLD_WORKSPACE, "talon.json"), '{"frontend":"telegram"}');
 
     const originalCwd = process.cwd;
@@ -136,7 +136,10 @@ describe("migrateLayout", () => {
       return {
         ...actual,
         renameSync: vi.fn(() => {
-          throw Object.assign(new Error("EXDEV: cross-device link not permitted"), { code: "EXDEV" });
+          throw Object.assign(
+            new Error("EXDEV: cross-device link not permitted"),
+            { code: "EXDEV" },
+          );
         }),
       };
     });
@@ -148,7 +151,9 @@ describe("migrateLayout", () => {
       // File was copied via copyFileSync fallback (line 57)
       expect(existsSync(join(NEW_ROOT, "data", "sessions.json"))).toBe(true);
       // Directory was copied via cpSync fallback (line 81)
-      expect(existsSync(join(NEW_ROOT, "workspace", "memory", "notes.md"))).toBe(true);
+      expect(
+        existsSync(join(NEW_ROOT, "workspace", "memory", "notes.md")),
+      ).toBe(true);
     } finally {
       process.cwd = originalCwd;
     }
@@ -168,7 +173,9 @@ describe("migrateLayout", () => {
 
       // workspace/ should still exist since it's not empty
       expect(existsSync(OLD_WORKSPACE)).toBe(true);
-      expect(existsSync(join(OLD_WORKSPACE, "unknown-extra-file.txt"))).toBe(true);
+      expect(existsSync(join(OLD_WORKSPACE, "unknown-extra-file.txt"))).toBe(
+        true,
+      );
     } finally {
       process.cwd = originalCwd;
     }
@@ -227,7 +234,10 @@ describe("initWorkspace — identity and prompt seeding", () => {
 
     const talonPromptsDir = join(NEW_ROOT, "prompts");
     mkdirSync(talonPromptsDir, { recursive: true });
-    writeFileSync(join(talonPromptsDir, "custom.md"), "# User customized version");
+    writeFileSync(
+      join(talonPromptsDir, "custom.md"),
+      "# User customized version",
+    );
 
     const originalCwd = process.cwd;
     process.cwd = () => TEST_ROOT;

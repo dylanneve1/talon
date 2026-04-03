@@ -18,8 +18,12 @@ function createMockDeps() {
   };
 
   const context: ContextManager = {
-    acquire: vi.fn((chatId: number) => { acquired.push(chatId); }),
-    release: vi.fn((chatId: number) => { released.push(chatId); }),
+    acquire: vi.fn((chatId: number) => {
+      acquired.push(chatId);
+    }),
+    release: vi.fn((chatId: number) => {
+      released.push(chatId);
+    }),
     getMessageCount: vi.fn(() => 0),
   };
 
@@ -168,13 +172,36 @@ describe("dispatcher", () => {
     const deps = createMockDeps();
     let resolveQuery!: () => void;
     (deps.backend.query as ReturnType<typeof vi.fn>).mockImplementation(
-      () => new Promise<{ text: string; durationMs: number; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number }>((r) => {
-        resolveQuery = () => r({ text: "", durationMs: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
-      }),
+      () =>
+        new Promise<{
+          text: string;
+          durationMs: number;
+          inputTokens: number;
+          outputTokens: number;
+          cacheRead: number;
+          cacheWrite: number;
+        }>((r) => {
+          resolveQuery = () =>
+            r({
+              text: "",
+              durationMs: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+            });
+        }),
     );
     initDispatcher(deps);
 
-    const p = execute({ chatId: "555", numericChatId: 555, prompt: "hi", senderName: "U", isGroup: false, source: "message" });
+    const p = execute({
+      chatId: "555",
+      numericChatId: 555,
+      prompt: "hi",
+      senderName: "U",
+      isGroup: false,
+      source: "message",
+    });
     // Give it a tick to start
     await new Promise((r) => setTimeout(r, 10));
     expect(getActiveCount()).toBe(1);
@@ -191,21 +218,46 @@ describe("dispatcher", () => {
         order.push(`start:${params.chatId}`);
         await new Promise((r) => setTimeout(r, 50));
         order.push(`end:${params.chatId}`);
-        return { text: "", durationMs: 50, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 };
+        return {
+          text: "",
+          durationMs: 50,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
       }),
     };
 
     initDispatcher({
       backend,
-      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      context: {
+        acquire: () => {},
+        release: () => {},
+        getMessageCount: () => 0,
+      },
       sendTyping: async () => {},
       onActivity: () => {},
     });
 
     // Fire two queries for DIFFERENT chats — they should overlap
     await Promise.all([
-      execute({ chatId: "A", numericChatId: 1, prompt: "a", senderName: "U", isGroup: false, source: "message" }),
-      execute({ chatId: "B", numericChatId: 2, prompt: "b", senderName: "U", isGroup: false, source: "message" }),
+      execute({
+        chatId: "A",
+        numericChatId: 1,
+        prompt: "a",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
+      execute({
+        chatId: "B",
+        numericChatId: 2,
+        prompt: "b",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
     ]);
 
     // Both should START before either ENDS (true parallel)
@@ -219,19 +271,44 @@ describe("dispatcher", () => {
       query: vi.fn(async () => {
         callCount++;
         if (callCount === 1) throw new Error("first fails");
-        return { text: "second ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 };
+        return {
+          text: "second ok",
+          durationMs: 10,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
       }),
     };
 
     initDispatcher({
       backend,
-      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      context: {
+        acquire: () => {},
+        release: () => {},
+        getMessageCount: () => 0,
+      },
       sendTyping: async () => {},
       onActivity: () => {},
     });
 
-    const p1 = execute({ chatId: "ERR", numericChatId: 1, prompt: "fail", senderName: "U", isGroup: false, source: "message" });
-    const p2 = execute({ chatId: "ERR", numericChatId: 1, prompt: "succeed", senderName: "U", isGroup: false, source: "message" });
+    const p1 = execute({
+      chatId: "ERR",
+      numericChatId: 1,
+      prompt: "fail",
+      senderName: "U",
+      isGroup: false,
+      source: "message",
+    });
+    const p2 = execute({
+      chatId: "ERR",
+      numericChatId: 1,
+      prompt: "succeed",
+      senderName: "U",
+      isGroup: false,
+      source: "message",
+    });
 
     await expect(p1).rejects.toThrow("first fails");
     const result = await p2;
@@ -240,18 +317,31 @@ describe("dispatcher", () => {
 
   it("activeCount is accurate during errors", async () => {
     const backend: QueryBackend = {
-      query: vi.fn(async () => { throw new Error("boom"); }),
+      query: vi.fn(async () => {
+        throw new Error("boom");
+      }),
     };
 
     initDispatcher({
       backend,
-      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      context: {
+        acquire: () => {},
+        release: () => {},
+        getMessageCount: () => 0,
+      },
       sendTyping: async () => {},
       onActivity: () => {},
     });
 
     await expect(
-      execute({ chatId: "X", numericChatId: 1, prompt: "x", senderName: "U", isGroup: false, source: "message" }),
+      execute({
+        chatId: "X",
+        numericChatId: 1,
+        prompt: "x",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
     ).rejects.toThrow("boom");
 
     expect(getActiveCount()).toBe(0); // cleaned up even on error
@@ -271,7 +361,11 @@ describe("dispatcher", () => {
 
     initDispatcher({
       backend,
-      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      context: {
+        acquire: () => {},
+        release: () => {},
+        getMessageCount: () => 0,
+      },
       sendTyping: async () => {},
       onActivity: () => {},
     });
@@ -360,25 +454,55 @@ describe("dispatcher", () => {
         order.push(`start:${params.text}`);
         await new Promise((r) => setTimeout(r, 30));
         order.push(`end:${params.text}`);
-        return { text: "", durationMs: 30, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 };
+        return {
+          text: "",
+          durationMs: 30,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
       }),
     };
 
     initDispatcher({
       backend,
-      context: { acquire: () => {}, release: () => {}, getMessageCount: () => 0 },
+      context: {
+        acquire: () => {},
+        release: () => {},
+        getMessageCount: () => 0,
+      },
       sendTyping: async () => {},
       onActivity: () => {},
     });
 
     // Fire two queries for the SAME chat — second must wait
     await Promise.all([
-      execute({ chatId: "X", numericChatId: 1, prompt: "first", senderName: "U", isGroup: false, source: "message" }),
-      execute({ chatId: "X", numericChatId: 1, prompt: "second", senderName: "U", isGroup: false, source: "message" }),
+      execute({
+        chatId: "X",
+        numericChatId: 1,
+        prompt: "first",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
+      execute({
+        chatId: "X",
+        numericChatId: 1,
+        prompt: "second",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
     ]);
 
     // Same chat: first completes before second starts
-    expect(order).toEqual(["start:first", "end:first", "start:second", "end:second"]);
+    expect(order).toEqual([
+      "start:first",
+      "end:first",
+      "start:second",
+      "end:second",
+    ]);
   });
 });
 
@@ -387,19 +511,36 @@ describe("typing indicator — interval error handling", () => {
     vi.useFakeTimers();
     vi.resetModules();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logDebug: vi.fn(), logWarn: vi.fn(), logError: vi.fn(),
+      log: vi.fn(),
+      logDebug: vi.fn(),
+      logWarn: vi.fn(),
+      logError: vi.fn(),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const { logWarn } = await import("../util/log.js") as unknown as { logWarn: ReturnType<typeof vi.fn> };
+    const { logWarn } = (await import("../util/log.js")) as unknown as {
+      logWarn: ReturnType<typeof vi.fn>;
+    };
 
     let typingCallCount = 0;
-    let resolveQuery!: (v: { text: string; durationMs: number; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number }) => void;
+    let resolveQuery!: (v: {
+      text: string;
+      durationMs: number;
+      inputTokens: number;
+      outputTokens: number;
+      cacheRead: number;
+      cacheWrite: number;
+    }) => void;
 
     initDispatcher({
       backend: {
-        query: vi.fn(() => new Promise((r) => { resolveQuery = r; })) as never,
+        query: vi.fn(
+          () =>
+            new Promise((r) => {
+              resolveQuery = r;
+            }),
+        ) as never,
       },
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {
@@ -421,7 +562,14 @@ describe("typing indicator — interval error handling", () => {
     // Let the initial sendTyping call run, then trigger the 4000ms interval
     await vi.advanceTimersByTimeAsync(4100);
 
-    resolveQuery({ text: "ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
+    resolveQuery({
+      text: "ok",
+      durationMs: 10,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
     await p;
 
     expect(logWarn).toHaveBeenCalledWith(
@@ -446,16 +594,27 @@ describe("typing indicator — error handling", () => {
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<typeof vi.fn>;
+    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
+      typeof vi.fn
+    >;
 
     const backend = {
-      query: vi.fn(async () => ({ text: "ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 })),
+      query: vi.fn(async () => ({
+        text: "ok",
+        durationMs: 10,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      })),
     };
 
     initDispatcher({
       backend,
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
-      sendTyping: vi.fn(async () => { throw new Error("typing API error"); }),
+      sendTyping: vi.fn(async () => {
+        throw new Error("typing API error");
+      }),
       onActivity: vi.fn(),
     });
 
@@ -479,20 +638,34 @@ describe("typing indicator — non-Error throws", () => {
   it("logs warning with String(err) when sendTyping throws a non-Error (initial call)", async () => {
     vi.resetModules();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logDebug: vi.fn(), logWarn: vi.fn(), logError: vi.fn(),
+      log: vi.fn(),
+      logDebug: vi.fn(),
+      logWarn: vi.fn(),
+      logError: vi.fn(),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<typeof vi.fn>;
+    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
+      typeof vi.fn
+    >;
 
     initDispatcher({
       backend: {
-        query: vi.fn(async () => ({ text: "ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 })),
+        query: vi.fn(async () => ({
+          text: "ok",
+          durationMs: 10,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        })),
       },
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // Throw a plain string (non-Error) to hit the `String(err)` branch at line 99
-      sendTyping: vi.fn(async () => { throw "plain string typing error"; }), // eslint-disable-line @typescript-eslint/no-throw-literal
+      sendTyping: vi.fn(async () => {
+        throw "plain string typing error";
+      }), // eslint-disable-line @typescript-eslint/no-throw-literal
       onActivity: vi.fn(),
     });
 
@@ -515,18 +688,37 @@ describe("typing indicator — non-Error throws", () => {
     vi.useFakeTimers();
     vi.resetModules();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logDebug: vi.fn(), logWarn: vi.fn(), logError: vi.fn(),
+      log: vi.fn(),
+      logDebug: vi.fn(),
+      logWarn: vi.fn(),
+      logError: vi.fn(),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<typeof vi.fn>;
+    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
+      typeof vi.fn
+    >;
 
     let callCount = 0;
-    let resolveQuery!: (v: { text: string; durationMs: number; inputTokens: number; outputTokens: number; cacheRead: number; cacheWrite: number }) => void;
+    let resolveQuery!: (v: {
+      text: string;
+      durationMs: number;
+      inputTokens: number;
+      outputTokens: number;
+      cacheRead: number;
+      cacheWrite: number;
+    }) => void;
 
     initDispatcher({
-      backend: { query: vi.fn(() => new Promise((r) => { resolveQuery = r; })) as never },
+      backend: {
+        query: vi.fn(
+          () =>
+            new Promise((r) => {
+              resolveQuery = r;
+            }),
+        ) as never,
+      },
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // First call OK, subsequent calls throw a non-Error string (covers line 103 String(err) branch)
       sendTyping: vi.fn(async () => {
@@ -546,7 +738,14 @@ describe("typing indicator — non-Error throws", () => {
     });
 
     await vi.advanceTimersByTimeAsync(4100);
-    resolveQuery({ text: "ok", durationMs: 10, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 });
+    resolveQuery({
+      text: "ok",
+      durationMs: 10,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    });
     await p;
 
     expect(logWarn).toHaveBeenCalledWith(
@@ -562,14 +761,24 @@ describe("dispatcher — uninitialized guard", () => {
   it("throws when execute is called before initDispatcher", async () => {
     vi.resetModules();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logDebug: vi.fn(), logWarn: vi.fn(), logError: vi.fn(),
+      log: vi.fn(),
+      logDebug: vi.fn(),
+      logWarn: vi.fn(),
+      logError: vi.fn(),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { execute } = await import("../core/dispatcher.js");
     // deps is null because initDispatcher was never called in this fresh module
     await expect(
-      execute({ chatId: "x", numericChatId: 1, prompt: "hi", senderName: "U", isGroup: false, source: "message" }),
+      execute({
+        chatId: "x",
+        numericChatId: 1,
+        prompt: "hi",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
     ).rejects.toThrow("Dispatcher not initialized");
   });
 });

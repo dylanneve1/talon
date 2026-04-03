@@ -63,15 +63,26 @@ export function loadHistory(): void {
     const bakFile = STORE_FILE + ".bak";
     try {
       if (existsSync(bakFile)) {
-        const raw = JSON.parse(readFileSync(bakFile, "utf-8")) as Record<string, HistoryMessage[]>;
+        const raw = JSON.parse(readFileSync(bakFile, "utf-8")) as Record<
+          string,
+          HistoryMessage[]
+        >;
         for (const [chatId, messages] of Object.entries(raw)) {
           chatHistories.set(chatId, messages.slice(-MAX_HISTORY_PER_CHAT));
         }
-        logError("sessions", "Loaded history from backup (primary was corrupt)");
+        logError(
+          "sessions",
+          "Loaded history from backup (primary was corrupt)",
+        );
         return;
       }
-    } catch { /* backup also corrupt */ }
-    logError("sessions", "History data corrupt and no valid backup — starting fresh");
+    } catch {
+      /* backup also corrupt */
+    }
+    logError(
+      "sessions",
+      "History data corrupt and no valid backup — starting fresh",
+    );
   }
 }
 
@@ -87,13 +98,19 @@ function saveHistory(): void {
     const data = JSON.stringify(obj) + "\n";
     // Write backup of current file before overwriting
     if (existsSync(STORE_FILE)) {
-      try { writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE)); } catch { /* best effort */ }
+      try {
+        writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE));
+      } catch {
+        /* best effort */
+      }
     }
     writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch (err) {
     logError("history", "Failed to persist history", err);
-    recordError(`History save failed: ${err instanceof Error ? err.message : err}`);
+    recordError(
+      `History save failed: ${err instanceof Error ? err.message : err}`,
+    );
   }
 }
 
@@ -139,11 +156,18 @@ export function getRecentHistory(chatId: string, limit = 50): HistoryMessage[] {
 }
 
 /** Update a message's file path after media download. */
-export function setMessageFilePath(chatId: string, msgId: number, filePath: string): void {
+export function setMessageFilePath(
+  chatId: string,
+  msgId: number,
+  filePath: string,
+): void {
   const history = chatHistories.get(chatId);
   if (!history) return;
   const msg = history.find((m) => m.msgId === msgId);
-  if (msg) { msg.filePath = filePath; dirty = true; }
+  if (msg) {
+    msg.filePath = filePath;
+    dirty = true;
+  }
 }
 
 export function clearHistory(chatId: string): void {
@@ -237,7 +261,6 @@ export function getKnownUsers(chatId: string): string {
     });
   return lines.join("\n");
 }
-
 
 export function getRecentBySenderId(
   chatId: string,

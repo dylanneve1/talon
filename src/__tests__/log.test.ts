@@ -29,14 +29,29 @@ describe("log", () => {
     it("calls pino.info with component and message", () => {
       log("bot", "started successfully");
       expect(mockInfo).toHaveBeenCalledOnce();
-      expect(mockInfo).toHaveBeenCalledWith({ component: "bot" }, "started successfully");
+      expect(mockInfo).toHaveBeenCalledWith(
+        { component: "bot" },
+        "started successfully",
+      );
     });
 
     it("works with all valid component types", () => {
       const components = [
-        "bot", "bridge", "agent", "pulse", "userbot", "users",
-        "watchdog", "workspace", "shutdown", "file", "sessions",
-        "settings", "commands", "cron", "dispatcher",
+        "bot",
+        "bridge",
+        "agent",
+        "pulse",
+        "userbot",
+        "users",
+        "watchdog",
+        "workspace",
+        "shutdown",
+        "file",
+        "sessions",
+        "settings",
+        "commands",
+        "cron",
+        "dispatcher",
       ] as const;
       for (const component of components) {
         mockInfo.mockClear();
@@ -50,7 +65,10 @@ describe("log", () => {
     it("calls pino.error with component and message", () => {
       logError("bot", "failed to start");
       expect(mockError).toHaveBeenCalledOnce();
-      expect(mockError).toHaveBeenCalledWith({ component: "bot" }, "failed to start");
+      expect(mockError).toHaveBeenCalledWith(
+        { component: "bot" },
+        "failed to start",
+      );
     });
 
     it("includes Error message in context", () => {

@@ -121,7 +121,11 @@ describe("classify — nested cause errors", () => {
 
   it("TalonError passed through classify preserves its existing cause", () => {
     const inner = new Error("original cause");
-    const talon = new TalonError("wrapped", { reason: "network", retryable: true, cause: inner });
+    const talon = new TalonError("wrapped", {
+      reason: "network",
+      retryable: true,
+      cause: inner,
+    });
     const result = classify(talon);
     expect(result).toBe(talon); // exact same reference
     expect(result.cause).toBe(inner);
@@ -317,9 +321,16 @@ describe("TalonError — construction and properties", () => {
 
   it("reason is stored correctly for every known reason", () => {
     const reasons = [
-      "rate_limit", "overloaded", "network", "auth",
-      "context_length", "session_expired", "bad_request",
-      "forbidden", "telegram_api", "unknown",
+      "rate_limit",
+      "overloaded",
+      "network",
+      "auth",
+      "context_length",
+      "session_expired",
+      "bad_request",
+      "forbidden",
+      "telegram_api",
+      "unknown",
     ] as const;
     for (const reason of reasons) {
       const err = new TalonError("msg", { reason });
@@ -348,7 +359,10 @@ describe("TalonError — construction and properties", () => {
   });
 
   it("retryAfterMs is preserved", () => {
-    const err = new TalonError("x", { reason: "rate_limit", retryAfterMs: 30_000 });
+    const err = new TalonError("x", {
+      reason: "rate_limit",
+      retryAfterMs: 30_000,
+    });
     expect(err.retryAfterMs).toBe(30_000);
   });
 
@@ -364,8 +378,15 @@ describe("TalonError — construction and properties", () => {
   });
 
   it("preserves a cause TalonError (nested chain)", () => {
-    const inner = new TalonError("inner", { reason: "network", retryable: true });
-    const outer = new TalonError("outer", { reason: "overloaded", retryable: true, cause: inner });
+    const inner = new TalonError("inner", {
+      reason: "network",
+      retryable: true,
+    });
+    const outer = new TalonError("outer", {
+      reason: "overloaded",
+      retryable: true,
+      cause: inner,
+    });
     expect(outer.cause).toBe(inner);
     expect((outer.cause as TalonError).reason).toBe("network");
   });

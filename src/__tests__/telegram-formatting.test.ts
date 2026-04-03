@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { markdownToTelegramHtml, splitMessage, escapeHtml } from "../frontend/telegram/formatting.js";
+import {
+  markdownToTelegramHtml,
+  splitMessage,
+  escapeHtml,
+} from "../frontend/telegram/formatting.js";
 
 describe("markdownToTelegramHtml", () => {
   it("converts bold markdown to HTML", () => {

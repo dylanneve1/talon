@@ -20,7 +20,11 @@ vi.mock("../core/dispatcher.js", () => ({
 }));
 
 vi.mock("../core/errors.js", () => ({
-  classify: vi.fn(() => ({ reason: "unknown", message: "error", retryable: false })),
+  classify: vi.fn(() => ({
+    reason: "unknown",
+    message: "error",
+    retryable: false,
+  })),
   friendlyMessage: vi.fn(() => "Something went wrong"),
   TalonError: class TalonError extends Error {},
 }));
@@ -45,11 +49,21 @@ vi.mock("../storage/media-index.js", () => ({
 }));
 
 vi.mock("../storage/sessions.js", () => ({
-  getSession: vi.fn(() => ({ turns: 0, lastActive: Date.now(), createdAt: Date.now() })),
+  getSession: vi.fn(() => ({
+    turns: 0,
+    lastActive: Date.now(),
+    createdAt: Date.now(),
+  })),
   incrementTurns: vi.fn(),
   recordUsage: vi.fn(),
   resetSession: vi.fn(),
-  getSessionInfo: vi.fn(() => ({ sessionId: undefined, turns: 0, lastActive: 0, createdAt: 0, usage: {} })),
+  getSessionInfo: vi.fn(() => ({
+    sessionId: undefined,
+    turns: 0,
+    lastActive: 0,
+    createdAt: 0,
+    usage: {},
+  })),
   setSessionId: vi.fn(),
   setLastBotMessageId: vi.fn(),
   getLastBotMessageId: vi.fn(),
@@ -63,7 +77,12 @@ vi.mock("../storage/sessions.js", () => ({
 vi.mock("../util/watchdog.js", () => ({
   recordMessageProcessed: vi.fn(),
   recordError: vi.fn(),
-  getHealthStatus: vi.fn(() => ({ healthy: true, totalMessagesProcessed: 0, recentErrorCount: 0, msSinceLastMessage: 0 })),
+  getHealthStatus: vi.fn(() => ({
+    healthy: true,
+    totalMessagesProcessed: 0,
+    recentErrorCount: 0,
+    msSinceLastMessage: 0,
+  })),
 }));
 
 vi.mock("node:fs", () => ({
@@ -83,7 +102,10 @@ vi.mock("../storage/cron-store.js", () => ({
   getCronJobsForChat: vi.fn(() => []),
   updateCronJob: vi.fn(),
   deleteCronJob: vi.fn(),
-  validateCronExpression: vi.fn(() => ({ valid: true, next: new Date().toISOString() })),
+  validateCronExpression: vi.fn(() => ({
+    valid: true,
+    next: new Date().toISOString(),
+  })),
   generateCronId: vi.fn(() => "test-id"),
   loadCronJobs: vi.fn(),
 }));
@@ -99,7 +121,11 @@ const mockConfig = {
 };
 
 describe("createStreamCallbacks — onStreamDelta streaming disabled path", () => {
-  let handleTextMessage: (ctx: unknown, bot: unknown, config: unknown) => Promise<void>;
+  let handleTextMessage: (
+    ctx: unknown,
+    bot: unknown,
+    config: unknown,
+  ) => Promise<void>;
   let executeMock: ReturnType<typeof vi.fn>;
   let sendMessageDraftMock: ReturnType<typeof vi.fn>;
   let logWarnMock: ReturnType<typeof vi.fn>;
@@ -108,7 +134,11 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
     vi.resetModules();
     // Fresh import gives us draftsSupported === null
     const handlers = await import("../frontend/telegram/handlers.js");
-    handleTextMessage = handlers.handleTextMessage as unknown as (ctx: unknown, bot: unknown, config: unknown) => Promise<void>;
+    handleTextMessage = handlers.handleTextMessage as unknown as (
+      ctx: unknown,
+      bot: unknown,
+      config: unknown,
+    ) => Promise<void>;
 
     const dispatcher = await import("../core/dispatcher.js");
     executeMock = dispatcher.execute as ReturnType<typeof vi.fn>;
@@ -118,7 +148,9 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
   });
 
   it("disables streaming and logs warning when sendMessageDraft throws (draftsSupported=null)", async () => {
-    sendMessageDraftMock = vi.fn(async () => { throw new Error("method not found"); });
+    sendMessageDraftMock = vi.fn(async () => {
+      throw new Error("method not found");
+    });
 
     const mockBot = {
       api: {
@@ -128,21 +160,35 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
       },
     };
 
-    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
-      const onStreamDelta = params.onStreamDelta as (acc: string, phase?: string) => Promise<void>;
-      // Wait for the 1000ms stream.started timer to fire
-      await new Promise((r) => setTimeout(r, 1100));
-      // With draftsSupported === null and state.started = true, onStreamDelta runs
-      if (onStreamDelta) await onStreamDelta("x".repeat(50), "text");
-      return {
-        text: "", durationMs: 10, inputTokens: 1, outputTokens: 1,
-        cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
-      };
-    });
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onStreamDelta = params.onStreamDelta as (
+          acc: string,
+          phase?: string,
+        ) => Promise<void>;
+        // Wait for the 1000ms stream.started timer to fire
+        await new Promise((r) => setTimeout(r, 1100));
+        // With draftsSupported === null and state.started = true, onStreamDelta runs
+        if (onStreamDelta) await onStreamDelta("x".repeat(50), "text");
+        return {
+          text: "",
+          durationMs: 10,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 0,
+        };
+      },
+    );
 
     const ctx = {
       chat: { id: 99001, type: "private" },
-      message: { text: "streaming disabled test", message_id: 980, reply_to_message: null },
+      message: {
+        text: "streaming disabled test",
+        message_id: 980,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 96, first_name: "TestUser" },
     };
@@ -154,6 +200,9 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
     // sendMessageDraft was called, then threw → draftsSupported set to false
     expect(sendMessageDraftMock).toHaveBeenCalled();
     // logWarn should be called with the "streaming disabled" message
-    expect(logWarnMock).toHaveBeenCalledWith("bot", expect.stringContaining("streaming disabled"));
+    expect(logWarnMock).toHaveBeenCalledWith(
+      "bot",
+      expect.stringContaining("streaming disabled"),
+    );
   }, 5000);
 });

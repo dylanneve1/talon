@@ -30,7 +30,11 @@ import { files as pathFiles } from "./util/paths.js";
 const { config } = await bootstrap();
 
 // Write PID file for daemon management
-try { writeFileSync(pathFiles.pid, String(process.pid)); } catch { /* ok */ }
+try {
+  writeFileSync(pathFiles.pid, String(process.pid));
+} catch {
+  /* ok */
+}
 
 // ── Create gateway + frontend ─────────────────────────────────────────────────
 
@@ -40,7 +44,8 @@ const selectedFrontend = getFrontends(config)[0]; // use first configured fronte
 let frontend: Frontend;
 
 if (selectedFrontend === "terminal") {
-  const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
+  const { createTerminalFrontend } =
+    await import("./frontend/terminal/index.js");
   frontend = createTerminalFrontend(config, gateway);
   log("bot", "Frontend: Terminal");
 } else if (selectedFrontend === "teams") {
@@ -48,7 +53,8 @@ if (selectedFrontend === "terminal") {
   frontend = createTeamsFrontend(config, gateway);
   log("bot", "Frontend: Teams");
 } else {
-  const { createTelegramFrontend } = await import("./frontend/telegram/index.js");
+  const { createTelegramFrontend } =
+    await import("./frontend/telegram/index.js");
   frontend = createTelegramFrontend(config, gateway);
   log("bot", "Frontend: Telegram");
 }
@@ -99,7 +105,11 @@ async function gracefulShutdown(signal: string): Promise<void> {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
-  try { unlinkSync(pathFiles.pid); } catch { /* ok */ }
+  try {
+    unlinkSync(pathFiles.pid);
+  } catch {
+    /* ok */
+  }
   log("shutdown", "State saved");
   process.exit(0);
 }

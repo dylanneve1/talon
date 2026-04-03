@@ -60,7 +60,8 @@ vi.mock("../util/paths.js", () => ({
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
-const { initDream, maybeStartDream, forceDream } = await import("../core/dream.js");
+const { initDream, maybeStartDream, forceDream } =
+  await import("../core/dream.js");
 
 describe("initDream", () => {
   it("accepts a config object without throwing", () => {
@@ -74,7 +75,7 @@ describe("initDream", () => {
         dreamModel: "claude-haiku-4-5",
         claudeBinary: "/usr/local/bin/claude",
         workspace: "/tmp/test-workspace",
-      })
+      }),
     ).not.toThrow();
   });
 });
@@ -96,7 +97,7 @@ describe("maybeStartDream", () => {
     const recentRun = Date.now() - 1_000; // 1 second ago
     existsSyncMock.mockReturnValue(true);
     readFileSyncMock.mockReturnValue(
-      JSON.stringify({ last_run: recentRun, status: "idle" })
+      JSON.stringify({ last_run: recentRun, status: "idle" }),
     );
 
     expect(() => maybeStartDream()).not.toThrow();
@@ -133,10 +134,14 @@ describe("forceDream", () => {
     // writeDreamState is called twice: once with status:running, once with status:idle
     expect(writeAtomicSyncMock).toHaveBeenCalledTimes(2);
 
-    const firstCall = JSON.parse(writeAtomicSyncMock.mock.calls[0][1] as string);
+    const firstCall = JSON.parse(
+      writeAtomicSyncMock.mock.calls[0][1] as string,
+    );
     expect(firstCall.status).toBe("running");
 
-    const secondCall = JSON.parse(writeAtomicSyncMock.mock.calls[1][1] as string);
+    const secondCall = JSON.parse(
+      writeAtomicSyncMock.mock.calls[1][1] as string,
+    );
     expect(secondCall.status).toBe("idle");
   });
 
@@ -149,7 +154,9 @@ describe("forceDream", () => {
     vi.resetModules();
     // Re-apply mocks
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false),
@@ -188,7 +195,9 @@ describe("readDreamState — edge cases", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {}),
@@ -218,7 +227,8 @@ describe("readDreamState — edge cases", () => {
       appendFileSync: vi.fn(),
     }));
 
-    const { initDream: initFresh, maybeStartDream: maybeFresh } = await import("../core/dream.js");
+    const { initDream: initFresh, maybeStartDream: maybeFresh } =
+      await import("../core/dream.js");
     initFresh({ model: "claude-sonnet-4-6" });
     // Corrupt state → readDreamState returns null → last_run=0 → long elapsed → dream fires
     // It won't throw because errors are swallowed in executeDream when trigger="auto"
@@ -235,7 +245,8 @@ describe("readDreamState — edge cases", () => {
       appendFileSync: vi.fn(),
     }));
 
-    const { initDream: initFresh, maybeStartDream: maybeFresh } = await import("../core/dream.js");
+    const { initDream: initFresh, maybeStartDream: maybeFresh } =
+      await import("../core/dream.js");
     initFresh({ model: "claude-sonnet-4-6" });
     // non-numeric last_run → readDreamState returns null → treated as very old → dream fires
     expect(() => maybeFresh()).not.toThrow();
@@ -250,7 +261,8 @@ describe("readDreamState — edge cases", () => {
       appendFileSync: vi.fn(),
     }));
 
-    const { initDream: initFresh, maybeStartDream: maybeFresh } = await import("../core/dream.js");
+    const { initDream: initFresh, maybeStartDream: maybeFresh } =
+      await import("../core/dream.js");
     initFresh({ model: "claude-sonnet-4-6" });
     const queryMock = vi.fn(async function* () {});
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({ query: queryMock }));
@@ -286,12 +298,17 @@ describe("logDreamMessage — processes all message types", () => {
   }
 
   function getLogOutput(): string {
-    return appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    return appendFileSyncMock.mock.calls
+      .map((c: unknown[]) => c[1] as string)
+      .join("");
   }
 
   it("processes assistant message with text content blocks", async () => {
     setupQuery([
-      { type: "assistant", message: { content: [{ type: "text", text: "I am analyzing..." }] } },
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "I am analyzing..." }] },
+      },
     ]);
     await forceDream();
     expect(getLogOutput()).toContain("I am analyzing...");
@@ -303,7 +320,11 @@ describe("logDreamMessage — processes all message types", () => {
         type: "assistant",
         message: {
           content: [
-            { type: "tool_use", name: "Read", input: { file_path: "/tmp/test.md" } },
+            {
+              type: "tool_use",
+              name: "Read",
+              input: { file_path: "/tmp/test.md" },
+            },
           ],
         },
       },
@@ -316,7 +337,11 @@ describe("logDreamMessage — processes all message types", () => {
 
   it("processes result message", async () => {
     setupQuery([
-      { type: "result", subtype: "success", result: "Memory consolidated successfully." },
+      {
+        type: "result",
+        subtype: "success",
+        result: "Memory consolidated successfully.",
+      },
     ]);
     await forceDream();
     const output = getLogOutput();
@@ -333,33 +358,30 @@ describe("logDreamMessage — processes all message types", () => {
   });
 
   it("processes system message", async () => {
-    setupQuery([
-      { type: "system", subtype: "init" },
-    ]);
+    setupQuery([{ type: "system", subtype: "init" }]);
     await forceDream();
     expect(getLogOutput()).toContain("System");
   });
 
   it("processes user message with string tool_use_result", async () => {
-    setupQuery([
-      { type: "user", tool_use_result: "tool ran successfully" },
-    ]);
+    setupQuery([{ type: "user", tool_use_result: "tool ran successfully" }]);
     await forceDream();
     expect(getLogOutput()).toContain("tool ran successfully");
   });
 
   it("processes user message with object tool_use_result", async () => {
     setupQuery([
-      { type: "user", tool_use_result: { output: "file contents", truncated: false } },
+      {
+        type: "user",
+        tool_use_result: { output: "file contents", truncated: false },
+      },
     ]);
     await forceDream();
     expect(getLogOutput()).toContain("file contents");
   });
 
   it("processes user message with long tool_use_result (truncation)", async () => {
-    setupQuery([
-      { type: "user", tool_use_result: "Y".repeat(3000) },
-    ]);
+    setupQuery([{ type: "user", tool_use_result: "Y".repeat(3000) }]);
     await forceDream();
     expect(getLogOutput()).toContain("... (truncated)");
   });
@@ -390,7 +412,10 @@ describe("logDreamMessage — processes all message types", () => {
   it("processes multiple message types in sequence", async () => {
     setupQuery([
       { type: "system", subtype: "init" },
-      { type: "assistant", message: { content: [{ type: "text", text: "Analyzing logs." }] } },
+      {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "Analyzing logs." }] },
+      },
       { type: "result", subtype: "success", result: "Done." },
     ]);
     await forceDream();
@@ -408,7 +433,9 @@ describe("dream error paths", () => {
   it("logError when writeDreamState throws (writeFileAtomic.sync fails)", async () => {
     const logErrorMock = vi.fn();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: logErrorMock, logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: logErrorMock,
+      logWarn: vi.fn(),
     }));
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false),
@@ -417,7 +444,11 @@ describe("dream error paths", () => {
       appendFileSync: vi.fn(),
     }));
     vi.doMock("write-file-atomic", () => ({
-      default: { sync: vi.fn(() => { throw new Error("disk full"); }) },
+      default: {
+        sync: vi.fn(() => {
+          throw new Error("disk full");
+        }),
+      },
     }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {}),
@@ -441,19 +472,27 @@ describe("dream error paths", () => {
     mod.initDream({ model: "claude-sonnet-4-6" });
     // writeDreamState throwing should not crash forceDream (error is swallowed)
     await expect(mod.forceDream()).resolves.toBeUndefined();
-    expect(logErrorMock).toHaveBeenCalledWith("dream", "Failed to write dream state", expect.any(Error));
+    expect(logErrorMock).toHaveBeenCalledWith(
+      "dream",
+      "Failed to write dream state",
+      expect.any(Error),
+    );
   });
 
   it("logError when appendFileSync throws in appendDreamLog", async () => {
     const logErrorMock = vi.fn();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: logErrorMock, logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: logErrorMock,
+      logWarn: vi.fn(),
     }));
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false),
       readFileSync: vi.fn(() => "dream prompt"),
       mkdirSync: vi.fn(),
-      appendFileSync: vi.fn(() => { throw new Error("append failed"); }),
+      appendFileSync: vi.fn(() => {
+        throw new Error("append failed");
+      }),
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
@@ -478,17 +517,25 @@ describe("dream error paths", () => {
     mod.initDream({ model: "claude-sonnet-4-6" });
     // appendFileSync throws, but appendDreamLog catches it
     await expect(mod.forceDream()).resolves.toBeUndefined();
-    expect(logErrorMock).toHaveBeenCalledWith("dream", "Failed to write dream log", expect.any(Error));
+    expect(logErrorMock).toHaveBeenCalledWith(
+      "dream",
+      "Failed to write dream log",
+      expect.any(Error),
+    );
   });
 
   it("forceDream rethrows when runDreamAgent fails (prompt file unreadable)", async () => {
     const logErrorMock = vi.fn();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: logErrorMock, logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: logErrorMock,
+      logWarn: vi.fn(),
     }));
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false), // readDreamState returns null (no read needed)
-      readFileSync: vi.fn(() => { throw new Error("ENOENT: prompt file missing"); }),
+      readFileSync: vi.fn(() => {
+        throw new Error("ENOENT: prompt file missing");
+      }),
       mkdirSync: vi.fn(),
       appendFileSync: vi.fn(),
     }));
@@ -514,7 +561,9 @@ describe("dream error paths", () => {
     const mod = await import("../core/dream.js");
     mod.initDream({ model: "claude-sonnet-4-6" });
     // forceDream rethrows when runDreamAgent throws (trigger === "forced")
-    await expect(mod.forceDream()).rejects.toThrow("Failed to read dream prompt");
+    await expect(mod.forceDream()).rejects.toThrow(
+      "Failed to read dream prompt",
+    );
     expect(logErrorMock).toHaveBeenCalledWith(
       "dream",
       expect.stringContaining("Memory consolidation failed"),
@@ -528,8 +577,9 @@ describe("dream error paths", () => {
     const stateJson = JSON.stringify({ last_run: lastRun, status: "idle" });
 
     vi.doMock("node:fs", () => {
-      const readFileSyncFn = vi.fn()
-        .mockReturnValueOnce(stateJson)   // readDreamState reads dream_state.json
+      const readFileSyncFn = vi
+        .fn()
+        .mockReturnValueOnce(stateJson) // readDreamState reads dream_state.json
         .mockReturnValue("dream prompt"); // subsequent calls: prompt file
       return {
         existsSync: vi.fn(() => true),
@@ -540,7 +590,9 @@ describe("dream error paths", () => {
     });
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("../util/paths.js", () => ({
       files: {
@@ -564,7 +616,9 @@ describe("dream error paths", () => {
     mod.initDream({ model: "claude-sonnet-4-6", workspace: "/fake/ws" });
     await mod.forceDream();
 
-    const logOutput = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    const logOutput = appendFileSyncMock.mock.calls
+      .map((c: unknown[]) => c[1] as string)
+      .join("");
     // TRUE branch: lastRunTimestamp > 0 → ISO string used instead of "beginning of time"
     expect(logOutput).toContain(new Date(lastRun).toISOString());
     expect(logOutput).not.toContain("beginning of time");
@@ -579,7 +633,9 @@ describe("dream error paths", () => {
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("../util/paths.js", () => ({
       files: {
@@ -608,11 +664,16 @@ describe("dream error paths", () => {
     await mod.forceDream();
 
     expect(queryMock).toHaveBeenCalled();
-    const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as { options: Record<string, unknown> };
+    const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as {
+      options: Record<string, unknown>;
+    };
     // dreamModel TRUE branch (line 135): haiku model used instead of sonnet
     expect(callArgs.options).toHaveProperty("model", "claude-haiku-4-5");
     // claudeBinary TRUE branch (line 150): pathToClaudeCodeExecutable spread in
-    expect(callArgs.options).toHaveProperty("pathToClaudeCodeExecutable", "/usr/local/bin/claude");
+    expect(callArgs.options).toHaveProperty(
+      "pathToClaudeCodeExecutable",
+      "/usr/local/bin/claude",
+    );
   });
 
   it("assistant block with type='text' but no 'text' property maps to empty string (line 226 FALSE branch)", async () => {
@@ -625,7 +686,9 @@ describe("dream error paths", () => {
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("../util/paths.js", () => ({
       files: {
@@ -653,14 +716,18 @@ describe("dream error paths", () => {
     await mod.forceDream();
 
     // textBlocks = [""] (empty string from false branch), length > 0 → Assistant block logged
-    const logOutput = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    const logOutput = appendFileSyncMock.mock.calls
+      .map((c: unknown[]) => c[1] as string)
+      .join("");
     expect(logOutput).toContain("Assistant");
   });
 
   it("agent crash causes forceDream to reject with failure log entry", async () => {
     const appendFileSyncMock = vi.fn();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false),
@@ -691,14 +758,20 @@ describe("dream error paths", () => {
 
     const mod = await import("../core/dream.js");
     mod.initDream({ model: "claude-sonnet-4-6" });
-    await expect(mod.forceDream()).rejects.toThrow("agent crashed unexpectedly");
-    const logOutput = appendFileSyncMock.mock.calls.map((c: unknown[]) => c[1] as string).join("");
+    await expect(mod.forceDream()).rejects.toThrow(
+      "agent crashed unexpectedly",
+    );
+    const logOutput = appendFileSyncMock.mock.calls
+      .map((c: unknown[]) => c[1] as string)
+      .join("");
     expect(logOutput).toContain("Dream FAILED");
   });
 
   it("maybeStartDream returns early when dreaming=true (line 61 TRUE branch)", async () => {
     let resolveQuery!: () => void;
-    const queryPromise = new Promise<void>((resolve) => { resolveQuery = resolve; });
+    const queryPromise = new Promise<void>((resolve) => {
+      resolveQuery = resolve;
+    });
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false),
       readFileSync: vi.fn(() => "dream prompt"),
@@ -707,7 +780,9 @@ describe("dream error paths", () => {
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("../util/paths.js", () => ({
       files: {
@@ -744,14 +819,18 @@ describe("dream error paths", () => {
   it("auto-triggered dream failure swallows error (line 98 FALSE branch: trigger !== 'forced')", async () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false),
-      readFileSync: vi.fn(() => { throw new Error("prompt missing for auto dream"); }),
+      readFileSync: vi.fn(() => {
+        throw new Error("prompt missing for auto dream");
+      }),
       mkdirSync: vi.fn(),
       appendFileSync: vi.fn(),
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     const logErrorMock = vi.fn();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: logErrorMock, logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: logErrorMock,
+      logWarn: vi.fn(),
     }));
     vi.doMock("../util/paths.js", () => ({
       files: {
@@ -797,7 +876,9 @@ describe("dream error paths", () => {
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("../util/paths.js", () => ({
       files: {
@@ -821,7 +902,9 @@ describe("dream error paths", () => {
     mod.initDream({ workspace: "/fake/ws" });
     await mod.forceDream();
 
-    const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as { options: Record<string, unknown> };
+    const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as {
+      options: Record<string, unknown>;
+    };
     expect(callArgs.options).toHaveProperty("model", "claude-sonnet-4-6");
   });
 });
@@ -882,7 +965,9 @@ describe("maybeStartDream — () => {} catch callback on executeDream rejection"
 
     // Make log throw on first call — that call is at L89 (before the try block)
     // in executeDream, which causes the async function to reject.
-    const logMock = vi.fn(() => { throw new Error("log forced fail"); });
+    const logMock = vi.fn(() => {
+      throw new Error("log forced fail");
+    });
     vi.doMock("../util/log.js", () => ({
       log: logMock,
       logError: vi.fn(),

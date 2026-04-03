@@ -77,16 +77,14 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
       )
       .describe("Button rows"),
   },
-  async (params) => textResult(await callBridge("send_message_with_buttons", params)),
+  async (params) =>
+    textResult(await callBridge("send_message_with_buttons", params)),
 );
 
 // ── Chat info ────────────────────────────────────────────────────────────────
 
-server.tool(
-  "get_chat_info",
-  "Get info about the current chat.",
-  {},
-  async () => textResult(await callBridge("get_chat_info", {})),
+server.tool("get_chat_info", "Get info about the current chat.", {}, async () =>
+  textResult(await callBridge("get_chat_info", {})),
 );
 
 // ── Web tools ────────────────────────────────────────────────────────────────

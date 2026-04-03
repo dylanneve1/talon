@@ -494,10 +494,10 @@ describe("sessions", () => {
       //         cacheRead * pricing.cacheRead + output * pricing.output) / 1_000_000
       // Sonnet: input=$3/M, output=$15/M, cacheRead=$0.3/M, cacheWrite=$3.75/M
       recordUsage(chatId, {
-        inputTokens: 500_000,   // 500k * 3 / 1M = $1.50
-        outputTokens: 100_000,  // 100k * 15 / 1M = $1.50
-        cacheRead: 200_000,     // 200k * 0.3 / 1M = $0.06
-        cacheWrite: 100_000,    // 100k * 3.75 / 1M = $0.375
+        inputTokens: 500_000, // 500k * 3 / 1M = $1.50
+        outputTokens: 100_000, // 100k * 15 / 1M = $1.50
+        cacheRead: 200_000, // 200k * 0.3 / 1M = $0.06
+        cacheWrite: 100_000, // 100k * 3.75 / 1M = $0.375
         model: "claude-sonnet-4-6",
       });
 
@@ -599,7 +599,14 @@ describe("sessions — migration of legacy field formats", () => {
     // We do this by calling loadSessions with a mocked file that has no usage field
     vi.mocked(existsSync).mockReturnValueOnce(true);
     vi.mocked(readFileSync).mockReturnValueOnce(
-      JSON.stringify({ "migrate-chat-1": { sessionId: undefined, turns: 5, lastActive: 1000, createdAt: 1000 } }),
+      JSON.stringify({
+        "migrate-chat-1": {
+          sessionId: undefined,
+          turns: 5,
+          lastActive: 1000,
+          createdAt: 1000,
+        },
+      }),
     );
     loadSessions();
     const session = getSession("migrate-chat-1");
@@ -613,9 +620,20 @@ describe("sessions — migration of legacy field formats", () => {
     vi.mocked(readFileSync).mockReturnValueOnce(
       JSON.stringify({
         "migrate-chat-2": {
-          sessionId: undefined, turns: 3, lastActive: 9999999,
-          usage: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0, totalCacheWrite: 0,
-            lastPromptTokens: 0, estimatedCostUsd: 0, totalResponseMs: 0, lastResponseMs: 0, fastestResponseMs: Infinity },
+          sessionId: undefined,
+          turns: 3,
+          lastActive: 9999999,
+          usage: {
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+            lastPromptTokens: 0,
+            estimatedCostUsd: 0,
+            totalResponseMs: 0,
+            lastResponseMs: 0,
+            fastestResponseMs: Infinity,
+          },
         },
       }),
     );
@@ -629,9 +647,21 @@ describe("sessions — migration of legacy field formats", () => {
     vi.mocked(readFileSync).mockReturnValueOnce(
       JSON.stringify({
         "migrate-chat-3": {
-          sessionId: undefined, turns: 2, lastActive: 1000, createdAt: 1000,
-          usage: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0, totalCacheWrite: 0,
-            lastPromptTokens: 0, estimatedCostUsd: 0, totalResponseMs: 0, lastResponseMs: 0, fastestResponseMs: 0 },
+          sessionId: undefined,
+          turns: 2,
+          lastActive: 1000,
+          createdAt: 1000,
+          usage: {
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+            lastPromptTokens: 0,
+            estimatedCostUsd: 0,
+            totalResponseMs: 0,
+            lastResponseMs: 0,
+            fastestResponseMs: 0,
+          },
         },
       }),
     );
@@ -644,11 +674,31 @@ describe("sessions — migration of legacy field formats", () => {
 describe("sessions — loadSessions backup recovery", () => {
   it("loads from backup when primary is corrupt", () => {
     vi.mocked(existsSync)
-      .mockReturnValueOnce(true)  // primary exists
+      .mockReturnValueOnce(true) // primary exists
       .mockReturnValueOnce(true); // backup exists
     vi.mocked(readFileSync)
-      .mockReturnValueOnce("{not valid json}")  // primary corrupt
-      .mockReturnValueOnce(JSON.stringify({ "backup-chat": { sessionId: "bak-sid", turns: 7, lastActive: 1, createdAt: 1, usage: { totalInputTokens: 0, totalOutputTokens: 0, totalCacheRead: 0, totalCacheWrite: 0, lastPromptTokens: 0, estimatedCostUsd: 0, totalResponseMs: 0, lastResponseMs: 0, fastestResponseMs: Infinity } } }));
+      .mockReturnValueOnce("{not valid json}") // primary corrupt
+      .mockReturnValueOnce(
+        JSON.stringify({
+          "backup-chat": {
+            sessionId: "bak-sid",
+            turns: 7,
+            lastActive: 1,
+            createdAt: 1,
+            usage: {
+              totalInputTokens: 0,
+              totalOutputTokens: 0,
+              totalCacheRead: 0,
+              totalCacheWrite: 0,
+              lastPromptTokens: 0,
+              estimatedCostUsd: 0,
+              totalResponseMs: 0,
+              lastResponseMs: 0,
+              fastestResponseMs: Infinity,
+            },
+          },
+        }),
+      );
     loadSessions();
     const s = getSession("backup-chat");
     expect(s.turns).toBe(7);
@@ -656,7 +706,7 @@ describe("sessions — loadSessions backup recovery", () => {
 
   it("starts fresh when both primary and backup are corrupt", () => {
     vi.mocked(existsSync)
-      .mockReturnValueOnce(true)  // primary exists
+      .mockReturnValueOnce(true) // primary exists
       .mockReturnValueOnce(true); // backup exists
     vi.mocked(readFileSync)
       .mockReturnValueOnce("BAD PRIMARY")
@@ -708,7 +758,9 @@ describe("sessions — edge cases for branch coverage", () => {
 
   it("saveSessions logs error when atomic write throws", async () => {
     const { logError } = await import("../util/log.js");
-    writeFileAtomicSync.mockImplementationOnce(() => { throw new Error("disk full"); });
+    writeFileAtomicSync.mockImplementationOnce(() => {
+      throw new Error("disk full");
+    });
     // resetSession sets dirty=true then calls saveSessions
     getSession("throw-on-save-xyz");
     expect(() => resetSession("throw-on-save-xyz")).not.toThrow();
@@ -720,11 +772,23 @@ describe("sessions — edge cases for branch coverage", () => {
     // Fresh session has fastestResponseMs=Infinity (from emptyUsage)
     // Calling recordUsage sets current = Infinity || Infinity... actually Infinity is truthy
     // so we need to exercise the case where fastestResponseMs is already set > durationMs
-    recordUsage(chatId, { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, durationMs: 500 });
+    recordUsage(chatId, {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      durationMs: 500,
+    });
     const session = getSession(chatId);
     expect(session.usage.fastestResponseMs).toBe(500);
     // Second call with LONGER duration — fastestResponseMs stays at 500 (not updated)
-    recordUsage(chatId, { inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, durationMs: 1000 });
+    recordUsage(chatId, {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      durationMs: 1000,
+    });
     expect(session.usage.fastestResponseMs).toBe(500);
   });
 
@@ -736,7 +800,9 @@ describe("sessions — edge cases for branch coverage", () => {
   it("saveSessions logs error with non-Error object thrown by writeFileAtomic", async () => {
     const { logError } = await import("../util/log.js");
     // Throw a plain string instead of an Error to cover the `err instanceof Error ? ... : err` false branch
-    writeFileAtomicSync.mockImplementationOnce(() => { throw "plain string error"; }); // eslint-disable-line @typescript-eslint/no-throw-literal
+    writeFileAtomicSync.mockImplementationOnce(() => {
+      throw "plain string error";
+    }); // eslint-disable-line @typescript-eslint/no-throw-literal
     getSession("throw-string-on-save-xyz");
     expect(() => resetSession("throw-string-on-save-xyz")).not.toThrow();
     expect(logError).toHaveBeenCalled();
@@ -750,17 +816,25 @@ describe("sessions — saveSessions dirty=false early return (line 98 TRUE branc
     vi.resetModules();
     vi.useFakeTimers();
     const wfaMock = vi.fn();
-    vi.doMock("../util/log.js", () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
     vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
     vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false), mkdirSync: vi.fn(), readFileSync: vi.fn(() => "{}"),
+      existsSync: vi.fn(() => false),
+      mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => "{}"),
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: wfaMock } }));
     vi.doMock("../util/paths.js", () => ({
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
     }));
-    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+    vi.doMock("../util/cleanup-registry.js", () => ({
+      registerCleanup: vi.fn(),
+    }));
 
     // Fresh import: dirty=false (nothing modified yet)
     await import("../storage/sessions.js");

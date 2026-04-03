@@ -3,7 +3,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // ── Module mocks (must come before import) ──────────────────────────────────
 
 vi.mock("../util/log.js", () => ({
-  log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
 }));
 
 vi.mock("write-file-atomic", () => ({
@@ -31,7 +34,12 @@ const mockGetCronJob = vi.fn();
 const mockGetCronJobsForChat = vi.fn((): any[] => []);
 const mockUpdateCronJob = vi.fn();
 const mockDeleteCronJob = vi.fn();
-const mockValidateCronExpression = vi.fn((): { valid: boolean; next?: string; error?: string } => ({ valid: true, next: "2026-04-01T09:00:00.000Z" }));
+const mockValidateCronExpression = vi.fn(
+  (): { valid: boolean; next?: string; error?: string } => ({
+    valid: true,
+    next: "2026-04-01T09:00:00.000Z",
+  }),
+);
 const mockGenerateCronId = vi.fn(() => "test-id-123");
 
 vi.mock("../storage/cron-store.js", () => ({
@@ -82,14 +90,27 @@ function mockResponse(opts: {
 }
 
 /** Create an ArrayBuffer with valid image magic bytes. */
-function imageBuffer(type: "png" | "jpg" | "gif" | "webp", size = 1024): ArrayBuffer {
+function imageBuffer(
+  type: "png" | "jpg" | "gif" | "webp",
+  size = 1024,
+): ArrayBuffer {
   const buf = new ArrayBuffer(Math.max(size, 16));
   const view = new Uint8Array(buf);
   switch (type) {
-    case "png":  view.set([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]); break;
-    case "jpg":  view.set([0xFF, 0xD8, 0xFF, 0xE0]); break;
-    case "gif":  view.set([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]); break;
-    case "webp": view.set([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]); break;
+    case "png":
+      view.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+      break;
+    case "jpg":
+      view.set([0xff, 0xd8, 0xff, 0xe0]);
+      break;
+    case "gif":
+      view.set([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
+      break;
+    case "webp":
+      view.set([
+        0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50,
+      ]);
+      break;
   }
   return buf;
 }
@@ -120,7 +141,9 @@ describe("gateway shared actions", () => {
 
   describe("unknown actions", () => {
     it("returns null for unknown actions", async () => {
-      expect(await handleSharedAction({ action: "unknown_thing" }, 123)).toBeNull();
+      expect(
+        await handleSharedAction({ action: "unknown_thing" }, 123),
+      ).toBeNull();
     });
 
     it("returns null for empty action", async () => {
@@ -162,18 +185,27 @@ describe("gateway shared actions", () => {
 
   describe("search_history", () => {
     it("returns search results with default limit", async () => {
-      const result = await handleSharedAction({ action: "search_history", query: "hello" }, 42);
+      const result = await handleSharedAction(
+        { action: "search_history", query: "hello" },
+        42,
+      );
       expect(result).toEqual({ ok: true, text: "search results here" });
       expect(mockSearchHistory).toHaveBeenCalledWith("42", "hello", 20);
     });
 
     it("passes custom limit", async () => {
-      await handleSharedAction({ action: "search_history", query: "test", limit: 5 }, 42);
+      await handleSharedAction(
+        { action: "search_history", query: "test", limit: 5 },
+        42,
+      );
       expect(mockSearchHistory).toHaveBeenCalledWith("42", "test", 5);
     });
 
     it("clamps limit to 100", async () => {
-      await handleSharedAction({ action: "search_history", query: "test", limit: 999 }, 42);
+      await handleSharedAction(
+        { action: "search_history", query: "test", limit: 999 },
+        42,
+      );
       expect(mockSearchHistory).toHaveBeenCalledWith("42", "test", 100);
     });
 
@@ -185,18 +217,27 @@ describe("gateway shared actions", () => {
 
   describe("get_user_messages", () => {
     it("returns user messages with default limit", async () => {
-      const result = await handleSharedAction({ action: "get_user_messages", user_name: "alice" }, 42);
+      const result = await handleSharedAction(
+        { action: "get_user_messages", user_name: "alice" },
+        42,
+      );
       expect(result).toEqual({ ok: true, text: "user messages here" });
       expect(mockGetMessagesByUser).toHaveBeenCalledWith("42", "alice", 20);
     });
 
     it("passes custom limit", async () => {
-      await handleSharedAction({ action: "get_user_messages", user_name: "bob", limit: 10 }, 42);
+      await handleSharedAction(
+        { action: "get_user_messages", user_name: "bob", limit: 10 },
+        42,
+      );
       expect(mockGetMessagesByUser).toHaveBeenCalledWith("42", "bob", 10);
     });
 
     it("clamps limit to 50", async () => {
-      await handleSharedAction({ action: "get_user_messages", user_name: "bob", limit: 200 }, 42);
+      await handleSharedAction(
+        { action: "get_user_messages", user_name: "bob", limit: 200 },
+        42,
+      );
       expect(mockGetMessagesByUser).toHaveBeenCalledWith("42", "bob", 50);
     });
 
@@ -208,7 +249,10 @@ describe("gateway shared actions", () => {
 
   describe("list_known_users", () => {
     it("returns known users", async () => {
-      const result = await handleSharedAction({ action: "list_known_users" }, 42);
+      const result = await handleSharedAction(
+        { action: "list_known_users" },
+        42,
+      );
       expect(result).toEqual({ ok: true, text: "alice, bob" });
       expect(mockGetKnownUsers).toHaveBeenCalledWith("42");
     });
@@ -243,27 +287,43 @@ describe("gateway shared actions", () => {
     });
 
     it("returns error for empty query string", async () => {
-      const result = await handleSharedAction({ action: "web_search", query: "" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "" },
+        123,
+      );
       expect(result).toEqual({ ok: false, error: "Missing query" });
     });
 
     it("uses Brave API when key is configured", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-brave-key";
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "application/json",
-        json: {
-          web: {
-            results: [
-              { title: "Result 1", url: "https://example.com/1", description: "Description 1" },
-              { title: "Result 2", url: "https://example.com/2", description: "Description 2" },
-            ],
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "application/json",
+          json: {
+            web: {
+              results: [
+                {
+                  title: "Result 1",
+                  url: "https://example.com/1",
+                  description: "Description 1",
+                },
+                {
+                  title: "Result 2",
+                  url: "https://example.com/2",
+                  description: "Description 2",
+                },
+              ],
+            },
           },
-        },
-      }));
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "test query" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "test query" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain("via Brave");
@@ -283,45 +343,73 @@ describe("gateway shared actions", () => {
 
     it("respects custom limit for Brave API", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-brave-key";
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        json: { web: { results: [{ title: "R", url: "https://r.com", description: "d" }] } },
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          json: {
+            web: {
+              results: [{ title: "R", url: "https://r.com", description: "d" }],
+            },
+          },
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      await handleSharedAction({ action: "web_search", query: "test", limit: 8 }, 123);
+      await handleSharedAction(
+        { action: "web_search", query: "test", limit: 8 },
+        123,
+      );
       const [url] = mockFetch.mock.calls[0];
       expect(url).toContain("count=8");
     });
 
     it("clamps search limit to 10", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-brave-key";
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        json: { web: { results: [{ title: "R", url: "https://r.com", description: "d" }] } },
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          json: {
+            web: {
+              results: [{ title: "R", url: "https://r.com", description: "d" }],
+            },
+          },
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      await handleSharedAction({ action: "web_search", query: "test", limit: 50 }, 123);
+      await handleSharedAction(
+        { action: "web_search", query: "test", limit: 50 },
+        123,
+      );
       const [url] = mockFetch.mock.calls[0];
       expect(url).toContain("count=10");
     });
 
     it("falls back to SearXNG when Brave returns non-ok", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-brave-key";
-      const mockFetch = vi.fn()
-        .mockResolvedValueOnce(mockResponse({ ok: false, status: 429 }))   // Brave fails
-        .mockResolvedValueOnce(mockResponse({
-          ok: true,
-          json: {
-            results: [
-              { title: "SearX Result", url: "https://searx.example.com", content: "SearX snippet" },
-            ],
-          },
-        }));
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce(mockResponse({ ok: false, status: 429 })) // Brave fails
+        .mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            json: {
+              results: [
+                {
+                  title: "SearX Result",
+                  url: "https://searx.example.com",
+                  content: "SearX snippet",
+                },
+              ],
+            },
+          }),
+        );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "fallback test" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "fallback test" },
+        123,
+      );
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
       expect(result?.ok).toBe(true);
@@ -331,19 +419,29 @@ describe("gateway shared actions", () => {
 
     it("falls back to SearXNG when Brave throws an error", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-brave-key";
-      const mockFetch = vi.fn()
-        .mockRejectedValueOnce(new Error("network error"))  // Brave throws
-        .mockResolvedValueOnce(mockResponse({
-          ok: true,
-          json: {
-            results: [
-              { title: "Fallback", url: "https://fb.com", content: "snippet" },
-            ],
-          },
-        }));
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("network error")) // Brave throws
+        .mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            json: {
+              results: [
+                {
+                  title: "Fallback",
+                  url: "https://fb.com",
+                  content: "snippet",
+                },
+              ],
+            },
+          }),
+        );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "test" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "test" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain("via SearXNG");
@@ -351,17 +449,26 @@ describe("gateway shared actions", () => {
 
     it("uses SearXNG directly when no Brave key", async () => {
       // No TALON_BRAVE_API_KEY set
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        json: {
-          results: [
-            { title: "Direct SearX", url: "https://searx.com/r", content: "content here" },
-          ],
-        },
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          json: {
+            results: [
+              {
+                title: "Direct SearX",
+                url: "https://searx.com/r",
+                content: "content here",
+              },
+            ],
+          },
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "direct" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "direct" },
+        123,
+      );
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const [url] = mockFetch.mock.calls[0];
@@ -373,10 +480,14 @@ describe("gateway shared actions", () => {
 
     it("uses custom SearXNG URL from env", async () => {
       process.env.TALON_SEARXNG_URL = "http://my-searx:9090";
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        json: { results: [{ title: "T", url: "https://t.com", content: "c" }] },
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          json: {
+            results: [{ title: "T", url: "https://t.com", content: "c" }],
+          },
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
       await handleSharedAction({ action: "web_search", query: "custom" }, 123);
@@ -387,12 +498,16 @@ describe("gateway shared actions", () => {
 
     it("returns 'no results' when both providers fail", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-key";
-      const mockFetch = vi.fn()
+      const mockFetch = vi
+        .fn()
         .mockRejectedValueOnce(new Error("brave fail"))
         .mockRejectedValueOnce(new Error("searx fail"));
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "nothing" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "nothing" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toBe('No results for "nothing".');
@@ -400,12 +515,16 @@ describe("gateway shared actions", () => {
 
     it("returns 'no results' when both return non-ok", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-key";
-      const mockFetch = vi.fn()
+      const mockFetch = vi
+        .fn()
         .mockResolvedValueOnce(mockResponse({ ok: false, status: 500 }))
         .mockResolvedValueOnce(mockResponse({ ok: false, status: 503 }));
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "failing" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "failing" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toBe('No results for "failing".');
@@ -413,12 +532,20 @@ describe("gateway shared actions", () => {
 
     it("returns 'no results' when Brave returns empty results array", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-key";
-      const mockFetch = vi.fn()
-        .mockResolvedValueOnce(mockResponse({ ok: true, json: { web: { results: [] } } }))
-        .mockResolvedValueOnce(mockResponse({ ok: true, json: { results: [] } }));
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse({ ok: true, json: { web: { results: [] } } }),
+        )
+        .mockResolvedValueOnce(
+          mockResponse({ ok: true, json: { results: [] } }),
+        );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "empty" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "empty" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toBe('No results for "empty".');
@@ -426,28 +553,49 @@ describe("gateway shared actions", () => {
 
     it("handles Brave response with missing web field", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-key";
-      const mockFetch = vi.fn()
-        .mockResolvedValueOnce(mockResponse({ ok: true, json: {} }))   // no web field
-        .mockResolvedValueOnce(mockResponse({
-          ok: true,
-          json: { results: [{ title: "FallbackR", url: "https://f.com", content: "fb" }] },
-        }));
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce(mockResponse({ ok: true, json: {} })) // no web field
+        .mockResolvedValueOnce(
+          mockResponse({
+            ok: true,
+            json: {
+              results: [
+                { title: "FallbackR", url: "https://f.com", content: "fb" },
+              ],
+            },
+          }),
+        );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "test" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "test" },
+        123,
+      );
       expect(result?.text).toContain("via SearXNG");
     });
 
     it("truncates long snippets to 200 chars", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-key";
       const longDesc = "A".repeat(500);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        json: { web: { results: [{ title: "Long", url: "https://l.com", description: longDesc }] } },
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          json: {
+            web: {
+              results: [
+                { title: "Long", url: "https://l.com", description: longDesc },
+              ],
+            },
+          },
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "long" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "long" },
+        123,
+      );
       // The snippet should be sliced to 200 chars
       expect(result?.text).not.toContain("A".repeat(201));
       expect(result?.text).toContain("A".repeat(200));
@@ -455,29 +603,43 @@ describe("gateway shared actions", () => {
 
     it("handles missing description in Brave results", async () => {
       process.env.TALON_BRAVE_API_KEY = "test-key";
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        json: { web: { results: [{ title: "NoDesc", url: "https://nd.com" }] } },
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          json: {
+            web: { results: [{ title: "NoDesc", url: "https://nd.com" }] },
+          },
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "nodesc" }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "nodesc" },
+        123,
+      );
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain("NoDesc");
     });
 
     it("slices SearXNG results to limit", async () => {
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        json: {
-          results: Array.from({ length: 20 }, (_, i) => ({
-            title: `R${i}`, url: `https://r${i}.com`, content: `c${i}`,
-          })),
-        },
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          json: {
+            results: Array.from({ length: 20 }, (_, i) => ({
+              title: `R${i}`,
+              url: `https://r${i}.com`,
+              content: `c${i}`,
+            })),
+          },
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "web_search", query: "many", limit: 3 }, 123);
+      const result = await handleSharedAction(
+        { action: "web_search", query: "many", limit: 3 },
+        123,
+      );
       // Should only contain 3 results (numbered 1-3)
       expect(result?.text).toContain("1. R0");
       expect(result?.text).toContain("3. R2");
@@ -496,23 +658,35 @@ describe("gateway shared actions", () => {
     });
 
     it("rejects non-http protocols", async () => {
-      const result = await handleSharedAction({ action: "fetch_url", url: "ftp://example.com" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "ftp://example.com" },
+        123,
+      );
       expect(result?.ok).toBe(false);
       expect(result?.error).toContain("http or https");
     });
 
     it("rejects malformed URLs", async () => {
-      const result = await handleSharedAction({ action: "fetch_url", url: "not a url at all" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "not a url at all" },
+        123,
+      );
       expect(result).toEqual({ ok: false, error: "Invalid URL" });
     });
 
     it("rejects javascript: protocol", async () => {
-      const result = await handleSharedAction({ action: "fetch_url", url: "javascript:alert(1)" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "javascript:alert(1)" },
+        123,
+      );
       expect(result?.ok).toBe(false);
     });
 
     it("rejects data: protocol", async () => {
-      const result = await handleSharedAction({ action: "fetch_url", url: "data:text/html,<h1>hi</h1>" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "data:text/html,<h1>hi</h1>" },
+        123,
+      );
       expect(result?.ok).toBe(false);
     });
 
@@ -523,14 +697,19 @@ describe("gateway shared actions", () => {
         <h1>Hello World</h1>
         <p>This is a &amp; test with &lt;tags&gt; and &nbsp; entities.</p>
       </body></html>`;
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "text/html; charset=utf-8",
-        body: htmlBody,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "text/html; charset=utf-8",
+          body: htmlBody,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       // Script and style content should be stripped
@@ -543,14 +722,19 @@ describe("gateway shared actions", () => {
 
     it("returns JSON content as text", async () => {
       const jsonBody = '{"key": "value", "count": 42}';
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "application/json",
-        body: jsonBody,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "application/json",
+          body: jsonBody,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://api.example.com/data" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://api.example.com/data" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain('"key": "value"');
@@ -558,72 +742,104 @@ describe("gateway shared actions", () => {
 
     it("truncates large text content to 8000 chars", async () => {
       const longText = "A".repeat(10000);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "text/plain",
-        body: longText,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "text/plain",
+          body: longText,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/big" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/big" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text!.length).toBe(8000);
     });
 
     it("returns message for pages with no readable content", async () => {
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "text/html",
-        body: "<html><body>  </body></html>",
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "text/html",
+          body: "<html><body>  </body></html>",
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://empty.com" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://empty.com" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toBe("(Page has no readable content)");
     });
 
     it("returns HTTP error for non-ok response", async () => {
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: false,
-        status: 404,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: false,
+          status: 404,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/missing" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/missing" },
+        123,
+      );
 
       expect(result).toEqual({ ok: false, error: "HTTP 404" });
     });
 
     it("returns HTTP 500 error", async () => {
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: false,
-        status: 500,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: false,
+          status: 500,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/error" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/error" },
+        123,
+      );
 
       expect(result).toEqual({ ok: false, error: "HTTP 500" });
     });
 
     it("handles network errors", async () => {
-      const mockFetch = vi.fn().mockRejectedValueOnce(new Error("ECONNREFUSED"));
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("ECONNREFUSED"));
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://down.example.com" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://down.example.com" },
+        123,
+      );
 
       expect(result?.ok).toBe(false);
       expect(result?.error).toContain("Fetch failed: ECONNREFUSED");
     });
 
     it("handles timeout errors", async () => {
-      const mockFetch = vi.fn().mockRejectedValueOnce(new Error("The operation was aborted due to timeout"));
+      const mockFetch = vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error("The operation was aborted due to timeout"),
+        );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://slow.example.com" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://slow.example.com" },
+        123,
+      );
 
       expect(result?.ok).toBe(false);
       expect(result?.error).toContain("Fetch failed");
@@ -634,7 +850,10 @@ describe("gateway shared actions", () => {
       const mockFetch = vi.fn().mockRejectedValueOnce("string error");
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://weird.example.com" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://weird.example.com" },
+        123,
+      );
 
       expect(result?.ok).toBe(false);
       expect(result?.error).toBe("Fetch failed: string error");
@@ -644,15 +863,20 @@ describe("gateway shared actions", () => {
 
     it("downloads binary PNG file", async () => {
       const buffer = imageBuffer("png");
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/png",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/png",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
       mockExistsSync.mockReturnValue(true);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/img.png" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/img.png" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain("Downloaded image");
@@ -663,15 +887,20 @@ describe("gateway shared actions", () => {
 
     it("downloads JPEG file", async () => {
       const buffer = imageBuffer("jpg", 2048);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/jpeg",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/jpeg",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
       mockExistsSync.mockReturnValue(true);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/photo.jpg" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/photo.jpg" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain(".jpg");
@@ -680,14 +909,19 @@ describe("gateway shared actions", () => {
 
     it("downloads GIF file", async () => {
       const buffer = imageBuffer("gif", 512);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/gif",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/gif",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/anim.gif" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/anim.gif" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain(".gif");
@@ -695,14 +929,19 @@ describe("gateway shared actions", () => {
 
     it("downloads WebP file", async () => {
       const buffer = imageBuffer("webp", 512);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/webp",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/webp",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/pic.webp" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/pic.webp" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain(".webp");
@@ -710,14 +949,19 @@ describe("gateway shared actions", () => {
 
     it("downloads PDF file", async () => {
       const buffer = new ArrayBuffer(4096);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "application/pdf",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "application/pdf",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/doc.pdf" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/doc.pdf" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain(".pdf");
@@ -726,14 +970,19 @@ describe("gateway shared actions", () => {
 
     it("downloads ZIP file", async () => {
       const buffer = new ArrayBuffer(8192);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "application/zip",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "application/zip",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/archive.zip" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/archive.zip" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain(".zip");
@@ -741,14 +990,19 @@ describe("gateway shared actions", () => {
 
     it("uses .bin extension for unknown binary types", async () => {
       const buffer = new ArrayBuffer(256);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "application/octet-stream",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "application/octet-stream",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/data" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/data" },
+        123,
+      );
 
       expect(result?.ok).toBe(true);
       expect(result?.text).toContain(".bin");
@@ -756,44 +1010,62 @@ describe("gateway shared actions", () => {
 
     it("creates uploads directory when it does not exist", async () => {
       const buffer = imageBuffer("png", 256);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/png",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/png",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
       mockExistsSync.mockReturnValue(false);
 
-      await handleSharedAction({ action: "fetch_url", url: "https://example.com/img.png" }, 123);
+      await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/img.png" },
+        123,
+      );
 
-      expect(mockMkdirSync).toHaveBeenCalledWith(expect.stringContaining("uploads"), { recursive: true });
+      expect(mockMkdirSync).toHaveBeenCalledWith(
+        expect.stringContaining("uploads"),
+        { recursive: true },
+      );
     });
 
     it("does not create uploads directory when it exists", async () => {
       const buffer = new ArrayBuffer(256);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/png",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/png",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
       mockExistsSync.mockReturnValue(true);
 
-      await handleSharedAction({ action: "fetch_url", url: "https://example.com/img.png" }, 123);
+      await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/img.png" },
+        123,
+      );
 
       expect(mockMkdirSync).not.toHaveBeenCalled();
     });
 
     it("rejects files larger than 20MB", async () => {
       const buffer = new ArrayBuffer(21 * 1024 * 1024); // 21MB
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/png",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/png",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/huge.png" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/huge.png" },
+        123,
+      );
 
       expect(result?.ok).toBe(false);
       expect(result?.error).toContain("File too large");
@@ -803,29 +1075,41 @@ describe("gateway shared actions", () => {
 
     it("includes send instructions in download response", async () => {
       const buffer = imageBuffer("png");
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/png",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/png",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/img.png" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/img.png" },
+        123,
+      );
 
       expect(result?.text).toContain("Read it with the Read tool");
       expect(result?.text).toContain('send(type="file"');
     });
 
     it("rejects HTML error page disguised as image (magic byte validation)", async () => {
-      const htmlError = new TextEncoder().encode("<!DOCTYPE html><html><body>Wikimedia Error</body></html>");
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/jpeg",
-        arrayBuffer: htmlError.buffer,
-      }));
+      const htmlError = new TextEncoder().encode(
+        "<!DOCTYPE html><html><body>Wikimedia Error</body></html>",
+      );
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/jpeg",
+          arrayBuffer: htmlError.buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://upload.wikimedia.org/img.jpg" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://upload.wikimedia.org/img.jpg" },
+        123,
+      );
 
       expect(result?.ok).toBe(false);
       expect(result?.error).toContain("error page instead of an image");
@@ -833,45 +1117,63 @@ describe("gateway shared actions", () => {
     });
 
     it("rejects empty response", async () => {
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "image/png",
-        arrayBuffer: new ArrayBuffer(0),
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "image/png",
+          arrayBuffer: new ArrayBuffer(0),
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/empty.png" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/empty.png" },
+        123,
+      );
 
       expect(result?.ok).toBe(false);
       expect(result?.error).toContain("Empty response");
     });
 
     it("passes User-Agent header in fetch", async () => {
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "text/html",
-        body: "<p>Content here is enough to pass the 20 char minimum check test</p>",
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "text/html",
+          body: "<p>Content here is enough to pass the 20 char minimum check test</p>",
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      await handleSharedAction({ action: "fetch_url", url: "https://example.com" }, 123);
+      await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com" },
+        123,
+      );
 
-      expect(mockFetch).toHaveBeenCalledWith("https://example.com", expect.objectContaining({
-        headers: { "User-Agent": "Talon/1.0" },
-        redirect: "follow",
-      }));
+      expect(mockFetch).toHaveBeenCalledWith(
+        "https://example.com",
+        expect.objectContaining({
+          headers: { "User-Agent": "Talon/1.0" },
+          redirect: "follow",
+        }),
+      );
     });
 
     it("labels non-image binary as content subtype", async () => {
       const buffer = new ArrayBuffer(512);
-      const mockFetch = vi.fn().mockResolvedValueOnce(mockResponse({
-        ok: true,
-        contentType: "application/pdf",
-        arrayBuffer: buffer,
-      }));
+      const mockFetch = vi.fn().mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          contentType: "application/pdf",
+          arrayBuffer: buffer,
+        }),
+      );
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/doc.pdf" }, 123);
+      const result = await handleSharedAction(
+        { action: "fetch_url", url: "https://example.com/doc.pdf" },
+        123,
+      );
 
       // For non-image types, it uses ct.split("/")[1]?.split(";")[0] => "pdf"
       expect(result?.text).toContain("Downloaded pdf");
@@ -887,95 +1189,128 @@ describe("gateway shared actions", () => {
 
     describe("create_cron_job", () => {
       it("creates a cron job with all fields", async () => {
-        const result = await handleSharedAction({
-          action: "create_cron_job",
-          name: "Morning Greeting",
-          schedule: "0 9 * * *",
-          type: "message",
-          content: "Good morning!",
-          timezone: "America/New_York",
-        }, 42);
+        const result = await handleSharedAction(
+          {
+            action: "create_cron_job",
+            name: "Morning Greeting",
+            schedule: "0 9 * * *",
+            type: "message",
+            content: "Good morning!",
+            timezone: "America/New_York",
+          },
+          42,
+        );
 
         expect(result?.ok).toBe(true);
         expect(result?.text).toContain('Created cron job "Morning Greeting"');
         expect(result?.text).toContain("test-id-123");
         expect(result?.text).toContain("0 9 * * *");
         expect(result?.text).toContain("Type: message");
-        expect(mockAddCronJob).toHaveBeenCalledWith(expect.objectContaining({
-          id: "test-id-123",
-          chatId: "42",
-          schedule: "0 9 * * *",
-          type: "message",
-          content: "Good morning!",
-          name: "Morning Greeting",
-          enabled: true,
-          timezone: "America/New_York",
-        }));
+        expect(mockAddCronJob).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: "test-id-123",
+            chatId: "42",
+            schedule: "0 9 * * *",
+            type: "message",
+            content: "Good morning!",
+            name: "Morning Greeting",
+            enabled: true,
+            timezone: "America/New_York",
+          }),
+        );
       });
 
       it("uses default name when not provided", async () => {
-        await handleSharedAction({
-          action: "create_cron_job",
-          schedule: "0 9 * * *",
-          content: "hi",
-        }, 42);
+        await handleSharedAction(
+          {
+            action: "create_cron_job",
+            schedule: "0 9 * * *",
+            content: "hi",
+          },
+          42,
+        );
 
-        expect(mockAddCronJob).toHaveBeenCalledWith(expect.objectContaining({
-          name: "Unnamed job",
-        }));
+        expect(mockAddCronJob).toHaveBeenCalledWith(
+          expect.objectContaining({
+            name: "Unnamed job",
+          }),
+        );
       });
 
       it("uses default type 'message' when not specified", async () => {
-        await handleSharedAction({
-          action: "create_cron_job",
-          schedule: "*/5 * * * *",
-          content: "ping",
-        }, 42);
+        await handleSharedAction(
+          {
+            action: "create_cron_job",
+            schedule: "*/5 * * * *",
+            content: "ping",
+          },
+          42,
+        );
 
-        expect(mockAddCronJob).toHaveBeenCalledWith(expect.objectContaining({
-          type: "message",
-        }));
+        expect(mockAddCronJob).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: "message",
+          }),
+        );
       });
 
       it("rejects missing schedule", async () => {
-        const result = await handleSharedAction({
-          action: "create_cron_job",
-          name: "test",
-          content: "hi",
-        }, 123);
-        expect(result).toEqual({ ok: false, error: "Missing schedule expression" });
+        const result = await handleSharedAction(
+          {
+            action: "create_cron_job",
+            name: "test",
+            content: "hi",
+          },
+          123,
+        );
+        expect(result).toEqual({
+          ok: false,
+          error: "Missing schedule expression",
+        });
       });
 
       it("rejects missing content", async () => {
-        const result = await handleSharedAction({
-          action: "create_cron_job",
-          name: "test",
-          schedule: "0 9 * * *",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "create_cron_job",
+            name: "test",
+            schedule: "0 9 * * *",
+          },
+          123,
+        );
         expect(result).toEqual({ ok: false, error: "Missing content" });
       });
 
       it("rejects content over 10,000 chars", async () => {
-        const result = await handleSharedAction({
-          action: "create_cron_job",
-          name: "test",
-          schedule: "0 9 * * *",
-          content: "x".repeat(10001),
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "create_cron_job",
+            name: "test",
+            schedule: "0 9 * * *",
+            content: "x".repeat(10001),
+          },
+          123,
+        );
         expect(result?.ok).toBe(false);
         expect(result?.error).toContain("too long");
         expect(result?.error).toContain("10,000");
       });
 
       it("rejects invalid cron expression", async () => {
-        mockValidateCronExpression.mockReturnValueOnce({ valid: false, error: "bad syntax" });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: false,
+          error: "bad syntax",
+        });
 
-        const result = await handleSharedAction({
-          action: "create_cron_job",
-          name: "test",
-          schedule: "not valid",
-          content: "hi",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "create_cron_job",
+            name: "test",
+            schedule: "not valid",
+            content: "hi",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(false);
         expect(result?.error).toContain("Invalid cron expression");
@@ -983,13 +1318,19 @@ describe("gateway shared actions", () => {
       });
 
       it("includes next run time in response", async () => {
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: "2026-04-01T09:00:00.000Z" });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: true,
+          next: "2026-04-01T09:00:00.000Z",
+        });
 
-        const result = await handleSharedAction({
-          action: "create_cron_job",
-          schedule: "0 9 * * *",
-          content: "morning",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "create_cron_job",
+            schedule: "0 9 * * *",
+            content: "morning",
+          },
+          123,
+        );
 
         expect(result?.text).toContain("2026-04-01T09:00:00.000Z");
       });
@@ -997,34 +1338,49 @@ describe("gateway shared actions", () => {
       it("shows 'unknown' when next run time is not available", async () => {
         mockValidateCronExpression.mockReturnValueOnce({ valid: true });
 
-        const result = await handleSharedAction({
-          action: "create_cron_job",
-          schedule: "0 9 * * *",
-          content: "morning",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "create_cron_job",
+            schedule: "0 9 * * *",
+            content: "morning",
+          },
+          123,
+        );
 
         expect(result?.text).toContain("Next run: unknown");
       });
 
       it("passes timezone to validation", async () => {
-        await handleSharedAction({
-          action: "create_cron_job",
-          schedule: "0 9 * * *",
-          content: "hi",
-          timezone: "Europe/London",
-        }, 123);
+        await handleSharedAction(
+          {
+            action: "create_cron_job",
+            schedule: "0 9 * * *",
+            content: "hi",
+            timezone: "Europe/London",
+          },
+          123,
+        );
 
-        expect(mockValidateCronExpression).toHaveBeenCalledWith("0 9 * * *", "Europe/London");
+        expect(mockValidateCronExpression).toHaveBeenCalledWith(
+          "0 9 * * *",
+          "Europe/London",
+        );
       });
 
       it("passes undefined timezone when not specified", async () => {
-        await handleSharedAction({
-          action: "create_cron_job",
-          schedule: "0 9 * * *",
-          content: "hi",
-        }, 123);
+        await handleSharedAction(
+          {
+            action: "create_cron_job",
+            schedule: "0 9 * * *",
+            content: "hi",
+          },
+          123,
+        );
 
-        expect(mockValidateCronExpression).toHaveBeenCalledWith("0 9 * * *", undefined);
+        expect(mockValidateCronExpression).toHaveBeenCalledWith(
+          "0 9 * * *",
+          undefined,
+        );
       });
     });
 
@@ -1034,9 +1390,15 @@ describe("gateway shared actions", () => {
       it("returns 'no cron jobs' when empty", async () => {
         mockGetCronJobsForChat.mockReturnValue([]);
 
-        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+        const result = await handleSharedAction(
+          { action: "list_cron_jobs" },
+          42,
+        );
 
-        expect(result).toEqual({ ok: true, text: "No cron jobs in this chat." });
+        expect(result).toEqual({
+          ok: true,
+          text: "No cron jobs in this chat.",
+        });
       });
 
       it("lists existing jobs with all details", async () => {
@@ -1055,9 +1417,15 @@ describe("gateway shared actions", () => {
             timezone: "America/New_York",
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date("2026-04-02T09:00:00Z").toISOString() });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: true,
+          next: new Date("2026-04-02T09:00:00Z").toISOString(),
+        });
 
-        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+        const result = await handleSharedAction(
+          { action: "list_cron_jobs" },
+          42,
+        );
 
         expect(result?.ok).toBe(true);
         expect(result?.text).toContain("Cron jobs (1)");
@@ -1084,9 +1452,15 @@ describe("gateway shared actions", () => {
             runCount: 0,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date(Date.now() + 60000).toISOString() });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: true,
+          next: new Date(Date.now() + 60000).toISOString(),
+        });
 
-        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+        const result = await handleSharedAction(
+          { action: "list_cron_jobs" },
+          42,
+        );
 
         expect(result?.text).toContain("Last: never");
       });
@@ -1108,7 +1482,10 @@ describe("gateway shared actions", () => {
         ]);
         mockValidateCronExpression.mockReturnValueOnce({ valid: true });
 
-        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+        const result = await handleSharedAction(
+          { action: "list_cron_jobs" },
+          42,
+        );
 
         expect(result?.text).toContain("Lunch Alert (disabled)");
       });
@@ -1129,7 +1506,10 @@ describe("gateway shared actions", () => {
         ]);
         mockValidateCronExpression.mockReturnValueOnce({ valid: false });
 
-        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+        const result = await handleSharedAction(
+          { action: "list_cron_jobs" },
+          42,
+        );
 
         expect(result?.text).toContain("Next: unknown");
       });
@@ -1149,9 +1529,15 @@ describe("gateway shared actions", () => {
             runCount: 0,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date().toISOString() });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: true,
+          next: new Date().toISOString(),
+        });
 
-        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+        const result = await handleSharedAction(
+          { action: "list_cron_jobs" },
+          42,
+        );
 
         expect(result?.text).toContain("B".repeat(100) + "...");
         expect(result?.text).not.toContain("B".repeat(101));
@@ -1160,18 +1546,41 @@ describe("gateway shared actions", () => {
       it("lists multiple jobs", async () => {
         mockGetCronJobsForChat.mockReturnValue([
           {
-            id: "j1", chatId: "42", schedule: "0 9 * * *", type: "message",
-            content: "morning", name: "Job A", enabled: true, createdAt: 1700000000000, runCount: 1,
+            id: "j1",
+            chatId: "42",
+            schedule: "0 9 * * *",
+            type: "message",
+            content: "morning",
+            name: "Job A",
+            enabled: true,
+            createdAt: 1700000000000,
+            runCount: 1,
           },
           {
-            id: "j2", chatId: "42", schedule: "0 17 * * *", type: "query",
-            content: "evening", name: "Job B", enabled: false, createdAt: 1700000000000, runCount: 2,
+            id: "j2",
+            chatId: "42",
+            schedule: "0 17 * * *",
+            type: "query",
+            content: "evening",
+            name: "Job B",
+            enabled: false,
+            createdAt: 1700000000000,
+            runCount: 2,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date().toISOString() });
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date().toISOString() });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: true,
+          next: new Date().toISOString(),
+        });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: true,
+          next: new Date().toISOString(),
+        });
 
-        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+        const result = await handleSharedAction(
+          { action: "list_cron_jobs" },
+          42,
+        );
 
         expect(result?.text).toContain("Cron jobs (2)");
         expect(result?.text).toContain("Job A");
@@ -1181,13 +1590,26 @@ describe("gateway shared actions", () => {
       it("shows no timezone when not set", async () => {
         mockGetCronJobsForChat.mockReturnValue([
           {
-            id: "j-tz", chatId: "42", schedule: "0 9 * * *", type: "message",
-            content: "hi", name: "No TZ", enabled: true, createdAt: 1700000000000, runCount: 0,
+            id: "j-tz",
+            chatId: "42",
+            schedule: "0 9 * * *",
+            type: "message",
+            content: "hi",
+            name: "No TZ",
+            enabled: true,
+            createdAt: 1700000000000,
+            runCount: 0,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: new Date().toISOString() });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: true,
+          next: new Date().toISOString(),
+        });
 
-        const result = await handleSharedAction({ action: "list_cron_jobs" }, 42);
+        const result = await handleSharedAction(
+          { action: "list_cron_jobs" },
+          42,
+        );
 
         // Should show schedule without timezone in parens
         expect(result?.text).toContain("Schedule: 0 9 * * *");
@@ -1199,14 +1621,20 @@ describe("gateway shared actions", () => {
 
     describe("edit_cron_job", () => {
       it("rejects missing job_id", async () => {
-        const result = await handleSharedAction({ action: "edit_cron_job" }, 123);
+        const result = await handleSharedAction(
+          { action: "edit_cron_job" },
+          123,
+        );
         expect(result).toEqual({ ok: false, error: "Missing job_id" });
       });
 
       it("rejects non-existent job", async () => {
         mockGetCronJob.mockReturnValue(undefined);
 
-        const result = await handleSharedAction({ action: "edit_cron_job", job_id: "nonexistent" }, 123);
+        const result = await handleSharedAction(
+          { action: "edit_cron_job", job_id: "nonexistent" },
+          123,
+        );
 
         expect(result?.ok).toBe(false);
         expect(result?.error).toContain("not found");
@@ -1214,11 +1642,21 @@ describe("gateway shared actions", () => {
 
       it("rejects job from different chat", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-x", chatId: "999", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Other Chat", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-x",
+          chatId: "999",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Other Chat",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
 
-        const result = await handleSharedAction({ action: "edit_cron_job", job_id: "job-x" }, 123);
+        const result = await handleSharedAction(
+          { action: "edit_cron_job", job_id: "job-x" },
+          123,
+        );
 
         expect(result?.ok).toBe(false);
         expect(result?.error).toBe("Job belongs to a different chat");
@@ -1226,79 +1664,156 @@ describe("gateway shared actions", () => {
 
       it("updates job name", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e1", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Old Name", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e1",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Old Name",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
         mockUpdateCronJob.mockReturnValue({ name: "New Name" });
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e1", name: "New Name",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e1",
+            name: "New Name",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
         expect(result?.text).toContain("New Name");
         expect(result?.text).toContain("Fields changed: name");
-        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e1", { name: "New Name" });
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e1", {
+          name: "New Name",
+        });
       });
 
       it("updates content", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e2", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "old", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e2",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "old",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
         mockUpdateCronJob.mockReturnValue({ name: "Job" });
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e2", content: "new content",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e2",
+            content: "new content",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
-        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e2", { content: "new content" });
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e2", {
+          content: "new content",
+        });
       });
 
       it("updates enabled flag", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e3", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e3",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
         mockUpdateCronJob.mockReturnValue({ name: "Job" });
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e3", enabled: false,
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e3",
+            enabled: false,
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
-        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e3", { enabled: false });
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e3", {
+          enabled: false,
+        });
       });
 
       it("updates schedule with validation", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e4", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e4",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
           timezone: "America/New_York",
         });
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true, next: "2026-05-01T12:00:00Z" });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: true,
+          next: "2026-05-01T12:00:00Z",
+        });
         mockUpdateCronJob.mockReturnValue({ name: "Job" });
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e4", schedule: "0 12 * * *",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e4",
+            schedule: "0 12 * * *",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
-        expect(mockValidateCronExpression).toHaveBeenCalledWith("0 12 * * *", "America/New_York");
-        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e4", { schedule: "0 12 * * *" });
+        expect(mockValidateCronExpression).toHaveBeenCalledWith(
+          "0 12 * * *",
+          "America/New_York",
+        );
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e4", {
+          schedule: "0 12 * * *",
+        });
       });
 
       it("rejects invalid schedule update", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e5", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e5",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
-        mockValidateCronExpression.mockReturnValueOnce({ valid: false, error: "too many fields" });
+        mockValidateCronExpression.mockReturnValueOnce({
+          valid: false,
+          error: "too many fields",
+        });
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e5", schedule: "bad schedule",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e5",
+            schedule: "bad schedule",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(false);
         expect(result?.error).toContain("Invalid cron expression");
@@ -1308,98 +1823,187 @@ describe("gateway shared actions", () => {
 
       it("updates multiple fields at once", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e6", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e6",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
         mockUpdateCronJob.mockReturnValue({ name: "Updated" });
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e6",
-          name: "Updated", content: "new", enabled: false, type: "query",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e6",
+            name: "Updated",
+            content: "new",
+            enabled: false,
+            type: "query",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
-        expect(result?.text).toContain("Fields changed: name, content, enabled, type");
+        expect(result?.text).toContain(
+          "Fields changed: name, content, enabled, type",
+        );
         expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e6", {
-          name: "Updated", content: "new", enabled: false, type: "query",
+          name: "Updated",
+          content: "new",
+          enabled: false,
+          type: "query",
         });
       });
 
       it("updates timezone", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e7", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e7",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
         mockUpdateCronJob.mockReturnValue({ name: "Job" });
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e7", timezone: "Europe/Berlin",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e7",
+            timezone: "Europe/Berlin",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
-        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e7", { timezone: "Europe/Berlin" });
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e7", {
+          timezone: "Europe/Berlin",
+        });
       });
 
       it("clears timezone when set to empty", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e8", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e8",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
           timezone: "America/New_York",
         });
         mockUpdateCronJob.mockReturnValue({ name: "Job" });
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e8", timezone: "",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e8",
+            timezone: "",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
-        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e8", { timezone: undefined });
+        expect(mockUpdateCronJob).toHaveBeenCalledWith("job-e8", {
+          timezone: undefined,
+        });
       });
 
       it("uses new timezone for schedule validation when both change", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e9", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e9",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
           timezone: "America/New_York",
         });
         mockValidateCronExpression.mockReturnValueOnce({ valid: true });
         mockUpdateCronJob.mockReturnValue({ name: "Job" });
 
-        await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e9",
-          schedule: "0 12 * * *", timezone: "Asia/Tokyo",
-        }, 123);
+        await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e9",
+            schedule: "0 12 * * *",
+            timezone: "Asia/Tokyo",
+          },
+          123,
+        );
 
         // Should validate with the NEW timezone, not the old one
-        expect(mockValidateCronExpression).toHaveBeenCalledWith("0 12 * * *", "Asia/Tokyo");
+        expect(mockValidateCronExpression).toHaveBeenCalledWith(
+          "0 12 * * *",
+          "Asia/Tokyo",
+        );
       });
 
       it("falls back to job timezone when schedule changes but timezone does not", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e10", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e10",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
           timezone: "US/Pacific",
         });
         mockValidateCronExpression.mockReturnValueOnce({ valid: true });
         mockUpdateCronJob.mockReturnValue({ name: "Job" });
 
-        await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e10", schedule: "30 8 * * 1-5",
-        }, 123);
+        await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e10",
+            schedule: "30 8 * * 1-5",
+          },
+          123,
+        );
 
-        expect(mockValidateCronExpression).toHaveBeenCalledWith("30 8 * * 1-5", "US/Pacific");
+        expect(mockValidateCronExpression).toHaveBeenCalledWith(
+          "30 8 * * 1-5",
+          "US/Pacific",
+        );
       });
 
       it("uses job_id as fallback name when updateCronJob returns no name", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-e11", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Job", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-e11",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Job",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
         mockUpdateCronJob.mockReturnValue(undefined);
 
-        const result = await handleSharedAction({
-          action: "edit_cron_job", job_id: "job-e11", content: "new",
-        }, 123);
+        const result = await handleSharedAction(
+          {
+            action: "edit_cron_job",
+            job_id: "job-e11",
+            content: "new",
+          },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
         expect(result?.text).toContain("job-e11");
@@ -1410,14 +2014,20 @@ describe("gateway shared actions", () => {
 
     describe("delete_cron_job", () => {
       it("rejects missing job_id", async () => {
-        const result = await handleSharedAction({ action: "delete_cron_job" }, 123);
+        const result = await handleSharedAction(
+          { action: "delete_cron_job" },
+          123,
+        );
         expect(result).toEqual({ ok: false, error: "Missing job_id" });
       });
 
       it("rejects non-existent job", async () => {
         mockGetCronJob.mockReturnValue(undefined);
 
-        const result = await handleSharedAction({ action: "delete_cron_job", job_id: "ghost" }, 123);
+        const result = await handleSharedAction(
+          { action: "delete_cron_job", job_id: "ghost" },
+          123,
+        );
 
         expect(result?.ok).toBe(false);
         expect(result?.error).toContain("not found");
@@ -1425,11 +2035,21 @@ describe("gateway shared actions", () => {
 
       it("rejects job from different chat", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-d1", chatId: "999", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "Other", enabled: true, createdAt: 1700000000000, runCount: 0,
+          id: "job-d1",
+          chatId: "999",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "Other",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 0,
         });
 
-        const result = await handleSharedAction({ action: "delete_cron_job", job_id: "job-d1" }, 123);
+        const result = await handleSharedAction(
+          { action: "delete_cron_job", job_id: "job-d1" },
+          123,
+        );
 
         expect(result?.ok).toBe(false);
         expect(result?.error).toBe("Job belongs to a different chat");
@@ -1437,11 +2057,21 @@ describe("gateway shared actions", () => {
 
       it("deletes a job successfully", async () => {
         mockGetCronJob.mockReturnValue({
-          id: "job-d2", chatId: "123", schedule: "0 9 * * *", type: "message",
-          content: "hi", name: "To Delete", enabled: true, createdAt: 1700000000000, runCount: 5,
+          id: "job-d2",
+          chatId: "123",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hi",
+          name: "To Delete",
+          enabled: true,
+          createdAt: 1700000000000,
+          runCount: 5,
         });
 
-        const result = await handleSharedAction({ action: "delete_cron_job", job_id: "job-d2" }, 123);
+        const result = await handleSharedAction(
+          { action: "delete_cron_job", job_id: "job-d2" },
+          123,
+        );
 
         expect(result?.ok).toBe(true);
         expect(result?.text).toContain('Deleted cron job "To Delete"');
@@ -1472,7 +2102,8 @@ describe("gateway-actions — additional branch coverage", () => {
     headers.set("content-type", "text/html");
     headers.set("content-length", String(25 * 1024 * 1024)); // 25MB
     const bigResponse = {
-      ok: true, status: 200,
+      ok: true,
+      status: 200,
       headers,
       text: async () => "some text",
       json: async () => ({}),
@@ -1480,7 +2111,10 @@ describe("gateway-actions — additional branch coverage", () => {
     } as unknown as Response;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(bigResponse));
 
-    const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/huge.html" }, 123);
+    const result = await handleSharedAction(
+      { action: "fetch_url", url: "https://example.com/huge.html" },
+      123,
+    );
 
     expect(result?.ok).toBe(false);
     expect(result?.error).toContain("too large");
@@ -1494,7 +2128,8 @@ describe("gateway-actions — additional branch coverage", () => {
     const view = new Uint8Array(buf);
     view[0] = 0x25; // not a known image magic byte → ext = "bin"
     const noCtResponse = {
-      ok: true, status: 200,
+      ok: true,
+      status: 200,
       headers: noCtHeaders,
       text: async () => "",
       json: async () => ({}),
@@ -1502,17 +2137,23 @@ describe("gateway-actions — additional branch coverage", () => {
     } as unknown as Response;
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(noCtResponse));
 
-    const result = await handleSharedAction({ action: "fetch_url", url: "https://example.com/unknown" }, 123);
+    const result = await handleSharedAction(
+      { action: "fetch_url", url: "https://example.com/unknown" },
+      123,
+    );
     // Should succeed (downloaded as bin), covering ct ?? "" right side and ct.split("/")[1] ?? "file" right side
     expect(result?.ok).toBe(true);
   });
 
   it("handles search result with missing content field (line 113 r.content ?? '' branch)", async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce({
-      ok: true, status: 200,
+      ok: true,
+      status: 200,
       headers: new Headers(),
       json: async () => ({
-        results: [{ title: "Result", url: "https://example.com", content: undefined }],
+        results: [
+          { title: "Result", url: "https://example.com", content: undefined },
+        ],
       }),
       text: async () => "",
       arrayBuffer: async () => new ArrayBuffer(0),
@@ -1520,7 +2161,10 @@ describe("gateway-actions — additional branch coverage", () => {
     vi.stubGlobal("fetch", mockFetch);
     process.env.TALON_SEARXNG_URL = "http://localhost:8080";
 
-    const result = await handleSharedAction({ action: "web_search", query: "test" }, 123);
+    const result = await handleSharedAction(
+      { action: "web_search", query: "test" },
+      123,
+    );
     expect(result?.ok).toBe(true);
     // snippet should be "" (from ?? "")
     expect(result?.text).toBeDefined();
@@ -1528,16 +2172,22 @@ describe("gateway-actions — additional branch coverage", () => {
 
   it("handles search response with no results array (line 113 data.results ?? [] branch)", async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce({
-      ok: true, status: 200,
+      ok: true,
+      status: 200,
       headers: new Headers(),
-      json: async () => ({ /* no results property */ }),
+      json: async () => ({
+        /* no results property */
+      }),
       text: async () => "",
       arrayBuffer: async () => new ArrayBuffer(0),
     } as unknown as Response);
     vi.stubGlobal("fetch", mockFetch);
     process.env.TALON_SEARXNG_URL = "http://localhost:8080";
 
-    const result = await handleSharedAction({ action: "web_search", query: "empty" }, 123);
+    const result = await handleSharedAction(
+      { action: "web_search", query: "empty" },
+      123,
+    );
     expect(result?.ok).toBe(true);
     expect(result?.text).toContain("No results for");
   });

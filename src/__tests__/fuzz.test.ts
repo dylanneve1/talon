@@ -141,13 +141,19 @@ describe("fuzz: classify()", () => {
 });
 
 // Real cron validator (the import is mocked, so we use Cron directly)
-function realValidateCron(expr: string, timezone?: string): { valid: boolean; error?: string } {
+function realValidateCron(
+  expr: string,
+  timezone?: string,
+): { valid: boolean; error?: string } {
   try {
     const cron = new Cron(expr, { timezone: timezone ?? undefined });
     cron.nextRun();
     return { valid: true };
   } catch (err) {
-    return { valid: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      valid: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -182,9 +188,17 @@ describe("fuzz: handleSharedAction() — unknown actions", () => {
       fc.asyncProperty(fc.string(), async (actionName) => {
         // Skip known action names to test only the default/unknown path
         const knownActions = new Set([
-          "read_history", "search_history", "get_user_messages",
-          "list_known_users", "list_media", "web_search", "fetch_url",
-          "create_cron_job", "list_cron_jobs", "edit_cron_job", "delete_cron_job",
+          "read_history",
+          "search_history",
+          "get_user_messages",
+          "list_known_users",
+          "list_media",
+          "web_search",
+          "fetch_url",
+          "create_cron_job",
+          "list_cron_jobs",
+          "edit_cron_job",
+          "delete_cron_job",
         ]);
         if (knownActions.has(actionName)) return;
 
@@ -205,9 +219,17 @@ describe("fuzz: handleSharedAction() — unknown actions", () => {
         }),
         async (body) => {
           const knownActions = new Set([
-            "read_history", "search_history", "get_user_messages",
-            "list_known_users", "list_media", "web_search", "fetch_url",
-            "create_cron_job", "list_cron_jobs", "edit_cron_job", "delete_cron_job",
+            "read_history",
+            "search_history",
+            "get_user_messages",
+            "list_known_users",
+            "list_media",
+            "web_search",
+            "fetch_url",
+            "create_cron_job",
+            "list_cron_jobs",
+            "edit_cron_job",
+            "delete_cron_job",
           ]);
           if (knownActions.has(body.action)) return;
 
@@ -230,7 +252,10 @@ describe("fuzz: fetch_url URL validation", () => {
 
     fc.assert(
       fc.asyncProperty(fc.string(), async (url) => {
-        const result = await handleSharedAction({ action: "fetch_url", url }, 123);
+        const result = await handleSharedAction(
+          { action: "fetch_url", url },
+          123,
+        );
         // Should either return an error result or handle gracefully
         expect(result).not.toBeUndefined();
         if (result !== null) {
@@ -249,11 +274,22 @@ describe("fuzz: fetch_url URL validation", () => {
   it("rejects all non-http/https protocols", () => {
     fc.assert(
       fc.asyncProperty(
-        fc.constantFrom("ftp", "file", "javascript", "data", "ws", "wss", "ssh"),
+        fc.constantFrom(
+          "ftp",
+          "file",
+          "javascript",
+          "data",
+          "ws",
+          "wss",
+          "ssh",
+        ),
         fc.webUrl(),
         async (protocol, path) => {
           const url = `${protocol}://${path.replace(/^https?:\/\//, "")}`;
-          const result = await handleSharedAction({ action: "fetch_url", url }, 123);
+          const result = await handleSharedAction(
+            { action: "fetch_url", url },
+            123,
+          );
           if (result !== null) {
             // Should not be ok for non-http protocols
             // (some invalid URLs will get "Invalid URL" error at parse time)
@@ -288,7 +324,17 @@ describe("fuzz: resolveModelName()", () => {
   });
 
   it("known aliases always resolve to claude model names", () => {
-    const aliases = ["sonnet", "opus", "haiku", "sonnet-4.6", "opus-4.6", "haiku-4.5", "sonnet-4-6", "opus-4-6", "haiku-4-5"];
+    const aliases = [
+      "sonnet",
+      "opus",
+      "haiku",
+      "sonnet-4.6",
+      "opus-4.6",
+      "haiku-4.5",
+      "sonnet-4-6",
+      "opus-4-6",
+      "haiku-4-5",
+    ];
     fc.assert(
       fc.property(
         fc.constantFrom(...aliases),
@@ -307,9 +353,15 @@ describe("fuzz: resolveModelName()", () => {
       fc.property(fc.string(), (input) => {
         const trimmed = input.trim().toLowerCase();
         const knownAliases = [
-          "sonnet", "opus", "haiku",
-          "sonnet-4.6", "opus-4.6", "haiku-4.5",
-          "sonnet-4-6", "opus-4-6", "haiku-4-5",
+          "sonnet",
+          "opus",
+          "haiku",
+          "sonnet-4.6",
+          "opus-4.6",
+          "haiku-4.5",
+          "sonnet-4-6",
+          "opus-4-6",
+          "haiku-4-5",
         ];
         if (knownAliases.includes(trimmed)) return;
 

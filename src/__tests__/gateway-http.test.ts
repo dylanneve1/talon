@@ -1,7 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  beforeAll,
+  afterAll,
+  beforeEach,
+  vi,
+} from "vitest";
 
 vi.mock("../util/log.js", () => ({
-  log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
 }));
 
 vi.mock("../core/plugin.js", () => ({
@@ -10,7 +21,10 @@ vi.mock("../core/plugin.js", () => ({
 
 vi.mock("../util/watchdog.js", () => ({
   getHealthStatus: vi.fn(() => ({
-    healthy: true, totalMessagesProcessed: 0, recentErrorCount: 0, msSinceLastMessage: 0,
+    healthy: true,
+    totalMessagesProcessed: 0,
+    recentErrorCount: 0,
+    msSinceLastMessage: 0,
   })),
 }));
 
@@ -29,7 +43,10 @@ vi.mock("../storage/cron-store.js", () => ({
   getCronJobsForChat: vi.fn(() => []),
   updateCronJob: vi.fn(),
   deleteCronJob: vi.fn(),
-  validateCronExpression: vi.fn(() => ({ valid: true, next: new Date().toISOString() })),
+  validateCronExpression: vi.fn(() => ({
+    valid: true,
+    next: new Date().toISOString(),
+  })),
   generateCronId: vi.fn(() => "test-id"),
   loadCronJobs: vi.fn(),
 }));
@@ -46,7 +63,8 @@ let port: number;
 // Mock frontend handler
 const mockFrontendHandler = vi.fn(async (body: Record<string, unknown>) => {
   const action = body.action as string;
-  if (action === "send_message") return { ok: true, message_id: 42, text: "sent" };
+  if (action === "send_message")
+    return { ok: true, message_id: 42, text: "sent" };
   if (action === "get_chat_info") return { ok: true, id: 123, type: "private" };
   return null;
 });
@@ -70,13 +88,18 @@ beforeEach(() => {
   mockFrontendHandler.mockClear();
 });
 
-async function post(body: Record<string, unknown>): Promise<{ status: number; body: Record<string, unknown> }> {
+async function post(
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: Record<string, unknown> }> {
   const resp = await fetch(`http://127.0.0.1:${port}/action`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  return { status: resp.status, body: await resp.json() as Record<string, unknown> };
+  return {
+    status: resp.status,
+    body: (await resp.json()) as Record<string, unknown>,
+  };
 }
 
 describe("gateway HTTP server", () => {
@@ -84,7 +107,7 @@ describe("gateway HTTP server", () => {
     it("returns health JSON", async () => {
       const resp = await fetch(`http://127.0.0.1:${port}/health`);
       expect(resp.status).toBe(200);
-      const data = await resp.json() as Record<string, unknown>;
+      const data = (await resp.json()) as Record<string, unknown>;
       expect(data.ok).toBeDefined();
       expect(data.uptime).toBeDefined();
       expect(data.memory).toBeDefined();
@@ -111,7 +134,7 @@ describe("gateway HTTP server", () => {
         body: "not valid json{{{",
       });
       expect(resp.status).toBe(400);
-      const data = await resp.json() as Record<string, unknown>;
+      const data = (await resp.json()) as Record<string, unknown>;
       expect(data.ok).toBe(false);
       expect(data.error).toContain("Invalid JSON");
     });
@@ -133,7 +156,11 @@ describe("gateway HTTP server", () => {
 
     it("routes to frontend handler", async () => {
       gateway.setContext(123);
-      const { body } = await post({ action: "send_message", _chatId: "123", text: "hello" });
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "123",
+        text: "hello",
+      });
       expect(body.ok).toBe(true);
       expect(body.message_id).toBe(42);
       expect(mockFrontendHandler).toHaveBeenCalled();
@@ -142,7 +169,10 @@ describe("gateway HTTP server", () => {
 
     it("returns error for unknown action", async () => {
       gateway.setContext(123);
-      const { body } = await post({ action: "completely_unknown_action", _chatId: "123" });
+      const { body } = await post({
+        action: "completely_unknown_action",
+        _chatId: "123",
+      });
       expect(body.ok).toBe(false);
       expect(body.error).toContain("Unknown action");
       gateway.clearContext(123);
@@ -184,21 +214,35 @@ describe("gateway HTTP server", () => {
     it("one chat's context doesn't affect another", async () => {
       gateway.setContext(300);
       // Chat 400 has no context
-      const { body } = await post({ action: "send_message", _chatId: "400", text: "no context" });
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "400",
+        text: "no context",
+      });
       expect(body.ok).toBe(false);
       expect(body.error).toContain("No active chat context");
       // Chat 300 still works
-      const r2 = await post({ action: "send_message", _chatId: "300", text: "still works" });
+      const r2 = await post({
+        action: "send_message",
+        _chatId: "300",
+        text: "still works",
+      });
       expect(r2.body.ok).toBe(true);
       gateway.clearContext(300);
     });
 
     it("frontend handler error returns error result (doesn't crash server)", async () => {
-      const errorHandler = vi.fn(async () => { throw new Error("handler exploded"); });
+      const errorHandler = vi.fn(async () => {
+        throw new Error("handler exploded");
+      });
       gateway.setFrontendHandler(errorHandler);
       gateway.setContext(123);
 
-      const { status, body } = await post({ action: "send_message", _chatId: "123", text: "boom" });
+      const { status, body } = await post({
+        action: "send_message",
+        _chatId: "123",
+        text: "boom",
+      });
 
       expect(status).toBe(200); // HTTP 200, error in body
       expect(body.ok).toBe(false);
@@ -210,7 +254,10 @@ describe("gateway HTTP server", () => {
 
     it("request without _chatId is rejected", async () => {
       gateway.setContext(123);
-      const { body } = await post({ action: "send_message", text: "no chatId" });
+      const { body } = await post({
+        action: "send_message",
+        text: "no chatId",
+      });
       expect(body.ok).toBe(false);
       expect(body.error).toContain("No active chat context");
       gateway.clearContext(123);
@@ -220,11 +267,17 @@ describe("gateway HTTP server", () => {
       // Make frontendHandler return a circular reference so JSON.stringify throws
       const circular: Record<string, unknown> = {};
       circular["self"] = circular;
-      const circularHandler = vi.fn(async () => circular) as unknown as import("../core/types.js").FrontendActionHandler;
+      const circularHandler = vi.fn(
+        async () => circular,
+      ) as unknown as import("../core/types.js").FrontendActionHandler;
       gateway.setFrontendHandler(circularHandler);
       gateway.setContext(123);
 
-      const { status, body } = await post({ action: "send_message", _chatId: "123", text: "boom" });
+      const { status, body } = await post({
+        action: "send_message",
+        _chatId: "123",
+        text: "boom",
+      });
 
       expect(status).toBe(500);
       expect(body.ok).toBe(false);
@@ -235,11 +288,14 @@ describe("gateway HTTP server", () => {
     });
   });
 
-
-describe("shared actions via HTTP", () => {
+  describe("shared actions via HTTP", () => {
     it("fetch_url rejects invalid URLs", async () => {
       gateway.setContext(123);
-      const { body } = await post({ action: "fetch_url", _chatId: "123", url: "not-a-url" });
+      const { body } = await post({
+        action: "fetch_url",
+        _chatId: "123",
+        url: "not-a-url",
+      });
       expect(body.ok).toBe(false);
       gateway.clearContext(123);
     });
@@ -254,8 +310,12 @@ describe("shared actions via HTTP", () => {
     it("create_cron_job works", async () => {
       gateway.setContext(123);
       const { body } = await post({
-        action: "create_cron_job", _chatId: "123",
-        name: "test", schedule: "0 9 * * *", type: "message", content: "hello",
+        action: "create_cron_job",
+        _chatId: "123",
+        name: "test",
+        schedule: "0 9 * * *",
+        type: "message",
+        content: "hello",
       });
       expect(body.ok).toBe(true);
       gateway.clearContext(123);
@@ -268,10 +328,16 @@ describe("shared actions via HTTP", () => {
 describe("gateway routes to plugin handler", () => {
   it("returns plugin result when handlePluginAction returns non-null", async () => {
     const { handlePluginAction } = await import("../core/plugin.js");
-    (handlePluginAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce({ ok: true, result: "from plugin" });
+    (handlePluginAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      ok: true,
+      result: "from plugin",
+    });
 
     gateway.setContext(123);
-    const { body } = await post({ action: "plugin_specific_action", _chatId: "123" });
+    const { body } = await post({
+      action: "plugin_specific_action",
+      _chatId: "123",
+    });
     expect(body.ok).toBe(true);
     expect(body.result).toBe("from plugin");
     gateway.clearContext(123);
@@ -300,11 +366,17 @@ describe("gateway — no frontend handler falls through to shared actions (line 
 
 describe("gateway — non-Error thrown in handleAction catch (line 186 FALSE branch)", () => {
   it("returns error with String(err) when handler throws a non-Error", async () => {
-    const stringThrowHandler = vi.fn(async () => { throw "plain string gateway error"; });
+    const stringThrowHandler = vi.fn(async () => {
+      throw "plain string gateway error";
+    });
     gateway.setFrontendHandler(stringThrowHandler);
     gateway.setContext(123);
 
-    const { body } = await post({ action: "send_message", _chatId: "123", text: "test" });
+    const { body } = await post({
+      action: "send_message",
+      _chatId: "123",
+      text: "test",
+    });
     expect(body.ok).toBe(false);
     expect(String(body.error)).toContain("plain string gateway error");
 
@@ -325,12 +397,14 @@ describe("gateway health endpoint — old activity shows minutes ago (line 211 F
   it("shows 'Xm ago' when msSinceLastMessage >= 60000", async () => {
     const { getHealthStatus } = await import("../util/watchdog.js");
     (getHealthStatus as ReturnType<typeof vi.fn>).mockReturnValueOnce({
-      healthy: true, totalMessagesProcessed: 5, recentErrorCount: 0,
+      healthy: true,
+      totalMessagesProcessed: 5,
+      recentErrorCount: 0,
       msSinceLastMessage: 5 * 60_000, // 5 minutes ago → > 60000
     });
 
     const resp = await fetch(`http://127.0.0.1:${port}/health`);
-    const data = await resp.json() as Record<string, unknown>;
+    const data = (await resp.json()) as Record<string, unknown>;
     expect(data.lastActivity).toMatch(/m ago$/);
   });
 });

@@ -148,9 +148,9 @@ describe("extractToolDetail", () => {
   });
 
   it("extracts package_url", () => {
-    expect(extractToolDetail({ package_url: "https://pkg.example.com/lib" }, 80)).toBe(
-      "https://pkg.example.com/lib",
-    );
+    expect(
+      extractToolDetail({ package_url: "https://pkg.example.com/lib" }, 80),
+    ).toBe("https://pkg.example.com/lib");
   });
 
   it("extracts packages array", () => {
@@ -161,12 +161,16 @@ describe("extractToolDetail", () => {
 
   it("skips empty string values in fallback", () => {
     // Empty string value (v.length === 0) is skipped by the `v.length > 0` check
-    expect(extractToolDetail({ empty: "", valid: "value" }, 80)).toBe("valid=value");
+    expect(extractToolDetail({ empty: "", valid: "value" }, 80)).toBe(
+      "valid=value",
+    );
   });
 
   it("skips object/null values in fallback (neither string nor number/boolean)", () => {
     // Object values don't match either string or number/boolean conditions → skipped
-    expect(extractToolDetail({ obj: { nested: "val" }, num: 42 }, 80)).toBe("num=42");
+    expect(extractToolDetail({ obj: { nested: "val" }, num: 42 }, 80)).toBe(
+      "num=42",
+    );
   });
 
   it("extracts query field", () => {
@@ -174,7 +178,9 @@ describe("extractToolDetail", () => {
   });
 
   it("extracts url field", () => {
-    expect(extractToolDetail({ url: "https://example.com" }, 80)).toBe("https://example.com");
+    expect(extractToolDetail({ url: "https://example.com" }, 80)).toBe(
+      "https://example.com",
+    );
   });
 
   it("extracts type field", () => {
@@ -186,7 +192,9 @@ describe("extractToolDetail", () => {
   });
 
   it("extracts model field", () => {
-    expect(extractToolDetail({ model: "claude-sonnet-4-6" }, 80)).toBe("claude-sonnet-4-6");
+    expect(extractToolDetail({ model: "claude-sonnet-4-6" }, 80)).toBe(
+      "claude-sonnet-4-6",
+    );
   });
 });
 

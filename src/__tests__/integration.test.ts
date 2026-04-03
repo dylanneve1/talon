@@ -8,7 +8,9 @@ import { initDispatcher, execute } from "../core/dispatcher.js";
 import type { QueryBackend, ContextManager } from "../core/types.js";
 import { TalonError } from "../core/errors.js";
 
-function setup(overrides: { queryResult?: Record<string, unknown>; queryError?: Error } = {}) {
+function setup(
+  overrides: { queryResult?: Record<string, unknown>; queryError?: Error } = {},
+) {
   const acquired: number[] = [];
   const released: number[] = [];
   const typingCalls: number[] = [];
@@ -38,16 +40,28 @@ function setup(overrides: { queryResult?: Record<string, unknown>; queryError?: 
   initDispatcher({
     backend,
     context,
-    sendTyping: vi.fn(async (id: number) => { typingCalls.push(id); }),
-    onActivity: vi.fn(() => { activityCount++; }),
+    sendTyping: vi.fn(async (id: number) => {
+      typingCalls.push(id);
+    }),
+    onActivity: vi.fn(() => {
+      activityCount++;
+    }),
   });
 
-  return { backend, context, acquired, released, typingCalls, getActivityCount: () => activityCount };
+  return {
+    backend,
+    context,
+    acquired,
+    released,
+    typingCalls,
+    getActivityCount: () => activityCount,
+  };
 }
 
 describe("integration: dispatcher lifecycle", () => {
   it("full happy path: acquire → type → query → activity → release", async () => {
-    const { backend, acquired, released, typingCalls, getActivityCount } = setup();
+    const { backend, acquired, released, typingCalls, getActivityCount } =
+      setup();
 
     const result = await execute({
       chatId: "123",
@@ -136,7 +150,14 @@ describe("integration: dispatcher lifecycle", () => {
         order.push(`start:${params.chatId}`);
         await new Promise((r) => setTimeout(r, 20));
         order.push(`end:${params.chatId}`);
-        return { text: "", durationMs: 20, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0 };
+        return {
+          text: "",
+          durationMs: 20,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
       }),
     };
 
@@ -153,8 +174,22 @@ describe("integration: dispatcher lifecycle", () => {
 
     // Fire two queries simultaneously
     await Promise.all([
-      execute({ chatId: "A", numericChatId: 1, prompt: "a", senderName: "U", isGroup: false, source: "message" }),
-      execute({ chatId: "B", numericChatId: 2, prompt: "b", senderName: "U", isGroup: false, source: "message" }),
+      execute({
+        chatId: "A",
+        numericChatId: 1,
+        prompt: "a",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
+      execute({
+        chatId: "B",
+        numericChatId: 2,
+        prompt: "b",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
     ]);
 
     // True concurrency — both start before either ends

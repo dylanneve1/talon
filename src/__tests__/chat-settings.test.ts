@@ -257,7 +257,9 @@ describe("chat-settings", () => {
       const settings = getChatSettings("migrate-1");
       expect(settings.effort).toBe("off");
       // maxThinkingTokens should be removed
-      expect((settings as Record<string, unknown>).maxThinkingTokens).toBeUndefined();
+      expect(
+        (settings as Record<string, unknown>).maxThinkingTokens,
+      ).toBeUndefined();
     });
 
     it("migrates maxThinkingTokens=1000 to effort=low", () => {
@@ -325,7 +327,9 @@ describe("chat-settings", () => {
       const settings = getChatSettings("migrate-6");
       // Should keep existing effort, just clean up old field
       expect(settings.effort).toBe("high");
-      expect((settings as Record<string, unknown>).maxThinkingTokens).toBeUndefined();
+      expect(
+        (settings as Record<string, unknown>).maxThinkingTokens,
+      ).toBeUndefined();
     });
 
     it("handles missing store file gracefully", () => {
@@ -343,20 +347,25 @@ describe("chat-settings", () => {
 
 describe("chat-settings — setPulseLastCheckMsgId", () => {
   it("sets pulseLastCheckMsgId when msgId is provided", async () => {
-    const { setPulseLastCheckMsgId, getChatSettings } = await import("../storage/chat-settings.js");
+    const { setPulseLastCheckMsgId, getChatSettings } =
+      await import("../storage/chat-settings.js");
     setPulseLastCheckMsgId("pulse-check-1", 42);
     expect(getChatSettings("pulse-check-1").pulseLastCheckMsgId).toBe(42);
   });
 
   it("clears pulseLastCheckMsgId when undefined is passed", async () => {
-    const { setPulseLastCheckMsgId, getChatSettings } = await import("../storage/chat-settings.js");
+    const { setPulseLastCheckMsgId, getChatSettings } =
+      await import("../storage/chat-settings.js");
     setPulseLastCheckMsgId("pulse-check-2", 100);
     setPulseLastCheckMsgId("pulse-check-2", undefined);
-    expect(getChatSettings("pulse-check-2").pulseLastCheckMsgId).toBeUndefined();
+    expect(
+      getChatSettings("pulse-check-2").pulseLastCheckMsgId,
+    ).toBeUndefined();
   });
 
   it("removes empty settings object after all fields cleared", async () => {
-    const { setPulseLastCheckMsgId, getChatSettings } = await import("../storage/chat-settings.js");
+    const { setPulseLastCheckMsgId, getChatSettings } =
+      await import("../storage/chat-settings.js");
     // Set only pulseLastCheckMsgId (no model, effort, pulse, pulseIntervalMs)
     setPulseLastCheckMsgId("pulse-cleanup-1", 99);
     setPulseLastCheckMsgId("pulse-cleanup-1", undefined);
@@ -367,12 +376,15 @@ describe("chat-settings — setPulseLastCheckMsgId", () => {
 
 describe("chat-settings — migration of has-effort + maxThinkingTokens", () => {
   it("cleans up maxThinkingTokens when effort already set", async () => {
-    const { loadChatSettings, getChatSettings } = await import("../storage/chat-settings.js");
+    const { loadChatSettings, getChatSettings } =
+      await import("../storage/chat-settings.js");
     const { existsSync, readFileSync } = await import("node:fs");
     vi.mocked(existsSync).mockReturnValueOnce(true);
-    vi.mocked(readFileSync).mockReturnValueOnce(JSON.stringify({
-      "migrate-has-effort": { effort: "high", maxThinkingTokens: 16000 },
-    }));
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({
+        "migrate-has-effort": { effort: "high", maxThinkingTokens: 16000 },
+      }),
+    );
     loadChatSettings();
     const s = getChatSettings("migrate-has-effort");
     expect(s.effort).toBe("high");
@@ -382,7 +394,8 @@ describe("chat-settings — migration of has-effort + maxThinkingTokens", () => 
 
 describe("chat-settings — flushChatSettings", () => {
   it("does not throw when called", async () => {
-    const { flushChatSettings, setChatModel } = await import("../storage/chat-settings.js");
+    const { flushChatSettings, setChatModel } =
+      await import("../storage/chat-settings.js");
     // Make dirty first so save() runs
     setChatModel("flush-test", "claude-opus-4-6");
     expect(() => flushChatSettings()).not.toThrow();
@@ -407,15 +420,21 @@ describe("chat-settings — cleanupEmpty keeps entry when other fields remain (l
 
 describe("chat-settings — backup recovery on corrupt primary", () => {
   it("loads from backup when primary JSON is corrupt", async () => {
-    const { loadChatSettings, getChatSettings } = await import("../storage/chat-settings.js");
+    const { loadChatSettings, getChatSettings } =
+      await import("../storage/chat-settings.js");
     vi.mocked(existsSync)
-      .mockReturnValueOnce(true)  // primary exists
+      .mockReturnValueOnce(true) // primary exists
       .mockReturnValueOnce(true); // backup exists
     vi.mocked(readFileSync)
-      .mockReturnValueOnce("{ INVALID JSON")  // primary corrupt
-      .mockReturnValueOnce(JSON.stringify({
-        "backup-settings-chat": { model: "claude-sonnet-4-6", effort: "medium" },
-      }));
+      .mockReturnValueOnce("{ INVALID JSON") // primary corrupt
+      .mockReturnValueOnce(
+        JSON.stringify({
+          "backup-settings-chat": {
+            model: "claude-sonnet-4-6",
+            effort: "medium",
+          },
+        }),
+      );
     loadChatSettings();
     const s = getChatSettings("backup-settings-chat");
     expect(s.model).toBe("claude-sonnet-4-6");

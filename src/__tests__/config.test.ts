@@ -12,15 +12,22 @@ describe("config", () => {
   function mockFs(
     configJson: Record<string, unknown> | null,
     promptFiles: Record<string, string> = {},
-    workspaceEntries?: { name: string; isDir: boolean; size?: number; children?: { name: string; size: number }[] }[],
+    workspaceEntries?: {
+      name: string;
+      isDir: boolean;
+      size?: number;
+      children?: { name: string; size: number }[];
+    }[],
   ) {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn((path: string) => {
-        if (path.includes("config.json") || path.includes("talon.json")) return configJson !== null;
+        if (path.includes("config.json") || path.includes("talon.json"))
+          return configJson !== null;
         // .talon directory checks (root, data)
         if (path.endsWith(".talon") || path.endsWith("/data")) return true;
         // workspace directory check
-        if (path.endsWith("workspace") && workspaceEntries !== undefined) return true;
+        if (path.endsWith("workspace") && workspaceEntries !== undefined)
+          return true;
         if (typeof path === "string") {
           for (const key of Object.keys(promptFiles)) {
             if (path.includes(key)) return true;
@@ -29,7 +36,8 @@ describe("config", () => {
         return false;
       }),
       readFileSync: vi.fn((path: string) => {
-        if (path.includes("config.json") || path.includes("talon.json")) return JSON.stringify(configJson ?? {});
+        if (path.includes("config.json") || path.includes("talon.json"))
+          return JSON.stringify(configJson ?? {});
         for (const [key, val] of Object.entries(promptFiles)) {
           if (path.includes(key)) return val;
         }
@@ -268,7 +276,9 @@ describe("config", () => {
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.systemPrompt).toContain("You are running in terminal mode.");
+      expect(config.systemPrompt).toContain(
+        "You are running in terminal mode.",
+      );
     });
 
     it("loads telegram.md prompt for telegram frontend", async () => {
@@ -287,13 +297,18 @@ describe("config", () => {
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.systemPrompt).toContain("You are a sharp and helpful AI assistant.");
+      expect(config.systemPrompt).toContain(
+        "You are a sharp and helpful AI assistant.",
+      );
     });
 
     it("custom.md overrides base.md", async () => {
       mockFs(
         { frontend: "terminal" },
-        { "custom.md": "Custom prompt override.", "base.md": "Default base prompt." },
+        {
+          "custom.md": "Custom prompt override.",
+          "base.md": "Default base prompt.",
+        },
       );
 
       const { loadConfig } = await import("../util/config.js");
@@ -330,14 +345,10 @@ describe("config", () => {
     });
 
     it("includes workspace file listing when files exist", async () => {
-      mockFs(
-        { frontend: "terminal" },
-        {},
-        [
-          { name: "notes.txt", isDir: false, size: 512 },
-          { name: "data.csv", isDir: false, size: 2048 },
-        ],
-      );
+      mockFs({ frontend: "terminal" }, {}, [
+        { name: "notes.txt", isDir: false, size: 512 },
+        { name: "data.csv", isDir: false, size: 2048 },
+      ]);
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
@@ -348,16 +359,12 @@ describe("config", () => {
     });
 
     it("skips hidden files and node_modules in workspace listing", async () => {
-      mockFs(
-        { frontend: "terminal" },
-        {},
-        [
-          { name: ".hidden", isDir: false, size: 100 },
-          { name: "node_modules", isDir: true },
-          { name: "talon.log", isDir: false, size: 500 },
-          { name: "visible.txt", isDir: false, size: 200 },
-        ],
-      );
+      mockFs({ frontend: "terminal" }, {}, [
+        { name: ".hidden", isDir: false, size: 100 },
+        { name: "node_modules", isDir: true },
+        { name: "talon.log", isDir: false, size: 500 },
+        { name: "visible.txt", isDir: false, size: 200 },
+      ]);
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
@@ -373,13 +380,9 @@ describe("config", () => {
       for (let i = 0; i < 10; i++) {
         manyChildren.push({ name: `file${i}.txt`, size: 100 });
       }
-      mockFs(
-        { frontend: "terminal" },
-        {},
-        [
-          { name: "bigdir", isDir: true, children: manyChildren },
-        ],
-      );
+      mockFs({ frontend: "terminal" }, {}, [
+        { name: "bigdir", isDir: true, children: manyChildren },
+      ]);
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
@@ -387,20 +390,16 @@ describe("config", () => {
     });
 
     it("lists subdirectory files when 8 or fewer", async () => {
-      mockFs(
-        { frontend: "terminal" },
-        {},
-        [
-          {
-            name: "smalldir",
-            isDir: true,
-            children: [
-              { name: "a.txt", size: 50 },
-              { name: "b.txt", size: 75 },
-            ],
-          },
-        ],
-      );
+      mockFs({ frontend: "terminal" }, {}, [
+        {
+          name: "smalldir",
+          isDir: true,
+          children: [
+            { name: "a.txt", size: 50 },
+            { name: "b.txt", size: 75 },
+          ],
+        },
+      ]);
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
@@ -411,14 +410,10 @@ describe("config", () => {
     it("omits empty subdirectory from listing (line 163 FALSE branch: sub.length=0)", async () => {
       // A directory entry with no children → listDir returns [] → sub.length=0
       // → `else if (sub.length > 8)` is FALSE → omitted from listing
-      mockFs(
-        { frontend: "terminal" },
-        {},
-        [
-          { name: "emptydir", isDir: true }, // no children → sub.length = 0
-          { name: "notes.txt", isDir: false, size: 100 },
-        ],
-      );
+      mockFs({ frontend: "terminal" }, {}, [
+        { name: "emptydir", isDir: true }, // no children → sub.length = 0
+        { name: "notes.txt", isDir: false, size: 100 },
+      ]);
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
@@ -452,7 +447,8 @@ describe("config", () => {
     it("does nothing when pluginAdditions is empty", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig, rebuildSystemPrompt } = await import("../util/config.js");
+      const { loadConfig, rebuildSystemPrompt } =
+        await import("../util/config.js");
       const config = loadConfig();
       const originalPrompt = config.systemPrompt;
       rebuildSystemPrompt(config, []);
@@ -462,7 +458,8 @@ describe("config", () => {
     it("appends plugin prompt additions to system prompt", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig, rebuildSystemPrompt } = await import("../util/config.js");
+      const { loadConfig, rebuildSystemPrompt } =
+        await import("../util/config.js");
       const config = loadConfig();
       rebuildSystemPrompt(config, [
         "## Plugin A\nPlugin A instructions.",
@@ -478,7 +475,8 @@ describe("config", () => {
         { "terminal.md": "Terminal-specific prompt." },
       );
 
-      const { loadConfig, rebuildSystemPrompt } = await import("../util/config.js");
+      const { loadConfig, rebuildSystemPrompt } =
+        await import("../util/config.js");
       const config = loadConfig();
       rebuildSystemPrompt(config, ["## Test Plugin\nTest addition."]);
       // Should use terminal (first in array) as the active frontend
@@ -492,7 +490,8 @@ describe("config", () => {
         { "terminal.md": "Terminal mode active." },
       );
 
-      const { loadConfig, rebuildSystemPrompt } = await import("../util/config.js");
+      const { loadConfig, rebuildSystemPrompt } =
+        await import("../util/config.js");
       const config = loadConfig();
       rebuildSystemPrompt(config, ["## My Plugin\nDo special things."]);
       expect(config.systemPrompt).toContain("Terminal mode active.");
@@ -502,7 +501,8 @@ describe("config", () => {
     it("uses telegram as default frontend when config.frontend is undefined", async () => {
       mockFs({ frontend: "terminal" });
 
-      const { loadConfig, rebuildSystemPrompt } = await import("../util/config.js");
+      const { loadConfig, rebuildSystemPrompt } =
+        await import("../util/config.js");
       const config = loadConfig();
       // Force frontend to undefined to trigger the ?? "telegram" fallback on line 132
       (config as Record<string, unknown>).frontend = undefined;
@@ -555,12 +555,14 @@ describe("config", () => {
       // Simulate a corrupt JSON by having readFileSync throw
       vi.doMock("node:fs", () => ({
         existsSync: vi.fn((path: string) => {
-          if (path.includes("config.json") || path.includes("talon.json")) return true;
+          if (path.includes("config.json") || path.includes("talon.json"))
+            return true;
           if (path.endsWith(".talon") || path.endsWith("/data")) return true;
           return false;
         }),
         readFileSync: vi.fn((path: string) => {
-          if (path.includes("config.json") || path.includes("talon.json")) throw new Error("corrupt file");
+          if (path.includes("config.json") || path.includes("talon.json"))
+            throw new Error("corrupt file");
           return "";
         }),
         mkdirSync: vi.fn(),
@@ -582,7 +584,10 @@ describe("loadConfig — teams webhook validation", () => {
 
   it("throws when teams frontend has no teamsWebhookUrl", async () => {
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("node:fs", () => ({
@@ -590,10 +595,12 @@ describe("loadConfig — teams webhook validation", () => {
         if (path.includes("config.json")) return true;
         return false;
       }),
-      readFileSync: vi.fn(() => JSON.stringify({
-        frontend: "teams",
-        // teamsWebhookUrl intentionally omitted
-      })),
+      readFileSync: vi.fn(() =>
+        JSON.stringify({
+          frontend: "teams",
+          // teamsWebhookUrl intentionally omitted
+        }),
+      ),
       mkdirSync: vi.fn(),
       readdirSync: vi.fn(() => []),
       statSync: vi.fn(() => ({ size: 0 })),

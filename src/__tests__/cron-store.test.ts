@@ -248,7 +248,9 @@ describe("cron-store", () => {
       const id = generateCronId();
       // Format: "cron_<uuid>" — uuid is 36 chars including hyphens
       const uuid = id.slice("cron_".length);
-      expect(uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+      expect(uuid).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
     });
   });
 
@@ -293,9 +295,15 @@ describe("cron-store", () => {
     });
 
     it("validates with different valid timezones", () => {
-      expect(validateCronExpression("0 9 * * *", "Europe/London").valid).toBe(true);
-      expect(validateCronExpression("0 9 * * *", "Asia/Tokyo").valid).toBe(true);
-      expect(validateCronExpression("0 9 * * *", "US/Pacific").valid).toBe(true);
+      expect(validateCronExpression("0 9 * * *", "Europe/London").valid).toBe(
+        true,
+      );
+      expect(validateCronExpression("0 9 * * *", "Asia/Tokyo").valid).toBe(
+        true,
+      );
+      expect(validateCronExpression("0 9 * * *", "US/Pacific").valid).toBe(
+        true,
+      );
     });
 
     it("returns no error field on valid expression", () => {
@@ -398,7 +406,8 @@ describe("cron-store", () => {
 
       expect(writeFileSyncMock).toHaveBeenCalled();
       // Last write call is the actual data (earlier calls may be .bak backups)
-      const lastCall = writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
+      const lastCall =
+        writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
       const writtenData = lastCall[1] as string;
       const parsed = JSON.parse(writtenData.trim());
       expect(parsed["flush-1"]).toBeDefined();
@@ -412,7 +421,9 @@ describe("cron-store", () => {
 
       addCronJob(makeCronJob({ id: "flush-mkdir-1" }));
 
-      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), { recursive: true });
+      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), {
+        recursive: true,
+      });
     });
 
     it("does not write when not dirty", () => {
@@ -448,7 +459,10 @@ describe("cron-store — additional branch coverage", () => {
     loadCronJobs();
 
     // log should not be called for empty store (count > 0 check is false)
-    expect(vi.mocked(log)).not.toHaveBeenCalledWith("cron", expect.stringContaining("Loaded"));
+    expect(vi.mocked(log)).not.toHaveBeenCalledWith(
+      "cron",
+      expect.stringContaining("Loaded"),
+    );
   });
 
   it("save() logs error when writeFileAtomic throws", async () => {
@@ -456,7 +470,9 @@ describe("cron-store — additional branch coverage", () => {
     vi.mocked(logError).mockClear();
 
     existsSyncMock.mockReturnValue(false);
-    writeFileSyncMock.mockImplementationOnce(() => { throw new Error("io error"); });
+    writeFileSyncMock.mockImplementationOnce(() => {
+      throw new Error("io error");
+    });
 
     // addCronJob sets dirty=true and calls save()
     expect(() => addCronJob(makeCronJob({ id: "save-fail-1" }))).not.toThrow();
@@ -481,12 +497,12 @@ describe("cron-store — additional branch coverage", () => {
     // First existsSync call: primary file exists
     // Second existsSync call (inside catch): backup file exists
     existsSyncMock
-      .mockReturnValueOnce(true)   // STORE_FILE exists
-      .mockReturnValueOnce(true);  // bakFile exists
+      .mockReturnValueOnce(true) // STORE_FILE exists
+      .mockReturnValueOnce(true); // bakFile exists
 
     readFileSyncMock
-      .mockReturnValueOnce("not valid json{{{")          // primary is corrupt
-      .mockReturnValueOnce(JSON.stringify(backupJob));   // backup is valid
+      .mockReturnValueOnce("not valid json{{{") // primary is corrupt
+      .mockReturnValueOnce(JSON.stringify(backupJob)); // backup is valid
 
     loadCronJobs();
 
@@ -520,7 +536,10 @@ describe("cron-store — additional branch coverage", () => {
     // timezone was invalid — should be cleared
     expect(job!.timezone).toBeUndefined();
     // log should mention invalid timezone
-    expect(vi.mocked(log)).toHaveBeenCalledWith("cron", expect.stringContaining("invalid timezone"));
+    expect(vi.mocked(log)).toHaveBeenCalledWith(
+      "cron",
+      expect.stringContaining("invalid timezone"),
+    );
   });
 
   it("save() logs error with String(err) when writeFileAtomic throws a non-Error", async () => {
@@ -531,9 +550,13 @@ describe("cron-store — additional branch coverage", () => {
     existsSyncMock.mockReturnValue(false);
 
     // Throw a plain string (non-Error) to cover the `err instanceof Error ? ... : err` false branch on line 103
-    writeFileSyncMock.mockImplementation(() => { throw "disk quota exceeded"; }); // eslint-disable-line @typescript-eslint/no-throw-literal
+    writeFileSyncMock.mockImplementation(() => {
+      throw "disk quota exceeded";
+    }); // eslint-disable-line @typescript-eslint/no-throw-literal
 
-    expect(() => addCronJob(makeCronJob({ id: "save-non-error-string" }))).not.toThrow();
+    expect(() =>
+      addCronJob(makeCronJob({ id: "save-non-error-string" })),
+    ).not.toThrow();
     expect(vi.mocked(logError)).toHaveBeenCalled();
 
     writeFileSyncMock.mockReset(); // restore default behavior

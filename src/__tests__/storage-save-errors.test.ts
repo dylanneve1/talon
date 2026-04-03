@@ -36,7 +36,9 @@ describe("cron-store — save failure logs error", () => {
     }));
     vi.doMock("write-file-atomic", () => ({
       default: {
-        sync: vi.fn(() => { throw new Error("disk full"); }),
+        sync: vi.fn(() => {
+          throw new Error("disk full");
+        }),
       },
     }));
     vi.doMock("../util/paths.js", () => ({
@@ -47,7 +49,8 @@ describe("cron-store — save failure logs error", () => {
       registerCleanup: vi.fn(),
     }));
 
-    const { addCronJob, generateCronId, flushCronJobs } = await import("../storage/cron-store.js");
+    const { addCronJob, generateCronId, flushCronJobs } =
+      await import("../storage/cron-store.js");
 
     const job = {
       id: generateCronId(),
@@ -73,7 +76,7 @@ describe("cron-store — save failure logs error", () => {
       expect.stringContaining("Cron save failed"),
     );
 
-    clearInterval((await import("../storage/cron-store.js") as any)._timer);
+    clearInterval(((await import("../storage/cron-store.js")) as any)._timer);
   });
 });
 
@@ -103,7 +106,9 @@ describe("chat-settings — save failure logs error", () => {
     }));
     vi.doMock("write-file-atomic", () => ({
       default: {
-        sync: vi.fn(() => { throw new Error("readonly fs"); }),
+        sync: vi.fn(() => {
+          throw new Error("readonly fs");
+        }),
       },
     }));
     vi.doMock("../util/paths.js", () => ({
@@ -153,7 +158,9 @@ describe("chat-settings — non-Error thrown in save (line 96 FALSE branch)", ()
     }));
     vi.doMock("write-file-atomic", () => ({
       default: {
-        sync: vi.fn(() => { throw "plain string chat-settings error"; }),
+        sync: vi.fn(() => {
+          throw "plain string chat-settings error";
+        }),
       },
     }));
     vi.doMock("../util/paths.js", () => ({
@@ -199,7 +206,9 @@ describe("sessions — save failure logs error", () => {
     }));
     vi.doMock("write-file-atomic", () => ({
       default: {
-        sync: vi.fn(() => { throw new Error("ENOSPC: no space left"); }),
+        sync: vi.fn(() => {
+          throw new Error("ENOSPC: no space left");
+        }),
       },
     }));
     vi.doMock("../util/paths.js", () => ({
@@ -210,7 +219,8 @@ describe("sessions — save failure logs error", () => {
       registerCleanup: vi.fn(),
     }));
 
-    const { getSession, flushSessions } = await import("../storage/sessions.js");
+    const { getSession, flushSessions } =
+      await import("../storage/sessions.js");
 
     // getSession creates a new session (marks dirty) then flushSessions forces save
     getSession("chat-save-fail");
@@ -257,7 +267,9 @@ describe("sessions — migration paths for usage fields", () => {
     };
 
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
     vi.doMock("node:fs", () => ({
@@ -270,7 +282,9 @@ describe("sessions — migration paths for usage fields", () => {
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
     }));
-    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+    vi.doMock("../util/cleanup-registry.js", () => ({
+      registerCleanup: vi.fn(),
+    }));
 
     const { loadSessions, getSession } = await import("../storage/sessions.js");
     loadSessions();
@@ -301,7 +315,9 @@ describe("sessions — migration paths for usage fields", () => {
     };
 
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
     }));
     vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
     vi.doMock("node:fs", () => ({
@@ -314,7 +330,9 @@ describe("sessions — migration paths for usage fields", () => {
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
     }));
-    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+    vi.doMock("../util/cleanup-registry.js", () => ({
+      registerCleanup: vi.fn(),
+    }));
 
     const { loadSessions, getSession } = await import("../storage/sessions.js");
     loadSessions();

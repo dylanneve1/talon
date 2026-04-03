@@ -24,7 +24,7 @@ const LOGS_DIR = join(TEST_ROOT, ".talon", "workspace", "logs");
 
 // paths.ts uses os.homedir() — mock it to point to our temp directory
 vi.mock("node:os", async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>;
+  const actual = (await importOriginal()) as Record<string, unknown>;
   return { ...actual, homedir: () => TEST_ROOT };
 });
 
@@ -41,9 +41,8 @@ describe("daily-log", () => {
   describe("appendDailyLog", () => {
     it("creates the log file if missing", async () => {
       // Re-import to pick up the mocked cwd
-      const { appendDailyLog, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
+      const { appendDailyLog, getLogsDir } =
+        await import("../storage/daily-log.js");
 
       // Ensure logs dir doesn't exist yet
       expect(existsSync(LOGS_DIR)).toBe(false);
@@ -64,9 +63,8 @@ describe("daily-log", () => {
     });
 
     it("appends to existing file", async () => {
-      const { appendDailyLog, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
+      const { appendDailyLog, getLogsDir } =
+        await import("../storage/daily-log.js");
 
       appendDailyLog("Chat1", "First entry");
       appendDailyLog("Chat2", "Second entry");
@@ -83,9 +81,8 @@ describe("daily-log", () => {
     });
 
     it("uses correct log format (## HH:MM -- [name])", async () => {
-      const { appendDailyLog, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
+      const { appendDailyLog, getLogsDir } =
+        await import("../storage/daily-log.js");
 
       appendDailyLog("MyChat", "Did some testing");
 
@@ -102,9 +99,8 @@ describe("daily-log", () => {
     });
 
     it("uses .talon/workspace/logs/ directory", async () => {
-      const { appendDailyLog, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
+      const { appendDailyLog, getLogsDir } =
+        await import("../storage/daily-log.js");
 
       appendDailyLog("LogDirTest", "checking path");
 
@@ -162,10 +158,11 @@ describe("daily-log", () => {
 
   describe("appendDailyLogResponse", () => {
     it("writes bot response with chat title context", async () => {
-      const { appendDailyLogResponse, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
-      appendDailyLogResponse("Talon", "Here is the weather.", { chatTitle: "MyGroup" });
+      const { appendDailyLogResponse, getLogsDir } =
+        await import("../storage/daily-log.js");
+      appendDailyLogResponse("Talon", "Here is the weather.", {
+        chatTitle: "MyGroup",
+      });
       const logsDir = getLogsDir();
       const todayStr = new Date().toISOString().slice(0, 10);
       const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
@@ -174,9 +171,8 @@ describe("daily-log", () => {
     });
 
     it("writes bot response without chat title", async () => {
-      const { appendDailyLogResponse, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
+      const { appendDailyLogResponse, getLogsDir } =
+        await import("../storage/daily-log.js");
       appendDailyLogResponse("Talon", "Standalone response");
       const logsDir = getLogsDir();
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -186,9 +182,8 @@ describe("daily-log", () => {
     });
 
     it("formats response with ## HH:MM -- [label] header", async () => {
-      const { appendDailyLogResponse, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
+      const { appendDailyLogResponse, getLogsDir } =
+        await import("../storage/daily-log.js");
       appendDailyLogResponse("BotName", "response text");
       const logsDir = getLogsDir();
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -199,9 +194,8 @@ describe("daily-log", () => {
 
   describe("appendDailyLog — chat context labels", () => {
     it("includes username in label", async () => {
-      const { appendDailyLog, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
+      const { appendDailyLog, getLogsDir } =
+        await import("../storage/daily-log.js");
       appendDailyLog("Alice", "hello", { username: "alice_tg" });
       const logsDir = getLogsDir();
       const todayStr = new Date().toISOString().slice(0, 10);
@@ -210,10 +204,12 @@ describe("daily-log", () => {
     });
 
     it("includes chat title and username together", async () => {
-      const { appendDailyLog, getLogsDir } = await import(
-        "../storage/daily-log.js"
-      );
-      appendDailyLog("Bob", "test message", { chatTitle: "DevGroup", username: "bob_dev" });
+      const { appendDailyLog, getLogsDir } =
+        await import("../storage/daily-log.js");
+      appendDailyLog("Bob", "test message", {
+        chatTitle: "DevGroup",
+        username: "bob_dev",
+      });
       const logsDir = getLogsDir();
       const todayStr = new Date().toISOString().slice(0, 10);
       const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
@@ -229,15 +225,20 @@ describe("daily-log — error resilience", () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
-      appendFileSync: vi.fn(() => { throw new Error("EPERM: permission denied"); }),
+      appendFileSync: vi.fn(() => {
+        throw new Error("EPERM: permission denied");
+      }),
       readdirSync: vi.fn(() => []),
       unlinkSync: vi.fn(),
     }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     vi.doMock("node:os", async (importOriginal) => {
-      const actual = await importOriginal() as Record<string, unknown>;
+      const actual = (await importOriginal()) as Record<string, unknown>;
       return { ...actual, homedir: () => TEST_ROOT };
     });
     const { appendDailyLog } = await import("../storage/daily-log.js");
@@ -250,15 +251,20 @@ describe("daily-log — error resilience", () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
-      appendFileSync: vi.fn(() => { throw new Error("EROFS: read-only file system"); }),
+      appendFileSync: vi.fn(() => {
+        throw new Error("EROFS: read-only file system");
+      }),
       readdirSync: vi.fn(() => []),
       unlinkSync: vi.fn(),
     }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     vi.doMock("node:os", async (importOriginal) => {
-      const actual = await importOriginal() as Record<string, unknown>;
+      const actual = (await importOriginal()) as Record<string, unknown>;
       return { ...actual, homedir: () => TEST_ROOT };
     });
     const { appendDailyLogResponse } = await import("../storage/daily-log.js");

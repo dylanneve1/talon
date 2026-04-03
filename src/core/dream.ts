@@ -41,7 +41,12 @@ const DREAM_LOGS_DIR = resolve(dirs.logs, "dreams");
 // ── State ────────────────────────────────────────────────────────────────────
 
 let dreaming = false; // in-process guard (one dream at a time)
-let configRef: { model?: string; dreamModel?: string; claudeBinary?: string; workspace?: string } | null = null;
+let configRef: {
+  model?: string;
+  dreamModel?: string;
+  claudeBinary?: string;
+  workspace?: string;
+} | null = null;
 
 export function initDream(cfg: {
   model?: string;
@@ -88,12 +93,18 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
 
   dreaming = true;
   writeDreamState({ last_run: now, status: "running" });
-  log("dream", `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`);
+  log(
+    "dream",
+    `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`,
+  );
 
   try {
     const dreamLogPath = await runDreamAgent(state?.last_run ?? 0);
     writeDreamState({ last_run: Date.now(), status: "idle" });
-    log("dream", `Memory consolidation complete (${trigger}), log: ${dreamLogPath}`);
+    log(
+      "dream",
+      `Memory consolidation complete (${trigger}), log: ${dreamLogPath}`,
+    );
   } catch (err) {
     logError("dream", `Memory consolidation failed (${trigger})`, err);
     writeDreamState({ last_run: Date.now(), status: "idle" });
@@ -111,9 +122,10 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
     return "";
   }
 
-  const lastRunIso = lastRunTimestamp > 0
-    ? new Date(lastRunTimestamp).toISOString()
-    : "the beginning of time";
+  const lastRunIso =
+    lastRunTimestamp > 0
+      ? new Date(lastRunTimestamp).toISOString()
+      : "the beginning of time";
 
   const logsDir = dirs.logs;
   const memoryFile = pathFiles.memory;
@@ -140,12 +152,19 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
   // Set up dream log file
   const dreamLogFile = createDreamLogFile();
   appendDreamLog(dreamLogFile, `# Dream Run — ${new Date().toISOString()}\n`);
-  appendDreamLog(dreamLogFile, `**Trigger:** last_run=${lastRunIso}, model=${model}\n`);
-  appendDreamLog(dreamLogFile, `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`);
+  appendDreamLog(
+    dreamLogFile,
+    `**Trigger:** last_run=${lastRunIso}, model=${model}\n`,
+  );
+  appendDreamLog(
+    dreamLogFile,
+    `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
+  );
 
   const options = {
     model,
-    systemPrompt: "You are a background memory consolidation agent for Talon. Use only filesystem tools. Be precise and surgical — update memory.md without losing existing accurate information.",
+    systemPrompt:
+      "You are a background memory consolidation agent for Talon. Use only filesystem tools. Be precise and surgical — update memory.md without losing existing accurate information.",
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
@@ -173,7 +192,10 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
   };
 
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("Dream agent timed out")), DREAM_TIMEOUT_MS),
+    setTimeout(
+      () => reject(new Error("Dream agent timed out")),
+      DREAM_TIMEOUT_MS,
+    ),
   );
 
   const agentPromise = (async () => {
@@ -184,13 +206,19 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
     for await (const msg of qi) {
       logDreamMessage(dreamLogFile, msg);
     }
-    appendDreamLog(dreamLogFile, `\n---\n**Dream completed at ${new Date().toISOString()}**\n`);
+    appendDreamLog(
+      dreamLogFile,
+      `\n---\n**Dream completed at ${new Date().toISOString()}**\n`,
+    );
   })();
 
   try {
     await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
-    appendDreamLog(dreamLogFile, `\n---\n**Dream FAILED at ${new Date().toISOString()}:** ${err}\n`);
+    appendDreamLog(
+      dreamLogFile,
+      `\n---\n**Dream FAILED at ${new Date().toISOString()}:** ${err}\n`,
+    );
     throw err;
   }
 
@@ -225,7 +253,7 @@ function logDreamMessage(logFile: string, msg: SDKMessage): void {
         // Extract text content from the assistant message
         const textBlocks = msg.message.content
           .filter((b) => b.type === "text")
-          .map((b) => "text" in b ? (b as { text: string }).text : "");
+          .map((b) => ("text" in b ? (b as { text: string }).text : ""));
         const toolUseBlocks = msg.message.content
           .filter((b) => b.type === "tool_use")
           .map((b) => {
@@ -234,7 +262,10 @@ function logDreamMessage(logFile: string, msg: SDKMessage): void {
           });
 
         if (textBlocks.length > 0) {
-          appendDreamLog(logFile, `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`);
+          appendDreamLog(
+            logFile,
+            `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`,
+          );
         }
         if (toolUseBlocks.length > 0) {
           appendDreamLog(logFile, `\n${toolUseBlocks.join("\n\n")}\n`);
@@ -243,9 +274,18 @@ function logDreamMessage(logFile: string, msg: SDKMessage): void {
       }
       case "result": {
         // Final result of the dream agent run
-        const result = "result" in msg ? (msg as { result: string }).result : JSON.stringify(msg);
-        const truncated = result.length > 2000 ? result.slice(0, 2000) + "\n... (truncated)" : result;
-        appendDreamLog(logFile, `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`);
+        const result =
+          "result" in msg
+            ? (msg as { result: string }).result
+            : JSON.stringify(msg);
+        const truncated =
+          result.length > 2000
+            ? result.slice(0, 2000) + "\n... (truncated)"
+            : result;
+        appendDreamLog(
+          logFile,
+          `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`,
+        );
         break;
       }
       case "system": {
@@ -255,11 +295,16 @@ function logDreamMessage(logFile: string, msg: SDKMessage): void {
       case "user": {
         // Tool results come back as user messages
         if (msg.tool_use_result != null) {
-          const raw = typeof msg.tool_use_result === "string"
-            ? msg.tool_use_result
-            : JSON.stringify(msg.tool_use_result, null, 2);
-          const truncated = raw.length > 2000 ? raw.slice(0, 2000) + "\n... (truncated)" : raw;
-          appendDreamLog(logFile, `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`);
+          const raw =
+            typeof msg.tool_use_result === "string"
+              ? msg.tool_use_result
+              : JSON.stringify(msg.tool_use_result, null, 2);
+          const truncated =
+            raw.length > 2000 ? raw.slice(0, 2000) + "\n... (truncated)" : raw;
+          appendDreamLog(
+            logFile,
+            `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`,
+          );
         }
         break;
       }
@@ -290,8 +335,14 @@ function writeDreamState(state: DreamState): void {
   try {
     const dir = resolve(DREAM_STATE_FILE, "..");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const enriched: DreamState = { ...state, last_run_at: new Date(state.last_run).toISOString() };
-    writeFileAtomic.sync(DREAM_STATE_FILE, JSON.stringify(enriched, null, 2) + "\n");
+    const enriched: DreamState = {
+      ...state,
+      last_run_at: new Date(state.last_run).toISOString(),
+    };
+    writeFileAtomic.sync(
+      DREAM_STATE_FILE,
+      JSON.stringify(enriched, null, 2) + "\n",
+    );
   } catch (err) {
     logError("dream", "Failed to write dream state", err);
   }

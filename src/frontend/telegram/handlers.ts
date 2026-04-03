@@ -18,7 +18,10 @@ import {
 } from "../../core/prompt-builder.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { appendDailyLog, appendDailyLogResponse } from "../../storage/daily-log.js";
+import {
+  appendDailyLog,
+  appendDailyLogResponse,
+} from "../../storage/daily-log.js";
 import { setMessageFilePath } from "../../storage/history.js";
 import { addMedia } from "../../storage/media-index.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
@@ -59,8 +62,7 @@ export function shouldHandleInGroup(ctx: Context): boolean {
   const botUser = ctx.me.username;
   // Word-boundary match — @botname must not be followed by alphanumeric/underscore
   const mentioned =
-    botUser &&
-    new RegExp(`@${botUser}(?![a-zA-Z0-9_])`, "i").test(text);
+    botUser && new RegExp(`@${botUser}(?![a-zA-Z0-9_])`, "i").test(text);
   const repliedToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
   return !!(mentioned || repliedToBot);
 }
@@ -93,23 +95,31 @@ export function getReplyContext(
 ): string {
   if (!replyMsg) return "";
 
-  const author = replyMsg.from?.id === botId
-    ? "bot"
-    : [replyMsg.from?.first_name, replyMsg.from?.last_name]
-        .filter(Boolean)
-        .join(" ") || "User";
+  const author =
+    replyMsg.from?.id === botId
+      ? "bot"
+      : [replyMsg.from?.first_name, replyMsg.from?.last_name]
+          .filter(Boolean)
+          .join(" ") || "User";
   const text = replyMsg.text || replyMsg.caption || "";
   const msgIdTag = replyMsg.message_id ? ` msg_id:${replyMsg.message_id}` : "";
 
   // Detect media type
-  const mediaType = replyMsg.photo ? "photo"
-    : replyMsg.video ? "video"
-    : replyMsg.document ? "document"
-    : replyMsg.voice ? "voice"
-    : replyMsg.audio ? "audio"
-    : replyMsg.sticker ? "sticker"
-    : replyMsg.animation ? "animation"
-    : null;
+  const mediaType = replyMsg.photo
+    ? "photo"
+    : replyMsg.video
+      ? "video"
+      : replyMsg.document
+        ? "document"
+        : replyMsg.voice
+          ? "voice"
+          : replyMsg.audio
+            ? "audio"
+            : replyMsg.sticker
+              ? "sticker"
+              : replyMsg.animation
+                ? "animation"
+                : null;
   const mediaPart = mediaType ? ` [${mediaType}]` : "";
 
   // Build context — always include if there's a message_id (even if no text)
@@ -125,7 +135,16 @@ export function getReplyContext(
  * line pointing to the saved file so Claude can see it. Returns "" if no photo.
  */
 async function downloadReplyPhoto(
-  replyMsg: { photo?: { file_id: string; file_unique_id: string; width?: number; height?: number }[] } | undefined,
+  replyMsg:
+    | {
+        photo?: {
+          file_id: string;
+          file_unique_id: string;
+          width?: number;
+          height?: number;
+        }[];
+      }
+    | undefined,
   bot: Bot,
   config: TalonConfig,
 ): Promise<string> {
@@ -141,7 +160,10 @@ async function downloadReplyPhoto(
     );
     return `[Replied-to message contains a photo saved to: ${savedPath} — read it to view]\n`;
   } catch (err) {
-    logWarn("bot", `Failed to download reply photo: ${err instanceof Error ? err.message : err}`);
+    logWarn(
+      "bot",
+      `Failed to download reply photo: ${err instanceof Error ? err.message : err}`,
+    );
     return "";
   }
 }
@@ -189,26 +211,39 @@ async function downloadTelegramFile(
   const MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024;
   const contentLength = resp.headers.get("content-length");
   if (contentLength && parseInt(contentLength, 10) > MAX_DOWNLOAD_BYTES) {
-    throw new Error(`File too large (${Math.round(parseInt(contentLength, 10) / 1024 / 1024)}MB, max 50MB)`);
+    throw new Error(
+      `File too large (${Math.round(parseInt(contentLength, 10) / 1024 / 1024)}MB, max 50MB)`,
+    );
   }
 
   const buffer = Buffer.from(await resp.arrayBuffer());
-  if (buffer.length === 0) throw new Error("Downloaded file is empty (0 bytes)");
+  if (buffer.length === 0)
+    throw new Error("Downloaded file is empty (0 bytes)");
 
   // Validate image files — prevent saving HTML/garbage as .jpg/.png
   // (corrupt "images" poison the Claude session permanently on resume)
   const imageExts = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
-  const isImageExt = imageExts.some((ext) => fileName.toLowerCase().endsWith(ext));
+  const isImageExt = imageExts.some((ext) =>
+    fileName.toLowerCase().endsWith(ext),
+  );
   if (isImageExt) {
     const m = buffer.subarray(0, 16);
     const validImage =
-      (m[0] === 0xFF && m[1] === 0xD8) || // JPEG
-      (m[0] === 0x89 && m[1] === 0x50 && m[2] === 0x4E && m[3] === 0x47) || // PNG
+      (m[0] === 0xff && m[1] === 0xd8) || // JPEG
+      (m[0] === 0x89 && m[1] === 0x50 && m[2] === 0x4e && m[3] === 0x47) || // PNG
       (m[0] === 0x47 && m[1] === 0x49 && m[2] === 0x46) || // GIF
-      (m[0] === 0x52 && m[1] === 0x49 && m[2] === 0x46 && m[3] === 0x46 &&
-       m[8] === 0x57 && m[9] === 0x45 && m[10] === 0x42 && m[11] === 0x50); // WebP
+      (m[0] === 0x52 &&
+        m[1] === 0x49 &&
+        m[2] === 0x46 &&
+        m[3] === 0x46 &&
+        m[8] === 0x57 &&
+        m[9] === 0x45 &&
+        m[10] === 0x42 &&
+        m[11] === 0x50); // WebP
     if (!validImage) {
-      throw new Error(`File "${fileName}" has image extension but invalid content — not saving to prevent session corruption`);
+      throw new Error(
+        `File "${fileName}" has image extension but invalid content — not saving to prevent session corruption`,
+      );
     }
   }
 
@@ -307,7 +342,10 @@ function enqueueMessage(
     // Show hourglass reaction on the queued message to indicate it's been seen
     bot.api
       .setMessageReaction(numericChatId, msg.messageId, [
-        { type: "emoji", emoji: "\u23F3" as "\uD83D\uDC4D" /* grammY wants union type */ },
+        {
+          type: "emoji",
+          emoji: "\u23F3" as "\uD83D\uDC4D" /* grammY wants union type */,
+        },
       ])
       .catch(() => {});
     existing.queuedReactionMsgIds.push(msg.messageId);
@@ -337,7 +375,10 @@ async function flushQueue(chatId: string): Promise<void> {
   // Clear hourglass reactions on queued messages now that we're processing
   for (const msgId of queuedReactionMsgIds) {
     bot.api.setMessageReaction(numericChatId, msgId, []).catch((err) => {
-      logWarn("bot", `Failed to clear reaction on msg ${msgId}: ${err instanceof Error ? err.message : err}`);
+      logWarn(
+        "bot",
+        `Failed to clear reaction on msg ${msgId}: ${err instanceof Error ? err.message : err}`,
+      );
     });
   }
 
@@ -350,12 +391,18 @@ async function flushQueue(chatId: string): Promise<void> {
       ? messages[0].prompt
       : messages.map((m) => m.prompt).join("\n\n");
 
-  const chatContext = { chatTitle: last.chatTitle, username: last.senderUsername };
+  const chatContext = {
+    chatTitle: last.chatTitle,
+    username: last.senderUsername,
+  };
   appendDailyLog(last.senderName, combinedPrompt, chatContext);
 
   try {
     await processAndReply({
-      bot, config, chatId, numericChatId,
+      bot,
+      config,
+      chatId,
+      numericChatId,
       replyToId: last.replyToId,
       messageId: last.messageId,
       prompt: combinedPrompt,
@@ -379,11 +426,17 @@ async function flushQueue(chatId: string): Promise<void> {
     // Retry once for transient errors (rate_limit, overloaded, network)
     if (classified.retryable) {
       const delayMs = classified.retryAfterMs ?? 2000;
-      log("bot", `[${chatId}] Retrying after ${classified.reason} (${delayMs}ms)...`);
+      log(
+        "bot",
+        `[${chatId}] Retrying after ${classified.reason} (${delayMs}ms)...`,
+      );
       try {
         await new Promise((r) => setTimeout(r, delayMs));
         await processAndReply({
-          bot, config, chatId, numericChatId,
+          bot,
+          config,
+          chatId,
+          numericChatId,
           replyToId: last.replyToId,
           messageId: last.messageId,
           prompt: combinedPrompt,
@@ -435,7 +488,10 @@ async function sendHtml(
     const sent = await bot.api.sendMessage(chatId, html, params);
     return sent.message_id;
   } catch (err) {
-    logWarn("bot", `HTML send failed, falling back to plain text: ${err instanceof Error ? err.message : err}`);
+    logWarn(
+      "bot",
+      `HTML send failed, falling back to plain text: ${err instanceof Error ? err.message : err}`,
+    );
     const plain = html.replace(/<[^>]+>/g, "");
     const sent = await bot.api.sendMessage(chatId, plain, {
       reply_parameters: replyToId ? { message_id: replyToId } : undefined,
@@ -490,9 +546,10 @@ function createStreamCallbacks(
 
     state.editing = true;
     try {
-      const display = accumulated.length > 3900
-        ? accumulated.slice(0, 3900) + "\u2026"
-        : accumulated;
+      const display =
+        accumulated.length > 3900
+          ? accumulated.slice(0, 3900) + "\u2026"
+          : accumulated;
 
       await bot.api.sendMessageDraft(chatId, state.draftId, display);
       if (draftsSupported === null) draftsSupported = true;
@@ -518,8 +575,18 @@ function createStreamCallbacks(
 
 async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
-    bot, config, chatId, numericChatId, replyToId, messageId,
-    prompt, senderName, isGroup, senderUsername, senderId, chatTitle,
+    bot,
+    config,
+    chatId,
+    numericChatId,
+    replyToId,
+    messageId,
+    prompt,
+    senderName,
+    isGroup,
+    senderUsername,
+    senderId,
+    chatTitle,
   } = params;
 
   const stream: StreamState = {
@@ -529,11 +596,16 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
     editing: false,
   };
   // Wait 1s before starting streaming — avoids flickering on fast responses
-  const streamTimer = setTimeout(() => { stream.started = true; }, 1000);
+  const streamTimer = setTimeout(() => {
+    stream.started = true;
+  }, 1000);
 
   try {
     const { onStreamDelta, onTextBlock } = createStreamCallbacks(
-      bot, numericChatId, replyToId, stream,
+      bot,
+      numericChatId,
+      replyToId,
+      stream,
     );
 
     // Enrich prompt with sender context
@@ -556,7 +628,11 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       onStreamDelta,
       onTextBlock,
       onToolUse: (toolName, input) => {
-        if (toolName === "send" && input.type === "text" && typeof input.text === "string") {
+        if (
+          toolName === "send" &&
+          input.type === "text" &&
+          typeof input.text === "string"
+        ) {
           appendDailyLogResponse("Talon", input.text, { chatTitle });
         }
       },
@@ -566,7 +642,10 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
     // Do NOT send fallback text — if Claude chose not to use send,
     // it's either choosing not to respond or outputting internal reasoning.
     if (result.bridgeMessageCount === 0 && result.text?.trim()) {
-      log("bot", `Suppressed fallback text (${result.text.length} chars) — no send tool used`);
+      log(
+        "bot",
+        `Suppressed fallback text (${result.text.length} chars) — no send tool used`,
+      );
     }
   } finally {
     clearTimeout(streamTimer);
@@ -633,7 +712,14 @@ async function handleMediaMessage(
       chatId,
       msgId: ctx.message.message_id,
       senderName: sender,
-      type: media.type as "photo" | "document" | "voice" | "video" | "animation" | "audio" | "sticker",
+      type: media.type as
+        | "photo"
+        | "document"
+        | "voice"
+        | "video"
+        | "animation"
+        | "audio"
+        | "sticker",
       filePath: savedPath,
       caption: media.caption,
       timestamp: Date.now(),
@@ -967,11 +1053,16 @@ export async function handleCallbackQuery(
     const prompt = `[Button pressed] User clicked inline button with callback data: "${callbackData}"`;
     const replyToId = ctx.callbackQuery.message?.message_id ?? 0;
 
-    const chatTitle = isGroup ? (ctx.chat as { title?: string })?.title : undefined;
+    const chatTitle = isGroup
+      ? (ctx.chat as { title?: string })?.title
+      : undefined;
     appendDailyLog(sender, `Button: ${callbackData}`, { chatTitle });
 
     await processAndReply({
-      bot, config, chatId, numericChatId,
+      bot,
+      config,
+      chatId,
+      numericChatId,
       replyToId,
       messageId: replyToId,
       prompt,

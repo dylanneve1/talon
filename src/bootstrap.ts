@@ -63,14 +63,11 @@ export async function bootstrap(
 
   // Load plugins (external tool packages)
   if (config.plugins.length > 0) {
-    const { loadPlugins, getPluginPromptAdditions } = await import(
-      "./core/plugin.js"
-    );
+    const { loadPlugins, getPluginPromptAdditions } =
+      await import("./core/plugin.js");
     const frontends =
       options.frontendNames ??
-      (Array.isArray(config.frontend)
-        ? config.frontend
-        : [config.frontend]);
+      (Array.isArray(config.frontend) ? config.frontend : [config.frontend]);
     await loadPlugins(config.plugins, frontends);
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
@@ -99,18 +96,14 @@ export async function initBackendAndDispatcher(
   let backend: QueryBackend;
 
   if (config.backend === "opencode") {
-    const {
-      initOpenCodeAgent,
-      handleMessage: opencodeHandleMessage,
-    } = await import("./backend/opencode/index.js");
+    const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } =
+      await import("./backend/opencode/index.js");
     initOpenCodeAgent(config, frontend.getBridgePort);
     backend = { query: (params) => opencodeHandleMessage(params) };
     log("bot", "Backend: OpenCode");
   } else {
-    const {
-      initAgent: initClaudeAgent,
-      handleMessage: claudeHandleMessage,
-    } = await import("./backend/claude-sdk/index.js");
+    const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } =
+      await import("./backend/claude-sdk/index.js");
     initClaudeAgent(config, frontend.getBridgePort);
     backend = { query: (params) => claudeHandleMessage(params) };
     log("bot", "Backend: Claude SDK");

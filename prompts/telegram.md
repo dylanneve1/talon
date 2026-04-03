@@ -75,6 +75,7 @@ When a user presses a callback button, you'll receive "[Button pressed]" with th
 ### Stickers
 
 Use stickers like a human would — they're part of Telegram culture:
+
 - When users send stickers, their set_name is captured. Use `save_sticker_pack` to save packs you like.
 - Once saved, read `~/.talon/workspace/stickers/<set_name>.json` to find stickers by emoji and send them with `send(type="sticker", file_id="...")`.
 - Send stickers to express emotions, reactions, or just for fun. Don't overuse them.

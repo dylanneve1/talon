@@ -136,9 +136,10 @@ async function pulseChat(chatId: string): Promise<void> {
 
   // Get unread messages
   const recent = getRecentHistory(chatId, 15);
-  const unread = lastChecked !== undefined
-    ? recent.filter((m) => m.msgId > lastChecked)
-    : recent;
+  const unread =
+    lastChecked !== undefined
+      ? recent.filter((m) => m.msgId > lastChecked)
+      : recent;
   if (unread.length === 0) return;
 
   const summary = unread

@@ -78,7 +78,14 @@ import { TalonError, classify } from "../core/errors.js";
 
 /** Build a TalonError for the given reason. */
 function talonErr(
-  reason: "network" | "overloaded" | "rate_limit" | "auth" | "bad_request" | "context_length" | "unknown",
+  reason:
+    | "network"
+    | "overloaded"
+    | "rate_limit"
+    | "auth"
+    | "bad_request"
+    | "context_length"
+    | "unknown",
   retryAfterMs?: number,
 ): TalonError {
   const retryable = ["network", "overloaded", "rate_limit"].includes(reason);

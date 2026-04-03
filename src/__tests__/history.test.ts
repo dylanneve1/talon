@@ -64,15 +64,18 @@ describe("history", () => {
 
     it("preserves all optional fields on the message", () => {
       const id = chatId();
-      pushMessage(id, makeMsg({
-        msgId: 1,
-        senderName: "Alice",
-        text: "photo msg",
-        replyToMsgId: 99,
-        mediaType: "photo",
-        stickerFileId: "stk123",
-        filePath: "/tmp/photo.jpg",
-      }));
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 1,
+          senderName: "Alice",
+          text: "photo msg",
+          replyToMsgId: 99,
+          mediaType: "photo",
+          stickerFileId: "stk123",
+          filePath: "/tmp/photo.jpg",
+        }),
+      );
       const history = getRecentHistory(id);
       expect(history[0].replyToMsgId).toBe(99);
       expect(history[0].mediaType).toBe("photo");
@@ -119,7 +122,9 @@ describe("history", () => {
 
     it("is a no-op for nonexistent chat", () => {
       // Should not throw
-      expect(() => setMessageFilePath("no-such-chat", 1, "/tmp/x.jpg")).not.toThrow();
+      expect(() =>
+        setMessageFilePath("no-such-chat", 1, "/tmp/x.jpg"),
+      ).not.toThrow();
     });
 
     it("is a no-op for nonexistent message", () => {
@@ -218,7 +223,10 @@ describe("history", () => {
     it("respects the limit parameter", () => {
       const id = chatId();
       for (let i = 0; i < 10; i++) {
-        pushMessage(id, makeMsg({ msgId: i, senderName: "Alice", text: `msg ${i}` }));
+        pushMessage(
+          id,
+          makeMsg({ msgId: i, senderName: "Alice", text: `msg ${i}` }),
+        );
       }
       const result = getMessagesByUser(id, "Alice", 3);
       const lines = result.split("\n");
@@ -306,66 +314,84 @@ describe("history", () => {
 
     it("shows time ago for users seen minutes ago", () => {
       const id = chatId();
-      pushMessage(id, makeMsg({
-        msgId: 1,
-        senderId: 100,
-        senderName: "Alice",
-        timestamp: Date.now() - 5 * 60_000, // 5 minutes ago
-      }));
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 1,
+          senderId: 100,
+          senderName: "Alice",
+          timestamp: Date.now() - 5 * 60_000, // 5 minutes ago
+        }),
+      );
       const result = getKnownUsers(id);
       expect(result).toContain("5m ago");
     });
 
     it("shows time ago for users seen hours ago", () => {
       const id = chatId();
-      pushMessage(id, makeMsg({
-        msgId: 1,
-        senderId: 100,
-        senderName: "Alice",
-        timestamp: Date.now() - 3 * 3_600_000, // 3 hours ago
-      }));
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 1,
+          senderId: 100,
+          senderName: "Alice",
+          timestamp: Date.now() - 3 * 3_600_000, // 3 hours ago
+        }),
+      );
       const result = getKnownUsers(id);
       expect(result).toContain("3h ago");
     });
 
     it("shows time ago for users seen days ago", () => {
       const id = chatId();
-      pushMessage(id, makeMsg({
-        msgId: 1,
-        senderId: 100,
-        senderName: "Alice",
-        timestamp: Date.now() - 2 * 86_400_000, // 2 days ago
-      }));
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 1,
+          senderId: 100,
+          senderName: "Alice",
+          timestamp: Date.now() - 2 * 86_400_000, // 2 days ago
+        }),
+      );
       const result = getKnownUsers(id);
       expect(result).toContain("2d ago");
     });
 
     it("shows 'just now' for users seen less than a minute ago", () => {
       const id = chatId();
-      pushMessage(id, makeMsg({
-        msgId: 1,
-        senderId: 100,
-        senderName: "Alice",
-        timestamp: Date.now() - 10_000, // 10 seconds ago
-      }));
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 1,
+          senderId: 100,
+          senderName: "Alice",
+          timestamp: Date.now() - 10_000, // 10 seconds ago
+        }),
+      );
       const result = getKnownUsers(id);
       expect(result).toContain("just now");
     });
 
     it("sorts users by last seen (most recent first)", () => {
       const id = chatId();
-      pushMessage(id, makeMsg({
-        msgId: 1,
-        senderId: 100,
-        senderName: "OldUser",
-        timestamp: Date.now() - 86_400_000,
-      }));
-      pushMessage(id, makeMsg({
-        msgId: 2,
-        senderId: 200,
-        senderName: "NewUser",
-        timestamp: Date.now() - 60_000,
-      }));
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 1,
+          senderId: 100,
+          senderName: "OldUser",
+          timestamp: Date.now() - 86_400_000,
+        }),
+      );
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 2,
+          senderId: 200,
+          senderName: "NewUser",
+          timestamp: Date.now() - 60_000,
+        }),
+      );
       const result = getKnownUsers(id);
       const newIdx = result.indexOf("NewUser");
       const oldIdx = result.indexOf("OldUser");
@@ -374,18 +400,24 @@ describe("history", () => {
 
     it("updates user name to the latest seen name", () => {
       const id = chatId();
-      pushMessage(id, makeMsg({
-        msgId: 1,
-        senderId: 100,
-        senderName: "OldName",
-        timestamp: Date.now() - 60_000,
-      }));
-      pushMessage(id, makeMsg({
-        msgId: 2,
-        senderId: 100,
-        senderName: "NewName",
-        timestamp: Date.now(),
-      }));
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 1,
+          senderId: 100,
+          senderName: "OldName",
+          timestamp: Date.now() - 60_000,
+        }),
+      );
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: 2,
+          senderId: 100,
+          senderName: "NewName",
+          timestamp: Date.now(),
+        }),
+      );
       const result = getKnownUsers(id);
       expect(result).toContain("NewName");
       expect(result).not.toContain("OldName");
@@ -399,18 +431,12 @@ describe("history", () => {
         id,
         makeMsg({ msgId: 1, senderId: 100, senderName: "Alice" }),
       );
-      pushMessage(
-        id,
-        makeMsg({ msgId: 2, senderId: 200, senderName: "Bob" }),
-      );
+      pushMessage(id, makeMsg({ msgId: 2, senderId: 200, senderName: "Bob" }));
       pushMessage(
         id,
         makeMsg({ msgId: 3, senderId: 100, senderName: "Alice" }),
       );
-      pushMessage(
-        id,
-        makeMsg({ msgId: 4, senderId: 200, senderName: "Bob" }),
-      );
+      pushMessage(id, makeMsg({ msgId: 4, senderId: 200, senderName: "Bob" }));
 
       const result = getRecentBySenderId(id, 100);
       expect(result).toHaveLength(2);
@@ -556,8 +582,14 @@ describe("history", () => {
 
     it("formats multiple messages joined by newlines", () => {
       const id = chatId();
-      pushMessage(id, makeMsg({ msgId: 1, text: "first", timestamp: 1000000000000 }));
-      pushMessage(id, makeMsg({ msgId: 2, text: "second", timestamp: 1000000060000 }));
+      pushMessage(
+        id,
+        makeMsg({ msgId: 1, text: "first", timestamp: 1000000000000 }),
+      );
+      pushMessage(
+        id,
+        makeMsg({ msgId: 2, text: "second", timestamp: 1000000060000 }),
+      );
       const result = getRecentFormatted(id, 5);
       const lines = result.split("\n");
       expect(lines).toHaveLength(2);
@@ -567,9 +599,17 @@ describe("history", () => {
 
     it("includes all media type variants in tags", () => {
       const id = chatId();
-      const types: Array<HistoryMessage["mediaType"]> = ["document", "voice", "video", "animation"];
+      const types: Array<HistoryMessage["mediaType"]> = [
+        "document",
+        "voice",
+        "video",
+        "animation",
+      ];
       types.forEach((type, i) => {
-        pushMessage(id, makeMsg({ msgId: i + 1, text: `media ${type}`, mediaType: type }));
+        pushMessage(
+          id,
+          makeMsg({ msgId: i + 1, text: `media ${type}`, mediaType: type }),
+        );
       });
       const result = getRecentFormatted(id, 10);
       expect(result).toContain("[document]");
@@ -612,14 +652,8 @@ describe("history", () => {
       const id = chatId();
       const ts1 = Date.now() - 10000;
       const ts2 = Date.now() - 5000;
-      pushMessage(
-        id,
-        makeMsg({ msgId: 1, senderId: 100, timestamp: ts1 }),
-      );
-      pushMessage(
-        id,
-        makeMsg({ msgId: 2, senderId: 200, timestamp: ts2 }),
-      );
+      pushMessage(id, makeMsg({ msgId: 1, senderId: 100, timestamp: ts1 }));
+      pushMessage(id, makeMsg({ msgId: 2, senderId: 200, timestamp: ts2 }));
 
       const stats = getHistoryStats(id);
       expect(stats.totalMessages).toBe(2);

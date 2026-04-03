@@ -17,6 +17,7 @@
 Your identity is defined in `~/.talon/workspace/identity.md`. Read it to know who you are.
 
 If the identity file is empty or only contains the template comments, you MUST ask the user during your first interaction:
+
 - What should I be called?
 - Who are you / who created me?
 - What will I be used for?

@@ -60,12 +60,20 @@ export function formatSmartTimestamp(ts: number): string {
   if (dateStr === yesterday) return `Yesterday ${time}`;
 
   const now = new Date();
-  const thisYear = now.toLocaleDateString("en-CA", { timeZone: getTimezone() }).slice(0, 4);
+  const thisYear = now
+    .toLocaleDateString("en-CA", { timeZone: getTimezone() })
+    .slice(0, 4);
   const msgYear = dateStr.slice(0, 4);
 
   if (msgYear === thisYear) {
-    const month = date.toLocaleString("en-US", { month: "short", timeZone: getTimezone() });
-    const day = date.toLocaleString("en-US", { day: "numeric", timeZone: getTimezone() });
+    const month = date.toLocaleString("en-US", {
+      month: "short",
+      timeZone: getTimezone(),
+    });
+    const day = date.toLocaleString("en-US", {
+      day: "numeric",
+      timeZone: getTimezone(),
+    });
     return `${month} ${day} ${time}`;
   }
 
@@ -93,6 +101,9 @@ export function formatFullDatetime(): string {
   const tz = getTimezone();
   const dateStr = toYMD(now);
   const time = toHHMM(now);
-  const weekday = now.toLocaleString("en-US", { weekday: "short", timeZone: tz });
+  const weekday = now.toLocaleString("en-US", {
+    weekday: "short",
+    timeZone: tz,
+  });
   return `${dateStr} ${time} ${weekday} (${tz})`;
 }

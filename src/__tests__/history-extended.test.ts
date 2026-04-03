@@ -191,13 +191,37 @@ describe("getKnownUsers", () => {
   it("returns sorted list by last seen (most recent first)", () => {
     const id = uniqueChat();
     const now = Date.now();
-    pushMessage(id, makeMsg({ msgId: 1, senderId: 100, senderName: "Alpha", timestamp: now - 3600_000 }));
-    pushMessage(id, makeMsg({ msgId: 2, senderId: 200, senderName: "Beta",  timestamp: now - 60_000 }));
-    pushMessage(id, makeMsg({ msgId: 3, senderId: 300, senderName: "Gamma", timestamp: now - 1_000 }));
+    pushMessage(
+      id,
+      makeMsg({
+        msgId: 1,
+        senderId: 100,
+        senderName: "Alpha",
+        timestamp: now - 3600_000,
+      }),
+    );
+    pushMessage(
+      id,
+      makeMsg({
+        msgId: 2,
+        senderId: 200,
+        senderName: "Beta",
+        timestamp: now - 60_000,
+      }),
+    );
+    pushMessage(
+      id,
+      makeMsg({
+        msgId: 3,
+        senderId: 300,
+        senderName: "Gamma",
+        timestamp: now - 1_000,
+      }),
+    );
 
     const result = getKnownUsers(id);
     const gammaIdx = result.indexOf("Gamma");
-    const betaIdx  = result.indexOf("Beta");
+    const betaIdx = result.indexOf("Beta");
     const alphaIdx = result.indexOf("Alpha");
 
     expect(gammaIdx).toBeLessThan(betaIdx);
@@ -207,9 +231,25 @@ describe("getKnownUsers", () => {
   it("includes message counts for each user", () => {
     const id = uniqueChat();
     for (let i = 0; i < 4; i++) {
-      pushMessage(id, makeMsg({ msgId: i, senderId: 10, senderName: "Active", timestamp: Date.now() + i }));
+      pushMessage(
+        id,
+        makeMsg({
+          msgId: i,
+          senderId: 10,
+          senderName: "Active",
+          timestamp: Date.now() + i,
+        }),
+      );
     }
-    pushMessage(id, makeMsg({ msgId: 99, senderId: 20, senderName: "Lurker", timestamp: Date.now() }));
+    pushMessage(
+      id,
+      makeMsg({
+        msgId: 99,
+        senderId: 20,
+        senderName: "Lurker",
+        timestamp: Date.now(),
+      }),
+    );
 
     const result = getKnownUsers(id);
     expect(result).toContain("4 msgs"); // Active
@@ -218,7 +258,10 @@ describe("getKnownUsers", () => {
 
   it("includes user_id in output", () => {
     const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 1, senderId: 55555, senderName: "Identified" }));
+    pushMessage(
+      id,
+      makeMsg({ msgId: 1, senderId: 55555, senderName: "Identified" }),
+    );
     expect(getKnownUsers(id)).toContain("user_id: 55555");
   });
 
@@ -235,7 +278,10 @@ describe("getKnownUsers", () => {
 describe("getMessageById", () => {
   it("finds and formats the correct message", () => {
     const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 77, senderName: "Alice", text: "find me" }));
+    pushMessage(
+      id,
+      makeMsg({ msgId: 77, senderName: "Alice", text: "find me" }),
+    );
     pushMessage(id, makeMsg({ msgId: 78, senderName: "Bob", text: "other" }));
 
     const result = getMessageById(id, 77);
@@ -310,8 +356,14 @@ describe("getRecentBySenderId", () => {
 describe("getMessagesByUser", () => {
   it("filters by case-insensitive substring match on senderName", () => {
     const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 1, senderName: "Charlie Brown", text: "peanuts" }));
-    pushMessage(id, makeMsg({ msgId: 2, senderName: "Lucy Van Pelt", text: "football" }));
+    pushMessage(
+      id,
+      makeMsg({ msgId: 1, senderName: "Charlie Brown", text: "peanuts" }),
+    );
+    pushMessage(
+      id,
+      makeMsg({ msgId: 2, senderName: "Lucy Van Pelt", text: "football" }),
+    );
 
     const result = getMessagesByUser(id, "charlie");
     expect(result).toContain("peanuts");
@@ -321,11 +373,15 @@ describe("getMessagesByUser", () => {
   it("returns 'No messages from' for unmatched user", () => {
     const id = uniqueChat();
     pushMessage(id, makeMsg({ msgId: 1, senderName: "Alice" }));
-    expect(getMessagesByUser(id, "Zorro")).toContain('No messages from "Zorro"');
+    expect(getMessagesByUser(id, "Zorro")).toContain(
+      'No messages from "Zorro"',
+    );
   });
 
   it("returns 'No messages in history' for empty chat", () => {
-    expect(getMessagesByUser("empty-usr-chat", "anyone")).toContain("No messages in history");
+    expect(getMessagesByUser("empty-usr-chat", "anyone")).toContain(
+      "No messages in history",
+    );
   });
 
   it("partial name match returns all matching messages", () => {
@@ -355,8 +411,14 @@ describe("searchHistory", () => {
 
   it("matches by sender name (case-insensitive)", () => {
     const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 1, senderName: "Sherlock Holmes", text: "elementary" }));
-    pushMessage(id, makeMsg({ msgId: 2, senderName: "Dr Watson", text: "quite so" }));
+    pushMessage(
+      id,
+      makeMsg({ msgId: 1, senderName: "Sherlock Holmes", text: "elementary" }),
+    );
+    pushMessage(
+      id,
+      makeMsg({ msgId: 2, senderName: "Dr Watson", text: "quite so" }),
+    );
 
     const result = searchHistory(id, "sherlock");
     expect(result).toContain("elementary");
@@ -364,7 +426,9 @@ describe("searchHistory", () => {
   });
 
   it("returns 'No messages in history' for chat with no messages", () => {
-    expect(searchHistory("no-msgs-srch", "anything")).toContain("No messages in history");
+    expect(searchHistory("no-msgs-srch", "anything")).toContain(
+      "No messages in history",
+    );
   });
 
   it("matches are returned in chronological order (last N)", () => {
@@ -427,7 +491,9 @@ describe("setMessageFilePath", () => {
   });
 
   it("is a no-op for a chat that does not exist", () => {
-    expect(() => setMessageFilePath("ghost-chat", 1, "/tmp/x.jpg")).not.toThrow();
+    expect(() =>
+      setMessageFilePath("ghost-chat", 1, "/tmp/x.jpg"),
+    ).not.toThrow();
   });
 
   it("is a no-op when msgId is not found", () => {
@@ -491,7 +557,13 @@ describe("loadHistory — persistence", () => {
   it("loads messages from a valid JSON file", () => {
     const stored = {
       "persist-chat-1": [
-        { msgId: 1, senderId: 1, senderName: "Test", text: "hello", timestamp: 1000 },
+        {
+          msgId: 1,
+          senderId: 1,
+          senderName: "Test",
+          text: "hello",
+          timestamp: 1000,
+        },
       ],
     };
     existsSyncMock.mockReturnValueOnce(true);
@@ -507,16 +579,22 @@ describe("loadHistory — persistence", () => {
   it("falls back to backup file when primary is corrupt", () => {
     const backup = {
       "backup-chat": [
-        { msgId: 99, senderId: 1, senderName: "Backup", text: "from backup", timestamp: 2000 },
+        {
+          msgId: 99,
+          senderId: 1,
+          senderName: "Backup",
+          text: "from backup",
+          timestamp: 2000,
+        },
       ],
     };
     // First existsSync call: primary exists; readFileSync returns corrupt data.
     // Second existsSync call: backup exists; readFileSync returns valid data.
     existsSyncMock
-      .mockReturnValueOnce(true)   // primary file exists
-      .mockReturnValueOnce(true);  // backup file exists
+      .mockReturnValueOnce(true) // primary file exists
+      .mockReturnValueOnce(true); // backup file exists
     readFileSyncMock
-      .mockReturnValueOnce("{{corrupt json}}")   // primary read fails
+      .mockReturnValueOnce("{{corrupt json}}") // primary read fails
       .mockReturnValueOnce(JSON.stringify(backup)); // backup read succeeds
 
     expect(() => loadHistory()).not.toThrow();
@@ -538,7 +616,9 @@ describe("loadHistory — persistence", () => {
       timestamp: Date.now() + i,
     }));
     existsSyncMock.mockReturnValueOnce(true);
-    readFileSyncMock.mockReturnValueOnce(JSON.stringify({ "cap-test-chat": msgs }));
+    readFileSyncMock.mockReturnValueOnce(
+      JSON.stringify({ "cap-test-chat": msgs }),
+    );
 
     loadHistory();
 
@@ -572,7 +652,10 @@ describe("flushHistory", () => {
 
   it("writes a JSON blob containing the chat data", () => {
     const id = `flush-check-${Date.now()}`;
-    pushMessage(id, makeMsg({ msgId: 42, senderName: "FlushUser", text: "flush me" }));
+    pushMessage(
+      id,
+      makeMsg({ msgId: 42, senderName: "FlushUser", text: "flush me" }),
+    );
 
     writeFileAtomicSyncMock.mockClear();
     existsSyncMock.mockReturnValue(false);
@@ -612,17 +695,25 @@ describe("history — saveHistory dirty=false early return (line 79 TRUE branch)
     vi.resetModules();
     vi.useFakeTimers();
     const wfaMock = vi.fn();
-    vi.doMock("../util/log.js", () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
     vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
     vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false), mkdirSync: vi.fn(), readFileSync: vi.fn(() => "{}"),
+      existsSync: vi.fn(() => false),
+      mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => "{}"),
     }));
     vi.doMock("write-file-atomic", () => ({ default: { sync: wfaMock } }));
     vi.doMock("../util/paths.js", () => ({
       files: { history: "/fake/history.json" },
       dirs: {},
     }));
-    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+    vi.doMock("../util/cleanup-registry.js", () => ({
+      registerCleanup: vi.fn(),
+    }));
 
     // Fresh import: dirty=false (nothing modified yet)
     await import("../storage/history.js");
@@ -641,22 +732,39 @@ describe("history — non-Error thrown in saveHistory (line 96 FALSE branch)", (
   it("records error with String(err) when non-Error is thrown", async () => {
     vi.resetModules();
     const recordErrorMock = vi.fn();
-    vi.doMock("../util/log.js", () => ({ log: vi.fn(), logError: vi.fn(), logWarn: vi.fn() }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
     vi.doMock("../util/watchdog.js", () => ({ recordError: recordErrorMock }));
     vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false), mkdirSync: vi.fn(), readFileSync: vi.fn(() => "{}"),
+      existsSync: vi.fn(() => false),
+      mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => "{}"),
     }));
     vi.doMock("write-file-atomic", () => ({
-      default: { sync: vi.fn(() => { throw "plain string history error"; }) },
+      default: {
+        sync: vi.fn(() => {
+          throw "plain string history error";
+        }),
+      },
     }));
     vi.doMock("../util/paths.js", () => ({
-      files: { history: "/fake/history.json" }, dirs: {},
+      files: { history: "/fake/history.json" },
+      dirs: {},
     }));
-    vi.doMock("../util/cleanup-registry.js", () => ({ registerCleanup: vi.fn() }));
+    vi.doMock("../util/cleanup-registry.js", () => ({
+      registerCleanup: vi.fn(),
+    }));
 
     const { pushMessage, flushHistory } = await import("../storage/history.js");
     pushMessage("chat-err", {
-      msgId: 1, senderId: 1, senderName: "Bob", text: "test", timestamp: Date.now(),
+      msgId: 1,
+      senderId: 1,
+      senderName: "Bob",
+      text: "test",
+      timestamp: Date.now(),
     });
     expect(() => flushHistory()).not.toThrow();
 

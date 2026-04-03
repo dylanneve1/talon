@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../util/log.js", () => ({
-  log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
 }));
 
 vi.mock("../core/plugin.js", () => ({
@@ -10,19 +13,21 @@ vi.mock("../core/plugin.js", () => ({
 
 // ── Test formatting module ──────────────────────────────────────────────────
 
-const { buildAdaptiveCard, splitTeamsMessage, stripHtml } = await import(
-  "../frontend/teams/formatting.js"
-);
+const { buildAdaptiveCard, splitTeamsMessage, stripHtml } =
+  await import("../frontend/teams/formatting.js");
 
 describe("teams formatting", () => {
-
   describe("buildAdaptiveCard", () => {
     it("builds a basic card with text", () => {
       const card = buildAdaptiveCard("Hello Teams!");
       expect(card.type).toBe("message");
       expect(card.attachments).toHaveLength(1);
-      const attachment = (card.attachments as Array<Record<string, unknown>>)[0];
-      expect(attachment.contentType).toBe("application/vnd.microsoft.card.adaptive");
+      const attachment = (
+        card.attachments as Array<Record<string, unknown>>
+      )[0];
+      expect(attachment.contentType).toBe(
+        "application/vnd.microsoft.card.adaptive",
+      );
       const content = attachment.content as Record<string, unknown>;
       expect(content.type).toBe("AdaptiveCard");
       expect(content.version).toBe("1.5");
@@ -36,7 +41,9 @@ describe("teams formatting", () => {
         { text: "Docs", url: "https://docs.example.com" },
         { text: "Repo", url: "https://github.com/example" },
       ]);
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const actions = content.actions as Array<Record<string, unknown>>;
       expect(actions).toHaveLength(2);
       expect(actions[0].type).toBe("Action.OpenUrl");
@@ -49,7 +56,9 @@ describe("teams formatting", () => {
         { text: "Option A" },
         { text: "Option B" },
       ]);
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const actions = content.actions as Array<Record<string, unknown>>;
       expect(actions[0].type).toBe("Action.Submit");
       expect(actions[0].data).toEqual({ choice: "Option A" });
@@ -57,19 +66,25 @@ describe("teams formatting", () => {
 
     it("omits actions when no buttons provided", () => {
       const card = buildAdaptiveCard("No buttons");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       expect(content.actions).toBeUndefined();
     });
 
     it("omits actions for empty button array", () => {
       const card = buildAdaptiveCard("Empty buttons", []);
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       expect(content.actions).toBeUndefined();
     });
 
     it("renders fenced code block as monospace Container", () => {
       const card = buildAdaptiveCard("```\nconst x = 1;\nconst y = 2;\n```");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
       const codeBlock = body.find((b) => b.type === "Container");
       expect(codeBlock).toBeDefined();
@@ -79,24 +94,38 @@ describe("teams formatting", () => {
 
     it("renders unordered list as TextBlock with dashes", () => {
       const card = buildAdaptiveCard("- item one\n- item two\n- item three");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
-      const listBlock = body.find((b) => typeof b.text === "string" && (b.text as string).includes("- item one"));
+      const listBlock = body.find(
+        (b) =>
+          typeof b.text === "string" &&
+          (b.text as string).includes("- item one"),
+      );
       expect(listBlock).toBeDefined();
     });
 
     it("renders ordered list with numeric prefixes", () => {
       const card = buildAdaptiveCard("1. first\n2. second\n3. third");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
-      const listBlock = body.find((b) => typeof b.text === "string" && (b.text as string).includes("1. first"));
+      const listBlock = body.find(
+        (b) =>
+          typeof b.text === "string" && (b.text as string).includes("1. first"),
+      );
       expect(listBlock).toBeDefined();
     });
 
     it("renders markdown table as Table element", () => {
-      const tableMarkdown = "| Header A | Header B |\n| --- | --- |\n| Row 1A | Row 1B |\n| Row 2A | Row 2B |";
+      const tableMarkdown =
+        "| Header A | Header B |\n| --- | --- |\n| Row 1A | Row 1B |\n| Row 2A | Row 2B |";
       const card = buildAdaptiveCard(tableMarkdown);
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
       const tableBlock = body.find((b) => b.type === "Table");
       expect(tableBlock).toBeDefined();
@@ -105,24 +134,34 @@ describe("teams formatting", () => {
 
     it("renders blockquote as emphasis Container", () => {
       const card = buildAdaptiveCard("> This is a quote");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
-      const bqBlock = body.find((b) => b.type === "Container" && b.style === "emphasis");
+      const bqBlock = body.find(
+        (b) => b.type === "Container" && b.style === "emphasis",
+      );
       expect(bqBlock).toBeDefined();
     });
 
     it("renders horizontal rule as separator TextBlock", () => {
       const card = buildAdaptiveCard("Above\n\n---\n\nBelow");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
-      const hrBlock = body.find((b) => typeof b.text === "string" && (b.text as string).includes("───"));
+      const hrBlock = body.find(
+        (b) => typeof b.text === "string" && (b.text as string).includes("───"),
+      );
       expect(hrBlock).toBeDefined();
     });
 
     it("falls back to TextBlock when body would be empty", () => {
       // A text with only whitespace results in space tokens → empty body → fallback
       const card = buildAdaptiveCard("   \n\n   ");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
       expect(body.length).toBeGreaterThanOrEqual(1);
       expect(body[0]!.type).toBe("TextBlock");
@@ -133,7 +172,9 @@ describe("teams formatting", () => {
       // → falls into default: case → `"text" in token` is false → condition FALSE → skipped
       // body ends up empty → fallback TextBlock is added
       const card = buildAdaptiveCard("[ref]: http://example.com");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
       expect(body.length).toBeGreaterThanOrEqual(1);
       expect(body[0]!.type).toBe("TextBlock");
@@ -141,7 +182,9 @@ describe("teams formatting", () => {
 
     it("renders heading with bold styling", () => {
       const card = buildAdaptiveCard("## Section Title");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
       const heading = body.find((b) => b.weight === "Bolder");
       expect(heading).toBeDefined();
@@ -151,9 +194,13 @@ describe("teams formatting", () => {
     it("replaces empty code block lines with non-breaking space", () => {
       // Empty line in code block triggers (line || " ") branch
       const card = buildAdaptiveCard("```\nfirst line\n\nthird line\n```");
-      const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+      const content = (
+        (card.attachments as unknown[])[0] as Record<string, unknown>
+      ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
-      const codeBlock = body.find((b) => b.type === "Container") as Record<string, unknown> | undefined;
+      const codeBlock = body.find((b) => b.type === "Container") as
+        | Record<string, unknown>
+        | undefined;
       expect(codeBlock).toBeDefined();
       const items = codeBlock!.items as Array<Record<string, unknown>>;
       // The empty line should become " " (non-breaking space placeholder)
@@ -176,14 +223,17 @@ describe("teams formatting", () => {
     });
 
     it("splits on paragraph boundaries", () => {
-      const text = "A".repeat(5000) + "\n\n" + "B".repeat(5000) + "\n\n" + "C".repeat(100);
+      const text =
+        "A".repeat(5000) + "\n\n" + "B".repeat(5000) + "\n\n" + "C".repeat(100);
       const chunks = splitTeamsMessage(text, 6000);
       expect(chunks.length).toBeGreaterThanOrEqual(2);
       expect(chunks[0]).toContain("A");
     });
 
     it("falls back to line boundaries when no paragraph break", () => {
-      const text = Array.from({ length: 200 }, (_, i) => `Line ${i}`).join("\n");
+      const text = Array.from({ length: 200 }, (_, i) => `Line ${i}`).join(
+        "\n",
+      );
       const chunks = splitTeamsMessage(text, 500);
       expect(chunks.length).toBeGreaterThanOrEqual(2);
       for (const chunk of chunks) {
@@ -210,7 +260,9 @@ describe("teams formatting", () => {
     });
 
     it("handles nested tags", () => {
-      expect(stripHtml("<div><p>Text <em>here</em></p></div>")).toBe("Text here");
+      expect(stripHtml("<div><p>Text <em>here</em></p></div>")).toBe(
+        "Text here",
+      );
     });
 
     it("returns plain text unchanged", () => {
@@ -247,13 +299,20 @@ describe("teams actions", () => {
     }));
 
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
 
     const gateway = new Gateway();
     gateway.setContext(123);
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
-    const result = await handler({ action: "send_message", text: "Hello Teams!" }, 123);
+    const result = await handler(
+      { action: "send_message", text: "Hello Teams!" },
+      123,
+    );
     expect(result?.ok).toBe(true);
     expect(result?.message_id).toBeDefined();
     expect(gateway.getMessageCount(123)).toBe(1);
@@ -262,9 +321,13 @@ describe("teams actions", () => {
 
   it("send_message returns ok for empty text (no-op)", async () => {
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
     const result = await handler({ action: "send_message", text: "" }, 123);
     expect(result?.ok).toBe(true);
@@ -272,13 +335,21 @@ describe("teams actions", () => {
 
   it("send_message handles webhook failure", async () => {
     vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
-      proxyFetch: vi.fn(async () => ({ ok: false, status: 500, text: async () => "Internal Error" })),
+      proxyFetch: vi.fn(async () => ({
+        ok: false,
+        status: 500,
+        text: async () => "Internal Error",
+      })),
     }));
 
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
     const result = await handler({ action: "send_message", text: "fail" }, 123);
     expect(result?.ok).toBe(false);
@@ -287,9 +358,13 @@ describe("teams actions", () => {
 
   it("get_chat_info returns channel info", async () => {
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
     const result = await handler({ action: "get_chat_info" }, 456);
     expect(result?.ok).toBe(true);
@@ -299,11 +374,22 @@ describe("teams actions", () => {
 
   it("unsupported actions return ok (graceful no-ops)", async () => {
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
-    for (const action of ["react", "edit_message", "delete_message", "pin_message", "unpin_message", "forward_message"]) {
+    for (const action of [
+      "react",
+      "edit_message",
+      "delete_message",
+      "pin_message",
+      "unpin_message",
+      "forward_message",
+    ]) {
       const result = await handler({ action }, 123);
       expect(result?.ok).toBe(true);
     }
@@ -311,9 +397,13 @@ describe("teams actions", () => {
 
   it("unknown actions return null", async () => {
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
     const result = await handler({ action: "totally_unknown" }, 123);
     expect(result).toBeNull();
@@ -325,20 +415,37 @@ describe("teams actions", () => {
       proxyFetch: vi.fn(async () => ({ ok: true, status: 200 })),
     }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
-    vi.doMock("../core/plugin.js", () => ({ handlePluginAction: vi.fn(async () => null) }));
+    vi.doMock("../core/plugin.js", () => ({
+      handlePluginAction: vi.fn(async () => null),
+    }));
 
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
-    const result = await handler({
-      action: "send_message_with_buttons",
-      text: "Choose an option",
-      rows: [[{ text: "Option A", url: "https://example.com" }, { text: "Option B" }]],
-    }, 123);
+    const result = await handler(
+      {
+        action: "send_message_with_buttons",
+        text: "Choose an option",
+        rows: [
+          [
+            { text: "Option A", url: "https://example.com" },
+            { text: "Option B" },
+          ],
+        ],
+      },
+      123,
+    );
     expect(result?.ok).toBe(true);
   });
 
@@ -348,20 +455,32 @@ describe("teams actions", () => {
       proxyFetch: vi.fn(async () => ({ ok: false, status: 503 })),
     }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
-    vi.doMock("../core/plugin.js", () => ({ handlePluginAction: vi.fn(async () => null) }));
+    vi.doMock("../core/plugin.js", () => ({
+      handlePluginAction: vi.fn(async () => null),
+    }));
 
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
-    const result = await handler({
-      action: "send_message_with_buttons",
-      text: "Click one",
-      rows: [[{ text: "Fail" }]],
-    }, 123);
+    const result = await handler(
+      {
+        action: "send_message_with_buttons",
+        text: "Click one",
+        rows: [[{ text: "Fail" }]],
+      },
+      123,
+    );
     expect(result?.ok).toBe(false);
     expect(result?.error).toBeDefined();
   });
@@ -374,7 +493,9 @@ describe("teams formatting — default token type", () => {
     // Raw HTML block generates an 'html' token with a text property,
     // which falls into the default: case of the switch in markdownToCardBody
     const card = buildAdaptiveCard("<div>some raw HTML content</div>");
-    const content = ((card.attachments as unknown[])[0] as Record<string, unknown>).content as Record<string, unknown>;
+    const content = (
+      (card.attachments as unknown[])[0] as Record<string, unknown>
+    ).content as Record<string, unknown>;
     const body = content.body as Array<Record<string, unknown>>;
     expect(body.length).toBeGreaterThan(0);
   });
@@ -383,13 +504,19 @@ describe("teams formatting — default token type", () => {
     vi.resetModules();
     vi.doMock("cheerio", () => ({
       default: {},
-      load: vi.fn(() => { throw new Error("cheerio unavailable"); }),
+      load: vi.fn(() => {
+        throw new Error("cheerio unavailable");
+      }),
     }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
 
-    const { stripHtml: stripHtmlFresh } = await import("../frontend/teams/formatting.js");
+    const { stripHtml: stripHtmlFresh } =
+      await import("../frontend/teams/formatting.js");
     const result = stripHtmlFresh("<p>Hello <b>world</b></p>");
     expect(result).toBe("Hello world");
   });
@@ -404,9 +531,13 @@ describe("teams actions — branch coverage", () => {
 
   it("send_message with undefined text uses empty string fallback", async () => {
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
     // text is undefined → triggers body.text ?? ""
     const result = await handler({ action: "send_message" }, 123);
@@ -418,18 +549,30 @@ describe("teams actions — branch coverage", () => {
       proxyFetch: vi.fn(async () => ({ ok: true, status: 200 })),
     }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
-    vi.doMock("../core/plugin.js", () => ({ handlePluginAction: vi.fn(async () => null) }));
+    vi.doMock("../core/plugin.js", () => ({
+      handlePluginAction: vi.fn(async () => null),
+    }));
 
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
     gateway.setContext(123);
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
     // text is undefined → triggers body.text ?? ""
-    const result = await handler({ action: "send_message_with_buttons", rows: [[{ text: "OK" }]] }, 123);
+    const result = await handler(
+      { action: "send_message_with_buttons", rows: [[{ text: "OK" }]] },
+      123,
+    );
     expect(result?.ok).toBe(true);
     gateway.clearContext(123);
   });
@@ -464,7 +607,12 @@ describe("buildAdaptiveCard — blockquote without text field", () => {
     // produce a blockquote with empty text which exercises the String() conversion.
     // Just calling with minimal blockquote markdown covers the path:
     const card = buildAdaptiveCard("> ");
-    const body = ((card.attachments as Array<Record<string, unknown>>)[0].content as Record<string, unknown>).body as Array<Record<string, unknown>>;
+    const body = (
+      (card.attachments as Array<Record<string, unknown>>)[0].content as Record<
+        string,
+        unknown
+      >
+    ).body as Array<Record<string, unknown>>;
     // Should produce some body (either Container or fallback)
     expect(body).toBeDefined();
   });
@@ -485,27 +633,43 @@ describe("teams actions — non-Error throw coverage", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
-    vi.doMock("../core/plugin.js", () => ({ handlePluginAction: vi.fn(async () => null) }));
+    vi.doMock("../core/plugin.js", () => ({
+      handlePluginAction: vi.fn(async () => null),
+    }));
     vi.doMock("../storage/cron-store.js", () => ({
-      addCronJob: vi.fn(), getCronJob: vi.fn(), getCronJobsForChat: vi.fn(() => []),
-      updateCronJob: vi.fn(), deleteCronJob: vi.fn(), recordCronRun: vi.fn(),
+      addCronJob: vi.fn(),
+      getCronJob: vi.fn(),
+      getCronJobsForChat: vi.fn(() => []),
+      updateCronJob: vi.fn(),
+      deleteCronJob: vi.fn(),
+      recordCronRun: vi.fn(),
       validateCronExpression: vi.fn(() => ({ valid: true, next: "" })),
-      generateCronId: vi.fn(() => "id"), loadCronJobs: vi.fn(),
+      generateCronId: vi.fn(() => "id"),
+      loadCronJobs: vi.fn(),
     }));
   });
 
   it("send_message covers String(err) branch when postToTeams throws a non-Error", async () => {
     // Mock postToTeams (via proxyFetch) to throw a plain string, not an Error instance
     vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
-      proxyFetch: vi.fn(async () => { throw "non-error webhook failure"; }), // eslint-disable-line @typescript-eslint/no-throw-literal
+      proxyFetch: vi.fn(async () => {
+        throw "non-error webhook failure";
+      }), // eslint-disable-line @typescript-eslint/no-throw-literal
     }));
 
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
     const result = await handler({ action: "send_message", text: "test" }, 123);
     expect(result?.ok).toBe(false);
@@ -515,15 +679,28 @@ describe("teams actions — non-Error throw coverage", () => {
 
   it("send_message_with_buttons covers String(err) branch when proxyFetch throws a non-Error", async () => {
     vi.doMock("../frontend/teams/proxy-fetch.js", () => ({
-      proxyFetch: vi.fn(async () => { throw "non-error button failure"; }), // eslint-disable-line @typescript-eslint/no-throw-literal
+      proxyFetch: vi.fn(async () => {
+        throw "non-error button failure";
+      }), // eslint-disable-line @typescript-eslint/no-throw-literal
     }));
 
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
-    const result = await handler({ action: "send_message_with_buttons", text: "click me", rows: [[{ text: "OK" }]] }, 123);
+    const result = await handler(
+      {
+        action: "send_message_with_buttons",
+        text: "click me",
+        rows: [[{ text: "OK" }]],
+      },
+      123,
+    );
     expect(result?.ok).toBe(false);
     expect(result?.error).toContain("non-error button failure");
   });
@@ -534,14 +711,20 @@ describe("teams actions — non-Error throw coverage", () => {
       proxyFetch: vi.fn(async () => ({
         ok: false,
         status: 500,
-        text: async () => { throw new Error("body read failed"); },
+        text: async () => {
+          throw new Error("body read failed");
+        },
       })),
     }));
 
     const { Gateway } = await import("../core/gateway.js");
-    const { createTeamsActionHandler } = await import("../frontend/teams/actions.js");
+    const { createTeamsActionHandler } =
+      await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
-    const handler = createTeamsActionHandler("https://webhook.example.com", gateway);
+    const handler = createTeamsActionHandler(
+      "https://webhook.example.com",
+      gateway,
+    );
 
     const result = await handler({ action: "send_message", text: "test" }, 123);
     expect(result?.ok).toBe(false);

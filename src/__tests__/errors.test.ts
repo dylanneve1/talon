@@ -78,7 +78,10 @@ describe("classify", () => {
   });
 
   it("passes through TalonError unchanged", () => {
-    const original = new TalonError("test", { reason: "rate_limit", retryable: true });
+    const original = new TalonError("test", {
+      reason: "rate_limit",
+      retryable: true,
+    });
     expect(classify(original)).toBe(original);
   });
 
@@ -94,8 +97,12 @@ describe("classify", () => {
 
   it("covers inner catch when String(err) throws — non-stringifiable object (L62)", () => {
     const bad = {
-      toString() { throw new Error("no string"); },
-      [Symbol.toPrimitive]() { throw new Error("no primitive"); },
+      toString() {
+        throw new Error("no string");
+      },
+      [Symbol.toPrimitive]() {
+        throw new Error("no primitive");
+      },
     };
     const err = classify(bad);
     expect(err.reason).toBe("unknown");
@@ -112,19 +119,27 @@ describe("classify", () => {
   });
 
   it("classifies 'connection reset' as network", () => {
-    expect(classify(new Error("connection reset by peer")).reason).toBe("network");
+    expect(classify(new Error("connection reset by peer")).reason).toBe(
+      "network",
+    );
   });
 
   it("classifies 'invalid.*resume' as session_expired", () => {
-    expect(classify(new Error("invalid session, resume not possible")).reason).toBe("session_expired");
+    expect(
+      classify(new Error("invalid session, resume not possible")).reason,
+    ).toBe("session_expired");
   });
 
   it("classifies 'too long' as context_length", () => {
-    expect(classify(new Error("message is too long")).reason).toBe("context_length");
+    expect(classify(new Error("message is too long")).reason).toBe(
+      "context_length",
+    );
   });
 
   it("classifies 'token limit' as context_length", () => {
-    expect(classify(new Error("token limit exceeded")).reason).toBe("context_length");
+    expect(classify(new Error("token limit exceeded")).reason).toBe(
+      "context_length",
+    );
   });
 
   it("classifies 'api_key' as auth", () => {
@@ -233,7 +248,10 @@ describe("classify", () => {
 
 describe("friendlyMessage", () => {
   it("returns rate limit message with retry time", () => {
-    const err = new TalonError("x", { reason: "rate_limit", retryAfterMs: 30000 });
+    const err = new TalonError("x", {
+      reason: "rate_limit",
+      retryAfterMs: 30000,
+    });
     expect(friendlyMessage(err)).toContain("30 seconds");
   });
 
@@ -257,7 +275,9 @@ describe("friendlyMessage", () => {
   });
 
   it("classifies raw errors before generating message", () => {
-    expect(friendlyMessage(new Error("some random failure"))).toContain("Something went wrong");
+    expect(friendlyMessage(new Error("some random failure"))).toContain(
+      "Something went wrong",
+    );
   });
 
   it("returns generic rate limit message when retryAfterMs is absent", () => {
@@ -272,7 +292,9 @@ describe("friendlyMessage", () => {
   });
 
   it("returns bad_request message", () => {
-    expect(friendlyMessage(new Error("400 Bad Request"))).toContain("Something went wrong");
+    expect(friendlyMessage(new Error("400 Bad Request"))).toContain(
+      "Something went wrong",
+    );
   });
 
   it("returns forbidden message", () => {

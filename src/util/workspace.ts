@@ -4,7 +4,19 @@
  * Includes periodic cleanup of old uploads to prevent disk exhaustion.
  */
 
-import { existsSync, mkdirSync, readdirSync, rmdirSync, renameSync, statSync, unlinkSync, copyFileSync, cpSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  rmdirSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  copyFileSync,
+  cpSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { log } from "./log.js";
 import { dirs, files as pathFiles } from "./paths.js";
@@ -41,7 +53,10 @@ export function migrateLayout(): void {
     [join(oldRoot, "talon.json"), dirs.root + "/config.json"],
     [join(oldRoot, "sessions.json"), join(dirs.data, "sessions.json")],
     [join(oldRoot, "history.json"), join(dirs.data, "history.json")],
-    [join(oldRoot, "chat-settings.json"), join(dirs.data, "chat-settings.json")],
+    [
+      join(oldRoot, "chat-settings.json"),
+      join(dirs.data, "chat-settings.json"),
+    ],
     [join(oldRoot, "cron.json"), join(dirs.data, "cron.json")],
     [join(oldRoot, "media-index.json"), join(dirs.data, "media-index.json")],
     [join(oldRoot, "talon.log"), join(dirs.root, "talon.log")],
@@ -92,9 +107,14 @@ export function migrateLayout(): void {
       rmdirSync(oldRoot);
       log("workspace", "Removed empty workspace/ directory");
     } else {
-      log("workspace", `Old workspace/ still has ${remaining.length} item(s) — not removed`);
+      log(
+        "workspace",
+        `Old workspace/ still has ${remaining.length} item(s) — not removed`,
+      );
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 
   log("workspace", "Migration complete");
 }
@@ -112,7 +132,14 @@ export function initWorkspace(root: string): void {
   if (!existsSync(root)) mkdirSync(root, { recursive: true });
 
   // Ensure subdirectories exist
-  for (const sub of [dirs.memory, dirs.uploads, dirs.logs, dirs.stickers, dirs.prompts, dirs.traces]) {
+  for (const sub of [
+    dirs.memory,
+    dirs.uploads,
+    dirs.logs,
+    dirs.stickers,
+    dirs.prompts,
+    dirs.traces,
+  ]) {
     if (!existsSync(sub)) mkdirSync(sub, { recursive: true });
   }
 
@@ -145,10 +172,16 @@ export function getWorkspaceDiskUsage(root: string): number {
         const full = join(dir, entry.name);
         if (entry.isDirectory()) walk(full);
         else if (entry.isFile()) {
-          try { total += statSync(full).size; } catch { /* skip */ }
+          try {
+            total += statSync(full).size;
+          } catch {
+            /* skip */
+          }
         }
       }
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
   walk(root);
   return total;
@@ -164,7 +197,10 @@ let cleanupTimer: ReturnType<typeof setInterval> | null = null;
  * Delete files in uploads/ older than maxAgeMs.
  * Returns number of files deleted.
  */
-export function cleanupUploads(root: string, maxAgeMs = DEFAULT_MAX_AGE_MS): number {
+export function cleanupUploads(
+  root: string,
+  maxAgeMs = DEFAULT_MAX_AGE_MS,
+): number {
   const uploadsDir = join(root, "uploads");
   if (!existsSync(uploadsDir)) return 0;
 
@@ -181,9 +217,13 @@ export function cleanupUploads(root: string, maxAgeMs = DEFAULT_MAX_AGE_MS): num
           unlinkSync(filePath);
           deleted++;
         }
-      } catch { /* skip individual file errors */ }
+      } catch {
+        /* skip individual file errors */
+      }
     }
-  } catch { /* skip if directory unreadable */ }
+  } catch {
+    /* skip if directory unreadable */
+  }
 
   if (deleted > 0) {
     log("workspace", `Cleaned up ${deleted} old upload(s)`);

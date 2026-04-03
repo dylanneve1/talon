@@ -32,6 +32,7 @@ Webhook-based integration — no reactions, media uploads, message editing, typi
 Messages render as Adaptive Cards. The formatting engine is NOT standard Markdown.
 
 What WORKS:
+
 - **bold** and _italic_
 - [links](https://example.com)
 - Fenced code blocks (triple backticks) — render as monospace in a grey box
@@ -39,11 +40,13 @@ What WORKS:
 - Numbered and bulleted lists
 
 What does NOT work:
+
 - Inline code with backticks — do NOT use `code` style, just write the text plain
 - Headings with # — use **bold** text instead
 - Images/media — not supported via webhook
 
 Style:
+
 - Concise. No filler.
 - Use **bold** for emphasis, _italic_ for secondary emphasis.
 - Use markdown tables for structured/tabular data — they render as proper grid tables.

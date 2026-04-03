@@ -53,7 +53,9 @@ export function createTeamsActionHandler(
 
       case "send_message_with_buttons": {
         const text = String(body.text ?? "");
-        const rows = body.rows as Array<Array<{ text: string; url?: string }>> | undefined;
+        const rows = body.rows as
+          | Array<Array<{ text: string; url?: string }>>
+          | undefined;
         const buttons = rows?.flat().map((b) => ({ text: b.text, url: b.url }));
         try {
           const card = buildAdaptiveCard(text, buttons);

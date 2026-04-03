@@ -24,7 +24,11 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 vi.mock("../core/errors.js", () => ({
-  classify: vi.fn((e: unknown) => ({ reason: "error", message: String(e), retryable: false })),
+  classify: vi.fn((e: unknown) => ({
+    reason: "error",
+    message: String(e),
+    retryable: false,
+  })),
   friendlyMessage: vi.fn(() => "An error occurred"),
 }));
 
@@ -41,20 +45,28 @@ vi.mock("node:fs", () => ({
   existsSync: vi.fn(() => true),
 }));
 
-const { shouldHandleInGroup, getSenderName, getReplyContext, getForwardContext } = await import(
-  "../frontend/telegram/handlers.js"
-);
+const {
+  shouldHandleInGroup,
+  getSenderName,
+  getReplyContext,
+  getForwardContext,
+} = await import("../frontend/telegram/handlers.js");
 
 describe("shouldHandleInGroup", () => {
-  const makeCtx = (overrides: {
-    type?: string;
-    text?: string;
-    username?: string;
-    replyFromId?: number;
-    botId?: number;
-  } = {}) => ({
+  const makeCtx = (
+    overrides: {
+      type?: string;
+      text?: string;
+      username?: string;
+      replyFromId?: number;
+      botId?: number;
+    } = {},
+  ) => ({
     chat: { type: overrides.type ?? "supergroup" },
-    me: { id: overrides.botId ?? 999, username: overrides.username ?? "testbot" },
+    me: {
+      id: overrides.botId ?? 999,
+      username: overrides.username ?? "testbot",
+    },
     message: {
       text: overrides.text ?? "",
       caption: undefined,
@@ -69,11 +81,15 @@ describe("shouldHandleInGroup", () => {
     makeCtx(overrides) as any;
 
   it("returns true for DMs (not a group)", () => {
-    expect(shouldHandleInGroup({ ...ctx(), chat: { type: "private" } })).toBe(true);
+    expect(shouldHandleInGroup({ ...ctx(), chat: { type: "private" } })).toBe(
+      true,
+    );
   });
 
   it("returns true when bot is mentioned with @", () => {
-    expect(shouldHandleInGroup(ctx({ text: "hey @testbot what's up" }))).toBe(true);
+    expect(shouldHandleInGroup(ctx({ text: "hey @testbot what's up" }))).toBe(
+      true,
+    );
   });
 
   it("returns true when bot is mentioned case-insensitively", () => {
@@ -81,7 +97,9 @@ describe("shouldHandleInGroup", () => {
   });
 
   it("returns false when a different bot is mentioned", () => {
-    expect(shouldHandleInGroup(ctx({ text: "hey @testbot123 what's up" }))).toBe(false);
+    expect(
+      shouldHandleInGroup(ctx({ text: "hey @testbot123 what's up" })),
+    ).toBe(false);
   });
 
   it("returns false when bot name appears without @", () => {
@@ -89,11 +107,15 @@ describe("shouldHandleInGroup", () => {
   });
 
   it("returns true when replying to the bot", () => {
-    expect(shouldHandleInGroup(ctx({ replyFromId: 999, botId: 999 }))).toBe(true);
+    expect(shouldHandleInGroup(ctx({ replyFromId: 999, botId: 999 }))).toBe(
+      true,
+    );
   });
 
   it("returns false when replying to someone else", () => {
-    expect(shouldHandleInGroup(ctx({ replyFromId: 123, botId: 999 }))).toBe(false);
+    expect(shouldHandleInGroup(ctx({ replyFromId: 123, botId: 999 }))).toBe(
+      false,
+    );
   });
 
   it("returns false for plain group message without mention or reply", () => {
@@ -101,7 +123,9 @@ describe("shouldHandleInGroup", () => {
   });
 
   it("handles @mention at end of message", () => {
-    expect(shouldHandleInGroup(ctx({ text: "what do you think @testbot" }))).toBe(true);
+    expect(
+      shouldHandleInGroup(ctx({ text: "what do you think @testbot" })),
+    ).toBe(true);
   });
 
   it("handles @mention with punctuation after", () => {
@@ -111,7 +135,9 @@ describe("shouldHandleInGroup", () => {
 
 describe("getSenderName", () => {
   it("returns first + last name", () => {
-    expect(getSenderName({ first_name: "John", last_name: "Doe" })).toBe("John Doe");
+    expect(getSenderName({ first_name: "John", last_name: "Doe" })).toBe(
+      "John Doe",
+    );
   });
 
   it("returns first name only when no last name", () => {
@@ -140,7 +166,11 @@ describe("getReplyContext", () => {
 
   it("includes author, text, and message_id for reply to others", () => {
     const result = getReplyContext(
-      { message_id: 42, from: { id: 123, first_name: "Alice" }, text: "original message" },
+      {
+        message_id: 42,
+        from: { id: 123, first_name: "Alice" },
+        text: "original message",
+      },
       999,
     );
     expect(result).toContain("Alice");
@@ -218,7 +248,11 @@ describe("getReplyContext — edge cases", () => {
 
   it("includes message_id and media type even without text", () => {
     const result = getReplyContext(
-      { message_id: 100, from: { id: 123, first_name: "Dan" }, photo: [{}] as unknown[] },
+      {
+        message_id: 100,
+        from: { id: 123, first_name: "Dan" },
+        photo: [{}] as unknown[],
+      },
       999,
     );
     expect(result).toContain("msg_id:100");
@@ -236,7 +270,10 @@ describe("getReplyContext — edge cases", () => {
 
   it("includes full name from first and last", () => {
     const result = getReplyContext(
-      { from: { id: 123, first_name: "Jane", last_name: "Smith" }, text: "hello" },
+      {
+        from: { id: 123, first_name: "Jane", last_name: "Smith" },
+        text: "hello",
+      },
       999,
     );
     expect(result).toContain("Jane Smith");
@@ -292,37 +329,49 @@ describe("getReplyContext — edge cases", () => {
 });
 
 describe("shouldHandleInGroup — edge cases", () => {
-  const ctx = (overrides: Record<string, unknown> = {}) => ({
-    chat: { type: overrides.type ?? "supergroup" },
-    me: { id: overrides.botId ?? 999, username: overrides.username ?? "testbot" },
-    message: {
-      text: overrides.text ?? "",
-      caption: overrides.caption ?? undefined,
-      reply_to_message: overrides.replyFromId
-        ? { from: { id: overrides.replyFromId } }
-        : undefined,
-    },
-  }) as any;
+  const ctx = (overrides: Record<string, unknown> = {}) =>
+    ({
+      chat: { type: overrides.type ?? "supergroup" },
+      me: {
+        id: overrides.botId ?? 999,
+        username: overrides.username ?? "testbot",
+      },
+      message: {
+        text: overrides.text ?? "",
+        caption: overrides.caption ?? undefined,
+        reply_to_message: overrides.replyFromId
+          ? { from: { id: overrides.replyFromId } }
+          : undefined,
+      },
+    }) as any;
 
   it("returns false when no chat", () => {
     expect(shouldHandleInGroup({ chat: null, message: {} } as any)).toBe(false);
   });
 
   it("returns false when no message", () => {
-    expect(shouldHandleInGroup({ chat: { type: "group" }, message: null } as any)).toBe(false);
+    expect(
+      shouldHandleInGroup({ chat: { type: "group" }, message: null } as any),
+    ).toBe(false);
   });
 
   it("detects bot mention in caption", () => {
-    expect(shouldHandleInGroup(ctx({ caption: "look @testbot", text: "" }))).toBe(true);
+    expect(
+      shouldHandleInGroup(ctx({ caption: "look @testbot", text: "" })),
+    ).toBe(true);
   });
 
   it("handles 'group' type (not just supergroup)", () => {
-    expect(shouldHandleInGroup(ctx({ type: "group", text: "@testbot hi" }))).toBe(true);
+    expect(
+      shouldHandleInGroup(ctx({ type: "group", text: "@testbot hi" })),
+    ).toBe(true);
   });
 
   it("returns false for group with @mention as part of longer username", () => {
     // @testbot123 should NOT match @testbot (word boundary check)
-    expect(shouldHandleInGroup(ctx({ text: "hey @testbot_extra" }))).toBe(false);
+    expect(shouldHandleInGroup(ctx({ text: "hey @testbot_extra" }))).toBe(
+      false,
+    );
   });
 });
 
@@ -338,9 +387,15 @@ describe("getSenderName — edge cases", () => {
 });
 
 const {
-  handleTextMessage, handlePhotoMessage, handleCallbackQuery,
-  handleStickerMessage, handleVoiceMessage, handleVideoMessage,
-  handleDocumentMessage, handleAudioMessage, handleVideoNoteMessage,
+  handleTextMessage,
+  handlePhotoMessage,
+  handleCallbackQuery,
+  handleStickerMessage,
+  handleVoiceMessage,
+  handleVideoMessage,
+  handleDocumentMessage,
+  handleAudioMessage,
+  handleVideoNoteMessage,
   handleAnimationMessage,
 } = await import("../frontend/telegram/handlers.js");
 
@@ -362,21 +417,28 @@ const mockConfig = {
 } as any;
 
 describe("handleTextMessage — integration via mock Context", () => {
-
   it("silently returns when ctx.message is missing", async () => {
     await handleTextMessage({ chat: { id: 1 } } as any, mockBot, mockConfig);
     // Should not throw
   });
 
   it("silently returns when ctx.chat is missing", async () => {
-    await handleTextMessage({ message: { text: "hi" } } as any, mockBot, mockConfig);
+    await handleTextMessage(
+      { message: { text: "hi" } } as any,
+      mockBot,
+      mockConfig,
+    );
     // Should not throw
   });
 
   it("silently returns for group message without mention", async () => {
     const ctx = {
       chat: { id: 1, type: "supergroup" },
-      message: { text: "hello everyone", message_id: 1, reply_to_message: null },
+      message: {
+        text: "hello everyone",
+        message_id: 1,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 1, first_name: "User" },
     } as any;
@@ -396,7 +458,7 @@ describe("handleTextMessage — integration via mock Context", () => {
 
   it("silently returns when callback query has no data", async () => {
     const ctx = {
-      callbackQuery: { message: { message_id: 1 } },  // no 'data' property
+      callbackQuery: { message: { message_id: 1 } }, // no 'data' property
       chat: { id: 1 },
       from: { id: 1, first_name: "User" },
     } as any;
@@ -441,16 +503,21 @@ describe("handleTextMessage — integration via mock Context", () => {
     });
 
     const chatId = 77777 + Math.floor(Math.random() * 1000); // unique id to avoid state sharing
-    const makeCtx = (text: string, msgId: number) => ({
-      chat: { id: chatId, type: "private" },
-      message: { text, message_id: msgId, reply_to_message: null },
-      me: { id: 999, username: "testbot" },
-      from: { id: 55, first_name: "Carol" },
-    } as any);
+    const makeCtx = (text: string, msgId: number) =>
+      ({
+        chat: { id: chatId, type: "private" },
+        message: { text, message_id: msgId, reply_to_message: null },
+        me: { id: 999, username: "testbot" },
+        from: { id: 55, first_name: "Carol" },
+      }) as any;
 
     const before = executeMock.mock.calls.length;
     await handleTextMessage(makeCtx("first message", 301), mockBot, mockConfig);
-    await handleTextMessage(makeCtx("second message", 302), mockBot, mockConfig);
+    await handleTextMessage(
+      makeCtx("second message", 302),
+      mockBot,
+      mockConfig,
+    );
 
     await new Promise((r) => setTimeout(r, 700));
 
@@ -473,8 +540,8 @@ describe("handlePhotoMessage — downloads and enqueues photo", () => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "photos/test.jpg" }));
     // Create a minimal valid JPEG buffer (FF D8 header = JPEG magic bytes)
     const jpegBuf = new Uint8Array(104);
-    jpegBuf[0] = 0xFF;
-    jpegBuf[1] = 0xD8;
+    jpegBuf[0] = 0xff;
+    jpegBuf[1] = 0xd8;
     const mockFetch = vi.fn(async () => ({
       ok: true,
       headers: { get: (_name: string) => null },
@@ -484,7 +551,13 @@ describe("handlePhotoMessage — downloads and enqueues photo", () => {
     vi.stubGlobal("fetch", mockFetch);
 
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
   });
 
@@ -499,8 +572,18 @@ describe("handlePhotoMessage — downloads and enqueues photo", () => {
       message: {
         message_id: 500,
         photo: [
-          { file_id: "small_id", file_unique_id: "small_uniq", width: 100, height: 100 },
-          { file_id: "large_id", file_unique_id: "large_uniq", width: 800, height: 600 },
+          {
+            file_id: "small_id",
+            file_unique_id: "small_uniq",
+            width: 100,
+            height: 100,
+          },
+          {
+            file_id: "large_id",
+            file_unique_id: "large_uniq",
+            width: 800,
+            height: 600,
+          },
         ],
         caption: "Look at this!",
         reply_to_message: null,
@@ -523,12 +606,22 @@ describe("handlePhotoMessage — downloads and enqueues photo", () => {
   }, 3000);
 
   it("returns error via bot API when file download fails", async () => {
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404 })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 404 })),
+    );
     const ctx = {
       chat: { id: 54322, type: "private" },
       message: {
         message_id: 501,
-        photo: [{ file_id: "bad_id", file_unique_id: "bad_uniq", width: 100, height: 100 }],
+        photo: [
+          {
+            file_id: "bad_id",
+            file_unique_id: "bad_uniq",
+            width: 100,
+            height: 100,
+          },
+        ],
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -589,7 +682,9 @@ describe("handleCallbackQuery — processes button press", () => {
     const before = executeMock.mock.calls.length;
     await handleCallbackQuery(ctx, mockBot, mockConfig);
     expect(executeMock.mock.calls.length).toBeGreaterThan(before);
-    const arg = executeMock.mock.calls[executeMock.mock.calls.length - 1][0] as { prompt: string };
+    const arg = executeMock.mock.calls[
+      executeMock.mock.calls.length - 1
+    ][0] as { prompt: string };
     expect(arg.prompt).toContain("button_option_a");
   });
 
@@ -682,12 +777,17 @@ describe("handleVoiceMessage/handleVideoMessage/handleDocumentMessage/handleAudi
 describe("rate limiting — isUserRateLimited via handleTextMessage", () => {
   it("blocks message after RATE_LIMIT_MAX_MESSAGES (15) messages from same user", async () => {
     const userId = 99999; // unique user ID for this test
-    const makeCtx = (i: number) => ({
-      chat: { id: 11111 + i, type: "private" }, // different chat each time to avoid queue conflicts
-      message: { text: `message ${i}`, message_id: 1000 + i, reply_to_message: null },
-      me: { id: 999, username: "testbot" },
-      from: { id: userId, first_name: "RateLimitUser" },
-    } as any);
+    const makeCtx = (i: number) =>
+      ({
+        chat: { id: 11111 + i, type: "private" }, // different chat each time to avoid queue conflicts
+        message: {
+          text: `message ${i}`,
+          message_id: 1000 + i,
+          reply_to_message: null,
+        },
+        me: { id: 999, username: "testbot" },
+        from: { id: userId, first_name: "RateLimitUser" },
+      }) as any;
 
     // Send 15 messages — all should be enqueued
     for (let i = 0; i < 15; i++) {
@@ -712,13 +812,25 @@ describe("rate limiting — isUserRateLimited via handleTextMessage", () => {
 describe("handleStickerMessage — enqueues sticker prompt", () => {
   it("enqueues a sticker message", async () => {
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
     const ctx = {
       chat: { id: 66666, type: "private" },
       message: {
         message_id: 200,
-        sticker: { file_id: "sticker123", emoji: "😀", set_name: "AnimatedEmoji", is_animated: false, is_video: false },
+        sticker: {
+          file_id: "sticker123",
+          emoji: "😀",
+          set_name: "AnimatedEmoji",
+          is_animated: false,
+          is_video: false,
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -753,14 +865,26 @@ describe("handleStickerMessage — enqueues sticker prompt", () => {
 
   it("builds sticker prompt with animated flag", async () => {
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
     const chatId = 66667;
     const ctx = {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 201,
-        sticker: { file_id: "anim123", emoji: "🔥", set_name: "", is_animated: true, is_video: false },
+        sticker: {
+          file_id: "anim123",
+          emoji: "🔥",
+          set_name: "",
+          is_animated: true,
+          is_video: false,
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -771,7 +895,9 @@ describe("handleStickerMessage — enqueues sticker prompt", () => {
     await handleStickerMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
     expect((calls[0][0] as { prompt: string }).prompt).toContain("animated");
   }, 3000);
@@ -780,20 +906,30 @@ describe("handleStickerMessage — enqueues sticker prompt", () => {
 // Helper: create a minimal non-image binary buffer (e.g. for voice/video/audio)
 function makeBinaryBuffer(size = 64): ArrayBuffer {
   const arr = new Uint8Array(size);
-  arr[0] = 0x1A; arr[1] = 0x45; // some random non-image bytes
+  arr[0] = 0x1a;
+  arr[1] = 0x45; // some random non-image bytes
   return arr.buffer;
 }
 
 describe("handleVoiceMessage — downloads and enqueues", () => {
   beforeEach(() => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "voice/test.ogg" }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => makeBinaryBuffer(),
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => makeBinaryBuffer(),
+      })),
+    );
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
   });
 
@@ -818,7 +954,9 @@ describe("handleVoiceMessage — downloads and enqueues", () => {
     await handleVoiceMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
     expect((calls[0][0] as { prompt: string }).prompt).toContain("voice");
   }, 3000);
@@ -827,13 +965,22 @@ describe("handleVoiceMessage — downloads and enqueues", () => {
 describe("handleAudioMessage — downloads and enqueues", () => {
   beforeEach(() => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "audio/test.mp3" }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => makeBinaryBuffer(),
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => makeBinaryBuffer(),
+      })),
+    );
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
   });
 
@@ -847,7 +994,15 @@ describe("handleAudioMessage — downloads and enqueues", () => {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 601,
-        audio: { file_id: "audio_abc", file_unique_id: "auq1", duration: 180, title: "My Song", performer: "Artist", file_name: "song.mp3", file_size: 2 * 1024 * 1024 },
+        audio: {
+          file_id: "audio_abc",
+          file_unique_id: "auq1",
+          duration: 180,
+          title: "My Song",
+          performer: "Artist",
+          file_name: "song.mp3",
+          file_size: 2 * 1024 * 1024,
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -858,7 +1013,9 @@ describe("handleAudioMessage — downloads and enqueues", () => {
     await handleAudioMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
     const prompt = (calls[0][0] as { prompt: string }).prompt;
     expect(prompt).toContain("My Song");
@@ -871,7 +1028,13 @@ describe("handleAudioMessage — downloads and enqueues", () => {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 602,
-        audio: { file_id: "audio_def", file_unique_id: "auq2", duration: 60, file_name: "recording.mp3", file_size: 500_000 },
+        audio: {
+          file_id: "audio_def",
+          file_unique_id: "auq2",
+          duration: 60,
+          file_name: "recording.mp3",
+          file_size: 500_000,
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -882,22 +1045,37 @@ describe("handleAudioMessage — downloads and enqueues", () => {
     await handleAudioMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
-    expect((calls[0][0] as { prompt: string }).prompt).toContain("recording.mp3");
+    expect((calls[0][0] as { prompt: string }).prompt).toContain(
+      "recording.mp3",
+    );
   }, 3000);
 });
 
 describe("handleVideoNoteMessage — downloads and enqueues", () => {
   beforeEach(() => {
-    mockBot.api.getFile = vi.fn(async () => ({ file_path: "video_note/test.mp4" }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => makeBinaryBuffer(),
-    })));
+    mockBot.api.getFile = vi.fn(async () => ({
+      file_path: "video_note/test.mp4",
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => makeBinaryBuffer(),
+      })),
+    );
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
   });
 
@@ -911,7 +1089,12 @@ describe("handleVideoNoteMessage — downloads and enqueues", () => {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 603,
-        video_note: { file_id: "vn_abc", file_unique_id: "vnq1", duration: 15, file_size: 300_000 },
+        video_note: {
+          file_id: "vn_abc",
+          file_unique_id: "vnq1",
+          duration: 15,
+          file_size: 300_000,
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -922,7 +1105,9 @@ describe("handleVideoNoteMessage — downloads and enqueues", () => {
     await handleVideoNoteMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
     expect((calls[0][0] as { prompt: string }).prompt).toContain("round video");
   }, 3000);
@@ -930,14 +1115,25 @@ describe("handleVideoNoteMessage — downloads and enqueues", () => {
 
 describe("handleDocumentMessage — downloads and enqueues", () => {
   beforeEach(() => {
-    mockBot.api.getFile = vi.fn(async () => ({ file_path: "documents/test.pdf" }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => makeBinaryBuffer(),
-    })));
+    mockBot.api.getFile = vi.fn(async () => ({
+      file_path: "documents/test.pdf",
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => makeBinaryBuffer(),
+      })),
+    );
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
   });
 
@@ -952,8 +1148,10 @@ describe("handleDocumentMessage — downloads and enqueues", () => {
       message: {
         message_id: 604,
         document: {
-          file_id: "doc_abc", file_unique_id: "dq1",
-          file_name: "report.pdf", file_size: 1_000_000,
+          file_id: "doc_abc",
+          file_unique_id: "dq1",
+          file_name: "report.pdf",
+          file_size: 1_000_000,
           mime_type: "application/pdf",
         },
         caption: "Please review",
@@ -967,7 +1165,9 @@ describe("handleDocumentMessage — downloads and enqueues", () => {
     await handleDocumentMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
     const prompt = (calls[0][0] as { prompt: string }).prompt;
     expect(prompt).toContain("report.pdf");
@@ -978,13 +1178,22 @@ describe("handleDocumentMessage — downloads and enqueues", () => {
 describe("handleVideoMessage — downloads and enqueues", () => {
   beforeEach(() => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "videos/test.mp4" }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => makeBinaryBuffer(),
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => makeBinaryBuffer(),
+      })),
+    );
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
   });
 
@@ -998,7 +1207,14 @@ describe("handleVideoMessage — downloads and enqueues", () => {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 605,
-        video: { file_id: "vid_abc", file_unique_id: "vq1", duration: 30, width: 1280, height: 720, file_name: "clip.mp4" },
+        video: {
+          file_id: "vid_abc",
+          file_unique_id: "vq1",
+          duration: 30,
+          width: 1280,
+          height: 720,
+          file_name: "clip.mp4",
+        },
         caption: "Check this out",
         reply_to_message: null,
       },
@@ -1010,7 +1226,9 @@ describe("handleVideoMessage — downloads and enqueues", () => {
     await handleVideoMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
     const prompt = (calls[0][0] as { prompt: string }).prompt;
     expect(prompt).toContain("clip.mp4");
@@ -1022,13 +1240,22 @@ describe("handleTextMessage — group message with @mention", () => {
   it("enqueues group message when bot is mentioned", async () => {
     executeMock.mockResolvedValue({
       text: "group response",
-      durationMs: 50, inputTokens: 5, outputTokens: 10, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      durationMs: 50,
+      inputTokens: 5,
+      outputTokens: 10,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 80001;
     const ctx = {
       chat: { id: chatId, type: "supergroup", title: "Test Group" },
-      message: { text: "@testbot hello from group", message_id: 700, reply_to_message: null },
+      message: {
+        text: "@testbot hello from group",
+        message_id: 700,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 70, first_name: "Tom" },
     } as any;
@@ -1037,7 +1264,9 @@ describe("handleTextMessage — group message with @mention", () => {
     await handleTextMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
     const arg = calls[0][0] as { isGroup: boolean; prompt: string };
     expect(arg.isGroup).toBe(true);
@@ -1072,10 +1301,21 @@ describe("flushQueue — retryable error path", () => {
       .mockRejectedValueOnce(new Error("still overloaded"));
 
     (classify as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce({ reason: "overloaded", message: "overloaded", retryable: true, retryAfterMs: 10 })
-      .mockReturnValueOnce({ reason: "overloaded", message: "still overloaded", retryable: false });
+      .mockReturnValueOnce({
+        reason: "overloaded",
+        message: "overloaded",
+        retryable: true,
+        retryAfterMs: 10,
+      })
+      .mockReturnValueOnce({
+        reason: "overloaded",
+        message: "still overloaded",
+        retryable: false,
+      });
 
-    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValue("Service temporarily overloaded");
+    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValue(
+      "Service temporarily overloaded",
+    );
 
     const chatId = 95001;
     const ctx = {
@@ -1090,7 +1330,9 @@ describe("flushQueue — retryable error path", () => {
     await new Promise((r) => setTimeout(r, 700));
 
     // Should have sent an error message after retry failure
-    expect(mockBot.api.sendMessage.mock.calls.length).toBeGreaterThan(sendMsgCalls);
+    expect(mockBot.api.sendMessage.mock.calls.length).toBeGreaterThan(
+      sendMsgCalls,
+    );
   }, 3000);
 });
 
@@ -1098,20 +1340,38 @@ describe("flushQueue — retryable error, successful retry (line 403 return)", (
   it("returns after successful retry without sending error message", async () => {
     const { classify } = await import("../core/errors.js");
 
-    const successResult = { text: "", durationMs: 5, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
+    const successResult = {
+      text: "",
+      durationMs: 5,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
+    };
     // First execute call throws (retryable), second SUCCEEDS → covers line 403 `return`
     executeMock
       .mockRejectedValueOnce(new Error("overloaded"))
       .mockResolvedValueOnce(successResult);
 
-    (classify as ReturnType<typeof vi.fn>)
-      .mockReturnValueOnce({ reason: "overloaded", message: "overloaded", retryable: true, retryAfterMs: 10 });
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      reason: "overloaded",
+      message: "overloaded",
+      retryable: true,
+      retryAfterMs: 10,
+    });
 
-    const sendMsgCountBefore = (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+    const sendMsgCountBefore = (
+      mockBot.api.sendMessage as ReturnType<typeof vi.fn>
+    ).mock.calls.length;
 
     const ctx = {
       chat: { id: 95010, type: "private" },
-      message: { text: "retry success test", message_id: 905, reply_to_message: null },
+      message: {
+        text: "retry success test",
+        message_id: 905,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 91, first_name: "Vera" },
     } as any;
@@ -1120,7 +1380,9 @@ describe("flushQueue — retryable error, successful retry (line 403 return)", (
     await new Promise((r) => setTimeout(r, 700));
 
     // Retry succeeded — no error message should have been sent
-    const sendMsgCountAfter = (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+    const sendMsgCountAfter = (
+      mockBot.api.sendMessage as ReturnType<typeof vi.fn>
+    ).mock.calls.length;
     expect(sendMsgCountAfter).toBe(sendMsgCountBefore); // no additional sendMessage call
   }, 3000);
 });
@@ -1131,13 +1393,23 @@ describe("flushQueue — group error logs 'group' chatType (line 378 TRUE branch
     const { logError } = await import("../util/log.js");
 
     executeMock.mockRejectedValueOnce(new Error("group exec error"));
-    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({ reason: "error", message: "group exec error", retryable: false });
-    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce("Error occurred");
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      reason: "error",
+      message: "group exec error",
+      retryable: false,
+    });
+    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      "Error occurred",
+    );
     (logError as ReturnType<typeof vi.fn>).mockClear();
 
     const ctx = {
       chat: { id: 95020, type: "supergroup", title: "My Group" },
-      message: { text: "@testbot group error test", message_id: 910, reply_to_message: null },
+      message: {
+        text: "@testbot group error test",
+        message_id: 910,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 92, first_name: "Greg" },
     } as any;
@@ -1147,7 +1419,10 @@ describe("flushQueue — group error logs 'group' chatType (line 378 TRUE branch
 
     // logError should include "group" in the message (not "DM")
     const logCalls = (logError as ReturnType<typeof vi.fn>).mock.calls;
-    const relevantCall = logCalls.find((c: unknown[]) => String(c[1]).includes("group") || String(c[1]).includes("95020"));
+    const relevantCall = logCalls.find(
+      (c: unknown[]) =>
+        String(c[1]).includes("group") || String(c[1]).includes("95020"),
+    );
     expect(relevantCall).toBeDefined();
     expect(String(relevantCall![1])).toContain("group");
   }, 3000);
@@ -1157,14 +1432,24 @@ describe("flushQueue — retry without retryAfterMs uses default 2000ms (line 38
   it("uses 2000ms default delay when retryAfterMs is undefined", async () => {
     const { classify } = await import("../core/errors.js");
 
-    const successResult = { text: "", durationMs: 5, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
+    const successResult = {
+      text: "",
+      durationMs: 5,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
+    };
     executeMock
       .mockRejectedValueOnce(new Error("overloaded"))
       .mockResolvedValueOnce(successResult);
 
     // retryAfterMs is absent — covers `?? 2000` FALSE branch
     (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({
-      reason: "overloaded", message: "overloaded", retryable: true,
+      reason: "overloaded",
+      message: "overloaded",
+      retryable: true,
       // no retryAfterMs → falls to 2000
     });
 
@@ -1173,7 +1458,11 @@ describe("flushQueue — retry without retryAfterMs uses default 2000ms (line 38
 
     const ctx = {
       chat: { id: 95030, type: "private" },
-      message: { text: "default delay test", message_id: 915, reply_to_message: null },
+      message: {
+        text: "default delay test",
+        message_id: 915,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 93, first_name: "Harry" },
     } as any;
@@ -1193,12 +1482,22 @@ describe("handleTextMessage — senderUsername truthy covers trackDmUser usernam
     (appendDailyLog as ReturnType<typeof vi.fn>).mockClear();
 
     executeMock.mockResolvedValueOnce({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const ctx = {
       chat: { id: 95040, type: "private" },
-      message: { text: "hi from @user", message_id: 920, reply_to_message: null },
+      message: {
+        text: "hi from @user",
+        message_id: 920,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       // username provided → senderUsername is truthy → tag = " (@johndoe)"
       from: { id: 94, first_name: "John", username: "johndoe" },
@@ -1209,7 +1508,9 @@ describe("handleTextMessage — senderUsername truthy covers trackDmUser usernam
 
     // appendDailyLog should have been called with the @username tag
     const allCalls = (appendDailyLog as ReturnType<typeof vi.fn>).mock.calls;
-    const taggedCall = allCalls.find((c: unknown[]) => String(c[1]).includes("@johndoe"));
+    const taggedCall = allCalls.find((c: unknown[]) =>
+      String(c[1]).includes("@johndoe"),
+    );
     expect(taggedCall).toBeDefined();
   }, 3000);
 });
@@ -1217,7 +1518,13 @@ describe("handleTextMessage — senderUsername truthy covers trackDmUser usernam
 describe("handleTextMessage — text=undefined uses empty string (line 725 FALSE branch)", () => {
   it("enqueues with empty prompt when ctx.message.text is undefined", async () => {
     executeMock.mockResolvedValueOnce({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const ctx = {
@@ -1241,8 +1548,14 @@ describe("sendHtml — non-Error thrown in fallback path (line 445 FALSE branch)
     const { logWarn } = await import("../util/log.js");
     executeMock.mockRejectedValueOnce(new Error("some error"));
     const { classify, friendlyMessage } = await import("../core/errors.js");
-    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({ reason: "error", message: "some error", retryable: false });
-    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce("Error text");
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      reason: "error",
+      message: "some error",
+      retryable: false,
+    });
+    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      "Error text",
+    );
     (logWarn as ReturnType<typeof vi.fn>).mockClear();
 
     // First sendMessage throws a non-Error string, second succeeds
@@ -1255,7 +1568,11 @@ describe("sendHtml — non-Error thrown in fallback path (line 445 FALSE branch)
 
     const ctx = {
       chat: { id: 95060, type: "private" },
-      message: { text: "non-error throw test", message_id: 930, reply_to_message: null },
+      message: {
+        text: "non-error throw test",
+        message_id: 930,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 96, first_name: "Jake" },
     } as any;
@@ -1265,7 +1582,9 @@ describe("sendHtml — non-Error thrown in fallback path (line 445 FALSE branch)
 
     // logWarn should be called with String(err) (non-Error path)
     const warnCalls = (logWarn as ReturnType<typeof vi.fn>).mock.calls;
-    const htmlFailWarn = warnCalls.find((c: unknown[]) => String(c[1]).includes("HTML send failed"));
+    const htmlFailWarn = warnCalls.find((c: unknown[]) =>
+      String(c[1]).includes("HTML send failed"),
+    );
     expect(htmlFailWarn).toBeDefined();
     expect(String(htmlFailWarn![1])).toContain("non-error failure string");
 
@@ -1280,17 +1599,30 @@ describe("downloadTelegramFile — content-length too large", () => {
 
   it("throws when content-length header exceeds 50MB limit", async () => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "photos/big.jpg" }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: (name: string) => name === "content-length" ? String(51 * 1024 * 1024) : null },
-      arrayBuffer: async () => makeBinaryBuffer(),
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            name === "content-length" ? String(51 * 1024 * 1024) : null,
+        },
+        arrayBuffer: async () => makeBinaryBuffer(),
+      })),
+    );
 
     const ctx = {
       chat: { id: 95002, type: "private" },
       message: {
         message_id: 901,
-        photo: [{ file_id: "big_photo", file_unique_id: "bpq1", width: 4000, height: 3000 }],
+        photo: [
+          {
+            file_id: "big_photo",
+            file_unique_id: "bpq1",
+            width: 4000,
+            height: 3000,
+          },
+        ],
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -1312,17 +1644,27 @@ describe("downloadTelegramFile — invalid image content", () => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "photos/fake.jpg" }));
     // Return a buffer with no valid image header
     const fakeData = new Uint8Array(64); // all zeros, not a valid image
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => fakeData.buffer,
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => fakeData.buffer,
+      })),
+    );
 
     const ctx = {
       chat: { id: 95003, type: "private" },
       message: {
         message_id: 902,
-        photo: [{ file_id: "fake_photo", file_unique_id: "fpq1", width: 100, height: 100 }],
+        photo: [
+          {
+            file_id: "fake_photo",
+            file_unique_id: "fpq1",
+            width: 100,
+            height: 100,
+          },
+        ],
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -1337,14 +1679,25 @@ describe("downloadTelegramFile — invalid image content", () => {
 
 describe("handleAnimationMessage — downloads and enqueues", () => {
   beforeEach(() => {
-    mockBot.api.getFile = vi.fn(async () => ({ file_path: "animations/test.mp4" }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => makeBinaryBuffer(),
-    })));
+    mockBot.api.getFile = vi.fn(async () => ({
+      file_path: "animations/test.mp4",
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => makeBinaryBuffer(),
+      })),
+    );
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
   });
 
@@ -1358,7 +1711,12 @@ describe("handleAnimationMessage — downloads and enqueues", () => {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 606,
-        animation: { file_id: "anim_abc", file_unique_id: "aq1", duration: 3, file_name: "funny.mp4" },
+        animation: {
+          file_id: "anim_abc",
+          file_unique_id: "aq1",
+          duration: 3,
+          file_name: "funny.mp4",
+        },
         caption: "lol",
         reply_to_message: null,
       },
@@ -1370,7 +1728,9 @@ describe("handleAnimationMessage — downloads and enqueues", () => {
     await handleAnimationMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
     const prompt = (calls[0][0] as { prompt: string }).prompt;
     expect(prompt).toContain("funny.mp4");
@@ -1382,12 +1742,25 @@ describe("processAndReply — onToolUse callback triggers appendDailyLogResponse
   it("calls appendDailyLogResponse when execute invokes onToolUse with send tool", async () => {
     const { appendDailyLogResponse } = await import("../storage/daily-log.js");
 
-    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
-      // Simulate execute calling onToolUse with a "send" tool
-      const onToolUse = params.onToolUse as (toolName: string, input: Record<string, unknown>) => void;
-      onToolUse?.("send", { type: "text", text: "Hello from Claude!" });
-      return { text: "", durationMs: 5, inputTokens: 1, outputTokens: 2, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 1 };
-    });
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        // Simulate execute calling onToolUse with a "send" tool
+        const onToolUse = params.onToolUse as (
+          toolName: string,
+          input: Record<string, unknown>,
+        ) => void;
+        onToolUse?.("send", { type: "text", text: "Hello from Claude!" });
+        return {
+          text: "",
+          durationMs: 5,
+          inputTokens: 1,
+          outputTokens: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 1,
+        };
+      },
+    );
 
     const ctx = {
       chat: { id: 96001, type: "private" },
@@ -1399,24 +1772,45 @@ describe("processAndReply — onToolUse callback triggers appendDailyLogResponse
     await handleTextMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    expect(appendDailyLogResponse).toHaveBeenCalledWith("Talon", "Hello from Claude!", expect.anything());
+    expect(appendDailyLogResponse).toHaveBeenCalledWith(
+      "Talon",
+      "Hello from Claude!",
+      expect.anything(),
+    );
   }, 3000);
 });
 
 describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", () => {
   it("calls sendMessage when execute invokes onTextBlock", async () => {
-    const sendMsgCount = () => (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+    const sendMsgCount = () =>
+      (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
 
-    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
-      const onTextBlock = params.onTextBlock as (text: string) => Promise<void>;
-      await onTextBlock?.("**Bold response**");
-      return { text: "", durationMs: 5, inputTokens: 1, outputTokens: 2, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 1 };
-    });
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onTextBlock = params.onTextBlock as (
+          text: string,
+        ) => Promise<void>;
+        await onTextBlock?.("**Bold response**");
+        return {
+          text: "",
+          durationMs: 5,
+          inputTokens: 1,
+          outputTokens: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 1,
+        };
+      },
+    );
 
     const before = sendMsgCount();
     const ctx = {
       chat: { id: 96002, type: "private" },
-      message: { text: "test onTextBlock", message_id: 951, reply_to_message: null },
+      message: {
+        text: "test onTextBlock",
+        message_id: 951,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 93, first_name: "Yuki" },
     } as any;
@@ -1431,7 +1825,13 @@ describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", 
 describe("sendHtml — falls back to plain text on HTML send failure", () => {
   it("sends plain text when HTML mode fails", async () => {
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     // Make the first sendMessage (HTML) throw, then succeed on second call (plain text)
@@ -1445,12 +1845,22 @@ describe("sendHtml — falls back to plain text on HTML send failure", () => {
     // Trigger sendHtml via the error handler path (classify returns non-retryable error)
     const { classify, friendlyMessage } = await import("../core/errors.js");
     executeMock.mockRejectedValueOnce(new Error("some error"));
-    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({ reason: "error", message: "some error", retryable: false });
-    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce("<b>Bold error</b>");
+    (classify as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      reason: "error",
+      message: "some error",
+      retryable: false,
+    });
+    (friendlyMessage as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+      "<b>Bold error</b>",
+    );
 
     const ctx = {
       chat: { id: 97001, type: "private" },
-      message: { text: "test html fallback", message_id: 960, reply_to_message: null },
+      message: {
+        text: "test html fallback",
+        message_id: 960,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 94, first_name: "Zoe" },
     } as any;
@@ -1460,7 +1870,8 @@ describe("sendHtml — falls back to plain text on HTML send failure", () => {
 
     // Second call should be plain text (HTML stripped)
     expect(mockBot.api.sendMessage).toHaveBeenCalledTimes(2);
-    const secondCallArg = (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls[1][1];
+    const secondCallArg = (mockBot.api.sendMessage as ReturnType<typeof vi.fn>)
+      .mock.calls[1][1];
     expect(secondCallArg).toContain("Bold error");
     expect(secondCallArg).not.toContain("<b>");
 
@@ -1469,24 +1880,40 @@ describe("sendHtml — falls back to plain text on HTML send failure", () => {
   }, 3000);
 });
 
-
 describe("createStreamCallbacks — onStreamDelta streaming path", () => {
   it("calls sendMessageDraft when state.started is true and delta is large enough", async () => {
     // Reset sendMessageDraft mock and use a fresh spy
     mockBot.api.sendMessageDraft = vi.fn(async () => {});
 
-    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
-      const onStreamDelta = params.onStreamDelta as (acc: string, phase?: string) => Promise<void>;
-      // Wait 1100ms so the internal 1000ms stream.started timer fires first
-      await new Promise((r) => setTimeout(r, 1100));
-      // Now state.started = true; accumulated delta > 40 chars > lastSentLength=0
-      if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
-      return { text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
-    });
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onStreamDelta = params.onStreamDelta as (
+          acc: string,
+          phase?: string,
+        ) => Promise<void>;
+        // Wait 1100ms so the internal 1000ms stream.started timer fires first
+        await new Promise((r) => setTimeout(r, 1100));
+        // Now state.started = true; accumulated delta > 40 chars > lastSentLength=0
+        if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
+        return {
+          text: "",
+          durationMs: 10,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 0,
+        };
+      },
+    );
 
     const ctx = {
       chat: { id: 98001, type: "private" },
-      message: { text: "streaming test", message_id: 970, reply_to_message: null },
+      message: {
+        text: "streaming test",
+        message_id: 970,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 95, first_name: "Stream" },
     } as any;
@@ -1501,17 +1928,34 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
   it("calls sendMessageDraft with truncated text when accumulated > 3900 chars", async () => {
     mockBot.api.sendMessageDraft = vi.fn(async () => {});
 
-    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
-      const onStreamDelta = params.onStreamDelta as (acc: string, phase?: string) => Promise<void>;
-      await new Promise((r) => setTimeout(r, 1100));
-      // accumulated.length > 3900 → triggers truncation + ellipsis
-      if (onStreamDelta) await onStreamDelta("b".repeat(4000), "text");
-      return { text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
-    });
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onStreamDelta = params.onStreamDelta as (
+          acc: string,
+          phase?: string,
+        ) => Promise<void>;
+        await new Promise((r) => setTimeout(r, 1100));
+        // accumulated.length > 3900 → triggers truncation + ellipsis
+        if (onStreamDelta) await onStreamDelta("b".repeat(4000), "text");
+        return {
+          text: "",
+          durationMs: 10,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 0,
+        };
+      },
+    );
 
     const ctx = {
       chat: { id: 98002, type: "private" },
-      message: { text: "long streaming test", message_id: 971, reply_to_message: null },
+      message: {
+        text: "long streaming test",
+        message_id: 971,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 95, first_name: "Stream" },
     } as any;
@@ -1519,7 +1963,8 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
     await handleTextMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 2000));
 
-    const calls = (mockBot.api.sendMessageDraft as ReturnType<typeof vi.fn>).mock.calls;
+    const calls = (mockBot.api.sendMessageDraft as ReturnType<typeof vi.fn>)
+      .mock.calls;
     if (calls.length > 0) {
       // Third arg is the display text — should be truncated with ellipsis
       const displayText = calls[calls.length - 1][2] as string;
@@ -1530,21 +1975,40 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
   it("disables streaming when sendMessageDraft throws on first attempt", async () => {
     // This test relies on draftsSupported resetting to null — but it's module-level state.
     // We test that even if it was set, the sendMessageDraft failure path (catch block) works.
-    mockBot.api.sendMessageDraft = vi.fn(async () => { throw new Error("not supported"); });
-
-    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
-      const onStreamDelta = params.onStreamDelta as (acc: string, phase?: string) => Promise<void>;
-      await new Promise((r) => setTimeout(r, 1100));
-      if (onStreamDelta) await onStreamDelta("c".repeat(50), "text");
-      return { text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
+    mockBot.api.sendMessageDraft = vi.fn(async () => {
+      throw new Error("not supported");
     });
+
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onStreamDelta = params.onStreamDelta as (
+          acc: string,
+          phase?: string,
+        ) => Promise<void>;
+        await new Promise((r) => setTimeout(r, 1100));
+        if (onStreamDelta) await onStreamDelta("c".repeat(50), "text");
+        return {
+          text: "",
+          durationMs: 10,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 0,
+        };
+      },
+    );
 
     const { logWarn } = await import("../util/log.js");
     (logWarn as ReturnType<typeof vi.fn>).mockClear();
 
     const ctx = {
       chat: { id: 98003, type: "private" },
-      message: { text: "streaming fail test", message_id: 972, reply_to_message: null },
+      message: {
+        text: "streaming fail test",
+        message_id: 972,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 95, first_name: "Stream" },
     } as any;
@@ -1564,16 +2028,33 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
   it("returns early from onStreamDelta when state.started is false (line 495 !state.started TRUE branch)", async () => {
     mockBot.api.sendMessageDraft = vi.fn(async () => {});
 
-    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
-      const onStreamDelta = params.onStreamDelta as (acc: string, phase?: string) => Promise<void>;
-      // Call IMMEDIATELY — state.started is still false (timer hasn't fired)
-      if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
-      return { text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
-    });
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onStreamDelta = params.onStreamDelta as (
+          acc: string,
+          phase?: string,
+        ) => Promise<void>;
+        // Call IMMEDIATELY — state.started is still false (timer hasn't fired)
+        if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
+        return {
+          text: "",
+          durationMs: 10,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 0,
+        };
+      },
+    );
 
     const ctx = {
       chat: { id: 98004, type: "private" },
-      message: { text: "early delta test", message_id: 973, reply_to_message: null },
+      message: {
+        text: "early delta test",
+        message_id: 973,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 95, first_name: "Stream" },
     } as any;
@@ -1588,17 +2069,34 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
   it("returns early from onStreamDelta when delta < 40 chars (line 496 TRUE branch)", async () => {
     mockBot.api.sendMessageDraft = vi.fn(async () => {});
 
-    executeMock.mockImplementationOnce(async (params: Record<string, unknown>) => {
-      const onStreamDelta = params.onStreamDelta as (acc: string, phase?: string) => Promise<void>;
-      await new Promise((r) => setTimeout(r, 1100)); // wait for started
-      // Only 20 chars since lastSentLength=0 → 20 < 40 → early return
-      if (onStreamDelta) await onStreamDelta("a".repeat(20), "text");
-      return { text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0 };
-    });
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onStreamDelta = params.onStreamDelta as (
+          acc: string,
+          phase?: string,
+        ) => Promise<void>;
+        await new Promise((r) => setTimeout(r, 1100)); // wait for started
+        // Only 20 chars since lastSentLength=0 → 20 < 40 → early return
+        if (onStreamDelta) await onStreamDelta("a".repeat(20), "text");
+        return {
+          text: "",
+          durationMs: 10,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 0,
+        };
+      },
+    );
 
     const ctx = {
       chat: { id: 98005, type: "private" },
-      message: { text: "small delta test", message_id: 974, reply_to_message: null },
+      message: {
+        text: "small delta test",
+        message_id: 974,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 95, first_name: "Stream" },
     } as any;
@@ -1618,16 +2116,28 @@ describe("downloadReplyPhoto — success and error paths", () => {
   });
 
   it("downloads reply photo and adds path to prompt (L134 FALSE branch)", async () => {
-    mockBot.api.getFile = vi.fn(async () => ({ file_path: "photos/reply.jpg" }));
+    mockBot.api.getFile = vi.fn(async () => ({
+      file_path: "photos/reply.jpg",
+    }));
     const jpegBuf = new Uint8Array(64);
-    jpegBuf[0] = 0xFF; jpegBuf[1] = 0xD8;
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => jpegBuf.buffer,
-    })));
+    jpegBuf[0] = 0xff;
+    jpegBuf[1] = 0xd8;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => jpegBuf.buffer,
+      })),
+    );
     executeMock.mockResolvedValueOnce({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 99001;
@@ -1638,7 +2148,14 @@ describe("downloadReplyPhoto — success and error paths", () => {
         message_id: 1001,
         reply_to_message: {
           from: { id: 200, first_name: "Alice" },
-          photo: [{ file_id: "reply_photo_id", file_unique_id: "rpq1", width: 400, height: 300 }],
+          photo: [
+            {
+              file_id: "reply_photo_id",
+              file_unique_id: "rpq1",
+              width: 400,
+              height: 300,
+            },
+          ],
         },
       },
       me: { id: 999, username: "testbot" },
@@ -1649,17 +2166,29 @@ describe("downloadReplyPhoto — success and error paths", () => {
     await handleTextMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
-    expect((calls[0][0] as { prompt: string }).prompt).toContain("Replied-to message contains a photo");
+    expect((calls[0][0] as { prompt: string }).prompt).toContain(
+      "Replied-to message contains a photo",
+    );
   }, 3000);
 
   it("logs warning on Error in downloadReplyPhoto catch (L146 TRUE branch)", async () => {
     const { logWarn } = await import("../util/log.js");
     (logWarn as ReturnType<typeof vi.fn>).mockClear();
-    mockBot.api.getFile = vi.fn(async () => { throw new Error("getFile failed"); });
+    mockBot.api.getFile = vi.fn(async () => {
+      throw new Error("getFile failed");
+    });
     executeMock.mockResolvedValueOnce({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 99002;
@@ -1670,7 +2199,14 @@ describe("downloadReplyPhoto — success and error paths", () => {
         message_id: 1002,
         reply_to_message: {
           from: { id: 200 },
-          photo: [{ file_id: "bad_photo", file_unique_id: "bpq2", width: 100, height: 100 }],
+          photo: [
+            {
+              file_id: "bad_photo",
+              file_unique_id: "bpq2",
+              width: 100,
+              height: 100,
+            },
+          ],
         },
       },
       me: { id: 999, username: "testbot" },
@@ -1680,8 +2216,9 @@ describe("downloadReplyPhoto — success and error paths", () => {
     await handleTextMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const photoWarn = (logWarn as ReturnType<typeof vi.fn>).mock.calls
-      .find((c: unknown[]) => String(c[1]).includes("reply photo"));
+    const photoWarn = (logWarn as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) => String(c[1]).includes("reply photo"),
+    );
     expect(photoWarn).toBeDefined();
     expect(String(photoWarn![1])).toContain("getFile failed");
   }, 3000);
@@ -1690,9 +2227,17 @@ describe("downloadReplyPhoto — success and error paths", () => {
     const { logWarn } = await import("../util/log.js");
     (logWarn as ReturnType<typeof vi.fn>).mockClear();
     // eslint-disable-next-line @typescript-eslint/no-throw-literal
-    mockBot.api.getFile = vi.fn(async () => { throw "non-error string"; });
+    mockBot.api.getFile = vi.fn(async () => {
+      throw "non-error string";
+    });
     executeMock.mockResolvedValueOnce({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 99003;
@@ -1703,7 +2248,14 @@ describe("downloadReplyPhoto — success and error paths", () => {
         message_id: 1003,
         reply_to_message: {
           from: { id: 200 },
-          photo: [{ file_id: "bad_photo2", file_unique_id: "bpq3", width: 100, height: 100 }],
+          photo: [
+            {
+              file_id: "bad_photo2",
+              file_unique_id: "bpq3",
+              width: 100,
+              height: 100,
+            },
+          ],
         },
       },
       me: { id: 999, username: "testbot" },
@@ -1713,8 +2265,11 @@ describe("downloadReplyPhoto — success and error paths", () => {
     await handleTextMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const photoWarn = (logWarn as ReturnType<typeof vi.fn>).mock.calls
-      .find((c: unknown[]) => String(c[1]).includes("reply photo") && String(c[1]).includes("non-error string"));
+    const photoWarn = (logWarn as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) =>
+        String(c[1]).includes("reply photo") &&
+        String(c[1]).includes("non-error string"),
+    );
     expect(photoWarn).toBeDefined();
   }, 3000);
 });
@@ -1722,7 +2277,13 @@ describe("downloadReplyPhoto — success and error paths", () => {
 describe("downloadTelegramFile — PNG/GIF/WebP image magic bytes", () => {
   beforeEach(() => {
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
   });
 
@@ -1733,19 +2294,31 @@ describe("downloadTelegramFile — PNG/GIF/WebP image magic bytes", () => {
   it("accepts PNG file with valid magic bytes (L208 TRUE branch)", async () => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "docs/image.png" }));
     const pngBuf = new Uint8Array(64);
-    pngBuf[0] = 0x89; pngBuf[1] = 0x50; pngBuf[2] = 0x4E; pngBuf[3] = 0x47;
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => pngBuf.buffer,
-    })));
+    pngBuf[0] = 0x89;
+    pngBuf[1] = 0x50;
+    pngBuf[2] = 0x4e;
+    pngBuf[3] = 0x47;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => pngBuf.buffer,
+      })),
+    );
 
     const chatId = 99100;
     const ctx = {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 1100,
-        document: { file_id: "png_doc", file_unique_id: "pngq1", file_name: "screenshot.png", file_size: 1000, mime_type: "image/png" },
+        document: {
+          file_id: "png_doc",
+          file_unique_id: "pngq1",
+          file_name: "screenshot.png",
+          file_size: 1000,
+          mime_type: "image/png",
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -1756,26 +2329,39 @@ describe("downloadTelegramFile — PNG/GIF/WebP image magic bytes", () => {
     await handleDocumentMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
   }, 3000);
 
   it("accepts GIF file with valid magic bytes (L209 TRUE branch)", async () => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "docs/image.gif" }));
     const gifBuf = new Uint8Array(64);
-    gifBuf[0] = 0x47; gifBuf[1] = 0x49; gifBuf[2] = 0x46;
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => gifBuf.buffer,
-    })));
+    gifBuf[0] = 0x47;
+    gifBuf[1] = 0x49;
+    gifBuf[2] = 0x46;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => gifBuf.buffer,
+      })),
+    );
 
     const chatId = 99101;
     const ctx = {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 1101,
-        document: { file_id: "gif_doc", file_unique_id: "gifq1", file_name: "animation.gif", file_size: 2000, mime_type: "image/gif" },
+        document: {
+          file_id: "gif_doc",
+          file_unique_id: "gifq1",
+          file_name: "animation.gif",
+          file_size: 2000,
+          mime_type: "image/gif",
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -1786,27 +2372,44 @@ describe("downloadTelegramFile — PNG/GIF/WebP image magic bytes", () => {
     await handleDocumentMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
   }, 3000);
 
   it("accepts WebP file with valid magic bytes (L210-211 TRUE branch)", async () => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "docs/image.webp" }));
     const webpBuf = new Uint8Array(64);
-    webpBuf[0] = 0x52; webpBuf[1] = 0x49; webpBuf[2] = 0x46; webpBuf[3] = 0x46;
-    webpBuf[8] = 0x57; webpBuf[9] = 0x45; webpBuf[10] = 0x42; webpBuf[11] = 0x50;
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => webpBuf.buffer,
-    })));
+    webpBuf[0] = 0x52;
+    webpBuf[1] = 0x49;
+    webpBuf[2] = 0x46;
+    webpBuf[3] = 0x46;
+    webpBuf[8] = 0x57;
+    webpBuf[9] = 0x45;
+    webpBuf[10] = 0x42;
+    webpBuf[11] = 0x50;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => webpBuf.buffer,
+      })),
+    );
 
     const chatId = 99102;
     const ctx = {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 1102,
-        document: { file_id: "webp_doc", file_unique_id: "webpq1", file_name: "image.webp", file_size: 3000, mime_type: "image/webp" },
+        document: {
+          file_id: "webp_doc",
+          file_unique_id: "webpq1",
+          file_name: "image.webp",
+          file_size: 3000,
+          mime_type: "image/webp",
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -1817,24 +2420,34 @@ describe("downloadTelegramFile — PNG/GIF/WebP image magic bytes", () => {
     await handleDocumentMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
   }, 3000);
 
   it("throws on empty downloaded buffer (L198 TRUE branch)", async () => {
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "docs/empty.pdf" }));
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      headers: { get: () => null },
-      arrayBuffer: async () => new ArrayBuffer(0),
-    })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => new ArrayBuffer(0),
+      })),
+    );
 
     const chatId = 99103;
     const ctx = {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 1103,
-        document: { file_id: "empty_doc", file_unique_id: "emq1", file_name: "empty.pdf", file_size: 0 },
+        document: {
+          file_id: "empty_doc",
+          file_unique_id: "emq1",
+          file_name: "empty.pdf",
+          file_size: 0,
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -1850,17 +2463,28 @@ describe("downloadTelegramFile — PNG/GIF/WebP image magic bytes", () => {
 describe("enqueueMessage — queue overflow drops 21st message (L311 TRUE branch)", () => {
   it("drops message when queue reaches MAX_QUEUED_PER_CHAT (20)", async () => {
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 99200;
     // Use unique userId per message to avoid rate-limit (15/min per user)
-    const makeCtx = (i: number) => ({
-      chat: { id: chatId, type: "private" },
-      message: { text: `flood ${i}`, message_id: 2000 + i, reply_to_message: null },
-      me: { id: 999, username: "testbot" },
-      from: { id: 9900000 + i, first_name: "Flood" }, // unique userId per message
-    } as any);
+    const makeCtx = (i: number) =>
+      ({
+        chat: { id: chatId, type: "private" },
+        message: {
+          text: `flood ${i}`,
+          message_id: 2000 + i,
+          reply_to_message: null,
+        },
+        me: { id: 999, username: "testbot" },
+        from: { id: 9900000 + i, first_name: "Flood" }, // unique userId per message
+      }) as any;
 
     // 21 rapid messages: 1st creates entry, 2nd-20th fill it, 21st is dropped
     for (let i = 0; i < 21; i++) {
@@ -1868,7 +2492,9 @@ describe("enqueueMessage — queue overflow drops 21st message (L311 TRUE branch
     }
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls.filter(
+      (c) => (c[0] as { chatId: string }).chatId === String(chatId),
+    );
     expect(calls.length).toBe(1);
     const prompt = (calls[0][0] as { prompt: string }).prompt;
     // 20 messages in prompt, 21st was dropped
@@ -1880,7 +2506,13 @@ describe("enqueueMessage — queue overflow drops 21st message (L311 TRUE branch
 describe("handleStickerMessage — video sticker branch (L835 TRUE)", () => {
   it("includes (video sticker) when is_animated=false and is_video=true", async () => {
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 99300;
@@ -1888,7 +2520,13 @@ describe("handleStickerMessage — video sticker branch (L835 TRUE)", () => {
       chat: { id: chatId, type: "private" },
       message: {
         message_id: 1300,
-        sticker: { file_id: "vs123", emoji: "🎬", set_name: "", is_animated: false, is_video: true },
+        sticker: {
+          file_id: "vs123",
+          emoji: "🎬",
+          set_name: "",
+          is_animated: false,
+          is_video: true,
+        },
         reply_to_message: null,
       },
       me: { id: 999, username: "testbot" },
@@ -1899,9 +2537,13 @@ describe("handleStickerMessage — video sticker branch (L835 TRUE)", () => {
     await handleStickerMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
-    expect((calls[0][0] as { prompt: string }).prompt).toContain("video sticker");
+    expect((calls[0][0] as { prompt: string }).prompt).toContain(
+      "video sticker",
+    );
   }, 3000);
 });
 
@@ -1911,13 +2553,23 @@ describe("processAndReply — group message without senderId (L552 FALSE branch)
     (enrichGroupPrompt as ReturnType<typeof vi.fn>).mockClear();
 
     executeMock.mockResolvedValueOnce({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 99400;
     const ctx = {
       chat: { id: chatId, type: "supergroup", title: "Test Group" },
-      message: { text: "@testbot anonymous message", message_id: 1400, reply_to_message: null },
+      message: {
+        text: "@testbot anonymous message",
+        message_id: 1400,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: undefined, // no sender info → senderId=undefined
     } as any;
@@ -1929,7 +2581,9 @@ describe("processAndReply — group message without senderId (L552 FALSE branch)
     // enrichGroupPrompt should NOT have been called (senderId falsy)
     expect(enrichGroupPrompt).not.toHaveBeenCalled();
     // But message was still processed
-    const calls = executeMock.mock.calls.slice(before).filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls
+      .slice(before)
+      .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
   }, 3000);
 });
@@ -1941,13 +2595,21 @@ describe("processAndReply — suppressed fallback text logged (L572 TRUE branch)
 
     executeMock.mockResolvedValueOnce({
       text: "internal reasoning only",
-      durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0,
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
       bridgeMessageCount: 0,
     });
 
     const ctx = {
       chat: { id: 99600, type: "private" },
-      message: { text: "test suppressed fallback", message_id: 1600, reply_to_message: null },
+      message: {
+        text: "test suppressed fallback",
+        message_id: 1600,
+        reply_to_message: null,
+      },
       me: { id: 999, username: "testbot" },
       from: { id: 9902000, first_name: "Tom" },
     } as any;
@@ -1956,7 +2618,9 @@ describe("processAndReply — suppressed fallback text logged (L572 TRUE branch)
     await new Promise((r) => setTimeout(r, 700));
 
     const logCalls = (log as ReturnType<typeof vi.fn>).mock.calls;
-    const suppressedLog = logCalls.find((c: unknown[]) => String(c[1]).includes("Suppressed fallback"));
+    const suppressedLog = logCalls.find((c: unknown[]) =>
+      String(c[1]).includes("Suppressed fallback"),
+    );
     expect(suppressedLog).toBeDefined();
   }, 3000);
 });
@@ -1970,26 +2634,36 @@ describe("flushQueue — setMessageReaction clear fails (L344 warn paths)", () =
     const { logWarn } = await import("../util/log.js");
     (logWarn as ReturnType<typeof vi.fn>).mockClear();
 
-    mockBot.api.setMessageReaction = vi.fn(async () => { throw new Error("setReaction failed"); });
+    mockBot.api.setMessageReaction = vi.fn(async () => {
+      throw new Error("setReaction failed");
+    });
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     // 2 messages to same chat — 2nd adds msgId to queuedReactionMsgIds
     const chatId = 99500;
-    const makeCtx = (msgId: number, userId: number) => ({
-      chat: { id: chatId, type: "private" },
-      message: { text: `msg`, message_id: msgId, reply_to_message: null },
-      me: { id: 999, username: "testbot" },
-      from: { id: userId, first_name: "R" },
-    } as any);
+    const makeCtx = (msgId: number, userId: number) =>
+      ({
+        chat: { id: chatId, type: "private" },
+        message: { text: `msg`, message_id: msgId, reply_to_message: null },
+        me: { id: 999, username: "testbot" },
+        from: { id: userId, first_name: "R" },
+      }) as any;
 
     await handleTextMessage(makeCtx(3001, 9901000), mockBot, mockConfig);
     await handleTextMessage(makeCtx(3002, 9901001), mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const reactionWarn = (logWarn as ReturnType<typeof vi.fn>).mock.calls
-      .find((c: unknown[]) => String(c[1]).includes("Failed to clear reaction"));
+    const reactionWarn = (logWarn as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) => String(c[1]).includes("Failed to clear reaction"),
+    );
     expect(reactionWarn).toBeDefined();
     expect(String(reactionWarn![1])).toContain("setReaction failed");
   }, 3000);
@@ -1999,25 +2673,37 @@ describe("flushQueue — setMessageReaction clear fails (L344 warn paths)", () =
     (logWarn as ReturnType<typeof vi.fn>).mockClear();
 
     // eslint-disable-next-line @typescript-eslint/no-throw-literal
-    mockBot.api.setMessageReaction = vi.fn(async () => { throw "reaction-string-err"; });
+    mockBot.api.setMessageReaction = vi.fn(async () => {
+      throw "reaction-string-err";
+    });
     executeMock.mockResolvedValue({
-      text: "", durationMs: 10, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 10,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 99501;
-    const makeCtx = (msgId: number, userId: number) => ({
-      chat: { id: chatId, type: "private" },
-      message: { text: `msg`, message_id: msgId, reply_to_message: null },
-      me: { id: 999, username: "testbot" },
-      from: { id: userId, first_name: "R" },
-    } as any);
+    const makeCtx = (msgId: number, userId: number) =>
+      ({
+        chat: { id: chatId, type: "private" },
+        message: { text: `msg`, message_id: msgId, reply_to_message: null },
+        me: { id: 999, username: "testbot" },
+        from: { id: userId, first_name: "R" },
+      }) as any;
 
     await handleTextMessage(makeCtx(3003, 9901002), mockBot, mockConfig);
     await handleTextMessage(makeCtx(3004, 9901003), mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    const reactionWarn = (logWarn as ReturnType<typeof vi.fn>).mock.calls
-      .find((c: unknown[]) => String(c[1]).includes("Failed to clear reaction") && String(c[1]).includes("reaction-string-err"));
+    const reactionWarn = (logWarn as ReturnType<typeof vi.fn>).mock.calls.find(
+      (c: unknown[]) =>
+        String(c[1]).includes("Failed to clear reaction") &&
+        String(c[1]).includes("reaction-string-err"),
+    );
     expect(reactionWarn).toBeDefined();
   }, 3000);
 });
@@ -2027,17 +2713,28 @@ describe("isUserRateLimited — expired timestamps evicted via shift() (L272)", 
     vi.useFakeTimers();
 
     executeMock.mockResolvedValue({
-      text: "", durationMs: 5, inputTokens: 1, outputTokens: 1, cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 5,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const chatId = 99700;
     const userId = 9903000; // unique userId — no prior timestamps
-    const makeCtx = (msgId: number) => ({
-      chat: { id: chatId, type: "private" },
-      message: { text: `old-timer ${msgId}`, message_id: msgId, reply_to_message: null },
-      me: { id: 999, username: "testbot" },
-      from: { id: userId, first_name: "OldTimer" },
-    } as any);
+    const makeCtx = (msgId: number) =>
+      ({
+        chat: { id: chatId, type: "private" },
+        message: {
+          text: `old-timer ${msgId}`,
+          message_id: msgId,
+          reply_to_message: null,
+        },
+        me: { id: 999, username: "testbot" },
+        from: { id: userId, first_name: "OldTimer" },
+      }) as any;
 
     // T=0: send message — adds timestamp[0]=0 for userId
     await handleTextMessage(makeCtx(1700), mockBot, mockConfig);
@@ -2054,7 +2751,9 @@ describe("isUserRateLimited — expired timestamps evicted via shift() (L272)", 
     vi.useRealTimers();
 
     // Both messages processed (second was not blocked by stale timestamp)
-    const calls = executeMock.mock.calls.filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
+    const calls = executeMock.mock.calls.filter(
+      (c) => (c[0] as { chatId: string }).chatId === String(chatId),
+    );
     expect(calls.length).toBe(2);
   }, 10000);
 });
@@ -2065,8 +2764,13 @@ describe("isUserRateLimited — userMessageTimestamps eviction when size > 5000 
     vi.useFakeTimers({ now: 0 });
 
     executeMock.mockResolvedValue({
-      text: "", durationMs: 5, inputTokens: 1, outputTokens: 1,
-      cacheRead: 0, cacheWrite: 0, bridgeMessageCount: 0,
+      text: "",
+      durationMs: 5,
+      inputTokens: 1,
+      outputTokens: 1,
+      cacheRead: 0,
+      cacheWrite: 0,
+      bridgeMessageCount: 0,
     });
 
     const BASE_UID = 200_000_000; // far outside all other test userId ranges
@@ -2074,12 +2778,16 @@ describe("isUserRateLimited — userMessageTimestamps eviction when size > 5000 
     // Fire 5000 handleTextMessage calls synchronously — each runs isUserRateLimited(BASE+i)
     // at T=0 before the first await (downloadReplyPhoto). The map accumulates 5000 entries.
     for (let i = 0; i < 5_000; i++) {
-      void handleTextMessage({
-        chat: { id: 88_000_001, type: "private" },
-        message: { text: "x", message_id: i + 1, reply_to_message: null },
-        me: { id: 999, username: "testbot" },
-        from: { id: BASE_UID + i, first_name: "X" },
-      } as any, mockBot, mockConfig);
+      void handleTextMessage(
+        {
+          chat: { id: 88_000_001, type: "private" },
+          message: { text: "x", message_id: i + 1, reply_to_message: null },
+          me: { id: 999, username: "testbot" },
+          from: { id: BASE_UID + i, first_name: "X" },
+        } as any,
+        mockBot,
+        mockConfig,
+      );
     }
 
     // Advance fake time by 11 minutes — makes all T=0 timestamps stale
@@ -2088,12 +2796,20 @@ describe("isUserRateLimited — userMessageTimestamps eviction when size > 5000 
 
     // 5001st unique user at T+11min — isUserRateLimited sees size > 5000 → cleanup runs
     // All 5000 T=0 entries (below cutoff) are deleted until size ≤ 2500 → break (L284)
-    void handleTextMessage({
-      chat: { id: 88_000_002, type: "private" },
-      message: { text: "trigger", message_id: 10_000, reply_to_message: null },
-      me: { id: 999, username: "testbot" },
-      from: { id: BASE_UID + 5_001, first_name: "T" },
-    } as any, mockBot, mockConfig);
+    void handleTextMessage(
+      {
+        chat: { id: 88_000_002, type: "private" },
+        message: {
+          text: "trigger",
+          message_id: 10_000,
+          reply_to_message: null,
+        },
+        me: { id: 999, username: "testbot" },
+        from: { id: BASE_UID + 5_001, first_name: "T" },
+      } as any,
+      mockBot,
+      mockConfig,
+    );
 
     // Drain pending microtasks and fire debounce timers to clean up async state
     await vi.advanceTimersByTimeAsync(1_000);

@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, existsSync, readdirSync, readFileSync, symlinkSync } from "node:fs";
+import {
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+  readdirSync,
+  readFileSync,
+  symlinkSync,
+} from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -204,7 +212,7 @@ describe("getWorkspaceDiskUsage — edge cases", () => {
   it("counts multiple files correctly", () => {
     mkdirSync(TEST_ROOT, { recursive: true });
     writeFileSync(join(TEST_ROOT, "a.txt"), "12345"); // 5 bytes
-    writeFileSync(join(TEST_ROOT, "b.txt"), "123");   // 3 bytes
+    writeFileSync(join(TEST_ROOT, "b.txt"), "123"); // 3 bytes
     const usage = getWorkspaceDiskUsage(TEST_ROOT);
     expect(usage).toBe(8);
   });

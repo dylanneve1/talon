@@ -5,9 +5,8 @@ vi.mock("../storage/history.js", () => ({
 }));
 
 const { getRecentBySenderId } = await import("../storage/history.js");
-const { enrichDMPrompt, enrichGroupPrompt } = await import(
-  "../core/prompt-builder.js"
-);
+const { enrichDMPrompt, enrichGroupPrompt } =
+  await import("../core/prompt-builder.js");
 
 describe("enrichDMPrompt", () => {
   it("prepends DM metadata", () => {
@@ -39,7 +38,13 @@ describe("enrichGroupPrompt", () => {
 
   it("returns prompt unchanged when only one message (current)", () => {
     vi.mocked(getRecentBySenderId).mockReturnValue([
-      { msgId: 1, senderId: 42, senderName: "Alice", text: "hello", timestamp: Date.now() },
+      {
+        msgId: 1,
+        senderId: 42,
+        senderName: "Alice",
+        text: "hello",
+        timestamp: Date.now(),
+      },
     ]);
     const result = enrichGroupPrompt("hello", "chat1", 42);
     expect(result).toBe("hello");
@@ -47,9 +52,27 @@ describe("enrichGroupPrompt", () => {
 
   it("prepends prior messages for threading context", () => {
     vi.mocked(getRecentBySenderId).mockReturnValue([
-      { msgId: 1, senderId: 42, senderName: "Alice", text: "first message", timestamp: new Date("2025-01-01T10:00:00Z").getTime() },
-      { msgId: 2, senderId: 42, senderName: "Alice", text: "second message", timestamp: new Date("2025-01-01T10:01:00Z").getTime() },
-      { msgId: 3, senderId: 42, senderName: "Alice", text: "current", timestamp: new Date("2025-01-01T10:02:00Z").getTime() },
+      {
+        msgId: 1,
+        senderId: 42,
+        senderName: "Alice",
+        text: "first message",
+        timestamp: new Date("2025-01-01T10:00:00Z").getTime(),
+      },
+      {
+        msgId: 2,
+        senderId: 42,
+        senderName: "Alice",
+        text: "second message",
+        timestamp: new Date("2025-01-01T10:01:00Z").getTime(),
+      },
+      {
+        msgId: 3,
+        senderId: 42,
+        senderName: "Alice",
+        text: "current",
+        timestamp: new Date("2025-01-01T10:02:00Z").getTime(),
+      },
     ]);
     const result = enrichGroupPrompt("current", "chat1", 42);
     expect(result).toContain("Alice's recent messages");
@@ -61,8 +84,20 @@ describe("enrichGroupPrompt", () => {
   it("truncates long messages to 200 chars", () => {
     const longText = "x".repeat(300);
     vi.mocked(getRecentBySenderId).mockReturnValue([
-      { msgId: 1, senderId: 42, senderName: "Bob", text: longText, timestamp: Date.now() },
-      { msgId: 2, senderId: 42, senderName: "Bob", text: "current", timestamp: Date.now() },
+      {
+        msgId: 1,
+        senderId: 42,
+        senderName: "Bob",
+        text: longText,
+        timestamp: Date.now(),
+      },
+      {
+        msgId: 2,
+        senderId: 42,
+        senderName: "Bob",
+        text: "current",
+        timestamp: Date.now(),
+      },
     ]);
     const result = enrichGroupPrompt("current", "chat1", 42);
     expect(result).not.toContain(longText); // full text shouldn't appear

@@ -43,7 +43,9 @@ export function loadChatSettings(): void {
         store = JSON.parse(readFileSync(bakFile, "utf-8"));
         log("settings", "Loaded from backup (primary was corrupt)");
       }
-    } catch { /* backup also corrupt */ }
+    } catch {
+      /* backup also corrupt */
+    }
   }
   // Migrate legacy maxThinkingTokens → effort
   let migrated = 0;
@@ -87,13 +89,19 @@ function save(): void {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     const data = JSON.stringify(store, null, 2) + "\n";
     if (existsSync(STORE_FILE)) {
-      try { writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE)); } catch { /* best effort */ }
+      try {
+        writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE));
+      } catch {
+        /* best effort */
+      }
     }
     writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch (err) {
     logError("settings", "Failed to persist chat settings", err);
-    recordError(`Settings save failed: ${err instanceof Error ? err.message : err}`);
+    recordError(
+      `Settings save failed: ${err instanceof Error ? err.message : err}`,
+    );
   }
 }
 
@@ -112,12 +120,22 @@ export function getChatSettings(chatId: string): ChatSettings {
 
 function cleanupEmpty(chatId: string): void {
   const s = store[chatId];
-  if (s && !s.model && !s.effort && s.pulse === undefined && s.pulseIntervalMs === undefined && s.pulseLastCheckMsgId === undefined) {
+  if (
+    s &&
+    !s.model &&
+    !s.effort &&
+    s.pulse === undefined &&
+    s.pulseIntervalMs === undefined &&
+    s.pulseLastCheckMsgId === undefined
+  ) {
     delete store[chatId];
   }
 }
 
-export function setPulseLastCheckMsgId(chatId: string, msgId: number | undefined): void {
+export function setPulseLastCheckMsgId(
+  chatId: string,
+  msgId: number | undefined,
+): void {
   if (!store[chatId]) store[chatId] = {};
   if (msgId !== undefined) {
     store[chatId].pulseLastCheckMsgId = msgId;
@@ -217,5 +235,7 @@ export const MODEL_ALIASES: Record<string, string> = {
 
 export function resolveModelName(input: string): string {
   const lower = input.trim().toLowerCase();
-  return Object.hasOwn(MODEL_ALIASES, lower) ? MODEL_ALIASES[lower] : input.trim();
+  return Object.hasOwn(MODEL_ALIASES, lower)
+    ? MODEL_ALIASES[lower]
+    : input.trim();
 }

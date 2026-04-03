@@ -59,7 +59,13 @@ export function classify(err: unknown): TalonError {
   let msg: string;
   if (err instanceof Error) msg = err.message;
   else if (typeof err === "string") msg = err;
-  else { try { msg = String(err); } catch { msg = "[non-stringifiable error]"; } }
+  else {
+    try {
+      msg = String(err);
+    } catch {
+      msg = "[non-stringifiable error]";
+    }
+  }
   const cause = err instanceof Error ? err : undefined;
 
   // Extract HTTP status if present
@@ -93,7 +99,11 @@ export function classify(err: unknown): TalonError {
   }
 
   // Network errors
-  if (/network|ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|ENOTFOUND|fetch failed|connection reset/i.test(msg)) {
+  if (
+    /network|ECONNREFUSED|ECONNRESET|ECONNABORTED|ETIMEDOUT|ENOTFOUND|fetch failed|connection reset/i.test(
+      msg,
+    )
+  ) {
     return new TalonError(msg, {
       reason: "network",
       retryable: true,

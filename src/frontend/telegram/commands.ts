@@ -218,10 +218,9 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
 
     const model = resolveModelName(arg);
     setChatModel(cid, model);
-    await ctx.reply(
-      `Model set to <code>${escapeHtml(model)}</code>.`,
-      { parse_mode: "HTML" },
-    );
+    await ctx.reply(`Model set to <code>${escapeHtml(model)}</code>.`, {
+      parse_mode: "HTML",
+    });
   });
 
   bot.command("effort", async (ctx) => {
@@ -304,10 +303,15 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         {
           parse_mode: "HTML",
           reply_markup: {
-            inline_keyboard: [[
-              { text: enabled ? "✓ On" : "On", callback_data: "pulse:on" },
-              { text: !enabled ? "✓ Off" : "Off", callback_data: "pulse:off" },
-            ]],
+            inline_keyboard: [
+              [
+                { text: enabled ? "✓ On" : "On", callback_data: "pulse:on" },
+                {
+                  text: !enabled ? "✓ Off" : "Off",
+                  callback_data: "pulse:off",
+                },
+              ],
+            ],
           },
         },
       );
@@ -344,16 +348,16 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       return;
     }
 
-    await ctx.reply(
-      "Use: /pulse on, /pulse off, /pulse 30m, /pulse 2h",
-    );
+    await ctx.reply("Use: /pulse on, /pulse off, /pulse 30m, /pulse 2h");
   });
 
   bot.command("memory", async (ctx) => {
     try {
       const memoryPath = files.memory;
       if (!existsSync(memoryPath)) {
-        await ctx.reply("No memory file yet. I'll create one as I learn about you.");
+        await ctx.reply(
+          "No memory file yet. I'll create one as I learn about you.",
+        );
         return;
       }
       const content = readFileSync(memoryPath, "utf-8").trim();
@@ -362,9 +366,10 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         return;
       }
       // Truncate for Telegram's 4096 char limit
-      const display = content.length > 3500
-        ? content.slice(0, 3500) + "\n\n... (truncated)"
-        : content;
+      const display =
+        content.length > 3500
+          ? content.slice(0, 3500) + "\n\n... (truncated)"
+          : content;
       await ctx.reply(display);
     } catch {
       await ctx.reply("Could not read memory file.");
@@ -427,10 +432,12 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         : 0;
     const barLen = 20;
     const filled = Math.round((contextPct / 100) * barLen);
-    const contextBar = "\u2588".repeat(filled) + "\u2591".repeat(barLen - filled);
+    const contextBar =
+      "\u2588".repeat(filled) + "\u2591".repeat(barLen - filled);
     const contextWarn = contextPct >= 80 ? " \u26A0\uFE0F consider /reset" : "";
 
-    const totalPrompt = u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
+    const totalPrompt =
+      u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
     const cacheHitPct =
       totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
 
@@ -439,7 +446,8 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
         ? Math.round(u.totalResponseMs / info.turns)
         : 0;
     const lastResponseMs = u.lastResponseMs || 0;
-    const fastestMs = u.fastestResponseMs === Infinity ? 0 : (u.fastestResponseMs || 0);
+    const fastestMs =
+      u.fastestResponseMs === Infinity ? 0 : u.fastestResponseMs || 0;
 
     const diskBytes = getWorkspaceDiskUsage(config.workspace);
     const diskStr = formatBytes(diskBytes);
@@ -504,14 +512,20 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     setTimeout(() => {
       // Try `talon restart` (handles daemon stop+start cleanly).
       // Fall back to the local bin if talon isn't on PATH globally.
-      const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+      const projectRoot = resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "../../../..",
+      );
       const localBin = resolve(projectRoot, "bin/talon.js");
 
       const trySpawn = (cmd: string, args: string[]): Promise<void> =>
         new Promise((res, rej) => {
           const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
           child.on("error", rej);
-          child.on("spawn", () => { child.unref(); res(); });
+          child.on("spawn", () => {
+            child.unref();
+            res();
+          });
         });
 
       // Try global first, then local bin, then just exit (let process manager restart)
@@ -532,7 +546,9 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       const ver = p.plugin.version ? ` v${p.plugin.version}` : "";
       const desc = p.plugin.description ? ` — ${p.plugin.description}` : "";
       const mcp = p.plugin.mcpServerPath ? " [MCP]" : "";
-      const fe = p.plugin.frontends?.length ? ` (${p.plugin.frontends.join(", ")})` : "";
+      const fe = p.plugin.frontends?.length
+        ? ` (${p.plugin.frontends.join(", ")})`
+        : "";
       return `• <b>${escapeHtml(p.plugin.name)}</b>${ver}${mcp}${fe}${desc}`;
     });
     await ctx.reply(

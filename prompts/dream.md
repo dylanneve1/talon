@@ -5,10 +5,12 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 ## Your 4-stage task
 
 ### Stage 1 — Orient
+
 - List log files in `{{logsDir}}/` that are dated on or after `{{lastRunIso}}`
 - If there are no new log files, stop — the system will handle state updates
 
 ### Stage 2 — Gather
+
 - Read each new log file
 - Each log file uses this format:
   - User messages appear as `## HH:MM -- [Username]` followed by the full message text
@@ -24,6 +26,7 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 - Be selective — only extract genuinely new or updated information
 
 ### Stage 3 — Consolidate
+
 - Read the current memory file at `{{memoryFile}}`
 - Merge new information into the appropriate sections
 - Update existing entries if new info contradicts or extends them
@@ -32,6 +35,7 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 - Preserve all existing structure and sections
 
 ### Stage 4 — Prune
+
 - Remove entries that have been explicitly contradicted
 - Remove entries that are clearly stale or irrelevant
 - Do NOT remove entries just because they're old — only remove if wrong or superseded

@@ -25,7 +25,11 @@ import type { FrontendActionHandler } from "./types.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
 
-type ChatContext = { refCount: number; messagesSent: number; stringId?: string };
+type ChatContext = {
+  refCount: number;
+  messagesSent: number;
+  stringId?: string;
+};
 
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
@@ -45,8 +49,12 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
           // Wrap in AbortError to prevent further retries
           throw new AbortError(classified);
         }
-        const delayMs = classified.retryAfterMs ?? 1000 * Math.pow(2, attempt - 1);
-        log("gateway", `Retry ${attempt}/3 (${classified.reason}) after ${delayMs}ms`);
+        const delayMs =
+          classified.retryAfterMs ?? 1000 * Math.pow(2, attempt - 1);
+        log(
+          "gateway",
+          `Retry ${attempt}/3 (${classified.reason}) after ${delayMs}ms`,
+        );
         throw classified; // rethrow to trigger p-retry delay
       }
     },
@@ -84,10 +92,16 @@ export class Gateway {
     const ctx = this.chatContexts.get(chatId);
     if (ctx) {
       ctx.refCount++;
-      log("gateway", `Context ref++ for chat ${chatId} (refCount=${ctx.refCount})`);
+      log(
+        "gateway",
+        `Context ref++ for chat ${chatId} (refCount=${ctx.refCount})`,
+      );
     } else {
       this.chatContexts.set(chatId, { refCount: 1, messagesSent: 0, stringId });
-      log("gateway", `Context acquired for chat ${chatId}${stringId ? ` (${stringId})` : ""}`);
+      log(
+        "gateway",
+        `Context acquired for chat ${chatId}${stringId ? ` (${stringId})` : ""}`,
+      );
     }
   }
 
@@ -104,7 +118,9 @@ export class Gateway {
     if (chatId === undefined) return;
     const parsed = typeof chatId === "number" ? chatId : Number(chatId);
     // For non-numeric IDs (e.g. Teams "19:abc..."), Number() returns NaN — look up by string
-    const numId = !isNaN(parsed) ? parsed : this.findContextByStringId(String(chatId));
+    const numId = !isNaN(parsed)
+      ? parsed
+      : this.findContextByStringId(String(chatId));
     if (numId === null) return;
     const ctx = this.chatContexts.get(numId);
     if (!ctx) return;
@@ -145,9 +161,10 @@ export class Gateway {
     // then fall back to searching active contexts.
     const rawChatId = body._chatId ? String(body._chatId) : "";
     const numericId = Number(rawChatId);
-    const chatId = !isNaN(numericId) && this.chatContexts.has(numericId)
-      ? numericId
-      : this.findContextByStringId(rawChatId);
+    const chatId =
+      !isNaN(numericId) && this.chatContexts.has(numericId)
+        ? numericId
+        : this.findContextByStringId(rawChatId);
     if (!chatId) {
       return { ok: false, error: "No active chat context" };
     }
@@ -170,14 +187,20 @@ export class Gateway {
       // Try plugin actions (loaded from external plugin packages)
       const pluginResult = await handlePluginAction(body, String(chatId));
       if (pluginResult) {
-        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (plugin)`);
+        logDebug(
+          "gateway",
+          `${action} chat=${chatId} ${Date.now() - t0}ms (plugin)`,
+        );
         return pluginResult;
       }
 
       // Shared actions last — provides in-memory fallbacks for history, cron, etc.
       const shared = await handleSharedAction(body, chatId);
       if (shared) {
-        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`);
+        logDebug(
+          "gateway",
+          `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`,
+        );
         return shared;
       }
 
@@ -199,19 +222,22 @@ export class Gateway {
         if (req.method === "GET" && req.url === "/health") {
           const w = getHealthStatus();
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({
-            ok: w.healthy,
-            uptime: Math.round(process.uptime()),
-            memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-            bridge: { activeChats: this.chatContexts.size },
-            queue: getActiveCount(),
-            sessions: getActiveSessionCount(),
-            messages: w.totalMessagesProcessed,
-            errors: w.recentErrorCount,
-            lastActivity: w.msSinceLastMessage < 60000
-              ? "just now"
-              : `${Math.round(w.msSinceLastMessage / 60000)}m ago`,
-          }));
+          res.end(
+            JSON.stringify({
+              ok: w.healthy,
+              uptime: Math.round(process.uptime()),
+              memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+              bridge: { activeChats: this.chatContexts.size },
+              queue: getActiveCount(),
+              sessions: getActiveSessionCount(),
+              messages: w.totalMessagesProcessed,
+              errors: w.recentErrorCount,
+              lastActivity:
+                w.msSinceLastMessage < 60000
+                  ? "just now"
+                  : `${Math.round(w.msSinceLastMessage / 60000)}m ago`,
+            }),
+          );
           return;
         }
 
@@ -270,8 +296,15 @@ export class Gateway {
 
   async stop(): Promise<void> {
     return new Promise((resolve) => {
-      if (!this.server) { resolve(); return; }
-      this.server.close(() => { this.server = null; this.port = 0; resolve(); });
+      if (!this.server) {
+        resolve();
+        return;
+      }
+      this.server.close(() => {
+        this.server = null;
+        this.port = 0;
+        resolve();
+      });
     });
   }
 }

@@ -202,14 +202,20 @@ describe("plugin system", () => {
 
       // Temporarily override process.platform to simulate Windows
       const originalPlatform = process.platform;
-      Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+      Object.defineProperty(process, "platform", {
+        value: "win32",
+        configurable: true,
+      });
       try {
         const servers = getPluginMcpServers("http://localhost:19876", "chat1");
         expect(servers["test-plugin-tools"].command).toBe("npx");
         const args = servers["test-plugin-tools"].args as string[];
         expect(args[0]).toBe("tsx");
       } finally {
-        Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+        Object.defineProperty(process, "platform", {
+          value: originalPlatform,
+          configurable: true,
+        });
       }
     });
   });
@@ -407,14 +413,24 @@ describe("extractPlugin — invalid optional field types", () => {
     vi.resetModules();
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
-    mod._deps.importModule = async () => { throw new Error("module load failed"); };
+    const { logError } = (await import("../util/log.js")) as unknown as {
+      logError: ReturnType<typeof vi.fn>;
+    };
+    mod._deps.importModule = async () => {
+      throw new Error("module load failed");
+    };
     await mod.loadPlugins([{ path: "/fake/throw-plugin" }]);
     expect(mod.getPluginCount()).toBe(0);
-    expect(logError).toHaveBeenCalledWith("plugin", expect.stringContaining("Failed to load plugin"));
+    expect(logError).toHaveBeenCalledWith(
+      "plugin",
+      expect.stringContaining("Failed to load plugin"),
+    );
   });
 
   it("default _deps.importModule can import real modules", async () => {
@@ -430,43 +446,67 @@ describe("extractPlugin — invalid optional field types", () => {
     vi.resetModules();
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = (await import("../util/log.js")) as unknown as {
+      logError: ReturnType<typeof vi.fn>;
+    };
     // Throw a plain string (non-Error) — covers String(err) branch
-    mod._deps.importModule = async () => { throw "plain string load error"; };
+    mod._deps.importModule = async () => {
+      throw "plain string load error";
+    };
     await mod.loadPlugins([{ path: "/fake/non-error-throw" }]);
-    expect(logError).toHaveBeenCalledWith("plugin", expect.stringContaining("plain string load error"));
+    expect(logError).toHaveBeenCalledWith(
+      "plugin",
+      expect.stringContaining("plain string load error"),
+    );
   });
 
   it("init non-Error throw uses String(err) (line 269 FALSE branch)", async () => {
     vi.resetModules();
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = (await import("../util/log.js")) as unknown as {
+      logError: ReturnType<typeof vi.fn>;
+    };
     const plugin = {
       name: "init-non-error",
-      init: () => { throw "plain string init error"; },
+      init: () => {
+        throw "plain string init error";
+      },
     };
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/init-non-error" }]);
-    expect(logError).toHaveBeenCalledWith("plugin", expect.stringContaining("plain string init error"));
+    expect(logError).toHaveBeenCalledWith(
+      "plugin",
+      expect.stringContaining("plain string init error"),
+    );
   });
 
   it("extractPlugin uses mod directly when default is absent (line 289 FALSE??branch)", async () => {
     vi.resetModules();
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
     // No `default` export — `mod.default ?? mod` falls back to mod itself
     const pluginMod = { name: "mod-as-plugin", handleAction: async () => null };
-    mod._deps.importModule = async () => pluginMod as unknown as Record<string, unknown>;
+    mod._deps.importModule = async () =>
+      pluginMod as unknown as Record<string, unknown>;
     await mod.loadPlugins([{ path: "/fake/no-default" }]);
     expect(mod.getPlugin("mod-as-plugin")).toBeDefined();
   });
@@ -475,12 +515,16 @@ describe("extractPlugin — invalid optional field types", () => {
     vi.resetModules();
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
     // default export is a number — candidate = 42, typeof 42 !== "object" → return null
     // Note: { default: null } would NOT work because null ?? mod evaluates to mod (not null)
-    mod._deps.importModule = async () => ({ default: 42 } as unknown as Record<string, unknown>);
+    mod._deps.importModule = async () =>
+      ({ default: 42 }) as unknown as Record<string, unknown>;
     await mod.loadPlugins([{ path: "/fake/non-object-default" }]);
     expect(mod.getPluginCount()).toBe(0);
   });
@@ -489,56 +533,86 @@ describe("extractPlugin — invalid optional field types", () => {
     vi.resetModules();
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = (await import("../util/log.js")) as unknown as {
+      logError: ReturnType<typeof vi.fn>;
+    };
     const plugin = {
       name: "destroy-non-error",
-      destroy: () => { throw "plain string destroy error"; },
+      destroy: () => {
+        throw "plain string destroy error";
+      },
     };
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/destroy-non-error" }]);
     await mod.destroyPlugins();
-    expect(logError).toHaveBeenCalledWith("plugin", expect.stringContaining("plain string destroy error"));
+    expect(logError).toHaveBeenCalledWith(
+      "plugin",
+      expect.stringContaining("plain string destroy error"),
+    );
   });
 
   it("getSystemPromptAddition non-Error throw uses String(err) (line 352 FALSE branch)", async () => {
     vi.resetModules();
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = (await import("../util/log.js")) as unknown as {
+      logError: ReturnType<typeof vi.fn>;
+    };
     const plugin = {
       name: "prompt-non-error",
-      getSystemPromptAddition: () => { throw "plain string prompt error"; },
+      getSystemPromptAddition: () => {
+        throw "plain string prompt error";
+      },
     };
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/prompt-non-error" }]);
     mod.getPluginPromptAdditions();
-    expect(logError).toHaveBeenCalledWith("plugin", expect.stringContaining("plain string prompt error"));
+    expect(logError).toHaveBeenCalledWith(
+      "plugin",
+      expect.stringContaining("plain string prompt error"),
+    );
   });
 
   it("handlePluginAction non-Error throw uses String(err) (lines 378+382 FALSE branches)", async () => {
     vi.resetModules();
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
     vi.doMock("../util/log.js", () => ({
-      log: vi.fn(), logError: vi.fn(), logWarn: vi.fn(), logDebug: vi.fn(),
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
     }));
     const mod = await import("../core/plugin.js");
-    const { logError } = await import("../util/log.js") as unknown as { logError: ReturnType<typeof vi.fn> };
+    const { logError } = (await import("../util/log.js")) as unknown as {
+      logError: ReturnType<typeof vi.fn>;
+    };
     const plugin = {
       name: "action-non-error",
-      handleAction: async () => { throw "plain string action error"; },
+      handleAction: async () => {
+        throw "plain string action error";
+      },
     };
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/action-non-error" }]);
     const result = await mod.handlePluginAction({ action: "test" }, "123");
     expect(result?.ok).toBe(false);
     expect(String(result?.error)).toContain("plain string action error");
-    expect(logError).toHaveBeenCalledWith("plugin", expect.stringContaining("plain string action error"));
+    expect(logError).toHaveBeenCalledWith(
+      "plugin",
+      expect.stringContaining("plain string action error"),
+    );
   });
 
   it("getLoadedPlugins returns all loaded plugins", async () => {

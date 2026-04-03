@@ -55,16 +55,23 @@ export function loadCronJobs(): void {
     try {
       if (existsSync(bakFile)) {
         const raw = JSON.parse(readFileSync(bakFile, "utf-8"));
-        store = Array.isArray(raw) ? Object.fromEntries(raw.map((j: CronJob) => [j.id, j])) : raw;
+        store = Array.isArray(raw)
+          ? Object.fromEntries(raw.map((j: CronJob) => [j.id, j]))
+          : raw;
         log("cron", "Loaded from backup (primary was corrupt)");
       }
-    } catch { /* backup also corrupt */ }
+    } catch {
+      /* backup also corrupt */
+    }
   }
   // Validate and strip invalid IANA timezone strings so Cron() doesn't throw at runtime
   let invalidTz = 0;
   for (const job of Object.values(store)) {
     if (job.timezone && !isValidTimezone(job.timezone)) {
-      log("cron", `Job "${job.name}" has invalid timezone "${job.timezone}" — clearing`);
+      log(
+        "cron",
+        `Job "${job.name}" has invalid timezone "${job.timezone}" — clearing`,
+      );
       job.timezone = undefined;
       dirty = true;
       invalidTz++;
@@ -73,7 +80,10 @@ export function loadCronJobs(): void {
 
   const count = Object.keys(store).length;
   if (count > 0) {
-    log("cron", `Loaded ${count} cron job(s)${invalidTz > 0 ? ` (cleared ${invalidTz} invalid timezone(s))` : ""}`);
+    log(
+      "cron",
+      `Loaded ${count} cron job(s)${invalidTz > 0 ? ` (cleared ${invalidTz} invalid timezone(s))` : ""}`,
+    );
   }
 }
 
@@ -94,13 +104,19 @@ function save(): void {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     const data = JSON.stringify(store, null, 2) + "\n";
     if (existsSync(STORE_FILE)) {
-      try { writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE)); } catch { /* best effort */ }
+      try {
+        writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE));
+      } catch {
+        /* best effort */
+      }
     }
     writeFileAtomic.sync(STORE_FILE, data);
     dirty = false;
   } catch (err) {
     logError("cron", "Failed to persist cron jobs", err);
-    recordError(`Cron save failed: ${err instanceof Error ? err.message : err}`);
+    recordError(
+      `Cron save failed: ${err instanceof Error ? err.message : err}`,
+    );
   }
 }
 

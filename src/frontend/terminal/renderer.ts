@@ -184,10 +184,7 @@ export function createRenderer(cols?: number, displayName = "Talon"): Renderer {
     tools: number,
     info: StatusBarInfo,
   ): void {
-    const p = [
-      `${(ms / 1000).toFixed(1)}s`,
-      info.model,
-    ];
+    const p = [`${(ms / 1000).toFixed(1)}s`, info.model];
     if (info.sessionName) p.push(`"${info.sessionName}"`);
     p.push(
       `${info.turns} turn${info.turns !== 1 ? "s" : ""}`,

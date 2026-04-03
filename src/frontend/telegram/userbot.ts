@@ -418,7 +418,9 @@ export async function downloadMessageMedia(params: {
     if (!buffer || buffer.length === 0) return "Download returned empty data.";
 
     // Use the original filename if available, otherwise generate one
-    const doc = (m.media as { document?: { attributes?: Array<{ fileName?: string }> } }).document;
+    const doc = (
+      m.media as { document?: { attributes?: Array<{ fileName?: string }> } }
+    ).document;
     const originalName = doc?.attributes?.find((a) => a.fileName)?.fileName;
     const filename = originalName
       ? `${Date.now()}-${originalName.replace(/[^a-zA-Z0-9._-]/g, "_")}`
@@ -431,7 +433,10 @@ export async function downloadMessageMedia(params: {
     const filePath = resolve(uploadsDir, filename);
     writeFileSync(filePath, buffer);
 
-    log("userbot", `Downloaded media from msg:${params.messageId} → ${filename} (${buffer.length} bytes)`);
+    log(
+      "userbot",
+      `Downloaded media from msg:${params.messageId} → ${filename} (${buffer.length} bytes)`,
+    );
     return `Downloaded to: ${filePath} (${buffer.length} bytes). Use the Read tool on this path to view the content.`;
   } catch (err) {
     return `Download failed: ${err instanceof Error ? err.message : err}`;
@@ -446,7 +451,17 @@ export async function saveStickerPack(params: {
   bot: unknown;
 }): Promise<string> {
   try {
-    const bot = params.bot as { api: { getStickerSet: (name: string) => Promise<{ title: string; name: string; stickers: Array<{ emoji?: string; file_id: string }> }> } };
+    const bot = params.bot as {
+      api: {
+        getStickerSet: (
+          name: string,
+        ) => Promise<{
+          title: string;
+          name: string;
+          stickers: Array<{ emoji?: string; file_id: string }>;
+        }>;
+      };
+    };
     const stickerSet = await bot.api.getStickerSet(params.setName);
 
     const stickers = stickerSet.stickers.map((s) => ({
@@ -543,4 +558,3 @@ export async function getOnlineCount(params: {
     return `Failed: ${err instanceof Error ? err.message : err}`;
   }
 }
-

@@ -21,10 +21,7 @@ import {
 } from "../../core/pulse.js";
 import { handleCallbackQuery } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
-import {
-  renderSettingsText,
-  renderSettingsKeyboard,
-} from "./helpers.js";
+import { renderSettingsText, renderSettingsKeyboard } from "./helpers.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
   // ── Callback query handler ──────────────────────────────────────────────────
@@ -130,14 +127,21 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
           {
             parse_mode: "HTML",
             reply_markup: {
-              inline_keyboard: [[
-                { text: enabled ? "✓ On" : "On", callback_data: "pulse:on" },
-                { text: !enabled ? "✓ Off" : "Off", callback_data: "pulse:off" },
-              ]],
+              inline_keyboard: [
+                [
+                  { text: enabled ? "✓ On" : "On", callback_data: "pulse:on" },
+                  {
+                    text: !enabled ? "✓ Off" : "Off",
+                    callback_data: "pulse:off",
+                  },
+                ],
+              ],
             },
           },
         );
-      } catch { /* unchanged */ }
+      } catch {
+        /* unchanged */
+      }
       return;
     }
 
@@ -220,7 +224,9 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
               inline_keyboard: [
                 [
                   {
-                    text: isModel("sonnet") ? "\u2713 Sonnet 4.6" : "Sonnet 4.6",
+                    text: isModel("sonnet")
+                      ? "\u2713 Sonnet 4.6"
+                      : "Sonnet 4.6",
                     callback_data: "model:sonnet",
                   },
                   {

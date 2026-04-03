@@ -37,7 +37,8 @@ vi.mock("../storage/history.js", () => ({
 // ── Dynamic imports (after mocks) ────────────────────────────────────────────
 
 const { getRecentBySenderId } = await import("../storage/history.js");
-const { enrichDMPrompt, enrichGroupPrompt } = await import("../core/prompt-builder.js");
+const { enrichDMPrompt, enrichGroupPrompt } =
+  await import("../core/prompt-builder.js");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -110,8 +111,20 @@ describe("enrichGroupPrompt — extended branch coverage", () => {
 
   it("includes context when there are exactly 2 messages (minimum enrichment case)", () => {
     vi.mocked(getRecentBySenderId).mockReturnValue([
-      msg(1, 10, "Alice", "prior message", new Date("2025-06-01T10:00:00Z").getTime()),
-      msg(2, 10, "Alice", "current message", new Date("2025-06-01T10:01:00Z").getTime()),
+      msg(
+        1,
+        10,
+        "Alice",
+        "prior message",
+        new Date("2025-06-01T10:00:00Z").getTime(),
+      ),
+      msg(
+        2,
+        10,
+        "Alice",
+        "current message",
+        new Date("2025-06-01T10:01:00Z").getTime(),
+      ),
     ]);
     const result = enrichGroupPrompt("current message", "chat-x", 10);
     expect(result).toContain("Alice's recent messages in this group:");
@@ -127,7 +140,7 @@ describe("enrichGroupPrompt — extended branch coverage", () => {
     vi.mocked(getRecentBySenderId).mockReturnValue([
       msg(1, 20, "FirstSender", "msg a", Date.now() - 5000),
       msg(2, 20, "SecondSender", "msg b", Date.now() - 3000), // prior[1]
-      msg(3, 20, "ThirdSender", "current msg", Date.now()),   // current (slice off)
+      msg(3, 20, "ThirdSender", "current msg", Date.now()), // current (slice off)
     ]);
     const result = enrichGroupPrompt("current msg", "chat-y", 20);
     // senderName header should be from index 0 of priorMsgs
@@ -272,7 +285,11 @@ describe("enrichGroupPrompt — extended branch coverage", () => {
       msg(1, 90, "Karl", "prior", Date.now() - 1000),
       msg(2, 90, "Karl", "current line 1\ncurrent line 2", Date.now()),
     ]);
-    const result = enrichGroupPrompt("current line 1\ncurrent line 2", "chat-ml", 90);
+    const result = enrichGroupPrompt(
+      "current line 1\ncurrent line 2",
+      "chat-ml",
+      90,
+    );
     expect(result).toContain("current line 1\ncurrent line 2");
     expect(result.endsWith("current line 1\ncurrent line 2")).toBe(true);
   });

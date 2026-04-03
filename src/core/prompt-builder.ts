@@ -33,8 +33,7 @@ export function enrichGroupPrompt(
   const senderName = priorMsgs[0].senderName;
   const contextLines = priorMsgs
     .map(
-      (m) =>
-        `  [${formatSmartTimestamp(m.timestamp)}] ${m.text.slice(0, 200)}`,
+      (m) => `  [${formatSmartTimestamp(m.timestamp)}] ${m.text.slice(0, 200)}`,
     )
     .join("\n");
   return `[${senderName}'s recent messages in this group:\n${contextLines}]\n\n${prompt}`;

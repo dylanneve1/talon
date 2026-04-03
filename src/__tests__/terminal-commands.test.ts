@@ -77,7 +77,15 @@ vi.mock("../storage/sessions.js", () => ({
   getAllSessions: () => mockGetAllSessions(),
 }));
 
-const mockGetLoadedPlugins = vi.fn(() => [] as Array<{ plugin: Record<string, unknown>; config: Record<string, unknown>; envVars: Record<string, string>; path: string }>);
+const mockGetLoadedPlugins = vi.fn(
+  () =>
+    [] as Array<{
+      plugin: Record<string, unknown>;
+      config: Record<string, unknown>;
+      envVars: Record<string, string>;
+      path: string;
+    }>,
+);
 vi.mock("../core/plugin.js", () => ({
   getLoadedPlugins: () => mockGetLoadedPlugins(),
 }));
@@ -444,7 +452,9 @@ describe("/status command", () => {
     const ctx = makeMockContext();
     await tryRunCommand("/status", ctx);
     // Should mention the session name
-    const calls = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls.flat();
+    const calls = (
+      ctx.renderer.writeln as ReturnType<typeof vi.fn>
+    ).mock.calls.flat();
     const output = calls.join(" ");
     expect(output).toContain("My Work Session");
   });
@@ -452,7 +462,12 @@ describe("/status command", () => {
   it("/status shows plugins section when plugins are loaded", async () => {
     mockGetLoadedPlugins.mockReturnValueOnce([
       {
-        plugin: { name: "my-plugin", version: "1.0", description: "A test plugin", mcpServerPath: "/path/tools.ts" },
+        plugin: {
+          name: "my-plugin",
+          version: "1.0",
+          description: "A test plugin",
+          mcpServerPath: "/path/tools.ts",
+        },
         config: {},
         envVars: {},
         path: "/fake/my-plugin",
@@ -460,7 +475,9 @@ describe("/status command", () => {
     ]);
     const ctx = makeMockContext();
     await tryRunCommand("/status", ctx);
-    const calls = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls.flat();
+    const calls = (
+      ctx.renderer.writeln as ReturnType<typeof vi.fn>
+    ).mock.calls.flat();
     const out = calls.join(" ");
     expect(out).toContain("my-plugin");
     expect(out).toContain("Plugins");
@@ -478,7 +495,9 @@ describe("/status command", () => {
     ]);
     const ctx = makeMockContext();
     await tryRunCommand("/status", ctx);
-    const calls = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls.flat();
+    const calls = (
+      ctx.renderer.writeln as ReturnType<typeof vi.fn>
+    ).mock.calls.flat();
     expect(calls.join(" ")).toContain("actions only");
   });
 });
@@ -494,7 +513,9 @@ describe("/effort command", () => {
     mockGetChatSettings.mockReturnValueOnce({ effort: "high" });
     const ctx = makeMockContext();
     await tryRunCommand("/effort", ctx);
-    expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(expect.stringContaining("high"));
+    expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
+      expect.stringContaining("high"),
+    );
     expect(ctx.reprompt).toHaveBeenCalled();
   });
 
@@ -502,7 +523,9 @@ describe("/effort command", () => {
     mockGetChatSettings.mockReturnValueOnce({});
     const ctx = makeMockContext();
     await tryRunCommand("/effort", ctx);
-    expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(expect.stringContaining("adaptive"));
+    expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
+      expect.stringContaining("adaptive"),
+    );
     expect(ctx.reprompt).toHaveBeenCalled();
   });
 
@@ -532,10 +555,18 @@ describe("/resume sort order", () => {
   it("sorts sessions by lastActive descending", async () => {
     const now = Date.now();
     mockGetAllSessions.mockReturnValueOnce([
-      { chatId: "t_older", info: { turns: 2, lastActive: now - 7200_000, sessionName: "older" } },
-      { chatId: "t_newer", info: { turns: 3, lastActive: now - 3600_000, sessionName: "newer" } },
+      {
+        chatId: "t_older",
+        info: { turns: 2, lastActive: now - 7200_000, sessionName: "older" },
+      },
+      {
+        chatId: "t_newer",
+        info: { turns: 3, lastActive: now - 3600_000, sessionName: "newer" },
+      },
     ]);
-    const ctx = makeMockContext({ waitForInput: vi.fn().mockResolvedValue("1") });
+    const ctx = makeMockContext({
+      waitForInput: vi.fn().mockResolvedValue("1"),
+    });
     await tryRunCommand("/resume", ctx);
     // Selection "1" should pick the first listed session (most recent = t_newer)
     expect(ctx.initNewChat).toHaveBeenCalledWith("t_newer");

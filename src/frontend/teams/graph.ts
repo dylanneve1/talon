@@ -74,7 +74,9 @@ function loadTokens(): StoredTokens | null {
     if (existsSync(TOKEN_FILE)) {
       return JSON.parse(readFileSync(TOKEN_FILE, "utf-8"));
     }
-  } catch { /* corrupt */ }
+  } catch {
+    /* corrupt */
+  }
   return null;
 }
 
@@ -85,7 +87,10 @@ function saveTokens(tokens: StoredTokens): void {
 
 // ── OAuth helpers ────────────────────────────────────────────────────────────
 
-async function postForm(url: string, params: Record<string, string>): Promise<Record<string, unknown>> {
+async function postForm(
+  url: string,
+  params: Record<string, string>,
+): Promise<Record<string, unknown>> {
   const body = new URLSearchParams(params).toString();
   const resp = await proxyFetch(url, {
     method: "POST",
@@ -96,7 +101,9 @@ async function postForm(url: string, params: Record<string, string>): Promise<Re
   return (await resp.json()) as Record<string, unknown>;
 }
 
-async function refreshAccessToken(refreshToken: string): Promise<StoredTokens | null> {
+async function refreshAccessToken(
+  refreshToken: string,
+): Promise<StoredTokens | null> {
   const data = (await postForm(`${AUTH_BASE}/token`, {
     grant_type: "refresh_token",
     client_id: CLIENT_ID,
@@ -105,7 +112,10 @@ async function refreshAccessToken(refreshToken: string): Promise<StoredTokens | 
   })) as TokenResponse;
 
   if (data.error) {
-    logError("teams", `Token refresh failed: ${data.error_description || data.error}`);
+    logError(
+      "teams",
+      `Token refresh failed: ${data.error_description || data.error}`,
+    );
     return null;
   }
 
@@ -129,7 +139,10 @@ export async function deviceCodeAuth(): Promise<StoredTokens> {
   console.log(`  To sign in, open: ${dcResp.verification_uri}`);
   console.log(`  Enter code: ${dcResp.user_code}`);
   console.log();
-  log("teams", `Device code auth: go to ${dcResp.verification_uri} and enter ${dcResp.user_code}`);
+  log(
+    "teams",
+    `Device code auth: go to ${dcResp.verification_uri} and enter ${dcResp.user_code}`,
+  );
 
   // Poll for token
   const pollInterval = (dcResp.interval || 5) * 1000;
@@ -161,7 +174,9 @@ export async function deviceCodeAuth(): Promise<StoredTokens> {
       continue;
     }
 
-    throw new Error(`Auth failed: ${tokenResp.error_description || tokenResp.error}`);
+    throw new Error(
+      `Auth failed: ${tokenResp.error_description || tokenResp.error}`,
+    );
   }
 
   throw new Error("Device code auth timed out (15 minutes)");
@@ -183,7 +198,8 @@ export class GraphClient {
 
     log("teams", "Refreshing access token...");
     const refreshed = await refreshAccessToken(this.tokens.refreshToken);
-    if (!refreshed) throw new Error("Token refresh failed — re-authentication needed");
+    if (!refreshed)
+      throw new Error("Token refresh failed — re-authentication needed");
 
     this.tokens = { ...this.tokens, ...refreshed };
     saveTokens(this.tokens);
@@ -214,7 +230,9 @@ export class GraphClient {
 
   // ── Chat discovery ─────────────────────────────────────────────────────
 
-  async listChats(): Promise<Array<{ id: string; topic: string | null; chatType: string }>> {
+  async listChats(): Promise<
+    Array<{ id: string; topic: string | null; chatType: string }>
+  > {
     const data = await this.graphGet("/me/chats?$top=50");
     const chats = data.value as Array<Record<string, unknown>>;
     return chats.map((c) => ({
@@ -259,9 +277,15 @@ export class GraphClient {
 
   // ── Stored config ──────────────────────────────────────────────────────
 
-  getStoredChatId(): string | undefined { return this.tokens.chatId; }
-  getStoredChatTopic(): string | undefined { return this.tokens.chatTopic; }
-  getStoredUserId(): string | undefined { return this.tokens.userId; }
+  getStoredChatId(): string | undefined {
+    return this.tokens.chatId;
+  }
+  getStoredChatTopic(): string | undefined {
+    return this.tokens.chatTopic;
+  }
+  getStoredUserId(): string | undefined {
+    return this.tokens.userId;
+  }
 
   saveChatConfig(chatId: string, chatTopic: string, userId: string): void {
     this.tokens.chatId = chatId;

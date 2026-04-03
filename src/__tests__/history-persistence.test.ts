@@ -23,12 +23,8 @@ vi.mock("write-file-atomic", () => ({
   default: { sync: (...args: unknown[]) => writeFileSyncMock(...args) },
 }));
 
-const {
-  loadHistory,
-  flushHistory,
-  pushMessage,
-  getRecentHistory,
-} = await import("../storage/history.js");
+const { loadHistory, flushHistory, pushMessage, getRecentHistory } =
+  await import("../storage/history.js");
 
 describe("history persistence", () => {
   beforeEach(() => {
@@ -37,10 +33,31 @@ describe("history persistence", () => {
 
   describe("loadHistory", () => {
     it("loads history from a JSON file when it exists", () => {
-      const data: Record<string, Array<{ msgId: number; senderId: number; senderName: string; text: string; timestamp: number }>> = {
+      const data: Record<
+        string,
+        Array<{
+          msgId: number;
+          senderId: number;
+          senderName: string;
+          text: string;
+          timestamp: number;
+        }>
+      > = {
         "chat-1": [
-          { msgId: 1, senderId: 100, senderName: "Alice", text: "hello", timestamp: 1000 },
-          { msgId: 2, senderId: 200, senderName: "Bob", text: "hi", timestamp: 2000 },
+          {
+            msgId: 1,
+            senderId: 100,
+            senderName: "Alice",
+            text: "hello",
+            timestamp: 1000,
+          },
+          {
+            msgId: 2,
+            senderId: 200,
+            senderName: "Bob",
+            text: "hi",
+            timestamp: 2000,
+          },
         ],
       };
       existsSyncMock.mockReturnValue(true);
@@ -89,9 +106,15 @@ describe("history persistence", () => {
 
     it("loads multiple chats", () => {
       const data = {
-        "chat-a": [{ msgId: 1, senderId: 1, senderName: "A", text: "a", timestamp: 1 }],
-        "chat-b": [{ msgId: 2, senderId: 2, senderName: "B", text: "b", timestamp: 2 }],
-        "chat-c": [{ msgId: 3, senderId: 3, senderName: "C", text: "c", timestamp: 3 }],
+        "chat-a": [
+          { msgId: 1, senderId: 1, senderName: "A", text: "a", timestamp: 1 },
+        ],
+        "chat-b": [
+          { msgId: 2, senderId: 2, senderName: "B", text: "b", timestamp: 2 },
+        ],
+        "chat-c": [
+          { msgId: 3, senderId: 3, senderName: "C", text: "c", timestamp: 3 },
+        ],
       };
       existsSyncMock.mockReturnValue(true);
       readFileSyncMock.mockReturnValue(JSON.stringify(data));
@@ -122,7 +145,8 @@ describe("history persistence", () => {
 
       expect(writeFileSyncMock).toHaveBeenCalled();
       // Last write call is the actual data (earlier calls may be .bak backups)
-      const lastCall = writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
+      const lastCall =
+        writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
       const writtenData = lastCall[1] as string;
       const parsed = JSON.parse(writtenData.trim());
       expect(parsed[id]).toBeDefined();
@@ -144,10 +168,9 @@ describe("history persistence", () => {
 
       flushHistory();
 
-      expect(mkdirSyncMock).toHaveBeenCalledWith(
-        expect.any(String),
-        { recursive: true },
-      );
+      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), {
+        recursive: true,
+      });
     });
 
     it("handles write errors gracefully (line 96 TRUE branch: Error thrown on data write)", () => {
@@ -192,7 +215,9 @@ describe("history — non-Error throw coverage", () => {
 
     existsSyncMock.mockReturnValue(false); // no backup attempt
     // Throw a plain string (non-Error) to cover `err instanceof Error ? ... : err`
-    writeFileSyncMock.mockImplementation(() => { throw "disk quota string"; }); // eslint-disable-line @typescript-eslint/no-throw-literal
+    writeFileSyncMock.mockImplementation(() => {
+      throw "disk quota string";
+    }); // eslint-disable-line @typescript-eslint/no-throw-literal
 
     expect(() => flushHistory()).not.toThrow();
     expect(vi.mocked(logError)).toHaveBeenCalled();

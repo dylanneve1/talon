@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { setTimezone, getTimezone, formatSmartTimestamp, formatFullDatetime, formatRelativeAge } from "../util/time.js";
+import {
+  setTimezone,
+  getTimezone,
+  formatSmartTimestamp,
+  formatFullDatetime,
+  formatRelativeAge,
+} from "../util/time.js";
 
 describe("time utilities", () => {
   describe("setTimezone / getTimezone", () => {

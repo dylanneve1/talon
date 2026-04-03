@@ -67,9 +67,11 @@ export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
   chatChains.set(chatId, queued); // must happen before any await
 
   // Clean up chain entry when this is the last in the chain
-  queued.catch(() => {}).finally(() => {
-    if (chatChains.get(chatId) === queued) chatChains.delete(chatId);
-  });
+  queued
+    .catch(() => {})
+    .finally(() => {
+      if (chatChains.get(chatId) === queued) chatChains.delete(chatId);
+    });
 
   return queued;
 }
@@ -90,17 +92,26 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   // Dream check — fire-and-forget background memory consolidation if due
   maybeStartDream();
 
-  logDebug("dispatcher", `[${reqId}] ${params.source} chat=${params.chatId} started (active=${activeCount})`);
+  logDebug(
+    "dispatcher",
+    `[${reqId}] ${params.source} chat=${params.chatId} started (active=${activeCount})`,
+  );
   context.acquire(params.numericChatId, params.chatId);
 
   let typingTimer: ReturnType<typeof setInterval> | undefined;
   try {
     await sendTyping(params.numericChatId).catch((err: unknown) => {
-      logWarn("dispatcher", `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`);
+      logWarn(
+        "dispatcher",
+        `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     });
     typingTimer = setInterval(() => {
       sendTyping(params.numericChatId).catch((err: unknown) => {
-        logWarn("dispatcher", `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`);
+        logWarn(
+          "dispatcher",
+          `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
       });
     }, 4000);
 
@@ -117,7 +128,10 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
 
     onActivity();
 
-    logDebug("dispatcher", `[${reqId}] completed in ${result.durationMs}ms (in=${result.inputTokens} out=${result.outputTokens})`);
+    logDebug(
+      "dispatcher",
+      `[${reqId}] completed in ${result.durationMs}ms (in=${result.inputTokens} out=${result.outputTokens})`,
+    );
 
     return {
       ...result,

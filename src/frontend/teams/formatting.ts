@@ -30,11 +30,21 @@ function markdownToCardBody(text: string): CardElement[] {
   for (const token of tokens) {
     switch (token.type) {
       case "heading":
-        body.push({ type: "TextBlock", text: `**${cleanInline(token.text)}**`, wrap: true, size: "Medium", weight: "Bolder" });
+        body.push({
+          type: "TextBlock",
+          text: `**${cleanInline(token.text)}**`,
+          wrap: true,
+          size: "Medium",
+          weight: "Bolder",
+        });
         break;
 
       case "paragraph":
-        body.push({ type: "TextBlock", text: cleanInline(token.text), wrap: true });
+        body.push({
+          type: "TextBlock",
+          text: cleanInline(token.text),
+          wrap: true,
+        });
         break;
 
       case "code": {
@@ -79,7 +89,14 @@ function markdownToCardBody(text: string): CardElement[] {
           style: "accent",
           cells: header.map((cell) => ({
             type: "TableCell",
-            items: [{ type: "TextBlock", text: cleanInline(cell.text), weight: "Bolder", wrap: true }],
+            items: [
+              {
+                type: "TextBlock",
+                text: cleanInline(cell.text),
+                weight: "Bolder",
+                wrap: true,
+              },
+            ],
           })),
         };
 
@@ -87,7 +104,9 @@ function markdownToCardBody(text: string): CardElement[] {
           type: "TableRow",
           cells: row.map((cell) => ({
             type: "TableCell",
-            items: [{ type: "TextBlock", text: cleanInline(cell.text), wrap: true }],
+            items: [
+              { type: "TextBlock", text: cleanInline(cell.text), wrap: true },
+            ],
           })),
         }));
 
@@ -106,13 +125,25 @@ function markdownToCardBody(text: string): CardElement[] {
         body.push({
           type: "Container",
           style: "emphasis",
-          items: [{ type: "TextBlock", text: cleanInline(String(bqToken.text)), wrap: true, isSubtle: true }],
+          items: [
+            {
+              type: "TextBlock",
+              text: cleanInline(String(bqToken.text)),
+              wrap: true,
+              isSubtle: true,
+            },
+          ],
         });
         break;
       }
 
       case "hr":
-        body.push({ type: "TextBlock", text: "───────────────────────────────", wrap: false, isSubtle: true });
+        body.push({
+          type: "TextBlock",
+          text: "───────────────────────────────",
+          wrap: false,
+          isSubtle: true,
+        });
         break;
 
       case "space":
@@ -120,8 +151,16 @@ function markdownToCardBody(text: string): CardElement[] {
 
       default:
         // Fallback: render as plain text
-        if ("text" in token && typeof token.text === "string" && token.text.trim()) {
-          body.push({ type: "TextBlock", text: cleanInline(token.text), wrap: true });
+        if (
+          "text" in token &&
+          typeof token.text === "string" &&
+          token.text.trim()
+        ) {
+          body.push({
+            type: "TextBlock",
+            text: cleanInline(token.text),
+            wrap: true,
+          });
         }
         break;
     }

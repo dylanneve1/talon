@@ -8,7 +8,14 @@
  */
 
 import pino from "pino";
-import { existsSync, readFileSync, mkdirSync, statSync, renameSync, unlinkSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  statSync,
+  renameSync,
+  unlinkSync,
+} from "node:fs";
 import { dirs, files } from "./paths.js";
 
 export type LogComponent =
@@ -38,7 +45,11 @@ const LOG_FILE = files.log;
 
 // Ensure .talon dir exists for log file
 if (!existsSync(dirs.root)) {
-  try { mkdirSync(dirs.root, { recursive: true }); } catch { /* ignore */ }
+  try {
+    mkdirSync(dirs.root, { recursive: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 // Rotate log file on startup if it exceeds 10MB
@@ -46,14 +57,21 @@ const MAX_LOG_SIZE = 10 * 1024 * 1024;
 try {
   if (existsSync(LOG_FILE) && statSync(LOG_FILE).size > MAX_LOG_SIZE) {
     const rotated = `${LOG_FILE}.old`;
-    try { unlinkSync(rotated); } catch { /* ignore */ }
+    try {
+      unlinkSync(rotated);
+    } catch {
+      /* ignore */
+    }
     renameSync(LOG_FILE, rotated);
   }
-} catch { /* ignore */ }
+} catch {
+  /* ignore */
+}
 
 // Detect if running as a bun compiled binary (pino-pretty can't be bundled).
 // import.meta.path is Bun-specific — undefined in Node.js/Vitest, so guard with ?.
-const isBunBinary = (import.meta as { path?: string }).path?.startsWith("/$bunfs/") ?? false;
+const isBunBinary =
+  (import.meta as { path?: string }).path?.startsWith("/$bunfs/") ?? false;
 
 // Suppress console output for terminal frontend (stdout belongs to the REPL)
 let quiet = process.env.TALON_QUIET === "1";
@@ -64,7 +82,9 @@ if (!quiet) {
       const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
       if (cfg.frontend === "terminal") quiet = true;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 const logger = pino({
@@ -72,15 +92,19 @@ const logger = pino({
   transport: {
     targets: [
       // Console output (disabled in quiet mode or compiled binary)
-      ...(!quiet && !isBunBinary ? [{
-        target: "pino-pretty",
-        level: "trace" as const,
-        options: {
-          colorize: true,
-          ignore: "pid,hostname",
-          translateTime: "HH:MM:ss",
-        },
-      }] : []),
+      ...(!quiet && !isBunBinary
+        ? [
+            {
+              target: "pino-pretty",
+              level: "trace" as const,
+              options: {
+                colorize: true,
+                ignore: "pid,hostname",
+                translateTime: "HH:MM:ss",
+              },
+            },
+          ]
+        : []),
       // JSON file output (always active)
       {
         target: "pino/file",
@@ -124,4 +148,3 @@ export function logDebug(component: LogComponent, message: string): void {
 (globalThis as Record<string, unknown>).__talonLog = log;
 (globalThis as Record<string, unknown>).__talonLogError = logError;
 (globalThis as Record<string, unknown>).__talonLogWarn = logWarn;
-

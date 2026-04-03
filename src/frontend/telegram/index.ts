@@ -13,10 +13,7 @@ import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions.js";
-import {
-  initUserClient,
-  disconnectUserClient,
-} from "./userbot.js";
+import { initUserClient, disconnectUserClient } from "./userbot.js";
 import { registerCommands, setAdminUserId } from "./commands.js";
 import { registerMiddleware } from "./middleware.js";
 import { registerCallbacks } from "./callbacks.js";
@@ -36,7 +33,10 @@ export type TelegramFrontend = {
 
 // ── Factory ─────────────────────────────────────────────────────────────────
 
-export function createTelegramFrontend(config: TalonConfig, gateway: Gateway): TelegramFrontend {
+export function createTelegramFrontend(
+  config: TalonConfig,
+  gateway: Gateway,
+): TelegramFrontend {
   const bot = new Bot(config.botToken!);
   bot.api.config.use(apiThrottler());
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
@@ -61,7 +61,9 @@ export function createTelegramFrontend(config: TalonConfig, gateway: Gateway): T
 
     async init() {
       // Register Telegram action handler with the core gateway
-      gateway.setFrontendHandler(createTelegramActionHandler(bot, InputFile, config.botToken!, gateway));
+      gateway.setFrontendHandler(
+        createTelegramActionHandler(bot, InputFile, config.botToken!, gateway),
+      );
 
       const port = await gateway.start(19876);
       log("bot", `Gateway started on port ${port}`);
@@ -75,7 +77,10 @@ export function createTelegramFrontend(config: TalonConfig, gateway: Gateway): T
       await bot.api.deleteMyCommands();
       await bot.api.setMyCommands([
         { command: "start", description: "Introduction" },
-        { command: "settings", description: "View and change all chat settings" },
+        {
+          command: "settings",
+          description: "View and change all chat settings",
+        },
         { command: "memory", description: "View what Talon remembers" },
         { command: "status", description: "Session info, usage, and stats" },
         { command: "ping", description: "Health check with latency" },
@@ -100,7 +105,10 @@ export function createTelegramFrontend(config: TalonConfig, gateway: Gateway): T
           })
           .catch((err) => logError("userbot", "Init failed", err));
       } else {
-        log("userbot", "TALON_API_ID/TALON_API_HASH not set -- using in-memory history only.");
+        log(
+          "userbot",
+          "TALON_API_ID/TALON_API_HASH not set -- using in-memory history only.",
+        );
       }
     },
 
@@ -119,12 +127,24 @@ export function createTelegramFrontend(config: TalonConfig, gateway: Gateway): T
     },
 
     async stop() {
-      try { await bot.stop(); log("shutdown", "Bot disconnected"); }
-      catch (err) { logError("shutdown", "Bot stop error", err); }
-      try { await disconnectUserClient(); log("shutdown", "User client disconnected"); }
-      catch (err) { logError("shutdown", "User client disconnect error", err); }
-      try { await gateway.stop(); log("shutdown", "Gateway stopped"); }
-      catch (err) { logError("shutdown", "Gateway stop error", err); }
+      try {
+        await bot.stop();
+        log("shutdown", "Bot disconnected");
+      } catch (err) {
+        logError("shutdown", "Bot stop error", err);
+      }
+      try {
+        await disconnectUserClient();
+        log("shutdown", "User client disconnected");
+      } catch (err) {
+        logError("shutdown", "User client disconnect error", err);
+      }
+      try {
+        await gateway.stop();
+        log("shutdown", "Gateway stopped");
+      } catch (err) {
+        logError("shutdown", "Gateway stop error", err);
+      }
     },
   };
 }
