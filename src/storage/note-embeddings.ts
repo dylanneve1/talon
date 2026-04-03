@@ -23,7 +23,7 @@ type EmbeddingIndex = {
 // ── Config ─────────────────────────────────────────────────────────────────
 
 const INDEX_FILE = resolve(dirs.workspace, "notes", ".embeddings.json");
-const GEMINI_EMBED_URL = "https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent";
+const GEMINI_EMBED_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent";
 
 function getApiKey(): string {
   return process.env.TALON_GEMINI_API_KEY || "";
@@ -42,7 +42,7 @@ async function getGeminiEmbedding(text: string): Promise<number[] | null> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "models/text-embedding-004",
+        model: "models/gemini-embedding-001",
         content: { parts: [{ text }] },
       }),
       signal: AbortSignal.timeout(10_000),
@@ -60,13 +60,13 @@ async function getGeminiEmbeddingsBatch(texts: string[]): Promise<(number[] | nu
   const key = getApiKey();
   if (!key || texts.length === 0) return texts.map(() => null);
   try {
-    const batchUrl = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:batchEmbedContents?key=${key}`;
+    const batchUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:batchEmbedContents?key=${key}`;
     const resp = await fetch(batchUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         requests: texts.map(text => ({
-          model: "models/text-embedding-004",
+          model: "models/gemini-embedding-001",
           content: { parts: [{ text }] },
         })),
       }),
