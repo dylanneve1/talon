@@ -15,8 +15,12 @@ jobs:
   quality:
     name: Code Quality
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - uses: actions/setup-node@v4
         with:
@@ -31,7 +35,25 @@ jobs:
         run: npm run lint
 
       - name: Format check
+        id: format-check
         run: npm run format:check
+        continue-on-error: true
+
+      - name: Auto-format and push
+        if: steps.format-check.outcome == 'failure'
+        run: |
+          npm run format
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: auto-format with prettier [skip ci]" || exit 0
+          git push
+
+      - name: Fail if format was wrong
+        if: steps.format-check.outcome == 'failure'
+        run: |
+          echo "::warning::Code was not formatted — auto-formatted and pushed a fix commit."
+          exit 1
 
   # ── Unit & integration tests (matrix) ─────────────────────────
   test:
