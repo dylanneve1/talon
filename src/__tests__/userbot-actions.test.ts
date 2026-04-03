@@ -31,7 +31,7 @@ const isUserClientReadyMock = vi.hoisted(() => vi.fn().mockReturnValue(true));
 const statSyncMock = vi.hoisted(() => vi.fn().mockReturnValue({ size: 100 }));
 const readFileSyncMock = vi.hoisted(() => vi.fn().mockReturnValue(Buffer.from("test")));
 
-vi.mock("../frontend/telegram/userbot.js", () => ({
+const userbotMockExports = {
   isUserClientReady: isUserClientReadyMock,
   sendUserbotMessage: sendUserbotMessageMock,
   sendUserbotTyping: sendUserbotTypingMock,
@@ -55,7 +55,10 @@ vi.mock("../frontend/telegram/userbot.js", () => ({
   getOnlineCount: getOnlineCountMock,
   downloadMessageMedia: downloadMessageMediaMock,
   getClient: getClientMock,
-}));
+};
+
+vi.mock("../frontend/telegram/userbot.js", () => userbotMockExports);
+vi.mock("../frontend/telegram/userbot/client.js", () => userbotMockExports);
 
 vi.mock("../core/gateway.js", () => ({
   withRetry: vi.fn().mockImplementation((fn: () => unknown) => fn()),
