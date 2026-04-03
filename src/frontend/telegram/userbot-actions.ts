@@ -2387,6 +2387,36 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Channel management ───────────────────────────────────────────────────
+
+      case "set_channel_username": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const username = String(body.username ?? ""); // empty string removes username
+        await withRetry(() => client!.invoke(new Api.channels.UpdateUsername({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          channel: p as any,
+          username,
+        })));
+        return { ok: true, username: username || null };
+      }
+
+      case "set_discussion_group": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const channelPeer = body.channel_id ? Number(body.channel_id) : peer;
+        const groupId = Number(body.group_id);
+        if (!groupId) return { ok: false, error: "group_id (the supergroup to use as discussion) is required" };
+        await withRetry(() => client!.invoke(new Api.channels.SetDiscussionGroup({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          broadcast: channelPeer as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          group: groupId as any,
+        })));
+        return { ok: true, channel_id: channelPeer, group_id: groupId };
+      }
+
       // ── Forum topic control ──────────────────────────────────────────────────
 
       case "close_forum_topic": {
