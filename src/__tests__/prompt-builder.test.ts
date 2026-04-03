@@ -3,6 +3,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../storage/history.js", () => ({
   getRecentBySenderId: vi.fn(() => []),
 }));
+vi.mock("../storage/learning.js", () => ({
+  getUserProfile: vi.fn(() => null),
+}));
+vi.mock("../storage/goals.js", () => ({
+  getActiveGoals: vi.fn(() => []),
+}));
+vi.mock("../storage/relationships.js", () => ({
+  getChatProfile: vi.fn(() => null),
+}));
 
 const { getRecentBySenderId } = await import("../storage/history.js");
 const { enrichDMPrompt, enrichGroupPrompt } = await import(
@@ -11,17 +20,17 @@ const { enrichDMPrompt, enrichGroupPrompt } = await import(
 
 describe("enrichDMPrompt", () => {
   it("prepends DM metadata", () => {
-    const result = enrichDMPrompt("hello", "Alice");
+    const result = enrichDMPrompt("hello", "Alice", 100);
     expect(result).toBe("[DM from Alice]\nhello");
   });
 
   it("includes username when provided", () => {
-    const result = enrichDMPrompt("hello", "Alice", "alice42");
+    const result = enrichDMPrompt("hello", "Alice", 100, "alice42");
     expect(result).toBe("[DM from Alice (@alice42)]\nhello");
   });
 
   it("works without username", () => {
-    const result = enrichDMPrompt("hello", "Bob", undefined);
+    const result = enrichDMPrompt("hello", "Bob", 100, undefined);
     expect(result).toBe("[DM from Bob]\nhello");
   });
 });

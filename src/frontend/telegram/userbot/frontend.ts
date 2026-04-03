@@ -351,7 +351,7 @@ async function processMessage(params: ProcessParams): Promise<void> {
 
   let enriched = prompt;
   if (!isGroup && senderName) {
-    enriched = enrichDMPrompt(prompt, senderName, senderUsername);
+    enriched = enrichDMPrompt(prompt, senderName, senderId ?? 0, senderUsername);
     if (senderId && !knownDmSenders.has(senderId)) {
       knownDmSenders.add(senderId);
       log("userbot-frontend", `New DM sender: ${senderName}${senderUsername ? ` (@${senderUsername})` : ""} [id:${senderId}]`);

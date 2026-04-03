@@ -30,6 +30,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../storage/history.js", () => ({
   getRecentBySenderId: vi.fn(() => []),
 }));
+vi.mock("../storage/learning.js", () => ({
+  getUserProfile: vi.fn(() => null),
+}));
+vi.mock("../storage/goals.js", () => ({
+  getActiveGoals: vi.fn(() => []),
+}));
+vi.mock("../storage/relationships.js", () => ({
+  getChatProfile: vi.fn(() => null),
+}));
 
 // We do NOT mock ../util/time.js — formatSmartTimestamp is a pure function
 // that we want exercised for real so that timestamp output is visible in results.
@@ -57,35 +66,35 @@ function msg(
 describe("enrichDMPrompt — extended edge cases", () => {
   it("omits the @tag when username is an empty string (falsy branch)", () => {
     // senderUsername = "" → `${senderUsername ? ` (@${senderUsername})` : ""}` → ""
-    const result = enrichDMPrompt("hello", "Alice", "");
+    const result = enrichDMPrompt("hello", "Alice", 100, "");
     expect(result).toBe("[DM from Alice]\nhello");
     expect(result).not.toContain("@");
   });
 
   it("preserves a multi-line prompt body verbatim", () => {
     const multiLine = "line one\nline two\nline three";
-    const result = enrichDMPrompt(multiLine, "Bob");
+    const result = enrichDMPrompt(multiLine, "Bob", 100);
     expect(result).toBe(`[DM from Bob]\n${multiLine}`);
   });
 
   it("handles special characters in sender name", () => {
-    const result = enrichDMPrompt("hi", "O'Brien & Co.", "obrien");
+    const result = enrichDMPrompt("hi", "O'Brien & Co.", 100, "obrien");
     expect(result).toBe("[DM from O'Brien & Co. (@obrien)]\nhi");
   });
 
   it("handles special characters in username", () => {
-    const result = enrichDMPrompt("hi", "User", "user.name_123");
+    const result = enrichDMPrompt("hi", "User", 100, "user.name_123");
     expect(result).toBe("[DM from User (@user.name_123)]\nhi");
   });
 
   it("handles an empty prompt string", () => {
-    const result = enrichDMPrompt("", "Carol");
+    const result = enrichDMPrompt("", "Carol", 100);
     expect(result).toBe("[DM from Carol]\n");
   });
 
   it("handles a whitespace-only sender name", () => {
     // No special handling expected — just passed through
-    const result = enrichDMPrompt("msg", "  ");
+    const result = enrichDMPrompt("msg", "  ", 100);
     expect(result).toBe("[DM from   ]\nmsg");
   });
 
@@ -93,7 +102,7 @@ describe("enrichDMPrompt — extended edge cases", () => {
     const name = "TestUser";
     const username = "tuser";
     const prompt = "test prompt";
-    const result = enrichDMPrompt(prompt, name, username);
+    const result = enrichDMPrompt(prompt, name, 100, username);
     expect(result.startsWith("[DM from TestUser (@tuser)]\n")).toBe(true);
     expect(result.endsWith(prompt)).toBe(true);
   });

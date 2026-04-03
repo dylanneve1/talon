@@ -20,6 +20,7 @@ import { rebuildSystemPrompt } from "../../util/config.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { formatSmartTimestamp, formatFullDatetime } from "../../util/time.js";
+import { recordResponse } from "../../storage/self-monitor.js";
 
 import type { QueryParams, QueryResult } from "../../core/types.js";
 
@@ -424,6 +425,11 @@ export async function handleMessage(
     `[${chatId}] -> (${durationMs}ms, in=${inputTokens} out=${outputTokens} cache=${cacheHitPct}%` +
       `${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`,
   );
+
+  // Record metrics for self-monitoring
+  try {
+    recordResponse(inputTokens, outputTokens, durationMs, allResponseText.trim().length > 0, toolCalls);
+  } catch { /* self-monitor not loaded */ }
   traceMessage(chatId, "out", allResponseText, {
     durationMs,
     inputTokens,
