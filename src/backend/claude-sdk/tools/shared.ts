@@ -1225,4 +1225,89 @@ Type "query" runs the content as a Claude prompt with full tool access (can sear
     },
     async (params) => textResult(await callBridge("delete_cron_job", params)),
   );
+
+  // ── Goal tracking ─────────────────────────────────────────────────────────
+
+  server.tool(
+    "create_goal",
+    "Create a new goal with steps to track progress.",
+    {
+      title: z.string().describe("Goal title"),
+      description: z.string().describe("Goal description"),
+      priority: z.enum(["high", "medium", "low"]).optional().describe("Priority level (default: medium)"),
+      steps: z.array(z.string()).optional().describe("Ordered steps to complete the goal"),
+      tags: z.array(z.string()).optional().describe("Tags for categorization"),
+    },
+    async (params) => textResult(await callBridge("create_goal", params)),
+  );
+
+  server.tool(
+    "list_goals",
+    "List goals by status. Defaults to active goals.",
+    {
+      status: z.enum(["active", "completed", "paused", "abandoned", "all"]).optional().describe("Filter by status (default: active)"),
+    },
+    async (params) => textResult(await callBridge("list_goals", params)),
+  );
+
+  server.tool(
+    "get_goal",
+    "Get full details of a specific goal by ID.",
+    {
+      id: z.string().describe("Goal ID"),
+    },
+    async (params) => textResult(await callBridge("get_goal", params)),
+  );
+
+  server.tool(
+    "update_goal",
+    "Update a goal's progress, description, or other details.",
+    {
+      id: z.string().describe("Goal ID"),
+      progress: z.number().optional().describe("Progress percentage (0-100)"),
+      status: z.enum(["active", "completed", "paused", "abandoned"]).optional().describe("New status"),
+      description: z.string().optional().describe("Updated description"),
+      title: z.string().optional().describe("Updated title"),
+      priority: z.enum(["high", "medium", "low"]).optional().describe("Updated priority"),
+      tags: z.array(z.string()).optional().describe("Updated tags"),
+    },
+    async (params) => textResult(await callBridge("update_goal", params)),
+  );
+
+  server.tool(
+    "complete_goal",
+    "Mark a goal as completed (sets progress to 100% and completes all steps).",
+    {
+      id: z.string().describe("Goal ID"),
+    },
+    async (params) => textResult(await callBridge("complete_goal", params)),
+  );
+
+  server.tool(
+    "complete_goal_step",
+    "Mark a specific step of a goal as done.",
+    {
+      goal_id: z.string().describe("Goal ID"),
+      step_index: z.number().describe("Step index (0-based)"),
+    },
+    async (params) => textResult(await callBridge("complete_goal_step", params)),
+  );
+
+  server.tool(
+    "abandon_goal",
+    "Mark a goal as abandoned.",
+    {
+      id: z.string().describe("Goal ID"),
+    },
+    async (params) => textResult(await callBridge("abandon_goal", params)),
+  );
+
+  server.tool(
+    "search_goals",
+    "Search goals by keyword across titles, descriptions, tags, and steps.",
+    {
+      query: z.string().describe("Search query"),
+    },
+    async (params) => textResult(await callBridge("search_goals", params)),
+  );
 }

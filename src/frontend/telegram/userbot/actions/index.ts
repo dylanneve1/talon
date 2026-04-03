@@ -23,6 +23,10 @@ import { registerFolderActions } from "./folders.js";
 import { registerPollActions } from "./polls.js";
 import { registerPrivacyActions } from "./privacy.js";
 import { registerLearningActions } from "./learning.js";
+import { registerGoalActions } from "./goals.js";
+import { registerRelationshipActions } from "./relationships.js";
+import { registerSummaryActions } from "./summaries.js";
+import { registerMonitoringActions } from "./monitoring.js";
 
 export type ActionHandler = (
   body: Record<string, unknown>,
@@ -61,6 +65,10 @@ export function createUserbotActionHandler(
   registerPollActions(registry, gateway, recordOurMessage);
   registerPrivacyActions(registry);
   registerLearningActions(registry);
+  registerGoalActions(registry);
+  registerRelationshipActions(registry);
+  registerSummaryActions(registry);
+  registerMonitoringActions(registry);
 
   return async (
     body: Record<string, unknown>,

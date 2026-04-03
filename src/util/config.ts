@@ -213,6 +213,23 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
     }
   } catch { /* no notes yet */ }
 
+  // Active goals summary
+  try {
+    const goalsPath = resolve(dirs.workspace, "memory", "goals.json");
+    if (existsSync(goalsPath)) {
+      const goalsData = JSON.parse(readFileSync(goalsPath, "utf-8"));
+      const active = goalsData.goals?.filter((g: { status: string }) => g.status === "active") ?? [];
+      if (active.length > 0) {
+        const goalLines = active.map((g: { priority: string; title: string; progress?: number; steps?: { done: boolean }[] }) => {
+          const progress = g.progress ?? 0;
+          const steps = g.steps?.filter((s) => !s.done).length ?? 0;
+          return `  - [${g.priority}] ${g.title} (${progress}%${steps > 0 ? `, ${steps} steps remaining` : ""})`;
+        });
+        parts.push(`## Active Goals (${active.length})\n\n${goalLines.join("\n")}\n\nUse goal tools to track progress. Review goals during conversations and heartbeats.`);
+      }
+    }
+  } catch { /* no goals yet */ }
+
   parts.push(`## Current Date & Time\n${formatFullDatetime()}`);
 
   // Plugin system prompt contributions (injected by caller)

@@ -24,6 +24,15 @@ Before doing anything else, check the learning state:
 - After completing tasks, use `add_insight` to record what you learned
 - Call `prune_insights` to decay old insights and keep the knowledge base fresh
 
+### Priority 0.5: Goal Progress
+
+- Call `list_goals` to review active goals
+- For each active goal, assess if any progress was made since last heartbeat
+- Update goal progress with `update_goal`
+- Complete steps that are done with `complete_goal_step`
+- If a goal seems stale or irrelevant, consider pausing or abandoning it
+- Create new goals based on patterns you notice in conversations
+
 ### Priority 1: Be proactive with people
 
 This is the most important task. You should:
