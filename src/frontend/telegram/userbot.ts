@@ -453,9 +453,7 @@ export async function saveStickerPack(params: {
   try {
     const bot = params.bot as {
       api: {
-        getStickerSet: (
-          name: string,
-        ) => Promise<{
+        getStickerSet: (name: string) => Promise<{
           title: string;
           name: string;
           stickers: Array<{ emoji?: string; file_id: string }>;

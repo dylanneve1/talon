@@ -148,13 +148,11 @@ export async function handleSharedAction(
             const data = (await resp.json()) as {
               results?: Array<{ title: string; url: string; content: string }>;
             };
-            results = (data.results ?? [])
-              .slice(0, limit)
-              .map((r) => ({
-                title: r.title,
-                url: r.url,
-                snippet: r.content ?? "",
-              }));
+            results = (data.results ?? []).slice(0, limit).map((r) => ({
+              title: r.title,
+              url: r.url,
+              snippet: r.content ?? "",
+            }));
             provider = "SearXNG";
           }
         } catch {
