@@ -51,6 +51,11 @@ const { handleSharedAction } = await import("../core/gateway-actions.js");
 const { resolveModelName } = await import("../storage/chat-settings.js");
 const { Cron } = await import("croner");
 
+// ── Configuration ───────────────────────────────────────────────────────────
+
+const NUM_RUNS = Number(process.env.FAST_CHECK_NUM_RUNS) || 100;
+const fcParams = { numRuns: NUM_RUNS };
+
 // ── Fuzz tests ───────────────────────────────────────────────────────────────
 
 describe("fuzz: classify()", () => {
@@ -63,6 +68,7 @@ describe("fuzz: classify()", () => {
         expect(typeof result.retryable).toBe("boolean");
         expect(typeof result.message).toBe("string");
       }),
+      fcParams,
     );
   });
 
@@ -73,6 +79,7 @@ describe("fuzz: classify()", () => {
         expect(result).toBeInstanceOf(TalonError);
         expect(result.reason).toBeTruthy();
       }),
+      fcParams,
     );
   });
 
@@ -93,6 +100,7 @@ describe("fuzz: classify()", () => {
           expect(result.reason).toBeTruthy();
         },
       ),
+      fcParams,
     );
   });
 
@@ -115,6 +123,7 @@ describe("fuzz: classify()", () => {
         const result = classify(input);
         expect(validReasons.has(result.reason)).toBe(true);
       }),
+      fcParams,
     );
   });
 
@@ -126,6 +135,7 @@ describe("fuzz: classify()", () => {
           expect(result.retryAfterMs).toBeGreaterThanOrEqual(0);
         }
       }),
+      fcParams,
     );
   });
 });
@@ -151,6 +161,7 @@ describe("fuzz: validateCronExpression()", () => {
           expect(typeof result.error).toBe("string");
         }
       }),
+      fcParams,
     );
   });
 
@@ -160,6 +171,7 @@ describe("fuzz: validateCronExpression()", () => {
         const result = realValidateCron(expr, tz);
         expect(typeof result.valid).toBe("boolean");
       }),
+      fcParams,
     );
   });
 });
@@ -179,6 +191,7 @@ describe("fuzz: handleSharedAction() — unknown actions", () => {
         const result = await handleSharedAction({ action: actionName }, 123);
         expect(result).toBeNull();
       }),
+      fcParams,
     );
   });
 
@@ -202,6 +215,7 @@ describe("fuzz: handleSharedAction() — unknown actions", () => {
           expect(result).toBeNull();
         },
       ),
+      fcParams,
     );
   });
 });
@@ -226,6 +240,7 @@ describe("fuzz: fetch_url URL validation", () => {
           }
         }
       }),
+      fcParams,
     );
 
     globalThis.fetch = originalFetch;
@@ -246,6 +261,7 @@ describe("fuzz: fetch_url URL validation", () => {
           }
         },
       ),
+      fcParams,
     );
   });
 });
@@ -257,6 +273,7 @@ describe("fuzz: resolveModelName()", () => {
         const result = resolveModelName(input);
         expect(typeof result).toBe("string");
       }),
+      fcParams,
     );
   });
 
@@ -266,6 +283,7 @@ describe("fuzz: resolveModelName()", () => {
         const result = resolveModelName(input);
         expect(result).toBe(result.trim());
       }),
+      fcParams,
     );
   });
 
@@ -280,6 +298,7 @@ describe("fuzz: resolveModelName()", () => {
           expect(result).toMatch(/^claude-/);
         },
       ),
+      fcParams,
     );
   });
 
@@ -297,6 +316,7 @@ describe("fuzz: resolveModelName()", () => {
         const result = resolveModelName(input);
         expect(result).toBe(input.trim());
       }),
+      fcParams,
     );
   });
 });

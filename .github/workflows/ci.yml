@@ -6,25 +6,51 @@ on:
   pull_request:
     branches: [main]
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
+  # ── Lint, format, and type-check ──────────────────────────────
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js 22
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 24
-      - name: Install dependencies
-        run: npm install
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
 
       - name: Type check
         run: npx tsc --noEmit
 
       - name: Lint
         run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+  # ── Unit & integration tests (matrix) ─────────────────────────
+  test:
+    name: Tests (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci
 
       - name: Run tests
         run: npx vitest run --reporter=verbose --reporter=json --outputFile=test-results.json
@@ -33,12 +59,184 @@ jobs:
         if: always()
         run: |
           if [ -f test-results.json ]; then
-            PASSED=$(node -e "const r=require('./test-results.json'); console.log(r.numPassedTests ?? 0)")
-            FAILED=$(node -e "const r=require('./test-results.json'); console.log(r.numFailedTests ?? 0)")
-            TOTAL=$(node -e "const r=require('./test-results.json'); console.log(r.numTotalTests ?? 0)")
-            echo "### Test Results" >> $GITHUB_STEP_SUMMARY
+            PASSED=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); console.log(r.numPassedTests ?? 0)")
+            FAILED=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); console.log(r.numFailedTests ?? 0)")
+            TOTAL=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); console.log(r.numTotalTests ?? 0)")
+            SUITES=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); console.log(r.numTotalTestSuites ?? 0)")
+            DURATION=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); const ms=r.testResults?.reduce((s,t)=>s+(t.endTime-t.startTime),0)??0; console.log((ms/1000).toFixed(1))")
+            echo "### Test Results (Node ${{ matrix.node-version }})" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Suites | $SUITES |" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | $FAILED |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total  | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| Duration | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-node-${{ matrix.node-version }}
+          path: test-results.json
+          retention-days: 30
+
+  # ── Coverage ──────────────────────────────────────────────────
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run tests with coverage
+        run: npx vitest run --coverage --reporter=verbose --reporter=json --outputFile=test-results.json
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Category | Coverage |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|----------|" >> $GITHUB_STEP_SUMMARY
+            node -e "
+              const c = JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json','utf8')).total;
+              for (const [k,v] of Object.entries(c)) {
+                console.log('| ' + k.charAt(0).toUpperCase() + k.slice(1) + ' | ' + v.pct + '% |');
+              }
+            " >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+  # ── Fuzz testing (property-based with fast-check) ─────────────
+  fuzz:
+    name: Fuzz Testing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run fuzz tests (extended iterations)
+        run: npx vitest run --reporter=verbose --reporter=json --outputFile=fuzz-results.json src/__tests__/fuzz.test.ts
+        env:
+          FAST_CHECK_NUM_RUNS: "10000"
+
+      - name: Fuzz summary
+        if: always()
+        run: |
+          if [ -f fuzz-results.json ]; then
+            PASSED=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numPassedTests ?? 0)")
+            FAILED=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numFailedTests ?? 0)")
+            TOTAL=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numTotalTests ?? 0)")
+            echo "### Fuzz Test Results" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "| Passed | Failed | Total |" >> $GITHUB_STEP_SUMMARY
             echo "|--------|--------|-------|" >> $GITHUB_STEP_SUMMARY
             echo "| $PASSED | $FAILED | $TOTAL |" >> $GITHUB_STEP_SUMMARY
           fi
+
+  # ── Mutation testing (Stryker) ────────────────────────────────
+  mutation:
+    name: Mutation Testing
+    runs-on: ubuntu-latest
+    # Only run on main pushes to save CI time on PRs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run mutation tests
+        run: npx stryker run
+        timeout-minutes: 30
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 30
+
+      - name: Mutation summary
+        if: always()
+        run: |
+          if [ -f reports/mutation/mutation.json ]; then
+            echo "### Mutation Testing Report" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            node -e "
+              const fs = require('fs');
+              if (fs.existsSync('reports/mutation/mutation.json')) {
+                const r = JSON.parse(fs.readFileSync('reports/mutation/mutation.json','utf8'));
+                const files = Object.values(r.files || {});
+                let killed=0, survived=0, timeout=0, noCov=0;
+                for (const f of files) {
+                  for (const m of f.mutants || []) {
+                    if (m.status==='Killed') killed++;
+                    else if (m.status==='Survived') survived++;
+                    else if (m.status==='Timeout') timeout++;
+                    else if (m.status==='NoCoverage') noCov++;
+                  }
+                }
+                const total = killed+survived+timeout+noCov;
+                const score = total > 0 ? ((killed+timeout)/total*100).toFixed(1) : 'N/A';
+                console.log('| Metric | Value |');
+                console.log('|--------|-------|');
+                console.log('| Score | ' + score + '% |');
+                console.log('| Killed | ' + killed + ' |');
+                console.log('| Survived | ' + survived + ' |');
+                console.log('| Timeout | ' + timeout + ' |');
+                console.log('| No Coverage | ' + noCov + ' |');
+                console.log('| Total | ' + total + ' |');
+              }
+            " >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ── Final status gate ─────────────────────────────────────────
+  ci-ok:
+    name: CI Status
+    if: always()
+    needs: [quality, test, coverage, fuzz]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check required jobs
+        run: |
+          echo "Quality: ${{ needs.quality.result }}"
+          echo "Test:    ${{ needs.test.result }}"
+          echo "Coverage: ${{ needs.coverage.result }}"
+          echo "Fuzz:    ${{ needs.fuzz.result }}"
+          if [[ "${{ needs.quality.result }}" != "success" ]] || \
+             [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.coverage.result }}" != "success" ]] || \
+             [[ "${{ needs.fuzz.result }}" != "success" ]]; then
+            echo "::error::One or more required jobs failed"
+            exit 1
+          fi
+          echo "All required jobs passed!"
