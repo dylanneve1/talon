@@ -2387,6 +2387,66 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Similar channels and stats ──────────────────────────────────────────
+
+      case "get_similar_channels": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.channels.GetChannelRecommendations({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          channel: p as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chats = (result.chats ?? []) as any[];
+        if (chats.length === 0) return { ok: true, text: "No similar channels found.", count: 0 };
+        const formatted = chats.map((c) => {
+          const username = c.username ? ` @${c.username}` : "";
+          const members = c.participantsCount ? ` (${c.participantsCount} members)` : "";
+          return `[chat:${Number(c.id)}]${username} ${c.title ?? "(no title)"}${members}`;
+        });
+        return { ok: true, text: formatted.join("\n"), count: chats.length };
+      }
+
+      case "get_channel_stats": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        try {
+          // Try broadcast stats first (channels), then megagroup stats
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let result: any;
+          try {
+            result = await withRetry(() => client!.invoke(new Api.stats.GetBroadcastStats({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              channel: p as any,
+              dark: false,
+            })));
+          } catch {
+            result = await withRetry(() => client!.invoke(new Api.stats.GetMegagroupStats({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              channel: p as any,
+              dark: false,
+            })));
+          }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const r = result as any;
+          return {
+            ok: true,
+            period: r.period ? { min: r.period.minDate, max: r.period.maxDate } : null,
+            followers: r.followers ? { current: Number(r.followers.current ?? 0), previous: Number(r.followers.previous ?? 0) } : null,
+            views_per_post: r.viewsPerPost ? { current: Number(r.viewsPerPost.current ?? 0), previous: Number(r.viewsPerPost.previous ?? 0) } : null,
+            shares_per_post: r.sharesPerPost ? { current: Number(r.sharesPerPost.current ?? 0) } : null,
+            reactions_per_post: r.reactionsPerPost ? { current: Number(r.reactionsPerPost.current ?? 0) } : null,
+            messages: r.messages ? { current: Number(r.messages.current ?? 0), previous: Number(r.messages.previous ?? 0) } : null,
+          };
+        } catch (err) {
+          return { ok: false, error: `Stats not available: ${err instanceof Error ? err.message : String(err)}` };
+        }
+      }
+
       // ── Emoji status ────────────────────────────────────────────────────────
 
       case "set_emoji_status": {
