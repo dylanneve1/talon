@@ -5,7 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ActionRegistry } from "./index.js";
-import { indexNote, removeNoteFromIndex, searchByEmbedding, reindexAll, flushEmbeddingIndex } from "../../../../storage/note-embeddings.js";
+import { indexNote, removeNoteFromIndex, searchByEmbedding, reindexAll, flushEmbeddingIndex, getEmbeddingStats } from "../../../../storage/note-embeddings.js";
 
 export function registerNotesActions(registry: ActionRegistry) {
   registry.set("save_note", async (body) => {
@@ -117,5 +117,9 @@ export function registerNotesActions(registry: ActionRegistry) {
     } catch (err) {
       return { ok: false, error: String(err) };
     }
+  });
+
+  registry.set("get_embedding_status", async () => {
+    return { ok: true, ...getEmbeddingStats() };
   });
 }

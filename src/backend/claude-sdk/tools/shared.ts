@@ -1117,6 +1117,13 @@ Examples:
     async () => textResult(await callBridge("reindex_notes", {})),
   );
 
+  server.tool(
+    "get_embedding_status",
+    "Get the current status of the note embedding index (method, document count, API key availability).",
+    {},
+    async () => textResult(await callBridge("get_embedding_status", {})),
+  );
+
   // ── Keyword watches ──────────────────────────────────────────────────────────
 
   server.tool(

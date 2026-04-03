@@ -215,6 +215,16 @@ export async function searchByEmbedding(
   return tfidfResults.map(r => ({ ...r, method: "tfidf" }));
 }
 
+/** Get stats about the embedding index. */
+export function getEmbeddingStats(): { method: string; documentCount: number; hasApiKey: boolean } {
+  if (!index) loadEmbeddingIndex();
+  return {
+    method: index!.method,
+    documentCount: Object.keys(index!.documents).length,
+    hasApiKey: !!getApiKey(),
+  };
+}
+
 /** Reindex all notes (batch — call on first load or migration). */
 export async function reindexAll(noteContents: Record<string, string>): Promise<number> {
   if (!index) loadEmbeddingIndex();
