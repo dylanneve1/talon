@@ -139,10 +139,6 @@ export class Gateway {
   // ── Action dispatch ────────────────────────────────────────────────────────
 
   private async handleAction(body: Record<string, unknown>): Promise<unknown> {
-    // Route by _chatId from the MCP subprocess request.
-    // _chatId may be a string (Teams: "teams_chat_19:...") or numeric string (Telegram: "123456").
-    // The context map is keyed by numeric chatId, so try direct parse first,
-    // then fall back to searching active contexts.
     const rawChatId = body._chatId ? String(body._chatId) : "";
     const numericId = Number(rawChatId);
     const chatId = !isNaN(numericId) && this.chatContexts.has(numericId)
@@ -156,37 +152,37 @@ export class Gateway {
     if (!action) return { ok: false, error: "Missing action" };
     const t0 = Date.now();
 
+    // 30-second timeout prevents hung handlers from blocking the gateway
+    const timeoutMs = 30_000;
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Action ${action} timed out after ${timeoutMs}ms`)), timeoutMs),
+    );
+
     try {
-      // Try frontend first — it has richer implementations (e.g. userbot history)
-      // and falls back to null when it can't handle the action.
-      if (this.frontendHandler) {
-        const result = await this.frontendHandler(body, chatId);
-        if (result) {
-          logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
-          return result;
-        }
-      }
-
-      // Try plugin actions (loaded from external plugin packages)
-      const pluginResult = await handlePluginAction(body, String(chatId));
-      if (pluginResult) {
-        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (plugin)`);
-        return pluginResult;
-      }
-
-      // Shared actions last — provides in-memory fallbacks for history, cron, etc.
-      const shared = await handleSharedAction(body, chatId);
-      if (shared) {
-        logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`);
-        return shared;
-      }
-
-      return { ok: false, error: `Unknown action: ${action}` };
+      const result = await Promise.race([this.dispatchAction(body, chatId, action), timeoutPromise]);
+      logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
       return { ok: false, error: `${action}: ${msg}` };
     }
+  }
+
+  private async dispatchAction(
+    body: Record<string, unknown>,
+    chatId: number,
+    action: string,
+  ): Promise<unknown> {
+    if (this.frontendHandler) {
+      const result = await this.frontendHandler(body, chatId);
+      if (result) return result;
+    }
+    const pluginResult = await handlePluginAction(body, String(chatId));
+    if (pluginResult) return pluginResult;
+    const shared = await handleSharedAction(body, chatId);
+    if (shared) return shared;
+    return { ok: false, error: `Unknown action: ${action}` };
   }
 
   // ── HTTP server ──────────────────────────────────────────────────────────

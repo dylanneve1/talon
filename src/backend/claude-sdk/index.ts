@@ -42,6 +42,19 @@ export function initAgent(
   delete process.env.CLAUDECODE;
 }
 
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const EFFORT_MAP: Record<
+  string,
+  { thinking: { type: "adaptive" | "disabled" }; effort?: "low" | "medium" | "high" | "max" }
+> = {
+  off: { thinking: { type: "disabled" } },
+  low: { thinking: { type: "adaptive" }, effort: "low" },
+  medium: { thinking: { type: "adaptive" }, effort: "medium" },
+  high: { thinking: { type: "adaptive" }, effort: "high" },
+  max: { thinking: { type: "adaptive" }, effort: "max" },
+};
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 export async function handleMessage(
@@ -74,19 +87,6 @@ export async function handleMessage(
   const activeModel = chatSettings.model ?? config.model;
   const activeEffort = chatSettings.effort ?? "adaptive";
 
-  const EFFORT_MAP: Record<
-    string,
-    {
-      thinking: { type: "adaptive" | "disabled" };
-      effort?: "low" | "medium" | "high" | "max";
-    }
-  > = {
-    off: { thinking: { type: "disabled" } },
-    low: { thinking: { type: "adaptive" }, effort: "low" },
-    medium: { thinking: { type: "adaptive" }, effort: "medium" },
-    high: { thinking: { type: "adaptive" }, effort: "high" },
-    max: { thinking: { type: "adaptive" }, effort: "max" },
-  };
   const thinkingConfig = EFFORT_MAP[activeEffort] ?? {
     thinking: { type: "adaptive" as const },
   };
@@ -413,7 +413,9 @@ export async function handleMessage(
   // The remaining currentBlockText is the final response text
   allResponseText += currentBlockText;
 
-  const totalPrompt = inputTokens + cacheRead + cacheWrite;
+  // Cache hit %: cacheRead / (cacheRead + inputTokens). cacheWrite is tokens
+  // written TO cache for future use, not part of this request's prompt cost.
+  const totalPrompt = inputTokens + cacheRead;
   const cacheHitPct =
     totalPrompt > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
 

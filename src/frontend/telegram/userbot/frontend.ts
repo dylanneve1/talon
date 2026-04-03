@@ -115,6 +115,21 @@ export function isUserTyping(userId: number): boolean {
   return true;
 }
 
+// Periodic cleanup of stale caches to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  // Clean expired typing entries
+  for (const [uid, ts] of typingCache) {
+    if (now - ts > TYPING_TTL) typingCache.delete(uid);
+  }
+  // Clean rate limit entries with no recent timestamps
+  for (const [uid, timestamps] of userTimestamps) {
+    const fresh = timestamps.filter((t) => t > now - RL_WINDOW);
+    if (fresh.length === 0) userTimestamps.delete(uid);
+    else userTimestamps.set(uid, fresh);
+  }
+}, 60_000); // every minute
+
 // ── Keyword watches ───────────────────────────────────────────────────────────
 
 type KeywordWatch = {

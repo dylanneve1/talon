@@ -12,7 +12,12 @@
 import {
   getSessionInfo,
   getActiveSessionCount,
+  getAllSessions,
+  resetSession as resetSessionFn,
 } from "../../storage/sessions.js";
+import { clearHistory as clearHistoryFn } from "../../storage/history.js";
+import { getHealthStatus, getRecentErrors } from "../../util/watchdog.js";
+import { getActiveCount } from "../../core/dispatcher.js";
 import {
   getChatSettings,
   resolveModelName,
@@ -258,10 +263,8 @@ export function handlePulseCommand(chatId: string, arg: string | undefined, fmt:
 // ── Reset logic ─────────────────────────────────────────────────────────────
 
 export function handleReset(chatId: string): string {
-  const { resetSession } = require("../../storage/sessions.js");
-  const { clearHistory } = require("../../storage/history.js");
-  resetSession(chatId);
-  clearHistory(chatId);
+  resetSessionFn(chatId);
+  clearHistoryFn(chatId);
   resetPulseCheckpoint(chatId);
   return "Session cleared.";
 }
@@ -269,12 +272,9 @@ export function handleReset(chatId: string): string {
 // ── Admin ───────────────────────────────────────────────────────────────────
 
 export function renderAdminHealth(fmt: Fmt): string {
-  const { getHealthStatus, getRecentErrors } = require("../../util/watchdog.js");
-  const { getAllSessions } = require("../../storage/sessions.js");
-  const { getActiveCount } = require("../../core/dispatcher.js");
 
   const health = getHealthStatus();
-  const errors = getRecentErrors(5) as string[];
+  const errors = getRecentErrors(5).map((e) => typeof e === "string" ? e : String((e as { message?: string }).message ?? e));
   const sessions = (getAllSessions() as unknown[]).length;
   const active = getActiveCount() as number;
 
@@ -296,8 +296,7 @@ export function renderAdminHealth(fmt: Fmt): string {
 }
 
 export function renderAdminChats(fmt: Fmt): string {
-  const { getAllSessions, getSessionInfo: _gsi } = require("../../storage/sessions.js");
-  const sessions = getAllSessions() as Array<{ chatId: string; info: { turns: number; lastActive?: number } }>;
+  const sessions = getAllSessions();
   if (sessions.length === 0) return "No active sessions.";
 
   sessions.sort((a, b) => (b.info.lastActive || 0) - (a.info.lastActive || 0));
