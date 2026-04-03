@@ -488,18 +488,52 @@ async function handleCommand(
       const activeModel = chatSets.model ?? "default";
       const effortName = chatSets.effort ?? "adaptive";
       const pulseOn = isPulseEnabled(chatId);
+      const { formatBytes } = await import("../helpers.js").catch(() => ({ formatBytes: (n: number) => `${Math.round(n / 1024)}KB` }));
+      const { getWorkspaceDiskUsage } = await import("../../../util/workspace.js");
 
+      // Context bar
+      const contextMax = activeModel.includes("haiku") ? 200_000 : 1_000_000;
+      const contextUsed = u.lastPromptTokens;
+      const contextPct = contextMax > 0 ? Math.min(100, Math.round((contextUsed / contextMax) * 100)) : 0;
+      const barLen = 20;
+      const filled = Math.round((contextPct / 100) * barLen);
+      const contextBar = "█".repeat(filled) + "░".repeat(barLen - filled);
+      const contextWarn = contextPct >= 80 ? " ⚠️ consider /reset" : "";
+
+      // Token stats
       const totalPrompt = u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
       const cacheHitPct = totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
+
+      // Response times
       const avgMs = info.turns > 0 && u.totalResponseMs ? Math.round(u.totalResponseMs / info.turns) : 0;
+      const lastMs = u.lastResponseMs || 0;
+      const fastestMs = u.fastestResponseMs === Infinity ? 0 : (u.fastestResponseMs || 0);
+
+      // Workspace
+      let diskStr = "—";
+      try {
+        const { dirs: talonDirs } = await import("../../../util/paths.js");
+        diskStr = formatBytes(getWorkspaceDiskUsage(talonDirs.workspace));
+      } catch { /* */ }
 
       const lines = [
-        `**Status** · \`${activeModel}\` · effort: ${effortName}`,
+        `**🦅 Talon** · \`${activeModel}\` · effort: ${effortName}`,
         "",
-        `**Context** ${formatTokenCount(u.lastPromptTokens)} tokens`,
-        `**Cache** ${cacheHitPct}% hit · in ${formatTokenCount(u.totalInputTokens)} · out ${formatTokenCount(u.totalOutputTokens)}`,
-        `**Turns** ${info.turns} · avg ${avgMs ? formatDuration(avgMs) : "—"} · session ${sessionAge}`,
-        `**Pulse** ${pulseOn ? "on" : "off"} · **Uptime** ${uptime} · ${getActiveSessionCount()} session(s)`,
+        `**Context**  ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextMax)} (${contextPct}%)${contextWarn}`,
+        `\`${contextBar}\``,
+        "",
+        `**Session Stats**`,
+        `  Response  last ${lastMs ? formatDuration(lastMs) : "—"} · avg ${avgMs ? formatDuration(avgMs) : "—"} · best ${fastestMs ? formatDuration(fastestMs) : "—"}`,
+        `  Turns     ${info.turns}${info.lastModel ? ` (${info.lastModel.replace("claude-", "")})` : ""}`,
+        "",
+        `**Cache**     ${cacheHitPct}% hit`,
+        `  Read ${formatTokenCount(u.totalCacheRead)}  Write ${formatTokenCount(u.totalCacheWrite)}`,
+        `  Input ${formatTokenCount(u.totalInputTokens)}  Output ${formatTokenCount(u.totalOutputTokens)}`,
+        "",
+        `**Pulse**  ${pulseOn ? "on" : "off"}`,
+        `**Workspace**  ${diskStr}`,
+        `**Session**   ${info.sessionName ? `"${info.sessionName}" ` : ""}${info.sessionId ? `\`${info.sessionId.slice(0, 8)}...\`` : "_(new)_"} · ${sessionAge} old`,
+        `**Uptime**    ${uptime} · ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
       ];
       const sentId = await sendUserbotMessage(numericChatId, lines.join("\n"), msgId);
       recordOurMessage(chatId, sentId);
