@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ActionRegistry } from "./index.js";
+import { indexNote, removeNoteFromIndex, searchByEmbedding, reindexAll, flushEmbeddingIndex } from "../../../../storage/note-embeddings.js";
 
 export function registerNotesActions(registry: ActionRegistry) {
   registry.set("save_note", async (body) => {
@@ -16,6 +17,8 @@ export function registerNotesActions(registry: ActionRegistry) {
     mkdirSync(notesDir, { recursive: true });
     const note = { key, content, tags, updatedAt: new Date().toISOString() };
     writeFileSync(resolve(notesDir, `${key}.json`), JSON.stringify(note, null, 2));
+    await indexNote(key, content, tags);
+    flushEmbeddingIndex();
     return { ok: true, key };
   });
 
@@ -57,6 +60,8 @@ export function registerNotesActions(registry: ActionRegistry) {
     const notesDir = resolve(process.env.HOME ?? "/root", ".talon/workspace/notes");
     try {
       unlinkSync(resolve(notesDir, `${key}.json`));
+      removeNoteFromIndex(key);
+      flushEmbeddingIndex();
       return { ok: true };
     } catch {
       return { ok: false, error: `Note "${key}" not found` };
@@ -64,24 +69,53 @@ export function registerNotesActions(registry: ActionRegistry) {
   });
 
   registry.set("search_notes", async (body) => {
-    const query = String(body.query ?? "").toLowerCase().trim();
+    const query = String(body.query ?? "").trim();
     if (!query) return { ok: false, error: "query is required" };
+    const limit = typeof body.limit === "number" ? body.limit : 20;
     const notesDir = resolve(process.env.HOME ?? "/root", ".talon/workspace/notes");
     try {
-      const files = readdirSync(notesDir).filter((f) => f.endsWith(".json"));
-      const matches = files
-        .map((f) => {
-          try {
-            const n = JSON.parse(readFileSync(resolve(notesDir, f), "utf8")) as { key: string; content?: string; tags?: string[]; updatedAt?: string };
-            const haystack = `${n.key} ${n.content ?? ""} ${(n.tags ?? []).join(" ")}`.toLowerCase();
-            if (!haystack.includes(query)) return null;
-            return { key: n.key, tags: n.tags ?? [], updatedAt: n.updatedAt, preview: String(n.content ?? "").slice(0, 300) };
-          } catch { return null; }
-        })
-        .filter(Boolean);
-      return { ok: true, query, count: matches.length, notes: matches };
+      const files = readdirSync(notesDir).filter((f) => f.endsWith(".json") && !f.startsWith("."));
+      // Build noteContents map
+      const noteContents: Record<string, string> = {};
+      const noteMeta: Record<string, { tags: string[]; updatedAt?: string; content: string }> = {};
+      for (const f of files) {
+        try {
+          const n = JSON.parse(readFileSync(resolve(notesDir, f), "utf8")) as { key: string; content?: string; tags?: string[]; updatedAt?: string };
+          const fullText = `${n.key} ${(n.tags ?? []).join(" ")} ${n.content ?? ""}`;
+          noteContents[n.key] = fullText;
+          noteMeta[n.key] = { tags: n.tags ?? [], updatedAt: n.updatedAt, content: String(n.content ?? "") };
+        } catch { /* skip */ }
+      }
+      const results = await searchByEmbedding(query, noteContents, limit);
+      const notes = results.map(r => ({
+        key: r.key,
+        score: Math.round(r.score * 1000) / 1000,
+        method: r.method,
+        tags: noteMeta[r.key]?.tags ?? [],
+        updatedAt: noteMeta[r.key]?.updatedAt,
+        preview: (noteMeta[r.key]?.content ?? "").slice(0, 300),
+      }));
+      return { ok: true, query, count: notes.length, notes };
     } catch {
       return { ok: true, query, count: 0, notes: [] };
+    }
+  });
+
+  registry.set("reindex_notes", async () => {
+    const notesDir = resolve(process.env.HOME ?? "/root", ".talon/workspace/notes");
+    try {
+      const files = readdirSync(notesDir).filter((f) => f.endsWith(".json") && !f.startsWith("."));
+      const noteContents: Record<string, string> = {};
+      for (const f of files) {
+        try {
+          const n = JSON.parse(readFileSync(resolve(notesDir, f), "utf8")) as { key: string; content?: string; tags?: string[] };
+          noteContents[n.key] = `${(n.tags ?? []).join(" ")} ${n.content ?? ""}`;
+        } catch { /* skip */ }
+      }
+      const count = await reindexAll(noteContents);
+      return { ok: true, total: files.length, indexed: count };
+    } catch (err) {
+      return { ok: false, error: String(err) };
     }
   });
 }

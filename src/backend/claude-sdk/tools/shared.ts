@@ -1102,9 +1102,19 @@ Examples:
 
   server.tool(
     "search_notes",
-    "Search through all saved notes by keyword.",
-    { query: z.string().describe("Search term") },
+    "Search through all saved notes using semantic similarity (embeddings) with TF-IDF fallback.",
+    {
+      query: z.string().describe("Search query — can be a concept, question, or keywords"),
+      limit: z.number().optional().describe("Max results (default 20)"),
+    },
     async (p) => textResult(await callBridge("search_notes", p)),
+  );
+
+  server.tool(
+    "reindex_notes",
+    "Rebuild the semantic embedding index for all notes. Run this after bulk imports or if search quality degrades.",
+    {},
+    async () => textResult(await callBridge("reindex_notes", {})),
   );
 
   // ── Keyword watches ──────────────────────────────────────────────────────────

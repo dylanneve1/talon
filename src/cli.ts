@@ -424,10 +424,12 @@ async function startChat(): Promise<void> {
   const { flushCronJobs } = await import("./storage/cron-store.js");
   const { flushHistory } = await import("./storage/history.js");
   const { flushMediaIndex } = await import("./storage/media-index.js");
+  const { loadEmbeddingIndex, flushEmbeddingIndex } = await import("./storage/note-embeddings.js");
   const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
   const { Gateway } = await import("./core/gateway.js");
 
   const { config } = await bootstrap({ frontendNames: ["terminal"] });
+  loadEmbeddingIndex();
 
   // Override frontend for the backend — talon chat always uses terminal,
   // regardless of what the config file says. This prevents the backend from
@@ -449,6 +451,7 @@ async function startChat(): Promise<void> {
     flushCronJobs();
     flushHistory();
     flushMediaIndex();
+    flushEmbeddingIndex();
     frontend.stop();
     process.exit(0);
   });
