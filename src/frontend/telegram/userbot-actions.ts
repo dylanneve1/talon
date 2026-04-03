@@ -2387,6 +2387,59 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── List media in chat ───────────────────────────────────────────────────
+
+      case "list_media": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const limit = Math.min(100, Number(body.limit ?? 20));
+        const mediaType = String(body.type ?? "all");
+
+        const filterMap: Record<string, unknown> = {
+          photo: new Api.InputMessagesFilterPhotos(),
+          video: new Api.InputMessagesFilterVideo(),
+          document: new Api.InputMessagesFilterDocument(),
+          voice: new Api.InputMessagesFilterVoice(),
+          audio: new Api.InputMessagesFilterMusic(),
+          all: new Api.InputMessagesFilterPhotoVideo(),
+        };
+        const filter = filterMap[mediaType] ?? new Api.InputMessagesFilterPhotoVideo();
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.Search({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          q: "",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          filter: filter as any,
+          minDate: 0,
+          maxDate: 0,
+          offsetId: 0,
+          addOffset: 0,
+          limit,
+          maxId: 0,
+          minId: 0,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = (result.messages ?? []) as any[];
+        if (msgs.length === 0) return { ok: true, text: `No ${mediaType} media found.`, count: 0 };
+
+        const lines = msgs.map((m) => {
+          const date = new Date((m.date ?? 0) * 1000).toISOString();
+          const mediaClass = m.media?.className ?? "unknown";
+          const fileName = m.media?.document?.attributes
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ?.find((a: any) => a.className === "DocumentAttributeFilename")?.fileName ?? "";
+          return `[msg:${m.id} ${date}] [${mediaClass}]${fileName ? ` ${fileName}` : ""} ${m.message || ""}`.trim();
+        });
+        return { ok: true, text: lines.join("\n"), count: msgs.length, type: mediaType };
+      }
+
       // ── Poll results details ─────────────────────────────────────────────────
 
       case "get_poll_results": {
