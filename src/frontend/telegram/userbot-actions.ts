@@ -11,8 +11,8 @@
  * sticker set creation, stories, contacts, polls, locations, and more.
  */
 
-import { readFileSync, statSync } from "node:fs";
-import { basename } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, statSync } from "node:fs";
+import { basename, resolve } from "node:path";
 import { CustomFile } from "telegram/client/uploads.js";
 import { Api } from "telegram";
 import {
@@ -45,6 +45,13 @@ import type { Gateway } from "../../core/gateway.js";
 import type { ActionResult } from "../../core/types.js";
 
 const TELEGRAM_MAX_TEXT = 4096;
+
+// ── Keyword watch type ───────────────────────────────────────────────────────
+type KeywordWatch = {
+  keyword: string;
+  chatId?: number; // restrict to specific chat (undefined = all chats)
+  createdAt: string;
+};
 
 // ── Scheduled message state ──────────────────────────────────────────────────
 
@@ -254,11 +261,8 @@ export function createUserbotActionHandler(
           closePeriod: typeof body.open_period === "number" ? body.open_period : undefined,
         });
 
-        const pollResults = isQuiz && correctOption !== undefined
-          ? new Api.PollResults({
-              results: [],
-              solution: body.explanation ? String(body.explanation) : undefined,
-            })
+        const solutionText = isQuiz && correctOption !== undefined && body.explanation
+          ? String(body.explanation)
           : undefined;
 
         const media = new Api.InputMediaPoll({
@@ -266,8 +270,10 @@ export function createUserbotActionHandler(
           correctAnswers: isQuiz && correctOption !== undefined
             ? [Buffer.from([correctOption])]
             : undefined,
-          solution: pollResults?.solution,
-          solutionEntities: [],
+          // Only set solution/solutionEntities when there's actual solution text —
+          // they share the same TL flag bit; setting one without the other causes INPUT_FETCH_ERROR
+          solution: solutionText,
+          solutionEntities: solutionText ? [] : undefined,
         });
 
         gateway.incrementMessages(chatId);
@@ -278,7 +284,7 @@ export function createUserbotActionHandler(
             media,
             message: "",
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            randomId: BigInt(Date.now()) as any,
+            randomId: BigInt(Date.now() * 1000 + Math.floor(Math.random() * 1000)) as any,
           })),
         );
         const pollMsgId = extractMessageId(sendResult);
@@ -486,8 +492,34 @@ export function createUserbotActionHandler(
 
       case "get_chat_member": {
         const userId = Number(body.user_id);
-        const result = await userbotGetUserInfo({ chatId, userId }).catch((e) => String(e));
-        return { ok: true, text: result };
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        try {
+          // Use channels.GetParticipant so we get the rank field
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await client.invoke(new Api.channels.GetParticipant({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            channel: peer as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            participant: userId as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          })) as any;
+          const p = result.participant;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const u = result.users?.[0] as any;
+          const name = u ? ([u.firstName, u.lastName].filter(Boolean).join(" ") || "(no name)") : String(userId);
+          const username = u?.username ? `@${u.username}` : "";
+          const role = p.className === "ChannelParticipantCreator" ? "owner"
+            : p.className === "ChannelParticipantAdmin" ? "admin"
+            : "member";
+          const tag = p.rank ? `\nTag: ${p.rank}` : "";
+          const joined = p.date ? `\nJoined: ${new Date(p.date * 1000).toISOString()}` : "";
+          return { ok: true, text: `${name} ${username}\nID: ${userId}\nRole: ${role}${tag}${joined}` };
+        } catch {
+          // Fallback for basic groups
+          const text = await userbotGetUserInfo({ chatId, userId }).catch((e) => String(e));
+          return { ok: true, text };
+        }
       }
 
       case "get_chat_admins": {
@@ -557,13 +589,24 @@ export function createUserbotActionHandler(
           client!.uploadFile({ file: new CustomFile(basename(filePath), chatPhotoSize, filePath), workers: 1 }),
         );
         const inputPhoto = new Api.InputChatUploadedPhoto({ file: uploaded });
-        await withRetry(() =>
-          client!.invoke(new Api.channels.EditPhoto({
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            channel: peer as any,
-            photo: inputPhoto,
-          })),
-        );
+        const isBasicGroupPhoto = peer < 0 && Math.abs(peer) < 1_000_000_000_000;
+        if (isBasicGroupPhoto) {
+          await withRetry(() =>
+            client!.invoke(new Api.messages.EditChatPhoto({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              chatId: Math.abs(peer) as any,
+              photo: inputPhoto,
+            })),
+          );
+        } else {
+          await withRetry(() =>
+            client!.invoke(new Api.channels.EditPhoto({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              channel: peer as any,
+              photo: inputPhoto,
+            })),
+          );
+        }
         return { ok: true };
       }
 
@@ -596,12 +639,25 @@ export function createUserbotActionHandler(
         const client = getClient();
         if (!client) return { ok: false, error: "User client not connected." };
 
-        await withRetry(() =>
-          client!.invoke(new Api.channels.LeaveChannel({
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            channel: peer as any,
-          })),
-        );
+        const isBasicGroupLeave = peer < 0 && Math.abs(peer) < 1_000_000_000_000;
+        if (isBasicGroupLeave) {
+          const self = await client.getMe();
+          await withRetry(() =>
+            client!.invoke(new Api.messages.DeleteChatUser({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              chatId: Math.abs(peer) as any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              userId: self as any,
+            })),
+          );
+        } else {
+          await withRetry(() =>
+            client!.invoke(new Api.channels.LeaveChannel({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              channel: peer as any,
+            })),
+          );
+        }
         return { ok: true };
       }
 
@@ -662,14 +718,30 @@ export function createUserbotActionHandler(
           return { ok: false, error: "user_ids must be a non-empty array" };
 
         const userIds = (rawUserIds as unknown[]).map(Number);
-        await withRetry(() =>
-          client!.invoke(new Api.channels.InviteToChannel({
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            channel: peer as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            users: userIds as any,
-          })),
-        );
+        const isBasicGroupInvite = peer < 0 && Math.abs(peer) < 1_000_000_000_000;
+        if (isBasicGroupInvite) {
+          // Basic groups only support adding one user at a time
+          for (const uid of userIds) {
+            await withRetry(() =>
+              client!.invoke(new Api.messages.AddChatUser({
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                chatId: Math.abs(peer) as any,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                userId: uid as any,
+                fwdLimit: 10,
+              })),
+            );
+          }
+        } else {
+          await withRetry(() =>
+            client!.invoke(new Api.channels.InviteToChannel({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              channel: peer as any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              users: userIds as any,
+            })),
+          );
+        }
         return { ok: true, invited: userIds.length };
       }
 
@@ -818,28 +890,43 @@ export function createUserbotActionHandler(
         if (!userId) return { ok: false, error: "user_id is required" };
         const rank = body.title ? String(body.title) : undefined;
 
-        await withRetry(() =>
-          client!.invoke(new Api.channels.EditAdmin({
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            channel: peer as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            userId: userId as any,
-            adminRights: new Api.ChatAdminRights({
-              changeInfo: true,
-              postMessages: true,
-              editMessages: true,
-              deleteMessages: true,
-              banUsers: true,
-              inviteUsers: true,
-              pinMessages: true,
-              addAdmins: body.can_add_admins === true,
-              anonymous: body.anonymous === true,
-              manageCall: true,
-              other: true,
-            }),
-            rank: rank ?? "",
-          })),
-        );
+        // Supergroup/channel IDs have abs value > 1e12; basic groups are smaller
+        const isBasicGroup = peer < 0 && Math.abs(peer) < 1_000_000_000_000;
+        if (isBasicGroup) {
+          // Basic groups: simple admin flag, no granular rights
+          await withRetry(() =>
+            client!.invoke(new Api.messages.EditChatAdmin({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              chatId: Math.abs(peer) as any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              userId: userId as any,
+              isAdmin: true,
+            })),
+          );
+        } else {
+          await withRetry(() =>
+            client!.invoke(new Api.channels.EditAdmin({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              channel: peer as any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              userId: userId as any,
+              adminRights: new Api.ChatAdminRights({
+                changeInfo: true,
+                postMessages: true,
+                editMessages: true,
+                deleteMessages: true,
+                banUsers: true,
+                inviteUsers: true,
+                pinMessages: true,
+                addAdmins: body.can_add_admins === true,
+                anonymous: body.anonymous === true,
+                manageCall: true,
+                other: true,
+              }),
+              rank: rank ?? "",
+            })),
+          );
+        }
         return { ok: true };
       }
 
@@ -850,28 +937,41 @@ export function createUserbotActionHandler(
         const userId = Number(body.user_id);
         if (!userId) return { ok: false, error: "user_id is required" };
 
-        await withRetry(() =>
-          client!.invoke(new Api.channels.EditAdmin({
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            channel: peer as any,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            userId: userId as any,
-            adminRights: new Api.ChatAdminRights({
-              changeInfo: false,
-              postMessages: false,
-              editMessages: false,
-              deleteMessages: false,
-              banUsers: false,
-              inviteUsers: false,
-              pinMessages: false,
-              addAdmins: false,
-              anonymous: false,
-              manageCall: false,
-              other: false,
-            }),
-            rank: "",
-          })),
-        );
+        const isBasicGroupDemote = peer < 0 && Math.abs(peer) < 1_000_000_000_000;
+        if (isBasicGroupDemote) {
+          await withRetry(() =>
+            client!.invoke(new Api.messages.EditChatAdmin({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              chatId: Math.abs(peer) as any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              userId: userId as any,
+              isAdmin: false,
+            })),
+          );
+        } else {
+          await withRetry(() =>
+            client!.invoke(new Api.channels.EditAdmin({
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              channel: peer as any,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              userId: userId as any,
+              adminRights: new Api.ChatAdminRights({
+                changeInfo: false,
+                postMessages: false,
+                editMessages: false,
+                deleteMessages: false,
+                banUsers: false,
+                inviteUsers: false,
+                pinMessages: false,
+                addAdmins: false,
+                anonymous: false,
+                manageCall: false,
+                other: false,
+              }),
+              rank: "",
+            })),
+          );
+        }
         return { ok: true };
       }
 
@@ -982,15 +1082,37 @@ export function createUserbotActionHandler(
           }),
         };
 
-      case "get_user_messages":
-        return {
-          ok: true,
-          text: await userbotSearch({
-            chatId,
-            query: String(body.user_name ?? ""),
-            limit: Math.min(50, Number(body.limit ?? 20)),
-          }),
-        };
+      case "get_user_messages": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const targetUserId = body.user_id ? Number(body.user_id) : null;
+        if (!targetUserId) return { ok: false, error: "user_id is required" };
+        const msgLimit = Math.min(Number(body.limit ?? 20), 100);
+        // Use messages.Search with fromId to filter by sender
+        const entity = await client.getEntity(targetUserId).catch(() => null);
+        if (!entity) return { ok: false, error: `Could not resolve user ${targetUserId}` };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const searchResult = await withRetry(() => client!.invoke(new Api.messages.Search({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: peer as any,
+          q: "",
+          filter: new Api.InputMessagesFilterEmpty(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          fromId: entity as any,
+          minDate: 0, maxDate: 0, offsetId: 0, addOffset: 0,
+          limit: msgLimit,
+          maxId: 0, minId: 0,
+          hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = (searchResult.messages ?? []) as any[];
+        const lines = msgs.map((m: any) => {
+          const date = new Date((m.date ?? 0) * 1000).toISOString();
+          return `[${date}] [msg:${m.id}] ${m.message || "(media)"}`;
+        });
+        return { ok: true, user_id: targetUserId, count: lines.length, messages: lines.join("\n") };
+      }
 
       case "list_known_users":
         return {
@@ -1673,17 +1795,629 @@ export function createUserbotActionHandler(
         }
 
         // File-based types: photo, video, voice, file
-        const fileData = readFileSync(filePath);
-        const fileName = basename(filePath);
-        const client = getClient();
-        if (!client) return { ok: false, error: "User client not connected." };
-        const uploaded = await withRetry(() =>
-          client!.uploadFile({ file: new CustomFile(fileName, fileData.length, filePath), workers: 4 }),
-        );
         const msgId = await withRetry(() =>
           sendUserbotFile(targetPeer, { filePath, caption }),
         );
         return { ok: true, message_id: msgId, to };
+      }
+
+      // ── Invite links ────────────────────────────────────────────────────────
+
+      case "get_invite_link": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.ExportChatInvite({ peer: p as any }))) as any;
+        return { ok: true, link: result.link };
+      }
+
+      case "create_invite_link": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const expireDate = body.expire_date ? Number(body.expire_date) : undefined;
+        const usageLimit = body.usage_limit ? Number(body.usage_limit) : undefined;
+        const title = body.title ? String(body.title) : undefined;
+        const requestNeeded = body.request_needed === true;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.ExportChatInvite({ peer: p as any, expireDate, usageLimit, title, requestNeeded }))) as any;
+        return { ok: true, link: result.link, title: result.title, expire_date: result.expireDate, usage_limit: result.usageLimit };
+      }
+
+      case "revoke_invite_link": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const link = String(body.link ?? "");
+        if (!link) return { ok: false, error: "link is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.EditExportedChatInvite({ peer: p as any, link, revoked: true }))) as any;
+        return { ok: true, revoked_link: result.invite?.link ?? link };
+      }
+
+      case "get_invite_links": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const self = await client.getMe() as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetExportedChatInvites({ peer: p as any, adminId: self as any, limit: 20 }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const lines = (result.invites ?? []).map((inv: any) => {
+          const used = inv.usage ? ` (${inv.usage} uses)` : "";
+          const limit = inv.usageLimit ? `/${inv.usageLimit}` : "";
+          const exp = inv.expireDate ? ` expires ${new Date(inv.expireDate * 1000).toISOString()}` : "";
+          const revoked = inv.revoked ? " [revoked]" : "";
+          return `${inv.link}${used}${limit}${exp}${revoked}`;
+        });
+        return { ok: true, text: lines.length ? lines.join("\n") : "No invite links found.", count: lines.length };
+      }
+
+      // ── Cross-chat read ──────────────────────────────────────────────────────
+
+      case "read_any_chat": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const target = String(body.target ?? "");
+        if (!target) return { ok: false, error: "target is required (@username, +phone, or numeric ID)" };
+        const targetPeer: number | string = /^-?\d+$/.test(target) ? Number(target) : target;
+        const limit = Math.min(100, Number(body.limit ?? 20));
+        const offsetDate = body.before ? Math.floor(new Date(String(body.before)).getTime() / 1000) : undefined;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = await client.getMessages(targetPeer as any, { limit, offsetDate });
+        if (!msgs.length) return { ok: true, text: "No messages found.", count: 0 };
+        const lines = msgs.reverse().map((m) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const sender = (m as any).senderId ? `[id:${Number((m as any).senderId)}]` : "[unknown]";
+          const date = new Date((m.date ?? 0) * 1000).toISOString();
+          const text = m.text || m.message || "(media)";
+          return `[${date}] ${sender}: ${text}`;
+        });
+        return { ok: true, text: lines.join("\n"), count: msgs.length };
+      }
+
+      // ── Cross-chat forward ───────────────────────────────────────────────────
+
+      case "forward_to": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const to = String(body.to ?? "").trim();
+        if (!to) return { ok: false, error: "to is required (@username, numeric ID, etc.)" };
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+        const targetPeer: number | string = /^-?\d+$/.test(to) ? Number(to) : to;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.forwardMessages(targetPeer as any, { messages: [msgId], fromPeer: peer as any }));
+        return { ok: true, to };
+      }
+
+      // ── Poll voting ─────────────────────────────────────────────────────────
+
+      case "vote_poll": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+        const optionIndex = Number(body.option_index ?? 0);
+
+        // Strategy: try to get option bytes from poll results first (works even when
+        // the poll media comes back as MessageMediaUnsupported due to layer mismatch)
+        let optionBytes: Buffer | null = null;
+        let votedFor = String(optionIndex);
+
+        // First attempt: fetch from poll results (PollAnswerVoters has the option bytes)
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const pollResultsData = await withRetry(() => client!.invoke(new Api.messages.GetPollResults({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            peer: peer as any,
+            msgId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          }))) as any;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const answerVoters = pollResultsData?.results?.results as any[] | undefined;
+          if (answerVoters && answerVoters[optionIndex]) {
+            optionBytes = Buffer.from(answerVoters[optionIndex].option);
+          }
+        } catch { /* fall through to media-based approach */ }
+
+        // Second attempt: deserialize poll media (works when no MessageMediaUnsupported issue)
+        if (!optionBytes) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const msgs = await client.getMessages(peer as any, { ids: [msgId] });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const pollMedia = (msgs[0] as any)?.media;
+          if (pollMedia?.className === "MessageMediaPoll") {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const answers = pollMedia.poll?.answers as any[] ?? [];
+            if (optionIndex < 0 || optionIndex >= answers.length)
+              return { ok: false, error: `Invalid option_index. Poll has ${answers.length} options (0-${answers.length - 1})` };
+            const answer = answers[optionIndex];
+            optionBytes = Buffer.from(answer.option);
+            votedFor = typeof answer.text === "string" ? answer.text : (answer.text?.text ?? String(optionIndex));
+          } else if (pollMedia?.className === "MessageMediaUnsupported") {
+            // Last resort: try common single-byte option values (polls created via GramJS use Buffer.from([index]))
+            optionBytes = Buffer.from([optionIndex]);
+          }
+        }
+
+        if (!optionBytes) return { ok: false, error: "Could not find poll or its options at that message ID" };
+
+        await withRetry(() => client!.invoke(new Api.messages.SendVote({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: peer as any,
+          msgId,
+          options: [optionBytes!],
+        })));
+        return { ok: true, voted_for: votedFor, option_index: optionIndex };
+      }
+
+      // ── Dialog / chat organisation ──────────────────────────────────────────
+
+      case "pin_chat": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const pinned = body.pinned !== false;
+        await withRetry(() => client!.invoke(new Api.messages.ToggleDialogPin({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: new Api.InputDialogPeer({ peer: p as any }) as any,
+          pinned,
+        })));
+        return { ok: true, pinned };
+      }
+
+      case "archive_chat": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const archive = body.archive !== false;
+        await withRetry(() => client!.invoke(new Api.folders.EditPeerFolders({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          folderPeers: [new Api.InputFolderPeer({ peer: p as any, folderId: archive ? 1 : 0 }) as any],
+        })));
+        return { ok: true, archived: archive };
+      }
+
+      case "mute_chat": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const muted = body.muted !== false;
+        const durationSeconds = body.duration_seconds ? Number(body.duration_seconds) : undefined;
+        const muteUntil = muted
+          ? (durationSeconds ? Math.floor(Date.now() / 1000) + durationSeconds : 2_147_483_647)
+          : 0;
+        await withRetry(() => client!.invoke(new Api.account.UpdateNotifySettings({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: new Api.InputNotifyPeer({ peer: p as any }) as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          settings: new Api.InputPeerNotifySettings({ muteUntil }) as any,
+        })));
+        return { ok: true, muted, mute_until: muteUntil };
+      }
+
+      // ── Save to Saved Messages ───────────────────────────────────────────────
+
+      case "save_to_saved": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const msgId = Number(body.message_id);
+        const fromPeer = body.chat_id ? Number(body.chat_id) : peer;
+        if (msgId) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await withRetry(() => client!.forwardMessages(new Api.InputPeerSelf() as any, { messages: [msgId], fromPeer: fromPeer as any }));
+        } else {
+          const text = String(body.text ?? "");
+          if (!text) return { ok: false, error: "Provide message_id or text" };
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await withRetry(() => sendUserbotMessage(new Api.InputPeerSelf() as any, text));
+        }
+        return { ok: true };
+      }
+
+      // ── Message link ─────────────────────────────────────────────────────────
+
+      case "get_message_link": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await withRetry(() => client!.invoke(new Api.channels.ExportMessageLink({ channel: p as any, id: msgId, grouped: false }))) as any;
+          return { ok: true, link: result.link };
+        } catch {
+          return { ok: false, error: "Could not get message link — only works for channels/supergroups" };
+        }
+      }
+
+      // ── Username check ────────────────────────────────────────────────────────
+
+      case "check_username": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const username = String(body.username ?? "").replace(/^@/, "");
+        if (!username) return { ok: false, error: "username is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const available = await withRetry(() => client!.invoke(new Api.account.CheckUsername({ username }))) as any;
+        return { ok: true, username, available: !!available };
+      }
+
+      // ── Full user profile ─────────────────────────────────────────────────────
+
+      case "get_full_user": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const target = String(body.target ?? body.user_id ?? "").trim();
+        if (!target) return { ok: false, error: "target is required (@username, phone, or user ID)" };
+        const targetPeer: number | string = /^-?\d+$/.test(target) ? Number(target) : target;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const entity = await client.getEntity(targetPeer as any) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const full = await withRetry(() => client!.invoke(new Api.users.GetFullUser({ id: entity as any }))) as any;
+        const u = full.users?.[0] ?? entity;
+        const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || "(no name)";
+        const username = u.username ? `@${u.username}` : "none";
+        const bio = full.fullUser?.about ?? "(no bio)";
+        const phone = u.phone ? `+${u.phone}` : "hidden";
+        const commonChatsCount = full.fullUser?.commonChatsCount ?? 0;
+        const premium = u.premium ? " [Premium]" : "";
+        const verified = u.verified ? " [Verified]" : "";
+        const bot = u.bot ? " [Bot]" : "";
+        return {
+          ok: true,
+          text: `${name}${premium}${verified}${bot}\nUsername: ${username}\nID: ${Number(u.id)}\nPhone: ${phone}\nBio: ${bio}\nCommon chats: ${commonChatsCount}`,
+        };
+      }
+
+      // ── Bulk delete ───────────────────────────────────────────────────────────
+
+      case "delete_messages_bulk": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const ids = Array.isArray(body.message_ids)
+          ? (body.message_ids as unknown[]).map(Number).filter(Boolean)
+          : [];
+        if (!ids.length) return { ok: false, error: "message_ids array is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.deleteMessages(peer as any, ids, { revoke: body.revoke !== false }));
+        return { ok: true, deleted: ids.length };
+      }
+
+      // ── Privacy settings ──────────────────────────────────────────────────────
+
+      case "get_privacy": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const keyName = String(body.key ?? "status_timestamp");
+        const keyMap: Record<string, unknown> = {
+          status_timestamp: new Api.InputPrivacyKeyStatusTimestamp(),
+          chat_invite: new Api.InputPrivacyKeyChatInvite(),
+          phone_number: new Api.InputPrivacyKeyPhoneNumber(),
+          phone_call: new Api.InputPrivacyKeyPhoneCall(),
+          phone_p2p: new Api.InputPrivacyKeyPhoneP2P(),
+          forwards: new Api.InputPrivacyKeyForwards(),
+          profile_photo: new Api.InputPrivacyKeyProfilePhoto(),
+          about: new Api.InputPrivacyKeyAbout(),
+        };
+        const privKey = keyMap[keyName] ?? new Api.InputPrivacyKeyStatusTimestamp();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.account.GetPrivacy({ key: privKey as any }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rules = (result.rules ?? []).map((r: any) => r.className).join(", ");
+        return { ok: true, key: keyName, rules };
+      }
+
+      case "set_privacy": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const keyName = String(body.key ?? "status_timestamp");
+        const ruleName = String(body.rule ?? "allow_all");
+        const keyMap: Record<string, unknown> = {
+          status_timestamp: new Api.InputPrivacyKeyStatusTimestamp(),
+          chat_invite: new Api.InputPrivacyKeyChatInvite(),
+          phone_number: new Api.InputPrivacyKeyPhoneNumber(),
+          phone_call: new Api.InputPrivacyKeyPhoneCall(),
+          profile_photo: new Api.InputPrivacyKeyProfilePhoto(),
+          forwards: new Api.InputPrivacyKeyForwards(),
+          about: new Api.InputPrivacyKeyAbout(),
+        };
+        const ruleMap: Record<string, unknown> = {
+          allow_all: new Api.InputPrivacyValueAllowAll(),
+          allow_contacts: new Api.InputPrivacyValueAllowContacts(),
+          allow_close_friends: new Api.InputPrivacyValueAllowCloseFriends(),
+          disallow_all: new Api.InputPrivacyValueDisallowAll(),
+          disallow_contacts: new Api.InputPrivacyValueDisallowContacts(),
+        };
+        const privKey = keyMap[keyName] ?? new Api.InputPrivacyKeyStatusTimestamp();
+        const privRule = ruleMap[ruleName] ?? new Api.InputPrivacyValueAllowAll();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.invoke(new Api.account.SetPrivacy({ key: privKey as any, rules: [privRule as any] })));
+        return { ok: true, key: keyName, rule: ruleName };
+      }
+
+      // ── Notes ──────────────────────────────────────────────────────────────
+
+      case "save_note": {
+        const key = String(body.key ?? "").trim().replace(/[^a-zA-Z0-9_.-]/g, "_");
+        if (!key) return { ok: false, error: "key is required" };
+        const content = String(body.content ?? body.value ?? "");
+        const tags: string[] = Array.isArray(body.tags) ? (body.tags as unknown[]).map(String) : [];
+        const notesDir = resolve(process.env.HOME ?? "/root", ".talon/workspace/notes");
+        mkdirSync(notesDir, { recursive: true });
+        const note = { key, content, tags, updatedAt: new Date().toISOString() };
+        writeFileSync(resolve(notesDir, `${key}.json`), JSON.stringify(note, null, 2));
+        return { ok: true, key };
+      }
+
+      case "get_note": {
+        const key = String(body.key ?? "").trim().replace(/[^a-zA-Z0-9_.-]/g, "_");
+        if (!key) return { ok: false, error: "key is required" };
+        const notesDir = resolve(process.env.HOME ?? "/root", ".talon/workspace/notes");
+        try {
+          const note = JSON.parse(readFileSync(resolve(notesDir, `${key}.json`), "utf8"));
+          return { ok: true, ...note };
+        } catch {
+          return { ok: false, error: `Note "${key}" not found` };
+        }
+      }
+
+      case "list_notes": {
+        const notesDir = resolve(process.env.HOME ?? "/root", ".talon/workspace/notes");
+        try {
+          const files = readdirSync(notesDir).filter((f) => f.endsWith(".json"));
+          const tag = body.tag ? String(body.tag) : null;
+          const notes = files
+            .map((f) => {
+              try {
+                const n = JSON.parse(readFileSync(resolve(notesDir, f), "utf8")) as { key: string; content?: string; tags?: string[]; updatedAt?: string };
+                if (tag && !(n.tags ?? []).includes(tag)) return null;
+                return { key: n.key, tags: n.tags ?? [], updatedAt: n.updatedAt, preview: String(n.content ?? "").slice(0, 120) };
+              } catch { return null; }
+            })
+            .filter(Boolean);
+          return { ok: true, count: notes.length, notes };
+        } catch {
+          return { ok: true, count: 0, notes: [] };
+        }
+      }
+
+      case "delete_note": {
+        const key = String(body.key ?? "").trim().replace(/[^a-zA-Z0-9_.-]/g, "_");
+        if (!key) return { ok: false, error: "key is required" };
+        const notesDir = resolve(process.env.HOME ?? "/root", ".talon/workspace/notes");
+        try {
+          unlinkSync(resolve(notesDir, `${key}.json`));
+          return { ok: true };
+        } catch {
+          return { ok: false, error: `Note "${key}" not found` };
+        }
+      }
+
+      case "search_notes": {
+        const query = String(body.query ?? "").toLowerCase().trim();
+        if (!query) return { ok: false, error: "query is required" };
+        const notesDir = resolve(process.env.HOME ?? "/root", ".talon/workspace/notes");
+        try {
+          const files = readdirSync(notesDir).filter((f) => f.endsWith(".json"));
+          const matches = files
+            .map((f) => {
+              try {
+                const n = JSON.parse(readFileSync(resolve(notesDir, f), "utf8")) as { key: string; content?: string; tags?: string[]; updatedAt?: string };
+                const haystack = `${n.key} ${n.content ?? ""} ${(n.tags ?? []).join(" ")}`.toLowerCase();
+                if (!haystack.includes(query)) return null;
+                return { key: n.key, tags: n.tags ?? [], updatedAt: n.updatedAt, preview: String(n.content ?? "").slice(0, 300) };
+              } catch { return null; }
+            })
+            .filter(Boolean);
+          return { ok: true, query, count: matches.length, notes: matches };
+        } catch {
+          return { ok: true, query, count: 0, notes: [] };
+        }
+      }
+
+      // ── Online / activity awareness ─────────────────────────────────────────
+
+      case "get_online_status": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const userId = body.user_id;
+        if (!userId) return { ok: false, error: "user_id is required" };
+        // Must resolve to InputUser (with accessHash) before invoking GetFullUser
+        const resolvedUser = await client.getEntity(Number(userId)).catch(() => null);
+        if (!resolvedUser) return { ok: false, error: `Could not resolve user ${userId}` };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.users.GetFullUser({ id: resolvedUser as any }))) as any;
+        const user = result.users?.[0] as any;
+        const status = user?.status;
+        if (!status) return { ok: true, user_id: userId, status: "unknown" };
+        const cn = status.className;
+        if (cn === "UserStatusOnline") return { ok: true, status: "online", expires: new Date(status.expires * 1000).toISOString() };
+        if (cn === "UserStatusOffline") return { ok: true, status: "offline", wasOnline: new Date(status.wasOnline * 1000).toISOString() };
+        if (cn === "UserStatusRecently") return { ok: true, status: "recently_online" };
+        if (cn === "UserStatusLastWeek") return { ok: true, status: "last_week" };
+        if (cn === "UserStatusLastMonth") return { ok: true, status: "last_month" };
+        return { ok: true, status: cn };
+      }
+
+      case "get_unread_counts": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const limit = Math.min(Number(body.limit ?? 100), 200);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetDialogs({
+          offsetDate: 0, offsetId: 0, offsetPeer: new Api.InputPeerEmpty(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          limit, hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const chatsMap = new Map<string, any>((result.chats ?? []).map((c: any) => [String(c.id), c]));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const usersMap = new Map<string, any>((result.users ?? []).map((u: any) => [String(u.id), u]));
+        const dialogs: Array<{ chatId: string; title: string; unread: number; mentions: number }> = [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const d of (result.dialogs ?? []) as any[]) {
+          const unread = Number(d.unreadCount ?? 0);
+          if (unread === 0) continue;
+          const p = d.peer as any;
+          let chatId = "";
+          let title = "Unknown";
+          if (p?.className === "PeerUser") {
+            chatId = String(p.userId);
+            const u = usersMap.get(String(p.userId));
+            title = [u?.firstName, u?.lastName].filter(Boolean).join(" ") || u?.username || chatId;
+          } else if (p?.className === "PeerChat") {
+            chatId = String(-Number(p.chatId));
+            title = chatsMap.get(String(p.chatId))?.title || chatId;
+          } else if (p?.className === "PeerChannel") {
+            // Safely reconstruct the full channel ID (avoid BigInt precision loss)
+            chatId = `-100${BigInt(p.channelId).toString()}`;
+            title = chatsMap.get(String(p.channelId))?.title || chatId;
+          }
+          dialogs.push({ chatId, title, unread, mentions: Number(d.unreadMentionsCount ?? 0) });
+        }
+        dialogs.sort((a, b) => b.unread - a.unread);
+        return { ok: true, total_unread: dialogs.reduce((s, d) => s + d.unread, 0), chats: dialogs };
+      }
+
+      // ── Drafts ──────────────────────────────────────────────────────────────
+
+      case "get_draft": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const targetPeer = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetAllDrafts())) as any;
+        // GetAllDrafts returns updates; find the draft for our target peer
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const update = (result?.updates ?? []).find((u: any) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const p2 = u.peer as any;
+          if (!p2) return false;
+          if (p2.className === "PeerUser") return Number(p2.userId) === targetPeer;
+          if (p2.className === "PeerChat") return -Number(p2.chatId) === targetPeer;
+          if (p2.className === "PeerChannel") return String(`-100${BigInt(p2.channelId).toString()}`) === String(targetPeer);
+          return false;
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const draft = update?.draft as any;
+        if (!draft || draft.className === "DraftMessageEmpty") return { ok: true, draft: null };
+        return { ok: true, draft: { text: draft.message, date: new Date((draft.date ?? 0) * 1000).toISOString() } };
+      }
+
+      case "set_draft": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const text = String(body.text ?? "");
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.invoke(new Api.messages.SaveDraft({ peer: p as any, message: text })));
+        return { ok: true };
+      }
+
+      // ── Broadcast ───────────────────────────────────────────────────────────
+
+      case "broadcast": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const text = String(body.text ?? "");
+        if (!text) return { ok: false, error: "text is required" };
+        const targets = Array.isArray(body.targets) ? (body.targets as unknown[]) : [];
+        if (!targets.length) return { ok: false, error: "targets array is required (list of chat IDs or usernames)" };
+        const results: Array<{ target: unknown; ok: boolean; error?: string }> = [];
+        for (const target of targets) {
+          try {
+            // Resolve entity first to ensure peer has accessHash (required for users/channels)
+            const resolvedTarget = await client.getEntity(
+              typeof target === "number" || typeof target === "string" ? target : String(target)
+            ).catch(() => target);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await withRetry(() => client!.sendMessage(resolvedTarget as any, { message: text }));
+            results.push({ target, ok: true });
+            await new Promise((r) => setTimeout(r, 700)); // anti-flood delay
+          } catch (err) {
+            results.push({ target, ok: false, error: err instanceof Error ? err.message : String(err) });
+          }
+        }
+        const sent = results.filter((r) => r.ok).length;
+        return { ok: true, sent, failed: results.length - sent, results };
+      }
+
+      // ── Keyword watches ─────────────────────────────────────────────────────
+
+      case "watch_keyword": {
+        const keyword = String(body.keyword ?? "").trim();
+        if (!keyword) return { ok: false, error: "keyword is required" };
+        const watchesPath = resolve(process.env.HOME ?? "/root", ".talon/workspace/keyword-watches.json");
+        let watches: KeywordWatch[] = [];
+        try { watches = JSON.parse(readFileSync(watchesPath, "utf8")) as KeywordWatch[]; } catch { /* new */ }
+        const newChatId = body.chat_id ? Number(body.chat_id) : undefined;
+        // Deduplicate: remove existing same keyword+chatId combo
+        watches = watches.filter((w) => !(w.keyword.toLowerCase() === keyword.toLowerCase() && w.chatId === newChatId));
+        watches.push({ keyword, chatId: newChatId, createdAt: new Date().toISOString() });
+        mkdirSync(resolve(process.env.HOME ?? "/root", ".talon/workspace"), { recursive: true });
+        writeFileSync(watchesPath, JSON.stringify(watches, null, 2));
+        return { ok: true, keyword, chat_id: newChatId, total_watches: watches.length };
+      }
+
+      case "unwatch_keyword": {
+        const keyword = String(body.keyword ?? "").trim();
+        if (!keyword) return { ok: false, error: "keyword is required" };
+        const watchesPath = resolve(process.env.HOME ?? "/root", ".talon/workspace/keyword-watches.json");
+        let watches: KeywordWatch[] = [];
+        try { watches = JSON.parse(readFileSync(watchesPath, "utf8")) as KeywordWatch[]; } catch { return { ok: false, error: "No watches configured" }; }
+        const before = watches.length;
+        watches = watches.filter((w) => w.keyword.toLowerCase() !== keyword.toLowerCase());
+        writeFileSync(watchesPath, JSON.stringify(watches, null, 2));
+        return { ok: true, removed: before - watches.length, remaining: watches.length };
+      }
+
+      case "list_watches": {
+        const watchesPath = resolve(process.env.HOME ?? "/root", ".talon/workspace/keyword-watches.json");
+        try {
+          const watches = JSON.parse(readFileSync(watchesPath, "utf8")) as KeywordWatch[];
+          return { ok: true, count: watches.length, watches };
+        } catch {
+          return { ok: true, count: 0, watches: [] };
+        }
+      }
+
+      // ── Chat activity ───────────────────────────────────────────────────────
+
+      case "get_chat_activity": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const actPeer = body.chat_id ? Number(body.chat_id) : peer;
+        const actLimit = Math.min(Number(body.limit ?? 200), 500);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const messages = await client.getMessages(actPeer as any, { limit: actLimit }) as any[];
+        // Build sender counts — GramJS messages include a _sender cache on the message object
+        const counts = new Map<string, { name: string; count: number }>();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const nameCache = new Map<string, string>();
+        for (const msg of messages) {
+          const sid = String(msg.senderId ?? msg.fromId?.userId ?? "unknown");
+          if (!counts.has(sid)) counts.set(sid, { name: sid, count: 0 });
+          counts.get(sid)!.count++;
+          if (!nameCache.has(sid)) {
+            // Try to get display name from cached sender entity
+            const sender = msg._sender ?? msg.sender;
+            if (sender) {
+              const name = [sender.firstName, sender.lastName].filter(Boolean).join(" ") || sender.username || sender.title || sid;
+              nameCache.set(sid, name);
+              counts.get(sid)!.name = name;
+            }
+          }
+        }
+        const sorted = [...counts.entries()]
+          .sort((a, b) => b[1].count - a[1].count)
+          .map(([userId, v]) => ({ userId, name: v.name, messages: v.count }));
+        return { ok: true, sample_size: messages.length, activity: sorted };
       }
 
       default:

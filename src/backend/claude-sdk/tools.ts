@@ -972,6 +972,194 @@ server.tool(
   async (p) => textResult(await callBridge("edit_forum_topic", p)),
 );
 
+// ── Invite links ─────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_invite_link",
+  "Get the primary invite link for a chat (defaults to current chat).",
+  { chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_invite_link", p)),
+);
+
+server.tool(
+  "create_invite_link",
+  "Create a new invite link for a chat (defaults to current chat) with optional limits.",
+  {
+    chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)"),
+    title: z.string().optional().describe("Label for this link"),
+    expire_date: z.number().optional().describe("Unix timestamp when the link expires"),
+    usage_limit: z.number().optional().describe("Max number of uses (0 = unlimited)"),
+    request_needed: z.boolean().optional().describe("If true, users must be approved by admin before joining"),
+  },
+  async (p) => textResult(await callBridge("create_invite_link", p)),
+);
+
+server.tool(
+  "revoke_invite_link",
+  "Revoke an invite link so it can no longer be used.",
+  {
+    link: z.string().describe("The invite link to revoke"),
+    chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("revoke_invite_link", p)),
+);
+
+server.tool(
+  "get_invite_links",
+  "List all active invite links for a chat (defaults to current chat).",
+  { chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_invite_links", p)),
+);
+
+// ── Cross-chat operations ─────────────────────────────────────────────────────
+
+server.tool(
+  "read_any_chat",
+  `Read messages from ANY chat Claudius is in — not just the current one.
+Use to monitor channels, read another group, check DMs, etc.
+
+Target: @username, numeric chat ID, or +phone.
+Examples:
+  read_any_chat(target="@durov", limit=10)
+  read_any_chat(target="-1001234567890", limit=30, before="2026-01-01")`,
+  {
+    target: z.string().describe("@username, numeric chat ID, or +phone"),
+    limit: z.number().optional().describe("Number of messages (default 20, max 100)"),
+    before: z.string().optional().describe("ISO date — fetch messages before this date"),
+  },
+  async (p) => textResult(await callBridge("read_any_chat", p)),
+);
+
+server.tool(
+  "forward_to",
+  "Forward a message from the current chat to any other chat.",
+  {
+    message_id: z.number().describe("Message ID to forward"),
+    to: z.string().describe("Destination: @username, numeric ID, etc."),
+  },
+  async (p) => textResult(await callBridge("forward_to", p)),
+);
+
+// ── Poll interaction ──────────────────────────────────────────────────────────
+
+server.tool(
+  "vote_poll",
+  "Vote in a poll in the current chat.",
+  {
+    message_id: z.number().describe("Message ID of the poll"),
+    option_index: z.number().describe("Zero-based index of the option to vote for"),
+  },
+  async (p) => textResult(await callBridge("vote_poll", p)),
+);
+
+// ── Dialog organisation ───────────────────────────────────────────────────────
+
+server.tool(
+  "pin_chat",
+  "Pin or unpin a chat in the dialog list (defaults to current chat).",
+  {
+    chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)"),
+    pinned: z.boolean().optional().describe("true to pin, false to unpin (default: true)"),
+  },
+  async (p) => textResult(await callBridge("pin_chat", p)),
+);
+
+server.tool(
+  "archive_chat",
+  "Archive or unarchive a chat (defaults to current chat).",
+  {
+    chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)"),
+    archive: z.boolean().optional().describe("true to archive, false to unarchive (default: true)"),
+  },
+  async (p) => textResult(await callBridge("archive_chat", p)),
+);
+
+server.tool(
+  "mute_chat",
+  "Mute or unmute notifications for a chat (defaults to current chat).",
+  {
+    chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)"),
+    muted: z.boolean().optional().describe("true to mute, false to unmute (default: true)"),
+    duration_seconds: z.number().optional().describe("Mute for this many seconds (omit for indefinite)"),
+  },
+  async (p) => textResult(await callBridge("mute_chat", p)),
+);
+
+// ── Saved Messages ────────────────────────────────────────────────────────────
+
+server.tool(
+  "save_to_saved",
+  "Save a message or text to Saved Messages (your personal Telegram notepad).",
+  {
+    chat_id: z.number().optional().describe("Chat ID to forward message from (defaults to current chat)"),
+    message_id: z.number().optional().describe("Forward this message ID to Saved Messages"),
+    text: z.string().optional().describe("Or save this text directly to Saved Messages"),
+  },
+  async (p) => textResult(await callBridge("save_to_saved", p)),
+);
+
+// ── Utilities ─────────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_message_link",
+  "Get a shareable t.me link to a specific message in a channel or supergroup.",
+  {
+    message_id: z.number().describe("Message ID"),
+    chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("get_message_link", p)),
+);
+
+server.tool(
+  "check_username",
+  "Check whether a Telegram @username is available to use.",
+  { username: z.string().describe("Username to check (with or without @)") },
+  async (p) => textResult(await callBridge("check_username", p)),
+);
+
+server.tool(
+  "get_full_user",
+  "Get comprehensive profile info for any Telegram user: name, bio, phone, common chats, Premium/Verified status.",
+  {
+    target: z.string().describe("@username, +phone, or numeric user ID"),
+  },
+  async (p) => textResult(await callBridge("get_full_user", p)),
+);
+
+server.tool(
+  "delete_messages_bulk",
+  "Delete multiple messages at once by their IDs.",
+  {
+    message_ids: z.array(z.number()).describe("Array of message IDs to delete"),
+    revoke: z.boolean().optional().describe("Also delete for everyone (default: true)"),
+  },
+  async (p) => textResult(await callBridge("delete_messages_bulk", p)),
+);
+
+// ── Privacy ───────────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_privacy",
+  "Get current privacy setting for a specific key.",
+  {
+    key: z.enum(["status_timestamp", "chat_invite", "phone_number", "phone_call", "phone_p2p", "forwards", "profile_photo", "about"])
+      .optional().describe("Privacy key (default: status_timestamp / last seen)"),
+  },
+  async (p) => textResult(await callBridge("get_privacy", p)),
+);
+
+server.tool(
+  "set_privacy",
+  "Set a privacy rule for your account.",
+  {
+    key: z.enum(["status_timestamp", "chat_invite", "phone_number", "phone_call", "profile_photo", "forwards", "about"])
+      .describe("Which setting to change"),
+    rule: z.enum(["allow_all", "allow_contacts", "allow_close_friends", "disallow_all", "disallow_contacts"])
+      .describe("Who can see/use this"),
+  },
+  async (p) => textResult(await callBridge("set_privacy", p)),
+);
+
 // ── Web ─────────────────────────────────────────────────────────────────────
 
 server.tool(
@@ -991,6 +1179,145 @@ server.tool(
     url: z.string().describe("The URL to fetch"),
   },
   async (params) => textResult(await callBridge("fetch_url", params)),
+);
+
+// ── Notes / persistent memory ─────────────────────────────────────────────────
+
+server.tool(
+  "save_note",
+  `Save a persistent note to Claudius's long-term memory.
+Notes survive restarts and are searchable. Use them to remember user preferences,
+ongoing situations, people's details, tasks, anything worth keeping.
+
+Examples:
+  save_note(key="dylan_prefs", content="Prefers concise replies. Hates emojis.")
+  save_note(key="project_status", content="Backend done, frontend in progress", tags=["work"])`,
+  {
+    key: z.string().describe("Unique key (letters, numbers, underscores, hyphens)"),
+    content: z.string().describe("The content to save"),
+    tags: z.array(z.string()).optional().describe("Optional tags for organisation"),
+  },
+  async (p) => textResult(await callBridge("save_note", p)),
+);
+
+server.tool(
+  "get_note",
+  "Retrieve a saved note by key.",
+  { key: z.string().describe("Note key") },
+  async (p) => textResult(await callBridge("get_note", p)),
+);
+
+server.tool(
+  "list_notes",
+  "List all saved notes (optionally filtered by tag).",
+  { tag: z.string().optional().describe("Filter by this tag") },
+  async (p) => textResult(await callBridge("list_notes", p)),
+);
+
+server.tool(
+  "delete_note",
+  "Delete a saved note.",
+  { key: z.string().describe("Note key to delete") },
+  async (p) => textResult(await callBridge("delete_note", p)),
+);
+
+server.tool(
+  "search_notes",
+  "Search through all saved notes by keyword.",
+  { query: z.string().describe("Search term") },
+  async (p) => textResult(await callBridge("search_notes", p)),
+);
+
+// ── Situational awareness ─────────────────────────────────────────────────────
+
+server.tool(
+  "get_online_status",
+  "Check when a user was last online / if they are currently online.",
+  { user_id: z.number().describe("User ID to check") },
+  async (p) => textResult(await callBridge("get_online_status", p)),
+);
+
+server.tool(
+  "get_unread_counts",
+  `Get all chats with unread messages, sorted by unread count.
+Use to prioritise attention across conversations.`,
+  { limit: z.number().optional().describe("Max dialogs to scan (default 100)") },
+  async (p) => textResult(await callBridge("get_unread_counts", p)),
+);
+
+server.tool(
+  "get_chat_activity",
+  "Get message frequency per member for a chat — who's most active.",
+  {
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+    limit: z.number().optional().describe("Number of recent messages to analyse (default 200, max 500)"),
+  },
+  async (p) => textResult(await callBridge("get_chat_activity", p)),
+);
+
+// ── Drafts ────────────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_draft",
+  "Get the current draft message for a chat.",
+  { chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_draft", p)),
+);
+
+server.tool(
+  "set_draft",
+  "Save a draft message in a chat (visible in Telegram app as a pending draft).",
+  {
+    text: z.string().describe("Draft text"),
+    chat_id: z.number().optional().describe("Target chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_draft", p)),
+);
+
+// ── Broadcast ─────────────────────────────────────────────────────────────────
+
+server.tool(
+  "broadcast",
+  `Send the same message to multiple chats at once.
+Use for announcements, mass notifications, or reaching multiple people.
+
+Example: broadcast(text="Meeting in 5!", targets=[123456789, -1001234567890, "@somegroup"])`,
+  {
+    text: z.string().describe("Message text to send"),
+    targets: z.array(z.union([z.number(), z.string()])).describe("List of chat IDs or @usernames to send to"),
+  },
+  async (p) => textResult(await callBridge("broadcast", p)),
+);
+
+// ── Keyword watches ───────────────────────────────────────────────────────────
+
+server.tool(
+  "watch_keyword",
+  `Watch for a keyword across all chats (or a specific chat). When a message contains
+the keyword, Claudius will proactively respond to it even in groups where not @mentioned.
+
+Examples:
+  watch_keyword(keyword="urgent")          — alert on "urgent" in any chat
+  watch_keyword(keyword="bug", chat_id=-1001234567890) — only in that group`,
+  {
+    keyword: z.string().describe("Keyword or phrase to watch for (case-insensitive)"),
+    chat_id: z.number().optional().describe("Restrict to this chat ID (omit for all chats)"),
+  },
+  async (p) => textResult(await callBridge("watch_keyword", p)),
+);
+
+server.tool(
+  "unwatch_keyword",
+  "Stop watching for a keyword.",
+  { keyword: z.string().describe("Keyword to stop watching") },
+  async (p) => textResult(await callBridge("unwatch_keyword", p)),
+);
+
+server.tool(
+  "list_watches",
+  "List all active keyword watches.",
+  {},
+  async () => textResult(await callBridge("list_watches", {})),
 );
 
 // ── Start ────────────────────────────────────────────────────────────────────

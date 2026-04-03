@@ -97,6 +97,13 @@ export async function initUserClient(params: {
   const session = new StringSession(sessionString);
   client = new TelegramClient(session, apiId, apiHash, {
     connectionRetries: 5,
+    // Identify as a modern desktop client so Telegram sends full media types
+    // (without this, some media like polls can come through as MessageMediaUnsupported)
+    deviceModel: "Desktop",
+    systemVersion: "Linux x86_64",
+    appVersion: "4.16.4",
+    langCode: "en",
+    systemLangCode: "en-US",
   });
 
   try {
@@ -289,31 +296,60 @@ export async function getParticipantDetails(params: {
 
   try {
     const chatId = assertAllowedChat(params.chatId);
-    const participants = await client.getParticipants(chatId, {
+
+    // Use raw API so we get ChannelParticipant objects (which carry rank/role)
+    // alongside User objects (which carry name/username/status).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await client.invoke(new Api.channels.GetParticipants({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      channel: chatId as any,
+      filter: new Api.ChannelParticipantsSearch({ q: "" }),
+      offset: 0,
       limit: params.limit ?? 50,
-    });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      hash: BigInt(0) as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    })) as any;
 
-    if (participants.length === 0) return "No participants found.";
+    if (!result?.participants?.length) return "No participants found.";
 
-    return participants
-      .map((p) => {
-        const name =
-          [p.firstName, p.lastName].filter(Boolean).join(" ") || "(no name)";
-        const username = p.username ? `@${p.username}` : "";
-        const bot = p.bot ? " [BOT]" : "";
-        const verified = p.verified ? " [verified]" : "";
-        const premium = p.premium ? " [premium]" : "";
+    // Build a userId → User lookup from the result's user list
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const userMap = new Map<number, any>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (result.users as any[]).map((u: any) => [Number(u.id), u]),
+    );
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (result.participants as any[])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((p: any) => {
+        const uid = Number(p.userId ?? p.peerId?.userId ?? 0);
+        const u = userMap.get(uid);
+        const name = u
+          ? ([u.firstName, u.lastName].filter(Boolean).join(" ") || "(no name)")
+          : "(unknown)";
+        const username = u?.username ? `@${u.username}` : "";
+        const bot = u?.bot ? " [BOT]" : "";
+        const verified = u?.verified ? " [verified]" : "";
+        const premium = u?.premium ? " [premium]" : "";
+
+        const role = p.className === "ChannelParticipantCreator"
+          ? " [owner]"
+          : p.className === "ChannelParticipantAdmin"
+            ? " [admin]"
+            : "";
+        const tag = p.rank ? ` «${p.rank}»` : "";
+
         const status = (() => {
-          const s = p.status;
+          const s = u?.status;
           if (!s) return "unknown";
           const cn = s.className;
           if (cn === "UserStatusOnline") return "online";
           if (cn === "UserStatusOffline") {
-            const off = s as { wasOnline?: number };
-            if (off.wasOnline) {
-              return `last seen ${formatSmartTimestamp(off.wasOnline * 1000)}`;
-            }
-            return "offline";
+            return s.wasOnline
+              ? `last seen ${formatSmartTimestamp(s.wasOnline * 1000)}`
+              : "offline";
           }
           if (cn === "UserStatusRecently") return "recently";
           if (cn === "UserStatusLastWeek") return "last week";
@@ -321,11 +357,23 @@ export async function getParticipantDetails(params: {
           return cn;
         })();
 
-        return `${name}${verified}${premium}${bot} ${username}\n  ID: ${p.id} | Status: ${status}`;
+        return `${name}${verified}${premium}${bot}${role}${tag} ${username}\n  ID: ${uid} | Status: ${status}`;
       })
       .join("\n\n");
-  } catch (err) {
-    return `Failed: ${err instanceof Error ? err.message : err}`;
+  } catch {
+    // Fallback for basic groups (not channels) that don't support GetParticipants
+    try {
+      const chatId = assertAllowedChat(params.chatId);
+      const participants = await client.getParticipants(chatId, { limit: params.limit ?? 50 });
+      if (participants.length === 0) return "No participants found.";
+      return participants.map((p) => {
+        const name = [p.firstName, p.lastName].filter(Boolean).join(" ") || "(no name)";
+        const username = p.username ? `@${p.username}` : "";
+        return `${name} ${username}\n  ID: ${p.id}`;
+      }).join("\n\n");
+    } catch (err2) {
+      return `Failed: ${err2 instanceof Error ? err2.message : err2}`;
+    }
   }
 }
 

@@ -24,7 +24,7 @@
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { Api } from "telegram";
-import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   initUserClient,
@@ -95,6 +95,31 @@ export function clearRateLimits(senderId?: number): void {
 export function clearOurMessageTracking(chatId?: string): void {
   if (chatId !== undefined) ourMessages.delete(chatId);
   else ourMessages.clear();
+}
+
+// ── Keyword watches ───────────────────────────────────────────────────────────
+
+type KeywordWatch = {
+  keyword: string;
+  chatId?: number;
+  createdAt: string;
+};
+
+let watchCache: KeywordWatch[] | null = null;
+let watchCacheTime = 0;
+const WATCH_CACHE_TTL = 15_000; // re-read file every 15s
+
+function loadWatches(): KeywordWatch[] {
+  const now = Date.now();
+  if (watchCache !== null && now - watchCacheTime < WATCH_CACHE_TTL) return watchCache;
+  const watchesPath = resolve(process.env.HOME ?? "/root", ".talon/workspace/keyword-watches.json");
+  try {
+    watchCache = JSON.parse(readFileSync(watchesPath, "utf8")) as KeywordWatch[];
+  } catch {
+    watchCache = [];
+  }
+  watchCacheTime = now;
+  return watchCache;
 }
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
@@ -543,6 +568,15 @@ export function createUserbotFrontend(
             historyText = message.message || `(sent ${fnAttr?.fileName ?? "file"})`;
             historyMediaType = "document";
           }
+          else if (mediaClass === "MessageMediaPoll") {
+            // Capture poll question for history
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const pollQ = (message.media as any)?.poll?.question?.text ?? "poll";
+            historyText = `(poll: "${pollQ}")`;
+          }
+          else if (mediaClass === "MessageMediaUnsupported") {
+            historyText = `(unsupported media — msg_id:${msgId})`;
+          }
           else if (mediaClass) { historyText = `(${mediaClass})`; }
         }
 
@@ -558,9 +592,24 @@ export function createUserbotFrontend(
           });
         }
 
+        // ── Keyword watch check ────────────────────────────────────────────
+        const watches = loadWatches();
+        const matchedKeywords = rawText
+          ? watches.filter(
+              (w) =>
+                rawText.toLowerCase().includes(w.keyword.toLowerCase()) &&
+                (!w.chatId || w.chatId === numericChatId),
+            )
+          : [];
+        const keywordAlertPrefix =
+          matchedKeywords.length > 0
+            ? `[KEYWORD ALERT: "${matchedKeywords.map((w) => w.keyword).join('", "')}"] `
+            : "";
+        const forceHandleByKeyword = matchedKeywords.length > 0;
+
         // ── Group filter ───────────────────────────────────────────────────
         if (isGroup) {
-          let handle = shouldHandleInGroup(message, chatId, selfUsername, selfId);
+          let handle = forceHandleByKeyword || shouldHandleInGroup(message, chatId, selfUsername, selfId);
           if (!handle) {
             // ourMessages map is empty after restart — fall back to fetching the
             // replied-to message from Telegram and checking if WE sent it.
@@ -627,7 +676,7 @@ export function createUserbotFrontend(
           const replyPrefix = message.replyTo?.replyToMsgId
             ? `[Replying to msg:${message.replyTo.replyToMsgId}]\n\n`
             : "";
-          const prompt = replyPrefix + rawText;
+          const prompt = keywordAlertPrefix + replyPrefix + rawText;
 
           enqueue(chatId, numericChatId, {
             prompt,
@@ -752,6 +801,36 @@ export function createUserbotFrontend(
               `Saved to: ${savedPath}`,
               "Read and process this file.",
             ].filter(Boolean).join("\n");
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── Unsupported media (client layer too old for this type) ─────
+          if (mediaClass === "MessageMediaUnsupported") {
+            const prompt = [
+              `[Unsupported media] msg_id:${msgId}`,
+              "Telegram sent media this client can't decode (session layer mismatch).",
+              `Use get_message_by_id(${msgId}) to attempt retrieval, or ask the sender to resend.`,
+            ].join("\n");
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── Poll ──────────────────────────────────────────────────────
+          if (mediaClass === "MessageMediaPoll") {
+            const pollMedia = message.media as { poll?: { question?: { text?: string }; answers?: Array<{ text?: { text?: string } }> }; results?: { results?: Array<{ chosen?: boolean; voters?: number }> } };
+            const question = pollMedia.poll?.question?.text ?? "?";
+            const answers = (pollMedia.poll?.answers ?? []).map((a, i) => {
+              const res = pollMedia.results?.results?.[i];
+              const voters = res?.voters ?? 0;
+              const chosen = res?.chosen ? " ✓" : "";
+              return `  ${i}: ${a.text?.text ?? "?"}${chosen} (${voters} votes)`;
+            });
+            const prompt = [
+              `[Poll] msg_id:${msgId} — "${question}"`,
+              answers.join("\n"),
+              `Use vote_poll(message_id=${msgId}, option_index=N) to vote.`,
+            ].join("\n");
             enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
             return;
           }

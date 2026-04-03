@@ -121,6 +121,22 @@ ALL types support `reply_to` to reply to a specific message.
 - `create_forum_topic(title, [icon_emoji])` — create a new topic
 - `edit_forum_topic(topic_id, title, [icon_emoji])` — rename/edit a topic
 
+**Memory & awareness**
+- `save_note(key, content, [tags])` — save a persistent note (survives restarts)
+- `get_note(key)` — recall a saved note
+- `list_notes([tag])` — browse all notes, optionally by tag
+- `delete_note(key)` — delete a note
+- `search_notes(query)` — full-text search through notes
+- `get_online_status(user_id)` — check if a user is online or when last seen
+- `get_unread_counts([limit])` — see all chats with unread messages
+- `get_chat_activity([chat_id], [limit])` — message frequency per member
+- `get_draft([chat_id])` — read pending draft in a chat
+- `set_draft(text, [chat_id])` — save a draft in Telegram
+- `broadcast(text, targets)` — send same message to multiple chats at once
+- `watch_keyword(keyword, [chat_id])` — proactively respond when keyword appears
+- `unwatch_keyword(keyword)` — stop watching a keyword
+- `list_watches()` — see active keyword watches
+
 ### Message IDs
 
 The user's message ID is in the prompt as [msg_id:N]. Use with `reply_to` and `react`.
