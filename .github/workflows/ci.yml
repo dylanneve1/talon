@@ -21,9 +21,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Type check
         run: npx tsc --noEmit
@@ -48,9 +47,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Run tests
         run: npx vitest run --reporter=verbose --reporter=json --outputFile=test-results.json
@@ -93,9 +91,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Run tests with coverage
         run: npx vitest run --coverage --reporter=verbose --reporter=json --outputFile=test-results.json
@@ -134,9 +131,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Run fuzz tests (extended iterations)
         run: npx vitest run --reporter=verbose --reporter=json --outputFile=fuzz-results.json src/__tests__/fuzz.test.ts
@@ -169,9 +165,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - run: npm ci
+      - run: npm install
 
       - name: Run mutation tests
         run: npx stryker run
