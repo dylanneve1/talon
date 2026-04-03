@@ -37,7 +37,9 @@ ALL types support `reply_to` to reply to a specific message.
 - `copy_message(message_id, [to_chat])` — copy without forward header
 - `pin_message(message_id)` / `unpin_message()` — pin/unpin
 - `schedule_message(text, send_at)` — schedule a future message (ISO datetime)
+- `send_scheduled(text, send_at, [chat_id])` — server-side scheduled message (unix timestamp or ISO)
 - `cancel_scheduled(scheduled_message_id)` — cancel a scheduled message
+- `retract_vote(message_id, [chat_id])` — retract your vote from a poll
 - `send_chat_action(action)` — show "typing…", "uploading photo", etc.
 - `get_message_reactions(message_id)` — who reacted and with what
 - `mark_as_read()` — mark all messages in chat as read
@@ -48,8 +50,13 @@ ALL types support `reply_to` to reply to a specific message.
 - `read_chat_history(limit, before)` — read past messages
 - `search_chat_history(query)` — search by keyword
 - `search_global(query, [limit])` — search across ALL chats
+- `search_by_date([query], from_date, [to_date], [limit], [chat_id])` — search within a date range (ISO dates)
+- `search_messages_from_user(user_id, [query], [limit], [chat_id])` — search messages by a specific user
+- `count_messages([chat_id])` — count total messages in a chat
 - `get_user_messages(user_id, limit)` — get messages from a specific user
 - `get_message_by_id(message_id)` — fetch a single message
+- `get_message_replies(message_id, [limit], [chat_id])` — get the reply thread for a message
+- `get_message_views(message_id, [chat_id])` — get view/forward counts for channel messages
 - `get_pinned_messages()` — list pinned messages
 - `download_media(message_id)` — download a photo/file/video to workspace
 - `list_media(limit)` — list recent photos/files in this chat
@@ -113,6 +120,7 @@ ALL types support `reply_to` to reply to a specific message.
 - `block_user(user_id)` — block a user
 - `unblock_user(user_id)` — unblock a user
 - `get_blocked_users()` — list blocked users
+- `export_contacts()` — export all contacts as a vCard (.vcf) file
 
 **Stories**
 - `post_story(file_path, [caption], [duration_seconds])` — post a story (photo or video)
@@ -129,6 +137,9 @@ ALL types support `reply_to` to reply to a specific message.
 - `set_sticker_set_title(set_name, new_title)` — rename a sticker pack
 - `delete_sticker_set(set_name)` — delete an entire sticker pack
 - `stop_poll(message_id)` — close/stop a poll
+- `search_stickers(query)` — search for sticker packs by keyword
+- `get_trending_stickers()` — get trending/featured sticker packs
+- `get_recent_stickers()` — get recently used stickers
 
 **Forum topics** (in forum-enabled supergroups)
 - `create_forum_topic(title, [icon_emoji])` — create a new topic
@@ -151,6 +162,22 @@ ALL types support `reply_to` to reply to a specific message.
 - `get_message_context(message_id, [context_size], [chat_id])` — messages around a message
 - `get_read_participants(message_id, [chat_id])` — who has read a message
 - `get_reactions_available([chat_id])` — list available reactions
+- `get_web_page_preview(url)` — preview a link (title, description, site name) without sending
+- `get_premium_info([user_id])` — check if a user has Telegram Premium
+- `translate_message(message_id, [to_lang], [chat_id])` — translate a message via Telegram's built-in translator
+- `get_nearby_users(latitude, longitude, [accuracy])` — find users/groups near a location
+- `report_spam([user_id], [chat_id])` — report a user/chat as spam
+- `get_bot_info(user_id_or_username)` — get bot description, commands, and capabilities
+- `get_chat_invite_link_info(hash)` — preview an invite link without joining
+
+**Privacy & security**
+- `get_active_sessions()` — list all active login sessions with device/IP info
+- `terminate_session(hash)` — log out from another device
+- `get_two_factor_status()` — check 2FA status (password set, recovery email, etc.)
+
+**Chat appearance**
+- `set_chat_color(color, [background_emoji_id], [chat_id])` — set channel/supergroup accent color
+- `set_default_send_as(send_as, [chat_id])` — set who messages are sent as in a channel
 
 **Bulk operations**
 - `forward_messages_bulk(message_ids, to, [from_chat_id])` — forward multiple at once
