@@ -24,6 +24,7 @@
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { Api } from "telegram";
+import { Raw } from "telegram/events/index.js";
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -280,6 +281,23 @@ type ProcessParams = {
 };
 
 const knownDmSenders = new Set<number>();
+
+// ── Online status cache ───────────────────────────────────────────────────────
+// Populated by watching UpdateUserStatus updates via Raw event handler.
+
+type CachedStatus = {
+  status: "online" | "offline" | "recently" | "unknown";
+  expiresAt?: number; // for online: when the session expires (unix ms)
+  wasOnlineAt?: number; // for offline: last seen (unix ms)
+  cachedAt: number; // when we cached this
+};
+
+const onlineStatusCache = new Map<number, CachedStatus>();
+
+/** Get cached online status for a user ID (returns null if not cached). */
+export function getCachedOnlineStatus(userId: number): CachedStatus | null {
+  return onlineStatusCache.get(userId) ?? null;
+}
 
 async function processMessage(params: ProcessParams): Promise<void> {
   const {
@@ -845,6 +863,31 @@ export function createUserbotFrontend(
           await sendError(numericChatId, friendlyMessage(err), replyToId);
         }
       }, new NewMessage({ incoming: true }));
+
+      // ── User status change tracking ────────────────────────────────────────
+      client.addEventHandler((update: Api.TypeUpdate) => {
+        if (!(update instanceof Api.UpdateUserStatus)) return;
+        const userId = Number(update.userId);
+        const status = update.status;
+        const now = Date.now();
+        if (status instanceof Api.UserStatusOnline) {
+          onlineStatusCache.set(userId, {
+            status: "online",
+            expiresAt: status.expires * 1000,
+            cachedAt: now,
+          });
+        } else if (status instanceof Api.UserStatusOffline) {
+          onlineStatusCache.set(userId, {
+            status: "offline",
+            wasOnlineAt: status.wasOnline * 1000,
+            cachedAt: now,
+          });
+        } else if (status instanceof Api.UserStatusRecently) {
+          onlineStatusCache.set(userId, { status: "recently", cachedAt: now });
+        } else {
+          onlineStatusCache.set(userId, { status: "unknown", cachedAt: now });
+        }
+      }, new Raw({ types: [Api.UpdateUserStatus] }));
 
       log(
         "userbot-frontend",
