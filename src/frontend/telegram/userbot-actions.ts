@@ -2387,6 +2387,46 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Telegram scheduled messages (server-side) ───────────────────────────
+
+      case "get_scheduled_messages": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetScheduledHistory({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          hash: BigInt(0) as unknown as import("big-integer").BigInteger,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = (result.messages ?? []) as any[];
+        if (msgs.length === 0) return { ok: true, text: "No scheduled messages.", count: 0 };
+        const lines = msgs.map((m) => {
+          const schedDate = m.date ? new Date(m.date * 1000).toISOString() : "unknown time";
+          return `[id:${m.id} scheduled:${schedDate}] ${m.message || "(media)"}`;
+        });
+        return { ok: true, text: lines.join("\n"), count: msgs.length };
+      }
+
+      case "delete_scheduled_message": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const rawIds = body.message_id;
+        const ids: number[] = Array.isArray(rawIds)
+          ? (rawIds as unknown[]).map(Number)
+          : [Number(rawIds)];
+        if (!ids.length || !ids[0]) return { ok: false, error: "message_id (or array) is required" };
+        await withRetry(() => client!.invoke(new Api.messages.DeleteScheduledMessages({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          id: ids,
+        })));
+        return { ok: true, deleted: ids.length };
+      }
+
       // ── Resolve peer / entity lookup ────────────────────────────────────────
 
       case "resolve_peer": {
