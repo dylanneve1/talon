@@ -1637,6 +1637,251 @@ server.tool(
   async () => textResult(await callBridge("get_connection_status", {})),
 );
 
+// ── Poll & vote tools ─────────────────────────────────────────────────────────
+
+server.tool(
+  "retract_vote",
+  "Retract your vote from a poll.",
+  {
+    message_id: z.number().describe("Message ID of the poll"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("retract_vote", p)),
+);
+
+// ── Scheduled messages ────────────────────────────────────────────────────────
+
+server.tool(
+  "send_scheduled",
+  "Send a message scheduled for a future time (server-side scheduling).",
+  {
+    text: z.string().describe("Message text"),
+    send_at: z.union([z.number(), z.string()]).describe("When to send: unix timestamp (seconds) or ISO date string"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("send_scheduled", p)),
+);
+
+// ── Message replies & views ───────────────────────────────────────────────────
+
+server.tool(
+  "get_message_replies",
+  "Get the reply thread for a specific message.",
+  {
+    message_id: z.number().describe("Message ID to get replies for"),
+    limit: z.number().optional().describe("Max replies to return (default 20, max 100)"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("get_message_replies", p)),
+);
+
+server.tool(
+  "get_message_views",
+  "Get view/forward counts for channel messages.",
+  {
+    message_id: z.union([z.number(), z.array(z.number())]).describe("Message ID or array of IDs"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("get_message_views", p)),
+);
+
+// ── Location & spam ───────────────────────────────────────────────────────────
+
+server.tool(
+  "get_nearby_users",
+  "Find Telegram users and groups near a geographic location.",
+  {
+    latitude: z.number().describe("Latitude"),
+    longitude: z.number().describe("Longitude"),
+    accuracy: z.number().optional().describe("Accuracy in meters"),
+  },
+  async (p) => textResult(await callBridge("get_nearby_users", p)),
+);
+
+server.tool(
+  "report_spam",
+  "Report a user or chat as spam.",
+  {
+    user_id: z.number().optional().describe("User ID to report"),
+    chat_id: z.number().optional().describe("Chat ID to report (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("report_spam", p)),
+);
+
+// ── Web preview ───────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_web_page_preview",
+  "Get link preview data (title, description, photo) without sending a message.",
+  {
+    url: z.string().describe("URL to preview"),
+  },
+  async (p) => textResult(await callBridge("get_web_page_preview", p)),
+);
+
+// ── Premium & translation ─────────────────────────────────────────────────────
+
+server.tool(
+  "get_premium_info",
+  "Check if a user has Telegram Premium.",
+  {
+    user_id: z.number().optional().describe("User ID to check (defaults to self)"),
+  },
+  async (p) => textResult(await callBridge("get_premium_info", p)),
+);
+
+server.tool(
+  "translate_message",
+  "Translate a message using Telegram's built-in translation.",
+  {
+    message_id: z.number().describe("Message ID to translate"),
+    to_lang: z.string().optional().describe("Target language code, e.g. 'en', 'es', 'fr' (default 'en')"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("translate_message", p)),
+);
+
+server.tool(
+  "set_chat_color",
+  "Set the accent color/theme of a channel or supergroup.",
+  {
+    color: z.number().describe("Color ID (0-6)"),
+    background_emoji_id: z.string().optional().describe("Background emoji ID (bigint as string)"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_chat_color", p)),
+);
+
+// ── Advanced search ───────────────────────────────────────────────────────────
+
+server.tool(
+  "search_by_date",
+  "Search messages within a specific date range.",
+  {
+    query: z.string().optional().describe("Search query (empty for all messages)"),
+    from_date: z.string().optional().describe("Start date (ISO format)"),
+    to_date: z.string().optional().describe("End date (ISO format)"),
+    limit: z.number().optional().describe("Max results (default 50, max 200)"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("search_by_date", p)),
+);
+
+server.tool(
+  "search_messages_from_user",
+  "Search messages sent by a specific user in a chat.",
+  {
+    user_id: z.number().describe("User ID whose messages to search"),
+    query: z.string().optional().describe("Search query (empty for all messages)"),
+    limit: z.number().optional().describe("Max results (default 50, max 200)"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("search_messages_from_user", p)),
+);
+
+server.tool(
+  "count_messages",
+  "Count total messages in a chat.",
+  {
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("count_messages", p)),
+);
+
+// ── Sticker discovery ─────────────────────────────────────────────────────────
+
+server.tool(
+  "search_stickers",
+  "Search for sticker packs by keyword.",
+  {
+    query: z.string().describe("Search query"),
+  },
+  async (p) => textResult(await callBridge("search_stickers", p)),
+);
+
+server.tool(
+  "get_trending_stickers",
+  "Get trending/featured sticker packs.",
+  {},
+  async () => textResult(await callBridge("get_trending_stickers", {})),
+);
+
+server.tool(
+  "get_recent_stickers",
+  "Get recently used stickers.",
+  {},
+  async () => textResult(await callBridge("get_recent_stickers", {})),
+);
+
+// ── Privacy & security ────────────────────────────────────────────────────────
+
+server.tool(
+  "get_active_sessions",
+  "List all active login sessions (devices, IPs, last active times).",
+  {},
+  async () => textResult(await callBridge("get_active_sessions", {})),
+);
+
+server.tool(
+  "terminate_session",
+  "Log out from another device/session.",
+  {
+    hash: z.string().describe("Session hash from get_active_sessions"),
+  },
+  async (p) => textResult(await callBridge("terminate_session", p)),
+);
+
+server.tool(
+  "get_two_factor_status",
+  "Check if two-factor authentication (2FA) is enabled.",
+  {},
+  async () => textResult(await callBridge("get_two_factor_status", {})),
+);
+
+// ── Contacts export ───────────────────────────────────────────────────────────
+
+server.tool(
+  "export_contacts",
+  "Export all Telegram contacts as a vCard (.vcf) file.",
+  {},
+  async () => textResult(await callBridge("export_contacts", {})),
+);
+
+// ── Bot info ──────────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_bot_info",
+  "Get detailed info about a Telegram bot (description, commands list).",
+  {
+    user_id: z.number().optional().describe("Bot user ID"),
+    username: z.string().optional().describe("Bot @username"),
+  },
+  async (p) => textResult(await callBridge("get_bot_info", p)),
+);
+
+// ── Invite link preview ──────────────────────────────────────────────────────
+
+server.tool(
+  "get_chat_invite_link_info",
+  "Preview an invite link without joining — see chat title, member count, etc.",
+  {
+    hash: z.string().describe("Invite link hash or full t.me link"),
+  },
+  async (p) => textResult(await callBridge("get_chat_invite_link_info", p)),
+);
+
+// ── Send-as identity ──────────────────────────────────────────────────────────
+
+server.tool(
+  "set_default_send_as",
+  "Set who messages are sent as in a channel (your account or a channel you admin).",
+  {
+    send_as: z.number().describe("User ID or channel ID to send as"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_default_send_as", p)),
+);
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {
