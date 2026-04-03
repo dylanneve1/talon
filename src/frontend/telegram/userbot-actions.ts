@@ -2387,6 +2387,60 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Contacts improvements ────────────────────────────────────────────────
+
+      case "get_mutual_contacts": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        // mutual contacts = contacts who are in our contact list
+        // contacts.GetContacts already returns the users we have mutual contact with
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.contacts.GetContacts({
+          hash: BigInt(0) as unknown as import("big-integer").BigInteger,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const users = (result.users ?? []) as any[];
+        if (users.length === 0) return { ok: true, text: "No mutual contacts.", count: 0 };
+        const formatted = users
+          .filter((u) => u.mutualContact === true || u.contact === true)
+          .map((u) => {
+            const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || "(no name)";
+            const username = u.username ? ` @${u.username}` : "";
+            const phone = u.phone ? ` +${u.phone}` : "";
+            return `[id:${Number(u.id)}]${username} ${name}${phone}`;
+          });
+        return { ok: true, text: formatted.join("\n") || "No mutual contacts.", count: formatted.length };
+      }
+
+      case "import_contacts": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const rawContacts = body.contacts;
+        if (!Array.isArray(rawContacts) || rawContacts.length === 0)
+          return { ok: false, error: "contacts must be a non-empty array of {phone, first_name, last_name?}" };
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const contacts = (rawContacts as any[]).map((c, i) => {
+          const phone = String(c.phone ?? "");
+          const firstName = String(c.first_name ?? "");
+          const lastName = String(c.last_name ?? "");
+          if (!phone || !firstName) throw new Error(`Contact[${i}]: phone and first_name are required`);
+          return new Api.InputPhoneContact({
+            clientId: BigInt(Date.now() + i) as unknown as import("big-integer").BigInteger,
+            phone,
+            firstName,
+            lastName,
+          });
+        });
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.contacts.ImportContacts({ contacts }))) as any;
+        const imported = Number(result?.imported?.length ?? 0);
+        const notImported = Number(result?.retryContacts?.length ?? 0);
+        return { ok: true, imported, not_imported: notImported };
+      }
+
       // ── List media in chat ───────────────────────────────────────────────────
 
       case "list_media": {
