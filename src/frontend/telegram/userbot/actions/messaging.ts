@@ -148,7 +148,7 @@ export function registerMessagingActions(
       scheduledMessages.delete(scheduleId);
     }, delaySec * 1000);
     scheduledMessages.set(scheduleId, timer);
-    return { ok: true, schedule_id: scheduleId, delay_seconds: delaySec };
+    return { ok: true, schedule_id: scheduleId, delay_seconds: delaySec, warning: "Scheduled messages are held in memory and will be lost if the bot restarts. For persistent scheduling, use send_scheduled instead." };
   });
 
   registry.set("cancel_scheduled", async (body) => {
@@ -283,9 +283,14 @@ export function registerMessagingActions(
     const results: Array<{ target: unknown; ok: boolean; error?: string }> = [];
     for (const target of targets) {
       try {
-        const resolvedTarget = await client.getEntity(
-          typeof target === "number" || typeof target === "string" ? target : String(target)
-        ).catch(() => target);
+        const rawTarget = typeof target === "number" || typeof target === "string" ? target : String(target);
+        let resolvedTarget: unknown;
+        try {
+          resolvedTarget = await client.getEntity(rawTarget);
+        } catch (resolveErr) {
+          results.push({ target, ok: false, error: `Could not resolve target: ${resolveErr instanceof Error ? resolveErr.message : String(resolveErr)}` });
+          continue;
+        }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await withRetry(() => client!.sendMessage(resolvedTarget as any, { message: text }));
         results.push({ target, ok: true });
