@@ -15,9 +15,9 @@ COPY prompts/ prompts/
 COPY bin/ bin/
 COPY tsconfig.json ./
 
-# Run as non-root user
-RUN useradd -m -u 1000 talon && chown -R talon:talon /app
-USER talon
+# Run as the existing non-root node user (UID 1000)
+RUN chown -R node:node /app
+USER node
 
 # Workspace persisted via volume
 VOLUME /app/workspace
