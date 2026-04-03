@@ -195,6 +195,24 @@ You can create persistent recurring scheduled tasks using cron tools. Jobs survi
 - \`delete_cron_job\` — remove a job permanently
 Two job types: "message" sends text directly, "query" runs a Claude prompt with full tool access.`);
 
+  // Include a brief summary of saved notes so Claude knows what it has stored
+  try {
+    const notesDir = resolve(dirs.workspace, "notes");
+    const noteFiles = readdirSync(notesDir).filter((f) => f.endsWith(".json") && !f.startsWith("."));
+    if (noteFiles.length > 0) {
+      const noteSummaries = noteFiles.slice(0, 30).map((f) => {
+        try {
+          const n = JSON.parse(readFileSync(resolve(notesDir, f), "utf-8"));
+          const tags = n.tags?.length ? ` [${n.tags.join(", ")}]` : "";
+          return `  - ${n.key}${tags}: ${String(n.content ?? "").slice(0, 80)}`;
+        } catch { return null; }
+      }).filter(Boolean);
+      if (noteSummaries.length > 0) {
+        parts.push(`## Saved Notes (${noteFiles.length} total)\n\nYou have these notes stored. Use \`get_note(key)\` to read full content, \`search_notes(query)\` for semantic search.\n${noteSummaries.join("\n")}${noteFiles.length > 30 ? `\n  ... and ${noteFiles.length - 30} more` : ""}`);
+      }
+    }
+  } catch { /* no notes yet */ }
+
   parts.push(`## Current Date & Time\n${formatFullDatetime()}`);
 
   // Plugin system prompt contributions (injected by caller)
