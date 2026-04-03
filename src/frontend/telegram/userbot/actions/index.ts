@@ -27,6 +27,7 @@ import { registerGoalActions } from "./goals.js";
 import { registerRelationshipActions } from "./relationships.js";
 import { registerSummaryActions } from "./summaries.js";
 import { registerMonitoringActions } from "./monitoring.js";
+import { registerJournalActions } from "./journal.js";
 
 export type ActionHandler = (
   body: Record<string, unknown>,
@@ -69,6 +70,7 @@ export function createUserbotActionHandler(
   registerRelationshipActions(registry);
   registerSummaryActions(registry);
   registerMonitoringActions(registry);
+  registerJournalActions(registry);
 
   return async (
     body: Record<string, unknown>,

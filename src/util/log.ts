@@ -39,7 +39,8 @@ export type LogComponent =
   | "relationships"
   | "summaries"
   | "self-monitor"
-  | "userbot-frontend";
+  | "userbot-frontend"
+  | "journal";
 
 const LOG_FILE = files.log;
 

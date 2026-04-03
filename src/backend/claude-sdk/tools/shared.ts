@@ -1310,4 +1310,45 @@ Type "query" runs the content as a Claude prompt with full tool access (can sear
     },
     async (params) => textResult(await callBridge("search_goals", params)),
   );
+
+  // ── Journal ─────────────────────────────────────────────────────────────────
+
+  server.tool(
+    "add_journal_entry",
+    "Record a reflection, decision, observation, or plan in your journal. Use this to think out loud and build context across sessions.",
+    {
+      type: z.enum(["reflection", "decision", "observation", "plan", "error_analysis"]),
+      content: z.string(),
+      tags: z.array(z.string()).optional(),
+    },
+    async (params) => textResult(await callBridge("add_journal_entry", params)),
+  );
+
+  server.tool(
+    "get_journal",
+    "Read recent journal entries — your own thoughts and decisions.",
+    {
+      limit: z.number().optional(),
+      type: z.enum(["reflection", "decision", "observation", "plan", "error_analysis"]).optional(),
+    },
+    async (params) => textResult(await callBridge("get_journal", params)),
+  );
+
+  server.tool(
+    "search_journal",
+    "Search your journal for past thoughts and decisions.",
+    {
+      query: z.string(),
+    },
+    async (params) => textResult(await callBridge("search_journal", params)),
+  );
+
+  // ── Conversation context ────────────────────────────────────────────────────
+
+  server.tool(
+    "get_conversation_context",
+    "Get a rich snapshot of the current conversation: summary, participants, goals, chat profile, pending items, and active watches.",
+    {},
+    async () => textResult(await callBridge("get_conversation_context", {})),
+  );
 }

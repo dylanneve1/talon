@@ -22,6 +22,7 @@ import { loadGoals } from "./storage/goals.js";
 import { loadRelationships } from "./storage/relationships.js";
 import { loadSummaries } from "./storage/summaries.js";
 import { loadMetrics } from "./storage/self-monitor.js";
+import { loadJournal } from "./storage/journal.js";
 import { initDispatcher } from "./core/dispatcher.js";
 import { initPulse, resetPulseTimer } from "./core/pulse.js";
 import { initCron } from "./core/cron.js";
@@ -94,6 +95,7 @@ export async function bootstrap(
   loadRelationships();
   loadSummaries();
   loadMetrics();
+  loadJournal();
 
   return { config };
 }

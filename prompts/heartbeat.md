@@ -24,6 +24,13 @@ Before doing anything else, check the learning state:
 - After completing tasks, use `add_insight` to record what you learned
 - Call `prune_insights` to decay old insights and keep the knowledge base fresh
 
+### Reflection
+
+- After completing tasks, write a journal entry with `add_journal_entry(type="reflection", content="...")`
+- Record decisions you made and why
+- Note observations about user patterns or system behavior
+- This builds your long-term self-awareness
+
 ### Priority 0.5: Goal Progress
 
 - Call `list_goals` to review active goals
@@ -113,6 +120,11 @@ Examples of good proactive messages:
 - `get_chat_profile(chat_id)` — chat details and activity
 - `get_chat_summary_stored(chat_id)` — stored conversation summary
 - `read_any_chat(target, limit)` — read messages from any chat
+
+**Journal:**
+- `add_journal_entry(type, content, tags)` — record a thought, decision, or observation
+- `get_journal(limit, type)` — read recent journal entries
+- `search_journal(query)` — search past thoughts and decisions
 
 **Self:**
 - `get_performance_report()` — your own metrics

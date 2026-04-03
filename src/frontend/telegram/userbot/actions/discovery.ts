@@ -201,6 +201,36 @@ export function registerDiscoveryActions(registry: ActionRegistry) {
     return { ok: true, query, count: msgs.length, messages: lines.join("\n") };
   });
 
+  registry.set("get_conversation_context", async (_body, _chatId, peer, chatIdStr) => {
+    const context: Record<string, unknown> = {};
+
+    try {
+      const { getSummary } = await import("../../../../storage/summaries.js");
+      context.summary = getSummary(String(peer));
+    } catch { /* no summaries */ }
+
+    try {
+      const { getChatProfile } = await import("../../../../storage/relationships.js");
+      context.chatProfile = getChatProfile(String(peer));
+    } catch { /* no relationships */ }
+
+    try {
+      const { getActiveGoals } = await import("../../../../storage/goals.js");
+      const goals = getActiveGoals();
+      context.relatedGoals = goals.filter((g) =>
+        g.relatedChats?.includes(String(peer)) || g.relatedChats?.includes(chatIdStr),
+      );
+    } catch { /* no goals */ }
+
+    try {
+      const { getRecentEntries } = await import("../../../../storage/journal.js");
+      const recent = getRecentEntries(3);
+      if (recent.length > 0) context.recentJournal = recent;
+    } catch { /* no journal */ }
+
+    return { ok: true, chat_id: chatIdStr, ...context };
+  });
+
   registry.set("read_any_chat", async (body) => {
     const client = getClient();
     if (!client) return { ok: false, error: "User client not connected." };

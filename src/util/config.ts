@@ -243,6 +243,19 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
     }
   } catch { /* no learning data yet */ }
 
+  // Journal entries
+  try {
+    const journalPath = resolve(dirs.workspace, "memory", "journal.json");
+    if (existsSync(journalPath)) {
+      const data = JSON.parse(readFileSync(journalPath, "utf-8"));
+      const recent = (data.entries ?? []).slice(-3);
+      if (recent.length > 0) {
+        const lines = recent.map((e: any) => `  - [${e.type}] ${e.content.slice(0, 100)}`);
+        parts.push(`## Recent Journal\n\nYour recent reflections:\n${lines.join("\n")}`);
+      }
+    }
+  } catch { /* no journal yet */ }
+
   // Chat summaries
   try {
     const summariesPath = resolve(dirs.workspace, "memory", "summaries.json");
