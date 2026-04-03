@@ -511,15 +511,17 @@ async function handleCommand(
       const activeModel = chatSets.model ?? "default";
       const effortName = chatSets.effort ?? "adaptive";
       const pulseOn = isPulseEnabled(chatId);
+      const { setChatPulseInterval: _spi } = await import("../../../storage/chat-settings.js");
+      const intervalMs = chatSets.pulseIntervalMs ?? 300000;
 
       const lines = [
-        "**Settings**",
+        "**⚙️ Settings**",
         "",
         `**Model:** \`${activeModel}\``,
         `**Effort:** ${effortName}`,
-        `**Pulse:** ${pulseOn ? "on" : "off"}`,
+        `**Pulse:** ${pulseOn ? "on" : "off"} (every ${formatDuration(intervalMs)})`,
         "",
-        "Change with: `/model opus`, `/effort high`, `/pulse on`",
+        "Change: `/model opus` · `/effort high` · `/pulse on`",
       ];
       const sentId = await sendUserbotMessage(numericChatId, lines.join("\n"), msgId);
       recordOurMessage(chatId, sentId);
@@ -645,6 +647,109 @@ async function handleCommand(
       const sentId = await sendUserbotMessage(numericChatId, "♻️ Restarting…", msgId);
       recordOurMessage(chatId, sentId);
       setTimeout(() => process.exit(0), 500);
+      return true;
+    }
+
+    case "memory": {
+      const { files: talonFiles } = await import("../../../util/paths.js");
+      try {
+        if (!existsSync(talonFiles.memory)) {
+          const sentId = await sendUserbotMessage(numericChatId, "No memory file yet. I'll create one as I learn about you.", msgId);
+          recordOurMessage(chatId, sentId);
+          return true;
+        }
+        const content = readFileSync(talonFiles.memory, "utf-8").trim();
+        if (!content) {
+          const sentId = await sendUserbotMessage(numericChatId, "Memory file is empty. I'll update it as we chat.", msgId);
+          recordOurMessage(chatId, sentId);
+          return true;
+        }
+        const display = content.length > 3500
+          ? content.slice(0, 3500) + "\n\n... (truncated)"
+          : content;
+        const sentId = await sendUserbotMessage(numericChatId, display, msgId);
+        recordOurMessage(chatId, sentId);
+      } catch {
+        const sentId = await sendUserbotMessage(numericChatId, "Could not read memory file.", msgId);
+        recordOurMessage(chatId, sentId);
+      }
+      return true;
+    }
+
+    case "plugins": {
+      const { getLoadedPlugins } = await import("../../../core/plugin.js");
+      const plugins = getLoadedPlugins();
+      if (plugins.length === 0) {
+        const sentId = await sendUserbotMessage(numericChatId, "No plugins loaded.", msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      const lines = plugins.map((p) => {
+        const ver = p.plugin.version ? ` v${p.plugin.version}` : "";
+        const desc = p.plugin.description ? ` — ${p.plugin.description}` : "";
+        const mcp = p.plugin.mcpServerPath ? " [MCP]" : "";
+        return `• **${p.plugin.name}**${ver}${mcp}${desc}`;
+      });
+      const sentId = await sendUserbotMessage(numericChatId, `**Plugins (${plugins.length})**\n\n${lines.join("\n")}`, msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
+
+    case "admin": {
+      if (!isAdmin) {
+        const sentId = await sendUserbotMessage(numericChatId, "Not authorized.", msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      const { getAllSessions } = await import("../../../storage/sessions.js");
+      const { getActiveCount } = await import("../../../core/dispatcher.js");
+      const { getHealthStatus, getRecentErrors } = await import("../../../util/watchdog.js");
+
+      const sub = cmdArg?.trim().split(/\s+/)[0] ?? "";
+
+      if (sub === "health" || !sub) {
+        const health = getHealthStatus();
+        const errors = getRecentErrors(5);
+        const sessions = getAllSessions();
+        const active = getActiveCount();
+        const lines = [
+          `**Admin Panel**`,
+          "",
+          `**Health:** ${health.healthy ? "✓ healthy" : "⚠ degraded"}`,
+          `**Active dispatches:** ${active}`,
+          `**Sessions:** ${sessions.length}`,
+          `**Uptime:** ${formatDuration(process.uptime() * 1000)}`,
+          `**Memory:** ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+        ];
+        if (errors.length > 0) {
+          lines.push("", "**Recent errors:**");
+          for (const e of errors) lines.push(`  • ${e}`);
+        }
+        lines.push("", "Subcommands: `/admin health`, `/admin chats`");
+        const sentId = await sendUserbotMessage(numericChatId, lines.join("\n"), msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+
+      if (sub === "chats") {
+        const sessions = getAllSessions();
+        if (sessions.length === 0) {
+          const sentId = await sendUserbotMessage(numericChatId, "No active sessions.", msgId);
+          recordOurMessage(chatId, sentId);
+          return true;
+        }
+        sessions.sort((a, b) => (b.info.lastActive || 0) - (a.info.lastActive || 0));
+        const lines = sessions.map((s) => {
+          const age = s.info.lastActive ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago` : "?";
+          return `\`${s.chatId}\` · ${s.info.turns} turns · ${age}`;
+        });
+        const sentId = await sendUserbotMessage(numericChatId, `**Active chats (${sessions.length})**\n\n${lines.join("\n")}`, msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+
+      const sentId = await sendUserbotMessage(numericChatId, "Unknown subcommand. Use: `/admin health`, `/admin chats`", msgId);
+      recordOurMessage(chatId, sentId);
       return true;
     }
 
