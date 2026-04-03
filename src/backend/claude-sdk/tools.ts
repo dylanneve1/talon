@@ -1320,6 +1320,323 @@ server.tool(
   async () => textResult(await callBridge("list_watches", {})),
 );
 
+// ── Join requests ─────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_join_requests",
+  "List pending join requests for a chat.",
+  {
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+    limit: z.number().optional().describe("Max results (default 20)"),
+  },
+  async (p) => textResult(await callBridge("get_join_requests", p)),
+);
+
+server.tool(
+  "approve_join_request",
+  "Approve a pending join request.",
+  {
+    user_id: z.number().describe("User ID to approve"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("approve_join_request", p)),
+);
+
+server.tool(
+  "decline_join_request",
+  "Decline a pending join request.",
+  {
+    user_id: z.number().describe("User ID to decline"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("decline_join_request", p)),
+);
+
+// ── Chat settings ─────────────────────────────────────────────────────────────
+
+server.tool(
+  "set_auto_delete",
+  "Set message auto-delete timer for a chat. Messages are deleted after the specified duration.",
+  {
+    seconds: z.number().describe("TTL in seconds: 0=off, 86400=1day, 604800=1week, 2592000=1month"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_auto_delete", p)),
+);
+
+server.tool(
+  "set_protected_content",
+  "Toggle forwarding/saving restriction on a chat's content.",
+  {
+    enabled: z.boolean().describe("true to restrict forwarding, false to allow"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_protected_content", p)),
+);
+
+server.tool(
+  "convert_to_supergroup",
+  "Convert a basic group to a supergroup (enables admin features, topics, etc).",
+  { chat_id: z.number().optional().describe("Basic group chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("convert_to_supergroup", p)),
+);
+
+// ── Entity lookup ─────────────────────────────────────────────────────────────
+
+server.tool(
+  "resolve_peer",
+  "Resolve any @username, phone number, or ID to full entity info.",
+  { query: z.string().describe("@username, +phone, or numeric ID") },
+  async (p) => textResult(await callBridge("resolve_peer", p)),
+);
+
+// ── Scheduled messages ────────────────────────────────────────────────────────
+
+server.tool(
+  "get_scheduled_messages",
+  "List all server-side scheduled messages in a chat.",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_scheduled_messages", p)),
+);
+
+server.tool(
+  "delete_scheduled_message",
+  "Delete a scheduled message before it sends.",
+  {
+    message_id: z.number().describe("Scheduled message ID to cancel"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("delete_scheduled_message", p)),
+);
+
+// ── Forum topics ──────────────────────────────────────────────────────────────
+
+server.tool(
+  "close_forum_topic",
+  "Close a forum topic (archive it).",
+  {
+    topic_id: z.number().describe("Topic ID to close"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("close_forum_topic", p)),
+);
+
+server.tool(
+  "reopen_forum_topic",
+  "Reopen a closed forum topic.",
+  {
+    topic_id: z.number().describe("Topic ID to reopen"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("reopen_forum_topic", p)),
+);
+
+server.tool(
+  "delete_forum_topic",
+  "Delete a forum topic and all its messages.",
+  {
+    topic_id: z.number().describe("Topic ID to delete"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("delete_forum_topic", p)),
+);
+
+// ── Channel management ────────────────────────────────────────────────────────
+
+server.tool(
+  "set_channel_username",
+  "Set or remove the public @username for a channel/supergroup.",
+  {
+    username: z.string().describe("New username (without @), or empty string to remove"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_channel_username", p)),
+);
+
+server.tool(
+  "set_discussion_group",
+  "Link a discussion supergroup to a channel.",
+  {
+    group_id: z.number().describe("Supergroup ID to use as discussion group"),
+    channel_id: z.number().optional().describe("Channel ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_discussion_group", p)),
+);
+
+// ── Emoji status ──────────────────────────────────────────────────────────────
+
+server.tool(
+  "set_emoji_status",
+  "Set or clear your profile emoji status (the icon next to your name).",
+  {
+    document_id: z.string().optional().describe("Custom emoji document ID (omit to clear)"),
+    until: z.number().optional().describe("Unix timestamp when status expires (omit for permanent)"),
+  },
+  async (p) => textResult(await callBridge("set_emoji_status", p)),
+);
+
+server.tool(
+  "get_emoji_status",
+  "Get your current emoji status.",
+  {},
+  async () => textResult(await callBridge("get_emoji_status", {})),
+);
+
+// ── Discovery & stats ─────────────────────────────────────────────────────────
+
+server.tool(
+  "get_similar_channels",
+  "Find channels similar to a given channel.",
+  { chat_id: z.number().optional().describe("Channel ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_similar_channels", p)),
+);
+
+server.tool(
+  "get_channel_stats",
+  "Get statistics for a channel or supergroup (views, growth, engagement).",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_channel_stats", p)),
+);
+
+// ── Read management ───────────────────────────────────────────────────────────
+
+server.tool(
+  "mark_mentions_read",
+  "Mark all @mentions as read in a chat.",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("mark_mentions_read", p)),
+);
+
+server.tool(
+  "mark_reactions_read",
+  "Mark all reaction notifications as read in a chat.",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("mark_reactions_read", p)),
+);
+
+// ── Message context ───────────────────────────────────────────────────────────
+
+server.tool(
+  "get_message_context",
+  "Get messages surrounding a specific message (before and after it).",
+  {
+    message_id: z.number().describe("Center message ID"),
+    context_size: z.number().optional().describe("Messages each side (default 5)"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("get_message_context", p)),
+);
+
+// ── Poll ──────────────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_poll_results",
+  "Get detailed vote breakdown for a poll.",
+  {
+    message_id: z.number().describe("Poll message ID"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("get_poll_results", p)),
+);
+
+// ── Media listing ─────────────────────────────────────────────────────────────
+
+server.tool(
+  "list_media",
+  "Search for media files in a chat.",
+  {
+    type: z.enum(["photo", "video", "document", "voice", "all"]).optional().describe("Media type (default: all)"),
+    limit: z.number().optional().describe("Max results (default 20)"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("list_media", p)),
+);
+
+// ── Contacts ──────────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_mutual_contacts",
+  "Get contacts who are also your Telegram contacts (mutual).",
+  {},
+  async () => textResult(await callBridge("get_mutual_contacts", {})),
+);
+
+server.tool(
+  "import_contacts",
+  "Import multiple phone contacts at once.",
+  {
+    contacts: z.array(z.object({
+      phone: z.string().describe("Phone number with country code"),
+      first_name: z.string().describe("First name"),
+      last_name: z.string().optional().describe("Last name"),
+    })).describe("Array of contacts to import"),
+  },
+  async (p) => textResult(await callBridge("import_contacts", p)),
+);
+
+// ── Reactions & read receipts ─────────────────────────────────────────────────
+
+server.tool(
+  "get_reactions_available",
+  "List all reactions available for use in a chat.",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_reactions_available", p)),
+);
+
+server.tool(
+  "get_read_participants",
+  "See who has read a specific message in a group.",
+  {
+    message_id: z.number().describe("Message ID"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("get_read_participants", p)),
+);
+
+// ── Bulk operations ───────────────────────────────────────────────────────────
+
+server.tool(
+  "clear_chat_history",
+  "Delete all messages in a chat (local or both sides).",
+  {
+    revoke: z.boolean().optional().describe("true to delete for both sides (DMs only), false for local only"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("clear_chat_history", p)),
+);
+
+server.tool(
+  "forward_messages_bulk",
+  "Forward multiple messages at once to another chat.",
+  {
+    message_ids: z.array(z.number()).describe("Array of message IDs to forward"),
+    to: z.string().describe("Destination: @username, numeric ID, etc."),
+    from_chat_id: z.number().optional().describe("Source chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("forward_messages_bulk", p)),
+);
+
+// ── Profile photos ────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_profile_photos",
+  "Get a user's profile photos.",
+  {
+    user_id: z.number().optional().describe("User ID (defaults to self)"),
+    limit: z.number().optional().describe("Max photos (default 10)"),
+  },
+  async (p) => textResult(await callBridge("get_profile_photos", p)),
+);
+
+// ── Connection ────────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_connection_status",
+  "Check the userbot connection status and session info.",
+  {},
+  async () => textResult(await callBridge("get_connection_status", {})),
+);
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {

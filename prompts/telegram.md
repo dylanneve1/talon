@@ -74,8 +74,13 @@ ALL types support `reply_to` to reply to a specific message.
 - `leave_chat([chat_id])` — leave a group or channel
 - `create_group(title, user_ids)` — create a basic group
 - `create_supergroup(title, [description])` — create a supergroup/channel
+- `convert_to_supergroup([chat_id])` — upgrade basic group to supergroup
 - `invite_to_chat(user_ids, [chat_id])` — invite users to a group
 - `delete_chat([chat_id])` — delete a group (must be creator)
+- `set_auto_delete(seconds, [chat_id])` — message auto-delete timer (0=off)
+- `set_protected_content(enabled, [chat_id])` — restrict forwarding/saving
+- `set_channel_username(username, [chat_id])` — set/remove public @username
+- `set_discussion_group(group_id, [channel_id])` — link discussion group to channel
 
 **Member management**
 - `kick_member(user_id, [chat_id])` — kick and ban a member
@@ -85,6 +90,9 @@ ALL types support `reply_to` to reply to a specific message.
 - `demote_admin(user_id, [chat_id])` — remove admin rights
 - `set_member_tag(user_id, tag, [chat_id])` — set a visual member tag (no admin powers needed)
 - `toggle_slow_mode(seconds, [chat_id])` — set slow mode delay (0 to disable)
+- `get_join_requests([chat_id])` — list pending join requests
+- `approve_join_request(user_id, [chat_id])` — approve a join request
+- `decline_join_request(user_id, [chat_id])` — decline a join request
 
 **Your own profile**
 - `get_my_profile()` — view your own account details
@@ -92,11 +100,16 @@ ALL types support `reply_to` to reply to a specific message.
 - `set_username(username)` — change your Telegram @username
 - `set_profile_photo(file_path)` — update your profile photo
 - `delete_profile_photos([all])` — delete your profile photo(s)
+- `set_emoji_status([document_id], [until])` — set/clear profile emoji status
+- `get_emoji_status()` — view current emoji status
+- `get_profile_photos([user_id], [limit])` — get a user's profile photos
 
 **Contacts**
 - `get_contacts()` — list your Telegram contacts
 - `add_contact(phone, first_name, [last_name])` — add a contact
 - `delete_contact(user_id)` — remove a contact
+- `import_contacts(contacts)` — import multiple contacts at once
+- `get_mutual_contacts()` — get mutual Telegram contacts
 - `block_user(user_id)` — block a user
 - `unblock_user(user_id)` — unblock a user
 - `get_blocked_users()` — list blocked users
@@ -120,6 +133,30 @@ ALL types support `reply_to` to reply to a specific message.
 **Forum topics** (in forum-enabled supergroups)
 - `create_forum_topic(title, [icon_emoji])` — create a new topic
 - `edit_forum_topic(topic_id, title, [icon_emoji])` — rename/edit a topic
+- `close_forum_topic(topic_id, [chat_id])` — close/archive a topic
+- `reopen_forum_topic(topic_id, [chat_id])` — reopen a closed topic
+- `delete_forum_topic(topic_id, [chat_id])` — delete topic and all messages
+
+**Scheduled messages**
+- `get_scheduled_messages([chat_id])` — list all scheduled messages
+- `delete_scheduled_message(message_id, [chat_id])` — cancel a scheduled message
+
+**Discovery & stats**
+- `resolve_peer(query)` — resolve @username/phone/ID to full entity info
+- `get_similar_channels([chat_id])` — find similar channels
+- `get_channel_stats([chat_id])` — channel/supergroup statistics
+- `get_connection_status()` — check userbot connection health
+- `get_poll_results(message_id, [chat_id])` — detailed poll vote breakdown
+- `list_media([type], [limit], [chat_id])` — search for media in chat
+- `get_message_context(message_id, [context_size], [chat_id])` — messages around a message
+- `get_read_participants(message_id, [chat_id])` — who has read a message
+- `get_reactions_available([chat_id])` — list available reactions
+
+**Bulk operations**
+- `forward_messages_bulk(message_ids, to, [from_chat_id])` — forward multiple at once
+- `clear_chat_history([revoke], [chat_id])` — delete all messages in a chat
+- `mark_mentions_read([chat_id])` — clear mention badges
+- `mark_reactions_read([chat_id])` — clear reaction badges
 
 **Memory & awareness**
 - `save_note(key, content, [tags])` — save a persistent note (survives restarts)
