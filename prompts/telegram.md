@@ -179,6 +179,15 @@ ALL types support `reply_to` to reply to a specific message.
 - `set_chat_color(color, [background_emoji_id], [chat_id])` — set channel/supergroup accent color
 - `set_default_send_as(send_as, [chat_id])` — set who messages are sent as in a channel
 
+**Advanced message operations**
+- `send_to_topic(text, topic_id, [chat_id])` — send a message to a specific forum topic
+- `edit_last_message(text, [chat_id])` — edit your most recent message
+- `unpin_all_messages([chat_id])` — unpin all messages at once
+- `delete_messages_by_date(from_date, [to_date], [limit])` — bulk delete by date range
+- `get_admin_rights([chat_id])` — list admins with their specific permissions
+- `get_story_viewers(story_id)` — who viewed your story (with reactions)
+- `get_custom_emojis()` — browse available custom emoji packs
+
 **Chat intelligence**
 - `get_chat_summary([chat_id], [limit])` — statistical summary of recent activity
 - `get_user_activity_summary(user_id)` — track a user's activity across shared chats

@@ -2025,6 +2025,73 @@ server.tool(
   async (p) => textResult(await callBridge("get_user_activity_summary", p)),
 );
 
+// ── Topics & threads ──────────────────────────────────────────────────────────
+
+server.tool(
+  "send_to_topic",
+  "Send a message to a specific forum topic.",
+  {
+    text: z.string().describe("Message text"),
+    topic_id: z.number().describe("Topic ID"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("send_to_topic", p)),
+);
+
+server.tool(
+  "unpin_all_messages",
+  "Unpin all pinned messages in a chat.",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("unpin_all_messages", p)),
+);
+
+server.tool(
+  "get_admin_rights",
+  "List all admins with their specific permissions.",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_admin_rights", p)),
+);
+
+server.tool(
+  "delete_messages_by_date",
+  "Delete messages in a date range.",
+  {
+    from_date: z.string().describe("Start date (ISO format)"),
+    to_date: z.string().optional().describe("End date (ISO, defaults to now)"),
+    limit: z.number().optional().describe("Max messages to delete (default 100)"),
+    revoke: z.boolean().optional().describe("Delete for everyone (default true)"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("delete_messages_by_date", p)),
+);
+
+server.tool(
+  "edit_last_message",
+  "Edit your most recent message in a chat.",
+  {
+    text: z.string().describe("New text"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("edit_last_message", p)),
+);
+
+server.tool(
+  "get_story_viewers",
+  "See who viewed one of your stories (with reactions).",
+  {
+    story_id: z.number().describe("Story ID"),
+    limit: z.number().optional().describe("Max viewers (default 50)"),
+  },
+  async (p) => textResult(await callBridge("get_story_viewers", p)),
+);
+
+server.tool(
+  "get_custom_emojis",
+  "Browse available custom emoji packs.",
+  {},
+  async () => textResult(await callBridge("get_custom_emojis", {})),
+);
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {

@@ -4234,6 +4234,186 @@ export function createUserbotActionHandler(
         return { ok: true, user_id: userId, shared_chats: chats.length, activity: summary };
       }
 
+      // ── Send message to topic ──────────────────────────────────────────────
+
+      case "send_to_topic": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const text = String(body.text ?? "");
+        if (!text) return { ok: false, error: "text is required" };
+        const topicId = Number(body.topic_id ?? 0);
+        if (!topicId) return { ok: false, error: "topic_id is required" };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        gateway.incrementMessages(p);
+        const sentMsgId = await withRetry(() =>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          client!.sendMessage(p as any, { message: text, replyTo: topicId }),
+        );
+        const msgId = typeof sentMsgId === "object" ? (sentMsgId as any).id : sentMsgId;
+        if (msgId) recordOurMessage(String(p), Number(msgId));
+        return { ok: true, message_id: msgId, topic_id: topicId };
+      }
+
+      // ── Pin/unpin multiple ─────────────────────────────────────────────────
+
+      case "unpin_all_messages": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.invoke(new Api.messages.UnpinAllMessages({ peer: p as any })));
+        return { ok: true };
+      }
+
+      // ── Get all admins with their permissions ──────────────────────────────
+
+      case "get_admin_rights": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.channels.GetParticipants({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          channel: p as any,
+          filter: new Api.ChannelParticipantsAdmins(),
+          offset: 0,
+          limit: 50,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          hash: BigInt(0) as any,
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const usersMap = new Map<string, any>((result.users ?? []).map((u: any) => [String(u.id), u]));
+        const admins = (result.participants ?? []).map((p2: any) => {
+          const user = usersMap.get(String(p2.userId ?? ""));
+          const name = user ? [user.firstName, user.lastName].filter(Boolean).join(" ") : "?";
+          const rights = p2.adminRights;
+          return {
+            userId: String(p2.userId),
+            name,
+            username: user?.username ?? null,
+            rank: p2.rank ?? null,
+            rights: rights ? {
+              changeInfo: !!rights.changeInfo,
+              deleteMessages: !!rights.deleteMessages,
+              banUsers: !!rights.banUsers,
+              inviteUsers: !!rights.inviteUsers,
+              pinMessages: !!rights.pinMessages,
+              addAdmins: !!rights.addAdmins,
+              manageCall: !!rights.manageCall,
+              postMessages: !!rights.postMessages,
+              editMessages: !!rights.editMessages,
+              anonymous: !!rights.anonymous,
+            } : "creator",
+          };
+        });
+        return { ok: true, count: admins.length, admins };
+      }
+
+      // ── Compact message delete (by date range) ─────────────────────────────
+
+      case "delete_messages_by_date": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const fromDate = body.from_date ? Math.floor(new Date(String(body.from_date)).getTime() / 1000) : 0;
+        const toDate = body.to_date ? Math.floor(new Date(String(body.to_date)).getTime() / 1000) : Math.floor(Date.now() / 1000);
+        if (!fromDate) return { ok: false, error: "from_date (ISO string) is required" };
+
+        // Search for messages in the date range
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.Search({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          q: "",
+          filter: new Api.InputMessagesFilterEmpty(),
+          minDate: fromDate,
+          maxDate: toDate,
+          offsetId: 0, addOffset: 0,
+          limit: Math.min(Number(body.limit ?? 100), 100),
+          maxId: 0, minId: 0,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          hash: BigInt(0) as any,
+        }))) as any;
+        const msgIds = (result.messages ?? []).map((m: any) => m.id as number);
+        if (!msgIds.length) return { ok: true, deleted: 0, note: "No messages found in that date range" };
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.deleteMessages(p as any, msgIds, { revoke: body.revoke !== false }));
+        return { ok: true, deleted: msgIds.length };
+      }
+
+      // ── Edit sent message by offset ────────────────────────────────────────
+
+      case "edit_last_message": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const text = String(body.text ?? "");
+        if (!text) return { ok: false, error: "text is required" };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+
+        // Find our last message
+        const me = await client.getMe();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = await client.getMessages(p as any, { limit: 20 });
+        const ourMsg = msgs.find((m: any) => String(m.senderId) === String(me.id));
+        if (!ourMsg) return { ok: false, error: "No recent message of ours found to edit" };
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await client.editMessage(p as any, { message: ourMsg.id, text });
+        return { ok: true, message_id: ourMsg.id };
+      }
+
+      // ── Who's seen my story ────────────────────────────────────────────────
+
+      case "get_story_viewers": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const storyId = Number(body.story_id);
+        if (!storyId) return { ok: false, error: "story_id is required" };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await withRetry(() => client!.invoke(new Api.stories.GetStoryViewsList({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            peer: new Api.InputPeerSelf() as any,
+            id: storyId,
+            limit: Math.min(Number(body.limit ?? 50), 100),
+            offset: "",
+          }))) as any;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const viewers = (result.views ?? []).map((v: any) => ({
+            userId: String(v.userId),
+            date: new Date((v.date ?? 0) * 1000).toISOString(),
+            reaction: v.reaction?.emoticon ?? null,
+          }));
+          return { ok: true, count: result.count ?? viewers.length, viewers };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+
+      // ── Get available custom emojis ────────────────────────────────────────
+
+      case "get_custom_emojis": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await withRetry(() => client!.invoke(new Api.messages.GetFeaturedEmojiStickers({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            hash: BigInt(0) as any,
+          }))) as any;
+          const sets = (result.sets ?? []).map((s: any) => ({
+            id: String(s.id),
+            title: s.title,
+            shortName: s.shortName,
+            count: s.count,
+          }));
+          return { ok: true, count: sets.length, emoji_sets: sets };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+
       default:
         return null; // not a Telegram action — fall through to shared handlers
     }
