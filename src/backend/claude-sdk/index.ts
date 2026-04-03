@@ -227,7 +227,7 @@ export async function handleMessage(
 
   // Streaming throttle
   let lastStreamUpdate = 0;
-  const STREAM_INTERVAL = 1000;
+  const STREAM_INTERVAL = 300;
 
   try {
     for await (const message of qi) {
