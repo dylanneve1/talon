@@ -2387,6 +2387,56 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Message context (messages around a specific ID) ─────────────────────
+
+      case "get_message_context": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+        const contextSize = Math.min(20, Math.max(1, Number(body.context_size ?? 5)));
+
+        // Fetch messages before (older) and after (newer) the target message
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const before = await client.getMessages(p as any, {
+          limit: contextSize,
+          offsetId: msgId,
+          addOffset: 0,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const after = await client.getMessages(p as any, {
+          limit: contextSize,
+          offsetId: msgId + 1,
+          addOffset: -contextSize,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const target = await client.getMessages(p as any, { ids: [msgId] });
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const formatMsg = (m: any) => {
+          const date = new Date((m.date ?? 0) * 1000).toISOString();
+          const sender = m.senderId ? `[id:${Number(m.senderId)}]` : "[unknown]";
+          const mark = m.id === msgId ? " ◀ TARGET" : "";
+          return `[msg:${m.id} ${date}] ${sender}: ${m.message || "(media)"}${mark}`;
+        };
+
+        const allMessages = [
+          ...before.reverse(),
+          ...target,
+          ...after.reverse(),
+        ].sort((a, b) => (a as { id: number }).id - (b as { id: number }).id);
+
+        return {
+          ok: true,
+          target_id: msgId,
+          context_size: contextSize,
+          count: allMessages.length,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          text: allMessages.map((m: any) => formatMsg(m)).join("\n"),
+        };
+      }
+
       // ── Mark mentions and reactions as read ─────────────────────────────────
 
       case "mark_mentions_read": {
