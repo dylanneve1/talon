@@ -2387,6 +2387,34 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Mark mentions and reactions as read ─────────────────────────────────
+
+      case "mark_mentions_read": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.ReadMentions({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        return { ok: true, pts: result?.pts ?? 0, pts_count: result?.ptsCount ?? 0 };
+      }
+
+      case "mark_reactions_read": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.ReadReactions({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        return { ok: true, pts: result?.pts ?? 0, pts_count: result?.ptsCount ?? 0 };
+      }
+
       // ── Similar channels and stats ──────────────────────────────────────────
 
       case "get_similar_channels": {
