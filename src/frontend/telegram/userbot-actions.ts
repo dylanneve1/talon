@@ -2387,6 +2387,68 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Join request management ─────────────────────────────────────────────
+
+      case "get_join_requests": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const limit = Math.min(100, Number(body.limit ?? 20));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetChatInviteImporters({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          requested: true,
+          limit,
+          offsetDate: 0,
+          offsetUser: new Api.InputUserEmpty(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const importers = (result.importers ?? []) as any[];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const usersMap = new Map<string, any>((result.users ?? []).map((u: any) => [String(u.id), u]));
+        const formatted = importers.map((imp) => {
+          const u = usersMap.get(String(imp.userId));
+          const name = u ? ([u.firstName, u.lastName].filter(Boolean).join(" ") || u.username || String(imp.userId)) : String(imp.userId);
+          const date = new Date((imp.date ?? 0) * 1000).toISOString();
+          return { user_id: Number(imp.userId), name, date, about: imp.about ?? null };
+        });
+        return { ok: true, count: formatted.length, requests: formatted };
+      }
+
+      case "approve_join_request": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const userId = Number(body.user_id);
+        if (!userId) return { ok: false, error: "user_id (numeric Telegram user ID) is required" };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        await withRetry(() => client!.invoke(new Api.messages.HideChatJoinRequest({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          userId: userId as any,
+          approved: true,
+        })));
+        return { ok: true, user_id: userId, approved: true };
+      }
+
+      case "decline_join_request": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const userId = Number(body.user_id);
+        if (!userId) return { ok: false, error: "user_id (numeric Telegram user ID) is required" };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        await withRetry(() => client!.invoke(new Api.messages.HideChatJoinRequest({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          userId: userId as any,
+          approved: false,
+        })));
+        return { ok: true, user_id: userId, approved: false };
+      }
+
       // ── Chat activity ───────────────────────────────────────────────────────
 
       case "get_chat_activity": {
