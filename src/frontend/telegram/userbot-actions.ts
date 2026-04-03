@@ -2387,6 +2387,50 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Emoji status ────────────────────────────────────────────────────────
+
+      case "set_emoji_status": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const docIdRaw = body.document_id;
+        if (!docIdRaw) {
+          // Clear emoji status
+          await withRetry(() => client!.invoke(new Api.account.UpdateEmojiStatus({
+            emojiStatus: new Api.EmojiStatusEmpty(),
+          })));
+          return { ok: true, cleared: true };
+        }
+        const documentId = BigInt(String(docIdRaw)) as unknown as import("big-integer").BigInteger;
+        const until = typeof body.until === "number" ? body.until : undefined;
+        const emojiStatus = until
+          ? new Api.EmojiStatusUntil({ documentId, until })
+          : new Api.EmojiStatus({ documentId });
+        await withRetry(() => client!.invoke(new Api.account.UpdateEmojiStatus({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          emojiStatus: emojiStatus as any,
+        })));
+        return { ok: true, document_id: String(docIdRaw), until: until ?? null };
+      }
+
+      case "get_emoji_status": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const me = await client.getMe() as any;
+        const status = me?.emojiStatus;
+        if (!status || status.className === "EmojiStatusEmpty") {
+          return { ok: true, emoji_status: null };
+        }
+        return {
+          ok: true,
+          emoji_status: {
+            document_id: status.documentId ? String(status.documentId) : null,
+            until: status.until ?? null,
+            className: status.className,
+          },
+        };
+      }
+
       // ── Channel management ───────────────────────────────────────────────────
 
       case "set_channel_username": {
