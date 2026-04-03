@@ -4063,6 +4063,177 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Topic listing (forum) ─────────────────────────────────────────────
+
+      case "get_forum_topics": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const limit = Math.min(Number(body.limit ?? 50), 100);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.channels.GetForumTopics({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          channel: p as any,
+          limit,
+          offsetDate: 0,
+          offsetId: 0,
+          offsetTopic: 0,
+          q: body.query ? String(body.query) : undefined,
+        }))) as any;
+        const topics = (result.topics ?? []).map((t: any) => ({
+          id: t.id,
+          title: t.title,
+          iconEmoji: t.iconEmojiId ? String(t.iconEmojiId) : null,
+          date: new Date((t.date ?? 0) * 1000).toISOString(),
+          closed: !!t.closed,
+          pinned: !!t.pinned,
+          unreadCount: t.unreadCount ?? 0,
+        }));
+        return { ok: true, count: topics.length, topics };
+      }
+
+      // ── Chat permissions ───────────────────────────────────────────────────
+
+      case "get_chat_permissions": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const entity = await client.getEntity(p).catch(() => null);
+        if (!entity) return { ok: false, error: `Could not resolve ${p}` };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e = entity as any;
+        const rights = e.defaultBannedRights;
+        if (!rights) return { ok: true, note: "No restricted rights configured", permissions: {} };
+        return {
+          ok: true,
+          permissions: {
+            sendMessages: !rights.sendMessages,
+            sendMedia: !rights.sendMedia,
+            sendStickers: !rights.sendStickers,
+            sendGifs: !rights.sendGifs,
+            sendGames: !rights.sendGames,
+            sendInline: !rights.sendInline,
+            embedLinks: !rights.embedLinks,
+            sendPolls: !rights.sendPolls,
+            changeInfo: !rights.changeInfo,
+            inviteUsers: !rights.inviteUsers,
+            pinMessages: !rights.pinMessages,
+            manageTopics: !rights.manageTopics,
+          },
+        };
+      }
+
+      // ── Set chat permissions ───────────────────────────────────────────────
+
+      case "set_chat_permissions": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const perms = (body.permissions ?? body) as any;
+        const rights = new Api.ChatBannedRights({
+          untilDate: 0,
+          sendMessages: perms.send_messages === false,
+          sendMedia: perms.send_media === false,
+          sendStickers: perms.send_stickers === false,
+          sendGifs: perms.send_gifs === false,
+          sendGames: perms.send_games === false,
+          sendInline: perms.send_inline === false,
+          embedLinks: perms.embed_links === false,
+          sendPolls: perms.send_polls === false,
+          changeInfo: perms.change_info === false,
+          inviteUsers: perms.invite_users === false,
+          pinMessages: perms.pin_messages === false,
+          manageTopics: perms.manage_topics === false,
+        });
+        await withRetry(() => client!.invoke(new Api.messages.EditChatDefaultBannedRights({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          bannedRights: rights,
+        })));
+        return { ok: true };
+      }
+
+      // ── Summarize a chat range ─────────────────────────────────────────────
+
+      case "get_chat_summary": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const limit = Math.min(Number(body.limit ?? 100), 500);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = await client.getMessages(p as any, { limit });
+        if (!msgs.length) return { ok: true, summary: "No messages found" };
+
+        const totalMsgs = msgs.length;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const senders = new Map<string, number>();
+        let mediaCount = 0;
+        let replyCount = 0;
+        for (const m of msgs as any[]) {
+          const sid = String(m.senderId ?? "unknown");
+          senders.set(sid, (senders.get(sid) ?? 0) + 1);
+          if (m.media) mediaCount++;
+          if (m.replyTo) replyCount++;
+        }
+        const oldest = new Date(((msgs[msgs.length - 1] as any).date ?? 0) * 1000).toISOString();
+        const newest = new Date(((msgs[0] as any).date ?? 0) * 1000).toISOString();
+        const topSenders = [...senders.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+
+        return {
+          ok: true,
+          total_messages: totalMsgs,
+          period: { from: oldest, to: newest },
+          unique_senders: senders.size,
+          media_messages: mediaCount,
+          replies: replyCount,
+          top_senders: topSenders.map(([id, count]) => ({ userId: id, messages: count })),
+        };
+      }
+
+      // ── Get user's recent activity across shared chats ─────────────────────
+
+      case "get_user_activity_summary": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const userId = Number(body.user_id);
+        if (!userId) return { ok: false, error: "user_id is required" };
+
+        // Get common chats
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetCommonChats({
+          userId: userId as any,
+          maxId: BigInt(0) as any,
+          limit: 20,
+        }))) as any;
+        const chats = (result.chats ?? []) as any[];
+
+        const summary: Array<{ chatId: string; chatTitle: string; recentMessages: number }> = [];
+        for (const chat of chats.slice(0, 5)) {
+          try {
+            const entity = await client.getEntity(Number(chat.id)).catch(() => null);
+            if (!entity) continue;
+            // Search for user's messages in this chat
+            const searchResult = await client.invoke(new Api.messages.Search({
+              peer: entity as any,
+              q: "",
+              filter: new Api.InputMessagesFilterEmpty(),
+              fromId: await client.getEntity(userId) as any,
+              minDate: Math.floor(Date.now() / 1000) - 86400 * 7, // last week
+              maxDate: 0, offsetId: 0, addOffset: 0,
+              limit: 1, maxId: 0, minId: 0,
+              hash: BigInt(0) as any,
+            })) as any;
+            summary.push({
+              chatId: String(chat.id),
+              chatTitle: chat.title ?? "?",
+              recentMessages: searchResult.count ?? 0,
+            });
+          } catch { continue; }
+        }
+        return { ok: true, user_id: userId, shared_chats: chats.length, activity: summary };
+      }
+
       default:
         return null; // not a Telegram action — fall through to shared handlers
     }

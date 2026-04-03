@@ -179,6 +179,13 @@ ALL types support `reply_to` to reply to a specific message.
 - `set_chat_color(color, [background_emoji_id], [chat_id])` — set channel/supergroup accent color
 - `set_default_send_as(send_as, [chat_id])` — set who messages are sent as in a channel
 
+**Chat intelligence**
+- `get_chat_summary([chat_id], [limit])` — statistical summary of recent activity
+- `get_user_activity_summary(user_id)` — track a user's activity across shared chats
+- `get_chat_permissions([chat_id])` — view default member permissions
+- `set_chat_permissions([chat_id], [flags...])` — configure what members can do
+- `get_forum_topics([chat_id], [query])` — list all topics in a forum group
+
 **Chat folders**
 - `get_chat_folders()` — list all folders with settings
 - `create_chat_folder(title, [flags...])` — create a folder with auto-include rules

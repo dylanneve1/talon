@@ -1968,6 +1968,63 @@ server.tool(
   async (p) => textResult(await callBridge("get_nearby_chats", p)),
 );
 
+// ── Forum topics ──────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_forum_topics",
+  "List all topics in a forum-enabled supergroup.",
+  {
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+    limit: z.number().optional().describe("Max topics (default 50)"),
+    query: z.string().optional().describe("Search topics by title"),
+  },
+  async (p) => textResult(await callBridge("get_forum_topics", p)),
+);
+
+// ── Chat permissions ──────────────────────────────────────────────────────────
+
+server.tool(
+  "get_chat_permissions",
+  "Get default permissions for a chat (what members can/can't do).",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_chat_permissions", p)),
+);
+
+server.tool(
+  "set_chat_permissions",
+  "Set default permissions for all members in a chat.",
+  {
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+    send_messages: z.boolean().optional().describe("Allow sending messages"),
+    send_media: z.boolean().optional().describe("Allow sending media"),
+    send_stickers: z.boolean().optional().describe("Allow stickers/GIFs"),
+    send_polls: z.boolean().optional().describe("Allow polls"),
+    change_info: z.boolean().optional().describe("Allow changing chat info"),
+    invite_users: z.boolean().optional().describe("Allow inviting users"),
+    pin_messages: z.boolean().optional().describe("Allow pinning messages"),
+  },
+  async (p) => textResult(await callBridge("set_chat_permissions", p)),
+);
+
+// ── Chat intelligence ─────────────────────────────────────────────────────────
+
+server.tool(
+  "get_chat_summary",
+  "Get a statistical summary of recent chat activity (senders, media count, time range).",
+  {
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+    limit: z.number().optional().describe("Messages to analyze (default 100, max 500)"),
+  },
+  async (p) => textResult(await callBridge("get_chat_summary", p)),
+);
+
+server.tool(
+  "get_user_activity_summary",
+  "Track a user's recent activity across shared chats (last 7 days).",
+  { user_id: z.number().describe("User ID to track") },
+  async (p) => textResult(await callBridge("get_user_activity_summary", p)),
+);
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {
