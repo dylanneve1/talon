@@ -317,6 +317,26 @@ async function processMessage(params: ProcessParams): Promise<void> {
     enriched = enrichGroupPrompt(prompt, chatId, senderId);
   }
 
+  // Append unread count context for DMs so Claude knows about pending chats
+  if (!isGroup) {
+    const client = getClient();
+    if (client) {
+      try {
+        // Quick check: count dialogs with unread > 0 excluding current chat
+        const dialogs = await client.getDialogs({ limit: 30 });
+        const unreadOthers = dialogs.filter((d) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const dAny = d as any;
+          const dId = dAny.entity?.id ? Number(dAny.entity.id) : 0;
+          return dAny.unreadCount > 0 && dId !== numericChatId;
+        }).length;
+        if (unreadOthers > 0) {
+          enriched += `\n\n[You have ${unreadOthers} other chat${unreadOthers === 1 ? "" : "s"} with unread messages]`;
+        }
+      } catch { /* best-effort — don't block on this */ }
+    }
+  }
+
   const MAX = 4096;
 
   const onTextBlock = async (text: string) => {
