@@ -1882,6 +1882,92 @@ server.tool(
   async (p) => textResult(await callBridge("set_default_send_as", p)),
 );
 
+// ── Chat folders ──────────────────────────────────────────────────────────────
+
+server.tool(
+  "get_chat_folders",
+  "List all chat folders (filters) with their settings.",
+  {},
+  async () => textResult(await callBridge("get_chat_folders", {})),
+);
+
+server.tool(
+  "create_chat_folder",
+  `Create a new chat folder. Set flags to auto-include chat types.
+Example: create_chat_folder(title="Work", groups=true, exclude_muted=true)`,
+  {
+    title: z.string().describe("Folder name"),
+    emoticon: z.string().optional().describe("Folder icon emoji"),
+    contacts: z.boolean().optional().describe("Include contacts"),
+    non_contacts: z.boolean().optional().describe("Include non-contacts"),
+    groups: z.boolean().optional().describe("Include groups"),
+    broadcasts: z.boolean().optional().describe("Include channels"),
+    bots: z.boolean().optional().describe("Include bots"),
+    exclude_muted: z.boolean().optional().describe("Exclude muted chats"),
+    exclude_read: z.boolean().optional().describe("Exclude read chats"),
+    exclude_archived: z.boolean().optional().describe("Exclude archived (default true)"),
+  },
+  async (p) => textResult(await callBridge("create_chat_folder", p)),
+);
+
+server.tool(
+  "delete_chat_folder",
+  "Delete a chat folder.",
+  { id: z.number().describe("Folder ID from get_chat_folders") },
+  async (p) => textResult(await callBridge("delete_chat_folder", p)),
+);
+
+server.tool(
+  "add_chat_to_folder",
+  "Add a chat to a folder.",
+  {
+    folder_id: z.number().describe("Folder ID"),
+    chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("add_chat_to_folder", p)),
+);
+
+server.tool(
+  "get_notification_settings",
+  "Get notification settings for a chat (muted, previews, sound).",
+  { chat_id: z.number().optional().describe("Chat ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_notification_settings", p)),
+);
+
+server.tool(
+  "get_full_chat_info",
+  "Get comprehensive info about a chat or user (about, members, linked chat, slowmode, etc).",
+  { chat_id: z.number().optional().describe("Chat/user ID (defaults to current chat)") },
+  async (p) => textResult(await callBridge("get_full_chat_info", p)),
+);
+
+server.tool(
+  "list_saved_messages",
+  "List messages in your Saved Messages.",
+  { limit: z.number().optional().describe("Max messages (default 20)") },
+  async (p) => textResult(await callBridge("list_saved_messages", p)),
+);
+
+server.tool(
+  "search_saved_messages",
+  "Search through your Saved Messages by keyword.",
+  {
+    query: z.string().describe("Search term"),
+    limit: z.number().optional().describe("Max results (default 20)"),
+  },
+  async (p) => textResult(await callBridge("search_saved_messages", p)),
+);
+
+server.tool(
+  "get_nearby_chats",
+  "Find groups and channels near a location.",
+  {
+    latitude: z.number().describe("Latitude"),
+    longitude: z.number().describe("Longitude"),
+  },
+  async (p) => textResult(await callBridge("get_nearby_chats", p)),
+);
+
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main() {

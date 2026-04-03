@@ -970,6 +970,94 @@ export function createUserbotFrontend(
         }
       }, new Raw({ types: [Api.UpdateEditMessage, Api.UpdateEditChannelMessage] }));
 
+      // ── Reaction events ──────────────────────────────────────────────────
+      client.addEventHandler((update: Api.TypeUpdate) => {
+        try {
+          if (!(update instanceof Api.UpdateMessageReactions)) return;
+          const reactMsgId = update.msgId;
+          const reactPeer = update.peer;
+          // Only care about reactions on our messages
+          let reactChatId = 0;
+          if (reactPeer instanceof Api.PeerUser) reactChatId = Number(reactPeer.userId);
+          else if (reactPeer instanceof Api.PeerChat) reactChatId = -Number(reactPeer.chatId);
+          else if (reactPeer instanceof Api.PeerChannel) reactChatId = -Number(`100${reactPeer.channelId}`);
+          if (!reactChatId) return;
+          const reactChatIdStr = String(reactChatId);
+
+          // Only notify for reactions on OUR messages
+          if (!isOurMessage(reactChatIdStr, reactMsgId)) return;
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const results = (update.reactions as any)?.results ?? [];
+          const reactionSummary = results.map((r: any) => {
+            const emoji = r.reaction?.emoticon ?? r.reaction?.documentId ?? "?";
+            return `${emoji} (${r.count})`;
+          }).join(", ");
+
+          if (!reactionSummary) return;
+
+          enqueue(reactChatIdStr, reactChatId, {
+            prompt: `[Reaction on msg:${reactMsgId}] ${reactionSummary}`,
+            replyToId: reactMsgId,
+            messageId: reactMsgId,
+            senderName: "system",
+            isGroup: reactPeer instanceof Api.PeerChat || reactPeer instanceof Api.PeerChannel,
+          });
+        } catch {
+          // silently ignore reaction event errors
+        }
+      }, new Raw({ types: [Api.UpdateMessageReactions] }));
+
+      // ── Member join/leave events ──────────────────────────────────────────
+      client.addEventHandler((update: Api.TypeUpdate) => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const u = update as any;
+          let eventChatId = 0;
+          let eventUserId = 0;
+          let eventType = "";
+
+          if (update instanceof Api.UpdateChatParticipantAdd) {
+            eventChatId = -Number(u.chatId);
+            eventUserId = Number(u.userId);
+            eventType = "joined";
+          } else if (update instanceof Api.UpdateChatParticipantDelete) {
+            eventChatId = -Number(u.chatId);
+            eventUserId = Number(u.userId);
+            eventType = "left";
+          } else if (update instanceof Api.UpdateChannelParticipant) {
+            eventChatId = -Number(`100${u.channelId}`);
+            eventUserId = Number(u.userId);
+            if (u.newParticipant && !u.prevParticipant) eventType = "joined";
+            else if (!u.newParticipant && u.prevParticipant) eventType = "left";
+            else if (u.newParticipant?.className === "ChannelParticipantAdmin" && u.prevParticipant?.className !== "ChannelParticipantAdmin") eventType = "promoted to admin";
+            else if (u.newParticipant?.className === "ChannelParticipantBanned") eventType = "banned";
+            else eventType = "updated";
+          }
+
+          if (!eventChatId || !eventUserId || !eventType) return;
+          const eventChatIdStr = String(eventChatId);
+
+          // Only notify in chats we're actively participating in
+          if (!ourMessages.has(eventChatIdStr)) return;
+
+          log("userbot-frontend", `[${eventChatIdStr}] Member ${eventUserId} ${eventType}`);
+
+          // Only enqueue a prompt for joins/leaves in DMs or active chats
+          if (eventType === "joined" || eventType === "left") {
+            enqueue(eventChatIdStr, eventChatId, {
+              prompt: `[Member event] User ${eventUserId} ${eventType} the chat`,
+              replyToId: 0,
+              messageId: 0,
+              senderName: "system",
+              isGroup: true,
+            });
+          }
+        } catch {
+          // silently ignore member event errors
+        }
+      }, new Raw({ types: [Api.UpdateChatParticipantAdd, Api.UpdateChatParticipantDelete, Api.UpdateChannelParticipant] }));
+
       // ── Typing indicator tracking ─────────────────────────────────────────
       client.addEventHandler((update: Api.TypeUpdate) => {
         try {

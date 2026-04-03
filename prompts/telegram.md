@@ -179,6 +179,21 @@ ALL types support `reply_to` to reply to a specific message.
 - `set_chat_color(color, [background_emoji_id], [chat_id])` — set channel/supergroup accent color
 - `set_default_send_as(send_as, [chat_id])` — set who messages are sent as in a channel
 
+**Chat folders**
+- `get_chat_folders()` — list all folders with settings
+- `create_chat_folder(title, [flags...])` — create a folder with auto-include rules
+- `delete_chat_folder(id)` — delete a folder
+- `add_chat_to_folder(folder_id, [chat_id])` — add a chat to a folder
+
+**Saved Messages**
+- `list_saved_messages([limit])` — browse your Saved Messages
+- `search_saved_messages(query, [limit])` — search Saved Messages
+
+**Notifications & info**
+- `get_notification_settings([chat_id])` — check mute/preview/sound settings
+- `get_full_chat_info([chat_id])` — comprehensive chat/user info (about, members, slowmode, etc)
+- `get_nearby_chats(latitude, longitude)` — find groups near a location
+
 **Bulk operations**
 - `forward_messages_bulk(message_ids, to, [from_chat_id])` — forward multiple at once
 - `clear_chat_history([revoke], [chat_id])` — delete all messages in a chat

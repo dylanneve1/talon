@@ -3772,6 +3772,297 @@ export function createUserbotActionHandler(
         return { ok: true, send_as: sendAs };
       }
 
+      // ── Chat folders ──────────────────────────────────────────────────────
+
+      case "get_chat_folders": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetDialogFilters())) as any;
+        const filters = (result.filters ?? result ?? []) as any[];
+        const folders = filters.map((f: any) => ({
+          id: f.id,
+          title: f.title?.text ?? f.title ?? "(unnamed)",
+          emoticon: f.emoticon ?? null,
+          includePeers: (f.includePeers ?? []).length,
+          excludePeers: (f.excludePeers ?? []).length,
+          pinnedPeers: (f.pinnedPeers ?? []).length,
+          flags: {
+            contacts: !!f.contacts,
+            nonContacts: !!f.nonContacts,
+            groups: !!f.groups,
+            broadcasts: !!f.broadcasts,
+            bots: !!f.bots,
+            excludeMuted: !!f.excludeMuted,
+            excludeRead: !!f.excludeRead,
+            excludeArchived: !!f.excludeArchived,
+          },
+        }));
+        return { ok: true, count: folders.length, folders };
+      }
+
+      case "create_chat_folder": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const title = String(body.title ?? "");
+        if (!title) return { ok: false, error: "title is required" };
+        const emoticon = body.emoticon ? String(body.emoticon) : undefined;
+
+        // Get existing filters to determine next ID
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const existing = await withRetry(() => client!.invoke(new Api.messages.GetDialogFilters())) as any;
+        const filters = (existing.filters ?? existing ?? []) as any[];
+        const maxId = Math.max(2, ...filters.map((f: any) => f.id ?? 0));
+        const newId = maxId + 1;
+
+        // Build include flags from body
+        const filter = new Api.DialogFilter({
+          id: newId,
+          title: new Api.TextWithEntities({ text: title, entities: [] }) as any,
+          emoticon,
+          pinnedPeers: [],
+          includePeers: [],
+          excludePeers: [],
+          contacts: body.contacts === true,
+          nonContacts: body.non_contacts === true,
+          groups: body.groups === true,
+          broadcasts: body.broadcasts === true,
+          bots: body.bots === true,
+          excludeMuted: body.exclude_muted === true,
+          excludeRead: body.exclude_read === true,
+          excludeArchived: body.exclude_archived !== false, // default true
+        });
+
+        await withRetry(() => client!.invoke(new Api.messages.UpdateDialogFilter({
+          id: newId,
+          filter,
+        })));
+        return { ok: true, id: newId, title };
+      }
+
+      case "delete_chat_folder": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const folderId = Number(body.id ?? body.folder_id ?? 0);
+        if (!folderId) return { ok: false, error: "id (folder ID) is required" };
+        await withRetry(() => client!.invoke(new Api.messages.UpdateDialogFilter({ id: folderId })));
+        return { ok: true };
+      }
+
+      case "add_chat_to_folder": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const folderId = Number(body.folder_id ?? 0);
+        if (!folderId) return { ok: false, error: "folder_id is required" };
+        const targetChat = body.chat_id ? Number(body.chat_id) : peer;
+
+        // Get current filter
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const existing = await withRetry(() => client!.invoke(new Api.messages.GetDialogFilters())) as any;
+        const filters = (existing.filters ?? existing ?? []) as any[];
+        const filter = filters.find((f: any) => f.id === folderId);
+        if (!filter) return { ok: false, error: `Folder ${folderId} not found` };
+
+        // Resolve entity and add to includePeers
+        const entity = await client.getEntity(targetChat).catch(() => null);
+        if (!entity) return { ok: false, error: `Could not resolve chat ${targetChat}` };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const inputPeer = (await client.getInputEntity(entity as any)) as any;
+        if (!filter.includePeers) filter.includePeers = [];
+        filter.includePeers.push(inputPeer);
+
+        await withRetry(() => client!.invoke(new Api.messages.UpdateDialogFilter({
+          id: folderId,
+          filter,
+        })));
+        return { ok: true, folder_id: folderId, chat_id: targetChat };
+      }
+
+      // ── Notification settings ─────────────────────────────────────────────
+
+      case "get_notification_settings": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.account.GetNotifySettings({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: new Api.InputNotifyPeer({ peer: p as any }) as any,
+        }))) as any;
+        return {
+          ok: true,
+          muted: !!result.silent,
+          mute_until: result.muteUntil ? new Date(result.muteUntil * 1000).toISOString() : null,
+          show_previews: result.showPreviews ?? true,
+          sound: result.sound?.className ?? "default",
+        };
+      }
+
+      // ── Get full chat/user info ────────────────────────────────────────────
+
+      case "get_full_chat_info": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const entity = await client.getEntity(p).catch(() => null);
+        if (!entity) return { ok: false, error: `Could not resolve ${p}` };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e = entity as any;
+        const info: Record<string, unknown> = {
+          id: String(e.id),
+          type: e.className,
+          title: e.title ?? [e.firstName, e.lastName].filter(Boolean).join(" ") ?? "Unknown",
+          username: e.username ?? null,
+          isBot: e.bot ?? false,
+          isVerified: e.verified ?? false,
+          isPremium: e.premium ?? false,
+          isScam: e.scam ?? false,
+          isFake: e.fake ?? false,
+          isRestricted: e.restricted ?? false,
+          phone: e.phone ?? null,
+          photo: e.photo ? { hasPhoto: true } : { hasPhoto: false },
+          participantsCount: e.participantsCount ?? null,
+          about: null,
+        };
+        // Try to get full info for about/description
+        try {
+          if (e.className === "User") {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const full = await client.invoke(new Api.users.GetFullUser({ id: e as any })) as any;
+            info.about = full.fullUser?.about ?? null;
+            info.commonChatsCount = full.fullUser?.commonChatsCount ?? 0;
+            info.pinnedMsgId = full.fullUser?.pinnedMsgId ?? null;
+          } else if (e.className === "Channel" || e.className === "Chat") {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const full = await client.invoke(new Api.channels.GetFullChannel({ channel: e as any })) as any;
+            info.about = full.fullChat?.about ?? null;
+            info.memberCount = full.fullChat?.participantsCount ?? null;
+            info.onlineCount = full.fullChat?.onlineCount ?? null;
+            info.slowmodeSeconds = full.fullChat?.slowmodeSeconds ?? 0;
+            info.linkedChatId = full.fullChat?.linkedChatId ? String(full.fullChat.linkedChatId) : null;
+          }
+        } catch { /* best-effort */ }
+        return { ok: true, ...info };
+      }
+
+      // ── Who can see my number / privacy check ─────────────────────────────
+
+      case "check_privacy_for_user": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const userId = Number(body.user_id);
+        if (!userId) return { ok: false, error: "user_id is required" };
+        // Get all privacy settings and summarize what a user can see
+        const keys = ["phone_number", "last_seen", "profile_photo", "forwards", "about"] as const;
+        const privacyKeyMap: Record<string, unknown> = {
+          phone_number: new Api.InputPrivacyKeyPhoneNumber(),
+          last_seen: new Api.InputPrivacyKeyStatusTimestamp(),
+          profile_photo: new Api.InputPrivacyKeyProfilePhoto(),
+          forwards: new Api.InputPrivacyKeyForwards(),
+          about: new Api.InputPrivacyKeyAbout(),
+        };
+        const results: Record<string, string> = {};
+        for (const key of keys) {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const res = await client.invoke(new Api.account.GetPrivacy({ key: privacyKeyMap[key] as any })) as any;
+            const rules = (res.rules ?? []) as any[];
+            const ruleNames = rules.map((r: any) => r.className?.replace("PrivacyValue", "") ?? "?");
+            results[key] = ruleNames.join(", ");
+          } catch {
+            results[key] = "unknown";
+          }
+        }
+        return { ok: true, user_id: userId, privacy_rules: results };
+      }
+
+      // ── Saved messages operations ──────────────────────────────────────────
+
+      case "list_saved_messages": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const limit = Math.min(Number(body.limit ?? 20), 100);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const me = await client.getMe() as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = await client.getMessages(me as any, { limit });
+        const lines = msgs.map((m: any) => {
+          const date = new Date((m.date ?? 0) * 1000).toISOString();
+          const fwd = m.fwdFrom ? " [forwarded]" : "";
+          return `[${date}] [msg:${m.id}]${fwd} ${m.message || "(media)"}`;
+        });
+        return { ok: true, count: msgs.length, messages: lines.join("\n") };
+      }
+
+      case "search_saved_messages": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const query = String(body.query ?? "");
+        if (!query) return { ok: false, error: "query is required" };
+        const limit = Math.min(Number(body.limit ?? 20), 100);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const me = await client.getMe() as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = await client.getMessages(me as any, { search: query, limit });
+        const lines = msgs.map((m: any) => {
+          const date = new Date((m.date ?? 0) * 1000).toISOString();
+          return `[${date}] [msg:${m.id}] ${m.message || "(media)"}`;
+        });
+        return { ok: true, query, count: msgs.length, messages: lines.join("\n") };
+      }
+
+      // ── Telegram Premium gifting check ─────────────────────────────────────
+
+      case "get_premium_gift_options": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await client.invoke(new Api.payments.GetPremiumGiftCodeOptions({})) as any;
+          const options = (result ?? []).map((o: any) => ({
+            months: o.months,
+            currency: o.currency,
+            amount: o.amount,
+            users: o.users,
+          }));
+          return { ok: true, options };
+        } catch {
+          return { ok: true, options: [], note: "Premium gift options not available" };
+        }
+      }
+
+      // ── Get nearby chats ───────────────────────────────────────────────────
+
+      case "get_nearby_chats": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const lat = Number(body.latitude ?? 0);
+        const long = Number(body.longitude ?? 0);
+        if (!lat && !long) return { ok: false, error: "latitude and longitude required" };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await client.invoke(new Api.contacts.GetLocated({
+            geoPoint: new Api.InputGeoPoint({ lat, long }),
+          })) as any;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const chatsMap = new Map<string, any>((result.chats ?? []).map((c: any) => [String(c.id), c]));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const peers = (result.updates ?? []).filter((u: any) => u.className === "UpdatePeerLocated")
+            .flatMap((u: any) => u.peers ?? [])
+            .map((p: any) => {
+              const chat = chatsMap.get(String(p.peer?.channelId ?? p.peer?.chatId ?? ""));
+              return {
+                title: chat?.title ?? "Unknown",
+                id: String(p.peer?.channelId ?? p.peer?.chatId ?? p.peer?.userId ?? "?"),
+                distance: p.distance,
+              };
+            });
+          return { ok: true, chats: peers };
+        } catch (err) {
+          return { ok: false, error: err instanceof Error ? err.message : String(err) };
+        }
+      }
+
       default:
         return null; // not a Telegram action — fall through to shared handlers
     }
