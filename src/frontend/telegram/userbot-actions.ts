@@ -2387,6 +2387,37 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Resolve peer / entity lookup ────────────────────────────────────────
+
+      case "resolve_peer": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const query = String(body.query ?? "").trim();
+        if (!query) return { ok: false, error: "query is required (@username, +phone, or numeric ID)" };
+        const target: number | string = /^-?\d+$/.test(query) ? Number(query) : query;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const entity = await client.getEntity(target as any).catch(() => null);
+        if (!entity) return { ok: false, error: `Could not resolve "${query}" — check the username, phone, or ID` };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e = entity as any;
+        const type = e.className === "User" ? (e.bot ? "bot" : "user")
+          : e.className === "Channel" ? (e.megagroup ? "supergroup" : "channel")
+          : e.className === "Chat" ? "group"
+          : "unknown";
+        return {
+          ok: true,
+          id: Number(e.id),
+          type,
+          first_name: e.firstName ?? null,
+          last_name: e.lastName ?? null,
+          username: e.username ?? null,
+          phone: e.phone ?? null,
+          title: e.title ?? null,
+          is_bot: e.bot ?? false,
+          verified: e.verified ?? false,
+        };
+      }
+
       // ── Convert group to supergroup ─────────────────────────────────────────
 
       case "convert_to_supergroup": {
