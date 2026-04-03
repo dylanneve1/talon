@@ -2387,6 +2387,23 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Convert group to supergroup ─────────────────────────────────────────
+
+      case "convert_to_supergroup": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        // MigrateChat takes a basic group ID (positive, without the - prefix)
+        const chatId = Math.abs(p);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.MigrateChat({
+          chatId: BigInt(chatId) as unknown as import("big-integer").BigInteger,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        const newChatId = result?.chats?.find?.((c: { megagroup?: boolean }) => c.megagroup)?.id;
+        return { ok: true, new_supergroup_id: newChatId ? `-100${BigInt(newChatId).toString()}` : null };
+      }
+
       // ── Protected content ───────────────────────────────────────────────────
 
       case "set_protected_content": {
