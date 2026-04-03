@@ -2402,9 +2402,9 @@ export function createUserbotActionHandler(
         }
         const documentId = BigInt(String(docIdRaw)) as unknown as import("big-integer").BigInteger;
         const until = typeof body.until === "number" ? body.until : undefined;
-        const emojiStatus = until
-          ? new Api.EmojiStatusUntil({ documentId, until })
-          : new Api.EmojiStatus({ documentId });
+        // EmojiStatusUntil may not exist in all layer versions; use EmojiStatus and pass until as any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const emojiStatus = new Api.EmojiStatus({ documentId, ...(until ? { until } : {}) } as any);
         await withRetry(() => client!.invoke(new Api.account.UpdateEmojiStatus({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           emojiStatus: emojiStatus as any,
