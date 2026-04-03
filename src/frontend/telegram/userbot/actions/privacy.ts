@@ -90,36 +90,6 @@ export function registerPrivacyActions(registry: ActionRegistry) {
     return { ok: true };
   });
 
-  registry.set("check_privacy_for_user", async (body) => {
-    const client = getClient();
-    if (!client) return { ok: false, error: "User client not connected." };
-    const userId = Number(body.user_id);
-    if (!userId) return { ok: false, error: "user_id is required" };
-    const keys = ["phone_number", "last_seen", "profile_photo", "forwards", "about"] as const;
-    const privacyKeyMap: Record<string, unknown> = {
-      phone_number: new Api.InputPrivacyKeyPhoneNumber(),
-      last_seen: new Api.InputPrivacyKeyStatusTimestamp(),
-      profile_photo: new Api.InputPrivacyKeyProfilePhoto(),
-      forwards: new Api.InputPrivacyKeyForwards(),
-      about: new Api.InputPrivacyKeyAbout(),
-    };
-    const results: Record<string, string> = {};
-    for (const key of keys) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const res = await client.invoke(new Api.account.GetPrivacy({ key: privacyKeyMap[key] as any })) as any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const rules = (res.rules ?? []) as any[];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ruleNames = rules.map((r: any) => r.className?.replace("PrivacyValue", "") ?? "?");
-        results[key] = ruleNames.join(", ");
-      } catch {
-        results[key] = "unknown";
-      }
-    }
-    return { ok: true, user_id: userId, privacy_rules: results };
-  });
-
   registry.set("get_active_sessions", async () => {
     const client = getClient();
     if (!client) return { ok: false, error: "User client not connected." };

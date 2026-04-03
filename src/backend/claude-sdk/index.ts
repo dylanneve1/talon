@@ -137,17 +137,22 @@ export async function handleMessage(
         );
 
         if (frontends.includes("telegram")) {
+          // Determine frontend mode for tool filtering
+          const frontendMode = config.apiId && config.apiHash
+            ? (config.botToken ? "dual" : "userbot")
+            : "bot";
+
           servers["telegram-tools"] = {
             command: process.platform === "win32" ? "npx" : "node",
             args:
               process.platform === "win32"
-                ? ["tsx", resolve(import.meta.dirname ?? ".", "tools.ts")]
+                ? ["tsx", resolve(import.meta.dirname ?? ".", "tools/index.ts")]
                 : [
                     "--import",
                     tsxImport,
-                    resolve(import.meta.dirname ?? ".", "tools.ts"),
+                    resolve(import.meta.dirname ?? ".", "tools/index.ts"),
                   ],
-            env: mcpEnv,
+            env: { ...mcpEnv, TALON_FRONTEND_MODE: frontendMode },
           };
         }
         if (frontends.includes("teams")) {

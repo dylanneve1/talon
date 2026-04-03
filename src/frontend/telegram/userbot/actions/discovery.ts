@@ -201,20 +201,6 @@ export function registerDiscoveryActions(registry: ActionRegistry) {
     return { ok: true, query, count: msgs.length, messages: lines.join("\n") };
   });
 
-  registry.set("get_premium_gift_options", async () => {
-    const client = getClient();
-    if (!client) return { ok: false, error: "User client not connected." };
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await client.invoke(new Api.payments.GetPremiumGiftCodeOptions({})) as any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const options = (result ?? []).map((o: any) => ({ months: o.months, currency: o.currency, amount: o.amount, users: o.users }));
-      return { ok: true, options };
-    } catch {
-      return { ok: true, options: [], note: "Premium gift options not available" };
-    }
-  });
-
   registry.set("read_any_chat", async (body) => {
     const client = getClient();
     if (!client) return { ok: false, error: "User client not connected." };

@@ -273,23 +273,6 @@ export function registerMessagingActions(
     return { ok: true, forwarded: msgIds.length, to };
   });
 
-  registry.set("edit_last_message", async (body, _chatId, peer) => {
-    const client = getClient();
-    if (!client) return { ok: false, error: "User client not connected." };
-    const text = String(body.text ?? "");
-    if (!text) return { ok: false, error: "text is required" };
-    const p = body.chat_id ? Number(body.chat_id) : peer;
-    const me = await client.getMe();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const msgs = await client.getMessages(p as any, { limit: 20 });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ourMsg = msgs.find((m: any) => String(m.senderId) === String(me.id));
-    if (!ourMsg) return { ok: false, error: "No recent message of ours found to edit" };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await client.editMessage(p as any, { message: ourMsg.id, text });
-    return { ok: true, message_id: ourMsg.id };
-  });
-
   registry.set("broadcast", async (body) => {
     const client = getClient();
     if (!client) return { ok: false, error: "User client not connected." };
