@@ -1443,9 +1443,10 @@ export function createUserbotActionHandler(
         if (!client) return { ok: false, error: "User client not connected." };
 
         const limit = Math.min(100, Number(body.limit ?? 20));
+        const offset = Number(body.offset ?? 0);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await client.invoke(new Api.contacts.GetBlocked({
-          offset: 0,
+          offset,
           limit,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         })) as any;
@@ -1456,14 +1457,15 @@ export function createUserbotActionHandler(
           lastName?: string;
           username?: string;
         }>;
-        if (users.length === 0) return { ok: true, text: "No blocked users.", count: 0 };
+        const totalCount = Number(result.count ?? users.length);
+        if (users.length === 0) return { ok: true, text: "No blocked users.", count: 0, total: 0 };
 
         const formatted = users.map((u) => {
           const name = [u.firstName, u.lastName].filter(Boolean).join(" ") || "(no name)";
           const username = u.username ? ` @${u.username}` : "";
           return `[id:${Number(u.id)}]${username} ${name}`;
         });
-        return { ok: true, text: formatted.join("\n"), count: users.length };
+        return { ok: true, text: formatted.join("\n"), count: users.length, total: totalCount, offset, has_more: offset + users.length < totalCount };
       }
 
       // ── Stories ────────────────────────────────────────────────────────────
