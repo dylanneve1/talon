@@ -2387,6 +2387,60 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Poll results details ─────────────────────────────────────────────────
+
+      case "get_poll_results": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetPollResults({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          msgId,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+
+        // Extract UpdateMessagePoll from the updates
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pollUpdate = (result?.updates ?? []).find((u: any) =>
+          u.className === "UpdateMessagePoll",
+        ) as any;
+
+        if (!pollUpdate) {
+          return { ok: false, error: "Poll results not available for this message. Ensure it is a poll message." };
+        }
+
+        const poll = pollUpdate.poll;
+        const results = pollUpdate.results;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const answers = (poll?.answers ?? []) as any[];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const answerVoters = (results?.results ?? []) as any[];
+        const totalVoters = Number(results?.totalVoters ?? 0);
+
+        const breakdown = answers.map((answer, i) => {
+          const voter = answerVoters[i];
+          const count = Number(voter?.voters ?? 0);
+          const pct = totalVoters > 0 ? Math.round((count / totalVoters) * 100) : 0;
+          const chosen = voter?.chosen ?? false;
+          const text = typeof answer.text === "string" ? answer.text : (answer.text?.text ?? `Option ${i}`);
+          return { index: i, text, votes: count, percentage: pct, you_voted: chosen };
+        });
+
+        return {
+          ok: true,
+          message_id: msgId,
+          question: typeof poll?.question === "string" ? poll.question : (poll?.question?.text ?? ""),
+          total_voters: totalVoters,
+          closed: poll?.closed ?? false,
+          options: breakdown,
+        };
+      }
+
       // ── Message context (messages around a specific ID) ─────────────────────
 
       case "get_message_context": {
