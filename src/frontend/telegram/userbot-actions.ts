@@ -2387,6 +2387,25 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Auto-delete timer ───────────────────────────────────────────────────
+
+      case "set_auto_delete": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const validSeconds = [0, 86400, 604800, 2592000]; // off, 1day, 1week, 1month
+        const seconds = Number(body.seconds ?? 0);
+        if (!validSeconds.includes(seconds))
+          return { ok: false, error: `seconds must be one of: ${validSeconds.join(", ")} (0=off, 86400=1day, 604800=1week, 2592000=1month)` };
+        await withRetry(() => client!.invoke(new Api.messages.SetHistoryTTL({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          period: seconds,
+        })));
+        const label = seconds === 0 ? "off" : seconds === 86400 ? "1 day" : seconds === 604800 ? "1 week" : "1 month";
+        return { ok: true, seconds, label };
+      }
+
       // ── Join request management ─────────────────────────────────────────────
 
       case "get_join_requests": {
