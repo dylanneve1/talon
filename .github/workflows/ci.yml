@@ -46,14 +46,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "style: auto-format with prettier [skip ci]" || exit 0
+          git commit -m "style: auto-format with prettier" || exit 0
           git push
-
-      - name: Fail if format was wrong
-        if: steps.format-check.outcome == 'failure'
-        run: |
-          echo "::warning::Code was not formatted — auto-formatted and pushed a fix commit."
-          exit 1
 
   # ── Unit & integration tests (matrix) ─────────────────────────
   test:
