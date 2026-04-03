@@ -13,9 +13,11 @@ import { flushChatSettings } from "./storage/chat-settings.js";
 import { flushCronJobs } from "./storage/cron-store.js";
 import { flushHistory } from "./storage/history.js";
 import { flushMediaIndex } from "./storage/media-index.js";
+import { loadEmbeddingIndex, flushEmbeddingIndex } from "./storage/note-embeddings.js";
 import { getActiveCount } from "./core/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/pulse.js";
 import { startCronTimer, stopCronTimer } from "./core/cron.js";
+import { startHeartbeatTimer, stopHeartbeatTimer } from "./core/heartbeat.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
@@ -28,6 +30,7 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { files as pathFiles } from "./util/paths.js";
 
 const { config } = await bootstrap();
+loadEmbeddingIndex();
 
 // Write PID file for daemon management
 try { writeFileSync(pathFiles.pid, String(process.pid)); } catch { /* ok */ }
@@ -55,7 +58,7 @@ if (selectedFrontend === "terminal") {
 
 // ── Create backend + wire dispatcher ─────────────────────────────────────────
 
-await initBackendAndDispatcher(config, frontend);
+await initBackendAndDispatcher(config, frontend, gateway);
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 
@@ -91,6 +94,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await destroyPlugins();
   }
   stopPulseTimer();
+  stopHeartbeatTimer();
   stopCronTimer();
   stopWatchdog();
   stopUploadCleanup();
@@ -99,6 +103,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
+  flushEmbeddingIndex();
   try { unlinkSync(pathFiles.pid); } catch { /* ok */ }
   log("shutdown", "State saved");
   process.exit(0);
@@ -120,6 +125,7 @@ process.on("uncaughtException", (err) => {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
+  flushEmbeddingIndex();
   process.exit(1);
 });
 
@@ -137,6 +143,7 @@ async function main(): Promise<void> {
   log("bot", "Starting Talon...");
 
   if (config.pulse) startPulseTimer(config.pulseIntervalMs);
+  if (config.heartbeat) startHeartbeatTimer(config.heartbeatIntervalMs);
   startCronTimer();
   startWatchdog(config.workspace);
   startUploadCleanup(config.workspace);

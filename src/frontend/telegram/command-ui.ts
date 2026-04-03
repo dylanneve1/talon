@@ -154,6 +154,7 @@ export function renderHelp(botUsername: string | undefined, fmt: Fmt): string {
     "  /status — session info, usage, and stats",
     "  /memory — view what Talon remembers",
     "  /dream — force memory consolidation now",
+    "  /heartbeat — show heartbeat status or force a run",
     "  /ping — health check with latency",
     "  /reset — clear session and start fresh",
     "  /restart — restart the process",
@@ -191,6 +192,24 @@ export function renderMemory(): string {
   } catch {
     return "Could not read memory file.";
   }
+}
+
+// ── Heartbeat ──────────────────────────────────────────────────────────────
+
+export async function renderHeartbeatStatus(fmt: Fmt): Promise<string> {
+  const { getHeartbeatStatus } = await import("../../core/heartbeat.js");
+  const state = getHeartbeatStatus();
+  const lines = [
+    bold("Heartbeat Status", fmt),
+    "",
+    `${bold("Status:", fmt)} ${state.status}`,
+    `${bold("Run count:", fmt)} ${state.runCount}`,
+    `${bold("Last run:", fmt)} ${state.lastRunAt ?? "never"}`,
+  ];
+  if (state.lastSummary) {
+    lines.push("", bold("Last summary:", fmt), state.lastSummary.slice(0, 300));
+  }
+  return lines.join("\n");
 }
 
 // ── Plugins ─────────────────────────────────────────────────────────────────

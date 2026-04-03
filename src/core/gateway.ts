@@ -144,7 +144,7 @@ export class Gateway {
     const chatId = !isNaN(numericId) && this.chatContexts.has(numericId)
       ? numericId
       : this.findContextByStringId(rawChatId);
-    if (!chatId) {
+    if (chatId === null || chatId === undefined) {
       return { ok: false, error: "No active chat context" };
     }
 

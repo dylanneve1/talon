@@ -542,6 +542,30 @@ async function handleCommand(
       return true;
     }
 
+    case "heartbeat": {
+      if (adminUserId && senderId !== adminUserId) {
+        await reply("Admin only.");
+        return true;
+      }
+      const hbArg = cmdArg?.trim().toLowerCase();
+      if (hbArg === "run" || hbArg === "force") {
+        const statusId = await sendUserbotMessage(numericChatId, "💓 Heartbeat starting...", msgId);
+        recordOurMessage(chatId, statusId);
+        const start = Date.now();
+        try {
+          const { forceHeartbeat } = await import("../../../core/heartbeat.js");
+          await forceHeartbeat();
+          await editUserbotMessage(numericChatId, statusId, `💓 Heartbeat complete in ${formatDuration(Date.now() - start)}.`);
+        } catch (err) {
+          await editUserbotMessage(numericChatId, statusId, `💓 Heartbeat failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      } else {
+        const { renderHeartbeatStatus } = await import("../command-ui.js");
+        await reply(await renderHeartbeatStatus(F));
+      }
+      return true;
+    }
+
     case "restart": {
       if (!isAdmin) { await reply("Admin only."); return true; }
       await reply("♻️ Restarting…");

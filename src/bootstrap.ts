@@ -21,6 +21,7 @@ import { initDispatcher } from "./core/dispatcher.js";
 import { initPulse, resetPulseTimer } from "./core/pulse.js";
 import { initCron } from "./core/cron.js";
 import { initDream } from "./core/dream.js";
+import { initHeartbeat } from "./core/heartbeat.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
 import type { QueryBackend, ContextManager } from "./core/types.js";
@@ -60,6 +61,7 @@ export async function bootstrap(
   // Expose search config as env vars for gateway-actions
   if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
   if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
+  if (config.geminiApiKey) process.env.TALON_GEMINI_API_KEY = config.geminiApiKey;
 
   // Load plugins (external tool packages)
   if (config.plugins.length > 0) {
@@ -95,6 +97,7 @@ export async function bootstrap(
 export async function initBackendAndDispatcher(
   config: TalonConfig,
   frontend: Frontend,
+  gateway?: { setContext: (chatId: number, stringId?: string) => void; clearContext: (chatId?: number | string) => void },
 ): Promise<void> {
   let backend: QueryBackend;
 
@@ -131,4 +134,13 @@ export async function initBackendAndDispatcher(
     claudeBinary: config.claudeBinary,
     workspace: config.workspace,
   });
+
+  if (gateway) {
+    initHeartbeat(
+      config,
+      frontend.getBridgePort,
+      gateway.setContext.bind(gateway),
+      gateway.clearContext.bind(gateway),
+    );
+  }
 }

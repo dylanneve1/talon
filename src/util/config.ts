@@ -30,9 +30,13 @@ const configSchema = z.object({
   adminUserId: z.number().int().optional(),
   pulse: z.boolean().default(true),
   pulseIntervalMs: z.number().int().min(60000).default(300000),
+  heartbeat: z.boolean().default(false),
+  heartbeatIntervalMs: z.number().int().min(300000).default(3600000),
+  heartbeatModel: z.string().optional(),
   braveApiKey: z.string().optional(),
   searxngUrl: z.string().default("http://localhost:8080"),
   timezone: z.string().optional(),
+  geminiApiKey: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
   // Display name shown in terminal UI (defaults to "Talon")
