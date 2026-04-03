@@ -510,6 +510,11 @@ export function createUserbotFrontend(
      * per message instead. Default: true.
      */
     primaryMode?: boolean;
+    /**
+     * Dual-mode dedup: called before processing a message. Returns false if the
+     * other frontend already claimed this message → skip processing.
+     */
+    claimMessage?: (chatId: number, msgId: number) => boolean;
   },
 ): TelegramFrontend {
   const context: ContextManager = {
@@ -687,6 +692,12 @@ export function createUserbotFrontend(
             }
           }
           if (!handle) return;
+        }
+
+        // Dual-mode dedup: check if the bot already claimed this message
+        if (options?.claimMessage && !options.claimMessage(numericChatId, msgId)) {
+          // Bot already claimed this message — skip to avoid duplicate response
+          return;
         }
 
         // Notify dual-mode coordinator which frontend owns this chat

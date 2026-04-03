@@ -22,7 +22,12 @@ import {
   handleVideoNoteMessage,
 } from "./handlers.js";
 
-export function registerMiddleware(bot: Bot, config: TalonConfig, onChatOwned?: (chatId: number) => void): void {
+export function registerMiddleware(
+  bot: Bot,
+  config: TalonConfig,
+  onChatOwned?: (chatId: number) => void,
+  claimMessage?: (chatId: number, msgId: number) => boolean,
+): void {
   // ── History capture (runs for ALL messages, before handlers) ─────────────
   bot.on("message", (ctx, next) => {
     const chatId = String(ctx.chat.id);
@@ -150,6 +155,12 @@ export function registerMiddleware(bot: Bot, config: TalonConfig, onChatOwned?: 
         replyToMsgId,
         timestamp,
       });
+    }
+
+    // Dual-mode dedup: if the userbot already claimed this message, skip handlers
+    // (history was already captured above — only the processing is skipped)
+    if (claimMessage && !claimMessage(ctx.chat.id, msgId)) {
+      return; // userbot will handle this message
     }
 
     return next();
