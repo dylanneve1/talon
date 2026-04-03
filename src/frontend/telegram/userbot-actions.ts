@@ -141,9 +141,24 @@ export function createUserbotActionHandler(
         return { ok: true, message_id: sentId };
       }
 
-      // copy_message: forward without attribution (same effect in user mode)
+      // copy_message: forward without attribution; supports to_chat for cross-chat copy
       case "copy_message": {
-        const sentId = await forwardUserbotMessage(peer, Number(body.message_id));
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const srcMsgId = Number(body.message_id);
+        const toChatRaw = body.to_chat ?? body.to_chat_id;
+        if (toChatRaw) {
+          const toPeer: number | string = /^-?\d+$/.test(String(toChatRaw)) ? Number(toChatRaw) : String(toChatRaw);
+          // Forward with noforwards=false (copy — no attribution link in TDLib terms)
+          await withRetry(() => client!.forwardMessages(
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            toPeer as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            { messages: [srcMsgId], fromPeer: peer as any, noforwards: false, dropAuthor: true },
+          ));
+          return { ok: true, message_id: srcMsgId, to_chat: toChatRaw };
+        }
+        const sentId = await forwardUserbotMessage(peer, srcMsgId);
         return { ok: true, message_id: sentId };
       }
 
@@ -1840,10 +1855,9 @@ export function createUserbotActionHandler(
         const client = getClient();
         if (!client) return { ok: false, error: "User client not connected." };
         const p = body.chat_id ? Number(body.chat_id) : peer;
+        // Use InputUserSelf so GramJS can properly serialize the adminId field
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const self = await client.getMe() as any;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await withRetry(() => client!.invoke(new Api.messages.GetExportedChatInvites({ peer: p as any, adminId: self as any, limit: 20 }))) as any;
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetExportedChatInvites({ peer: p as any, adminId: new Api.InputUserSelf(), limit: 20 }))) as any;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const lines = (result.invites ?? []).map((inv: any) => {
           const used = inv.usage ? ` (${inv.usage} uses)` : "";
