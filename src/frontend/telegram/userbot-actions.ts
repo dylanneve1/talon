@@ -1293,14 +1293,22 @@ export function createUserbotActionHandler(
         const limit = Math.min(100, Number(body.limit ?? 20));
         const dialogs = await client.getDialogs({ limit });
 
-        const formatted = dialogs.map((d) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const formatted = dialogs.map((d: any) => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const e = d.entity as any;
           const title = e?.title ?? e?.firstName ?? "(unnamed)";
+          const lastName = e?.lastName ? ` ${e.lastName}` : "";
           const username = e?.username ? ` @${e.username}` : "";
           const id = e?.id ? Number(e.id) : "?";
-          const unread = (d as unknown as { unreadCount?: number }).unreadCount ?? 0;
-          return `[chat:${id}]${username} ${title} — ${unread} unread`;
+          const unread = d.unreadCount ?? 0;
+          const mentions = d.unreadMentionsCount ?? 0;
+          const lastMsg = d.message?.message ? ` | "${String(d.message.message).slice(0, 60)}"` : "";
+          const lastDate = d.message?.date ? ` [${new Date(d.message.date * 1000).toISOString().slice(0, 10)}]` : "";
+          const type = e?.className === "User" ? (e.bot ? "bot" : "user")
+            : e?.className === "Channel" ? (e.megagroup ? "supergroup" : "channel")
+            : e?.className === "Chat" ? "group" : "?";
+          return `[chat:${id} type:${type}]${username} ${title}${lastName}${lastDate} — ${unread} unread${mentions > 0 ? ` (${mentions} mentions)` : ""}${lastMsg}`;
         });
         return { ok: true, text: formatted.join("\n"), count: dialogs.length };
       }
