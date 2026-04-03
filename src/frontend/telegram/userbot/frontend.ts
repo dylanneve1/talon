@@ -39,6 +39,7 @@ import {
   clearUserbotReactions,
   reactUserbotMessage,
   markUserbotAsRead,
+  editUserbotMessage,
 } from "./client.js";
 import { createUserbotActionHandler } from "./actions/index.js";
 import { splitMessage, escapeHtml } from "../formatting.js";
@@ -444,8 +445,13 @@ async function handleCommand(
   msgId: number,
   adminUserId: number | undefined,
   senderId: number | undefined,
+  cmdArg?: string,
 ): Promise<boolean> {
   const isAdmin = adminUserId && senderId === adminUserId;
+  const { getSessionInfo, getActiveSessionCount } = await import("../../../storage/sessions.js");
+  const { getChatSettings, setChatModel, setChatEffort, resolveModelName } = await import("../../../storage/chat-settings.js");
+  const { isPulseEnabled, enablePulse, disablePulse, resetPulseCheckpoint } = await import("../../../core/pulse.js");
+  const { formatDuration, formatTokenCount } = await import("../helpers.js");
 
   switch (cmd) {
     case "help":
@@ -453,41 +459,195 @@ async function handleCommand(
       const helpText = [
         "**Commands**",
         "",
-        "`/reset` — Clear session and start fresh",
-        "`/dream` — Force memory consolidation",
-        "`/restart` — Restart the bot (admin only)",
-        "`/help` — This panel",
+        "**Settings**",
+        "  `/model [name]` — Show or change model (sonnet, opus, haiku)",
+        "  `/effort [level]` — Set thinking effort (off, low, medium, high, max)",
+        "  `/pulse [on|off]` — Toggle periodic engagement",
+        "  `/settings` — View all settings",
         "",
-        "Or just ask me anything naturally — I understand plain language.",
+        "**Session**",
+        "  `/status` — Session info, usage, and stats",
+        "  `/dream` — Force memory consolidation",
+        "  `/ping` — Health check with uptime",
+        "  `/reset` — Clear session and start fresh",
+        "  `/restart` — Restart process (admin only)",
+        "",
+        "Or just ask me anything in plain language.",
       ].join("\n");
       const sentId = await sendUserbotMessage(numericChatId, helpText, msgId);
       recordOurMessage(chatId, sentId);
       return true;
     }
+
+    case "status": {
+      const info = getSessionInfo(chatId);
+      const u = info.usage;
+      const uptime = formatDuration(process.uptime() * 1000);
+      const sessionAge = info.createdAt ? formatDuration(Date.now() - info.createdAt) : "—";
+      const chatSets = getChatSettings(chatId);
+      const activeModel = chatSets.model ?? "default";
+      const effortName = chatSets.effort ?? "adaptive";
+      const pulseOn = isPulseEnabled(chatId);
+
+      const totalPrompt = u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
+      const cacheHitPct = totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
+      const avgMs = info.turns > 0 && u.totalResponseMs ? Math.round(u.totalResponseMs / info.turns) : 0;
+
+      const lines = [
+        `**Status** · \`${activeModel}\` · effort: ${effortName}`,
+        "",
+        `**Context** ${formatTokenCount(u.lastPromptTokens)} tokens`,
+        `**Cache** ${cacheHitPct}% hit · in ${formatTokenCount(u.totalInputTokens)} · out ${formatTokenCount(u.totalOutputTokens)}`,
+        `**Turns** ${info.turns} · avg ${avgMs ? formatDuration(avgMs) : "—"} · session ${sessionAge}`,
+        `**Pulse** ${pulseOn ? "on" : "off"} · **Uptime** ${uptime} · ${getActiveSessionCount()} session(s)`,
+      ];
+      const sentId = await sendUserbotMessage(numericChatId, lines.join("\n"), msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
+
+    case "settings": {
+      const chatSets = getChatSettings(chatId);
+      const activeModel = chatSets.model ?? "default";
+      const effortName = chatSets.effort ?? "adaptive";
+      const pulseOn = isPulseEnabled(chatId);
+
+      const lines = [
+        "**Settings**",
+        "",
+        `**Model:** \`${activeModel}\``,
+        `**Effort:** ${effortName}`,
+        `**Pulse:** ${pulseOn ? "on" : "off"}`,
+        "",
+        "Change with: `/model opus`, `/effort high`, `/pulse on`",
+      ];
+      const sentId = await sendUserbotMessage(numericChatId, lines.join("\n"), msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
+
+    case "model": {
+      const arg = cmdArg?.trim();
+      if (!arg) {
+        const current = getChatSettings(chatId).model ?? "default";
+        const sentId = await sendUserbotMessage(numericChatId, `**Model:** \`${current}\`\nChange: \`/model sonnet\`, \`/model opus\`, \`/model haiku\`, \`/model reset\``, msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      if (arg === "reset" || arg === "default") {
+        setChatModel(chatId, undefined);
+        const sentId = await sendUserbotMessage(numericChatId, "Model reset to default.", msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      const model = resolveModelName(arg);
+      setChatModel(chatId, model);
+      const sentId = await sendUserbotMessage(numericChatId, `Model set to \`${model}\`.`, msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
+
+    case "effort": {
+      const arg = cmdArg?.trim().toLowerCase();
+      const levels = ["off", "low", "medium", "high", "max", "adaptive"];
+      if (!arg) {
+        const current = getChatSettings(chatId).effort ?? "adaptive";
+        const sentId = await sendUserbotMessage(numericChatId, `**Effort:** ${current}\nChange: \`/effort low\`, \`/effort high\`, \`/effort max\``, msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      if (arg === "reset" || arg === "default" || arg === "adaptive") {
+        setChatEffort(chatId, undefined);
+        const sentId = await sendUserbotMessage(numericChatId, "Effort reset to adaptive.", msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      if (levels.includes(arg)) {
+        setChatEffort(chatId, arg as import("../../../storage/chat-settings.js").EffortLevel);
+        const sentId = await sendUserbotMessage(numericChatId, `Effort set to **${arg}**.`, msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      const sentId = await sendUserbotMessage(numericChatId, "Unknown level. Use: off, low, medium, high, max, adaptive.", msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
+
+    case "pulse": {
+      const arg = cmdArg?.trim().toLowerCase();
+      if (!arg) {
+        const on = isPulseEnabled(chatId);
+        const sentId = await sendUserbotMessage(numericChatId, `**Pulse:** ${on ? "on" : "off"}\nToggle: \`/pulse on\`, \`/pulse off\``, msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      if (arg === "on" || arg === "enable") {
+        enablePulse(chatId);
+        registerChat(chatId);
+        const sentId = await sendUserbotMessage(numericChatId, "Pulse enabled.", msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      if (arg === "off" || arg === "disable") {
+        disablePulse(chatId);
+        const sentId = await sendUserbotMessage(numericChatId, "Pulse disabled.", msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      const sentId2 = await sendUserbotMessage(numericChatId, "Use: /pulse on, /pulse off", msgId);
+      recordOurMessage(chatId, sentId2);
+      return true;
+    }
+
+    case "ping": {
+      const start = Date.now();
+      const uptime = formatDuration(process.uptime() * 1000);
+      const sentId = await sendUserbotMessage(numericChatId, `Pong! ${Date.now() - start}ms · Uptime: ${uptime}`, msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
+
     case "reset": {
       resetSession(chatId);
       clearHistory(chatId);
-      const sentId = await sendUserbotMessage(numericChatId, "Session reset. Starting fresh.", msgId);
+      resetPulseCheckpoint(chatId);
+      const sentId = await sendUserbotMessage(numericChatId, "Session cleared.", msgId);
       recordOurMessage(chatId, sentId);
       return true;
     }
+
     case "dream": {
-      await forceDream();
-      const sentId = await sendUserbotMessage(numericChatId, "Memory consolidation triggered.", msgId);
-      recordOurMessage(chatId, sentId);
+      if (adminUserId && senderId !== adminUserId) {
+        const sentId = await sendUserbotMessage(numericChatId, "Admin only.", msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      const statusId = await sendUserbotMessage(numericChatId, "🌙 Dream mode starting...", msgId);
+      recordOurMessage(chatId, statusId);
+      const start = Date.now();
+      try {
+        await forceDream();
+        const elapsed = formatDuration(Date.now() - start);
+        await editUserbotMessage(numericChatId, statusId, `🌙 Dream complete — memory consolidated in ${elapsed}.`);
+      } catch (err) {
+        const emsg = err instanceof Error ? err.message : String(err);
+        await editUserbotMessage(numericChatId, statusId, `🌙 Dream failed: ${emsg}`);
+      }
       return true;
     }
+
     case "restart": {
       if (!isAdmin) {
         const sentId = await sendUserbotMessage(numericChatId, "Admin only.", msgId);
         recordOurMessage(chatId, sentId);
         return true;
       }
-      const sentId = await sendUserbotMessage(numericChatId, "Restarting…", msgId);
+      const sentId = await sendUserbotMessage(numericChatId, "♻️ Restarting…", msgId);
       recordOurMessage(chatId, sentId);
       setTimeout(() => process.exit(0), 500);
       return true;
     }
+
     default:
       return false; // let Claude handle it
   }
@@ -741,11 +901,12 @@ export function createUserbotFrontend(
 
         // ── Command handling (/cmd text) ───────────────────────────────────
         if (rawText.startsWith("/")) {
-          const [cmdPart] = rawText.split(/\s+/);
+          const [cmdPart, ...argParts] = rawText.split(/\s+/);
           const cmd = cmdPart.slice(1).split("@")[0].toLowerCase();
+          const cmdArg = argParts.join(" ");
           const handled = await handleCommand(
             cmd, chatId, numericChatId, msgId,
-            config.adminUserId, senderId,
+            config.adminUserId, senderId, cmdArg,
           ).catch((e) => {
             logError("userbot-frontend", `Command /${cmd} failed`, e);
             return false;
