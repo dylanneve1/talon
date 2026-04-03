@@ -2387,6 +2387,159 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Get available reactions ──────────────────────────────────────────────
+
+      case "get_reactions_available": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.GetAvailableReactions({
+          hash: 0,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const reactions = (result.reactions ?? []) as any[];
+        const formatted = reactions.map((r) => ({
+          emoji: r.reaction ?? "?",
+          title: r.title ?? "",
+          premium: r.premium ?? false,
+        }));
+        return { ok: true, count: formatted.length, reactions: formatted };
+      }
+
+      // ── Get read participants ────────────────────────────────────────────────
+
+      case "get_read_participants": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const result = await withRetry(() => client!.invoke(new Api.messages.GetMessageReadParticipants({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            peer: p as any,
+            msgId,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          }))) as any;
+          // Result is a list of ReadParticipantDate objects
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const readers = Array.isArray(result) ? result as any[] : [];
+          return {
+            ok: true,
+            message_id: msgId,
+            count: readers.length,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            readers: readers.map((r: any) => ({
+              user_id: Number(r.userId ?? r),
+              date: r.date ? new Date(r.date * 1000).toISOString() : null,
+            })),
+          };
+        } catch (err) {
+          return { ok: false, error: `Read participants not available: ${err instanceof Error ? err.message : String(err)}` };
+        }
+      }
+
+      // ── Clear chat history ───────────────────────────────────────────────────
+
+      case "clear_chat_history": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const revoke = body.revoke === true; // false = local only, true = both sides (DMs only)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.messages.DeleteHistory({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          maxId: 0, // 0 = all messages
+          revoke,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        return { ok: true, revoke, pts: result?.pts ?? 0 };
+      }
+
+      // ── Get profile photos ───────────────────────────────────────────────────
+
+      case "get_profile_photos": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const userId = body.user_id ? Number(body.user_id) : null;
+        const limit = Math.min(50, Number(body.limit ?? 10));
+        const targetUser = userId
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ? (userId as any)
+          : new Api.InputUserSelf();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.photos.GetUserPhotos({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          userId: targetUser as any,
+          offset: 0,
+          maxId: BigInt(0) as unknown as import("big-integer").BigInteger,
+          limit,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const photos = (result.photos ?? []) as any[];
+        const formatted = photos.map((p_) => ({
+          id: String(p_.id),
+          date: p_.date ? new Date(p_.date * 1000).toISOString() : null,
+        }));
+        return { ok: true, count: formatted.length, photos: formatted };
+      }
+
+      // ── Connection status ─────────────────────────────────────────────────────
+
+      case "get_connection_status": {
+        const client = getClient();
+        const connected = !!client;
+        if (!client) return { ok: true, connected: false, authorized: false };
+        try {
+          const authorized = await client.isUserAuthorized();
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const session = (client as any).session;
+          const dcId = session?.dcId ?? null;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const me = authorized ? (await client.getMe().catch(() => null)) as any : null;
+          return {
+            ok: true,
+            connected,
+            authorized,
+            dc_id: dcId,
+            self: me ? {
+              id: Number(me.id),
+              username: me.username ?? null,
+              first_name: me.firstName ?? null,
+              phone: me.phone ?? null,
+            } : null,
+          };
+        } catch {
+          return { ok: true, connected, authorized: false };
+        }
+      }
+
+      // ── Forward messages in bulk ─────────────────────────────────────────────
+
+      case "forward_messages_bulk": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const to = String(body.to ?? "").trim();
+        if (!to) return { ok: false, error: "to is required (@username, numeric ID, etc.)" };
+        const rawIds = body.message_ids;
+        if (!Array.isArray(rawIds) || rawIds.length === 0)
+          return { ok: false, error: "message_ids array is required" };
+        const msgIds = (rawIds as unknown[]).map(Number).filter(Boolean);
+        const fromPeer = body.from_chat_id ? Number(body.from_chat_id) : peer;
+        const targetPeer: number | string = /^-?\d+$/.test(to) ? Number(to) : to;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.forwardMessages(targetPeer as any, {
+          messages: msgIds,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          fromPeer: fromPeer as any,
+        }));
+        return { ok: true, forwarded: msgIds.length, to };
+      }
+
       // ── Contacts improvements ────────────────────────────────────────────────
 
       case "get_mutual_contacts": {
