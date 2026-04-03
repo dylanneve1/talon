@@ -141,9 +141,10 @@ Think critically about Talon itself. Save improvement ideas as notes tagged `[im
 - Are there tools you never use? Should they be removed or improved?
 - How could the heartbeat itself be better?
 
-Use `save_note(key="improvement-{topic}", content="...", tags=["improvement"])` to record ideas.
+Use `save_note(key="improvement-{topic}", content="...", tags=["improvement"])` to record ideas when you have them.
 Use `get_performance_report()` and `get_tool_usage_stats()` for data to base observations on.
 These notes will be reviewed by the developer to actually improve Talon's codebase.
+Only save an idea if it's genuinely useful — don't force one every heartbeat.
 
 ### Rules
 
@@ -153,4 +154,4 @@ These notes will be reviewed by the developer to actually improve Talon's codeba
 4. Write what you did to a brief summary at the end.
 5. Read the previous heartbeat log if it exists to avoid repeating the same work.
 6. If nothing needs doing after careful review, that's fine — say so and move on.
-7. Always save at least one improvement idea per heartbeat — think critically about yourself.
+7. If you notice something worth improving about Talon, save it. Don't force it.
