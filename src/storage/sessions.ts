@@ -319,7 +319,11 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
 }
 
 // Flush on exit (signal handlers are in index.ts for graceful shutdown)
-registerCleanup(saveSessions);
+registerCleanup(() => {
+  clearInterval(autoSaveTimer);
+  dirty = true;
+  saveSessions();
+});
 
 /** Force-save sessions to disk and stop the auto-save timer. */
 export function flushSessions(): void {

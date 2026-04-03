@@ -114,10 +114,12 @@ export function pushMessage(chatId: string, msg: HistoryMessage): void {
   if (!history) {
     if (chatHistories.size >= MAX_CHAT_COUNT) {
       const evictCount = Math.floor(MAX_CHAT_COUNT * 0.1);
-      const iter = chatHistories.keys();
-      for (let i = 0; i < evictCount; i++) {
-        const oldest = iter.next();
-        chatHistories.delete(oldest.value as string);
+      // Evict least-recently-active chats (by last message timestamp)
+      const chatsByAge = [...chatHistories.entries()]
+        .map(([id, msgs]) => ({ id, lastTs: msgs.length > 0 ? msgs[msgs.length - 1].timestamp : 0 }))
+        .sort((a, b) => a.lastTs - b.lastTs);
+      for (let i = 0; i < evictCount && i < chatsByAge.length; i++) {
+        chatHistories.delete(chatsByAge[i].id);
       }
       // Mark dirty so evicted chats are removed from disk on next save
       dirty = true;
