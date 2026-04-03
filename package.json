@@ -46,7 +46,8 @@
     "test:coverage": "vitest run --coverage",
     "test:mutation": "stryker run",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint src/ --ignore-pattern '**/__tests__/**'",
+    "lint": "oxlint src/",
+    "knip": "knip",
     "format": "prettier --write src/ prompts/",
     "format:check": "prettier --check src/ prompts/"
   },
@@ -80,6 +81,7 @@
     "@types/write-file-atomic": "^4.0.3",
     "@vitest/coverage-v8": "^4.1.2",
     "fast-check": "^4.6.0",
+    "knip": "^6.3.0",
     "oxlint": "^1.58.0",
     "prettier": "^3.8.1",
     "typescript": "^6.0.2",

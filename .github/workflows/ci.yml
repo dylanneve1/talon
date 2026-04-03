@@ -44,6 +44,18 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Check for .only/.skip in tests
+        run: |
+          if grep -rn '\.only\s*(' --include='*.test.ts' src/__tests__/ || \
+             grep -rn '\.skip\s*(' --include='*.test.ts' src/__tests__/; then
+            echo "::error::Found .only() or .skip() in test files — remove before merging"
+            exit 1
+          fi
+
+      - name: Dead code analysis (informational)
+        run: npx knip --no-exit-code
+        continue-on-error: true
+
       - name: Format check
         id: format-check
         run: npm run format:check
