@@ -285,10 +285,16 @@ function createDualFrontend(config: TalonConfig, gateway: Gateway): TelegramFron
 
       gateway.setFrontendHandler(async (body, chatId) => {
         const owner = chatOwnership.get(chatId) ?? "bot";
-        const result = owner === "userbot"
-          ? await userbotHandler(body, chatId)
-          : await botHandler(body, chatId);
-        return result;
+        if (owner === "userbot") {
+          // Userbot-owned chat: userbot handles everything
+          return await userbotHandler(body, chatId);
+        }
+        // Bot-owned chat: try bot handler first, fall back to userbot for
+        // advanced tools (profile, cross-chat, privacy, etc.) that only
+        // work via the MTProto user session.
+        const result = await botHandler(body, chatId);
+        if (result !== null) return result;
+        return await userbotHandler(body, chatId);
       });
     },
 
