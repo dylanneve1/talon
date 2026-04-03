@@ -196,6 +196,9 @@ async function flushQueue(chatId: string): Promise<void> {
 
   const { messages, numericChatId, queuedReactionMsgIds } = entry;
 
+  // Show typing indicator immediately so the user knows we're processing
+  sendUserbotTyping(numericChatId).catch(() => {});
+
   // Clear hourglass reactions and mark chat as read
   for (const msgId of queuedReactionMsgIds) {
     clearUserbotReactions(numericChatId, msgId).catch(() => {});
@@ -561,7 +564,7 @@ export function createUserbotFrontend(
           else if (message.videoNote) { historyText = "(video note)"; historyMediaType = "video"; }
           else if (message.gif) { historyText = message.message || "(GIF)"; historyMediaType = "animation"; }
           else if (message.video) { historyText = message.message || "(video)"; historyMediaType = "video"; }
-          else if (message.sticker) { historyText = `${(message.sticker as { attributes?: Array<{ alt?: string }> }).attributes?.find(a => 'alt' in a)?.alt ?? ""}(sticker)`; historyMediaType = "sticker"; }
+          else if (message.sticker) { historyText = `${(message.sticker as { attributes?: Array<{ alt?: string; className?: string }> }).attributes?.find(a => a.className === "DocumentAttributeSticker")?.alt ?? ""}(sticker)`; historyMediaType = "sticker"; }
           else if (message.audio) { historyText = message.message || "(audio)"; historyMediaType = "document"; }
           else if (message.document) {
             const fnAttr = (message.document as { attributes?: Array<{ className?: string; fileName?: string }> }).attributes?.find(a => a.className === "DocumentAttributeFilename");
@@ -751,7 +754,7 @@ export function createUserbotFrontend(
           // ── Sticker ────────────────────────────────────────────────────
           if (message.sticker) {
             const stickerDoc = message.sticker as { attributes?: Array<{ alt?: string; className?: string }> };
-            const emoji = stickerDoc.attributes?.find(a => "alt" in a)?.alt ?? "🖼";
+            const emoji = stickerDoc.attributes?.find(a => a.className === "DocumentAttributeSticker")?.alt ?? "🖼";
             const prompt = `User sent a sticker: ${emoji}`;
             addMedia({ chatId, msgId, senderName, type: "sticker", filePath: "", caption: emoji, timestamp });
             enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
