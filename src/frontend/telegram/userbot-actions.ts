@@ -2387,6 +2387,54 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Forum topic control ──────────────────────────────────────────────────
+
+      case "close_forum_topic": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const topicId = Number(body.topic_id);
+        if (!topicId) return { ok: false, error: "topic_id is required" };
+        await withRetry(() => client!.invoke(new Api.channels.EditForumTopic({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          channel: p as any,
+          topicId,
+          closed: true,
+        })));
+        return { ok: true, topic_id: topicId, closed: true };
+      }
+
+      case "reopen_forum_topic": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const topicId = Number(body.topic_id);
+        if (!topicId) return { ok: false, error: "topic_id is required" };
+        await withRetry(() => client!.invoke(new Api.channels.EditForumTopic({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          channel: p as any,
+          topicId,
+          closed: false,
+        })));
+        return { ok: true, topic_id: topicId, closed: false };
+      }
+
+      case "delete_forum_topic": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const topicId = Number(body.topic_id);
+        if (!topicId) return { ok: false, error: "topic_id is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await withRetry(() => client!.invoke(new Api.channels.DeleteTopicHistory({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          channel: p as any,
+          topMsgId: topicId,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        return { ok: true, topic_id: topicId, deleted_messages: result?.pts ?? 0 };
+      }
+
       // ── Telegram scheduled messages (server-side) ───────────────────────────
 
       case "get_scheduled_messages": {
