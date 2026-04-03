@@ -15,6 +15,7 @@ jobs:
   quality:
     name: Code Quality
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -26,6 +27,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          restore-keys: node-modules-${{ runner.os }}-22-
 
       - run: npm install
 
@@ -54,6 +62,7 @@ jobs:
   test:
     name: Tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -64,6 +73,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ matrix.node-version }}-${{ hashFiles('package.json') }}
+          restore-keys: node-modules-${{ runner.os }}-${{ matrix.node-version }}-
 
       - run: npm install
 
@@ -98,16 +114,25 @@ jobs:
           path: test-results.json
           retention-days: 30
 
-  # ── Coverage ──────────────────────────────────────────────────
+  # ── Coverage (runs after tests pass) ──────────────────────────
   coverage:
     name: Coverage
+    needs: [test]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          restore-keys: node-modules-${{ runner.os }}-22-
 
       - run: npm install
 
@@ -142,12 +167,20 @@ jobs:
   fuzz:
     name: Fuzz Testing
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          restore-keys: node-modules-${{ runner.os }}-22-
 
       - run: npm install
 
@@ -163,31 +196,76 @@ jobs:
             PASSED=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numPassedTests ?? 0)")
             FAILED=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numFailedTests ?? 0)")
             TOTAL=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numTotalTests ?? 0)")
-            echo "### Fuzz Test Results" >> $GITHUB_STEP_SUMMARY
+            echo "### Fuzz Test Results (10,000 iterations/property)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "| Passed | Failed | Total |" >> $GITHUB_STEP_SUMMARY
             echo "|--------|--------|-------|" >> $GITHUB_STEP_SUMMARY
             echo "| $PASSED | $FAILED | $TOTAL |" >> $GITHUB_STEP_SUMMARY
           fi
 
+  # ── Security audit ────────────────────────────────────────────
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          restore-keys: node-modules-${{ runner.os }}-22-
+
+      - run: npm install
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+  # ── Docker build validation ───────────────────────────────────
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t talon:ci-${{ github.sha }} .
+
   # ── Final status gate ─────────────────────────────────────────
   ci-ok:
     name: CI Status
     if: always()
-    needs: [quality, test, coverage, fuzz]
+    needs: [quality, test, coverage, fuzz, security]
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - name: Check required jobs
         run: |
-          echo "Quality: ${{ needs.quality.result }}"
-          echo "Test:    ${{ needs.test.result }}"
-          echo "Coverage: ${{ needs.coverage.result }}"
-          echo "Fuzz:    ${{ needs.fuzz.result }}"
           if [[ "${{ needs.quality.result }}" != "success" ]] || \
              [[ "${{ needs.test.result }}" != "success" ]] || \
              [[ "${{ needs.coverage.result }}" != "success" ]] || \
-             [[ "${{ needs.fuzz.result }}" != "success" ]]; then
+             [[ "${{ needs.fuzz.result }}" != "success" ]] || \
+             [[ "${{ needs.security.result }}" != "success" ]]; then
             echo "::error::One or more required jobs failed"
             exit 1
           fi
-          echo "All required jobs passed!"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Quality | ${{ needs.quality.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Tests | ${{ needs.test.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Coverage | ${{ needs.coverage.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Fuzz | ${{ needs.fuzz.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security | ${{ needs.security.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY

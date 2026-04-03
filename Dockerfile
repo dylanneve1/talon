@@ -6,8 +6,8 @@ WORKDIR /app
 RUN npm install -g @anthropic-ai/claude-code
 
 # Copy package files first for layer caching
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY package.json ./
+RUN npm install --omit=dev
 
 # Copy source
 COPY src/ src/
