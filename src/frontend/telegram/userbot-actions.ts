@@ -2387,6 +2387,21 @@ export function createUserbotActionHandler(
         }
       }
 
+      // ── Protected content ───────────────────────────────────────────────────
+
+      case "set_protected_content": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected. Ensure the userbot session is active." };
+        const p = body.chat_id ? Number(body.chat_id) : peer;
+        const enabled = body.enabled !== false;
+        await withRetry(() => client!.invoke(new Api.messages.ToggleNoForwards({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: p as any,
+          enabled,
+        })));
+        return { ok: true, protected_content: enabled };
+      }
+
       // ── Auto-delete timer ───────────────────────────────────────────────────
 
       case "set_auto_delete": {
