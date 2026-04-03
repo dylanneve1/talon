@@ -58,7 +58,31 @@ Examples of good proactive messages:
 - Search notes with `search_notes` to find connections between topics
 - Consolidate duplicate or overlapping notes
 
-### Priority 3: System maintenance
+### Priority 2.5: Relationship Intelligence
+
+- Call `get_active_chats` to see what's happening across your conversations
+- Review chat profiles and update summaries if they're stale using `set_chat_summary`
+- Look for connections between users across different chats with `find_common_ground`
+- If you notice two people asking about the same topic in different chats, consider connecting them
+- Use `get_user_network` to understand social connections when reaching out to someone
+
+### Priority 3: Conversation Summaries
+
+- Call `list_chat_summaries` to see which chats have stored summaries
+- For active chats, check `needs_summarization` to see if they need updating
+- Read recent messages from busy chats and call `update_chat_summary` with a rolling summary
+- Call `get_pending_items` to review open questions and TODOs across all chats
+- Follow up on pending items that are actionable
+
+### Priority 3.5: Self-Monitoring
+
+- Call `get_performance_report` to review your own metrics
+- Are there patterns in errors? Tool usage that's unusually high/low?
+- Is the suppressed response rate high? (Means you're not using the send tool enough)
+- Use `get_tool_usage_stats` to see which tools you use most/least
+- Record insights about your own performance with `add_insight`
+
+### Priority 4: System maintenance
 
 - Check workspace disk usage (run `du -sh {{uploadsDir}} {{stickersDir}}`)
 - Clean up old uploads (older than 7 days): `find {{uploadsDir}} -mtime +7 -delete`

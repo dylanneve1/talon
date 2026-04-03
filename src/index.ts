@@ -14,6 +14,9 @@ import { flushCronJobs } from "./storage/cron-store.js";
 import { flushHistory } from "./storage/history.js";
 import { flushMediaIndex } from "./storage/media-index.js";
 import { flushLearningState } from "./storage/learning.js";
+import { flushRelationships } from "./storage/relationships.js";
+import { flushSummaries } from "./storage/summaries.js";
+import { flushMetrics } from "./storage/self-monitor.js";
 import { loadEmbeddingIndex, flushEmbeddingIndex } from "./storage/note-embeddings.js";
 import { getActiveCount } from "./core/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/pulse.js";
@@ -105,6 +108,9 @@ async function gracefulShutdown(signal: string): Promise<void> {
   flushHistory();
   flushMediaIndex();
   flushLearningState();
+  flushRelationships();
+  flushSummaries();
+  flushMetrics();
   flushEmbeddingIndex();
   try { unlinkSync(pathFiles.pid); } catch { /* ok */ }
   log("shutdown", "State saved");
@@ -128,6 +134,9 @@ process.on("uncaughtException", (err) => {
   flushHistory();
   flushMediaIndex();
   flushLearningState();
+  flushRelationships();
+  flushSummaries();
+  flushMetrics();
   flushEmbeddingIndex();
   process.exit(1);
 });

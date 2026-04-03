@@ -425,6 +425,7 @@ async function startChat(): Promise<void> {
   const { flushHistory } = await import("./storage/history.js");
   const { flushMediaIndex } = await import("./storage/media-index.js");
   const { loadEmbeddingIndex, flushEmbeddingIndex } = await import("./storage/note-embeddings.js");
+  const { flushRelationships } = await import("./storage/relationships.js");
   const { createTerminalFrontend } = await import("./frontend/terminal/index.js");
   const { Gateway } = await import("./core/gateway.js");
 
@@ -451,6 +452,7 @@ async function startChat(): Promise<void> {
     flushCronJobs();
     flushHistory();
     flushMediaIndex();
+    flushRelationships();
     flushEmbeddingIndex();
     frontend.stop();
     process.exit(0);

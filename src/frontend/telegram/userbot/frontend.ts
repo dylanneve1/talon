@@ -49,8 +49,9 @@ import {
   enrichDMPrompt,
   enrichGroupPrompt,
 } from "../../../core/prompt-builder.js";
-import { pushMessage, setMessageFilePath } from "../../../storage/history.js";
+import { pushMessage, setMessageFilePath, getRecentSenderIds } from "../../../storage/history.js";
 import { recordInteraction } from "../../../storage/learning.js";
+import { recordCoPresence, recordChatActivity } from "../../../storage/relationships.js";
 import { addMedia } from "../../../storage/media-index.js";
 import { appendDailyLog, appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { recordMessageProcessed, recordError } from "../../../util/watchdog.js";
@@ -781,6 +782,19 @@ export function createUserbotFrontend(
 
         // ── Learning: record interaction ──────────────────────────────────
         recordInteraction(senderId ?? 0, senderName, senderUsername, rawText);
+
+        // ── Relationship tracking ────────────────────────────────────────
+        if (isGroup) {
+          const recentSenders = getRecentSenderIds(chatId, 10);
+          for (const otherId of recentSenders) {
+            if (otherId !== senderId && otherId !== 0) {
+              recordCoPresence(senderId ?? 0, otherId, chatId);
+            }
+          }
+          recordChatActivity(chatId, "", "group", senderId ?? 0);
+        } else {
+          recordChatActivity(chatId, senderName, "dm", senderId ?? 0);
+        }
 
         // ── Keyword watch check ────────────────────────────────────────────
         const watches = loadWatches();

@@ -21,6 +21,7 @@ import { getActiveSessionCount } from "../storage/sessions.js";
 import { log, logError, logDebug } from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "./plugin.js";
+import { recordToolUse } from "../storage/self-monitor.js";
 import type { FrontendActionHandler } from "./types.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
@@ -174,6 +175,9 @@ export class Gateway {
     chatId: number,
     action: string,
   ): Promise<unknown> {
+    // Track tool usage for self-monitoring
+    recordToolUse(action);
+
     if (this.frontendHandler) {
       const result = await this.frontendHandler(body, chatId);
       if (result) return result;

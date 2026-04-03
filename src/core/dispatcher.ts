@@ -18,6 +18,7 @@ import type {
 } from "./types.js";
 import { log, logDebug, logWarn } from "../util/log.js";
 import { maybeStartDream } from "./dream.js";
+import { recordResponse } from "../storage/self-monitor.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -117,11 +118,23 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
 
     onActivity();
 
+    const bridgeMessageCount = context.getMessageCount(params.numericChatId);
+
+    // Record self-monitoring metrics
+    recordResponse(
+      result.inputTokens,
+      result.outputTokens,
+      result.durationMs,
+      bridgeMessageCount > 0,
+      0, // toolCalls not tracked at dispatcher level
+      null,
+    );
+
     logDebug("dispatcher", `[${reqId}] completed in ${result.durationMs}ms (in=${result.inputTokens} out=${result.outputTokens})`);
 
     return {
       ...result,
-      bridgeMessageCount: context.getMessageCount(params.numericChatId),
+      bridgeMessageCount,
     };
   } finally {
     clearInterval(typingTimer);

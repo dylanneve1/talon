@@ -886,4 +886,123 @@ Example: create_chat_folder(title="Work", groups=true, exclude_muted=true)`,
     {},
     async () => textResult(await callBridge("prune_insights", {})),
   );
+
+  // ── Relationship Intelligence ─────────────────────────────────────────────
+
+  server.tool(
+    "get_user_network",
+    "See who a user frequently interacts with — returns connections sorted by strength.",
+    {
+      user_id: z.number().describe("User ID to look up"),
+      limit: z.number().optional().describe("Max connections to return (default 10)"),
+    },
+    async (p) => textResult(await callBridge("get_user_network", p)),
+  );
+
+  server.tool(
+    "get_chat_profile",
+    "Get profile of a chat (type, active users, topics, message count, summary).",
+    {
+      chat_id: z.number().optional().describe("Chat ID (defaults to current chat)"),
+    },
+    async (p) => textResult(await callBridge("get_chat_profile", p)),
+  );
+
+  server.tool(
+    "get_active_chats",
+    "List most recently active chats with summaries and activity stats.",
+    {
+      limit: z.number().optional().describe("Max chats to return (default 10)"),
+    },
+    async (p) => textResult(await callBridge("get_active_chats", p)),
+  );
+
+  server.tool(
+    "find_common_ground",
+    "Find shared chats and topics between two users — useful for introductions.",
+    {
+      user_a: z.number().describe("First user ID"),
+      user_b: z.number().describe("Second user ID"),
+    },
+    async (p) => textResult(await callBridge("find_common_ground", p)),
+  );
+
+  server.tool(
+    "set_chat_summary",
+    "Set a brief description for a chat (used by heartbeat to maintain chat intelligence).",
+    {
+      chat_id: z.number().describe("Chat ID"),
+      summary: z.string().describe("Brief summary of what this chat is about"),
+    },
+    async (p) => textResult(await callBridge("set_chat_summary", p)),
+  );
+
+  // ── Conversation Summaries ──────────────────────────────────────────────────
+
+  server.tool(
+    "get_chat_summary_stored",
+    "Get the stored rolling summary for a chat — topics, decisions, pending items.",
+    {
+      chat_id: z.string().optional().describe("Chat ID (defaults to current chat)"),
+    },
+    async (p) => textResult(await callBridge("get_chat_summary_stored", p)),
+  );
+
+  server.tool(
+    "update_chat_summary",
+    "Store or update a chat summary with topics, decisions, and pending items.",
+    {
+      chat_id: z.string().optional().describe("Chat ID (defaults to current chat)"),
+      summary: z.string().describe("Rolling summary text"),
+      title: z.string().optional().describe("Chat title/label"),
+      key_topics: z.array(z.string()).optional().describe("Main topics discussed"),
+      key_decisions: z.array(z.string()).optional().describe("Decisions or conclusions reached"),
+      pending_items: z.array(z.string()).optional().describe("Unanswered questions, TODOs"),
+      participants: z.array(z.string()).optional().describe("Active participant names"),
+      message_count: z.number().optional().describe("Current message count (for tracking threshold)"),
+    },
+    async (p) => textResult(await callBridge("update_chat_summary", p)),
+  );
+
+  server.tool(
+    "list_chat_summaries",
+    "List all stored chat summaries, sorted by most recently updated.",
+    {
+      limit: z.number().optional().describe("Max summaries to return (default 20)"),
+    },
+    async (p) => textResult(await callBridge("list_chat_summaries", p)),
+  );
+
+  server.tool(
+    "get_pending_items",
+    "Get all pending items (unanswered questions, TODOs) across all chats.",
+    {},
+    async () => textResult(await callBridge("get_pending_items", {})),
+  );
+
+  server.tool(
+    "needs_summarization",
+    "Check if a chat needs re-summarization based on new message count since last summary.",
+    {
+      chat_id: z.string().optional().describe("Chat ID (defaults to current chat)"),
+      message_count: z.number().describe("Current total message count in the chat"),
+    },
+    async (p) => textResult(await callBridge("needs_summarization", p)),
+  );
+
+  // ── Self-Monitoring ─────────────────────────────────────────────────────────
+
+  server.tool(
+    "get_performance_report",
+    "Get a formatted report of the bot's own performance metrics — response rates, token usage, errors, tool usage.",
+    {},
+    async () => textResult(await callBridge("get_performance_report", {})),
+  );
+
+  server.tool(
+    "get_tool_usage_stats",
+    "Get tool usage frequency stats, sorted by most used.",
+    {},
+    async () => textResult(await callBridge("get_tool_usage_stats", {})),
+  );
 }

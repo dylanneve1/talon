@@ -258,6 +258,24 @@ export function getLatestMessageId(chatId: string): number | undefined {
   return history[history.length - 1].msgId;
 }
 
+/**
+ * Get recent unique sender IDs from a chat's history (most recent first).
+ */
+export function getRecentSenderIds(chatId: string, limit: number): number[] {
+  const history = chatHistories.get(chatId);
+  if (!history) return [];
+  const seen = new Set<number>();
+  const result: number[] = [];
+  for (let i = history.length - 1; i >= 0 && result.length < limit; i--) {
+    const sid = history[i].senderId;
+    if (sid && !seen.has(sid)) {
+      seen.add(sid);
+      result.push(sid);
+    }
+  }
+  return result;
+}
+
 export function getHistoryStats(chatId: string): {
   totalMessages: number;
   uniqueUsers: number;

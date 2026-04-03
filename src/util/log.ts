@@ -36,6 +36,9 @@ export type LogComponent =
   | "heartbeat"
   | "learning"
   | "goals"
+  | "relationships"
+  | "summaries"
+  | "self-monitor"
   | "userbot-frontend";
 
 const LOG_FILE = files.log;
