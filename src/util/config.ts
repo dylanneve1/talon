@@ -230,6 +230,49 @@ Two job types: "message" sends text directly, "query" runs a Claude prompt with 
     }
   } catch { /* no goals yet */ }
 
+  // Learning insights
+  try {
+    const learningPath = resolve(dirs.workspace, "memory", "learning_state.json");
+    if (existsSync(learningPath)) {
+      const data = JSON.parse(readFileSync(learningPath, "utf-8"));
+      const insights = (data.insights ?? []).filter((i: any) => i.relevance > 0.3).slice(0, 5);
+      if (insights.length > 0) {
+        const lines = insights.map((i: any) => `  - [${i.type}] ${i.content}`);
+        parts.push(`## Recent Insights\n\n${lines.join("\n")}`);
+      }
+    }
+  } catch { /* no learning data yet */ }
+
+  // Chat summaries
+  try {
+    const summariesPath = resolve(dirs.workspace, "memory", "summaries.json");
+    if (existsSync(summariesPath)) {
+      const data = JSON.parse(readFileSync(summariesPath, "utf-8"));
+      const chats = Object.values(data.chats ?? {}).slice(0, 5);
+      if (chats.length > 0) {
+        const lines = chats.map((c: any) => `  - ${c.title ?? c.chatId}: ${c.summary?.slice(0, 100) ?? "no summary"}`);
+        parts.push(`## Chat Summaries\n\n${lines.join("\n")}`);
+      }
+    }
+  } catch { /* no summaries yet */ }
+
+  // Pending items across chats
+  try {
+    const summariesPath = resolve(dirs.workspace, "memory", "summaries.json");
+    if (existsSync(summariesPath)) {
+      const data = JSON.parse(readFileSync(summariesPath, "utf-8"));
+      const allPending: string[] = [];
+      for (const chat of Object.values(data.chats ?? {}) as any[]) {
+        for (const item of chat.pendingItems ?? []) {
+          allPending.push(`  - [${chat.title ?? chat.chatId}] ${item}`);
+        }
+      }
+      if (allPending.length > 0) {
+        parts.push(`## Pending Items\n\nThese items are unresolved across your chats:\n${allPending.slice(0, 10).join("\n")}`);
+      }
+    }
+  } catch { /* */ }
+
   parts.push(`## Current Date & Time\n${formatFullDatetime()}`);
 
   // Plugin system prompt contributions (injected by caller)

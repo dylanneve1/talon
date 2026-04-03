@@ -35,7 +35,8 @@ import {
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { files as talonFiles, dirs as talonDirs } from "../../util/paths.js";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   formatDuration,
   formatTokenCount,
@@ -97,7 +98,7 @@ export function renderStatus(chatId: string, defaultModel: string, fmt: Fmt): st
   let diskStr = "—";
   try { diskStr = formatBytes(getWorkspaceDiskUsage(talonDirs.workspace)); } catch { /* */ }
 
-  return [
+  const lines = [
     `${bold("🦅 Talon", fmt)} · ${code(esc(activeModel, fmt), fmt)} · effort: ${effortName}`,
     "",
     `${bold("Context", fmt)}  ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextMax)} (${contextPct}%)${contextWarn}`,
@@ -115,7 +116,25 @@ export function renderStatus(chatId: string, defaultModel: string, fmt: Fmt): st
     `${bold("Workspace", fmt)}  ${diskStr}`,
     `${bold("Session", fmt)}   ${info.sessionName ? `"${esc(info.sessionName, fmt)}" ` : ""}${info.sessionId ? code(info.sessionId.slice(0, 8) + "...", fmt) : italic("(new)", fmt)} · ${sessionAge} old`,
     `${bold("Uptime", fmt)}    ${uptime} · ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
-  ].join("\n");
+  ];
+
+  // System intelligence counts
+  try {
+    const goalsPath = resolve(talonDirs.workspace, "memory", "goals.json");
+    const learningPath = resolve(talonDirs.workspace, "memory", "learning_state.json");
+    const summariesPath = resolve(talonDirs.workspace, "memory", "summaries.json");
+
+    let goalCount = 0, insightCount = 0, summaryCount = 0, noteCount = 0;
+    try { goalCount = JSON.parse(readFileSync(goalsPath, "utf-8")).goals?.filter((g: any) => g.status === "active").length ?? 0; } catch {}
+    try { insightCount = JSON.parse(readFileSync(learningPath, "utf-8")).insights?.length ?? 0; } catch {}
+    try { summaryCount = Object.keys(JSON.parse(readFileSync(summariesPath, "utf-8")).chats ?? {}).length; } catch {}
+    try { noteCount = readdirSync(resolve(talonDirs.workspace, "notes")).filter(f => f.endsWith(".json") && !f.startsWith(".")).length; } catch {}
+
+    lines.push("");
+    lines.push(`${bold("Intelligence", fmt)}  ${noteCount} notes · ${goalCount} goals · ${insightCount} insights · ${summaryCount} summaries`);
+  } catch {}
+
+  return lines.join("\n");
 }
 
 // ── Settings ────────────────────────────────────────────────────────────────
@@ -199,15 +218,25 @@ export function renderMemory(): string {
 export async function renderHeartbeatStatus(fmt: Fmt): Promise<string> {
   const { getHeartbeatStatus } = await import("../../core/heartbeat.js");
   const state = getHeartbeatStatus();
+
+  const lastRunStr = state.lastRunAt
+    ? `${state.lastRunAt} (${formatDuration(Date.now() - state.lastRun)} ago)`
+    : "never";
+
+  const nextRunStr = state.lastRun > 0
+    ? `~${formatDuration(Math.max(0, state.lastRun + 3_600_000 - Date.now()))} from now`
+    : "pending first run";
+
   const lines = [
     bold("Heartbeat Status", fmt),
     "",
     `${bold("Status:", fmt)} ${state.status}`,
     `${bold("Run count:", fmt)} ${state.runCount}`,
-    `${bold("Last run:", fmt)} ${state.lastRunAt ?? "never"}`,
+    `${bold("Last run:", fmt)} ${lastRunStr}`,
+    `${bold("Next run:", fmt)} ${nextRunStr}`,
   ];
   if (state.lastSummary) {
-    lines.push("", bold("Last summary:", fmt), state.lastSummary.slice(0, 300));
+    lines.push("", bold("Last summary:", fmt), state.lastSummary.slice(0, 500));
   }
   return lines.join("\n");
 }

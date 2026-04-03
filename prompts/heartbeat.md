@@ -90,6 +90,34 @@ Examples of good proactive messages:
 - Check if any keyword watches need updating (`list_watches`)
 - Review cron jobs for relevance
 
+### Available Intelligence Tools
+
+**People:**
+- `get_user_profile(user_id)` — learned preferences, activity patterns, topics
+- `get_active_users(hours)` — who's been active recently
+- `get_user_network(user_id)` — who they interact with
+- `find_common_ground(user_a, user_b)` — shared chats and topics
+
+**Knowledge:**
+- `search_notes(query)` — semantic search through notes (embedding-powered)
+- `get_insights(limit)` — recent learning insights
+- `get_pending_items()` — unresolved items across chats
+
+**Goals:**
+- `list_goals()` — active goals with progress
+- `update_goal(id, progress)` — track progress
+- `create_goal(title, description, steps)` — create new objectives
+
+**Chats:**
+- `get_active_chats(limit)` — most active conversations
+- `get_chat_profile(chat_id)` — chat details and activity
+- `get_chat_summary_stored(chat_id)` — stored conversation summary
+- `read_any_chat(target, limit)` — read messages from any chat
+
+**Self:**
+- `get_performance_report()` — your own metrics
+- `get_tool_usage_stats()` — which tools you use most/least
+
 ### Rules
 
 1. Do at least ONE tangible thing. Preferably 2-3.

@@ -79,4 +79,14 @@ export const files = {
   dreamState: resolve(TALON_ROOT, "workspace", "memory", "dream_state.json"),
   /** Heartbeat state: ~/.talon/workspace/memory/heartbeat_state.json */
   heartbeatState: resolve(TALON_ROOT, "workspace", "memory", "heartbeat_state.json"),
+  /** Goals state: ~/.talon/workspace/memory/goals.json */
+  goalsState: resolve(TALON_ROOT, "workspace", "memory", "goals.json"),
+  /** Learning state: ~/.talon/workspace/memory/learning_state.json */
+  learningState: resolve(TALON_ROOT, "workspace", "memory", "learning_state.json"),
+  /** Chat summaries: ~/.talon/workspace/memory/summaries.json */
+  summariesState: resolve(TALON_ROOT, "workspace", "memory", "summaries.json"),
+  /** Metrics state: ~/.talon/workspace/memory/metrics.json */
+  metricsState: resolve(TALON_ROOT, "workspace", "memory", "metrics.json"),
+  /** Relationships state: ~/.talon/workspace/memory/relationships.json */
+  relationshipsState: resolve(TALON_ROOT, "workspace", "memory", "relationships.json"),
 } as const;
