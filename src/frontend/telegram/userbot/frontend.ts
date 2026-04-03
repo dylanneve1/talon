@@ -448,6 +448,22 @@ async function handleCommand(
   const isAdmin = adminUserId && senderId === adminUserId;
 
   switch (cmd) {
+    case "help":
+    case "commands": {
+      const helpText = [
+        "**Commands**",
+        "",
+        "`/reset` — Clear session and start fresh",
+        "`/dream` — Force memory consolidation",
+        "`/restart` — Restart the bot (admin only)",
+        "`/help` — This panel",
+        "",
+        "Or just ask me anything naturally — I understand plain language.",
+      ].join("\n");
+      const sentId = await sendUserbotMessage(numericChatId, helpText, msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
     case "reset": {
       resetSession(chatId);
       clearHistory(chatId);
