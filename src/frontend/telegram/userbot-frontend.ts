@@ -98,6 +98,22 @@ export function clearOurMessageTracking(chatId?: string): void {
   else ourMessages.clear();
 }
 
+// ── Typing indicator cache ────────────────────────────────────────────────────
+
+const typingCache = new Map<number, number>(); // userId → timestamp of last typing event
+const TYPING_TTL = 6_000; // Telegram typing indicator lasts ~5s
+
+/** Check if a user is currently typing. */
+export function isUserTyping(userId: number): boolean {
+  const ts = typingCache.get(userId);
+  if (!ts) return false;
+  if (Date.now() - ts > TYPING_TTL) {
+    typingCache.delete(userId);
+    return false;
+  }
+  return true;
+}
+
 // ── Keyword watches ───────────────────────────────────────────────────────────
 
 type KeywordWatch = {
@@ -908,6 +924,67 @@ export function createUserbotFrontend(
           onlineStatusCache.set(userId, { status: "unknown", cachedAt: now });
         }
       }, new Raw({ types: [Api.UpdateUserStatus] }));
+
+      // ── Edit detection ────────────────────────────────────────────────────
+      client.addEventHandler((update: Api.TypeUpdate) => {
+        try {
+          let editedMsg: Api.Message | undefined;
+          if (update instanceof Api.UpdateEditMessage) {
+            editedMsg = update.message as Api.Message;
+          } else if (update instanceof Api.UpdateEditChannelMessage) {
+            editedMsg = update.message as Api.Message;
+          }
+          if (!editedMsg || !editedMsg.message) return;
+
+          const editChatId = Number(editedMsg.chatId ?? (
+            editedMsg.peerId && "channelId" in editedMsg.peerId
+              ? Number((editedMsg.peerId as any).channelId)
+              : ((editedMsg.peerId as any)?.userId ? Number((editedMsg.peerId as any).userId) : 0)
+          ));
+          if (!editChatId) return;
+          const editChatIdStr = String(editChatId);
+
+          // Only notify for edits in DMs or if the edited message is one we replied to
+          const isDM = editedMsg.peerId?.className === "PeerUser";
+          const isOurs = isOurMessage(editChatIdStr, editedMsg.id);
+          // Skip our own edits
+          const editSenderId = (editedMsg as any).fromId?.userId
+            ? Number((editedMsg as any).fromId.userId)
+            : (editedMsg as any).senderId ? Number((editedMsg as any).senderId) : 0;
+          if (editSenderId && BigInt(editSenderId) === selfId) return;
+
+          if (!isDM && !isOurs) return;
+
+          const senderName = editSenderId ? String(editSenderId) : "unknown";
+          const editPrompt = `[Message ${editedMsg.id} was edited by user ${senderName}]\nNew text: ${editedMsg.message}`;
+
+          enqueue(editChatIdStr, editChatId, {
+            prompt: editPrompt,
+            replyToId: editedMsg.id,
+            messageId: editedMsg.id,
+            senderName,
+            isGroup: !isDM,
+          });
+        } catch (err) {
+          logError("userbot-frontend", "Edit detection error", err);
+        }
+      }, new Raw({ types: [Api.UpdateEditMessage, Api.UpdateEditChannelMessage] }));
+
+      // ── Typing indicator tracking ─────────────────────────────────────────
+      client.addEventHandler((update: Api.TypeUpdate) => {
+        try {
+          let typingUserId: number | undefined;
+          if (update instanceof Api.UpdateUserTyping) {
+            typingUserId = Number(update.userId);
+          } else if (update instanceof Api.UpdateChatUserTyping) {
+            typingUserId = (update.fromId as any)?.userId ? Number((update.fromId as any).userId) : undefined;
+          }
+          if (!typingUserId) return;
+          typingCache.set(typingUserId, Date.now());
+        } catch {
+          // silently ignore typing detection errors
+        }
+      }, new Raw({ types: [Api.UpdateUserTyping, Api.UpdateChatUserTyping] }));
 
       log(
         "userbot-frontend",
