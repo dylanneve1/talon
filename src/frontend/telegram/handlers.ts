@@ -60,7 +60,7 @@ export function shouldHandleInGroup(ctx: Context): boolean {
   // Word-boundary match — @botname must not be followed by alphanumeric/underscore
   const mentioned =
     botUser &&
-    new RegExp(`@${botUser}(?![a-zA-Z0-9_])`, "i").test(text);
+    new RegExp(`@${botUser.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![a-zA-Z0-9_])`, "i").test(text);
   const repliedToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
   return !!(mentioned || repliedToBot);
 }
@@ -365,18 +365,18 @@ async function flushQueue(chatId: string): Promise<void> {
       prompt: combinedPrompt,
       senderName: first.senderName,
       isGroup: first.isGroup,
-      senderUsername: last.senderUsername,
-      senderId: last.senderId,
+      senderUsername: first.senderUsername,
+      senderId: first.senderId,
       chatTitle: last.chatTitle,
     });
     recordMessageProcessed();
   } catch (err) {
     const classified = classify(err);
-    const chatType = last.isGroup ? "group" : "DM";
+    const chatType = first.isGroup ? "group" : "DM";
     const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
     logError(
       "bot",
-      `[${chatId}] [${chatType}] [${last.senderName}] ${classified.reason}: ${classified.message} | prompt: "${promptPreview}"`,
+      `[${chatId}] [${chatType}] [${first.senderName}] ${classified.reason}: ${classified.message} | prompt: "${promptPreview}"`,
     );
     recordError(classified.message);
 
@@ -391,10 +391,10 @@ async function flushQueue(chatId: string): Promise<void> {
           replyToId: last.replyToId,
           messageId: last.messageId,
           prompt: combinedPrompt,
-          senderName: last.senderName,
-          isGroup: last.isGroup,
-          senderUsername: last.senderUsername,
-          senderId: last.senderId,
+          senderName: first.senderName,
+          isGroup: first.isGroup,
+          senderUsername: first.senderUsername,
+          senderId: first.senderId,
           chatTitle: last.chatTitle,
         });
         return;
@@ -798,6 +798,7 @@ export async function handleVoiceMessage(
     type: "voice",
     fileId: voice.file_id,
     fileName: `voice_${voice.file_unique_id}.ogg`,
+    fileSize: voice.file_size,
     promptLines: [
       `User sent a voice message (${voice.duration}s).`,
       "Audio saved to: ${savedPath}. You cannot transcribe audio — acknowledge it and respond based on context.",
@@ -866,6 +867,7 @@ export async function handleVideoMessage(
     type: "video",
     fileId: video.file_id,
     fileName,
+    fileSize: video.file_size,
     promptLines: [
       `User sent a video: "${fileName}" (${video.duration}s, ${video.width}x${video.height}).`,
       "Saved to: ${savedPath}",
@@ -891,6 +893,7 @@ export async function handleAnimationMessage(
     type: "animation",
     fileId: anim.file_id,
     fileName,
+    fileSize: anim.file_size,
     promptLines: [
       `User sent a GIF/animation: "${fileName}" (${anim.duration}s).`,
       "Saved to: ${savedPath}",
