@@ -3219,6 +3219,559 @@ export function createUserbotActionHandler(
         return { ok: true, sample_size: messages.length, activity: sorted };
       }
 
+      // ── Retract vote from poll ───────────────────────────────────────────
+      case "retract_vote": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+        const votePeer = body.chat_id ? Number(body.chat_id) : peer;
+        await withRetry(() => client!.invoke(new Api.messages.SendVote({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: votePeer as any,
+          msgId,
+          options: [], // empty array retracts vote
+        })));
+        return { ok: true, retracted: true };
+      }
+
+      // ── Send scheduled message (server-side) ─────────────────────────────
+      case "send_scheduled": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const text = String(body.text ?? "");
+        if (!text) return { ok: false, error: "text is required" };
+        const sendAt = body.send_at;
+        if (!sendAt) return { ok: false, error: "send_at is required (ISO date string or unix timestamp)" };
+        const schedPeer = body.chat_id ? Number(body.chat_id) : peer;
+        // Parse send_at: accept unix timestamp (number) or ISO date string
+        let scheduleDate: number;
+        if (typeof sendAt === "number") {
+          scheduleDate = sendAt;
+        } else {
+          const parsed = Date.parse(String(sendAt));
+          if (isNaN(parsed)) return { ok: false, error: "Invalid send_at value" };
+          scheduleDate = Math.floor(parsed / 1000);
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const schedMsg = await withRetry(() => client!.sendMessage(schedPeer as any, {
+          message: text,
+          schedule: scheduleDate,
+        }));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const schedMsgId = (schedMsg as any)?.id;
+        return { ok: true, message_id: schedMsgId, scheduled_for: scheduleDate };
+      }
+
+      // ── Get message replies (reply thread) ────────────────────────────────
+      case "get_message_replies": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+        const repliesPeer = body.chat_id ? Number(body.chat_id) : peer;
+        const repliesLimit = Math.min(Number(body.limit ?? 20), 100);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const repliesResult = await withRetry(() => client!.invoke(new Api.messages.GetReplies({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: repliesPeer as any,
+          msgId,
+          offsetId: 0,
+          offsetDate: 0,
+          addOffset: 0,
+          limit: repliesLimit,
+          maxId: 0,
+          minId: 0,
+          hash: BigInt(0) as any,
+        })));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const replyMsgs = ((repliesResult as any).messages ?? []).map((m: any) => ({
+          id: m.id,
+          date: m.date,
+          text: m.message ?? "",
+          from_id: m.fromId?.userId ? Number(m.fromId.userId) : null,
+        }));
+        return { ok: true, replies: replyMsgs, count: replyMsgs.length };
+      }
+
+      // ── Get message view counts ───────────────────────────────────────────
+      case "get_message_views": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const rawIds = body.message_id ?? body.message_ids;
+        const viewsPeer = body.chat_id ? Number(body.chat_id) : peer;
+        let ids: number[];
+        if (Array.isArray(rawIds)) {
+          ids = (rawIds as unknown[]).map(Number);
+        } else {
+          ids = [Number(rawIds)];
+        }
+        if (ids.some(isNaN) || ids.length === 0) return { ok: false, error: "message_id (number or array) is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = await client.getMessages(viewsPeer as any, { ids });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const views = msgs.map((m: any) => ({
+          id: m?.id,
+          views: m?.views ?? null,
+          forwards: m?.forwards ?? null,
+        }));
+        return { ok: true, messages: views };
+      }
+
+      // ── Get nearby users ──────────────────────────────────────────────────
+      case "get_nearby_users": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const lat = Number(body.latitude);
+        const lng = Number(body.longitude);
+        if (isNaN(lat) || isNaN(lng)) return { ok: false, error: "latitude and longitude are required" };
+        const accuracy = body.accuracy ? Number(body.accuracy) : undefined;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const nearbyResult = await withRetry(() => client!.invoke(new Api.contacts.GetLocated({
+          geoPoint: new Api.InputGeoPoint({
+            lat,
+            long: lng,
+            ...(accuracy ? { accuracyRadius: accuracy } : {}),
+          }),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const peers = (nearbyResult.updates?.flatMap?.((u: any) => u.peers ?? []) ?? nearbyResult.peers ?? []).map((p: any) => ({
+          peer_id: p.peer?.userId ? Number(p.peer.userId) : (p.peer?.channelId ? Number(p.peer.channelId) : null),
+          distance: p.distance,
+        }));
+        return { ok: true, nearby: peers };
+      }
+
+      // ── Report spam ───────────────────────────────────────────────────────
+      case "report_spam": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const reportPeer = body.user_id ? Number(body.user_id) : (body.chat_id ? Number(body.chat_id) : peer);
+        await withRetry(() => client!.invoke(new Api.messages.ReportSpam({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: reportPeer as any,
+        })));
+        return { ok: true, reported: true };
+      }
+
+      // ── Get web page preview ──────────────────────────────────────────────
+      case "get_web_page_preview": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const url = String(body.url ?? "");
+        if (!url) return { ok: false, error: "url is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const wpResult = await withRetry(() => client!.invoke(new Api.messages.GetWebPagePreview({
+          message: url,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        const wp = wpResult.webpage ?? wpResult;
+        return {
+          ok: true,
+          url: wp.url ?? url,
+          display_url: wp.displayUrl ?? null,
+          site_name: wp.siteName ?? null,
+          title: wp.title ?? null,
+          description: wp.description ?? null,
+          type: wp.type ?? null,
+          has_photo: !!wp.photo,
+        };
+      }
+
+      // ── Get premium info ──────────────────────────────────────────────────
+      case "get_premium_info": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const premUserId = body.user_id ? Number(body.user_id) : undefined;
+        if (premUserId) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const entity = await client.getEntity(premUserId as any) as any;
+          return {
+            ok: true,
+            user_id: Number(entity.id),
+            premium: entity.premium ?? false,
+            username: entity.username ?? null,
+            first_name: entity.firstName ?? null,
+          };
+        }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const me = await client.getMe() as any;
+        return {
+          ok: true,
+          user_id: Number(me.id),
+          premium: me.premium ?? false,
+          username: me.username ?? null,
+          first_name: me.firstName ?? null,
+          is_self: true,
+        };
+      }
+
+      // ── Translate message ─────────────────────────────────────────────────
+      case "translate_message": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const msgId = Number(body.message_id);
+        if (!msgId) return { ok: false, error: "message_id is required" };
+        const toLang = String(body.to_lang ?? "en");
+        const transPeer = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const transResult = await withRetry(() => client!.invoke(new Api.messages.TranslateText({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: transPeer as any,
+          id: [msgId],
+          toLang,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const translations = (transResult.result ?? []).map((r: any) => ({
+          text: r.text ?? "",
+        }));
+        return { ok: true, to_lang: toLang, translations };
+      }
+
+      // ── Set chat accent color ─────────────────────────────────────────────
+      case "set_chat_color": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const colorId = Number(body.color ?? 0);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const bgEmojiId = body.background_emoji_id ? BigInt(String(body.background_emoji_id)) as any : undefined;
+        const colorPeer = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.invoke(new Api.channels.UpdateColor({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          channel: colorPeer as any,
+          color: colorId,
+          ...(bgEmojiId ? { backgroundEmojiId: bgEmojiId } : {}),
+        })));
+        return { ok: true, color: colorId };
+      }
+
+      // ── Search by date range ──────────────────────────────────────────────
+      case "search_by_date": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const query = String(body.query ?? "");
+        const datePeer = body.chat_id ? Number(body.chat_id) : peer;
+        const searchLimit = Math.min(Number(body.limit ?? 50), 200);
+        const fromDate = body.from_date ? Math.floor(Date.parse(String(body.from_date)) / 1000) : 0;
+        const toDate = body.to_date ? Math.floor(Date.parse(String(body.to_date)) / 1000) : 0;
+        if (!fromDate && !toDate) return { ok: false, error: "At least one of from_date or to_date is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const searchResult = await withRetry(() => client!.invoke(new Api.messages.Search({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: datePeer as any,
+          q: query,
+          filter: new Api.InputMessagesFilterEmpty(),
+          minDate: fromDate,
+          maxDate: toDate,
+          offsetId: 0,
+          addOffset: 0,
+          limit: searchLimit,
+          maxId: 0,
+          minId: 0,
+          hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const msgs = (searchResult.messages ?? []).map((m: any) => ({
+          id: m.id,
+          date: m.date,
+          text: m.message ?? "",
+          from_id: m.fromId?.userId ? Number(m.fromId.userId) : null,
+        }));
+        return { ok: true, messages: msgs, count: searchResult.count ?? msgs.length };
+      }
+
+      // ── Search messages from specific user ────────────────────────────────
+      case "search_messages_from_user": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const userId = body.user_id;
+        if (!userId) return { ok: false, error: "user_id is required" };
+        const query = String(body.query ?? "");
+        const sfuPeer = body.chat_id ? Number(body.chat_id) : peer;
+        const sfuLimit = Math.min(Number(body.limit ?? 50), 200);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fromEntity = await client.getEntity(Number(userId) as any) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sfuResult = await withRetry(() => client!.invoke(new Api.messages.Search({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: sfuPeer as any,
+          q: query,
+          filter: new Api.InputMessagesFilterEmpty(),
+          minDate: 0,
+          maxDate: 0,
+          offsetId: 0,
+          addOffset: 0,
+          limit: sfuLimit,
+          maxId: 0,
+          minId: 0,
+          fromId: new Api.InputPeerUser({
+            userId: BigInt(fromEntity.id) as any,
+            accessHash: BigInt(fromEntity.accessHash ?? 0) as any,
+          }),
+          hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sfuMsgs = (sfuResult.messages ?? []).map((m: any) => ({
+          id: m.id,
+          date: m.date,
+          text: m.message ?? "",
+          from_id: m.fromId?.userId ? Number(m.fromId.userId) : null,
+        }));
+        return { ok: true, messages: sfuMsgs, count: sfuResult.count ?? sfuMsgs.length };
+      }
+
+      // ── Count messages in a chat ──────────────────────────────────────────
+      case "count_messages": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const countPeer = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const countResult = await withRetry(() => client!.invoke(new Api.messages.Search({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: countPeer as any,
+          q: "",
+          filter: new Api.InputMessagesFilterEmpty(),
+          minDate: 0,
+          maxDate: 0,
+          offsetId: 0,
+          addOffset: 0,
+          limit: 1, // we only need the count, not actual messages
+          maxId: 0,
+          minId: 0,
+          hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        return { ok: true, total_count: countResult.count ?? 0 };
+      }
+
+      // ── Search sticker packs ──────────────────────────────────────────────
+      case "search_stickers": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const query = String(body.query ?? "");
+        if (!query) return { ok: false, error: "query is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const stickerResult = await withRetry(() => client!.invoke(new Api.messages.SearchStickerSets({
+          q: query,
+          excludeFeatured: false,
+          hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sets = (stickerResult.sets ?? []).map((s: any) => ({
+          id: String(s.id),
+          title: s.title,
+          short_name: s.shortName,
+          count: s.count,
+          animated: s.animated ?? false,
+          video: s.videos ?? false,
+        }));
+        return { ok: true, sticker_sets: sets };
+      }
+
+      // ── Get trending stickers ─────────────────────────────────────────────
+      case "get_trending_stickers": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const trendResult = await withRetry(() => client!.invoke(new Api.messages.GetFeaturedStickers({
+          hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const trendSets = (trendResult.sets ?? []).map((s: any) => ({
+          id: String(s.id),
+          title: s.title,
+          short_name: s.shortName,
+          count: s.count,
+        }));
+        return { ok: true, sticker_sets: trendSets };
+      }
+
+      // ── Get recent stickers ───────────────────────────────────────────────
+      case "get_recent_stickers": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const recentResult = await withRetry(() => client!.invoke(new Api.messages.GetRecentStickers({
+          hash: BigInt(0) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const recentStickers = (recentResult.stickers ?? []).map((s: any) => ({
+          id: String(s.id),
+          access_hash: String(s.accessHash),
+          emoji: s.attributes?.find?.((a: any) => a.className === "DocumentAttributeSticker")?.alt ?? "",
+          set_id: s.attributes?.find?.((a: any) => a.className === "DocumentAttributeSticker")?.stickerset?.id ? String(s.attributes.find((a: any) => a.className === "DocumentAttributeSticker").stickerset.id) : null,
+        }));
+        return { ok: true, stickers: recentStickers, count: recentStickers.length };
+      }
+
+      // ── Get active sessions ───────────────────────────────────────────────
+      case "get_active_sessions": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const authResult = await withRetry(() => client!.invoke(new Api.account.GetAuthorizations())) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sessions = (authResult.authorizations ?? []).map((a: any) => ({
+          hash: String(a.hash),
+          device: a.deviceModel ?? "",
+          platform: a.platform ?? "",
+          system_version: a.systemVersion ?? "",
+          app_name: a.appName ?? "",
+          app_version: a.appVersion ?? "",
+          date_created: a.dateCreated,
+          date_active: a.dateActive,
+          ip: a.ip ?? "",
+          country: a.country ?? "",
+          region: a.region ?? "",
+          is_current: a.current ?? false,
+        }));
+        return { ok: true, sessions };
+      }
+
+      // ── Terminate session ─────────────────────────────────────────────────
+      case "terminate_session": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const hash = body.hash;
+        if (!hash) return { ok: false, error: "hash is required (from get_active_sessions)" };
+        await withRetry(() => client!.invoke(new Api.account.ResetAuthorization({
+          hash: BigInt(String(hash)) as any,
+        })));
+        return { ok: true, terminated: true };
+      }
+
+      // ── Get two-factor authentication status ──────────────────────────────
+      case "get_two_factor_status": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pwResult = await withRetry(() => client!.invoke(new Api.account.GetPassword())) as any;
+        return {
+          ok: true,
+          has_password: pwResult.hasPassword ?? false,
+          hint: pwResult.hint ?? null,
+          email_unconfirmed_pattern: pwResult.emailUnconfirmedPattern ?? null,
+          has_recovery: pwResult.hasRecovery ?? false,
+          has_secure_values: pwResult.hasSecureValues ?? false,
+        };
+      }
+
+      // ── Export contacts as vCard ───────────────────────────────────────────
+      case "export_contacts": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const contactsResult = await withRetry(() => client!.invoke(new Api.contacts.GetContacts({ hash: BigInt(0) as any }))) as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const users = contactsResult.users ?? [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vcards = users.map((u: any) => {
+          const fn = [u.firstName ?? "", u.lastName ?? ""].filter(Boolean).join(" ");
+          let vcard = `BEGIN:VCARD\nVERSION:3.0\nFN:${fn}\n`;
+          vcard += `N:${u.lastName ?? ""};${u.firstName ?? ""};;;\n`;
+          if (u.phone) vcard += `TEL;TYPE=CELL:+${u.phone}\n`;
+          if (u.username) vcard += `NOTE:@${u.username} (Telegram ID: ${u.id})\n`;
+          vcard += `END:VCARD`;
+          return vcard;
+        });
+        const vcfContent = vcards.join("\n\n");
+        const outDir = resolve("workspace");
+        mkdirSync(outDir, { recursive: true });
+        const outPath = resolve(outDir, `contacts_${Date.now()}.vcf`);
+        writeFileSync(outPath, vcfContent, "utf-8");
+        return { ok: true, count: users.length, file: outPath };
+      }
+
+      // ── Get bot info ──────────────────────────────────────────────────────
+      case "get_bot_info": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const botId = body.user_id ?? body.bot_id ?? body.username;
+        if (!botId) return { ok: false, error: "user_id or username is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const botEntity = await client.getEntity(typeof botId === "string" ? botId : Number(botId) as any) as any;
+        if (!botEntity.bot) return { ok: false, error: "The specified user is not a bot" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const fullUser = await client.invoke(new Api.users.GetFullUser({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          id: new Api.InputUser({ userId: BigInt(botEntity.id) as any, accessHash: BigInt(botEntity.accessHash ?? 0) as any }) as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        })) as any;
+        const botInfo = fullUser.fullUser?.botInfo;
+        return {
+          ok: true,
+          bot_id: Number(botEntity.id),
+          username: botEntity.username ?? null,
+          first_name: botEntity.firstName ?? null,
+          description: botInfo?.description ?? null,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          commands: (botInfo?.commands ?? []).map((c: any) => ({
+            command: c.command,
+            description: c.description,
+          })),
+          can_join_groups: botEntity.botChatHistory ?? false,
+          inline_placeholder: botInfo?.inlinePlaceholder ?? null,
+        };
+      }
+
+      // ── Check invite link info ────────────────────────────────────────────
+      case "get_chat_invite_link_info": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        let hash = String(body.hash ?? body.link ?? "");
+        // Extract hash from full link URLs
+        if (hash.includes("t.me/+")) hash = hash.split("t.me/+").pop()!;
+        else if (hash.includes("t.me/joinchat/")) hash = hash.split("t.me/joinchat/").pop()!;
+        if (!hash) return { ok: false, error: "hash or link is required" };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const inviteResult = await withRetry(() => client!.invoke(new Api.messages.CheckChatInvite({ hash }))) as any;
+        if (inviteResult.className === "ChatInviteAlready") {
+          const chat = inviteResult.chat;
+          return {
+            ok: true,
+            already_joined: true,
+            chat_id: Number(chat.id),
+            title: chat.title ?? null,
+          };
+        }
+        return {
+          ok: true,
+          already_joined: false,
+          title: inviteResult.title ?? null,
+          about: inviteResult.about ?? null,
+          participants_count: inviteResult.participantsCount ?? null,
+          has_photo: !!inviteResult.photo,
+          is_broadcast: inviteResult.broadcast ?? false,
+          is_megagroup: inviteResult.megagroup ?? false,
+          request_needed: inviteResult.requestNeeded ?? false,
+        };
+      }
+
+      // ── Set default send-as identity ──────────────────────────────────────
+      case "set_default_send_as": {
+        const client = getClient();
+        if (!client) return { ok: false, error: "User client not connected." };
+        const sendAs = body.send_as;
+        if (!sendAs) return { ok: false, error: "send_as is required (user_id or channel_id)" };
+        const sasPeer = body.chat_id ? Number(body.chat_id) : peer;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await withRetry(() => client!.invoke(new Api.messages.SaveDefaultSendAs({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          peer: sasPeer as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          sendAs: Number(sendAs) as any,
+        })));
+        return { ok: true, send_as: sendAs };
+      }
+
       default:
         return null; // not a Telegram action — fall through to shared handlers
     }
