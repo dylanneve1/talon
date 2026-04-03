@@ -50,6 +50,7 @@ import {
   enrichGroupPrompt,
 } from "../../../core/prompt-builder.js";
 import { pushMessage, setMessageFilePath } from "../../../storage/history.js";
+import { recordInteraction } from "../../../storage/learning.js";
 import { addMedia } from "../../../storage/media-index.js";
 import { appendDailyLog, appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { recordMessageProcessed, recordError } from "../../../util/watchdog.js";
@@ -777,6 +778,9 @@ export function createUserbotFrontend(
             mediaType: historyMediaType,
           });
         }
+
+        // ── Learning: record interaction ──────────────────────────────────
+        recordInteraction(senderId ?? 0, senderName, senderUsername, rawText);
 
         // ── Keyword watch check ────────────────────────────────────────────
         const watches = loadWatches();

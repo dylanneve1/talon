@@ -6,6 +6,7 @@
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
 import { pushMessage } from "../../storage/history.js";
+import { recordInteraction } from "../../storage/learning.js";
 import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/pulse.js";
 import { log } from "../../util/log.js";
@@ -155,6 +156,12 @@ export function registerMiddleware(
         timestamp,
       });
     }
+
+    // ── Learning: record interaction ──────────────────────────────────
+    const rawText = ("text" in ctx.message && ctx.message.text)
+      ? ctx.message.text
+      : ("caption" in ctx.message && ctx.message.caption) ? ctx.message.caption : "";
+    recordInteraction(senderId, sender, ctx.from?.username, rawText ?? "");
 
     return next();
   });

@@ -13,6 +13,7 @@ import { flushChatSettings } from "./storage/chat-settings.js";
 import { flushCronJobs } from "./storage/cron-store.js";
 import { flushHistory } from "./storage/history.js";
 import { flushMediaIndex } from "./storage/media-index.js";
+import { flushLearningState } from "./storage/learning.js";
 import { loadEmbeddingIndex, flushEmbeddingIndex } from "./storage/note-embeddings.js";
 import { getActiveCount } from "./core/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/pulse.js";
@@ -103,6 +104,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
+  flushLearningState();
   flushEmbeddingIndex();
   try { unlinkSync(pathFiles.pid); } catch { /* ok */ }
   log("shutdown", "State saved");
@@ -125,6 +127,7 @@ process.on("uncaughtException", (err) => {
   flushCronJobs();
   flushHistory();
   flushMediaIndex();
+  flushLearningState();
   flushEmbeddingIndex();
   process.exit(1);
 });

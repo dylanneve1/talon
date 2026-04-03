@@ -843,4 +843,47 @@ Example: create_chat_folder(title="Work", groups=true, exclude_muted=true)`,
     },
     async (p) => textResult(await callBridge("send_poll", p)),
   );
+
+  // ── Learning & Reflection ──────────────────────────────────────────────────
+
+  server.tool(
+    "get_user_profile",
+    "Get the learned profile for a user — activity patterns, topics, preferences, message count.",
+    { user_id: z.number().describe("User ID to look up") },
+    async (p) => textResult(await callBridge("get_user_profile", p)),
+  );
+
+  server.tool(
+    "get_active_users",
+    "Get users who have been active in the last N hours, sorted by recency.",
+    { hours: z.number().optional().describe("Lookback window in hours (default 24)") },
+    async (p) => textResult(await callBridge("get_active_users", p)),
+  );
+
+  server.tool(
+    "get_insights",
+    "Get recent learning insights. Filter by type: user_pattern, topic_trend, system_health, improvement.",
+    {
+      limit: z.number().optional().describe("Max insights to return (default 10)"),
+      type: z.string().optional().describe("Filter by type: user_pattern, topic_trend, system_health, improvement"),
+    },
+    async (p) => textResult(await callBridge("get_insights", p)),
+  );
+
+  server.tool(
+    "add_insight",
+    "Record a new learning insight (observation, pattern, or improvement idea).",
+    {
+      type: z.enum(["user_pattern", "topic_trend", "system_health", "improvement"]).describe("Insight category"),
+      content: z.string().describe("The insight text"),
+    },
+    async (p) => textResult(await callBridge("add_insight", p)),
+  );
+
+  server.tool(
+    "prune_insights",
+    "Decay insight relevance scores and remove stale insights (relevance < 0.2).",
+    {},
+    async () => textResult(await callBridge("prune_insights", {})),
+  );
 }

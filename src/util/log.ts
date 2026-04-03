@@ -34,6 +34,7 @@ export type LogComponent =
   | "teams"
   | "config"
   | "heartbeat"
+  | "learning"
   | "userbot-frontend";
 
 const LOG_FILE = files.log;

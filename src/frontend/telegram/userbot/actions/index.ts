@@ -22,6 +22,7 @@ import { registerDiscoveryActions } from "./discovery.js";
 import { registerFolderActions } from "./folders.js";
 import { registerPollActions } from "./polls.js";
 import { registerPrivacyActions } from "./privacy.js";
+import { registerLearningActions } from "./learning.js";
 
 export type ActionHandler = (
   body: Record<string, unknown>,
@@ -59,6 +60,7 @@ export function createUserbotActionHandler(
   registerFolderActions(registry);
   registerPollActions(registry, gateway, recordOurMessage);
   registerPrivacyActions(registry);
+  registerLearningActions(registry);
 
   return async (
     body: Record<string, unknown>,
