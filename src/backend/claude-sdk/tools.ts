@@ -46,7 +46,7 @@ const server = new McpServer({ name: "telegram-tools", version: "2.0.0" });
 
 server.tool(
   "send",
-  `Send content to the current Telegram chat. Supports text, photos, videos, files, audio, voice, stickers, polls, locations, contacts, dice, and GIFs.
+  `Send content to the CURRENT Telegram chat. For other chats or users use message_user instead. Supports text, photos, videos, files, audio, voice, stickers, polls, locations, contacts, dice, and GIFs.
 
 Examples:
   Text: send(type="text", text="Hello!")
@@ -236,6 +236,33 @@ Examples:
         return textResult({ ok: false, error: `Unknown type: ${type}` });
     }
   },
+);
+
+// ── Cross-chat messaging ─────────────────────────────────────────────────────
+
+server.tool(
+  "message_user",
+  `Send a message to ANY Telegram user, group, or channel — not just the current chat.
+Use this to slide into someone's DMs, message a contact, or post to another group.
+
+Target formats:
+  @username    → send by Telegram username
+  +12125551234 → send by phone number (must be a contact)
+  352042062    → send by numeric Telegram user/chat ID
+
+Examples:
+  message_user(to="@risen", text="hey what's up")
+  message_user(to="+17738209203", text="got your number")
+  message_user(to="352042062", text="direct by ID")
+  message_user(to="@mygroup", type="photo", file_path="/workspace/img.jpg", caption="check this out")`,
+  {
+    to: z.string().describe("Target: @username, +phone number, or numeric chat/user ID"),
+    text: z.string().optional().describe("Message text (for type=text)"),
+    type: z.enum(["text", "photo", "file", "video", "voice"]).optional().describe("Content type (default: text)"),
+    file_path: z.string().optional().describe("File path for photo/file/video/voice"),
+    caption: z.string().optional().describe("Caption for media"),
+  },
+  async (p) => textResult(await callBridge("send_to_chat", p)),
 );
 
 // ── Message actions ──────────────────────────────────────────────────────────
@@ -569,6 +596,380 @@ server.tool(
     limit: z.number().optional().describe("Number of entries (default 10, max 20)"),
   },
   async (params) => textResult(await callBridge("list_media", { limit: params.limit })),
+);
+
+// ── Userbot: Profile management ─────────────────────────────────────────────
+
+server.tool(
+  "get_my_profile",
+  "View your own Telegram account details: name, username, bio, phone, ID.",
+  {},
+  async () => textResult(await callBridge("get_my_profile", {})),
+);
+
+server.tool(
+  "edit_profile",
+  "Edit your own Telegram profile (name and/or bio). Provide any combination of fields.",
+  {
+    first_name: z.string().optional().describe("New first name"),
+    last_name: z.string().optional().describe("New last name (empty string to clear)"),
+    about: z.string().optional().describe("New bio/about text (empty string to clear)"),
+  },
+  async (p) => textResult(await callBridge("edit_profile", p)),
+);
+
+server.tool(
+  "set_username",
+  "Change your Telegram @username. Pass empty string to remove it.",
+  { username: z.string().describe("New username without @, or empty string to remove") },
+  async (p) => textResult(await callBridge("set_username", p)),
+);
+
+server.tool(
+  "set_profile_photo",
+  "Set a new profile photo from a file in the workspace.",
+  { file_path: z.string().describe("Path to the image file (JPG/PNG)") },
+  async (p) => textResult(await callBridge("set_profile_photo", p)),
+);
+
+server.tool(
+  "delete_profile_photos",
+  "Delete your current profile photo(s).",
+  { all: z.boolean().optional().describe("If true, delete all profile photos; otherwise just the most recent") },
+  async (p) => textResult(await callBridge("delete_profile_photos", p)),
+);
+
+// ── Userbot: Contacts ────────────────────────────────────────────────────────
+
+server.tool(
+  "get_contacts",
+  "List all Telegram contacts (name, username, phone, ID).",
+  {},
+  async () => textResult(await callBridge("get_contacts", {})),
+);
+
+server.tool(
+  "add_contact",
+  "Add a Telegram user as a contact by phone number.",
+  {
+    phone: z.string().describe("Phone number with country code (e.g. +12125551234)"),
+    first_name: z.string().describe("Contact first name"),
+    last_name: z.string().optional().describe("Contact last name"),
+  },
+  async (p) => textResult(await callBridge("add_contact", p)),
+);
+
+server.tool(
+  "delete_contact",
+  "Remove a user from your contacts.",
+  { user_id: z.number().describe("Telegram user ID") },
+  async (p) => textResult(await callBridge("delete_contact", p)),
+);
+
+server.tool(
+  "block_user",
+  "Block a user (they can no longer message you).",
+  { user_id: z.number().describe("Telegram user ID to block") },
+  async (p) => textResult(await callBridge("block_user", p)),
+);
+
+server.tool(
+  "unblock_user",
+  "Unblock a previously blocked user.",
+  { user_id: z.number().describe("Telegram user ID to unblock") },
+  async (p) => textResult(await callBridge("unblock_user", p)),
+);
+
+server.tool(
+  "get_blocked_users",
+  "List all users you have blocked.",
+  {},
+  async () => textResult(await callBridge("get_blocked_users", {})),
+);
+
+// ── Userbot: Chat & group management ────────────────────────────────────────
+
+server.tool(
+  "set_chat_photo",
+  "Set a new photo for a group or channel.",
+  {
+    file_path: z.string().describe("Path to the image file"),
+    chat_id: z.number().optional().describe("Target chat (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_chat_photo", p)),
+);
+
+server.tool(
+  "join_chat",
+  "Join a public group, channel, or private chat by invite link or username.",
+  { invite: z.string().describe("Username (e.g. @mygroup) or invite link (t.me/+...)") },
+  async (p) => textResult(await callBridge("join_chat", p)),
+);
+
+server.tool(
+  "leave_chat",
+  "Leave a group or channel.",
+  { chat_id: z.number().optional().describe("Chat to leave (defaults to current chat)") },
+  async (p) => textResult(await callBridge("leave_chat", p)),
+);
+
+server.tool(
+  "create_group",
+  "Create a basic Telegram group with specified members.",
+  {
+    title: z.string().describe("Group title"),
+    user_ids: z.array(z.number()).describe("Array of user IDs to add"),
+  },
+  async (p) => textResult(await callBridge("create_group", p)),
+);
+
+server.tool(
+  "create_supergroup",
+  "Create a supergroup or channel.",
+  {
+    title: z.string().describe("Group title"),
+    description: z.string().optional().describe("Group description"),
+  },
+  async (p) => textResult(await callBridge("create_supergroup", p)),
+);
+
+server.tool(
+  "invite_to_chat",
+  "Invite users to a group by their user IDs.",
+  {
+    user_ids: z.array(z.number()).describe("Array of user IDs to invite"),
+    chat_id: z.number().optional().describe("Target group (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("invite_to_chat", p)),
+);
+
+server.tool(
+  "delete_chat",
+  "Delete a group (only if you are the creator).",
+  { chat_id: z.number().optional().describe("Group to delete (defaults to current chat)") },
+  async (p) => textResult(await callBridge("delete_chat", p)),
+);
+
+// ── Userbot: Member management ───────────────────────────────────────────────
+
+server.tool(
+  "kick_member",
+  "Kick and ban a member from a group.",
+  {
+    user_id: z.number().describe("User ID to kick"),
+    chat_id: z.number().optional().describe("Target chat (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("kick_member", p)),
+);
+
+server.tool(
+  "unban_member",
+  "Unban a previously kicked member, allowing them to rejoin.",
+  {
+    user_id: z.number().describe("User ID to unban"),
+    chat_id: z.number().optional().describe("Target chat (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("unban_member", p)),
+);
+
+server.tool(
+  "restrict_member",
+  "Restrict a group member's posting rights.",
+  {
+    user_id: z.number().describe("User ID to restrict"),
+    no_messages: z.boolean().optional().describe("Prevent sending messages"),
+    no_media: z.boolean().optional().describe("Prevent sending media"),
+    no_stickers: z.boolean().optional().describe("Prevent sending stickers"),
+    until_date: z.number().optional().describe("Unix timestamp when restriction expires (0 = permanent)"),
+    chat_id: z.number().optional().describe("Target chat (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("restrict_member", p)),
+);
+
+server.tool(
+  "promote_admin",
+  "Promote a user to admin with specified rights.",
+  {
+    user_id: z.number().describe("User ID to promote"),
+    can_manage_chat: z.boolean().optional(),
+    can_post_messages: z.boolean().optional(),
+    can_edit_messages: z.boolean().optional(),
+    can_delete_messages: z.boolean().optional(),
+    can_ban_users: z.boolean().optional(),
+    can_invite_users: z.boolean().optional(),
+    can_pin_messages: z.boolean().optional(),
+    can_change_info: z.boolean().optional(),
+    rank: z.string().optional().describe("Custom admin title shown next to their name"),
+    chat_id: z.number().optional().describe("Target chat (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("promote_admin", p)),
+);
+
+server.tool(
+  "demote_admin",
+  "Remove admin rights from a user.",
+  {
+    user_id: z.number().describe("User ID to demote"),
+    chat_id: z.number().optional().describe("Target chat (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("demote_admin", p)),
+);
+
+server.tool(
+  "set_member_tag",
+  "Set a visual member tag (custom title shown next to name) without granting admin powers. Works in supergroups.",
+  {
+    user_id: z.number().describe("User ID to tag"),
+    tag: z.string().describe("Tag text to display (e.g. 'VIP', 'Mod', 'Legend')"),
+    chat_id: z.number().optional().describe("Target chat (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("set_member_tag", p)),
+);
+
+server.tool(
+  "toggle_slow_mode",
+  "Set slow mode delay for a group (how many seconds between messages per user).",
+  {
+    seconds: z.number().describe("Delay in seconds (0 to disable, or 10/30/60/300/900/3600)"),
+    chat_id: z.number().optional().describe("Target chat (defaults to current chat)"),
+  },
+  async (p) => textResult(await callBridge("toggle_slow_mode", p)),
+);
+
+server.tool(
+  "get_admin_log",
+  "View recent admin actions in a group (who changed what, when).",
+  {
+    limit: z.number().optional().describe("Number of log entries (default 20, max 100)"),
+  },
+  async (p) => textResult(await callBridge("get_admin_log", p)),
+);
+
+// ── Userbot: Messaging extras ────────────────────────────────────────────────
+
+server.tool(
+  "send_album",
+  "Send a group of photos/videos as an album (up to 10 items).",
+  {
+    file_paths: z.array(z.string()).describe("Array of image/video file paths (2–10 files)"),
+    caption: z.string().optional().describe("Caption for the album"),
+  },
+  async (p) => textResult(await callBridge("send_album", p)),
+);
+
+server.tool(
+  "clear_reactions",
+  "Remove all your reactions from a message.",
+  { message_id: z.number().describe("Message ID") },
+  async (p) => textResult(await callBridge("clear_reactions", p)),
+);
+
+server.tool(
+  "mark_as_read",
+  "Mark all messages in the current chat as read.",
+  {},
+  async () => textResult(await callBridge("mark_as_read", {})),
+);
+
+server.tool(
+  "search_global",
+  "Search for messages across ALL your chats (not just the current one).",
+  {
+    query: z.string().describe("Search query"),
+    limit: z.number().optional().describe("Max results (default 20)"),
+  },
+  async (p) => textResult(await callBridge("search_global", p)),
+);
+
+server.tool(
+  "translate_text",
+  "Translate text to a target language using Telegram's built-in translation.",
+  {
+    text: z.string().describe("Text to translate"),
+    to_lang: z.string().describe("Target language code (e.g. 'en', 'es', 'fr', 'de', 'ja', 'zh')"),
+  },
+  async (p) => textResult(await callBridge("translate_text", p)),
+);
+
+server.tool(
+  "transcribe_audio",
+  "Transcribe a voice message or audio file to text using Telegram's speech recognition.",
+  { message_id: z.number().describe("Message ID of the voice/audio message to transcribe") },
+  async (p) => textResult(await callBridge("transcribe_audio", p)),
+);
+
+server.tool(
+  "get_message_reactions",
+  "Get who reacted to a message and with which emoji.",
+  { message_id: z.number().describe("Message ID") },
+  async (p) => textResult(await callBridge("get_message_reactions", p)),
+);
+
+server.tool(
+  "get_dialogs",
+  "List all your chats, groups, channels, and DMs with unread counts and last message info.",
+  {
+    limit: z.number().optional().describe("Max number of dialogs to return (default 20)"),
+    offset: z.number().optional().describe("Pagination offset"),
+  },
+  async (p) => textResult(await callBridge("get_dialogs", p)),
+);
+
+server.tool(
+  "get_common_chats",
+  "Find groups and channels you share with another user.",
+  { user_id: z.number().describe("Telegram user ID") },
+  async (p) => textResult(await callBridge("get_common_chats", p)),
+);
+
+// ── Userbot: Stories ─────────────────────────────────────────────────────────
+
+server.tool(
+  "post_story",
+  "Post a story (photo or short video) visible to your contacts for 24h.",
+  {
+    file_path: z.string().describe("Path to photo (JPG/PNG) or video (MP4) file"),
+    caption: z.string().optional().describe("Story caption text"),
+    duration_seconds: z.number().optional().describe("Duration to show photo in story (default 7)"),
+  },
+  async (p) => textResult(await callBridge("post_story", p)),
+);
+
+server.tool(
+  "delete_story",
+  "Delete one of your stories.",
+  { story_id: z.number().describe("Story ID to delete") },
+  async (p) => textResult(await callBridge("delete_story", p)),
+);
+
+server.tool(
+  "get_stories",
+  "List active stories (yours or another user's).",
+  { user_id: z.number().optional().describe("User ID to get stories for (defaults to your own)") },
+  async (p) => textResult(await callBridge("get_stories", p)),
+);
+
+// ── Userbot: Forum topics ────────────────────────────────────────────────────
+
+server.tool(
+  "create_forum_topic",
+  "Create a new topic in a forum-enabled supergroup.",
+  {
+    title: z.string().describe("Topic title"),
+    icon_emoji: z.string().optional().describe("Icon emoji for the topic"),
+  },
+  async (p) => textResult(await callBridge("create_forum_topic", p)),
+);
+
+server.tool(
+  "edit_forum_topic",
+  "Edit a forum topic's title or icon.",
+  {
+    topic_id: z.number().describe("Topic/thread ID"),
+    title: z.string().describe("New title"),
+    icon_emoji: z.string().optional().describe("New icon emoji"),
+  },
+  async (p) => textResult(await callBridge("edit_forum_topic", p)),
 );
 
 // ── Web ─────────────────────────────────────────────────────────────────────

@@ -22,7 +22,7 @@ import {
   handleVideoNoteMessage,
 } from "./handlers.js";
 
-export function registerMiddleware(bot: Bot, config: TalonConfig): void {
+export function registerMiddleware(bot: Bot, config: TalonConfig, onChatOwned?: (chatId: number) => void): void {
   // ── History capture (runs for ALL messages, before handlers) ─────────────
   bot.on("message", (ctx, next) => {
     const chatId = String(ctx.chat.id);
@@ -33,6 +33,7 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
 
     // Register this chat for userbot access
     allowChat(ctx.chat.id);
+    onChatOwned?.(ctx.chat.id);
     // Only register groups for pulse (DMs don't need it — bot always responds)
     const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
     if (isGroup) registerChat(chatId);

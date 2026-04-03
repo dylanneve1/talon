@@ -1,0 +1,783 @@
+/**
+ * GramJS user-account primary frontend.
+ *
+ * Implements the same TelegramFrontend interface as the Grammy bot frontend
+ * but drives everything (receive + send) through a single GramJS user session.
+ * No bot token required — only apiId / apiHash + a saved session file.
+ *
+ * Behaviour parity with the bot frontend:
+ *  - Per-user rate limiting (15 msgs / minute)
+ *  - Debounced message queue (500ms window, concatenates burst messages)
+ *  - All media types: photo, document, voice, video, audio, sticker, gif, video_note
+ *  - Group filtering: respond only when @mentioned or replying to one of our messages
+ *  - /reset, /restart, /dream handled directly; everything else routed to Claude
+ *  - Pulse and cron tick normally (same execute() dispatcher)
+ *  - History capture via pushMessage (shared storage)
+ *
+ * Differences vs bot mode:
+ *  - No bot command UI (setMyCommands unavailable for user accounts)
+ *  - Streaming (sendMessageDraft) not available — responses delivered as whole blocks
+ *  - Inline keyboards sent without buttons (with a warning)
+ *  - Bot-API-only actions return { ok: false } from the action handler
+ */
+
+import { NewMessage } from "telegram/events/index.js";
+import type { NewMessageEvent } from "telegram/events/NewMessage.js";
+import { Api } from "telegram";
+import { writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
+import {
+  initUserClient,
+  disconnectUserClient,
+  fetchSelfInfo,
+  getSelfInfo,
+  setUserbotPrimary,
+  getClient,
+  sendUserbotMessage,
+  sendUserbotTyping,
+  clearUserbotReactions,
+  reactUserbotMessage,
+  markUserbotAsRead,
+} from "./userbot.js";
+import { createUserbotActionHandler } from "./userbot-actions.js";
+import { splitMessage, escapeHtml } from "./formatting.js";
+import { execute } from "../../core/dispatcher.js";
+import { classify, friendlyMessage } from "../../core/errors.js";
+import {
+  enrichDMPrompt,
+  enrichGroupPrompt,
+} from "../../core/prompt-builder.js";
+import { pushMessage, setMessageFilePath } from "../../storage/history.js";
+import { addMedia } from "../../storage/media-index.js";
+import { appendDailyLog, appendDailyLogResponse } from "../../storage/daily-log.js";
+import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
+import { resetSession } from "../../storage/sessions.js";
+import { clearHistory } from "../../storage/history.js";
+import { forceDream } from "../../core/dream.js";
+import { registerChat } from "../../core/pulse.js";
+import { log, logError, logWarn } from "../../util/log.js";
+import type { TalonConfig } from "../../util/config.js";
+import type { ContextManager } from "../../core/types.js";
+import type { Gateway } from "../../core/gateway.js";
+import type { TelegramFrontend } from "./index.js";
+
+// ── Our-message tracking (for reply-to-self detection) ───────────────────────
+// We track message IDs of messages WE sent so that when someone replies to one
+// of them in a group we know to respond — replies don't always include @mention.
+
+const ourMessages = new Map<string, Set<number>>(); // chatId → Set<msgId>
+const OUR_MSG_CAP = 500; // per-chat cap to bound memory
+
+export function recordOurMessage(chatId: string, msgId: number): void {
+  let set = ourMessages.get(chatId);
+  if (!set) {
+    set = new Set();
+    ourMessages.set(chatId, set);
+  }
+  set.add(msgId);
+  if (set.size > OUR_MSG_CAP) {
+    const iter = set.values();
+    for (let i = 0; i < 50; i++) set.delete(iter.next().value as number);
+  }
+}
+
+export function isOurMessage(chatId: string, msgId: number): boolean {
+  return ourMessages.get(chatId)?.has(msgId) ?? false;
+}
+
+/** Reset rate limit state for a sender (or all senders if no argument). Used in tests. */
+export function clearRateLimits(senderId?: number): void {
+  if (senderId !== undefined) userTimestamps.delete(senderId);
+  else userTimestamps.clear();
+}
+
+/** Reset our-message tracking for a chat (or all chats if no argument). Used in tests. */
+export function clearOurMessageTracking(chatId?: string): void {
+  if (chatId !== undefined) ourMessages.delete(chatId);
+  else ourMessages.clear();
+}
+
+// ── Rate limiting ─────────────────────────────────────────────────────────────
+
+const userTimestamps = new Map<number, number[]>();
+const RL_WINDOW = 60_000;
+const RL_MAX = 15;
+
+export function isRateLimited(senderId: number): boolean {
+  const now = Date.now();
+  const ts = userTimestamps.get(senderId) ?? [];
+  const fresh = ts.filter((t) => t > now - RL_WINDOW);
+  if (fresh.length >= RL_MAX) {
+    userTimestamps.set(senderId, fresh);
+    return true;
+  }
+  fresh.push(now);
+  userTimestamps.set(senderId, fresh);
+  return false;
+}
+
+// ── Debounce queue ────────────────────────────────────────────────────────────
+
+type QueuedMsg = {
+  prompt: string;
+  replyToId: number;
+  messageId: number;
+  senderName: string;
+  senderUsername?: string;
+  senderId?: number;
+  isGroup: boolean;
+  chatTitle?: string;
+};
+
+type QueueEntry = {
+  messages: QueuedMsg[];
+  timer: ReturnType<typeof setTimeout>;
+  numericChatId: number;
+  queuedReactionMsgIds: number[];
+};
+
+const queues = new Map<string, QueueEntry>();
+const DEBOUNCE_MS = 500;
+const MAX_QUEUED = 20;
+
+function enqueue(
+  chatId: string,
+  numericChatId: number,
+  msg: QueuedMsg,
+): void {
+  const existing = queues.get(chatId);
+  if (existing) {
+    if (existing.messages.length >= MAX_QUEUED) return;
+    existing.messages.push(msg);
+    // Hourglass reaction to show we've seen it
+    reactUserbotMessage(numericChatId, msg.messageId, "⏳").catch(() => {});
+    existing.queuedReactionMsgIds.push(msg.messageId);
+    clearTimeout(existing.timer);
+    existing.timer = setTimeout(() => flushQueue(chatId), DEBOUNCE_MS);
+    return;
+  }
+  queues.set(chatId, {
+    messages: [msg],
+    timer: setTimeout(() => flushQueue(chatId), DEBOUNCE_MS),
+    numericChatId,
+    queuedReactionMsgIds: [],
+  });
+}
+
+async function flushQueue(chatId: string): Promise<void> {
+  const entry = queues.get(chatId);
+  if (!entry) return;
+  queues.delete(chatId);
+
+  const { messages, numericChatId, queuedReactionMsgIds } = entry;
+
+  // Clear hourglass reactions and mark chat as read
+  for (const msgId of queuedReactionMsgIds) {
+    clearUserbotReactions(numericChatId, msgId).catch(() => {});
+  }
+  // Mark all messages as read so the chat doesn't show an unread badge
+  markUserbotAsRead(numericChatId).catch(() => {});
+
+  const last = messages[messages.length - 1];
+  const combinedPrompt =
+    messages.length === 1
+      ? messages[0].prompt
+      : messages.map((m) => m.prompt).join("\n\n");
+
+  appendDailyLog(last.senderName, combinedPrompt, {
+    chatTitle: last.chatTitle,
+    username: last.senderUsername,
+  });
+
+  try {
+    await processMessage({
+      chatId,
+      numericChatId,
+      replyToId: last.replyToId,
+      messageId: last.messageId,
+      prompt: combinedPrompt,
+      senderName: last.senderName,
+      senderUsername: last.senderUsername,
+      senderId: last.senderId,
+      isGroup: last.isGroup,
+      chatTitle: last.chatTitle,
+    });
+    recordMessageProcessed();
+  } catch (err) {
+    const classified = classify(err);
+    const chatType = last.isGroup ? "group" : "DM";
+    logError(
+      "userbot-frontend",
+      `[${chatId}] [${chatType}] [${last.senderName}] ${classified.reason}: ${classified.message}`,
+    );
+    recordError(classified.message);
+
+    if (classified.retryable) {
+      const delay = classified.retryAfterMs ?? 2000;
+      log("userbot-frontend", `[${chatId}] Retrying after ${classified.reason} (${delay}ms)...`);
+      await new Promise((r) => setTimeout(r, delay));
+      try {
+        await processMessage({
+          chatId, numericChatId, replyToId: last.replyToId,
+          messageId: last.messageId, prompt: combinedPrompt,
+          senderName: last.senderName, senderUsername: last.senderUsername,
+          senderId: last.senderId, isGroup: last.isGroup, chatTitle: last.chatTitle,
+        });
+        return;
+      } catch (retryErr) {
+        const rc = classify(retryErr);
+        logError("userbot-frontend", `[${chatId}] Retry failed: ${rc.message}`);
+        await sendError(numericChatId, friendlyMessage(rc), last.replyToId);
+        return;
+      }
+    }
+
+    await sendError(numericChatId, friendlyMessage(classified), last.replyToId);
+  }
+}
+
+// ── Process & reply ───────────────────────────────────────────────────────────
+
+type ProcessParams = {
+  chatId: string;
+  numericChatId: number;
+  replyToId: number;
+  messageId: number;
+  prompt: string;
+  senderName: string;
+  senderUsername?: string;
+  senderId?: number;
+  isGroup: boolean;
+  chatTitle?: string;
+};
+
+const knownDmSenders = new Set<number>();
+
+async function processMessage(params: ProcessParams): Promise<void> {
+  const {
+    chatId, numericChatId, replyToId, messageId,
+    prompt, senderName, senderUsername, senderId, isGroup, chatTitle,
+  } = params;
+
+  let enriched = prompt;
+  if (!isGroup && senderName) {
+    enriched = enrichDMPrompt(prompt, senderName, senderUsername);
+    if (senderId && !knownDmSenders.has(senderId)) {
+      knownDmSenders.add(senderId);
+      log("userbot-frontend", `New DM sender: ${senderName}${senderUsername ? ` (@${senderUsername})` : ""} [id:${senderId}]`);
+      appendDailyLog("System", `New DM sender: ${senderName}${senderUsername ? ` (@${senderUsername})` : ""} [id:${senderId}]`);
+    }
+  } else if (isGroup && senderId) {
+    enriched = enrichGroupPrompt(prompt, chatId, senderId);
+  }
+
+  const MAX = 4096;
+
+  const onTextBlock = async (text: string) => {
+    const chunks = splitMessage(text, MAX);
+    for (const chunk of chunks) {
+      const msgId = await sendUserbotMessage(numericChatId, chunk, replyToId);
+      recordOurMessage(chatId, msgId);
+    }
+  };
+
+  const result = await execute({
+    chatId,
+    numericChatId,
+    prompt: enriched,
+    senderName,
+    isGroup,
+    messageId,
+    source: "message",
+    onTextBlock,
+    onToolUse: (toolName, input) => {
+      if (toolName === "send" && input.type === "text" && typeof input.text === "string") {
+        appendDailyLogResponse("Talon", input.text, { chatTitle });
+      }
+    },
+  });
+
+  if (result.bridgeMessageCount === 0 && result.text?.trim()) {
+    log("userbot-frontend", `Suppressed fallback text — no send tool used`);
+  }
+}
+
+async function sendError(chatId: number, text: string, replyTo?: number): Promise<void> {
+  try {
+    const msgId = await sendUserbotMessage(chatId, escapeHtml(text), replyTo);
+    recordOurMessage(String(chatId), msgId);
+  } catch (e) {
+    logError("userbot-frontend", "Failed to send error message", e);
+  }
+}
+
+// ── Media download ────────────────────────────────────────────────────────────
+
+async function downloadGramJSMedia(
+  media: Api.TypeMessageMedia | null | undefined,
+  filename: string,
+  workspace: string,
+): Promise<string> {
+  const client = getClient();
+  if (!client || !media) throw new Error("No client or no media");
+
+  const buffer = (await client.downloadMedia(media, {})) as Buffer;
+  if (!buffer || buffer.length === 0) throw new Error("Download returned empty data");
+
+  const uploadsDir = resolve(workspace, "uploads");
+  if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+
+  const safeName = `${Date.now()}-${filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const destPath = resolve(uploadsDir, safeName);
+  writeFileSync(destPath, buffer);
+  return destPath;
+}
+
+// ── Group filter ──────────────────────────────────────────────────────────────
+
+export function shouldHandleInGroup(
+  message: NewMessageEvent["message"],
+  chatId: string,
+  selfUsername: string | undefined,
+  selfId: bigint,
+): boolean {
+  const text = message.text ?? "";
+  // @mention check (case-insensitive, word-boundary)
+  const mentioned =
+    selfUsername &&
+    new RegExp(`@${selfUsername}(?![a-zA-Z0-9_])`, "i").test(text);
+  if (mentioned) return true;
+  // Reply-to-self check
+  const replyToId = message.replyTo?.replyToMsgId;
+  if (replyToId && isOurMessage(chatId, replyToId)) return true;
+  return false;
+}
+
+// ── Command handling ──────────────────────────────────────────────────────────
+
+async function handleCommand(
+  cmd: string,
+  chatId: string,
+  numericChatId: number,
+  msgId: number,
+  adminUserId: number | undefined,
+  senderId: number | undefined,
+): Promise<boolean> {
+  const isAdmin = adminUserId && senderId === adminUserId;
+
+  switch (cmd) {
+    case "reset": {
+      resetSession(chatId);
+      clearHistory(chatId);
+      const sentId = await sendUserbotMessage(numericChatId, "Session reset. Starting fresh.", msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
+    case "dream": {
+      await forceDream();
+      const sentId = await sendUserbotMessage(numericChatId, "Memory consolidation triggered.", msgId);
+      recordOurMessage(chatId, sentId);
+      return true;
+    }
+    case "restart": {
+      if (!isAdmin) {
+        const sentId = await sendUserbotMessage(numericChatId, "Admin only.", msgId);
+        recordOurMessage(chatId, sentId);
+        return true;
+      }
+      const sentId = await sendUserbotMessage(numericChatId, "Restarting…", msgId);
+      recordOurMessage(chatId, sentId);
+      setTimeout(() => process.exit(0), 500);
+      return true;
+    }
+    default:
+      return false; // let Claude handle it
+  }
+}
+
+// ── Sender helpers ────────────────────────────────────────────────────────────
+
+export function getSenderName(entity: unknown): string {
+  if (!entity) return "User";
+  const e = entity as { firstName?: string; lastName?: string; title?: string };
+  return [e.firstName, e.lastName].filter(Boolean).join(" ") || e.title || "User";
+}
+
+export function getSenderUsername(entity: unknown): string | undefined {
+  if (!entity) return undefined;
+  return (entity as { username?: string }).username ?? undefined;
+}
+
+export function getSenderId(entity: unknown): number | undefined {
+  if (!entity) return undefined;
+  const id = (entity as { id?: bigint | number }).id;
+  return id !== undefined ? Number(id) : undefined;
+}
+
+// ── Factory ───────────────────────────────────────────────────────────────────
+
+export function createUserbotFrontend(
+  config: TalonConfig,
+  gateway: Gateway,
+  options?: {
+    /** Called when an incoming message passes the group filter and will be processed. */
+    onChatOwned?: (chatId: number) => void;
+    /**
+     * When false, does NOT call setUserbotPrimary(true) — used in dual mode where the
+     * bot frontend is also active. The scope guard stays active; allowChat() is called
+     * per message instead. Default: true.
+     */
+    primaryMode?: boolean;
+  },
+): TelegramFrontend {
+  const context: ContextManager = {
+    acquire: (chatId: number) => gateway.setContext(chatId),
+    release: (chatId: number) => gateway.clearContext(chatId),
+    getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
+  };
+
+  return {
+    context,
+
+    sendTyping: (chatId: number) => sendUserbotTyping(chatId),
+
+    sendMessage: async (chatId: number, text: string) => {
+      const msgId = await sendUserbotMessage(chatId, text);
+      recordOurMessage(String(chatId), msgId);
+    },
+
+    getBridgePort: () => gateway.getPort(),
+
+    async init() {
+      // Only bypass scope guard when running as the sole frontend
+      if (options?.primaryMode !== false) setUserbotPrimary(true);
+
+      // Register GramJS action handler
+      gateway.setFrontendHandler(
+        createUserbotActionHandler(gateway, recordOurMessage),
+      );
+
+      const port = await gateway.start(19876);
+      log("userbot-frontend", `Gateway started on port ${port}`);
+
+      // Connect user client
+      const ok = await initUserClient({
+        apiId: config.apiId!,
+        apiHash: config.apiHash!,
+      });
+      if (!ok) {
+        throw new Error(
+          "User client not authorized. Run: npx tsx src/login.ts with the new API credentials.",
+        );
+      }
+
+      // Cache self info for group mention detection
+      await fetchSelfInfo();
+      const self = getSelfInfo();
+      if (self) {
+        log(
+          "userbot-frontend",
+          `Running as ${self.firstName ?? ""} ${self.username ? `@${self.username}` : ""} (id:${self.id})`,
+        );
+      }
+    },
+
+    async start() {
+      const client = getClient();
+      if (!client) throw new Error("User client not initialized.");
+
+      const self = getSelfInfo();
+      const selfId = self?.id ?? 0n;
+      const selfUsername = self?.username;
+
+      // ── Main message event handler ─────────────────────────────────────────
+      client.addEventHandler(async (event: NewMessageEvent) => {
+        const message = event.message;
+        if (!message) return;
+
+        // Convert BigInt peer ID to number — safe for all Telegram ID ranges
+        const numericChatId = Number(message.chatId ?? 0n);
+        if (!numericChatId) return;
+        const chatId = String(numericChatId);
+
+        const peerClass = message.peerId?.className;
+        const isGroup = peerClass === "PeerChat" || peerClass === "PeerChannel";
+
+        // Fetch sender entity (async, cached by GramJS internally)
+        let senderEntity: unknown = null;
+        try {
+          senderEntity = await message.getSender();
+        } catch { /* best-effort */ }
+
+        const senderName = getSenderName(senderEntity);
+        const senderUsername = getSenderUsername(senderEntity);
+        const senderId = Number(message.senderId ?? 0n) || getSenderId(senderEntity);
+
+        // Ignore our own outgoing messages (NewMessage incoming:true should already
+        // filter these, but guard against edge cases with anonymous/channel posts)
+        if (senderId && senderId === Number(selfId)) return;
+
+        // Register for pulse (groups only)
+        if (isGroup) registerChat(chatId);
+
+        const msgId = message.id;
+        const replyToId = message.replyTo?.replyToMsgId ?? msgId;
+        const timestamp = (message.date ?? 0) * 1000;
+
+        // ── History capture (all messages, before filtering) ───────────────
+        const rawText = message.text || message.message || "";
+        const mediaClass = message.media?.className;
+        let historyText = rawText;
+        let historyMediaType: "photo" | "document" | "voice" | "video" | "animation" | "sticker" | undefined;
+
+        if (!rawText) {
+          if (message.photo) { historyText = message.message || "(photo)"; historyMediaType = "photo"; }
+          else if (message.voice) { historyText = "(voice message)"; historyMediaType = "voice"; }
+          else if (message.videoNote) { historyText = "(video note)"; historyMediaType = "video"; }
+          else if (message.gif) { historyText = message.message || "(GIF)"; historyMediaType = "animation"; }
+          else if (message.video) { historyText = message.message || "(video)"; historyMediaType = "video"; }
+          else if (message.sticker) { historyText = `${(message.sticker as { attributes?: Array<{ alt?: string }> }).attributes?.find(a => 'alt' in a)?.alt ?? ""}(sticker)`; historyMediaType = "sticker"; }
+          else if (message.audio) { historyText = message.message || "(audio)"; historyMediaType = "document"; }
+          else if (message.document) {
+            const fnAttr = (message.document as { attributes?: Array<{ className?: string; fileName?: string }> }).attributes?.find(a => a.className === "DocumentAttributeFilename");
+            historyText = message.message || `(sent ${fnAttr?.fileName ?? "file"})`;
+            historyMediaType = "document";
+          }
+          else if (mediaClass) { historyText = `(${mediaClass})`; }
+        }
+
+        if (historyText) {
+          pushMessage(chatId, {
+            msgId,
+            senderId: senderId ?? 0,
+            senderName,
+            text: historyText,
+            replyToMsgId: message.replyTo?.replyToMsgId,
+            timestamp,
+            mediaType: historyMediaType,
+          });
+        }
+
+        // ── Group filter ───────────────────────────────────────────────────
+        if (isGroup) {
+          let handle = shouldHandleInGroup(message, chatId, selfUsername, selfId);
+          if (!handle) {
+            // ourMessages map is empty after restart — fall back to fetching the
+            // replied-to message from Telegram and checking if WE sent it.
+            const replyToId = message.replyTo?.replyToMsgId;
+            if (replyToId) {
+              try {
+                const c = getClient();
+                if (c) {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  const msgs = await c.getMessages(numericChatId as any, { ids: [replyToId] });
+                  const replied = msgs[0];
+                  if (replied && Number(replied.senderId ?? 0n) === Number(selfId)) {
+                    recordOurMessage(chatId, replyToId); // warm cache for future replies
+                    handle = true;
+                  }
+                }
+              } catch { /* best-effort */ }
+            }
+          }
+          if (!handle) return;
+        }
+
+        // Notify dual-mode coordinator which frontend owns this chat
+        options?.onChatOwned?.(numericChatId);
+
+        // Mark as read immediately so the unread badge clears right away
+        markUserbotAsRead(numericChatId, message.id).catch(() => {});
+
+        // ── Rate limit ─────────────────────────────────────────────────────
+        if (senderId && isRateLimited(senderId)) return;
+
+        // ── Get chat title for context ─────────────────────────────────────
+        let chatTitle: string | undefined;
+        if (isGroup) {
+          try {
+            const chatEntity = await message.getChat();
+            if (chatEntity) {
+              chatTitle = "title" in chatEntity
+                ? (chatEntity as { title?: string }).title
+                : "firstName" in chatEntity
+                  ? (chatEntity as { firstName?: string }).firstName
+                  : undefined;
+            }
+          } catch { /* best-effort */ }
+        }
+
+        // ── Command handling (/cmd text) ───────────────────────────────────
+        if (rawText.startsWith("/")) {
+          const [cmdPart] = rawText.split(/\s+/);
+          const cmd = cmdPart.slice(1).split("@")[0].toLowerCase();
+          const handled = await handleCommand(
+            cmd, chatId, numericChatId, msgId,
+            config.adminUserId, senderId,
+          ).catch((e) => {
+            logError("userbot-frontend", `Command /${cmd} failed`, e);
+            return false;
+          });
+          if (handled) return;
+          // Unrecognised command → fall through to Claude
+        }
+
+        // ── Text message ───────────────────────────────────────────────────
+        if (rawText && !message.media) {
+          const replyPrefix = message.replyTo?.replyToMsgId
+            ? `[Replying to msg:${message.replyTo.replyToMsgId}]\n\n`
+            : "";
+          const prompt = replyPrefix + rawText;
+
+          enqueue(chatId, numericChatId, {
+            prompt,
+            replyToId,
+            messageId: msgId,
+            senderName,
+            senderUsername,
+            senderId,
+            isGroup,
+            chatTitle,
+          });
+          return;
+        }
+
+        // ── Media messages ─────────────────────────────────────────────────
+        if (!message.media) return; // nothing to process
+
+        const caption = message.message || "";
+
+        try {
+          // ── Photo ──────────────────────────────────────────────────────
+          if (message.photo) {
+            const savedPath = await downloadGramJSMedia(
+              message.media,
+              `photo_${msgId}.jpg`,
+              config.workspace,
+            );
+            setMessageFilePath(chatId, msgId, savedPath);
+            addMedia({ chatId, msgId, senderName, type: "photo", filePath: savedPath, caption, timestamp });
+            const prompt = [
+              caption ? `Caption: ${caption}` : "",
+              `User sent a photo saved to: ${savedPath}`,
+              "Read this file to view it. Re-read it in future turns if you need to reference it.",
+            ].filter(Boolean).join("\n");
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── Voice ──────────────────────────────────────────────────────
+          if (message.voice) {
+            const savedPath = await downloadGramJSMedia(message.media, `voice_${msgId}.ogg`, config.workspace);
+            setMessageFilePath(chatId, msgId, savedPath);
+            addMedia({ chatId, msgId, senderName, type: "voice", filePath: savedPath, caption, timestamp });
+            const prompt = [
+              caption,
+              `User sent a voice message saved to: ${savedPath}`,
+              "Transcribe and respond to the voice message by reading the audio file.",
+            ].filter(Boolean).join("\n");
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── Video note (circle) ────────────────────────────────────────
+          if (message.videoNote) {
+            const savedPath = await downloadGramJSMedia(message.media, `vidnote_${msgId}.mp4`, config.workspace);
+            setMessageFilePath(chatId, msgId, savedPath);
+            addMedia({ chatId, msgId, senderName, type: "video", filePath: savedPath, caption, timestamp });
+            const prompt = `User sent a video note saved to: ${savedPath}\nRead and describe its contents.`;
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── GIF / animation ────────────────────────────────────────────
+          if (message.gif) {
+            const savedPath = await downloadGramJSMedia(message.media, `gif_${msgId}.mp4`, config.workspace);
+            addMedia({ chatId, msgId, senderName, type: "animation", filePath: savedPath, caption, timestamp });
+            const prompt = [caption, `User sent a GIF saved to: ${savedPath}`].filter(Boolean).join("\n");
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── Sticker ────────────────────────────────────────────────────
+          if (message.sticker) {
+            const stickerDoc = message.sticker as { attributes?: Array<{ alt?: string; className?: string }> };
+            const emoji = stickerDoc.attributes?.find(a => "alt" in a)?.alt ?? "🖼";
+            const prompt = `User sent a sticker: ${emoji}`;
+            addMedia({ chatId, msgId, senderName, type: "sticker", filePath: "", caption: emoji, timestamp });
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── Video ──────────────────────────────────────────────────────
+          if (message.video) {
+            const savedPath = await downloadGramJSMedia(message.media, `video_${msgId}.mp4`, config.workspace);
+            setMessageFilePath(chatId, msgId, savedPath);
+            addMedia({ chatId, msgId, senderName, type: "video", filePath: savedPath, caption, timestamp });
+            const prompt = [caption, `User sent a video saved to: ${savedPath}`].filter(Boolean).join("\n");
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── Audio ──────────────────────────────────────────────────────
+          if (message.audio) {
+            const audioDoc = message.audio as { attributes?: Array<{ className?: string; title?: string; performer?: string }> };
+            const audioAttr = audioDoc.attributes?.find(a => a.className === "DocumentAttributeAudio");
+            const trackName = [audioAttr?.performer, audioAttr?.title].filter(Boolean).join(" — ") || "audio";
+            const savedPath = await downloadGramJSMedia(message.media, `audio_${msgId}.mp3`, config.workspace);
+            setMessageFilePath(chatId, msgId, savedPath);
+            addMedia({ chatId, msgId, senderName, type: "audio", filePath: savedPath, caption, timestamp });
+            const prompt = [caption, `User sent audio: ${trackName}, saved to: ${savedPath}`].filter(Boolean).join("\n");
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // ── Generic document ───────────────────────────────────────────
+          if (message.document) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const docMedia = message.document as any;
+            const fnAttr = (docMedia.attributes as Array<{ className?: string; fileName?: string }> | undefined)?.find(a => a.className === "DocumentAttributeFilename");
+            const fileName = fnAttr?.fileName || `document_${msgId}`;
+            const sizeBytes = Number(docMedia.size ?? 0);
+            if (sizeBytes > 20 * 1024 * 1024) {
+              await sendError(numericChatId, "File too large (max 20MB).", replyToId);
+              return;
+            }
+            const savedPath = await downloadGramJSMedia(message.media, fileName, config.workspace);
+            setMessageFilePath(chatId, msgId, savedPath);
+            addMedia({ chatId, msgId, senderName, type: "document", filePath: savedPath, caption, timestamp });
+            const prompt = [
+              caption,
+              `User sent a document: "${fileName}" (${docMedia.mimeType || "unknown"}).`,
+              `Saved to: ${savedPath}`,
+              "Read and process this file.",
+            ].filter(Boolean).join("\n");
+            enqueue(chatId, numericChatId, { prompt, replyToId, messageId: msgId, senderName, senderUsername, senderId, isGroup, chatTitle });
+            return;
+          }
+
+          // Unknown media — log and ignore
+          logWarn("userbot-frontend", `[${chatId}] Unhandled media type: ${mediaClass ?? "unknown"}`);
+        } catch (err) {
+          logError("userbot-frontend", `[${chatId}] Media handling error`, err);
+          await sendError(numericChatId, friendlyMessage(err), replyToId);
+        }
+      }, new NewMessage({ incoming: true }));
+
+      log(
+        "userbot-frontend",
+        `Listening for messages as ${selfUsername ? `@${selfUsername}` : String(selfId)}`,
+      );
+
+      // Block until disconnected (GramJS keeps the event loop alive internally)
+      await getClient()!.connect();
+    },
+
+    async stop() {
+      try { await disconnectUserClient(); log("shutdown", "User client disconnected"); }
+      catch (err) { logError("shutdown", "User client disconnect error", err); }
+      try { await gateway.stop(); log("shutdown", "Gateway stopped"); }
+      catch (err) { logError("shutdown", "Gateway stop error", err); }
+    },
+  };
+}

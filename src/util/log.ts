@@ -32,7 +32,8 @@ export type LogComponent =
   | "gateway"
   | "plugin"
   | "teams"
-  | "config";
+  | "config"
+  | "userbot-frontend";
 
 const LOG_FILE = files.log;
 

@@ -217,8 +217,10 @@ export function loadConfig(): TalonConfig {
   // Validate per-frontend requirements
   const frontends = Array.isArray(parsed.frontend) ? parsed.frontend : [parsed.frontend];
   for (const fe of frontends) {
-    if (fe === "telegram" && !parsed.botToken) {
-      throw new Error(`Telegram frontend requires "botToken" in ${CONFIG_FILE}. Run "talon setup" to configure.`);
+    if (fe === "telegram" && !parsed.botToken && !(parsed.apiId && parsed.apiHash)) {
+      throw new Error(
+        `Telegram frontend requires either "botToken" (bot mode) or "apiId" + "apiHash" (userbot mode) in ${CONFIG_FILE}. Run "talon setup" to configure.`,
+      );
     }
     if (fe === "teams" && !parsed.teamsWebhookUrl) {
       throw new Error(`Teams frontend requires "teamsWebhookUrl" in ${CONFIG_FILE}. Run "talon setup" to configure.`);
