@@ -99,9 +99,26 @@ export function createUserbotActionHandler(
       }
 
       case "react": {
-        const emoji = String(body.emoji ?? "👍");
+        const client = getClient();
+        const emoji = body.emoji ? String(body.emoji) : null;
+        const documentId = body.document_id ? String(body.document_id) : null;
         const msgId = Number(body.message_id);
-        await withRetry(() => reactUserbotMessage(peer, msgId, emoji));
+        const big = body.big === true; // animated (big) reaction
+
+        if (documentId && client) {
+          // Custom emoji reaction via document ID
+          await withRetry(() => client!.invoke(new Api.messages.SendReaction({
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            peer: peer as any,
+            msgId,
+            big,
+            reaction: [new Api.ReactionCustomEmoji({
+              documentId: BigInt(documentId) as unknown as import("big-integer").BigInteger,
+            })],
+          })));
+        } else {
+          await withRetry(() => reactUserbotMessage(peer, msgId, emoji ?? "👍"));
+        }
         return { ok: true };
       }
 
