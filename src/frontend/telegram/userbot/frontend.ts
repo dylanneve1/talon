@@ -585,7 +585,12 @@ export function createUserbotFrontend(
         // Convert BigInt peer ID to number — safe for all Telegram ID ranges
         const numericChatId = Number(message.chatId ?? 0n);
         if (!numericChatId) return;
-        const chatId = String(numericChatId);
+        // In dual mode, prefix session key so userbot has separate Claude sessions
+        // from the bot (even in the same group chat). The numeric peer stays unchanged
+        // for Telegram API calls.
+        const chatId = options?.primaryMode === false
+          ? `ub:${numericChatId}`
+          : String(numericChatId);
 
         const peerClass = message.peerId?.className;
         const isGroup = peerClass === "PeerChat" || peerClass === "PeerChannel";
@@ -692,12 +697,6 @@ export function createUserbotFrontend(
             }
           }
           if (!handle) return;
-        }
-
-        // Dual-mode dedup: check if the bot already claimed this message
-        if (options?.claimMessage && !options.claimMessage(numericChatId, msgId)) {
-          // Bot already claimed this message — skip to avoid duplicate response
-          return;
         }
 
         // Notify dual-mode coordinator which frontend owns this chat

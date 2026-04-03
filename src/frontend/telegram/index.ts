@@ -189,35 +189,6 @@ function createDualFrontend(config: TalonConfig, gateway: Gateway): TelegramFron
   // Default: 'bot' — safe fallback since bot is more reliable for sending.
   const chatOwnership = new Map<number, "bot" | "userbot">();
 
-  // ── Message deduplication ─────────────────────────────────────────────────
-  // In dual mode, both frontends see group messages. Without dedup, both
-  // would process and respond to the same message → duplicate replies.
-  // First frontend to claim a message wins; the other skips it.
-  const claimedMessages = new Map<string, "bot" | "userbot">();
-  const CLAIM_CAP = 5_000;
-
-  /**
-   * Try to claim a message for processing. Returns true if this frontend
-   * should process it, false if the other frontend already claimed it.
-   */
-  function claimMessage(chatId: number, msgId: number, frontend: "bot" | "userbot"): boolean {
-    const key = `${chatId}:${msgId}`;
-    const existing = claimedMessages.get(key);
-    if (existing) return existing === frontend; // already claimed
-    claimedMessages.set(key, frontend);
-    chatOwnership.set(chatId, frontend);
-    // LRU eviction
-    if (claimedMessages.size > CLAIM_CAP) {
-      const iter = claimedMessages.keys();
-      for (let i = 0; i < 1000; i++) claimedMessages.delete(iter.next().value as string);
-    }
-    return true;
-  }
-
-  // Export claim function for both frontends
-  const claimForBot = (chatId: number, msgId: number) => claimMessage(chatId, msgId, "bot");
-  const claimForUserbot = (chatId: number, msgId: number) => claimMessage(chatId, msgId, "userbot");
-
   const markBotOwned = (chatId: number) => chatOwnership.set(chatId, "bot");
   const markUserbotOwned = (chatId: number) => chatOwnership.set(chatId, "userbot");
 
@@ -231,7 +202,6 @@ function createDualFrontend(config: TalonConfig, gateway: Gateway): TelegramFron
   const userbotFrontend = createUserbotFrontend(config, gateway, {
     primaryMode: false,
     onChatOwned: markUserbotOwned,
-    claimMessage: claimForUserbot,
   });
 
   // ── Shared context manager ────────────────────────────────────────────────
@@ -271,7 +241,7 @@ function createDualFrontend(config: TalonConfig, gateway: Gateway): TelegramFron
       // Step 2: Bot-side setup (commands, middleware, callbacks)
       setAdminUserId(config.adminUserId);
       registerCommands(bot, config);
-      registerMiddleware(bot, config, markBotOwned, claimForBot);
+      registerMiddleware(bot, config, markBotOwned);
       registerCallbacks(bot, config);
 
       await bot.api.deleteMyCommands();
