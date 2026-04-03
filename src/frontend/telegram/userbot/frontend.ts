@@ -128,6 +128,10 @@ setInterval(() => {
     if (fresh.length === 0) userTimestamps.delete(uid);
     else userTimestamps.set(uid, fresh);
   }
+  // Clean stale online status entries (older than 1 hour)
+  for (const [uid, status] of onlineStatusCache) {
+    if (now - status.cachedAt > 3_600_000) onlineStatusCache.delete(uid);
+  }
 }, 60_000); // every minute
 
 // ── Keyword watches ───────────────────────────────────────────────────────────
@@ -205,7 +209,10 @@ function enqueue(
 ): void {
   const existing = queues.get(chatId);
   if (existing) {
-    if (existing.messages.length >= MAX_QUEUED) return;
+    if (existing.messages.length >= MAX_QUEUED) {
+      logWarn("userbot-frontend", `[${chatId}] Queue full (${MAX_QUEUED}), dropping message from ${msg.senderName}`);
+      return;
+    }
     existing.messages.push(msg);
     // Hourglass reaction to show we've seen it
     reactUserbotMessage(numericChatId, msg.messageId, "⏳").catch(() => {});
@@ -239,15 +246,18 @@ async function flushQueue(chatId: string): Promise<void> {
   // Mark all messages as read so the chat doesn't show an unread badge
   markUserbotAsRead(numericChatId).catch(() => {});
 
+  // Use first message's sender for metadata (they initiated the conversation),
+  // but last message's IDs for reply targeting (reply to the most recent).
+  const first = messages[0];
   const last = messages[messages.length - 1];
   const combinedPrompt =
     messages.length === 1
-      ? messages[0].prompt
+      ? first.prompt
       : messages.map((m) => m.prompt).join("\n\n");
 
-  appendDailyLog(last.senderName, combinedPrompt, {
-    chatTitle: last.chatTitle,
-    username: last.senderUsername,
+  appendDailyLog(first.senderName, combinedPrompt, {
+    chatTitle: first.chatTitle,
+    username: first.senderUsername,
   });
 
   try {
@@ -257,11 +267,11 @@ async function flushQueue(chatId: string): Promise<void> {
       replyToId: last.replyToId,
       messageId: last.messageId,
       prompt: combinedPrompt,
-      senderName: last.senderName,
-      senderUsername: last.senderUsername,
-      senderId: last.senderId,
-      isGroup: last.isGroup,
-      chatTitle: last.chatTitle,
+      senderName: first.senderName,
+      senderUsername: first.senderUsername,
+      senderId: first.senderId,
+      isGroup: first.isGroup,
+      chatTitle: first.chatTitle,
     });
     recordMessageProcessed();
   } catch (err) {
@@ -1056,7 +1066,7 @@ export function createUserbotFrontend(
 
           enqueue(editChatIdStr, editChatId, {
             prompt: editPrompt,
-            replyToId: editedMsg.id,
+            replyToId: 0, // Don't reply-to the edited message itself
             messageId: editedMsg.id,
             senderName,
             isGroup: !isDM,
@@ -1067,12 +1077,13 @@ export function createUserbotFrontend(
       }, new Raw({ types: [Api.UpdateEditMessage, Api.UpdateEditChannelMessage] }));
 
       // ── Reaction events ──────────────────────────────────────────────────
+      // Rate-limit: only process one reaction event per message per 30 seconds
+      const reactionCooldown = new Map<string, number>(); // "chatId:msgId" → timestamp
       client.addEventHandler((update: Api.TypeUpdate) => {
         try {
           if (!(update instanceof Api.UpdateMessageReactions)) return;
           const reactMsgId = update.msgId;
           const reactPeer = update.peer;
-          // Only care about reactions on our messages
           let reactChatId = 0;
           if (reactPeer instanceof Api.PeerUser) reactChatId = Number(reactPeer.userId);
           else if (reactPeer instanceof Api.PeerChat) reactChatId = -Number(reactPeer.chatId);
@@ -1082,6 +1093,17 @@ export function createUserbotFrontend(
 
           // Only notify for reactions on OUR messages
           if (!isOurMessage(reactChatIdStr, reactMsgId)) return;
+
+          // Cooldown: skip if we already processed a reaction on this message recently
+          const cooldownKey = `${reactChatIdStr}:${reactMsgId}`;
+          const lastProcessed = reactionCooldown.get(cooldownKey) ?? 0;
+          if (Date.now() - lastProcessed < 30_000) return;
+          reactionCooldown.set(cooldownKey, Date.now());
+          // Clean up old cooldown entries periodically
+          if (reactionCooldown.size > 500) {
+            const now = Date.now();
+            for (const [k, t] of reactionCooldown) { if (now - t > 60_000) reactionCooldown.delete(k); }
+          }
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const results = (update.reactions as any)?.results ?? [];

@@ -302,7 +302,10 @@ function enqueueMessage(
 ): void {
   const existing = messageQueues.get(chatId);
   if (existing) {
-    if (existing.messages.length >= MAX_QUEUED_PER_CHAT) return; // drop excess
+    if (existing.messages.length >= MAX_QUEUED_PER_CHAT) {
+      logWarn("bot", `[${chatId}] Queue full (${MAX_QUEUED_PER_CHAT}), dropping message`);
+      return;
+    }
     existing.messages.push(msg);
     // Show hourglass reaction on the queued message to indicate it's been seen
     bot.api
@@ -341,17 +344,18 @@ async function flushQueue(chatId: string): Promise<void> {
     });
   }
 
-  // Use last message's metadata for reply context
+  // Use first message's sender for metadata (they initiated),
+  // but last message's IDs for reply targeting (reply to most recent).
+  const first = messages[0];
   const last = messages[messages.length - 1];
 
-  // Concatenate prompts (with newlines between them if multiple)
   const combinedPrompt =
     messages.length === 1
-      ? messages[0].prompt
+      ? first.prompt
       : messages.map((m) => m.prompt).join("\n\n");
 
-  const chatContext = { chatTitle: last.chatTitle, username: last.senderUsername };
-  appendDailyLog(last.senderName, combinedPrompt, chatContext);
+  const chatContext = { chatTitle: first.chatTitle, username: first.senderUsername };
+  appendDailyLog(first.senderName, combinedPrompt, chatContext);
 
   try {
     await processAndReply({
@@ -359,8 +363,8 @@ async function flushQueue(chatId: string): Promise<void> {
       replyToId: last.replyToId,
       messageId: last.messageId,
       prompt: combinedPrompt,
-      senderName: last.senderName,
-      isGroup: last.isGroup,
+      senderName: first.senderName,
+      isGroup: first.isGroup,
       senderUsername: last.senderUsername,
       senderId: last.senderId,
       chatTitle: last.chatTitle,
