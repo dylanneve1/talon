@@ -448,214 +448,61 @@ async function handleCommand(
   cmdArg?: string,
 ): Promise<boolean> {
   const isAdmin = adminUserId && senderId === adminUserId;
-  const { getSessionInfo, getActiveSessionCount } = await import("../../../storage/sessions.js");
-  const { getChatSettings, setChatModel, setChatEffort, resolveModelName } = await import("../../../storage/chat-settings.js");
-  const { isPulseEnabled, enablePulse, disablePulse, resetPulseCheckpoint } = await import("../../../core/pulse.js");
-  const { formatDuration, formatTokenCount } = await import("../helpers.js");
+  const {
+    renderStatus, renderSettings, renderHelp, renderPing, renderMemory,
+    renderPlugins, handleModelCommand, handleEffortCommand, handlePulseCommand,
+    handleReset, renderAdminHealth, renderAdminChats,
+  } = await import("../command-ui.js");
+  const { formatDuration } = await import("../helpers.js");
+
+  const reply = async (text: string) => {
+    const id = await sendUserbotMessage(numericChatId, text, msgId);
+    recordOurMessage(chatId, id);
+  };
+  const F = "markdown" as const;
 
   switch (cmd) {
     case "help":
     case "commands": {
-      const helpText = [
-        "**Commands**",
-        "",
-        "**Settings**",
-        "  `/model [name]` — Show or change model (sonnet, opus, haiku)",
-        "  `/effort [level]` — Set thinking effort (off, low, medium, high, max)",
-        "  `/pulse [on|off]` — Toggle periodic engagement",
-        "  `/settings` — View all settings",
-        "",
-        "**Session**",
-        "  `/status` — Session info, usage, and stats",
-        "  `/dream` — Force memory consolidation",
-        "  `/ping` — Health check with uptime",
-        "  `/reset` — Clear session and start fresh",
-        "  `/restart` — Restart process (admin only)",
-        "",
-        "Or just ask me anything in plain language.",
-      ].join("\n");
-      const sentId = await sendUserbotMessage(numericChatId, helpText, msgId);
-      recordOurMessage(chatId, sentId);
+      await reply(renderHelp(undefined, F));
       return true;
     }
-
     case "status": {
-      const info = getSessionInfo(chatId);
-      const u = info.usage;
-      const uptime = formatDuration(process.uptime() * 1000);
-      const sessionAge = info.createdAt ? formatDuration(Date.now() - info.createdAt) : "—";
-      const chatSets = getChatSettings(chatId);
-      const activeModel = chatSets.model ?? "default";
-      const effortName = chatSets.effort ?? "adaptive";
-      const pulseOn = isPulseEnabled(chatId);
-      const { formatBytes } = await import("../helpers.js").catch(() => ({ formatBytes: (n: number) => `${Math.round(n / 1024)}KB` }));
-      const { getWorkspaceDiskUsage } = await import("../../../util/workspace.js");
-
-      // Context bar
-      const contextMax = activeModel.includes("haiku") ? 200_000 : 1_000_000;
-      const contextUsed = u.lastPromptTokens;
-      const contextPct = contextMax > 0 ? Math.min(100, Math.round((contextUsed / contextMax) * 100)) : 0;
-      const barLen = 20;
-      const filled = Math.round((contextPct / 100) * barLen);
-      const contextBar = "█".repeat(filled) + "░".repeat(barLen - filled);
-      const contextWarn = contextPct >= 80 ? " ⚠️ consider /reset" : "";
-
-      // Token stats
-      const totalPrompt = u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
-      const cacheHitPct = totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
-
-      // Response times
-      const avgMs = info.turns > 0 && u.totalResponseMs ? Math.round(u.totalResponseMs / info.turns) : 0;
-      const lastMs = u.lastResponseMs || 0;
-      const fastestMs = u.fastestResponseMs === Infinity ? 0 : (u.fastestResponseMs || 0);
-
-      // Workspace
-      let diskStr = "—";
-      try {
-        const { dirs: talonDirs } = await import("../../../util/paths.js");
-        diskStr = formatBytes(getWorkspaceDiskUsage(talonDirs.workspace));
-      } catch { /* */ }
-
-      const lines = [
-        `**🦅 Talon** · \`${activeModel}\` · effort: ${effortName}`,
-        "",
-        `**Context**  ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextMax)} (${contextPct}%)${contextWarn}`,
-        `\`${contextBar}\``,
-        "",
-        `**Session Stats**`,
-        `  Response  last ${lastMs ? formatDuration(lastMs) : "—"} · avg ${avgMs ? formatDuration(avgMs) : "—"} · best ${fastestMs ? formatDuration(fastestMs) : "—"}`,
-        `  Turns     ${info.turns}${info.lastModel ? ` (${info.lastModel.replace("claude-", "")})` : ""}`,
-        "",
-        `**Cache**     ${cacheHitPct}% hit`,
-        `  Read ${formatTokenCount(u.totalCacheRead)}  Write ${formatTokenCount(u.totalCacheWrite)}`,
-        `  Input ${formatTokenCount(u.totalInputTokens)}  Output ${formatTokenCount(u.totalOutputTokens)}`,
-        "",
-        `**Pulse**  ${pulseOn ? "on" : "off"}`,
-        `**Workspace**  ${diskStr}`,
-        `**Session**   ${info.sessionName ? `"${info.sessionName}" ` : ""}${info.sessionId ? `\`${info.sessionId.slice(0, 8)}...\`` : "_(new)_"} · ${sessionAge} old`,
-        `**Uptime**    ${uptime} · ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
-      ];
-      const sentId = await sendUserbotMessage(numericChatId, lines.join("\n"), msgId);
-      recordOurMessage(chatId, sentId);
+      await reply(renderStatus(chatId, "default", F));
       return true;
     }
-
     case "settings": {
-      const chatSets = getChatSettings(chatId);
-      const activeModel = chatSets.model ?? "default";
-      const effortName = chatSets.effort ?? "adaptive";
-      const pulseOn = isPulseEnabled(chatId);
-      const { setChatPulseInterval: _spi } = await import("../../../storage/chat-settings.js");
-      const intervalMs = chatSets.pulseIntervalMs ?? 300000;
-
-      const lines = [
-        "**⚙️ Settings**",
-        "",
-        `**Model:** \`${activeModel}\``,
-        `**Effort:** ${effortName}`,
-        `**Pulse:** ${pulseOn ? "on" : "off"} (every ${formatDuration(intervalMs)})`,
-        "",
-        "Change: `/model opus` · `/effort high` · `/pulse on`",
-      ];
-      const sentId = await sendUserbotMessage(numericChatId, lines.join("\n"), msgId);
-      recordOurMessage(chatId, sentId);
+      await reply(renderSettings(chatId, "default", F));
       return true;
     }
-
     case "model": {
-      const arg = cmdArg?.trim();
-      if (!arg) {
-        const current = getChatSettings(chatId).model ?? "default";
-        const sentId = await sendUserbotMessage(numericChatId, `**Model:** \`${current}\`\nChange: \`/model sonnet\`, \`/model opus\`, \`/model haiku\`, \`/model reset\``, msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      if (arg === "reset" || arg === "default") {
-        setChatModel(chatId, undefined);
-        const sentId = await sendUserbotMessage(numericChatId, "Model reset to default.", msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      const model = resolveModelName(arg);
-      setChatModel(chatId, model);
-      const sentId = await sendUserbotMessage(numericChatId, `Model set to \`${model}\`.`, msgId);
-      recordOurMessage(chatId, sentId);
+      await reply(handleModelCommand(chatId, cmdArg?.trim() || undefined, "default", F));
       return true;
     }
-
     case "effort": {
-      const arg = cmdArg?.trim().toLowerCase();
-      const levels = ["off", "low", "medium", "high", "max", "adaptive"];
-      if (!arg) {
-        const current = getChatSettings(chatId).effort ?? "adaptive";
-        const sentId = await sendUserbotMessage(numericChatId, `**Effort:** ${current}\nChange: \`/effort low\`, \`/effort high\`, \`/effort max\``, msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      if (arg === "reset" || arg === "default" || arg === "adaptive") {
-        setChatEffort(chatId, undefined);
-        const sentId = await sendUserbotMessage(numericChatId, "Effort reset to adaptive.", msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      if (levels.includes(arg)) {
-        setChatEffort(chatId, arg as import("../../../storage/chat-settings.js").EffortLevel);
-        const sentId = await sendUserbotMessage(numericChatId, `Effort set to **${arg}**.`, msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      const sentId = await sendUserbotMessage(numericChatId, "Unknown level. Use: off, low, medium, high, max, adaptive.", msgId);
-      recordOurMessage(chatId, sentId);
+      await reply(handleEffortCommand(chatId, cmdArg?.trim().toLowerCase() || undefined, F));
       return true;
     }
-
     case "pulse": {
-      const arg = cmdArg?.trim().toLowerCase();
-      if (!arg) {
-        const on = isPulseEnabled(chatId);
-        const sentId = await sendUserbotMessage(numericChatId, `**Pulse:** ${on ? "on" : "off"}\nToggle: \`/pulse on\`, \`/pulse off\``, msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      if (arg === "on" || arg === "enable") {
-        enablePulse(chatId);
-        registerChat(chatId);
-        const sentId = await sendUserbotMessage(numericChatId, "Pulse enabled.", msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      if (arg === "off" || arg === "disable") {
-        disablePulse(chatId);
-        const sentId = await sendUserbotMessage(numericChatId, "Pulse disabled.", msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      const sentId2 = await sendUserbotMessage(numericChatId, "Use: /pulse on, /pulse off", msgId);
-      recordOurMessage(chatId, sentId2);
+      const text = handlePulseCommand(chatId, cmdArg?.trim().toLowerCase() || undefined, F);
+      if (cmdArg?.trim().toLowerCase() === "on") registerChat(chatId);
+      await reply(text);
       return true;
     }
-
     case "ping": {
       const start = Date.now();
-      const uptime = formatDuration(process.uptime() * 1000);
-      const sentId = await sendUserbotMessage(numericChatId, `Pong! ${Date.now() - start}ms · Uptime: ${uptime}`, msgId);
-      recordOurMessage(chatId, sentId);
+      const { isUserClientReady } = await import("./client.js");
+      await reply(renderPing(Date.now() - start, isUserClientReady()));
       return true;
     }
-
     case "reset": {
-      resetSession(chatId);
-      clearHistory(chatId);
-      resetPulseCheckpoint(chatId);
-      const sentId = await sendUserbotMessage(numericChatId, "Session cleared.", msgId);
-      recordOurMessage(chatId, sentId);
+      await reply(handleReset(chatId));
       return true;
     }
 
     case "dream": {
       if (adminUserId && senderId !== adminUserId) {
-        const sentId = await sendUserbotMessage(numericChatId, "Admin only.", msgId);
-        recordOurMessage(chatId, sentId);
+        await reply("Admin only.");
         return true;
       }
       const statusId = await sendUserbotMessage(numericChatId, "🌙 Dream mode starting...", msgId);
@@ -663,127 +510,35 @@ async function handleCommand(
       const start = Date.now();
       try {
         await forceDream();
-        const elapsed = formatDuration(Date.now() - start);
-        await editUserbotMessage(numericChatId, statusId, `🌙 Dream complete — memory consolidated in ${elapsed}.`);
+        await editUserbotMessage(numericChatId, statusId, `🌙 Dream complete — memory consolidated in ${formatDuration(Date.now() - start)}.`);
       } catch (err) {
-        const emsg = err instanceof Error ? err.message : String(err);
-        await editUserbotMessage(numericChatId, statusId, `🌙 Dream failed: ${emsg}`);
+        await editUserbotMessage(numericChatId, statusId, `🌙 Dream failed: ${err instanceof Error ? err.message : String(err)}`);
       }
       return true;
     }
 
     case "restart": {
-      if (!isAdmin) {
-        const sentId = await sendUserbotMessage(numericChatId, "Admin only.", msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      const sentId = await sendUserbotMessage(numericChatId, "♻️ Restarting…", msgId);
-      recordOurMessage(chatId, sentId);
+      if (!isAdmin) { await reply("Admin only."); return true; }
+      await reply("♻️ Restarting…");
       setTimeout(() => process.exit(0), 500);
       return true;
     }
 
     case "memory": {
-      const { files: talonFiles } = await import("../../../util/paths.js");
-      try {
-        if (!existsSync(talonFiles.memory)) {
-          const sentId = await sendUserbotMessage(numericChatId, "No memory file yet. I'll create one as I learn about you.", msgId);
-          recordOurMessage(chatId, sentId);
-          return true;
-        }
-        const content = readFileSync(talonFiles.memory, "utf-8").trim();
-        if (!content) {
-          const sentId = await sendUserbotMessage(numericChatId, "Memory file is empty. I'll update it as we chat.", msgId);
-          recordOurMessage(chatId, sentId);
-          return true;
-        }
-        const display = content.length > 3500
-          ? content.slice(0, 3500) + "\n\n... (truncated)"
-          : content;
-        const sentId = await sendUserbotMessage(numericChatId, display, msgId);
-        recordOurMessage(chatId, sentId);
-      } catch {
-        const sentId = await sendUserbotMessage(numericChatId, "Could not read memory file.", msgId);
-        recordOurMessage(chatId, sentId);
-      }
+      await reply(renderMemory());
       return true;
     }
 
     case "plugins": {
-      const { getLoadedPlugins } = await import("../../../core/plugin.js");
-      const plugins = getLoadedPlugins();
-      if (plugins.length === 0) {
-        const sentId = await sendUserbotMessage(numericChatId, "No plugins loaded.", msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      const lines = plugins.map((p) => {
-        const ver = p.plugin.version ? ` v${p.plugin.version}` : "";
-        const desc = p.plugin.description ? ` — ${p.plugin.description}` : "";
-        const mcp = p.plugin.mcpServerPath ? " [MCP]" : "";
-        return `• **${p.plugin.name}**${ver}${mcp}${desc}`;
-      });
-      const sentId = await sendUserbotMessage(numericChatId, `**Plugins (${plugins.length})**\n\n${lines.join("\n")}`, msgId);
-      recordOurMessage(chatId, sentId);
+      await reply(renderPlugins(F));
       return true;
     }
 
     case "admin": {
-      if (!isAdmin) {
-        const sentId = await sendUserbotMessage(numericChatId, "Not authorized.", msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-      const { getAllSessions } = await import("../../../storage/sessions.js");
-      const { getActiveCount } = await import("../../../core/dispatcher.js");
-      const { getHealthStatus, getRecentErrors } = await import("../../../util/watchdog.js");
-
+      if (!isAdmin) { await reply("Not authorized."); return true; }
       const sub = cmdArg?.trim().split(/\s+/)[0] ?? "";
-
-      if (sub === "health" || !sub) {
-        const health = getHealthStatus();
-        const errors = getRecentErrors(5);
-        const sessions = getAllSessions();
-        const active = getActiveCount();
-        const lines = [
-          `**Admin Panel**`,
-          "",
-          `**Health:** ${health.healthy ? "✓ healthy" : "⚠ degraded"}`,
-          `**Active dispatches:** ${active}`,
-          `**Sessions:** ${sessions.length}`,
-          `**Uptime:** ${formatDuration(process.uptime() * 1000)}`,
-          `**Memory:** ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
-        ];
-        if (errors.length > 0) {
-          lines.push("", "**Recent errors:**");
-          for (const e of errors) lines.push(`  • ${e}`);
-        }
-        lines.push("", "Subcommands: `/admin health`, `/admin chats`");
-        const sentId = await sendUserbotMessage(numericChatId, lines.join("\n"), msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-
-      if (sub === "chats") {
-        const sessions = getAllSessions();
-        if (sessions.length === 0) {
-          const sentId = await sendUserbotMessage(numericChatId, "No active sessions.", msgId);
-          recordOurMessage(chatId, sentId);
-          return true;
-        }
-        sessions.sort((a, b) => (b.info.lastActive || 0) - (a.info.lastActive || 0));
-        const lines = sessions.map((s) => {
-          const age = s.info.lastActive ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago` : "?";
-          return `\`${s.chatId}\` · ${s.info.turns} turns · ${age}`;
-        });
-        const sentId = await sendUserbotMessage(numericChatId, `**Active chats (${sessions.length})**\n\n${lines.join("\n")}`, msgId);
-        recordOurMessage(chatId, sentId);
-        return true;
-      }
-
-      const sentId = await sendUserbotMessage(numericChatId, "Unknown subcommand. Use: `/admin health`, `/admin chats`", msgId);
-      recordOurMessage(chatId, sentId);
+      if (sub === "chats") { await reply(renderAdminChats(F)); return true; }
+      await reply(renderAdminHealth(F));
       return true;
     }
 
