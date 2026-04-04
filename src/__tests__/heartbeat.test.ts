@@ -20,13 +20,18 @@ vi.mock("../util/log.js", () => ({
 const existsSyncMock = vi.fn(() => false);
 const readFileSyncMock = vi.fn(() => "null");
 const mkdirSyncMock = vi.fn();
-const appendFileSyncMock = vi.fn();
 
 vi.mock("node:fs", () => ({
   existsSync: existsSyncMock,
   readFileSync: readFileSyncMock,
   mkdirSync: mkdirSyncMock,
-  appendFileSync: appendFileSyncMock,
+}));
+
+const appendFileMock = vi.fn(async () => {});
+const mkdirAsyncMock = vi.fn(async () => undefined);
+vi.mock("node:fs/promises", () => ({
+  appendFile: appendFileMock,
+  mkdir: mkdirAsyncMock,
 }));
 
 const writeAtomicSyncMock = vi.fn();

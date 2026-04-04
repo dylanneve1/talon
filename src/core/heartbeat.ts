@@ -8,7 +8,8 @@
  * Modeled after dream.ts but more general-purpose.
  */
 
-import { existsSync, readFileSync, mkdirSync, appendFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
+import { appendFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -261,16 +262,16 @@ async function runHeartbeatAgent(
     configRef.heartbeatModel ?? configRef.model ?? "claude-sonnet-4-6";
 
   // Set up heartbeat log file
-  const heartbeatLogFile = createHeartbeatLogFile();
-  appendHeartbeatLog(
+  const heartbeatLogFile = await createHeartbeatLogFile();
+  await appendHeartbeatLog(
     heartbeatLogFile,
     `# Heartbeat Run #${runCount} — ${new Date().toISOString()}\n`,
   );
-  appendHeartbeatLog(
+  await appendHeartbeatLog(
     heartbeatLogFile,
     `**Trigger:** ${lastRunIso === "never" ? "first run" : `last_run=${lastRunIso}`}, model=${model}\n`,
   );
-  appendHeartbeatLog(
+  await appendHeartbeatLog(
     heartbeatLogFile,
     `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
   );
@@ -323,9 +324,9 @@ async function runHeartbeatAgent(
       options: options as Parameters<typeof query>[0]["options"],
     });
     for await (const msg of qi) {
-      logHeartbeatMessage(heartbeatLogFile, msg);
+      await logHeartbeatMessage(heartbeatLogFile, msg);
     }
-    appendHeartbeatLog(
+    await appendHeartbeatLog(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} completed at ${new Date().toISOString()}**\n`,
     );
@@ -334,7 +335,7 @@ async function runHeartbeatAgent(
   try {
     await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
-    appendHeartbeatLog(
+    await appendHeartbeatLog(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
@@ -353,9 +354,9 @@ async function runHeartbeatAgent(
 
 let heartbeatLogFileSequence = 0;
 
-function createHeartbeatLogFile(): string {
+async function createHeartbeatLogFile(): Promise<string> {
   if (!existsSync(HEARTBEAT_LOGS_DIR)) {
-    mkdirSync(HEARTBEAT_LOGS_DIR, { recursive: true });
+    await mkdir(HEARTBEAT_LOGS_DIR, { recursive: true });
   }
   const now = new Date();
   const ts = now.toISOString().replace(/[:.]/g, "-");
@@ -363,15 +364,21 @@ function createHeartbeatLogFile(): string {
   return resolve(HEARTBEAT_LOGS_DIR, `heartbeat-${ts}-${seq}.md`);
 }
 
-function appendHeartbeatLog(logFile: string, text: string): void {
+async function appendHeartbeatLog(
+  logFile: string,
+  text: string,
+): Promise<void> {
   try {
-    appendFileSync(logFile, text);
+    await appendFile(logFile, text);
   } catch (err) {
     logError("heartbeat", "Failed to write heartbeat log", err);
   }
 }
 
-function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
+async function logHeartbeatMessage(
+  logFile: string,
+  msg: SDKMessage,
+): Promise<void> {
   try {
     const ts = new Date().toISOString().slice(11, 19);
 
@@ -388,13 +395,16 @@ function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
           });
 
         if (textBlocks.length > 0) {
-          appendHeartbeatLog(
+          await appendHeartbeatLog(
             logFile,
             `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`,
           );
         }
         if (toolUseBlocks.length > 0) {
-          appendHeartbeatLog(logFile, `\n${toolUseBlocks.join("\n\n")}\n`);
+          await appendHeartbeatLog(
+            logFile,
+            `\n${toolUseBlocks.join("\n\n")}\n`,
+          );
         }
         break;
       }
@@ -407,14 +417,17 @@ function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
           result.length > 2000
             ? result.slice(0, 2000) + "\n... (truncated)"
             : result;
-        appendHeartbeatLog(
+        await appendHeartbeatLog(
           logFile,
           `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`,
         );
         break;
       }
       case "system": {
-        appendHeartbeatLog(logFile, `\n### [${ts}] System (${msg.subtype})\n`);
+        await appendHeartbeatLog(
+          logFile,
+          `\n### [${ts}] System (${msg.subtype})\n`,
+        );
         break;
       }
       case "user": {
@@ -425,7 +438,7 @@ function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
               : JSON.stringify(msg.tool_use_result, null, 2);
           const truncated =
             raw.length > 2000 ? raw.slice(0, 2000) + "\n... (truncated)" : raw;
-          appendHeartbeatLog(
+          await appendHeartbeatLog(
             logFile,
             `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`,
           );
