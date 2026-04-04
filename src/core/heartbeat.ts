@@ -1,0 +1,367 @@
+/**
+ * Heartbeat — periodic background agent for user-defined maintenance tasks.
+ *
+ * Runs at a configurable interval (default: 60 minutes).
+ * The agent reads instructions from ~/.talon/workspace/heartbeat-instructions.md
+ * and executes them using filesystem-only tools (no Telegram/MCP access).
+ *
+ * Modeled after dream.ts but more general-purpose.
+ */
+
+import { existsSync, readFileSync, mkdirSync, appendFileSync } from "node:fs";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import writeFileAtomic from "write-file-atomic";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import { files as pathFiles, dirs } from "../util/paths.js";
+import { log, logError, logWarn } from "../util/log.js";
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+export type HeartbeatState = {
+  /** Unix millisecond timestamp of the last completed heartbeat run. */
+  last_run: number;
+  /** Human-readable ISO timestamp of the last completed heartbeat run. */
+  last_run_at?: string;
+  /** "idle" when no heartbeat is running, "running" while one is active. */
+  status: "idle" | "running";
+  /** Total number of completed heartbeat runs. */
+  run_count: number;
+};
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const HEARTBEAT_STATE_FILE = pathFiles.heartbeatState;
+const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute max
+const HEARTBEAT_LOGS_DIR = resolve(dirs.logs, "heartbeats");
+const STARTUP_DELAY_MS = 5 * 60 * 1000; // 5-minute delay before first run
+const INSTRUCTIONS_FILE = resolve(dirs.workspace, "heartbeat-instructions.md");
+
+// ── State ────────────────────────────────────────────────────────────────────
+
+let running = false; // in-process guard (one heartbeat at a time)
+let timer: ReturnType<typeof setInterval> | null = null;
+let startupTimer: ReturnType<typeof setTimeout> | null = null;
+let intervalMinutesRef = 60; // stored from startHeartbeatTimer
+let configRef: {
+  model?: string;
+  heartbeatModel?: string;
+  dreamModel?: string;
+  claudeBinary?: string;
+  workspace?: string;
+} | null = null;
+
+export function initHeartbeat(cfg: {
+  model?: string;
+  /** Override model used specifically for heartbeat (e.g. haiku for cost savings). Falls back to main model. */
+  heartbeatModel?: string;
+  dreamModel?: string;
+  claudeBinary?: string;
+  workspace?: string;
+}): void {
+  configRef = cfg;
+}
+
+// ── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Start the heartbeat timer. First run happens after a 5-minute startup delay,
+ * then repeats at the configured interval.
+ */
+export function startHeartbeatTimer(intervalMinutes: number): void {
+  if (timer) return; // already running
+
+  intervalMinutesRef = intervalMinutes;
+  const intervalMs = intervalMinutes * 60 * 1000;
+  log("heartbeat", `Starting heartbeat timer (every ${intervalMinutes}min, first run in 5min)`);
+
+  startupTimer = setTimeout(() => {
+    startupTimer = null;
+    // Run immediately after startup delay
+    executeHeartbeat("auto").catch(() => {});
+
+    // Then set up the recurring interval
+    timer = setInterval(() => {
+      executeHeartbeat("auto").catch(() => {});
+    }, intervalMs);
+  }, STARTUP_DELAY_MS);
+}
+
+/**
+ * Stop the heartbeat timer.
+ */
+export function stopHeartbeatTimer(): void {
+  if (startupTimer) {
+    clearTimeout(startupTimer);
+    startupTimer = null;
+  }
+  if (timer) {
+    clearInterval(timer);
+    timer = null;
+    log("heartbeat", "Heartbeat timer stopped");
+  }
+}
+
+/**
+ * Force a heartbeat run immediately.
+ * Returns a promise that resolves when the heartbeat completes.
+ * Throws if a heartbeat is already running.
+ */
+export async function forceHeartbeat(): Promise<void> {
+  if (running) throw new Error("Heartbeat already running");
+  await executeHeartbeat("forced");
+}
+
+/**
+ * Get the current heartbeat status.
+ */
+export function getHeartbeatStatus(): HeartbeatState | null {
+  return readHeartbeatState();
+}
+
+// ── Core execution ──────────────────────────────────────────────────────────
+
+async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
+  if (running) return;
+
+  const state = readHeartbeatState();
+  const now = Date.now();
+  const runCount = (state?.run_count ?? 0) + 1;
+
+  running = true;
+  writeHeartbeatState({ last_run: now, status: "running", run_count: runCount });
+  log(
+    "heartbeat",
+    `${trigger === "forced" ? "Force-triggering" : "Triggering"} heartbeat #${runCount} (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`,
+  );
+
+  try {
+    const heartbeatLogPath = await runHeartbeatAgent(state?.last_run ?? 0, runCount);
+    writeHeartbeatState({ last_run: Date.now(), status: "idle", run_count: runCount });
+    log("heartbeat", `Heartbeat #${runCount} complete (${trigger}), log: ${heartbeatLogPath}`);
+  } catch (err) {
+    logError("heartbeat", `Heartbeat #${runCount} failed (${trigger})`, err);
+    writeHeartbeatState({ last_run: Date.now(), status: "idle", run_count: runCount });
+    if (trigger === "forced") throw err;
+  } finally {
+    running = false;
+  }
+}
+
+// ── Heartbeat agent ─────────────────────────────────────────────────────────
+
+async function runHeartbeatAgent(lastRunTimestamp: number, runCount: number): Promise<string> {
+  if (!configRef) {
+    logWarn("heartbeat", "Heartbeat agent not initialized — skipping");
+    return "";
+  }
+
+  const lastRunIso =
+    lastRunTimestamp > 0
+      ? new Date(lastRunTimestamp).toISOString()
+      : "never";
+
+  const logsDir = dirs.logs;
+  const memoryFile = pathFiles.memory;
+  const workspace = configRef.workspace ?? dirs.workspace;
+
+  // Load prompt template from prompts/heartbeat.md and interpolate variables
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+  const promptPath = resolve(projectRoot, "prompts/heartbeat.md");
+
+  let prompt: string;
+  try {
+    prompt = readFileSync(promptPath, "utf-8")
+      .replace(/\{\{workspace\}\}/g, workspace)
+      .replace(/\{\{logsDir\}\}/g, logsDir)
+      .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
+      .replace(/\{\{memoryFile\}\}/g, memoryFile)
+      .replace(/\{\{instructionsFile\}\}/g, INSTRUCTIONS_FILE)
+      .replace(/\{\{runCount\}\}/g, String(runCount))
+      .replace(/\{\{intervalMinutes\}\}/g, String(intervalMinutesRef));
+  } catch {
+    throw new Error(`Failed to read heartbeat prompt from ${promptPath}`);
+  }
+
+  const model = configRef.heartbeatModel ?? configRef.model ?? "claude-sonnet-4-6";
+
+  // Set up heartbeat log file
+  const heartbeatLogFile = createHeartbeatLogFile();
+  appendHeartbeatLog(heartbeatLogFile, `# Heartbeat Run #${runCount} — ${new Date().toISOString()}\n`);
+  appendHeartbeatLog(heartbeatLogFile, `**Trigger:** ${lastRunIso === "never" ? "first run" : `last_run=${lastRunIso}`}, model=${model}\n`);
+  appendHeartbeatLog(heartbeatLogFile, `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`);
+
+  const options = {
+    model,
+    systemPrompt:
+      "You are a background heartbeat agent for Talon. Use only filesystem tools. Follow the user-defined instructions precisely. Be efficient — you have limited time.",
+    cwd: workspace,
+    permissionMode: "bypassPermissions" as const,
+    allowDangerouslySkipPermissions: true,
+    ...(configRef.claudeBinary
+      ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
+      : {}),
+    // No MCP servers — filesystem tools only
+    mcpServers: {},
+    disallowedTools: [
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "EnterWorktree",
+      "ExitWorktree",
+      "TodoWrite",
+      "TodoRead",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskGet",
+      "TaskList",
+      "TaskOutput",
+      "TaskStop",
+      "AskUserQuestion",
+      "Agent",
+    ],
+  };
+
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(
+      () => reject(new Error("Heartbeat agent timed out")),
+      HEARTBEAT_TIMEOUT_MS,
+    ),
+  );
+
+  const agentPromise = (async () => {
+    const qi = query({
+      prompt,
+      options: options as Parameters<typeof query>[0]["options"],
+    });
+    for await (const msg of qi) {
+      logHeartbeatMessage(heartbeatLogFile, msg);
+    }
+    appendHeartbeatLog(
+      heartbeatLogFile,
+      `\n---\n**Heartbeat #${runCount} completed at ${new Date().toISOString()}**\n`,
+    );
+  })();
+
+  try {
+    await Promise.race([agentPromise, timeoutPromise]);
+  } catch (err) {
+    appendHeartbeatLog(
+      heartbeatLogFile,
+      `\n---\n**Heartbeat #${runCount} FAILED at ${new Date().toISOString()}:** ${err}\n`,
+    );
+    throw err;
+  }
+
+  return heartbeatLogFile;
+}
+
+// ── Logging helpers ─────────────────────────────────────────────────────────
+
+function createHeartbeatLogFile(): string {
+  if (!existsSync(HEARTBEAT_LOGS_DIR)) {
+    mkdirSync(HEARTBEAT_LOGS_DIR, { recursive: true });
+  }
+  const now = new Date();
+  const ts = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return resolve(HEARTBEAT_LOGS_DIR, `heartbeat-${ts}.md`);
+}
+
+function appendHeartbeatLog(logFile: string, text: string): void {
+  try {
+    appendFileSync(logFile, text);
+  } catch (err) {
+    logError("heartbeat", "Failed to write heartbeat log", err);
+  }
+}
+
+function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
+  try {
+    const ts = new Date().toISOString().slice(11, 19);
+
+    switch (msg.type) {
+      case "assistant": {
+        const textBlocks = msg.message.content
+          .filter((b) => b.type === "text")
+          .map((b) => ("text" in b ? (b as { text: string }).text : ""));
+        const toolUseBlocks = msg.message.content
+          .filter((b) => b.type === "tool_use")
+          .map((b) => {
+            const tu = b as { name: string; input: unknown };
+            return `**Tool call:** \`${tu.name}\`\n\`\`\`json\n${JSON.stringify(tu.input, null, 2)}\n\`\`\``;
+          });
+
+        if (textBlocks.length > 0) {
+          appendHeartbeatLog(logFile, `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`);
+        }
+        if (toolUseBlocks.length > 0) {
+          appendHeartbeatLog(logFile, `\n${toolUseBlocks.join("\n\n")}\n`);
+        }
+        break;
+      }
+      case "result": {
+        const result =
+          "result" in msg
+            ? (msg as { result: string }).result
+            : JSON.stringify(msg);
+        const truncated =
+          result.length > 2000
+            ? result.slice(0, 2000) + "\n... (truncated)"
+            : result;
+        appendHeartbeatLog(logFile, `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`);
+        break;
+      }
+      case "system": {
+        appendHeartbeatLog(logFile, `\n### [${ts}] System (${msg.subtype})\n`);
+        break;
+      }
+      case "user": {
+        if (msg.tool_use_result != null) {
+          const raw =
+            typeof msg.tool_use_result === "string"
+              ? msg.tool_use_result
+              : JSON.stringify(msg.tool_use_result, null, 2);
+          const truncated =
+            raw.length > 2000 ? raw.slice(0, 2000) + "\n... (truncated)" : raw;
+          appendHeartbeatLog(logFile, `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  } catch {
+    // Don't let logging errors break the heartbeat
+  }
+}
+
+// ── State helpers ────────────────────────────────────────────────────────────
+
+function readHeartbeatState(): HeartbeatState | null {
+  try {
+    if (!existsSync(HEARTBEAT_STATE_FILE)) return null;
+    const raw = readFileSync(HEARTBEAT_STATE_FILE, "utf-8");
+    const parsed = JSON.parse(raw) as HeartbeatState;
+    if (typeof parsed.last_run !== "number") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeHeartbeatState(state: HeartbeatState): void {
+  try {
+    const dir = resolve(HEARTBEAT_STATE_FILE, "..");
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const enriched: HeartbeatState = {
+      ...state,
+      last_run_at: new Date(state.last_run).toISOString(),
+    };
+    writeFileAtomic.sync(
+      HEARTBEAT_STATE_FILE,
+      JSON.stringify(enriched, null, 2) + "\n",
+    );
+  } catch (err) {
+    logError("heartbeat", "Failed to write heartbeat state", err);
+  }
+}
