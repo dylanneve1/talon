@@ -124,12 +124,13 @@ describe("forceHeartbeat", () => {
     initHeartbeat({ model: "claude-sonnet-4-6" });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReset();
-    readFileSyncMock.mockImplementation((filePath: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    readFileSyncMock.mockImplementation(((filePath: string) => {
       const p = String(filePath).replace(/\\/g, "/");
       if (p.endsWith("/prompts/heartbeat.md"))
         return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
       return "null";
-    });
+    }) as any);
     writeAtomicSyncMock.mockClear();
     queryMock.mockClear();
   });
@@ -301,12 +302,13 @@ describe("awaitCurrentRun", () => {
     initHeartbeat({ model: "claude-sonnet-4-6" });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReset();
-    readFileSyncMock.mockImplementation((filePath: string) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    readFileSyncMock.mockImplementation(((filePath: string) => {
       const p = String(filePath).replace(/\\/g, "/");
       if (p.endsWith("/prompts/heartbeat.md"))
         return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
       return "null";
-    });
+    }) as any);
     writeAtomicSyncMock.mockClear();
   });
 
