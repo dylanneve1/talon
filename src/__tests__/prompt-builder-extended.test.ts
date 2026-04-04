@@ -29,6 +29,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../storage/history.js", () => ({
   getRecentBySenderId: vi.fn(() => []),
+  getRecentHistory: vi.fn(() => []),
 }));
 vi.mock("../storage/learning.js", () => ({
   getUserProfile: vi.fn(() => null),
@@ -45,7 +46,7 @@ vi.mock("../storage/relationships.js", () => ({
 
 // ── Dynamic imports (after mocks) ────────────────────────────────────────────
 
-const { getRecentBySenderId } = await import("../storage/history.js");
+const { getRecentBySenderId, getRecentHistory } = await import("../storage/history.js");
 const { enrichDMPrompt, enrichGroupPrompt } = await import("../core/prompt-builder.js");
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -112,145 +113,77 @@ describe("enrichDMPrompt — extended edge cases", () => {
 
 describe("enrichGroupPrompt — extended branch coverage", () => {
   beforeEach(() => {
-    vi.mocked(getRecentBySenderId).mockReset();
+    vi.mocked(getRecentHistory).mockReset();
   });
 
-  // ── boundary: exactly 2 messages (1 prior + 1 current) ──────────────────
-
-  it("includes context when there are exactly 2 messages (minimum enrichment case)", () => {
-    vi.mocked(getRecentBySenderId).mockReturnValue([
-      msg(1, 10, "Alice", "prior message", new Date("2025-06-01T10:00:00Z").getTime()),
-      msg(2, 10, "Alice", "current message", new Date("2025-06-01T10:01:00Z").getTime()),
+  it("includes context from all participants when multiple messages exist", () => {
+    vi.mocked(getRecentHistory).mockReturnValue([
+      msg(1, 10, "Alice", "alice said hi", new Date("2025-06-01T10:00:00Z").getTime()),
+      msg(2, 20, "Bot", "bot replied", new Date("2025-06-01T10:00:30Z").getTime()),
+      msg(3, 10, "Alice", "current message", new Date("2025-06-01T10:01:00Z").getTime()),
     ]);
     const result = enrichGroupPrompt("current message", "chat-x", 10);
-    expect(result).toContain("Alice's recent messages in this group:");
-    expect(result).toContain("prior message");
-    expect(result).toContain("current message"); // original prompt preserved
-    // Structure: context block then blank line then prompt
-    expect(result).toMatch(/\]\n\ncurrent message$/);
+    expect(result).toContain("Recent group thread:");
+    expect(result).toContain("Alice: alice said hi");
+    expect(result).toContain("Bot: bot replied");
+    expect(result).toContain("current message"); // original prompt
   });
 
-  // ── senderName from priorMsgs[0], not the current message ───────────────
+  it("calls getRecentHistory with chatId and limit 10", () => {
+    vi.mocked(getRecentHistory).mockReturnValue([]);
+    enrichGroupPrompt("hi", "specific-chat", 99);
+    expect(getRecentHistory).toHaveBeenCalledWith("specific-chat", 10);
+  });
 
-  it("uses the senderName from the first prior message (priorMsgs[0])", () => {
-    vi.mocked(getRecentBySenderId).mockReturnValue([
-      msg(1, 20, "FirstSender", "msg a", Date.now() - 5000),
-      msg(2, 20, "SecondSender", "msg b", Date.now() - 3000), // prior[1]
-      msg(3, 20, "ThirdSender", "current msg", Date.now()),   // current (slice off)
+  it("returns raw prompt when only 1 message in history", () => {
+    vi.mocked(getRecentHistory).mockReturnValue([
+      msg(1, 10, "Solo", "only message", Date.now()),
     ]);
-    const result = enrichGroupPrompt("current msg", "chat-y", 20);
-    // senderName header should be from index 0 of priorMsgs
-    expect(result).toContain("FirstSender's recent messages in this group:");
+    const result = enrichGroupPrompt("only message", "chat-solo", 10);
+    expect(result).toBe("only message");
   });
 
-  // ── 6 messages: 5 prior + 1 current ─────────────────────────────────────
-
-  it("includes all 5 prior messages when 6 total are returned", () => {
-    const now = Date.now();
-    vi.mocked(getRecentBySenderId).mockReturnValue([
-      msg(1, 30, "Dave", "msg 1", now - 50000),
-      msg(2, 30, "Dave", "msg 2", now - 40000),
-      msg(3, 30, "Dave", "msg 3", now - 30000),
-      msg(4, 30, "Dave", "msg 4", now - 20000),
-      msg(5, 30, "Dave", "msg 5", now - 10000),
-      msg(6, 30, "Dave", "current", now),
-    ]);
-    const result = enrichGroupPrompt("current", "chat-z", 30);
-    expect(result).toContain("Dave's recent messages in this group:");
-    for (let i = 1; i <= 5; i++) {
-      expect(result).toContain(`msg ${i}`);
-    }
-    expect(result).toContain("current"); // original prompt
-    // The current message's text should NOT appear inside the context block
-    const contextBlock = result.split("]\n\n")[0];
-    expect(contextBlock).not.toContain("current");
-  });
-
-  // ── text truncation at exactly 200 chars ─────────────────────────────────
-
-  it("truncates messages at exactly 200 characters (slice boundary)", () => {
-    const exactly200 = "a".repeat(200);
+  it("truncates messages at 200 characters", () => {
     const longText = "a".repeat(250);
-    vi.mocked(getRecentBySenderId).mockReturnValue([
+    vi.mocked(getRecentHistory).mockReturnValue([
       msg(1, 40, "Eve", longText, Date.now() - 2000),
       msg(2, 40, "Eve", "current", Date.now()),
     ]);
     const result = enrichGroupPrompt("current", "chat-trunc", 40);
-    expect(result).toContain(exactly200);
+    expect(result).toContain("a".repeat(200));
     expect(result).not.toContain("a".repeat(201));
   });
 
-  it("short messages (< 200 chars) are not truncated or padded", () => {
-    const shortText = "short message";
-    vi.mocked(getRecentBySenderId).mockReturnValue([
-      msg(1, 41, "Frank", shortText, Date.now() - 1000),
-      msg(2, 41, "Frank", "current", Date.now()),
-    ]);
-    const result = enrichGroupPrompt("current", "chat-short", 41);
-    expect(result).toContain(shortText);
-    // The full text appears — no additional characters appended to the message body.
-    // Note: the outer context bracket `]` is appended after the last context line
-    // in the format `[header:\n  lines]`, so we check containment, not endsWith.
-    const lines = result.split("\n");
-    const priorLine = lines.find((l) => l.includes(shortText));
-    expect(priorLine).toBeDefined();
-    // Line format: `  [timestamp] short message` optionally followed by `]` (closing bracket)
-    // Verify the message text appears after the timestamp bracket and is not padded
-    expect(priorLine).toMatch(new RegExp(`\\] ${shortText}\\]?$`));
-  });
-
-  // ── getRecentBySenderId called with correct args ──────────────────────────
-
-  it("calls getRecentBySenderId with the provided chatId and senderId", () => {
-    vi.mocked(getRecentBySenderId).mockReturnValue([]);
-    enrichGroupPrompt("hi", "specific-chat-id", 99);
-    expect(getRecentBySenderId).toHaveBeenCalledWith("specific-chat-id", 99, 5);
-  });
-
-  it("requests exactly 5 recent messages from history", () => {
-    vi.mocked(getRecentBySenderId).mockReturnValue([]);
-    enrichGroupPrompt("hi", "chat-count", 55);
-    const [, , limit] = vi.mocked(getRecentBySenderId).mock.calls[0];
-    expect(limit).toBe(5);
-  });
-
-  // ── output structure ──────────────────────────────────────────────────────
-
-  it("context block is wrapped with [ ... ] and separated from prompt by blank line", () => {
-    vi.mocked(getRecentBySenderId).mockReturnValue([
+  it("context block structure: [Recent group thread: ...] then blank line then prompt", () => {
+    vi.mocked(getRecentHistory).mockReturnValue([
       msg(1, 50, "Gina", "past msg", Date.now() - 3000),
       msg(2, 50, "Gina", "now", Date.now()),
     ]);
     const result = enrichGroupPrompt("now", "chat-struct", 50);
-    // Should start with '[' (the context header)
-    expect(result.startsWith("[")).toBe(true);
-    // Blank line (\n\n) separates context block from the original prompt
+    expect(result.startsWith("[Recent group thread:")).toBe(true);
     expect(result).toContain("]\n\nnow");
   });
 
-  it("each prior message line is indented with two spaces", () => {
-    vi.mocked(getRecentBySenderId).mockReturnValue([
+  it("each prior message line is indented and includes sender name", () => {
+    vi.mocked(getRecentHistory).mockReturnValue([
       msg(1, 60, "Hank", "indented message", Date.now() - 5000),
       msg(2, 60, "Hank", "current", Date.now()),
     ]);
     const result = enrichGroupPrompt("current", "chat-indent", 60);
-    // The format is `  [timestamp] message text`
     const lines = result.split("\n");
     const priorLine = lines.find((l) => l.includes("indented message"));
     expect(priorLine).toBeDefined();
     expect(priorLine!.startsWith("  [")).toBe(true);
+    expect(priorLine).toContain("Hank:");
   });
 
-  // ── timestamp is formatted and embedded ──────────────────────────────────
-
   it("includes a formatted timestamp in each prior message line", () => {
-    const ts = new Date("2020-03-15T12:34:00Z").getTime(); // past year → full date format
-    vi.mocked(getRecentBySenderId).mockReturnValue([
+    const ts = new Date("2020-03-15T12:34:00Z").getTime();
+    vi.mocked(getRecentHistory).mockReturnValue([
       msg(1, 70, "Iris", "timestamped msg", ts),
       msg(2, 70, "Iris", "current", Date.now()),
     ]);
     const result = enrichGroupPrompt("current", "chat-ts", 70);
-    // The context block line should contain a bracket-wrapped timestamp
     const lines = result.split("\n");
     const priorLine = lines.find((l) => l.includes("timestamped msg"));
     expect(priorLine).toBeDefined();

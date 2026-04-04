@@ -3,7 +3,7 @@
  * Platform-agnostic; works with any messaging frontend.
  */
 
-import { getRecentBySenderId } from "../storage/history.js";
+import { getRecentBySenderId, getRecentHistory } from "../storage/history.js";
 import { getUserProfile } from "../storage/learning.js";
 import { getActiveGoals } from "../storage/goals.js";
 import { getChatProfile } from "../storage/relationships.js";
@@ -17,24 +17,9 @@ export function enrichDMPrompt(
   senderName: string,
   senderId: number,
   senderUsername?: string,
-  chatId?: string,
 ): string {
   const userTag = senderUsername ? ` (@${senderUsername})` : "";
   let enriched = `[DM from ${senderName}${userTag}]\n${prompt}`;
-
-  // Include recent conversation thread so Claude doesn't lose context
-  if (chatId) {
-    try {
-      const recent = getRecentBySenderId(chatId, senderId, 5);
-      if (recent.length > 1) {
-        const prior = recent.slice(0, -1); // exclude the current message
-        const contextLines = prior
-          .map((m) => `  [${formatSmartTimestamp(m.timestamp)}] ${m.senderName}: ${m.text.slice(0, 150)}`)
-          .join("\n");
-        enriched = `[Recent thread:\n${contextLines}]\n\n${enriched}`;
-      }
-    } catch { /* history not available */ }
-  }
 
   // Add learned context about this user
   try {
@@ -76,20 +61,22 @@ export function enrichGroupPrompt(
   chatId: string,
   senderId: number,
 ): string {
-  const recentMsgs = getRecentBySenderId(chatId, senderId, 5);
+  // Include recent messages from ALL participants (not just the sender) so
+  // Claude sees the full conversation thread and doesn't lose context.
+  const recentAll = getRecentHistory(chatId, 10);
   let enriched: string;
-  if (recentMsgs.length <= 1) {
+  if (recentAll.length <= 1) {
     enriched = prompt;
   } else {
-    const priorMsgs = recentMsgs.slice(0, -1);
-    const senderName = priorMsgs[0].senderName;
-    const contextLines = priorMsgs
+    // Exclude the current message (last in the list)
+    const prior = recentAll.slice(0, -1).slice(-8); // last 8 messages before current
+    const contextLines = prior
       .map(
         (m) =>
-          `  [${formatSmartTimestamp(m.timestamp)}] ${m.text.slice(0, 200)}`,
+          `  [${formatSmartTimestamp(m.timestamp)}] ${m.senderName}: ${m.text.slice(0, 200)}`,
       )
       .join("\n");
-    enriched = `[${senderName}'s recent messages in this group:\n${contextLines}]\n\n${prompt}`;
+    enriched = `[Recent group thread:\n${contextLines}]\n\n${prompt}`;
   }
 
   // Add learned context about the sender
