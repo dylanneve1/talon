@@ -77,4 +77,11 @@ export const files = {
   pid: resolve(TALON_ROOT, "talon.pid"),
   /** Dream mode state: ~/.talon/workspace/memory/dream_state.json */
   dreamState: resolve(TALON_ROOT, "workspace", "memory", "dream_state.json"),
+  /** Heartbeat state: ~/.talon/workspace/memory/heartbeat_state.json */
+  heartbeatState: resolve(
+    TALON_ROOT,
+    "workspace",
+    "memory",
+    "heartbeat_state.json",
+  ),
 } as const;

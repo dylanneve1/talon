@@ -21,6 +21,7 @@ import { initDispatcher } from "./core/dispatcher.js";
 import { initPulse, resetPulseTimer } from "./core/pulse.js";
 import { initCron } from "./core/cron.js";
 import { initDream } from "./core/dream.js";
+import { initHeartbeat } from "./core/heartbeat.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
 import type { QueryBackend, ContextManager } from "./core/types.js";
@@ -121,6 +122,12 @@ export async function initBackendAndDispatcher(
   initDream({
     model: config.model,
     dreamModel: config.dreamModel,
+    claudeBinary: config.claudeBinary,
+    workspace: config.workspace,
+  });
+  initHeartbeat({
+    model: config.model,
+    heartbeatModel: config.heartbeatModel,
     claudeBinary: config.claudeBinary,
     workspace: config.workspace,
   });
