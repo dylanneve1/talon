@@ -42,6 +42,8 @@ export const dirs = {
   logs: resolve(TALON_ROOT, "workspace", "logs"),
   /** Memory: ~/.talon/workspace/memory/ */
   memory: resolve(TALON_ROOT, "workspace", "memory"),
+  /** Daily memory notes: ~/.talon/workspace/memory/daily/ */
+  dailyMemory: resolve(TALON_ROOT, "workspace", "memory", "daily"),
   /** Sticker packs: ~/.talon/workspace/stickers/ */
   stickers: resolve(TALON_ROOT, "workspace", "stickers"),
   /** Prompt files: ~/.talon/prompts/ */

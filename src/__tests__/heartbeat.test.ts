@@ -61,6 +61,7 @@ vi.mock("../util/paths.js", () => ({
     workspace: "/fake/.talon/workspace",
     data: "/fake/.talon/data",
     memory: "/fake/.talon/workspace/memory",
+    dailyMemory: "/fake/.talon/workspace/memory/daily",
     prompts: "/fake/.talon/prompts",
   },
 }));

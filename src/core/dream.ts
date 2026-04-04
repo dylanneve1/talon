@@ -141,7 +141,8 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
       .replace(/\{\{dreamStateFile\}\}/g, dreamStateFile)
       .replace(/\{\{logsDir\}\}/g, logsDir)
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
-      .replace(/\{\{memoryFile\}\}/g, memoryFile);
+      .replace(/\{\{memoryFile\}\}/g, memoryFile)
+      .replace(/\{\{dailyMemoryDir\}\}/g, dirs.dailyMemory);
   } catch {
     throw new Error(`Failed to read dream prompt from ${promptPath}`);
   }

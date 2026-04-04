@@ -117,4 +117,30 @@ export function cleanupOldLogs(): void {
   } catch {
     /* skip */
   }
+
+  // Also clean up old daily memory files
+  try {
+    const dailyMemDir = dirs.dailyMemory;
+    if (!existsSync(dailyMemDir)) return;
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - MAX_LOG_DAYS);
+    const cutoffMem = cutoffDate.toISOString().slice(0, 10);
+
+    let deletedMem = 0;
+    for (const file of readdirSync(dailyMemDir)) {
+      if (file.endsWith(".md") && file < cutoffMem) {
+        try {
+          unlinkSync(resolve(dailyMemDir, file));
+          deletedMem++;
+        } catch {
+          /* skip */
+        }
+      }
+    }
+    if (deletedMem > 0) {
+      logInfo("workspace", `Cleaned up ${deletedMem} old daily memory file(s)`);
+    }
+  } catch {
+    /* skip */
+  }
 }

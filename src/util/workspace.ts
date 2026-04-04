@@ -134,6 +134,7 @@ export function initWorkspace(root: string): void {
   // Ensure subdirectories exist
   for (const sub of [
     dirs.memory,
+    dirs.dailyMemory,
     dirs.uploads,
     dirs.logs,
     dirs.stickers,

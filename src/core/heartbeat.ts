@@ -240,6 +240,10 @@ async function runHeartbeatAgent(
   const memoryFile = pathFiles.memory;
   const workspace = configRef.workspace ?? dirs.workspace;
   const instructionsFile = resolve(workspace, "heartbeat-instructions.md");
+  const dailyMemoryFile = resolve(
+    dirs.dailyMemory,
+    `${new Date().toISOString().slice(0, 10)}.md`,
+  );
 
   // Load prompt template from the prompts directory (seeded to ~/.talon/prompts/)
   const promptPath = resolve(dirs.prompts, "heartbeat.md");
@@ -252,6 +256,7 @@ async function runHeartbeatAgent(
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
       .replace(/\{\{memoryFile\}\}/g, memoryFile)
       .replace(/\{\{instructionsFile\}\}/g, instructionsFile)
+      .replace(/\{\{dailyMemoryFile\}\}/g, dailyMemoryFile)
       .replace(/\{\{runCount\}\}/g, String(runCount))
       .replace(/\{\{intervalMinutes\}\}/g, String(intervalMinutesRef));
   } catch {
