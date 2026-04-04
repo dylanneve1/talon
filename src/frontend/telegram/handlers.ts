@@ -543,7 +543,7 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
     // Enrich prompt with sender context
     let enrichedPrompt = prompt;
     if (!isGroup && senderName) {
-      enrichedPrompt = enrichDMPrompt(prompt, senderName, senderId ?? 0, senderUsername);
+      enrichedPrompt = enrichDMPrompt(prompt, senderName, senderId ?? 0, senderUsername, String(chatId));
       if (senderId) trackDmUser(senderId, senderName, senderUsername);
     } else if (isGroup && senderId) {
       enrichedPrompt = enrichGroupPrompt(prompt, String(chatId), senderId);

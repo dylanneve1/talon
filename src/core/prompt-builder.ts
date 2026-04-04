@@ -17,9 +17,24 @@ export function enrichDMPrompt(
   senderName: string,
   senderId: number,
   senderUsername?: string,
+  chatId?: string,
 ): string {
   const userTag = senderUsername ? ` (@${senderUsername})` : "";
   let enriched = `[DM from ${senderName}${userTag}]\n${prompt}`;
+
+  // Include recent conversation thread so Claude doesn't lose context
+  if (chatId) {
+    try {
+      const recent = getRecentBySenderId(chatId, senderId, 5);
+      if (recent.length > 1) {
+        const prior = recent.slice(0, -1); // exclude the current message
+        const contextLines = prior
+          .map((m) => `  [${formatSmartTimestamp(m.timestamp)}] ${m.senderName}: ${m.text.slice(0, 150)}`)
+          .join("\n");
+        enriched = `[Recent thread:\n${contextLines}]\n\n${enriched}`;
+      }
+    } catch { /* history not available */ }
+  }
 
   // Add learned context about this user
   try {
