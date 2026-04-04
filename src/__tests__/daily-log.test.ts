@@ -196,6 +196,33 @@ describe("daily-log", () => {
       expect(() => cleanupOldLogs()).not.toThrow();
     });
 
+    it("ignores non-YYYY-MM-DD.md files in daily memory dir", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+      mkdirSync(DAILY_MEM_DIR, { recursive: true });
+
+      // A file that would sort before the cutoff but doesn't match the pattern
+      writeFileSync(join(DAILY_MEM_DIR, "2020-summary.md"), "should survive");
+      writeFileSync(join(DAILY_MEM_DIR, "notes.md"), "also should survive");
+
+      cleanupOldLogs();
+
+      const remaining = readdirSync(DAILY_MEM_DIR);
+      expect(remaining).toContain("2020-summary.md");
+      expect(remaining).toContain("notes.md");
+    });
+
+    it("ignores non-YYYY-MM-DD.md files in logs dir", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+
+      writeFileSync(join(LOGS_DIR, "2020-summary.md"), "should survive");
+
+      cleanupOldLogs();
+
+      expect(readdirSync(LOGS_DIR)).toContain("2020-summary.md");
+    });
+
     it("does not delete recent daily memory files", async () => {
       const { cleanupOldLogs } = await import("../storage/daily-log.js");
       mkdirSync(LOGS_DIR, { recursive: true });

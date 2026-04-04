@@ -91,6 +91,9 @@ export function getLogsDir(): string {
   return LOGS_DIR;
 }
 
+/** Matches YYYY-MM-DD.md filenames strictly. */
+const DAILY_FILE_RE = /^\d{4}-\d{2}-\d{2}\.md$/;
+
 /** Remove daily logs older than MAX_LOG_DAYS. Called on startup. */
 export function cleanupOldLogs(): void {
   try {
@@ -101,8 +104,7 @@ export function cleanupOldLogs(): void {
 
     let deleted = 0;
     for (const file of readdirSync(LOGS_DIR)) {
-      // Log files are named YYYY-MM-DD.md
-      if (file.endsWith(".md") && file < cutoffStr) {
+      if (DAILY_FILE_RE.test(file) && file < cutoffStr) {
         try {
           unlinkSync(resolve(LOGS_DIR, file));
           deleted++;
@@ -128,7 +130,7 @@ export function cleanupOldLogs(): void {
 
     let deletedMem = 0;
     for (const file of readdirSync(dailyMemDir)) {
-      if (file.endsWith(".md") && file < cutoffMem) {
+      if (DAILY_FILE_RE.test(file) && file < cutoffMem) {
         try {
           unlinkSync(resolve(dailyMemDir, file));
           deletedMem++;
