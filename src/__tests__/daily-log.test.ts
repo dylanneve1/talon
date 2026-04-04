@@ -156,6 +156,62 @@ describe("daily-log", () => {
     });
   });
 
+  describe("cleanupOldLogs — daily memory files", () => {
+    const DAILY_MEM_DIR = join(
+      TEST_ROOT,
+      ".talon",
+      "workspace",
+      "memory",
+      "daily",
+    );
+
+    it("deletes daily memory files older than 30 days", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+      mkdirSync(DAILY_MEM_DIR, { recursive: true });
+
+      // Create an old daily memory file (40 days ago)
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 40);
+      const oldName = oldDate.toISOString().slice(0, 10) + ".md";
+      writeFileSync(join(DAILY_MEM_DIR, oldName), "old daily memory");
+
+      // Create a recent daily memory file (5 days ago)
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 5);
+      const recentName = recentDate.toISOString().slice(0, 10) + ".md";
+      writeFileSync(join(DAILY_MEM_DIR, recentName), "recent daily memory");
+
+      cleanupOldLogs();
+
+      const remaining = readdirSync(DAILY_MEM_DIR);
+      expect(remaining).not.toContain(oldName);
+      expect(remaining).toContain(recentName);
+    });
+
+    it("handles missing daily memory directory gracefully", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      // Create logs dir but NOT the daily memory dir
+      mkdirSync(LOGS_DIR, { recursive: true });
+      expect(() => cleanupOldLogs()).not.toThrow();
+    });
+
+    it("does not delete recent daily memory files", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+      mkdirSync(DAILY_MEM_DIR, { recursive: true });
+
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 3);
+      const recentName = recentDate.toISOString().slice(0, 10) + ".md";
+      writeFileSync(join(DAILY_MEM_DIR, recentName), "keep me");
+
+      cleanupOldLogs();
+
+      expect(readdirSync(DAILY_MEM_DIR)).toContain(recentName);
+    });
+  });
+
   describe("appendDailyLogResponse", () => {
     it("writes bot response with chat title context", async () => {
       const { appendDailyLogResponse, getLogsDir } =
