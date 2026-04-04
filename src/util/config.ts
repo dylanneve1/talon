@@ -175,7 +175,8 @@ function loadSystemPrompt(
     let content = readOptionalFile(resolve(dailyMemoryDir, `${dateStr}.md`));
     if (content) {
       if (content.length > DAILY_MEMORY_MAX_BYTES) {
-        content = content.slice(0, DAILY_MEMORY_MAX_BYTES) + "\n\n... (truncated)";
+        content =
+          content.slice(0, DAILY_MEMORY_MAX_BYTES) + "\n\n... (truncated)";
       }
       dailyParts.push(content);
     }
