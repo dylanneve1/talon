@@ -303,16 +303,12 @@ describe("getHeartbeatStatus", () => {
     expect(getHeartbeatStatus()).toBeNull();
   });
 
-  it("returns null when last_run is NaN", () => {
+  it("returns null when last_run is non-finite", () => {
     existsSyncMock.mockReturnValue(true);
+    // 1e309 parses to Infinity, which is typeof number but not finite
     readFileSyncMock.mockReturnValue(
-      JSON.stringify({
-        last_run: NaN,
-        status: "idle",
-        run_count: 0,
-      }),
+      '{"last_run":1e309,"status":"idle","run_count":0}',
     );
-    // NaN is typeof number but not finite
     expect(getHeartbeatStatus()).toBeNull();
   });
 });
