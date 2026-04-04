@@ -119,11 +119,23 @@ export function stopHeartbeatTimer(): void {
  * Wait for any in-flight heartbeat run to complete.
  * Call after stopHeartbeatTimer() during graceful shutdown.
  */
-export async function awaitCurrentRun(): Promise<void> {
+export async function awaitCurrentRun(timeoutMs = 10_000): Promise<void> {
   if (currentRunPromise) {
     log("heartbeat", "Waiting for in-flight heartbeat to complete...");
     try {
-      await currentRunPromise;
+      await Promise.race([
+        currentRunPromise,
+        new Promise<void>((resolve) => {
+          const t = setTimeout(() => {
+            logWarn(
+              "heartbeat",
+              "In-flight heartbeat did not finish within shutdown budget, proceeding",
+            );
+            resolve();
+          }, timeoutMs);
+          t.unref();
+        }),
+      ]);
     } catch {
       // Already logged in executeHeartbeat
     }

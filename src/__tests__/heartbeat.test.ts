@@ -123,6 +123,13 @@ describe("forceHeartbeat", () => {
   beforeEach(() => {
     initHeartbeat({ model: "claude-sonnet-4-6" });
     existsSyncMock.mockReturnValue(false);
+    readFileSyncMock.mockReset();
+    readFileSyncMock.mockImplementation((filePath: string) => {
+      const p = String(filePath).replace(/\\/g, "/");
+      if (p.endsWith("/prompts/heartbeat.md"))
+        return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
+      return "null";
+    });
     writeAtomicSyncMock.mockClear();
     queryMock.mockClear();
   });
@@ -293,6 +300,13 @@ describe("awaitCurrentRun", () => {
   beforeEach(() => {
     initHeartbeat({ model: "claude-sonnet-4-6" });
     existsSyncMock.mockReturnValue(false);
+    readFileSyncMock.mockReset();
+    readFileSyncMock.mockImplementation((filePath: string) => {
+      const p = String(filePath).replace(/\\/g, "/");
+      if (p.endsWith("/prompts/heartbeat.md"))
+        return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
+      return "null";
+    });
     writeAtomicSyncMock.mockClear();
   });
 
