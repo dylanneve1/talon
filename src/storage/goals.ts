@@ -129,7 +129,7 @@ export function updateGoal(
   id: string,
   updates: Partial<Pick<Goal, "title" | "description" | "priority" | "progress" | "status" | "tags" | "relatedChats" | "relatedUsers">>,
 ): Goal | null {
-  const goal = store.goals.find((g) => g.id === id);
+  const goal = findGoalById(id);
   if (!goal) return null;
 
   if (updates.title !== undefined) goal.title = updates.title;
@@ -148,7 +148,7 @@ export function updateGoal(
 }
 
 export function completeGoal(id: string): Goal | null {
-  const goal = store.goals.find((g) => g.id === id);
+  const goal = findGoalById(id);
   if (!goal) return null;
 
   goal.status = "completed";
@@ -171,7 +171,7 @@ export function completeGoal(id: string): Goal | null {
 }
 
 export function abandonGoal(id: string): Goal | null {
-  const goal = store.goals.find((g) => g.id === id);
+  const goal = findGoalById(id);
   if (!goal) return null;
 
   goal.status = "abandoned";
@@ -184,7 +184,7 @@ export function abandonGoal(id: string): Goal | null {
 }
 
 export function pauseGoal(id: string): Goal | null {
-  const goal = store.goals.find((g) => g.id === id);
+  const goal = findGoalById(id);
   if (!goal) return null;
 
   goal.status = "paused";
@@ -197,7 +197,7 @@ export function pauseGoal(id: string): Goal | null {
 }
 
 export function completeStep(goalId: string, stepIndex: number): Goal | null {
-  const goal = store.goals.find((g) => g.id === goalId);
+  const goal = findGoalById(goalId);
   if (!goal) return null;
   if (stepIndex < 0 || stepIndex >= goal.steps.length) return null;
 
@@ -216,12 +216,29 @@ export function completeStep(goalId: string, stepIndex: number): Goal | null {
   return goal;
 }
 
+/**
+ * Find a goal by exact ID or prefix match (first 8+ chars of UUID).
+ * This is needed because Claude often truncates UUIDs.
+ */
+function findGoalById(id: string): Goal | null {
+  // Exact match first
+  const exact = store.goals.find((g) => g.id === id);
+  if (exact) return exact;
+  // Prefix match (at least 4 chars to avoid ambiguity)
+  if (id.length >= 4) {
+    const prefix = id.toLowerCase();
+    const matches = store.goals.filter((g) => g.id.toLowerCase().startsWith(prefix));
+    if (matches.length === 1) return matches[0];
+  }
+  return null;
+}
+
 export function getActiveGoals(): Goal[] {
   return store.goals.filter((g) => g.status === "active");
 }
 
 export function getGoalById(id: string): Goal | null {
-  return store.goals.find((g) => g.id === id) ?? null;
+  return findGoalById(id);
 }
 
 export function getGoalsByStatus(status: Goal["status"] | "all"): Goal[] {
