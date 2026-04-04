@@ -74,7 +74,10 @@ export function startHeartbeatTimer(intervalMinutes: number): void {
 
   intervalMinutesRef = intervalMinutes;
   const intervalMs = intervalMinutes * 60 * 1000;
-  log("heartbeat", `Starting heartbeat timer (every ${intervalMinutes}min, first run in 5min)`);
+  log(
+    "heartbeat",
+    `Starting heartbeat timer (every ${intervalMinutes}min, first run in 5min)`,
+  );
 
   startupTimer = setTimeout(() => {
     startupTimer = null;
@@ -130,19 +133,37 @@ async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
   const runCount = (state?.run_count ?? 0) + 1;
 
   running = true;
-  writeHeartbeatState({ last_run: now, status: "running", run_count: runCount });
+  writeHeartbeatState({
+    last_run: now,
+    status: "running",
+    run_count: runCount,
+  });
   log(
     "heartbeat",
     `${trigger === "forced" ? "Force-triggering" : "Triggering"} heartbeat #${runCount} (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`,
   );
 
   try {
-    const heartbeatLogPath = await runHeartbeatAgent(state?.last_run ?? 0, runCount);
-    writeHeartbeatState({ last_run: Date.now(), status: "idle", run_count: runCount });
-    log("heartbeat", `Heartbeat #${runCount} complete (${trigger}), log: ${heartbeatLogPath}`);
+    const heartbeatLogPath = await runHeartbeatAgent(
+      state?.last_run ?? 0,
+      runCount,
+    );
+    writeHeartbeatState({
+      last_run: Date.now(),
+      status: "idle",
+      run_count: runCount,
+    });
+    log(
+      "heartbeat",
+      `Heartbeat #${runCount} complete (${trigger}), log: ${heartbeatLogPath}`,
+    );
   } catch (err) {
     logError("heartbeat", `Heartbeat #${runCount} failed (${trigger})`, err);
-    writeHeartbeatState({ last_run: Date.now(), status: "idle", run_count: runCount });
+    writeHeartbeatState({
+      last_run: Date.now(),
+      status: "idle",
+      run_count: runCount,
+    });
     if (trigger === "forced") throw err;
   } finally {
     running = false;
@@ -151,16 +172,17 @@ async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
 
 // ── Heartbeat agent ─────────────────────────────────────────────────────────
 
-async function runHeartbeatAgent(lastRunTimestamp: number, runCount: number): Promise<string> {
+async function runHeartbeatAgent(
+  lastRunTimestamp: number,
+  runCount: number,
+): Promise<string> {
   if (!configRef) {
     logWarn("heartbeat", "Heartbeat agent not initialized — skipping");
     return "";
   }
 
   const lastRunIso =
-    lastRunTimestamp > 0
-      ? new Date(lastRunTimestamp).toISOString()
-      : "never";
+    lastRunTimestamp > 0 ? new Date(lastRunTimestamp).toISOString() : "never";
 
   const logsDir = dirs.logs;
   const memoryFile = pathFiles.memory;
@@ -184,13 +206,23 @@ async function runHeartbeatAgent(lastRunTimestamp: number, runCount: number): Pr
     throw new Error(`Failed to read heartbeat prompt from ${promptPath}`);
   }
 
-  const model = configRef.heartbeatModel ?? configRef.model ?? "claude-sonnet-4-6";
+  const model =
+    configRef.heartbeatModel ?? configRef.model ?? "claude-sonnet-4-6";
 
   // Set up heartbeat log file
   const heartbeatLogFile = createHeartbeatLogFile();
-  appendHeartbeatLog(heartbeatLogFile, `# Heartbeat Run #${runCount} — ${new Date().toISOString()}\n`);
-  appendHeartbeatLog(heartbeatLogFile, `**Trigger:** ${lastRunIso === "never" ? "first run" : `last_run=${lastRunIso}`}, model=${model}\n`);
-  appendHeartbeatLog(heartbeatLogFile, `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`);
+  appendHeartbeatLog(
+    heartbeatLogFile,
+    `# Heartbeat Run #${runCount} — ${new Date().toISOString()}\n`,
+  );
+  appendHeartbeatLog(
+    heartbeatLogFile,
+    `**Trigger:** ${lastRunIso === "never" ? "first run" : `last_run=${lastRunIso}`}, model=${model}\n`,
+  );
+  appendHeartbeatLog(
+    heartbeatLogFile,
+    `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
+  );
 
   const options = {
     model,
@@ -292,7 +324,10 @@ function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
           });
 
         if (textBlocks.length > 0) {
-          appendHeartbeatLog(logFile, `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`);
+          appendHeartbeatLog(
+            logFile,
+            `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`,
+          );
         }
         if (toolUseBlocks.length > 0) {
           appendHeartbeatLog(logFile, `\n${toolUseBlocks.join("\n\n")}\n`);
@@ -308,7 +343,10 @@ function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
           result.length > 2000
             ? result.slice(0, 2000) + "\n... (truncated)"
             : result;
-        appendHeartbeatLog(logFile, `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`);
+        appendHeartbeatLog(
+          logFile,
+          `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`,
+        );
         break;
       }
       case "system": {
@@ -323,7 +361,10 @@ function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
               : JSON.stringify(msg.tool_use_result, null, 2);
           const truncated =
             raw.length > 2000 ? raw.slice(0, 2000) + "\n... (truncated)" : raw;
-          appendHeartbeatLog(logFile, `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`);
+          appendHeartbeatLog(
+            logFile,
+            `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`,
+          );
         }
         break;
       }
