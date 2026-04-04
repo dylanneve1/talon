@@ -20,13 +20,15 @@ import { log, logError, logWarn } from "../util/log.js";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type HeartbeatState = {
-  /** Unix millisecond timestamp of the last completed heartbeat run. */
+  /** Unix millisecond timestamp of the last successfully completed heartbeat run. */
   last_run: number;
-  /** Human-readable ISO timestamp of the last completed heartbeat run. */
+  /** Human-readable ISO timestamp of the last successfully completed heartbeat run. */
   last_run_at?: string;
+  /** Unix millisecond timestamp of the last time a heartbeat was started (success or failure). */
+  last_started?: number;
   /** "idle" when no heartbeat is running, "running" while one is active. */
   status: "idle" | "running";
-  /** Total number of completed heartbeat runs. */
+  /** Total number of successfully completed heartbeat runs. */
   run_count: number;
 };
 
@@ -41,6 +43,7 @@ const INSTRUCTIONS_FILE = resolve(dirs.workspace, "heartbeat-instructions.md");
 // ── State ────────────────────────────────────────────────────────────────────
 
 let running = false; // in-process guard (one heartbeat at a time)
+let currentRunPromise: Promise<void> | null = null; // tracks in-flight run for graceful shutdown
 let timer: ReturnType<typeof setInterval> | null = null;
 let startupTimer: ReturnType<typeof setTimeout> | null = null;
 let intervalMinutesRef = 60; // stored from startHeartbeatTimer
@@ -70,7 +73,7 @@ export function initHeartbeat(cfg: {
  * then repeats at the configured interval.
  */
 export function startHeartbeatTimer(intervalMinutes: number): void {
-  if (timer) return; // already running
+  if (timer || startupTimer) return; // already running or scheduled to start
 
   intervalMinutesRef = intervalMinutes;
   const intervalMs = intervalMinutes * 60 * 1000;
@@ -92,7 +95,8 @@ export function startHeartbeatTimer(intervalMinutes: number): void {
 }
 
 /**
- * Stop the heartbeat timer.
+ * Stop the heartbeat timer. Does not wait for in-flight runs.
+ * Use awaitCurrentRun() after this to wait for a running heartbeat to finish.
  */
 export function stopHeartbeatTimer(): void {
   if (startupTimer) {
@@ -103,6 +107,21 @@ export function stopHeartbeatTimer(): void {
     clearInterval(timer);
     timer = null;
     log("heartbeat", "Heartbeat timer stopped");
+  }
+}
+
+/**
+ * Wait for any in-flight heartbeat run to complete.
+ * Call after stopHeartbeatTimer() during graceful shutdown.
+ */
+export async function awaitCurrentRun(): Promise<void> {
+  if (currentRunPromise) {
+    log("heartbeat", "Waiting for in-flight heartbeat to complete...");
+    try {
+      await currentRunPromise;
+    } catch {
+      // Already logged in executeHeartbeat
+    }
   }
 }
 
@@ -130,44 +149,61 @@ async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
 
   const state = readHeartbeatState();
   const now = Date.now();
-  const runCount = (state?.run_count ?? 0) + 1;
+  const previousRunCount = state?.run_count ?? 0;
+  const previousLastRun = state?.last_run ?? 0;
 
   running = true;
+  // Mark as running with last_started, but preserve last_run from previous successful run
   writeHeartbeatState({
-    last_run: now,
+    last_run: previousLastRun,
+    last_started: now,
     status: "running",
-    run_count: runCount,
+    run_count: previousRunCount,
   });
   log(
     "heartbeat",
-    `${trigger === "forced" ? "Force-triggering" : "Triggering"} heartbeat #${runCount} (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`,
+    `${trigger === "forced" ? "Force-triggering" : "Triggering"} heartbeat #${previousRunCount + 1} (last run: ${previousLastRun ? new Date(previousLastRun).toISOString() : "never"})`,
   );
 
-  try {
-    const heartbeatLogPath = await runHeartbeatAgent(
-      state?.last_run ?? 0,
-      runCount,
-    );
-    writeHeartbeatState({
-      last_run: Date.now(),
-      status: "idle",
-      run_count: runCount,
-    });
-    log(
-      "heartbeat",
-      `Heartbeat #${runCount} complete (${trigger}), log: ${heartbeatLogPath}`,
-    );
-  } catch (err) {
-    logError("heartbeat", `Heartbeat #${runCount} failed (${trigger})`, err);
-    writeHeartbeatState({
-      last_run: Date.now(),
-      status: "idle",
-      run_count: runCount,
-    });
-    if (trigger === "forced") throw err;
-  } finally {
-    running = false;
-  }
+  const run = (async () => {
+    try {
+      const heartbeatLogPath = await runHeartbeatAgent(
+        previousLastRun,
+        previousRunCount + 1,
+      );
+      // Only update last_run and increment run_count on success
+      writeHeartbeatState({
+        last_run: Date.now(),
+        last_started: now,
+        status: "idle",
+        run_count: previousRunCount + 1,
+      });
+      log(
+        "heartbeat",
+        `Heartbeat #${previousRunCount + 1} complete (${trigger}), log: ${heartbeatLogPath}`,
+      );
+    } catch (err) {
+      logError(
+        "heartbeat",
+        `Heartbeat #${previousRunCount + 1} failed (${trigger})`,
+        err,
+      );
+      // On failure, revert to idle but keep previous last_run and run_count
+      writeHeartbeatState({
+        last_run: previousLastRun,
+        last_started: now,
+        status: "idle",
+        run_count: previousRunCount,
+      });
+      if (trigger === "forced") throw err;
+    } finally {
+      running = false;
+      currentRunPromise = null;
+    }
+  })();
+
+  currentRunPromise = run;
+  await run;
 }
 
 // ── Heartbeat agent ─────────────────────────────────────────────────────────

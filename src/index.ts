@@ -15,7 +15,11 @@ import { flushHistory } from "./storage/history.js";
 import { flushMediaIndex } from "./storage/media-index.js";
 import { getActiveCount } from "./core/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/pulse.js";
-import { startHeartbeatTimer, stopHeartbeatTimer } from "./core/heartbeat.js";
+import {
+  startHeartbeatTimer,
+  stopHeartbeatTimer,
+  awaitCurrentRun as awaitHeartbeat,
+} from "./core/heartbeat.js";
 import { startCronTimer, stopCronTimer } from "./core/cron.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
@@ -99,6 +103,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }
   stopPulseTimer();
   stopHeartbeatTimer();
+  await awaitHeartbeat();
   stopCronTimer();
   stopWatchdog();
   stopUploadCleanup();
