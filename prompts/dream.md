@@ -33,7 +33,7 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 - Add new entries where appropriate
 - Keep entries concise and factual — no padding, no narrative
 - Preserve all existing structure and sections
-- Also write daily memory summaries to `{{dailyMemoryDir}}/YYYY-MM-DD.md` for each day of logs you processed. Include key learnings, conversation summaries, and follow-ups. Keep these concise — they are injected into conversation context.
+- Also write daily memory summaries to `{{dailyMemoryDir}}/YYYY-MM-DD.md` for each day of logs you processed. Include key learnings, conversation summaries, and follow-ups. Keep these concise — the bot reads them on demand for context.
 
 ### Stage 4 — Prune
 

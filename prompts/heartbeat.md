@@ -19,7 +19,7 @@ If the instructions file does not exist or is empty, perform these default tasks
 
 1. **Review recent logs** — Check `{{logsDir}}/` for log files dated after `{{lastRunIso}}`. If `{{lastRunIso}}` is `never`, treat it as the beginning of time and review all available logs. Extract any new facts, preferences, or notable events.
 2. **Update memory** — Merge any new information into `{{memoryFile}}`, keeping entries concise and factual.
-3. **Update daily notes** — Write today's learnings, observations, corrections, and follow-ups to `{{dailyMemoryFile}}`. Keep entries concise — this file is injected into conversation context.
+3. **Update daily notes** — Write today's learnings, observations, corrections, and follow-ups to `{{dailyMemoryFile}}`. Keep entries concise — the bot reads this file on demand for context.
 4. **Workspace hygiene** — Note any issues but do not delete files unless the instructions explicitly say to.
 
 ## Rules

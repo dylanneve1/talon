@@ -98,30 +98,31 @@ const DAILY_FILE_RE = /^\d{4}-\d{2}-\d{2}\.md$/;
 /** Remove daily logs older than MAX_LOG_DAYS. Called on startup. */
 export function cleanupOldLogs(): void {
   try {
-    if (!existsSync(LOGS_DIR)) return;
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - MAX_LOG_DAYS);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    if (existsSync(LOGS_DIR)) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - MAX_LOG_DAYS);
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
 
-    let deleted = 0;
-    for (const file of readdirSync(LOGS_DIR)) {
-      if (DAILY_FILE_RE.test(file) && file < cutoffStr) {
-        try {
-          unlinkSync(resolve(LOGS_DIR, file));
-          deleted++;
-        } catch {
-          /* skip */
+      let deleted = 0;
+      for (const file of readdirSync(LOGS_DIR)) {
+        if (DAILY_FILE_RE.test(file) && file < cutoffStr) {
+          try {
+            unlinkSync(resolve(LOGS_DIR, file));
+            deleted++;
+          } catch {
+            /* skip */
+          }
         }
       }
-    }
-    if (deleted > 0) {
-      logInfo("workspace", `Cleaned up ${deleted} old daily log(s)`);
+      if (deleted > 0) {
+        logInfo("workspace", `Cleaned up ${deleted} old daily log(s)`);
+      }
     }
   } catch {
     /* skip */
   }
 
-  // Also clean up old daily memory files
+  // Clean up old daily memory files (independent of logs dir)
   try {
     const dailyMemDir = dirs.dailyMemory;
     if (!existsSync(dailyMemDir)) return;
