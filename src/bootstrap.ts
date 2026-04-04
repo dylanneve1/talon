@@ -128,7 +128,6 @@ export async function initBackendAndDispatcher(
   initHeartbeat({
     model: config.model,
     heartbeatModel: config.heartbeatModel,
-    dreamModel: config.dreamModel,
     claudeBinary: config.claudeBinary,
     workspace: config.workspace,
   });

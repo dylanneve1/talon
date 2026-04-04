@@ -50,7 +50,6 @@ let intervalMinutesRef = 60; // stored from startHeartbeatTimer
 let configRef: {
   model?: string;
   heartbeatModel?: string;
-  dreamModel?: string;
   claudeBinary?: string;
   workspace?: string;
 } | null = null;
@@ -59,7 +58,6 @@ export function initHeartbeat(cfg: {
   model?: string;
   /** Override model used specifically for heartbeat (e.g. haiku for cost savings). Falls back to main model. */
   heartbeatModel?: string;
-  dreamModel?: string;
   claudeBinary?: string;
   workspace?: string;
 }): void {
@@ -213,8 +211,7 @@ async function runHeartbeatAgent(
   runCount: number,
 ): Promise<string> {
   if (!configRef) {
-    logWarn("heartbeat", "Heartbeat agent not initialized — skipping");
-    return "";
+    throw new Error("Heartbeat agent not initialized");
   }
 
   const lastRunIso =
@@ -326,13 +323,16 @@ async function runHeartbeatAgent(
 
 // ── Logging helpers ─────────────────────────────────────────────────────────
 
+let heartbeatLogFileSequence = 0;
+
 function createHeartbeatLogFile(): string {
   if (!existsSync(HEARTBEAT_LOGS_DIR)) {
     mkdirSync(HEARTBEAT_LOGS_DIR, { recursive: true });
   }
   const now = new Date();
-  const ts = now.toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  return resolve(HEARTBEAT_LOGS_DIR, `heartbeat-${ts}.md`);
+  const ts = now.toISOString().replace(/[:.]/g, "-");
+  const seq = heartbeatLogFileSequence++;
+  return resolve(HEARTBEAT_LOGS_DIR, `heartbeat-${ts}-${seq}.md`);
 }
 
 function appendHeartbeatLog(logFile: string, text: string): void {
@@ -414,13 +414,37 @@ function logHeartbeatMessage(logFile: string, msg: SDKMessage): void {
 
 // ── State helpers ────────────────────────────────────────────────────────────
 
+function normalizeHeartbeatState(parsed: unknown): HeartbeatState | null {
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const candidate = parsed as Record<string, unknown>;
+  const { last_run, last_run_at, last_started, status, run_count } = candidate;
+
+  if (typeof last_run !== "number" || !Number.isFinite(last_run)) return null;
+  if (typeof run_count !== "number" || !Number.isFinite(run_count)) return null;
+  if (status !== "idle" && status !== "running") return null;
+  if (last_run_at !== undefined && typeof last_run_at !== "string") return null;
+  if (
+    last_started !== undefined &&
+    (typeof last_started !== "number" || !Number.isFinite(last_started))
+  ) {
+    return null;
+  }
+
+  return {
+    last_run,
+    run_count,
+    status,
+    ...(last_run_at !== undefined ? { last_run_at } : {}),
+    ...(last_started !== undefined ? { last_started } : {}),
+  };
+}
+
 function readHeartbeatState(): HeartbeatState | null {
   try {
     if (!existsSync(HEARTBEAT_STATE_FILE)) return null;
     const raw = readFileSync(HEARTBEAT_STATE_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as HeartbeatState;
-    if (typeof parsed.last_run !== "number") return null;
-    return parsed;
+    return normalizeHeartbeatState(JSON.parse(raw));
   } catch {
     return null;
   }

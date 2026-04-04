@@ -242,8 +242,49 @@ describe("getHeartbeatStatus", () => {
   it("returns null when last_run is not a number", () => {
     existsSyncMock.mockReturnValue(true);
     readFileSyncMock.mockReturnValue(
-      JSON.stringify({ last_run: "not-a-number", status: "idle" }),
+      JSON.stringify({
+        last_run: "not-a-number",
+        status: "idle",
+        run_count: 0,
+      }),
     );
+    expect(getHeartbeatStatus()).toBeNull();
+  });
+
+  it("returns null when run_count is not a number", () => {
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(
+      JSON.stringify({
+        last_run: Date.now(),
+        status: "idle",
+        run_count: "five",
+      }),
+    );
+    expect(getHeartbeatStatus()).toBeNull();
+  });
+
+  it("returns null when status is invalid", () => {
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(
+      JSON.stringify({
+        last_run: Date.now(),
+        status: "broken",
+        run_count: 1,
+      }),
+    );
+    expect(getHeartbeatStatus()).toBeNull();
+  });
+
+  it("returns null when last_run is NaN", () => {
+    existsSyncMock.mockReturnValue(true);
+    readFileSyncMock.mockReturnValue(
+      JSON.stringify({
+        last_run: NaN,
+        status: "idle",
+        run_count: 0,
+      }),
+    );
+    // NaN is typeof number but not finite
     expect(getHeartbeatStatus()).toBeNull();
   });
 });
