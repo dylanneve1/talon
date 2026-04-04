@@ -13,6 +13,7 @@ import {
 import { resolve } from "node:path";
 import { log as logInfo, logError } from "../util/log.js";
 import { dirs } from "../util/paths.js";
+import { toYMD } from "../util/time.js";
 
 const LOGS_DIR = dirs.logs;
 const MAX_LOG_DAYS = 30; // Keep last 30 days of logs
@@ -126,7 +127,7 @@ export function cleanupOldLogs(): void {
     if (!existsSync(dailyMemDir)) return;
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - MAX_LOG_DAYS);
-    const cutoffMem = cutoffDate.toISOString().slice(0, 10);
+    const cutoffMem = toYMD(cutoffDate);
 
     let deletedMem = 0;
     for (const file of readdirSync(dailyMemDir)) {

@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
-import { setTimezone, formatFullDatetime } from "./time.js";
+import { setTimezone, formatFullDatetime, todayAndYesterday } from "./time.js";
 import { log } from "./log.js";
 
 // ── Config schema ───────────────────────────────────────────────────────────
@@ -166,16 +166,19 @@ function loadSystemPrompt(
     loaded.push("memory");
   }
 
-  // Inject daily memory notes (today + yesterday)
+  // Inject daily memory notes (today + yesterday, timezone-aware)
   const dailyMemoryDir = dirs.dailyMemory;
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86_400_000)
-    .toISOString()
-    .slice(0, 10);
+  const { today, yesterday } = todayAndYesterday();
   const dailyParts: string[] = [];
+  const DAILY_MEMORY_MAX_BYTES = 10_240; // 10KB cap per file
   for (const dateStr of [today, yesterday]) {
-    const content = readOptionalFile(resolve(dailyMemoryDir, `${dateStr}.md`));
-    if (content) dailyParts.push(content);
+    let content = readOptionalFile(resolve(dailyMemoryDir, `${dateStr}.md`));
+    if (content) {
+      if (content.length > DAILY_MEMORY_MAX_BYTES) {
+        content = content.slice(0, DAILY_MEMORY_MAX_BYTES) + "\n\n... (truncated)";
+      }
+      dailyParts.push(content);
+    }
   }
   if (dailyParts.length > 0) {
     parts.push(

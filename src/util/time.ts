@@ -29,12 +29,12 @@ function toHHMM(date: Date): string {
 }
 
 /** Format a Date in the configured timezone as YYYY-MM-DD. */
-function toYMD(date: Date): string {
+export function toYMD(date: Date): string {
   return date.toLocaleDateString("en-CA", { timeZone: getTimezone() }); // en-CA gives YYYY-MM-DD
 }
 
 /** Get "today" and "yesterday" date strings in the configured timezone. */
-function todayAndYesterday(): { today: string; yesterday: string } {
+export function todayAndYesterday(): { today: string; yesterday: string } {
   const now = new Date();
   const today = toYMD(now);
   const yd = new Date(now.getTime() - 86_400_000);
