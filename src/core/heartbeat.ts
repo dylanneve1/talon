@@ -297,14 +297,15 @@ async function runHeartbeatAgent(
 
   // NOTE: The timeout races against the agent promise but cannot abort the
   // underlying Claude subprocess (the Agent SDK does not expose an abort
-  // mechanism). On timeout, the running flag is cleared and state set to idle,
-  // but the subprocess may continue briefly until it naturally completes.
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(
+  // mechanism). On timeout, we still await the agent promise to ensure the
+  // running lock is not released while the subprocess is still active.
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(
       () => reject(new Error("Heartbeat agent timed out")),
       HEARTBEAT_TIMEOUT_MS,
-    ),
-  );
+    );
+  });
 
   const agentPromise = (async () => {
     const qi = query({
@@ -327,7 +328,12 @@ async function runHeartbeatAgent(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
+    // On timeout, wait for the agent to actually finish before releasing the lock
+    // to prevent overlapping heartbeat runs
+    await agentPromise.catch(() => {});
     throw err;
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 
   return heartbeatLogFile;
