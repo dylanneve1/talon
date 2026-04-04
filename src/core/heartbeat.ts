@@ -38,7 +38,6 @@ const HEARTBEAT_STATE_FILE = pathFiles.heartbeatState;
 const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute max
 const HEARTBEAT_LOGS_DIR = resolve(dirs.logs, "heartbeats");
 const STARTUP_DELAY_MS = 5 * 60 * 1000; // 5-minute delay before first run
-const INSTRUCTIONS_FILE = resolve(dirs.workspace, "heartbeat-instructions.md");
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -72,6 +71,14 @@ export function initHeartbeat(cfg: {
  */
 export function startHeartbeatTimer(intervalMinutes: number): void {
   if (timer || startupTimer) return; // already running or scheduled to start
+
+  if (!Number.isFinite(intervalMinutes) || intervalMinutes <= 0) {
+    logWarn(
+      "heartbeat",
+      `Refusing to start heartbeat timer with invalid intervalMinutes: ${intervalMinutes}`,
+    );
+    return;
+  }
 
   intervalMinutesRef = intervalMinutes;
   const intervalMs = intervalMinutes * 60 * 1000;
@@ -220,6 +227,7 @@ async function runHeartbeatAgent(
   const logsDir = dirs.logs;
   const memoryFile = pathFiles.memory;
   const workspace = configRef.workspace ?? dirs.workspace;
+  const instructionsFile = resolve(workspace, "heartbeat-instructions.md");
 
   // Load prompt template from prompts/heartbeat.md and interpolate variables
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -232,7 +240,7 @@ async function runHeartbeatAgent(
       .replace(/\{\{logsDir\}\}/g, logsDir)
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
       .replace(/\{\{memoryFile\}\}/g, memoryFile)
-      .replace(/\{\{instructionsFile\}\}/g, INSTRUCTIONS_FILE)
+      .replace(/\{\{instructionsFile\}\}/g, instructionsFile)
       .replace(/\{\{runCount\}\}/g, String(runCount))
       .replace(/\{\{intervalMinutes\}\}/g, String(intervalMinutesRef));
   } catch {
@@ -287,6 +295,10 @@ async function runHeartbeatAgent(
     ],
   };
 
+  // NOTE: The timeout races against the agent promise but cannot abort the
+  // underlying Claude subprocess (the Agent SDK does not expose an abort
+  // mechanism). On timeout, the running flag is cleared and state set to idle,
+  // but the subprocess may continue briefly until it naturally completes.
   const timeoutPromise = new Promise<never>((_, reject) =>
     setTimeout(
       () => reject(new Error("Heartbeat agent timed out")),
@@ -454,9 +466,12 @@ function writeHeartbeatState(state: HeartbeatState): void {
   try {
     const dir = resolve(HEARTBEAT_STATE_FILE, "..");
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    const { last_run_at: _lastRunAt, ...rest } = state;
     const enriched: HeartbeatState = {
-      ...state,
-      last_run_at: new Date(state.last_run).toISOString(),
+      ...rest,
+      ...(state.last_run !== 0
+        ? { last_run_at: new Date(state.last_run).toISOString() }
+        : {}),
     };
     writeFileAtomic.sync(
       HEARTBEAT_STATE_FILE,

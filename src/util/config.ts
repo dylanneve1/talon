@@ -36,7 +36,7 @@ const configSchema = z.object({
   pulse: z.boolean().default(true),
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   heartbeat: z.boolean().default(false),
-  heartbeatInterval: z.number().int().min(5).default(60), // minutes
+  heartbeatIntervalMinutes: z.number().int().min(5).default(60),
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)
   braveApiKey: z.string().optional(),
   searxngUrl: z.string().default("http://localhost:8080"),

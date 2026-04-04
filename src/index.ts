@@ -154,7 +154,7 @@ async function main(): Promise<void> {
   log("bot", "Starting Talon...");
 
   if (config.pulse) startPulseTimer(config.pulseIntervalMs);
-  if (config.heartbeat) startHeartbeatTimer(config.heartbeatInterval);
+  if (config.heartbeat) startHeartbeatTimer(config.heartbeatIntervalMinutes);
   startCronTimer();
   startWatchdog(config.workspace);
   startUploadCleanup(config.workspace);
