@@ -181,7 +181,7 @@ describe("forceDream", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
 
@@ -217,7 +217,7 @@ describe("readDreamState — edge cases", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
   });
@@ -468,7 +468,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
 
@@ -514,7 +514,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
 
@@ -560,7 +560,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
 
@@ -612,7 +612,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
@@ -656,7 +656,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
     const queryMock = vi.fn(async function* () {});
@@ -710,7 +710,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
@@ -762,7 +762,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
 
@@ -806,7 +806,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
@@ -855,7 +855,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
@@ -904,7 +904,7 @@ describe("dream error paths", () => {
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
     const queryMock = vi.fn(async function* () {});
@@ -951,7 +951,7 @@ describe("runDreamAgent — timeout arrow fn fires after DREAM_TIMEOUT_MS", () =
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
     // query never resolves — so the 10-minute timeout wins the race
@@ -1009,7 +1009,7 @@ describe("maybeStartDream — () => {} catch callback on executeDream rejection"
         workspace: "/fake/.talon/workspace",
         data: "/fake/.talon/data",
         memory: "/fake/.talon/workspace/memory",
-    dailyMemory: "/fake/.talon/workspace/memory/daily",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
 
