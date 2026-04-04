@@ -14,6 +14,7 @@
  *       media-index.json
  *     workspace/               User-facing workspace (memory, uploads, logs)
  *       memory/
+ *         daily/               Per-day memory notes (YYYY-MM-DD.md)
  *       uploads/
  *       stickers/
  *       logs/

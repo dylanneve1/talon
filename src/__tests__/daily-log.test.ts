@@ -17,6 +17,7 @@ vi.mock("../util/log.js", () => ({
 }));
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { toYMD } from "../util/time.js";
 
 // Use a unique temp directory for each test run
 const TEST_ROOT = join(tmpdir(), `talon-daily-log-test-${Date.now()}`);
@@ -173,13 +174,13 @@ describe("daily-log", () => {
       // Create an old daily memory file (40 days ago)
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 40);
-      const oldName = oldDate.toISOString().slice(0, 10) + ".md";
+      const oldName = toYMD(oldDate) + ".md";
       writeFileSync(join(DAILY_MEM_DIR, oldName), "old daily memory");
 
       // Create a recent daily memory file (5 days ago)
       const recentDate = new Date();
       recentDate.setDate(recentDate.getDate() - 5);
-      const recentName = recentDate.toISOString().slice(0, 10) + ".md";
+      const recentName = toYMD(recentDate) + ".md";
       writeFileSync(join(DAILY_MEM_DIR, recentName), "recent daily memory");
 
       cleanupOldLogs();
@@ -230,7 +231,7 @@ describe("daily-log", () => {
 
       const recentDate = new Date();
       recentDate.setDate(recentDate.getDate() - 3);
-      const recentName = recentDate.toISOString().slice(0, 10) + ".md";
+      const recentName = toYMD(recentDate) + ".md";
       writeFileSync(join(DAILY_MEM_DIR, recentName), "keep me");
 
       cleanupOldLogs();
