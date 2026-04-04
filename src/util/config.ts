@@ -166,27 +166,11 @@ function loadSystemPrompt(
     loaded.push("memory");
   }
 
-  // Inject daily memory notes (today + yesterday, timezone-aware)
-  const dailyMemoryDir = dirs.dailyMemory;
-  const { today, yesterday } = todayAndYesterday();
-  const dailyParts: string[] = [];
-  const DAILY_MEMORY_MAX_BYTES = 10_240; // 10KB cap per file
-  for (const dateStr of [today, yesterday]) {
-    let content = readOptionalFile(resolve(dailyMemoryDir, `${dateStr}.md`));
-    if (content) {
-      if (content.length > DAILY_MEMORY_MAX_BYTES) {
-        content =
-          content.slice(0, DAILY_MEMORY_MAX_BYTES) + "\n\n... (truncated)";
-      }
-      dailyParts.push(content);
-    }
-  }
-  if (dailyParts.length > 0) {
-    parts.push(
-      `## Recent Daily Notes\n\nYour daily notes from recent days. Update today's file at \`~/.talon/workspace/memory/daily/${today}.md\` as you learn things.\n\n${dailyParts.join("\n\n---\n\n")}`,
-    );
-    loaded.push("daily-memory");
-  }
+  // Point the bot at daily memory files (read on demand, not injected)
+  const { today } = todayAndYesterday();
+  parts.push(
+    `## Daily Memory\n\nYour daily notes are stored in \`${dirs.dailyMemory}/\`. Today's file is \`${today}.md\`. Use the Read tool to check recent daily notes when you need context from previous days.`,
+  );
 
   const loadedKey = loaded.join(" + ");
   if (loadedKey && loadedKey !== lastLoggedPromptKey) {
