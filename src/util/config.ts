@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
-import { setTimezone, formatFullDatetime } from "./time.js";
+import { setTimezone, formatFullDatetime, todayAndYesterday } from "./time.js";
 import { log } from "./log.js";
 
 // ── Config schema ───────────────────────────────────────────────────────────
@@ -166,6 +166,12 @@ function loadSystemPrompt(
     loaded.push("memory");
   }
 
+  // Point the bot at daily memory files (read on demand, not injected)
+  const { today } = todayAndYesterday();
+  parts.push(
+    `## Daily Memory\n\nYour daily notes are stored in \`${dirs.dailyMemory}/\`. Today's file is \`${today}.md\`. Use the Read tool to check recent daily notes when you need context from previous days.`,
+  );
+
   const loadedKey = loaded.join(" + ");
   if (loadedKey && loadedKey !== lastLoggedPromptKey) {
     log("config", `System prompt: ${loadedKey}`);
@@ -217,6 +223,7 @@ function loadSystemPrompt(
 
 You have a workspace directory at \`~/.talon/workspace/\`. This is your home — organize it however you want.
 - \`~/.talon/workspace/memory/memory.md\` is your persistent memory file. Update it when you learn important things.
+- \`~/.talon/workspace/memory/daily/YYYY-MM-DD.md\` is your daily notes file. Write observations, learnings, corrections, and follow-ups here throughout the day. Keep entries concise.
 - Daily interaction logs are saved to \`~/.talon/workspace/logs/\` automatically.
 - Files users send you (photos, docs, voice) are saved to \`~/.talon/workspace/uploads/\`.
 - Persistent cron jobs are managed via the cron tools.

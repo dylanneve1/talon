@@ -17,6 +17,7 @@ vi.mock("../util/log.js", () => ({
 }));
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { toYMD } from "../util/time.js";
 
 // Use a unique temp directory for each test run
 const TEST_ROOT = join(tmpdir(), `talon-daily-log-test-${Date.now()}`);
@@ -153,6 +154,89 @@ describe("daily-log", () => {
 
       // File should still be present (not deleted)
       expect(readdirSync(LOGS_DIR)).toContain(recentName);
+    });
+  });
+
+  describe("cleanupOldLogs — daily memory files", () => {
+    const DAILY_MEM_DIR = join(
+      TEST_ROOT,
+      ".talon",
+      "workspace",
+      "memory",
+      "daily",
+    );
+
+    it("deletes daily memory files older than 30 days", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+      mkdirSync(DAILY_MEM_DIR, { recursive: true });
+
+      // Create an old daily memory file (40 days ago)
+      const oldDate = new Date();
+      oldDate.setDate(oldDate.getDate() - 40);
+      const oldName = toYMD(oldDate) + ".md";
+      writeFileSync(join(DAILY_MEM_DIR, oldName), "old daily memory");
+
+      // Create a recent daily memory file (5 days ago)
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 5);
+      const recentName = toYMD(recentDate) + ".md";
+      writeFileSync(join(DAILY_MEM_DIR, recentName), "recent daily memory");
+
+      cleanupOldLogs();
+
+      const remaining = readdirSync(DAILY_MEM_DIR);
+      expect(remaining).not.toContain(oldName);
+      expect(remaining).toContain(recentName);
+    });
+
+    it("handles missing daily memory directory gracefully", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      // Create logs dir but NOT the daily memory dir
+      mkdirSync(LOGS_DIR, { recursive: true });
+      expect(() => cleanupOldLogs()).not.toThrow();
+    });
+
+    it("ignores non-YYYY-MM-DD.md files in daily memory dir", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+      mkdirSync(DAILY_MEM_DIR, { recursive: true });
+
+      // A file that would sort before the cutoff but doesn't match the pattern
+      writeFileSync(join(DAILY_MEM_DIR, "2020-summary.md"), "should survive");
+      writeFileSync(join(DAILY_MEM_DIR, "notes.md"), "also should survive");
+
+      cleanupOldLogs();
+
+      const remaining = readdirSync(DAILY_MEM_DIR);
+      expect(remaining).toContain("2020-summary.md");
+      expect(remaining).toContain("notes.md");
+    });
+
+    it("ignores non-YYYY-MM-DD.md files in logs dir", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+
+      writeFileSync(join(LOGS_DIR, "2020-summary.md"), "should survive");
+
+      cleanupOldLogs();
+
+      expect(readdirSync(LOGS_DIR)).toContain("2020-summary.md");
+    });
+
+    it("does not delete recent daily memory files", async () => {
+      const { cleanupOldLogs } = await import("../storage/daily-log.js");
+      mkdirSync(LOGS_DIR, { recursive: true });
+      mkdirSync(DAILY_MEM_DIR, { recursive: true });
+
+      const recentDate = new Date();
+      recentDate.setDate(recentDate.getDate() - 3);
+      const recentName = toYMD(recentDate) + ".md";
+      writeFileSync(join(DAILY_MEM_DIR, recentName), "keep me");
+
+      cleanupOldLogs();
+
+      expect(readdirSync(DAILY_MEM_DIR)).toContain(recentName);
     });
   });
 

@@ -16,6 +16,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
+import { toYMD } from "../util/time.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -240,6 +241,7 @@ async function runHeartbeatAgent(
   const memoryFile = pathFiles.memory;
   const workspace = configRef.workspace ?? dirs.workspace;
   const instructionsFile = resolve(workspace, "heartbeat-instructions.md");
+  const dailyMemoryFile = resolve(dirs.dailyMemory, `${toYMD(new Date())}.md`);
 
   // Load prompt template from the prompts directory (seeded to ~/.talon/prompts/)
   const promptPath = resolve(dirs.prompts, "heartbeat.md");
@@ -252,6 +254,7 @@ async function runHeartbeatAgent(
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
       .replace(/\{\{memoryFile\}\}/g, memoryFile)
       .replace(/\{\{instructionsFile\}\}/g, instructionsFile)
+      .replace(/\{\{dailyMemoryFile\}\}/g, dailyMemoryFile)
       .replace(/\{\{runCount\}\}/g, String(runCount))
       .replace(/\{\{intervalMinutes\}\}/g, String(intervalMinutesRef));
   } catch {
