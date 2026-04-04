@@ -56,6 +56,7 @@ vi.mock("../util/paths.js", () => ({
     workspace: "/fake/.talon/workspace",
     data: "/fake/.talon/data",
     memory: "/fake/.talon/workspace/memory",
+    prompts: "/fake/.talon/prompts",
   },
 }));
 
@@ -99,23 +100,37 @@ describe("startHeartbeatTimer", () => {
   });
 
   it("guards against double-start during startup delay", () => {
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+
     startHeartbeatTimer(60);
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+
     // Calling again during the 5-minute startup delay should be a no-op
-    // (no duplicate timers created)
     startHeartbeatTimer(60);
-    // If the guard works, stopping once should clean up everything
-    stopHeartbeatTimer();
-    expect(true).toBe(true); // no crash = success
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+
+    setTimeoutSpy.mockRestore();
+    setIntervalSpy.mockRestore();
   });
 
   it("guards against double-start after interval is set", () => {
+    const setIntervalSpy = vi.spyOn(globalThis, "setInterval");
+
     startHeartbeatTimer(60);
+    expect(setIntervalSpy).not.toHaveBeenCalled();
+
     // Advance past startup delay to create the interval timer
     vi.advanceTimersByTime(5 * 60 * 1000 + 100);
-    // Now try to start again — should be a no-op
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+
+    // Now try to start again — should be a no-op (interval count stays at 1)
     startHeartbeatTimer(60);
-    stopHeartbeatTimer();
-    expect(true).toBe(true);
+    expect(setIntervalSpy).toHaveBeenCalledTimes(1);
+
+    setIntervalSpy.mockRestore();
   });
 });
 
@@ -127,7 +142,7 @@ describe("forceHeartbeat", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     readFileSyncMock.mockImplementation(((filePath: string) => {
       const p = String(filePath).replace(/\\/g, "/");
-      if (p.endsWith("/prompts/heartbeat.md"))
+      if (p.endsWith("/heartbeat.md"))
         return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
       return "null";
     }) as any);
@@ -305,7 +320,7 @@ describe("awaitCurrentRun", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     readFileSyncMock.mockImplementation(((filePath: string) => {
       const p = String(filePath).replace(/\\/g, "/");
-      if (p.endsWith("/prompts/heartbeat.md"))
+      if (p.endsWith("/heartbeat.md"))
         return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
       return "null";
     }) as any);

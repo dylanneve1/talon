@@ -9,8 +9,7 @@
  */
 
 import { existsSync, readFileSync, mkdirSync, appendFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
@@ -241,9 +240,8 @@ async function runHeartbeatAgent(
   const workspace = configRef.workspace ?? dirs.workspace;
   const instructionsFile = resolve(workspace, "heartbeat-instructions.md");
 
-  // Load prompt template from prompts/heartbeat.md and interpolate variables
-  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-  const promptPath = resolve(projectRoot, "prompts/heartbeat.md");
+  // Load prompt template from the prompts directory (seeded to ~/.talon/prompts/)
+  const promptPath = resolve(dirs.prompts, "heartbeat.md");
 
   let prompt: string;
   try {
