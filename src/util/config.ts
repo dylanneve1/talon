@@ -33,6 +33,7 @@ const configSchema = z.object({
   apiId: z.number().int().optional(),
   apiHash: z.string().optional(),
   adminUserId: z.number().int().optional(),
+  allowedUsers: z.array(z.number().int()).optional(), // Whitelist of user IDs allowed to DM the bot
   pulse: z.boolean().default(true),
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   heartbeat: z.boolean().default(false),

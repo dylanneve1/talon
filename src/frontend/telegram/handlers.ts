@@ -52,6 +52,51 @@ function trackDmUser(
   appendDailyLog("System", `New DM user: ${senderName}${tag} [id:${senderId}]`);
 }
 
+// ── Access control ──────────────────────────────────────────────────────────
+
+let allowedUserIds: Set<number> | null = null; // null = no whitelist (allow all)
+let adminId = 0;
+const verifiedGroups = new Map<number, boolean>(); // chatId → admin is member
+
+export function setAccessControl(cfg: {
+  allowedUsers?: number[];
+  adminUserId?: number;
+}): void {
+  allowedUserIds = cfg.allowedUsers?.length ? new Set(cfg.allowedUsers) : null;
+  adminId = cfg.adminUserId ?? 0;
+}
+
+/**
+ * Check if a DM user is allowed. Returns true if no whitelist is set.
+ */
+function isDmAllowed(senderId: number | undefined): boolean {
+  if (!allowedUserIds) return true;
+  return senderId !== undefined && allowedUserIds.has(senderId);
+}
+
+/**
+ * Check if the admin is a member of a group. Caches results for 10 minutes.
+ */
+async function isAdminInGroup(bot: Bot, chatId: number): Promise<boolean> {
+  if (!adminId) return true; // no admin configured, allow all groups
+  const cached = verifiedGroups.get(chatId);
+  if (cached !== undefined) return cached;
+
+  try {
+    const member = await bot.api.getChatMember(chatId, adminId);
+    const isMember = !["left", "kicked"].includes(member.status);
+    verifiedGroups.set(chatId, isMember);
+    // Expire cache after 10 minutes
+    setTimeout(() => verifiedGroups.delete(chatId), 10 * 60 * 1000);
+    return isMember;
+  } catch {
+    // API error (e.g. bot can't query members) — deny by default
+    verifiedGroups.set(chatId, false);
+    setTimeout(() => verifiedGroups.delete(chatId), 10 * 60 * 1000);
+    return false;
+  }
+}
+
 // ── Shared utilities ─────────────────────────────────────────────────────────
 
 export function shouldHandleInGroup(ctx: Context): boolean {
@@ -65,6 +110,26 @@ export function shouldHandleInGroup(ctx: Context): boolean {
     botUser && new RegExp(`@${botUser}(?![a-zA-Z0-9_])`, "i").test(text);
   const repliedToBot = ctx.message.reply_to_message?.from?.id === ctx.me.id;
   return !!(mentioned || repliedToBot);
+}
+
+/**
+ * Full access check: DM whitelist + group admin membership.
+ * Returns true if the message should be processed.
+ */
+export async function isAccessAllowed(
+  ctx: Context,
+  bot: Bot,
+): Promise<boolean> {
+  if (!ctx.chat) return false;
+  const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
+
+  if (!isGroup) {
+    // DM — check whitelist
+    return isDmAllowed(ctx.from?.id);
+  }
+
+  // Group — check admin is a member
+  return isAdminInGroup(bot, ctx.chat.id);
 }
 
 export function getSenderName(
@@ -782,6 +847,7 @@ export async function handleTextMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
   if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
 
   const chatId = String(ctx.chat.id);
@@ -821,6 +887,7 @@ export async function handlePhotoMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
 
   const photos = ctx.message.photo;
   if (!photos?.length) return;
@@ -845,6 +912,7 @@ export async function handleDocumentMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
 
   const doc = ctx.message.document;
   if (!doc) return;
@@ -872,6 +940,7 @@ export async function handleVoiceMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
 
   const voice = ctx.message.voice;
   if (!voice) return;
@@ -893,6 +962,7 @@ export async function handleStickerMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
 
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
@@ -937,6 +1007,7 @@ export async function handleVideoMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
 
   const video = ctx.message.video;
   if (!video) return;
@@ -962,6 +1033,7 @@ export async function handleAnimationMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
 
   const anim = ctx.message.animation;
   if (!anim) return;
@@ -987,6 +1059,7 @@ export async function handleAudioMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
   if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
 
   const audio = ctx.message.audio;
@@ -1016,6 +1089,7 @@ export async function handleVideoNoteMessage(
   config: TalonConfig,
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
+  if (!(await isAccessAllowed(ctx, bot))) return;
   if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
 
   const videoNote = ctx.message.video_note;

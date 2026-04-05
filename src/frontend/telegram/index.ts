@@ -15,6 +15,7 @@ import type { Gateway } from "../../core/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions.js";
 import { initUserClient, disconnectUserClient } from "./userbot.js";
 import { registerCommands, setAdminUserId } from "./commands.js";
+import { setAccessControl } from "./handlers.js";
 import { registerMiddleware } from "./middleware.js";
 import { registerCallbacks } from "./callbacks.js";
 import { log, logError } from "../../util/log.js";
@@ -69,6 +70,10 @@ export function createTelegramFrontend(
       log("bot", `Gateway started on port ${port}`);
 
       setAdminUserId(config.adminUserId);
+      setAccessControl({
+        allowedUsers: config.allowedUsers,
+        adminUserId: config.adminUserId,
+      });
 
       registerCommands(bot, config);
       registerMiddleware(bot, config);
