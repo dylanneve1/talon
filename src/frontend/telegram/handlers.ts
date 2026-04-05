@@ -112,9 +112,14 @@ export function shouldHandleInGroup(ctx: Context): boolean {
   return !!(mentioned || repliedToBot);
 }
 
+// Rate-limit unauthorized access warnings (one per user/group per 10 minutes)
+const unauthorizedCooldown = new Map<string, number>();
+const UNAUTHORIZED_COOLDOWN_MS = 10 * 60 * 1000;
+
 /**
  * Full access check: DM whitelist + group admin membership.
  * Returns true if the message should be processed.
+ * Warns unauthorized users and notifies the admin.
  */
 export async function isAccessAllowed(
   ctx: Context,
@@ -124,12 +129,58 @@ export async function isAccessAllowed(
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";
 
   if (!isGroup) {
-    // DM — check whitelist
-    return isDmAllowed(ctx.from?.id);
+    if (isDmAllowed(ctx.from?.id)) return true;
+    await notifyUnauthorized(bot, ctx, "dm");
+    return false;
   }
 
-  // Group — check admin is a member
-  return isAdminInGroup(bot, ctx.chat.id);
+  if (await isAdminInGroup(bot, ctx.chat.id)) return true;
+  await notifyUnauthorized(bot, ctx, "group");
+  return false;
+}
+
+async function notifyUnauthorized(
+  bot: Bot,
+  ctx: Context,
+  type: "dm" | "group",
+): Promise<void> {
+  const key = type === "dm" ? `dm:${ctx.from?.id}` : `group:${ctx.chat?.id}`;
+  const now = Date.now();
+  const lastWarned = unauthorizedCooldown.get(key);
+  if (lastWarned && now - lastWarned < UNAUTHORIZED_COOLDOWN_MS) return;
+  unauthorizedCooldown.set(key, now);
+
+  const sender = getSenderName(ctx.from);
+  const username = ctx.from?.username ? ` (@${ctx.from.username})` : "";
+  const userId = ctx.from?.id ?? "unknown";
+
+  // Warn the user
+  try {
+    await bot.api.sendMessage(
+      ctx.chat!.id,
+      "⚠️ Unauthorized access. This bot is private. This attempt has been reported to the bot owner.",
+    );
+  } catch {
+    /* can't send — ignore */
+  }
+
+  // Notify admin
+  if (adminId) {
+    const detail =
+      type === "dm"
+        ? `🚨 Unauthorized DM from ${sender}${username} [id:${userId}]`
+        : `🚨 Unauthorized group access: "${(ctx.chat as { title?: string })?.title ?? ctx.chat!.id}" [id:${ctx.chat!.id}] by ${sender}${username}`;
+    try {
+      await bot.api.sendMessage(adminId, detail);
+    } catch {
+      /* admin unreachable — ignore */
+    }
+  }
+
+  logWarn(
+    "access",
+    `Unauthorized ${type}: ${sender}${username} [id:${userId}] in chat ${ctx.chat!.id}`,
+  );
 }
 
 export function getSenderName(

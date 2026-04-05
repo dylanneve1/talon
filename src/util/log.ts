@@ -40,7 +40,8 @@ export type LogComponent =
   | "gateway"
   | "plugin"
   | "teams"
-  | "config";
+  | "config"
+  | "access";
 
 const LOG_FILE = files.log;
 
