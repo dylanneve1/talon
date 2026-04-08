@@ -25,7 +25,7 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
-      - run: npm install
+      - run: npm ci
 
       - name: Verify package version matches tag
         run: |
@@ -41,6 +41,33 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # ── Verify the published package actually works ────────────────
+  smoke-test:
+    name: Smoke Test
+    needs: [npm]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Wait for npm registry propagation
+        run: sleep 15
+
+      - name: Install published package
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          npm install talon-agent@"$TAG_VERSION"
+
+      - name: Verify package contents
+        run: |
+          # Check critical files exist in installed package
+          test -f node_modules/talon-agent/src/index.ts
+          test -f node_modules/talon-agent/bin/talon.js
+          test -d node_modules/talon-agent/prompts
+          echo "Package contents verified"
+
   # ── Docker image → GHCR ───────────────────────────────────────
   docker:
     name: Docker
@@ -51,6 +78,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v3
 
       - uses: docker/login-action@v3
         with:
@@ -73,3 +102,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

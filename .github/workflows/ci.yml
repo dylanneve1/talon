@@ -33,10 +33,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package-lock.json') }}
           restore-keys: node-modules-${{ runner.os }}-22-
 
-      - run: npm install
+      - run: npm ci
 
       - name: Type check
         run: npx tsc --noEmit
@@ -91,10 +91,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-${{ matrix.node-version }}-${{ hashFiles('package.json') }}
+          key: node-modules-${{ runner.os }}-${{ matrix.node-version }}-${{ hashFiles('package-lock.json') }}
           restore-keys: node-modules-${{ runner.os }}-${{ matrix.node-version }}-
 
-      - run: npm install
+      - run: npm ci
 
       - name: Run tests
         run: npx vitest run --reporter=verbose --reporter=json --outputFile=test-results.json
@@ -143,10 +143,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package-lock.json') }}
           restore-keys: node-modules-${{ runner.os }}-22-
 
-      - run: npm install
+      - run: npm ci
 
       - name: Run tests with coverage
         run: npx vitest run --coverage --reporter=verbose
@@ -191,10 +191,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package-lock.json') }}
           restore-keys: node-modules-${{ runner.os }}-22-
 
-      - run: npm install
+      - run: npm ci
 
       - name: Run fuzz tests (extended iterations)
         run: npx vitest run --reporter=verbose --reporter=json --outputFile=fuzz-results.json src/__tests__/fuzz.test.ts
@@ -232,10 +232,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package-lock.json') }}
           restore-keys: node-modules-${{ runner.os }}-22-
 
-      - run: npm install
+      - run: npm ci
 
       - name: Run mutation tests
         run: npx stryker run
@@ -264,10 +264,10 @@ jobs:
         uses: actions/cache@v5
         with:
           path: node_modules
-          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package-lock.json') }}
           restore-keys: node-modules-${{ runner.os }}-22-
 
-      - run: npm install
+      - run: npm ci
 
       - name: Audit dependencies
         run: npm audit --audit-level=critical
