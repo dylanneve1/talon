@@ -15,9 +15,10 @@ updates:
         update-types:
           - "minor"
           - "patch"
-      production-patches:
+      production-dependencies:
         dependency-type: "production"
         update-types:
+          - "minor"
           - "patch"
 
   - package-ecosystem: "github-actions"
