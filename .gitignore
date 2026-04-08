@@ -6,7 +6,6 @@ workspace/
 .env
 coverage/
 .stryker-tmp/
-package-lock.json
 # Compiled binaries
 talon-bin
 talon-bun
