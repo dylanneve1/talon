@@ -125,12 +125,11 @@ jobs:
         with:
           name: test-results-node-${{ matrix.node-version }}
           path: test-results.json
-          retention-days: 30
+          retention-days: 14
 
-  # ── Coverage (runs after tests pass) ──────────────────────────
+  # ── Coverage with thresholds ─────────────────────────────────
   coverage:
     name: Coverage
-    needs: [test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -150,7 +149,7 @@ jobs:
       - run: npm install
 
       - name: Run tests with coverage
-        run: npx vitest run --coverage --reporter=verbose --reporter=json --outputFile=test-results.json
+        run: npx vitest run --coverage --reporter=verbose
 
       - name: Coverage summary
         if: always()
@@ -174,7 +173,7 @@ jobs:
         with:
           name: coverage-report
           path: coverage/
-          retention-days: 30
+          retention-days: 14
 
   # ── Fuzz testing (property-based with fast-check) ─────────────
   fuzz:
@@ -216,6 +215,39 @@ jobs:
             echo "| $PASSED | $FAILED | $TOTAL |" >> $GITHUB_STEP_SUMMARY
           fi
 
+  # ── Mutation testing (informational) ─────────────────────────
+  mutation:
+    name: Mutation Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Cache node_modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package.json') }}
+          restore-keys: node-modules-${{ runner.os }}-22-
+
+      - run: npm install
+
+      - name: Run mutation tests
+        run: npx stryker run
+
+      - name: Upload mutation report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: mutation-report
+          path: reports/mutation/
+          retention-days: 14
+
   # ── Security audit ────────────────────────────────────────────
   security:
     name: Security Audit
@@ -248,14 +280,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: docker/setup-buildx-action@v3
+
       - name: Build Docker image
-        run: docker build -t talon:ci-${{ github.sha }} .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # ── Final status gate ─────────────────────────────────────────
   ci-ok:
     name: CI Status
     if: always()
-    needs: [quality, test, coverage, fuzz, security]
+    needs: [quality, test, coverage, fuzz, security, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -265,7 +304,8 @@ jobs:
              [[ "${{ needs.test.result }}" != "success" ]] || \
              [[ "${{ needs.coverage.result }}" != "success" ]] || \
              [[ "${{ needs.fuzz.result }}" != "success" ]] || \
-             [[ "${{ needs.security.result }}" != "success" ]]; then
+             [[ "${{ needs.security.result }}" != "success" ]] || \
+             [[ "${{ needs.docker.result }}" != "success" ]]; then
             echo "::error::One or more required jobs failed"
             exit 1
           fi
@@ -282,3 +322,4 @@ jobs:
           echo "| Coverage | ${{ needs.coverage.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Fuzz | ${{ needs.fuzz.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security | ${{ needs.security.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Docker | ${{ needs.docker.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
