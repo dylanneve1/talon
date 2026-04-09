@@ -215,39 +215,6 @@ jobs:
             echo "| $PASSED | $FAILED | $TOTAL |" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # ── Mutation testing (informational) ─────────────────────────
-  mutation:
-    name: Mutation Testing
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - name: Cache node_modules
-        uses: actions/cache@v5
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package-lock.json') }}
-          restore-keys: node-modules-${{ runner.os }}-22-
-
-      - run: npm ci
-
-      - name: Run mutation tests
-        run: npx stryker run
-
-      - name: Upload mutation report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: mutation-report
-          path: reports/mutation/
-          retention-days: 14
-
   # ── Security audit ────────────────────────────────────────────
   security:
     name: Security Audit
