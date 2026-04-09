@@ -71,7 +71,7 @@ jobs:
           git commit -m "style: auto-format with prettier" || exit 0
           git push
 
-  # ── Unit & integration tests (matrix) ─────────────────────────
+  # ── Unit & integration tests + coverage ────────────────────────
   test:
     name: Tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
@@ -97,7 +97,12 @@ jobs:
       - run: npm ci
 
       - name: Run tests
+        if: matrix.node-version != 22
         run: npx vitest run --reporter=verbose --reporter=json --outputFile=test-results.json
+
+      - name: Run tests with coverage
+        if: matrix.node-version == 22
+        run: npx vitest run --coverage --reporter=verbose --reporter=json --outputFile=test-results.json
 
       - name: Test summary
         if: always()
@@ -119,40 +124,8 @@ jobs:
             echo "| Duration | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: test-results-node-${{ matrix.node-version }}
-          path: test-results.json
-          retention-days: 14
-
-  # ── Coverage with thresholds ─────────────────────────────────
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - name: Cache node_modules
-        uses: actions/cache@v5
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}-22-${{ hashFiles('package-lock.json') }}
-          restore-keys: node-modules-${{ runner.os }}-22-
-
-      - run: npm ci
-
-      - name: Run tests with coverage
-        run: npx vitest run --coverage --reporter=verbose
-
       - name: Coverage summary
-        if: always()
+        if: always() && matrix.node-version == 22
         run: |
           if [ -f coverage/coverage-summary.json ]; then
             echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
@@ -167,8 +140,16 @@ jobs:
             " >> $GITHUB_STEP_SUMMARY
           fi
 
-      - name: Upload coverage artifact
+      - name: Upload test results
         if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-node-${{ matrix.node-version }}
+          path: test-results.json
+          retention-days: 14
+
+      - name: Upload coverage
+        if: always() && matrix.node-version == 22
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
@@ -261,7 +242,7 @@ jobs:
   ci-ok:
     name: CI Status
     if: always()
-    needs: [quality, test, coverage, fuzz, security, docker]
+    needs: [quality, test, fuzz, security, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -269,7 +250,6 @@ jobs:
         run: |
           if [[ "${{ needs.quality.result }}" != "success" ]] || \
              [[ "${{ needs.test.result }}" != "success" ]] || \
-             [[ "${{ needs.coverage.result }}" != "success" ]] || \
              [[ "${{ needs.fuzz.result }}" != "success" ]] || \
              [[ "${{ needs.security.result }}" != "success" ]] || \
              [[ "${{ needs.docker.result }}" != "success" ]]; then
@@ -286,7 +266,6 @@ jobs:
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Quality | ${{ needs.quality.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tests | ${{ needs.test.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Coverage | ${{ needs.coverage.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Fuzz | ${{ needs.fuzz.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security | ${{ needs.security.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker | ${{ needs.docker.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
