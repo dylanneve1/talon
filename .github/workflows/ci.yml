@@ -9,7 +9,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # ── Lint, format, and type-check ──────────────────────────────
@@ -62,7 +62,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "style: auto-format with prettier [skip ci]" || exit 0
+          if git diff --cached --quiet; then
+            echo "No formatting changes needed"
+            exit 0
+          fi
+          git commit -m "style: auto-format with prettier [skip ci]"
           git push
 
   # ── Unit & integration tests + coverage ────────────────────────
@@ -110,6 +114,14 @@ jobs:
             echo "| Failed | $FAILED |" >> $GITHUB_STEP_SUMMARY
             echo "| Total  | $TOTAL |" >> $GITHUB_STEP_SUMMARY
             echo "| Duration | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Validate coverage report
+        if: matrix.node-version == 22
+        run: |
+          if [ ! -f coverage/coverage-summary.json ]; then
+            echo "::error::Coverage report not generated"
+            exit 1
           fi
 
       - name: Coverage summary
