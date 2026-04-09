@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/dylanneve1/talon/compare/v1.2.0...v1.2.1) (2026-04-09)
+
+
+### Bug Fixes
+
+* **ci:** fix coverage validation, concurrency, format error handling ([d3a75af](https://github.com/dylanneve1/talon/commit/d3a75af90abede3eea5160884c9c8a0ce0d4e821))
+* patch SDK vulnerability, optimize CI, remove stryker ([833c791](https://github.com/dylanneve1/talon/commit/833c79190a8d147ca995048a39797889e6b6b1c6))
+
 ## [1.2.0](https://github.com/dylanneve1/talon/compare/v1.1.0...v1.2.0) (2026-04-09)
 
 
