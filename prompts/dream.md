@@ -42,4 +42,8 @@ You have access ONLY to filesystem tools (Read, Write, Edit, Bash, Glob, Grep). 
 - Do NOT remove entries just because they're old — only remove if wrong or superseded
 - Write the updated memory.md back to `{{memoryFile}}`
 
+### Stage 5 — Mine to MemPalace (optional)
+
+{{mempalaceSection}}
+
 When done with memory consolidation, stop. The system handles all dream_state.json updates.

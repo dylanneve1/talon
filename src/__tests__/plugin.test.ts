@@ -218,6 +218,98 @@ describe("plugin system", () => {
         });
       }
     });
+
+    it("builds MCP server entries for plugins with custom mcpServer", async () => {
+      const plugin = createMockPlugin({
+        mcpServer: {
+          command: "/usr/bin/python3",
+          args: ["-m", "mempalace.mcp_server", "--palace", "/tmp/palace"],
+        },
+        getEnvVars: () => ({ PALACE_PATH: "/tmp/palace" }),
+      });
+      // Remove mcpServerPath so mcpServer is used
+      delete (plugin as Record<string, unknown>).mcpServerPath;
+      const { loadPlugins, getPluginMcpServers } = await setup(plugin);
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+      expect(servers["test-plugin-tools"]).toBeDefined();
+      expect(servers["test-plugin-tools"].command).toBe("/usr/bin/python3");
+      expect(servers["test-plugin-tools"].args).toEqual([
+        "-m",
+        "mempalace.mcp_server",
+        "--palace",
+        "/tmp/palace",
+      ]);
+      expect(servers["test-plugin-tools"].env.PALACE_PATH).toBe("/tmp/palace");
+      expect(servers["test-plugin-tools"].env.TALON_BRIDGE_URL).toBe(
+        "http://localhost:19876",
+      );
+    });
+
+    it("mcpServer takes priority over mcpServerPath when both are set", async () => {
+      const plugin = createMockPlugin({
+        mcpServerPath: "/fake/tools.ts",
+        mcpServer: {
+          command: "/usr/bin/python3",
+          args: ["-m", "my_server"],
+        },
+      });
+      const { loadPlugins, getPluginMcpServers } = await setup(plugin);
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+      // mcpServer should win over mcpServerPath
+      expect(servers["test-plugin-tools"].command).toBe("/usr/bin/python3");
+      expect(servers["test-plugin-tools"].args).toEqual(["-m", "my_server"]);
+    });
+
+    it("skips plugins without mcpServer or mcpServerPath", async () => {
+      const plugin = createMockPlugin();
+      delete (plugin as Record<string, unknown>).mcpServerPath;
+      delete (plugin as Record<string, unknown>).mcpServer;
+      const { loadPlugins, getPluginMcpServers } = await setup(plugin);
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+      expect(Object.keys(servers)).toHaveLength(0);
+    });
+  });
+
+  describe("registerPlugin (built-in)", () => {
+    it("registers a built-in plugin directly", async () => {
+      const plugin = createMockPlugin({ name: "built-in-test" });
+      const { registerPlugin, getPlugin, getPluginCount } =
+        await setup(createMockPlugin());
+
+      registerPlugin(plugin, { key: "val" });
+      expect(getPlugin("built-in-test")).toBeDefined();
+      expect(getPlugin("built-in-test")!.path).toBe("(built-in)");
+    });
+
+    it("sets env vars from built-in plugin", async () => {
+      const plugin = createMockPlugin({
+        name: "builtin-env",
+        getEnvVars: () => ({
+          TEST_PLUGIN_BUILTIN_FOO: "baz",
+        }),
+      });
+      const { registerPlugin } = await setup(createMockPlugin());
+
+      registerPlugin(plugin);
+      expect(process.env.TEST_PLUGIN_BUILTIN_FOO).toBe("baz");
+    });
+
+    it("skips registration when validateConfig returns errors", async () => {
+      const plugin = createMockPlugin({
+        name: "builtin-invalid",
+        validateConfig: () => ["missing required field"],
+      });
+      const { registerPlugin, getPlugin } = await setup(createMockPlugin());
+
+      registerPlugin(plugin, {});
+      expect(getPlugin("builtin-invalid")).toBeUndefined();
+    });
   });
 
   describe("system prompt additions", () => {
@@ -407,6 +499,60 @@ describe("extractPlugin — invalid optional field types", () => {
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-handle" }]);
     expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("rejects plugin when mcpServer is not an object", async () => {
+    const plugin = { name: "bad-mcp-server", mcpServer: "not-an-object" };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-mcp-server" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("rejects plugin when mcpServer is null", async () => {
+    const plugin = { name: "null-mcp-server", mcpServer: null };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/null-mcp-server" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("rejects plugin when mcpServer.command is not a string", async () => {
+    const plugin = {
+      name: "bad-mcp-cmd",
+      mcpServer: { command: 123, args: [] },
+    };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-mcp-cmd" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("rejects plugin when mcpServer.args is not an array", async () => {
+    const plugin = {
+      name: "bad-mcp-args",
+      mcpServer: { command: "/usr/bin/python3", args: "not-an-array" },
+    };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-mcp-args" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("accepts plugin with valid mcpServer object", async () => {
+    const plugin = {
+      name: "good-mcp-server",
+      mcpServer: { command: "/usr/bin/python3", args: ["-m", "server"] },
+    };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/good-mcp-server" }]);
+    expect(mod.getPluginCount()).toBe(1);
   });
 
   it("catches and logs error when importModule throws", async () => {

@@ -46,6 +46,7 @@ let configRef: {
   dreamModel?: string;
   claudeBinary?: string;
   workspace?: string;
+  mempalace?: { pythonPath: string; palacePath: string };
 } | null = null;
 
 export function initDream(cfg: {
@@ -54,6 +55,8 @@ export function initDream(cfg: {
   dreamModel?: string;
   claudeBinary?: string;
   workspace?: string;
+  /** MemPalace config for mining logs into the palace during dream runs. */
+  mempalace?: { pythonPath: string; palacePath: string };
 }): void {
   configRef = cfg;
 }
@@ -137,12 +140,26 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
 
   let prompt: string;
   try {
+    // Build optional mempalace mining section
+    const mempalaceSection = configRef.mempalace
+      ? `If mempalace is available, mine the recent log files into the palace for long-term semantic retrieval.
+Run this command using the Bash tool:
+
+\`\`\`bash
+${configRef.mempalace.pythonPath} -m mempalace mine ${logsDir} --palace ${configRef.mempalace.palacePath} --mode convos --wing conversations
+\`\`\`
+
+This indexes conversation logs into the memory palace so the agent can search them later via mempalace_search.
+If the command fails (e.g. mempalace not installed), log the error and continue — this stage is optional.`
+      : "MemPalace is not configured. Skip this stage.";
+
     prompt = readFileSync(promptPath, "utf-8")
       .replace(/\{\{dreamStateFile\}\}/g, dreamStateFile)
       .replace(/\{\{logsDir\}\}/g, logsDir)
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
       .replace(/\{\{memoryFile\}\}/g, memoryFile)
-      .replace(/\{\{dailyMemoryDir\}\}/g, dirs.dailyMemory);
+      .replace(/\{\{dailyMemoryDir\}\}/g, dirs.dailyMemory)
+      .replace(/\{\{mempalaceSection\}\}/g, mempalaceSection);
   } catch {
     throw new Error(`Failed to read dream prompt from ${promptPath}`);
   }

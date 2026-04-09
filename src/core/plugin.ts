@@ -61,10 +61,21 @@ export interface TalonPlugin {
   destroy?(): Promise<void> | void;
 
   /**
-   * Absolute path to the MCP server script (spawned as subprocess).
+   * Absolute path to the MCP server script (spawned as subprocess via node/tsx).
    * Omit if the plugin only provides action handlers without MCP tools.
+   * For non-Node MCP servers (Python, Go, etc.), use `mcpServer` instead.
    */
   mcpServerPath?: string;
+
+  /**
+   * Custom MCP server command and arguments (e.g. Python, Go, Rust servers).
+   * Takes priority over `mcpServerPath` when both are set.
+   * Example: { command: "/path/to/python", args: ["-m", "mempalace.mcp_server"] }
+   */
+  mcpServer?: {
+    readonly command: string;
+    readonly args: readonly string[];
+  };
 
   /**
    * Map plugin config to env vars for the MCP subprocess and action handlers.
@@ -309,6 +320,13 @@ function extractPlugin(mod: Record<string, unknown>): TalonPlugin | null {
     typeof plugin.mcpServerPath !== "string"
   )
     return null;
+  if (plugin.mcpServer !== undefined) {
+    if (typeof plugin.mcpServer !== "object" || plugin.mcpServer === null)
+      return null;
+    const srv = plugin.mcpServer as Record<string, unknown>;
+    if (typeof srv.command !== "string" || !Array.isArray(srv.args))
+      return null;
+  }
   if (plugin.frontends !== undefined && !Array.isArray(plugin.frontends))
     return null;
   return candidate as TalonPlugin;
@@ -334,6 +352,35 @@ export function getPluginCount(): number {
 /** Destroy all plugins (called during shutdown). */
 export async function destroyPlugins(): Promise<void> {
   await registry.destroyAll();
+}
+
+/**
+ * Register a built-in plugin directly (bypasses filesystem loader).
+ * Used for tightly-integrated plugins like mempalace that are configured
+ * via dedicated config fields rather than the plugins[] array.
+ */
+export function registerPlugin(
+  plugin: TalonPlugin,
+  config: Record<string, unknown> = {},
+): void {
+  const errors = plugin.validateConfig?.(config);
+  if (errors && errors.length > 0) {
+    logError(
+      "plugin",
+      `Built-in plugin "${plugin.name}" config validation failed:\n  ${errors.join("\n  ")}`,
+    );
+    return;
+  }
+  const envVars = plugin.getEnvVars?.(config) ?? {};
+  for (const [k, v] of Object.entries(envVars)) {
+    process.env[k] = v;
+  }
+  const loaded: LoadedPlugin = { plugin, config, envVars, path: "(built-in)" };
+  registry.register(loaded);
+
+  const version = plugin.version ? ` v${plugin.version}` : "";
+  const desc = plugin.description ? ` — ${plugin.description}` : "";
+  log("plugin", `Registered built-in: ${plugin.name}${version}${desc}`);
 }
 
 /**
@@ -412,20 +459,30 @@ export function getPluginMcpServers(
   );
 
   for (const { plugin, envVars } of registry.all) {
-    if (!plugin.mcpServerPath) continue;
-
-    servers[`${plugin.name}-tools`] = {
-      command: process.platform === "win32" ? "npx" : "node",
-      args:
-        process.platform === "win32"
-          ? ["tsx", plugin.mcpServerPath]
-          : ["--import", tsxPath, plugin.mcpServerPath],
-      env: {
-        TALON_BRIDGE_URL: bridgeUrl,
-        TALON_CHAT_ID: chatId,
-        ...envVars,
-      },
+    const baseEnv = {
+      TALON_BRIDGE_URL: bridgeUrl,
+      TALON_CHAT_ID: chatId,
+      ...envVars,
     };
+
+    if (plugin.mcpServer) {
+      // Custom command/args (Python, Go, etc.) — no tsx wrapper
+      servers[`${plugin.name}-tools`] = {
+        command: plugin.mcpServer.command,
+        args: [...plugin.mcpServer.args],
+        env: baseEnv,
+      };
+    } else if (plugin.mcpServerPath) {
+      // Existing Node/tsx pattern
+      servers[`${plugin.name}-tools`] = {
+        command: process.platform === "win32" ? "npx" : "node",
+        args:
+          process.platform === "win32"
+            ? ["tsx", plugin.mcpServerPath]
+            : ["--import", tsxPath, plugin.mcpServerPath],
+        env: baseEnv,
+      };
+    }
   }
 
   return servers;

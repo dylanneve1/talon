@@ -44,6 +44,17 @@ const configSchema = z.object({
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
+  // MemPalace — structured long-term memory with vector search
+  mempalace: z
+    .object({
+      enabled: z.boolean().default(false),
+      /** Palace directory path (default: ~/.talon/workspace/palace/) */
+      palacePath: z.string().optional(),
+      /** Python binary path (default: ~/.talon/mempalace-venv/bin/python) */
+      pythonPath: z.string().optional(),
+    })
+    .optional(),
+
   // Display name shown in terminal UI (defaults to "Talon")
   botDisplayName: z.string().default("Talon"),
 

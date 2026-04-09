@@ -62,14 +62,44 @@ export async function bootstrap(
   if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
   if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
 
-  // Load plugins (external tool packages)
-  if (config.plugins.length > 0) {
-    const { loadPlugins, getPluginPromptAdditions } =
+  // Load plugins (external tool packages + built-in mempalace)
+  const hasPlugins =
+    config.plugins.length > 0 || config.mempalace?.enabled === true;
+  if (hasPlugins) {
+    const { loadPlugins, getPluginPromptAdditions, registerPlugin } =
       await import("./core/plugin.js");
-    const frontends =
-      options.frontendNames ??
-      (Array.isArray(config.frontend) ? config.frontend : [config.frontend]);
-    await loadPlugins(config.plugins, frontends);
+
+    // External plugins
+    if (config.plugins.length > 0) {
+      const frontends =
+        options.frontendNames ??
+        (Array.isArray(config.frontend) ? config.frontend : [config.frontend]);
+      await loadPlugins(config.plugins, frontends);
+    }
+
+    // Built-in: MemPalace
+    if (config.mempalace?.enabled) {
+      const { createMempalacePlugin } =
+        await import("./plugins/mempalace/index.js");
+      const { dirs, files: pathFiles } = await import("./util/paths.js");
+      const pythonPath =
+        config.mempalace.pythonPath ?? pathFiles.mempalacePython;
+      const palacePath = config.mempalace.palacePath ?? dirs.palace;
+      const mp = createMempalacePlugin({ pythonPath, palacePath });
+      registerPlugin(
+        mp,
+        config.mempalace as unknown as Record<string, unknown>,
+      );
+      try {
+        await mp.init?.({});
+      } catch (err) {
+        log(
+          "mempalace",
+          `Init warning: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
 
@@ -119,11 +149,23 @@ export async function initBackendAndDispatcher(
 
   initPulse();
   initCron({ sendMessage: frontend.sendMessage });
+
+  // Resolve mempalace paths for dream mode mining (if enabled)
+  let mempalaceCfg: { pythonPath: string; palacePath: string } | undefined;
+  if (config.mempalace?.enabled) {
+    const { dirs, files: pathFiles } = await import("./util/paths.js");
+    mempalaceCfg = {
+      pythonPath: config.mempalace.pythonPath ?? pathFiles.mempalacePython,
+      palacePath: config.mempalace.palacePath ?? dirs.palace,
+    };
+  }
+
   initDream({
     model: config.model,
     dreamModel: config.dreamModel,
     claudeBinary: config.claudeBinary,
     workspace: config.workspace,
+    mempalace: mempalaceCfg,
   });
   initHeartbeat({
     model: config.model,
