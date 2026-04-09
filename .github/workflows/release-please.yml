@@ -18,5 +18,4 @@ jobs:
       - uses: googleapis/release-please-action@v4
         with:
           release-type: node
-          # Note: uses GITHUB_TOKEN so release PRs won't auto-trigger CI.
-          # CI runs on merge to main instead.
+          token: ${{ secrets.PAT }}
