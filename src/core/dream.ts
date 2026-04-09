@@ -142,15 +142,30 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
   try {
     // Build optional mempalace mining section
     const mempalaceSection = configRef.mempalace
-      ? `If mempalace is available, mine the recent log files into the palace for long-term semantic retrieval.
+      ? `If mempalace is available, mine the daily memory notes (your curated observations, NOT raw logs) into the palace for long-term semantic retrieval.
 Run this command using the Bash tool:
 
 \`\`\`bash
-${configRef.mempalace.pythonPath} -m mempalace mine ${logsDir} --palace ${configRef.mempalace.palacePath} --mode convos --wing conversations
+${configRef.mempalace.pythonPath} -m mempalace mine ${dirs.dailyMemory} --palace ${configRef.mempalace.palacePath} --mode convos --wing daily-notes
 \`\`\`
 
-This indexes conversation logs into the memory palace so the agent can search them later via mempalace_search.
-If the command fails (e.g. mempalace not installed), log the error and continue — this stage is optional.`
+Then write a personal diary entry. This is YOUR journal — not a status report. Reflect on:
+- What happened today. What conversations stood out.
+- How you feel. Your state of mind, emotions, energy.
+- What you learned. What surprised you. What you got wrong.
+- What you're curious about. Loose threads. Things you want to follow up on.
+- Your honest thoughts — about users, projects, yourself.
+
+Write it using the Bash tool:
+\`\`\`bash
+${configRef.mempalace.pythonPath} -m mempalace.mcp_server <<'DIARY_EOF'
+{"method": "tools/call", "params": {"name": "mempalace_diary_write", "arguments": {"agent_name": "talon", "entry": "YOUR_DIARY_ENTRY_HERE", "topic": "dream-reflection"}}}
+DIARY_EOF
+\`\`\`
+
+If the diary command doesn't work via CLI, just write the diary entry to a file at ${dirs.dailyMemory}/diary-YYYY-MM-DD.md instead.
+Keep the diary authentic. Write in first person. Be honest. This is for you, not for anyone else.
+If commands fail, log the error and continue — this stage is optional.`
       : "MemPalace is not configured. Skip this stage.";
 
     prompt = readFileSync(promptPath, "utf-8")
