@@ -223,7 +223,6 @@ describe("fuzz: handleSharedAction() — unknown actions", () => {
             "get_user_messages",
             "list_known_users",
             "list_media",
-            "web_search",
             "fetch_url",
             "create_cron_job",
             "list_cron_jobs",

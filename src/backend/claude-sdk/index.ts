@@ -115,8 +115,8 @@ export async function handleMessage(
       "TaskOutput",
       "TaskStop",
       "AskUserQuestion",
-      "WebSearch",
-      "WebFetch",
+      // Disable built-in web tools only when Brave Search MCP is configured
+      ...(config.braveApiKey ? ["WebSearch", "WebFetch"] : []),
     ],
     ...thinkingConfig,
     mcpServers: {
@@ -166,8 +166,11 @@ export async function handleMessage(
       ...(config.braveApiKey
         ? {
             "brave-search": {
-              command: "npx",
-              args: ["-y", "@modelcontextprotocol/server-brave-search"],
+              command: resolve(
+                import.meta.dirname ?? ".",
+                "../../../node_modules/.bin/brave-search-mcp-server",
+              ),
+              args: [],
               env: { BRAVE_API_KEY: config.braveApiKey },
             },
           }
