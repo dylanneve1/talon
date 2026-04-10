@@ -52,7 +52,7 @@ export interface ToolDefinition {
     bridge: BridgeFunction,
   ) => Promise<unknown>;
 
-  /** Which frontends this tool appears on.  Defaults to ["all"]. */
+  /** Which frontends this tool appears on. Omit for all frontends. */
   readonly frontends?: readonly ToolFrontend[];
 
   /** Grouping tag. */
