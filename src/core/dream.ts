@@ -7,7 +7,7 @@
  *   2. Spawns a background Agent that reads recent logs and merges new
  *      facts/preferences/events into memory.md
  *
- * The dream agent runs entirely on filesystem tools — no Telegram/MCP access.
+ * The dream agent runs on filesystem tools, with optional MCP access for MemPalace when configured.
  * It does NOT use the main dispatcher (no chat session, no typing indicator).
  */
 
@@ -19,6 +19,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
+import { getPluginMcpServers } from "./plugin.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -202,8 +203,8 @@ If commands fail, log the error and continue — this stage is optional.`
     ...(configRef.claudeBinary
       ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
       : {}),
-    // No MCP servers — filesystem tools only
-    mcpServers: {},
+    // Include mempalace MCP servers when configured, otherwise empty
+    mcpServers: configRef.mempalace ? getPluginMcpServers("", "dream") : {},
     disallowedTools: [
       "EnterPlanMode",
       "ExitPlanMode",

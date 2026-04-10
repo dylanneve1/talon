@@ -380,6 +380,15 @@ export function registerPlugin(
     );
     return;
   }
+  // Check for duplicates before setting env vars or logging
+  if (registry.getByName(plugin.name)) {
+    logWarn(
+      "plugin",
+      `Built-in plugin "${plugin.name}" already registered — skipping`,
+    );
+    return;
+  }
+
   const envVars = plugin.getEnvVars?.(config) ?? {};
   for (const [k, v] of Object.entries(envVars)) {
     process.env[k] = v;
