@@ -2,9 +2,9 @@
  * Web tools — search and URL fetching.
  *
  * These are platform-agnostic and available on all frontends.
- * Note: Claude Code also has built-in WebSearch / WebFetch tools.
- * These can be excluded via composeTools({ excludeTags: ["web"] })
- * if you prefer the built-in equivalents.
+ * Claude Code's built-in WebSearch / WebFetch are disabled in favour
+ * of these MCP tools (which use Brave Search with SearXNG fallback).
+ * These can be excluded via composeTools({ excludeTags: ["web"] }).
  */
 
 import { z } from "zod";

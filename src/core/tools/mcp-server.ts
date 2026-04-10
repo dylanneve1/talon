@@ -26,6 +26,12 @@ const BRIDGE_URL = process.env.TALON_BRIDGE_URL || "http://127.0.0.1:19876";
 const CHAT_ID = process.env.TALON_CHAT_ID || "";
 const rawFrontend = (process.env.TALON_FRONTEND || "telegram") as ToolFrontend;
 
+if (!CHAT_ID) {
+  console.warn(
+    "TALON_CHAT_ID is not set — bridge calls will fail without a valid chat context.",
+  );
+}
+
 if (!VALID_FRONTENDS.has(rawFrontend)) {
   console.error(
     `Invalid TALON_FRONTEND: "${rawFrontend}". Must be one of: ${[...VALID_FRONTENDS].join(", ")}`,
