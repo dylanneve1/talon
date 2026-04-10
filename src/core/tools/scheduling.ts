@@ -33,9 +33,7 @@ Type "query" runs the content as a Claude prompt with full tool access (can sear
       name: z.string().describe("Human-readable name for the job"),
       schedule: z
         .string()
-        .describe(
-          "Cron expression (5-field: minute hour day month weekday)",
-        ),
+        .describe("Cron expression (5-field: minute hour day month weekday)"),
       type: z
         .enum(["message", "query"])
         .describe(
@@ -70,15 +68,9 @@ Type "query" runs the content as a Claude prompt with full tool access (can sear
       job_id: z.string().describe("Job ID to edit"),
       name: z.string().optional().describe("New name"),
       schedule: z.string().optional().describe("New cron expression"),
-      type: z
-        .enum(["message", "query"])
-        .optional()
-        .describe("New job type"),
+      type: z.enum(["message", "query"]).optional().describe("New job type"),
       content: z.string().optional().describe("New content"),
-      enabled: z
-        .boolean()
-        .optional()
-        .describe("Enable or disable the job"),
+      enabled: z.boolean().optional().describe("Enable or disable the job"),
       timezone: z.string().optional().describe("New IANA timezone"),
     },
     execute: (params, bridge) => bridge("edit_cron_job", params),

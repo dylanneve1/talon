@@ -29,9 +29,7 @@ export const stickerTools: ToolDefinition[] = [
     schema: {
       file_id: z
         .string()
-        .describe(
-          "Sticker file_id from chat history or sticker pack listing",
-        ),
+        .describe("Sticker file_id from chat history or sticker pack listing"),
     },
     execute: (params, bridge) => bridge("download_sticker", params),
     frontends: ["telegram"],
@@ -58,22 +56,16 @@ The set name will automatically get "_by_<botname>" appended if needed.
 
 Example: create_sticker_set(user_id=123, name="cool_pack", title="Cool Stickers", file_path="/path/to/sticker.png", emoji_list=["😎"])`,
     schema: {
-      user_id: z
-        .number()
-        .describe("Telegram user ID who will own the pack"),
+      user_id: z.number().describe("Telegram user ID who will own the pack"),
       name: z
         .string()
         .describe(
           "Short name for the pack (a-z, 0-9, underscores). Will get _by_<botname> appended.",
         ),
-      title: z
-        .string()
-        .describe("Display title for the pack (1-64 chars)"),
+      title: z.string().describe("Display title for the pack (1-64 chars)"),
       file_path: z
         .string()
-        .describe(
-          "Path to the sticker image file (PNG/WEBP, 512x512 max)",
-        ),
+        .describe("Path to the sticker image file (PNG/WEBP, 512x512 max)"),
       emoji_list: z
         .array(z.string())
         .optional()
@@ -93,15 +85,9 @@ Example: create_sticker_set(user_id=123, name="cool_pack", title="Cool Stickers"
     description:
       "Add a new sticker to an existing sticker pack created by the bot.",
     schema: {
-      user_id: z
-        .number()
-        .describe("Telegram user ID who owns the pack"),
-      name: z
-        .string()
-        .describe("Sticker set name (including _by_<botname>)"),
-      file_path: z
-        .string()
-        .describe("Path to the sticker image file"),
+      user_id: z.number().describe("Telegram user ID who owns the pack"),
+      name: z.string().describe("Sticker set name (including _by_<botname>)"),
+      file_path: z.string().describe("Path to the sticker image file"),
       emoji_list: z
         .array(z.string())
         .optional()
@@ -118,8 +104,7 @@ Example: create_sticker_set(user_id=123, name="cool_pack", title="Cool Stickers"
 
   {
     name: "delete_sticker_from_set",
-    description:
-      "Remove a specific sticker from a pack by its file_id.",
+    description: "Remove a specific sticker from a pack by its file_id.",
     schema: {
       sticker_file_id: z
         .string()
@@ -127,22 +112,19 @@ Example: create_sticker_set(user_id=123, name="cool_pack", title="Cool Stickers"
           "file_id of the sticker to remove (get from get_sticker_pack)",
         ),
     },
-    execute: (params, bridge) =>
-      bridge("delete_sticker_from_set", params),
+    execute: (params, bridge) => bridge("delete_sticker_from_set", params),
     frontends: ["telegram"],
     tag: "stickers",
   },
 
   {
     name: "set_sticker_set_title",
-    description:
-      "Change the title of a sticker pack created by the bot.",
+    description: "Change the title of a sticker pack created by the bot.",
     schema: {
       name: z.string().describe("Sticker set name"),
       title: z.string().describe("New title (1-64 chars)"),
     },
-    execute: (params, bridge) =>
-      bridge("set_sticker_set_title", params),
+    execute: (params, bridge) => bridge("set_sticker_set_title", params),
     frontends: ["telegram"],
     tag: "stickers",
   },

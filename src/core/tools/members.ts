@@ -8,8 +8,7 @@ import type { ToolDefinition } from "./types.js";
 export const memberTools: ToolDefinition[] = [
   {
     name: "list_chat_members",
-    description:
-      "List chat members with names, IDs, online status, badges.",
+    description: "List chat members with names, IDs, online status, badges.",
     schema: { limit: z.number().optional() },
     execute: (params, bridge) =>
       bridge("list_known_users", { limit: params.limit }),

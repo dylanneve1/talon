@@ -158,8 +158,7 @@ Examples:
             is_anonymous: params.is_anonymous,
             correct_option_id: params.correct_option_id,
             explanation: params.explanation,
-            type:
-              params.correct_option_id !== undefined ? "quiz" : "regular",
+            type: params.correct_option_id !== undefined ? "quiz" : "regular",
           });
         case "location":
           return bridge("send_location", {
@@ -217,8 +216,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
         )
         .describe("Button rows"),
     },
-    execute: (params, bridge) =>
-      bridge("send_message_with_buttons", params),
+    execute: (params, bridge) => bridge("send_message_with_buttons", params),
     frontends: ["teams"],
     tag: "messaging",
   },

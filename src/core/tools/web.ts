@@ -17,10 +17,7 @@ export const webTools: ToolDefinition[] = [
       "Search the web using Brave Search (with SearXNG fallback). Returns titles, URLs, and snippets. Use for current events, facts, or finding URLs to fetch.",
     schema: {
       query: z.string().describe("Search query"),
-      limit: z
-        .number()
-        .optional()
-        .describe("Max results (default 5, max 10)"),
+      limit: z.number().optional().describe("Max results (default 5, max 10)"),
     },
     execute: (params, bridge) => bridge("web_search", params),
     tag: "web",
