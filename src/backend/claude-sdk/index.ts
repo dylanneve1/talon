@@ -9,7 +9,6 @@ import {
   setSessionName,
 } from "../../storage/sessions.js";
 import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
-import { getRecentHistory } from "../../storage/history.js";
 import { resolve } from "node:path";
 import { classify } from "../../core/errors.js";
 import {
@@ -19,7 +18,7 @@ import {
 import { rebuildSystemPrompt } from "../../util/config.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
-import { formatSmartTimestamp, formatFullDatetime } from "../../util/time.js";
+import { formatFullDatetime } from "../../util/time.js";
 
 import type { QueryParams, QueryResult } from "../../core/types.js";
 
@@ -185,25 +184,9 @@ export async function handleMessage(
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
   const nowTag = `[${formatFullDatetime()}]`;
 
-  // Session continuity: when resuming a session that has history but no active
-  // SDK session (after restart or /resume), prepend recent messages for context.
-  let continuityPrefix = "";
-  if (!session.sessionId && session.turns > 0) {
-    const recentMsgs = getRecentHistory(chatId, 10);
-    if (recentMsgs.length > 0) {
-      const contextLines = recentMsgs
-        .map((m) => {
-          const time = formatSmartTimestamp(m.timestamp);
-          return `[${time}] ${m.senderName}: ${m.text.slice(0, 300)}`;
-        })
-        .join("\n");
-      continuityPrefix = `[Session resumed — recent conversation context:\n${contextLines}]\n\n`;
-    }
-  }
-
   const prompt = isGroup
-    ? `${continuityPrefix}${nowTag} [${senderName}]${msgIdHint}: ${text}`
-    : `${continuityPrefix}${nowTag}${msgIdHint} ${text}`;
+    ? `${nowTag} [${senderName}]${msgIdHint}: ${text}`
+    : `${nowTag}${msgIdHint} ${text}`;
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
 
