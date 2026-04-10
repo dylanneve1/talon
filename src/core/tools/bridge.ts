@@ -16,7 +16,7 @@ export function createBridge(
     const resp = await fetch(`${bridgeUrl}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, _chatId: chatId, ...params }),
+      body: JSON.stringify({ action, ...params, _chatId: chatId }),
       signal: AbortSignal.timeout(120_000),
     });
     if (!resp.ok) {

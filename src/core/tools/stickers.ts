@@ -14,7 +14,7 @@ export const stickerTools: ToolDefinition[] = [
       set_name: z
         .string()
         .describe(
-          "Sticker set name (e.g. 'AnimatedEmojies' or from sticker metadata)",
+          "Sticker set name (e.g. 'AnimatedEmojis' or from sticker metadata)",
         ),
     },
     execute: (params, bridge) => bridge("get_sticker_pack", params),

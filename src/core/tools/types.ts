@@ -2,7 +2,7 @@
  * Shared types for the modular tool system.
  *
  * Tool definitions are pure data + execute logic — no MCP imports,
- * no bridge coupling.  The MCP server consumes these via compose().
+ * no bridge coupling.  The MCP server consumes these via composeTools().
  */
 
 import type { ZodRawShape } from "zod";

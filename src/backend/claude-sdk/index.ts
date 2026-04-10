@@ -118,11 +118,14 @@ export async function handleMessage(
     ],
     ...thinkingConfig,
     mcpServers: {
-      // Register unified MCP tools server — one per frontend
+      // Register unified MCP tools server — one per messaging frontend.
+      // Terminal frontend relies on Claude Code built-in tools (Read, Write,
+      // Bash, etc.) and doesn't need a custom MCP tools server.
       ...(() => {
-        const frontends = Array.isArray(config.frontend)
+        const allFrontends = Array.isArray(config.frontend)
           ? config.frontend
           : [config.frontend];
+        const frontends = allFrontends.filter((f) => f !== "terminal");
         const bridgeUrl = `http://127.0.0.1:${bridgePortFn()}`;
         const servers: Record<
           string,
