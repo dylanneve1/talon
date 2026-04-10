@@ -1,9 +1,11 @@
 /**
- * Web tools — search and URL fetching.
+ * Web tools — URL fetching.
  *
- * These are platform-agnostic and available on all frontends.
- * Claude Code's built-in WebSearch / WebFetch are disabled in favour
- * of these MCP tools (which use Brave Search with SearXNG fallback).
+ * Platform-agnostic, available on all frontends.
+ * Web search is handled by the Brave Search MCP server (registered in
+ * src/backend/claude-sdk/index.ts) when configured. URL fetching is provided here via
+ * the `fetch_url` tool, so Claude Code's built-in WebSearch / WebFetch are
+ * disabled in favor of these project-specific replacements.
  * These can be excluded via composeTools({ excludeTags: ["web"] }).
  */
 
@@ -11,18 +13,6 @@ import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
 
 export const webTools: ToolDefinition[] = [
-  {
-    name: "web_search",
-    description:
-      "Search the web using Brave Search (with SearXNG fallback). Returns titles, URLs, and snippets. Use for current events, facts, or finding URLs to fetch.",
-    schema: {
-      query: z.string().describe("Search query"),
-      limit: z.number().optional().describe("Max results (default 5, max 10)"),
-    },
-    execute: (params, bridge) => bridge("web_search", params),
-    tag: "web",
-  },
-
   {
     name: "fetch_url",
     description:

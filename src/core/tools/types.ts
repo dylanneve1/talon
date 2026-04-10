@@ -34,7 +34,7 @@ export type BridgeFunction = (
  * AND to know which bridge action it maps to.
  */
 export interface ToolDefinition {
-  /** MCP tool name (e.g. "send", "react", "web_search"). */
+  /** MCP tool name (e.g. "send", "react", "fetch_url"). */
   readonly name: string;
 
   /** Human-readable description shown to the model. */

@@ -115,6 +115,8 @@ export async function handleMessage(
       "TaskOutput",
       "TaskStop",
       "AskUserQuestion",
+      // Always disable Claude Code built-in web tools — fetch_url is always
+      // available, and Brave Search MCP replaces WebSearch when configured.
       "WebSearch",
       "WebFetch",
     ],
@@ -162,6 +164,19 @@ export async function handleMessage(
         }
         return servers;
       })(),
+      // Brave Search MCP server — provides brave_web_search and brave_local_search
+      ...(config.braveApiKey
+        ? {
+            "brave-search": {
+              command: resolve(
+                import.meta.dirname ?? ".",
+                "../../../node_modules/.bin/brave-search-mcp-server",
+              ),
+              args: [],
+              env: { BRAVE_API_KEY: config.braveApiKey },
+            },
+          }
+        : {}),
       ...getPluginMcpServers(`http://127.0.0.1:${bridgePortFn()}`, chatId),
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
