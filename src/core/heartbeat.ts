@@ -283,14 +283,14 @@ async function runHeartbeatAgent(
   const options = {
     model,
     systemPrompt:
-      "You are a background heartbeat agent for Talon. You have access to filesystem tools and MCP plugins (email, mempalace, brave search, etc.). Follow the user-defined instructions precisely. Be efficient — you have limited time.",
+      "You are a background heartbeat agent for Talon. You have access to filesystem tools and all registered MCP plugins. Follow the user-defined instructions precisely. Be efficient — you have limited time.",
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     ...(configRef.claudeBinary
       ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
       : {}),
-    // Load all plugin MCP servers (email, mempalace, brave, etc.)
+    // Load all registered plugin MCP servers (excludes frontend-specific tools like telegram)
     mcpServers: getPluginMcpServers("", "heartbeat"),
     disallowedTools: [
       "EnterPlanMode",
