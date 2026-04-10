@@ -46,7 +46,7 @@ vi.mock("../storage/cron-store.js", () => ({
 // ── Imports (after mocks) ────────────────────────────────────────────────────
 
 const { classify, TalonError } = await import("../core/errors.js");
-const { validateCronExpression } = await import("../storage/cron-store.js");
+await import("../storage/cron-store.js");
 const { handleSharedAction } = await import("../core/gateway-actions.js");
 const { resolveModelName } = await import("../storage/chat-settings.js");
 const { Cron } = await import("croner");

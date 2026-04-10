@@ -244,10 +244,8 @@ describe("withRetry", () => {
 
   describe("exhausting all retries", () => {
     it("throws the last error after 3 total attempts for retryable errors", async () => {
-      let calls = 0;
       const networkErr = talonErr("network");
       const fn = vi.fn(async () => {
-        calls++;
         throw networkErr;
       });
 
@@ -257,9 +255,7 @@ describe("withRetry", () => {
     });
 
     it("throws the last error after 3 total attempts for overloaded errors", async () => {
-      let calls = 0;
       const fn = vi.fn(async () => {
-        calls++;
         throw talonErr("overloaded");
       });
 

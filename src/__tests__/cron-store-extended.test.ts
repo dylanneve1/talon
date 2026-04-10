@@ -596,7 +596,7 @@ describe("loadCronJobs — invalid timezone stripping", () => {
   beforeEach(() => existsSyncMock.mockReset().mockReturnValue(false));
 
   it("strips invalid timezone from loaded job", async () => {
-    const { isValidTimezone } = await import("../storage/cron-store.js");
+    await import("../storage/cron-store.js");
     const jobWithBadTz: Record<string, unknown> = {
       "tz-bad-id": {
         id: "tz-bad-id",

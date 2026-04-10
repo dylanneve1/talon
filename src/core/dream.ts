@@ -7,7 +7,7 @@
  *   2. Spawns a background Agent that reads recent logs and merges new
  *      facts/preferences/events into memory.md
  *
- * The dream agent runs entirely on filesystem tools — no Telegram/MCP access.
+ * The dream agent runs on filesystem tools, with optional MCP access for MemPalace when configured.
  * It does NOT use the main dispatcher (no chat session, no typing indicator).
  */
 
@@ -19,6 +19,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
+import { getPluginMcpServers } from "./plugin.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ let configRef: {
   dreamModel?: string;
   claudeBinary?: string;
   workspace?: string;
+  mempalace?: { pythonPath: string; palacePath: string };
 } | null = null;
 
 export function initDream(cfg: {
@@ -54,6 +56,8 @@ export function initDream(cfg: {
   dreamModel?: string;
   claudeBinary?: string;
   workspace?: string;
+  /** MemPalace config for mining logs into the palace during dream runs. */
+  mempalace?: { pythonPath: string; palacePath: string };
 }): void {
   configRef = cfg;
 }
@@ -137,12 +141,39 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
 
   let prompt: string;
   try {
+    // Build optional mempalace mining section
+    const mempalaceSection = configRef.mempalace
+      ? `If mempalace is available, mine the daily memory notes (your curated observations, NOT raw logs) into the palace for long-term semantic retrieval.
+Run this command using the Bash tool:
+
+\`\`\`bash
+'${configRef.mempalace.pythonPath.replace(/'/g, "'\\''")}' -m mempalace mine '${dirs.dailyMemory.replace(/'/g, "'\\''")}' --palace '${configRef.mempalace.palacePath.replace(/'/g, "'\\''")}' --mode convos --wing daily-notes
+\`\`\`
+
+Then write a personal diary entry. This is YOUR journal — not a status report. Reflect on:
+- What happened today. What conversations stood out.
+- How you feel. Your state of mind, emotions, energy.
+- What you learned. What surprised you. What you got wrong.
+- What you're curious about. Loose threads. Things you want to follow up on.
+- Your honest thoughts — about users, projects, yourself.
+
+Write the diary using the \`mempalace_diary_write\` MCP tool (available during dream):
+\`\`\`
+mempalace_diary_write(agent_name="talon", entry="YOUR_DIARY_ENTRY_HERE", topic="dream-reflection")
+\`\`\`
+
+If the MCP tool is not available, write the diary entry to a file at ${dirs.dailyMemory}/diary-YYYY-MM-DD.md instead.
+Keep the diary authentic. Write in first person. Be honest. This is for you, not for anyone else.
+If commands fail, log the error and continue — this stage is optional.`
+      : "MemPalace is not configured. Skip this stage.";
+
     prompt = readFileSync(promptPath, "utf-8")
       .replace(/\{\{dreamStateFile\}\}/g, dreamStateFile)
       .replace(/\{\{logsDir\}\}/g, logsDir)
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
       .replace(/\{\{memoryFile\}\}/g, memoryFile)
-      .replace(/\{\{dailyMemoryDir\}\}/g, dirs.dailyMemory);
+      .replace(/\{\{dailyMemoryDir\}\}/g, dirs.dailyMemory)
+      .replace(/\{\{mempalaceSection\}\}/g, mempalaceSection);
   } catch {
     throw new Error(`Failed to read dream prompt from ${promptPath}`);
   }
@@ -164,16 +195,19 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
 
   const options = {
     model,
-    systemPrompt:
-      "You are a background memory consolidation agent for Talon. Use only filesystem tools. Be precise and surgical — update memory.md without losing existing accurate information.",
+    systemPrompt: configRef.mempalace
+      ? "You are a background memory consolidation agent for Talon. Use filesystem tools and MemPalace MCP tools. Do NOT use Telegram or messaging tools. Be precise and surgical — update memory.md without losing existing accurate information."
+      : "You are a background memory consolidation agent for Talon. Use only filesystem tools. Be precise and surgical — update memory.md without losing existing accurate information.",
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     ...(configRef.claudeBinary
       ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
       : {}),
-    // No MCP servers — filesystem tools only
-    mcpServers: {},
+    // Only load mempalace MCP server for dream — no other plugins needed
+    mcpServers: configRef.mempalace
+      ? getPluginMcpServers("", "dream", ["mempalace"])
+      : {},
     disallowedTools: [
       "EnterPlanMode",
       "ExitPlanMode",

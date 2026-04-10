@@ -62,14 +62,59 @@ export async function bootstrap(
   if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
   if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
 
-  // Load plugins (external tool packages)
-  if (config.plugins.length > 0) {
-    const { loadPlugins, getPluginPromptAdditions } =
+  // Load plugins (external tool packages + built-in mempalace)
+  const hasPlugins =
+    config.plugins.length > 0 || config.mempalace?.enabled === true;
+  if (hasPlugins) {
+    const { loadPlugins, getPluginPromptAdditions, registerPlugin } =
       await import("./core/plugin.js");
-    const frontends =
-      options.frontendNames ??
-      (Array.isArray(config.frontend) ? config.frontend : [config.frontend]);
-    await loadPlugins(config.plugins, frontends);
+
+    // External plugins
+    if (config.plugins.length > 0) {
+      const frontends =
+        options.frontendNames ??
+        (Array.isArray(config.frontend) ? config.frontend : [config.frontend]);
+      await loadPlugins(config.plugins, frontends);
+    }
+
+    // Built-in: MemPalace
+    if (config.mempalace?.enabled) {
+      const { createMempalacePlugin } =
+        await import("./plugins/mempalace/index.js");
+      const { getPlugin } = await import("./core/plugin.js");
+      const { dirs, files: pathFiles } = await import("./util/paths.js");
+      const pythonPath =
+        config.mempalace.pythonPath ?? pathFiles.mempalacePython;
+      const palacePath = config.mempalace.palacePath ?? dirs.palace;
+      const mempalaceConfig = config.mempalace as unknown as Record<
+        string,
+        unknown
+      >;
+      const mp = createMempalacePlugin({ pythonPath, palacePath });
+      registerPlugin(mp, mempalaceConfig);
+
+      // Only call init if registration succeeded (validation passed)
+      if (getPlugin("mempalace")) {
+        try {
+          const MEMPALACE_INIT_TIMEOUT_MS = 30_000;
+          await Promise.race([
+            mp.init?.(mempalaceConfig),
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error("MemPalace init timed out after 30s")),
+                MEMPALACE_INIT_TIMEOUT_MS,
+              ),
+            ),
+          ]);
+        } catch (err) {
+          log(
+            "mempalace",
+            `Init warning: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
+    }
+
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
 
@@ -119,11 +164,31 @@ export async function initBackendAndDispatcher(
 
   initPulse();
   initCron({ sendMessage: frontend.sendMessage });
+
+  // Only enable mempalace dream integration if the plugin actually registered
+  let mempalaceCfg: { pythonPath: string; palacePath: string } | undefined;
+  if (config.mempalace?.enabled) {
+    const { getPlugin } = await import("./core/plugin.js");
+    if (getPlugin("mempalace")) {
+      const { dirs, files: pathFiles } = await import("./util/paths.js");
+      mempalaceCfg = {
+        pythonPath: config.mempalace.pythonPath ?? pathFiles.mempalacePython,
+        palacePath: config.mempalace.palacePath ?? dirs.palace,
+      };
+    } else {
+      log(
+        "mempalace",
+        "Enabled in config but plugin not registered — skipping dream integration",
+      );
+    }
+  }
+
   initDream({
     model: config.model,
     dreamModel: config.dreamModel,
     claudeBinary: config.claudeBinary,
     workspace: config.workspace,
+    mempalace: mempalaceCfg,
   });
   initHeartbeat({
     model: config.model,

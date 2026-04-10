@@ -5,11 +5,7 @@
 
 import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
-import {
-  splitMessage,
-  markdownToTelegramHtml,
-  escapeHtml,
-} from "./formatting.js";
+import { markdownToTelegramHtml, escapeHtml } from "./formatting.js";
 import { execute } from "../../core/dispatcher.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import {
@@ -391,7 +387,6 @@ const messageQueues = new Map<
     messages: QueuedMessage[];
     timer: ReturnType<typeof setTimeout>;
     bot: Bot;
-    config: TalonConfig;
     numericChatId: number;
     queuedReactionMsgIds: number[];
   }
@@ -446,7 +441,6 @@ function isUserRateLimited(senderId: number): boolean {
  */
 function enqueueMessage(
   bot: Bot,
-  config: TalonConfig,
   chatId: string,
   numericChatId: number,
   msg: QueuedMessage,
@@ -474,7 +468,6 @@ function enqueueMessage(
     messages: [msg],
     timer: setTimeout(() => flushQueue(chatId), DEBOUNCE_MS),
     bot,
-    config,
     numericChatId,
     queuedReactionMsgIds: [] as number[],
   };
@@ -486,7 +479,7 @@ async function flushQueue(chatId: string): Promise<void> {
   if (!entry) return;
   messageQueues.delete(chatId);
 
-  const { messages, bot, config, numericChatId, queuedReactionMsgIds } = entry;
+  const { messages, bot, numericChatId, queuedReactionMsgIds } = entry;
 
   // Clear hourglass reactions on queued messages now that we're processing
   for (const msgId of queuedReactionMsgIds) {
@@ -516,7 +509,6 @@ async function flushQueue(chatId: string): Promise<void> {
   try {
     await processAndReply({
       bot,
-      config,
       chatId,
       numericChatId,
       replyToId: last.replyToId,
@@ -550,7 +542,6 @@ async function flushQueue(chatId: string): Promise<void> {
         await new Promise((r) => setTimeout(r, delayMs));
         await processAndReply({
           bot,
-          config,
           chatId,
           numericChatId,
           replyToId: last.replyToId,
@@ -621,7 +612,6 @@ async function sendHtml(
  */
 type ProcessAndReplyParams = {
   bot: Bot;
-  config: TalonConfig;
   chatId: string | number;
   numericChatId: number;
   replyToId: number;
@@ -692,7 +682,6 @@ function createStreamCallbacks(
 async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
     bot,
-    config,
     chatId,
     numericChatId,
     replyToId,
@@ -864,7 +853,7 @@ async function handleMediaMessage(
 
     const prompt = promptParts.join("\n");
 
-    enqueueMessage(bot, config, chatId, ctx.chat.id, {
+    enqueueMessage(bot, chatId, ctx.chat.id, {
       prompt,
       replyToId: ctx.message.message_id,
       messageId: ctx.message.message_id,
@@ -920,7 +909,7 @@ export async function handleTextMessage(
   );
   const prompt = fwdCtx + replyCtx + replyPhotoCtx + (ctx.message.text ?? "");
 
-  enqueueMessage(bot, config, chatId, ctx.chat.id, {
+  enqueueMessage(bot, chatId, ctx.chat.id, {
     prompt,
     replyToId: ctx.message.message_id,
     messageId: ctx.message.message_id,
@@ -1040,7 +1029,7 @@ export async function handleStickerMessage(
     .filter(Boolean)
     .join("\n");
 
-  enqueueMessage(bot, config, chatId, ctx.chat.id, {
+  enqueueMessage(bot, chatId, ctx.chat.id, {
     prompt,
     replyToId: ctx.message.message_id,
     messageId: ctx.message.message_id,
@@ -1185,7 +1174,6 @@ export async function handleCallbackQuery(
 
     await processAndReply({
       bot,
-      config,
       chatId,
       numericChatId,
       replyToId,

@@ -51,6 +51,8 @@ export const dirs = {
   prompts: resolve(TALON_ROOT, "prompts"),
   /** Per-chat message traces: ~/.talon/data/traces/ */
   traces: resolve(TALON_ROOT, "data", "traces"),
+  /** MemPalace palace: ~/.talon/workspace/palace/ */
+  palace: resolve(TALON_ROOT, "workspace", "palace"),
 } as const;
 
 // ── Files ──────────────────────────────────────────────────────────────────
@@ -78,6 +80,13 @@ export const files = {
   userSession: resolve(TALON_ROOT, ".user-session"),
   /** PID file for daemon mode: ~/.talon/talon.pid */
   pid: resolve(TALON_ROOT, "talon.pid"),
+  /** MemPalace venv python binary (platform-dependent: bin/python on Unix, Scripts/python.exe on Windows) */
+  mempalacePython: resolve(
+    TALON_ROOT,
+    "mempalace-venv",
+    process.platform === "win32" ? "Scripts" : "bin",
+    process.platform === "win32" ? "python.exe" : "python",
+  ),
   /** Dream mode state: ~/.talon/workspace/memory/dream_state.json */
   dreamState: resolve(TALON_ROOT, "workspace", "memory", "dream_state.json"),
   /** Heartbeat state: ~/.talon/workspace/memory/heartbeat_state.json */

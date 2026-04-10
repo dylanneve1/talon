@@ -747,6 +747,7 @@ describe("dream error paths", () => {
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {
+        yield; // satisfy require-yield
         throw new Error("agent crashed unexpectedly");
       }),
     }));
@@ -811,6 +812,7 @@ describe("dream error paths", () => {
     }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {
+        yield; // satisfy require-yield
         await queryPromise; // suspend until we release
       }),
     }));
@@ -957,7 +959,8 @@ describe("runDreamAgent — timeout arrow fn fires after DREAM_TIMEOUT_MS", () =
     // query never resolves — so the 10-minute timeout wins the race
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {
-        await new Promise(() => {}); // never yields
+        yield; // satisfy require-yield
+        await new Promise(() => {}); // never resolves
       }),
     }));
 
@@ -970,6 +973,120 @@ describe("runDreamAgent — timeout arrow fn fires after DREAM_TIMEOUT_MS", () =
     await dreamPromise;
 
     vi.useRealTimers();
+  });
+});
+
+describe("mempalace section gating in dream prompt", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("includes mempalace mining command and diary instructions when mempalace is configured", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "PROMPT START {{mempalaceSection}} PROMPT END"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
+      },
+    }));
+    const queryMock = vi.fn(async function* () {});
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({ query: queryMock }));
+
+    const mod = await import("../core/dream.js");
+    mod.initDream({
+      model: "claude-sonnet-4-6",
+      workspace: "/fake/ws",
+      mempalace: {
+        pythonPath: "/usr/bin/python3",
+        palacePath: "/fake/palace",
+      },
+    });
+    await mod.forceDream();
+
+    expect(queryMock).toHaveBeenCalled();
+    const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as {
+      prompt: string;
+    };
+    // Mempalace mining command should be in the prompt
+    expect(callArgs.prompt).toContain("-m mempalace mine");
+    // Diary instructions should be in the prompt
+    expect(callArgs.prompt).toContain("mempalace_diary_write");
+    // Should NOT contain the skip message
+    expect(callArgs.prompt).not.toContain(
+      "MemPalace is not configured. Skip this stage.",
+    );
+  });
+
+  it("includes skip message when mempalace is not configured", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(() => "PROMPT START {{mempalaceSection}} PROMPT END"),
+      mkdirSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        dreamState: "/fake/.talon/data/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
+      },
+    }));
+    const queryMock = vi.fn(async function* () {});
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({ query: queryMock }));
+
+    const mod = await import("../core/dream.js");
+    // No mempalace config
+    mod.initDream({
+      model: "claude-sonnet-4-6",
+      workspace: "/fake/ws",
+    });
+    await mod.forceDream();
+
+    expect(queryMock).toHaveBeenCalled();
+    const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as {
+      prompt: string;
+    };
+    // Should contain the skip message
+    expect(callArgs.prompt).toContain(
+      "MemPalace is not configured. Skip this stage.",
+    );
+    // Should NOT contain mempalace mining commands
+    expect(callArgs.prompt).not.toContain("-m mempalace mine");
+    expect(callArgs.prompt).not.toContain("mempalace_diary_write");
   });
 });
 
