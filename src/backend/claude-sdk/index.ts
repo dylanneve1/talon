@@ -118,58 +118,40 @@ export async function handleMessage(
     ],
     ...thinkingConfig,
     mcpServers: {
-      // Register frontend-specific MCP tools based on active frontend
+      // Register unified MCP tools server — one per frontend
       ...(() => {
         const frontends = Array.isArray(config.frontend)
           ? config.frontend
           : [config.frontend];
         const bridgeUrl = `http://127.0.0.1:${bridgePortFn()}`;
-        const mcpEnv = { TALON_BRIDGE_URL: bridgeUrl, TALON_CHAT_ID: chatId };
         const servers: Record<
           string,
           { command: string; args: string[]; env: Record<string, string> }
         > = {};
-        // Resolve tsx from Talon's node_modules (cwd may be ~/.talon/workspace/ which has no node_modules)
         // Resolve tsx from the package root (3 levels up from src/backend/claude-sdk/)
         const tsxImport = resolve(
           import.meta.dirname ?? ".",
           "../../../node_modules/tsx/dist/esm/index.mjs",
         );
+        // Unified MCP server in core/tools/
+        const mcpServerPath = resolve(
+          import.meta.dirname ?? ".",
+          "../../core/tools/mcp-server.ts",
+        );
 
-        if (frontends.includes("telegram")) {
-          servers["telegram-tools"] = {
-            command: process.platform === "win32" ? "npx" : "node",
-            args:
-              process.platform === "win32"
-                ? ["tsx", resolve(import.meta.dirname ?? ".", "tools.ts")]
-                : [
-                    "--import",
-                    tsxImport,
-                    resolve(import.meta.dirname ?? ".", "tools.ts"),
-                  ],
-            env: mcpEnv,
+        for (const frontend of frontends) {
+          const serverName = `${frontend}-tools`;
+          const mcpEnv = {
+            TALON_BRIDGE_URL: bridgeUrl,
+            TALON_CHAT_ID: chatId,
+            TALON_FRONTEND: frontend,
           };
-        }
-        if (frontends.includes("teams")) {
-          servers["teams-tools"] = {
+          servers[serverName] = {
             command: process.platform === "win32" ? "npx" : "node",
             args:
               process.platform === "win32"
-                ? [
-                    "tsx",
-                    resolve(
-                      import.meta.dirname ?? ".",
-                      "../../frontend/teams/tools.ts",
-                    ),
-                  ]
-                : [
-                    "--import",
-                    tsxImport,
-                    resolve(
-                      import.meta.dirname ?? ".",
-                      "../../frontend/teams/tools.ts",
-                    ),
-                  ],
+                ? ["tsx", mcpServerPath]
+                : ["--import", tsxImport, mcpServerPath],
             env: mcpEnv,
           };
         }

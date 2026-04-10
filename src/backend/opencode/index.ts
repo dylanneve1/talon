@@ -53,7 +53,7 @@ async function ensureServer(): Promise<OpencodeClient> {
 
   // Register our MCP tools server with OpenCode
   try {
-    const toolsPath = new URL("../claude-sdk/tools.ts", import.meta.url)
+    const toolsPath = new URL("../../core/tools/mcp-server.ts", import.meta.url)
       .pathname;
     await client.mcp.add({
       body: {
@@ -63,6 +63,7 @@ async function ensureServer(): Promise<OpencodeClient> {
           command: ["node", "--import", "tsx", toolsPath],
           environment: {
             TALON_BRIDGE_URL: `http://127.0.0.1:${gatewayPortFn()}`,
+            TALON_FRONTEND: "telegram",
           },
         },
       },
