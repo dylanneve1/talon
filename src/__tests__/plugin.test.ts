@@ -543,6 +543,30 @@ describe("extractPlugin — invalid optional field types", () => {
     expect(mod.getPluginCount()).toBe(0);
   });
 
+  it("rejects plugin when mcpServer.command is empty string", async () => {
+    const plugin = {
+      name: "empty-mcp-cmd",
+      mcpServer: { command: "", args: ["-m", "server"] },
+    };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/empty-mcp-cmd" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
+  it("rejects plugin when mcpServer.args contains non-string elements", async () => {
+    const plugin = {
+      name: "bad-mcp-args-types",
+      mcpServer: { command: "/usr/bin/python3", args: ["-m", 42] },
+    };
+    vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+    const mod = await import("../core/plugin.js");
+    mod._deps.importModule = async () => ({ default: plugin });
+    await mod.loadPlugins([{ path: "/fake/bad-mcp-args-types" }]);
+    expect(mod.getPluginCount()).toBe(0);
+  });
+
   it("accepts plugin with valid mcpServer object", async () => {
     const plugin = {
       name: "good-mcp-server",
