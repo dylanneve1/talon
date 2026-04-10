@@ -197,6 +197,7 @@ describe("forceHeartbeat", () => {
 
     // Make agent throw
     queryMock.mockImplementationOnce(async function* () {
+      yield; // satisfy require-yield
       throw new Error("Agent exploded");
     });
 
@@ -217,6 +218,7 @@ describe("forceHeartbeat", () => {
     existsSyncMock.mockReturnValue(false);
 
     queryMock.mockImplementationOnce(async function* () {
+      yield; // satisfy require-yield
       throw new Error("Boom");
     });
 
@@ -340,6 +342,7 @@ describe("awaitCurrentRun", () => {
     });
 
     queryMock.mockImplementationOnce(async function* () {
+      yield; // satisfy require-yield
       await agentPromise;
     });
 

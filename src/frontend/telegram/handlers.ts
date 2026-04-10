@@ -5,11 +5,7 @@
 
 import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
-import {
-  splitMessage,
-  markdownToTelegramHtml,
-  escapeHtml,
-} from "./formatting.js";
+import { markdownToTelegramHtml, escapeHtml } from "./formatting.js";
 import { execute } from "../../core/dispatcher.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import {
@@ -692,7 +688,6 @@ function createStreamCallbacks(
 async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
     bot,
-    config,
     chatId,
     numericChatId,
     replyToId,

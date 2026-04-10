@@ -279,8 +279,7 @@ describe("plugin system", () => {
   describe("registerPlugin (built-in)", () => {
     it("registers a built-in plugin directly", async () => {
       const plugin = createMockPlugin({ name: "built-in-test" });
-      const { registerPlugin, getPlugin, getPluginCount } =
-        await setup(createMockPlugin());
+      const { registerPlugin, getPlugin } = await setup(createMockPlugin());
 
       registerPlugin(plugin, { key: "val" });
       expect(getPlugin("built-in-test")).toBeDefined();

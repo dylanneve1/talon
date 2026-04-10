@@ -66,7 +66,7 @@ export function createMempalacePlugin(config: {
           timeout: 15_000,
           stdio: "pipe",
         });
-      } catch (err) {
+      } catch {
         logError(
           "mempalace",
           `mempalace not installed in ${pythonPath}. Run: ${pythonPath} -m pip install mempalace`,

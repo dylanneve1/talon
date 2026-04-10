@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -38,8 +38,6 @@ describe("watchdog", () => {
     });
 
     it("updates lastProcessedAt timestamp", () => {
-      const beforeStatus = getHealthStatus();
-      const beforeMs = beforeStatus.msSinceLastMessage;
       recordMessageProcessed();
       const afterStatus = getHealthStatus();
       // After recording, msSinceLastMessage should be very small (near 0)

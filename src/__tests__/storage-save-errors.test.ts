@@ -49,7 +49,7 @@ describe("cron-store — save failure logs error", () => {
       registerCleanup: vi.fn(),
     }));
 
-    const { addCronJob, generateCronId, flushCronJobs } =
+    const { addCronJob, generateCronId } =
       await import("../storage/cron-store.js");
 
     const job = {

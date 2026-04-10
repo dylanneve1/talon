@@ -533,8 +533,6 @@ describe("handleTextMessage — integration via mock Context", () => {
 });
 
 describe("handlePhotoMessage — downloads and enqueues photo", () => {
-  let restoreFetch: () => void;
-
   beforeEach(() => {
     // Mock bot.api.getFile for file download
     mockBot.api.getFile = vi.fn(async () => ({ file_path: "photos/test.jpg" }));
@@ -547,7 +545,6 @@ describe("handlePhotoMessage — downloads and enqueues photo", () => {
       headers: { get: (_name: string) => null },
       arrayBuffer: async () => jpegBuf.buffer,
     }));
-    restoreFetch = () => {};
     vi.stubGlobal("fetch", mockFetch);
 
     executeMock.mockResolvedValue({
@@ -795,7 +792,6 @@ describe("rate limiting — isUserRateLimited via handleTextMessage", () => {
     }
 
     // 16th message should be rate limited (return early without enqueuing)
-    const before = executeMock.mock.calls.length;
     await handleTextMessage(makeCtx(15), mockBot, mockConfig);
 
     // Wait to confirm no debounce fires for the 16th chat

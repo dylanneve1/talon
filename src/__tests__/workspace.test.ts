@@ -5,7 +5,6 @@ import {
   rmSync,
   existsSync,
   readdirSync,
-  readFileSync,
   symlinkSync,
 } from "node:fs";
 import { join } from "node:path";

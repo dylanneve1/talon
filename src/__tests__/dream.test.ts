@@ -747,6 +747,7 @@ describe("dream error paths", () => {
     vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {
+        yield; // satisfy require-yield
         throw new Error("agent crashed unexpectedly");
       }),
     }));
@@ -811,6 +812,7 @@ describe("dream error paths", () => {
     }));
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {
+        yield; // satisfy require-yield
         await queryPromise; // suspend until we release
       }),
     }));
@@ -957,7 +959,8 @@ describe("runDreamAgent — timeout arrow fn fires after DREAM_TIMEOUT_MS", () =
     // query never resolves — so the 10-minute timeout wins the race
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {
-        await new Promise(() => {}); // never yields
+        yield; // satisfy require-yield
+        await new Promise(() => {}); // never resolves
       }),
     }));
 
@@ -1029,7 +1032,9 @@ describe("mempalace section gating in dream prompt", () => {
     // Diary instructions should be in the prompt
     expect(callArgs.prompt).toContain("mempalace_diary_write");
     // Should NOT contain the skip message
-    expect(callArgs.prompt).not.toContain("MemPalace is not configured. Skip this stage.");
+    expect(callArgs.prompt).not.toContain(
+      "MemPalace is not configured. Skip this stage.",
+    );
   });
 
   it("includes skip message when mempalace is not configured", async () => {
@@ -1076,7 +1081,9 @@ describe("mempalace section gating in dream prompt", () => {
       prompt: string;
     };
     // Should contain the skip message
-    expect(callArgs.prompt).toContain("MemPalace is not configured. Skip this stage.");
+    expect(callArgs.prompt).toContain(
+      "MemPalace is not configured. Skip this stage.",
+    );
     // Should NOT contain mempalace mining commands
     expect(callArgs.prompt).not.toContain("-m mempalace mine");
     expect(callArgs.prompt).not.toContain("mempalace_diary_write");
