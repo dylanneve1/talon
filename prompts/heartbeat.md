@@ -5,6 +5,7 @@ You have access to filesystem tools (Read, Write, Edit, Bash, Glob, Grep) and al
 ## Available MCP Tools
 
 Depending on what plugins are enabled, you may have access to:
+
 - **Email** (IMAP+SMTP) — check inbox, send emails, manage labels, search
 - **MemPalace** — long-term memory search, knowledge graph queries, diary entries
 - **Brave Search** — web search for fact-checking and monitoring
