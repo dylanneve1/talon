@@ -7,6 +7,16 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
+const PROMPT_TEMPLATE = `## MemPalace — Long-term Memory
+
+mempalace_search mempalace_add_drawer mempalace_kg_query mempalace_kg_invalidate
+mempalace_kg_timeline mempalace_traverse mempalace_find_tunnels
+mempalace_diary_write mempalace_diary_read mempalace_delete_drawer
+Protocol
+
+### Palace location: \`{{palacePath}}\`
+`;
+
 describe("mempalace plugin", () => {
   beforeEach(() => {
     vi.resetModules();
@@ -17,6 +27,7 @@ describe("mempalace plugin", () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
     vi.doMock("node:child_process", () => ({
       execFileSync: vi.fn(() => "Palace: 42 drawers"),
@@ -41,6 +52,7 @@ describe("mempalace plugin", () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false),
       mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
 
     const { createMempalacePlugin } =
@@ -60,6 +72,7 @@ describe("mempalace plugin", () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
 
     const { createMempalacePlugin } =
@@ -80,6 +93,7 @@ describe("mempalace plugin", () => {
         p === "/venv/bin/python" ? true : false,
       ),
       mkdirSync: mkdirSyncMock,
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
     vi.doMock("node:child_process", () => ({
       execFileSync: vi.fn(() => "ok"),
@@ -102,6 +116,7 @@ describe("mempalace plugin", () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
     vi.doMock("node:child_process", () => ({
       execFileSync: vi.fn(() => {
@@ -131,6 +146,7 @@ describe("mempalace plugin", () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
 
     const { createMempalacePlugin } =
@@ -145,10 +161,11 @@ describe("mempalace plugin", () => {
     });
   });
 
-  it("getSystemPromptAddition includes palace path and tool descriptions", async () => {
+  it("getSystemPromptAddition loads from .md file and interpolates palacePath", async () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
 
     const { createMempalacePlugin } =
@@ -172,5 +189,36 @@ describe("mempalace plugin", () => {
     expect(addition).toContain("mempalace_delete_drawer");
     expect(addition).toContain("Protocol");
     expect(addition).toContain("/custom/palace");
+    // Verify interpolation happened — no raw placeholder
+    expect(addition).not.toContain("{{palacePath}}");
+  });
+
+  it("getSystemPromptAddition returns fallback when .md file is missing", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => true),
+      mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => {
+        throw new Error("ENOENT: no such file");
+      }),
+    }));
+
+    const { logWarn } = (await import("../util/log.js")) as unknown as {
+      logWarn: ReturnType<typeof vi.fn>;
+    };
+
+    const { createMempalacePlugin } =
+      await import("../plugins/mempalace/index.js");
+    const plugin = createMempalacePlugin({
+      pythonPath: "/venv/bin/python",
+      palacePath: "/data/palace",
+    });
+
+    const addition = plugin.getSystemPromptAddition!({});
+    expect(addition).toContain("MemPalace");
+    expect(addition).toContain("/data/palace");
+    expect(logWarn).toHaveBeenCalledWith(
+      "mempalace",
+      expect.stringContaining("Failed to load prompt"),
+    );
   });
 });
