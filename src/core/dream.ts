@@ -146,7 +146,7 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
 Run this command using the Bash tool:
 
 \`\`\`bash
-${configRef.mempalace.pythonPath} -m mempalace mine ${dirs.dailyMemory} --palace ${configRef.mempalace.palacePath} --mode convos --wing daily-notes
+"${configRef.mempalace.pythonPath}" -m mempalace mine "${dirs.dailyMemory}" --palace "${configRef.mempalace.palacePath}" --mode convos --wing daily-notes
 \`\`\`
 
 Then write a personal diary entry. This is YOUR journal — not a status report. Reflect on:
@@ -156,14 +156,9 @@ Then write a personal diary entry. This is YOUR journal — not a status report.
 - What you're curious about. Loose threads. Things you want to follow up on.
 - Your honest thoughts — about users, projects, yourself.
 
-Write it using the Bash tool:
-\`\`\`bash
-${configRef.mempalace.pythonPath} -m mempalace.mcp_server <<'DIARY_EOF'
-{"method": "tools/call", "params": {"name": "mempalace_diary_write", "arguments": {"agent_name": "talon", "entry": "YOUR_DIARY_ENTRY_HERE", "topic": "dream-reflection"}}}
-DIARY_EOF
-\`\`\`
+Write the diary entry directly to a file at ${dirs.dailyMemory}/diary-YYYY-MM-DD.md using the filesystem tools.
+Do not invoke mempalace.mcp_server as a one-shot CLI for this step.
 
-If the diary command doesn't work via CLI, just write the diary entry to a file at ${dirs.dailyMemory}/diary-YYYY-MM-DD.md instead.
 Keep the diary authentic. Write in first person. Be honest. This is for you, not for anyone else.
 If commands fail, log the error and continue — this stage is optional.`
       : "MemPalace is not configured. Skip this stage.";

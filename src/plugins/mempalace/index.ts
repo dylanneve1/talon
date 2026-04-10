@@ -42,7 +42,7 @@ export function createMempalacePlugin(config: {
       const errors: string[] = [];
       if (!existsSync(pythonPath)) {
         errors.push(
-          `Python binary not found at ${pythonPath}. Run: python3 -m venv ~/.talon/mempalace-venv && ~/.talon/mempalace-venv/bin/pip install mempalace`,
+          `Python binary not found at ${pythonPath}. Create or select a Python environment, set "pythonPath" to that interpreter, then run: ${pythonPath} -m pip install mempalace`,
         );
       }
       return errors.length > 0 ? errors : undefined;

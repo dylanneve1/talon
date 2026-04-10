@@ -324,7 +324,12 @@ function extractPlugin(mod: Record<string, unknown>): TalonPlugin | null {
     if (typeof plugin.mcpServer !== "object" || plugin.mcpServer === null)
       return null;
     const srv = plugin.mcpServer as Record<string, unknown>;
-    if (typeof srv.command !== "string" || !Array.isArray(srv.args))
+    if (
+      typeof srv.command !== "string" ||
+      !srv.command ||
+      !Array.isArray(srv.args) ||
+      !srv.args.every((a) => typeof a === "string")
+    )
       return null;
   }
   if (plugin.frontends !== undefined && !Array.isArray(plugin.frontends))

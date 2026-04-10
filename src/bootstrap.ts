@@ -91,7 +91,16 @@ export async function bootstrap(
         config.mempalace as unknown as Record<string, unknown>,
       );
       try {
-        await mp.init?.({});
+        const MEMPALACE_INIT_TIMEOUT_MS = 30_000;
+        await Promise.race([
+          mp.init?.({}),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("MemPalace init timed out after 30s")),
+              MEMPALACE_INIT_TIMEOUT_MS,
+            ),
+          ),
+        ]);
       } catch (err) {
         log(
           "mempalace",
