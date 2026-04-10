@@ -48,7 +48,7 @@ export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
         "--rm",
         "-i",
         "-e",
-        `GITHUB_PERSONAL_ACCESS_TOKEN=${token ?? ""}`,
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
         "ghcr.io/github/github-mcp-server",
       ],
     },

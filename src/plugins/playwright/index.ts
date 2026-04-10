@@ -12,10 +12,10 @@
  *   }
  */
 
-import { execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { TalonPlugin } from "../../core/plugin.js";
-import { log, logWarn } from "../../util/log.js";
+import { log } from "../../util/log.js";
 
 export function createPlaywrightPlugin(config: {
   browser?: string;
@@ -24,13 +24,17 @@ export function createPlaywrightPlugin(config: {
   const browser = config.browser ?? "chromium";
   const headless = config.headless !== false; // default true
 
-  // Resolve npx path from Talon's node_modules
+  // Resolve path from Talon's node_modules
   const mcpBin = resolve(
-    import.meta.dirname,
+    import.meta.dirname ?? ".",
     "../../../node_modules/@playwright/mcp/cli.js",
   );
 
-  const args = ["--headless", "--no-sandbox"];
+  const args = ["--no-sandbox"];
+
+  if (headless) {
+    args.push("--headless");
+  }
 
   if (browser !== "chromium") {
     args.push("--browser", browser);
@@ -62,20 +66,16 @@ export function createPlaywrightPlugin(config: {
         );
       }
 
+      if (!existsSync(mcpBin)) {
+        errors.push(
+          `@playwright/mcp not found at ${mcpBin} — run "npm install @playwright/mcp"`,
+        );
+      }
+
       return errors.length > 0 ? errors : undefined;
     },
 
     async init() {
-      // Verify the MCP server script exists
-      const { existsSync } = await import("node:fs");
-      if (!existsSync(mcpBin)) {
-        logWarn(
-          "playwright",
-          `MCP server not found at ${mcpBin} — run "npm install @playwright/mcp"`,
-        );
-        return;
-      }
-
       log("playwright", `Ready (${browser}, headless=${headless})`);
     },
   };

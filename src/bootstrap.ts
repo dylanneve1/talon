@@ -58,7 +58,7 @@ export async function bootstrap(
 ): Promise<BootstrapResult> {
   const config = loadConfig();
 
-  // Load plugins (external tool packages + built-in GitHub, MemPalace)
+  // Load plugins (external tool packages + built-in GitHub, MemPalace, Playwright)
   const hasPlugins =
     config.plugins.length > 0 ||
     config.github?.enabled === true ||
