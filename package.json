@@ -56,6 +56,7 @@
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/transformer-throttler": "^1.2.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/server-brave-search": "^0.6.2",
     "@opencode-ai/sdk": "^1.4.0",
     "big-integer": "^1.6.52",
     "cheerio": "^1.2.0",

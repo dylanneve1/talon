@@ -190,11 +190,11 @@ describe("composeTools()", () => {
   it("combines frontend + excludeNames", () => {
     const tools = composeTools({
       frontend: "telegram",
-      excludeNames: ["web_search"],
+      excludeNames: ["fetch_url"],
     });
     const names = new Set(tools.map((t) => t.name));
-    expect(names.has("web_search")).toBe(false);
-    expect(names.has("fetch_url")).toBe(true);
+    expect(names.has("fetch_url")).toBe(false);
+    expect(names.has("send")).toBe(true);
   });
 
   // ── Edge cases ────────────────────────────────────────────────────────

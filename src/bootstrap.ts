@@ -58,10 +58,6 @@ export async function bootstrap(
 ): Promise<BootstrapResult> {
   const config = loadConfig();
 
-  // Expose search config as env vars for gateway-actions
-  if (config.braveApiKey) process.env.TALON_BRAVE_API_KEY = config.braveApiKey;
-  if (config.searxngUrl) process.env.TALON_SEARXNG_URL = config.searxngUrl;
-
   // Load plugins (external tool packages + built-in mempalace)
   const hasPlugins =
     config.plugins.length > 0 || config.mempalace?.enabled === true;

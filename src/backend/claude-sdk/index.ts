@@ -162,6 +162,16 @@ export async function handleMessage(
         }
         return servers;
       })(),
+      // Brave Search MCP server — provides brave_web_search and brave_local_search
+      ...(config.braveApiKey
+        ? {
+            "brave-search": {
+              command: "npx",
+              args: ["-y", "@modelcontextprotocol/server-brave-search"],
+              env: { BRAVE_API_KEY: config.braveApiKey },
+            },
+          }
+        : {}),
       ...getPluginMcpServers(`http://127.0.0.1:${bridgePortFn()}`, chatId),
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
