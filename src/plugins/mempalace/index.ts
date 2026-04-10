@@ -8,7 +8,7 @@
  *   "mempalace": {
  *     "enabled": true,
  *     "palacePath": "/path/to/palace",   // optional, defaults to ~/.talon/workspace/palace/
- *     "pythonPath": "/path/to/python"     // optional, defaults to ~/.talon/mempalace-venv/bin/python
+ *     "pythonPath": "/path/to/python"     // optional, defaults to mempalace venv python (bin/python on Unix, Scripts/python.exe on Windows)
  *   }
  */
 

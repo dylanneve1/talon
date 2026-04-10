@@ -387,7 +387,6 @@ const messageQueues = new Map<
     messages: QueuedMessage[];
     timer: ReturnType<typeof setTimeout>;
     bot: Bot;
-    config: TalonConfig;
     numericChatId: number;
     queuedReactionMsgIds: number[];
   }
@@ -442,7 +441,6 @@ function isUserRateLimited(senderId: number): boolean {
  */
 function enqueueMessage(
   bot: Bot,
-  config: TalonConfig,
   chatId: string,
   numericChatId: number,
   msg: QueuedMessage,
@@ -470,7 +468,6 @@ function enqueueMessage(
     messages: [msg],
     timer: setTimeout(() => flushQueue(chatId), DEBOUNCE_MS),
     bot,
-    config,
     numericChatId,
     queuedReactionMsgIds: [] as number[],
   };
@@ -856,7 +853,7 @@ async function handleMediaMessage(
 
     const prompt = promptParts.join("\n");
 
-    enqueueMessage(bot, config, chatId, ctx.chat.id, {
+    enqueueMessage(bot, chatId, ctx.chat.id, {
       prompt,
       replyToId: ctx.message.message_id,
       messageId: ctx.message.message_id,
@@ -912,7 +909,7 @@ export async function handleTextMessage(
   );
   const prompt = fwdCtx + replyCtx + replyPhotoCtx + (ctx.message.text ?? "");
 
-  enqueueMessage(bot, config, chatId, ctx.chat.id, {
+  enqueueMessage(bot, chatId, ctx.chat.id, {
     prompt,
     replyToId: ctx.message.message_id,
     messageId: ctx.message.message_id,
@@ -1032,7 +1029,7 @@ export async function handleStickerMessage(
     .filter(Boolean)
     .join("\n");
 
-  enqueueMessage(bot, config, chatId, ctx.chat.id, {
+  enqueueMessage(bot, chatId, ctx.chat.id, {
     prompt,
     replyToId: ctx.message.message_id,
     messageId: ctx.message.message_id,
