@@ -91,7 +91,7 @@ export function createMempalacePlugin(config: {
       try {
         const { stdout } = await execFile(
           pythonPath,
-          ["-m", "mempalace", "status", "--palace", palacePath],
+          ["-m", "mempalace", "--palace", palacePath, "status"],
           { timeout: 30_000 },
         );
         log(
