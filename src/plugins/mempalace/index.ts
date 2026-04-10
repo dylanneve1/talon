@@ -13,17 +13,17 @@
  */
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { execFile as execFileCb, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import type { TalonPlugin } from "../../core/plugin.js";
 import { log, logWarn } from "../../util/log.js";
+import { dirs } from "../../util/paths.js";
 
 const execFile = promisify(execFileCb);
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROMPT_PATH = resolve(__dirname, "../../../prompts/mempalace.md");
+/** Load from ~/.talon/prompts/ (user-customisable, seeded on first run) */
+const PROMPT_PATH = resolve(dirs.prompts, "mempalace.md");
 
 /**
  * Create a mempalace plugin instance with resolved paths.

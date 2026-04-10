@@ -195,8 +195,9 @@ If commands fail, log the error and continue — this stage is optional.`
 
   const options = {
     model,
-    systemPrompt:
-      "You are a background memory consolidation agent for Talon. Use only filesystem tools. Be precise and surgical — update memory.md without losing existing accurate information.",
+    systemPrompt: configRef.mempalace
+      ? "You are a background memory consolidation agent for Talon. Use filesystem tools and MemPalace MCP tools. Do NOT use Telegram or messaging tools. Be precise and surgical — update memory.md without losing existing accurate information."
+      : "You are a background memory consolidation agent for Talon. Use only filesystem tools. Be precise and surgical — update memory.md without losing existing accurate information.",
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
