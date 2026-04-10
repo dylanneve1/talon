@@ -203,8 +203,10 @@ If commands fail, log the error and continue — this stage is optional.`
     ...(configRef.claudeBinary
       ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
       : {}),
-    // Include mempalace MCP servers when configured, otherwise empty
-    mcpServers: configRef.mempalace ? getPluginMcpServers("", "dream") : {},
+    // Only load mempalace MCP server for dream — no other plugins needed
+    mcpServers: configRef.mempalace
+      ? getPluginMcpServers("", "dream", ["mempalace"])
+      : {},
     disallowedTools: [
       "EnterPlanMode",
       "ExitPlanMode",

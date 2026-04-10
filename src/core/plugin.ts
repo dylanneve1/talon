@@ -461,16 +461,22 @@ export interface McpServerConfig {
 }
 
 /**
- * Build MCP server entries for all plugins that provide an MCP server.
+ * Build MCP server entries for plugins that provide an MCP server.
  * Plugins can expose an MCP server in two ways:
  *   - `mcpServerPath` — path to a Node/TypeScript MCP server script (run via tsx)
  *   - `mcpServer` — custom command/args for non-Node servers (Python, Go, etc.)
  * Plugins with neither are skipped. When both are set, `mcpServer` takes priority.
+ *
+ * @param only — optional list of plugin names to include. If omitted, all
+ *   plugins with MCP servers are returned. Pass `[]` to get none.
  */
 export function getPluginMcpServers(
   bridgeUrl: string,
   chatId: string,
+  only?: string[],
 ): Record<string, McpServerConfig> {
+  if (only !== undefined && only.length === 0) return {};
+
   const servers: Record<string, McpServerConfig> = {};
 
   // Resolve tsx from Talon's own node_modules (not cwd which may be ~/.talon/workspace/)
@@ -480,6 +486,8 @@ export function getPluginMcpServers(
   );
 
   for (const { plugin, envVars } of registry.all) {
+    // Skip plugins not in the allow-list when filtering
+    if (only !== undefined && !only.includes(plugin.name)) continue;
     const baseEnv = {
       TALON_BRIDGE_URL: bridgeUrl,
       TALON_CHAT_ID: chatId,
