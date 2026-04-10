@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { ALL_TOOLS, composeTools } from "../core/tools/index.js";
-import type { ToolDefinition, ToolFrontend, ToolTag } from "../core/tools/types.js";
+import type {
+  ToolDefinition,
+  ToolFrontend,
+  ToolTag,
+} from "../core/tools/types.js";
 
 describe("ALL_TOOLS registry", () => {
   it("contains tools from every domain", () => {
@@ -52,9 +56,7 @@ describe("composeTools()", () => {
 
     for (const t of tools) {
       const f = t.frontends;
-      expect(
-        !f || f.includes("all") || f.includes("telegram"),
-      ).toBe(true);
+      expect(!f || f.includes("all") || f.includes("telegram")).toBe(true);
     }
   });
 
@@ -64,9 +66,7 @@ describe("composeTools()", () => {
 
     for (const t of tools) {
       const f = t.frontends;
-      expect(
-        !f || f.includes("all") || f.includes("teams"),
-      ).toBe(true);
+      expect(!f || f.includes("all") || f.includes("teams")).toBe(true);
     }
   });
 
@@ -94,7 +94,11 @@ describe("composeTools()", () => {
     const universalTools = ALL_TOOLS.filter((t) => !t.frontends);
     expect(universalTools.length).toBeGreaterThan(0);
 
-    for (const frontend of ["telegram", "teams", "terminal"] as ToolFrontend[]) {
+    for (const frontend of [
+      "telegram",
+      "teams",
+      "terminal",
+    ] as ToolFrontend[]) {
       const tools = composeTools({ frontend });
       const names = new Set(tools.map((t) => t.name));
       for (const ut of universalTools) {
@@ -104,11 +108,15 @@ describe("composeTools()", () => {
   });
 
   it("includes tools with frontends: ['all'] for any frontend", () => {
-    const allFrontendTools = ALL_TOOLS.filter(
-      (t) => t.frontends?.includes("all"),
+    const allFrontendTools = ALL_TOOLS.filter((t) =>
+      t.frontends?.includes("all"),
     );
     // Even if there are none right now, the filter logic is tested via universal tools
-    for (const frontend of ["telegram", "teams", "terminal"] as ToolFrontend[]) {
+    for (const frontend of [
+      "telegram",
+      "teams",
+      "terminal",
+    ] as ToolFrontend[]) {
       const tools = composeTools({ frontend });
       const names = new Set(tools.map((t) => t.name));
       for (const t of allFrontendTools) {

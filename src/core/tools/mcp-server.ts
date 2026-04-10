@@ -17,13 +17,19 @@ import { composeTools } from "./index.js";
 import { createBridge, textResult } from "./bridge.js";
 import type { ToolFrontend } from "./types.js";
 
-const VALID_FRONTENDS = new Set<ToolFrontend>(["telegram", "teams", "terminal"]);
+const VALID_FRONTENDS = new Set<ToolFrontend>([
+  "telegram",
+  "teams",
+  "terminal",
+]);
 const BRIDGE_URL = process.env.TALON_BRIDGE_URL || "http://127.0.0.1:19876";
 const CHAT_ID = process.env.TALON_CHAT_ID || "";
 const rawFrontend = (process.env.TALON_FRONTEND || "telegram") as ToolFrontend;
 
 if (!VALID_FRONTENDS.has(rawFrontend)) {
-  console.error(`Invalid TALON_FRONTEND: "${rawFrontend}". Must be one of: ${[...VALID_FRONTENDS].join(", ")}`);
+  console.error(
+    `Invalid TALON_FRONTEND: "${rawFrontend}". Must be one of: ${[...VALID_FRONTENDS].join(", ")}`,
+  );
   process.exit(1);
 }
 const FRONTEND = rawFrontend;
