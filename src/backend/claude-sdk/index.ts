@@ -115,6 +115,8 @@ export async function handleMessage(
       "TaskOutput",
       "TaskStop",
       "AskUserQuestion",
+      "WebSearch",
+      "WebFetch",
     ],
     ...thinkingConfig,
     mcpServers: {
