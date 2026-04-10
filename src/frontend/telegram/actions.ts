@@ -278,7 +278,10 @@ export function createTelegramActionHandler(
       case "send_voice":
       case "send_audio": {
         const filePath = String(body.file_path ?? "");
-        const caption = body.caption ? String(body.caption) : undefined;
+        const caption = body.caption
+          ? markdownToTelegramHtml(String(body.caption))
+          : undefined;
+        const captionParseMode = caption ? ("HTML" as const) : undefined;
         gateway.incrementMessages(chatId);
         if (action === "send_file") {
           const stat = statSync(filePath);
@@ -294,6 +297,7 @@ export function createTelegramActionHandler(
             sent = await withRetry(() =>
               bot.api.sendDocument(chatId, file, {
                 caption,
+                parse_mode: captionParseMode,
                 reply_parameters: rp,
               }),
             );
@@ -302,6 +306,7 @@ export function createTelegramActionHandler(
             sent = await withRetry(() =>
               bot.api.sendPhoto(chatId, file, {
                 caption,
+                parse_mode: captionParseMode,
                 reply_parameters: rp,
               }),
             );
@@ -310,6 +315,7 @@ export function createTelegramActionHandler(
             sent = await withRetry(() =>
               bot.api.sendVideo(chatId, file, {
                 caption,
+                parse_mode: captionParseMode,
                 reply_parameters: rp,
               }),
             );
@@ -318,6 +324,7 @@ export function createTelegramActionHandler(
             sent = await withRetry(() =>
               bot.api.sendAnimation(chatId, file, {
                 caption,
+                parse_mode: captionParseMode,
                 reply_parameters: rp,
               }),
             );
@@ -326,6 +333,7 @@ export function createTelegramActionHandler(
             sent = await withRetry(() =>
               bot.api.sendAudio(chatId, file, {
                 caption,
+                parse_mode: captionParseMode,
                 reply_parameters: rp,
                 title: body.title as string | undefined,
                 performer: body.performer as string | undefined,
@@ -336,6 +344,7 @@ export function createTelegramActionHandler(
             sent = await withRetry(() =>
               bot.api.sendVoice(chatId, file, {
                 caption,
+                parse_mode: captionParseMode,
                 reply_parameters: rp,
               }),
             );

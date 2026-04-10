@@ -43,6 +43,15 @@ const configSchema = z.object({
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
+  // GitHub — GitHub API access via official MCP server
+  github: z
+    .object({
+      enabled: z.boolean().default(false),
+      /** GitHub personal access token (default: from `gh auth token`) */
+      token: z.string().min(1).optional(),
+    })
+    .optional(),
+
   // MemPalace — structured long-term memory with vector search
   mempalace: z
     .object({
@@ -51,6 +60,17 @@ const configSchema = z.object({
       palacePath: z.string().min(1).optional(),
       /** Python binary path (default: ~/.talon/mempalace-venv/bin/python) */
       pythonPath: z.string().min(1).optional(),
+    })
+    .optional(),
+
+  // Playwright — headless browser automation via MCP
+  playwright: z
+    .object({
+      enabled: z.boolean().default(false),
+      /** Browser engine: chromium (default), chrome, firefox, webkit, msedge */
+      browser: z.string().optional(),
+      /** Run headless (default: true) */
+      headless: z.boolean().default(true),
     })
     .optional(),
 

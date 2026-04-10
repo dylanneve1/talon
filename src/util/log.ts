@@ -42,7 +42,9 @@ export type LogComponent =
   | "teams"
   | "config"
   | "access"
-  | "mempalace";
+  | "github"
+  | "mempalace"
+  | "playwright";
 
 const LOG_FILE = files.log;
 

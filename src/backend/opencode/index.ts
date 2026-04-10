@@ -17,7 +17,6 @@ import {
   resetSession,
 } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
-import { getRecentHistory } from "../../storage/history.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -150,24 +149,9 @@ export async function handleMessage(
 
   // Build prompt with group context
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
-  let continuityPrefix = "";
-  const session = getSession(chatId);
-  if (!session.sessionId && session.turns > 0) {
-    const recent = getRecentHistory(chatId, 3);
-    if (recent.length > 0) {
-      const ctx = recent
-        .map(
-          (m) =>
-            `[${new Date(m.timestamp).toISOString().slice(11, 16)}] ${m.senderName}: ${m.text.slice(0, 300)}`,
-        )
-        .join("\n");
-      continuityPrefix = `[Session resumed — recent context:\n${ctx}]\n\n`;
-    }
-  }
-
   const prompt = isGroup
-    ? `${continuityPrefix}[${senderName}]${msgIdHint}: ${text}`
-    : `${continuityPrefix}${text}${msgIdHint}`;
+    ? `[${senderName}]${msgIdHint}: ${text}`
+    : `${text}${msgIdHint}`;
 
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
@@ -212,7 +196,7 @@ export async function handleMessage(
       model: activeModel,
     });
 
-    if (session.turns === 0 && text) {
+    if (getSession(chatId).turns === 0 && text) {
       const cleanText = text
         .replace(/^\[.*?\]\s*/g, "")
         .replace(/\[msg_id:\d+\]\s*/g, "")

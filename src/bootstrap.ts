@@ -58,9 +58,12 @@ export async function bootstrap(
 ): Promise<BootstrapResult> {
   const config = loadConfig();
 
-  // Load plugins (external tool packages + built-in mempalace)
+  // Load plugins (external tool packages + built-in GitHub, MemPalace, Playwright)
   const hasPlugins =
-    config.plugins.length > 0 || config.mempalace?.enabled === true;
+    config.plugins.length > 0 ||
+    config.github?.enabled === true ||
+    config.mempalace?.enabled === true ||
+    config.playwright?.enabled === true;
   if (hasPlugins) {
     const { loadPlugins, getPluginPromptAdditions, registerPlugin } =
       await import("./core/plugin.js");
@@ -71,6 +74,35 @@ export async function bootstrap(
         options.frontendNames ??
         (Array.isArray(config.frontend) ? config.frontend : [config.frontend]);
       await loadPlugins(config.plugins, frontends);
+    }
+
+    // Built-in: GitHub
+    if (config.github?.enabled) {
+      const { createGitHubPlugin } = await import("./plugins/github/index.js");
+      const { getPlugin } = await import("./core/plugin.js");
+      const githubConfig = config.github as unknown as Record<string, unknown>;
+      const gh = createGitHubPlugin({ token: config.github.token });
+      registerPlugin(gh, githubConfig);
+
+      if (getPlugin("github")) {
+        try {
+          const GITHUB_INIT_TIMEOUT_MS = 15_000;
+          await Promise.race([
+            gh.init?.(githubConfig),
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error("GitHub init timed out after 15s")),
+                GITHUB_INIT_TIMEOUT_MS,
+              ),
+            ),
+          ]);
+        } catch (err) {
+          log(
+            "github",
+            `Init warning: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
     }
 
     // Built-in: MemPalace
@@ -105,6 +137,42 @@ export async function bootstrap(
         } catch (err) {
           log(
             "mempalace",
+            `Init warning: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+      }
+    }
+
+    // Built-in: Playwright
+    if (config.playwright?.enabled) {
+      const { createPlaywrightPlugin } =
+        await import("./plugins/playwright/index.js");
+      const { getPlugin } = await import("./core/plugin.js");
+      const playwrightConfig = config.playwright as unknown as Record<
+        string,
+        unknown
+      >;
+      const pw = createPlaywrightPlugin({
+        browser: config.playwright.browser,
+        headless: config.playwright.headless,
+      });
+      registerPlugin(pw, playwrightConfig);
+
+      if (getPlugin("playwright")) {
+        try {
+          const PW_INIT_TIMEOUT_MS = 15_000;
+          await Promise.race([
+            pw.init?.(playwrightConfig),
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Playwright init timed out after 15s")),
+                PW_INIT_TIMEOUT_MS,
+              ),
+            ),
+          ]);
+        } catch (err) {
+          log(
+            "playwright",
             `Init warning: ${err instanceof Error ? err.message : err}`,
           );
         }
