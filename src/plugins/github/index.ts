@@ -20,7 +20,8 @@ import { log, logWarn } from "../../util/log.js";
  * Priority: explicit config > `gh auth token` CLI.
  */
 function resolveToken(configToken?: string): string | undefined {
-  if (configToken) return configToken;
+  const trimmed = configToken?.trim();
+  if (trimmed) return trimmed;
   try {
     return execFileSync("gh", ["auth", "token"], {
       timeout: 5_000,
