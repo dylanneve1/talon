@@ -372,19 +372,20 @@ export function registerPlugin(
   plugin: TalonPlugin,
   config: Record<string, unknown> = {},
 ): void {
+  // Check for duplicates first — avoids re-running expensive validation
+  if (registry.getByName(plugin.name)) {
+    logWarn(
+      "plugin",
+      `Built-in plugin "${plugin.name}" already registered — skipping`,
+    );
+    return;
+  }
+
   const errors = plugin.validateConfig?.(config);
   if (errors && errors.length > 0) {
     logError(
       "plugin",
       `Built-in plugin "${plugin.name}" config validation failed:\n  ${errors.join("\n  ")}`,
-    );
-    return;
-  }
-  // Check for duplicates before setting env vars or logging
-  if (registry.getByName(plugin.name)) {
-    logWarn(
-      "plugin",
-      `Built-in plugin "${plugin.name}" already registered — skipping`,
     );
     return;
   }

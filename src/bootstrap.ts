@@ -165,14 +165,22 @@ export async function initBackendAndDispatcher(
   initPulse();
   initCron({ sendMessage: frontend.sendMessage });
 
-  // Resolve mempalace paths for dream mode mining (if enabled)
+  // Only enable mempalace dream integration if the plugin actually registered
   let mempalaceCfg: { pythonPath: string; palacePath: string } | undefined;
   if (config.mempalace?.enabled) {
-    const { dirs, files: pathFiles } = await import("./util/paths.js");
-    mempalaceCfg = {
-      pythonPath: config.mempalace.pythonPath ?? pathFiles.mempalacePython,
-      palacePath: config.mempalace.palacePath ?? dirs.palace,
-    };
+    const { getPlugin } = await import("./core/plugin.js");
+    if (getPlugin("mempalace")) {
+      const { dirs, files: pathFiles } = await import("./util/paths.js");
+      mempalaceCfg = {
+        pythonPath: config.mempalace.pythonPath ?? pathFiles.mempalacePython,
+        palacePath: config.mempalace.palacePath ?? dirs.palace,
+      };
+    } else {
+      log(
+        "mempalace",
+        "Enabled in config but plugin not registered — skipping dream integration",
+      );
+    }
   }
 
   initDream({
