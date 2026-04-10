@@ -163,6 +163,14 @@ describe("mempalace plugin", () => {
     expect(addition).toContain("mempalace_search");
     expect(addition).toContain("mempalace_add_drawer");
     expect(addition).toContain("mempalace_kg_query");
+    expect(addition).toContain("mempalace_kg_invalidate");
+    expect(addition).toContain("mempalace_kg_timeline");
+    expect(addition).toContain("mempalace_traverse");
+    expect(addition).toContain("mempalace_find_tunnels");
+    expect(addition).toContain("mempalace_diary_write");
+    expect(addition).toContain("mempalace_diary_read");
+    expect(addition).toContain("mempalace_delete_drawer");
+    expect(addition).toContain("Protocol");
     expect(addition).toContain("/custom/palace");
   });
 });
