@@ -78,8 +78,7 @@ export async function bootstrap(
 
     // Built-in: GitHub
     if (config.github?.enabled) {
-      const { createGitHubPlugin } =
-        await import("./plugins/github/index.js");
+      const { createGitHubPlugin } = await import("./plugins/github/index.js");
       const { getPlugin } = await import("./core/plugin.js");
       const githubConfig = config.github as unknown as Record<string, unknown>;
       const gh = createGitHubPlugin({ token: config.github.token });

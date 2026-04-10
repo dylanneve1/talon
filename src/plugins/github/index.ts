@@ -33,9 +33,7 @@ function resolveToken(configToken?: string): string | undefined {
   }
 }
 
-export function createGitHubPlugin(config: {
-  token?: string;
-}): TalonPlugin {
+export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
   const token = resolveToken(config.token);
 
   return {
@@ -100,9 +98,7 @@ export function createGitHubPlugin(config: {
 
     getEnvVars() {
       return {
-        ...(token
-          ? { GITHUB_PERSONAL_ACCESS_TOKEN: token }
-          : {}),
+        ...(token ? { GITHUB_PERSONAL_ACCESS_TOKEN: token } : {}),
       };
     },
   };

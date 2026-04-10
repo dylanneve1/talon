@@ -49,7 +49,13 @@ export function createPlaywrightPlugin(config: {
     validateConfig() {
       const errors: string[] = [];
 
-      const validBrowsers = ["chromium", "chrome", "firefox", "webkit", "msedge"];
+      const validBrowsers = [
+        "chromium",
+        "chrome",
+        "firefox",
+        "webkit",
+        "msedge",
+      ];
       if (!validBrowsers.includes(browser)) {
         errors.push(
           `Invalid browser "${browser}". Valid options: ${validBrowsers.join(", ")}`,
