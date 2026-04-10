@@ -48,6 +48,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: queryMock,
 }));
 
+vi.mock("../core/plugin.js", () => ({
+  getPluginMcpServers: vi.fn(() => ({})),
+}));
+
 vi.mock("../util/paths.js", () => ({
   files: {
     heartbeatState: "/fake/.talon/workspace/memory/heartbeat_state.json",
