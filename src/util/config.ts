@@ -49,9 +49,9 @@ const configSchema = z.object({
     .object({
       enabled: z.boolean().default(false),
       /** Palace directory path (default: ~/.talon/workspace/palace/) */
-      palacePath: z.string().optional(),
+      palacePath: z.string().min(1).optional(),
       /** Python binary path (default: ~/.talon/mempalace-venv/bin/python) */
-      pythonPath: z.string().optional(),
+      pythonPath: z.string().min(1).optional(),
     })
     .optional(),
 

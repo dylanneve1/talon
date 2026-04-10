@@ -30,7 +30,20 @@ describe("mempalace plugin", () => {
       readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
     vi.doMock("node:child_process", () => ({
-      execFileSync: vi.fn(() => "Palace: 42 drawers"),
+      execFileSync: vi.fn(() => "ok"),
+      execFile: vi.fn(
+        (
+          _cmd: string,
+          _args: string[],
+          _opts: unknown,
+          cb: (
+            err: Error | null,
+            result: { stdout: string; stderr: string },
+          ) => void,
+        ) => {
+          cb(null, { stdout: "Palace: 42 drawers", stderr: "" });
+        },
+      ),
     }));
 
     const { createMempalacePlugin } =
@@ -54,6 +67,10 @@ describe("mempalace plugin", () => {
       mkdirSync: vi.fn(),
       readFileSync: vi.fn(() => PROMPT_TEMPLATE),
     }));
+    vi.doMock("node:child_process", () => ({
+      execFileSync: vi.fn(),
+      execFile: vi.fn(),
+    }));
 
     const { createMempalacePlugin } =
       await import("../plugins/mempalace/index.js");
@@ -68,11 +85,15 @@ describe("mempalace plugin", () => {
     expect(errors![0]).toContain("Python binary not found");
   });
 
-  it("validateConfig passes when python binary exists", async () => {
+  it("validateConfig passes when python binary exists and mempalace is importable", async () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
       readFileSync: vi.fn(() => PROMPT_TEMPLATE),
+    }));
+    vi.doMock("node:child_process", () => ({
+      execFileSync: vi.fn(() => "ok"),
+      execFile: vi.fn(),
     }));
 
     const { createMempalacePlugin } =
@@ -86,6 +107,32 @@ describe("mempalace plugin", () => {
     expect(errors).toBeUndefined();
   });
 
+  it("validateConfig returns error when mempalace is not importable", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => true),
+      mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
+    }));
+    vi.doMock("node:child_process", () => ({
+      execFileSync: vi.fn(() => {
+        throw new Error("ModuleNotFoundError");
+      }),
+      execFile: vi.fn(),
+    }));
+
+    const { createMempalacePlugin } =
+      await import("../plugins/mempalace/index.js");
+    const plugin = createMempalacePlugin({
+      pythonPath: "/venv/bin/python",
+      palacePath: "/data/palace",
+    });
+
+    const errors = plugin.validateConfig!({});
+    expect(errors).toBeDefined();
+    expect(errors!.length).toBeGreaterThan(0);
+    expect(errors![0]).toContain("mempalace package not installed");
+  });
+
   it("init creates palace directory if missing", async () => {
     const mkdirSyncMock = vi.fn();
     vi.doMock("node:fs", () => ({
@@ -97,6 +144,19 @@ describe("mempalace plugin", () => {
     }));
     vi.doMock("node:child_process", () => ({
       execFileSync: vi.fn(() => "ok"),
+      execFile: vi.fn(
+        (
+          _cmd: string,
+          _args: string[],
+          _opts: unknown,
+          cb: (
+            err: Error | null,
+            result: { stdout: string; stderr: string },
+          ) => void,
+        ) => {
+          cb(null, { stdout: "ok", stderr: "" });
+        },
+      ),
     }));
 
     const { createMempalacePlugin } =
@@ -112,7 +172,7 @@ describe("mempalace plugin", () => {
     });
   });
 
-  it("init logs warning when mempalace is not importable", async () => {
+  it("validateConfig returns error when python binary exists but mempalace import fails with ENOENT", async () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
@@ -120,13 +180,12 @@ describe("mempalace plugin", () => {
     }));
     vi.doMock("node:child_process", () => ({
       execFileSync: vi.fn(() => {
-        throw new Error("ModuleNotFoundError");
+        const err = new Error("spawn ENOENT") as Error & { code: string };
+        err.code = "ENOENT";
+        throw err;
       }),
+      execFile: vi.fn(),
     }));
-
-    const { logError } = (await import("../util/log.js")) as unknown as {
-      logError: ReturnType<typeof vi.fn>;
-    };
 
     const { createMempalacePlugin } =
       await import("../plugins/mempalace/index.js");
@@ -135,11 +194,11 @@ describe("mempalace plugin", () => {
       palacePath: "/data/palace",
     });
 
-    await plugin.init!({});
-    expect(logError).toHaveBeenCalledWith(
-      "mempalace",
-      expect.stringContaining("mempalace not installed"),
-    );
+    const errors = plugin.validateConfig!({});
+    expect(errors).toBeDefined();
+    expect(errors!.length).toBeGreaterThan(0);
+    expect(errors![0]).toContain("Cannot execute Python");
+    expect(errors![0]).toContain("ENOENT");
   });
 
   it("getEnvVars returns MEMPALACE_PALACE_PATH", async () => {
@@ -147,6 +206,10 @@ describe("mempalace plugin", () => {
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
       readFileSync: vi.fn(() => PROMPT_TEMPLATE),
+    }));
+    vi.doMock("node:child_process", () => ({
+      execFileSync: vi.fn(),
+      execFile: vi.fn(),
     }));
 
     const { createMempalacePlugin } =
@@ -166,6 +229,10 @@ describe("mempalace plugin", () => {
       existsSync: vi.fn(() => true),
       mkdirSync: vi.fn(),
       readFileSync: vi.fn(() => PROMPT_TEMPLATE),
+    }));
+    vi.doMock("node:child_process", () => ({
+      execFileSync: vi.fn(),
+      execFile: vi.fn(),
     }));
 
     const { createMempalacePlugin } =
@@ -200,6 +267,10 @@ describe("mempalace plugin", () => {
       readFileSync: vi.fn(() => {
         throw new Error("ENOENT: no such file");
       }),
+    }));
+    vi.doMock("node:child_process", () => ({
+      execFileSync: vi.fn(),
+      execFile: vi.fn(),
     }));
 
     const { logWarn } = (await import("../util/log.js")) as unknown as {

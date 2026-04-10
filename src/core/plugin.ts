@@ -363,6 +363,10 @@ export async function destroyPlugins(): Promise<void> {
  * Register a built-in plugin directly (bypasses filesystem loader).
  * Used for tightly-integrated plugins like mempalace that are configured
  * via dedicated config fields rather than the plugins[] array.
+ *
+ * NOTE: This only registers the plugin — it does NOT call `init()`.
+ * The caller is responsible for calling `plugin.init()` separately
+ * after registration if initialization is needed.
  */
 export function registerPlugin(
   plugin: TalonPlugin,
@@ -449,7 +453,10 @@ export interface McpServerConfig {
 
 /**
  * Build MCP server entries for all plugins that provide an MCP server.
- * Plugins without `mcpServerPath` are skipped.
+ * Plugins can expose an MCP server in two ways:
+ *   - `mcpServerPath` — path to a Node/TypeScript MCP server script (run via tsx)
+ *   - `mcpServer` — custom command/args for non-Node servers (Python, Go, etc.)
+ * Plugins with neither are skipped. When both are set, `mcpServer` takes priority.
  */
 export function getPluginMcpServers(
   bridgeUrl: string,

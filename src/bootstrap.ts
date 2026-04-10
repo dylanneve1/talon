@@ -81,31 +81,37 @@ export async function bootstrap(
     if (config.mempalace?.enabled) {
       const { createMempalacePlugin } =
         await import("./plugins/mempalace/index.js");
+      const { getPlugin } = await import("./core/plugin.js");
       const { dirs, files: pathFiles } = await import("./util/paths.js");
       const pythonPath =
         config.mempalace.pythonPath ?? pathFiles.mempalacePython;
       const palacePath = config.mempalace.palacePath ?? dirs.palace;
+      const mempalaceConfig = config.mempalace as unknown as Record<
+        string,
+        unknown
+      >;
       const mp = createMempalacePlugin({ pythonPath, palacePath });
-      registerPlugin(
-        mp,
-        config.mempalace as unknown as Record<string, unknown>,
-      );
-      try {
-        const MEMPALACE_INIT_TIMEOUT_MS = 30_000;
-        await Promise.race([
-          mp.init?.({}),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error("MemPalace init timed out after 30s")),
-              MEMPALACE_INIT_TIMEOUT_MS,
+      registerPlugin(mp, mempalaceConfig);
+
+      // Only call init if registration succeeded (validation passed)
+      if (getPlugin("mempalace")) {
+        try {
+          const MEMPALACE_INIT_TIMEOUT_MS = 30_000;
+          await Promise.race([
+            mp.init?.(mempalaceConfig),
+            new Promise((_, reject) =>
+              setTimeout(
+                () => reject(new Error("MemPalace init timed out after 30s")),
+                MEMPALACE_INIT_TIMEOUT_MS,
+              ),
             ),
-          ),
-        ]);
-      } catch (err) {
-        log(
-          "mempalace",
-          `Init warning: ${err instanceof Error ? err.message : err}`,
-        );
+          ]);
+        } catch (err) {
+          log(
+            "mempalace",
+            `Init warning: ${err instanceof Error ? err.message : err}`,
+          );
+        }
       }
     }
 

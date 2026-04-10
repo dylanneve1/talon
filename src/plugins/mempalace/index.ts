@@ -15,9 +15,12 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execFile as execFileCb, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
 import type { TalonPlugin } from "../../core/plugin.js";
-import { log, logError, logWarn } from "../../util/log.js";
+import { log, logWarn } from "../../util/log.js";
+
+const execFile = promisify(execFileCb);
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROMPT_PATH = resolve(__dirname, "../../../prompts/mempalace.md");
@@ -49,7 +52,31 @@ export function createMempalacePlugin(config: {
         errors.push(
           `Python binary not found at ${pythonPath}. Create or select a Python environment, set "pythonPath" to that interpreter, then run: ${pythonPath} -m pip install mempalace`,
         );
+        return errors;
       }
+
+      // Verify mempalace is importable (sync check during validation is acceptable)
+      try {
+        execFileSync(pythonPath, ["-c", "import mempalace"], {
+          timeout: 15_000,
+          stdio: "pipe",
+        });
+      } catch (err: unknown) {
+        const code =
+          err && typeof err === "object" && "code" in err
+            ? (err as { code: string }).code
+            : undefined;
+        if (code === "ENOENT" || code === "EACCES" || code === "EPERM") {
+          errors.push(
+            `Cannot execute Python at ${pythonPath} (${code}). Check that the path is correct and the binary is executable.`,
+          );
+        } else {
+          errors.push(
+            `mempalace package not installed. Run: ${pythonPath} -m pip install mempalace`,
+          );
+        }
+      }
+
       return errors.length > 0 ? errors : undefined;
     },
 
@@ -60,30 +87,16 @@ export function createMempalacePlugin(config: {
         log("mempalace", `Created palace directory: ${palacePath}`);
       }
 
-      // Verify mempalace is importable
+      // Check palace status (async — does not block event loop)
       try {
-        execFileSync(pythonPath, ["-c", "import mempalace"], {
-          timeout: 15_000,
-          stdio: "pipe",
-        });
-      } catch {
-        logError(
-          "mempalace",
-          `mempalace not installed in ${pythonPath}. Run: ${pythonPath} -m pip install mempalace`,
-        );
-        return;
-      }
-
-      // Check palace status
-      try {
-        const status = execFileSync(
+        const { stdout } = await execFile(
           pythonPath,
           ["-m", "mempalace", "status", "--palace", palacePath],
-          { timeout: 30_000, stdio: "pipe", encoding: "utf-8" },
+          { timeout: 30_000 },
         );
         log(
           "mempalace",
-          `Palace initialized: ${status.trim().split("\n")[0] || "ok"}`,
+          `Palace initialized: ${stdout.trim().split("\n")[0] || "ok"}`,
         );
       } catch {
         // Palace may not be initialized yet — that's fine, MCP server handles lazy init
