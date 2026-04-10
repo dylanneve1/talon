@@ -41,7 +41,8 @@ export type LogComponent =
   | "plugin"
   | "teams"
   | "config"
-  | "access";
+  | "access"
+  | "mempalace";
 
 const LOG_FILE = files.log;
 
