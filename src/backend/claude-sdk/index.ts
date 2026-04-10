@@ -115,8 +115,10 @@ export async function handleMessage(
       "TaskOutput",
       "TaskStop",
       "AskUserQuestion",
-      // Disable built-in web tools only when Brave Search MCP is configured
-      ...(config.braveApiKey ? ["WebSearch", "WebFetch"] : []),
+      // Always disable Claude Code built-in web tools — fetch_url is always
+      // available, and Brave Search MCP replaces WebSearch when configured.
+      "WebSearch",
+      "WebFetch",
     ],
     ...thinkingConfig,
     mcpServers: {
