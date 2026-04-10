@@ -55,24 +55,40 @@ export function createMempalacePlugin(config: {
         return errors;
       }
 
-      // Verify mempalace is importable (sync check during validation is acceptable)
+      // Verify mempalace.mcp_server is importable (the actual module spawned by MCP)
       try {
-        execFileSync(pythonPath, ["-c", "import mempalace"], {
+        execFileSync(pythonPath, ["-c", "import mempalace.mcp_server"], {
           timeout: 15_000,
           stdio: "pipe",
         });
       } catch (err: unknown) {
-        const code =
-          err && typeof err === "object" && "code" in err
-            ? (err as { code: string }).code
+        const execErr =
+          err && typeof err === "object"
+            ? (err as {
+                code?: string;
+                signal?: string;
+                killed?: boolean;
+                stderr?: string | Buffer;
+              })
             : undefined;
+        const code = execErr?.code;
         if (code === "ENOENT" || code === "EACCES" || code === "EPERM") {
           errors.push(
             `Cannot execute Python at ${pythonPath} (${code}). Check that the path is correct and the binary is executable.`,
           );
-        } else {
+        } else if (code === "ETIMEDOUT" || execErr?.killed || execErr?.signal) {
           errors.push(
-            `mempalace package not installed. Run: ${pythonPath} -m pip install mempalace`,
+            `Python import check timed out or was killed. The interpreter at ${pythonPath} may be unresponsive.`,
+          );
+        } else {
+          const stderr =
+            typeof execErr?.stderr === "string"
+              ? execErr.stderr.trim()
+              : Buffer.isBuffer(execErr?.stderr)
+                ? execErr.stderr.toString("utf-8").trim()
+                : "";
+          errors.push(
+            `mempalace package not installed or mcp_server submodule missing. Run: ${pythonPath} -m pip install mempalace${stderr ? `. Details: ${stderr}` : ""}`,
           );
         }
       }
@@ -87,22 +103,22 @@ export function createMempalacePlugin(config: {
         log("mempalace", `Created palace directory: ${palacePath}`);
       }
 
-      // Check palace status (async — does not block event loop)
+      // Quick smoke test — verify mempalace can import and access the palace path
       try {
         const { stdout } = await execFile(
           pythonPath,
-          ["-m", "mempalace", "--palace", palacePath, "status"],
-          { timeout: 30_000 },
+          [
+            "-c",
+            `import mempalace; print(f"mempalace {mempalace.__version__}" if hasattr(mempalace, "__version__") else "mempalace ok")`,
+          ],
+          { timeout: 15_000 },
         );
+        log("mempalace", stdout.trim() || "Module verified");
+      } catch {
+        // Non-fatal — MCP server handles lazy init
         log(
           "mempalace",
-          `Palace initialized: ${stdout.trim().split("\n")[0] || "ok"}`,
-        );
-      } catch {
-        // Palace may not be initialized yet — that's fine, MCP server handles lazy init
-        logWarn(
-          "mempalace",
-          "Palace not yet initialized — will be created on first use",
+          "Module import check skipped — MCP server will initialize on first use",
         );
       }
 

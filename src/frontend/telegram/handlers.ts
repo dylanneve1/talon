@@ -482,7 +482,7 @@ async function flushQueue(chatId: string): Promise<void> {
   if (!entry) return;
   messageQueues.delete(chatId);
 
-  const { messages, bot, config, numericChatId, queuedReactionMsgIds } = entry;
+  const { messages, bot, numericChatId, queuedReactionMsgIds } = entry;
 
   // Clear hourglass reactions on queued messages now that we're processing
   for (const msgId of queuedReactionMsgIds) {
@@ -512,7 +512,6 @@ async function flushQueue(chatId: string): Promise<void> {
   try {
     await processAndReply({
       bot,
-      config,
       chatId,
       numericChatId,
       replyToId: last.replyToId,
@@ -546,7 +545,6 @@ async function flushQueue(chatId: string): Promise<void> {
         await new Promise((r) => setTimeout(r, delayMs));
         await processAndReply({
           bot,
-          config,
           chatId,
           numericChatId,
           replyToId: last.replyToId,
@@ -617,7 +615,6 @@ async function sendHtml(
  */
 type ProcessAndReplyParams = {
   bot: Bot;
-  config: TalonConfig;
   chatId: string | number;
   numericChatId: number;
   replyToId: number;
@@ -1180,7 +1177,6 @@ export async function handleCallbackQuery(
 
     await processAndReply({
       bot,
-      config,
       chatId,
       numericChatId,
       replyToId,
