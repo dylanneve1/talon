@@ -37,4 +37,6 @@ If the instructions file does not exist or is empty, perform these default tasks
 - Be concise in log entries and memory updates.
 - If a task fails, log the error and move on to the next task.
 - Do NOT modify the instructions file — only read it.
+- Be surgical: only make the minimal file changes needed to complete the current task.
+- Do NOT create, modify, move, or delete files outside `{{workspace}}` unless the user-defined instructions explicitly require it.
 - Complete all tasks within the time budget. If running low, prioritize memory updates.
