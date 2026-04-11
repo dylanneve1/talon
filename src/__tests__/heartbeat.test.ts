@@ -199,8 +199,10 @@ describe("forceHeartbeat", () => {
 
     expect(getPluginMcpServers).toHaveBeenCalledWith("", "heartbeat");
     // Verify mcpServers was passed through to query()
-    const queryCall = queryMock.mock.calls[0][0];
-    expect(queryCall.options.mcpServers).toEqual(mockServers);
+    const queryCall = queryMock.mock.calls[0] as unknown as [
+      { options: { mcpServers: Record<string, unknown> } },
+    ];
+    expect(queryCall[0].options.mcpServers).toEqual(mockServers);
   });
 
   it("preserves previous last_run on failure", async () => {
