@@ -94,7 +94,9 @@ export function formatRelativeAge(ts: number): string {
 
 /**
  * Full datetime for system prompt injection.
- * Example: "2026-03-21 14:32 (Europe/Warsaw, Fri)"
+ * Includes both ISO (YYYY-MM-DD) and human (DD/MM/YYYY) date formats
+ * so the agent always knows the current date, even mid-session.
+ * Example: "2026-03-21 14:32 Fri (UTC) [21/03/2026]"
  */
 export function formatFullDatetime(): string {
   const now = new Date();
@@ -105,5 +107,7 @@ export function formatFullDatetime(): string {
     weekday: "short",
     timeZone: tz,
   });
-  return `${dateStr} ${time} ${weekday} (${tz})`;
+  const [year, month, day] = dateStr.split("-");
+  const humanDate = `${day}/${month}/${year}`;
+  return `${dateStr} ${time} ${weekday} (${tz}) [${humanDate}]`;
 }

@@ -81,6 +81,25 @@ describe("time utilities", () => {
       const result = formatFullDatetime();
       expect(result).toMatch(/Mon|Tue|Wed|Thu|Fri|Sat|Sun/);
     });
+
+    it("includes human-readable date in DD/MM/YYYY format", () => {
+      setTimezone("UTC");
+      const result = formatFullDatetime();
+      expect(result).toMatch(/\[\d{2}\/\d{2}\/\d{4}\]$/);
+    });
+
+    it("has consistent dates between ISO and human formats", () => {
+      setTimezone("UTC");
+      const result = formatFullDatetime();
+      const isoMatch = result.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      const humanMatch = result.match(/\[(\d{2})\/(\d{2})\/(\d{4})\]$/);
+      expect(isoMatch).toBeTruthy();
+      expect(humanMatch).toBeTruthy();
+      // ISO: YYYY-MM-DD, Human: DD/MM/YYYY — should be the same date
+      expect(isoMatch![1]).toBe(humanMatch![3]); // year
+      expect(isoMatch![2]).toBe(humanMatch![2]); // month
+      expect(isoMatch![3]).toBe(humanMatch![1]); // day
+    });
   });
 
   describe("formatRelativeAge", () => {
