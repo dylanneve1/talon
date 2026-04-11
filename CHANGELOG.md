@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/dylanneve1/talon/compare/v1.3.0...v1.4.0) (2026-04-10)
+
+
+### Features
+
+* replace custom web search with Brave Search MCP server ([#30](https://github.com/dylanneve1/talon/issues/30)) ([eeb9cf2](https://github.com/dylanneve1/talon/commit/eeb9cf20b885a717baf875bb6a9b933099a57706))
+
 ## [1.3.0](https://github.com/dylanneve1/talon/compare/v1.2.0...v1.3.0) (2026-04-10)
 
 
