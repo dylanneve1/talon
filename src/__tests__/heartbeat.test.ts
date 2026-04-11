@@ -48,6 +48,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: queryMock,
 }));
 
+vi.mock("../core/plugin.js", () => ({
+  getPluginMcpServers: vi.fn(() => ({})),
+}));
+
 vi.mock("../util/paths.js", () => ({
   files: {
     heartbeatState: "/fake/.talon/workspace/memory/heartbeat_state.json",
@@ -182,6 +186,23 @@ describe("forceHeartbeat", () => {
     );
     expect(finalState.run_count).toBe(1);
     expect(finalState.status).toBe("idle");
+  });
+
+  it("passes plugin MCP servers to the agent via getPluginMcpServers", async () => {
+    const { getPluginMcpServers } = await import("../core/plugin.js");
+    const mockServers = {
+      "email-tools": { command: "node", args: ["email.js"], env: {} },
+    };
+    vi.mocked(getPluginMcpServers).mockReturnValue(mockServers);
+
+    await forceHeartbeat();
+
+    expect(getPluginMcpServers).toHaveBeenCalledWith("", "heartbeat");
+    // Verify mcpServers was passed through to query()
+    const queryCall = queryMock.mock.calls[0] as unknown as [
+      { options: { mcpServers: Record<string, unknown> } },
+    ];
+    expect(queryCall[0].options.mcpServers).toEqual(mockServers);
   });
 
   it("preserves previous last_run on failure", async () => {

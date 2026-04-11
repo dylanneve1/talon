@@ -3,7 +3,7 @@
  *
  * Runs at a configurable interval (default: 60 minutes).
  * The agent reads instructions from ~/.talon/workspace/heartbeat-instructions.md
- * and executes them using filesystem-only tools (no Telegram/MCP access).
+ * and executes them using filesystem tools and all loaded MCP plugins.
  *
  * Modeled after dream.ts but more general-purpose.
  */
@@ -17,6 +17,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
 import { toYMD } from "../util/time.js";
+import { getPluginMcpServers } from "./plugin.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -282,15 +283,15 @@ async function runHeartbeatAgent(
   const options = {
     model,
     systemPrompt:
-      "You are a background heartbeat agent for Talon. Use only filesystem tools. Follow the user-defined instructions precisely. Be efficient — you have limited time.",
+      "You are a background heartbeat agent for Talon. You have access to filesystem tools and all registered MCP plugins. Follow the user-defined instructions precisely. Be efficient — you have limited time.",
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     ...(configRef.claudeBinary
       ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
       : {}),
-    // No MCP servers — filesystem tools only
-    mcpServers: {},
+    // Load all registered plugin MCP servers (excludes frontend-specific tools like telegram)
+    mcpServers: getPluginMcpServers("", "heartbeat"),
     disallowedTools: [
       "EnterPlanMode",
       "ExitPlanMode",
@@ -315,10 +316,12 @@ async function runHeartbeatAgent(
   // running lock is not released while the subprocess is still active.
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(
+    const t = setTimeout(
       () => reject(new Error("Heartbeat agent timed out")),
       HEARTBEAT_TIMEOUT_MS,
     );
+    t.unref(); // Don't prevent Node.js from exiting cleanly during shutdown
+    timeoutHandle = t;
   });
 
   const agentPromise = (async () => {
