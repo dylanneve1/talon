@@ -246,10 +246,9 @@ export function createTeamsFrontend(
               ).replace("claude-", "");
               const avgMs =
                 info.turns > 0 ? Math.round(u.totalResponseMs / info.turns) : 0;
-              // Context info piped from Agent SDK's result.modelUsage and usage.iterations
+              // Context info piped directly from Agent SDK — no model-name guessing
               const ctxUsed = u.contextTokens || u.lastPromptTokens;
-              const defaultCtx = model.includes("haiku") ? 200_000 : 1_000_000;
-              const ctxMax = u.contextWindow || defaultCtx;
+              const ctxMax = u.contextWindow;
               const ctxPct =
                 ctxMax > 0
                   ? Math.min(100, Math.round((ctxUsed / ctxMax) * 100))
@@ -280,7 +279,12 @@ export function createTeamsFrontend(
                             { title: "Turns", value: String(info.turns) },
                             {
                               title: "Context",
-                              value: `${(ctxUsed / 1000).toFixed(0)}K / ${(ctxMax / 1000).toFixed(0)}K (${ctxPct}%)`,
+                              value:
+                                ctxMax > 0
+                                  ? `${(ctxUsed / 1000).toFixed(0)}K / ${(ctxMax / 1000).toFixed(0)}K (${ctxPct}%)`
+                                  : ctxUsed > 0
+                                    ? `${(ctxUsed / 1000).toFixed(0)}K (awaiting SDK data)`
+                                    : "—",
                             },
                             { title: "Cache", value: `${cacheHit}% hit` },
                             {

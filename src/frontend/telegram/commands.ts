@@ -424,11 +424,10 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
 
-    // Context info piped from Agent SDK's result.modelUsage and usage.iterations.
-    // Opus 4.6 and Sonnet 4.6 have 1M context; Haiku has 200K.
-    const ctxUsed = u.contextTokens || u.lastPromptTokens; // fall back to cumulative if no iteration data
-    const defaultCtx = activeModel.includes("haiku") ? 200_000 : 1_000_000;
-    const ctxMax = u.contextWindow || defaultCtx;
+    // Context info piped from Agent SDK — contextWindow and contextTokens
+    // come directly from the SDK result, no model-name guessing needed.
+    const ctxUsed = u.contextTokens || u.lastPromptTokens;
+    const ctxMax = u.contextWindow; // 0 if SDK hasn't reported yet
     const ctxPct =
       ctxMax > 0 ? Math.min(100, Math.round((ctxUsed / ctxMax) * 100)) : 0;
     const barLen = 20;
@@ -456,8 +455,10 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const lines = [
       `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(activeModel)}</code> \u00B7 effort: ${effortName}`,
       "",
-      `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
-      `<code>${contextBar}</code>`,
+      ctxMax > 0
+        ? `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`
+        : `<b>Context</b>  ${ctxUsed > 0 ? formatTokenCount(ctxUsed) : "\u2014"} (awaiting SDK data)`,
+      ctxMax > 0 ? `<code>${contextBar}</code>` : "",
       "",
       `<b>Session Stats</b>`,
       `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "\u2014"} \u00B7 avg ${avgResponseMs ? formatDuration(avgResponseMs) : "\u2014"} \u00B7 best ${fastestMs ? formatDuration(fastestMs) : "\u2014"}`,
