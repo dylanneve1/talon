@@ -210,14 +210,16 @@ export async function handleMessage(
   let currentBlockText = "";
   let allResponseText = "";
   let newSessionId: string | undefined;
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheRead = 0;
-  let cacheWrite = 0;
   let toolCalls = 0;
+  // Populated from SDK result message
   let contextTokens = 0; // actual context fill from last iteration
-  let contextWindow: number | undefined; // model's context window size, if reported by the SDK
-  let numApiCalls = 0; // number of API round-trips in this turn
+  let contextWindow: number | undefined;
+  let numApiCalls = 0;
+  // Cumulative token counts from SDK modelUsage (aggregated across models)
+  let sdkInputTokens = 0;
+  let sdkOutputTokens = 0;
+  let sdkCacheRead = 0;
+  let sdkCacheWrite = 0;
 
   // Streaming throttle
   let lastStreamUpdate = 0;
@@ -312,46 +314,56 @@ export async function handleMessage(
         }
       }
 
-      // Final result
+      // Final result — read all data from SDK result fields
       if (type === "result") {
+        numApiCalls =
+          ((msg as Record<string, unknown>).num_turns as number) ?? 0;
+
+        // Context fill from last API iteration (only available in raw usage)
         const usage = msg.usage as
-          | (Record<string, number> & {
+          | {
               iterations?: Array<{
-                type: string;
                 input_tokens: number;
-                output_tokens: number;
                 cache_read_input_tokens: number;
                 cache_creation_input_tokens: number;
               }>;
-            })
+            }
           | undefined;
-        if (usage) {
-          inputTokens = usage.input_tokens ?? 0;
-          outputTokens = usage.output_tokens ?? 0;
-          cacheRead = usage.cache_read_input_tokens ?? 0;
-          cacheWrite = usage.cache_creation_input_tokens ?? 0;
-
-          // Extract actual context fill from the last iteration
-          if (Array.isArray(usage.iterations) && usage.iterations.length > 0) {
-            const last = usage.iterations[usage.iterations.length - 1];
-            contextTokens =
-              (last.input_tokens ?? 0) +
-              (last.cache_read_input_tokens ?? 0) +
-              (last.cache_creation_input_tokens ?? 0);
-          }
+        if (
+          usage &&
+          Array.isArray(usage.iterations) &&
+          usage.iterations.length > 0
+        ) {
+          const last = usage.iterations[usage.iterations.length - 1];
+          contextTokens =
+            (last.input_tokens ?? 0) +
+            (last.cache_read_input_tokens ?? 0) +
+            (last.cache_creation_input_tokens ?? 0);
         }
 
-        // Extract context window and num_turns from result metadata
-        numApiCalls =
-          ((msg as Record<string, unknown>).num_turns as number) ?? 0;
+        // Token counts, context window from SDK modelUsage (aggregated per model)
+        type MU = {
+          inputTokens?: number;
+          outputTokens?: number;
+          cacheReadInputTokens?: number;
+          cacheCreationInputTokens?: number;
+          contextWindow?: number;
+        };
         const modelUsage = (msg as Record<string, unknown>).modelUsage as
-          | Record<string, { contextWindow?: number }>
+          | Record<string, MU>
           | undefined;
         if (modelUsage) {
           for (const mu of Object.values(modelUsage)) {
-            if (mu.contextWindow && mu.contextWindow > 0) {
+            sdkInputTokens += mu.inputTokens ?? 0;
+            sdkOutputTokens += mu.outputTokens ?? 0;
+            sdkCacheRead += mu.cacheReadInputTokens ?? 0;
+            sdkCacheWrite += mu.cacheCreationInputTokens ?? 0;
+            if (
+              mu.contextWindow &&
+              mu.contextWindow > 0 &&
+              contextWindow === undefined
+            ) {
               contextWindow = mu.contextWindow;
-              break;
             }
           }
         }
@@ -421,10 +433,10 @@ export async function handleMessage(
   if (newSessionId) setSessionId(chatId, newSessionId);
   incrementTurns(chatId);
   recordUsage(chatId, {
-    inputTokens,
-    outputTokens,
-    cacheRead,
-    cacheWrite,
+    inputTokens: sdkInputTokens,
+    outputTokens: sdkOutputTokens,
+    cacheRead: sdkCacheRead,
+    cacheWrite: sdkCacheWrite,
     durationMs,
     model: activeModel,
     contextTokens,
@@ -449,21 +461,21 @@ export async function handleMessage(
   // The remaining currentBlockText is the final response text
   allResponseText += currentBlockText;
 
-  const totalPrompt = inputTokens + cacheRead + cacheWrite;
+  const totalPrompt = sdkInputTokens + sdkCacheRead + sdkCacheWrite;
   const cacheHitPct =
-    totalPrompt > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
+    totalPrompt > 0 ? Math.round((sdkCacheRead / totalPrompt) * 100) : 0;
 
   log(
     "agent",
-    `[${chatId}] -> (${durationMs}ms, in=${inputTokens} out=${outputTokens} cache=${cacheHitPct}%` +
+    `[${chatId}] -> (${durationMs}ms, in=${sdkInputTokens} out=${sdkOutputTokens} cache=${cacheHitPct}%` +
       `${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`,
   );
   traceMessage(chatId, "out", allResponseText, {
     durationMs,
-    inputTokens,
-    outputTokens,
-    cacheRead,
-    cacheWrite,
+    inputTokens: sdkInputTokens,
+    outputTokens: sdkOutputTokens,
+    cacheRead: sdkCacheRead,
+    cacheWrite: sdkCacheWrite,
     toolCalls,
     model: activeModel,
   });
@@ -471,9 +483,9 @@ export async function handleMessage(
   return {
     text: allResponseText.trim(),
     durationMs,
-    inputTokens,
-    outputTokens,
-    cacheRead,
-    cacheWrite,
+    inputTokens: sdkInputTokens,
+    outputTokens: sdkOutputTokens,
+    cacheRead: sdkCacheRead,
+    cacheWrite: sdkCacheWrite,
   };
 }

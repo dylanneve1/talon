@@ -72,7 +72,6 @@ describe("sessions", () => {
       expect(session.usage.totalCacheRead).toBe(0);
       expect(session.usage.totalCacheWrite).toBe(0);
       expect(session.usage.lastPromptTokens).toBe(0);
-      expect(session.usage.estimatedCostUsd).toBe(0);
       expect(session.usage.totalResponseMs).toBe(0);
       expect(session.usage.lastResponseMs).toBe(0);
       expect(session.usage.fastestResponseMs).toBe(Infinity);
@@ -149,20 +148,6 @@ describe("sessions", () => {
         cacheWrite: 20,
       });
       expect(getSession(chatId).usage.lastPromptTokens).toBe(250);
-    });
-
-    it("calculates estimated cost", () => {
-      const chatId = "test-cost";
-      getSession(chatId);
-
-      recordUsage(chatId, {
-        inputTokens: 1_000_000,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      });
-      // Cost for 1M input tokens at $3/M = $3
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(3, 1);
     });
 
     it("tracks response time duration", () => {
@@ -251,96 +236,7 @@ describe("sessions", () => {
     });
   });
 
-  describe("recordUsage with model pricing", () => {
-    it("applies haiku pricing for haiku model", () => {
-      const chatId = "test-haiku-pricing";
-      getSession(chatId);
-
-      recordUsage(chatId, {
-        inputTokens: 1_000_000,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        model: "claude-haiku-4-5",
-      });
-      // Haiku input: $0.8/M
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(0.8, 1);
-    });
-
-    it("applies opus pricing for opus model", () => {
-      const chatId = "test-opus-pricing";
-      getSession(chatId);
-
-      recordUsage(chatId, {
-        inputTokens: 1_000_000,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        model: "claude-opus-4-6",
-      });
-      // Opus input: $15/M
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(15, 1);
-    });
-
-    it("applies sonnet pricing by default (no model)", () => {
-      const chatId = "test-sonnet-pricing-default";
-      getSession(chatId);
-
-      recordUsage(chatId, {
-        inputTokens: 1_000_000,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      });
-      // Sonnet input: $3/M
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(3, 1);
-    });
-
-    it("calculates output cost correctly", () => {
-      const chatId = "test-output-cost";
-      getSession(chatId);
-
-      recordUsage(chatId, {
-        inputTokens: 0,
-        outputTokens: 1_000_000,
-        cacheRead: 0,
-        cacheWrite: 0,
-        model: "claude-sonnet-4-6",
-      });
-      // Sonnet output: $15/M
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(15, 1);
-    });
-
-    it("calculates cache read cost correctly", () => {
-      const chatId = "test-cache-read-cost";
-      getSession(chatId);
-
-      recordUsage(chatId, {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheRead: 1_000_000,
-        cacheWrite: 0,
-        model: "claude-sonnet-4-6",
-      });
-      // Sonnet cacheRead: $0.3/M
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(0.3, 2);
-    });
-
-    it("calculates cache write cost correctly", () => {
-      const chatId = "test-cache-write-cost";
-      getSession(chatId);
-
-      recordUsage(chatId, {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 1_000_000,
-        model: "claude-sonnet-4-6",
-      });
-      // Sonnet cacheWrite: $3.75/M
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(3.75, 2);
-    });
-
+  describe("recordUsage — model tracking", () => {
     it("tracks lastModel", () => {
       const chatId = "test-last-model";
       getSession(chatId);
@@ -635,52 +531,6 @@ describe("sessions", () => {
     });
   });
 
-  describe("cost calculation math", () => {
-    it("calculates multi-component cost correctly (input + output + cache)", () => {
-      const chatId = "test-cost-math";
-      getSession(chatId);
-
-      // Use exact token counts to verify the formula:
-      // cost = (input * pricing.input + cacheWrite * pricing.cacheWrite +
-      //         cacheRead * pricing.cacheRead + output * pricing.output) / 1_000_000
-      // Sonnet: input=$3/M, output=$15/M, cacheRead=$0.3/M, cacheWrite=$3.75/M
-      recordUsage(chatId, {
-        inputTokens: 500_000, // 500k * 3 / 1M = $1.50
-        outputTokens: 100_000, // 100k * 15 / 1M = $1.50
-        cacheRead: 200_000, // 200k * 0.3 / 1M = $0.06
-        cacheWrite: 100_000, // 100k * 3.75 / 1M = $0.375
-        model: "claude-sonnet-4-6",
-      });
-
-      const usage = getSession(chatId).usage;
-      // Total: 1.50 + 1.50 + 0.06 + 0.375 = $3.435
-      expect(usage.estimatedCostUsd).toBeCloseTo(3.435, 3);
-    });
-
-    it("accumulates cost across multiple recordUsage calls", () => {
-      const chatId = "test-cost-accum";
-      getSession(chatId);
-
-      recordUsage(chatId, {
-        inputTokens: 1_000_000,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      });
-      // Sonnet input: $3
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(3, 2);
-
-      recordUsage(chatId, {
-        inputTokens: 0,
-        outputTokens: 1_000_000,
-        cacheRead: 0,
-        cacheWrite: 0,
-      });
-      // + Sonnet output: $15. Total: $18
-      expect(getSession(chatId).usage.estimatedCostUsd).toBeCloseTo(18, 2);
-    });
-  });
-
   describe("cache hit rate tracking", () => {
     it("tracks cache read tokens across multiple turns", () => {
       const chatId = "test-cache-track-read";
@@ -722,7 +572,6 @@ describe("sessions", () => {
       const fresh = getSession(chatId);
       expect(fresh.sessionId).toBeUndefined();
       expect(fresh.turns).toBe(0);
-      expect(fresh.usage.estimatedCostUsd).toBe(0);
       expect(fresh.usage.totalInputTokens).toBe(0);
     });
   });

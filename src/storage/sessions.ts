@@ -181,25 +181,6 @@ export function incrementTurns(chatId: string): void {
   dirty = true;
 }
 
-/** Model-specific pricing ($ per million tokens). */
-const MODEL_PRICING: Record<
-  string,
-  { input: number; output: number; cacheRead: number; cacheWrite: number }
-> = {
-  haiku: { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
-  sonnet: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  opus: { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
-};
-
-function getPricing(model?: string): (typeof MODEL_PRICING)["sonnet"] {
-  if (!model) return MODEL_PRICING.sonnet;
-  const lower = model.toLowerCase();
-  if (lower.includes("haiku")) return MODEL_PRICING.haiku;
-  if (lower.includes("opus")) return MODEL_PRICING.opus;
-  return MODEL_PRICING.sonnet;
-}
-
-
 export function recordUsage(
   chatId: string,
   turn: {
@@ -218,16 +199,15 @@ export function recordUsage(
   },
 ): void {
   const session = getSession(chatId);
+  // Token counts from SDK modelUsage (accumulated per-turn)
   session.usage.totalInputTokens += turn.inputTokens;
   session.usage.totalOutputTokens += turn.outputTokens;
   session.usage.totalCacheRead += turn.cacheRead;
   session.usage.totalCacheWrite += turn.cacheWrite;
-  // Snapshot: prompt tokens = input + cache_read + cache_write for this turn
   session.usage.lastPromptTokens =
     turn.inputTokens + turn.cacheRead + turn.cacheWrite;
-  // Context window info from SDK (per-iteration data)
+  // Context info from SDK
   session.usage.contextTokens = turn.contextTokens ?? 0;
-  // Use SDK-reported contextWindow; preserve previous value if not reported this turn
   if (
     turn.contextWindow !== undefined &&
     Number.isFinite(turn.contextWindow) &&
@@ -236,15 +216,6 @@ export function recordUsage(
     session.usage.contextWindow = turn.contextWindow;
   }
   session.usage.numApiCalls = turn.numApiCalls ?? 0;
-  // Model-aware cost estimate
-  const pricing = getPricing(turn.model);
-  session.usage.estimatedCostUsd +=
-    (turn.inputTokens * pricing.input +
-      turn.cacheWrite * pricing.cacheWrite +
-      turn.cacheRead * pricing.cacheRead +
-      turn.outputTokens * pricing.output) /
-    1_000_000;
-  // Track which model was last used
   if (turn.model) session.lastModel = turn.model;
   // Response time tracking
   if (turn.durationMs && turn.durationMs > 0) {
