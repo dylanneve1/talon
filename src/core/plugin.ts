@@ -159,8 +159,14 @@ class PluginRegistry {
     }
   }
 
-  /** Destroy all plugins and clear the registry. Used by hot-reload. */
+  /** Destroy all plugins, clean up env vars, and clear the registry. Used by hot-reload. */
   async destroyAndClear(): Promise<void> {
+    // Clean up env vars set by plugins before destroying
+    for (const { envVars } of this.plugins) {
+      for (const key of Object.keys(envVars)) {
+        delete process.env[key];
+      }
+    }
     await this.destroyAll();
     this.plugins.length = 0;
   }
@@ -366,46 +372,13 @@ export async function destroyPlugins(): Promise<void> {
 }
 
 /**
- * Hot-reload all plugins: destroy current plugins, re-read config,
- * re-load everything (external + built-in). Returns the list of loaded
- * plugin names for status reporting.
- *
- * Does NOT restart the main process, Claude session, or bot connection.
- * Active Claude sessions should be reset after calling this so the next
- * query spawns fresh MCP server subprocesses with the updated config.
+ * Load built-in plugins (GitHub, MemPalace, Playwright) based on config flags.
+ * Shared by both bootstrap and hot-reload to avoid duplication.
  */
-export async function reloadPlugins(
-  activeFrontends?: string[],
-): Promise<string[]> {
-  log("plugin", "Hot-reload: destroying current plugins...");
-  await registry.destroyAndClear();
-
-  // Re-read config from disk to pick up plugin changes
-  const { readFileSync } = await import("node:fs");
-  const { files: pathFiles } = await import("../util/paths.js");
-  let fileConfig: Record<string, unknown> = {};
-  try {
-    fileConfig = JSON.parse(readFileSync(pathFiles.config, "utf-8"));
-  } catch (err) {
-    logError(
-      "plugin",
-      `Failed to read config: ${err instanceof Error ? err.message : err}`,
-    );
-    return [];
-  }
-
-  // Parse plugin entries from config
-  const pluginConfigs: PluginEntry[] = Array.isArray(fileConfig.plugins)
-    ? (fileConfig.plugins as PluginEntry[])
-    : [];
-
-  // Re-load external plugins
-  if (pluginConfigs.length > 0) {
-    await loadPlugins(pluginConfigs, activeFrontends);
-  }
-
-  // Re-load built-in plugins based on config flags
-  const github = fileConfig.github as
+export async function loadBuiltinPlugins(
+  config: Record<string, unknown>,
+): Promise<void> {
+  const github = config.github as
     | { enabled?: boolean; token?: string }
     | undefined;
   if (github?.enabled) {
@@ -419,7 +392,7 @@ export async function reloadPlugins(
           gh.init?.(ghConfig),
           new Promise((_, reject) =>
             setTimeout(
-              () => reject(new Error("GitHub init timed out")),
+              () => reject(new Error("GitHub init timed out after 15s")),
               15_000,
             ),
           ),
@@ -428,12 +401,12 @@ export async function reloadPlugins(
     } catch (err) {
       logError(
         "plugin",
-        `GitHub reload: ${err instanceof Error ? err.message : err}`,
+        `GitHub init: ${err instanceof Error ? err.message : err}`,
       );
     }
   }
 
-  const mempalace = fileConfig.mempalace as
+  const mempalace = config.mempalace as
     | { enabled?: boolean; pythonPath?: string; palacePath?: string }
     | undefined;
   if (mempalace?.enabled) {
@@ -451,7 +424,7 @@ export async function reloadPlugins(
           mp.init?.(mpConfig),
           new Promise((_, reject) =>
             setTimeout(
-              () => reject(new Error("MemPalace init timed out")),
+              () => reject(new Error("MemPalace init timed out after 30s")),
               30_000,
             ),
           ),
@@ -460,12 +433,12 @@ export async function reloadPlugins(
     } catch (err) {
       logError(
         "plugin",
-        `MemPalace reload: ${err instanceof Error ? err.message : err}`,
+        `MemPalace init: ${err instanceof Error ? err.message : err}`,
       );
     }
   }
 
-  const playwright = fileConfig.playwright as
+  const playwright = config.playwright as
     | { enabled?: boolean; browser?: string; headless?: boolean }
     | undefined;
   if (playwright?.enabled) {
@@ -483,7 +456,7 @@ export async function reloadPlugins(
           pw.init?.(pwConfig),
           new Promise((_, reject) =>
             setTimeout(
-              () => reject(new Error("Playwright init timed out")),
+              () => reject(new Error("Playwright init timed out after 15s")),
               15_000,
             ),
           ),
@@ -492,10 +465,40 @@ export async function reloadPlugins(
     } catch (err) {
       logError(
         "plugin",
-        `Playwright reload: ${err instanceof Error ? err.message : err}`,
+        `Playwright init: ${err instanceof Error ? err.message : err}`,
       );
     }
   }
+}
+
+/**
+ * Hot-reload all plugins: destroy current plugins, re-read config via
+ * the validated loadConfig() path, re-load everything (external + built-in).
+ * Returns the list of loaded plugin names for status reporting.
+ *
+ * Throws on config parse/validation failure so the gateway can report an error.
+ *
+ * Does NOT restart the main process, Claude session, or bot connection.
+ * Active conversations continue uninterrupted — new MCP servers spawn
+ * automatically on the next tool call.
+ */
+export async function reloadPlugins(
+  activeFrontends?: string[],
+): Promise<string[]> {
+  log("plugin", "Hot-reload: destroying current plugins...");
+  await registry.destroyAndClear();
+
+  // Use the validated config loader (Zod schema) — throws on malformed config
+  const { loadConfig } = await import("../util/config.js");
+  const config = loadConfig();
+
+  // Re-load external plugins
+  if (config.plugins.length > 0) {
+    await loadPlugins(config.plugins, activeFrontends);
+  }
+
+  // Re-load built-in plugins using shared helper
+  await loadBuiltinPlugins(config as unknown as Record<string, unknown>);
 
   const loaded = registry.all.map((p) => p.plugin.name);
   log(

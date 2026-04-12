@@ -10,11 +10,11 @@ import type { ToolDefinition } from "./types.js";
 export const adminTools: ToolDefinition[] = [
   {
     name: "reload_plugins",
-    description: `Hot-reload all MCP plugins without restarting the bot. Re-reads ~/.talon/config.json, destroys current plugin instances, loads fresh ones, and resets sessions so new MCP servers spawn on the next message.
+    description: `Hot-reload all MCP plugins without restarting the bot or disrupting active sessions. Re-reads ~/.talon/config.json, destroys current plugin MCP subprocesses, and loads fresh ones.
 
-Use this after editing the plugin config (adding, removing, or updating plugin entries) to apply changes without downtime.
+Use this after editing the plugin config (adding, removing, or updating plugin entries) to apply changes without downtime. Active conversations continue uninterrupted.
 
-Returns the list of successfully loaded plugins and number of sessions reset.`,
+Returns the list of successfully loaded plugins.`,
     schema: {},
     execute: (_params, bridge) => bridge("reload_plugins", {}),
     tag: "admin",
