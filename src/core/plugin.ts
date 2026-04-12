@@ -376,9 +376,7 @@ export async function destroyPlugins(): Promise<void> {
  * Load built-in plugins (GitHub, MemPalace, Playwright) based on config flags.
  * Shared by both bootstrap and hot-reload to avoid duplication.
  */
-export async function loadBuiltinPlugins(
-  config: TalonConfig,
-): Promise<void> {
+export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
   const github = config.github;
   if (github?.enabled) {
     try {
