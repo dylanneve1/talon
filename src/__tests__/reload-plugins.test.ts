@@ -45,7 +45,7 @@ vi.mock("../storage/cron-store.js", () => ({
   generateCronId: vi.fn(() => "test-id"),
 }));
 
-// ── Plugin mocking ─────────────────────────────────────────────────���──────
+// ── Plugin mocking ──────────────────────────────────────────────────────
 
 const DEFAULT_CONFIG = {
   model: "claude-opus-4-6",

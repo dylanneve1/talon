@@ -486,15 +486,17 @@ export async function loadBuiltinPlugins(
 export async function reloadPlugins(
   activeFrontends?: string[],
 ): Promise<{ names: string[]; config: TalonConfig }> {
-  log("plugin", "Hot-reload: destroying current plugins...");
-  await registry.destroyAndClear();
-
-  // Use the validated config loader (Zod schema) — throws on malformed config
+  // Validate config BEFORE tearing down existing plugins.
+  // If the config is malformed the error propagates and current plugins stay intact.
   const { loadConfig, getFrontends } = await import("../util/config.js");
   const config = loadConfig();
 
   // Derive frontends from config if not explicitly provided
   const frontends = activeFrontends ?? getFrontends(config);
+
+  // Config is valid — safe to destroy current plugins now
+  log("plugin", "Hot-reload: destroying current plugins...");
+  await registry.destroyAndClear();
 
   // Re-load external plugins
   if (config.plugins.length > 0) {
