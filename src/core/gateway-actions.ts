@@ -315,23 +315,29 @@ export async function handleSharedAction(
       try {
         const { reloadPlugins, getPluginPromptAdditions } =
           await import("./plugin.js");
-        const { loadConfig, rebuildSystemPrompt, getFrontends } =
-          await import("../util/config.js");
+        const { rebuildSystemPrompt } = await import("../util/config.js");
 
-        // Re-read config and reload all plugins
-        const freshConfig = loadConfig();
-        const frontends = getFrontends(freshConfig);
-        const loaded = await reloadPlugins(frontends);
+        // reloadPlugins reads + validates config internally — no double read.
+        // Frontends are derived from config if not explicitly provided.
+        const { names, config: freshConfig } = await reloadPlugins();
 
-        // Rebuild system prompt with new plugin contributions
+        // Rebuild system prompt on the freshConfig, then update the backend's
+        // live config reference so subsequent messages use the new prompt
         rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
+        try {
+          const { updateSystemPrompt } =
+            await import("../backend/claude-sdk/index.js");
+          updateSystemPrompt(freshConfig.systemPrompt);
+        } catch {
+          /* non-fatal — OpenCode backend doesn't have this */
+        }
 
-        log("gateway", `reload_plugins: ${loaded.length} plugins loaded`);
+        log("gateway", `reload_plugins: ${names.length} plugins loaded`);
         return {
           ok: true,
           text:
             `Plugins reloaded successfully.\n` +
-            `Loaded (${loaded.length}): ${loaded.length > 0 ? loaded.join(", ") : "(none)"}`,
+            `Loaded (${names.length}): ${names.length > 0 ? names.join(", ") : "(none)"}`,
         };
       } catch (err) {
         return {

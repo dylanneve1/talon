@@ -45,17 +45,22 @@ vi.mock("../storage/cron-store.js", () => ({
   generateCronId: vi.fn(() => "test-id"),
 }));
 
-// ── Plugin mocking ────────────────────────────────────────────────────────
+// ── Plugin mocking ─────────────────────────────────────────────────���──────
 
-const mockReloadPlugins = vi.fn(async () => ["extras", "brave-search"]);
-const mockGetPluginPromptAdditions = vi.fn(() => "prompt additions");
-const mockLoadConfig = vi.fn(() => ({
+const DEFAULT_CONFIG = {
   model: "claude-opus-4-6",
   frontend: "telegram",
   plugins: [],
+  systemPrompt: "test prompt",
+};
+
+const mockReloadPlugins = vi.fn(async () => ({
+  names: ["extras", "brave-search"],
+  config: { ...DEFAULT_CONFIG },
 }));
+const mockGetPluginPromptAdditions = vi.fn(() => "prompt additions");
 const mockRebuildSystemPrompt = vi.fn();
-const mockGetFrontends = vi.fn(() => ["telegram"]);
+const mockUpdateSystemPrompt = vi.fn();
 
 vi.mock("../core/plugin.js", () => ({
   reloadPlugins: (...args: unknown[]) => mockReloadPlugins(...args),
@@ -63,9 +68,11 @@ vi.mock("../core/plugin.js", () => ({
 }));
 
 vi.mock("../util/config.js", () => ({
-  loadConfig: () => mockLoadConfig(),
   rebuildSystemPrompt: (...args: unknown[]) => mockRebuildSystemPrompt(...args),
-  getFrontends: (...args: unknown[]) => mockGetFrontends(...args),
+}));
+
+vi.mock("../backend/claude-sdk/index.js", () => ({
+  updateSystemPrompt: (...args: unknown[]) => mockUpdateSystemPrompt(...args),
 }));
 
 // ── Import after mocks ────────────────────────────────────────────────────
@@ -78,18 +85,13 @@ describe("reload_plugins gateway action", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     // Re-establish default implementations after reset
-    mockReloadPlugins.mockImplementation(async () => [
-      "extras",
-      "brave-search",
-    ]);
+    mockReloadPlugins.mockImplementation(async () => ({
+      names: ["extras", "brave-search"],
+      config: { ...DEFAULT_CONFIG },
+    }));
     mockGetPluginPromptAdditions.mockReturnValue("prompt additions");
-    mockLoadConfig.mockReturnValue({
-      model: "claude-opus-4-6",
-      frontend: "telegram",
-      plugins: [],
-    });
     mockRebuildSystemPrompt.mockImplementation(() => {});
-    mockGetFrontends.mockReturnValue(["telegram"]);
+    mockUpdateSystemPrompt.mockImplementation(() => {});
   });
 
   it("returns loaded plugin names on success", async () => {
@@ -105,16 +107,21 @@ describe("reload_plugins gateway action", () => {
     expect(result!.text).toContain("(2)");
   });
 
-  it("calls reloadPlugins with frontends from config", async () => {
-    mockGetFrontends.mockReturnValue(["telegram", "terminal"]);
+  it("calls reloadPlugins without explicit frontends (derived from config)", async () => {
     await handleSharedAction({ action: "reload_plugins" }, 12345);
-    expect(mockReloadPlugins).toHaveBeenCalledWith(["telegram", "terminal"]);
+    // Gateway no longer passes frontends — reloadPlugins derives them from config
+    expect(mockReloadPlugins).toHaveBeenCalledWith();
   });
 
   it("rebuilds system prompt after reloading", async () => {
     await handleSharedAction({ action: "reload_plugins" }, 12345);
     expect(mockRebuildSystemPrompt).toHaveBeenCalledTimes(1);
     expect(mockGetPluginPromptAdditions).toHaveBeenCalledTimes(1);
+  });
+
+  it("updates backend system prompt after rebuild", async () => {
+    await handleSharedAction({ action: "reload_plugins" }, 12345);
+    expect(mockUpdateSystemPrompt).toHaveBeenCalledTimes(1);
   });
 
   it("returns error when reloadPlugins throws", async () => {
@@ -130,12 +137,7 @@ describe("reload_plugins gateway action", () => {
     expect(result!.error).toContain("Config validation failed");
   });
 
-  it("returns error when loadConfig throws", async () => {
-    mockLoadConfig.mockImplementationOnce(() => {
-      throw new Error("Invalid JSON in config");
-    });
-    // reloadPlugins would call loadConfig internally — but since we mock
-    // reloadPlugins directly, we test the gateway's error handling
+  it("returns error when config is malformed", async () => {
     mockReloadPlugins.mockRejectedValueOnce(
       new Error("Invalid JSON in config"),
     );
@@ -148,7 +150,10 @@ describe("reload_plugins gateway action", () => {
   });
 
   it("reports zero plugins when none configured", async () => {
-    mockReloadPlugins.mockImplementation(async () => []);
+    mockReloadPlugins.mockImplementation(async () => ({
+      names: [],
+      config: { ...DEFAULT_CONFIG },
+    }));
     const result = await handleSharedAction(
       { action: "reload_plugins" },
       12345,
@@ -159,35 +164,24 @@ describe("reload_plugins gateway action", () => {
   });
 });
 
-// ── Plugin registry tests ─────────────────────────────────────────────────
-
-describe("PluginRegistry.destroyAndClear", () => {
-  it("cleans up env vars set by plugins", async () => {
-    // Import the internal registry class for direct testing
-    const pluginMod = await import("../core/plugin.js");
-
-    // Set a test env var to simulate plugin behavior
-    const testKey = "__TALON_TEST_PLUGIN_VAR__";
-    process.env[testKey] = "test_value";
-    expect(process.env[testKey]).toBe("test_value");
-
-    // After destroyAndClear, env var cleanup happens on the registered plugins.
-    // Since we're mocking the module, we test the principle:
-    // the env var should be removable via delete
-    delete process.env[testKey];
-    expect(process.env[testKey]).toBeUndefined();
-  });
-});
+// ── Admin tool description tests ──────────────────────────────────────────
 
 describe("admin tool description", () => {
-  it("does not mention session reset", async () => {
+  it("does not mention session reset or MCP subprocesses", async () => {
     const { adminTools } = await import("../core/tools/admin.js");
     const reloadTool = adminTools.find((t) => t.name === "reload_plugins");
     expect(reloadTool).toBeDefined();
     expect(reloadTool!.description).not.toContain("resets sessions");
     expect(reloadTool!.description).not.toContain("sessions reset");
+    expect(reloadTool!.description).not.toContain("MCP subprocesses");
     expect(reloadTool!.description).toContain("without restarting");
     expect(reloadTool!.description).toContain("without downtime");
+  });
+
+  it("mentions env var cleanup", async () => {
+    const { adminTools } = await import("../core/tools/admin.js");
+    const reloadTool = adminTools.find((t) => t.name === "reload_plugins");
+    expect(reloadTool!.description).toContain("env vars");
   });
 
   it("has admin tag", async () => {

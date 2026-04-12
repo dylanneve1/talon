@@ -41,6 +41,12 @@ export function initAgent(
   delete process.env.CLAUDECODE;
 }
 
+/** Update the system prompt on the live config. Used by plugin hot-reload
+ *  so the next message picks up new plugin tool descriptions. */
+export function updateSystemPrompt(prompt: string): void {
+  if (config) config.systemPrompt = prompt;
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 export async function handleMessage(

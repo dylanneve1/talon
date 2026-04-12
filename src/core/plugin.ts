@@ -18,6 +18,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { log, logError, logWarn } from "../util/log.js";
 import type { ActionResult } from "./types.js";
+import type { TalonConfig } from "../util/config.js";
 
 // ── Plugin interfaces ──────────────────────────────────────────────────────
 
@@ -474,7 +475,7 @@ export async function loadBuiltinPlugins(
 /**
  * Hot-reload all plugins: destroy current plugins, re-read config via
  * the validated loadConfig() path, re-load everything (external + built-in).
- * Returns the list of loaded plugin names for status reporting.
+ * Returns the loaded plugin names and the config that was used.
  *
  * Throws on config parse/validation failure so the gateway can report an error.
  *
@@ -484,28 +485,31 @@ export async function loadBuiltinPlugins(
  */
 export async function reloadPlugins(
   activeFrontends?: string[],
-): Promise<string[]> {
+): Promise<{ names: string[]; config: TalonConfig }> {
   log("plugin", "Hot-reload: destroying current plugins...");
   await registry.destroyAndClear();
 
   // Use the validated config loader (Zod schema) — throws on malformed config
-  const { loadConfig } = await import("../util/config.js");
+  const { loadConfig, getFrontends } = await import("../util/config.js");
   const config = loadConfig();
+
+  // Derive frontends from config if not explicitly provided
+  const frontends = activeFrontends ?? getFrontends(config);
 
   // Re-load external plugins
   if (config.plugins.length > 0) {
-    await loadPlugins(config.plugins, activeFrontends);
+    await loadPlugins(config.plugins, frontends);
   }
 
   // Re-load built-in plugins using shared helper
   await loadBuiltinPlugins(config as unknown as Record<string, unknown>);
 
-  const loaded = registry.all.map((p) => p.plugin.name);
+  const names = registry.all.map((p) => p.plugin.name);
   log(
     "plugin",
-    `Hot-reload complete: ${loaded.length} plugins loaded [${loaded.join(", ")}]`,
+    `Hot-reload complete: ${names.length} plugins loaded [${names.join(", ")}]`,
   );
-  return loaded;
+  return { names, config };
 }
 
 /**
