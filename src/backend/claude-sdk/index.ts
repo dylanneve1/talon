@@ -205,7 +205,7 @@ export async function handleMessage(
   let cacheWrite = 0;
   let toolCalls = 0;
   let contextTokens = 0; // actual context fill from last iteration
-  let contextWindow = 0; // model's context window size
+  let contextWindow: number | undefined; // model's context window size, if reported by the SDK
   let numApiCalls = 0; // number of API round-trips in this turn
 
   // Streaming throttle

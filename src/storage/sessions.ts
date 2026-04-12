@@ -159,6 +159,12 @@ export function getSession(chatId: string): SessionState {
     session.usage.fastestResponseMs === 0
   )
     session.usage.fastestResponseMs = Infinity;
+  // Migrate sessions from before context tracking was added
+  if (session.usage.contextTokens === undefined)
+    session.usage.contextTokens = 0;
+  if (session.usage.contextWindow === undefined)
+    session.usage.contextWindow = 0;
+  if (session.usage.numApiCalls === undefined) session.usage.numApiCalls = 0;
   return session;
 }
 
@@ -219,12 +225,14 @@ export function recordUsage(
   session.usage.lastPromptTokens =
     turn.inputTokens + turn.cacheRead + turn.cacheWrite;
   // Context window info from SDK (per-iteration data)
-  if (turn.contextTokens !== undefined)
-    session.usage.contextTokens = turn.contextTokens;
-  if (turn.contextWindow !== undefined && turn.contextWindow > 0)
-    session.usage.contextWindow = turn.contextWindow;
-  if (turn.numApiCalls !== undefined)
-    session.usage.numApiCalls = turn.numApiCalls;
+  session.usage.contextTokens = turn.contextTokens ?? 0;
+  session.usage.contextWindow =
+    turn.contextWindow !== undefined &&
+    Number.isFinite(turn.contextWindow) &&
+    turn.contextWindow > 0
+      ? turn.contextWindow
+      : 0;
+  session.usage.numApiCalls = turn.numApiCalls ?? 0;
   // Model-aware cost estimate
   const pricing = getPricing(turn.model);
   session.usage.estimatedCostUsd +=

@@ -391,6 +391,137 @@ describe("sessions", () => {
     });
   });
 
+  describe("recordUsage — context tracking fields", () => {
+    it("stores contextTokens from SDK iteration data", () => {
+      const chatId = "test-ctx-tokens";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 10,
+        cacheWrite: 5,
+        contextTokens: 85000,
+      });
+
+      expect(getSession(chatId).usage.contextTokens).toBe(85000);
+    });
+
+    it("stores contextWindow from SDK modelUsage", () => {
+      const chatId = "test-ctx-window";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        contextWindow: 1_000_000,
+      });
+
+      expect(getSession(chatId).usage.contextWindow).toBe(1_000_000);
+    });
+
+    it("stores numApiCalls from SDK num_turns", () => {
+      const chatId = "test-num-api-calls";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        numApiCalls: 3,
+      });
+
+      expect(getSession(chatId).usage.numApiCalls).toBe(3);
+    });
+
+    it("resets contextTokens to 0 when not provided", () => {
+      const chatId = "test-ctx-tokens-reset";
+      getSession(chatId);
+
+      // First turn with context data
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        contextTokens: 50000,
+      });
+      expect(getSession(chatId).usage.contextTokens).toBe(50000);
+
+      // Second turn without context data — resets to 0
+      recordUsage(chatId, {
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+      });
+      expect(getSession(chatId).usage.contextTokens).toBe(0);
+    });
+
+    it("resets contextWindow to 0 when not provided or invalid", () => {
+      const chatId = "test-ctx-window-reset";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        contextWindow: 1_000_000,
+      });
+      expect(getSession(chatId).usage.contextWindow).toBe(1_000_000);
+
+      // Turn without contextWindow — resets to 0
+      recordUsage(chatId, {
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+      });
+      expect(getSession(chatId).usage.contextWindow).toBe(0);
+    });
+
+    it("rejects non-finite contextWindow values", () => {
+      const chatId = "test-ctx-window-nan";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        contextWindow: NaN,
+      });
+      expect(getSession(chatId).usage.contextWindow).toBe(0);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        contextWindow: Infinity,
+      });
+      expect(getSession(chatId).usage.contextWindow).toBe(0);
+    });
+
+    it("rejects negative contextWindow values", () => {
+      const chatId = "test-ctx-window-neg";
+      getSession(chatId);
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        contextWindow: -100,
+      });
+      expect(getSession(chatId).usage.contextWindow).toBe(0);
+    });
+  });
+
   describe("setSessionName", () => {
     it("persists session name", () => {
       const chatId = "test-set-name";
@@ -640,6 +771,40 @@ describe("sessions — migration of legacy field formats", () => {
     loadSessions();
     const session = getSession("migrate-chat-2");
     expect(session.createdAt).toBe(9999999);
+  });
+
+  it("backfills missing context tracking fields on legacy sessions", () => {
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({
+        "migrate-chat-ctx": {
+          sessionId: undefined,
+          turns: 4,
+          lastActive: 2000,
+          createdAt: 2000,
+          usage: {
+            totalInputTokens: 100,
+            totalOutputTokens: 50,
+            totalCacheRead: 10,
+            totalCacheWrite: 5,
+            lastPromptTokens: 115,
+            estimatedCostUsd: 0.5,
+            totalResponseMs: 1000,
+            lastResponseMs: 500,
+            fastestResponseMs: 500,
+            // contextTokens, contextWindow, numApiCalls deliberately omitted
+          },
+        },
+      }),
+    );
+    loadSessions();
+    const session = getSession("migrate-chat-ctx");
+    expect(session.usage.contextTokens).toBe(0);
+    expect(session.usage.contextWindow).toBe(0);
+    expect(session.usage.numApiCalls).toBe(0);
+    // Existing fields should be preserved
+    expect(session.usage.totalInputTokens).toBe(100);
+    expect(session.usage.lastPromptTokens).toBe(115);
   });
 
   it("fixes fastestResponseMs of 0 to Infinity", () => {
