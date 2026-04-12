@@ -326,10 +326,7 @@ export async function handleSharedAction(
         // Rebuild system prompt with new plugin contributions
         rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
 
-        log(
-          "gateway",
-          `reload_plugins: ${loaded.length} plugins loaded`,
-        );
+        log("gateway", `reload_plugins: ${loaded.length} plugins loaded`);
         return {
           ok: true,
           text:
