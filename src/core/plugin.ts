@@ -377,11 +377,9 @@ export async function destroyPlugins(): Promise<void> {
  * Shared by both bootstrap and hot-reload to avoid duplication.
  */
 export async function loadBuiltinPlugins(
-  config: Record<string, unknown>,
+  config: TalonConfig,
 ): Promise<void> {
-  const github = config.github as
-    | { enabled?: boolean; token?: string }
-    | undefined;
+  const github = config.github;
   if (github?.enabled) {
     try {
       const { createGitHubPlugin } = await import("../plugins/github/index.js");
@@ -407,9 +405,7 @@ export async function loadBuiltinPlugins(
     }
   }
 
-  const mempalace = config.mempalace as
-    | { enabled?: boolean; pythonPath?: string; palacePath?: string }
-    | undefined;
+  const mempalace = config.mempalace;
   if (mempalace?.enabled) {
     try {
       const { createMempalacePlugin } =
@@ -439,9 +435,7 @@ export async function loadBuiltinPlugins(
     }
   }
 
-  const playwright = config.playwright as
-    | { enabled?: boolean; browser?: string; headless?: boolean }
-    | undefined;
+  const playwright = config.playwright;
   if (playwright?.enabled) {
     try {
       const { createPlaywrightPlugin } =
@@ -504,7 +498,7 @@ export async function reloadPlugins(
   }
 
   // Re-load built-in plugins using shared helper
-  await loadBuiltinPlugins(config as unknown as Record<string, unknown>);
+  await loadBuiltinPlugins(config);
 
   const names = registry.all.map((p) => p.plugin.name);
   log(

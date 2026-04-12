@@ -77,7 +77,7 @@ export async function bootstrap(
     }
 
     // Built-in plugins (GitHub, MemPalace, Playwright) — shared with hot-reload
-    await loadBuiltinPlugins(config as unknown as Record<string, unknown>);
+    await loadBuiltinPlugins(config);
 
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }

@@ -328,8 +328,12 @@ export async function handleSharedAction(
           const { updateSystemPrompt } =
             await import("../backend/claude-sdk/index.js");
           updateSystemPrompt(freshConfig.systemPrompt);
-        } catch {
-          /* non-fatal — OpenCode backend doesn't have this */
+        } catch (err) {
+          // Non-fatal — OpenCode backend doesn't expose updateSystemPrompt
+          log(
+            "gateway",
+            `reload_plugins: could not update backend prompt: ${err instanceof Error ? err.message : err}`,
+          );
         }
 
         log("gateway", `reload_plugins: ${names.length} plugins loaded`);
