@@ -434,10 +434,9 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
       "\u2588".repeat(filled) + "\u2591".repeat(barLen - filled);
     const contextWarn = ctxPct >= 80 ? " \u26A0\uFE0F consider /reset" : "";
 
-    const totalPrompt =
-      u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
+    const cacheTotal = u.totalInputTokens + u.totalCacheRead;
     const cacheHitPct =
-      totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
+      cacheTotal > 0 ? Math.round((u.totalCacheRead / cacheTotal) * 100) : 0;
 
     const avgResponseMs =
       info.turns > 0 && u.totalResponseMs

@@ -449,9 +449,9 @@ export async function handleMessage(
   // The remaining currentBlockText is the final response text
   allResponseText += currentBlockText;
 
-  const totalPrompt = inputTokens + cacheRead + cacheWrite;
+  const cacheTotal = inputTokens + cacheRead;
   const cacheHitPct =
-    totalPrompt > 0 ? Math.round((cacheRead / totalPrompt) * 100) : 0;
+    cacheTotal > 0 ? Math.round((cacheRead / cacheTotal) * 100) : 0;
 
   log(
     "agent",
