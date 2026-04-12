@@ -246,7 +246,6 @@ export function createTeamsFrontend(
               ).replace("claude-", "");
               const avgMs =
                 info.turns > 0 ? Math.round(u.totalResponseMs / info.turns) : 0;
-              // Context info piped directly from Agent SDK — no model-name guessing
               const ctxUsed = u.contextTokens || u.lastPromptTokens;
               const ctxMax = u.contextWindow;
               const ctxPct =
@@ -279,12 +278,7 @@ export function createTeamsFrontend(
                             { title: "Turns", value: String(info.turns) },
                             {
                               title: "Context",
-                              value:
-                                ctxMax > 0
-                                  ? `${(ctxUsed / 1000).toFixed(0)}K / ${(ctxMax / 1000).toFixed(0)}K (${ctxPct}%)`
-                                  : ctxUsed > 0
-                                    ? `${(ctxUsed / 1000).toFixed(0)}K (awaiting SDK data)`
-                                    : "—",
+                              value: `${(ctxUsed / 1000).toFixed(0)}K / ${(ctxMax / 1000).toFixed(0)}K (${ctxPct}%)`,
                             },
                             { title: "Cache", value: `${cacheHit}% hit` },
                             {

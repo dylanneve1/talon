@@ -199,6 +199,7 @@ function getPricing(model?: string): (typeof MODEL_PRICING)["sonnet"] {
   return MODEL_PRICING.sonnet;
 }
 
+
 export function recordUsage(
   chatId: string,
   turn: {
@@ -226,12 +227,14 @@ export function recordUsage(
     turn.inputTokens + turn.cacheRead + turn.cacheWrite;
   // Context window info from SDK (per-iteration data)
   session.usage.contextTokens = turn.contextTokens ?? 0;
-  session.usage.contextWindow =
+  // Use SDK-reported contextWindow; preserve previous value if not reported this turn
+  if (
     turn.contextWindow !== undefined &&
     Number.isFinite(turn.contextWindow) &&
     turn.contextWindow > 0
-      ? turn.contextWindow
-      : 0;
+  ) {
+    session.usage.contextWindow = turn.contextWindow;
+  }
   session.usage.numApiCalls = turn.numApiCalls ?? 0;
   // Model-aware cost estimate
   const pricing = getPricing(turn.model);

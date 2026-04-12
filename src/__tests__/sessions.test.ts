@@ -461,8 +461,8 @@ describe("sessions", () => {
       expect(getSession(chatId).usage.contextTokens).toBe(0);
     });
 
-    it("resets contextWindow to 0 when not provided or invalid", () => {
-      const chatId = "test-ctx-window-reset";
+    it("preserves contextWindow across turns when not reported", () => {
+      const chatId = "test-ctx-window-preserve";
       getSession(chatId);
 
       recordUsage(chatId, {
@@ -474,20 +474,31 @@ describe("sessions", () => {
       });
       expect(getSession(chatId).usage.contextWindow).toBe(1_000_000);
 
-      // Turn without contextWindow — resets to 0
+      // Turn without contextWindow — preserves previous value
       recordUsage(chatId, {
         inputTokens: 200,
         outputTokens: 100,
         cacheRead: 0,
         cacheWrite: 0,
       });
-      expect(getSession(chatId).usage.contextWindow).toBe(0);
+      expect(getSession(chatId).usage.contextWindow).toBe(1_000_000);
     });
 
-    it("rejects non-finite contextWindow values", () => {
+    it("rejects non-finite contextWindow values and keeps previous", () => {
       const chatId = "test-ctx-window-nan";
       getSession(chatId);
 
+      // Set a valid contextWindow first
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
+        contextWindow: 1_000_000,
+      });
+      expect(getSession(chatId).usage.contextWindow).toBe(1_000_000);
+
+      // NaN should not overwrite
       recordUsage(chatId, {
         inputTokens: 100,
         outputTokens: 50,
@@ -495,8 +506,9 @@ describe("sessions", () => {
         cacheWrite: 0,
         contextWindow: NaN,
       });
-      expect(getSession(chatId).usage.contextWindow).toBe(0);
+      expect(getSession(chatId).usage.contextWindow).toBe(1_000_000);
 
+      // Infinity should not overwrite
       recordUsage(chatId, {
         inputTokens: 100,
         outputTokens: 50,
@@ -504,10 +516,10 @@ describe("sessions", () => {
         cacheWrite: 0,
         contextWindow: Infinity,
       });
-      expect(getSession(chatId).usage.contextWindow).toBe(0);
+      expect(getSession(chatId).usage.contextWindow).toBe(1_000_000);
     });
 
-    it("rejects negative contextWindow values", () => {
+    it("rejects negative contextWindow values and keeps previous", () => {
       const chatId = "test-ctx-window-neg";
       getSession(chatId);
 
@@ -516,9 +528,17 @@ describe("sessions", () => {
         outputTokens: 50,
         cacheRead: 0,
         cacheWrite: 0,
+        contextWindow: 200_000,
+      });
+
+      recordUsage(chatId, {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheRead: 0,
+        cacheWrite: 0,
         contextWindow: -100,
       });
-      expect(getSession(chatId).usage.contextWindow).toBe(0);
+      expect(getSession(chatId).usage.contextWindow).toBe(200_000);
     });
   });
 

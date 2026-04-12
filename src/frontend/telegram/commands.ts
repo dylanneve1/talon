@@ -424,10 +424,8 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
 
-    // Context info piped from Agent SDK — contextWindow and contextTokens
-    // come directly from the SDK result, no model-name guessing needed.
     const ctxUsed = u.contextTokens || u.lastPromptTokens;
-    const ctxMax = u.contextWindow; // 0 if SDK hasn't reported yet
+    const ctxMax = u.contextWindow; // from SDK modelUsage, preserved across turns
     const ctxPct =
       ctxMax > 0 ? Math.min(100, Math.round((ctxUsed / ctxMax) * 100)) : 0;
     const barLen = 20;
@@ -455,10 +453,8 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const lines = [
       `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(activeModel)}</code> \u00B7 effort: ${effortName}`,
       "",
-      ctxMax > 0
-        ? `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`
-        : `<b>Context</b>  ${ctxUsed > 0 ? formatTokenCount(ctxUsed) : "\u2014"} (awaiting SDK data)`,
-      ctxMax > 0 ? `<code>${contextBar}</code>` : "",
+      `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
+      `<code>${contextBar}</code>`,
       "",
       `<b>Session Stats</b>`,
       `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "\u2014"} \u00B7 avg ${avgResponseMs ? formatDuration(avgResponseMs) : "\u2014"} \u00B7 best ${fastestMs ? formatDuration(fastestMs) : "\u2014"}`,

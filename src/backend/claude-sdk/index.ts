@@ -96,13 +96,18 @@ export async function handleMessage(
     thinking: { type: "adaptive" as const },
   };
 
+  // The Agent SDK uses [1m] suffix to identify 1M context models internally
+  // (stripped by nX() before API calls). Append for opus/sonnet which support 1M.
+  const supports1m =
+    !activeModel.includes("haiku") && !activeModel.includes("[1m]");
+  const sdkModel = supports1m ? `${activeModel}[1m]` : activeModel;
+
   const options = {
-    model: activeModel,
+    model: sdkModel,
     systemPrompt: config.systemPrompt,
     cwd: config.workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
-    betas: ["context-1m-2025-08-07"],
     ...(config.claudeBinary
       ? { pathToClaudeCodeExecutable: config.claudeBinary }
       : {}),
@@ -343,7 +348,6 @@ export async function handleMessage(
           | Record<string, { contextWindow?: number }>
           | undefined;
         if (modelUsage) {
-          // Get context window from the first (usually only) model entry
           for (const mu of Object.values(modelUsage)) {
             if (mu.contextWindow && mu.contextWindow > 0) {
               contextWindow = mu.contextWindow;
@@ -351,6 +355,10 @@ export async function handleMessage(
             }
           }
         }
+        log(
+          "agent",
+          `SDK result: modelUsage=${JSON.stringify(modelUsage)}, contextWindow=${contextWindow}, contextTokens=${contextTokens}, numApiCalls=${numApiCalls}`,
+        );
 
         // If we still have unsent text and no streaming captured it
         if (
