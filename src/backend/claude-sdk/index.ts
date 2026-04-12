@@ -204,6 +204,9 @@ export async function handleMessage(
   let cacheRead = 0;
   let cacheWrite = 0;
   let toolCalls = 0;
+  let contextTokens = 0; // actual context fill from last iteration
+  let contextWindow = 0; // model's context window size
+  let numApiCalls = 0; // number of API round-trips in this turn
 
   // Streaming throttle
   let lastStreamUpdate = 0;
@@ -300,13 +303,49 @@ export async function handleMessage(
 
       // Final result
       if (type === "result") {
-        const usage = msg.usage as Record<string, number> | undefined;
+        const usage = msg.usage as
+          | (Record<string, number> & {
+              iterations?: Array<{
+                type: string;
+                input_tokens: number;
+                output_tokens: number;
+                cache_read_input_tokens: number;
+                cache_creation_input_tokens: number;
+              }>;
+            })
+          | undefined;
         if (usage) {
           inputTokens = usage.input_tokens ?? 0;
           outputTokens = usage.output_tokens ?? 0;
           cacheRead = usage.cache_read_input_tokens ?? 0;
           cacheWrite = usage.cache_creation_input_tokens ?? 0;
+
+          // Extract actual context fill from the last iteration
+          if (Array.isArray(usage.iterations) && usage.iterations.length > 0) {
+            const last = usage.iterations[usage.iterations.length - 1];
+            contextTokens =
+              (last.input_tokens ?? 0) +
+              (last.cache_read_input_tokens ?? 0) +
+              (last.cache_creation_input_tokens ?? 0);
+          }
         }
+
+        // Extract context window and num_turns from result metadata
+        numApiCalls =
+          ((msg as Record<string, unknown>).num_turns as number) ?? 0;
+        const modelUsage = (msg as Record<string, unknown>).modelUsage as
+          | Record<string, { contextWindow?: number }>
+          | undefined;
+        if (modelUsage) {
+          // Get context window from the first (usually only) model entry
+          for (const mu of Object.values(modelUsage)) {
+            if (mu.contextWindow && mu.contextWindow > 0) {
+              contextWindow = mu.contextWindow;
+              break;
+            }
+          }
+        }
+
         // If we still have unsent text and no streaming captured it
         if (
           !allResponseText &&
@@ -374,6 +413,9 @@ export async function handleMessage(
     cacheWrite,
     durationMs,
     model: activeModel,
+    contextTokens,
+    contextWindow,
+    numApiCalls,
   });
 
   // Set a descriptive session name from the first message

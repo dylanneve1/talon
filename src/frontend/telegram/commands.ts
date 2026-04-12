@@ -424,17 +424,18 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
 
-    const contextMax = activeModel.includes("haiku") ? 200_000 : 1_000_000;
-    const contextUsed = u.lastPromptTokens;
-    const contextPct =
-      contextMax > 0
-        ? Math.min(100, Math.round((contextUsed / contextMax) * 100))
-        : 0;
+    // Context info piped from Agent SDK's result.modelUsage and usage.iterations.
+    // Opus 4.6 and Sonnet 4.6 have 1M context; Haiku has 200K.
+    const ctxUsed = u.contextTokens || u.lastPromptTokens; // fall back to cumulative if no iteration data
+    const defaultCtx = activeModel.includes("haiku") ? 200_000 : 1_000_000;
+    const ctxMax = u.contextWindow || defaultCtx;
+    const ctxPct =
+      ctxMax > 0 ? Math.min(100, Math.round((ctxUsed / ctxMax) * 100)) : 0;
     const barLen = 20;
-    const filled = Math.round((contextPct / 100) * barLen);
+    const filled = Math.round((ctxPct / 100) * barLen);
     const contextBar =
       "\u2588".repeat(filled) + "\u2591".repeat(barLen - filled);
-    const contextWarn = contextPct >= 80 ? " \u26A0\uFE0F consider /reset" : "";
+    const contextWarn = ctxPct >= 80 ? " \u26A0\uFE0F consider /reset" : "";
 
     const totalPrompt =
       u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
@@ -455,7 +456,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     const lines = [
       `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(activeModel)}</code> \u00B7 effort: ${effortName}`,
       "",
-      `<b>Context</b>  ${formatTokenCount(contextUsed)} / ${formatTokenCount(contextMax)} (${contextPct}%)${contextWarn}`,
+      `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
       `<code>${contextBar}</code>`,
       "",
       `<b>Session Stats</b>`,
