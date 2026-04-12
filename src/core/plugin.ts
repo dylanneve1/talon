@@ -418,7 +418,10 @@ export async function reloadPlugins(
         await Promise.race([
           gh.init?.(ghConfig),
           new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("GitHub init timed out")), 15_000),
+            setTimeout(
+              () => reject(new Error("GitHub init timed out")),
+              15_000,
+            ),
           ),
         ]);
       }
@@ -435,9 +438,8 @@ export async function reloadPlugins(
     | undefined;
   if (mempalace?.enabled) {
     try {
-      const { createMempalacePlugin } = await import(
-        "../plugins/mempalace/index.js"
-      );
+      const { createMempalacePlugin } =
+        await import("../plugins/mempalace/index.js");
       const { dirs, files: pf } = await import("../util/paths.js");
       const pythonPath = mempalace.pythonPath ?? pf.mempalacePython;
       const palacePath = mempalace.palacePath ?? dirs.palace;
@@ -468,9 +470,8 @@ export async function reloadPlugins(
     | undefined;
   if (playwright?.enabled) {
     try {
-      const { createPlaywrightPlugin } = await import(
-        "../plugins/playwright/index.js"
-      );
+      const { createPlaywrightPlugin } =
+        await import("../plugins/playwright/index.js");
       const pw = createPlaywrightPlugin({
         browser: playwright.browser,
         headless: playwright.headless,
@@ -497,7 +498,10 @@ export async function reloadPlugins(
   }
 
   const loaded = registry.all.map((p) => p.plugin.name);
-  log("plugin", `Hot-reload complete: ${loaded.length} plugins loaded [${loaded.join(", ")}]`);
+  log(
+    "plugin",
+    `Hot-reload complete: ${loaded.length} plugins loaded [${loaded.join(", ")}]`,
+  );
   return loaded;
 }
 

@@ -313,16 +313,12 @@ export async function handleSharedAction(
     // ── Plugin hot-reload ──────────────────────────────────────────────
     case "reload_plugins": {
       try {
-        const {
-          reloadPlugins,
-          getPluginPromptAdditions,
-        } = await import("./plugin.js");
-        const { loadConfig, rebuildSystemPrompt, getFrontends } = await import(
-          "../util/config.js"
-        );
-        const { getAllSessions, resetSession } = await import(
-          "../storage/sessions.js"
-        );
+        const { reloadPlugins, getPluginPromptAdditions } =
+          await import("./plugin.js");
+        const { loadConfig, rebuildSystemPrompt, getFrontends } =
+          await import("../util/config.js");
+        const { getAllSessions, resetSession } =
+          await import("../storage/sessions.js");
 
         // Re-read config and reload all plugins
         const freshConfig = loadConfig();
