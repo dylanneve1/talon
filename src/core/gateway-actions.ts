@@ -317,8 +317,6 @@ export async function handleSharedAction(
           await import("./plugin.js");
         const { loadConfig, rebuildSystemPrompt, getFrontends } =
           await import("../util/config.js");
-        const { getAllSessions, resetSession } =
-          await import("../storage/sessions.js");
 
         // Re-read config and reload all plugins
         const freshConfig = loadConfig();
@@ -328,24 +326,15 @@ export async function handleSharedAction(
         // Rebuild system prompt with new plugin contributions
         rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
 
-        // Reset all active sessions so the next query spawns fresh MCP
-        // server subprocesses with the updated plugin config
-        const sessions = getAllSessions();
-        for (const { chatId: sid } of sessions) {
-          resetSession(sid);
-        }
-
         log(
           "gateway",
-          `reload_plugins: ${loaded.length} plugins, ${sessions.length} sessions reset`,
+          `reload_plugins: ${loaded.length} plugins loaded`,
         );
         return {
           ok: true,
           text:
             `Plugins reloaded successfully.\n` +
-            `Loaded (${loaded.length}): ${loaded.length > 0 ? loaded.join(", ") : "(none)"}\n` +
-            `Sessions reset: ${sessions.length}\n` +
-            `Note: New MCP servers will spawn on the next message.`,
+            `Loaded (${loaded.length}): ${loaded.length > 0 ? loaded.join(", ") : "(none)"}`,
         };
       } catch (err) {
         return {
