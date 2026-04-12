@@ -171,12 +171,12 @@ function buildSdkOptions(chatId: string) {
  */
 export async function warmSession(chatId: string): Promise<void> {
   if (!config) return;
+  const abort = new AbortController();
   try {
     rebuildSystemPrompt(config, getPluginPromptAdditions());
     const { options } = buildSdkOptions(chatId);
 
-    const abort = new AbortController();
-    // Streaming input mode: pass an async iterable that never yields
+    // Streaming input mode: pass an async iterable that never yields a user message
     const neverYield = async function* (): AsyncGenerator<never> {
       await new Promise<never>((_, reject) => {
         abort.signal.addEventListener("abort", () =>
@@ -193,6 +193,19 @@ export async function warmSession(chatId: string): Promise<void> {
       } as Parameters<typeof query>[0]["options"],
     });
 
+    // Drain the stream in the background so the SDK's internal message loop
+    // doesn't stall — control responses are processed in readMessages() which
+    // needs the inputStream consumer to not back-pressure.
+    const drainPromise = (async () => {
+      try {
+        for await (const _ of q) {
+          // discard SDK messages; we only care about the control response
+        }
+      } catch {
+        // expected: abort causes the stream to end with an error
+      }
+    })();
+
     const ctx = await q.getContextUsage();
     const session = getSession(chatId);
     if (ctx.maxTokens > 0) session.usage.contextWindow = ctx.maxTokens;
@@ -203,7 +216,9 @@ export async function warmSession(chatId: string): Promise<void> {
     );
 
     abort.abort();
+    await drainPromise;
   } catch (err) {
+    abort.abort();
     // Non-fatal — /status will just show 0 until first real message
     logWarn(
       "agent",
