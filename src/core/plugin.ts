@@ -18,6 +18,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { log, logError, logWarn } from "../util/log.js";
 import type { ActionResult } from "./types.js";
+import type { TalonConfig } from "../util/config.js";
 
 // ── Plugin interfaces ──────────────────────────────────────────────────────
 
@@ -157,6 +158,18 @@ class PluginRegistry {
         );
       }
     }
+  }
+
+  /** Destroy all plugins, clean up env vars, and clear the registry. Used by hot-reload. */
+  async destroyAndClear(): Promise<void> {
+    // Clean up env vars set by plugins before destroying
+    for (const { envVars } of this.plugins) {
+      for (const key of Object.keys(envVars)) {
+        delete process.env[key];
+      }
+    }
+    await this.destroyAll();
+    this.plugins.length = 0;
   }
 }
 
@@ -357,6 +370,140 @@ export function getPluginCount(): number {
 /** Destroy all plugins (called during shutdown). */
 export async function destroyPlugins(): Promise<void> {
   await registry.destroyAll();
+}
+
+/**
+ * Load built-in plugins (GitHub, MemPalace, Playwright) based on config flags.
+ * Shared by both bootstrap and hot-reload to avoid duplication.
+ */
+export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
+  const github = config.github;
+  if (github?.enabled) {
+    try {
+      const { createGitHubPlugin } = await import("../plugins/github/index.js");
+      const gh = createGitHubPlugin({ token: github.token });
+      const ghConfig = github as unknown as Record<string, unknown>;
+      registerPlugin(gh, ghConfig);
+      if (registry.getByName("github")) {
+        await Promise.race([
+          gh.init?.(ghConfig),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("GitHub init timed out after 15s")),
+              15_000,
+            ),
+          ),
+        ]);
+      }
+    } catch (err) {
+      logError(
+        "plugin",
+        `GitHub init: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  const mempalace = config.mempalace;
+  if (mempalace?.enabled) {
+    try {
+      const { createMempalacePlugin } =
+        await import("../plugins/mempalace/index.js");
+      const { dirs, files: pf } = await import("../util/paths.js");
+      const pythonPath = mempalace.pythonPath ?? pf.mempalacePython;
+      const palacePath = mempalace.palacePath ?? dirs.palace;
+      const mp = createMempalacePlugin({ pythonPath, palacePath });
+      const mpConfig = mempalace as unknown as Record<string, unknown>;
+      registerPlugin(mp, mpConfig);
+      if (registry.getByName("mempalace")) {
+        await Promise.race([
+          mp.init?.(mpConfig),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("MemPalace init timed out after 30s")),
+              30_000,
+            ),
+          ),
+        ]);
+      }
+    } catch (err) {
+      logError(
+        "plugin",
+        `MemPalace init: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  const playwright = config.playwright;
+  if (playwright?.enabled) {
+    try {
+      const { createPlaywrightPlugin } =
+        await import("../plugins/playwright/index.js");
+      const pw = createPlaywrightPlugin({
+        browser: playwright.browser,
+        headless: playwright.headless,
+      });
+      const pwConfig = playwright as unknown as Record<string, unknown>;
+      registerPlugin(pw, pwConfig);
+      if (registry.getByName("playwright")) {
+        await Promise.race([
+          pw.init?.(pwConfig),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Playwright init timed out after 15s")),
+              15_000,
+            ),
+          ),
+        ]);
+      }
+    } catch (err) {
+      logError(
+        "plugin",
+        `Playwright init: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+}
+
+/**
+ * Hot-reload all plugins: destroy current plugins, re-read config via
+ * the validated loadConfig() path, re-load everything (external + built-in).
+ * Returns the loaded plugin names and the config that was used.
+ *
+ * Throws on config parse/validation failure so the gateway can report an error.
+ *
+ * Does NOT restart the main process, Claude session, or bot connection.
+ * Active conversations continue uninterrupted — new MCP servers spawn
+ * automatically on the next tool call.
+ */
+export async function reloadPlugins(
+  activeFrontends?: string[],
+): Promise<{ names: string[]; config: TalonConfig }> {
+  // Validate config BEFORE tearing down existing plugins.
+  // If the config is malformed the error propagates and current plugins stay intact.
+  const { loadConfig, getFrontends } = await import("../util/config.js");
+  const config = loadConfig();
+
+  // Derive frontends from config if not explicitly provided
+  const frontends = activeFrontends ?? getFrontends(config);
+
+  // Config is valid — safe to destroy current plugins now
+  log("plugin", "Hot-reload: destroying current plugins...");
+  await registry.destroyAndClear();
+
+  // Re-load external plugins
+  if (config.plugins.length > 0) {
+    await loadPlugins(config.plugins, frontends);
+  }
+
+  // Re-load built-in plugins using shared helper
+  await loadBuiltinPlugins(config);
+
+  const names = registry.all.map((p) => p.plugin.name);
+  log(
+    "plugin",
+    `Hot-reload complete: ${names.length} plugins loaded [${names.join(", ")}]`,
+  );
+  return { names, config };
 }
 
 /**

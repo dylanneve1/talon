@@ -19,7 +19,8 @@ export type ToolTag =
   | "media"
   | "stickers"
   | "scheduling"
-  | "web";
+  | "web"
+  | "admin";
 
 /** The bridge caller signature — injected into execute(). */
 export type BridgeFunction = (

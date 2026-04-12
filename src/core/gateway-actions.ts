@@ -1,7 +1,7 @@
 /**
  * Shared gateway actions — platform-agnostic handlers that work with any frontend.
  *
- * Handles: cron CRUD, fetch_url, in-memory history queries.
+ * Handles: cron CRUD, fetch_url, plugin reload, in-memory history queries.
  * Returns null if the action isn't recognized (so the gateway delegates to the frontend).
  */
 
@@ -308,6 +308,47 @@ export async function handleSharedAction(
         return { ok: false, error: "Job belongs to a different chat" };
       deleteCronJob(jobId);
       return { ok: true, text: `Deleted cron job "${job.name}" (${jobId})` };
+    }
+
+    // ── Plugin hot-reload ──────────────────────────────────────────────
+    case "reload_plugins": {
+      try {
+        const { reloadPlugins, getPluginPromptAdditions } =
+          await import("./plugin.js");
+        const { rebuildSystemPrompt } = await import("../util/config.js");
+
+        // reloadPlugins reads + validates config internally — no double read.
+        // Frontends are derived from config if not explicitly provided.
+        const { names, config: freshConfig } = await reloadPlugins();
+
+        // Rebuild system prompt on the freshConfig, then update the backend's
+        // live config reference so subsequent messages use the new prompt
+        rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
+        try {
+          const { updateSystemPrompt } =
+            await import("../backend/claude-sdk/index.js");
+          updateSystemPrompt(freshConfig.systemPrompt);
+        } catch (err) {
+          // Non-fatal — OpenCode backend doesn't expose updateSystemPrompt
+          log(
+            "gateway",
+            `reload_plugins: could not update backend prompt: ${err instanceof Error ? err.message : err}`,
+          );
+        }
+
+        log("gateway", `reload_plugins: ${names.length} plugins loaded`);
+        return {
+          ok: true,
+          text:
+            `Plugins reloaded successfully.\n` +
+            `Loaded (${names.length}): ${names.length > 0 ? names.join(", ") : "(none)"}`,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: `Plugin reload failed: ${err instanceof Error ? err.message : err}`,
+        };
+      }
     }
 
     default:
