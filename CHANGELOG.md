@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.5.0](https://github.com/dylanneve1/talon/compare/v1.4.0...v1.5.0) (2026-04-12)
+
+
+### Features
+
+* add reload_plugins tool for hot-reloading MCP plugins ([#37](https://github.com/dylanneve1/talon/issues/37)) ([ca72c4e](https://github.com/dylanneve1/talon/commit/ca72c4e50507589daf30ad9ade50700487f6586a))
+* give heartbeat access to all MCP plugins ([#33](https://github.com/dylanneve1/talon/issues/33)) ([d148b90](https://github.com/dylanneve1/talon/commit/d148b909021fafadb023b87f9b259bd214dbe7c9))
+* warm-start sessions on /reset for immediate /status context data ([6956e41](https://github.com/dylanneve1/talon/commit/6956e41599bede2242e6c91ed28b2b688dddfab6))
+
+
+### Bug Fixes
+
+* /status context bar — use SDK [1m] model suffix for correct context window ([ffa0b61](https://github.com/dylanneve1/talon/commit/ffa0b61fa44b7a0cb53d87a562fba894e5cdf27a))
+* await warmSession on /reset so context data is ready for /status ([3ef6c60](https://github.com/dylanneve1/talon/commit/3ef6c60d55e7f2562f58f10bf5a2582f28ab0300))
+* drain SDK stream during warm-up so control requests don't stall ([d46ef0d](https://github.com/dylanneve1/talon/commit/d46ef0d40fc8d9a14abfe179babb65577331306d))
+* regenerate lockfile with npm 10 for CI Node 22 compat ([0ff5eb7](https://github.com/dylanneve1/talon/commit/0ff5eb783c9499145db4f47af68eb436adfb0534))
+
 ## [1.4.0](https://github.com/dylanneve1/talon/compare/v1.3.0...v1.4.0) (2026-04-10)
 
 
