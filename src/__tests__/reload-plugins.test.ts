@@ -63,16 +63,23 @@ const mockRebuildSystemPrompt = vi.fn();
 const mockUpdateSystemPrompt = vi.fn();
 
 vi.mock("../core/plugin.js", () => ({
-  reloadPlugins: (...args: unknown[]) => mockReloadPlugins(...args),
+  reloadPlugins: (...args: unknown[]) =>
+    mockReloadPlugins(...(args as Parameters<typeof mockReloadPlugins>)),
   getPluginPromptAdditions: () => mockGetPluginPromptAdditions(),
 }));
 
 vi.mock("../util/config.js", () => ({
-  rebuildSystemPrompt: (...args: unknown[]) => mockRebuildSystemPrompt(...args),
+  rebuildSystemPrompt: (...args: unknown[]) =>
+    mockRebuildSystemPrompt(
+      ...(args as Parameters<typeof mockRebuildSystemPrompt>),
+    ),
 }));
 
 vi.mock("../backend/claude-sdk/index.js", () => ({
-  updateSystemPrompt: (...args: unknown[]) => mockUpdateSystemPrompt(...args),
+  updateSystemPrompt: (...args: unknown[]) =>
+    mockUpdateSystemPrompt(
+      ...(args as Parameters<typeof mockUpdateSystemPrompt>),
+    ),
 }));
 
 // ── Import after mocks ────────────────────────────────────────────────────
