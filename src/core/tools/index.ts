@@ -15,6 +15,7 @@ import { mediaTools } from "./media.js";
 import { stickerTools } from "./stickers.js";
 import { schedulingTools } from "./scheduling.js";
 import { webTools } from "./web.js";
+import { adminTools } from "./admin.js";
 
 /** All built-in tool definitions. */
 export const ALL_TOOLS: readonly ToolDefinition[] = [
@@ -26,6 +27,7 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...stickerTools,
   ...schedulingTools,
   ...webTools,
+  ...adminTools,
 ];
 
 /** Filter options for composing a tool set. */

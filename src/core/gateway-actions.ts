@@ -1,7 +1,7 @@
 /**
  * Shared gateway actions — platform-agnostic handlers that work with any frontend.
  *
- * Handles: cron CRUD, fetch_url, in-memory history queries.
+ * Handles: cron CRUD, fetch_url, plugin reload, in-memory history queries.
  * Returns null if the action isn't recognized (so the gateway delegates to the frontend).
  */
 
@@ -308,6 +308,55 @@ export async function handleSharedAction(
         return { ok: false, error: "Job belongs to a different chat" };
       deleteCronJob(jobId);
       return { ok: true, text: `Deleted cron job "${job.name}" (${jobId})` };
+    }
+
+    // ── Plugin hot-reload ──────────────────────────────────────────────
+    case "reload_plugins": {
+      try {
+        const {
+          reloadPlugins,
+          getPluginPromptAdditions,
+        } = await import("./plugin.js");
+        const { loadConfig, rebuildSystemPrompt, getFrontends } = await import(
+          "../util/config.js"
+        );
+        const { getAllSessions, resetSession } = await import(
+          "../storage/sessions.js"
+        );
+
+        // Re-read config and reload all plugins
+        const freshConfig = loadConfig();
+        const frontends = getFrontends(freshConfig);
+        const loaded = await reloadPlugins(frontends);
+
+        // Rebuild system prompt with new plugin contributions
+        rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
+
+        // Reset all active sessions so the next query spawns fresh MCP
+        // server subprocesses with the updated plugin config
+        const sessions = getAllSessions();
+        for (const { chatId: sid } of sessions) {
+          resetSession(sid);
+        }
+
+        log(
+          "gateway",
+          `reload_plugins: ${loaded.length} plugins, ${sessions.length} sessions reset`,
+        );
+        return {
+          ok: true,
+          text:
+            `Plugins reloaded successfully.\n` +
+            `Loaded (${loaded.length}): ${loaded.length > 0 ? loaded.join(", ") : "(none)"}\n` +
+            `Sessions reset: ${sessions.length}\n` +
+            `Note: New MCP servers will spawn on the next message.`,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: `Plugin reload failed: ${err instanceof Error ? err.message : err}`,
+        };
+      }
     }
 
     default:

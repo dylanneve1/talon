@@ -158,6 +158,12 @@ class PluginRegistry {
       }
     }
   }
+
+  /** Destroy all plugins and clear the registry. Used by hot-reload. */
+  async destroyAndClear(): Promise<void> {
+    await this.destroyAll();
+    this.plugins.length = 0;
+  }
 }
 
 // Module-level singleton
@@ -357,6 +363,142 @@ export function getPluginCount(): number {
 /** Destroy all plugins (called during shutdown). */
 export async function destroyPlugins(): Promise<void> {
   await registry.destroyAll();
+}
+
+/**
+ * Hot-reload all plugins: destroy current plugins, re-read config,
+ * re-load everything (external + built-in). Returns the list of loaded
+ * plugin names for status reporting.
+ *
+ * Does NOT restart the main process, Claude session, or bot connection.
+ * Active Claude sessions should be reset after calling this so the next
+ * query spawns fresh MCP server subprocesses with the updated config.
+ */
+export async function reloadPlugins(
+  activeFrontends?: string[],
+): Promise<string[]> {
+  log("plugin", "Hot-reload: destroying current plugins...");
+  await registry.destroyAndClear();
+
+  // Re-read config from disk to pick up plugin changes
+  const { readFileSync } = await import("node:fs");
+  const { files: pathFiles } = await import("../util/paths.js");
+  let fileConfig: Record<string, unknown> = {};
+  try {
+    fileConfig = JSON.parse(readFileSync(pathFiles.config, "utf-8"));
+  } catch (err) {
+    logError(
+      "plugin",
+      `Failed to read config: ${err instanceof Error ? err.message : err}`,
+    );
+    return [];
+  }
+
+  // Parse plugin entries from config
+  const pluginConfigs: PluginEntry[] = Array.isArray(fileConfig.plugins)
+    ? (fileConfig.plugins as PluginEntry[])
+    : [];
+
+  // Re-load external plugins
+  if (pluginConfigs.length > 0) {
+    await loadPlugins(pluginConfigs, activeFrontends);
+  }
+
+  // Re-load built-in plugins based on config flags
+  const github = fileConfig.github as
+    | { enabled?: boolean; token?: string }
+    | undefined;
+  if (github?.enabled) {
+    try {
+      const { createGitHubPlugin } = await import("../plugins/github/index.js");
+      const gh = createGitHubPlugin({ token: github.token });
+      const ghConfig = github as unknown as Record<string, unknown>;
+      registerPlugin(gh, ghConfig);
+      if (registry.getByName("github")) {
+        await Promise.race([
+          gh.init?.(ghConfig),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("GitHub init timed out")), 15_000),
+          ),
+        ]);
+      }
+    } catch (err) {
+      logError(
+        "plugin",
+        `GitHub reload: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  const mempalace = fileConfig.mempalace as
+    | { enabled?: boolean; pythonPath?: string; palacePath?: string }
+    | undefined;
+  if (mempalace?.enabled) {
+    try {
+      const { createMempalacePlugin } = await import(
+        "../plugins/mempalace/index.js"
+      );
+      const { dirs, files: pf } = await import("../util/paths.js");
+      const pythonPath = mempalace.pythonPath ?? pf.mempalacePython;
+      const palacePath = mempalace.palacePath ?? dirs.palace;
+      const mp = createMempalacePlugin({ pythonPath, palacePath });
+      const mpConfig = mempalace as unknown as Record<string, unknown>;
+      registerPlugin(mp, mpConfig);
+      if (registry.getByName("mempalace")) {
+        await Promise.race([
+          mp.init?.(mpConfig),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("MemPalace init timed out")),
+              30_000,
+            ),
+          ),
+        ]);
+      }
+    } catch (err) {
+      logError(
+        "plugin",
+        `MemPalace reload: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  const playwright = fileConfig.playwright as
+    | { enabled?: boolean; browser?: string; headless?: boolean }
+    | undefined;
+  if (playwright?.enabled) {
+    try {
+      const { createPlaywrightPlugin } = await import(
+        "../plugins/playwright/index.js"
+      );
+      const pw = createPlaywrightPlugin({
+        browser: playwright.browser,
+        headless: playwright.headless,
+      });
+      const pwConfig = playwright as unknown as Record<string, unknown>;
+      registerPlugin(pw, pwConfig);
+      if (registry.getByName("playwright")) {
+        await Promise.race([
+          pw.init?.(pwConfig),
+          new Promise((_, reject) =>
+            setTimeout(
+              () => reject(new Error("Playwright init timed out")),
+              15_000,
+            ),
+          ),
+        ]);
+      }
+    } catch (err) {
+      logError(
+        "plugin",
+        `Playwright reload: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
+
+  const loaded = registry.all.map((p) => p.plugin.name);
+  log("plugin", `Hot-reload complete: ${loaded.length} plugins loaded [${loaded.join(", ")}]`);
+  return loaded;
 }
 
 /**
