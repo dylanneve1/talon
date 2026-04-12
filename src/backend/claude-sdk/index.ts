@@ -47,6 +47,171 @@ export function updateSystemPrompt(prompt: string): void {
   if (config) config.systemPrompt = prompt;
 }
 
+// ── Shared options builder ───────────────────────────────────────────────────
+
+function buildSdkOptions(chatId: string) {
+  const chatSettings = getChatSettings(chatId);
+  const activeModel = chatSettings.model ?? config.model;
+  const activeEffort = chatSettings.effort ?? "adaptive";
+
+  const EFFORT_MAP: Record<
+    string,
+    {
+      thinking: { type: "adaptive" | "disabled" };
+      effort?: "low" | "medium" | "high" | "max";
+    }
+  > = {
+    off: { thinking: { type: "disabled" } },
+    low: { thinking: { type: "adaptive" }, effort: "low" },
+    medium: { thinking: { type: "adaptive" }, effort: "medium" },
+    high: { thinking: { type: "adaptive" }, effort: "high" },
+    max: { thinking: { type: "adaptive" }, effort: "max" },
+  };
+  const thinkingConfig = EFFORT_MAP[activeEffort] ?? {
+    thinking: { type: "adaptive" as const },
+  };
+
+  const supports1m =
+    !activeModel.includes("haiku") && !activeModel.includes("[1m]");
+  const sdkModel = supports1m ? `${activeModel}[1m]` : activeModel;
+
+  const session = getSession(chatId);
+
+  const options = {
+    model: sdkModel,
+    systemPrompt: config.systemPrompt,
+    cwd: config.workspace,
+    permissionMode: "bypassPermissions" as const,
+    allowDangerouslySkipPermissions: true,
+    ...(config.claudeBinary
+      ? { pathToClaudeCodeExecutable: config.claudeBinary }
+      : {}),
+    disallowedTools: [
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "EnterWorktree",
+      "ExitWorktree",
+      "TodoWrite",
+      "TodoRead",
+      "TaskCreate",
+      "TaskUpdate",
+      "TaskGet",
+      "TaskList",
+      "TaskOutput",
+      "TaskStop",
+      "AskUserQuestion",
+      "WebSearch",
+      "WebFetch",
+    ],
+    ...thinkingConfig,
+    mcpServers: {
+      ...(() => {
+        const allFrontends = Array.isArray(config.frontend)
+          ? config.frontend
+          : [config.frontend];
+        const frontends = allFrontends.filter((f) => f !== "terminal");
+        const bridgeUrl = `http://127.0.0.1:${bridgePortFn()}`;
+        const servers: Record<
+          string,
+          { command: string; args: string[]; env: Record<string, string> }
+        > = {};
+        const tsxImport = resolve(
+          import.meta.dirname ?? ".",
+          "../../../node_modules/tsx/dist/esm/index.mjs",
+        );
+        const mcpServerPath = resolve(
+          import.meta.dirname ?? ".",
+          "../../core/tools/mcp-server.ts",
+        );
+
+        for (const frontend of frontends) {
+          const serverName = `${frontend}-tools`;
+          const mcpEnv = {
+            TALON_BRIDGE_URL: bridgeUrl,
+            TALON_CHAT_ID: chatId,
+            TALON_FRONTEND: frontend,
+          };
+          servers[serverName] = {
+            command: process.platform === "win32" ? "npx" : "node",
+            args:
+              process.platform === "win32"
+                ? ["tsx", mcpServerPath]
+                : ["--import", tsxImport, mcpServerPath],
+            env: mcpEnv,
+          };
+        }
+        return servers;
+      })(),
+      ...(config.braveApiKey
+        ? {
+            "brave-search": {
+              command: resolve(
+                import.meta.dirname ?? ".",
+                "../../../node_modules/.bin/brave-search-mcp-server",
+              ),
+              args: [],
+              env: { BRAVE_API_KEY: config.braveApiKey },
+            },
+          }
+        : {}),
+      ...getPluginMcpServers(`http://127.0.0.1:${bridgePortFn()}`, chatId),
+    },
+    ...(session.sessionId ? { resume: session.sessionId } : {}),
+  };
+
+  return { options, activeModel, session };
+}
+
+// ── Session warm-up ─────────────────────────────────────────────────────────
+
+/**
+ * Cold-start a session by spawning an SDK subprocess in streaming input mode,
+ * calling getContextUsage() to populate contextWindow and baseline contextTokens,
+ * then tearing it down. Fire-and-forget — does not block the caller.
+ */
+export async function warmSession(chatId: string): Promise<void> {
+  if (!config) return;
+  try {
+    rebuildSystemPrompt(config, getPluginPromptAdditions());
+    const { options } = buildSdkOptions(chatId);
+
+    const abort = new AbortController();
+    // Streaming input mode: pass an async iterable that never yields
+    const neverYield = async function* (): AsyncGenerator<never> {
+      await new Promise<never>((_, reject) => {
+        abort.signal.addEventListener("abort", () =>
+          reject(new Error("aborted")),
+        );
+      });
+    };
+
+    const q = query({
+      prompt: neverYield(),
+      options: {
+        ...options,
+        abortController: abort,
+      } as Parameters<typeof query>[0]["options"],
+    });
+
+    const ctx = await q.getContextUsage();
+    const session = getSession(chatId);
+    if (ctx.maxTokens > 0) session.usage.contextWindow = ctx.maxTokens;
+    if (ctx.totalTokens > 0) session.usage.contextTokens = ctx.totalTokens;
+    log(
+      "agent",
+      `[${chatId}] warm-up: context ${ctx.totalTokens}/${ctx.maxTokens} (${ctx.percentage.toFixed(1)}%) model=${ctx.model}`,
+    );
+
+    abort.abort();
+  } catch (err) {
+    // Non-fatal — /status will just show 0 until first real message
+    logWarn(
+      "agent",
+      `[${chatId}] warm-up failed: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 export async function handleMessage(
@@ -74,123 +239,7 @@ export async function handleMessage(
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
 
-  // Per-chat settings override global config
-  const chatSettings = getChatSettings(chatId);
-  const activeModel = chatSettings.model ?? config.model;
-  const activeEffort = chatSettings.effort ?? "adaptive";
-
-  const EFFORT_MAP: Record<
-    string,
-    {
-      thinking: { type: "adaptive" | "disabled" };
-      effort?: "low" | "medium" | "high" | "max";
-    }
-  > = {
-    off: { thinking: { type: "disabled" } },
-    low: { thinking: { type: "adaptive" }, effort: "low" },
-    medium: { thinking: { type: "adaptive" }, effort: "medium" },
-    high: { thinking: { type: "adaptive" }, effort: "high" },
-    max: { thinking: { type: "adaptive" }, effort: "max" },
-  };
-  const thinkingConfig = EFFORT_MAP[activeEffort] ?? {
-    thinking: { type: "adaptive" as const },
-  };
-
-  // The Agent SDK uses [1m] suffix to identify 1M context models internally
-  // (stripped by nX() before API calls). Append for opus/sonnet which support 1M.
-  const supports1m =
-    !activeModel.includes("haiku") && !activeModel.includes("[1m]");
-  const sdkModel = supports1m ? `${activeModel}[1m]` : activeModel;
-
-  const options = {
-    model: sdkModel,
-    systemPrompt: config.systemPrompt,
-    cwd: config.workspace,
-    permissionMode: "bypassPermissions" as const,
-    allowDangerouslySkipPermissions: true,
-    ...(config.claudeBinary
-      ? { pathToClaudeCodeExecutable: config.claudeBinary }
-      : {}),
-    disallowedTools: [
-      "EnterPlanMode",
-      "ExitPlanMode",
-      "EnterWorktree",
-      "ExitWorktree",
-      "TodoWrite",
-      "TodoRead",
-      "TaskCreate",
-      "TaskUpdate",
-      "TaskGet",
-      "TaskList",
-      "TaskOutput",
-      "TaskStop",
-      "AskUserQuestion",
-      // Always disable Claude Code built-in web tools — fetch_url is always
-      // available, and Brave Search MCP replaces WebSearch when configured.
-      "WebSearch",
-      "WebFetch",
-    ],
-    ...thinkingConfig,
-    mcpServers: {
-      // Register unified MCP tools server — one per messaging frontend.
-      // Terminal frontend relies on Claude Code built-in tools (Read, Write,
-      // Bash, etc.) and doesn't need a custom MCP tools server.
-      ...(() => {
-        const allFrontends = Array.isArray(config.frontend)
-          ? config.frontend
-          : [config.frontend];
-        const frontends = allFrontends.filter((f) => f !== "terminal");
-        const bridgeUrl = `http://127.0.0.1:${bridgePortFn()}`;
-        const servers: Record<
-          string,
-          { command: string; args: string[]; env: Record<string, string> }
-        > = {};
-        // Resolve tsx from the package root (3 levels up from src/backend/claude-sdk/)
-        const tsxImport = resolve(
-          import.meta.dirname ?? ".",
-          "../../../node_modules/tsx/dist/esm/index.mjs",
-        );
-        // Unified MCP server in core/tools/
-        const mcpServerPath = resolve(
-          import.meta.dirname ?? ".",
-          "../../core/tools/mcp-server.ts",
-        );
-
-        for (const frontend of frontends) {
-          const serverName = `${frontend}-tools`;
-          const mcpEnv = {
-            TALON_BRIDGE_URL: bridgeUrl,
-            TALON_CHAT_ID: chatId,
-            TALON_FRONTEND: frontend,
-          };
-          servers[serverName] = {
-            command: process.platform === "win32" ? "npx" : "node",
-            args:
-              process.platform === "win32"
-                ? ["tsx", mcpServerPath]
-                : ["--import", tsxImport, mcpServerPath],
-            env: mcpEnv,
-          };
-        }
-        return servers;
-      })(),
-      // Brave Search MCP server — provides brave_web_search and brave_local_search
-      ...(config.braveApiKey
-        ? {
-            "brave-search": {
-              command: resolve(
-                import.meta.dirname ?? ".",
-                "../../../node_modules/.bin/brave-search-mcp-server",
-              ),
-              args: [],
-              env: { BRAVE_API_KEY: config.braveApiKey },
-            },
-          }
-        : {}),
-      ...getPluginMcpServers(`http://127.0.0.1:${bridgePortFn()}`, chatId),
-    },
-    ...(session.sessionId ? { resume: session.sessionId } : {}),
-  };
+  const { options, activeModel } = buildSdkOptions(chatId);
 
   const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
   const nowTag = `[${formatFullDatetime()}]`;

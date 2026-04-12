@@ -38,6 +38,7 @@ import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
+import { warmSession } from "../../backend/claude-sdk/index.js";
 import {
   formatDuration,
   formatTokenCount,
@@ -141,6 +142,8 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     clearHistory(cid);
     resetPulseCheckpoint(cid);
     await ctx.reply("Session cleared.");
+    // Fire-and-forget: warm up the new session so /status has context data
+    warmSession(cid).catch(() => {});
   });
 
   bot.command("ping", async (ctx) => {
