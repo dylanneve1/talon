@@ -141,9 +141,9 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     resetSession(cid);
     clearHistory(cid);
     resetPulseCheckpoint(cid);
+    // Warm up the new session so /status has context data immediately
+    await warmSession(cid);
     await ctx.reply("Session cleared.");
-    // Fire-and-forget: warm up the new session so /status has context data
-    warmSession(cid).catch(() => {});
   });
 
   bot.command("ping", async (ctx) => {
