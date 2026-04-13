@@ -12,19 +12,15 @@ Multi-platform agentic AI harness powered by Claude. Runs on **Telegram**, **Tea
 
 ## Features
 
-**Frontends** --- Telegram (Grammy + GramJS userbot), Microsoft Teams (Bot Framework + Power Automate), Terminal (readline with live tool visibility)
-
-**AI** --- Claude Agent SDK with streaming responses, extended thinking, adaptive effort levels, 1M token context sessions, and dynamic model discovery from the SDK at startup
-
-**Tools** --- MCP-based tool system with messaging, media, history, search, web fetch, cron jobs, file system access, sticker management, and admin controls
-
-**Plugins** --- Extensible plugin architecture with hot-reload. Built-in plugins for GitHub, MemPalace (long-term memory), Playwright (browser automation), and Brave Search
-
-**Background agents** --- Heartbeat (periodic maintenance tasks) and Dream (memory consolidation with optional MemPalace integration and diary entries)
-
-**Per-chat settings** --- Model, thinking effort, and pulse toggle configurable per conversation with inline keyboard UI
-
-**Model registry** --- Models discovered dynamically from the Claude SDK. New models appear automatically in all pickers. Fallback chains, capability detection, and alias resolution handled by the registry.
+| | |
+|---|---|
+| **Multi-frontend** | Telegram (Grammy + GramJS userbot), Microsoft Teams (Bot Framework), Terminal with live tool visibility |
+| **Claude Agent SDK** | Streaming responses, extended thinking, adaptive effort, 1M token context, dynamic model discovery |
+| **MCP tools** | Messaging, media, history, search, web fetch, cron jobs, stickers, file system, admin controls |
+| **Plugins** | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search |
+| **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary) |
+| **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard |
+| **Model registry** | Models discovered from the SDK at startup --- new models appear in all pickers automatically |
 
 ---
 
