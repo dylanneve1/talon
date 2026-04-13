@@ -55,10 +55,19 @@ export async function warmSession(chatId: string): Promise<void> {
     })();
 
     // Race getContextUsage against a timeout so /reset doesn't hang
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("warm-up timed out")), 15_000),
-    );
-    const ctx = await Promise.race([q.getContextUsage(), timeout]);
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
+        () => reject(new Error("warm-up timed out")),
+        15_000,
+      );
+    });
+    let ctx: Awaited<ReturnType<typeof q.getContextUsage>>;
+    try {
+      ctx = await Promise.race([q.getContextUsage(), timeout]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
     const session = getSession(chatId);
     if (ctx.maxTokens > 0) session.usage.contextWindow = ctx.maxTokens;
     if (ctx.totalTokens > 0) session.usage.contextTokens = ctx.totalTokens;

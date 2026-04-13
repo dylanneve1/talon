@@ -209,7 +209,7 @@ If commands fail, log the error and continue — this stage is optional.`
     mcpServers: configRef.mempalace
       ? getPluginMcpServers("", "dream", ["mempalace"])
       : {},
-    disallowedTools: DISALLOWED_TOOLS_BACKGROUND,
+    disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
   };
 
   const timeoutPromise = new Promise<never>((_, reject) =>

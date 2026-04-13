@@ -116,8 +116,8 @@ export type ToolCall = {
 
 /** Result of processing an assistant message. */
 export type AssistantResult = {
-  /** Text accumulated before tool calls that should be sent as a progress message. */
-  intermediateText: string | null;
+  /** Text segments accumulated before tool calls, each to be sent as a progress message. */
+  progressTexts: string[];
   /** Tool calls found in the message. */
   tools: ToolCall[];
   /** Trailing text after all tool calls (or the full text if no tool calls). */
@@ -127,6 +127,10 @@ export type AssistantResult = {
 /**
  * Process a complete assistant message — extracts text blocks and tool calls.
  * Uses the typed BetaContentBlock discriminated union.
+ *
+ * When multiple tool_use blocks appear in the same message with text before
+ * each, every text segment is captured in progressTexts so the handler can
+ * emit them all in order.
  */
 export function processAssistantMessage(
   msg: SDKAssistantMessage,
@@ -134,8 +138,8 @@ export function processAssistantMessage(
 ): AssistantResult {
   const content = msg.message.content;
   const tools: ToolCall[] = [];
+  const progressTexts: string[] = [];
   let blockText = "";
-  let intermediateText: string | null = null;
 
   for (const block of content) {
     if (block.type === "text") {
@@ -143,13 +147,14 @@ export function processAssistantMessage(
     }
     if (block.type === "tool_use") {
       state.toolCalls++;
-      tools.push({
-        name: block.name,
-        input: (block.input ?? {}) as Record<string, unknown>,
-      });
+      const input =
+        typeof block.input === "object" && block.input !== null
+          ? (block.input as Record<string, unknown>)
+          : {};
+      tools.push({ name: block.name, input });
       // Text before this tool call is a progress message
       if (blockText.trim()) {
-        intermediateText = blockText.trim();
+        progressTexts.push(blockText.trim());
         state.allResponseText += blockText;
         blockText = "";
         state.currentBlockText = "";
@@ -163,7 +168,7 @@ export function processAssistantMessage(
     state.currentBlockText = blockText;
   }
 
-  return { intermediateText, tools, trailingText };
+  return { progressTexts, tools, trailingText };
 }
 
 /**
@@ -203,11 +208,12 @@ export function processResultMessage(
     `SDK result: modelUsage=${JSON.stringify(modelUsage)}, contextWindow=${state.contextWindow}, contextTokens=${state.contextTokens}, numApiCalls=${state.numApiCalls}`,
   );
 
-  // Fallback: if no text was captured via streaming or assistant messages
+  // Fallback: if no text was captured via streaming or assistant messages,
+  // pull from the result string (available on success results).
   if (
     !state.allResponseText &&
     !state.currentBlockText &&
-    msg.subtype === "success" &&
+    "result" in msg &&
     typeof msg.result === "string"
   ) {
     state.currentBlockText = msg.result;

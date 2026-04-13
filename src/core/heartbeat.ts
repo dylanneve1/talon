@@ -293,7 +293,7 @@ async function runHeartbeatAgent(
       : {}),
     // Load all registered plugin MCP servers (excludes frontend-specific tools like telegram)
     mcpServers: getPluginMcpServers("", "heartbeat"),
-    disallowedTools: DISALLOWED_TOOLS_BACKGROUND,
+    disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
   };
 
   // NOTE: The timeout races against the agent promise but cannot abort the

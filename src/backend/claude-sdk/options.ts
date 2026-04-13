@@ -25,7 +25,7 @@ export type BuildSdkOptionsResult = {
 
 /**
  * Build the MCP servers map for a chat query.
- * Includes frontend-specific tool servers, Brave Search, and plugin servers.
+ * Includes frontend-specific tool servers and Brave Search, if configured.
  */
 function buildMcpServers(
   chatId: string,
@@ -115,7 +115,7 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     ...(config.claudeBinary
       ? { pathToClaudeCodeExecutable: config.claudeBinary }
       : {}),
-    disallowedTools: DISALLOWED_TOOLS_CHAT,
+    disallowedTools: [...DISALLOWED_TOOLS_CHAT],
     ...thinkingConfig,
     mcpServers: {
       ...buildMcpServers(chatId),

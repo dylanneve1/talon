@@ -106,12 +106,14 @@ export async function handleMessage(
           }
         }
 
-        // Send progress text (text before tool calls) immediately
-        if (result.intermediateText && onTextBlock) {
-          try {
-            await onTextBlock(result.intermediateText);
-          } catch {
-            /* non-fatal — don't abort the stream loop */
+        // Send progress text segments (text before each tool call) in order
+        if (onTextBlock) {
+          for (const text of result.progressTexts) {
+            try {
+              await onTextBlock(text);
+            } catch {
+              /* non-fatal — don't abort the stream loop */
+            }
           }
         }
         continue;

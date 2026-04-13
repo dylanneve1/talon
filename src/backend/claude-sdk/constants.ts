@@ -29,17 +29,17 @@ export const DISALLOWED_TOOLS_CORE = [
 ] as const;
 
 /** Disallowed tools for the main chat handler (core + web tools replaced by Brave MCP). */
-export const DISALLOWED_TOOLS_CHAT: string[] = [
+export const DISALLOWED_TOOLS_CHAT = [
   ...DISALLOWED_TOOLS_CORE,
   "WebSearch",
   "WebFetch",
-];
+] as const;
 
 /** Disallowed tools for background agents — heartbeat and dream (core + Agent). */
-export const DISALLOWED_TOOLS_BACKGROUND: string[] = [
+export const DISALLOWED_TOOLS_BACKGROUND = [
   ...DISALLOWED_TOOLS_CORE,
   "Agent",
-];
+] as const;
 
 // ── Thinking / effort configuration ────────────────────────────────────────
 
