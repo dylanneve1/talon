@@ -149,9 +149,7 @@ export async function initBackendAndDispatcher(
             setTimeout(
               () =>
                 reject(
-                  new Error(
-                    `setMcpServers timed out after ${TIMEOUT_MS}ms`,
-                  ),
+                  new Error(`setMcpServers timed out after ${TIMEOUT_MS}ms`),
                 ),
               TIMEOUT_MS,
             ),
