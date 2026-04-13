@@ -33,10 +33,10 @@ const {
   EFFORT_LEVELS,
 } = await import("../storage/chat-settings.js");
 
-// Register Claude models so alias resolution works in tests
-const { registerClaudeModels } =
+// Register Claude models (static — no SDK subprocess in tests)
+const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =
   await import("../backend/claude-sdk/models.js");
-registerClaudeModels();
+registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
 
 describe("chat-settings", () => {
   describe("getChatSettings", () => {

@@ -282,10 +282,27 @@ async function runSetup(): Promise<void> {
     if (botName) teamsBotDisplayName = botName;
   }
 
-  // Register Claude models so the picker is populated from the registry
-  const { registerClaudeModels } =
-    await import("./backend/claude-sdk/models.js");
-  registerClaudeModels();
+  // Discover models from SDK; fall back to static list if SDK isn't available
+  const {
+    registerClaudeModels,
+    registerClaudeModelsStatic,
+    CLAUDE_MODELS_STATIC,
+  } = await import("./backend/claude-sdk/models.js");
+  try {
+    const { dirs } = await import("./util/paths.js");
+    await registerClaudeModels({
+      model: config.model,
+      cwd: dirs.workspace,
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+      ...(config.claudeBinary
+        ? { pathToClaudeCodeExecutable: config.claudeBinary }
+        : {}),
+    });
+  } catch {
+    // Setup wizard may run before Claude Code is installed — use static list
+    registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
+  }
   const { getModels } = await import("./core/models.js");
   const registeredModels = getModels();
 

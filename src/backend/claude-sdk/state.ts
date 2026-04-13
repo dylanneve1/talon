@@ -15,29 +15,29 @@ let bridgePortFn: () => number = () => 19876;
 
 // ── Public API (re-exported from barrel) ────────────────────────────────────
 
-export function initAgent(
+export async function initAgent(
   cfg: TalonConfig,
   getBridgePort?: () => number,
-): void {
+): Promise<void> {
   config = cfg;
   if (getBridgePort) bridgePortFn = getBridgePort;
-
-  // Register static models immediately, then discover live models from SDK
-  registerClaudeModels({
-    model: cfg.model,
-    cwd: cfg.workspace,
-    permissionMode: "bypassPermissions" as const,
-    allowDangerouslySkipPermissions: true,
-    ...(cfg.claudeBinary
-      ? { pathToClaudeCodeExecutable: cfg.claudeBinary }
-      : {}),
-  });
 
   // The Agent SDK spawns an embedded Claude Code subprocess.
   // If CLAUDECODE is set (e.g. running from a Claude Code terminal),
   // the subprocess refuses to start with a nested-session error that
   // gets swallowed — causing an infinite hang on Windows.
   delete process.env.CLAUDECODE;
+
+  // Discover available models from the SDK — fatal if this fails
+  await registerClaudeModels({
+    model: cfg.model,
+    cwd: cfg.workspace,
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    ...(cfg.claudeBinary
+      ? { pathToClaudeCodeExecutable: cfg.claudeBinary }
+      : {}),
+  });
 }
 
 /** Update the system prompt on the live config. Used by plugin hot-reload

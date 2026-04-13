@@ -122,7 +122,7 @@ export async function initBackendAndDispatcher(
       warmSession: claudeWarmSession,
       updateSystemPrompt: claudeUpdateSystemPrompt,
     } = await import("./backend/claude-sdk/index.js");
-    initClaudeAgent(config, frontend.getBridgePort);
+    await initClaudeAgent(config, frontend.getBridgePort);
     backend = {
       query: (params) => claudeHandleMessage(params),
       warmSession: (chatId) => claudeWarmSession(chatId),
