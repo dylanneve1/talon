@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/dylanneve1/talon/compare/v1.6.0...v1.6.1) (2026-04-13)
+
+
+### Bug Fixes
+
+* model switch doubling context usage ([#44](https://github.com/dylanneve1/talon/issues/44)) ([032d8cc](https://github.com/dylanneve1/talon/commit/032d8cce53be3cd626559348862b2fdc1ffe86d9))
+
 ## [1.6.0](https://github.com/dylanneve1/talon/compare/v1.5.0...v1.6.0) (2026-04-13)
 
 
