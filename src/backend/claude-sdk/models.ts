@@ -48,7 +48,15 @@ function convertSdkModels(
     description: string;
   }>,
 ): ModelInfo[] {
-  const models: ModelInfo[] = sdkModels.map((m) => ({
+  // Filter out SDK artifacts:
+  // - [1m] variants: we add this suffix ourselves in options.ts
+  // - "default" pseudo-model: not a real model, just an alias for the default
+  // - any model that doesn't start with "claude-": not an Anthropic model
+  const filtered = sdkModels.filter(
+    (m) => m.value.startsWith("claude-") && !m.value.includes("["),
+  );
+
+  const models: ModelInfo[] = filtered.map((m) => ({
     id: m.value,
     displayName: m.displayName,
     description: m.description,
