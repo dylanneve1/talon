@@ -18,6 +18,7 @@ import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
 import { toYMD } from "../util/time.js";
 import { getPluginMcpServers } from "./plugin.js";
+import { DISALLOWED_TOOLS_BACKGROUND } from "../backend/claude-sdk/constants.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -292,22 +293,7 @@ async function runHeartbeatAgent(
       : {}),
     // Load all registered plugin MCP servers (excludes frontend-specific tools like telegram)
     mcpServers: getPluginMcpServers("", "heartbeat"),
-    disallowedTools: [
-      "EnterPlanMode",
-      "ExitPlanMode",
-      "EnterWorktree",
-      "ExitWorktree",
-      "TodoWrite",
-      "TodoRead",
-      "TaskCreate",
-      "TaskUpdate",
-      "TaskGet",
-      "TaskList",
-      "TaskOutput",
-      "TaskStop",
-      "AskUserQuestion",
-      "Agent",
-    ],
+    disallowedTools: DISALLOWED_TOOLS_BACKGROUND,
   };
 
   // NOTE: The timeout races against the agent promise but cannot abort the
