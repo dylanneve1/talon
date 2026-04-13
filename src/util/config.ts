@@ -71,6 +71,8 @@ const configSchema = z.object({
       browser: z.string().optional(),
       /** Run headless (default: true) */
       headless: z.boolean().default(true),
+      /** Docker container name — runs MCP inside the container (e.g. "camoufox-vpn") */
+      dockerContainer: z.string().optional(),
     })
     .optional(),
 

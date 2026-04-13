@@ -441,6 +441,7 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       const pw = createPlaywrightPlugin({
         browser: playwright.browser,
         headless: playwright.headless,
+        dockerContainer: playwright.dockerContainer,
       });
       const pwConfig = playwright as unknown as Record<string, unknown>;
       registerPlugin(pw, pwConfig);
