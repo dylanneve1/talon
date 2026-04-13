@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/dylanneve1/talon/compare/v1.5.0...v1.6.0) (2026-04-13)
+
+
+### Features
+
+* add model registry middleware and dynamic model pickers ([#42](https://github.com/dylanneve1/talon/issues/42)) ([6e68b6f](https://github.com/dylanneve1/talon/commit/6e68b6f957dd2c3c24c9a16ff1137aa2ff8962c4))
+
 ## [1.5.0](https://github.com/dylanneve1/talon/compare/v1.4.0...v1.5.0) (2026-04-12)
 
 
