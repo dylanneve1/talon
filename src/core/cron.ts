@@ -104,7 +104,10 @@ function isDue(job: CronJob, now: Date): boolean {
 
     return true;
   } catch (err) {
-    logWarn("cron", `Invalid cron schedule for job "${job.id}": ${err instanceof Error ? err.message : err}`);
+    logWarn(
+      "cron",
+      `Invalid cron schedule for job "${job.id}": ${err instanceof Error ? err.message : err}`,
+    );
     return false;
   }
 }

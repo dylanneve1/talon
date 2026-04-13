@@ -22,9 +22,15 @@ export function recordHistogram(name: string, value: number): void {
 
 export function getMetrics(): {
   counters: Record<string, number>;
-  histograms: Record<string, { count: number; p50: number; p95: number; p99: number; avg: number }>;
+  histograms: Record<
+    string,
+    { count: number; p50: number; p95: number; p99: number; avg: number }
+  >;
 } {
-  const result: ReturnType<typeof getMetrics> = { counters: {}, histograms: {} };
+  const result: ReturnType<typeof getMetrics> = {
+    counters: {},
+    histograms: {},
+  };
   for (const [k, v] of counters) result.counters[k] = v;
   for (const [k, values] of histograms) {
     if (values.length === 0) continue;

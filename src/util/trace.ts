@@ -30,6 +30,8 @@ export function traceMessage(
       JSON.stringify(entry) + "\n",
     );
   } catch (err) {
-    process.stderr.write(`[trace] Trace write failed: ${err instanceof Error ? err.message : err}\n`);
+    process.stderr.write(
+      `[trace] Trace write failed: ${err instanceof Error ? err.message : err}\n`,
+    );
   }
 }

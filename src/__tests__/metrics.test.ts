@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { incrementCounter, recordHistogram, getMetrics, resetMetrics } from "../util/metrics.js";
+import {
+  incrementCounter,
+  recordHistogram,
+  getMetrics,
+  resetMetrics,
+} from "../util/metrics.js";
 
 describe("metrics", () => {
   beforeEach(() => resetMetrics());

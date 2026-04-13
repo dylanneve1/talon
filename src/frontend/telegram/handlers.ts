@@ -92,7 +92,10 @@ async function isAdminInGroup(bot: Bot, chatId: number): Promise<boolean> {
     setTimeout(() => verifiedGroups.delete(chatId), 10 * 60 * 1000);
     return isMember;
   } catch (err) {
-    logWarn("bot", `isAdminInGroup check failed for chat ${chatId}: ${err instanceof Error ? err.message : err}`);
+    logWarn(
+      "bot",
+      `isAdminInGroup check failed for chat ${chatId}: ${err instanceof Error ? err.message : err}`,
+    );
     // API error (e.g. bot can't query members) — deny by default
     verifiedGroups.set(chatId, false);
     setTimeout(() => verifiedGroups.delete(chatId), 10 * 60 * 1000);

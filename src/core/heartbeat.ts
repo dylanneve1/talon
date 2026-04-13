@@ -442,7 +442,9 @@ async function logHeartbeatMessage(
         break;
     }
   } catch (err) {
-    process.stderr.write(`[heartbeat] Log write error: ${err instanceof Error ? err.message : err}\n`);
+    process.stderr.write(
+      `[heartbeat] Log write error: ${err instanceof Error ? err.message : err}\n`,
+    );
   }
 }
 

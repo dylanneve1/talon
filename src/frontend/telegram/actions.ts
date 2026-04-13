@@ -65,7 +65,10 @@ export async function sendText(
     });
     return sent.message_id;
   } catch (err) {
-    logWarn("bot", `sendText HTML parse failed (chat=${chatId}): ${err instanceof Error ? err.message : err}`);
+    logWarn(
+      "bot",
+      `sendText HTML parse failed (chat=${chatId}): ${err instanceof Error ? err.message : err}`,
+    );
     const sent = await bot.api.sendMessage(chatId, text, {
       reply_parameters: replyTo ? { message_id: replyTo } : undefined,
     });
@@ -127,7 +130,10 @@ export function createTelegramActionHandler(
             ]),
           );
         } catch (err) {
-          logWarn("bot", `Custom emoji reaction failed, falling back to \uD83D\uDC4D: ${err instanceof Error ? err.message : err}`);
+          logWarn(
+            "bot",
+            `Custom emoji reaction failed, falling back to \uD83D\uDC4D: ${err instanceof Error ? err.message : err}`,
+          );
           try {
             await bot.api.setMessageReaction(chatId, Number(body.message_id), [
               { type: "emoji", emoji: "\uD83D\uDC4D" },
@@ -255,7 +261,10 @@ export function createTelegramActionHandler(
           try {
             await sendText(bot, chatId, text);
           } catch (err) {
-            logError("bot", `Scheduled message failed (chat=${chatId}): ${err instanceof Error ? err.message : err}`);
+            logError(
+              "bot",
+              `Scheduled message failed (chat=${chatId}): ${err instanceof Error ? err.message : err}`,
+            );
           }
           scheduledMessages.delete(scheduleId);
         }, delaySec * 1000);

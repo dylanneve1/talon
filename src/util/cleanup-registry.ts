@@ -28,7 +28,9 @@ function runAll(): void {
     try {
       fn();
     } catch (err) {
-      process.stderr.write(`[cleanup] Handler error: ${err instanceof Error ? err.message : err}\n`);
+      process.stderr.write(
+        `[cleanup] Handler error: ${err instanceof Error ? err.message : err}\n`,
+      );
     }
   }
 }

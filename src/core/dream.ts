@@ -336,7 +336,9 @@ function logDreamMessage(logFile: string, msg: SDKMessage): void {
         break;
     }
   } catch (err) {
-    process.stderr.write(`[dream] Log write error: ${err instanceof Error ? err.message : err}\n`);
+    process.stderr.write(
+      `[dream] Log write error: ${err instanceof Error ? err.message : err}\n`,
+    );
   }
 }
 
