@@ -75,12 +75,14 @@ vi.mock("../util/config.js", () => ({
     ),
 }));
 
-vi.mock("../backend/claude-sdk/index.js", () => ({
+// Backend mock — passed as 3rd arg to handleSharedAction
+const mockBackend = {
+  query: vi.fn(),
   updateSystemPrompt: (...args: unknown[]) =>
     mockUpdateSystemPrompt(
       ...(args as Parameters<typeof mockUpdateSystemPrompt>),
     ),
-}));
+};
 
 // ── Import after mocks ────────────────────────────────────────────────────
 
@@ -105,6 +107,7 @@ describe("reload_plugins gateway action", () => {
     const result = await handleSharedAction(
       { action: "reload_plugins" },
       12345,
+      mockBackend,
     );
     expect(result).not.toBeNull();
     expect(result!.ok).toBe(true);
@@ -115,19 +118,19 @@ describe("reload_plugins gateway action", () => {
   });
 
   it("calls reloadPlugins without explicit frontends (derived from config)", async () => {
-    await handleSharedAction({ action: "reload_plugins" }, 12345);
+    await handleSharedAction({ action: "reload_plugins" }, 12345, mockBackend);
     // Gateway no longer passes frontends — reloadPlugins derives them from config
     expect(mockReloadPlugins).toHaveBeenCalledWith();
   });
 
   it("rebuilds system prompt after reloading", async () => {
-    await handleSharedAction({ action: "reload_plugins" }, 12345);
+    await handleSharedAction({ action: "reload_plugins" }, 12345, mockBackend);
     expect(mockRebuildSystemPrompt).toHaveBeenCalledTimes(1);
     expect(mockGetPluginPromptAdditions).toHaveBeenCalledTimes(1);
   });
 
   it("updates backend system prompt after rebuild", async () => {
-    await handleSharedAction({ action: "reload_plugins" }, 12345);
+    await handleSharedAction({ action: "reload_plugins" }, 12345, mockBackend);
     expect(mockUpdateSystemPrompt).toHaveBeenCalledTimes(1);
   });
 
@@ -138,6 +141,7 @@ describe("reload_plugins gateway action", () => {
     const result = await handleSharedAction(
       { action: "reload_plugins" },
       12345,
+      mockBackend,
     );
     expect(result).not.toBeNull();
     expect(result!.ok).toBe(false);
@@ -151,6 +155,7 @@ describe("reload_plugins gateway action", () => {
     const result = await handleSharedAction(
       { action: "reload_plugins" },
       12345,
+      mockBackend,
     );
     expect(result!.ok).toBe(false);
     expect(result!.error).toContain("Invalid JSON in config");
@@ -164,6 +169,7 @@ describe("reload_plugins gateway action", () => {
     const result = await handleSharedAction(
       { action: "reload_plugins" },
       12345,
+      mockBackend,
     );
     expect(result!.ok).toBe(true);
     expect(result!.text).toContain("(0)");

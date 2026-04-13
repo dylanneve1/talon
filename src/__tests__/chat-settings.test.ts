@@ -31,8 +31,12 @@ const {
   loadChatSettings,
   resolveModelName,
   EFFORT_LEVELS,
-  MODEL_ALIASES,
 } = await import("../storage/chat-settings.js");
+
+// Register Claude models so alias resolution works in tests
+const { registerClaudeModels } =
+  await import("../backend/claude-sdk/models.js");
+registerClaudeModels();
 
 describe("chat-settings", () => {
   describe("getChatSettings", () => {
@@ -166,12 +170,21 @@ describe("chat-settings", () => {
     });
   });
 
-  describe("MODEL_ALIASES", () => {
-    it("contains all expected aliases", () => {
-      expect(Object.keys(MODEL_ALIASES).length).toBeGreaterThanOrEqual(9);
-      expect(MODEL_ALIASES.sonnet).toBe("claude-sonnet-4-6");
-      expect(MODEL_ALIASES.opus).toBe("claude-opus-4-6");
-      expect(MODEL_ALIASES.haiku).toBe("claude-haiku-4-5");
+  describe("model alias resolution (via registry)", () => {
+    it("resolves short aliases to full model IDs", () => {
+      expect(resolveModelName("sonnet")).toBe("claude-sonnet-4-6");
+      expect(resolveModelName("opus")).toBe("claude-opus-4-6");
+      expect(resolveModelName("haiku")).toBe("claude-haiku-4-5");
+    });
+
+    it("resolves versioned aliases", () => {
+      expect(resolveModelName("sonnet-4-6")).toBe("claude-sonnet-4-6");
+      expect(resolveModelName("opus-4.6")).toBe("claude-opus-4-6");
+      expect(resolveModelName("haiku-4.5")).toBe("claude-haiku-4-5");
+    });
+
+    it("passes through unknown names unchanged", () => {
+      expect(resolveModelName("gpt-4o")).toBe("gpt-4o");
     });
   });
 

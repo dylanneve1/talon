@@ -220,22 +220,8 @@ export const EFFORT_LEVELS: EffortLevel[] = [
   "max",
 ];
 
-/** Known model aliases. */
-export const MODEL_ALIASES: Record<string, string> = {
-  sonnet: "claude-sonnet-4-6",
-  opus: "claude-opus-4-6",
-  haiku: "claude-haiku-4-5",
-  "sonnet-4.6": "claude-sonnet-4-6",
-  "opus-4.6": "claude-opus-4-6",
-  "haiku-4.5": "claude-haiku-4-5",
-  "sonnet-4-6": "claude-sonnet-4-6",
-  "opus-4-6": "claude-opus-4-6",
-  "haiku-4-5": "claude-haiku-4-5",
-};
-
-export function resolveModelName(input: string): string {
-  const lower = input.trim().toLowerCase();
-  return Object.hasOwn(MODEL_ALIASES, lower)
-    ? MODEL_ALIASES[lower]
-    : input.trim();
-}
+/**
+ * Resolve a user-provided model name (alias or full ID) to the canonical model ID.
+ * Delegates to the model registry; falls through unknown names unchanged.
+ */
+export { resolveModelId as resolveModelName } from "../core/models.js";

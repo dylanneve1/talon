@@ -47,6 +47,10 @@ export type BootstrapResult = {
   config: TalonConfig;
 };
 
+export type BackendAndDispatcherResult = {
+  backend: QueryBackend;
+};
+
 // ── Bootstrap: config, env, plugins, workspace, storage ──────────────────────
 
 /**
@@ -102,7 +106,7 @@ export async function bootstrap(
 export async function initBackendAndDispatcher(
   config: TalonConfig,
   frontend: Frontend,
-): Promise<void> {
+): Promise<BackendAndDispatcherResult> {
   let backend: QueryBackend;
 
   if (config.backend === "opencode") {
@@ -112,10 +116,18 @@ export async function initBackendAndDispatcher(
     backend = { query: (params) => opencodeHandleMessage(params) };
     log("bot", "Backend: OpenCode");
   } else {
-    const { initAgent: initClaudeAgent, handleMessage: claudeHandleMessage } =
-      await import("./backend/claude-sdk/index.js");
+    const {
+      initAgent: initClaudeAgent,
+      handleMessage: claudeHandleMessage,
+      warmSession: claudeWarmSession,
+      updateSystemPrompt: claudeUpdateSystemPrompt,
+    } = await import("./backend/claude-sdk/index.js");
     initClaudeAgent(config, frontend.getBridgePort);
-    backend = { query: (params) => claudeHandleMessage(params) };
+    backend = {
+      query: (params) => claudeHandleMessage(params),
+      warmSession: (chatId) => claudeWarmSession(chatId),
+      updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
+    };
     log("bot", "Backend: Claude SDK");
   }
 
@@ -160,4 +172,6 @@ export async function initBackendAndDispatcher(
     claudeBinary: config.claudeBinary,
     workspace: config.workspace,
   });
+
+  return { backend };
 }

@@ -19,6 +19,7 @@ import { log, logError, logWarn } from "../util/log.js";
 import { toYMD } from "../util/time.js";
 import { getPluginMcpServers } from "./plugin.js";
 import { DISALLOWED_TOOLS_BACKGROUND } from "../backend/claude-sdk/constants.js";
+import { getDefaultModel } from "./models.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -264,7 +265,7 @@ async function runHeartbeatAgent(
   }
 
   const model =
-    configRef.heartbeatModel ?? configRef.model ?? "claude-sonnet-4-6";
+    configRef.heartbeatModel ?? configRef.model ?? getDefaultModel("balanced");
 
   // Set up heartbeat log file
   const heartbeatLogFile = await createHeartbeatLogFile();

@@ -21,7 +21,7 @@ import { getActiveSessionCount } from "../storage/sessions.js";
 import { log, logError, logDebug } from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "./plugin.js";
-import type { FrontendActionHandler } from "./types.js";
+import type { FrontendActionHandler, QueryBackend } from "./types.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
 
@@ -79,6 +79,9 @@ export class Gateway {
   private frontendHandler: FrontendActionHandler | null = null;
   private server: ReturnType<typeof createServer> | null = null;
   private port = 0;
+
+  /** The active backend — set by bootstrap after initialization. */
+  backend: QueryBackend | null = null;
 
   // ── Frontend handler registration ────────────────────────────────────────
 
@@ -195,7 +198,7 @@ export class Gateway {
       }
 
       // Shared actions last — provides in-memory fallbacks for history, cron, etc.
-      const shared = await handleSharedAction(body, chatId);
+      const shared = await handleSharedAction(body, chatId, this.backend);
       if (shared) {
         logDebug(
           "gateway",

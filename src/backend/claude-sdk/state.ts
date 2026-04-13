@@ -6,6 +6,7 @@
  */
 
 import type { TalonConfig } from "../../util/config.js";
+import { registerClaudeModels } from "./models.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ export function initAgent(
 ): void {
   config = cfg;
   if (getBridgePort) bridgePortFn = getBridgePort;
+  registerClaudeModels();
 
   // The Agent SDK spawns an embedded Claude Code subprocess.
   // If CLAUDECODE is set (e.g. running from a Claude Code terminal),

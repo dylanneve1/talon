@@ -33,6 +33,10 @@ export type QueryResult = {
 /** Backend interface — any AI provider implements this. */
 export interface QueryBackend {
   query(params: QueryParams): Promise<QueryResult>;
+  /** Pre-warm a session (cold-start optimization). Optional — not all backends support this. */
+  warmSession?(chatId: string): Promise<void>;
+  /** Update the system prompt on the live backend config. Optional — used by plugin hot-reload. */
+  updateSystemPrompt?(prompt: string): void;
 }
 
 // ── Execution context ───────────────────────────────────────────────────────

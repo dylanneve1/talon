@@ -282,23 +282,20 @@ async function runSetup(): Promise<void> {
     if (botName) teamsBotDisplayName = botName;
   }
 
+  // Register Claude models so the picker is populated from the registry
+  const { registerClaudeModels } =
+    await import("./backend/claude-sdk/models.js");
+  registerClaudeModels();
+  const { getModels } = await import("./core/models.js");
+  const registeredModels = getModels();
+
   const model = await p.select({
     message: "Default model",
     initialValue: config.model,
-    options: [
-      {
-        value: "claude-sonnet-4-6",
-        label: `Sonnet 4.6  ${pc.dim("\u2014 fast, balanced")}`,
-      },
-      {
-        value: "claude-opus-4-6",
-        label: `Opus 4.6    ${pc.dim("\u2014 smartest")}`,
-      },
-      {
-        value: "claude-haiku-4-5",
-        label: `Haiku 4.5   ${pc.dim("\u2014 fastest, cheapest")}`,
-      },
-    ],
+    options: registeredModels.map((m) => ({
+      value: m.id,
+      label: `${m.displayName.padEnd(12)}${m.description ? pc.dim(`\u2014 ${m.description}`) : ""}`,
+    })),
   });
   if (p.isCancel(model)) {
     p.cancel("Cancelled.");
@@ -652,7 +649,8 @@ async function startChat(): Promise<void> {
   const gateway = new Gateway();
   const frontend = createTerminalFrontend(config, gateway);
   await frontend.init();
-  await initBackendAndDispatcher(config, frontend);
+  const { backend } = await initBackendAndDispatcher(config, frontend);
+  gateway.backend = backend;
 
   process.on("SIGINT", () => {
     flushSessions();
