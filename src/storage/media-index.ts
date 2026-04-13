@@ -10,7 +10,7 @@ import { existsSync, readFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { registerCleanup } from "../util/cleanup-registry.js";
 import writeFileAtomic from "write-file-atomic";
-import { log } from "../util/log.js";
+import { log, logError } from "../util/log.js";
 import { files } from "../util/paths.js";
 
 export type MediaEntry = {
@@ -58,8 +58,8 @@ function save(): void {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     writeFileAtomic.sync(STORE_FILE, JSON.stringify(entries) + "\n");
     dirty = false;
-  } catch {
-    /* non-fatal */
+  } catch (err) {
+    logError("workspace", `Media index save failed: ${err instanceof Error ? err.message : err}`);
   }
 }
 

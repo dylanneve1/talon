@@ -31,6 +31,7 @@ import {
 import { withRetry } from "../../core/gateway.js";
 import type { Gateway } from "../../core/gateway.js";
 import type { ActionResult } from "../../core/types.js";
+import { logWarn, logError } from "../../util/log.js";
 
 const TELEGRAM_MAX_TEXT = 4096;
 
@@ -63,7 +64,8 @@ export async function sendText(
       reply_parameters: replyTo ? { message_id: replyTo } : undefined,
     });
     return sent.message_id;
-  } catch {
+  } catch (err) {
+    logWarn("bot", `sendText HTML parse failed (chat=${chatId}): ${err instanceof Error ? err.message : err}`);
     const sent = await bot.api.sendMessage(chatId, text, {
       reply_parameters: replyTo ? { message_id: replyTo } : undefined,
     });
@@ -124,7 +126,8 @@ export function createTelegramActionHandler(
               { type: "emoji", emoji: emoji as "\uD83D\uDC4D" },
             ]),
           );
-        } catch {
+        } catch (err) {
+          logWarn("bot", `Custom emoji reaction failed, falling back to \uD83D\uDC4D: ${err instanceof Error ? err.message : err}`);
           try {
             await bot.api.setMessageReaction(chatId, Number(body.message_id), [
               { type: "emoji", emoji: "\uD83D\uDC4D" },
@@ -251,8 +254,8 @@ export function createTelegramActionHandler(
         const timer = setTimeout(async () => {
           try {
             await sendText(bot, chatId, text);
-          } catch {
-            /* scheduled send failed */
+          } catch (err) {
+            logError("bot", `Scheduled message failed (chat=${chatId}): ${err instanceof Error ? err.message : err}`);
           }
           scheduledMessages.delete(scheduleId);
         }, delaySec * 1000);

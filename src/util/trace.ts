@@ -29,7 +29,7 @@ export function traceMessage(
       resolve(dirs.traces, `${chatId}.jsonl`),
       JSON.stringify(entry) + "\n",
     );
-  } catch {
-    // Non-fatal — never break the bot for debug tracing
+  } catch (err) {
+    process.stderr.write(`[trace] Trace write failed: ${err instanceof Error ? err.message : err}\n`);
   }
 }

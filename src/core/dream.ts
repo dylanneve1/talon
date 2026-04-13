@@ -335,8 +335,8 @@ function logDreamMessage(logFile: string, msg: SDKMessage): void {
         // Skip stream_event and other noisy message types
         break;
     }
-  } catch {
-    // Don't let logging errors break the dream
+  } catch (err) {
+    process.stderr.write(`[dream] Log write error: ${err instanceof Error ? err.message : err}\n`);
   }
 }
 

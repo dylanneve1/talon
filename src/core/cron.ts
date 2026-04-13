@@ -16,7 +16,7 @@ import {
   type CronJob,
 } from "../storage/cron-store.js";
 import { appendDailyLog } from "../storage/daily-log.js";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -103,7 +103,8 @@ function isDue(job: CronJob, now: Date): boolean {
     if (job.lastRunAt && job.lastRunAt > now.getTime()) return false;
 
     return true;
-  } catch {
+  } catch (err) {
+    logWarn("cron", `Invalid cron schedule for job "${job.id}": ${err instanceof Error ? err.message : err}`);
     return false;
   }
 }

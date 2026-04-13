@@ -21,7 +21,7 @@ import {
 import { setMessageFilePath } from "../../storage/history.js";
 import { addMedia } from "../../storage/media-index.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
-import { log, logError, logWarn } from "../../util/log.js";
+import { log, logError, logWarn, logDebug } from "../../util/log.js";
 
 // ── First-time DM user tracking ──────────────────────────────────────────────
 
@@ -53,6 +53,7 @@ function trackDmUser(
 let allowedUserIds: Set<number> | null = null; // null = no whitelist (allow all)
 let adminId = 0;
 const verifiedGroups = new Map<number, boolean>(); // chatId → admin is member
+const MAX_VERIFIED_GROUPS = 1000;
 
 export function setAccessControl(cfg: {
   allowedUsers?: number[];
@@ -78,6 +79,11 @@ async function isAdminInGroup(bot: Bot, chatId: number): Promise<boolean> {
   const cached = verifiedGroups.get(chatId);
   if (cached !== undefined) return cached;
 
+  // Prevent unbounded growth — clear and re-verify on access
+  if (verifiedGroups.size >= MAX_VERIFIED_GROUPS) {
+    verifiedGroups.clear();
+  }
+
   try {
     const member = await bot.api.getChatMember(chatId, adminId);
     const isMember = !["left", "kicked"].includes(member.status);
@@ -85,7 +91,8 @@ async function isAdminInGroup(bot: Bot, chatId: number): Promise<boolean> {
     // Expire cache after 10 minutes
     setTimeout(() => verifiedGroups.delete(chatId), 10 * 60 * 1000);
     return isMember;
-  } catch {
+  } catch (err) {
+    logWarn("bot", `isAdminInGroup check failed for chat ${chatId}: ${err instanceof Error ? err.message : err}`);
     // API error (e.g. bot can't query members) — deny by default
     verifiedGroups.set(chatId, false);
     setTimeout(() => verifiedGroups.delete(chatId), 10 * 60 * 1000);
@@ -111,6 +118,7 @@ export function shouldHandleInGroup(ctx: Context): boolean {
 // Rate-limit unauthorized access warnings (one per user/group per 10 minutes)
 const unauthorizedCooldown = new Map<string, number>();
 const UNAUTHORIZED_COOLDOWN_MS = 10 * 60 * 1000;
+const MAX_UNAUTHORIZED_COOLDOWNS = 5000;
 
 /**
  * Full access check: DM whitelist + group admin membership.
@@ -144,6 +152,9 @@ async function notifyUnauthorized(
   const now = Date.now();
   const lastWarned = unauthorizedCooldown.get(key);
   if (lastWarned && now - lastWarned < UNAUTHORIZED_COOLDOWN_MS) return;
+  if (unauthorizedCooldown.size >= MAX_UNAUTHORIZED_COOLDOWNS) {
+    unauthorizedCooldown.clear();
+  }
   unauthorizedCooldown.set(key, now);
 
   const sender = getSenderName(ctx.from);
@@ -415,6 +426,7 @@ function isUserRateLimited(senderId: number): boolean {
   }
 
   if (timestamps.length >= RATE_LIMIT_MAX_MESSAGES) {
+    logDebug("bot", `Rate-limited user ${senderId}`);
     return true;
   }
 

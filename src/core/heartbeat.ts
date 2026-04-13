@@ -441,8 +441,8 @@ async function logHeartbeatMessage(
       default:
         break;
     }
-  } catch {
-    // Don't let logging errors break the heartbeat
+  } catch (err) {
+    process.stderr.write(`[heartbeat] Log write error: ${err instanceof Error ? err.message : err}\n`);
   }
 }
 
