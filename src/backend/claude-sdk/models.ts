@@ -8,7 +8,7 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { registerModels, clearModels } from "../../core/models.js";
+import { registerModels, clearModelsByProvider } from "../../core/models.js";
 import type { ModelInfo } from "../../core/models.js";
 import { log, logError } from "../../util/log.js";
 
@@ -153,7 +153,7 @@ export async function registerClaudeModels(sdkOptions: {
     }
 
     const models = convertSdkModels(sdkModels);
-    clearModels();
+    clearModelsByProvider("anthropic");
     registerModels(models);
     log(
       "agent",

@@ -128,9 +128,21 @@ export function getDefaultModel(tier: ModelTier = "balanced"): string {
   return "claude-sonnet-4-6"; // ultimate fallback if registry is empty
 }
 
-// ── Test support ────────────────────────────────────────────────────────────
+// ── Provider-scoped clearing ────────────────────────────────────────────────
 
-/** Clear the registry. For tests only. */
+/** Remove all models for a specific provider (and their aliases). */
+export function clearModelsByProvider(provider: string): void {
+  for (const [id, info] of models) {
+    if (info.provider !== provider) continue;
+    aliasIndex.delete(id.toLowerCase());
+    for (const alias of info.aliases) {
+      aliasIndex.delete(alias.toLowerCase());
+    }
+    models.delete(id);
+  }
+}
+
+/** Clear the entire registry. For tests only. */
 export function clearModels(): void {
   models.clear();
   aliasIndex.clear();
