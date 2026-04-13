@@ -178,7 +178,7 @@ export function processAssistantMessage(
 export function processResultMessage(
   msg: SDKResultMessage,
   state: StreamState,
-  activeModel: string,
+  sdkModel: string,
 ): void {
   state.numApiCalls = msg.num_turns ?? 0;
 
@@ -193,13 +193,11 @@ export function processResultMessage(
   }
 
   // Read token counts from the ACTIVE model's usage only.
-  // modelUsage is keyed by model ID and contains cumulative session totals
-  // per model — summing all entries double-counts when switching models.
+  // modelUsage is keyed by the exact SDK model string (e.g. "claude-sonnet-4-6[1m]")
+  // and contains cumulative session totals per model — summing all entries
+  // double-counts when switching models mid-session.
   const modelUsage: Record<string, ModelUsage> = msg.modelUsage;
-  const mu =
-    modelUsage[activeModel] ??
-    modelUsage[`${activeModel}[1m]`] ??
-    Object.values(modelUsage).at(-1);
+  const mu = modelUsage[sdkModel] ?? Object.values(modelUsage).at(-1);
   if (mu) {
     state.sdkInputTokens = mu.inputTokens ?? 0;
     state.sdkOutputTokens = mu.outputTokens ?? 0;
@@ -212,7 +210,7 @@ export function processResultMessage(
 
   log(
     "agent",
-    `SDK result: activeModel=${activeModel}, contextWindow=${state.contextWindow}, contextTokens=${state.contextTokens}, numApiCalls=${state.numApiCalls}`,
+    `SDK result: sdkModel=${sdkModel}, contextWindow=${state.contextWindow}, contextTokens=${state.contextTokens}, numApiCalls=${state.numApiCalls}`,
   );
 
   // Fallback: if no text was captured via streaming or assistant messages,
