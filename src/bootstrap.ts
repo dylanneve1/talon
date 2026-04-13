@@ -138,7 +138,25 @@ export async function initBackendAndDispatcher(
           ...buildMcpServers(chatId),
           ...getPluginMcpServers(bridgeUrl, chatId),
         };
-        return qi.setMcpServers(freshServers);
+        // setMcpServers() is called on an in-flight query (suspended waiting
+        // for the tool result). If MCP servers are slow to connect it can
+        // block indefinitely — enforce a hard timeout so the tool response
+        // always returns quickly even if hot-swap fails.
+        const TIMEOUT_MS = 8_000;
+        return Promise.race([
+          qi.setMcpServers(freshServers),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `setMcpServers timed out after ${TIMEOUT_MS}ms`,
+                  ),
+                ),
+              TIMEOUT_MS,
+            ),
+          ),
+        ]);
       },
     };
     log("bot", "Backend: Claude SDK");

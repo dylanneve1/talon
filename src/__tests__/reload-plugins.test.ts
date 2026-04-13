@@ -243,6 +243,20 @@ describe("reload_plugins gateway action", () => {
     expect(mockRefreshMcpServers).toHaveBeenCalledWith("12345");
   });
 
+  it("uses body._chatId over numeric chatId when present", async () => {
+    await handleSharedAction(
+      { action: "reload_plugins", _chatId: "teams_chat_abc123" },
+      12345,
+      mockBackend,
+    );
+    expect(mockRefreshMcpServers).toHaveBeenCalledWith("teams_chat_abc123");
+  });
+
+  it("falls back to String(chatId) when body._chatId is absent", async () => {
+    await handleSharedAction({ action: "reload_plugins" }, 99999, mockBackend);
+    expect(mockRefreshMcpServers).toHaveBeenCalledWith("99999");
+  });
+
   it("includes MCP update info in response", async () => {
     mockRefreshMcpServers.mockResolvedValue({
       added: ["foo-tools"],

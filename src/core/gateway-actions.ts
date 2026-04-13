@@ -332,7 +332,13 @@ export async function handleSharedAction(
         let mcpInfo = "";
         if (backend?.refreshMcpServers) {
           try {
-            const result = await backend.refreshMcpServers(String(chatId));
+            // Prefer body._chatId (string chat ID passed by frontends that use
+            // non-numeric IDs, e.g. Teams/terminal) over the numeric context ID.
+            const refreshChatId =
+              typeof body._chatId === "string" && body._chatId.length > 0
+                ? body._chatId
+                : String(chatId);
+            const result = await backend.refreshMcpServers(refreshChatId);
             if (result) {
               const parts: string[] = [];
               if (result.added.length > 0)
