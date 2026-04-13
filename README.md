@@ -249,7 +249,7 @@ docker compose up -d
 
 **Health endpoint:** `GET http://localhost:19876/health` returns JSON with uptime, memory, queue depth, active sessions, and last activity timestamp.
 
-**Logging:** Structured JSON via pino to `~/.talon/logs/talon.log`. Daily rotation.
+**Logging:** Structured JSON via pino to `~/.talon/talon.log`. Rotated on startup when the file exceeds 10MB.
 
 **Resilience:** Dynamic model fallback on overload, session auto-retry on expiry, rate limit handling with backoff, atomic file writes, graceful shutdown with 15-second drain timeout.
 
