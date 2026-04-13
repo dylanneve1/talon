@@ -27,7 +27,7 @@ import {
   type CronJobType,
 } from "../storage/cron-store.js";
 import { log } from "../util/log.js";
-import type { ActionResult } from "./types.js";
+import type { ActionResult, QueryBackend } from "./types.js";
 
 /** Extract readable text from HTML using cheerio (proper DOM parser). */
 function extractText(html: string, maxLength = 8000): string {
@@ -42,6 +42,7 @@ function extractText(html: string, maxLength = 8000): string {
 export async function handleSharedAction(
   body: Record<string, unknown>,
   chatId: number,
+  backend?: QueryBackend | null,
 ): Promise<ActionResult | null> {
   const action = body.action as string;
 
@@ -324,17 +325,7 @@ export async function handleSharedAction(
         // Rebuild system prompt on the freshConfig, then update the backend's
         // live config reference so subsequent messages use the new prompt
         rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
-        try {
-          const { updateSystemPrompt } =
-            await import("../backend/claude-sdk/index.js");
-          updateSystemPrompt(freshConfig.systemPrompt);
-        } catch (err) {
-          // Non-fatal — OpenCode backend doesn't expose updateSystemPrompt
-          log(
-            "gateway",
-            `reload_plugins: could not update backend prompt: ${err instanceof Error ? err.message : err}`,
-          );
-        }
+        backend?.updateSystemPrompt?.(freshConfig.systemPrompt);
 
         log("gateway", `reload_plugins: ${names.length} plugins loaded`);
         return {

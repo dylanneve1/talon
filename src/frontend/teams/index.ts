@@ -217,9 +217,7 @@ export function createTeamsFrontend(
               resetSession(talonChatId);
               clearHistory(talonChatId);
               log("teams", `Session reset by ${msg.senderName}`);
-              const { warmSession } =
-                await import("../../backend/claude-sdk/index.js");
-              await warmSession(talonChatId);
+              await gateway.backend?.warmSession?.(talonChatId);
               const card = buildAdaptiveCard("Session cleared.");
               await proxyFetch(webhookUrl, {
                 method: "POST",

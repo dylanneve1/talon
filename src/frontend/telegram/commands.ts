@@ -38,7 +38,7 @@ import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
-import { warmSession } from "../../backend/claude-sdk/index.js";
+import { getModels } from "../../core/models.js";
 import {
   formatDuration,
   formatTokenCount,
@@ -56,7 +56,11 @@ export function setAdminUserId(id: number | undefined): void {
   ADMIN_USER_ID = id ?? 0;
 }
 
-export function registerCommands(bot: Bot, config: TalonConfig): void {
+export function registerCommands(
+  bot: Bot,
+  config: TalonConfig,
+  gateway?: { backend: import("../../core/types.js").QueryBackend | null },
+): void {
   bot.command("start", (ctx) =>
     ctx.reply(
       [
@@ -142,7 +146,7 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
     clearHistory(cid);
     resetPulseCheckpoint(cid);
     // Warm up the new session so /status has context data immediately
-    await warmSession(cid);
+    await gateway?.backend?.warmSession?.(cid);
     await ctx.reply("Session cleared.");
   });
 
@@ -179,33 +183,24 @@ export function registerCommands(bot: Bot, config: TalonConfig): void {
 
     if (!arg) {
       const current = settings.model ?? config.model;
-      const isModel = (id: string) => current.includes(id);
+      // Build model buttons dynamically from the registry
+      const models = getModels();
+      const modelButtons = models.map((m) => ({
+        text: current.includes(m.id)
+          ? `\u2713 ${m.displayName}`
+          : m.displayName,
+        callback_data: `model:${m.aliases[0] ?? m.id}`,
+      }));
+      // Two models per row, plus a reset button on the last row
+      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+      for (let i = 0; i < modelButtons.length; i += 2) {
+        rows.push(modelButtons.slice(i, i + 2));
+      }
+      rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
+
       await ctx.reply(
         `<b>Model:</b> <code>${escapeHtml(current)}</code>\nSelect a model:`,
-        {
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: isModel("sonnet") ? "\u2713 Sonnet 4.6" : "Sonnet 4.6",
-                  callback_data: "model:sonnet",
-                },
-                {
-                  text: isModel("opus") ? "\u2713 Opus 4.6" : "Opus 4.6",
-                  callback_data: "model:opus",
-                },
-              ],
-              [
-                {
-                  text: isModel("haiku") ? "\u2713 Haiku 4.5" : "Haiku 4.5",
-                  callback_data: "model:haiku",
-                },
-                { text: "Reset to default", callback_data: "model:reset" },
-              ],
-            ],
-          },
-        },
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
       );
       return;
     }

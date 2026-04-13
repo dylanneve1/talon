@@ -21,6 +21,7 @@ import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
 import { getPluginMcpServers } from "./plugin.js";
 import { DISALLOWED_TOOLS_BACKGROUND } from "../backend/claude-sdk/constants.js";
+import { getDefaultModel } from "./models.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -179,7 +180,8 @@ If commands fail, log the error and continue — this stage is optional.`
     throw new Error(`Failed to read dream prompt from ${promptPath}`);
   }
 
-  const model = configRef.dreamModel ?? configRef.model ?? "claude-sonnet-4-6";
+  const model =
+    configRef.dreamModel ?? configRef.model ?? getDefaultModel("balanced");
   const workspace = configRef.workspace ?? dirs.workspace;
 
   // Set up dream log file

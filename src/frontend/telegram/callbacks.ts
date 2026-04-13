@@ -22,6 +22,7 @@ import {
 import { handleCallbackQuery } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
 import { renderSettingsText, renderSettingsKeyboard } from "./helpers.js";
+import { getModels } from "../../core/models.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
   // ── Callback query handler ──────────────────────────────────────────────────
@@ -214,36 +215,23 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
         });
       }
       const current = getChatSettings(cid).model ?? config.model;
-      const isModel = (id: string) => current.includes(id);
+      // Build model buttons dynamically from the registry
+      const models = getModels();
+      const modelButtons = models.map((m) => ({
+        text: current.includes(m.id)
+          ? `\u2713 ${m.displayName}`
+          : m.displayName,
+        callback_data: `model:${m.aliases[0] ?? m.id}`,
+      }));
+      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+      for (let i = 0; i < modelButtons.length; i += 2) {
+        rows.push(modelButtons.slice(i, i + 2));
+      }
+      rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
       try {
         await ctx.editMessageText(
           `<b>Model:</b> <code>${escapeHtml(current)}</code>`,
-          {
-            parse_mode: "HTML",
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: isModel("sonnet")
-                      ? "\u2713 Sonnet 4.6"
-                      : "Sonnet 4.6",
-                    callback_data: "model:sonnet",
-                  },
-                  {
-                    text: isModel("opus") ? "\u2713 Opus 4.6" : "Opus 4.6",
-                    callback_data: "model:opus",
-                  },
-                ],
-                [
-                  {
-                    text: isModel("haiku") ? "\u2713 Haiku 4.5" : "Haiku 4.5",
-                    callback_data: "model:haiku",
-                  },
-                  { text: "Reset to default", callback_data: "model:reset" },
-                ],
-              ],
-            },
-          },
+          { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
         );
       } catch {
         /* message unchanged */

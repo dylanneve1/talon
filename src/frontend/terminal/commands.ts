@@ -90,14 +90,17 @@ export function registerBuiltinCommands(): void {
   registerCommand({
     name: "model",
     argHint: "[name]",
-    description: "Switch model (opus, sonnet, haiku)",
+    description: "Switch model",
     async handler(args, ctx) {
       const { getChatSettings, setChatModel, resolveModelName } =
         await import("../../storage/chat-settings.js");
       if (!args) {
-        ctx.renderer.writeSystem(
-          `Model: ${getChatSettings(ctx.chatId()).model ?? ctx.config.model}`,
-        );
+        const { getModels } = await import("../../core/models.js");
+        const current = getChatSettings(ctx.chatId()).model ?? ctx.config.model;
+        const names = getModels()
+          .map((m) => m.aliases[0] ?? m.id)
+          .join(", ");
+        ctx.renderer.writeSystem(`Model: ${current} (available: ${names})`);
       } else {
         setChatModel(ctx.chatId(), resolveModelName(args));
         ctx.renderer.writeSystem(`Model → ${resolveModelName(args)}`);

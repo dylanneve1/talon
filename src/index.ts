@@ -66,7 +66,8 @@ if (selectedFrontend === "terminal") {
 
 // ── Create backend + wire dispatcher ─────────────────────────────────────────
 
-await initBackendAndDispatcher(config, frontend);
+const { backend } = await initBackendAndDispatcher(config, frontend);
+gateway.backend = backend;
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 

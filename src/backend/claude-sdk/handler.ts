@@ -17,6 +17,7 @@ import {
 } from "../../storage/sessions.js";
 import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
+import { getFallbackModel } from "../../core/models.js";
 import { rebuildSystemPrompt } from "../../util/config.js";
 import { getPluginPromptAdditions } from "../../core/plugin.js";
 import { log, logError, logWarn } from "../../util/log.js";
@@ -148,21 +149,17 @@ export async function handleMessage(
       return handleMessage(params, true);
     }
 
-    // Model fallback: if overloaded/timeout, retry with a faster model
+    // Model fallback: if overloaded/timeout, retry with the next-tier model
     if (!_retried && classified.retryable) {
-      const fallbackModel = activeModel.includes("opus")
-        ? "claude-sonnet-4-6"
-        : activeModel.includes("sonnet")
-          ? "claude-haiku-4-5"
-          : null;
-      if (fallbackModel) {
+      const fallback = getFallbackModel(activeModel);
+      if (fallback) {
         logWarn(
           "agent",
-          `[${chatId}] ${classified.reason}, falling back to ${fallbackModel.replace("claude-", "")}`,
+          `[${chatId}] ${classified.reason}, falling back to ${fallback.replace("claude-", "")}`,
         );
         resetSession(chatId);
         const originalModel = getChatSettings(chatId).model;
-        setChatModel(chatId, fallbackModel);
+        setChatModel(chatId, fallback);
         try {
           return await handleMessage(params, true);
         } finally {

@@ -49,6 +49,9 @@ const { classify, TalonError } = await import("../core/errors.js");
 await import("../storage/cron-store.js");
 const { handleSharedAction } = await import("../core/gateway-actions.js");
 const { resolveModelName } = await import("../storage/chat-settings.js");
+const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =
+  await import("../backend/claude-sdk/models.js");
+registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
 const { Cron } = await import("croner");
 
 // ── Configuration ───────────────────────────────────────────────────────────

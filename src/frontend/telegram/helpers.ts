@@ -3,6 +3,7 @@
  */
 
 import { escapeHtml } from "./formatting.js";
+import { getModels } from "../../core/models.js";
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
 
 /** Parse a duration string like "30m", "2h", "1h30m" into milliseconds. */
@@ -60,22 +61,19 @@ export function renderSettingsKeyboard(
   effort: string,
   proactive: boolean,
 ): Array<Array<{ text: string; callback_data: string }>> {
-  const isModel = (id: string) => model.includes(id);
+  // Build model buttons dynamically from the registry, chunked into rows of 3
+  const modelButtons = getModels().map((m) => ({
+    text: model.includes(m.id)
+      ? `\u2713 ${m.displayName.split(" ")[0]}`
+      : m.displayName.split(" ")[0],
+    callback_data: `settings:model:${m.aliases[0] ?? m.id}`,
+  }));
+  const modelRows: Array<Array<{ text: string; callback_data: string }>> = [];
+  for (let i = 0; i < modelButtons.length; i += 3) {
+    modelRows.push(modelButtons.slice(i, i + 3));
+  }
   return [
-    [
-      {
-        text: isModel("sonnet") ? "\u2713 Sonnet" : "Sonnet",
-        callback_data: "settings:model:sonnet",
-      },
-      {
-        text: isModel("opus") ? "\u2713 Opus" : "Opus",
-        callback_data: "settings:model:opus",
-      },
-      {
-        text: isModel("haiku") ? "\u2713 Haiku" : "Haiku",
-        callback_data: "settings:model:haiku",
-      },
-    ],
+    ...modelRows,
     [
       {
         text: effort === "low" ? "\u2713 Low" : "Low",
