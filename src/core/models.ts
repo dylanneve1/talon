@@ -53,6 +53,14 @@ const aliasIndex = new Map<string, string>();
 /** Register one or more models. Idempotent — re-registration overwrites. */
 export function registerModels(infos: ModelInfo[]): void {
   for (const info of infos) {
+    // Clear stale aliases from any previous registration of this model ID
+    const prev = models.get(info.id);
+    if (prev) {
+      aliasIndex.delete(prev.id.toLowerCase());
+      for (const alias of prev.aliases) {
+        aliasIndex.delete(alias.toLowerCase());
+      }
+    }
     models.set(info.id, info);
     // Index the canonical ID itself as an alias
     aliasIndex.set(info.id.toLowerCase(), info.id);

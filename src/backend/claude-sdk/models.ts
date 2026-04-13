@@ -71,11 +71,13 @@ function convertSdkModels(
   const tierOrder = { premium: 0, balanced: 1, economy: 2 };
   models.sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier]);
 
-  // Fallback chain: each model falls back to the next tier down
-  for (let i = 0; i < models.length - 1; i++) {
-    if (!models[i].fallback) {
-      models[i].fallback = models[i + 1].id;
-    }
+  // Fallback chain: each model falls back to the first model in the next lower tier
+  for (const model of models) {
+    if (model.fallback) continue;
+    const nextTier = models.find(
+      (m) => tierOrder[m.tier] > tierOrder[model.tier],
+    );
+    if (nextTier) model.fallback = nextTier.id;
   }
 
   return models;

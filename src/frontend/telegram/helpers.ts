@@ -61,15 +61,19 @@ export function renderSettingsKeyboard(
   effort: string,
   proactive: boolean,
 ): Array<Array<{ text: string; callback_data: string }>> {
-  // Build model row dynamically from the registry
-  const modelRow = getModels().map((m) => ({
+  // Build model buttons dynamically from the registry, chunked into rows of 3
+  const modelButtons = getModels().map((m) => ({
     text: model.includes(m.id)
       ? `\u2713 ${m.displayName.split(" ")[0]}`
       : m.displayName.split(" ")[0],
     callback_data: `settings:model:${m.aliases[0] ?? m.id}`,
   }));
+  const modelRows: Array<Array<{ text: string; callback_data: string }>> = [];
+  for (let i = 0; i < modelButtons.length; i += 3) {
+    modelRows.push(modelButtons.slice(i, i + 3));
+  }
   return [
-    modelRow,
+    ...modelRows,
     [
       {
         text: effort === "low" ? "\u2713 Low" : "Low",
