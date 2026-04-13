@@ -327,12 +327,38 @@ export async function handleSharedAction(
         rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
         backend?.updateSystemPrompt?.(freshConfig.systemPrompt);
 
+        // Hot-swap MCP servers on the active query so new plugin tools
+        // are available immediately (not just on the next message)
+        let mcpInfo = "";
+        if (backend?.refreshMcpServers) {
+          try {
+            const result = await backend.refreshMcpServers(String(chatId));
+            if (result) {
+              const parts: string[] = [];
+              if (result.added.length > 0)
+                parts.push(`added: ${result.added.join(", ")}`);
+              if (result.removed.length > 0)
+                parts.push(`removed: ${result.removed.join(", ")}`);
+              const errorKeys = Object.keys(result.errors);
+              if (errorKeys.length > 0)
+                parts.push(
+                  `errors: ${errorKeys.map((k) => `${k}: ${result.errors[k]}`).join("; ")}`,
+                );
+              if (parts.length > 0)
+                mcpInfo = `\nMCP servers updated: ${parts.join(" | ")}`;
+            }
+          } catch (err) {
+            mcpInfo = `\nWarning: MCP server refresh failed: ${err instanceof Error ? err.message : err}`;
+          }
+        }
+
         log("gateway", `reload_plugins: ${names.length} plugins loaded`);
         return {
           ok: true,
           text:
             `Plugins reloaded successfully.\n` +
-            `Loaded (${names.length}): ${names.length > 0 ? names.join(", ") : "(none)"}`,
+            `Loaded (${names.length}): ${names.length > 0 ? names.join(", ") : "(none)"}` +
+            mcpInfo,
         };
       } catch (err) {
         return {

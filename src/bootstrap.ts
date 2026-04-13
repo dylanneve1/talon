@@ -121,12 +121,25 @@ export async function initBackendAndDispatcher(
       handleMessage: claudeHandleMessage,
       warmSession: claudeWarmSession,
       updateSystemPrompt: claudeUpdateSystemPrompt,
+      getActiveQuery,
+      buildMcpServers,
     } = await import("./backend/claude-sdk/index.js");
+    const { getPluginMcpServers } = await import("./core/plugin.js");
     await initClaudeAgent(config, frontend.getBridgePort);
     backend = {
       query: (params) => claudeHandleMessage(params),
       warmSession: (chatId) => claudeWarmSession(chatId),
       updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
+      refreshMcpServers: async (chatId) => {
+        const qi = getActiveQuery(chatId);
+        if (!qi) return null;
+        const bridgeUrl = `http://127.0.0.1:${frontend.getBridgePort()}`;
+        const freshServers = {
+          ...buildMcpServers(chatId),
+          ...getPluginMcpServers(bridgeUrl, chatId),
+        };
+        return qi.setMcpServers(freshServers);
+      },
     };
     log("bot", "Backend: Claude SDK");
   }
