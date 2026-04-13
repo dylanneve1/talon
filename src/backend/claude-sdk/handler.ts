@@ -122,7 +122,7 @@ export async function handleMessage(
 
       // Final result — read token counts and context info
       if (isResult(message)) {
-        processResultMessage(message, state);
+        processResultMessage(message, state, options.model ?? activeModel);
       }
     }
   } catch (err) {
