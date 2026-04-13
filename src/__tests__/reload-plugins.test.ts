@@ -321,9 +321,7 @@ describe("admin tool description", () => {
 
 describe("getActiveQuery", () => {
   it("is exported and returns undefined when no query is active", async () => {
-    const { getActiveQuery } = await import(
-      "../backend/claude-sdk/handler.js"
-    );
+    const { getActiveQuery } = await import("../backend/claude-sdk/handler.js");
     expect(typeof getActiveQuery).toBe("function");
     expect(getActiveQuery("nonexistent-chat-id")).toBeUndefined();
   });
