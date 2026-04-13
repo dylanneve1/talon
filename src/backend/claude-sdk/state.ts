@@ -21,7 +21,17 @@ export function initAgent(
 ): void {
   config = cfg;
   if (getBridgePort) bridgePortFn = getBridgePort;
-  registerClaudeModels();
+
+  // Register static models immediately, then discover live models from SDK
+  registerClaudeModels({
+    model: cfg.model,
+    cwd: cfg.workspace,
+    permissionMode: "bypassPermissions" as const,
+    allowDangerouslySkipPermissions: true,
+    ...(cfg.claudeBinary
+      ? { pathToClaudeCodeExecutable: cfg.claudeBinary }
+      : {}),
+  });
 
   // The Agent SDK spawns an embedded Claude Code subprocess.
   // If CLAUDECODE is set (e.g. running from a Claude Code terminal),
