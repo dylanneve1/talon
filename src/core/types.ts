@@ -38,7 +38,13 @@ export interface QueryBackend {
   /** Update the system prompt on the live backend config. Optional — used by plugin hot-reload. */
   updateSystemPrompt?(prompt: string): void;
   /** Hot-swap MCP servers on the active query for a chat. Optional — used by plugin hot-reload. */
-  refreshMcpServers?(chatId: string): Promise<{ added: string[]; removed: string[]; errors: Record<string, string> } | null>;
+  refreshMcpServers?(
+    chatId: string,
+  ): Promise<{
+    added: string[];
+    removed: string[];
+    errors: Record<string, string>;
+  } | null>;
 }
 
 // ── Execution context ───────────────────────────────────────────────────────
