@@ -184,7 +184,9 @@ export async function handleMessage(
     logError("agent", `[${chatId}] SDK error: ${classified.message}`);
     throw classified;
   } finally {
-    activeQueries.delete(chatId);
+    if (activeQueries.get(chatId) === qi) {
+      activeQueries.delete(chatId);
+    }
   }
 
   // ── Persist session and usage ─────────────────────────────────────────────
