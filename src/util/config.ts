@@ -115,7 +115,7 @@ const configSchema = z.object({
   botToken: z.string().optional(),
   backend: z.enum(["claude", "opencode"]).default("claude"),
   claudeBinary: z.string().optional(),
-  model: z.string().default("claude-sonnet-4-6"),
+  model: z.string().default("default"),
   dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)
   maxMessageLength: z.number().int().min(100).default(4000),
   concurrency: z.number().int().min(1).max(20).default(1),
@@ -185,7 +185,7 @@ const CONFIG_FILE = pathFiles.config;
 
 const DEFAULT_CONFIG = {
   botToken: "",
-  model: "claude-sonnet-4-6",
+  model: "default",
   maxMessageLength: 4000,
   concurrency: 1,
   pulse: true,

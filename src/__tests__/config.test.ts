@@ -94,7 +94,7 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.frontend).toBe("terminal");
-      expect(config.model).toBe("claude-sonnet-4-6");
+      expect(config.model).toBe("default");
     });
 
     it("throws when telegram frontend has no botToken", async () => {
@@ -118,7 +118,7 @@ describe("config", () => {
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.model).toBe("claude-sonnet-4-6");
+      expect(config.model).toBe("default");
       expect(config.maxMessageLength).toBe(4000);
       expect(config.concurrency).toBe(1);
       expect(config.pulse).toBe(true);
@@ -617,12 +617,12 @@ describe("config", () => {
       expect(() => loadConfig()).toThrow();
     });
 
-    it("default model is exactly claude-sonnet-4-6", async () => {
+    it("defaults the canonical Claude model to default", async () => {
       mockFs({ frontend: "terminal" });
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.model).toBe("claude-sonnet-4-6");
+      expect(config.model).toBe("default");
     });
 
     it("default pulse is exactly true", async () => {

@@ -19,7 +19,7 @@ export type ModelCapabilities = {
 };
 
 export type ModelInfo = {
-  /** Canonical model ID (e.g. "claude-sonnet-4-6"). */
+  /** Canonical SDK model ID (e.g. "default", "opus", "sonnet[1m]"). */
   id: string;
   /** Human-readable display name for UIs (e.g. "Sonnet 4.6"). */
   displayName: string;
@@ -132,7 +132,7 @@ export function getDefaultModel(tier: ModelTier = "balanced"): string {
   if (byTier) return byTier.id;
   const first = models.values().next();
   if (!first.done) return first.value.id;
-  return "claude-sonnet-4-6"; // ultimate fallback if registry is empty
+  return "default"; // ultimate fallback if the registry is still empty
 }
 
 // ── Provider-scoped clearing ────────────────────────────────────────────────

@@ -209,7 +209,7 @@ Config file: `~/.talon/config.json`
 | `frontend` | `"telegram"` | `"telegram"`, `"terminal"`, `"teams"`, or an array |
 | `backend` | `"claude"` | `"claude"` or `"opencode"` |
 | `botToken` | --- | Telegram bot token |
-| `model` | `"claude-sonnet-4-6"` | Default model (discovered from SDK at startup) |
+| `model` | `"default"` | Default Claude model. Legacy `claude-*` aliases are still accepted. |
 | `concurrency` | `1` | Max concurrent AI queries (1--20) |
 | `pulse` | `true` | Periodic group engagement |
 | `heartbeat` | `false` | Background maintenance agent |
