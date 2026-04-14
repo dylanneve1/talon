@@ -102,7 +102,11 @@ describe("telegram helpers", () => {
   });
 
   it("marks the canonical model button as selected for legacy aliases", () => {
-    const buttons = renderSettingsKeyboard("claude-sonnet-4-6", "adaptive", true)
+    const buttons = renderSettingsKeyboard(
+      "claude-sonnet-4-6",
+      "adaptive",
+      true,
+    )
       .flat()
       .map((button) => button.text);
 
