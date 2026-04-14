@@ -38,8 +38,29 @@ function buildAliases(modelId: string): string[] {
 // ── SDK → registry conversion ───────────────────────────────────────────────
 
 /**
+ * Extract "X.Y" version string from a description like "Opus 4.6 · …".
+ * Returns undefined if no version is found.
+ */
+function extractVersion(description: string): string | undefined {
+  return description.match(/\b(\d+\.\d+)\b/)?.[1];
+}
+
+/**
+ * Build a display name that always includes the version number.
+ * "Opus"              + "Opus 4.6 · …"                  → "Opus 4.6"
+ * "Sonnet (1M context)" + "Sonnet 4.6 with 1M context…" → "Sonnet 4.6 (1M)"
+ */
+function buildDisplayName(value: string, displayName: string, description: string): string {
+  const version = extractVersion(description);
+  if (!version) return displayName;
+  const is1m = value.includes("[1m]");
+  // Strip SDK's verbose "(1M context)" suffix so we can rebuild it consistently
+  const base = displayName.replace(/\s*\(1M context\)/i, "").trim();
+  return is1m ? `${base} ${version} (1M)` : `${base} ${version}`;
+}
+
+/**
  * Convert SDK ModelInfo to our registry format.
- * Registers every model the SDK returns verbatim — no ID parsing or derivation.
  * Sorts by tier and builds fallback chains automatically.
  */
 function convertSdkModels(
@@ -49,32 +70,36 @@ function convertSdkModels(
     description: string;
   }>,
 ): ModelInfo[] {
-  // Skip the "default" pseudo-entry — it's an alias for whatever the SDK
-  // considers the default model, not a distinct model the user should pick.
-  // Everything else (including [1m] variants) is registered as-is so the
-  // model picker reflects exactly what the SDK supports.
+  // The SDK "default" entry is the plain (non-1M) Sonnet model — the only
+  // place Sonnet appears without [1m]. We remap its value to "sonnet" so it
+  // shows up as a normal picker entry alongside "sonnet[1m]".
+  // Everything else (including [1m] variants) is registered verbatim.
   const seen = new Set<string>();
   const models: ModelInfo[] = [];
   for (const m of sdkModels) {
-    if (m.value === "default") continue;
-    if (seen.has(m.value)) continue;
-    // Skip long-form canonical IDs that are duplicates of an already-registered
-    // short alias, e.g. "claude-opus-4-6" after "opus" is already in seen.
-    const aliases = buildAliases(m.value);
+    // Remap "default" → "sonnet" (first word of its description, lowercased)
+    const id = m.value === "default"
+      ? (m.description.match(/^([A-Za-z]+)/)?.[1].toLowerCase() ?? "sonnet")
+      : m.value;
+
+    if (seen.has(id)) continue;
+    // Skip long-form canonical IDs that duplicate an already-registered short
+    // alias, e.g. "claude-opus-4-6" after "opus" is already in seen.
+    const aliases = buildAliases(id);
     if (aliases.some((a) => seen.has(a))) continue;
-    seen.add(m.value);
+    seen.add(id);
     models.push({
-      id: m.value,
-      displayName: m.displayName,
+      id,
+      displayName: buildDisplayName(id, m.displayName, m.description),
       description: m.description,
-      aliases: buildAliases(m.value),
+      aliases: buildAliases(id),
       provider: "anthropic",
       capabilities: {
-        // [1m] models already have the suffix; base models let the user choose
-        // by selecting the explicit [1m] entry from the picker.
-        supports1mContext: m.value.includes("[1m]"),
+        // [1m] models already carry the suffix; base models let users choose
+        // the explicit [1m] entry from the picker if they want 1M context.
+        supports1mContext: id.includes("[1m]"),
       },
-      tier: inferTier(m.value),
+      tier: inferTier(id),
     });
   }
 
