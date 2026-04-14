@@ -94,6 +94,12 @@ function isDue(job: CronJob, now: Date): boolean {
     const cron = new Cron(job.schedule, {
       timezone: job.timezone ?? undefined,
     });
+
+    // Schedule parsed fine — clear stale warning immediately so it can
+    // re-trigger if the schedule breaks again later (regardless of whether
+    // the job is actually due right now)
+    warnedBadSchedule.delete(job.id);
+
     const next = cron.nextRun(oneMinuteAgo);
     if (!next) return false;
 
@@ -108,8 +114,6 @@ function isDue(job: CronJob, now: Date): boolean {
     // future, skip until the clock catches up
     if (job.lastRunAt && job.lastRunAt > now.getTime()) return false;
 
-    // Schedule parsed fine — clear stale warning so it can re-trigger if broken again
-    warnedBadSchedule.delete(job.id);
     return true;
   } catch (err) {
     if (!warnedBadSchedule.has(job.id)) {
