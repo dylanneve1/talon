@@ -21,9 +21,14 @@ process.on("unhandledRejection", (err) => {
   const detail =
     err instanceof Error ? (err.stack ?? err.message) : String(err);
   const message = `[mcp-server] Unhandled rejection: ${detail}\n`;
-  process.exitCode = 1;
+
+  // Ensure we always exit even if stderr is backpressured
+  const forceExit = setTimeout(() => process.exit(1), 1000);
+  forceExit.unref();
+
   process.stderr.write(message, () => {
-    process.exit();
+    clearTimeout(forceExit);
+    process.exit(1);
   });
 });
 

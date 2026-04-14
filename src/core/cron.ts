@@ -83,8 +83,10 @@ async function runCronTick(): Promise<void> {
 }
 
 // Track jobs that have already logged a bad-schedule warning to avoid log spam
-// (isDue runs every 60s — a single bad job would flood the logs otherwise)
+// (isDue runs every 60s — a single bad job would flood the logs otherwise).
+// Capped to prevent unbounded growth from ephemeral job IDs.
 const warnedBadSchedule = new Set<string>();
+const MAX_WARNED_SCHEDULES = 200;
 
 function isDue(job: CronJob, now: Date): boolean {
   try {
@@ -106,9 +108,12 @@ function isDue(job: CronJob, now: Date): boolean {
     // future, skip until the clock catches up
     if (job.lastRunAt && job.lastRunAt > now.getTime()) return false;
 
+    // Schedule parsed fine — clear stale warning so it can re-trigger if broken again
+    warnedBadSchedule.delete(job.id);
     return true;
   } catch (err) {
     if (!warnedBadSchedule.has(job.id)) {
+      if (warnedBadSchedule.size >= MAX_WARNED_SCHEDULES) warnedBadSchedule.clear();
       warnedBadSchedule.add(job.id);
       logWarn(
         "cron",
