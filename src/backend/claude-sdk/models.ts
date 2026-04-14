@@ -38,23 +38,8 @@ function buildAliases(modelId: string): string[] {
 // ── SDK → registry conversion ───────────────────────────────────────────────
 
 /**
- * Derive canonical claude-{family}-{major}-{minor} ID from a short alias entry.
- * Returns undefined if the description doesn't contain a parseable version.
- */
-function deriveCanonicalId(
-  value: string,
-  description: string,
-): string | undefined {
-  // Already canonical — nothing to do
-  if (value.startsWith("claude-")) return value;
-  // Parse "Sonnet 4.6 · …" or "Haiku 4.5 · …" from description
-  const match = description.match(/([A-Za-z]+)\s+(\d+)\.(\d+)/);
-  if (!match) return undefined;
-  return `claude-${match[1].toLowerCase()}-${match[2]}-${match[3]}`;
-}
-
-/**
  * Convert SDK ModelInfo to our registry format.
+ * Registers every model the SDK returns verbatim — no ID parsing or derivation.
  * Sorts by tier and builds fallback chains automatically.
  */
 function convertSdkModels(
@@ -64,33 +49,28 @@ function convertSdkModels(
     description: string;
   }>,
 ): ModelInfo[] {
-  // Filter out SDK artifacts:
-  // - [1m] variants: we add this suffix ourselves in options.ts
-  // The SDK (≥0.2.104) returns short aliases ("sonnet", "haiku") instead of
-  // canonical IDs. Notably Sonnet only appears as "default" and "sonnet[1m]" —
-  // the "default" entry IS the Sonnet model, so we keep it and derive the real
-  // canonical ID from its description rather than discarding it.
-  const filtered = sdkModels.filter((m) => !m.value.includes("["));
-
+  // Skip the "default" pseudo-entry — it's an alias for whatever the SDK
+  // considers the default model, not a distinct model the user should pick.
+  // Everything else (including [1m] variants) is registered as-is so the
+  // model picker reflects exactly what the SDK supports.
   const seen = new Set<string>();
   const models: ModelInfo[] = [];
-  for (const m of filtered) {
-    const id = deriveCanonicalId(m.value, m.description) ?? m.value;
-    // Skip entries where we couldn't derive a canonical ID from "default"
-    if (id === "default") continue;
-    // Deduplicate — the SDK may return both "opus" and "claude-opus-4-6"
-    if (seen.has(id)) continue;
-    seen.add(id);
+  for (const m of sdkModels) {
+    if (m.value === "default") continue;
+    if (seen.has(m.value)) continue;
+    seen.add(m.value);
     models.push({
-      id,
+      id: m.value,
       displayName: m.displayName,
       description: m.description,
-      aliases: buildAliases(id),
+      aliases: buildAliases(m.value),
       provider: "anthropic",
       capabilities: {
-        supports1mContext: !id.includes("haiku"),
+        // [1m] models already have the suffix; base models let the user choose
+        // by selecting the explicit [1m] entry from the picker.
+        supports1mContext: m.value.includes("[1m]"),
       },
-      tier: inferTier(id),
+      tier: inferTier(m.value),
     });
   }
 
