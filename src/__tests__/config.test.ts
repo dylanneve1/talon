@@ -277,7 +277,9 @@ describe("config", () => {
       });
 
       const { loadConfig } = await import("../util/config.js");
-      expect(() => loadConfig()).toThrow("MCP plugin entries cannot include 'config'");
+      expect(() => loadConfig()).toThrow(
+        "MCP plugin entries cannot include 'config'",
+      );
     });
 
     it("defaults plugins to empty array", async () => {
