@@ -264,6 +264,22 @@ describe("config", () => {
       );
     });
 
+    it("rejects standalone MCP entries with config blocks", async () => {
+      mockFs({
+        frontend: "terminal",
+        plugins: [
+          {
+            name: "polymarket",
+            command: "node",
+            config: { market: "crypto" },
+          },
+        ],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow("MCP plugin entries cannot include 'config'");
+    });
+
     it("defaults plugins to empty array", async () => {
       mockFs({ frontend: "terminal" });
 

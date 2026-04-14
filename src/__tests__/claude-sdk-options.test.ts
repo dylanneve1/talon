@@ -104,4 +104,14 @@ describe("buildSdkOptions", () => {
 
     expect(options.model).toBe("haiku");
   });
+
+  it("resolves legacy 1M aliases to canonical SDK model IDs", async () => {
+    mockGetChatSettings.mockReturnValue({ model: "claude-sonnet-4-6[1m]" });
+
+    const { buildSdkOptions } = await import("../backend/claude-sdk/options.js");
+    const { activeModel, options } = buildSdkOptions("chat-3");
+
+    expect(activeModel).toBe("claude-sonnet-4-6[1m]");
+    expect(options.model).toBe("sonnet[1m]");
+  });
 });

@@ -68,15 +68,15 @@ const pluginEntrySchema = z
       return;
     }
 
-    if (!hasPath && value.config !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["config"],
-        message: "Path-based plugin entries must include 'path'.",
-      });
-    }
-
     if (hasMcpFields) {
+      if (value.config !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["config"],
+          message: "MCP plugin entries cannot include 'config'.",
+        });
+      }
+
       if (value.name === undefined) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -92,6 +92,8 @@ const pluginEntrySchema = z
           message: "MCP plugin entries must include 'command'.",
         });
       }
+
+      return;
     }
   })
   .pipe(z.union([pluginPathSchema, pluginMcpSchema]));
