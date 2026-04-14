@@ -310,15 +310,16 @@ describe("plugin system", () => {
       ]);
 
       const servers = getPluginMcpServers("http://localhost:19876", "chat1");
-      expect(servers["standalone-tools"]).toEqual({
-        command: "node",
-        args: ["/tmp/server.js"],
-        env: {
-          API_KEY: "secret",
-          TALON_BRIDGE_URL: "http://localhost:19876",
-          TALON_CHAT_ID: "chat1",
-        },
+      expect(servers["standalone-tools"].command).toBe("node");
+      expect(servers["standalone-tools"].args).toEqual(["/tmp/server.js"]);
+      expect(servers["standalone-tools"].env).toMatchObject({
+        API_KEY: "secret",
+        TALON_BRIDGE_URL: "http://localhost:19876",
+        TALON_CHAT_ID: "chat1",
       });
+      expect(servers["standalone-tools"].env.TALON_RELOAD_AT).toMatch(
+        /^\d{4}-\d{2}-\d{2}T/,
+      );
     });
 
     it("skips path plugins that collide with standalone MCP names", async () => {
