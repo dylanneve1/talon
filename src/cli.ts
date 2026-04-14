@@ -60,7 +60,7 @@ type Config = {
 
 const DEFAULTS: Config = {
   frontend: "telegram",
-  model: "claude-sonnet-4-6",
+  model: "default",
   concurrency: 1,
   pulse: true,
   pulseIntervalMs: 300000,

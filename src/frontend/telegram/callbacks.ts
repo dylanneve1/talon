@@ -21,8 +21,14 @@ import {
 } from "../../core/pulse.js";
 import { handleCallbackQuery } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
-import { renderSettingsText, renderSettingsKeyboard } from "./helpers.js";
-import { getModels } from "../../core/models.js";
+import {
+  formatModelLabel,
+  formatModelOptionLabel,
+  getTelegramModelOptions,
+  isSelectedModel,
+  renderSettingsText,
+  renderSettingsKeyboard,
+} from "./helpers.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
   // ── Callback query handler ──────────────────────────────────────────────────
@@ -205,23 +211,23 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       if (model === "reset") {
         setChatModel(cid, undefined);
         await ctx.answerCallbackQuery({
-          text: `Model: ${config.model} (default)`,
+          text: `Model: ${formatModelLabel(config.model)} (default)`,
         });
       } else {
         const resolved = resolveModelName(model);
         setChatModel(cid, resolved);
         await ctx.answerCallbackQuery({
-          text: `Model: ${resolved}`,
+          text: `Model: ${formatModelLabel(resolved)}`,
         });
       }
       const current = getChatSettings(cid).model ?? config.model;
       // Build model buttons dynamically from the registry
-      const models = getModels();
+      const models = getTelegramModelOptions();
       const modelButtons = models.map((m) => ({
-        text: current.includes(m.id)
-          ? `\u2713 ${m.displayName}`
-          : m.displayName,
-        callback_data: `model:${m.aliases[0] ?? m.id}`,
+        text: isSelectedModel(current, m.id)
+          ? `\u2713 ${formatModelOptionLabel(m)}`
+          : formatModelOptionLabel(m),
+        callback_data: `model:${m.id}`,
       }));
       const rows: Array<Array<{ text: string; callback_data: string }>> = [];
       for (let i = 0; i < modelButtons.length; i += 2) {
@@ -230,7 +236,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
       try {
         await ctx.editMessageText(
-          `<b>Model:</b> <code>${escapeHtml(current)}</code>`,
+          `<b>Model:</b> <code>${escapeHtml(formatModelLabel(current))}</code>`,
           { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
         );
       } catch {

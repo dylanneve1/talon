@@ -3,8 +3,10 @@
  */
 
 import { escapeHtml } from "./formatting.js";
-import { getModels } from "../../core/models.js";
+import type { ModelInfo } from "../../core/models.js";
+import { getModels, resolveModel, resolveModelId } from "../../core/models.js";
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
+const FAMILY_VERSION_PATTERN = /\b([A-Za-z][A-Za-z-]*)\s+(\d+(?:\.\d+)*)\b/;
 
 /** Parse a duration string like "30m", "2h", "1h30m" into milliseconds. */
 export function parseInterval(input: string): number | null {
@@ -38,6 +40,60 @@ export function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
+function toDisplayFamilyName(family: string): string {
+  return family
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function formatResolvedModelLabel(model: ModelInfo): string {
+  const match = `${model.displayName} ${model.description ?? ""}`.match(
+    FAMILY_VERSION_PATTERN,
+  );
+  if (match) {
+    return `${toDisplayFamilyName(match[1])} ${match[2]}`;
+  }
+
+  const familyAlias = model.aliases.find(
+    (alias) =>
+      !alias.startsWith("claude-") &&
+      !alias.endsWith("[1m]") &&
+      !/[-.]\d/.test(alias),
+  );
+  const baseName = familyAlias
+    ? toDisplayFamilyName(familyAlias)
+    : model.displayName.replace(/\s*\([^)]*\)/g, "").trim();
+  return baseName;
+}
+
+export function formatModelLabel(modelId: string): string {
+  const model = resolveModel(modelId);
+  return model ? formatResolvedModelLabel(model) : modelId;
+}
+
+export function formatModelOptionLabel(model: ModelInfo): string {
+  return formatResolvedModelLabel(model);
+}
+
+export function formatCompactModelLabel(model: ModelInfo): string {
+  return formatResolvedModelLabel(model).replace(/\s+\d+(?:\.\d+)*$/, "");
+}
+
+export function getTelegramModelOptions(): ModelInfo[] {
+  const options: ModelInfo[] = [];
+  const seenKeys = new Set<string>();
+
+  for (const model of getModels()) {
+    const key = formatResolvedModelLabel(model).toLowerCase();
+    if (seenKeys.has(key)) continue;
+    seenKeys.add(key);
+    options.push(model);
+  }
+
+  return options;
+}
+
 export function renderSettingsText(
   model: string,
   effort: string,
@@ -50,10 +106,25 @@ export function renderSettingsText(
   return [
     "<b>\uD83E\uDD85 Settings</b>",
     "",
-    `<b>Model:</b> <code>${escapeHtml(model)}</code>`,
+    `<b>Model:</b> <code>${escapeHtml(formatModelLabel(model))}</code>`,
     `<b>Effort:</b> ${effort}`,
     `<b>Pulse:</b> ${proactive ? "on" : "off"} (every ${intervalStr})`,
   ].join("\n");
+}
+
+export function isSelectedModel(
+  currentModel: string,
+  modelId: string,
+): boolean {
+  const current = resolveModel(currentModel);
+  const candidate = resolveModel(modelId);
+  if (current && candidate) {
+    return (
+      formatResolvedModelLabel(current).toLowerCase() ===
+      formatResolvedModelLabel(candidate).toLowerCase()
+    );
+  }
+  return resolveModelId(currentModel) === modelId;
 }
 
 export function renderSettingsKeyboard(
@@ -62,11 +133,11 @@ export function renderSettingsKeyboard(
   proactive: boolean,
 ): Array<Array<{ text: string; callback_data: string }>> {
   // Build model buttons dynamically from the registry, chunked into rows of 3
-  const modelButtons = getModels().map((m) => ({
-    text: model.includes(m.id)
-      ? `\u2713 ${m.displayName.split(" ")[0]}`
-      : m.displayName.split(" ")[0],
-    callback_data: `settings:model:${m.aliases[0] ?? m.id}`,
+  const modelButtons = getTelegramModelOptions().map((m) => ({
+    text: isSelectedModel(model, m.id)
+      ? `\u2713 ${formatCompactModelLabel(m)}`
+      : formatCompactModelLabel(m),
+    callback_data: `settings:model:${m.id}`,
   }));
   const modelRows: Array<Array<{ text: string; callback_data: string }>> = [];
   for (let i = 0; i < modelButtons.length; i += 3) {

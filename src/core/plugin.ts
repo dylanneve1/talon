@@ -22,10 +22,31 @@ import type { TalonConfig } from "../util/config.js";
 
 // ── Plugin interfaces ──────────────────────────────────────────────────────
 
-/** Configuration entry for a plugin in talon.json. */
-export interface PluginEntry {
+/** Path-based plugin entry (loaded as a Node module). */
+export interface PluginPathEntry {
   path: string;
   config?: Record<string, unknown>;
+}
+
+/** Standalone MCP server entry (command + args, not a loadable module). */
+export interface PluginMcpEntry {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/** Configuration entry for a plugin in config.json. */
+export type PluginEntry = PluginPathEntry | PluginMcpEntry;
+
+/** Type guard: is this a path-based plugin? */
+export function isPathPlugin(entry: PluginEntry): entry is PluginPathEntry {
+  return "path" in entry;
+}
+
+/** Type guard: is this a standalone MCP server entry? */
+export function isMcpPlugin(entry: PluginEntry): entry is PluginMcpEntry {
+  return "command" in entry && "name" in entry && !("path" in entry);
 }
 
 /**
@@ -119,28 +140,58 @@ export interface LoadedPlugin {
 
 class PluginRegistry {
   private readonly plugins: LoadedPlugin[] = [];
+  private readonly standaloneMcpServers: PluginMcpEntry[] = [];
 
   get all(): readonly LoadedPlugin[] {
     return this.plugins;
+  }
+
+  get mcpEntries(): readonly PluginMcpEntry[] {
+    return this.standaloneMcpServers;
   }
 
   get count(): number {
     return this.plugins.length;
   }
 
-  register(loaded: LoadedPlugin): void {
-    // Guard against duplicate names
-    const existing = this.plugins.find(
-      (p) => p.plugin.name === loaded.plugin.name,
+  private getRegistrationSource(name: string): string | undefined {
+    const existingPlugin = this.plugins.find(
+      (entry) => entry.plugin.name === name,
     );
-    if (existing) {
+    if (existingPlugin) return existingPlugin.path;
+
+    const existingMcpEntry = this.standaloneMcpServers.find(
+      (entry) => entry.name === name,
+    );
+    if (existingMcpEntry) return "standalone MCP entry";
+
+    return undefined;
+  }
+
+  register(loaded: LoadedPlugin): boolean {
+    const existingSource = this.getRegistrationSource(loaded.plugin.name);
+    if (existingSource) {
       logWarn(
         "plugin",
-        `Duplicate plugin name "${loaded.plugin.name}" — skipping (already loaded from ${existing.path})`,
+        `Duplicate plugin/MCP name "${loaded.plugin.name}" — skipping (already registered from ${existingSource})`,
       );
-      return;
+      return false;
     }
     this.plugins.push(loaded);
+    return true;
+  }
+
+  registerMcpEntry(entry: PluginMcpEntry): boolean {
+    const existingSource = this.getRegistrationSource(entry.name);
+    if (existingSource) {
+      logWarn(
+        "plugin",
+        `Duplicate plugin/MCP name "${entry.name}" — skipping (already registered from ${existingSource})`,
+      );
+      return false;
+    }
+    this.standaloneMcpServers.push(entry);
+    return true;
   }
 
   getByName(name: string): LoadedPlugin | undefined {
@@ -170,6 +221,7 @@ class PluginRegistry {
     }
     await this.destroyAll();
     this.plugins.length = 0;
+    this.standaloneMcpServers.length = 0;
   }
 }
 
@@ -204,6 +256,13 @@ export async function loadPlugins(
   activeFrontends?: string[],
 ): Promise<void> {
   for (const entry of pluginConfigs) {
+    // Standalone MCP servers are registered for getPluginMcpServers, not loaded as modules
+    if (isMcpPlugin(entry)) {
+      if (registry.registerMcpEntry(entry)) {
+        log("plugin", `Registered standalone MCP server: ${entry.name}`);
+      }
+      continue;
+    }
     try {
       await loadSinglePlugin(entry, activeFrontends);
     } catch (err) {
@@ -215,8 +274,81 @@ export async function loadPlugins(
   }
 }
 
+function applyEnvVars(envVars: Record<string, string>): void {
+  for (const [key, value] of Object.entries(envVars)) {
+    process.env[key] = value;
+  }
+}
+
+function registerPluginInstance(
+  plugin: TalonPlugin,
+  config: Record<string, unknown>,
+  path: string,
+): LoadedPlugin | null {
+  const errors = plugin.validateConfig?.(config);
+  if (errors && errors.length > 0) {
+    logError(
+      "plugin",
+      `${path === "(built-in)" ? `Built-in plugin "${plugin.name}"` : `Plugin "${plugin.name}"`} config validation failed:\n  ${errors.join("\n  ")}`,
+    );
+    return null;
+  }
+
+  const envVars = plugin.getEnvVars?.(config) ?? {};
+  const loaded: LoadedPlugin = { plugin, config, envVars, path };
+  if (!registry.register(loaded)) return null;
+
+  applyEnvVars(envVars);
+  return loaded;
+}
+
+async function initPluginWithTimeout(
+  plugin: TalonPlugin,
+  config: Record<string, unknown>,
+  timeoutMs: number,
+  timeoutLabel: string,
+  errorPrefix: string,
+): Promise<void> {
+  if (!plugin.init) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    await Promise.race([
+      Promise.resolve(plugin.init(config)),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(`${timeoutLabel} timed out after ${timeoutMs / 1000}s`),
+          );
+        }, timeoutMs);
+        timer.unref?.();
+      }),
+    ]);
+  } catch (err) {
+    logError(
+      "plugin",
+      `${errorPrefix}: ${err instanceof Error ? err.message : err}`,
+    );
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function buildBridgeEnv(
+  bridgeUrl: string,
+  chatId: string,
+  envVars?: Record<string, string>,
+): Record<string, string> {
+  return {
+    ...envVars,
+    TALON_BRIDGE_URL: bridgeUrl,
+    TALON_CHAT_ID: chatId,
+  };
+}
+
 async function loadSinglePlugin(
-  entry: PluginEntry,
+  entry: PluginPathEntry,
   activeFrontends?: string[],
 ): Promise<void> {
   const pluginDir = resolve(entry.path);
@@ -255,49 +387,23 @@ async function loadSinglePlugin(
   }
 
   const config = entry.config ?? {};
-
-  // Validate config if the plugin provides validation
-  const errors = plugin.validateConfig?.(config);
-  if (errors && errors.length > 0) {
-    logError(
-      "plugin",
-      `Plugin "${plugin.name}" config validation failed:\n  ${errors.join("\n  ")}`,
-    );
-    return;
-  }
-
-  // Resolve env vars
-  const envVars = plugin.getEnvVars?.(config) ?? {};
-
-  // Set env vars on main process for action handlers
-  for (const [k, v] of Object.entries(envVars)) {
-    process.env[k] = v;
-  }
-
-  // Register before init (so other plugins can discover it)
-  const loaded: LoadedPlugin = { plugin, config, envVars, path: pluginDir };
-  registry.register(loaded);
+  const loaded = registerPluginInstance(plugin, config, pluginDir);
+  if (!loaded) return;
 
   // Run init hook
-  const INIT_TIMEOUT = 30_000;
-  try {
-    await Promise.race([
-      plugin.init?.(config),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("init timeout (30s)")), INIT_TIMEOUT),
-      ),
-    ]);
-  } catch (err) {
-    logError(
-      "plugin",
-      `Plugin "${plugin.name}" init failed: ${err instanceof Error ? err.message : err}`,
-    );
-    // Still registered — tools may work even if init partially failed
-  }
+  await initPluginWithTimeout(
+    loaded.plugin,
+    loaded.config,
+    30_000,
+    "init",
+    `Plugin "${loaded.plugin.name}" init failed`,
+  );
 
-  const version = plugin.version ? ` v${plugin.version}` : "";
-  const desc = plugin.description ? ` — ${plugin.description}` : "";
-  log("plugin", `Loaded: ${plugin.name}${version}${desc}`);
+  const version = loaded.plugin.version ? ` v${loaded.plugin.version}` : "";
+  const desc = loaded.plugin.description
+    ? ` — ${loaded.plugin.description}`
+    : "";
+  log("plugin", `Loaded: ${loaded.plugin.name}${version}${desc}`);
 }
 
 function resolveEntryPoint(pluginDir: string): string | null {
@@ -383,17 +489,15 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       const { createGitHubPlugin } = await import("../plugins/github/index.js");
       const gh = createGitHubPlugin({ token: github.token });
       const ghConfig = github as unknown as Record<string, unknown>;
-      registerPlugin(gh, ghConfig);
-      if (registry.getByName("github")) {
-        await Promise.race([
-          gh.init?.(ghConfig),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error("GitHub init timed out after 15s")),
-              15_000,
-            ),
-          ),
-        ]);
+      const loaded = registerPlugin(gh, ghConfig);
+      if (loaded) {
+        await initPluginWithTimeout(
+          loaded.plugin,
+          loaded.config,
+          15_000,
+          "GitHub init",
+          "GitHub init",
+        );
       }
     } catch (err) {
       logError(
@@ -413,17 +517,15 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       const palacePath = mempalace.palacePath ?? dirs.palace;
       const mp = createMempalacePlugin({ pythonPath, palacePath });
       const mpConfig = mempalace as unknown as Record<string, unknown>;
-      registerPlugin(mp, mpConfig);
-      if (registry.getByName("mempalace")) {
-        await Promise.race([
-          mp.init?.(mpConfig),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error("MemPalace init timed out after 30s")),
-              30_000,
-            ),
-          ),
-        ]);
+      const loaded = registerPlugin(mp, mpConfig);
+      if (loaded) {
+        await initPluginWithTimeout(
+          loaded.plugin,
+          loaded.config,
+          30_000,
+          "MemPalace init",
+          "MemPalace init",
+        );
       }
     } catch (err) {
       logError(
@@ -438,22 +540,22 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
     try {
       const { createPlaywrightPlugin } =
         await import("../plugins/playwright/index.js");
+      const pwConfig = playwright as unknown as Record<string, unknown>;
       const pw = createPlaywrightPlugin({
         browser: playwright.browser,
         headless: playwright.headless,
+        endpoint: playwright.endpoint,
+        endpointFile: playwright.endpointFile,
       });
-      const pwConfig = playwright as unknown as Record<string, unknown>;
-      registerPlugin(pw, pwConfig);
-      if (registry.getByName("playwright")) {
-        await Promise.race([
-          pw.init?.(pwConfig),
-          new Promise((_, reject) =>
-            setTimeout(
-              () => reject(new Error("Playwright init timed out after 15s")),
-              15_000,
-            ),
-          ),
-        ]);
+      const loaded = registerPlugin(pw, pwConfig);
+      if (loaded) {
+        await initPluginWithTimeout(
+          loaded.plugin,
+          loaded.config,
+          15_000,
+          "Playwright init",
+          "Playwright init",
+        );
       }
     } catch (err) {
       logError(
@@ -518,35 +620,16 @@ export async function reloadPlugins(
 export function registerPlugin(
   plugin: TalonPlugin,
   config: Record<string, unknown> = {},
-): void {
-  // Check for duplicates first — avoids re-running expensive validation
-  if (registry.getByName(plugin.name)) {
-    logWarn(
-      "plugin",
-      `Built-in plugin "${plugin.name}" already registered — skipping`,
-    );
-    return;
-  }
+): LoadedPlugin | null {
+  const loaded = registerPluginInstance(plugin, config, "(built-in)");
+  if (!loaded) return null;
 
-  const errors = plugin.validateConfig?.(config);
-  if (errors && errors.length > 0) {
-    logError(
-      "plugin",
-      `Built-in plugin "${plugin.name}" config validation failed:\n  ${errors.join("\n  ")}`,
-    );
-    return;
-  }
-
-  const envVars = plugin.getEnvVars?.(config) ?? {};
-  for (const [k, v] of Object.entries(envVars)) {
-    process.env[k] = v;
-  }
-  const loaded: LoadedPlugin = { plugin, config, envVars, path: "(built-in)" };
-  registry.register(loaded);
-
-  const version = plugin.version ? ` v${plugin.version}` : "";
-  const desc = plugin.description ? ` — ${plugin.description}` : "";
-  log("plugin", `Registered built-in: ${plugin.name}${version}${desc}`);
+  const version = loaded.plugin.version ? ` v${loaded.plugin.version}` : "";
+  const desc = loaded.plugin.description
+    ? ` — ${loaded.plugin.description}`
+    : "";
+  log("plugin", `Registered built-in: ${loaded.plugin.name}${version}${desc}`);
+  return loaded;
 }
 
 /**
@@ -636,11 +719,7 @@ export function getPluginMcpServers(
   for (const { plugin, envVars } of registry.all) {
     // Skip plugins not in the allow-list when filtering
     if (only !== undefined && !only.includes(plugin.name)) continue;
-    const baseEnv = {
-      TALON_BRIDGE_URL: bridgeUrl,
-      TALON_CHAT_ID: chatId,
-      ...envVars,
-    };
+    const baseEnv = buildBridgeEnv(bridgeUrl, chatId, envVars);
 
     if (plugin.mcpServer) {
       // Custom command/args (Python, Go, etc.) — no tsx wrapper
@@ -660,6 +739,16 @@ export function getPluginMcpServers(
         env: baseEnv,
       };
     }
+  }
+
+  // Include standalone MCP server entries from config
+  for (const entry of registry.mcpEntries) {
+    if (only !== undefined && !only.includes(entry.name)) continue;
+    servers[`${entry.name}-tools`] = {
+      command: entry.command,
+      args: [...(entry.args ?? [])],
+      env: buildBridgeEnv(bridgeUrl, chatId, entry.env),
+    };
   }
 
   return servers;

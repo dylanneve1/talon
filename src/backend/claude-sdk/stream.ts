@@ -193,7 +193,7 @@ export function processResultMessage(
   }
 
   // Read token counts from the ACTIVE model's usage only.
-  // modelUsage is keyed by the exact SDK model string (e.g. "claude-sonnet-4-6[1m]")
+  // modelUsage is keyed by the exact SDK model string (e.g. "sonnet[1m]")
   // and contains cumulative session totals per model — summing all entries
   // double-counts when switching models mid-session.
   const modelUsage: Record<string, ModelUsage> = msg.modelUsage;

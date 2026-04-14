@@ -1,3 +1,4 @@
+import type { TalonConfig } from "../util/config.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../util/log.js", () => ({
@@ -23,6 +24,27 @@ describe("plugin system", () => {
       mcpServerPath: "/fake/tools.ts",
       getEnvVars: vi.fn(() => ({ TEST_PLUGIN_KEY: "value" })),
       handleAction: vi.fn(async () => null),
+      ...overrides,
+    };
+  }
+
+  function createTestConfig(overrides: Partial<TalonConfig> = {}): TalonConfig {
+    return {
+      frontend: "terminal",
+      backend: "claude",
+      model: "default",
+      maxMessageLength: 4000,
+      concurrency: 1,
+      pulse: true,
+      pulseIntervalMs: 300000,
+      heartbeat: false,
+      heartbeatIntervalMinutes: 60,
+      plugins: [],
+      botDisplayName: "Talon",
+      teamsWebhookPort: 19878,
+      teamsGraphPollMs: 10000,
+      systemPrompt: "test prompt",
+      workspace: "/tmp/workspace",
       ...overrides,
     };
   }
@@ -247,6 +269,75 @@ describe("plugin system", () => {
       );
     });
 
+    it("does not let plugin env vars override bridge metadata", async () => {
+      const plugin = createMockPlugin({
+        mcpServer: {
+          command: "/usr/bin/python3",
+          args: ["-m", "my_server"],
+        },
+        getEnvVars: () => ({
+          TALON_BRIDGE_URL: "http://malicious.example",
+          TALON_CHAT_ID: "wrong-chat",
+          MY_KEY: "val",
+        }),
+      });
+      delete (plugin as Record<string, unknown>).mcpServerPath;
+      const { loadPlugins, getPluginMcpServers } = await setup(plugin);
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+      expect(servers["test-plugin-tools"].env).toMatchObject({
+        TALON_BRIDGE_URL: "http://localhost:19876",
+        TALON_CHAT_ID: "chat1",
+        MY_KEY: "val",
+      });
+    });
+
+    it("builds standalone MCP server entries from config", async () => {
+      const { loadPlugins, getPluginMcpServers } =
+        await setup(createMockPlugin());
+      await loadPlugins([
+        {
+          name: "standalone",
+          command: "node",
+          args: ["/tmp/server.js"],
+          env: {
+            API_KEY: "secret",
+            TALON_BRIDGE_URL: "http://malicious.example",
+            TALON_CHAT_ID: "wrong-chat",
+          },
+        },
+      ]);
+
+      const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+      expect(servers["standalone-tools"]).toEqual({
+        command: "node",
+        args: ["/tmp/server.js"],
+        env: {
+          API_KEY: "secret",
+          TALON_BRIDGE_URL: "http://localhost:19876",
+          TALON_CHAT_ID: "chat1",
+        },
+      });
+    });
+
+    it("skips path plugins that collide with standalone MCP names", async () => {
+      const initFn = vi.fn();
+      const plugin = createMockPlugin({ init: initFn });
+      const { loadPlugins, getPluginCount, getPluginMcpServers } =
+        await setup(plugin);
+      await loadPlugins([
+        { name: "test-plugin", command: "node", args: ["/tmp/server.js"] },
+        { path: "/fake/plugin" },
+      ]);
+
+      expect(getPluginCount()).toBe(0);
+      expect(initFn).not.toHaveBeenCalled();
+      expect(
+        getPluginMcpServers("http://localhost:19876", "chat1"),
+      ).toHaveProperty("test-plugin-tools");
+    });
+
     it("mcpServer takes priority over mcpServerPath when both are set", async () => {
       const plugin = createMockPlugin({
         mcpServerPath: "/fake/tools.ts",
@@ -276,12 +367,42 @@ describe("plugin system", () => {
     });
   });
 
+  describe("reload", () => {
+    it("clears standalone MCP entries on hot reload", async () => {
+      vi.resetModules();
+      vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+      vi.doMock("../util/config.js", () => ({
+        loadConfig: () => ({
+          frontend: "terminal",
+          model: "default",
+          plugins: [],
+          systemPrompt: "test prompt",
+          workspace: "/tmp/workspace",
+        }),
+        getFrontends: () => ["terminal"],
+      }));
+
+      const mod = await import("../core/plugin.js");
+      await mod.loadPlugins([{ name: "standalone", command: "node" }]);
+      expect(
+        mod.getPluginMcpServers("http://localhost:19876", "chat1"),
+      ).toHaveProperty("standalone-tools");
+
+      await mod.reloadPlugins();
+
+      expect(
+        mod.getPluginMcpServers("http://localhost:19876", "chat1"),
+      ).toEqual({});
+    });
+  });
+
   describe("registerPlugin (built-in)", () => {
     it("registers a built-in plugin directly", async () => {
       const plugin = createMockPlugin({ name: "built-in-test" });
       const { registerPlugin, getPlugin } = await setup(createMockPlugin());
 
-      registerPlugin(plugin, { key: "val" });
+      const loaded = registerPlugin(plugin, { key: "val" });
+      expect(loaded?.path).toBe("(built-in)");
       expect(getPlugin("built-in-test")).toBeDefined();
       expect(getPlugin("built-in-test")!.path).toBe("(built-in)");
     });
@@ -306,8 +427,26 @@ describe("plugin system", () => {
       });
       const { registerPlugin, getPlugin } = await setup(createMockPlugin());
 
-      registerPlugin(plugin, {});
+      expect(registerPlugin(plugin, {})).toBeNull();
       expect(getPlugin("builtin-invalid")).toBeUndefined();
+    });
+
+    it("does not init a built-in plugin when duplicate registration is skipped", async () => {
+      const init = vi.fn();
+      const githubPlugin = createMockPlugin({ name: "github", init });
+
+      vi.doMock("../plugins/github/index.js", () => ({
+        createGitHubPlugin: () => githubPlugin,
+      }));
+
+      const mod = await import("../core/plugin.js");
+      await mod.loadPlugins([{ name: "github", command: "node" }]);
+      await mod.loadBuiltinPlugins(
+        createTestConfig({ github: { enabled: true } }),
+      );
+
+      expect(init).not.toHaveBeenCalled();
+      expect(mod.getPlugin("github")).toBeUndefined();
     });
   });
 
@@ -364,6 +503,20 @@ describe("plugin system", () => {
       await loadPlugins([{ path: "/fake/plugin" }]);
 
       expect(getPluginCount()).toBe(1);
+    });
+
+    it("does not leave an init timeout running for plugins without init", async () => {
+      vi.useFakeTimers();
+      try {
+        const plugin = createMockPlugin();
+        const { loadPlugins } = await setup(plugin);
+
+        await loadPlugins([{ path: "/fake/plugin" }]);
+
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("catches destroy errors without crashing", async () => {

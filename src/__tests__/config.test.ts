@@ -94,7 +94,7 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.frontend).toBe("terminal");
-      expect(config.model).toBe("claude-sonnet-4-6");
+      expect(config.model).toBe("default");
     });
 
     it("throws when telegram frontend has no botToken", async () => {
@@ -118,7 +118,7 @@ describe("config", () => {
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.model).toBe("claude-sonnet-4-6");
+      expect(config.model).toBe("default");
       expect(config.maxMessageLength).toBe(4000);
       expect(config.concurrency).toBe(1);
       expect(config.pulse).toBe(true);
@@ -195,10 +195,91 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.plugins).toHaveLength(2);
-      expect(config.plugins[0].path).toBe("./plugins/my-plugin");
-      expect(config.plugins[0].config).toEqual({ key: "value" });
-      expect(config.plugins[1].path).toBe("./plugins/another");
-      expect(config.plugins[1].config).toBeUndefined();
+      const [firstPlugin, secondPlugin] = config.plugins;
+
+      expect("path" in firstPlugin).toBe(true);
+      if ("path" in firstPlugin) {
+        expect(firstPlugin.path).toBe("./plugins/my-plugin");
+        expect(firstPlugin.config).toEqual({ key: "value" });
+      }
+
+      expect("path" in secondPlugin).toBe(true);
+      if ("path" in secondPlugin) {
+        expect(secondPlugin.path).toBe("./plugins/another");
+        expect(secondPlugin.config).toBeUndefined();
+      }
+    });
+
+    it("parses standalone MCP plugins in config", async () => {
+      mockFs({
+        frontend: "terminal",
+        plugins: [
+          {
+            name: "polymarket",
+            command: "node",
+            args: ["/tmp/polymarket.js"],
+            env: { POLYMARKET_PRIVATE_KEY: "0x123" },
+          },
+        ],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+
+      expect(config.plugins).toEqual([
+        {
+          name: "polymarket",
+          command: "node",
+          args: ["/tmp/polymarket.js"],
+          env: { POLYMARKET_PRIVATE_KEY: "0x123" },
+        },
+      ]);
+    });
+
+    it("rejects plugin entries that mix path and standalone MCP fields", async () => {
+      mockFs({
+        frontend: "terminal",
+        plugins: [
+          {
+            path: "./plugins/extras",
+            name: "extras",
+            command: "node",
+          },
+        ],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow("exactly one format");
+    });
+
+    it("rejects standalone MCP entries missing required fields", async () => {
+      mockFs({
+        frontend: "terminal",
+        plugins: [{ name: "polymarket" }],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow(
+        "MCP plugin entries must include 'command'",
+      );
+    });
+
+    it("rejects standalone MCP entries with config blocks", async () => {
+      mockFs({
+        frontend: "terminal",
+        plugins: [
+          {
+            name: "polymarket",
+            command: "node",
+            config: { market: "crypto" },
+          },
+        ],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow(
+        "MCP plugin entries cannot include 'config'",
+      );
     });
 
     it("defaults plugins to empty array", async () => {
@@ -234,6 +315,29 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.frontend).toEqual(["terminal"]);
+    });
+
+    it("preserves Playwright endpoint settings from config", async () => {
+      mockFs({
+        frontend: "terminal",
+        playwright: {
+          enabled: true,
+          browser: "firefox",
+          endpoint: "ws://127.0.0.1:9222/devtools/browser/test",
+          endpointFile: "/tmp/camoufox-endpoint.txt",
+        },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+
+      expect(config.playwright).toEqual({
+        enabled: true,
+        browser: "firefox",
+        headless: true,
+        endpoint: "ws://127.0.0.1:9222/devtools/browser/test",
+        endpointFile: "/tmp/camoufox-endpoint.txt",
+      });
     });
   });
 
@@ -533,12 +637,12 @@ describe("config", () => {
       expect(() => loadConfig()).toThrow();
     });
 
-    it("default model is exactly claude-sonnet-4-6", async () => {
+    it("defaults the canonical Claude model to default", async () => {
       mockFs({ frontend: "terminal" });
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      expect(config.model).toBe("claude-sonnet-4-6");
+      expect(config.model).toBe("default");
     });
 
     it("default pulse is exactly true", async () => {

@@ -9,7 +9,7 @@ console.log("Platform:", process.platform);
 const qi = query({
   prompt: "Say hi",
   options: {
-    model: "claude-sonnet-4-6",
+    model: "default",
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     maxTurns: 1,

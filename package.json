@@ -51,7 +51,7 @@
     "format:check": "prettier --check src/ prompts/"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.104",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.108",
     "@brave/brave-search-mcp-server": "^2.0.75",
     "@clack/prompts": "^1.2.0",
     "@grammyjs/auto-retry": "^2.0.2",

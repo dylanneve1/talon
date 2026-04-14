@@ -881,7 +881,7 @@ describe("dream error paths", () => {
     );
   });
 
-  it("model defaults to 'claude-sonnet-4-6' when neither dreamModel nor model set (line 135 FALSE??FALSE branch)", async () => {
+  it("model defaults to 'default' when neither dreamModel nor model set (line 135 FALSE??FALSE branch)", async () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => false),
       readFileSync: vi.fn(() => "dream prompt"),
@@ -913,14 +913,14 @@ describe("dream error paths", () => {
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({ query: queryMock }));
 
     const mod = await import("../core/dream.js");
-    // No model or dreamModel → falls through to "claude-sonnet-4-6" literal default
+    // No model or dreamModel → falls through to the canonical SDK default model
     mod.initDream({ workspace: "/fake/ws" });
     await mod.forceDream();
 
     const callArgs = (queryMock.mock.calls[0] as unknown[])[0] as {
       options: Record<string, unknown>;
     };
-    expect(callArgs.options).toHaveProperty("model", "claude-sonnet-4-6");
+    expect(callArgs.options).toHaveProperty("model", "default");
   });
 });
 
