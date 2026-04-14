@@ -261,11 +261,7 @@ export function createTelegramActionHandler(
           try {
             await sendText(bot, chatId, text);
           } catch (err) {
-            logError(
-              "bot",
-              `Scheduled message failed (chat=${chatId})`,
-              err,
-            );
+            logError("bot", `Scheduled message failed (chat=${chatId})`, err);
           }
           scheduledMessages.delete(scheduleId);
         }, delaySec * 1000);
