@@ -155,7 +155,9 @@ class PluginRegistry {
   }
 
   private getRegistrationSource(name: string): string | undefined {
-    const existingPlugin = this.plugins.find((entry) => entry.plugin.name === name);
+    const existingPlugin = this.plugins.find(
+      (entry) => entry.plugin.name === name,
+    );
     if (existingPlugin) return existingPlugin.path;
 
     const existingMcpEntry = this.standaloneMcpServers.find(
@@ -316,7 +318,9 @@ async function initPluginWithTimeout(
       Promise.resolve(plugin.init(config)),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
-          reject(new Error(`${timeoutLabel} timed out after ${timeoutMs / 1000}s`));
+          reject(
+            new Error(`${timeoutLabel} timed out after ${timeoutMs / 1000}s`),
+          );
         }, timeoutMs);
         timer.unref?.();
       }),
@@ -396,7 +400,9 @@ async function loadSinglePlugin(
   );
 
   const version = loaded.plugin.version ? ` v${loaded.plugin.version}` : "";
-  const desc = loaded.plugin.description ? ` — ${loaded.plugin.description}` : "";
+  const desc = loaded.plugin.description
+    ? ` — ${loaded.plugin.description}`
+    : "";
   log("plugin", `Loaded: ${loaded.plugin.name}${version}${desc}`);
 }
 
@@ -619,7 +625,9 @@ export function registerPlugin(
   if (!loaded) return null;
 
   const version = loaded.plugin.version ? ` v${loaded.plugin.version}` : "";
-  const desc = loaded.plugin.description ? ` — ${loaded.plugin.description}` : "";
+  const desc = loaded.plugin.description
+    ? ` — ${loaded.plugin.description}`
+    : "";
   log("plugin", `Registered built-in: ${loaded.plugin.name}${version}${desc}`);
   return loaded;
 }

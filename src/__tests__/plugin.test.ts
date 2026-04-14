@@ -294,7 +294,8 @@ describe("plugin system", () => {
     });
 
     it("builds standalone MCP server entries from config", async () => {
-      const { loadPlugins, getPluginMcpServers } = await setup(createMockPlugin());
+      const { loadPlugins, getPluginMcpServers } =
+        await setup(createMockPlugin());
       await loadPlugins([
         {
           name: "standalone",
@@ -323,7 +324,8 @@ describe("plugin system", () => {
     it("skips path plugins that collide with standalone MCP names", async () => {
       const initFn = vi.fn();
       const plugin = createMockPlugin({ init: initFn });
-      const { loadPlugins, getPluginCount, getPluginMcpServers } = await setup(plugin);
+      const { loadPlugins, getPluginCount, getPluginMcpServers } =
+        await setup(plugin);
       await loadPlugins([
         { name: "test-plugin", command: "node", args: ["/tmp/server.js"] },
         { path: "/fake/plugin" },
@@ -331,9 +333,9 @@ describe("plugin system", () => {
 
       expect(getPluginCount()).toBe(0);
       expect(initFn).not.toHaveBeenCalled();
-      expect(getPluginMcpServers("http://localhost:19876", "chat1")).toHaveProperty(
-        "test-plugin-tools",
-      );
+      expect(
+        getPluginMcpServers("http://localhost:19876", "chat1"),
+      ).toHaveProperty("test-plugin-tools");
     });
 
     it("mcpServer takes priority over mcpServerPath when both are set", async () => {
@@ -388,9 +390,9 @@ describe("plugin system", () => {
 
       await mod.reloadPlugins();
 
-      expect(mod.getPluginMcpServers("http://localhost:19876", "chat1")).toEqual(
-        {},
-      );
+      expect(
+        mod.getPluginMcpServers("http://localhost:19876", "chat1"),
+      ).toEqual({});
     });
   });
 

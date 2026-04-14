@@ -86,7 +86,9 @@ describe("telegram helpers", () => {
     expect(formatModelOptionLabel(getTelegramModelOptions()[0]!)).toBe(
       "Opus 4.6",
     );
-    expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe("Sonnet");
+    expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe(
+      "Sonnet",
+    );
   });
 
   it("shows a single clean option per model family", () => {
@@ -98,7 +100,11 @@ describe("telegram helpers", () => {
   });
 
   it("marks the canonical model button as selected for legacy aliases", () => {
-    const buttons = renderSettingsKeyboard("claude-sonnet-4-6", "adaptive", true)
+    const buttons = renderSettingsKeyboard(
+      "claude-sonnet-4-6",
+      "adaptive",
+      true,
+    )
       .flat()
       .map((button) => button.text);
 

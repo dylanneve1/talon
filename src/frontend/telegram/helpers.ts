@@ -112,7 +112,10 @@ export function renderSettingsText(
   ].join("\n");
 }
 
-export function isSelectedModel(currentModel: string, modelId: string): boolean {
+export function isSelectedModel(
+  currentModel: string,
+  modelId: string,
+): boolean {
   const current = resolveModel(currentModel);
   const candidate = resolveModel(modelId);
   if (current && candidate) {

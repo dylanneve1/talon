@@ -259,7 +259,9 @@ describe("config", () => {
       });
 
       const { loadConfig } = await import("../util/config.js");
-      expect(() => loadConfig()).toThrow("MCP plugin entries must include 'command'");
+      expect(() => loadConfig()).toThrow(
+        "MCP plugin entries must include 'command'",
+      );
     });
 
     it("defaults plugins to empty array", async () => {

@@ -68,7 +68,10 @@ function resolveGenericFamilyAlias(input: string): string | null {
     boundary -= 1;
   }
 
-  const family = tokens.slice(0, boundary === tokens.length ? tokens.length : boundary);
+  const family = tokens.slice(
+    0,
+    boundary === tokens.length ? tokens.length : boundary,
+  );
   if (family.length === 0) return null;
 
   const alias = family.join("-");

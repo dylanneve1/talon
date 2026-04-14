@@ -18,7 +18,9 @@ vi.mock("../storage/chat-settings.js", () => ({
 
 vi.mock("../core/plugin.js", () => ({
   getPluginMcpServers: (...args: unknown[]) =>
-    mockGetPluginMcpServers(...(args as Parameters<typeof mockGetPluginMcpServers>)),
+    mockGetPluginMcpServers(
+      ...(args as Parameters<typeof mockGetPluginMcpServers>),
+    ),
 }));
 
 vi.mock("../backend/claude-sdk/state.js", () => ({
@@ -84,7 +86,8 @@ describe("buildSdkOptions", () => {
   });
 
   it("uses the exact mapped 1M SDK model for legacy Sonnet IDs", async () => {
-    const { buildSdkOptions } = await import("../backend/claude-sdk/options.js");
+    const { buildSdkOptions } =
+      await import("../backend/claude-sdk/options.js");
 
     const { activeModel, options } = buildSdkOptions("chat-1");
 
@@ -95,7 +98,8 @@ describe("buildSdkOptions", () => {
   it("leaves models without a mapped 1M variant unchanged", async () => {
     mockGetChatSettings.mockReturnValue({ model: "haiku" });
 
-    const { buildSdkOptions } = await import("../backend/claude-sdk/options.js");
+    const { buildSdkOptions } =
+      await import("../backend/claude-sdk/options.js");
     const { options } = buildSdkOptions("chat-2");
 
     expect(options.model).toBe("haiku");

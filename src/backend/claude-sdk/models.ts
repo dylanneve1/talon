@@ -72,10 +72,9 @@ function parseFamilyAndVersionFromTexts(
   return { family: null, version: null };
 }
 
-function parseClaudeId(value: string): Pick<
-  ParsedModelIdentity,
-  "family" | "version" | "claudeId"
-> {
+function parseClaudeId(
+  value: string,
+): Pick<ParsedModelIdentity, "family" | "version" | "claudeId"> {
   const claudeId = stripOneMillionSuffix(value);
   if (!claudeId.startsWith("claude-")) {
     return { family: null, version: null, claudeId: null };
@@ -133,10 +132,7 @@ function buildVariantKey(identity: ParsedModelIdentity): string | null {
     : null;
 }
 
-function appendOneMillionSuffix(
-  alias: string,
-  isOneMillion: boolean,
-): string {
+function appendOneMillionSuffix(alias: string, isOneMillion: boolean): string {
   return isOneMillion ? `${alias}[1m]` : alias;
 }
 
@@ -281,7 +277,11 @@ function buildOneMillionContextVariants(
   const variants = new Map<string, string>();
 
   for (const record of records) {
-    if (!record.identity.isOneMillion || !record.familyKey || !record.variantKey) {
+    if (
+      !record.identity.isOneMillion ||
+      !record.familyKey ||
+      !record.variantKey
+    ) {
       continue;
     }
 
@@ -367,9 +367,9 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
 
     const oneMillionContextModelId = record.identity.isOneMillion
       ? undefined
-      : (record.familyKey
-          ? oneMillionContextVariants.get(record.familyKey)
-          : undefined);
+      : record.familyKey
+        ? oneMillionContextVariants.get(record.familyKey)
+        : undefined;
 
     models.push({
       id: record.value,
@@ -379,7 +379,8 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
       provider: "anthropic",
       capabilities: {
         supports1mContext:
-          record.identity.isOneMillion || oneMillionContextModelId !== undefined,
+          record.identity.isOneMillion ||
+          oneMillionContextModelId !== undefined,
         ...(oneMillionContextModelId !== undefined
           ? { oneMillionContextModelId }
           : {}),

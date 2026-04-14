@@ -59,9 +59,8 @@ describe("registerClaudeModels", () => {
   });
 
   it("keeps SDK IDs/display names and maps 1M upgrades explicitly", async () => {
-    const { registerClaudeModels } = await import(
-      "../backend/claude-sdk/models.js"
-    );
+    const { registerClaudeModels } =
+      await import("../backend/claude-sdk/models.js");
     const {
       get1mContextModelId,
       getModels,
@@ -86,9 +85,9 @@ describe("registerClaudeModels", () => {
     expect(
       anthropicModels.find((model) => model.id === "sonnet[1m]")?.displayName,
     ).toBe("Sonnet (1M context)");
-    expect(anthropicModels.some((model) => model.id === "claude-sonnet-4-6")).toBe(
-      false,
-    );
+    expect(
+      anthropicModels.some((model) => model.id === "claude-sonnet-4-6"),
+    ).toBe(false);
 
     expect(resolveModelId("claude-sonnet-4-6")).toBe("default");
     expect(resolveModelId("claude-sonnet-4-6[1m]")).toBe("sonnet[1m]");
@@ -139,12 +138,10 @@ describe("registerClaudeModels", () => {
       },
     ]);
 
-    const { registerClaudeModels } = await import(
-      "../backend/claude-sdk/models.js"
-    );
-    const { get1mContextModelId, resolveModelId } = await import(
-      "../core/models.js"
-    );
+    const { registerClaudeModels } =
+      await import("../backend/claude-sdk/models.js");
+    const { get1mContextModelId, resolveModelId } =
+      await import("../core/models.js");
 
     await registerClaudeModels({ model: "default" });
 

@@ -39,7 +39,10 @@ export function createPlaywrightPlugin(config: {
     try {
       endpoint = readFileSync(config.endpointFile, "utf-8").trim();
     } catch {
-      log("playwright", `Warning: could not read endpoint file ${config.endpointFile}`);
+      log(
+        "playwright",
+        `Warning: could not read endpoint file ${config.endpointFile}`,
+      );
     }
   }
 
@@ -104,7 +107,10 @@ export function createPlaywrightPlugin(config: {
     },
 
     async init() {
-      log("playwright", `Ready (${endpoint ? `Camoufox @ ${endpoint}` : `${browser}, headless=${headless}`})`);
+      log(
+        "playwright",
+        `Ready (${endpoint ? `Camoufox @ ${endpoint}` : `${browser}, headless=${headless}`})`,
+      );
     },
   };
 }
