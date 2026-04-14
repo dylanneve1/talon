@@ -186,7 +186,7 @@ export function registerCommands(
       // Build model buttons dynamically from the registry
       const models = getModels();
       const modelButtons = models.map((m) => ({
-        text: current.includes(m.id)
+        text: current === m.id
           ? `\u2713 ${m.displayName}`
           : m.displayName,
         callback_data: `model:${m.aliases[0] ?? m.id}`,

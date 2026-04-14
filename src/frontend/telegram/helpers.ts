@@ -63,7 +63,7 @@ export function renderSettingsKeyboard(
 ): Array<Array<{ text: string; callback_data: string }>> {
   // Build model buttons dynamically from the registry, chunked into rows of 3
   const modelButtons = getModels().map((m) => ({
-    text: model.includes(m.id)
+    text: model === m.id
       ? `\u2713 ${m.displayName.split(" ")[0]}`
       : m.displayName.split(" ")[0],
     callback_data: `settings:model:${m.aliases[0] ?? m.id}`,

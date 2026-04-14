@@ -58,6 +58,10 @@ function convertSdkModels(
   for (const m of sdkModels) {
     if (m.value === "default") continue;
     if (seen.has(m.value)) continue;
+    // Skip long-form canonical IDs that are duplicates of an already-registered
+    // short alias, e.g. "claude-opus-4-6" after "opus" is already in seen.
+    const aliases = buildAliases(m.value);
+    if (aliases.some((a) => seen.has(a))) continue;
     seen.add(m.value);
     models.push({
       id: m.value,
