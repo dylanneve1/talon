@@ -626,7 +626,10 @@ export async function reloadPlugins(
   // from /proc and killing any that don't match the current timestamp.
   // Runs async so it doesn't block the reload response.
   void killOrphanedPluginSubprocesses(_lastReloadAt).catch((err) =>
-    logError("plugin", `Orphan cleanup error: ${err instanceof Error ? err.message : err}`),
+    logError(
+      "plugin",
+      `Orphan cleanup error: ${err instanceof Error ? err.message : err}`,
+    ),
   );
 
   return { names, config };
@@ -664,11 +667,17 @@ async function killOrphanedPluginSubprocesses(
       }
     }
   } catch (err) {
-    logError("plugin", `Orphan scan failed: ${err instanceof Error ? err.message : err}`);
+    logError(
+      "plugin",
+      `Orphan scan failed: ${err instanceof Error ? err.message : err}`,
+    );
   }
 
   if (killed > 0) {
-    log("plugin", `Orphan cleanup: killed ${killed} stale subprocess(es), ${errors} skipped`);
+    log(
+      "plugin",
+      `Orphan cleanup: killed ${killed} stale subprocess(es), ${errors} skipped`,
+    );
   }
 }
 
