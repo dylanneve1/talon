@@ -186,11 +186,14 @@ export function renderMetricsMessages(
       if (!line) return;
     }
 
-    const available = Math.max(0, maxLen - header.length - 1);
+    const available = maxLen - header.length - 1;
+    if (available < 0) return; // header alone already fills maxLen — skip line
     const safeLine =
       line.length <= available
         ? line
-        : `${line.slice(0, Math.max(0, available - 3))}...`;
+        : available >= 4
+          ? `${line.slice(0, available - 3)}...`
+          : line.slice(0, available); // not enough room for ellipsis — just truncate
     current = `${current}\n${safeLine}`;
   };
 
