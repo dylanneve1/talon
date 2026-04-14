@@ -52,8 +52,13 @@ function trackDmUser(
 
 let allowedUserIds: Set<number> | null = null; // null = no whitelist (allow all)
 let adminId = 0;
-const verifiedGroups = new Map<number, boolean>(); // chatId → admin is member
+// chatId → { isMember, expiresAt } — timestamp-based expiry, no timers
+const verifiedGroups = new Map<
+  number,
+  { isMember: boolean; expiresAt: number }
+>();
 const MAX_VERIFIED_GROUPS = 1000;
+const VERIFIED_GROUP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export function setAccessControl(cfg: {
   allowedUsers?: number[];
@@ -77,19 +82,28 @@ function isDmAllowed(senderId: number | undefined): boolean {
 async function isAdminInGroup(bot: Bot, chatId: number): Promise<boolean> {
   if (!adminId) return true; // no admin configured, allow all groups
   const cached = verifiedGroups.get(chatId);
-  if (cached !== undefined) return cached;
+  if (cached !== undefined && cached.expiresAt > Date.now()) {
+    return cached.isMember;
+  }
+  // Expired or missing — delete stale entry
+  if (cached) verifiedGroups.delete(chatId);
 
-  // Prevent unbounded growth — clear and re-verify on access
+  // Prevent unbounded growth — evict expired entries first, then clear if still over
   if (verifiedGroups.size >= MAX_VERIFIED_GROUPS) {
-    verifiedGroups.clear();
+    const now = Date.now();
+    for (const [k, v] of verifiedGroups) {
+      if (v.expiresAt <= now) verifiedGroups.delete(k);
+    }
+    if (verifiedGroups.size >= MAX_VERIFIED_GROUPS) verifiedGroups.clear();
   }
 
   try {
     const member = await bot.api.getChatMember(chatId, adminId);
     const isMember = !["left", "kicked"].includes(member.status);
-    verifiedGroups.set(chatId, isMember);
-    // Expire cache after 10 minutes
-    setTimeout(() => verifiedGroups.delete(chatId), 10 * 60 * 1000);
+    verifiedGroups.set(chatId, {
+      isMember,
+      expiresAt: Date.now() + VERIFIED_GROUP_TTL_MS,
+    });
     return isMember;
   } catch (err) {
     logWarn(

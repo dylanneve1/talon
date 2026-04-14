@@ -9,6 +9,7 @@ export function incrementCounter(name: string, amount = 1): void {
 }
 
 export function recordHistogram(name: string, value: number): void {
+  if (!Number.isFinite(value)) return; // drop NaN/Infinity/invalid samples
   let values = histograms.get(name);
   if (!values) {
     values = [];

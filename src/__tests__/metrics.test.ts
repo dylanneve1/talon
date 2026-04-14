@@ -43,4 +43,15 @@ describe("metrics", () => {
   it("handles empty histograms", () => {
     expect(getMetrics().histograms).toEqual({});
   });
+
+  it("drops NaN, Infinity, and -Infinity from histograms", () => {
+    recordHistogram("clean", 10);
+    recordHistogram("clean", NaN);
+    recordHistogram("clean", Infinity);
+    recordHistogram("clean", -Infinity);
+    recordHistogram("clean", 20);
+    const h = getMetrics().histograms["clean"];
+    expect(h.count).toBe(2);
+    expect(h.avg).toBe(15);
+  });
 });
