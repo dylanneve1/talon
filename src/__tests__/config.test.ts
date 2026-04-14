@@ -195,10 +195,12 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.plugins).toHaveLength(2);
-      expect(config.plugins[0].path).toBe("./plugins/my-plugin");
-      expect(config.plugins[0].config).toEqual({ key: "value" });
-      expect(config.plugins[1].path).toBe("./plugins/another");
-      expect(config.plugins[1].config).toBeUndefined();
+      const p0 = config.plugins[0] as { path: string; config?: Record<string, unknown> };
+      const p1 = config.plugins[1] as { path: string; config?: Record<string, unknown> };
+      expect(p0.path).toBe("./plugins/my-plugin");
+      expect(p0.config).toEqual({ key: "value" });
+      expect(p1.path).toBe("./plugins/another");
+      expect(p1.config).toBeUndefined();
     });
 
     it("defaults plugins to empty array", async () => {

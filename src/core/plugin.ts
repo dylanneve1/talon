@@ -22,10 +22,31 @@ import type { TalonConfig } from "../util/config.js";
 
 // ── Plugin interfaces ──────────────────────────────────────────────────────
 
-/** Configuration entry for a plugin in talon.json. */
-export interface PluginEntry {
+/** Path-based plugin entry (loaded as a Node module). */
+export interface PluginPathEntry {
   path: string;
   config?: Record<string, unknown>;
+}
+
+/** Standalone MCP server entry (command + args, not a loadable module). */
+export interface PluginMcpEntry {
+  name: string;
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/** Configuration entry for a plugin in config.json. */
+export type PluginEntry = PluginPathEntry | PluginMcpEntry;
+
+/** Type guard: is this a path-based plugin? */
+export function isPathPlugin(entry: PluginEntry): entry is PluginPathEntry {
+  return "path" in entry;
+}
+
+/** Type guard: is this a standalone MCP server entry? */
+export function isMcpPlugin(entry: PluginEntry): entry is PluginMcpEntry {
+  return "command" in entry && "name" in entry && !("path" in entry);
 }
 
 /**
@@ -119,9 +140,14 @@ export interface LoadedPlugin {
 
 class PluginRegistry {
   private readonly plugins: LoadedPlugin[] = [];
+  private readonly standaloneMcpServers: PluginMcpEntry[] = [];
 
   get all(): readonly LoadedPlugin[] {
     return this.plugins;
+  }
+
+  get mcpEntries(): readonly PluginMcpEntry[] {
+    return this.standaloneMcpServers;
   }
 
   get count(): number {
@@ -141,6 +167,10 @@ class PluginRegistry {
       return;
     }
     this.plugins.push(loaded);
+  }
+
+  registerMcpEntry(entry: PluginMcpEntry): void {
+    this.standaloneMcpServers.push(entry);
   }
 
   getByName(name: string): LoadedPlugin | undefined {
@@ -204,6 +234,12 @@ export async function loadPlugins(
   activeFrontends?: string[],
 ): Promise<void> {
   for (const entry of pluginConfigs) {
+    // Standalone MCP servers are registered for getPluginMcpServers, not loaded as modules
+    if (isMcpPlugin(entry)) {
+      registry.registerMcpEntry(entry);
+      log("plugin", `Registered standalone MCP server: ${entry.name}`);
+      continue;
+    }
     try {
       await loadSinglePlugin(entry, activeFrontends);
     } catch (err) {
@@ -216,7 +252,7 @@ export async function loadPlugins(
 }
 
 async function loadSinglePlugin(
-  entry: PluginEntry,
+  entry: PluginPathEntry,
   activeFrontends?: string[],
 ): Promise<void> {
   const pluginDir = resolve(entry.path);
@@ -662,6 +698,20 @@ export function getPluginMcpServers(
         env: baseEnv,
       };
     }
+  }
+
+  // Include standalone MCP server entries from config
+  for (const entry of registry.mcpEntries) {
+    if (only !== undefined && !only.includes(entry.name)) continue;
+    servers[`${entry.name}-tools`] = {
+      command: entry.command,
+      args: [...(entry.args ?? [])],
+      env: {
+        TALON_BRIDGE_URL: bridgeUrl,
+        TALON_CHAT_ID: chatId,
+        ...(entry.env ?? {}),
+      },
+    };
   }
 
   return servers;

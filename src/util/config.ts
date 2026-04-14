@@ -14,10 +14,21 @@ import { log } from "./log.js";
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
-const pluginEntrySchema = z.object({
+/** Path-based Talon plugin (loaded as a Node module). */
+const pluginPathSchema = z.object({
   path: z.string(),
   config: z.record(z.string(), z.unknown()).optional(),
 });
+
+/** Standalone MCP server (command + args, not a Talon plugin module). */
+const pluginMcpSchema = z.object({
+  name: z.string(),
+  command: z.string(),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
+const pluginEntrySchema = z.union([pluginPathSchema, pluginMcpSchema]);
 
 const frontendEnum = z.enum(["telegram", "terminal", "teams"]);
 
