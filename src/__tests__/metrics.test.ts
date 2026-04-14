@@ -54,4 +54,23 @@ describe("metrics", () => {
     expect(h.count).toBe(2);
     expect(h.avg).toBe(15);
   });
+
+  it("caps counter keys at MAX_METRIC_KEYS", () => {
+    // Fill up to the cap (500)
+    for (let i = 0; i < 500; i++) incrementCounter(`key_${i}`);
+    expect(Object.keys(getMetrics().counters)).toHaveLength(500);
+    // New key beyond cap is silently dropped
+    incrementCounter("overflow_key");
+    expect(getMetrics().counters["overflow_key"]).toBeUndefined();
+    // Existing keys still work
+    incrementCounter("key_0", 5);
+    expect(getMetrics().counters["key_0"]).toBe(6);
+  });
+
+  it("caps histogram keys at MAX_METRIC_KEYS", () => {
+    for (let i = 0; i < 500; i++) recordHistogram(`h_${i}`, i);
+    expect(Object.keys(getMetrics().histograms)).toHaveLength(500);
+    recordHistogram("overflow_hist", 42);
+    expect(getMetrics().histograms["overflow_hist"]).toBeUndefined();
+  });
 });

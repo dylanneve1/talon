@@ -67,7 +67,7 @@ export async function sendText(
   } catch (err) {
     logWarn(
       "bot",
-      `sendText HTML parse failed (chat=${chatId}): ${err instanceof Error ? err.message : err}`,
+      `sendText with parse_mode=HTML failed; retrying without parse_mode (chat=${chatId}): ${err instanceof Error ? err.message : err}`,
     );
     const sent = await bot.api.sendMessage(chatId, text, {
       reply_parameters: replyTo ? { message_id: replyTo } : undefined,

@@ -3,8 +3,11 @@
 const counters = new Map<string, number>();
 const histograms = new Map<string, number[]>();
 const MAX_HISTOGRAM_SIZE = 1000;
+const MAX_METRIC_KEYS = 500; // cap to prevent unbounded growth from high-cardinality names
 
 export function incrementCounter(name: string, amount = 1): void {
+  // Only allow new keys up to the cap — existing keys always pass
+  if (!counters.has(name) && counters.size >= MAX_METRIC_KEYS) return;
   counters.set(name, (counters.get(name) ?? 0) + amount);
 }
 
@@ -12,6 +15,7 @@ export function recordHistogram(name: string, value: number): void {
   if (!Number.isFinite(value)) return; // drop NaN/Infinity/invalid samples
   let values = histograms.get(name);
   if (!values) {
+    if (histograms.size >= MAX_METRIC_KEYS) return; // cap key count
     values = [];
     histograms.set(name, values);
   }
