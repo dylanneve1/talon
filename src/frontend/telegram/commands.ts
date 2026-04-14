@@ -36,6 +36,7 @@ import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
+import { isSelectedModel } from "./helpers.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getModels } from "../../core/models.js";
@@ -186,7 +187,7 @@ export function registerCommands(
       // Build model buttons dynamically from the registry
       const models = getModels();
       const modelButtons = models.map((m) => ({
-        text: current === m.id
+        text: isSelectedModel(current, m.id)
           ? `\u2713 ${m.displayName}`
           : m.displayName,
         callback_data: `model:${m.aliases[0] ?? m.id}`,

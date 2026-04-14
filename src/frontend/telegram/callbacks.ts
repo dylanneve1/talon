@@ -21,7 +21,11 @@ import {
 } from "../../core/pulse.js";
 import { handleCallbackQuery } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
-import { renderSettingsText, renderSettingsKeyboard } from "./helpers.js";
+import {
+  isSelectedModel,
+  renderSettingsText,
+  renderSettingsKeyboard,
+} from "./helpers.js";
 import { getModels } from "../../core/models.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
@@ -218,7 +222,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       // Build model buttons dynamically from the registry
       const models = getModels();
       const modelButtons = models.map((m) => ({
-        text: current === m.id
+        text: isSelectedModel(current, m.id)
           ? `\u2713 ${m.displayName}`
           : m.displayName,
         callback_data: `model:${m.aliases[0] ?? m.id}`,

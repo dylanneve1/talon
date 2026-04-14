@@ -102,4 +102,59 @@ describe("registerClaudeModels", () => {
     expect(supports1mContext("claude-sonnet-4-6")).toBe(true);
     expect(supports1mContext("haiku")).toBe(false);
   });
+
+  it("derives compatibility aliases from SDK metadata instead of hardcoded versions", async () => {
+    mockSupportedModels.mockResolvedValue([
+      {
+        value: "default",
+        displayName: "Default (recommended)",
+        description: "Sonnet 5.0 · Best for everyday tasks",
+      },
+      {
+        value: "sonnet[1m]",
+        displayName: "Sonnet (1M context)",
+        description:
+          "Sonnet 5.0 with 1M context · Billed as extra usage · $3/$15 per Mtok",
+      },
+      {
+        value: "opus",
+        displayName: "Opus",
+        description: "Opus 5.0 · Most capable for complex work",
+      },
+      {
+        value: "opus[1m]",
+        displayName: "Opus (1M context)",
+        description:
+          "Opus 5.0 with 1M context · Billed as extra usage · $5/$25 per Mtok",
+      },
+      {
+        value: "haiku",
+        displayName: "Haiku",
+        description: "Haiku 5.0 · Fastest for quick answers",
+      },
+      {
+        value: "claude-sonnet-5-0",
+        displayName: "Sonnet 5.0",
+        description: "claude-sonnet-5-0",
+      },
+    ]);
+
+    const { registerClaudeModels } = await import(
+      "../backend/claude-sdk/models.js"
+    );
+    const { get1mContextModelId, resolveModelId } = await import(
+      "../core/models.js"
+    );
+
+    await registerClaudeModels({ model: "default" });
+
+    expect(resolveModelId("claude-sonnet-5-0")).toBe("default");
+    expect(resolveModelId("claude-sonnet-4-6")).toBe("default");
+    expect(resolveModelId("claude-opus-5-0")).toBe("opus");
+    expect(resolveModelId("claude-opus-4-6")).toBe("opus");
+    expect(resolveModelId("claude-haiku-5-0")).toBe("haiku");
+    expect(resolveModelId("claude-haiku-4-5")).toBe("haiku");
+    expect(get1mContextModelId("claude-sonnet-4-6")).toBe("sonnet[1m]");
+    expect(get1mContextModelId("claude-sonnet-5-0")).toBe("sonnet[1m]");
+  });
 });

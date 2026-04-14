@@ -1,3 +1,4 @@
+import type { TalonConfig } from "../util/config.js";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../util/log.js", () => ({
@@ -23,6 +24,27 @@ describe("plugin system", () => {
       mcpServerPath: "/fake/tools.ts",
       getEnvVars: vi.fn(() => ({ TEST_PLUGIN_KEY: "value" })),
       handleAction: vi.fn(async () => null),
+      ...overrides,
+    };
+  }
+
+  function createTestConfig(overrides: Partial<TalonConfig> = {}): TalonConfig {
+    return {
+      frontend: "terminal",
+      backend: "claude",
+      model: "default",
+      maxMessageLength: 4000,
+      concurrency: 1,
+      pulse: true,
+      pulseIntervalMs: 300000,
+      heartbeat: false,
+      heartbeatIntervalMinutes: 60,
+      plugins: [],
+      botDisplayName: "Talon",
+      teamsWebhookPort: 19878,
+      teamsGraphPollMs: 10000,
+      systemPrompt: "test prompt",
+      workspace: "/tmp/workspace",
       ...overrides,
     };
   }
@@ -377,7 +399,8 @@ describe("plugin system", () => {
       const plugin = createMockPlugin({ name: "built-in-test" });
       const { registerPlugin, getPlugin } = await setup(createMockPlugin());
 
-      registerPlugin(plugin, { key: "val" });
+      const loaded = registerPlugin(plugin, { key: "val" });
+      expect(loaded?.path).toBe("(built-in)");
       expect(getPlugin("built-in-test")).toBeDefined();
       expect(getPlugin("built-in-test")!.path).toBe("(built-in)");
     });
@@ -402,8 +425,26 @@ describe("plugin system", () => {
       });
       const { registerPlugin, getPlugin } = await setup(createMockPlugin());
 
-      registerPlugin(plugin, {});
+      expect(registerPlugin(plugin, {})).toBeNull();
       expect(getPlugin("builtin-invalid")).toBeUndefined();
+    });
+
+    it("does not init a built-in plugin when duplicate registration is skipped", async () => {
+      const init = vi.fn();
+      const githubPlugin = createMockPlugin({ name: "github", init });
+
+      vi.doMock("../plugins/github/index.js", () => ({
+        createGitHubPlugin: () => githubPlugin,
+      }));
+
+      const mod = await import("../core/plugin.js");
+      await mod.loadPlugins([{ name: "github", command: "node" }]);
+      await mod.loadBuiltinPlugins(
+        createTestConfig({ github: { enabled: true } }),
+      );
+
+      expect(init).not.toHaveBeenCalled();
+      expect(mod.getPlugin("github")).toBeUndefined();
     });
   });
 
@@ -460,6 +501,20 @@ describe("plugin system", () => {
       await loadPlugins([{ path: "/fake/plugin" }]);
 
       expect(getPluginCount()).toBe(1);
+    });
+
+    it("does not leave an init timeout running for plugins without init", async () => {
+      vi.useFakeTimers();
+      try {
+        const plugin = createMockPlugin();
+        const { loadPlugins } = await setup(plugin);
+
+        await loadPlugins([{ path: "/fake/plugin" }]);
+
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("catches destroy errors without crashing", async () => {

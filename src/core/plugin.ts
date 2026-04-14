@@ -307,24 +307,27 @@ async function initPluginWithTimeout(
   timeoutLabel: string,
   errorPrefix: string,
 ): Promise<void> {
+  if (!plugin.init) return;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
   try {
     await Promise.race([
-      plugin.init?.(config),
-      new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error(`${timeoutLabel} timed out after ${timeoutMs / 1000}s`),
-            ),
-          timeoutMs,
-        ),
-      ),
+      Promise.resolve(plugin.init(config)),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`${timeoutLabel} timed out after ${timeoutMs / 1000}s`));
+        }, timeoutMs);
+        timer.unref?.();
+      }),
     ]);
   } catch (err) {
     logError(
       "plugin",
       `${errorPrefix}: ${err instanceof Error ? err.message : err}`,
     );
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -480,11 +483,11 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       const { createGitHubPlugin } = await import("../plugins/github/index.js");
       const gh = createGitHubPlugin({ token: github.token });
       const ghConfig = github as unknown as Record<string, unknown>;
-      registerPlugin(gh, ghConfig);
-      if (registry.getByName("github")) {
+      const loaded = registerPlugin(gh, ghConfig);
+      if (loaded) {
         await initPluginWithTimeout(
-          gh,
-          ghConfig,
+          loaded.plugin,
+          loaded.config,
           15_000,
           "GitHub init",
           "GitHub init",
@@ -508,11 +511,11 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       const palacePath = mempalace.palacePath ?? dirs.palace;
       const mp = createMempalacePlugin({ pythonPath, palacePath });
       const mpConfig = mempalace as unknown as Record<string, unknown>;
-      registerPlugin(mp, mpConfig);
-      if (registry.getByName("mempalace")) {
+      const loaded = registerPlugin(mp, mpConfig);
+      if (loaded) {
         await initPluginWithTimeout(
-          mp,
-          mpConfig,
+          loaded.plugin,
+          loaded.config,
           30_000,
           "MemPalace init",
           "MemPalace init",
@@ -538,11 +541,11 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
         endpoint: playwright.endpoint,
         endpointFile: playwright.endpointFile,
       });
-      registerPlugin(pw, pwConfig);
-      if (registry.getByName("playwright")) {
+      const loaded = registerPlugin(pw, pwConfig);
+      if (loaded) {
         await initPluginWithTimeout(
-          pw,
-          pwConfig,
+          loaded.plugin,
+          loaded.config,
           15_000,
           "Playwright init",
           "Playwright init",
@@ -611,13 +614,14 @@ export async function reloadPlugins(
 export function registerPlugin(
   plugin: TalonPlugin,
   config: Record<string, unknown> = {},
-): void {
+): LoadedPlugin | null {
   const loaded = registerPluginInstance(plugin, config, "(built-in)");
-  if (!loaded) return;
+  if (!loaded) return null;
 
   const version = loaded.plugin.version ? ` v${loaded.plugin.version}` : "";
   const desc = loaded.plugin.description ? ` — ${loaded.plugin.description}` : "";
   log("plugin", `Registered built-in: ${loaded.plugin.name}${version}${desc}`);
+  return loaded;
 }
 
 /**

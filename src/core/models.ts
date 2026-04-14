@@ -50,6 +50,31 @@ const TIER_ORDER: Record<ModelTier, number> = {
 const models = new Map<string, ModelInfo>();
 const aliasIndex = new Map<string, string>();
 
+function resolveGenericFamilyAlias(input: string): string | null {
+  const trimmed = input.trim().toLowerCase();
+  if (!trimmed) return null;
+
+  const isOneMillion = trimmed.endsWith("[1m]");
+  let base = isOneMillion ? trimmed.slice(0, -4) : trimmed;
+  if (base.startsWith("claude-")) {
+    base = base.slice("claude-".length);
+  }
+
+  const tokens = base.replace(/\./g, "-").split("-").filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  let boundary = tokens.length;
+  while (boundary > 0 && /^\d+$/.test(tokens[boundary - 1] ?? "")) {
+    boundary -= 1;
+  }
+
+  const family = tokens.slice(0, boundary === tokens.length ? tokens.length : boundary);
+  if (family.length === 0) return null;
+
+  const alias = family.join("-");
+  return isOneMillion ? `${alias}[1m]` : alias;
+}
+
 // ── Registration ────────────────────────────────────────────────────────────
 
 /** Register one or more models. Idempotent — re-registration overwrites. */
@@ -95,7 +120,16 @@ export function getModels(provider?: string): ModelInfo[] {
  */
 export function resolveModelId(input: string): string {
   const lower = input.trim().toLowerCase();
-  return aliasIndex.get(lower) ?? input.trim();
+  const direct = aliasIndex.get(lower);
+  if (direct) return direct;
+
+  const genericAlias = resolveGenericFamilyAlias(input);
+  if (genericAlias) {
+    const resolved = aliasIndex.get(genericAlias);
+    if (resolved) return resolved;
+  }
+
+  return input.trim();
 }
 
 /**
