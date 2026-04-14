@@ -44,6 +44,7 @@ import {
 } from "./helpers.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
+import { getMetrics } from "../../util/metrics.js";
 import { getModels } from "../../core/models.js";
 import {
   formatDuration,
@@ -96,6 +97,7 @@ export function registerCommands(
         "",
         "<b>Session</b>",
         "  /status -- session info, usage, and stats",
+        "  /metrics -- aggregate performance metrics (admin)",
         "  /memory -- view what Talon remembers",
         "  /dream -- force memory consolidation now",
         "  /ping -- health check with latency",
@@ -476,6 +478,55 @@ export function registerCommands(
       `<b>Session</b>   ${info.sessionName ? `"${escapeHtml(info.sessionName)}" ` : ""}${info.sessionId ? "<code>" + escapeHtml(info.sessionId.slice(0, 8)) + "...</code>" : "<i>(new)</i>"} \u00B7 ${sessionAge} old`,
       `<b>Uptime</b>    ${uptime} \u00B7 ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
     ];
+    await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+  });
+
+  bot.command("metrics", async (ctx) => {
+    if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
+      await ctx.reply("Not authorized.");
+      return;
+    }
+    const m = getMetrics();
+    const lines: string[] = ["<b>📊 Metrics</b>", ""];
+
+    // Histograms
+    const histKeys = Object.keys(m.histograms);
+    if (histKeys.length > 0) {
+      lines.push("<b>Latency</b>");
+      for (const k of histKeys) {
+        const h = m.histograms[k];
+        lines.push(
+          `  <code>${escapeHtml(k)}</code>  n=${h.count}  p50=${formatDuration(h.p50)}  p95=${formatDuration(h.p95)}  p99=${formatDuration(h.p99)}  avg=${formatDuration(h.avg)}`,
+        );
+      }
+      lines.push("");
+    }
+
+    // Counters — group by prefix
+    const counterKeys = Object.keys(m.counters).sort();
+    if (counterKeys.length > 0) {
+      const groups = new Map<string, string[]>();
+      for (const k of counterKeys) {
+        const prefix = k.includes(".") ? k.split(".")[0] : "general";
+        if (!groups.has(prefix)) groups.set(prefix, []);
+        groups.get(prefix)!.push(k);
+      }
+      for (const [prefix, keys] of groups) {
+        lines.push(`<b>${escapeHtml(prefix)}</b>`);
+        for (const k of keys) {
+          const label = k.includes(".") ? k.split(".").slice(1).join(".") : k;
+          lines.push(
+            `  <code>${escapeHtml(label)}</code>  ${m.counters[k].toLocaleString()}`,
+          );
+        }
+        lines.push("");
+      }
+    }
+
+    if (histKeys.length === 0 && counterKeys.length === 0) {
+      lines.push("<i>No metrics recorded yet.</i>");
+    }
+
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   });
 
