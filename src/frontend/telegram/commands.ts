@@ -36,7 +36,12 @@ import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
-import { isSelectedModel } from "./helpers.js";
+import {
+  formatModelLabel,
+  formatModelOptionLabel,
+  getTelegramModelOptions,
+  isSelectedModel,
+} from "./helpers.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getModels } from "../../core/models.js";
@@ -185,12 +190,12 @@ export function registerCommands(
     if (!arg) {
       const current = settings.model ?? config.model;
       // Build model buttons dynamically from the registry
-      const models = getModels();
+      const models = getTelegramModelOptions();
       const modelButtons = models.map((m) => ({
         text: isSelectedModel(current, m.id)
-          ? `\u2713 ${m.displayName}`
-          : m.displayName,
-        callback_data: `model:${m.aliases[0] ?? m.id}`,
+          ? `\u2713 ${formatModelOptionLabel(m)}`
+          : formatModelOptionLabel(m),
+        callback_data: `model:${m.id}`,
       }));
       // Two models per row, plus a reset button on the last row
       const rows: Array<Array<{ text: string; callback_data: string }>> = [];
@@ -200,7 +205,7 @@ export function registerCommands(
       rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
 
       await ctx.reply(
-        `<b>Model:</b> <code>${escapeHtml(current)}</code>\nSelect a model:`,
+        `<b>Model:</b> <code>${escapeHtml(formatModelLabel(current))}</code>\nSelect a model:`,
         { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
       );
       return;
@@ -209,7 +214,7 @@ export function registerCommands(
     if (arg === "reset" || arg === "default") {
       setChatModel(cid, undefined);
       await ctx.reply(
-        `Model reset to default: <code>${escapeHtml(config.model)}</code>`,
+        `Model reset to default: <code>${escapeHtml(formatModelLabel(config.model))}</code>`,
         { parse_mode: "HTML" },
       );
       return;
@@ -217,9 +222,12 @@ export function registerCommands(
 
     const model = resolveModelName(arg);
     setChatModel(cid, model);
-    await ctx.reply(`Model set to <code>${escapeHtml(model)}</code>.`, {
-      parse_mode: "HTML",
-    });
+    await ctx.reply(
+      `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
+      {
+        parse_mode: "HTML",
+      },
+    );
   });
 
   bot.command("effort", async (ctx) => {
