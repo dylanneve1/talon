@@ -66,17 +66,18 @@ function convertSdkModels(
 ): ModelInfo[] {
   // Filter out SDK artifacts:
   // - [1m] variants: we add this suffix ourselves in options.ts
-  // - "default" pseudo-model: not a real model, just an alias for the default
   // The SDK (≥0.2.104) returns short aliases ("sonnet", "haiku") instead of
-  // canonical IDs, so we can no longer rely on startsWith("claude-").
-  const filtered = sdkModels.filter(
-    (m) => !m.value.includes("[") && m.value !== "default",
-  );
+  // canonical IDs. Notably Sonnet only appears as "default" and "sonnet[1m]" —
+  // the "default" entry IS the Sonnet model, so we keep it and derive the real
+  // canonical ID from its description rather than discarding it.
+  const filtered = sdkModels.filter((m) => !m.value.includes("["));
 
   const seen = new Set<string>();
   const models: ModelInfo[] = [];
   for (const m of filtered) {
     const id = deriveCanonicalId(m.value, m.description) ?? m.value;
+    // Skip entries where we couldn't derive a canonical ID from "default"
+    if (id === "default") continue;
     // Deduplicate — the SDK may return both "opus" and "claude-opus-4-6"
     if (seen.has(id)) continue;
     seen.add(id);
