@@ -438,11 +438,13 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
     try {
       const { createPlaywrightPlugin } =
         await import("../plugins/playwright/index.js");
+      const pwConfig = playwright as unknown as Record<string, unknown>;
       const pw = createPlaywrightPlugin({
         browser: playwright.browser,
         headless: playwright.headless,
+        endpoint: pwConfig.endpoint as string | undefined,
+        endpointFile: pwConfig.endpointFile as string | undefined,
       });
-      const pwConfig = playwright as unknown as Record<string, unknown>;
       registerPlugin(pw, pwConfig);
       if (registry.getByName("playwright")) {
         await Promise.race([
