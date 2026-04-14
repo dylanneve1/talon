@@ -14,6 +14,8 @@ export type ModelTier = "premium" | "balanced" | "economy";
 export type ModelCapabilities = {
   /** Whether the model supports the 1M token context window. */
   supports1mContext: boolean;
+  /** Exact model ID to use for the 1M token context window, if available. */
+  oneMillionContextModelId?: string;
 };
 
 export type ModelInfo = {
@@ -106,14 +108,19 @@ export function resolveModel(input: string): ModelInfo | undefined {
 
 /** Get the fallback model ID for a given model, or null if none configured. */
 export function getFallbackModel(modelId: string): string | null {
-  return models.get(modelId)?.fallback ?? null;
+  return resolveModel(modelId)?.fallback ?? null;
 }
 
 /** Check whether a model supports the 1M token context window. */
 export function supports1mContext(modelId: string): boolean {
-  const info = models.get(modelId);
+  const info = resolveModel(modelId);
   // Default to true for unknown models (don't restrict capabilities we can't check)
   return info?.capabilities.supports1mContext ?? true;
+}
+
+/** Resolve the exact 1M-context model ID for a given model, if one exists. */
+export function get1mContextModelId(modelId: string): string | null {
+  return resolveModel(modelId)?.capabilities.oneMillionContextModelId ?? null;
 }
 
 /**

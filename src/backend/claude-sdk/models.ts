@@ -12,94 +12,169 @@ import { registerModels, clearModelsByProvider } from "../../core/models.js";
 import type { ModelInfo } from "../../core/models.js";
 import { log, logError } from "../../util/log.js";
 
+type SdkModelInfo = {
+  value: string;
+  displayName: string;
+  description: string;
+};
+
 // ── Tier / fallback inference ───────────────────────────────────────────────
 
-/** Infer tier from model ID. */
-function inferTier(modelId: string): ModelInfo["tier"] {
-  if (modelId.includes("opus")) return "premium";
-  if (modelId.includes("haiku")) return "economy";
+/** Infer tier from the SDK model metadata. */
+function inferTier(model: SdkModelInfo): ModelInfo["tier"] {
+  const searchableText =
+    `${model.value} ${model.displayName} ${model.description}`.toLowerCase();
+  if (searchableText.includes("opus")) return "premium";
+  if (searchableText.includes("haiku")) return "economy";
   return "balanced";
-}
-
-/** Build short aliases from a model ID like "claude-sonnet-4-6". */
-function buildAliases(modelId: string): string[] {
-  const aliases: string[] = [];
-  const match = modelId.match(/claude-(\w+)-(.+)/);
-  if (match) {
-    const family = match[1];
-    const version = match[2];
-    aliases.push(family);
-    aliases.push(`${family}-${version}`);
-    aliases.push(`${family}-${version.replace(/-/g, ".")}`);
-  }
-  return aliases;
 }
 
 // ── SDK → registry conversion ───────────────────────────────────────────────
 
 /**
- * Extract "X.Y" version string from a description like "Opus 4.6 · …".
- * Returns undefined if no version is found.
+ * Compatibility aliases we preserve for Talon's existing config values.
+ *
+ * The SDK now returns short IDs like "default", "opus", and "sonnet[1m]".
+ * We keep the SDK IDs as canonical, and only add explicit aliases for older
+ * Talon config values and shortcuts that users may already have stored.
  */
-function extractVersion(description: string): string | undefined {
-  return description.match(/\b(\d+\.\d+)\b/)?.[1];
-}
+const COMPATIBILITY_ALIASES: Record<string, string[]> = {
+  default: ["sonnet", "sonnet-4-6", "sonnet-4.6", "claude-sonnet-4-6"],
+  "sonnet[1m]": [
+    "sonnet-4-6[1m]",
+    "sonnet-4.6[1m]",
+    "claude-sonnet-4-6[1m]",
+  ],
+  opus: ["claude-opus-4-6", "opus-4-6", "opus-4.6"],
+  "opus[1m]": ["claude-opus-4-6[1m]", "opus-4-6[1m]", "opus-4.6[1m]"],
+  haiku: ["claude-haiku-4-5", "haiku-4-5", "haiku-4.5"],
+};
 
 /**
- * Build a display name that always includes the version number.
- * "Opus"              + "Opus 4.6 · …"                  → "Opus 4.6"
- * "Sonnet (1M context)" + "Sonnet 4.6 with 1M context…" → "Sonnet 4.6 (1M)"
+ * Hidden SDK duplicates we collapse into the user-facing entry that Claude Code
+ * recommends for that model family.
  */
-function buildDisplayName(value: string, displayName: string, description: string): string {
-  const version = extractVersion(description);
-  if (!version) return displayName;
-  const is1m = value.includes("[1m]");
-  // Strip SDK's verbose "(1M context)" suffix so we can rebuild it consistently
-  const base = displayName.replace(/\s*\(1M context\)/i, "").trim();
-  return is1m ? `${base} ${version} (1M)` : `${base} ${version}`;
+const HIDDEN_DUPLICATE_MODELS: Record<string, string> = {
+  "claude-sonnet-4-6": "default",
+};
+
+function buildCompatibilityAliases(modelId: string): string[] {
+  return COMPATIBILITY_ALIASES[modelId] ?? [];
+}
+
+function mergeAliases(...lists: readonly string[][]): string[] {
+  const seen = new Set<string>();
+  const aliases: string[] = [];
+
+  for (const list of lists) {
+    for (const alias of list) {
+      const key = alias.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      aliases.push(alias);
+    }
+  }
+
+  return aliases;
+}
+
+function buildHiddenModelAliases(
+  values: ReadonlySet<string>,
+): Map<string, string[]> {
+  const hiddenAliases = new Map<string, string[]>();
+
+  for (const [hiddenValue, targetValue] of Object.entries(
+    HIDDEN_DUPLICATE_MODELS,
+  )) {
+    if (!values.has(hiddenValue) || !values.has(targetValue)) continue;
+    hiddenAliases.set(
+      targetValue,
+      mergeAliases(
+        hiddenAliases.get(targetValue) ?? [],
+        [hiddenValue],
+        buildCompatibilityAliases(hiddenValue),
+      ),
+    );
+  }
+
+  return hiddenAliases;
+}
+
+function buildOneMillionContextVariants(
+  values: ReadonlySet<string>,
+): Map<string, string> {
+  const variants = new Map<string, string>();
+
+  for (const value of values) {
+    if (!value.endsWith("[1m]")) continue;
+    variants.set(value.slice(0, -4), value);
+  }
+
+  const sonnetVariant = variants.get("sonnet");
+  if (sonnetVariant) {
+    variants.set("default", sonnetVariant);
+    variants.set("claude-sonnet-4-6", sonnetVariant);
+  }
+
+  return variants;
 }
 
 /**
  * Convert SDK ModelInfo to our registry format.
- * Sorts by tier and builds fallback chains automatically.
+ * Keeps SDK model IDs/display names intact while adding a thin compatibility
+ * layer for older Talon config values.
  */
-function convertSdkModels(
-  sdkModels: Array<{
-    value: string;
-    displayName: string;
-    description: string;
-  }>,
-): ModelInfo[] {
-  // The SDK "default" entry is the plain (non-1M) Sonnet model — the only
-  // place Sonnet appears without [1m]. We remap its value to "sonnet" so it
-  // shows up as a normal picker entry alongside "sonnet[1m]".
-  // Everything else (including [1m] variants) is registered verbatim.
-  const seen = new Set<string>();
-  const models: ModelInfo[] = [];
-  for (const m of sdkModels) {
-    // Remap "default" → "sonnet" (first word of its description, lowercased)
-    const id = m.value === "default"
-      ? (m.description.match(/^([A-Za-z]+)/)?.[1].toLowerCase() ?? "sonnet")
-      : m.value;
+function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
+  const values = new Set(sdkModels.map((model) => model.value));
+  const hiddenModelAliases = buildHiddenModelAliases(values);
+  const oneMillionContextVariants = buildOneMillionContextVariants(values);
+  const hiddenModels = new Set(
+    Object.entries(HIDDEN_DUPLICATE_MODELS)
+      .filter(([hiddenValue, targetValue]) =>
+        values.has(hiddenValue) && values.has(targetValue),
+      )
+      .map(([hiddenValue]) => hiddenValue),
+  );
 
-    if (seen.has(id)) continue;
-    // Skip long-form canonical IDs that duplicate an already-registered short
-    // alias, e.g. "claude-opus-4-6" after "opus" is already in seen.
-    const aliases = buildAliases(id);
-    if (aliases.some((a) => seen.has(a))) continue;
-    seen.add(id);
+  const usedKeys = new Set<string>();
+  const models: ModelInfo[] = [];
+
+  for (const model of sdkModels) {
+    if (hiddenModels.has(model.value)) continue;
+
+    const canonicalKey = model.value.toLowerCase();
+    if (usedKeys.has(canonicalKey)) continue;
+
+    const aliases = mergeAliases(
+      buildCompatibilityAliases(model.value),
+      hiddenModelAliases.get(model.value) ?? [],
+    )
+      .filter((alias) => alias.toLowerCase() !== canonicalKey)
+      .filter((alias) => !usedKeys.has(alias.toLowerCase()));
+
+    usedKeys.add(canonicalKey);
+    for (const alias of aliases) {
+      usedKeys.add(alias.toLowerCase());
+    }
+
+    const oneMillionContextModelId = model.value.endsWith("[1m]")
+      ? undefined
+      : oneMillionContextVariants.get(model.value);
+
     models.push({
-      id,
-      displayName: buildDisplayName(id, m.displayName, m.description),
-      description: m.description,
-      aliases: buildAliases(id),
+      id: model.value,
+      displayName: model.displayName,
+      description: model.description,
+      aliases,
       provider: "anthropic",
       capabilities: {
-        // [1m] models already carry the suffix; base models let users choose
-        // the explicit [1m] entry from the picker if they want 1M context.
-        supports1mContext: id.includes("[1m]"),
+        supports1mContext:
+          model.value.endsWith("[1m]") || oneMillionContextModelId !== undefined,
+        ...(oneMillionContextModelId !== undefined
+          ? { oneMillionContextModelId }
+          : {}),
       },
-      tier: inferTier(id),
+      tier: inferTier(model),
     });
   }
 
@@ -172,11 +247,7 @@ export async function registerClaudeModels(sdkOptions: {
       );
     });
 
-    let sdkModels: Array<{
-      value: string;
-      displayName: string;
-      description: string;
-    }>;
+    let sdkModels: SdkModelInfo[];
     try {
       sdkModels = await Promise.race([q.supportedModels(), timeout]);
     } finally {
@@ -220,30 +291,62 @@ export function registerClaudeModelsStatic(models: ModelInfo[]): void {
 /** Default model definitions for CLI setup wizard and tests. */
 export const CLAUDE_MODELS_STATIC: ModelInfo[] = [
   {
-    id: "claude-opus-4-6",
-    displayName: "Opus 4.6",
-    description: "smartest",
-    aliases: ["opus", "opus-4.6", "opus-4-6"],
+    id: "opus",
+    displayName: "Opus",
+    description: "Opus 4.6 · Most capable for complex work",
+    aliases: ["claude-opus-4-6", "opus-4.6", "opus-4-6"],
+    provider: "anthropic",
+    capabilities: {
+      supports1mContext: true,
+      oneMillionContextModelId: "opus[1m]",
+    },
+    tier: "premium",
+    fallback: "default",
+  },
+  {
+    id: "default",
+    displayName: "Default (recommended)",
+    description: "Sonnet 4.6 · Best for everyday tasks",
+    aliases: ["sonnet", "sonnet-4.6", "sonnet-4-6", "claude-sonnet-4-6"],
+    provider: "anthropic",
+    capabilities: {
+      supports1mContext: true,
+      oneMillionContextModelId: "sonnet[1m]",
+    },
+    tier: "balanced",
+    fallback: "haiku",
+  },
+  {
+    id: "opus[1m]",
+    displayName: "Opus (1M context)",
+    description:
+      "Opus 4.6 with 1M context · Billed as extra usage · $5/$25 per Mtok",
+    aliases: ["claude-opus-4-6[1m]", "opus-4.6[1m]", "opus-4-6[1m]"],
     provider: "anthropic",
     capabilities: { supports1mContext: true },
     tier: "premium",
-    fallback: "claude-sonnet-4-6",
+    fallback: "default",
   },
   {
-    id: "claude-sonnet-4-6",
-    displayName: "Sonnet 4.6",
-    description: "fast, balanced",
-    aliases: ["sonnet", "sonnet-4.6", "sonnet-4-6"],
+    id: "sonnet[1m]",
+    displayName: "Sonnet (1M context)",
+    description:
+      "Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15 per Mtok",
+    aliases: [
+      "claude-sonnet-4-6[1m]",
+      "sonnet-4.6[1m]",
+      "sonnet-4-6[1m]",
+    ],
     provider: "anthropic",
     capabilities: { supports1mContext: true },
     tier: "balanced",
-    fallback: "claude-haiku-4-5",
+    fallback: "haiku",
   },
   {
-    id: "claude-haiku-4-5",
-    displayName: "Haiku 4.5",
-    description: "fastest, cheapest",
-    aliases: ["haiku", "haiku-4.5", "haiku-4-5"],
+    id: "haiku",
+    displayName: "Haiku",
+    description: "Haiku 4.5 · Fastest for quick answers",
+    aliases: ["claude-haiku-4-5", "haiku-4.5", "haiku-4-5"],
     provider: "anthropic",
     capabilities: { supports1mContext: false },
     tier: "economy",

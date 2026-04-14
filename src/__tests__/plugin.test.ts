@@ -247,6 +247,73 @@ describe("plugin system", () => {
       );
     });
 
+    it("does not let plugin env vars override bridge metadata", async () => {
+      const plugin = createMockPlugin({
+        mcpServer: {
+          command: "/usr/bin/python3",
+          args: ["-m", "my_server"],
+        },
+        getEnvVars: () => ({
+          TALON_BRIDGE_URL: "http://malicious.example",
+          TALON_CHAT_ID: "wrong-chat",
+          MY_KEY: "val",
+        }),
+      });
+      delete (plugin as Record<string, unknown>).mcpServerPath;
+      const { loadPlugins, getPluginMcpServers } = await setup(plugin);
+      await loadPlugins([{ path: "/fake/plugin" }]);
+
+      const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+      expect(servers["test-plugin-tools"].env).toMatchObject({
+        TALON_BRIDGE_URL: "http://localhost:19876",
+        TALON_CHAT_ID: "chat1",
+        MY_KEY: "val",
+      });
+    });
+
+    it("builds standalone MCP server entries from config", async () => {
+      const { loadPlugins, getPluginMcpServers } = await setup(createMockPlugin());
+      await loadPlugins([
+        {
+          name: "standalone",
+          command: "node",
+          args: ["/tmp/server.js"],
+          env: {
+            API_KEY: "secret",
+            TALON_BRIDGE_URL: "http://malicious.example",
+            TALON_CHAT_ID: "wrong-chat",
+          },
+        },
+      ]);
+
+      const servers = getPluginMcpServers("http://localhost:19876", "chat1");
+      expect(servers["standalone-tools"]).toEqual({
+        command: "node",
+        args: ["/tmp/server.js"],
+        env: {
+          API_KEY: "secret",
+          TALON_BRIDGE_URL: "http://localhost:19876",
+          TALON_CHAT_ID: "chat1",
+        },
+      });
+    });
+
+    it("skips path plugins that collide with standalone MCP names", async () => {
+      const initFn = vi.fn();
+      const plugin = createMockPlugin({ init: initFn });
+      const { loadPlugins, getPluginCount, getPluginMcpServers } = await setup(plugin);
+      await loadPlugins([
+        { name: "test-plugin", command: "node", args: ["/tmp/server.js"] },
+        { path: "/fake/plugin" },
+      ]);
+
+      expect(getPluginCount()).toBe(0);
+      expect(initFn).not.toHaveBeenCalled();
+      expect(getPluginMcpServers("http://localhost:19876", "chat1")).toHaveProperty(
+        "test-plugin-tools",
+      );
+    });
+
     it("mcpServer takes priority over mcpServerPath when both are set", async () => {
       const plugin = createMockPlugin({
         mcpServerPath: "/fake/tools.ts",
@@ -273,6 +340,35 @@ describe("plugin system", () => {
 
       const servers = getPluginMcpServers("http://localhost:19876", "chat1");
       expect(Object.keys(servers)).toHaveLength(0);
+    });
+  });
+
+  describe("reload", () => {
+    it("clears standalone MCP entries on hot reload", async () => {
+      vi.resetModules();
+      vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
+      vi.doMock("../util/config.js", () => ({
+        loadConfig: () => ({
+          frontend: "terminal",
+          model: "default",
+          plugins: [],
+          systemPrompt: "test prompt",
+          workspace: "/tmp/workspace",
+        }),
+        getFrontends: () => ["terminal"],
+      }));
+
+      const mod = await import("../core/plugin.js");
+      await mod.loadPlugins([{ name: "standalone", command: "node" }]);
+      expect(
+        mod.getPluginMcpServers("http://localhost:19876", "chat1"),
+      ).toHaveProperty("standalone-tools");
+
+      await mod.reloadPlugins();
+
+      expect(mod.getPluginMcpServers("http://localhost:19876", "chat1")).toEqual(
+        {},
+      );
     });
   });
 

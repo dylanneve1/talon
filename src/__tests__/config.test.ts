@@ -195,12 +195,71 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.plugins).toHaveLength(2);
-      const p0 = config.plugins[0] as { path: string; config?: Record<string, unknown> };
-      const p1 = config.plugins[1] as { path: string; config?: Record<string, unknown> };
-      expect(p0.path).toBe("./plugins/my-plugin");
-      expect(p0.config).toEqual({ key: "value" });
-      expect(p1.path).toBe("./plugins/another");
-      expect(p1.config).toBeUndefined();
+      const [firstPlugin, secondPlugin] = config.plugins;
+
+      expect("path" in firstPlugin).toBe(true);
+      if ("path" in firstPlugin) {
+        expect(firstPlugin.path).toBe("./plugins/my-plugin");
+        expect(firstPlugin.config).toEqual({ key: "value" });
+      }
+
+      expect("path" in secondPlugin).toBe(true);
+      if ("path" in secondPlugin) {
+        expect(secondPlugin.path).toBe("./plugins/another");
+        expect(secondPlugin.config).toBeUndefined();
+      }
+    });
+
+    it("parses standalone MCP plugins in config", async () => {
+      mockFs({
+        frontend: "terminal",
+        plugins: [
+          {
+            name: "polymarket",
+            command: "node",
+            args: ["/tmp/polymarket.js"],
+            env: { POLYMARKET_PRIVATE_KEY: "0x123" },
+          },
+        ],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+
+      expect(config.plugins).toEqual([
+        {
+          name: "polymarket",
+          command: "node",
+          args: ["/tmp/polymarket.js"],
+          env: { POLYMARKET_PRIVATE_KEY: "0x123" },
+        },
+      ]);
+    });
+
+    it("rejects plugin entries that mix path and standalone MCP fields", async () => {
+      mockFs({
+        frontend: "terminal",
+        plugins: [
+          {
+            path: "./plugins/extras",
+            name: "extras",
+            command: "node",
+          },
+        ],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow("exactly one format");
+    });
+
+    it("rejects standalone MCP entries missing required fields", async () => {
+      mockFs({
+        frontend: "terminal",
+        plugins: [{ name: "polymarket" }],
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      expect(() => loadConfig()).toThrow("MCP plugin entries must include 'command'");
     });
 
     it("defaults plugins to empty array", async () => {
@@ -236,6 +295,29 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.frontend).toEqual(["terminal"]);
+    });
+
+    it("preserves Playwright endpoint settings from config", async () => {
+      mockFs({
+        frontend: "terminal",
+        playwright: {
+          enabled: true,
+          browser: "firefox",
+          endpoint: "ws://127.0.0.1:9222/devtools/browser/test",
+          endpointFile: "/tmp/camoufox-endpoint.txt",
+        },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+
+      expect(config.playwright).toEqual({
+        enabled: true,
+        browser: "firefox",
+        headless: true,
+        endpoint: "ws://127.0.0.1:9222/devtools/browser/test",
+        endpointFile: "/tmp/camoufox-endpoint.txt",
+      });
     });
   });
 

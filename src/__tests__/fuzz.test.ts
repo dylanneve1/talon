@@ -324,25 +324,25 @@ describe("fuzz: resolveModelName()", () => {
     );
   });
 
-  it("known aliases always resolve to claude model names", () => {
-    const aliases = [
-      "sonnet",
-      "opus",
-      "haiku",
-      "sonnet-4.6",
-      "opus-4.6",
-      "haiku-4.5",
-      "sonnet-4-6",
-      "opus-4-6",
-      "haiku-4-5",
-    ];
+  it("known aliases resolve to the expected SDK model IDs", () => {
+    const aliasMappings = [
+      ["sonnet", "default"],
+      ["opus", "opus"],
+      ["haiku", "haiku"],
+      ["sonnet-4.6", "default"],
+      ["opus-4.6", "opus"],
+      ["haiku-4.5", "haiku"],
+      ["sonnet-4-6", "default"],
+      ["opus-4-6", "opus"],
+      ["haiku-4-5", "haiku"],
+    ] as const;
     fc.assert(
       fc.property(
-        fc.constantFrom(...aliases),
+        fc.constantFrom(...aliasMappings),
         fc.constantFrom("", " ", "  "),
-        (alias, padding) => {
+        ([alias, expectedModelId], padding) => {
           const result = resolveModelName(padding + alias + padding);
-          expect(result).toMatch(/^claude-/);
+          expect(result).toBe(expectedModelId);
         },
       ),
       fcParams,

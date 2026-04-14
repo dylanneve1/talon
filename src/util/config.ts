@@ -15,22 +15,100 @@ import { log } from "./log.js";
 // ── Config schema ───────────────────────────────────────────────────────────
 
 /** Path-based Talon plugin (loaded as a Node module). */
-const pluginPathSchema = z.object({
-  path: z.string(),
-  config: z.record(z.string(), z.unknown()).optional(),
-});
+const pluginPathSchema = z
+  .object({
+    path: z.string(),
+    config: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
 
 /** Standalone MCP server (command + args, not a Talon plugin module). */
-const pluginMcpSchema = z.object({
-  name: z.string(),
-  command: z.string(),
-  args: z.array(z.string()).optional(),
-  env: z.record(z.string(), z.string()).optional(),
-});
+const pluginMcpSchema = z
+  .object({
+    name: z.string(),
+    command: z.string(),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
 
-const pluginEntrySchema = z.union([pluginPathSchema, pluginMcpSchema]);
+const pluginEntrySchema = z
+  .object({
+    path: z.string().optional(),
+    config: z.record(z.string(), z.unknown()).optional(),
+    name: z.string().optional(),
+    command: z.string().optional(),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const hasPath = value.path !== undefined;
+    const hasMcpFields =
+      value.name !== undefined ||
+      value.command !== undefined ||
+      value.args !== undefined ||
+      value.env !== undefined;
+
+    if (hasPath && hasMcpFields) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Plugin entry must use exactly one format: either 'path' (with optional 'config') or MCP fields ('name', 'command', optional 'args'/'env'), but not both.",
+      });
+      return;
+    }
+
+    if (!hasPath && !hasMcpFields) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message:
+          "Plugin entry must provide either 'path' or both 'name' and 'command'.",
+      });
+      return;
+    }
+
+    if (!hasPath && value.config !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["config"],
+        message: "Path-based plugin entries must include 'path'.",
+      });
+    }
+
+    if (hasMcpFields) {
+      if (value.name === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["name"],
+          message: "MCP plugin entries must include 'name'.",
+        });
+      }
+
+      if (value.command === undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["command"],
+          message: "MCP plugin entries must include 'command'.",
+        });
+      }
+    }
+  })
+  .pipe(z.union([pluginPathSchema, pluginMcpSchema]));
 
 const frontendEnum = z.enum(["telegram", "terminal", "teams"]);
+
+const playwrightConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Browser engine: chromium (default), chrome, firefox, webkit, msedge */
+  browser: z.string().optional(),
+  /** Run headless (default: true) */
+  headless: z.boolean().default(true),
+  /** Connect to an existing browser websocket endpoint. */
+  endpoint: z.string().optional(),
+  /** Read the browser websocket endpoint from a file. */
+  endpointFile: z.string().optional(),
+});
 
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
@@ -75,15 +153,7 @@ const configSchema = z.object({
     .optional(),
 
   // Playwright — headless browser automation via MCP
-  playwright: z
-    .object({
-      enabled: z.boolean().default(false),
-      /** Browser engine: chromium (default), chrome, firefox, webkit, msedge */
-      browser: z.string().optional(),
-      /** Run headless (default: true) */
-      headless: z.boolean().default(true),
-    })
-    .optional(),
+  playwright: playwrightConfigSchema.optional(),
 
   // Display name shown in terminal UI (defaults to "Talon")
   botDisplayName: z.string().default("Talon"),

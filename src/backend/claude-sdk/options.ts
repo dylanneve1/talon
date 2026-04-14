@@ -10,7 +10,7 @@ import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
-import { supports1mContext } from "../../core/models.js";
+import { get1mContextModelId } from "../../core/models.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 
@@ -101,9 +101,10 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     thinking: { type: "adaptive" as const },
   };
 
-  const canUse1m =
-    supports1mContext(activeModel) && !activeModel.includes("[1m]");
-  const sdkModel = canUse1m ? `${activeModel}[1m]` : activeModel;
+  const oneMillionContextModelId = activeModel.includes("[1m]")
+    ? null
+    : get1mContextModelId(activeModel);
+  const sdkModel = oneMillionContextModelId ?? activeModel;
 
   const session = getSession(chatId);
 

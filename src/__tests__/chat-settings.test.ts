@@ -38,6 +38,12 @@ const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =
   await import("../backend/claude-sdk/models.js");
 registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
 
+const SDK_MODEL_IDS = {
+  sonnet: "default",
+  opus: "opus",
+  haiku: "haiku",
+} as const;
+
 describe("chat-settings", () => {
   describe("getChatSettings", () => {
     it("returns empty object for unknown chat", () => {
@@ -85,62 +91,67 @@ describe("chat-settings", () => {
   });
 
   describe("resolveModelName", () => {
-    it("resolves 'sonnet' to claude-sonnet-4-6", () => {
-      expect(resolveModelName("sonnet")).toBe("claude-sonnet-4-6");
+    it("resolves 'sonnet' to the SDK default model ID", () => {
+      expect(resolveModelName("sonnet")).toBe(SDK_MODEL_IDS.sonnet);
     });
 
-    it("resolves 'opus' to claude-opus-4-6", () => {
-      expect(resolveModelName("opus")).toBe("claude-opus-4-6");
+    it("resolves 'opus' to the SDK Opus model ID", () => {
+      expect(resolveModelName("opus")).toBe(SDK_MODEL_IDS.opus);
     });
 
-    it("resolves 'haiku' to claude-haiku-4-5", () => {
-      expect(resolveModelName("haiku")).toBe("claude-haiku-4-5");
+    it("resolves 'haiku' to the SDK Haiku model ID", () => {
+      expect(resolveModelName("haiku")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("resolves versioned aliases", () => {
-      expect(resolveModelName("sonnet-4.6")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("opus-4.6")).toBe("claude-opus-4-6");
-      expect(resolveModelName("haiku-4.5")).toBe("claude-haiku-4-5");
+      expect(resolveModelName("sonnet-4.6")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("opus-4.6")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("haiku-4.5")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("resolves dash-separated aliases", () => {
-      expect(resolveModelName("sonnet-4-6")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("opus-4-6")).toBe("claude-opus-4-6");
-      expect(resolveModelName("haiku-4-5")).toBe("claude-haiku-4-5");
+      expect(resolveModelName("sonnet-4-6")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("opus-4-6")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("haiku-4-5")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("is case-insensitive", () => {
-      expect(resolveModelName("Sonnet")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("OPUS")).toBe("claude-opus-4-6");
+      expect(resolveModelName("Sonnet")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("OPUS")).toBe(SDK_MODEL_IDS.opus);
     });
 
     it("trims whitespace", () => {
-      expect(resolveModelName("  sonnet  ")).toBe("claude-sonnet-4-6");
+      expect(resolveModelName("  sonnet  ")).toBe(SDK_MODEL_IDS.sonnet);
     });
 
     it("passes through unknown model names unchanged", () => {
       expect(resolveModelName("gpt-4")).toBe("gpt-4");
-      expect(resolveModelName("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
+    });
+
+    it("resolves legacy claude-* aliases to the current SDK IDs", () => {
+      expect(resolveModelName("claude-sonnet-4-6")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("claude-opus-4-6")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("claude-haiku-4-5")).toBe(SDK_MODEL_IDS.haiku);
     });
   });
 
   describe("resolveModelName — exhaustive alias coverage", () => {
     it("resolves all base aliases correctly", () => {
-      expect(resolveModelName("sonnet")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("opus")).toBe("claude-opus-4-6");
-      expect(resolveModelName("haiku")).toBe("claude-haiku-4-5");
+      expect(resolveModelName("sonnet")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("opus")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("haiku")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("resolves all dot-separated version aliases", () => {
-      expect(resolveModelName("sonnet-4.6")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("opus-4.6")).toBe("claude-opus-4-6");
-      expect(resolveModelName("haiku-4.5")).toBe("claude-haiku-4-5");
+      expect(resolveModelName("sonnet-4.6")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("opus-4.6")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("haiku-4.5")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("resolves all dash-separated version aliases", () => {
-      expect(resolveModelName("sonnet-4-6")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("opus-4-6")).toBe("claude-opus-4-6");
-      expect(resolveModelName("haiku-4-5")).toBe("claude-haiku-4-5");
+      expect(resolveModelName("sonnet-4-6")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("opus-4-6")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("haiku-4-5")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("passes through completely unknown model names unchanged", () => {
@@ -149,10 +160,10 @@ describe("chat-settings", () => {
       expect(resolveModelName("mistral-large")).toBe("mistral-large");
     });
 
-    it("passes through full claude model names unchanged (not aliases)", () => {
-      expect(resolveModelName("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("claude-opus-4-6")).toBe("claude-opus-4-6");
-      expect(resolveModelName("claude-haiku-4-5")).toBe("claude-haiku-4-5");
+    it("maps full claude compatibility aliases to the current SDK IDs", () => {
+      expect(resolveModelName("claude-sonnet-4-6")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("claude-opus-4-6")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("claude-haiku-4-5")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("preserves original casing for unknown models", () => {
@@ -171,16 +182,16 @@ describe("chat-settings", () => {
   });
 
   describe("model alias resolution (via registry)", () => {
-    it("resolves short aliases to full model IDs", () => {
-      expect(resolveModelName("sonnet")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("opus")).toBe("claude-opus-4-6");
-      expect(resolveModelName("haiku")).toBe("claude-haiku-4-5");
+    it("resolves short aliases to SDK model IDs", () => {
+      expect(resolveModelName("sonnet")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("opus")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("haiku")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("resolves versioned aliases", () => {
-      expect(resolveModelName("sonnet-4-6")).toBe("claude-sonnet-4-6");
-      expect(resolveModelName("opus-4.6")).toBe("claude-opus-4-6");
-      expect(resolveModelName("haiku-4.5")).toBe("claude-haiku-4-5");
+      expect(resolveModelName("sonnet-4-6")).toBe(SDK_MODEL_IDS.sonnet);
+      expect(resolveModelName("opus-4.6")).toBe(SDK_MODEL_IDS.opus);
+      expect(resolveModelName("haiku-4.5")).toBe(SDK_MODEL_IDS.haiku);
     });
 
     it("passes through unknown names unchanged", () => {
