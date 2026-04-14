@@ -38,6 +38,22 @@ function buildAliases(modelId: string): string[] {
 // ── SDK → registry conversion ───────────────────────────────────────────────
 
 /**
+ * Derive canonical claude-{family}-{major}-{minor} ID from a short alias entry.
+ * Returns undefined if the description doesn't contain a parseable version.
+ */
+function deriveCanonicalId(
+  value: string,
+  description: string,
+): string | undefined {
+  // Already canonical — nothing to do
+  if (value.startsWith("claude-")) return value;
+  // Parse "Sonnet 4.6 · …" or "Haiku 4.5 · …" from description
+  const match = description.match(/([A-Za-z]+)\s+(\d+)\.(\d+)/);
+  if (!match) return undefined;
+  return `claude-${match[1].toLowerCase()}-${match[2]}-${match[3]}`;
+}
+
+/**
  * Convert SDK ModelInfo to our registry format.
  * Sorts by tier and builds fallback chains automatically.
  */
@@ -51,22 +67,31 @@ function convertSdkModels(
   // Filter out SDK artifacts:
   // - [1m] variants: we add this suffix ourselves in options.ts
   // - "default" pseudo-model: not a real model, just an alias for the default
-  // - any model that doesn't start with "claude-": not an Anthropic model
+  // The SDK (≥0.2.104) returns short aliases ("sonnet", "haiku") instead of
+  // canonical IDs, so we can no longer rely on startsWith("claude-").
   const filtered = sdkModels.filter(
-    (m) => m.value.startsWith("claude-") && !m.value.includes("["),
+    (m) => !m.value.includes("[") && m.value !== "default",
   );
 
-  const models: ModelInfo[] = filtered.map((m) => ({
-    id: m.value,
-    displayName: m.displayName,
-    description: m.description,
-    aliases: buildAliases(m.value),
-    provider: "anthropic",
-    capabilities: {
-      supports1mContext: !m.value.includes("haiku"),
-    },
-    tier: inferTier(m.value),
-  }));
+  const seen = new Set<string>();
+  const models: ModelInfo[] = [];
+  for (const m of filtered) {
+    const id = deriveCanonicalId(m.value, m.description) ?? m.value;
+    // Deduplicate — the SDK may return both "opus" and "claude-opus-4-6"
+    if (seen.has(id)) continue;
+    seen.add(id);
+    models.push({
+      id,
+      displayName: m.displayName,
+      description: m.description,
+      aliases: buildAliases(id),
+      provider: "anthropic",
+      capabilities: {
+        supports1mContext: !id.includes("haiku"),
+      },
+      tier: inferTier(id),
+    });
+  }
 
   const tierOrder = { premium: 0, balanced: 1, economy: 2 };
   models.sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier]);
