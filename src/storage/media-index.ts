@@ -59,10 +59,7 @@ function save(): void {
     writeFileAtomic.sync(STORE_FILE, JSON.stringify(entries) + "\n");
     dirty = false;
   } catch (err) {
-    logError(
-      "workspace",
-      `Media index save failed: ${err instanceof Error ? err.message : err}`,
-    );
+    logError("workspace", "Media index save failed", err);
   }
 }
 

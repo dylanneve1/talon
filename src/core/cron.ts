@@ -82,6 +82,10 @@ async function runCronTick(): Promise<void> {
   }
 }
 
+// Track jobs that have already logged a bad-schedule warning to avoid log spam
+// (isDue runs every 60s — a single bad job would flood the logs otherwise)
+const warnedBadSchedule = new Set<string>();
+
 function isDue(job: CronJob, now: Date): boolean {
   try {
     const oneMinuteAgo = new Date(now.getTime() - 60_000);
@@ -104,10 +108,13 @@ function isDue(job: CronJob, now: Date): boolean {
 
     return true;
   } catch (err) {
-    logWarn(
-      "cron",
-      `Invalid cron schedule for job "${job.id}": ${err instanceof Error ? err.message : err}`,
-    );
+    if (!warnedBadSchedule.has(job.id)) {
+      warnedBadSchedule.add(job.id);
+      logWarn(
+        "cron",
+        `Invalid cron schedule for job "${job.id}": ${err instanceof Error ? err.message : err}`,
+      );
+    }
     return false;
   }
 }

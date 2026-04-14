@@ -263,7 +263,8 @@ export function createTelegramActionHandler(
           } catch (err) {
             logError(
               "bot",
-              `Scheduled message failed (chat=${chatId}): ${err instanceof Error ? err.message : err}`,
+              `Scheduled message failed (chat=${chatId})`,
+              err,
             );
           }
           scheduledMessages.delete(scheduleId);

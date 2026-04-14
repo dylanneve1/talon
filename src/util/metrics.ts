@@ -1,9 +1,33 @@
 // src/util/metrics.ts — lightweight in-process metrics
 
 const counters = new Map<string, number>();
-const histograms = new Map<string, number[]>();
-const MAX_HISTOGRAM_SIZE = 1000;
 const MAX_METRIC_KEYS = 500; // cap to prevent unbounded growth from high-cardinality names
+
+// Ring buffer for histograms — O(1) insert, avoids splice overhead
+interface RingBuffer {
+  data: number[];
+  head: number; // next write position
+  size: number; // current number of valid entries (≤ capacity)
+}
+
+const histograms = new Map<string, RingBuffer>();
+const MAX_HISTOGRAM_SIZE = 1000;
+
+function createRingBuffer(capacity: number): RingBuffer {
+  return { data: new Array<number>(capacity), head: 0, size: 0 };
+}
+
+function ringPush(buf: RingBuffer, value: number): void {
+  buf.data[buf.head] = value;
+  buf.head = (buf.head + 1) % buf.data.length;
+  if (buf.size < buf.data.length) buf.size++;
+}
+
+function ringValues(buf: RingBuffer): number[] {
+  if (buf.size < buf.data.length) return buf.data.slice(0, buf.size);
+  // Full ring — read from head (oldest) wrapping around
+  return [...buf.data.slice(buf.head), ...buf.data.slice(0, buf.head)];
+}
 
 export function incrementCounter(name: string, amount = 1): void {
   // Only allow new keys up to the cap — existing keys always pass
@@ -13,16 +37,13 @@ export function incrementCounter(name: string, amount = 1): void {
 
 export function recordHistogram(name: string, value: number): void {
   if (!Number.isFinite(value)) return; // drop NaN/Infinity/invalid samples
-  let values = histograms.get(name);
-  if (!values) {
+  let buf = histograms.get(name);
+  if (!buf) {
     if (histograms.size >= MAX_METRIC_KEYS) return; // cap key count
-    values = [];
-    histograms.set(name, values);
+    buf = createRingBuffer(MAX_HISTOGRAM_SIZE);
+    histograms.set(name, buf);
   }
-  values.push(value);
-  if (values.length > MAX_HISTOGRAM_SIZE) {
-    values.splice(0, values.length - MAX_HISTOGRAM_SIZE);
-  }
+  ringPush(buf, value);
 }
 
 export function getMetrics(): {
@@ -37,8 +58,9 @@ export function getMetrics(): {
     histograms: {},
   };
   for (const [k, v] of counters) result.counters[k] = v;
-  for (const [k, values] of histograms) {
-    if (values.length === 0) continue;
+  for (const [k, buf] of histograms) {
+    if (buf.size === 0) continue;
+    const values = ringValues(buf);
     const sorted = [...values].sort((a, b) => a - b);
     const len = sorted.length;
     result.histograms[k] = {
