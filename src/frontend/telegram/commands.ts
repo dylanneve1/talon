@@ -51,6 +51,7 @@ import {
   formatTokenCount,
   formatBytes,
   parseInterval,
+  renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
 } from "./helpers.js";
@@ -486,48 +487,9 @@ export function registerCommands(
       await ctx.reply("Not authorized.");
       return;
     }
-    const m = getMetrics();
-    const lines: string[] = ["<b>📊 Metrics</b>", ""];
-
-    // Histograms
-    const histKeys = Object.keys(m.histograms);
-    if (histKeys.length > 0) {
-      lines.push("<b>Latency</b>");
-      for (const k of histKeys) {
-        const h = m.histograms[k];
-        lines.push(
-          `  <code>${escapeHtml(k)}</code>  n=${h.count}  p50=${formatDuration(h.p50)}  p95=${formatDuration(h.p95)}  p99=${formatDuration(h.p99)}  avg=${formatDuration(h.avg)}`,
-        );
-      }
-      lines.push("");
+    for (const message of renderMetricsMessages(getMetrics())) {
+      await ctx.reply(message, { parse_mode: "HTML" });
     }
-
-    // Counters — group by prefix
-    const counterKeys = Object.keys(m.counters).sort();
-    if (counterKeys.length > 0) {
-      const groups = new Map<string, string[]>();
-      for (const k of counterKeys) {
-        const prefix = k.includes(".") ? k.split(".")[0] : "general";
-        if (!groups.has(prefix)) groups.set(prefix, []);
-        groups.get(prefix)!.push(k);
-      }
-      for (const [prefix, keys] of groups) {
-        lines.push(`<b>${escapeHtml(prefix)}</b>`);
-        for (const k of keys) {
-          const label = k.includes(".") ? k.split(".").slice(1).join(".") : k;
-          lines.push(
-            `  <code>${escapeHtml(label)}</code>  ${m.counters[k].toLocaleString()}`,
-          );
-        }
-        lines.push("");
-      }
-    }
-
-    if (histKeys.length === 0 && counterKeys.length === 0) {
-      lines.push("<i>No metrics recorded yet.</i>");
-    }
-
-    await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
   });
 
   bot.command("dream", async (ctx) => {
