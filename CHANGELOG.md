@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/dylanneve1/talon/compare/v1.6.1...v1.7.0) (2026-04-14)
+
+
+### Features
+
+* add standalone MCP server plugin support ([#52](https://github.com/dylanneve1/talon/issues/52)) ([bf3cdc3](https://github.com/dylanneve1/talon/commit/bf3cdc30d4d157f51433b70ef0968514dcb90c84))
+
 ## [1.6.1](https://github.com/dylanneve1/talon/compare/v1.6.0...v1.6.1) (2026-04-13)
 
 
