@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0](https://github.com/dylanneve1/talon/compare/v1.6.1...v1.7.0) (2026-04-14)
+
+
+### Features
+
+* **playwright:** add Camoufox endpoint support, fix playwright-core version split ([f3154a4](https://github.com/dylanneve1/talon/commit/f3154a4e7fd7b7feeffc25089ca2d4ce0de89972))
+
+
+### Bug Fixes
+
+* **models:** deduplicate canonical-ID entries; fix model picker selection ([8d89376](https://github.com/dylanneve1/talon/commit/8d893769efbbcad47b830f6d5e1a61f53f555a06))
+* **models:** handle SDK v0.2.104 short alias model format ([ee1ecf6](https://github.com/dylanneve1/talon/commit/ee1ecf699909da5870d74e5ee0087d2fe3ad2100))
+* **models:** include "default" entry to recover Sonnet model ([a424d86](https://github.com/dylanneve1/talon/commit/a424d86cb44cc5adc16074ce7b47c5301d8b2a65))
+* **models:** recover plain Sonnet entry; add version numbers to display names ([ef81c4a](https://github.com/dylanneve1/talon/commit/ef81c4a734320245ffe48fe4f734cb34ab3bd569))
+
 ## [1.6.1](https://github.com/dylanneve1/talon/compare/v1.6.0...v1.6.1) (2026-04-13)
 
 
