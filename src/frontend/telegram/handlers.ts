@@ -111,8 +111,10 @@ async function isAdminInGroup(bot: Bot, chatId: number): Promise<boolean> {
       `isAdminInGroup check failed for chat ${chatId}: ${err instanceof Error ? err.message : err}`,
     );
     // API error (e.g. bot can't query members) — deny by default
-    verifiedGroups.set(chatId, false);
-    setTimeout(() => verifiedGroups.delete(chatId), 10 * 60 * 1000);
+    verifiedGroups.set(chatId, {
+      isMember: false,
+      expiresAt: Date.now() + VERIFIED_GROUP_TTL_MS,
+    });
     return false;
   }
 }

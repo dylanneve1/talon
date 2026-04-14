@@ -18,7 +18,8 @@ import { createBridge, textResult } from "./bridge.js";
 import type { ToolFrontend } from "./types.js";
 
 process.on("unhandledRejection", (err) => {
-  const message = `[mcp-server] Unhandled rejection: ${err instanceof Error ? err.message : err}\n`;
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  const message = `[mcp-server] Unhandled rejection: ${detail}\n`;
   process.exitCode = 1;
   process.stderr.write(message, () => {
     process.exit();
