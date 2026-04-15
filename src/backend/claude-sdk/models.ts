@@ -310,25 +310,29 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
     });
   }
 
-  // Assign fallback chain from SDK order:
+  // Assign fallback chain from SDK order (single pass, O(1) lookups):
   // - 1M variants fall back to their base family model
   // - Base models fall back to the next base model in SDK order
-  const baseModels = models.filter((m) => !m.id.endsWith("[1m]"));
+  const recordById = new Map(records.map((r) => [r.value, r]));
   const baseByFamily = new Map<string, string>();
-  for (const model of models) {
-    const rec = records.find((r) => r.value === model.id);
-    if (rec?.familyKey && !model.id.endsWith("[1m]")) {
-      baseByFamily.set(rec.familyKey, model.id);
-    }
-  }
+  const baseModels: ModelInfo[] = [];
 
   for (const model of models) {
-    const rec = records.find((r) => r.value === model.id);
+    if (model.id.endsWith("[1m]")) continue;
+    const rec = recordById.get(model.id);
+    if (rec?.familyKey) baseByFamily.set(rec.familyKey, model.id);
+    baseModels.push(model);
+  }
+
+  const baseIndex = new Map(baseModels.map((m, i) => [m.id, i]));
+
+  for (const model of models) {
+    const rec = recordById.get(model.id);
     if (model.id.endsWith("[1m]") && rec?.familyKey) {
       model.fallback = baseByFamily.get(rec.familyKey);
     } else {
-      const idx = baseModels.indexOf(model);
-      if (idx >= 0 && idx < baseModels.length - 1) {
+      const idx = baseIndex.get(model.id);
+      if (idx !== undefined && idx < baseModels.length - 1) {
         model.fallback = baseModels[idx + 1]!.id;
       }
     }
