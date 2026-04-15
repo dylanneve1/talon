@@ -432,4 +432,3 @@ export const CLAUDE_MODELS_STATIC: ModelInfo[] = convertSdkModels([
     description: "Haiku · Fastest for quick answers",
   },
 ]);
-
