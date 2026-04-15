@@ -28,6 +28,19 @@ export type ModelInfo = {
 
 const models = new Map<string, ModelInfo>();
 const aliasIndex = new Map<string, string>();
+const providerPrefixes: string[] = [];
+
+/**
+ * Register a provider-specific prefix (e.g. "claude-") that the fuzzy
+ * alias resolver will strip when matching family names. Backends call
+ * this during initialization so core stays provider-agnostic.
+ */
+export function registerProviderPrefix(prefix: string): void {
+  const lower = prefix.toLowerCase();
+  if (!providerPrefixes.includes(lower)) {
+    providerPrefixes.push(lower);
+  }
+}
 
 function resolveGenericFamilyAlias(input: string): string | null {
   const trimmed = input.trim().toLowerCase();
@@ -35,8 +48,11 @@ function resolveGenericFamilyAlias(input: string): string | null {
 
   const isOneMillion = trimmed.endsWith("[1m]");
   let base = isOneMillion ? trimmed.slice(0, -4) : trimmed;
-  if (base.startsWith("claude-")) {
-    base = base.slice("claude-".length);
+  for (const prefix of providerPrefixes) {
+    if (base.startsWith(prefix)) {
+      base = base.slice(prefix.length);
+      break;
+    }
   }
 
   const tokens = base.replace(/\./g, "-").split("-").filter(Boolean);
@@ -128,10 +144,12 @@ export function getFallbackModel(modelId: string): string | null {
 }
 
 /**
- * Get the default model. Returns the first registered model,
- * or the hardcoded "default" if the registry is still empty.
+ * Get the default model. Prefers the canonical "default" model ID if
+ * registered, otherwise returns the first registered model, otherwise
+ * falls back to the literal string "default".
  */
 export function getDefaultModel(): string {
+  if (models.has("default")) return "default";
   const first = models.values().next();
   if (!first.done) return first.value.id;
   return "default";
@@ -155,4 +173,5 @@ export function clearModelsByProvider(provider: string): void {
 export function clearModels(): void {
   models.clear();
   aliasIndex.clear();
+  providerPrefixes.length = 0;
 }

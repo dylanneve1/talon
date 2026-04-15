@@ -8,7 +8,11 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { registerModels, clearModelsByProvider } from "../../core/models.js";
+import {
+  registerModels,
+  clearModelsByProvider,
+  registerProviderPrefix,
+} from "../../core/models.js";
 import type { ModelInfo } from "../../core/models.js";
 import { log, logError } from "../../util/log.js";
 
@@ -306,6 +310,30 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
     });
   }
 
+  // Assign fallback chain from SDK order:
+  // - 1M variants fall back to their base family model
+  // - Base models fall back to the next base model in SDK order
+  const baseModels = models.filter((m) => !m.id.endsWith("[1m]"));
+  const baseByFamily = new Map<string, string>();
+  for (const model of models) {
+    const rec = records.find((r) => r.value === model.id);
+    if (rec?.familyKey && !model.id.endsWith("[1m]")) {
+      baseByFamily.set(rec.familyKey, model.id);
+    }
+  }
+
+  for (const model of models) {
+    const rec = records.find((r) => r.value === model.id);
+    if (model.id.endsWith("[1m]") && rec?.familyKey) {
+      model.fallback = baseByFamily.get(rec.familyKey);
+    } else {
+      const idx = baseModels.indexOf(model);
+      if (idx >= 0 && idx < baseModels.length - 1) {
+        model.fallback = baseModels[idx + 1]!.id;
+      }
+    }
+  }
+
   return models;
 }
 
@@ -376,6 +404,7 @@ export async function registerClaudeModels(sdkOptions: {
 
     const models = convertSdkModels(sdkModels);
     clearModelsByProvider("anthropic");
+    registerProviderPrefix("claude-");
     registerModels(models);
     log(
       "agent",
@@ -401,6 +430,7 @@ export async function registerClaudeModels(sdkOptions: {
  * wizard where the SDK subprocess is not available.
  */
 export function registerClaudeModelsStatic(models: ModelInfo[]): void {
+  registerProviderPrefix("claude-");
   registerModels(models);
 }
 
