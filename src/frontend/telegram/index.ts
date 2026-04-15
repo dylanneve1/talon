@@ -79,7 +79,7 @@ export function createTelegramFrontend(
 
       registerCommands(bot, config, gateway);
       registerMiddleware(bot, config);
-      registerCallbacks(bot, config);
+      registerCallbacks(bot, config, gateway);
 
       await bot.api.deleteMyCommands();
       await bot.api.setMyCommands([

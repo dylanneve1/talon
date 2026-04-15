@@ -38,13 +38,10 @@ import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
 import {
   formatModelLabel,
-  formatModelOptionLabel,
   formatDuration,
   formatTokenCount,
   formatBytes,
   parseInterval,
-  getTelegramModelOptions,
-  isSelectedModel,
   renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
@@ -53,16 +50,6 @@ import {
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
-import {
-  getOpenCodeModelCatalog,
-  getOpenCodeModelSelectionValue,
-  getOpenCodeSettingsPresentation,
-  resolveOpenCodeModelInput,
-  renderOpenCodeModelSummary,
-  renderOpenCodeModelList,
-  formatOpenCodeSelectionError,
-  formatOpenCodeUnavailableModel,
-} from "../../backend/opencode/index.js";
 
 // Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
 let ADMIN_USER_ID = 0;
@@ -111,9 +98,7 @@ export function registerCommands(
         "",
         "<b>\uD83E\uDD85 Settings</b>",
         "  /settings -- view and change all chat settings",
-        config.backend === "opencode"
-          ? "  /model -- browse/change OpenCode models (free + login info)"
-          : "  /model -- show or change model (sonnet, opus, haiku)",
+        "  /model -- show or change model",
         "  /effort -- set thinking effort (off, low, medium, high, max)",
         "  /pulse -- toggle periodic check-ins (on/off)",
         "",
@@ -209,43 +194,11 @@ export function registerCommands(
   bot.command("model", async (ctx) => {
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim();
-    const settings = getChatSettings(cid);
-    const activeModel = settings.model ?? config.model;
+    const activeModel = getChatSettings(cid).model ?? config.model;
+    const be = gateway?.backend;
 
-    if (config.backend === "opencode") {
-      if (!arg) {
-        const summary = await renderOpenCodeModelSummary(
-          activeModel,
-          config.model,
-        );
-        await ctx.reply(summary.text, {
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: chunkButtons(summary.quickButtons),
-          },
-        });
-        return;
-      }
-
-      const lowerArg = arg.toLowerCase();
-      if (lowerArg === "free" || lowerArg === "list" || lowerArg === "all") {
-        await ctx.reply(
-          await renderOpenCodeModelList(lowerArg === "free" ? "free" : "all"),
-          {
-            parse_mode: "HTML",
-          },
-        );
-        return;
-      }
-
-      if (lowerArg === "providers") {
-        await ctx.reply(await renderOpenCodeModelList("providers"), {
-          parse_mode: "HTML",
-        });
-        return;
-      }
-
-      if (lowerArg === "reset" || lowerArg === "default") {
+    if (!arg || arg.toLowerCase() === "reset" || arg.toLowerCase() === "default") {
+      if (arg) {
         setChatModel(cid, undefined);
         await ctx.reply(
           `Model reset to default: <code>${escapeHtml(config.model)}</code>`,
@@ -253,77 +206,56 @@ export function registerCommands(
         );
         return;
       }
-
-      const catalog = await getOpenCodeModelCatalog();
-      const resolution = resolveOpenCodeModelInput(arg, catalog);
-      if (resolution.kind !== "exact") {
-        await ctx.reply(
-          formatOpenCodeSelectionError(arg, resolution, catalog),
-          {
-            parse_mode: "HTML",
-          },
-        );
-        return;
-      }
-
-      if (!resolution.model.selectable) {
-        await ctx.reply(formatOpenCodeUnavailableModel(resolution.model), {
+      // Show current model + quick-pick buttons via backend
+      if (be?.getSettingsPresentation) {
+        const pres = await be.getSettingsPresentation(activeModel);
+        const rows = chunkButtons(pres.modelButtons);
+        rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
+        const lines = [
+          `<b>Model:</b> <code>${escapeHtml(activeModel)}</code>`,
+          ...pres.modelDetails,
+        ];
+        await ctx.reply(lines.join("\n"), {
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: rows },
+        });
+      } else {
+        await ctx.reply(`<b>Model:</b> <code>${escapeHtml(activeModel)}</code>`, {
           parse_mode: "HTML",
         });
+      }
+      return;
+    }
+
+    // Resolve model query via backend
+    if (be?.resolveModel) {
+      const resolution = await be.resolveModel(arg);
+      if (resolution.kind !== "exact") {
+        const msg = be.formatModelError?.(arg, resolution) ??
+          `No model matched "${escapeHtml(arg)}".`;
+        await ctx.reply(msg, { parse_mode: "HTML" });
         return;
       }
-
-      const storedModel = getOpenCodeModelSelectionValue(
-        resolution.model,
-        catalog,
-      );
-      setChatModel(cid, storedModel);
+      if (!resolution.model.selectable) {
+        const msg = resolution.model.unavailableReason ??
+          `${resolution.model.providerName} is not connected.`;
+        await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
+        return;
+      }
+      setChatModel(cid, resolution.storedValue);
       await ctx.reply(
-        `Model set to <code>${escapeHtml(storedModel)}</code> (${escapeHtml(
-          resolution.model.providerName,
-        )}${resolution.model.free ? " · free" : ""}).`,
-        {
-          parse_mode: "HTML",
-        },
-      );
-      return;
-    }
-
-    if (!arg) {
-      const current = settings.model ?? config.model;
-      const modelButtons = getTelegramModelOptions().map((m) => ({
-        text: isSelectedModel(current, m.id)
-          ? `\u2713 ${formatModelOptionLabel(m)}`
-          : formatModelOptionLabel(m),
-        callback_data: `model:${m.id}`,
-      }));
-      const rows = chunkButtons(modelButtons);
-      rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
-
-      await ctx.reply(
-        `<b>Model:</b> <code>${escapeHtml(formatModelLabel(current))}</code>\nSelect a model:`,
-        { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
-      );
-      return;
-    }
-
-    if (arg === "reset" || arg === "default") {
-      setChatModel(cid, undefined);
-      await ctx.reply(
-        `Model reset to default: <code>${escapeHtml(formatModelLabel(config.model))}</code>`,
+        `Model set to <code>${escapeHtml(resolution.storedValue)}</code> (${escapeHtml(resolution.model.providerName)}${resolution.model.free ? " \u00B7 free" : ""}).`,
         { parse_mode: "HTML" },
       );
-      return;
+    } else {
+      // Fallback for backends without model resolution
+      const model = resolveModelName(arg);
+      setChatModel(cid, model);
+      await ctx.reply(
+        `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
+        { parse_mode: "HTML" },
+      );
     }
-
-    const model = resolveModelName(arg);
-    setChatModel(cid, model);
-    await ctx.reply(
-      `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
-      {
-        parse_mode: "HTML",
-      },
-    );
   });
 
   bot.command("effort", async (ctx) => {
@@ -488,8 +420,8 @@ export function registerCommands(
     let modelDetails: Array<string> | undefined;
     let modelButtons: Array<SettingsButton> | undefined;
 
-    if (config.backend === "opencode") {
-      const presentation = await getOpenCodeSettingsPresentation(activeModel);
+    if (gateway?.backend?.getSettingsPresentation) {
+      const presentation = await gateway.backend.getSettingsPresentation(activeModel);
       modelDetails = presentation.modelDetails;
       modelButtons = presentation.modelButtons;
     }
@@ -545,37 +477,26 @@ export function registerCommands(
     let displayCacheWrite = u.totalCacheWrite;
     let turnsModelLabel = info.lastModel;
 
-    if (config.backend === "opencode") {
-      const { getOpenCodeModelInfo, getOpenCodeSessionSnapshot } =
-        await import("../../backend/opencode/index.js");
-      const activeModelInfo = await getOpenCodeModelInfo(activeModel).catch(
-        () => undefined,
-      );
-      const sessionSnapshot = info.sessionId
-        ? await getOpenCodeSessionSnapshot(info.sessionId).catch(
-            () => undefined,
-          )
-        : undefined;
-      const liveUsage = sessionSnapshot?.usage;
-
-      displayInputTokens = liveUsage?.totalInputTokens ?? displayInputTokens;
-      displayOutputTokens = liveUsage?.totalOutputTokens ?? displayOutputTokens;
-      displayCacheRead = liveUsage?.totalCacheRead ?? displayCacheRead;
-      displayCacheWrite = liveUsage?.totalCacheWrite ?? displayCacheWrite;
-
-      const contextModelID =
-        sessionSnapshot?.assistant?.modelID ?? info.lastModel ?? activeModel;
-      turnsModelLabel = contextModelID;
-      const contextModelInfo =
-        contextModelID === activeModel
-          ? activeModelInfo
-          : await getOpenCodeModelInfo(contextModelID).catch(() => undefined);
-      ctxMax = contextModelInfo?.contextWindow ?? ctxMax;
-      ctxUsed = sessionSnapshot?.assistant
-        ? sessionSnapshot.assistant.inputTokens +
-          sessionSnapshot.assistant.cacheRead +
-          sessionSnapshot.assistant.cacheWrite
-        : ctxUsed;
+    // Enrich context/usage data from backend when available
+    const be = gateway?.backend;
+    if (be?.getModelInfo) {
+      const modelInfo = await be.getModelInfo(activeModel).catch(() => undefined);
+      if (modelInfo?.contextWindow) ctxMax = ctxMax || modelInfo.contextWindow;
+    }
+    if (be?.getSessionSnapshot && info.sessionId) {
+      const snap = await be.getSessionSnapshot(info.sessionId).catch(() => undefined);
+      if (snap) {
+        displayInputTokens = snap.inputTokens ?? displayInputTokens;
+        displayOutputTokens = snap.outputTokens ?? displayOutputTokens;
+        displayCacheRead = snap.cacheRead ?? displayCacheRead;
+        displayCacheWrite = snap.cacheWrite ?? displayCacheWrite;
+        if (snap.contextModelId) turnsModelLabel = snap.contextModelId;
+        // Re-fetch context window for the actual model if different
+        if (snap.contextModelId && snap.contextModelId !== activeModel && be.getModelInfo) {
+          const ctxModelInfo = await be.getModelInfo(snap.contextModelId).catch(() => undefined);
+          if (ctxModelInfo?.contextWindow) ctxMax = ctxModelInfo.contextWindow;
+        }
+      }
     }
 
     const ctxPct =

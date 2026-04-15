@@ -33,3 +33,12 @@ export {
 export { initOpenCodeAgent, stopOpenCodeServer } from "./server.js";
 
 export { handleMessage } from "./handler.js";
+
+export {
+  resolveModel,
+  getModelInfo,
+  getSettingsPresentation,
+  getProviders,
+  getProviderModels,
+  formatModelError,
+} from "./model-provider.js";

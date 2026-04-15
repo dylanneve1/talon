@@ -30,6 +30,39 @@ export type QueryResult = {
   cacheWrite: number;
 };
 
+// ── Model abstraction ──────────────────────────────────────────────────────
+
+/** Unified model info returned by any backend. */
+export type UnifiedModelInfo = {
+  id: string;
+  displayName: string;
+  provider: string;
+  providerName: string;
+  selectable: boolean;
+  free?: boolean;
+  contextWindow?: number;
+  reasoning?: boolean;
+  /** Why the model can't be selected (login required, env setup, etc.) */
+  unavailableReason?: string;
+};
+
+/** Result of resolving a user's model query. */
+export type UnifiedModelResolution =
+  | { kind: "exact"; model: UnifiedModelInfo; storedValue: string }
+  | { kind: "ambiguous"; matches: UnifiedModelInfo[] }
+  | { kind: "missing" };
+
+/** A provider with its available models. */
+export type UnifiedProviderInfo = {
+  id: string;
+  name: string;
+  connected: boolean;
+  modelCount: number;
+};
+
+/** Keyboard button for model/settings UIs. */
+export type ModelButton = { text: string; callback_data: string };
+
 /** Backend interface — any AI provider implements this. */
 export interface QueryBackend {
   query(params: QueryParams): Promise<QueryResult>;
@@ -43,6 +76,36 @@ export interface QueryBackend {
     removed: string[];
     errors: Record<string, string>;
   } | null>;
+  /** Resolve a user's model query (e.g. "opus", "gpt-5") to a concrete model. */
+  resolveModel?(query: string): Promise<UnifiedModelResolution>;
+  /** Get info for a model by its stored ID. */
+  getModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
+  /** Get quick-pick buttons for the settings keyboard. */
+  getSettingsPresentation?(activeModel: string): Promise<{
+    modelButtons: ModelButton[];
+    modelDetails: string[];
+  }>;
+  /** List available providers. */
+  getProviders?(): Promise<UnifiedProviderInfo[]>;
+  /** List models for a given provider (paginated). */
+  getProviderModels?(
+    providerId: string,
+    page?: number,
+    pageSize?: number,
+  ): Promise<{ models: UnifiedModelInfo[]; total: number }>;
+  /** Format error for an unresolvable/unavailable model. */
+  formatModelError?(
+    query: string,
+    resolution: UnifiedModelResolution,
+  ): string;
+  /** Get live session usage snapshot (for /status enrichment). */
+  getSessionSnapshot?(sessionId: string): Promise<{
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    contextModelId?: string;
+  } | undefined>;
 }
 
 // ── Execution context ───────────────────────────────────────────────────────
