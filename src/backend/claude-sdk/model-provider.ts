@@ -157,10 +157,7 @@ export async function getSettingsPresentation(
     };
   });
 
-  const resolved = coreResolveModel(activeModel);
-  const modelDetails = resolved ? [`<i>${resolved.displayName}</i>`] : [];
-
-  return { modelButtons, modelDetails };
+  return { modelButtons, modelDetails: [] };
 }
 
 export async function getProviders(): Promise<UnifiedProviderInfo[]> {

@@ -76,8 +76,10 @@ export function registerCallbacks(
         } else {
           setChatModel(cid, resolveModelName(value));
         }
+        const settingsModel = getChatSettings(cid).model ?? config.model;
+        const settingsModelInfo = await gateway?.backend?.getModelInfo?.(settingsModel);
         await ctx.answerCallbackQuery({
-          text: `Model: ${getChatSettings(cid).model ?? config.model}`,
+          text: `Model: ${settingsModelInfo?.displayName ?? settingsModel}`,
         });
       } else if (category === "effort") {
         if (value === "adaptive") {
@@ -241,7 +243,7 @@ export function registerCallbacks(
         if (resolution.kind === "exact" && resolution.model.selectable) {
           setChatModel(cid, resolution.storedValue);
           await ctx.answerCallbackQuery({
-            text: `Model: ${resolution.storedValue}`,
+            text: `Model: ${resolution.model.displayName}`,
           });
         } else {
           await ctx.answerCallbackQuery({ text: "Model is unavailable" });
@@ -258,13 +260,15 @@ export function registerCallbacks(
       const be = gateway?.backend;
       if (be?.getSettingsPresentation) {
         const pres = await be.getSettingsPresentation(current, "model:");
+        const modelInfo = await be.getModelInfo?.(current);
+        const displayName = modelInfo?.displayName ?? current;
         const rows: Array<Array<{ text: string; callback_data: string }>> = [];
         for (let i = 0; i < pres.modelButtons.length; i += 2) {
           rows.push(pres.modelButtons.slice(i, i + 2));
         }
         try {
           await ctx.editMessageText(
-            `<b>Model:</b> <code>${escapeHtml(current)}</code>`,
+            `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
             { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
           );
         } catch {
