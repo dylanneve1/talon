@@ -6,9 +6,8 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-const { summarizeOpenCodeAssistantMessages } = await import(
-  "../backend/opencode/index.js"
-);
+const { summarizeOpenCodeAssistantMessages } =
+  await import("../backend/opencode/index.js");
 
 describe("OpenCode assistant summaries", () => {
   it("aggregates usage across the full assistant chain for a turn", () => {

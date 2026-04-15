@@ -1851,7 +1851,10 @@ describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", 
       from: { id: 94, first_name: "Mika" },
     } as any;
 
-    await handleTextMessage(ctx, mockBot, { ...mockConfig, backend: "opencode" });
+    await handleTextMessage(ctx, mockBot, {
+      ...mockConfig,
+      backend: "opencode",
+    });
     await new Promise((r) => setTimeout(r, 700));
 
     expect(sendMsgCount() - before).toBe(1);

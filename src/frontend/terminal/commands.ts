@@ -94,7 +94,8 @@ export function registerBuiltinCommands(): void {
     async handler(args, ctx) {
       const { getChatSettings, setChatModel, resolveModelName } =
         await import("../../storage/chat-settings.js");
-      const currentModel = getChatSettings(ctx.chatId()).model ?? ctx.config.model;
+      const currentModel =
+        getChatSettings(ctx.chatId()).model ?? ctx.config.model;
 
       if (ctx.config.backend === "opencode") {
         const {
@@ -144,7 +145,10 @@ export function registerBuiltinCommands(): void {
           if (catalog.loginProviders.length > 0) {
             const loginSummary = catalog.loginProviders
               .slice(0, 4)
-              .map((provider) => `${provider.name} (${provider.authMethods.join(", ")})`)
+              .map(
+                (provider) =>
+                  `${provider.name} (${provider.authMethods.join(", ")})`,
+              )
               .join("  ·  ");
             ctx.renderer.writeln(`  Login required: ${loginSummary}`);
           }
@@ -178,9 +182,15 @@ export function registerBuiltinCommands(): void {
           return;
         }
 
-        if (lowerArgs === "free" || lowerArgs === "list" || lowerArgs === "all") {
+        if (
+          lowerArgs === "free" ||
+          lowerArgs === "list" ||
+          lowerArgs === "all"
+        ) {
           const source =
-            lowerArgs === "free" ? catalog.connectedFreeModels : catalog.connectedModels;
+            lowerArgs === "free"
+              ? catalog.connectedFreeModels
+              : catalog.connectedModels;
           const list = source.slice(0, 20);
 
           ctx.renderer.writeSystem(
@@ -218,7 +228,9 @@ export function registerBuiltinCommands(): void {
 
         const resolution = resolveOpenCodeModelInput(trimmedArgs, catalog);
         if (resolution.kind === "missing") {
-          ctx.renderer.writeError(`No OpenCode model matched "${trimmedArgs}".`);
+          ctx.renderer.writeError(
+            `No OpenCode model matched "${trimmedArgs}".`,
+          );
           ctx.reprompt();
           return;
         }
@@ -259,7 +271,10 @@ export function registerBuiltinCommands(): void {
           return;
         }
 
-        const storedModel = getOpenCodeModelSelectionValue(selectedModel, catalog);
+        const storedModel = getOpenCodeModelSelectionValue(
+          selectedModel,
+          catalog,
+        );
         setChatModel(ctx.chatId(), storedModel);
         ctx.renderer.writeSystem(
           `Model → ${storedModel} (${selectedModel.providerName}${selectedModel.free ? " · free" : ""})`,
@@ -312,7 +327,8 @@ export function registerBuiltinCommands(): void {
     description: "Session stats",
     async handler(_args, ctx) {
       const { getSessionInfo } = await import("../../storage/sessions.js");
-      const { getChatSettings } = await import("../../storage/chat-settings.js");
+      const { getChatSettings } =
+        await import("../../storage/chat-settings.js");
       const { getLoadedPlugins } = await import("../../core/plugin.js");
       const info = getSessionInfo(ctx.chatId());
       const u = info.usage;
@@ -325,18 +341,22 @@ export function registerBuiltinCommands(): void {
       ctx.renderer.writeln();
       const nameStr = info.sessionName ? `"${info.sessionName}"  ·  ` : "";
       if (ctx.config.backend === "opencode") {
-        const activeModel = getChatSettings(ctx.chatId()).model ?? ctx.config.model;
-        const {
-          getOpenCodeModelInfo,
-          getOpenCodeSessionSnapshot,
-        } = await import("../../backend/opencode/index.js");
-        const modelInfo = await getOpenCodeModelInfo(activeModel).catch(() => undefined);
+        const activeModel =
+          getChatSettings(ctx.chatId()).model ?? ctx.config.model;
+        const { getOpenCodeModelInfo, getOpenCodeSessionSnapshot } =
+          await import("../../backend/opencode/index.js");
+        const modelInfo = await getOpenCodeModelInfo(activeModel).catch(
+          () => undefined,
+        );
         const sessionSnapshot = info.sessionId
-          ? await getOpenCodeSessionSnapshot(info.sessionId).catch(() => undefined)
+          ? await getOpenCodeSessionSnapshot(info.sessionId).catch(
+              () => undefined,
+            )
           : undefined;
         const liveUsage = sessionSnapshot?.usage;
         displayInputTokens = liveUsage?.totalInputTokens ?? displayInputTokens;
-        displayOutputTokens = liveUsage?.totalOutputTokens ?? displayOutputTokens;
+        displayOutputTokens =
+          liveUsage?.totalOutputTokens ?? displayOutputTokens;
         displayCacheRead = liveUsage?.totalCacheRead ?? displayCacheRead;
         displayCacheWrite = liveUsage?.totalCacheWrite ?? displayCacheWrite;
 
@@ -360,7 +380,10 @@ export function registerBuiltinCommands(): void {
 
       const cacheHit =
         displayInputTokens + displayCacheRead > 0
-          ? Math.round((displayCacheRead / (displayInputTokens + displayCacheRead)) * 100)
+          ? Math.round(
+              (displayCacheRead / (displayInputTokens + displayCacheRead)) *
+                100,
+            )
           : 0;
       ctx.renderer.writeln(
         `  ${pc.bold("Session")}  ${nameStr}turns ${info.turns}  ·  ${cacheHit}% cache`,

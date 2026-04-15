@@ -6,10 +6,8 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-const {
-  getOpenCodeModelSelectionValue,
-  resolveOpenCodeModelInput,
-} = await import("../backend/opencode/index.js");
+const { getOpenCodeModelSelectionValue, resolveOpenCodeModelInput } =
+  await import("../backend/opencode/index.js");
 
 const catalog = {
   generatedAt: Date.now(),
@@ -93,7 +91,10 @@ const catalog = {
 
 describe("OpenCode model resolution", () => {
   it("resolves provider-qualified model queries exactly", () => {
-    const resolution = resolveOpenCodeModelInput("github-copilot/gpt-5", catalog);
+    const resolution = resolveOpenCodeModelInput(
+      "github-copilot/gpt-5",
+      catalog,
+    );
 
     expect(resolution.kind).toBe("exact");
     if (resolution.kind !== "exact") return;
@@ -101,8 +102,14 @@ describe("OpenCode model resolution", () => {
   });
 
   it("uses provider-qualified storage values only for colliding model ids", () => {
-    const duplicateValue = getOpenCodeModelSelectionValue(catalog.models[0], catalog);
-    const uniqueValue = getOpenCodeModelSelectionValue(catalog.models[2], catalog);
+    const duplicateValue = getOpenCodeModelSelectionValue(
+      catalog.models[0],
+      catalog,
+    );
+    const uniqueValue = getOpenCodeModelSelectionValue(
+      catalog.models[2],
+      catalog,
+    );
 
     expect(duplicateValue).toBe("openai/gpt-5");
     expect(uniqueValue).toBe("big-pickle");

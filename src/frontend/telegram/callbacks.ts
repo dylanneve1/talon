@@ -68,7 +68,8 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
           if (value === "reset") {
             setChatModel(cid, undefined);
           } else {
-            const { catalog, resolution } = await resolveOpenCodeModelSelection(value);
+            const { catalog, resolution } =
+              await resolveOpenCodeModelSelection(value);
             if (resolution.kind !== "exact") {
               await ctx.answerCallbackQuery({ text: "Model is unavailable" });
               return;

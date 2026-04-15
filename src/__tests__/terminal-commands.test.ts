@@ -106,10 +106,7 @@ const mockGetOpenCodeQuickPickModels = vi.fn<
   (catalog: unknown, currentModelId?: string) => Array<unknown>
 >(() => []);
 const mockResolveOpenCodeModelInput = vi.fn<
-  (
-    query: string,
-    catalog: unknown,
-  ) => Record<string, unknown>
+  (query: string, catalog: unknown) => Record<string, unknown>
 >((_query: string) => ({
   kind: "missing",
   matches: [],
@@ -670,9 +667,9 @@ describe("/status command", () => {
     });
     await tryRunCommand("/status", ctx);
 
-    const output = (
-      ctx.renderer.writeln as ReturnType<typeof vi.fn>
-    ).mock.calls.flat().join(" ");
+    const output = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls
+      .flat()
+      .join(" ");
     expect(output).toContain("1,389,045");
     expect(output).toContain("3,675");
     expect(output).toContain("204,800");

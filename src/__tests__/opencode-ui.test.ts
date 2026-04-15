@@ -11,9 +11,8 @@ vi.mock("../backend/opencode/index.js", () => ({
   resolveOpenCodeModelInput: vi.fn(),
 }));
 
-const { formatOpenCodeSelectionError } = await import(
-  "../frontend/telegram/opencode-ui.js"
-);
+const { formatOpenCodeSelectionError } =
+  await import("../frontend/telegram/opencode-ui.js");
 
 describe("OpenCode Telegram UI helpers", () => {
   it("includes provider details for ambiguous model matches", () => {

@@ -35,7 +35,11 @@ function getAvailabilityLabel(model: OpenCodeModelCatalogEntry): string {
 
 function getShortModelButtonLabel(model: OpenCodeModelCatalogEntry): string {
   const preferred =
-    model.id.length <= 20 ? model.id : model.name.length <= 20 ? model.name : model.id;
+    model.id.length <= 20
+      ? model.id
+      : model.name.length <= 20
+        ? model.name
+        : model.id;
   return model.free ? `${preferred} ★` : preferred;
 }
 
@@ -156,7 +160,9 @@ export async function renderOpenCodeModelSummary(
     lines.push("");
     lines.push("<b>Free now</b>");
     lines.push(
-      ...freePreview.map((model) => formatModelLine(model, presentation.catalog)),
+      ...freePreview.map((model) =>
+        formatModelLine(model, presentation.catalog),
+      ),
     );
   }
 
@@ -191,7 +197,8 @@ export async function renderOpenCodeModelList(
     return lines.join("\n");
   }
 
-  const source = mode === "free" ? catalog.connectedFreeModels : catalog.connectedModels;
+  const source =
+    mode === "free" ? catalog.connectedFreeModels : catalog.connectedModels;
   const title = mode === "free" ? "Connected Free Models" : "Connected Models";
   const lines = [`<b>${escapeHtml(title)}</b>`];
   for (const model of source.slice(0, 24)) {
@@ -203,9 +210,7 @@ export async function renderOpenCodeModelList(
   return lines.join("\n");
 }
 
-export async function resolveOpenCodeModelSelection(
-  input: string,
-): Promise<{
+export async function resolveOpenCodeModelSelection(input: string): Promise<{
   catalog: OpenCodeModelCatalog;
   resolution: OpenCodeModelResolution;
 }> {
