@@ -54,7 +54,7 @@ function formatResolvedModelLabel(model: ModelInfo): string {
 }
 
 function formatCompactLabel(model: ModelInfo): string {
-  return formatResolvedModelLabel(model).replace(/\s+\d+(?:\.\d+)*$/, "");
+  return formatResolvedModelLabel(model);
 }
 
 function toUnified(model: ModelInfo): UnifiedModelInfo {
@@ -144,6 +144,7 @@ export async function getModelInfo(
 
 export async function getSettingsPresentation(
   activeModel: string,
+  callbackPrefix = "settings:model:",
 ): Promise<{ modelButtons: ModelButton[]; modelDetails: string[] }> {
   const options = getUniqueModels();
 
@@ -152,7 +153,7 @@ export async function getSettingsPresentation(
     const selected = isSelectedModel(activeModel, m.id);
     return {
       text: selected ? `\u2713 ${label}` : label,
-      callback_data: `settings:model:${m.id}`,
+      callback_data: `${callbackPrefix}${m.id}`,
     };
   });
 

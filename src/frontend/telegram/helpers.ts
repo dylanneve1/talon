@@ -88,7 +88,7 @@ export function formatModelOptionLabel(model: ModelInfo): string {
 }
 
 export function formatCompactModelLabel(model: ModelInfo): string {
-  return formatResolvedModelLabel(model).replace(/\s+\d+(?:\.\d+)*$/, "");
+  return formatResolvedModelLabel(model);
 }
 
 export function getTelegramModelOptions(): ModelInfo[] {

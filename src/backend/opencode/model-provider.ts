@@ -92,8 +92,9 @@ export async function getModelInfo(
 
 export async function getSettingsPresentation(
   activeModel: string,
+  callbackPrefix = "settings:model:",
 ): Promise<{ modelButtons: ModelButton[]; modelDetails: string[] }> {
-  return getOpenCodeSettingsPresentation(activeModel);
+  return getOpenCodeSettingsPresentation(activeModel, callbackPrefix);
 }
 
 export async function getProviders(): Promise<UnifiedProviderInfo[]> {

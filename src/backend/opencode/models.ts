@@ -590,6 +590,7 @@ function formatCtxWindow(n: number) {
 
 export async function getOpenCodeSettingsPresentation(
   activeModel: string,
+  callbackPrefix = "settings:model:",
 ): Promise<{ modelButtons: Array<ModelButton>; modelDetails: Array<string> }> {
   const catalog = await getOpenCodeModelCatalog();
   const current = await getOpenCodeModelInfo(activeModel);
@@ -603,10 +604,10 @@ export async function getOpenCodeSettingsPresentation(
       current && m.id === current.id && m.providerID === current.providerID;
     return {
       text: sel ? `\u2713 ${txt}` : txt,
-      callback_data: `settings:model:${m.id}`,
+      callback_data: `${callbackPrefix}${m.id}`,
     };
   });
-  modelButtons.push({ text: "Reset", callback_data: "settings:model:reset" });
+  modelButtons.push({ text: "Reset", callback_data: `${callbackPrefix}reset` });
 
   const details: Array<string> = [];
   if (current) {

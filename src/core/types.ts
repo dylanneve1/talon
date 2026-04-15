@@ -80,8 +80,8 @@ export interface QueryBackend {
   resolveModel?(query: string): Promise<UnifiedModelResolution>;
   /** Get info for a model by its stored ID. */
   getModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
-  /** Get quick-pick buttons for the settings keyboard. */
-  getSettingsPresentation?(activeModel: string): Promise<{
+  /** Get quick-pick buttons for model selection. callbackPrefix defaults to "settings:model:". */
+  getSettingsPresentation?(activeModel: string, callbackPrefix?: string): Promise<{
     modelButtons: ModelButton[];
     modelDetails: string[];
   }>;

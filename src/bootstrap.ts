@@ -120,8 +120,8 @@ export async function initBackendAndDispatcher(
       query: (params) => opencodeHandleMessage(params),
       resolveModel: (q) => ocModelProvider.resolveModel(q),
       getModelInfo: (id) => ocModelProvider.getModelInfo(id),
-      getSettingsPresentation: (m) =>
-        ocModelProvider.getSettingsPresentation(m),
+      getSettingsPresentation: (m, prefix) =>
+        ocModelProvider.getSettingsPresentation(m, prefix),
       getProviders: () => ocModelProvider.getProviders(),
       getProviderModels: (p, pg, ps) =>
         ocModelProvider.getProviderModels(p, pg, ps),
@@ -160,8 +160,8 @@ export async function initBackendAndDispatcher(
       updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
       resolveModel: (q) => claudeModelProvider.resolveModel(q),
       getModelInfo: (id) => claudeModelProvider.getModelInfo(id),
-      getSettingsPresentation: (m) =>
-        claudeModelProvider.getSettingsPresentation(m),
+      getSettingsPresentation: (m, prefix) =>
+        claudeModelProvider.getSettingsPresentation(m, prefix),
       getProviders: () => claudeModelProvider.getProviders(),
       getProviderModels: (p, pg, ps) =>
         claudeModelProvider.getProviderModels(p, pg, ps),

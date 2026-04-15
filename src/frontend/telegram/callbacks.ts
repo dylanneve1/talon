@@ -257,12 +257,11 @@ export function registerCallbacks(
       const current = getChatSettings(cid).model ?? config.model;
       const be = gateway?.backend;
       if (be?.getSettingsPresentation) {
-        const pres = await be.getSettingsPresentation(current);
+        const pres = await be.getSettingsPresentation(current, "model:");
         const rows: Array<Array<{ text: string; callback_data: string }>> = [];
         for (let i = 0; i < pres.modelButtons.length; i += 2) {
           rows.push(pres.modelButtons.slice(i, i + 2));
         }
-        rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
         try {
           await ctx.editMessageText(
             `<b>Model:</b> <code>${escapeHtml(current)}</code>`,
