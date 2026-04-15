@@ -190,7 +190,8 @@ export async function ensurePluginMcpServers(
   try {
     const statusResp = await oc.mcp.status();
     existingServers =
-      (statusResp.data as Record<string, { status?: string }> | undefined) ?? {};
+      (statusResp.data as Record<string, { status?: string }> | undefined) ??
+      {};
   } catch {
     // status check failed — try to register anyway
   }
@@ -212,7 +213,10 @@ export async function ensurePluginMcpServers(
       registered.push(name);
       log("agent", `Registered plugin MCP server: ${name}`);
     } catch (err) {
-      logWarn("agent", `Plugin MCP registration failed for ${name}: ${errMsg(err)}`);
+      logWarn(
+        "agent",
+        `Plugin MCP registration failed for ${name}: ${errMsg(err)}`,
+      );
     }
   }
 
