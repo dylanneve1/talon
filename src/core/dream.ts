@@ -180,8 +180,7 @@ If commands fail, log the error and continue — this stage is optional.`
     throw new Error(`Failed to read dream prompt from ${promptPath}`);
   }
 
-  const model =
-    configRef.dreamModel ?? configRef.model ?? getDefaultModel("balanced");
+  const model = configRef.dreamModel ?? configRef.model ?? getDefaultModel();
   const workspace = configRef.workspace ?? dirs.workspace;
 
   // Set up dream log file

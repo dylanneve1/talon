@@ -165,13 +165,13 @@ export async function handleMessage(
       return handleMessage(params, true);
     }
 
-    // Model fallback: if overloaded/timeout, retry with the next-tier model
+    // Model fallback: if overloaded/timeout, retry with the configured fallback
     if (!_retried && classified.retryable) {
       const fallback = getFallbackModel(activeModel);
       if (fallback) {
         logWarn(
           "agent",
-          `[${chatId}] ${classified.reason}, falling back to ${fallback.replace("claude-", "")}`,
+          `[${chatId}] ${classified.reason}, falling back to ${fallback}`,
         );
         resetSession(chatId);
         const originalModel = getChatSettings(chatId).model;

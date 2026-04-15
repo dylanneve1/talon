@@ -9,15 +9,6 @@
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type ModelTier = "premium" | "balanced" | "economy";
-
-export type ModelCapabilities = {
-  /** Whether the model supports the 1M token context window. */
-  supports1mContext: boolean;
-  /** Exact model ID to use for the 1M token context window, if available. */
-  oneMillionContextModelId?: string;
-};
-
 export type ModelInfo = {
   /** Canonical SDK model ID (e.g. "default", "opus", "sonnet[1m]"). */
   id: string;
@@ -29,26 +20,27 @@ export type ModelInfo = {
   aliases: string[];
   /** Provider identifier (e.g. "anthropic", "openai"). */
   provider: string;
-  /** Model capabilities used for backend configuration. */
-  capabilities: ModelCapabilities;
-  /** Tier for UI grouping and fallback ordering. */
-  tier: ModelTier;
   /** Model to fall back to on overload/timeout. */
   fallback?: string;
-};
-
-// ── Tier sort order ─────────────────────────────────────────────────────────
-
-const TIER_ORDER: Record<ModelTier, number> = {
-  premium: 0,
-  balanced: 1,
-  economy: 2,
 };
 
 // ── Registry state ──────────────────────────────────────────────────────────
 
 const models = new Map<string, ModelInfo>();
 const aliasIndex = new Map<string, string>();
+const providerPrefixes: string[] = [];
+
+/**
+ * Register a provider-specific prefix (e.g. "claude-") that the fuzzy
+ * alias resolver will strip when matching family names. Backends call
+ * this during initialization so core stays provider-agnostic.
+ */
+export function registerProviderPrefix(prefix: string): void {
+  const lower = prefix.toLowerCase();
+  if (!providerPrefixes.includes(lower)) {
+    providerPrefixes.push(lower);
+  }
+}
 
 function resolveGenericFamilyAlias(input: string): string | null {
   const trimmed = input.trim().toLowerCase();
@@ -56,8 +48,11 @@ function resolveGenericFamilyAlias(input: string): string | null {
 
   const isOneMillion = trimmed.endsWith("[1m]");
   let base = isOneMillion ? trimmed.slice(0, -4) : trimmed;
-  if (base.startsWith("claude-")) {
-    base = base.slice("claude-".length);
+  for (const prefix of providerPrefixes) {
+    if (base.startsWith(prefix)) {
+      base = base.slice(prefix.length);
+      break;
+    }
   }
 
   const tokens = base.replace(/\./g, "-").split("-").filter(Boolean);
@@ -107,13 +102,13 @@ export function getModel(id: string): ModelInfo | undefined {
   return models.get(id);
 }
 
-/** List all registered models, optionally filtered by provider. Sorted by tier. */
+/** List all registered models, optionally filtered by provider. Returned in registration order. */
 export function getModels(provider?: string): ModelInfo[] {
-  let result = [...models.values()];
+  const result = [...models.values()];
   if (provider) {
-    result = result.filter((m) => m.provider === provider);
+    return result.filter((m) => m.provider === provider);
   }
-  return result.sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
+  return result;
 }
 
 /**
@@ -148,28 +143,16 @@ export function getFallbackModel(modelId: string): string | null {
   return resolveModel(modelId)?.fallback ?? null;
 }
 
-/** Check whether a model supports the 1M token context window. */
-export function supports1mContext(modelId: string): boolean {
-  const info = resolveModel(modelId);
-  // Default to true for unknown models (don't restrict capabilities we can't check)
-  return info?.capabilities.supports1mContext ?? true;
-}
-
-/** Resolve the exact 1M-context model ID for a given model, if one exists. */
-export function get1mContextModelId(modelId: string): string | null {
-  return resolveModel(modelId)?.capabilities.oneMillionContextModelId ?? null;
-}
-
 /**
- * Get the default model for a given tier. Returns the first registered model
- * matching the tier, or the first model overall, or the hardcoded fallback.
+ * Get the default model. Prefers the canonical "default" model ID if
+ * registered, otherwise returns the first registered model, otherwise
+ * falls back to the literal string "default".
  */
-export function getDefaultModel(tier: ModelTier = "balanced"): string {
-  const byTier = [...models.values()].find((m) => m.tier === tier);
-  if (byTier) return byTier.id;
+export function getDefaultModel(): string {
+  if (models.has("default")) return "default";
   const first = models.values().next();
   if (!first.done) return first.value.id;
-  return "default"; // ultimate fallback if the registry is still empty
+  return "default";
 }
 
 // ── Provider-scoped clearing ────────────────────────────────────────────────
@@ -190,4 +173,5 @@ export function clearModelsByProvider(provider: string): void {
 export function clearModels(): void {
   models.clear();
   aliasIndex.clear();
+  providerPrefixes.length = 0;
 }

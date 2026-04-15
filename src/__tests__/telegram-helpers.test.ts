@@ -21,11 +21,6 @@ describe("telegram helpers", () => {
         description: "Sonnet 4.6 · Best for everyday tasks",
         aliases: ["sonnet", "claude-sonnet-4-6"],
         provider: "anthropic",
-        capabilities: {
-          supports1mContext: true,
-          oneMillionContextModelId: "sonnet[1m]",
-        },
-        tier: "balanced",
         fallback: "haiku",
       },
       {
@@ -35,8 +30,6 @@ describe("telegram helpers", () => {
           "Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15 per Mtok",
         aliases: ["claude-sonnet-4-6[1m]"],
         provider: "anthropic",
-        capabilities: { supports1mContext: true },
-        tier: "balanced",
         fallback: "haiku",
       },
       {
@@ -45,11 +38,6 @@ describe("telegram helpers", () => {
         description: "Opus 4.6 · Most capable for complex work",
         aliases: ["claude-opus-4-6"],
         provider: "anthropic",
-        capabilities: {
-          supports1mContext: true,
-          oneMillionContextModelId: "opus[1m]",
-        },
-        tier: "premium",
         fallback: "default",
       },
       {
@@ -59,8 +47,6 @@ describe("telegram helpers", () => {
           "Opus 4.6 with 1M context · Billed as extra usage · $5/$25 per Mtok",
         aliases: ["claude-opus-4-6[1m]"],
         provider: "anthropic",
-        capabilities: { supports1mContext: true },
-        tier: "premium",
         fallback: "default",
       },
       {
@@ -69,8 +55,6 @@ describe("telegram helpers", () => {
         description: "Haiku 4.5 · Fastest for quick answers",
         aliases: ["claude-haiku-4-5"],
         provider: "anthropic",
-        capabilities: { supports1mContext: false },
-        tier: "economy",
       },
     ]);
   });
@@ -86,17 +70,15 @@ describe("telegram helpers", () => {
     expect(formatModelLabel("claude-sonnet-4-6")).toBe("Sonnet 4.6");
     expect(formatModelLabel("sonnet[1m]")).toBe("Sonnet 4.6");
     expect(formatModelOptionLabel(getTelegramModelOptions()[0]!)).toBe(
-      "Opus 4.6",
+      "Sonnet 4.6",
     );
-    expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe(
-      "Sonnet",
-    );
+    expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe("Opus");
   });
 
   it("shows a single clean option per model family", () => {
     expect(getTelegramModelOptions().map((model) => model.id)).toEqual([
-      "opus",
       "default",
+      "opus",
       "haiku",
     ]);
   });

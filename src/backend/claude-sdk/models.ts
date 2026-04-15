@@ -8,7 +8,11 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { registerModels, clearModelsByProvider } from "../../core/models.js";
+import {
+  registerModels,
+  clearModelsByProvider,
+  registerProviderPrefix,
+} from "../../core/models.js";
 import type { ModelInfo } from "../../core/models.js";
 import { log, logError } from "../../util/log.js";
 
@@ -165,25 +169,6 @@ function buildGeneratedAliases(identity: ParsedModelIdentity): string[] {
   return aliases;
 }
 
-function inferTierFromText(searchableText: string): ModelInfo["tier"] {
-  const lower = searchableText.toLowerCase();
-  if (
-    lower.includes("most capable") ||
-    lower.includes("smartest") ||
-    lower.includes("complex work")
-  ) {
-    return "premium";
-  }
-  if (
-    lower.includes("fastest") ||
-    lower.includes("quick answers") ||
-    lower.includes("cheapest")
-  ) {
-    return "economy";
-  }
-  return "balanced";
-}
-
 function getPreferredModelPriority(value: string): number {
   if (value === "default") return 0;
   if (!value.startsWith("claude-")) return 1;
@@ -270,50 +255,6 @@ function buildHiddenModelAliases(
   return hiddenAliases;
 }
 
-function buildOneMillionContextVariants(
-  records: readonly SdkModelRecord[],
-  preferredCanonicalIds: ReadonlyMap<string, string>,
-): Map<string, string> {
-  const variants = new Map<string, string>();
-
-  for (const record of records) {
-    if (
-      !record.identity.isOneMillion ||
-      !record.familyKey ||
-      !record.variantKey
-    ) {
-      continue;
-    }
-
-    const preferredId = preferredCanonicalIds.get(record.variantKey);
-    if (preferredId && preferredId !== record.value) continue;
-
-    variants.set(record.familyKey, record.value);
-  }
-
-  return variants;
-}
-
-function buildTierByFamily(
-  records: readonly SdkModelRecord[],
-): Map<string, ModelInfo["tier"]> {
-  const textsByFamily = new Map<string, string[]>();
-
-  for (const record of records) {
-    if (!record.familyKey) continue;
-    const texts = textsByFamily.get(record.familyKey) ?? [];
-    texts.push(record.displayName, record.description, record.value);
-    textsByFamily.set(record.familyKey, texts);
-  }
-
-  const tiers = new Map<string, ModelInfo["tier"]>();
-  for (const [familyKey, texts] of textsByFamily) {
-    tiers.set(familyKey, inferTierFromText(texts.join(" ")));
-  }
-
-  return tiers;
-}
-
 // ── SDK → registry conversion ───────────────────────────────────────────────
 
 /**
@@ -328,11 +269,6 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
     records,
     preferredCanonicalIds,
   );
-  const oneMillionContextVariants = buildOneMillionContextVariants(
-    records,
-    preferredCanonicalIds,
-  );
-  const tierByFamily = buildTierByFamily(records);
   const hiddenModels = new Set(
     records
       .filter(
@@ -365,44 +301,41 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
       usedKeys.add(alias.toLowerCase());
     }
 
-    const oneMillionContextModelId = record.identity.isOneMillion
-      ? undefined
-      : record.familyKey
-        ? oneMillionContextVariants.get(record.familyKey)
-        : undefined;
-
     models.push({
       id: record.value,
       displayName: record.displayName,
       description: record.description,
       aliases,
       provider: "anthropic",
-      capabilities: {
-        supports1mContext:
-          record.identity.isOneMillion ||
-          oneMillionContextModelId !== undefined,
-        ...(oneMillionContextModelId !== undefined
-          ? { oneMillionContextModelId }
-          : {}),
-      },
-      tier:
-        (record.familyKey ? tierByFamily.get(record.familyKey) : undefined) ??
-        inferTierFromText(
-          `${record.value} ${record.displayName} ${record.description}`,
-        ),
     });
   }
 
-  const tierOrder = { premium: 0, balanced: 1, economy: 2 };
-  models.sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier]);
+  // Assign fallback chain from SDK order (single pass, O(1) lookups):
+  // - 1M variants fall back to their base family model
+  // - Base models fall back to the next base model in SDK order
+  const recordById = new Map(records.map((r) => [r.value, r]));
+  const baseByFamily = new Map<string, string>();
+  const baseModels: ModelInfo[] = [];
 
-  // Fallback chain: each model falls back to the first model in the next lower tier
   for (const model of models) {
-    if (model.fallback) continue;
-    const nextTier = models.find(
-      (m) => tierOrder[m.tier] > tierOrder[model.tier],
-    );
-    if (nextTier) model.fallback = nextTier.id;
+    if (model.id.endsWith("[1m]")) continue;
+    const rec = recordById.get(model.id);
+    if (rec?.familyKey) baseByFamily.set(rec.familyKey, model.id);
+    baseModels.push(model);
+  }
+
+  const baseIndex = new Map(baseModels.map((m, i) => [m.id, i]));
+
+  for (const model of models) {
+    const rec = recordById.get(model.id);
+    if (model.id.endsWith("[1m]") && rec?.familyKey) {
+      model.fallback = baseByFamily.get(rec.familyKey);
+    } else {
+      const idx = baseIndex.get(model.id);
+      if (idx !== undefined && idx < baseModels.length - 1) {
+        model.fallback = baseModels[idx + 1]!.id;
+      }
+    }
   }
 
   return models;
@@ -475,6 +408,7 @@ export async function registerClaudeModels(sdkOptions: {
 
     const models = convertSdkModels(sdkModels);
     clearModelsByProvider("anthropic");
+    registerProviderPrefix("claude-");
     registerModels(models);
     log(
       "agent",
@@ -500,6 +434,7 @@ export async function registerClaudeModels(sdkOptions: {
  * wizard where the SDK subprocess is not available.
  */
 export function registerClaudeModelsStatic(models: ModelInfo[]): void {
+  registerProviderPrefix("claude-");
   registerModels(models);
 }
 
