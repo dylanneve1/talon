@@ -8,11 +8,7 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import {
-  registerModels,
-  clearModelsByProvider,
-  resolveModel,
-} from "../../core/models.js";
+import { registerModels, clearModelsByProvider } from "../../core/models.js";
 import type { ModelInfo } from "../../core/models.js";
 import { log, logError } from "../../util/log.js";
 
@@ -255,30 +251,6 @@ function buildHiddenModelAliases(
   return hiddenAliases;
 }
 
-function buildOneMillionContextVariants(
-  records: readonly SdkModelRecord[],
-  preferredCanonicalIds: ReadonlyMap<string, string>,
-): Map<string, string> {
-  const variants = new Map<string, string>();
-
-  for (const record of records) {
-    if (
-      !record.identity.isOneMillion ||
-      !record.familyKey ||
-      !record.variantKey
-    ) {
-      continue;
-    }
-
-    const preferredId = preferredCanonicalIds.get(record.variantKey);
-    if (preferredId && preferredId !== record.value) continue;
-
-    variants.set(record.familyKey, record.value);
-  }
-
-  return variants;
-}
-
 // ── SDK → registry conversion ───────────────────────────────────────────────
 
 /**
@@ -290,10 +262,6 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
   const records = buildSdkModelRecords(sdkModels);
   const preferredCanonicalIds = buildPreferredCanonicalIds(records);
   const hiddenModelAliases = buildHiddenModelAliases(
-    records,
-    preferredCanonicalIds,
-  );
-  const oneMillionContextVariants = buildOneMillionContextVariants(
     records,
     preferredCanonicalIds,
   );
@@ -329,26 +297,12 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
       usedKeys.add(alias.toLowerCase());
     }
 
-    const oneMillionContextModelId = record.identity.isOneMillion
-      ? undefined
-      : record.familyKey
-        ? oneMillionContextVariants.get(record.familyKey)
-        : undefined;
-
     models.push({
       id: record.value,
       displayName: record.displayName,
       description: record.description,
       aliases,
       provider: "anthropic",
-      capabilities: {
-        supports1mContext:
-          record.identity.isOneMillion ||
-          oneMillionContextModelId !== undefined,
-        ...(oneMillionContextModelId !== undefined
-          ? { oneMillionContextModelId }
-          : {}),
-      },
     });
   }
 
@@ -479,16 +433,3 @@ export const CLAUDE_MODELS_STATIC: ModelInfo[] = convertSdkModels([
   },
 ]);
 
-// ── Claude-specific model helpers ─────────────────────────────────────────
-
-/** Check whether a model supports the 1M token context window. */
-export function supports1mContext(modelId: string): boolean {
-  const info = resolveModel(modelId);
-  // Default to true for unknown models (don't restrict capabilities we can't check)
-  return info?.capabilities.supports1mContext ?? true;
-}
-
-/** Resolve the exact 1M-context model ID for a given model, if one exists. */
-export function get1mContextModelId(modelId: string): string | null {
-  return resolveModel(modelId)?.capabilities.oneMillionContextModelId ?? null;
-}

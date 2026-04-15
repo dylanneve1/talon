@@ -11,7 +11,6 @@ import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
 import { resolveModelId } from "../../core/models.js";
-import { get1mContextModelId } from "./models.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 
@@ -103,15 +102,10 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     thinking: { type: "adaptive" as const },
   };
 
-  const oneMillionContextModelId = resolvedActiveModel.endsWith("[1m]")
-    ? null
-    : get1mContextModelId(resolvedActiveModel);
-  const sdkModel = oneMillionContextModelId ?? resolvedActiveModel;
-
   const session = getSession(chatId);
 
   const options: Options = {
-    model: sdkModel,
+    model: resolvedActiveModel,
     systemPrompt: config.systemPrompt,
     cwd: config.workspace,
     permissionMode: "bypassPermissions",

@@ -21,10 +21,6 @@ describe("telegram helpers", () => {
         description: "Sonnet 4.6 · Best for everyday tasks",
         aliases: ["sonnet", "claude-sonnet-4-6"],
         provider: "anthropic",
-        capabilities: {
-          supports1mContext: true,
-          oneMillionContextModelId: "sonnet[1m]",
-        },
         fallback: "haiku",
       },
       {
@@ -34,7 +30,6 @@ describe("telegram helpers", () => {
           "Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15 per Mtok",
         aliases: ["claude-sonnet-4-6[1m]"],
         provider: "anthropic",
-        capabilities: { supports1mContext: true },
         fallback: "haiku",
       },
       {
@@ -43,10 +38,6 @@ describe("telegram helpers", () => {
         description: "Opus 4.6 · Most capable for complex work",
         aliases: ["claude-opus-4-6"],
         provider: "anthropic",
-        capabilities: {
-          supports1mContext: true,
-          oneMillionContextModelId: "opus[1m]",
-        },
         fallback: "default",
       },
       {
@@ -56,7 +47,6 @@ describe("telegram helpers", () => {
           "Opus 4.6 with 1M context · Billed as extra usage · $5/$25 per Mtok",
         aliases: ["claude-opus-4-6[1m]"],
         provider: "anthropic",
-        capabilities: { supports1mContext: true },
         fallback: "default",
       },
       {
@@ -65,7 +55,6 @@ describe("telegram helpers", () => {
         description: "Haiku 4.5 · Fastest for quick answers",
         aliases: ["claude-haiku-4-5"],
         provider: "anthropic",
-        capabilities: { supports1mContext: false },
       },
     ]);
   });

@@ -9,13 +9,6 @@
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type ModelCapabilities = {
-  /** Whether the model supports the 1M token context window. */
-  supports1mContext: boolean;
-  /** Exact model ID to use for the 1M token context window, if available. */
-  oneMillionContextModelId?: string;
-};
-
 export type ModelInfo = {
   /** Canonical SDK model ID (e.g. "default", "opus", "sonnet[1m]"). */
   id: string;
@@ -27,8 +20,6 @@ export type ModelInfo = {
   aliases: string[];
   /** Provider identifier (e.g. "anthropic", "openai"). */
   provider: string;
-  /** Model capabilities used for backend configuration. */
-  capabilities: ModelCapabilities;
   /** Model to fall back to on overload/timeout. */
   fallback?: string;
 };

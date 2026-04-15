@@ -58,12 +58,10 @@ describe("registerClaudeModels", () => {
     clearModels();
   });
 
-  it("keeps SDK IDs/display names and maps 1M upgrades explicitly", async () => {
+  it("keeps SDK IDs/display names and collapses duplicates", async () => {
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
     const { getModels, resolveModelId } = await import("../core/models.js");
-    const { get1mContextModelId, supports1mContext } =
-      await import("../backend/claude-sdk/models.js");
 
     await registerClaudeModels({ model: "default" });
 
@@ -82,6 +80,7 @@ describe("registerClaudeModels", () => {
     expect(
       anthropicModels.find((model) => model.id === "sonnet[1m]")?.displayName,
     ).toBe("Sonnet (1M context)");
+    // claude-sonnet-4-6 collapsed into "default" as alias
     expect(
       anthropicModels.some((model) => model.id === "claude-sonnet-4-6"),
     ).toBe(false);
@@ -89,14 +88,6 @@ describe("registerClaudeModels", () => {
     expect(resolveModelId("claude-sonnet-4-6")).toBe("default");
     expect(resolveModelId("claude-sonnet-4-6[1m]")).toBe("sonnet[1m]");
     expect(resolveModelId("claude-opus-4-6")).toBe("opus");
-
-    expect(get1mContextModelId("default")).toBe("sonnet[1m]");
-    expect(get1mContextModelId("claude-sonnet-4-6")).toBe("sonnet[1m]");
-    expect(get1mContextModelId("opus")).toBe("opus[1m]");
-    expect(get1mContextModelId("haiku")).toBeNull();
-
-    expect(supports1mContext("claude-sonnet-4-6")).toBe(true);
-    expect(supports1mContext("haiku")).toBe(false);
   });
 
   it("derives compatibility aliases from SDK metadata instead of hardcoded versions", async () => {
@@ -138,8 +129,6 @@ describe("registerClaudeModels", () => {
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
     const { resolveModelId } = await import("../core/models.js");
-    const { get1mContextModelId } =
-      await import("../backend/claude-sdk/models.js");
 
     await registerClaudeModels({ model: "default" });
 
@@ -149,7 +138,5 @@ describe("registerClaudeModels", () => {
     expect(resolveModelId("claude-opus-4-6")).toBe("opus");
     expect(resolveModelId("claude-haiku-5-0")).toBe("haiku");
     expect(resolveModelId("claude-haiku-4-5")).toBe("haiku");
-    expect(get1mContextModelId("claude-sonnet-4-6")).toBe("sonnet[1m]");
-    expect(get1mContextModelId("claude-sonnet-5-0")).toBe("sonnet[1m]");
   });
 });

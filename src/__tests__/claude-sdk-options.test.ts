@@ -55,10 +55,6 @@ describe("buildSdkOptions", () => {
         description: "Sonnet 4.6 · Best for everyday tasks",
         aliases: ["claude-sonnet-4-6"],
         provider: "anthropic",
-        capabilities: {
-          supports1mContext: true,
-          oneMillionContextModelId: "sonnet[1m]",
-        },
         fallback: "haiku",
       },
       {
@@ -68,7 +64,6 @@ describe("buildSdkOptions", () => {
           "Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15 per Mtok",
         aliases: ["claude-sonnet-4-6[1m]"],
         provider: "anthropic",
-        capabilities: { supports1mContext: true },
         fallback: "haiku",
       },
       {
@@ -77,22 +72,22 @@ describe("buildSdkOptions", () => {
         description: "Haiku 4.5 · Fastest for quick answers",
         aliases: ["claude-haiku-4-5"],
         provider: "anthropic",
-        capabilities: { supports1mContext: false },
       },
     ]);
   });
 
-  it("uses the exact mapped 1M SDK model for legacy Sonnet IDs", async () => {
+  it("resolves legacy aliases to canonical model ID and passes through", async () => {
     const { buildSdkOptions } =
       await import("../backend/claude-sdk/options.js");
 
     const { activeModel, options } = buildSdkOptions("chat-1");
 
     expect(activeModel).toBe("claude-sonnet-4-6");
-    expect(options.model).toBe("sonnet[1m]");
+    // Model is passed through as resolved — SDK handles context window
+    expect(options.model).toBe("default");
   });
 
-  it("leaves models without a mapped 1M variant unchanged", async () => {
+  it("passes model through unchanged when no alias resolution needed", async () => {
     mockGetChatSettings.mockReturnValue({ model: "haiku" });
 
     const { buildSdkOptions } =
@@ -102,7 +97,7 @@ describe("buildSdkOptions", () => {
     expect(options.model).toBe("haiku");
   });
 
-  it("resolves legacy 1M aliases to canonical SDK model IDs", async () => {
+  it("resolves 1M aliases to their canonical SDK model ID", async () => {
     mockGetChatSettings.mockReturnValue({ model: "claude-sonnet-4-6[1m]" });
 
     const { buildSdkOptions } =

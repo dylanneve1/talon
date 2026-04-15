@@ -9,4 +9,3 @@ export { initAgent, updateSystemPrompt } from "./state.js";
 export { warmSession } from "./warm.js";
 export { handleMessage, getActiveQuery } from "./handler.js";
 export { buildMcpServers } from "./options.js";
-export { supports1mContext, get1mContextModelId } from "./models.js";
