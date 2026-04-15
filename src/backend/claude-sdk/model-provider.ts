@@ -35,32 +35,32 @@ function toDisplayFamilyName(family: string): string {
 }
 
 function formatResolvedModelLabel(model: ModelInfo): string {
+  const isOneMillion = model.id.endsWith("[1m]") ||
+    model.aliases.some((a) => a.endsWith("[1m]"));
   const match = `${model.displayName} ${model.description ?? ""}`.match(
     FAMILY_VERSION_PATTERN,
   );
+  let label: string;
   if (match) {
-    return `${toDisplayFamilyName(match[1])} ${match[2]}`;
+    label = `${toDisplayFamilyName(match[1])} ${match[2]}`;
+  } else {
+    const familyAlias = model.aliases.find(
+      (alias) =>
+        !alias.startsWith("claude-") &&
+        !alias.endsWith("[1m]") &&
+        !/[-.]\d/.test(alias),
+    );
+    label = familyAlias
+      ? toDisplayFamilyName(familyAlias)
+      : model.displayName.replace(/\s*\([^)]*\)/g, "").trim();
   }
-
-  const familyAlias = model.aliases.find(
-    (alias) =>
-      !alias.startsWith("claude-") &&
-      !alias.endsWith("[1m]") &&
-      !/[-.]\d/.test(alias),
-  );
-  return familyAlias
-    ? toDisplayFamilyName(familyAlias)
-    : model.displayName.replace(/\s*\([^)]*\)/g, "").trim();
-}
-
-function formatCompactLabel(model: ModelInfo): string {
-  return formatResolvedModelLabel(model);
+  return isOneMillion ? `${label} [1M]` : label;
 }
 
 function toUnified(model: ModelInfo): UnifiedModelInfo {
   return {
     id: model.id,
-    displayName: model.displayName,
+    displayName: formatResolvedModelLabel(model),
     provider: PROVIDER_ID,
     providerName: PROVIDER_NAME,
     selectable: true,
@@ -149,7 +149,7 @@ export async function getSettingsPresentation(
   const options = getUniqueModels();
 
   const modelButtons: ModelButton[] = options.map((m) => {
-    const label = formatCompactLabel(m);
+    const label = formatResolvedModelLabel(m);
     const selected = isSelectedModel(activeModel, m.id);
     return {
       text: selected ? `\u2713 ${label}` : label,
