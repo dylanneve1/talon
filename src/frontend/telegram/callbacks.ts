@@ -4,8 +4,6 @@
 
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
-import { getOpenCodeModelSelectionValue } from "../../backend/opencode/index.js";
-
 import {
   getChatSettings,
   setChatModel,
@@ -29,12 +27,14 @@ import {
   isSelectedModel,
   renderSettingsText,
   renderSettingsKeyboard,
+  type SettingsButton,
 } from "./helpers.js";
 import {
+  getOpenCodeModelCatalog,
+  getOpenCodeModelSelectionValue,
   getOpenCodeSettingsPresentation,
-  resolveOpenCodeModelSelection,
-  type TelegramInlineButton,
-} from "./opencode-ui.js";
+  resolveOpenCodeModelInput,
+} from "../../backend/opencode/index.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
   // ── Callback query handler ──────────────────────────────────────────────────
@@ -68,8 +68,8 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
           if (value === "reset") {
             setChatModel(cid, undefined);
           } else {
-            const { catalog, resolution } =
-              await resolveOpenCodeModelSelection(value);
+            const catalog = await getOpenCodeModelCatalog();
+            const resolution = resolveOpenCodeModelInput(value, catalog);
             if (resolution.kind !== "exact") {
               await ctx.answerCallbackQuery({ text: "Model is unavailable" });
               return;
@@ -123,7 +123,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       const effortName = chatSets.effort ?? "adaptive";
       const pulseOn = isPulseEnabled(cid);
       let modelDetails: Array<string> | undefined;
-      let modelButtons: Array<TelegramInlineButton> | undefined;
+      let modelButtons: Array<SettingsButton> | undefined;
 
       if (config.backend === "opencode") {
         const presentation = await getOpenCodeSettingsPresentation(activeModel);

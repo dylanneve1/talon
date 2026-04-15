@@ -39,32 +39,30 @@ import { escapeHtml } from "./formatting.js";
 import {
   formatModelLabel,
   formatModelOptionLabel,
-  getTelegramModelOptions,
-  isSelectedModel,
-} from "./helpers.js";
-import { handleAdminCommand } from "./admin.js";
-import { getLoadedPlugins } from "../../core/plugin.js";
-import { getMetrics } from "../../util/metrics.js";
-import { getModels } from "../../core/models.js";
-import { getOpenCodeModelSelectionValue } from "../../backend/opencode/index.js";
-import {
   formatDuration,
   formatTokenCount,
   formatBytes,
   parseInterval,
+  getTelegramModelOptions,
+  isSelectedModel,
   renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
+  type SettingsButton,
 } from "./helpers.js";
+import { handleAdminCommand } from "./admin.js";
+import { getLoadedPlugins } from "../../core/plugin.js";
+import { getMetrics } from "../../util/metrics.js";
 import {
+  getOpenCodeModelCatalog,
+  getOpenCodeModelSelectionValue,
+  getOpenCodeSettingsPresentation,
+  resolveOpenCodeModelInput,
+  renderOpenCodeModelSummary,
+  renderOpenCodeModelList,
   formatOpenCodeSelectionError,
   formatOpenCodeUnavailableModel,
-  getOpenCodeSettingsPresentation,
-  renderOpenCodeModelList,
-  renderOpenCodeModelSummary,
-  resolveOpenCodeModelSelection,
-  type TelegramInlineButton,
-} from "./opencode-ui.js";
+} from "../../backend/opencode/index.js";
 
 // Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
 let ADMIN_USER_ID = 0;
@@ -75,10 +73,10 @@ export function setAdminUserId(id: number | undefined): void {
 }
 
 function chunkButtons(
-  buttons: Array<TelegramInlineButton>,
+  buttons: Array<SettingsButton>,
   columns = 2,
-): Array<Array<TelegramInlineButton>> {
-  const rows: Array<Array<TelegramInlineButton>> = [];
+): Array<Array<SettingsButton>> {
+  const rows: Array<Array<SettingsButton>> = [];
   for (let index = 0; index < buttons.length; index += columns) {
     rows.push(buttons.slice(index, index + columns));
   }
@@ -256,7 +254,8 @@ export function registerCommands(
         return;
       }
 
-      const { catalog, resolution } = await resolveOpenCodeModelSelection(arg);
+      const catalog = await getOpenCodeModelCatalog();
+      const resolution = resolveOpenCodeModelInput(arg, catalog);
       if (resolution.kind !== "exact") {
         await ctx.reply(
           formatOpenCodeSelectionError(arg, resolution, catalog),
@@ -292,19 +291,13 @@ export function registerCommands(
 
     if (!arg) {
       const current = settings.model ?? config.model;
-      // Build model buttons dynamically from the registry
-      const models = getTelegramModelOptions();
-      const modelButtons = models.map((m) => ({
+      const modelButtons = getTelegramModelOptions().map((m) => ({
         text: isSelectedModel(current, m.id)
           ? `\u2713 ${formatModelOptionLabel(m)}`
           : formatModelOptionLabel(m),
         callback_data: `model:${m.id}`,
       }));
-      // Two models per row, plus a reset button on the last row
-      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-      for (let i = 0; i < modelButtons.length; i += 2) {
-        rows.push(modelButtons.slice(i, i + 2));
-      }
+      const rows = chunkButtons(modelButtons);
       rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
 
       await ctx.reply(
@@ -493,7 +486,7 @@ export function registerCommands(
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
     let modelDetails: Array<string> | undefined;
-    let modelButtons: Array<TelegramInlineButton> | undefined;
+    let modelButtons: Array<SettingsButton> | undefined;
 
     if (config.backend === "opencode") {
       const presentation = await getOpenCodeSettingsPresentation(activeModel);

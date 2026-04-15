@@ -244,7 +244,7 @@ export function isSelectedModel(
   return resolveModelId(currentModel) === modelId;
 }
 
-type SettingsButton = { text: string; callback_data: string };
+export type SettingsButton = { text: string; callback_data: string };
 
 export function renderSettingsKeyboard(
   model: string,
@@ -252,16 +252,14 @@ export function renderSettingsKeyboard(
   proactive: boolean,
   modelButtons?: Array<SettingsButton>,
 ): Array<Array<SettingsButton>> {
-  // Use provided buttons (e.g. from opencode backend) or build from model registry
-  const defaultButtons: Array<SettingsButton> = getTelegramModelOptions().map(
-    (m) => ({
-      text: isSelectedModel(model, m.id)
-        ? `\u2713 ${formatCompactModelLabel(m)}`
-        : formatCompactModelLabel(m),
-      callback_data: `settings:model:${m.id}`,
-    }),
-  );
-  const selectedButtons = modelButtons?.length ? modelButtons : defaultButtons;
+  const selectedButtons = modelButtons?.length
+    ? modelButtons
+    : getTelegramModelOptions().map((m) => ({
+        text: isSelectedModel(model, m.id)
+          ? `\u2713 ${formatCompactModelLabel(m)}`
+          : formatCompactModelLabel(m),
+        callback_data: `settings:model:${m.id}`,
+      }));
   const cols = modelButtons?.length ? 2 : 3;
   const modelRows: Array<Array<SettingsButton>> = [];
   for (let i = 0; i < selectedButtons.length; i += cols) {
