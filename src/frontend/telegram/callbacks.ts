@@ -77,7 +77,8 @@ export function registerCallbacks(
           setChatModel(cid, resolveModelName(value));
         }
         const settingsModel = getChatSettings(cid).model ?? config.model;
-        const settingsModelInfo = await gateway?.backend?.getModelInfo?.(settingsModel);
+        const settingsModelInfo =
+          await gateway?.backend?.getModelInfo?.(settingsModel);
         await ctx.answerCallbackQuery({
           text: `Model: ${settingsModelInfo?.displayName ?? settingsModel}`,
         });
