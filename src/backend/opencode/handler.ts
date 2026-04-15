@@ -18,6 +18,7 @@ import {
   ensureServer,
   ensureSession,
   ensureChatMcpServer,
+  ensurePluginMcpServers,
   buildToolOverrides,
   disconnectChatMcpServer,
   resolveProviderID,
@@ -55,6 +56,7 @@ export async function handleMessage(
     selectedProviderID ?? (await resolveProviderID(oc, modelID));
   const sessionId = await ensureSession(oc, chatId);
   const chatMcpServerName = await ensureChatMcpServer(oc, chatId);
+  await ensurePluginMcpServers(oc, chatId);
   const toolOverrides = await buildToolOverrides(oc, chatMcpServerName);
   const seenQuestionIds = new Set<string>();
 

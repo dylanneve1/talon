@@ -176,6 +176,49 @@ export async function ensureChatMcpServer(
   return serverName;
 }
 
+export async function ensurePluginMcpServers(
+  oc: OpencodeClient,
+  chatId: string,
+): Promise<string[]> {
+  const { getPluginMcpServers } = await import("../../core/plugin.js");
+  const bridgeUrl = `http://127.0.0.1:${gatewayPortFn()}`;
+  const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
+  const registered: string[] = [];
+
+  // Check which are already connected
+  let existingServers: Record<string, { status?: string }> = {};
+  try {
+    const statusResp = await oc.mcp.status();
+    existingServers =
+      (statusResp.data as Record<string, { status?: string }> | undefined) ?? {};
+  } catch {
+    // status check failed — try to register anyway
+  }
+
+  for (const [name, cfg] of Object.entries(pluginServers)) {
+    if (existingServers[name]?.status === "connected") {
+      registered.push(name);
+      continue;
+    }
+    try {
+      await oc.mcp.add({
+        name,
+        config: {
+          type: "local",
+          command: [cfg.command, ...cfg.args],
+          environment: cfg.env ?? {},
+        },
+      });
+      registered.push(name);
+      log("agent", `Registered plugin MCP server: ${name}`);
+    } catch (err) {
+      logWarn("agent", `Plugin MCP registration failed for ${name}: ${errMsg(err)}`);
+    }
+  }
+
+  return registered;
+}
+
 export async function buildToolOverrides(
   oc: OpencodeClient,
   chatServerName: string,
