@@ -29,6 +29,7 @@ import type { QueryBackend, ContextManager } from "./core/types.js";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type Frontend = {
+  name: "telegram" | "terminal" | "teams";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -112,7 +113,7 @@ export async function initBackendAndDispatcher(
   if (config.backend === "opencode") {
     const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } =
       await import("./backend/opencode/index.js");
-    initOpenCodeAgent(config, frontend.getBridgePort);
+    initOpenCodeAgent(config, frontend.getBridgePort, frontend.name);
     backend = { query: (params) => opencodeHandleMessage(params) };
     log("bot", "Backend: OpenCode");
   } else {

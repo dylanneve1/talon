@@ -196,6 +196,7 @@ export function recordUsage(
     contextWindow?: number;
     /** Number of agentic turns / API round-trips in this turn. */
     numApiCalls?: number;
+    costUsd?: number;
   },
 ): void {
   const session = getSession(chatId);
@@ -216,6 +217,10 @@ export function recordUsage(
     session.usage.contextWindow = turn.contextWindow;
   }
   session.usage.numApiCalls = turn.numApiCalls ?? 0;
+  // Add backend-reported cost when available
+  if (typeof turn.costUsd === "number" && Number.isFinite(turn.costUsd)) {
+    session.usage.estimatedCostUsd += turn.costUsd;
+  }
   if (turn.model) session.lastModel = turn.model;
   // Response time tracking
   if (turn.durationMs && turn.durationMs > 0) {

@@ -4,6 +4,7 @@
 
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
+import { getOpenCodeModelSelectionValue } from "../../backend/opencode/index.js";
 
 import {
   getChatSettings,
@@ -29,6 +30,11 @@ import {
   renderSettingsText,
   renderSettingsKeyboard,
 } from "./helpers.js";
+import {
+  getOpenCodeSettingsPresentation,
+  resolveOpenCodeModelSelection,
+  type TelegramInlineButton,
+} from "./opencode-ui.js";
 
 export function registerCallbacks(bot: Bot, config: TalonConfig): void {
   // ── Callback query handler ──────────────────────────────────────────────────
@@ -58,11 +64,36 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       }
 
       if (category === "model") {
-        if (value === "reset") {
-          setChatModel(cid, undefined);
+        if (config.backend === "opencode") {
+          if (value === "reset") {
+            setChatModel(cid, undefined);
+          } else {
+            const { catalog, resolution } = await resolveOpenCodeModelSelection(value);
+            if (resolution.kind !== "exact") {
+              await ctx.answerCallbackQuery({ text: "Model is unavailable" });
+              return;
+            }
+            if (!resolution.model.selectable) {
+              const detail = resolution.model.loginRequired
+                ? `${resolution.model.providerName}: login required`
+                : resolution.model.envRequired
+                  ? `${resolution.model.providerName}: credentials required`
+                  : `${resolution.model.providerName}: unavailable`;
+              await ctx.answerCallbackQuery({ text: detail });
+              return;
+            }
+            setChatModel(
+              cid,
+              getOpenCodeModelSelectionValue(resolution.model, catalog),
+            );
+          }
         } else {
-          const resolved = resolveModelName(value);
-          setChatModel(cid, resolved);
+          if (value === "reset") {
+            setChatModel(cid, undefined);
+          } else {
+            const resolved = resolveModelName(value);
+            setChatModel(cid, resolved);
+          }
         }
         await ctx.answerCallbackQuery({
           text: `Model: ${getChatSettings(cid).model ?? config.model}`,
@@ -90,6 +121,14 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       const activeModel = chatSets.model ?? config.model;
       const effortName = chatSets.effort ?? "adaptive";
       const pulseOn = isPulseEnabled(cid);
+      let modelDetails: Array<string> | undefined;
+      let modelButtons: Array<TelegramInlineButton> | undefined;
+
+      if (config.backend === "opencode") {
+        const presentation = await getOpenCodeSettingsPresentation(activeModel);
+        modelDetails = presentation.modelDetails;
+        modelButtons = presentation.modelButtons;
+      }
 
       try {
         await ctx.editMessageText(
@@ -98,6 +137,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
             effortName,
             pulseOn,
             chatSets.pulseIntervalMs,
+            modelDetails,
           ),
           {
             parse_mode: "HTML",
@@ -106,6 +146,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
                 activeModel,
                 effortName,
                 pulseOn,
+                modelButtons,
               ),
             },
           },

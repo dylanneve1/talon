@@ -25,6 +25,7 @@ import { proxyFetch } from "./proxy-fetch.js";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type TeamsFrontend = {
+  name: "teams";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -63,6 +64,7 @@ export function createTeamsFrontend(
   };
 
   return {
+    name: "teams",
     context,
 
     // Teams has no typing indicator via webhooks

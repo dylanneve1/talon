@@ -23,6 +23,7 @@ import { log, logError } from "../../util/log.js";
 // ── Frontend interface ──────────────────────────────────────────────────────
 
 export type TelegramFrontend = {
+  name: "telegram";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -49,6 +50,7 @@ export function createTelegramFrontend(
   };
 
   return {
+    name: "telegram",
     context,
 
     sendTyping: (chatId: number) =>
