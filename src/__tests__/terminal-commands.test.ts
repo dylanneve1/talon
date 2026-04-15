@@ -309,11 +309,16 @@ describe("built-in commands", () => {
 
   describe("/model", () => {
     it("shows current model when no arg given", async () => {
-      mockGetChatSettings.mockReturnValueOnce({ model: "claude-opus-4-6" });
+      // getChatSettings is called twice: once at handler entry, once in the
+      // non-opencode branch — use mockReturnValue so both calls see the model.
+      mockGetChatSettings.mockReturnValue({ model: "claude-opus-4-6" });
       const ctx = makeMockContext();
       await tryRunCommand("/model", ctx);
       expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
         expect.stringContaining("claude-opus-4-6"),
+      );
+      mockGetChatSettings.mockImplementation(
+        (_chatId: string): Record<string, unknown> => ({}),
       );
     });
 
