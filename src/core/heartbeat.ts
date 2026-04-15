@@ -265,7 +265,7 @@ async function runHeartbeatAgent(
   }
 
   const model =
-    configRef.heartbeatModel ?? configRef.model ?? getDefaultModel("balanced");
+    configRef.heartbeatModel ?? configRef.model ?? getDefaultModel();
 
   // Set up heartbeat log file
   const heartbeatLogFile = await createHeartbeatLogFile();

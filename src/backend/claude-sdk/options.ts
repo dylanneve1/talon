@@ -10,7 +10,8 @@ import type { Options } from "@anthropic-ai/claude-agent-sdk";
 import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
-import { get1mContextModelId, resolveModelId } from "../../core/models.js";
+import { resolveModelId } from "../../core/models.js";
+import { get1mContextModelId } from "./models.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 

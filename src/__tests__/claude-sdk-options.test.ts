@@ -59,7 +59,6 @@ describe("buildSdkOptions", () => {
           supports1mContext: true,
           oneMillionContextModelId: "sonnet[1m]",
         },
-        tier: "balanced",
         fallback: "haiku",
       },
       {
@@ -70,7 +69,6 @@ describe("buildSdkOptions", () => {
         aliases: ["claude-sonnet-4-6[1m]"],
         provider: "anthropic",
         capabilities: { supports1mContext: true },
-        tier: "balanced",
         fallback: "haiku",
       },
       {
@@ -80,7 +78,6 @@ describe("buildSdkOptions", () => {
         aliases: ["claude-haiku-4-5"],
         provider: "anthropic",
         capabilities: { supports1mContext: false },
-        tier: "economy",
       },
     ]);
   });

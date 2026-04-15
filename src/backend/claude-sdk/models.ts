@@ -8,7 +8,11 @@
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { registerModels, clearModelsByProvider } from "../../core/models.js";
+import {
+  registerModels,
+  clearModelsByProvider,
+  resolveModel,
+} from "../../core/models.js";
 import type { ModelInfo } from "../../core/models.js";
 import { log, logError } from "../../util/log.js";
 
@@ -165,25 +169,6 @@ function buildGeneratedAliases(identity: ParsedModelIdentity): string[] {
   return aliases;
 }
 
-function inferTierFromText(searchableText: string): ModelInfo["tier"] {
-  const lower = searchableText.toLowerCase();
-  if (
-    lower.includes("most capable") ||
-    lower.includes("smartest") ||
-    lower.includes("complex work")
-  ) {
-    return "premium";
-  }
-  if (
-    lower.includes("fastest") ||
-    lower.includes("quick answers") ||
-    lower.includes("cheapest")
-  ) {
-    return "economy";
-  }
-  return "balanced";
-}
-
 function getPreferredModelPriority(value: string): number {
   if (value === "default") return 0;
   if (!value.startsWith("claude-")) return 1;
@@ -294,26 +279,6 @@ function buildOneMillionContextVariants(
   return variants;
 }
 
-function buildTierByFamily(
-  records: readonly SdkModelRecord[],
-): Map<string, ModelInfo["tier"]> {
-  const textsByFamily = new Map<string, string[]>();
-
-  for (const record of records) {
-    if (!record.familyKey) continue;
-    const texts = textsByFamily.get(record.familyKey) ?? [];
-    texts.push(record.displayName, record.description, record.value);
-    textsByFamily.set(record.familyKey, texts);
-  }
-
-  const tiers = new Map<string, ModelInfo["tier"]>();
-  for (const [familyKey, texts] of textsByFamily) {
-    tiers.set(familyKey, inferTierFromText(texts.join(" ")));
-  }
-
-  return tiers;
-}
-
 // ── SDK → registry conversion ───────────────────────────────────────────────
 
 /**
@@ -332,7 +297,6 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
     records,
     preferredCanonicalIds,
   );
-  const tierByFamily = buildTierByFamily(records);
   const hiddenModels = new Set(
     records
       .filter(
@@ -385,24 +349,7 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
           ? { oneMillionContextModelId }
           : {}),
       },
-      tier:
-        (record.familyKey ? tierByFamily.get(record.familyKey) : undefined) ??
-        inferTierFromText(
-          `${record.value} ${record.displayName} ${record.description}`,
-        ),
     });
-  }
-
-  const tierOrder = { premium: 0, balanced: 1, economy: 2 };
-  models.sort((a, b) => tierOrder[a.tier] - tierOrder[b.tier]);
-
-  // Fallback chain: each model falls back to the first model in the next lower tier
-  for (const model of models) {
-    if (model.fallback) continue;
-    const nextTier = models.find(
-      (m) => tierOrder[m.tier] > tierOrder[model.tier],
-    );
-    if (nextTier) model.fallback = nextTier.id;
   }
 
   return models;
@@ -531,3 +478,17 @@ export const CLAUDE_MODELS_STATIC: ModelInfo[] = convertSdkModels([
     description: "Haiku · Fastest for quick answers",
   },
 ]);
+
+// ── Claude-specific model helpers ─────────────────────────────────────────
+
+/** Check whether a model supports the 1M token context window. */
+export function supports1mContext(modelId: string): boolean {
+  const info = resolveModel(modelId);
+  // Default to true for unknown models (don't restrict capabilities we can't check)
+  return info?.capabilities.supports1mContext ?? true;
+}
+
+/** Resolve the exact 1M-context model ID for a given model, if one exists. */
+export function get1mContextModelId(modelId: string): string | null {
+  return resolveModel(modelId)?.capabilities.oneMillionContextModelId ?? null;
+}

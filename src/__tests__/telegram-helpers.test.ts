@@ -25,7 +25,6 @@ describe("telegram helpers", () => {
           supports1mContext: true,
           oneMillionContextModelId: "sonnet[1m]",
         },
-        tier: "balanced",
         fallback: "haiku",
       },
       {
@@ -36,7 +35,6 @@ describe("telegram helpers", () => {
         aliases: ["claude-sonnet-4-6[1m]"],
         provider: "anthropic",
         capabilities: { supports1mContext: true },
-        tier: "balanced",
         fallback: "haiku",
       },
       {
@@ -49,7 +47,6 @@ describe("telegram helpers", () => {
           supports1mContext: true,
           oneMillionContextModelId: "opus[1m]",
         },
-        tier: "premium",
         fallback: "default",
       },
       {
@@ -60,7 +57,6 @@ describe("telegram helpers", () => {
         aliases: ["claude-opus-4-6[1m]"],
         provider: "anthropic",
         capabilities: { supports1mContext: true },
-        tier: "premium",
         fallback: "default",
       },
       {
@@ -70,7 +66,6 @@ describe("telegram helpers", () => {
         aliases: ["claude-haiku-4-5"],
         provider: "anthropic",
         capabilities: { supports1mContext: false },
-        tier: "economy",
       },
     ]);
   });
@@ -86,17 +81,17 @@ describe("telegram helpers", () => {
     expect(formatModelLabel("claude-sonnet-4-6")).toBe("Sonnet 4.6");
     expect(formatModelLabel("sonnet[1m]")).toBe("Sonnet 4.6");
     expect(formatModelOptionLabel(getTelegramModelOptions()[0]!)).toBe(
-      "Opus 4.6",
+      "Sonnet 4.6",
     );
     expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe(
-      "Sonnet",
+      "Opus",
     );
   });
 
   it("shows a single clean option per model family", () => {
     expect(getTelegramModelOptions().map((model) => model.id)).toEqual([
-      "opus",
       "default",
+      "opus",
       "haiku",
     ]);
   });

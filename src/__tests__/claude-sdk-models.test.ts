@@ -61,21 +61,19 @@ describe("registerClaudeModels", () => {
   it("keeps SDK IDs/display names and maps 1M upgrades explicitly", async () => {
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
-    const {
-      get1mContextModelId,
-      getModels,
-      resolveModelId,
-      supports1mContext,
-    } = await import("../core/models.js");
+    const { getModels, resolveModelId } = await import("../core/models.js");
+    const { get1mContextModelId, supports1mContext } = await import(
+      "../backend/claude-sdk/models.js"
+    );
 
     await registerClaudeModels({ model: "default" });
 
     const anthropicModels = getModels("anthropic");
     expect(anthropicModels.map((model) => model.id)).toEqual([
-      "opus",
-      "opus[1m]",
       "default",
       "sonnet[1m]",
+      "opus",
+      "opus[1m]",
       "haiku",
     ]);
 
@@ -140,8 +138,10 @@ describe("registerClaudeModels", () => {
 
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
-    const { get1mContextModelId, resolveModelId } =
-      await import("../core/models.js");
+    const { resolveModelId } = await import("../core/models.js");
+    const { get1mContextModelId } = await import(
+      "../backend/claude-sdk/models.js"
+    );
 
     await registerClaudeModels({ model: "default" });
 

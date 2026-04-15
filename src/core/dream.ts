@@ -181,7 +181,7 @@ If commands fail, log the error and continue — this stage is optional.`
   }
 
   const model =
-    configRef.dreamModel ?? configRef.model ?? getDefaultModel("balanced");
+    configRef.dreamModel ?? configRef.model ?? getDefaultModel();
   const workspace = configRef.workspace ?? dirs.workspace;
 
   // Set up dream log file
