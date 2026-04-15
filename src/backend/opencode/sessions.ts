@@ -94,9 +94,10 @@ type OpenCodeUsageSummary = {
 // Functions
 // ---------------------------------------------------------------------------
 
-export function extractPartsSummary(
-  parts: Array<Record<string, unknown>>,
-): { text: string; toolCalls: number } {
+export function extractPartsSummary(parts: Array<Record<string, unknown>>): {
+  text: string;
+  toolCalls: number;
+} {
   const textParts: string[] = [];
   let toolCalls = 0;
 
@@ -139,11 +140,11 @@ export function extractAssistantUsage(
 function hasAssistantUsage(info: OpenCodeAssistantInfo | undefined): boolean {
   return Boolean(
     info?.tokens?.input ||
-      info?.tokens?.output ||
-      info?.tokens?.reasoning ||
-      info?.tokens?.cache?.read ||
-      info?.tokens?.cache?.write ||
-      info?.cost,
+    info?.tokens?.output ||
+    info?.tokens?.reasoning ||
+    info?.tokens?.cache?.read ||
+    info?.tokens?.cache?.write ||
+    info?.cost,
   );
 }
 
@@ -178,11 +179,13 @@ function parseAssistantMessage(
   };
 }
 
-function isMeaningfulAssistantMessage(message: ParsedAssistantMessage): boolean {
+function isMeaningfulAssistantMessage(
+  message: ParsedAssistantMessage,
+): boolean {
   return Boolean(
     message.parts.length > 0 ||
-      message.info?.time?.completed ||
-      hasAssistantUsage(message.info),
+    message.info?.time?.completed ||
+    hasAssistantUsage(message.info),
   );
 }
 
@@ -199,7 +202,8 @@ export function summarizeOpenCodeAssistantMessages(
     .filter((message): message is ParsedAssistantMessage => Boolean(message))
     .filter(
       (message) =>
-        message.createdAt >= minCreatedAt && isMeaningfulAssistantMessage(message),
+        message.createdAt >= minCreatedAt &&
+        isMeaningfulAssistantMessage(message),
     );
 
   for (const assistant of assistants) {
@@ -269,12 +273,14 @@ export async function getOpenCodeSessionSnapshot(
   ]);
 
   const sessionInfo =
-    (sessionResp.data as {
-      time?: {
-        created?: number;
-        updated?: number;
-      };
-    } | undefined) ?? {};
+    (sessionResp.data as
+      | {
+          time?: {
+            created?: number;
+            updated?: number;
+          };
+        }
+      | undefined) ?? {};
   const summary = summarizeOpenCodeAssistantMessages(messages);
   const latestAssistant = summary.latestAssistant;
   const usage = extractAssistantUsage(latestAssistant?.info);

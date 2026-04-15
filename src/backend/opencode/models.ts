@@ -115,12 +115,10 @@ export type ModelButton = { text: string; callback_data: string };
 // State
 // ---------------------------------------------------------------------------
 
-let modelCatalogCache:
-  | {
-      expiresAt: number;
-      value: OpenCodeModelCatalog;
-    }
-  | null = null;
+let modelCatalogCache: {
+  expiresAt: number;
+  value: OpenCodeModelCatalog;
+} | null = null;
 
 export function clearModelCatalogCache(): void {
   modelCatalogCache = null;
@@ -137,7 +135,10 @@ const PROVIDER_PATTERNS: Array<[RegExp, string]> = [
 ];
 
 const BUCKET_PRIORITY: Record<string, number> = {
-  connected: 0, configured: 1, available: 2, all: 3,
+  connected: 0,
+  configured: 1,
+  available: 2,
+  all: 3,
 };
 
 const OPENCODE_MODEL_CATALOG_TTL_MS = 60_000;
@@ -159,9 +160,10 @@ export function normalizeModelLookup(value: string): string {
   return value.trim().toLowerCase().replace(/[`"']/g, "").replace(/\s+/g, "-");
 }
 
-export function parseOpenCodeModelQuery(
-  value: string,
-): { providerQuery?: string; modelQuery: string } {
+export function parseOpenCodeModelQuery(value: string): {
+  providerQuery?: string;
+  modelQuery: string;
+} {
   const trimmed = value.trim();
   const slashIndex = trimmed.indexOf("/");
   const colonIndex = trimmed.indexOf(":");
@@ -351,21 +353,30 @@ function buildModelCatalog(
   const defaultModels = providersData.default ?? {};
   const providers = (Array.isArray(providersData.all) ? providersData.all : [])
     .map((rawProvider) =>
-      parseCatalogProvider(rawProvider, connectedProviders, defaultModels, authMap),
+      parseCatalogProvider(
+        rawProvider,
+        connectedProviders,
+        defaultModels,
+        authMap,
+      ),
     )
-    .filter(
-      (provider): provider is OpenCodeProviderCatalogEntry => Boolean(provider),
+    .filter((provider): provider is OpenCodeProviderCatalogEntry =>
+      Boolean(provider),
     )
     .sort((left, right) => {
       if (left.connected !== right.connected) return left.connected ? -1 : 1;
       return left.name.localeCompare(right.name);
     });
 
-  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+  const providerById = new Map(
+    providers.map((provider) => [provider.id, provider]),
+  );
   const models: Array<OpenCodeModelCatalogEntry> = [];
 
   for (const rawProvider of providersData.all ?? []) {
-    const provider = rawProvider.id ? providerById.get(rawProvider.id) : undefined;
+    const provider = rawProvider.id
+      ? providerById.get(rawProvider.id)
+      : undefined;
     if (!provider) continue;
 
     for (const rawModel of Object.values(rawProvider.models ?? {})) {
@@ -383,7 +394,9 @@ function buildModelCatalog(
     connectedProviders: providers.filter((provider) => provider.connected),
     loginProviders: providers.filter((provider) => provider.loginRequired),
     connectedModels: models.filter((model) => model.selectable),
-    connectedFreeModels: models.filter((model) => model.selectable && model.free),
+    connectedFreeModels: models.filter(
+      (model) => model.selectable && model.free,
+    ),
   };
 }
 
@@ -406,13 +419,16 @@ export async function getOpenCodeModelCatalog(
   ]);
 
   const providersData =
-    (providersResp.data as {
-      all?: Array<OpenCodeRawProvider>;
-      connected?: Array<string>;
-      default?: Record<string, string>;
-    } | undefined) ?? {};
+    (providersResp.data as
+      | {
+          all?: Array<OpenCodeRawProvider>;
+          connected?: Array<string>;
+          default?: Record<string, string>;
+        }
+      | undefined) ?? {};
   const authMap =
-    (authResp.data as Record<string, Array<OpenCodeAuthMethod>> | undefined) ?? {};
+    (authResp.data as Record<string, Array<OpenCodeAuthMethod>> | undefined) ??
+    {};
 
   const catalog = buildModelCatalog(providersData, authMap);
   modelCatalogCache = {
@@ -453,7 +469,10 @@ function getSearchCandidates(
   return matches.sort((left, right) => {
     if (normalizedProvider) {
       const leftProviderExact = hasProviderExactMatch(left, normalizedProvider);
-      const rightProviderExact = hasProviderExactMatch(right, normalizedProvider);
+      const rightProviderExact = hasProviderExactMatch(
+        right,
+        normalizedProvider,
+      );
       if (leftProviderExact !== rightProviderExact) {
         return leftProviderExact ? -1 : 1;
       }
@@ -483,19 +502,19 @@ export function resolveOpenCodeModelInput(
   const normalizedProvider = providerQuery
     ? normalizeModelLookup(providerQuery)
     : undefined;
-  const exactMatches = matches.filter(
-    (model) => {
-      const exactModelMatch =
-        normalizeModelLookup(model.id) === normalizedModel ||
-        normalizeModelLookup(model.name) === normalizedModel;
-      if (!exactModelMatch) return false;
+  const exactMatches = matches.filter((model) => {
+    const exactModelMatch =
+      normalizeModelLookup(model.id) === normalizedModel ||
+      normalizeModelLookup(model.name) === normalizedModel;
+    if (!exactModelMatch) return false;
 
-      return normalizedProvider
-        ? hasProviderExactMatch(model, normalizedProvider)
-        : true;
-    },
+    return normalizedProvider
+      ? hasProviderExactMatch(model, normalizedProvider)
+      : true;
+  });
+  const selectableExactMatches = exactMatches.filter(
+    (model) => model.selectable,
   );
-  const selectableExactMatches = exactMatches.filter((model) => model.selectable);
 
   if (exactMatches.length === 1) {
     return { kind: "exact", model: exactMatches[0] };
@@ -513,7 +532,9 @@ export function resolveOpenCodeModelInput(
 }
 
 function isCallbackSafeModelID(modelID: string): boolean {
-  return modelID.length <= 48 && !modelID.includes(":") && !modelID.includes("/");
+  return (
+    modelID.length <= 48 && !modelID.includes(":") && !modelID.includes("/")
+  );
 }
 
 export function getOpenCodeQuickPickModels(
@@ -524,7 +545,8 @@ export function getOpenCodeQuickPickModels(
   const seen = new Set<string>();
 
   const tryAdd = (model: OpenCodeModelCatalogEntry | undefined) => {
-    if (!model || seen.has(model.id) || !isCallbackSafeModelID(model.id)) return;
+    if (!model || seen.has(model.id) || !isCallbackSafeModelID(model.id))
+      return;
     picks.push(model);
     seen.add(model.id);
   };
@@ -574,24 +596,40 @@ export async function getOpenCodeSettingsPresentation(
   const picks = getOpenCodeQuickPickModels(catalog, activeModel);
 
   const modelButtons: Array<ModelButton> = picks.map((m) => {
-    const label = m.id.length <= 20 ? m.id : m.name.length <= 20 ? m.name : m.id;
+    const label =
+      m.id.length <= 20 ? m.id : m.name.length <= 20 ? m.name : m.id;
     const txt = m.free ? `${label} \u2605` : label;
-    const sel = current && m.id === current.id && m.providerID === current.providerID;
-    return { text: sel ? `\u2713 ${txt}` : txt, callback_data: `settings:model:${m.id}` };
+    const sel =
+      current && m.id === current.id && m.providerID === current.providerID;
+    return {
+      text: sel ? `\u2713 ${txt}` : txt,
+      callback_data: `settings:model:${m.id}`,
+    };
   });
   modelButtons.push({ text: "Reset", callback_data: "settings:model:reset" });
 
   const details: Array<string> = [];
   if (current) {
-    details.push(`Provider: ${current.providerName} \u00B7 ${getAvailabilityLabel(current)}`);
-    details.push(`Context: ${formatCtxWindow(current.contextWindow)} \u00B7 reasoning ${current.reasoning ? "yes" : "no"} \u00B7 tools ${current.toolcall ? "yes" : "no"}`);
+    details.push(
+      `Provider: ${current.providerName} \u00B7 ${getAvailabilityLabel(current)}`,
+    );
+    details.push(
+      `Context: ${formatCtxWindow(current.contextWindow)} \u00B7 reasoning ${current.reasoning ? "yes" : "no"} \u00B7 tools ${current.toolcall ? "yes" : "no"}`,
+    );
   }
   const np = catalog.connectedProviders.length;
   const nm = catalog.connectedModels.length;
-  details.push(`OpenCode: ${np} provider${np === 1 ? "" : "s"} connected \u00B7 ${nm} model${nm === 1 ? "" : "s"} usable`);
+  details.push(
+    `OpenCode: ${np} provider${np === 1 ? "" : "s"} connected \u00B7 ${nm} model${nm === 1 ? "" : "s"} usable`,
+  );
   if (catalog.loginProviders.length > 0) {
-    const preview = catalog.loginProviders.slice(0, 4).map((p) => p.name).join(", ");
-    details.push(`Login available: ${preview}${catalog.loginProviders.length > 4 ? "\u2026" : ""}`);
+    const preview = catalog.loginProviders
+      .slice(0, 4)
+      .map((p) => p.name)
+      .join(", ");
+    details.push(
+      `Login available: ${preview}${catalog.loginProviders.length > 4 ? "\u2026" : ""}`,
+    );
   }
   details.push("Hint: use /model free, /model providers, or /model <id>.");
   return { modelButtons, modelDetails: details };
@@ -601,10 +639,13 @@ export async function renderOpenCodeModelSummary(
   activeModel: string,
   defaultModel: string,
 ): Promise<{ text: string; quickButtons: Array<ModelButton> }> {
-  const { modelButtons, modelDetails } = await getOpenCodeSettingsPresentation(activeModel);
+  const { modelButtons, modelDetails } =
+    await getOpenCodeSettingsPresentation(activeModel);
   const catalog = await getOpenCodeModelCatalog();
   const current = await getOpenCodeModelInfo(activeModel);
-  const currentLabel = current ? getOpenCodeModelSelectionValue(current, catalog) : activeModel;
+  const currentLabel = current
+    ? getOpenCodeModelSelectionValue(current, catalog)
+    : activeModel;
   const freePreview = catalog.connectedFreeModels.slice(0, 8);
 
   const lines = [
@@ -614,8 +655,15 @@ export async function renderOpenCodeModelSummary(
   if (freePreview.length > 0) {
     lines.push("", "Free now");
     for (const m of freePreview) {
-      const tags = [m.providerName, m.free ? "free" : `$${m.costInput}/${m.costOutput}`, `${formatCtxWindow(m.contextWindow)} ctx`, getAvailabilityLabel(m)];
-      lines.push(`\u2022 ${getOpenCodeModelSelectionValue(m, catalog)} \u2014 ${m.name} (${tags.join(" \u00B7 ")})`);
+      const tags = [
+        m.providerName,
+        m.free ? "free" : `$${m.costInput}/${m.costOutput}`,
+        `${formatCtxWindow(m.contextWindow)} ctx`,
+        getAvailabilityLabel(m),
+      ];
+      lines.push(
+        `\u2022 ${getOpenCodeModelSelectionValue(m, catalog)} \u2014 ${m.name} (${tags.join(" \u00B7 ")})`,
+      );
     }
   }
   return { text: lines.join("\n"), quickButtons: modelButtons };
@@ -628,18 +676,35 @@ export async function renderOpenCodeModelList(
   if (mode === "providers") {
     const lines = ["OpenCode Providers"];
     for (const p of catalog.providers.slice(0, 24)) {
-      const detail = p.connected ? "connected" : p.loginRequired ? `login: ${p.authMethods.join(", ")}` : p.envRequired ? `env: ${p.envKeys.join(", ")}` : p.source;
-      lines.push(`\u2022 ${p.name} (${p.id}) \u2014 ${detail} \u00B7 ${p.modelCount} models`);
+      const detail = p.connected
+        ? "connected"
+        : p.loginRequired
+          ? `login: ${p.authMethods.join(", ")}`
+          : p.envRequired
+            ? `env: ${p.envKeys.join(", ")}`
+            : p.source;
+      lines.push(
+        `\u2022 ${p.name} (${p.id}) \u2014 ${detail} \u00B7 ${p.modelCount} models`,
+      );
     }
-    if (catalog.providers.length > 24) lines.push(`\u2026and ${catalog.providers.length - 24} more`);
+    if (catalog.providers.length > 24)
+      lines.push(`\u2026and ${catalog.providers.length - 24} more`);
     return lines.join("\n");
   }
-  const source = mode === "free" ? catalog.connectedFreeModels : catalog.connectedModels;
+  const source =
+    mode === "free" ? catalog.connectedFreeModels : catalog.connectedModels;
   const title = mode === "free" ? "Connected Free Models" : "Connected Models";
   const lines = [title];
   for (const m of source.slice(0, 24)) {
-    const tags = [m.providerName, m.free ? "free" : `$${m.costInput}/${m.costOutput}`, `${formatCtxWindow(m.contextWindow)} ctx`, getAvailabilityLabel(m)];
-    lines.push(`\u2022 ${getOpenCodeModelSelectionValue(m, catalog)} \u2014 ${m.name} (${tags.join(" \u00B7 ")})`);
+    const tags = [
+      m.providerName,
+      m.free ? "free" : `$${m.costInput}/${m.costOutput}`,
+      `${formatCtxWindow(m.contextWindow)} ctx`,
+      getAvailabilityLabel(m),
+    ];
+    lines.push(
+      `\u2022 ${getOpenCodeModelSelectionValue(m, catalog)} \u2014 ${m.name} (${tags.join(" \u00B7 ")})`,
+    );
   }
   if (source.length > 24) lines.push(`\u2026and ${source.length - 24} more`);
   return lines.join("\n");
@@ -650,16 +715,27 @@ export function formatOpenCodeSelectionError(
   resolution: Exclude<OpenCodeModelResolution, { kind: "exact" }>,
   catalog: OpenCodeModelCatalog,
 ) {
-  if (resolution.kind === "missing") return `No OpenCode model matched "${input}".`;
-  const preview = resolution.matches.slice(0, 6).map((m) => {
-    const provider = m.providerName === m.providerID ? m.providerName : `${m.providerName} / ${m.providerID}`;
-    return `${getOpenCodeModelSelectionValue(m, catalog)} \u2014 ${provider} (${getAvailabilityLabel(m)})`;
-  }).join(", ");
+  if (resolution.kind === "missing")
+    return `No OpenCode model matched "${input}".`;
+  const preview = resolution.matches
+    .slice(0, 6)
+    .map((m) => {
+      const provider =
+        m.providerName === m.providerID
+          ? m.providerName
+          : `${m.providerName} / ${m.providerID}`;
+      return `${getOpenCodeModelSelectionValue(m, catalog)} \u2014 ${provider} (${getAvailabilityLabel(m)})`;
+    })
+    .join(", ");
   return `Model query "${input}" is ambiguous. Try one of: ${preview}`;
 }
 
-export function formatOpenCodeUnavailableModel(model: OpenCodeModelCatalogEntry) {
-  if (model.loginRequired) return `${model.providerName} isn't connected yet. Login methods: ${model.authMethods.join(", ")}.`;
-  if (model.envRequired) return `${model.providerName} needs credentials/env setup before ${model.id} can be used.`;
+export function formatOpenCodeUnavailableModel(
+  model: OpenCodeModelCatalogEntry,
+) {
+  if (model.loginRequired)
+    return `${model.providerName} isn't connected yet. Login methods: ${model.authMethods.join(", ")}.`;
+  if (model.envRequired)
+    return `${model.providerName} needs credentials/env setup before ${model.id} can be used.`;
   return `${model.providerName} isn't connected, so ${model.id} can't be selected yet.`;
 }

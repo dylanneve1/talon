@@ -143,7 +143,8 @@ export async function ensureChatMcpServer(
   try {
     const statusResp = await oc.mcp.status();
     const mcpServers =
-      (statusResp.data as Record<string, { status?: string }> | undefined) ?? {};
+      (statusResp.data as Record<string, { status?: string }> | undefined) ??
+      {};
     const talonTools = mcpServers[serverName];
 
     if (talonTools?.status === "connected") {
@@ -211,10 +212,7 @@ export async function disconnectChatMcpServer(
   try {
     await oc.mcp.disconnect({ name: serverName });
   } catch (err) {
-    logWarn(
-      "agent",
-      `Failed to disconnect ${serverName}: ${errMsg(err)}`,
-    );
+    logWarn("agent", `Failed to disconnect ${serverName}: ${errMsg(err)}`);
   }
 }
 
@@ -312,9 +310,10 @@ export async function resolveProviderID(
   return fallbackProviderID;
 }
 
-export function parseStoredOpenCodeModelSelection(
-  value: string,
-): { providerID?: string; modelID: string } {
+export function parseStoredOpenCodeModelSelection(value: string): {
+  providerID?: string;
+  modelID: string;
+} {
   const { providerQuery, modelQuery } = parseOpenCodeModelQuery(value);
   return {
     providerID: providerQuery ? normalizeModelLookup(providerQuery) : undefined,

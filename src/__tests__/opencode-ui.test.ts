@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../backend/opencode/index.js", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("../backend/opencode/index.js")>();
+  const mod =
+    await importOriginal<typeof import("../backend/opencode/index.js")>();
   return {
     ...mod,
     getOpenCodeModelSelectionValue: vi.fn(
@@ -11,9 +12,8 @@ vi.mock("../backend/opencode/index.js", async (importOriginal) => {
   };
 });
 
-const { formatOpenCodeSelectionError } = await import(
-  "../backend/opencode/index.js"
-);
+const { formatOpenCodeSelectionError } =
+  await import("../backend/opencode/index.js");
 
 function makeEntry(overrides: Record<string, unknown> = {}) {
   return {
@@ -55,8 +55,18 @@ const emptyCatalog = {
 describe("formatOpenCodeSelectionError", () => {
   it("includes provider details for ambiguous matches", () => {
     const matches = [
-      makeEntry({ id: "gpt-5", name: "GPT-5", providerID: "openai", providerName: "OpenAI" }),
-      makeEntry({ id: "gpt-5", name: "GPT-5", providerID: "github-copilot", providerName: "GitHub Copilot" }),
+      makeEntry({
+        id: "gpt-5",
+        name: "GPT-5",
+        providerID: "openai",
+        providerName: "OpenAI",
+      }),
+      makeEntry({
+        id: "gpt-5",
+        name: "GPT-5",
+        providerID: "github-copilot",
+        providerName: "GitHub Copilot",
+      }),
     ];
 
     const text = formatOpenCodeSelectionError(
