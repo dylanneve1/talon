@@ -35,8 +35,8 @@ function toDisplayFamilyName(family: string): string {
 }
 
 function formatResolvedModelLabel(model: ModelInfo): string {
-  const isOneMillion = model.id.endsWith("[1m]") ||
-    model.aliases.some((a) => a.endsWith("[1m]"));
+  const isOneMillion =
+    model.id.endsWith("[1m]") || model.aliases.some((a) => a.endsWith("[1m]"));
   const match = `${model.displayName} ${model.description ?? ""}`.match(
     FAMILY_VERSION_PATTERN,
   );
