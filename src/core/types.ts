@@ -81,7 +81,10 @@ export interface QueryBackend {
   /** Get info for a model by its stored ID. */
   getModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
   /** Get quick-pick buttons for model selection. callbackPrefix defaults to "settings:model:". */
-  getSettingsPresentation?(activeModel: string, callbackPrefix?: string): Promise<{
+  getSettingsPresentation?(
+    activeModel: string,
+    callbackPrefix?: string,
+  ): Promise<{
     modelButtons: ModelButton[];
     modelDetails: string[];
   }>;
