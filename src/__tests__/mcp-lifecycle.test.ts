@@ -30,9 +30,7 @@ afterEach(() => {
   spawned.length = 0;
 });
 
-function spawnMcpServer(
-  env?: Record<string, string>,
-): ChildProcess {
+function spawnMcpServer(env?: Record<string, string>): ChildProcess {
   const child = spawn(process.execPath, ["--import", TSX_LOADER, FIXTURE], {
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
