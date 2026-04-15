@@ -335,6 +335,20 @@ function summarizeQuestionHeaders(
     .join(" | ");
 }
 
+function isToolApprovalQuestion(
+  questions: Array<Record<string, unknown>>,
+): boolean {
+  return questions.some((q) => {
+    const header = String(q.header ?? q.question ?? "").toLowerCase();
+    return (
+      header.includes("tool") ||
+      header.includes("approve") ||
+      header.includes("permission") ||
+      header.includes("allow")
+    );
+  });
+}
+
 async function rejectPendingQuestions(
   oc: OpencodeClient,
   sessionId: string,
@@ -363,17 +377,26 @@ async function rejectPendingQuestions(
     const questions = Array.isArray(data.questions) ? data.questions : [];
     const summary = summarizeQuestionHeaders(questions);
 
-    logWarn(
-      "agent",
-      `[${chatId}] Rejecting OpenCode question ${requestId}${summary ? `: ${summary}` : ""}`,
-    );
-
     try {
-      await oc.question.reject({ requestID: requestId });
+      if (isToolApprovalQuestion(questions)) {
+        // Auto-approve tool usage — Talon manages its own tool access
+        const answers = questions.map(() => ["always"]);
+        await oc.question.reply({ requestID: requestId, answers });
+        logWarn(
+          "agent",
+          `[${chatId}] Auto-approved OpenCode tool question ${requestId}${summary ? `: ${summary}` : ""}`,
+        );
+      } else {
+        await oc.question.reject({ requestID: requestId });
+        logWarn(
+          "agent",
+          `[${chatId}] Rejected OpenCode question ${requestId}${summary ? `: ${summary}` : ""}`,
+        );
+      }
     } catch (err) {
       logWarn(
         "agent",
-        `[${chatId}] Failed to reject OpenCode question ${requestId}: ${errMsg(err)}`,
+        `[${chatId}] Failed to handle OpenCode question ${requestId}: ${errMsg(err)}`,
       );
     }
   }
