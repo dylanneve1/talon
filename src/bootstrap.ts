@@ -113,9 +113,8 @@ export async function initBackendAndDispatcher(
   if (config.backend === "opencode") {
     const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } =
       await import("./backend/opencode/index.js");
-    const ocModelProvider = await import(
-      "./backend/opencode/model-provider.js"
-    );
+    const ocModelProvider =
+      await import("./backend/opencode/model-provider.js");
     initOpenCodeAgent(config, frontend.getBridgePort, frontend.name);
     backend = {
       query: (params) => opencodeHandleMessage(params),
@@ -128,9 +127,8 @@ export async function initBackendAndDispatcher(
         ocModelProvider.getProviderModels(p, pg, ps),
       formatModelError: (q, r) => ocModelProvider.formatModelError(q, r),
       getSessionSnapshot: async (sessionId) => {
-        const { getOpenCodeSessionSnapshot } = await import(
-          "./backend/opencode/index.js"
-        );
+        const { getOpenCodeSessionSnapshot } =
+          await import("./backend/opencode/index.js");
         const snap = await getOpenCodeSessionSnapshot(sessionId);
         if (!snap) return undefined;
         return {
@@ -153,9 +151,8 @@ export async function initBackendAndDispatcher(
       buildMcpServers,
     } = await import("./backend/claude-sdk/index.js");
     const { getPluginMcpServers } = await import("./core/plugin.js");
-    const claudeModelProvider = await import(
-      "./backend/claude-sdk/model-provider.js"
-    );
+    const claudeModelProvider =
+      await import("./backend/claude-sdk/model-provider.js");
     await initClaudeAgent(config, frontend.getBridgePort);
     backend = {
       query: (params) => claudeHandleMessage(params),

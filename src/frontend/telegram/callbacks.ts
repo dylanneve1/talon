@@ -106,7 +106,8 @@ export function registerCallbacks(
       let modelButtons: Array<SettingsButton> | undefined;
 
       if (gateway?.backend?.getSettingsPresentation) {
-        const presentation = await gateway.backend.getSettingsPresentation(activeModel);
+        const presentation =
+          await gateway.backend.getSettingsPresentation(activeModel);
         modelDetails = presentation.modelDetails;
         modelButtons = presentation.modelButtons;
       }

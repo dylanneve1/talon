@@ -94,18 +94,18 @@ export interface QueryBackend {
     pageSize?: number,
   ): Promise<{ models: UnifiedModelInfo[]; total: number }>;
   /** Format error for an unresolvable/unavailable model. */
-  formatModelError?(
-    query: string,
-    resolution: UnifiedModelResolution,
-  ): string;
+  formatModelError?(query: string, resolution: UnifiedModelResolution): string;
   /** Get live session usage snapshot (for /status enrichment). */
-  getSessionSnapshot?(sessionId: string): Promise<{
-    inputTokens?: number;
-    outputTokens?: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-    contextModelId?: string;
-  } | undefined>;
+  getSessionSnapshot?(sessionId: string): Promise<
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+        contextModelId?: string;
+      }
+    | undefined
+  >;
 }
 
 // ── Execution context ───────────────────────────────────────────────────────

@@ -157,9 +157,7 @@ export async function getSettingsPresentation(
   });
 
   const resolved = coreResolveModel(activeModel);
-  const modelDetails = resolved
-    ? [`<i>${resolved.displayName}</i>`]
-    : [];
+  const modelDetails = resolved ? [`<i>${resolved.displayName}</i>`] : [];
 
   return { modelButtons, modelDetails };
 }

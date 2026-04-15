@@ -197,7 +197,11 @@ export function registerCommands(
     const activeModel = getChatSettings(cid).model ?? config.model;
     const be = gateway?.backend;
 
-    if (!arg || arg.toLowerCase() === "reset" || arg.toLowerCase() === "default") {
+    if (
+      !arg ||
+      arg.toLowerCase() === "reset" ||
+      arg.toLowerCase() === "default"
+    ) {
       if (arg) {
         setChatModel(cid, undefined);
         await ctx.reply(
@@ -220,9 +224,12 @@ export function registerCommands(
           reply_markup: { inline_keyboard: rows },
         });
       } else {
-        await ctx.reply(`<b>Model:</b> <code>${escapeHtml(activeModel)}</code>`, {
-          parse_mode: "HTML",
-        });
+        await ctx.reply(
+          `<b>Model:</b> <code>${escapeHtml(activeModel)}</code>`,
+          {
+            parse_mode: "HTML",
+          },
+        );
       }
       return;
     }
@@ -231,13 +238,15 @@ export function registerCommands(
     if (be?.resolveModel) {
       const resolution = await be.resolveModel(arg);
       if (resolution.kind !== "exact") {
-        const msg = be.formatModelError?.(arg, resolution) ??
+        const msg =
+          be.formatModelError?.(arg, resolution) ??
           `No model matched "${escapeHtml(arg)}".`;
         await ctx.reply(msg, { parse_mode: "HTML" });
         return;
       }
       if (!resolution.model.selectable) {
-        const msg = resolution.model.unavailableReason ??
+        const msg =
+          resolution.model.unavailableReason ??
           `${resolution.model.providerName} is not connected.`;
         await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
         return;
@@ -421,7 +430,8 @@ export function registerCommands(
     let modelButtons: Array<SettingsButton> | undefined;
 
     if (gateway?.backend?.getSettingsPresentation) {
-      const presentation = await gateway.backend.getSettingsPresentation(activeModel);
+      const presentation =
+        await gateway.backend.getSettingsPresentation(activeModel);
       modelDetails = presentation.modelDetails;
       modelButtons = presentation.modelButtons;
     }
@@ -480,11 +490,15 @@ export function registerCommands(
     // Enrich context/usage data from backend when available
     const be = gateway?.backend;
     if (be?.getModelInfo) {
-      const modelInfo = await be.getModelInfo(activeModel).catch(() => undefined);
+      const modelInfo = await be
+        .getModelInfo(activeModel)
+        .catch(() => undefined);
       if (modelInfo?.contextWindow) ctxMax = ctxMax || modelInfo.contextWindow;
     }
     if (be?.getSessionSnapshot && info.sessionId) {
-      const snap = await be.getSessionSnapshot(info.sessionId).catch(() => undefined);
+      const snap = await be
+        .getSessionSnapshot(info.sessionId)
+        .catch(() => undefined);
       if (snap) {
         displayInputTokens = snap.inputTokens ?? displayInputTokens;
         displayOutputTokens = snap.outputTokens ?? displayOutputTokens;
@@ -492,8 +506,14 @@ export function registerCommands(
         displayCacheWrite = snap.cacheWrite ?? displayCacheWrite;
         if (snap.contextModelId) turnsModelLabel = snap.contextModelId;
         // Re-fetch context window for the actual model if different
-        if (snap.contextModelId && snap.contextModelId !== activeModel && be.getModelInfo) {
-          const ctxModelInfo = await be.getModelInfo(snap.contextModelId).catch(() => undefined);
+        if (
+          snap.contextModelId &&
+          snap.contextModelId !== activeModel &&
+          be.getModelInfo
+        ) {
+          const ctxModelInfo = await be
+            .getModelInfo(snap.contextModelId)
+            .catch(() => undefined);
           if (ctxModelInfo?.contextWindow) ctxMax = ctxModelInfo.contextWindow;
         }
       }

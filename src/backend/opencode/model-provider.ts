@@ -131,9 +131,7 @@ export async function getProviderModels(
   pageSize = 8,
 ): Promise<{ models: UnifiedModelInfo[]; total: number }> {
   const catalog = await getOpenCodeModelCatalog();
-  const filtered = catalog.models.filter(
-    (m) => m.providerID === providerId,
-  );
+  const filtered = catalog.models.filter((m) => m.providerID === providerId);
   const start = page * pageSize;
   const slice = filtered.slice(start, start + pageSize);
   return {
