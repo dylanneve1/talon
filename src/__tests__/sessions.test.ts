@@ -826,11 +826,6 @@ describe("sessions — edge cases for branch coverage", () => {
     expect(session.usage.fastestResponseMs).toBe(500);
   });
 
-  it("placeholder test removed", () => {
-    // placeholder - actual test moved to end of file to avoid module isolation issues
-    expect(true).toBe(true);
-  });
-
   it("saveSessions logs error with non-Error object thrown by writeFileAtomic", async () => {
     const { logError } = await import("../util/log.js");
     // Throw a plain string instead of an Error to cover the `err instanceof Error ? ... : err` false branch

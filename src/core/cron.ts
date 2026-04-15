@@ -16,7 +16,7 @@ import {
   type CronJob,
 } from "../storage/cron-store.js";
 import { appendDailyLog } from "../storage/daily-log.js";
-import { log, logError } from "../util/log.js";
+import { log, logError, logWarn } from "../util/log.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -82,12 +82,24 @@ async function runCronTick(): Promise<void> {
   }
 }
 
+// Track jobs that have already logged a bad-schedule warning to avoid log spam
+// (isDue runs every 60s — a single bad job would flood the logs otherwise).
+// Capped to prevent unbounded growth from ephemeral job IDs.
+const warnedBadSchedule = new Set<string>();
+const MAX_WARNED_SCHEDULES = 200;
+
 function isDue(job: CronJob, now: Date): boolean {
   try {
     const oneMinuteAgo = new Date(now.getTime() - 60_000);
     const cron = new Cron(job.schedule, {
       timezone: job.timezone ?? undefined,
     });
+
+    // Schedule parsed fine — clear stale warning immediately so it can
+    // re-trigger if the schedule breaks again later (regardless of whether
+    // the job is actually due right now)
+    warnedBadSchedule.delete(job.id);
+
     const next = cron.nextRun(oneMinuteAgo);
     if (!next) return false;
 
@@ -103,7 +115,16 @@ function isDue(job: CronJob, now: Date): boolean {
     if (job.lastRunAt && job.lastRunAt > now.getTime()) return false;
 
     return true;
-  } catch {
+  } catch (err) {
+    if (!warnedBadSchedule.has(job.id)) {
+      if (warnedBadSchedule.size >= MAX_WARNED_SCHEDULES)
+        warnedBadSchedule.clear();
+      warnedBadSchedule.add(job.id);
+      logWarn(
+        "cron",
+        `Invalid cron schedule for job "${job.id}": ${err instanceof Error ? err.message : err}`,
+      );
+    }
     return false;
   }
 }

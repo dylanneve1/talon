@@ -28,7 +28,7 @@ export type BuildSdkOptionsResult = {
  * Build the MCP servers map for a chat query.
  * Includes frontend-specific tool servers and Brave Search, if configured.
  */
-function buildMcpServers(
+export function buildMcpServers(
   chatId: string,
 ): Record<
   string,

@@ -44,12 +44,14 @@ import {
 } from "./helpers.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
+import { getMetrics } from "../../util/metrics.js";
 import { getModels } from "../../core/models.js";
 import {
   formatDuration,
   formatTokenCount,
   formatBytes,
   parseInterval,
+  renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
 } from "./helpers.js";
@@ -96,6 +98,7 @@ export function registerCommands(
         "",
         "<b>Session</b>",
         "  /status -- session info, usage, and stats",
+        "  /metrics -- aggregate performance metrics (admin)",
         "  /memory -- view what Talon remembers",
         "  /dream -- force memory consolidation now",
         "  /ping -- health check with latency",
@@ -477,6 +480,16 @@ export function registerCommands(
       `<b>Uptime</b>    ${uptime} \u00B7 ${getActiveSessionCount()} active session${getActiveSessionCount() === 1 ? "" : "s"}`,
     ];
     await ctx.reply(lines.join("\n"), { parse_mode: "HTML" });
+  });
+
+  bot.command("metrics", async (ctx) => {
+    if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
+      await ctx.reply("Not authorized.");
+      return;
+    }
+    for (const message of renderMetricsMessages(getMetrics())) {
+      await ctx.reply(message, { parse_mode: "HTML" });
+    }
   });
 
   bot.command("dream", async (ctx) => {

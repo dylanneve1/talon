@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { clearModels, registerModels } from "../core/models.js";
 import {
   formatCompactModelLabel,
+  formatDuration,
   formatModelLabel,
   formatModelOptionLabel,
   getTelegramModelOptions,
   isSelectedModel,
+  renderMetricsMessages,
   renderSettingsKeyboard,
 } from "../frontend/telegram/helpers.js";
 
@@ -108,6 +110,63 @@ describe("telegram helpers", () => {
       .flat()
       .map((button) => button.text);
 
-    expect(buttons).toContain("\u2713 Sonnet");
+    expect(buttons).toContain("✓ Sonnet");
+  });
+});
+
+describe("formatDuration", () => {
+  it("preserves millisecond precision for subsecond values", () => {
+    expect(formatDuration(250)).toBe("250ms");
+    expect(formatDuration(999)).toBe("999ms");
+  });
+
+  it("keeps second-and-up formatting intact", () => {
+    expect(formatDuration(1_500)).toBe("1s");
+    expect(formatDuration(65_000)).toBe("1m 5s");
+  });
+});
+
+describe("renderMetricsMessages", () => {
+  it("formats latency metrics with millisecond precision", () => {
+    const messages = renderMetricsMessages({
+      counters: { queries_total: 7 },
+      histograms: {
+        response_latency_ms: {
+          count: 3,
+          p50: 250,
+          p95: 1_250,
+          p99: 2_000,
+          avg: 900,
+        },
+      },
+    });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("p50=250ms");
+    expect(messages[0]).toContain("p95=1s");
+    expect(messages[0]).toContain("avg=900ms");
+  });
+
+  it("splits large metrics output into Telegram-safe chunks", () => {
+    const counters = Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => [`tool_calls.tool_${i}`, i + 1]),
+    );
+
+    const messages = renderMetricsMessages({ counters, histograms: {} }, 160);
+
+    expect(messages.length).toBeGreaterThan(1);
+    for (const message of messages) {
+      expect(message.length).toBeLessThanOrEqual(160);
+    }
+    expect(messages[0]).toContain("<b>📊 Metrics</b>");
+    expect(
+      messages.slice(1).every((message) => message.includes("(cont.)")),
+    ).toBe(true);
+  });
+
+  it("shows an empty-state message when no metrics exist", () => {
+    expect(renderMetricsMessages({ counters: {}, histograms: {} })).toEqual([
+      "<b>📊 Metrics</b>\n\n<i>No metrics recorded yet.</i>",
+    ]);
   });
 });

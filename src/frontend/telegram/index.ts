@@ -94,6 +94,7 @@ export function createTelegramFrontend(
         { command: "pulse", description: "Conversation engagement settings" },
         { command: "reset", description: "Clear session and start fresh" },
         { command: "restart", description: "Restart the bot (admin)" },
+        { command: "metrics", description: "Aggregate performance metrics" },
         { command: "dream", description: "Force memory consolidation" },
         { command: "plugins", description: "List loaded plugins" },
         { command: "help", description: "All commands and features" },

@@ -22,8 +22,10 @@ import { rebuildSystemPrompt } from "../../util/config.js";
 import { getPluginPromptAdditions } from "../../core/plugin.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
+import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { formatFullDatetime } from "../../util/time.js";
 
+import type { Query } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryParams, QueryResult } from "../../core/types.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions } from "./options.js";
@@ -37,6 +39,17 @@ import {
   processAssistantMessage,
   processResultMessage,
 } from "./stream.js";
+
+// ── Active query store ──────────────────────────────────────────────────────
+// Holds the Query reference for each in-flight chat so gateway actions
+// (e.g. reload_plugins) can call control methods like setMcpServers().
+
+const activeQueries = new Map<string, Query>();
+
+/** Get the active Query for a chat, if one is in flight. */
+export function getActiveQuery(chatId: string): Query | undefined {
+  return activeQueries.get(chatId);
+}
 
 // ── Main handler ─────────────────────────────────────────────────────────────
 
@@ -76,6 +89,7 @@ export async function handleMessage(
   traceMessage(chatId, "in", text, { senderName, isGroup });
 
   const qi = query({ prompt, options });
+  activeQueries.set(chatId, qi);
   const state = createStreamState();
 
   try {
@@ -98,6 +112,7 @@ export async function handleMessage(
 
         // Notify tool usage
         for (const tool of result.tools) {
+          incrementCounter(`tool_calls.${tool.name}`);
           if (onToolUse) {
             try {
               onToolUse(tool.name, tool.input);
@@ -127,6 +142,7 @@ export async function handleMessage(
     }
   } catch (err) {
     const classified = classify(err);
+    incrementCounter(`errors.${classified.reason ?? "unknown"}`);
 
     // Session expired — reset and retry once
     if (classified.reason === "session_expired" && !_retried) {
@@ -170,11 +186,17 @@ export async function handleMessage(
 
     logError("agent", `[${chatId}] SDK error: ${classified.message}`);
     throw classified;
+  } finally {
+    if (activeQueries.get(chatId) === qi) {
+      activeQueries.delete(chatId);
+    }
   }
 
   // ── Persist session and usage ─────────────────────────────────────────────
 
   const durationMs = Date.now() - t0;
+  recordHistogram("response_latency_ms", durationMs);
+  incrementCounter("queries_total");
   if (state.newSessionId) setSessionId(chatId, state.newSessionId);
   incrementTurns(chatId);
   recordUsage(chatId, {

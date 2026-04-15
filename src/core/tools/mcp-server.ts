@@ -17,6 +17,21 @@ import { composeTools } from "./index.js";
 import { createBridge, textResult } from "./bridge.js";
 import type { ToolFrontend } from "./types.js";
 
+process.on("unhandledRejection", (err) => {
+  const detail =
+    err instanceof Error ? (err.stack ?? err.message) : String(err);
+  const message = `[mcp-server] Unhandled rejection: ${detail}\n`;
+
+  // Ensure we always exit even if stderr is backpressured
+  const forceExit = setTimeout(() => process.exit(1), 1000);
+  forceExit.unref();
+
+  process.stderr.write(message, () => {
+    clearTimeout(forceExit);
+    process.exit(1);
+  });
+});
+
 const VALID_FRONTENDS = new Set<ToolFrontend>([
   "telegram",
   "teams",
@@ -56,6 +71,14 @@ for (const tool of tools) {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Graceful self-termination: when the parent closes our stdin (e.g. the SDK
+  // tears down this MCP server during hot-swap), exit cleanly. This is the
+  // OS-agnostic replacement for scanning /proc — the parent signals "you're done"
+  // by closing the stdio pipe, and we respect it.
+  process.stdin.on("end", () => {
+    server.close().finally(() => process.exit(0));
+  });
 }
 
 main().catch((err) => {

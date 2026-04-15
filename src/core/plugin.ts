@@ -228,6 +228,14 @@ class PluginRegistry {
 // Module-level singleton
 const registry = new PluginRegistry();
 
+/**
+ * Tracks the last reload timestamp. Injected into every MCP subprocess env
+ * as TALON_RELOAD_AT so the Claude SDK sees a changed env on each reload and
+ * spawns a fresh subprocess — ensuring source-file changes are picked up
+ * without a full Talon restart.
+ */
+let _lastReloadAt: string = new Date().toISOString();
+
 /** Internal deps — exposed as an object so tests can replace properties.
  *  Direct function exports can't be mocked for internal callers in ESM. */
 export const _deps = {
@@ -344,6 +352,7 @@ function buildBridgeEnv(
     ...envVars,
     TALON_BRIDGE_URL: bridgeUrl,
     TALON_CHAT_ID: chatId,
+    TALON_RELOAD_AT: _lastReloadAt,
   };
 }
 
@@ -588,6 +597,11 @@ export async function reloadPlugins(
   // Derive frontends from config if not explicitly provided
   const frontends = activeFrontends ?? getFrontends(config);
 
+  // Bump reload timestamp so every MCP subprocess env differs from the previous
+  // load — the Claude SDK will see a changed env and spawn fresh subprocesses,
+  // picking up any source-file changes without a full Talon restart.
+  _lastReloadAt = new Date().toISOString();
+
   // Config is valid — safe to destroy current plugins now
   log("plugin", "Hot-reload: destroying current plugins...");
   await registry.destroyAndClear();
@@ -605,6 +619,7 @@ export async function reloadPlugins(
     "plugin",
     `Hot-reload complete: ${names.length} plugins loaded [${names.join(", ")}]`,
   );
+
   return { names, config };
 }
 

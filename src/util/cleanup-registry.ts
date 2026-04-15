@@ -27,8 +27,10 @@ function runAll(): void {
   for (const fn of handlers) {
     try {
       fn();
-    } catch {
-      // Suppress — we're in exit, can't do much about it
+    } catch (err) {
+      process.stderr.write(
+        `[cleanup] Handler error: ${err instanceof Error ? err.message : err}\n`,
+      );
     }
   }
 }
