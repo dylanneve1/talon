@@ -15,7 +15,7 @@
  */
 
 import { resolve } from "node:path";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { log, logError, logWarn } from "../util/log.js";
 import type { ActionResult } from "./types.js";
 import type { TalonConfig } from "../util/config.js";
@@ -620,65 +620,7 @@ export async function reloadPlugins(
     `Hot-reload complete: ${names.length} plugins loaded [${names.join(", ")}]`,
   );
 
-  // Kill any orphaned plugin subprocesses left behind by the SDK's hot-swap.
-  // The SDK spawns fresh subprocesses for the new config but does not SIGTERM
-  // the old ones. We identify orphans by reading their TALON_RELOAD_AT env var
-  // from /proc and killing any that don't match the current timestamp.
-  // Runs async so it doesn't block the reload response.
-  void killOrphanedPluginSubprocesses(_lastReloadAt).catch((err) =>
-    logError(
-      "plugin",
-      `Orphan cleanup error: ${err instanceof Error ? err.message : err}`,
-    ),
-  );
-
   return { names, config };
-}
-
-/**
- * Kill plugin subprocesses whose TALON_RELOAD_AT env var doesn't match the
- * current reload timestamp. These are orphans left by the SDK's hot-swap.
- * Uses /proc/<pid>/environ (Linux-only) to read subprocess env without ptrace.
- */
-async function killOrphanedPluginSubprocesses(
-  currentReloadAt: string,
-): Promise<void> {
-  // Wait briefly for the SDK to finish spawning new subprocesses before killing old ones
-  await new Promise((r) => setTimeout(r, 2000));
-
-  let killed = 0;
-  let errors = 0;
-
-  try {
-    const pids = readdirSync("/proc").filter((f) => /^\d+$/.test(f));
-    for (const pid of pids) {
-      try {
-        const envRaw = readFileSync(`/proc/${pid}/environ`, "utf-8");
-        if (!envRaw.includes("TALON_RELOAD_AT=")) continue;
-        if (envRaw.includes(`TALON_RELOAD_AT=${currentReloadAt}`)) continue;
-
-        // This is a stale plugin subprocess — send SIGTERM
-        process.kill(Number(pid), "SIGTERM");
-        killed++;
-        log("plugin", `Killed orphaned plugin subprocess PID ${pid}`);
-      } catch {
-        // Process may have exited between readdir and kill — normal, skip
-        errors++;
-      }
-    }
-  } catch (err) {
-    logError(
-      "plugin",
-      `Orphan scan failed: ${err instanceof Error ? err.message : err}`,
-    );
-  }
-
-  if (killed > 0) {
-    log(
-      "plugin",
-      `Orphan cleanup: killed ${killed} stale subprocess(es), ${errors} skipped`,
-    );
-  }
 }
 
 /**

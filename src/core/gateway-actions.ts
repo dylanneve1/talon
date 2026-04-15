@@ -26,7 +26,7 @@ import {
   generateCronId,
   type CronJobType,
 } from "../storage/cron-store.js";
-import { log } from "../util/log.js";
+import { log, logWarn } from "../util/log.js";
 import type { ActionResult, QueryBackend } from "./types.js";
 
 /** Extract readable text from HTML using cheerio (proper DOM parser). */
@@ -354,6 +354,10 @@ export async function handleSharedAction(
                 mcpInfo = `\nMCP servers updated: ${parts.join(" | ")}`;
             }
           } catch (err) {
+            logWarn(
+              "gateway",
+              `MCP server refresh failed during reload: ${err instanceof Error ? err.message : err}`,
+            );
             mcpInfo = `\nWarning: MCP server refresh failed: ${err instanceof Error ? err.message : err}`;
           }
         }

@@ -71,6 +71,14 @@ for (const tool of tools) {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Graceful self-termination: when the parent closes our stdin (e.g. the SDK
+  // tears down this MCP server during hot-swap), exit cleanly. This is the
+  // OS-agnostic replacement for scanning /proc — the parent signals "you're done"
+  // by closing the stdio pipe, and we respect it.
+  process.stdin.on("end", () => {
+    server.close().finally(() => process.exit(0));
+  });
 }
 
 main().catch((err) => {
