@@ -62,9 +62,8 @@ describe("registerClaudeModels", () => {
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
     const { getModels, resolveModelId } = await import("../core/models.js");
-    const { get1mContextModelId, supports1mContext } = await import(
-      "../backend/claude-sdk/models.js"
-    );
+    const { get1mContextModelId, supports1mContext } =
+      await import("../backend/claude-sdk/models.js");
 
     await registerClaudeModels({ model: "default" });
 
@@ -139,9 +138,8 @@ describe("registerClaudeModels", () => {
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
     const { resolveModelId } = await import("../core/models.js");
-    const { get1mContextModelId } = await import(
-      "../backend/claude-sdk/models.js"
-    );
+    const { get1mContextModelId } =
+      await import("../backend/claude-sdk/models.js");
 
     await registerClaudeModels({ model: "default" });
 

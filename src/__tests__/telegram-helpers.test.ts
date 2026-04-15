@@ -83,9 +83,7 @@ describe("telegram helpers", () => {
     expect(formatModelOptionLabel(getTelegramModelOptions()[0]!)).toBe(
       "Sonnet 4.6",
     );
-    expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe(
-      "Opus",
-    );
+    expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe("Opus");
   });
 
   it("shows a single clean option per model family", () => {
