@@ -7,5 +7,5 @@
 
 export { initAgent, updateSystemPrompt } from "./state.js";
 export { warmSession } from "./warm.js";
-export { handleMessage, getActiveQuery } from "./handler.js";
+export { handleMessage, getActiveQuery, getQueuedCount } from "./handler.js";
 export { buildMcpServers } from "./options.js";

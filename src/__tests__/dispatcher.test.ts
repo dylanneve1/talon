@@ -447,7 +447,12 @@ describe("dispatcher", () => {
     await p;
   });
 
-  it("serializes same-chat queries (FIFO)", async () => {
+  it("forwards concurrent same-chat queries to the backend in parallel", async () => {
+    // The dispatcher no longer serializes same-chat queries — the Claude SDK
+    // backend keeps a single live Query per chat and injects new messages
+    // mid-flight via streaming input. Multiple dispatcher.execute() calls
+    // for the same chat all reach backend.query() concurrently and the
+    // backend folds them into the same conversation.
     const order: string[] = [];
     const backend: QueryBackend = {
       query: vi.fn(async (params) => {
@@ -476,7 +481,6 @@ describe("dispatcher", () => {
       onActivity: () => {},
     });
 
-    // Fire two queries for the SAME chat — second must wait
     await Promise.all([
       execute({
         chatId: "X",
@@ -496,13 +500,11 @@ describe("dispatcher", () => {
       }),
     ]);
 
-    // Same chat: first completes before second starts
-    expect(order).toEqual([
-      "start:first",
-      "end:first",
-      "start:second",
-      "end:second",
-    ]);
+    // Both should START before either ENDS — true concurrent dispatch.
+    expect(order[0]).toBe("start:first");
+    expect(order[1]).toBe("start:second");
+    expect(order.indexOf("end:first")).toBeGreaterThan(1);
+    expect(order.indexOf("end:second")).toBeGreaterThan(1);
   });
 });
 

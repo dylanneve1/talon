@@ -5,6 +5,13 @@
  * True concurrency — every query runs immediately in parallel.
  * No queue, no artificial limits. The Claude API handles its own rate limiting.
  *
+ * Concurrency note: same-chat queries used to be serialized here via a
+ * per-chat promise chain to prevent two queries from touching the same
+ * Claude session at once. The backend now keeps a single live SDK Query
+ * per chat and injects new messages mid-flight via streaming input, so
+ * concurrent same-chat dispatches are safe and DESIRABLE — they all flow
+ * into the same conversation as adjacent turns.
+ *
  * Dependencies are injected at startup — this module imports nothing from
  * frontend/ or backend/.
  */
@@ -31,13 +38,9 @@ type DispatcherDeps = {
 let deps: DispatcherDeps | null = null;
 let activeCount = 0;
 
-// Per-chat promise chains — serializes within a chat, parallel across chats.
-// Prevents two queries from resuming the same Claude session simultaneously.
-const chatChains = new Map<string, Promise<unknown>>();
-
 export function initDispatcher(d: DispatcherDeps): void {
   deps = d;
-  log("dispatcher", "Initialized (per-chat serial, cross-chat parallel)");
+  log("dispatcher", "Initialized (per-chat injection, cross-chat parallel)");
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -49,31 +52,12 @@ export function getActiveCount(): number {
 
 /**
  * Execute an AI query with full lifecycle management.
- * Same-chat queries are serialized (FIFO) to avoid session conflicts.
- * Different-chat queries run in true parallel.
+ * Concurrent dispatches for the same chat are forwarded to the backend,
+ * which folds them into a single live SDK conversation as separate turns.
  */
 export async function execute(params: ExecuteParams): Promise<ExecuteResult> {
   if (!deps) throw new Error("Dispatcher not initialized");
-
-  const { chatId } = params;
-
-  // Chain this query behind any pending query for the same chat.
-  // Atomic get-or-insert: read and replace in one step to prevent
-  // two concurrent calls both seeing the same `prev`.
-  const prev = chatChains.get(chatId) ?? Promise.resolve();
-  // Use .catch(() => {}) on prev to prevent unhandled rejections —
-  // previous query's error is already handled by its own caller.
-  const queued = prev.catch(() => {}).then(() => run(params));
-  chatChains.set(chatId, queued); // must happen before any await
-
-  // Clean up chain entry when this is the last in the chain
-  queued
-    .catch(() => {})
-    .finally(() => {
-      if (chatChains.get(chatId) === queued) chatChains.delete(chatId);
-    });
-
-  return queued;
+  return run(params);
 }
 
 async function run(params: ExecuteParams): Promise<ExecuteResult> {
