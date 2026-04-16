@@ -2,10 +2,8 @@
  * Web tools — URL fetching.
  *
  * Platform-agnostic, available on all frontends.
- * Web search is handled by the Brave Search MCP server (registered in
- * src/backend/claude-sdk/index.ts) when configured. URL fetching is provided here via
- * the `fetch_url` tool, so Claude Code's built-in WebSearch / WebFetch are
- * disabled in favor of these project-specific replacements.
+ * Web search is handled by the Brave Search MCP server when configured.
+ * URL fetching is provided here via the `fetch_url` tool.
  * These can be excluded via composeTools({ excludeTags: ["web"] }).
  */
 

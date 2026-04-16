@@ -317,7 +317,7 @@ export function registerCommands(
     if (arg === "reset" || arg === "default" || arg === "adaptive") {
       setChatEffort(cid, undefined);
       await ctx.reply(
-        "Effort reset to <b>adaptive</b> (Claude decides when to think)",
+        "Effort reset to <b>adaptive</b> (model decides when to think)",
         { parse_mode: "HTML" },
       );
       return;
@@ -553,7 +553,7 @@ export function registerCommands(
       "",
       `<b>Session Stats</b>`,
       `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "\u2014"} \u00B7 avg ${avgResponseMs ? formatDuration(avgResponseMs) : "\u2014"} \u00B7 best ${fastestMs ? formatDuration(fastestMs) : "\u2014"}`,
-      `  Turns     ${info.turns}${turnsModelLabel ? ` (${turnsModelLabel.replace("claude-", "")})` : ""}`,
+      `  Turns     ${info.turns}${turnsModelLabel ? ` (${formatModelLabel(turnsModelLabel)})` : ""}`,
       "",
       `<b>Cache</b>     ${cacheHitPct}% hit`,
       `  Read ${formatTokenCount(displayCacheRead)}  Write ${formatTokenCount(displayCacheWrite)}`,

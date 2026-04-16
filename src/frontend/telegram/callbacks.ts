@@ -279,7 +279,7 @@ export function registerCallbacks(
       return;
     }
 
-    // Forward other callbacks to Claude
+    // Forward other callbacks to the AI backend
     handleCallbackQuery(ctx, bot, config);
   });
 }

@@ -35,7 +35,7 @@ export function escapeHtml(text: string): string {
 }
 
 /**
- * Convert Claude's Markdown output to Telegram-safe HTML.
+ * Convert Markdown output to Telegram-safe HTML.
  *
  * Handles: bold, italic, inline code, fenced code blocks, links.
  * Escapes HTML entities in non-formatted text.

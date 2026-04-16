@@ -10,13 +10,13 @@
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type ModelInfo = {
-  /** Canonical SDK model ID (e.g. "default", "opus", "sonnet[1m]"). */
+  /** Canonical model ID as registered by the backend. */
   id: string;
   /** Human-readable display name for UIs (e.g. "Sonnet 4.6"). */
   displayName: string;
   /** Short description for setup wizard (e.g. "fast, balanced"). */
   description?: string;
-  /** Aliases that resolve to this model (e.g. ["sonnet", "sonnet-4.6"]). */
+  /** Aliases that resolve to this model. */
   aliases: string[];
   /** Provider identifier (e.g. "anthropic", "openai"). */
   provider: string;
@@ -31,7 +31,7 @@ const aliasIndex = new Map<string, string>();
 const providerPrefixes: string[] = [];
 
 /**
- * Register a provider-specific prefix (e.g. "claude-") that the fuzzy
+ * Register a provider-specific prefix that the fuzzy
  * alias resolver will strip when matching family names. Backends call
  * this during initialization so core stays provider-agnostic.
  */
@@ -46,8 +46,7 @@ function resolveGenericFamilyAlias(input: string): string | null {
   const trimmed = input.trim().toLowerCase();
   if (!trimmed) return null;
 
-  const isOneMillion = trimmed.endsWith("[1m]");
-  let base = isOneMillion ? trimmed.slice(0, -4) : trimmed;
+  let base = trimmed;
   for (const prefix of providerPrefixes) {
     if (base.startsWith(prefix)) {
       base = base.slice(prefix.length);
@@ -69,8 +68,7 @@ function resolveGenericFamilyAlias(input: string): string | null {
   );
   if (family.length === 0) return null;
 
-  const alias = family.join("-");
-  return isOneMillion ? `${alias}[1m]` : alias;
+  return family.join("-");
 }
 
 // ── Registration ────────────────────────────────────────────────────────────

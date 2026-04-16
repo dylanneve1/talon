@@ -244,9 +244,11 @@ export function createTeamsFrontend(
                   : 0;
               const { getChatSettings } =
                 await import("../../storage/chat-settings.js");
-              const model = (
-                getChatSettings(talonChatId).model ?? (config.model as string)
-              ).replace("claude-", "");
+              const { resolveModel: coreResolve } =
+                await import("../../core/models.js");
+              const rawModel =
+                getChatSettings(talonChatId).model ?? (config.model as string);
+              const model = coreResolve(rawModel)?.displayName ?? rawModel;
               const avgMs =
                 info.turns > 0 ? Math.round(u.totalResponseMs / info.turns) : 0;
               const ctxUsed = u.contextTokens || u.lastPromptTokens;
@@ -358,7 +360,7 @@ export function createTeamsFrontend(
             })
               .then(async (result) => {
                 // Only deliver messages sent via the send_message tool.
-                // Do NOT send fallback text — if Claude chose not to use send_message,
+                // Do NOT send fallback text — if the model chose not to use send_message,
                 // it's either choosing not to respond or outputting internal reasoning
                 // that shouldn't be shown to users.
                 if (result.bridgeMessageCount === 0 && result.text?.trim()) {

@@ -274,7 +274,7 @@ export function getReplyContext(
 
 /**
  * If the replied-to message contains a photo, download it and return a prompt
- * line pointing to the saved file so Claude can see it. Returns "" if no photo.
+ * line pointing to the saved file so the model can see it. Returns "" if no photo.
  */
 async function downloadReplyPhoto(
   replyMsg:
@@ -363,7 +363,7 @@ async function downloadTelegramFile(
     throw new Error("Downloaded file is empty (0 bytes)");
 
   // Validate image files — prevent saving HTML/garbage as .jpg/.png
-  // (corrupt "images" poison the Claude session permanently on resume)
+  // (corrupt "images" poison the session permanently on resume)
   const imageExts = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
   const isImageExt = imageExts.some((ext) =>
     fileName.toLowerCase().endsWith(ext),
@@ -789,24 +789,10 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       !stream.sentTextBlock &&
       result.text?.trim()
     ) {
-      if (config.backend === "opencode") {
-        await sendHtml(
-          bot,
-          numericChatId,
-          markdownToTelegramHtml(result.text),
-          replyToId,
-        );
-        appendDailyLogResponse("Talon", result.text, { chatTitle });
-        log(
-          "bot",
-          `Delivered OpenCode fallback text (${result.text.length} chars)`,
-        );
-      } else {
-        log(
-          "bot",
-          `Suppressed fallback text (${result.text.length} chars) — no send tool used`,
-        );
-      }
+      log(
+        "bot",
+        `Suppressed fallback text (${result.text.length} chars) — no send tool used`,
+      );
     }
   } finally {
     clearTimeout(streamTimer);

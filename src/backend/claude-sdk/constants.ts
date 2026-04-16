@@ -1,44 +1,23 @@
 /**
- * Shared constants for Claude SDK backend and background agents.
+ * Claude SDK backend constants — thinking effort, streaming, and
+ * chat-specific tool restrictions.
  *
- * Single source of truth for disallowed tool lists, thinking effort
- * configuration, and streaming parameters.
+ * Core disallowed-tool lists live in core/constants.ts (backend-agnostic).
  */
 
-// ── Disallowed tool lists ──────────────────────────────────────────────────
+import {
+  DISALLOWED_TOOLS_CORE,
+  DISALLOWED_TOOLS_BACKGROUND,
+} from "../../core/constants.js";
 
-/**
- * Core tools disallowed in all SDK query contexts (chat, heartbeat, dream).
- * These are interactive or planning-only tools that make no sense in a
- * headless agent context.
- */
-export const DISALLOWED_TOOLS_CORE = [
-  "EnterPlanMode",
-  "ExitPlanMode",
-  "EnterWorktree",
-  "ExitWorktree",
-  "TodoWrite",
-  "TodoRead",
-  "TaskCreate",
-  "TaskUpdate",
-  "TaskGet",
-  "TaskList",
-  "TaskOutput",
-  "TaskStop",
-  "AskUserQuestion",
-] as const;
+// Re-export so existing backend imports keep working
+export { DISALLOWED_TOOLS_CORE, DISALLOWED_TOOLS_BACKGROUND };
 
 /** Disallowed tools for the main chat handler (core + web tools replaced by Brave MCP). */
 export const DISALLOWED_TOOLS_CHAT = [
   ...DISALLOWED_TOOLS_CORE,
   "WebSearch",
   "WebFetch",
-] as const;
-
-/** Disallowed tools for background agents — heartbeat and dream (core + Agent). */
-export const DISALLOWED_TOOLS_BACKGROUND = [
-  ...DISALLOWED_TOOLS_CORE,
-  "Agent",
 ] as const;
 
 // ── Thinking / effort configuration ────────────────────────────────────────

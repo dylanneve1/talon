@@ -61,26 +61,27 @@ describe("telegram helpers", () => {
 
   it("matches legacy aliases to the canonical selected model", () => {
     expect(isSelectedModel("claude-sonnet-4-6", "default")).toBe(true);
-    expect(isSelectedModel("sonnet[1m]", "default")).toBe(true);
     expect(isSelectedModel("claude-sonnet-4-6", "haiku")).toBe(false);
   });
 
-  it("formats clean model labels for telegram users", () => {
-    expect(formatModelLabel("default")).toBe("Sonnet 4.6");
-    expect(formatModelLabel("claude-sonnet-4-6")).toBe("Sonnet 4.6");
-    expect(formatModelLabel("sonnet[1m]")).toBe("Sonnet 4.6");
+  it("formats labels using backend-registered displayName", () => {
+    expect(formatModelLabel("default")).toBe("Default (recommended)");
+    expect(formatModelLabel("claude-sonnet-4-6")).toBe("Default (recommended)");
+    expect(formatModelLabel("sonnet[1m]")).toBe("Sonnet (1M context)");
     expect(formatModelOptionLabel(getTelegramModelOptions()[0]!)).toBe(
-      "Sonnet 4.6",
+      "Default (recommended)",
     );
     expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe(
-      "Opus 4.6",
+      "Sonnet (1M context)",
     );
   });
 
-  it("shows a single clean option per model family", () => {
+  it("shows one option per unique displayName", () => {
     expect(getTelegramModelOptions().map((model) => model.id)).toEqual([
       "default",
+      "sonnet[1m]",
       "opus",
+      "opus[1m]",
       "haiku",
     ]);
   });
@@ -94,7 +95,7 @@ describe("telegram helpers", () => {
       .flat()
       .map((button) => button.text);
 
-    expect(buttons).toContain("\u2713 Sonnet 4.6");
+    expect(buttons).toContain("\u2713 Default (recommended)");
   });
 });
 

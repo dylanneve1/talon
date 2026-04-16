@@ -4,9 +4,12 @@
 
 import { escapeHtml } from "./formatting.js";
 import type { ModelInfo } from "../../core/models.js";
-import { getModels, resolveModel, resolveModelId } from "../../core/models.js";
+import {
+  getModels,
+  resolveModel,
+  resolveModelId,
+} from "../../core/models.js";
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
-const FAMILY_VERSION_PATTERN = /\b([A-Za-z][A-Za-z-]*)\s+(\d+(?:\.\d+)*)\b/;
 const DEFAULT_METRICS_MESSAGE_MAX = 3800;
 
 type MetricsSnapshot = {
@@ -51,44 +54,19 @@ export function formatBytes(bytes: number): string {
   return `${bytes} B`;
 }
 
-function toDisplayFamilyName(family: string): string {
-  return family
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatResolvedModelLabel(model: ModelInfo): string {
-  const match = `${model.displayName} ${model.description ?? ""}`.match(
-    FAMILY_VERSION_PATTERN,
-  );
-  if (match) {
-    return `${toDisplayFamilyName(match[1])} ${match[2]}`;
-  }
-
-  const familyAlias = model.aliases.find(
-    (alias) =>
-      !alias.startsWith("claude-") &&
-      !alias.endsWith("[1m]") &&
-      !/[-.]\d/.test(alias),
-  );
-  const baseName = familyAlias
-    ? toDisplayFamilyName(familyAlias)
-    : model.displayName.replace(/\s*\([^)]*\)/g, "").trim();
-  return baseName;
-}
-
+/** Resolve a model ID to its backend-registered display name. */
 export function formatModelLabel(modelId: string): string {
-  const model = resolveModel(modelId);
-  return model ? formatResolvedModelLabel(model) : modelId;
+  return resolveModel(modelId)?.displayName ?? modelId;
 }
 
+/** Display name for a known ModelInfo. */
 export function formatModelOptionLabel(model: ModelInfo): string {
-  return formatResolvedModelLabel(model);
+  return model.displayName;
 }
 
+/** Compact display name for a known ModelInfo. */
 export function formatCompactModelLabel(model: ModelInfo): string {
-  return formatResolvedModelLabel(model);
+  return model.displayName;
 }
 
 export function getTelegramModelOptions(): ModelInfo[] {
@@ -96,7 +74,7 @@ export function getTelegramModelOptions(): ModelInfo[] {
   const seenKeys = new Set<string>();
 
   for (const model of getModels()) {
-    const key = formatResolvedModelLabel(model).toLowerCase();
+    const key = model.displayName.toLowerCase();
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
     options.push(model);
@@ -237,8 +215,8 @@ export function isSelectedModel(
   const candidate = resolveModel(modelId);
   if (current && candidate) {
     return (
-      formatResolvedModelLabel(current).toLowerCase() ===
-      formatResolvedModelLabel(candidate).toLowerCase()
+      current.displayName.toLowerCase() ===
+      candidate.displayName.toLowerCase()
     );
   }
   return resolveModelId(currentModel) === modelId;

@@ -328,35 +328,25 @@ describe("built-in commands", () => {
       );
     });
 
-    it("stores provider-qualified OpenCode model selections when needed", async () => {
-      mockGetOpenCodeModelCatalog.mockResolvedValueOnce({
-        generatedAt: Date.now(),
-        providers: [],
-        models: [],
-        connectedProviders: [],
-        loginProviders: [],
-        connectedModels: [],
-        connectedFreeModels: [],
-      });
-      mockResolveOpenCodeModelInput.mockReturnValueOnce({
-        kind: "exact",
-        model: {
-          id: "gpt-5",
-          providerID: "github-copilot",
-          providerName: "GitHub Copilot",
-          free: false,
-          selectable: true,
-          loginRequired: false,
-          envRequired: false,
-          authMethods: [],
-        },
-      });
-      mockGetOpenCodeModelSelectionValue.mockReturnValueOnce(
-        "github-copilot/gpt-5",
-      );
-
+    it("stores provider-qualified model selections via backend.resolveModel", async () => {
       const ctx = makeMockContext({
-        config: { model: "nemotron-3-super-free", backend: "opencode" } as any,
+        config: { model: "nemotron-3-super-free" } as any,
+        backend: {
+          query: vi.fn() as any,
+          resolveModel: vi.fn().mockResolvedValue({
+            kind: "exact",
+            model: {
+              id: "gpt-5",
+              displayName: "GPT-5",
+              provider: "github-copilot",
+              providerName: "GitHub Copilot",
+              free: false,
+              selectable: true,
+            },
+            storedValue: "github-copilot/gpt-5",
+          }),
+          formatModelError: vi.fn(),
+        },
       });
 
       await tryRunCommand("/model github-copilot/gpt-5", ctx);
@@ -366,7 +356,7 @@ describe("built-in commands", () => {
         "github-copilot/gpt-5",
       );
       expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
-        expect.stringContaining("github-copilot/gpt-5"),
+        expect.stringContaining("GPT-5"),
       );
     });
   });
@@ -593,7 +583,7 @@ describe("/status command", () => {
     expect(calls.join(" ")).toContain("actions only");
   });
 
-  it("/status uses live OpenCode usage totals when backend is opencode", async () => {
+  it("/status uses live backend usage totals via getSessionSnapshot", async () => {
     mockGetSessionInfo.mockReturnValueOnce({
       turns: 14,
       sessionId: "ses_live",
@@ -612,58 +602,31 @@ describe("/status command", () => {
       },
     });
     mockGetChatSettings.mockReturnValueOnce({ model: "big-pickle" });
-    mockGetOpenCodeModelInfo.mockResolvedValueOnce({
-      id: "big-pickle",
-      name: "Big Pickle",
-      providerID: "opencode",
-      providerName: "OpenCode Zen",
-      providerSource: "builtin",
-      connected: true,
-      selectable: true,
-      loginRequired: false,
-      envRequired: false,
-      authMethods: [],
-      free: true,
-      status: "active",
-      contextWindow: 204800,
-      outputWindow: 128000,
-      reasoning: true,
-      attachment: false,
-      toolcall: true,
-      costInput: 0,
-      costOutput: 0,
-      costCacheRead: 0,
-      costCacheWrite: 0,
-    });
-    mockGetOpenCodeSessionSnapshot.mockResolvedValueOnce({
-      sessionId: "ses_live",
-      assistant: {
-        modelID: "big-pickle",
-        providerID: "opencode",
-        inputTokens: 42200,
-        outputTokens: 20,
-        reasoningTokens: 10,
-        cacheRead: 0,
-        cacheWrite: 0,
-        costUsd: 0,
-        totalTokens: 42220,
-      },
-      usage: {
-        assistantMessages: 42,
-        totalInputTokens: 1389045,
-        totalOutputTokens: 3675,
-        totalReasoningTokens: 4717,
-        totalCacheRead: 0,
-        totalCacheWrite: 0,
-        totalCostUsd: 0,
-      },
-    });
 
     const ctx = makeMockContext({
       config: {
         model: "big-pickle",
-        backend: "opencode",
       } as CommandContext["config"],
+      backend: {
+        query: vi.fn() as any,
+        getModelInfo: vi.fn().mockResolvedValue({
+          id: "big-pickle",
+          displayName: "Big Pickle",
+          provider: "opencode",
+          providerName: "OpenCode Zen",
+          free: true,
+          contextWindow: 204800,
+          selectable: true,
+        }),
+        getSessionSnapshot: vi.fn().mockResolvedValue({
+          inputTokens: 1389045,
+          outputTokens: 3675,
+          cacheRead: 0,
+          cacheWrite: 0,
+          contextModelId: "big-pickle",
+        }),
+        backendLabel: "OpenCode",
+      },
     });
     await tryRunCommand("/status", ctx);
 

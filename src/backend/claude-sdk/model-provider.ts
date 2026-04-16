@@ -189,6 +189,18 @@ export async function getProviderModels(
   };
 }
 
+export async function listModels(
+  filter?: "free" | "all",
+): Promise<{ models: UnifiedModelInfo[]; total: number }> {
+  // Claude SDK models are all paid/connected — "free" filter returns none
+  const all = getModels(PROVIDER_ID).map(toUnified);
+  if (filter === "free") {
+    const free = all.filter((m) => m.free);
+    return { models: free, total: free.length };
+  }
+  return { models: all, total: all.length };
+}
+
 export function formatModelError(
   query: string,
   resolution: UnifiedModelResolution,
