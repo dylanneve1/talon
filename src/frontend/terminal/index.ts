@@ -17,6 +17,7 @@ import {
   deriveNumericChatId,
   generateTerminalChatId,
 } from "../../util/chat-id.js";
+import { resolveModel } from "../../core/models.js";
 import { createRenderer } from "./renderer.js";
 import { createInput } from "./input.js";
 import {
@@ -145,10 +146,8 @@ export function createTerminalFrontend(
     async start() {
       initNewChat();
 
-      const { resolveModel: coreResolve } =
-        await import("../../core/models.js");
       const modelDisplay =
-        coreResolve(config.model)?.displayName ?? config.model;
+        resolveModel(config.model)?.displayName ?? config.model;
 
       renderer.writeln();
       renderer.writeln(

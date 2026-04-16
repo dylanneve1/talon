@@ -45,6 +45,25 @@ function normalizeFamilyName(family: string): string {
   return family.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
+function toDisplayFamilyName(family: string): string {
+  return family
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+/** Synthesize a clean label like "Sonnet 4.6" or "Sonnet 4.6 [1M]" from parsed identity. */
+function deriveDisplayName(
+  identity: ParsedModelIdentity,
+  fallback: string,
+): string {
+  if (!identity.family) return fallback;
+  const family = toDisplayFamilyName(identity.family);
+  const version = identity.version ? ` ${identity.version}` : "";
+  const million = identity.isOneMillion ? " [1M]" : "";
+  return `${family}${version}${million}`;
+}
+
 function stripOneMillionSuffix(value: string): string {
   return value.endsWith("[1m]") ? value.slice(0, -4) : value;
 }
@@ -303,7 +322,7 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
 
     models.push({
       id: record.value,
-      displayName: record.displayName,
+      displayName: deriveDisplayName(record.identity, record.displayName),
       description: record.description,
       aliases,
       provider: "anthropic",
@@ -443,26 +462,26 @@ export const CLAUDE_MODELS_STATIC: ModelInfo[] = convertSdkModels([
   {
     value: "default",
     displayName: "Default (recommended)",
-    description: "Sonnet · Best for everyday tasks",
+    description: "Sonnet 4.6 · Best for everyday tasks",
   },
   {
     value: "sonnet[1m]",
     displayName: "Sonnet (1M context)",
-    description: "Sonnet with 1M context · Large context window",
+    description: "Sonnet 4.6 with 1M context · Large context window",
   },
   {
     value: "opus",
     displayName: "Opus",
-    description: "Opus · Most capable for complex work",
+    description: "Opus 4.6 · Most capable for complex work",
   },
   {
     value: "opus[1m]",
     displayName: "Opus (1M context)",
-    description: "Opus with 1M context · Large context window",
+    description: "Opus 4.6 with 1M context · Large context window",
   },
   {
     value: "haiku",
     displayName: "Haiku",
-    description: "Haiku · Fastest for quick answers",
+    description: "Haiku 4.5 · Fastest for quick answers",
   },
 ]);

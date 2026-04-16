@@ -25,55 +25,23 @@ import type {
 const PROVIDER_ID = "anthropic";
 const PROVIDER_NAME = "Anthropic";
 
-const FAMILY_VERSION_PATTERN = /\b([A-Za-z][A-Za-z-]*)\s+(\d+(?:\.\d+)*)\b/;
-
-function toDisplayFamilyName(family: string): string {
-  return family
-    .split("-")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-function formatResolvedModelLabel(model: ModelInfo): string {
-  const isOneMillion =
-    model.id.endsWith("[1m]") || model.aliases.some((a) => a.endsWith("[1m]"));
-  const match = `${model.displayName} ${model.description ?? ""}`.match(
-    FAMILY_VERSION_PATTERN,
-  );
-  let label: string;
-  if (match) {
-    label = `${toDisplayFamilyName(match[1])} ${match[2]}`;
-  } else {
-    const familyAlias = model.aliases.find(
-      (alias) =>
-        !alias.startsWith("claude-") &&
-        !alias.endsWith("[1m]") &&
-        !/[-.]\d/.test(alias),
-    );
-    label = familyAlias
-      ? toDisplayFamilyName(familyAlias)
-      : model.displayName.replace(/\s*\([^)]*\)/g, "").trim();
-  }
-  return isOneMillion ? `${label} [1M]` : label;
-}
-
 function toUnified(model: ModelInfo): UnifiedModelInfo {
   return {
     id: model.id,
-    displayName: formatResolvedModelLabel(model),
+    displayName: model.displayName,
     provider: PROVIDER_ID,
     providerName: PROVIDER_NAME,
     selectable: true,
   };
 }
 
-/** De-duplicate models by their resolved display label (same logic as getTelegramModelOptions). */
+/** De-duplicate models by displayName (1M variants share a label with their base). */
 function getUniqueModels(): ModelInfo[] {
   const options: ModelInfo[] = [];
   const seenKeys = new Set<string>();
 
   for (const model of getModels(PROVIDER_ID)) {
-    const key = formatResolvedModelLabel(model).toLowerCase();
+    const key = model.displayName.toLowerCase();
     if (seenKeys.has(key)) continue;
     seenKeys.add(key);
     options.push(model);
@@ -87,8 +55,7 @@ function isSelectedModel(currentModel: string, candidateId: string): boolean {
   const candidate = coreResolveModel(candidateId);
   if (current && candidate) {
     return (
-      formatResolvedModelLabel(current).toLowerCase() ===
-      formatResolvedModelLabel(candidate).toLowerCase()
+      current.displayName.toLowerCase() === candidate.displayName.toLowerCase()
     );
   }
   return resolveModelId(currentModel) === candidateId;
@@ -149,10 +116,9 @@ export async function getSettingsPresentation(
   const options = getUniqueModels();
 
   const modelButtons: ModelButton[] = options.map((m) => {
-    const label = formatResolvedModelLabel(m);
     const selected = isSelectedModel(activeModel, m.id);
     return {
-      text: selected ? `\u2713 ${label}` : label,
+      text: selected ? `\u2713 ${m.displayName}` : m.displayName,
       callback_data: `${callbackPrefix}${m.id}`,
     };
   });
@@ -192,12 +158,9 @@ export async function getProviderModels(
 export async function listModels(
   filter?: "free" | "all",
 ): Promise<{ models: UnifiedModelInfo[]; total: number }> {
-  // Claude SDK models are all paid/connected — "free" filter returns none
+  // Claude SDK models are all paid — the "free" filter returns nothing.
+  if (filter === "free") return { models: [], total: 0 };
   const all = getModels(PROVIDER_ID).map(toUnified);
-  if (filter === "free") {
-    const free = all.filter((m) => m.free);
-    return { models: free, total: free.length };
-  }
   return { models: all, total: all.length };
 }
 

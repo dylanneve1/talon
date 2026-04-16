@@ -90,48 +90,6 @@ vi.mock("../core/plugin.js", () => ({
   getLoadedPlugins: () => mockGetLoadedPlugins(),
 }));
 
-const mockGetOpenCodeModelCatalog = vi.fn(async () => ({
-  generatedAt: Date.now(),
-  providers: [],
-  models: [],
-  connectedProviders: [],
-  loginProviders: [],
-  connectedModels: [],
-  connectedFreeModels: [],
-}));
-const mockGetOpenCodeModelInfo = vi.fn<
-  (modelId: string) => Promise<Record<string, unknown> | undefined>
->(async (_modelId: string) => undefined);
-const mockGetOpenCodeQuickPickModels = vi.fn<
-  (catalog: unknown, currentModelId?: string) => Array<unknown>
->(() => []);
-const mockResolveOpenCodeModelInput = vi.fn<
-  (query: string, catalog: unknown) => Record<string, unknown>
->((_query: string) => ({
-  kind: "missing",
-  matches: [],
-}));
-const mockGetOpenCodeSessionSnapshot = vi.fn<
-  (sessionId: string) => Promise<Record<string, unknown> | undefined>
->(async (_sessionId: string) => undefined);
-const mockGetOpenCodeModelSelectionValue = vi.fn<
-  (model: Record<string, unknown>, catalog: unknown) => string
->((model: Record<string, unknown>) => String(model.id ?? ""));
-vi.mock("../backend/opencode/index.js", () => ({
-  getOpenCodeModelCatalog: () => mockGetOpenCodeModelCatalog(),
-  getOpenCodeModelInfo: (modelId: string) => mockGetOpenCodeModelInfo(modelId),
-  getOpenCodeModelSelectionValue: (
-    model: Record<string, unknown>,
-    catalog: unknown,
-  ) => mockGetOpenCodeModelSelectionValue(model, catalog),
-  getOpenCodeQuickPickModels: (catalog: unknown, currentModelId?: string) =>
-    mockGetOpenCodeQuickPickModels(catalog, currentModelId),
-  resolveOpenCodeModelInput: (query: string, catalog: unknown) =>
-    mockResolveOpenCodeModelInput(query, catalog),
-  getOpenCodeSessionSnapshot: (sessionId: string) =>
-    mockGetOpenCodeSessionSnapshot(sessionId),
-}));
-
 import {
   registerCommand,
   tryRunCommand,
@@ -257,9 +215,6 @@ describe("built-in commands", () => {
     clearCommands();
     registerBuiltinCommands();
     vi.clearAllMocks();
-    mockGetOpenCodeModelSelectionValue.mockImplementation(
-      (model: Record<string, unknown>) => String(model.id ?? ""),
-    );
   });
 
   it("registers all expected commands", () => {

@@ -13,6 +13,7 @@ import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/gateway.js";
 import { log, logError } from "../../util/log.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
+import { resolveModel } from "../../core/models.js";
 import { createTeamsActionHandler } from "./actions.js";
 import { splitTeamsMessage, buildAdaptiveCard } from "./formatting.js";
 import {
@@ -244,11 +245,9 @@ export function createTeamsFrontend(
                   : 0;
               const { getChatSettings } =
                 await import("../../storage/chat-settings.js");
-              const { resolveModel: coreResolve } =
-                await import("../../core/models.js");
               const rawModel =
                 getChatSettings(talonChatId).model ?? (config.model as string);
-              const model = coreResolve(rawModel)?.displayName ?? rawModel;
+              const model = resolveModel(rawModel)?.displayName ?? rawModel;
               const avgMs =
                 info.turns > 0 ? Math.round(u.totalResponseMs / info.turns) : 0;
               const ctxUsed = u.contextTokens || u.lastPromptTokens;

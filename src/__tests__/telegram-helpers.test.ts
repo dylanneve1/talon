@@ -17,7 +17,7 @@ describe("telegram helpers", () => {
     registerModels([
       {
         id: "default",
-        displayName: "Default (recommended)",
+        displayName: "Sonnet 4.6",
         description: "Sonnet 4.6 · Best for everyday tasks",
         aliases: ["sonnet", "claude-sonnet-4-6"],
         provider: "anthropic",
@@ -25,7 +25,7 @@ describe("telegram helpers", () => {
       },
       {
         id: "sonnet[1m]",
-        displayName: "Sonnet (1M context)",
+        displayName: "Sonnet 4.6 [1M]",
         description:
           "Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15 per Mtok",
         aliases: ["claude-sonnet-4-6[1m]"],
@@ -34,7 +34,7 @@ describe("telegram helpers", () => {
       },
       {
         id: "opus",
-        displayName: "Opus",
+        displayName: "Opus 4.6",
         description: "Opus 4.6 · Most capable for complex work",
         aliases: ["claude-opus-4-6"],
         provider: "anthropic",
@@ -42,7 +42,7 @@ describe("telegram helpers", () => {
       },
       {
         id: "opus[1m]",
-        displayName: "Opus (1M context)",
+        displayName: "Opus 4.6 [1M]",
         description:
           "Opus 4.6 with 1M context · Billed as extra usage · $5/$25 per Mtok",
         aliases: ["claude-opus-4-6[1m]"],
@@ -51,7 +51,7 @@ describe("telegram helpers", () => {
       },
       {
         id: "haiku",
-        displayName: "Haiku",
+        displayName: "Haiku 4.5",
         description: "Haiku 4.5 · Fastest for quick answers",
         aliases: ["claude-haiku-4-5"],
         provider: "anthropic",
@@ -65,14 +65,14 @@ describe("telegram helpers", () => {
   });
 
   it("formats labels using backend-registered displayName", () => {
-    expect(formatModelLabel("default")).toBe("Default (recommended)");
-    expect(formatModelLabel("claude-sonnet-4-6")).toBe("Default (recommended)");
-    expect(formatModelLabel("sonnet[1m]")).toBe("Sonnet (1M context)");
+    expect(formatModelLabel("default")).toBe("Sonnet 4.6");
+    expect(formatModelLabel("claude-sonnet-4-6")).toBe("Sonnet 4.6");
+    expect(formatModelLabel("sonnet[1m]")).toBe("Sonnet 4.6 [1M]");
     expect(formatModelOptionLabel(getTelegramModelOptions()[0]!)).toBe(
-      "Default (recommended)",
+      "Sonnet 4.6",
     );
     expect(formatCompactModelLabel(getTelegramModelOptions()[1]!)).toBe(
-      "Sonnet (1M context)",
+      "Sonnet 4.6 [1M]",
     );
   });
 
@@ -95,7 +95,7 @@ describe("telegram helpers", () => {
       .flat()
       .map((button) => button.text);
 
-    expect(buttons).toContain("\u2713 Default (recommended)");
+    expect(buttons).toContain("\u2713 Sonnet 4.6");
   });
 });
 

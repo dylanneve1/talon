@@ -58,7 +58,7 @@ describe("registerClaudeModels", () => {
     clearModels();
   });
 
-  it("keeps SDK IDs/display names and collapses duplicates", async () => {
+  it("derives clean display names (Sonnet 4.6) and collapses duplicates", async () => {
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
     const { getModels, resolveModelId } = await import("../core/models.js");
@@ -76,10 +76,16 @@ describe("registerClaudeModels", () => {
 
     expect(
       anthropicModels.find((model) => model.id === "default")?.displayName,
-    ).toBe("Default (recommended)");
+    ).toBe("Sonnet 4.6");
     expect(
       anthropicModels.find((model) => model.id === "sonnet[1m]")?.displayName,
-    ).toBe("Sonnet (1M context)");
+    ).toBe("Sonnet 4.6 [1M]");
+    expect(
+      anthropicModels.find((model) => model.id === "opus[1m]")?.displayName,
+    ).toBe("Opus 4.6 [1M]");
+    expect(
+      anthropicModels.find((model) => model.id === "haiku")?.displayName,
+    ).toBe("Haiku 4.5");
     // claude-sonnet-4-6 collapsed into "default" as alias
     expect(
       anthropicModels.some((model) => model.id === "claude-sonnet-4-6"),
