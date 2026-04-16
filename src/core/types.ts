@@ -116,6 +116,14 @@ export interface QueryBackend {
   }>;
   /** Human-readable backend label for UIs (e.g. "Anthropic", "OpenCode"). */
   backendLabel?: string;
+  /**
+   * Whether the backend can fold concurrent same-chat dispatches into a
+   * single conversation (mid-flight message injection). When true, the
+   * dispatcher forwards same-chat queries in parallel; when false (or
+   * undefined), the dispatcher serializes them per-chat to avoid corrupting
+   * a single shared session.
+   */
+  supportsInjection?: boolean;
 }
 
 // ── Execution context ───────────────────────────────────────────────────────

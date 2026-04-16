@@ -447,14 +447,74 @@ describe("dispatcher", () => {
     await p;
   });
 
-  it("forwards concurrent same-chat queries to the backend in parallel", async () => {
-    // The dispatcher no longer serializes same-chat queries — the Claude SDK
-    // backend keeps a single live Query per chat and injects new messages
-    // mid-flight via streaming input. Multiple dispatcher.execute() calls
-    // for the same chat all reach backend.query() concurrently and the
-    // backend folds them into the same conversation.
+  it("serializes same-chat queries when backend.supportsInjection is false (FIFO)", async () => {
+    // Backends that don't support mid-flight injection (OpenCode) need the
+    // dispatcher to serialize same-chat queries so a shared session isn't
+    // corrupted by overlapping prompts.
     const order: string[] = [];
     const backend: QueryBackend = {
+      query: vi.fn(async (params) => {
+        order.push(`start:${params.text}`);
+        await new Promise((r) => setTimeout(r, 30));
+        order.push(`end:${params.text}`);
+        return {
+          text: "",
+          durationMs: 30,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      }),
+      // supportsInjection omitted → defaults to false (OpenCode-style)
+    };
+
+    initDispatcher({
+      backend,
+      context: {
+        acquire: () => {},
+        release: () => {},
+        getMessageCount: () => 0,
+      },
+      sendTyping: async () => {},
+      onActivity: () => {},
+    });
+
+    await Promise.all([
+      execute({
+        chatId: "X",
+        numericChatId: 1,
+        prompt: "first",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
+      execute({
+        chatId: "X",
+        numericChatId: 1,
+        prompt: "second",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
+    ]);
+
+    // Same chat: first completes before second starts
+    expect(order).toEqual([
+      "start:first",
+      "end:first",
+      "start:second",
+      "end:second",
+    ]);
+  });
+
+  it("forwards concurrent same-chat queries in parallel when backend.supportsInjection is true", async () => {
+    // Backends that handle their own per-chat queueing (Claude SDK) get
+    // dispatched in parallel so they can fold concurrent calls into the
+    // same live conversation as adjacent turns.
+    const order: string[] = [];
+    const backend: QueryBackend = {
+      supportsInjection: true,
       query: vi.fn(async (params) => {
         order.push(`start:${params.text}`);
         await new Promise((r) => setTimeout(r, 30));

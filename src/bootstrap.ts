@@ -170,6 +170,10 @@ export async function initBackendAndDispatcher(
       formatModelError: (q, r) => claudeModelProvider.formatModelError(q, r),
       listModels: (f) => claudeModelProvider.listModels(f),
       backendLabel: "Anthropic",
+      // Session queue keeps one live SDK Query per chat and folds in
+      // concurrent same-chat dispatches via streaming-input mode, so the
+      // dispatcher should NOT serialize them.
+      supportsInjection: true,
       refreshMcpServers: async (chatId) => {
         const qi = getActiveQuery(chatId);
         if (!qi) return null;
