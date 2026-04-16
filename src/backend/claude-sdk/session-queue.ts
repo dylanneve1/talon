@@ -137,10 +137,22 @@ type ChatSession = {
   iterDone: Promise<void>;
   /** Set true when an unrecoverable error occurs — no new turns accepted */
   failed: boolean;
+  /** Idle timer — closes the session after IDLE_MS of no activity */
+  idleTimer: ReturnType<typeof setTimeout> | null;
 };
 
 const sessions = new Map<string, ChatSession>();
 let turnSeq = 0;
+
+/**
+ * How long to keep a session alive (subprocess + MCP servers) after the last
+ * turn completes. New messages arriving within this window get injected into
+ * the existing conversation; messages after it start a fresh session.
+ *
+ * Trade-off: higher = better latency on follow-up messages, higher idle
+ * resource cost (one subprocess + MCP servers per chat); lower = opposite.
+ */
+const IDLE_MS = 5 * 60 * 1000; // 5 minutes
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -217,6 +229,7 @@ function startSession(chatId: string): ChatSession {
     activeModel,
     iterDone: Promise.resolve(),
     failed: false,
+    idleTimer: null,
   };
   sessions.set(chatId, session);
 
@@ -227,13 +240,16 @@ function startSession(chatId: string): ChatSession {
 }
 
 function enqueueTurn(session: ChatSession, turn: PendingTurn): void {
+  // Cancel any pending idle close — we're active again
+  cancelIdleTimer(session);
+
   const text = formatPromptText(turn.params);
   const userMsg = buildSdkUserMessage(text);
 
   log(
     "agent",
     `[${session.chatId}] <- (${turn.params.text.length} chars)` +
-      (session.current ? ` [injected]` : ``),
+      (session.current ? ` [queued]` : ``),
   );
   traceMessage(session.chatId, "in", turn.params.text, {
     senderName: turn.params.senderName,
@@ -267,12 +283,54 @@ function formatPromptText(params: QueryParams): string {
     : `${nowTag}${msgIdHint} ${params.text}`;
 }
 
+/**
+ * Build an SDKUserMessage in the exact shape the SDK CLI subprocess expects.
+ * Mirrors what `unstable_v2_createSession.send()` produces internally:
+ * content as an array of typed blocks, plus a placeholder session_id (the
+ * SDK fills in the real one when forwarding to the model).
+ */
 function buildSdkUserMessage(text: string): SDKUserMessage {
   return {
     type: "user",
-    message: { role: "user", content: text },
+    session_id: "",
+    message: {
+      role: "user",
+      content: [{ type: "text", text }],
+    },
     parent_tool_use_id: null,
   };
+}
+
+// ── Idle timer ─────────────────────────────────────────────────────────────
+// When a turn finishes and nothing is queued, start an idle timer. If a new
+// message arrives before it fires, cancel it and inject. If the timer fires,
+// close the input stream and let the SDK subprocess exit cleanly.
+
+function startIdleTimer(session: ChatSession): void {
+  cancelIdleTimer(session);
+  session.idleTimer = setTimeout(() => {
+    // Re-check: a message might have arrived in the same macrotask
+    if (session.current || session.pending.length > 0 || session.failed) return;
+    log(
+      "agent",
+      `[${session.chatId}] session idle for ${IDLE_MS / 1000}s, closing`,
+    );
+    session.inputQueue.close();
+  }, IDLE_MS);
+  // Don't keep the process alive on this timer
+  if (
+    session.idleTimer &&
+    typeof (session.idleTimer as { unref?: () => void }).unref === "function"
+  ) {
+    (session.idleTimer as { unref: () => void }).unref();
+  }
+}
+
+function cancelIdleTimer(session: ChatSession): void {
+  if (session.idleTimer) {
+    clearTimeout(session.idleTimer);
+    session.idleTimer = null;
+  }
 }
 
 // ── Iteration loop ─────────────────────────────────────────────────────────
@@ -330,10 +388,11 @@ async function iterate(session: ChatSession, sdkModel: string): Promise<void> {
       if (isResult(message)) {
         processResultMessage(message, turn.state, sdkModel);
         completeTurn(session, turn);
-        // If no more pending and no current, close the iterable so the
-        // SDK loop terminates cleanly. New messages will start a fresh session.
+        // Don't close the queue when we drain — keep the SDK subprocess + MCP
+        // servers alive so a follow-up message gets injected as a new turn
+        // in the SAME conversation. The idle timer eventually closes it.
         if (!session.current && session.pending.length === 0) {
-          session.inputQueue.close();
+          startIdleTimer(session);
         }
         continue;
       }
@@ -341,6 +400,7 @@ async function iterate(session: ChatSession, sdkModel: string): Promise<void> {
   } catch (err) {
     handleSessionError(session, err);
   } finally {
+    cancelIdleTimer(session);
     // Always tear down the session record so the next message starts fresh
     if (sessions.get(chatId) === session) {
       sessions.delete(chatId);

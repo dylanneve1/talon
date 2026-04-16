@@ -350,13 +350,23 @@ describe("submitMessage — single turn", () => {
     const first = await it.next();
     const msg = first.value as {
       type: string;
-      message: { role: string; content: string };
+      session_id: string;
+      message: {
+        role: string;
+        content: { type: string; text: string }[];
+      };
+      parent_tool_use_id: string | null;
     };
+    // Match the exact shape SDK Session.send() produces
     expect(msg.type).toBe("user");
+    expect(msg.session_id).toBe("");
+    expect(msg.parent_tool_use_id).toBeNull();
     expect(msg.message.role).toBe("user");
-    expect(msg.message.content).toContain("[Dylan]");
-    expect(msg.message.content).toContain("[msg_id:42]");
-    expect(msg.message.content).toContain("ping");
+    expect(Array.isArray(msg.message.content)).toBe(true);
+    expect(msg.message.content[0].type).toBe("text");
+    expect(msg.message.content[0].text).toContain("[Dylan]");
+    expect(msg.message.content[0].text).toContain("[msg_id:42]");
+    expect(msg.message.content[0].text).toContain("ping");
   });
 });
 
@@ -534,6 +544,52 @@ describe("submitMessage — mid-flight injection", () => {
     endSdkStream();
     await flushMicrotasks();
     expect(getQueuedCount("chat-three")).toBe(0);
+  });
+});
+
+describe("submitMessage — follow-up after drain reuses session", () => {
+  it("a second message arriving after the first turn's result keeps the same Query", async () => {
+    const { submitMessage, getActiveQuery } = await import(
+      "../backend/claude-sdk/session-queue.js"
+    );
+    const sdk = await import("@anthropic-ai/claude-agent-sdk");
+
+    // Submit + drain message A
+    const pA = submitMessage({
+      chatId: "chat-followup",
+      text: "first",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+    await flushMicrotasks();
+    pushSdkMessage({ type: "system", subtype: "init", session_id: "s-fu" });
+    pushSdkMessage({ type: "assistant", text: "Adone" });
+    pushSdkMessage({ type: "result", in: 1, out: 1 });
+    expect((await pA).text).toBe("Adone");
+    await flushMicrotasks();
+
+    // The session must STILL be alive (idle timer is running, queue not closed).
+    // This is the key behavior that makes injection useful — the SDK
+    // subprocess + MCP servers stay loaded for the next message.
+    expect(getActiveQuery("chat-followup")).toBeDefined();
+    expect(sdk.query).toHaveBeenCalledOnce();
+
+    // Submit B — should be injected into the SAME query
+    const pB = submitMessage({
+      chatId: "chat-followup",
+      text: "second",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+    await flushMicrotasks();
+    expect(sdk.query).toHaveBeenCalledOnce(); // still only one query() call
+
+    pushSdkMessage({ type: "assistant", text: "Bdone" });
+    pushSdkMessage({ type: "result", in: 1, out: 1 });
+    expect((await pB).text).toBe("Bdone");
+
+    endSdkStream();
+    await flushMicrotasks();
   });
 });
 
