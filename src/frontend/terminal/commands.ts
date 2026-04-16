@@ -148,11 +148,7 @@ export function registerBuiltinCommands(): void {
         return;
       }
 
-      if (
-        lowerArgs === "free" ||
-        lowerArgs === "list" ||
-        lowerArgs === "all"
-      ) {
+      if (lowerArgs === "free" || lowerArgs === "list" || lowerArgs === "all") {
         if (be?.listModels) {
           const filter = lowerArgs === "free" ? "free" : "all";
           const { models, total } = await be.listModels(filter);
@@ -296,7 +292,9 @@ export function registerBuiltinCommands(): void {
       }
 
       if (be?.getModelInfo) {
-        const modelInfo = await be.getModelInfo(activeModel).catch(() => undefined);
+        const modelInfo = await be
+          .getModelInfo(activeModel)
+          .catch(() => undefined);
         const label = be.backendLabel ?? "Backend";
         if (modelInfo) {
           backendModelLine = `  ${pc.bold(label)}  ${modelInfo.displayName}  ·  ${modelInfo.providerName}${modelInfo.free ? " · free" : ""}`;
@@ -389,7 +387,8 @@ export function registerBuiltinCommands(): void {
         const turns = `${s.info.turns} turn${s.info.turns !== 1 ? "s" : ""}`;
         const ago = formatTimeAgo(s.info.lastActive);
         const model = s.info.lastModel
-          ? (coreResolveModel(s.info.lastModel)?.displayName ?? s.info.lastModel)
+          ? (coreResolveModel(s.info.lastModel)?.displayName ??
+            s.info.lastModel)
           : "";
         ctx.renderer.writeln(
           `  ${pc.green(String(i + 1))}. ${name}  ${pc.dim(`${turns}  ·  ${ago}${model ? `  ·  ${model}` : ""}`)}`,

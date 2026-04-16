@@ -145,8 +145,10 @@ export function createTerminalFrontend(
     async start() {
       initNewChat();
 
-      const { resolveModel: coreResolve } = await import("../../core/models.js");
-      const modelDisplay = coreResolve(config.model)?.displayName ?? config.model;
+      const { resolveModel: coreResolve } =
+        await import("../../core/models.js");
+      const modelDisplay =
+        coreResolve(config.model)?.displayName ?? config.model;
 
       renderer.writeln();
       renderer.writeln(

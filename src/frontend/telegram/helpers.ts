@@ -4,11 +4,7 @@
 
 import { escapeHtml } from "./formatting.js";
 import type { ModelInfo } from "../../core/models.js";
-import {
-  getModels,
-  resolveModel,
-  resolveModelId,
-} from "../../core/models.js";
+import { getModels, resolveModel, resolveModelId } from "../../core/models.js";
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_METRICS_MESSAGE_MAX = 3800;
 
@@ -215,8 +211,7 @@ export function isSelectedModel(
   const candidate = resolveModel(modelId);
   if (current && candidate) {
     return (
-      current.displayName.toLowerCase() ===
-      candidate.displayName.toLowerCase()
+      current.displayName.toLowerCase() === candidate.displayName.toLowerCase()
     );
   }
   return resolveModelId(currentModel) === modelId;
