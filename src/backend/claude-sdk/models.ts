@@ -52,7 +52,11 @@ function toDisplayFamilyName(family: string): string {
     .join(" ");
 }
 
-/** Synthesize a clean label like "Sonnet 4.6" or "Sonnet 4.6 [1M]" from parsed identity. */
+/**
+ * Synthesize a clean label like "Sonnet 4.6" from parsed identity. Base and
+ * 1M variants share a label because the variant-merge step hides the base
+ * behind the 1M one — what we surface is effectively the 1M model.
+ */
 function deriveDisplayName(
   identity: ParsedModelIdentity,
   fallback: string,
@@ -60,8 +64,7 @@ function deriveDisplayName(
   if (!identity.family) return fallback;
   const family = toDisplayFamilyName(identity.family);
   const version = identity.version ? ` ${identity.version}` : "";
-  const million = identity.isOneMillion ? " [1M]" : "";
-  return `${family}${version}${million}`;
+  return `${family}${version}`;
 }
 
 function stripOneMillionSuffix(value: string): string {
@@ -148,11 +151,13 @@ function buildFamilyKey(identity: ParsedModelIdentity): string | null {
     : null;
 }
 
+/**
+ * Variant key collapses base and 1M variants of the same family+version into
+ * a single bucket. The priority function picks the 1M entry as canonical, so
+ * users see one "Sonnet 4.6" option (backed by sonnet[1m]) rather than two.
+ */
 function buildVariantKey(identity: ParsedModelIdentity): string | null {
-  const familyKey = buildFamilyKey(identity);
-  return familyKey
-    ? `${familyKey}:${identity.isOneMillion ? "1m" : "base"}`
-    : null;
+  return buildFamilyKey(identity);
 }
 
 function appendOneMillionSuffix(alias: string, isOneMillion: boolean): string {
@@ -188,10 +193,20 @@ function buildGeneratedAliases(identity: ParsedModelIdentity): string[] {
   return aliases;
 }
 
-function getPreferredModelPriority(value: string): number {
-  if (value === "default") return 0;
-  if (!value.startsWith("claude-")) return 1;
-  return 2;
+/**
+ * Lower number = higher priority when picking a canonical ID among variants
+ * sharing a family+version:
+ *   0 — "default"                      (SDK-recommended canonical)
+ *   1 — 1M variant, non-claude-prefix  (e.g. sonnet[1m])
+ *   2 — base variant, non-claude       (e.g. sonnet)
+ *   3 — claude-prefixed (legacy)       (e.g. claude-sonnet-4-6[1m])
+ */
+function getPreferredModelPriority(record: SdkModelRecord): number {
+  if (record.value === "default") return 0;
+  const isClaudePrefixed = record.value.startsWith("claude-");
+  if (record.identity.isOneMillion && !isClaudePrefixed) return 1;
+  if (!isClaudePrefixed) return 2;
+  return 3;
 }
 
 function buildSdkModelRecords(sdkModels: SdkModelInfo[]): SdkModelRecord[] {
@@ -223,8 +238,7 @@ function buildPreferredCanonicalIds(
   for (const [variantKey, variants] of grouped) {
     const canonical = [...variants].sort((left, right) => {
       const priorityDelta =
-        getPreferredModelPriority(left.value) -
-        getPreferredModelPriority(right.value);
+        getPreferredModelPriority(left) - getPreferredModelPriority(right);
       if (priorityDelta !== 0) return priorityDelta;
       return left.index - right.index;
     })[0];
