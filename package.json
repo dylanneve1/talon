@@ -1,6 +1,6 @@
 {
   "name": "talon-agent",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
   "author": "Dylan Neve",
   "license": "MIT",
