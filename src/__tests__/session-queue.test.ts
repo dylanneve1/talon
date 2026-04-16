@@ -549,9 +549,8 @@ describe("submitMessage — mid-flight injection", () => {
 
 describe("submitMessage — follow-up after drain reuses session", () => {
   it("a second message arriving after the first turn's result keeps the same Query", async () => {
-    const { submitMessage, getActiveQuery } = await import(
-      "../backend/claude-sdk/session-queue.js"
-    );
+    const { submitMessage, getActiveQuery } =
+      await import("../backend/claude-sdk/session-queue.js");
     const sdk = await import("@anthropic-ai/claude-agent-sdk");
 
     // Submit + drain message A
