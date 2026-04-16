@@ -14,44 +14,34 @@ import {
 describe("telegram helpers", () => {
   beforeEach(() => {
     clearModels();
+    // Post-merge state: convertSdkModels collapses base/1M/claude-* variants
+    // of the same family+version into a single canonical entry. This fixture
+    // is what the registry looks like after that merge.
     registerModels([
       {
         id: "default",
-        displayName: "Default (recommended)",
+        displayName: "Sonnet 4.6",
         description: "Sonnet 4.6 · Best for everyday tasks",
-        aliases: ["sonnet", "claude-sonnet-4-6"],
+        aliases: [
+          "sonnet",
+          "sonnet[1m]",
+          "claude-sonnet-4-6",
+          "claude-sonnet-4-6[1m]",
+        ],
         provider: "anthropic",
         fallback: "haiku",
-      },
-      {
-        id: "sonnet[1m]",
-        displayName: "Sonnet (1M context)",
-        description:
-          "Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15 per Mtok",
-        aliases: ["claude-sonnet-4-6[1m]"],
-        provider: "anthropic",
-        fallback: "haiku",
-      },
-      {
-        id: "opus",
-        displayName: "Opus",
-        description: "Opus 4.6 · Most capable for complex work",
-        aliases: ["claude-opus-4-6"],
-        provider: "anthropic",
-        fallback: "default",
       },
       {
         id: "opus[1m]",
-        displayName: "Opus (1M context)",
-        description:
-          "Opus 4.6 with 1M context · Billed as extra usage · $5/$25 per Mtok",
-        aliases: ["claude-opus-4-6[1m]"],
+        displayName: "Opus 4.6",
+        description: "Opus 4.6 with 1M context · Large context window",
+        aliases: ["opus", "claude-opus-4-6", "claude-opus-4-6[1m]"],
         provider: "anthropic",
         fallback: "default",
       },
       {
         id: "haiku",
-        displayName: "Haiku",
+        displayName: "Haiku 4.5",
         description: "Haiku 4.5 · Fastest for quick answers",
         aliases: ["claude-haiku-4-5"],
         provider: "anthropic",
@@ -59,16 +49,21 @@ describe("telegram helpers", () => {
     ]);
   });
 
-  it("matches legacy aliases to the canonical selected model", () => {
+  it("matches legacy aliases and 1M variants to the canonical selected model", () => {
     expect(isSelectedModel("claude-sonnet-4-6", "default")).toBe(true);
+    // sonnet[1m] is merged into "default" — same canonical model.
     expect(isSelectedModel("sonnet[1m]", "default")).toBe(true);
+    expect(isSelectedModel("claude-sonnet-4-6[1m]", "default")).toBe(true);
     expect(isSelectedModel("claude-sonnet-4-6", "haiku")).toBe(false);
   });
 
-  it("formats clean model labels for telegram users", () => {
+  it("formats labels using backend-registered displayName", () => {
     expect(formatModelLabel("default")).toBe("Sonnet 4.6");
     expect(formatModelLabel("claude-sonnet-4-6")).toBe("Sonnet 4.6");
+    // 1M variants collapse into the same entry — same clean label.
     expect(formatModelLabel("sonnet[1m]")).toBe("Sonnet 4.6");
+    expect(formatModelLabel("opus[1m]")).toBe("Opus 4.6");
+    expect(formatModelLabel("claude-opus-4-6")).toBe("Opus 4.6");
     expect(formatModelOptionLabel(getTelegramModelOptions()[0]!)).toBe(
       "Sonnet 4.6",
     );
@@ -77,10 +72,10 @@ describe("telegram helpers", () => {
     );
   });
 
-  it("shows a single clean option per model family", () => {
+  it("shows one option per family+version (base/1M variants merged)", () => {
     expect(getTelegramModelOptions().map((model) => model.id)).toEqual([
       "default",
-      "opus",
+      "opus[1m]",
       "haiku",
     ]);
   });

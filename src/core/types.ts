@@ -76,7 +76,7 @@ export interface QueryBackend {
     removed: string[];
     errors: Record<string, string>;
   } | null>;
-  /** Resolve a user's model query (e.g. "opus", "gpt-5") to a concrete model. */
+  /** Resolve a user's model query to a concrete model. */
   resolveModel?(query: string): Promise<UnifiedModelResolution>;
   /** Get info for a model by its stored ID. */
   getModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
@@ -109,6 +109,13 @@ export interface QueryBackend {
       }
     | undefined
   >;
+  /** List models matching a filter. Frontends use this for /model free|all|list. */
+  listModels?(filter?: "free" | "all"): Promise<{
+    models: UnifiedModelInfo[];
+    total: number;
+  }>;
+  /** Human-readable backend label for UIs (e.g. "Anthropic", "OpenCode"). */
+  backendLabel?: string;
 }
 
 // ── Execution context ───────────────────────────────────────────────────────

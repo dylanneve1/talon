@@ -141,6 +141,18 @@ export async function getProviderModels(
   };
 }
 
+export async function listModels(
+  filter?: "free" | "all",
+): Promise<{ models: UnifiedModelInfo[]; total: number }> {
+  const catalog = await getOpenCodeModelCatalog();
+  const source =
+    filter === "free" ? catalog.connectedFreeModels : catalog.connectedModels;
+  return {
+    models: source.map(toUnifiedModelInfo),
+    total: source.length,
+  };
+}
+
 export function formatModelError(
   query: string,
   resolution: UnifiedModelResolution,

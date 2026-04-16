@@ -17,7 +17,7 @@ import {
 import { getActiveCount } from "../../core/dispatcher.js";
 import { getPulseStatus } from "../../core/pulse.js";
 import { getHealthStatus, getRecentErrors } from "../../util/watchdog.js";
-import { formatDuration } from "./helpers.js";
+import { formatDuration, formatModelLabel } from "./helpers.js";
 
 export async function handleAdminCommand(
   ctx: Context,
@@ -64,9 +64,8 @@ export async function handleAdminCommand(
           ? `${Math.round((Date.now() - s.info.lastActive) / 60000)}m ago`
           : "?";
         const title = titles.get(s.chatId) ?? s.chatId;
-        const model = (getChatSettings(s.chatId).model ?? config.model).replace(
-          "claude-",
-          "",
+        const model = formatModelLabel(
+          getChatSettings(s.chatId).model ?? config.model,
         );
         return `<b>${escapeHtml(title)}</b> <code>${s.chatId}</code>\n  ${s.info.turns} turns | ${age} | ${model}`;
       });

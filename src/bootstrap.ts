@@ -126,6 +126,8 @@ export async function initBackendAndDispatcher(
       getProviderModels: (p, pg, ps) =>
         ocModelProvider.getProviderModels(p, pg, ps),
       formatModelError: (q, r) => ocModelProvider.formatModelError(q, r),
+      listModels: (f) => ocModelProvider.listModels(f),
+      backendLabel: "OpenCode",
       getSessionSnapshot: async (sessionId) => {
         const { getOpenCodeSessionSnapshot } =
           await import("./backend/opencode/index.js");
@@ -166,6 +168,8 @@ export async function initBackendAndDispatcher(
       getProviderModels: (p, pg, ps) =>
         claudeModelProvider.getProviderModels(p, pg, ps),
       formatModelError: (q, r) => claudeModelProvider.formatModelError(q, r),
+      listModels: (f) => claudeModelProvider.listModels(f),
+      backendLabel: "Anthropic",
       refreshMcpServers: async (chatId) => {
         const qi = getActiveQuery(chatId);
         if (!qi) return null;

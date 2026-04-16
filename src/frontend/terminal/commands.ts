@@ -7,9 +7,11 @@
 
 import pc from "picocolors";
 import type { TalonConfig } from "../../util/config.js";
+import type { QueryBackend } from "../../core/types.js";
 import type { Renderer } from "./renderer.js";
 import { formatTimeAgo } from "./renderer.js";
 import { isTerminalChatId } from "../../util/chat-id.js";
+import { resolveModel as coreResolveModel } from "../../core/models.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -23,6 +25,8 @@ export type CommandContext = {
   waitForInput: () => Promise<string>;
   /** Close the terminal (for /quit). */
   close: () => void;
+  /** AI backend (available after bootstrap). */
+  backend?: QueryBackend | null;
 };
 
 export type CommandHandler = (
@@ -96,203 +100,133 @@ export function registerBuiltinCommands(): void {
         await import("../../storage/chat-settings.js");
       const currentModel =
         getChatSettings(ctx.chatId()).model ?? ctx.config.model;
+      const be = ctx.backend;
 
-      if (ctx.config.backend === "opencode") {
-        const {
-          getOpenCodeModelCatalog,
-          getOpenCodeModelInfo,
-          getOpenCodeModelSelectionValue,
-          getOpenCodeQuickPickModels,
-          resolveOpenCodeModelInput,
-        } = await import("../../backend/opencode/index.js");
+      const trimmedArgs = args.trim();
+      const lowerArgs = trimmedArgs.toLowerCase();
 
-        const catalog = await getOpenCodeModelCatalog();
-        const trimmedArgs = args.trim();
-
-        const renderProviderLine = (providerName: string, details: string[]) =>
-          [providerName, ...details.filter(Boolean)].join(" · ");
-
-        if (!trimmedArgs) {
-          const currentInfo = await getOpenCodeModelInfo(currentModel);
-          const quickPicks = getOpenCodeQuickPickModels(catalog, currentModel);
-          const currentLabel = currentInfo
-            ? getOpenCodeModelSelectionValue(currentInfo, catalog)
-            : currentModel;
-          const details = currentInfo
-            ? [
-                currentInfo.providerName,
-                currentInfo.free ? "free" : "paid",
-                currentInfo.selectable
-                  ? "ready"
-                  : currentInfo.loginRequired
-                    ? "login required"
-                    : "not connected",
-              ]
-            : [];
-
-          ctx.renderer.writeSystem(
-            `Model: ${currentLabel}${details.length ? ` · ${renderProviderLine("", details).replace(/^ · /, "")}` : ""}`,
-          );
-
-          if (quickPicks.length > 0) {
-            ctx.renderer.writeln(
-              `  Free now: ${quickPicks
-                .map((model) => `${model.id}${model.free ? " (free)" : ""}`)
-                .join("  ·  ")}`,
-            );
-          }
-
-          if (catalog.loginProviders.length > 0) {
-            const loginSummary = catalog.loginProviders
-              .slice(0, 4)
-              .map(
-                (provider) =>
-                  `${provider.name} (${provider.authMethods.join(", ")})`,
-              )
-              .join("  ·  ");
-            ctx.renderer.writeln(`  Login required: ${loginSummary}`);
-          }
-
-          if (catalog.connectedProviders.length > 0) {
-            ctx.renderer.writeln(
-              `  Connected providers: ${catalog.connectedProviders
-                .map((provider) => `${provider.name} (${provider.modelCount})`)
-                .join(", ")}`,
-            );
-          }
-
-          if (currentInfo?.contextWindow) {
-            ctx.renderer.writeln(
-              `  Context window: ${currentInfo.contextWindow.toLocaleString()}`,
-            );
-          }
-
-          ctx.renderer.writeln(
-            `  Use /model free, /model all, /model providers, or /model <id>.`,
-          );
-          ctx.reprompt();
-          return;
-        }
-
-        const lowerArgs = trimmedArgs.toLowerCase();
-        if (lowerArgs === "reset" || lowerArgs === "default") {
-          setChatModel(ctx.chatId(), undefined);
-          ctx.renderer.writeSystem(`Model → ${ctx.config.model}`);
-          ctx.reprompt();
-          return;
-        }
-
-        if (
-          lowerArgs === "free" ||
-          lowerArgs === "list" ||
-          lowerArgs === "all"
-        ) {
-          const source =
-            lowerArgs === "free"
-              ? catalog.connectedFreeModels
-              : catalog.connectedModels;
-          const list = source.slice(0, 20);
-
-          ctx.renderer.writeSystem(
-            `${lowerArgs === "free" ? "Connected free" : "Connected"} models (${source.length})`,
-          );
-          for (const model of list) {
-            ctx.renderer.writeln(
-              `  ${getOpenCodeModelSelectionValue(model, catalog)}  ·  ${model.providerName}  ·  ${model.contextWindow.toLocaleString()} ctx${model.free ? "  ·  free" : ""}`,
-            );
-          }
-          if (source.length > list.length) {
-            ctx.renderer.writeln(`  …and ${source.length - list.length} more`);
-          }
-          ctx.reprompt();
-          return;
-        }
-
-        if (lowerArgs === "providers") {
-          ctx.renderer.writeSystem("OpenCode providers");
-          for (const provider of catalog.providers.slice(0, 20)) {
-            const detail = provider.connected
-              ? "connected"
-              : provider.loginRequired
-                ? `login: ${provider.authMethods.join(", ")}`
-                : provider.envRequired
-                  ? `env: ${provider.envKeys.join(", ")}`
-                  : provider.source;
-            ctx.renderer.writeln(
-              `  ${provider.id}  ·  ${provider.name}  ·  ${detail}  ·  ${provider.modelCount} models`,
-            );
-          }
-          ctx.reprompt();
-          return;
-        }
-
-        const resolution = resolveOpenCodeModelInput(trimmedArgs, catalog);
-        if (resolution.kind === "missing") {
-          ctx.renderer.writeError(
-            `No OpenCode model matched "${trimmedArgs}".`,
-          );
-          ctx.reprompt();
-          return;
-        }
-
-        if (resolution.kind === "ambiguous") {
-          const preview = resolution.matches
-            .map((model) => {
-              const providerLabel =
-                model.providerName === model.providerID
-                  ? model.providerName
-                  : `${model.providerName} / ${model.providerID}`;
-              const availability = model.selectable
+      if (!trimmedArgs) {
+        const modelInfo = await be?.getModelInfo?.(currentModel);
+        const displayName = modelInfo?.displayName ?? currentModel;
+        const details = modelInfo
+          ? [
+              modelInfo.providerName,
+              modelInfo.free ? "free" : undefined,
+              modelInfo.selectable
                 ? "ready"
-                : model.loginRequired
-                  ? "login required"
-                  : model.envRequired
-                    ? "credentials required"
-                    : "not connected";
-              return `${getOpenCodeModelSelectionValue(model, catalog)} — ${providerLabel} (${availability})`;
-            })
-            .join(", ");
-          ctx.renderer.writeError(
-            `Model query "${trimmedArgs}" is ambiguous: ${preview}`,
-          );
-          ctx.reprompt();
-          return;
-        }
-
-        const selectedModel = resolution.model;
-        if (!selectedModel.selectable) {
-          const detail = selectedModel.loginRequired
-            ? `Connect ${selectedModel.providerName} first (${selectedModel.authMethods.join(", ")}).`
-            : selectedModel.envRequired
-              ? `Set ${selectedModel.providerName} credentials (${selectedModel.providerID}).`
-              : `${selectedModel.providerName} is not connected.`;
-          ctx.renderer.writeError(detail);
-          ctx.reprompt();
-          return;
-        }
-
-        const storedModel = getOpenCodeModelSelectionValue(
-          selectedModel,
-          catalog,
-        );
-        setChatModel(ctx.chatId(), storedModel);
+                : (modelInfo.unavailableReason ?? "not connected"),
+            ].filter(Boolean)
+          : [];
         ctx.renderer.writeSystem(
-          `Model → ${storedModel} (${selectedModel.providerName}${selectedModel.free ? " · free" : ""})`,
+          `Model: ${displayName}${details.length ? ` · ${details.join(" · ")}` : ""}`,
+        );
+        if (modelInfo?.contextWindow) {
+          ctx.renderer.writeln(
+            `  Context window: ${modelInfo.contextWindow.toLocaleString()}`,
+          );
+        }
+        if (be?.getProviders) {
+          const providers = await be.getProviders();
+          const connected = providers.filter((p) => p.connected);
+          if (connected.length > 0) {
+            ctx.renderer.writeln(
+              `  Providers: ${connected.map((p) => `${p.name} (${p.modelCount})`).join(", ")}`,
+            );
+          }
+        }
+        ctx.renderer.writeln(
+          `  Use /model free, /model all, /model providers, or /model <name>.`,
         );
         ctx.reprompt();
         return;
       }
 
-      if (!args) {
-        const { getModels } = await import("../../core/models.js");
-        const current = getChatSettings(ctx.chatId()).model ?? ctx.config.model;
-        const names = getModels()
-          .map((m) => m.aliases[0] ?? m.id)
-          .join(", ");
-        ctx.renderer.writeSystem(`Model: ${current} (available: ${names})`);
+      if (lowerArgs === "reset" || lowerArgs === "default") {
+        setChatModel(ctx.chatId(), undefined);
+        ctx.renderer.writeSystem(`Model → ${ctx.config.model}`);
+        ctx.reprompt();
+        return;
+      }
+
+      if (lowerArgs === "free" || lowerArgs === "list" || lowerArgs === "all") {
+        if (be?.listModels) {
+          const filter = lowerArgs === "free" ? "free" : "all";
+          const { models, total } = await be.listModels(filter);
+          const list = models.slice(0, 20);
+          ctx.renderer.writeSystem(
+            `${filter === "free" ? "Free" : "Available"} models (${total})`,
+          );
+          for (const model of list) {
+            ctx.renderer.writeln(
+              `  ${model.displayName}  ·  ${model.providerName}${model.contextWindow ? `  ·  ${model.contextWindow.toLocaleString()} ctx` : ""}${model.free ? "  ·  free" : ""}`,
+            );
+          }
+          if (total > list.length) {
+            ctx.renderer.writeln(`  …and ${total - list.length} more`);
+          }
+        } else {
+          const { getModels } = await import("../../core/models.js");
+          const names = getModels()
+            .map((m) => m.aliases[0] ?? m.id)
+            .join(", ");
+          ctx.renderer.writeSystem(`Available: ${names}`);
+        }
+        ctx.reprompt();
+        return;
+      }
+
+      if (lowerArgs === "providers") {
+        if (be?.getProviders) {
+          const providers = await be.getProviders();
+          ctx.renderer.writeSystem(`Providers (${providers.length})`);
+          for (const p of providers.slice(0, 20)) {
+            ctx.renderer.writeln(
+              `  ${p.name}  ·  ${p.connected ? "connected" : "not connected"}  ·  ${p.modelCount} models`,
+            );
+          }
+        } else {
+          ctx.renderer.writeSystem("Provider listing not supported.");
+        }
+        ctx.reprompt();
+        return;
+      }
+
+      // Resolve model query via backend
+      if (be?.resolveModel) {
+        const resolution = await be.resolveModel(trimmedArgs);
+        if (resolution.kind === "missing") {
+          const msg =
+            be.formatModelError?.(trimmedArgs, resolution) ??
+            `No model matched "${trimmedArgs}".`;
+          ctx.renderer.writeError(msg);
+          ctx.reprompt();
+          return;
+        }
+        if (resolution.kind === "ambiguous") {
+          const preview = resolution.matches
+            .map((m) => `${m.displayName} (${m.providerName})`)
+            .join(", ");
+          ctx.renderer.writeError(
+            `Ambiguous: "${trimmedArgs}" matches ${preview}`,
+          );
+          ctx.reprompt();
+          return;
+        }
+        if (!resolution.model.selectable) {
+          ctx.renderer.writeError(
+            resolution.model.unavailableReason ??
+              `${resolution.model.providerName} is not connected.`,
+          );
+          ctx.reprompt();
+          return;
+        }
+        setChatModel(ctx.chatId(), resolution.storedValue);
+        ctx.renderer.writeSystem(
+          `Model → ${resolution.model.displayName} (${resolution.model.providerName}${resolution.model.free ? " · free" : ""})`,
+        );
       } else {
-        setChatModel(ctx.chatId(), resolveModelName(args));
-        ctx.renderer.writeSystem(`Model → ${resolveModelName(args)}`);
+        setChatModel(ctx.chatId(), resolveModelName(trimmedArgs));
+        ctx.renderer.writeSystem(`Model → ${resolveModelName(trimmedArgs)}`);
       }
       ctx.reprompt();
     },
@@ -332,49 +266,41 @@ export function registerBuiltinCommands(): void {
       const { getLoadedPlugins } = await import("../../core/plugin.js");
       const info = getSessionInfo(ctx.chatId());
       const u = info.usage;
+      const be = ctx.backend;
+      const activeModel =
+        getChatSettings(ctx.chatId()).model ?? ctx.config.model;
       let displayInputTokens = u.totalInputTokens;
       let displayOutputTokens = u.totalOutputTokens;
       let displayCacheRead = u.totalCacheRead;
       let displayCacheWrite = u.totalCacheWrite;
-      let openCodeModelLine = "";
-      let openCodeContextLine = "";
+      let backendModelLine = "";
+      let backendContextLine = "";
       ctx.renderer.writeln();
       const nameStr = info.sessionName ? `"${info.sessionName}"  ·  ` : "";
-      if (ctx.config.backend === "opencode") {
-        const activeModel =
-          getChatSettings(ctx.chatId()).model ?? ctx.config.model;
-        const { getOpenCodeModelInfo, getOpenCodeSessionSnapshot } =
-          await import("../../backend/opencode/index.js");
-        const modelInfo = await getOpenCodeModelInfo(activeModel).catch(
-          () => undefined,
-        );
-        const sessionSnapshot = info.sessionId
-          ? await getOpenCodeSessionSnapshot(info.sessionId).catch(
-              () => undefined,
-            )
-          : undefined;
-        const liveUsage = sessionSnapshot?.usage;
-        displayInputTokens = liveUsage?.totalInputTokens ?? displayInputTokens;
-        displayOutputTokens =
-          liveUsage?.totalOutputTokens ?? displayOutputTokens;
-        displayCacheRead = liveUsage?.totalCacheRead ?? displayCacheRead;
-        displayCacheWrite = liveUsage?.totalCacheWrite ?? displayCacheWrite;
 
-        const contextModelID =
-          sessionSnapshot?.assistant?.modelID ?? info.lastModel ?? activeModel;
-        const contextModelInfo =
-          contextModelID === activeModel
-            ? modelInfo
-            : await getOpenCodeModelInfo(contextModelID).catch(() => undefined);
-        const promptTokens = sessionSnapshot?.assistant
-          ? sessionSnapshot.assistant.inputTokens +
-            sessionSnapshot.assistant.cacheRead +
-            sessionSnapshot.assistant.cacheWrite
-          : u.lastPromptTokens;
+      // Enrich from backend when available
+      if (be?.getSessionSnapshot && info.sessionId) {
+        const snap = await be
+          .getSessionSnapshot(info.sessionId)
+          .catch(() => undefined);
+        if (snap) {
+          displayInputTokens = snap.inputTokens ?? displayInputTokens;
+          displayOutputTokens = snap.outputTokens ?? displayOutputTokens;
+          displayCacheRead = snap.cacheRead ?? displayCacheRead;
+          displayCacheWrite = snap.cacheWrite ?? displayCacheWrite;
+        }
+      }
 
-        openCodeModelLine = `  ${pc.bold("OpenCode")}  ${activeModel}${modelInfo ? `  ·  ${modelInfo.providerName}${modelInfo.free ? " · free" : ""}` : ""}`;
-        if (contextModelInfo?.contextWindow) {
-          openCodeContextLine = `  ${pc.dim(`context ${promptTokens.toLocaleString()} / ${contextModelInfo.contextWindow.toLocaleString()}  ·  cache ${displayCacheRead.toLocaleString()} / ${displayCacheWrite.toLocaleString()}`)}`;
+      if (be?.getModelInfo) {
+        const modelInfo = await be
+          .getModelInfo(activeModel)
+          .catch(() => undefined);
+        const label = be.backendLabel ?? "Backend";
+        if (modelInfo) {
+          backendModelLine = `  ${pc.bold(label)}  ${modelInfo.displayName}  ·  ${modelInfo.providerName}${modelInfo.free ? " · free" : ""}`;
+          if (modelInfo.contextWindow) {
+            backendContextLine = `  ${pc.dim(`context window ${modelInfo.contextWindow.toLocaleString()}  ·  cache ${displayCacheRead.toLocaleString()} / ${displayCacheWrite.toLocaleString()}`)}`;
+          }
         }
       }
 
@@ -391,11 +317,11 @@ export function registerBuiltinCommands(): void {
       ctx.renderer.writeln(
         `  ${pc.dim(`in ${displayInputTokens.toLocaleString()}  ·  out ${displayOutputTokens.toLocaleString()} tokens`)}`,
       );
-      if (openCodeModelLine) {
+      if (backendModelLine) {
         ctx.renderer.writeln();
-        ctx.renderer.writeln(openCodeModelLine);
-        if (openCodeContextLine) {
-          ctx.renderer.writeln(openCodeContextLine);
+        ctx.renderer.writeln(backendModelLine);
+        if (backendContextLine) {
+          ctx.renderer.writeln(backendContextLine);
         }
       }
 
@@ -461,9 +387,8 @@ export function registerBuiltinCommands(): void {
         const turns = `${s.info.turns} turn${s.info.turns !== 1 ? "s" : ""}`;
         const ago = formatTimeAgo(s.info.lastActive);
         const model = s.info.lastModel
-          ? s.info.lastModel
-              .replace("claude-", "")
-              .replace(/-(\d+)-(\d+).*/, " $1.$2")
+          ? (coreResolveModel(s.info.lastModel)?.displayName ??
+            s.info.lastModel)
           : "";
         ctx.renderer.writeln(
           `  ${pc.green(String(i + 1))}. ${name}  ${pc.dim(`${turns}  ·  ${ago}${model ? `  ·  ${model}` : ""}`)}`,

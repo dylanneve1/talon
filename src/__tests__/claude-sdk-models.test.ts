@@ -58,36 +58,40 @@ describe("registerClaudeModels", () => {
     clearModels();
   });
 
-  it("keeps SDK IDs/display names and collapses duplicates", async () => {
+  it("collapses family+version duplicates (base + 1M + claude-*) into a single canonical entry", async () => {
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
     const { getModels, resolveModelId } = await import("../core/models.js");
 
     await registerClaudeModels({ model: "default" });
 
+    // sonnet, sonnet[1m], claude-sonnet-4-6 all share family+version and
+    // collapse into "default" (the SDK's recommended canonical). opus/opus[1m]
+    // collapse into opus[1m] (1M-preferred since no "default" exists for that
+    // family). haiku stands alone.
     const anthropicModels = getModels("anthropic");
     expect(anthropicModels.map((model) => model.id)).toEqual([
       "default",
-      "sonnet[1m]",
-      "opus",
       "opus[1m]",
       "haiku",
     ]);
 
     expect(
       anthropicModels.find((model) => model.id === "default")?.displayName,
-    ).toBe("Default (recommended)");
+    ).toBe("Sonnet 4.6");
     expect(
-      anthropicModels.find((model) => model.id === "sonnet[1m]")?.displayName,
-    ).toBe("Sonnet (1M context)");
-    // claude-sonnet-4-6 collapsed into "default" as alias
+      anthropicModels.find((model) => model.id === "opus[1m]")?.displayName,
+    ).toBe("Opus 4.6");
     expect(
-      anthropicModels.some((model) => model.id === "claude-sonnet-4-6"),
-    ).toBe(false);
+      anthropicModels.find((model) => model.id === "haiku")?.displayName,
+    ).toBe("Haiku 4.5");
 
+    expect(resolveModelId("sonnet")).toBe("default");
+    expect(resolveModelId("sonnet[1m]")).toBe("default");
     expect(resolveModelId("claude-sonnet-4-6")).toBe("default");
-    expect(resolveModelId("claude-sonnet-4-6[1m]")).toBe("sonnet[1m]");
-    expect(resolveModelId("claude-opus-4-6")).toBe("opus");
+    expect(resolveModelId("claude-sonnet-4-6[1m]")).toBe("default");
+    expect(resolveModelId("opus")).toBe("opus[1m]");
+    expect(resolveModelId("claude-opus-4-6")).toBe("opus[1m]");
   });
 
   it("derives compatibility aliases from SDK metadata instead of hardcoded versions", async () => {
@@ -134,8 +138,8 @@ describe("registerClaudeModels", () => {
 
     expect(resolveModelId("claude-sonnet-5-0")).toBe("default");
     expect(resolveModelId("claude-sonnet-4-6")).toBe("default");
-    expect(resolveModelId("claude-opus-5-0")).toBe("opus");
-    expect(resolveModelId("claude-opus-4-6")).toBe("opus");
+    expect(resolveModelId("claude-opus-5-0")).toBe("opus[1m]");
+    expect(resolveModelId("claude-opus-4-6")).toBe("opus[1m]");
     expect(resolveModelId("claude-haiku-5-0")).toBe("haiku");
     expect(resolveModelId("claude-haiku-4-5")).toBe("haiku");
   });

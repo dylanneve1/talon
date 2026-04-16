@@ -17,6 +17,7 @@ import {
   deriveNumericChatId,
   generateTerminalChatId,
 } from "../../util/chat-id.js";
+import { resolveModel } from "../../core/models.js";
 import { createRenderer } from "./renderer.js";
 import { createInput } from "./input.js";
 import {
@@ -145,13 +146,8 @@ export function createTerminalFrontend(
     async start() {
       initNewChat();
 
-      const modelDisplay = config.model
-        .replace("claude-", "")
-        .replace(
-          /^(\w+)-(\d+)-(\d+)/,
-          (_, name: string, maj: string, min: string) =>
-            `${name.charAt(0).toUpperCase() + name.slice(1)} ${maj}.${min}`,
-        );
+      const modelDisplay =
+        resolveModel(config.model)?.displayName ?? config.model;
 
       renderer.writeln();
       renderer.writeln(
@@ -189,6 +185,9 @@ export function createTerminalFrontend(
           renderer.writeln();
           input.close();
           process.exit(0);
+        },
+        get backend() {
+          return gateway.backend;
         },
       };
 

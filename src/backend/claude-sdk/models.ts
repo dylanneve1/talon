@@ -45,6 +45,28 @@ function normalizeFamilyName(family: string): string {
   return family.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
+function toDisplayFamilyName(family: string): string {
+  return family
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+/**
+ * Synthesize a clean label like "Sonnet 4.6" from parsed identity. Base and
+ * 1M variants share a label because the variant-merge step hides the base
+ * behind the 1M one — what we surface is effectively the 1M model.
+ */
+function deriveDisplayName(
+  identity: ParsedModelIdentity,
+  fallback: string,
+): string {
+  if (!identity.family) return fallback;
+  const family = toDisplayFamilyName(identity.family);
+  const version = identity.version ? ` ${identity.version}` : "";
+  return `${family}${version}`;
+}
+
 function stripOneMillionSuffix(value: string): string {
   return value.endsWith("[1m]") ? value.slice(0, -4) : value;
 }
@@ -129,11 +151,13 @@ function buildFamilyKey(identity: ParsedModelIdentity): string | null {
     : null;
 }
 
+/**
+ * Variant key collapses base and 1M variants of the same family+version into
+ * a single bucket. The priority function picks the 1M entry as canonical, so
+ * users see one "Sonnet 4.6" option (backed by sonnet[1m]) rather than two.
+ */
 function buildVariantKey(identity: ParsedModelIdentity): string | null {
-  const familyKey = buildFamilyKey(identity);
-  return familyKey
-    ? `${familyKey}:${identity.isOneMillion ? "1m" : "base"}`
-    : null;
+  return buildFamilyKey(identity);
 }
 
 function appendOneMillionSuffix(alias: string, isOneMillion: boolean): string {
@@ -169,10 +193,20 @@ function buildGeneratedAliases(identity: ParsedModelIdentity): string[] {
   return aliases;
 }
 
-function getPreferredModelPriority(value: string): number {
-  if (value === "default") return 0;
-  if (!value.startsWith("claude-")) return 1;
-  return 2;
+/**
+ * Lower number = higher priority when picking a canonical ID among variants
+ * sharing a family+version:
+ *   0 — "default"                      (SDK-recommended canonical)
+ *   1 — 1M variant, non-claude-prefix  (e.g. sonnet[1m])
+ *   2 — base variant, non-claude       (e.g. sonnet)
+ *   3 — claude-prefixed (legacy)       (e.g. claude-sonnet-4-6[1m])
+ */
+function getPreferredModelPriority(record: SdkModelRecord): number {
+  if (record.value === "default") return 0;
+  const isClaudePrefixed = record.value.startsWith("claude-");
+  if (record.identity.isOneMillion && !isClaudePrefixed) return 1;
+  if (!isClaudePrefixed) return 2;
+  return 3;
 }
 
 function buildSdkModelRecords(sdkModels: SdkModelInfo[]): SdkModelRecord[] {
@@ -204,8 +238,7 @@ function buildPreferredCanonicalIds(
   for (const [variantKey, variants] of grouped) {
     const canonical = [...variants].sort((left, right) => {
       const priorityDelta =
-        getPreferredModelPriority(left.value) -
-        getPreferredModelPriority(right.value);
+        getPreferredModelPriority(left) - getPreferredModelPriority(right);
       if (priorityDelta !== 0) return priorityDelta;
       return left.index - right.index;
     })[0];
@@ -303,7 +336,7 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
 
     models.push({
       id: record.value,
-      displayName: record.displayName,
+      displayName: deriveDisplayName(record.identity, record.displayName),
       description: record.description,
       aliases,
       provider: "anthropic",
@@ -443,26 +476,26 @@ export const CLAUDE_MODELS_STATIC: ModelInfo[] = convertSdkModels([
   {
     value: "default",
     displayName: "Default (recommended)",
-    description: "Sonnet · Best for everyday tasks",
+    description: "Sonnet 4.6 · Best for everyday tasks",
   },
   {
     value: "sonnet[1m]",
     displayName: "Sonnet (1M context)",
-    description: "Sonnet with 1M context · Large context window",
+    description: "Sonnet 4.6 with 1M context · Large context window",
   },
   {
     value: "opus",
     displayName: "Opus",
-    description: "Opus · Most capable for complex work",
+    description: "Opus 4.6 · Most capable for complex work",
   },
   {
     value: "opus[1m]",
     displayName: "Opus (1M context)",
-    description: "Opus with 1M context · Large context window",
+    description: "Opus 4.6 with 1M context · Large context window",
   },
   {
     value: "haiku",
     displayName: "Haiku",
-    description: "Haiku · Fastest for quick answers",
+    description: "Haiku 4.5 · Fastest for quick answers",
   },
 ]);
