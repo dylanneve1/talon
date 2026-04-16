@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/dylanneve1/talon/compare/v1.7.0...v1.8.0) (2026-04-16)
+
+
+### Features
+
+* move Claude model logic to backend and remove model tiers ([#54](https://github.com/dylanneve1/talon/issues/54)) ([99d6b73](https://github.com/dylanneve1/talon/commit/99d6b73ba3a44bb6e91008a110bc9c3ec72390fc))
+* **opencode:** add model catalog and fix delivery/status flows ([#57](https://github.com/dylanneve1/talon/issues/57)) ([bb9a216](https://github.com/dylanneve1/talon/commit/bb9a216721174e946876a5828a545926573d941e))
+
 ## [1.7.0](https://github.com/dylanneve1/talon/compare/v1.6.1...v1.7.0) (2026-04-14)
 
 
