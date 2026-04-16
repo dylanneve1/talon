@@ -1816,6 +1816,49 @@ describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", 
 
     expect(sendMsgCount()).toBeGreaterThan(before);
   }, 3000);
+
+  it("does not send the same OpenCode response twice when onTextBlock already delivered it", async () => {
+    const sendMsgCount = () =>
+      (mockBot.api.sendMessage as ReturnType<typeof vi.fn>).mock.calls.length;
+
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onTextBlock = params.onTextBlock as (
+          text: string,
+        ) => Promise<void>;
+        await onTextBlock?.("Hi! 👋");
+        return {
+          text: "Hi! 👋",
+          durationMs: 5,
+          inputTokens: 1,
+          outputTokens: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 0,
+        };
+      },
+    );
+
+    const before = sendMsgCount();
+    const ctx = {
+      chat: { id: 96003, type: "private" },
+      message: {
+        text: "test duplicate suppression",
+        message_id: 952,
+        reply_to_message: null,
+      },
+      me: { id: 999, username: "testbot" },
+      from: { id: 94, first_name: "Mika" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, {
+      ...mockConfig,
+      backend: "opencode",
+    });
+    await new Promise((r) => setTimeout(r, 700));
+
+    expect(sendMsgCount() - before).toBe(1);
+  }, 3000);
 });
 
 describe("sendHtml — falls back to plain text on HTML send failure", () => {

@@ -98,6 +98,7 @@ function createActionHandler(
 // ── Frontend interface ───────────────────────────────────────────────────────
 
 export type TerminalFrontend = {
+  name: "terminal";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -122,6 +123,7 @@ export function createTerminalFrontend(
   };
 
   return {
+    name: "terminal",
     context,
     sendTyping: async () => {
       renderer.startSpinner(

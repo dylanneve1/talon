@@ -23,6 +23,7 @@ import { log, logError } from "../../util/log.js";
 // ── Frontend interface ──────────────────────────────────────────────────────
 
 export type TelegramFrontend = {
+  name: "telegram";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -49,6 +50,7 @@ export function createTelegramFrontend(
   };
 
   return {
+    name: "telegram",
     context,
 
     sendTyping: (chatId: number) =>
@@ -77,7 +79,7 @@ export function createTelegramFrontend(
 
       registerCommands(bot, config, gateway);
       registerMiddleware(bot, config);
-      registerCallbacks(bot, config);
+      registerCallbacks(bot, config, gateway);
 
       await bot.api.deleteMyCommands();
       await bot.api.setMyCommands([

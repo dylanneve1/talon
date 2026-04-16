@@ -4,7 +4,6 @@
 
 import type { Bot } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
-
 import {
   getChatSettings,
   setChatModel,
@@ -22,15 +21,16 @@ import {
 import { handleCallbackQuery } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
 import {
-  formatModelLabel,
-  formatModelOptionLabel,
-  getTelegramModelOptions,
-  isSelectedModel,
   renderSettingsText,
   renderSettingsKeyboard,
+  type SettingsButton,
 } from "./helpers.js";
 
-export function registerCallbacks(bot: Bot, config: TalonConfig): void {
+export function registerCallbacks(
+  bot: Bot,
+  config: TalonConfig,
+  gateway?: { backend: import("../../core/types.js").QueryBackend | null },
+): void {
   // ── Callback query handler ──────────────────────────────────────────────────
 
   bot.on("callback_query:data", async (ctx) => {
@@ -60,12 +60,27 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       if (category === "model") {
         if (value === "reset") {
           setChatModel(cid, undefined);
+        } else if (gateway?.backend?.resolveModel) {
+          const resolution = await gateway.backend.resolveModel(value);
+          if (resolution.kind !== "exact") {
+            await ctx.answerCallbackQuery({ text: "Model is unavailable" });
+            return;
+          }
+          if (!resolution.model.selectable) {
+            await ctx.answerCallbackQuery({
+              text: resolution.model.unavailableReason ?? "Unavailable",
+            });
+            return;
+          }
+          setChatModel(cid, resolution.storedValue);
         } else {
-          const resolved = resolveModelName(value);
-          setChatModel(cid, resolved);
+          setChatModel(cid, resolveModelName(value));
         }
+        const settingsModel = getChatSettings(cid).model ?? config.model;
+        const settingsModelInfo =
+          await gateway?.backend?.getModelInfo?.(settingsModel);
         await ctx.answerCallbackQuery({
-          text: `Model: ${getChatSettings(cid).model ?? config.model}`,
+          text: `Model: ${settingsModelInfo?.displayName ?? settingsModel}`,
         });
       } else if (category === "effort") {
         if (value === "adaptive") {
@@ -90,6 +105,15 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       const activeModel = chatSets.model ?? config.model;
       const effortName = chatSets.effort ?? "adaptive";
       const pulseOn = isPulseEnabled(cid);
+      let modelDetails: Array<string> | undefined;
+      let modelButtons: Array<SettingsButton> | undefined;
+
+      if (gateway?.backend?.getSettingsPresentation) {
+        const presentation =
+          await gateway.backend.getSettingsPresentation(activeModel);
+        modelDetails = presentation.modelDetails;
+        modelButtons = presentation.modelButtons;
+      }
 
       try {
         await ctx.editMessageText(
@@ -98,6 +122,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
             effortName,
             pulseOn,
             chatSets.pulseIntervalMs,
+            modelDetails,
           ),
           {
             parse_mode: "HTML",
@@ -106,6 +131,7 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
                 activeModel,
                 effortName,
                 pulseOn,
+                modelButtons,
               ),
             },
           },
@@ -205,42 +231,50 @@ export function registerCallbacks(bot: Bot, config: TalonConfig): void {
       return;
     }
 
-    // Handle model callbacks
+    // Handle model callbacks (from /model quick-pick buttons)
     if (data.startsWith("model:")) {
       const model = data.slice(6);
       if (model === "reset") {
         setChatModel(cid, undefined);
         await ctx.answerCallbackQuery({
-          text: `Model: ${formatModelLabel(config.model)} (default)`,
+          text: `Model: ${config.model} (default)`,
         });
+      } else if (gateway?.backend?.resolveModel) {
+        const resolution = await gateway.backend.resolveModel(model);
+        if (resolution.kind === "exact" && resolution.model.selectable) {
+          setChatModel(cid, resolution.storedValue);
+          await ctx.answerCallbackQuery({
+            text: `Model: ${resolution.model.displayName}`,
+          });
+        } else {
+          await ctx.answerCallbackQuery({ text: "Model is unavailable" });
+          return;
+        }
       } else {
-        const resolved = resolveModelName(model);
-        setChatModel(cid, resolved);
+        setChatModel(cid, resolveModelName(model));
         await ctx.answerCallbackQuery({
-          text: `Model: ${formatModelLabel(resolved)}`,
+          text: `Model: ${getChatSettings(cid).model ?? config.model}`,
         });
       }
+      // Refresh the model picker buttons
       const current = getChatSettings(cid).model ?? config.model;
-      // Build model buttons dynamically from the registry
-      const models = getTelegramModelOptions();
-      const modelButtons = models.map((m) => ({
-        text: isSelectedModel(current, m.id)
-          ? `\u2713 ${formatModelOptionLabel(m)}`
-          : formatModelOptionLabel(m),
-        callback_data: `model:${m.id}`,
-      }));
-      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-      for (let i = 0; i < modelButtons.length; i += 2) {
-        rows.push(modelButtons.slice(i, i + 2));
-      }
-      rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
-      try {
-        await ctx.editMessageText(
-          `<b>Model:</b> <code>${escapeHtml(formatModelLabel(current))}</code>`,
-          { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
-        );
-      } catch {
-        /* message unchanged */
+      const be = gateway?.backend;
+      if (be?.getSettingsPresentation) {
+        const pres = await be.getSettingsPresentation(current, "model:");
+        const modelInfo = await be.getModelInfo?.(current);
+        const displayName = modelInfo?.displayName ?? current;
+        const rows: Array<Array<{ text: string; callback_data: string }>> = [];
+        for (let i = 0; i < pres.modelButtons.length; i += 2) {
+          rows.push(pres.modelButtons.slice(i, i + 2));
+        }
+        try {
+          await ctx.editMessageText(
+            `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
+            { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
+          );
+        } catch {
+          /* message unchanged */
+        }
       }
       return;
     }

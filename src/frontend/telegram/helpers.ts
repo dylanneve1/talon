@@ -88,7 +88,7 @@ export function formatModelOptionLabel(model: ModelInfo): string {
 }
 
 export function formatCompactModelLabel(model: ModelInfo): string {
-  return formatResolvedModelLabel(model).replace(/\s+\d+(?:\.\d+)*$/, "");
+  return formatResolvedModelLabel(model);
 }
 
 export function getTelegramModelOptions(): ModelInfo[] {
@@ -214,6 +214,7 @@ export function renderSettingsText(
   effort: string,
   proactive: boolean,
   pulseIntervalMs?: number,
+  modelDetails?: Array<string>,
 ): string {
   const intervalStr = pulseIntervalMs
     ? formatDuration(pulseIntervalMs)
@@ -222,6 +223,7 @@ export function renderSettingsText(
     "<b>\uD83E\uDD85 Settings</b>",
     "",
     `<b>Model:</b> <code>${escapeHtml(formatModelLabel(model))}</code>`,
+    ...(modelDetails?.length ? modelDetails : []),
     `<b>Effort:</b> ${effort}`,
     `<b>Pulse:</b> ${proactive ? "on" : "off"} (every ${intervalStr})`,
   ].join("\n");
@@ -242,21 +244,26 @@ export function isSelectedModel(
   return resolveModelId(currentModel) === modelId;
 }
 
+export type SettingsButton = { text: string; callback_data: string };
+
 export function renderSettingsKeyboard(
   model: string,
   effort: string,
   proactive: boolean,
-): Array<Array<{ text: string; callback_data: string }>> {
-  // Build model buttons dynamically from the registry, chunked into rows of 3
-  const modelButtons = getTelegramModelOptions().map((m) => ({
-    text: isSelectedModel(model, m.id)
-      ? `\u2713 ${formatCompactModelLabel(m)}`
-      : formatCompactModelLabel(m),
-    callback_data: `settings:model:${m.id}`,
-  }));
-  const modelRows: Array<Array<{ text: string; callback_data: string }>> = [];
-  for (let i = 0; i < modelButtons.length; i += 3) {
-    modelRows.push(modelButtons.slice(i, i + 3));
+  modelButtons?: Array<SettingsButton>,
+): Array<Array<SettingsButton>> {
+  const selectedButtons = modelButtons?.length
+    ? modelButtons
+    : getTelegramModelOptions().map((m) => ({
+        text: isSelectedModel(model, m.id)
+          ? `\u2713 ${formatCompactModelLabel(m)}`
+          : formatCompactModelLabel(m),
+        callback_data: `settings:model:${m.id}`,
+      }));
+  const cols = modelButtons?.length ? 2 : 3;
+  const modelRows: Array<Array<SettingsButton>> = [];
+  for (let i = 0; i < selectedButtons.length; i += cols) {
+    modelRows.push(selectedButtons.slice(i, i + cols));
   }
   return [
     ...modelRows,

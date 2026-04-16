@@ -90,6 +90,48 @@ vi.mock("../core/plugin.js", () => ({
   getLoadedPlugins: () => mockGetLoadedPlugins(),
 }));
 
+const mockGetOpenCodeModelCatalog = vi.fn(async () => ({
+  generatedAt: Date.now(),
+  providers: [],
+  models: [],
+  connectedProviders: [],
+  loginProviders: [],
+  connectedModels: [],
+  connectedFreeModels: [],
+}));
+const mockGetOpenCodeModelInfo = vi.fn<
+  (modelId: string) => Promise<Record<string, unknown> | undefined>
+>(async (_modelId: string) => undefined);
+const mockGetOpenCodeQuickPickModels = vi.fn<
+  (catalog: unknown, currentModelId?: string) => Array<unknown>
+>(() => []);
+const mockResolveOpenCodeModelInput = vi.fn<
+  (query: string, catalog: unknown) => Record<string, unknown>
+>((_query: string) => ({
+  kind: "missing",
+  matches: [],
+}));
+const mockGetOpenCodeSessionSnapshot = vi.fn<
+  (sessionId: string) => Promise<Record<string, unknown> | undefined>
+>(async (_sessionId: string) => undefined);
+const mockGetOpenCodeModelSelectionValue = vi.fn<
+  (model: Record<string, unknown>, catalog: unknown) => string
+>((model: Record<string, unknown>) => String(model.id ?? ""));
+vi.mock("../backend/opencode/index.js", () => ({
+  getOpenCodeModelCatalog: () => mockGetOpenCodeModelCatalog(),
+  getOpenCodeModelInfo: (modelId: string) => mockGetOpenCodeModelInfo(modelId),
+  getOpenCodeModelSelectionValue: (
+    model: Record<string, unknown>,
+    catalog: unknown,
+  ) => mockGetOpenCodeModelSelectionValue(model, catalog),
+  getOpenCodeQuickPickModels: (catalog: unknown, currentModelId?: string) =>
+    mockGetOpenCodeQuickPickModels(catalog, currentModelId),
+  resolveOpenCodeModelInput: (query: string, catalog: unknown) =>
+    mockResolveOpenCodeModelInput(query, catalog),
+  getOpenCodeSessionSnapshot: (sessionId: string) =>
+    mockGetOpenCodeSessionSnapshot(sessionId),
+}));
+
 import {
   registerCommand,
   tryRunCommand,
@@ -215,6 +257,9 @@ describe("built-in commands", () => {
     clearCommands();
     registerBuiltinCommands();
     vi.clearAllMocks();
+    mockGetOpenCodeModelSelectionValue.mockImplementation(
+      (model: Record<string, unknown>) => String(model.id ?? ""),
+    );
   });
 
   it("registers all expected commands", () => {
@@ -261,11 +306,16 @@ describe("built-in commands", () => {
 
   describe("/model", () => {
     it("shows current model when no arg given", async () => {
-      mockGetChatSettings.mockReturnValueOnce({ model: "claude-opus-4-6" });
+      // getChatSettings is called twice: once at handler entry, once in the
+      // non-opencode branch — use mockReturnValue so both calls see the model.
+      mockGetChatSettings.mockReturnValue({ model: "claude-opus-4-6" });
       const ctx = makeMockContext();
       await tryRunCommand("/model", ctx);
       expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
         expect.stringContaining("claude-opus-4-6"),
+      );
+      mockGetChatSettings.mockImplementation(
+        (_chatId: string): Record<string, unknown> => ({}),
       );
     });
 
@@ -275,6 +325,48 @@ describe("built-in commands", () => {
       expect(mockSetChatModel).toHaveBeenCalledWith(
         "t_test_123",
         "claude-opus",
+      );
+    });
+
+    it("stores provider-qualified OpenCode model selections when needed", async () => {
+      mockGetOpenCodeModelCatalog.mockResolvedValueOnce({
+        generatedAt: Date.now(),
+        providers: [],
+        models: [],
+        connectedProviders: [],
+        loginProviders: [],
+        connectedModels: [],
+        connectedFreeModels: [],
+      });
+      mockResolveOpenCodeModelInput.mockReturnValueOnce({
+        kind: "exact",
+        model: {
+          id: "gpt-5",
+          providerID: "github-copilot",
+          providerName: "GitHub Copilot",
+          free: false,
+          selectable: true,
+          loginRequired: false,
+          envRequired: false,
+          authMethods: [],
+        },
+      });
+      mockGetOpenCodeModelSelectionValue.mockReturnValueOnce(
+        "github-copilot/gpt-5",
+      );
+
+      const ctx = makeMockContext({
+        config: { model: "nemotron-3-super-free", backend: "opencode" } as any,
+      });
+
+      await tryRunCommand("/model github-copilot/gpt-5", ctx);
+
+      expect(mockSetChatModel).toHaveBeenCalledWith(
+        "t_test_123",
+        "github-copilot/gpt-5",
+      );
+      expect(ctx.renderer.writeSystem).toHaveBeenCalledWith(
+        expect.stringContaining("github-copilot/gpt-5"),
       );
     });
   });
@@ -499,6 +591,88 @@ describe("/status command", () => {
       ctx.renderer.writeln as ReturnType<typeof vi.fn>
     ).mock.calls.flat();
     expect(calls.join(" ")).toContain("actions only");
+  });
+
+  it("/status uses live OpenCode usage totals when backend is opencode", async () => {
+    mockGetSessionInfo.mockReturnValueOnce({
+      turns: 14,
+      sessionId: "ses_live",
+      sessionName: undefined,
+      lastModel: "big-pickle",
+      usage: {
+        totalInputTokens: 100,
+        totalOutputTokens: 50,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+        lastPromptTokens: 10,
+        estimatedCostUsd: 0,
+        totalResponseMs: 60_000,
+        lastResponseMs: 6_000,
+        fastestResponseMs: 5_000,
+      },
+    });
+    mockGetChatSettings.mockReturnValueOnce({ model: "big-pickle" });
+    mockGetOpenCodeModelInfo.mockResolvedValueOnce({
+      id: "big-pickle",
+      name: "Big Pickle",
+      providerID: "opencode",
+      providerName: "OpenCode Zen",
+      providerSource: "builtin",
+      connected: true,
+      selectable: true,
+      loginRequired: false,
+      envRequired: false,
+      authMethods: [],
+      free: true,
+      status: "active",
+      contextWindow: 204800,
+      outputWindow: 128000,
+      reasoning: true,
+      attachment: false,
+      toolcall: true,
+      costInput: 0,
+      costOutput: 0,
+      costCacheRead: 0,
+      costCacheWrite: 0,
+    });
+    mockGetOpenCodeSessionSnapshot.mockResolvedValueOnce({
+      sessionId: "ses_live",
+      assistant: {
+        modelID: "big-pickle",
+        providerID: "opencode",
+        inputTokens: 42200,
+        outputTokens: 20,
+        reasoningTokens: 10,
+        cacheRead: 0,
+        cacheWrite: 0,
+        costUsd: 0,
+        totalTokens: 42220,
+      },
+      usage: {
+        assistantMessages: 42,
+        totalInputTokens: 1389045,
+        totalOutputTokens: 3675,
+        totalReasoningTokens: 4717,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+        totalCostUsd: 0,
+      },
+    });
+
+    const ctx = makeMockContext({
+      config: {
+        model: "big-pickle",
+        backend: "opencode",
+      } as CommandContext["config"],
+    });
+    await tryRunCommand("/status", ctx);
+
+    const output = (ctx.renderer.writeln as ReturnType<typeof vi.fn>).mock.calls
+      .flat()
+      .join(" ");
+    expect(output).toContain("1,389,045");
+    expect(output).toContain("3,675");
+    expect(output).toContain("204,800");
   });
 });
 

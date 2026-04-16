@@ -29,6 +29,7 @@ import type { QueryBackend, ContextManager } from "./core/types.js";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type Frontend = {
+  name: "telegram" | "terminal" | "teams";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -112,8 +113,33 @@ export async function initBackendAndDispatcher(
   if (config.backend === "opencode") {
     const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } =
       await import("./backend/opencode/index.js");
-    initOpenCodeAgent(config, frontend.getBridgePort);
-    backend = { query: (params) => opencodeHandleMessage(params) };
+    const ocModelProvider =
+      await import("./backend/opencode/model-provider.js");
+    initOpenCodeAgent(config, frontend.getBridgePort, frontend.name);
+    backend = {
+      query: (params) => opencodeHandleMessage(params),
+      resolveModel: (q) => ocModelProvider.resolveModel(q),
+      getModelInfo: (id) => ocModelProvider.getModelInfo(id),
+      getSettingsPresentation: (m, prefix) =>
+        ocModelProvider.getSettingsPresentation(m, prefix),
+      getProviders: () => ocModelProvider.getProviders(),
+      getProviderModels: (p, pg, ps) =>
+        ocModelProvider.getProviderModels(p, pg, ps),
+      formatModelError: (q, r) => ocModelProvider.formatModelError(q, r),
+      getSessionSnapshot: async (sessionId) => {
+        const { getOpenCodeSessionSnapshot } =
+          await import("./backend/opencode/index.js");
+        const snap = await getOpenCodeSessionSnapshot(sessionId);
+        if (!snap) return undefined;
+        return {
+          inputTokens: snap.usage?.totalInputTokens,
+          outputTokens: snap.usage?.totalOutputTokens,
+          cacheRead: snap.usage?.totalCacheRead,
+          cacheWrite: snap.usage?.totalCacheWrite,
+          contextModelId: snap.assistant?.modelID,
+        };
+      },
+    };
     log("bot", "Backend: OpenCode");
   } else {
     const {
@@ -125,11 +151,21 @@ export async function initBackendAndDispatcher(
       buildMcpServers,
     } = await import("./backend/claude-sdk/index.js");
     const { getPluginMcpServers } = await import("./core/plugin.js");
+    const claudeModelProvider =
+      await import("./backend/claude-sdk/model-provider.js");
     await initClaudeAgent(config, frontend.getBridgePort);
     backend = {
       query: (params) => claudeHandleMessage(params),
       warmSession: (chatId) => claudeWarmSession(chatId),
       updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
+      resolveModel: (q) => claudeModelProvider.resolveModel(q),
+      getModelInfo: (id) => claudeModelProvider.getModelInfo(id),
+      getSettingsPresentation: (m, prefix) =>
+        claudeModelProvider.getSettingsPresentation(m, prefix),
+      getProviders: () => claudeModelProvider.getProviders(),
+      getProviderModels: (p, pg, ps) =>
+        claudeModelProvider.getProviderModels(p, pg, ps),
+      formatModelError: (q, r) => claudeModelProvider.formatModelError(q, r),
       refreshMcpServers: async (chatId) => {
         const qi = getActiveQuery(chatId);
         if (!qi) return null;

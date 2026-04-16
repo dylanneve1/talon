@@ -38,15 +38,6 @@ import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
 import {
   formatModelLabel,
-  formatModelOptionLabel,
-  getTelegramModelOptions,
-  isSelectedModel,
-} from "./helpers.js";
-import { handleAdminCommand } from "./admin.js";
-import { getLoadedPlugins } from "../../core/plugin.js";
-import { getMetrics } from "../../util/metrics.js";
-import { getModels } from "../../core/models.js";
-import {
   formatDuration,
   formatTokenCount,
   formatBytes,
@@ -54,7 +45,11 @@ import {
   renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
+  type SettingsButton,
 } from "./helpers.js";
+import { handleAdminCommand } from "./admin.js";
+import { getLoadedPlugins } from "../../core/plugin.js";
+import { getMetrics } from "../../util/metrics.js";
 
 // Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
 let ADMIN_USER_ID = 0;
@@ -62,6 +57,17 @@ let ADMIN_USER_ID = 0;
 /** Set the admin user ID (called from config at startup). */
 export function setAdminUserId(id: number | undefined): void {
   ADMIN_USER_ID = id ?? 0;
+}
+
+function chunkButtons(
+  buttons: Array<SettingsButton>,
+  columns = 2,
+): Array<Array<SettingsButton>> {
+  const rows: Array<Array<SettingsButton>> = [];
+  for (let index = 0; index < buttons.length; index += columns) {
+    rows.push(buttons.slice(index, index + columns));
+  }
+  return rows;
 }
 
 export function registerCommands(
@@ -92,7 +98,7 @@ export function registerCommands(
         "",
         "<b>\uD83E\uDD85 Settings</b>",
         "  /settings -- view and change all chat settings",
-        "  /model -- show or change model (sonnet, opus, haiku)",
+        "  /model -- show or change model",
         "  /effort -- set thinking effort (off, low, medium, high, max)",
         "  /pulse -- toggle periodic check-ins (on/off)",
         "",
@@ -188,49 +194,79 @@ export function registerCommands(
   bot.command("model", async (ctx) => {
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim();
-    const settings = getChatSettings(cid);
+    const activeModel = getChatSettings(cid).model ?? config.model;
+    const be = gateway?.backend;
 
-    if (!arg) {
-      const current = settings.model ?? config.model;
-      // Build model buttons dynamically from the registry
-      const models = getTelegramModelOptions();
-      const modelButtons = models.map((m) => ({
-        text: isSelectedModel(current, m.id)
-          ? `\u2713 ${formatModelOptionLabel(m)}`
-          : formatModelOptionLabel(m),
-        callback_data: `model:${m.id}`,
-      }));
-      // Two models per row, plus a reset button on the last row
-      const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-      for (let i = 0; i < modelButtons.length; i += 2) {
-        rows.push(modelButtons.slice(i, i + 2));
+    if (
+      !arg ||
+      arg.toLowerCase() === "reset" ||
+      arg.toLowerCase() === "default"
+    ) {
+      if (arg) {
+        setChatModel(cid, undefined);
+        await ctx.reply(
+          `Model reset to default: <code>${escapeHtml(config.model)}</code>`,
+          { parse_mode: "HTML" },
+        );
+        return;
       }
-      rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
-
-      await ctx.reply(
-        `<b>Model:</b> <code>${escapeHtml(formatModelLabel(current))}</code>\nSelect a model:`,
-        { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
-      );
+      // Show current model + quick-pick buttons via backend
+      if (be?.getSettingsPresentation) {
+        const pres = await be.getSettingsPresentation(activeModel, "model:");
+        const rows = chunkButtons(pres.modelButtons);
+        const modelInfo = await be.getModelInfo?.(activeModel);
+        const displayName =
+          modelInfo?.displayName ?? formatModelLabel(activeModel);
+        const lines = [
+          `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
+          ...pres.modelDetails,
+        ];
+        await ctx.reply(lines.join("\n"), {
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: rows },
+        });
+      } else {
+        await ctx.reply(
+          `<b>Model:</b> <code>${escapeHtml(formatModelLabel(activeModel))}</code>`,
+          {
+            parse_mode: "HTML",
+          },
+        );
+      }
       return;
     }
 
-    if (arg === "reset" || arg === "default") {
-      setChatModel(cid, undefined);
+    // Resolve model query via backend
+    if (be?.resolveModel) {
+      const resolution = await be.resolveModel(arg);
+      if (resolution.kind !== "exact") {
+        const msg =
+          be.formatModelError?.(arg, resolution) ??
+          `No model matched "${escapeHtml(arg)}".`;
+        await ctx.reply(msg, { parse_mode: "HTML" });
+        return;
+      }
+      if (!resolution.model.selectable) {
+        const msg =
+          resolution.model.unavailableReason ??
+          `${resolution.model.providerName} is not connected.`;
+        await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
+        return;
+      }
+      setChatModel(cid, resolution.storedValue);
       await ctx.reply(
-        `Model reset to default: <code>${escapeHtml(formatModelLabel(config.model))}</code>`,
+        `Model set to <code>${escapeHtml(resolution.storedValue)}</code> (${escapeHtml(resolution.model.providerName)}${resolution.model.free ? " \u00B7 free" : ""}).`,
         { parse_mode: "HTML" },
       );
-      return;
+    } else {
+      // Fallback for backends without model resolution
+      const model = resolveModelName(arg);
+      setChatModel(cid, model);
+      await ctx.reply(
+        `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
+        { parse_mode: "HTML" },
+      );
     }
-
-    const model = resolveModelName(arg);
-    setChatModel(cid, model);
-    await ctx.reply(
-      `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
-      {
-        parse_mode: "HTML",
-      },
-    );
   });
 
   bot.command("effort", async (ctx) => {
@@ -392,6 +428,15 @@ export function registerCommands(
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
+    let modelDetails: Array<string> | undefined;
+    let modelButtons: Array<SettingsButton> | undefined;
+
+    if (gateway?.backend?.getSettingsPresentation) {
+      const presentation =
+        await gateway.backend.getSettingsPresentation(activeModel);
+      modelDetails = presentation.modelDetails;
+      modelButtons = presentation.modelButtons;
+    }
 
     await ctx.reply(
       renderSettingsText(
@@ -399,6 +444,7 @@ export function registerCommands(
         effortName,
         pulseOn,
         chatSets.pulseIntervalMs,
+        modelDetails,
       ),
       {
         parse_mode: "HTML",
@@ -407,6 +453,7 @@ export function registerCommands(
             activeModel,
             effortName,
             pulseOn,
+            modelButtons,
           ),
         },
       },
@@ -434,8 +481,46 @@ export function registerCommands(
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
 
-    const ctxUsed = u.contextTokens || u.lastPromptTokens;
-    const ctxMax = u.contextWindow; // from SDK modelUsage, preserved across turns
+    let ctxUsed = u.contextTokens || u.lastPromptTokens;
+    let ctxMax = u.contextWindow; // from SDK modelUsage, preserved across turns
+    let displayInputTokens = u.totalInputTokens;
+    let displayOutputTokens = u.totalOutputTokens;
+    let displayCacheRead = u.totalCacheRead;
+    let displayCacheWrite = u.totalCacheWrite;
+    let turnsModelLabel = info.lastModel;
+
+    // Enrich context/usage data from backend when available
+    const be = gateway?.backend;
+    if (be?.getModelInfo) {
+      const modelInfo = await be
+        .getModelInfo(activeModel)
+        .catch(() => undefined);
+      if (modelInfo?.contextWindow) ctxMax = ctxMax || modelInfo.contextWindow;
+    }
+    if (be?.getSessionSnapshot && info.sessionId) {
+      const snap = await be
+        .getSessionSnapshot(info.sessionId)
+        .catch(() => undefined);
+      if (snap) {
+        displayInputTokens = snap.inputTokens ?? displayInputTokens;
+        displayOutputTokens = snap.outputTokens ?? displayOutputTokens;
+        displayCacheRead = snap.cacheRead ?? displayCacheRead;
+        displayCacheWrite = snap.cacheWrite ?? displayCacheWrite;
+        if (snap.contextModelId) turnsModelLabel = snap.contextModelId;
+        // Re-fetch context window for the actual model if different
+        if (
+          snap.contextModelId &&
+          snap.contextModelId !== activeModel &&
+          be.getModelInfo
+        ) {
+          const ctxModelInfo = await be
+            .getModelInfo(snap.contextModelId)
+            .catch(() => undefined);
+          if (ctxModelInfo?.contextWindow) ctxMax = ctxModelInfo.contextWindow;
+        }
+      }
+    }
+
     const ctxPct =
       ctxMax > 0 ? Math.min(100, Math.round((ctxUsed / ctxMax) * 100)) : 0;
     const barLen = 20;
@@ -445,9 +530,9 @@ export function registerCommands(
     const contextWarn = ctxPct >= 80 ? " \u26A0\uFE0F consider /reset" : "";
 
     const totalPrompt =
-      u.totalInputTokens + u.totalCacheRead + u.totalCacheWrite;
+      displayInputTokens + displayCacheRead + displayCacheWrite;
     const cacheHitPct =
-      totalPrompt > 0 ? Math.round((u.totalCacheRead / totalPrompt) * 100) : 0;
+      totalPrompt > 0 ? Math.round((displayCacheRead / totalPrompt) * 100) : 0;
 
     const avgResponseMs =
       info.turns > 0 && u.totalResponseMs
@@ -461,18 +546,18 @@ export function registerCommands(
     const diskStr = formatBytes(diskBytes);
 
     const lines = [
-      `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(activeModel)}</code> \u00B7 effort: ${effortName}`,
+      `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code> \u00B7 effort: ${effortName}`,
       "",
       `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
       `<code>${contextBar}</code>`,
       "",
       `<b>Session Stats</b>`,
       `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "\u2014"} \u00B7 avg ${avgResponseMs ? formatDuration(avgResponseMs) : "\u2014"} \u00B7 best ${fastestMs ? formatDuration(fastestMs) : "\u2014"}`,
-      `  Turns     ${info.turns}${info.lastModel ? ` (${info.lastModel.replace("claude-", "")})` : ""}`,
+      `  Turns     ${info.turns}${turnsModelLabel ? ` (${turnsModelLabel.replace("claude-", "")})` : ""}`,
       "",
       `<b>Cache</b>     ${cacheHitPct}% hit`,
-      `  Read ${formatTokenCount(u.totalCacheRead)}  Write ${formatTokenCount(u.totalCacheWrite)}`,
-      `  Input ${formatTokenCount(u.totalInputTokens)}  Output ${formatTokenCount(u.totalOutputTokens)}`,
+      `  Read ${formatTokenCount(displayCacheRead)}  Write ${formatTokenCount(displayCacheWrite)}`,
+      `  Input ${formatTokenCount(displayInputTokens)}  Output ${formatTokenCount(displayOutputTokens)}`,
       "",
       `<b>Pulse</b>  ${pulseOn ? "on" : "off"}`,
       `<b>Workspace</b>  ${diskStr}`,
