@@ -15,7 +15,13 @@ import type {
   ExecuteParams,
   ExecuteResult,
 } from "./types.js";
-import { log, logDebug, logWarn, newRequestId, childLogger } from "../util/log.js";
+import {
+  log,
+  logDebug,
+  logWarn,
+  newRequestId,
+  childLogger,
+} from "../util/log.js";
 import { withSpan } from "../util/trace.js";
 import { incrementCounter, recordHistogram } from "../util/metrics.js";
 import { maybeStartDream } from "./dream.js";

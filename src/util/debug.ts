@@ -90,7 +90,8 @@ export function buildDebugSnapshot(
     logs: {
       level: safe(() => getLogLevel(), "info" as LogLevel),
       recent: safe(
-        () => getRecentLogs(opts.logLimit ?? 50) as Array<Record<string, unknown>>,
+        () =>
+          getRecentLogs(opts.logLimit ?? 50) as Array<Record<string, unknown>>,
         [],
       ),
       recentErrors: safe(() => getRecentErrors(20), []),

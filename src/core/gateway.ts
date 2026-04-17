@@ -214,10 +214,7 @@ export class Gateway {
             span.setAttribute("durationMs", ms);
             recordHistogram(`gateway.${action}.ms`, ms);
             incrementCounter(`gateway.${action}.ok`);
-            logDebug(
-              "gateway",
-              `${action} chat=${chatId} ${ms}ms (plugin)`,
-            );
+            logDebug("gateway", `${action} chat=${chatId} ${ms}ms (plugin)`);
             return pluginResult;
           }
 
@@ -229,10 +226,7 @@ export class Gateway {
             span.setAttribute("durationMs", ms);
             recordHistogram(`gateway.${action}.ms`, ms);
             incrementCounter(`gateway.${action}.ok`);
-            logDebug(
-              "gateway",
-              `${action} chat=${chatId} ${ms}ms (shared)`,
-            );
+            logDebug("gateway", `${action} chat=${chatId} ${ms}ms (shared)`);
             return shared;
           }
 
