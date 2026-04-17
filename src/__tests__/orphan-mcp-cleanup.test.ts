@@ -4,7 +4,15 @@
  * the right PIDs and leaves the rest alone.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  afterAll,
+} from "vitest";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,8 +24,14 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-// Stub process.kill so we don't actually SIGTERM the test runner.
+// Stub process.kill so we don't actually SIGTERM the test runner. Restored
+// in afterAll so the spy doesn't leak into sibling test files running in
+// the same Vitest worker.
 const killMock = vi.spyOn(process, "kill").mockImplementation(() => true);
+
+afterAll(() => {
+  killMock.mockRestore();
+});
 
 // Build a fake /proc/<pid> entry.
 function makeProc(
@@ -96,7 +110,12 @@ describe("cleanOrphanedMcpProcesses", () => {
   });
 
   it("ignores processes whose parent is still alive (PPID != 1)", async () => {
-    makeProc(procRoot, 1111, 222, "node /path/@playwright/mcp/cli.js");
+    makeProc(
+      procRoot,
+      1111,
+      222,
+      "node /home/dylan/telegram-claude-agent/node_modules/@playwright/mcp/cli.js",
+    );
     const { cleanOrphanedMcpProcesses } =
       await import("../util/orphan-mcp-cleanup.js");
     const result = await cleanOrphanedMcpProcesses(procRoot);
@@ -105,7 +124,12 @@ describe("cleanOrphanedMcpProcesses", () => {
   });
 
   it("handles ESRCH (already gone) as success", async () => {
-    makeProc(procRoot, 1234, 1, "node /path/@playwright/mcp/cli.js");
+    makeProc(
+      procRoot,
+      1234,
+      1,
+      "node /home/dylan/telegram-claude-agent/node_modules/@playwright/mcp/cli.js",
+    );
     killMock.mockImplementationOnce(() => {
       const err = new Error("ESRCH") as NodeJS.ErrnoException;
       err.code = "ESRCH";
@@ -119,7 +143,12 @@ describe("cleanOrphanedMcpProcesses", () => {
   });
 
   it("counts failures when SIGTERM throws non-ESRCH", async () => {
-    makeProc(procRoot, 1234, 1, "node /path/@playwright/mcp/cli.js");
+    makeProc(
+      procRoot,
+      1234,
+      1,
+      "node /home/dylan/telegram-claude-agent/node_modules/@playwright/mcp/cli.js",
+    );
     killMock.mockImplementationOnce(() => {
       const err = new Error("EPERM") as NodeJS.ErrnoException;
       err.code = "EPERM";
@@ -142,8 +171,58 @@ describe("cleanOrphanedMcpProcesses", () => {
     expect(killMock).not.toHaveBeenCalled();
   });
 
+  it("no-ops on non-linux platforms without touching the proc root", async () => {
+    // Spoof platform so the early-return branch runs.
+    const orig = process.platform;
+    Object.defineProperty(process, "platform", { value: "darwin" });
+    try {
+      makeProc(
+        procRoot,
+        1234,
+        1,
+        "node /home/dylan/telegram-claude-agent/node_modules/@playwright/mcp/cli.js",
+      );
+      const { cleanOrphanedMcpProcesses } =
+        await import("../util/orphan-mcp-cleanup.js");
+      const result = await cleanOrphanedMcpProcesses(procRoot);
+      expect(result.found).toBe(0);
+      expect(killMock).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(process, "platform", { value: orig });
+    }
+  });
+
+  it("matches only Talon-owned path markers, not bare substrings", async () => {
+    // A random user's polymarket daemon that ISN'T under /talon.plugins.
+    // should NOT be swept (this was the specific concern in review).
+    makeProc(
+      procRoot,
+      8001,
+      1,
+      "node /opt/some-other-app/polymarket/server.js",
+    );
+    // A playwright process from a different project's node_modules also no.
+    makeProc(
+      procRoot,
+      8002,
+      1,
+      "node /home/someoneelse/otherproj/playwright-test.js",
+    );
+    const { cleanOrphanedMcpProcesses } =
+      await import("../util/orphan-mcp-cleanup.js");
+    const result = await cleanOrphanedMcpProcesses(procRoot);
+    expect(result.found).toBe(0);
+    expect(killMock).not.toHaveBeenCalledWith(8001, "SIGTERM");
+    expect(killMock).not.toHaveBeenCalledWith(8002, "SIGTERM");
+  });
+
   it("never kills self (current Talon PID)", async () => {
-    makeProc(procRoot, process.pid, 1, "node /path/@playwright/mcp/cli.js");
+    makeProc(
+      procRoot,
+      process.pid,
+      1,
+      "node /home/dylan/telegram-claude-agent/node_modules/@playwright/mcp/cli.js",
+    );
     const { cleanOrphanedMcpProcesses } =
       await import("../util/orphan-mcp-cleanup.js");
     const result = await cleanOrphanedMcpProcesses(procRoot);
@@ -160,7 +239,10 @@ describe("cleanOrphanedMcpProcesses", () => {
       join(dir, "stat"),
       `${pid} (weird (evil) name) S 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n`,
     );
-    writeFileSync(join(dir, "cmdline"), "node\0/path/@playwright/mcp/cli.js\0");
+    writeFileSync(
+      join(dir, "cmdline"),
+      "node\0/home/dylan/telegram-claude-agent/node_modules/@playwright/mcp/cli.js\0",
+    );
     const { cleanOrphanedMcpProcesses } =
       await import("../util/orphan-mcp-cleanup.js");
     const result = await cleanOrphanedMcpProcesses(procRoot);

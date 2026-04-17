@@ -55,12 +55,18 @@ vi.mock("../storage/chat-settings.js", () => ({
   setChatModel: vi.fn(),
 }));
 
+// The real classify() returns a TalonError (which extends Error) — preserve
+// that shape by returning the original Error when given one, so the handler's
+// `throw classified` propagates an Error we can assert on.
 vi.mock("../core/errors.js", () => ({
-  classify: vi.fn((err) => ({
-    reason: "unknown",
-    message: err instanceof Error ? err.message : String(err),
-    retryable: false,
-  })),
+  classify: vi.fn((err) =>
+    err instanceof Error
+      ? Object.assign(err, { reason: "unknown", retryable: false })
+      : Object.assign(new Error(String(err)), {
+          reason: "unknown",
+          retryable: false,
+        }),
+  ),
 }));
 
 vi.mock("../core/models.js", () => ({
@@ -102,14 +108,30 @@ vi.mock("../backend/claude-sdk/stream.js", () => ({
   processResultMessage: vi.fn(),
 }));
 
-// Stuck query: iterator.next() never resolves.
-const interruptMock = vi.fn(async () => {});
+// Stuck query: iterator.next() never resolves on its own, but we give
+// interrupt() a hook that flips the iterator to done=true so the handler's
+// iterateStream loop can exit cleanly after the watchdog fires. That way
+// the test waits on a real settled promise instead of leaking an in-flight
+// handler + unreachable setTimeout on the vitest worker.
+let iteratorResolved = false;
+let stuckResolve: (r: IteratorResult<unknown>) => void = () => {};
+
+const interruptMock = vi.fn(async () => {
+  iteratorResolved = true;
+  stuckResolve({ value: undefined, done: true });
+});
+
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: vi.fn(() => {
     return {
       interrupt: interruptMock,
       [Symbol.asyncIterator]: () => ({
-        next: () => new Promise(() => {}), // never resolves
+        next: () =>
+          iteratorResolved
+            ? Promise.resolve({ value: undefined, done: true })
+            : new Promise<IteratorResult<unknown>>((resolve) => {
+                stuckResolve = resolve;
+              }),
       }),
     };
   }),
@@ -117,10 +139,12 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 
 beforeEach(() => {
   interruptMock.mockClear();
+  iteratorResolved = false;
+  stuckResolve = () => {};
 });
 
 describe("handler progress watchdog", () => {
-  it("calls qi.interrupt() after silence exceeds threshold", async () => {
+  it("fires watchdog, calls interrupt, and rejects with a timeout error", async () => {
     vi.useFakeTimers();
     const { handleMessage } = await import("../backend/claude-sdk/handler.js");
 
@@ -130,25 +154,22 @@ describe("handler progress watchdog", () => {
       senderName: "Dylan",
       isGroup: false,
     });
+    // Stop the promise from floating as unhandled while we advance timers —
+    // we re-await at the end for the actual assertion.
+    const settled = p.catch((err: unknown) => err);
 
-    // Watchdog checks every 30s; fires at 5 minutes of silence.
-    // Run 6 minutes of fake time in chunks so each setInterval tick fires.
+    // Watchdog polls every 30s, fires at 5 min of silence. Advance 6 min.
     for (let i = 0; i < 12; i++) {
       await vi.advanceTimersByTimeAsync(30_000);
     }
 
-    // After the watchdog fires, it calls interrupt. But our iterator never
-    // throws, so the for-await is still hanging. Force-reject by failing the
-    // pending promise on next microtask via timers — but simpler: just
-    // verify interrupt was called. The ongoing promise p is intentionally
-    // not awaited (would hang forever).
-    expect(interruptMock).toHaveBeenCalled();
-
-    // Tear down: we can't easily resolve the outer promise, but since the
-    // test function ends, vi.useRealTimers() + unawaited promise cleanup
-    // should let vitest finish this test.
     vi.useRealTimers();
-    // Prevent unhandled rejection warnings
-    p.catch(() => {});
+
+    // The watchdog's Promise.race() rejects independently of the iterator
+    // unblocking, so we get a settled rejection every time.
+    const err = (await settled) as Error;
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toMatch(/timed out after.*of SDK silence/);
+    expect(interruptMock).toHaveBeenCalledTimes(1);
   });
 });

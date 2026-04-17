@@ -16,20 +16,38 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { log, logWarn } from "./log.js";
 
-/** Command-line signatures we consider to be MCP server subprocesses. */
+/**
+ * Command-line path signatures that uniquely identify a Talon-spawned MCP
+ * subprocess. Each entry is a substring we expect to find on the FULL
+ * argv string, chosen to be specific enough that unrelated processes on
+ * the host — e.g. a different user's `polymarket` daemon — never match.
+ *
+ * Rule of thumb: prefer `/talon.plugins.x/` over `x`, prefer
+ * `/node_modules/@playwright/mcp/cli.js` over `@playwright/mcp`. When in
+ * doubt, lean narrower — a missed orphan is safer than a wrongful kill.
+ */
 const MCP_SIGNATURES: readonly string[] = [
-  "@playwright/mcp",
-  "@modelcontextprotocol/server-",
-  "brave-search-mcp-server",
-  "ssh-mcp-server",
-  "mcp-hetzner",
-  "mcp-server.ts", // Talon's own per-frontend tool server
-  "wikipedia_mcp",
-  "mempalace.mcp_server",
-  "x-mcp",
-  "gmail-mcp",
-  "firecrawl-mcp",
-  "polymarket", // Polymarket plugin
+  "/node_modules/@playwright/mcp/cli.js",
+  "/node_modules/@modelcontextprotocol/server-",
+  "/node_modules/.bin/brave-search-mcp-server",
+  "/.npm-global/bin/brave-search-mcp-server",
+  "/.npm-global/bin/ssh-mcp-server",
+  "/.npm-global/bin/mcp-hetzner",
+  "/telegram-claude-agent/src/core/tools/mcp-server.ts",
+  "/.talon/wikipedia-mcp-venv/",
+  "/.talon/mempalace-venv/",
+  "/talon.plugins.extras/",
+  "/talon.plugins.ffmpeg/",
+  "/talon.plugins.email/",
+  "/talon.plugins.x-twitter/",
+  "/talon.plugins.tailscale/",
+  "/talon.plugins.firecrawl/",
+  "/talon.plugins.polymarket/",
+  "/talon.plugins.github/",
+  "/talon.plugins.ssh/",
+  "/talon.plugins.hetzner/",
+  "/talon.plugins.playwright/",
+  "/talon.plugins.mempalace/",
 ];
 
 export type OrphanCleanupResult = {
@@ -54,8 +72,9 @@ async function doCleanup(procRoot: string): Promise<OrphanCleanupResult> {
     details: [],
   };
 
-  if (process.platform === "win32") {
-    // Windows orphan detection is very different — skip for now.
+  if (process.platform !== "linux") {
+    // /proc parsing is Linux-only. macOS/BSD/Windows no-op quietly so
+    // startup doesn't log a spurious warning on every boot.
     return result;
   }
 

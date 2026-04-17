@@ -95,35 +95,65 @@ export async function handleMessage(
   // ── Progress watchdog ──────────────────────────────────────────────────
   // A query is "making progress" whenever the SDK emits any message. If
   // silence stretches beyond WATCHDOG_MS, something downstream is hung
-  // (MCP subprocess died, network stall, model API wedge, etc.) — we
-  // interrupt the query so the for-await throws and the caller sees an
-  // actual error instead of typing forever.
+  // (MCP subprocess died, network stall, model API wedge, etc.).
+  //
+  // The watchdog is a Promise<never> that rejects on timeout. It's raced
+  // against the iteration Promise so a hang aborts the handler even if
+  // qi.interrupt() fails to unstick the SDK iterator. `interrupt()` is
+  // still called best-effort as a cleanup signal.
   const WATCHDOG_MS = 5 * 60 * 1000; // 5 minutes of total silence
   const WATCHDOG_CHECK_MS = 30_000; // check every 30s
   let lastActivityAt = Date.now();
+  let resultReceived = false;
   let watchdogFired = false;
+  let watchdogTimer: ReturnType<typeof setTimeout> | undefined;
+  let watchdogCancelled = false;
   const bumpActivity = (): void => {
     lastActivityAt = Date.now();
   };
-  const watchdogTimer = setInterval(() => {
-    const silent = Date.now() - lastActivityAt;
-    if (silent > WATCHDOG_MS && !watchdogFired) {
-      watchdogFired = true;
-      logWarn(
-        "agent",
-        `[${chatId}] Watchdog: no SDK activity for ${Math.round(silent / 1000)}s — interrupting query`,
-      );
-      incrementCounter("agent.watchdog_fired");
-      qi.interrupt().catch((err: unknown) => {
+  const cancelWatchdog = (): void => {
+    watchdogCancelled = true;
+    if (watchdogTimer) {
+      clearTimeout(watchdogTimer);
+      watchdogTimer = undefined;
+    }
+  };
+
+  const watchdogPromise = new Promise<never>((_, reject) => {
+    const check = (): void => {
+      if (watchdogCancelled) return;
+      const silent = Date.now() - lastActivityAt;
+      if (silent > WATCHDOG_MS) {
+        watchdogFired = true;
         logWarn(
           "agent",
-          `[${chatId}] Watchdog interrupt() failed: ${err instanceof Error ? err.message : String(err)}`,
+          `[${chatId}] Watchdog: no SDK activity for ${Math.round(silent / 1000)}s — aborting`,
         );
-      });
-    }
-  }, WATCHDOG_CHECK_MS);
+        incrementCounter("agent.watchdog_fired");
+        // Best-effort: signal the SDK to unwind cleanly. If it doesn't
+        // respond the Promise.race below will still reject via this path.
+        qi.interrupt().catch((err: unknown) => {
+          logWarn(
+            "agent",
+            `[${chatId}] Watchdog interrupt() failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+        reject(
+          new Error(
+            `Query timed out after ${WATCHDOG_MS / 1000}s of SDK silence (likely a stuck tool call)`,
+          ),
+        );
+        return;
+      }
+      watchdogTimer = setTimeout(check, WATCHDOG_CHECK_MS);
+    };
+    watchdogTimer = setTimeout(check, WATCHDOG_CHECK_MS);
+  });
+  // Prevent an unhandled rejection if the happy path resolves first and
+  // cancelWatchdog() stops the timer without us awaiting watchdogPromise.
+  watchdogPromise.catch(() => {});
 
-  try {
+  const iterateStream = async (): Promise<void> => {
     for await (const message of qi) {
       bumpActivity();
       // Session ID capture
@@ -169,9 +199,14 @@ export async function handleMessage(
 
       // Final result — read token counts and context info
       if (isResult(message)) {
+        resultReceived = true;
         processResultMessage(message, state, options.model ?? activeModel);
       }
     }
+  };
+
+  try {
+    await Promise.race([iterateStream(), watchdogPromise]);
   } catch (err) {
     const classified = classify(err);
     incrementCounter(`errors.${classified.reason ?? "unknown"}`);
@@ -219,22 +254,23 @@ export async function handleMessage(
     logError("agent", `[${chatId}] SDK error: ${classified.message}`);
     throw classified;
   } finally {
-    clearInterval(watchdogTimer);
+    cancelWatchdog();
     if (activeQueries.get(chatId) === qi) {
       activeQueries.delete(chatId);
     }
   }
 
-  // If the watchdog fired, the for-await exited without a result — surface
-  // this as an explicit error so the caller (dispatcher / frontend) sends a
-  // proper reply rather than pretending the turn succeeded silently.
-  if (watchdogFired && !state.newSessionId && !state.allResponseText) {
-    incrementCounter("errors.watchdog_timeout");
-    const err = new Error(
-      `Query timed out after ${WATCHDOG_MS / 1000}s of SDK silence (likely a stuck tool call)`,
-    );
-    logError("agent", `[${chatId}] ${err.message}`);
-    throw err;
+  // Defensive: the race resolved cleanly but we never saw a `result`. This
+  // would mean the SDK iterator exited on its own between turns without
+  // emitting a terminal result. Unlikely in practice, but worth surfacing
+  // so a silent no-op can't masquerade as a successful turn.
+  if (!resultReceived) {
+    incrementCounter("errors.no_result");
+    const msg = watchdogFired
+      ? `Query timed out after ${WATCHDOG_MS / 1000}s of SDK silence (likely a stuck tool call)`
+      : `SDK stream ended without a result message`;
+    logError("agent", `[${chatId}] ${msg}`);
+    throw new Error(msg);
   }
 
   // ── Persist session and usage ─────────────────────────────────────────────
