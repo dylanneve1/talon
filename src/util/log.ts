@@ -180,7 +180,9 @@ const initialLevel = resolveInitialLevel();
 // user-facing level set via setLogLevel. User-facing filtering is applied in
 // the wrapper functions below: info/debug/trace wrappers gate on currentLevel,
 // while warn/error/fatal wrappers always emit so the long-term error record
-// is never diluted when someone temporarily raises the display level.
+// is never diluted when someone temporarily raises the display level. The one
+// exception is "silent", which short-circuits every wrapper so no output is
+// produced at all — the user explicitly asked for silence.
 const logger = pino({
   level: "trace",
   base: { pid: process.pid, v: 1 },
@@ -289,6 +291,7 @@ export function logError(
   message: string,
   err?: unknown,
 ): void {
+  if (currentLevel === "silent") return;
   if (err instanceof Error) {
     logger.error({ component, err: err.message, stack: err.stack }, message);
   } else if (err !== undefined) {
@@ -306,6 +309,7 @@ export function logError(
 }
 
 export function logWarn(component: LogComponent, message: string): void {
+  if (currentLevel === "silent") return;
   logger.warn({ component }, message);
   pushRecent({ ts: Date.now(), level: "warn", component, msg: message });
 }
@@ -329,6 +333,7 @@ export function logFatal(
   message: string,
   err?: unknown,
 ): void {
+  if (currentLevel === "silent") return;
   if (err instanceof Error) {
     logger.fatal({ component, err: err.message, stack: err.stack }, message);
   } else if (err !== undefined) {
@@ -403,10 +408,12 @@ function buildChild(bindings: Bindings): ChildLogger {
       capture("info", msg, undefined, extra);
     },
     warn: (msg, extra) => {
+      if (currentLevel === "silent") return;
       pinoChild.warn(extra ?? {}, msg);
       capture("warn", msg, undefined, extra);
     },
     error: (msg, err, extra) => {
+      if (currentLevel === "silent") return;
       const body: Record<string, unknown> = { ...(extra ?? {}) };
       if (err instanceof Error) {
         body.err = err.message;
@@ -418,6 +425,7 @@ function buildChild(bindings: Bindings): ChildLogger {
       capture("error", msg, err, extra);
     },
     fatal: (msg, err, extra) => {
+      if (currentLevel === "silent") return;
       const body: Record<string, unknown> = { ...(extra ?? {}) };
       if (err instanceof Error) {
         body.err = err.message;
