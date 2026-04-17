@@ -92,8 +92,40 @@ export async function handleMessage(
   activeQueries.set(chatId, qi);
   const state = createStreamState();
 
+  // ── Progress watchdog ──────────────────────────────────────────────────
+  // A query is "making progress" whenever the SDK emits any message. If
+  // silence stretches beyond WATCHDOG_MS, something downstream is hung
+  // (MCP subprocess died, network stall, model API wedge, etc.) — we
+  // interrupt the query so the for-await throws and the caller sees an
+  // actual error instead of typing forever.
+  const WATCHDOG_MS = 5 * 60 * 1000; // 5 minutes of total silence
+  const WATCHDOG_CHECK_MS = 30_000; // check every 30s
+  let lastActivityAt = Date.now();
+  let watchdogFired = false;
+  const bumpActivity = (): void => {
+    lastActivityAt = Date.now();
+  };
+  const watchdogTimer = setInterval(() => {
+    const silent = Date.now() - lastActivityAt;
+    if (silent > WATCHDOG_MS && !watchdogFired) {
+      watchdogFired = true;
+      logWarn(
+        "agent",
+        `[${chatId}] Watchdog: no SDK activity for ${Math.round(silent / 1000)}s — interrupting query`,
+      );
+      incrementCounter("agent.watchdog_fired");
+      qi.interrupt().catch((err: unknown) => {
+        logWarn(
+          "agent",
+          `[${chatId}] Watchdog interrupt() failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+    }
+  }, WATCHDOG_CHECK_MS);
+
   try {
     for await (const message of qi) {
+      bumpActivity();
       // Session ID capture
       if (isSystemInit(message)) {
         state.newSessionId = message.session_id;
@@ -187,9 +219,22 @@ export async function handleMessage(
     logError("agent", `[${chatId}] SDK error: ${classified.message}`);
     throw classified;
   } finally {
+    clearInterval(watchdogTimer);
     if (activeQueries.get(chatId) === qi) {
       activeQueries.delete(chatId);
     }
+  }
+
+  // If the watchdog fired, the for-await exited without a result — surface
+  // this as an explicit error so the caller (dispatcher / frontend) sends a
+  // proper reply rather than pretending the turn succeeded silently.
+  if (watchdogFired && !state.newSessionId && !state.allResponseText) {
+    incrementCounter("errors.watchdog_timeout");
+    const err = new Error(
+      `Query timed out after ${WATCHDOG_MS / 1000}s of SDK silence (likely a stuck tool call)`,
+    );
+    logError("agent", `[${chatId}] ${err.message}`);
+    throw err;
   }
 
   // ── Persist session and usage ─────────────────────────────────────────────

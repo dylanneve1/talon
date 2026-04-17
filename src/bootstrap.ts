@@ -23,6 +23,7 @@ import { initCron } from "./core/cron.js";
 import { initDream } from "./core/dream.js";
 import { initHeartbeat } from "./core/heartbeat.js";
 import { log } from "./util/log.js";
+import { cleanOrphanedMcpProcesses } from "./util/orphan-mcp-cleanup.js";
 import type { TalonConfig } from "./util/config.js";
 import type { QueryBackend, ContextManager } from "./core/types.js";
 
@@ -108,6 +109,26 @@ export async function initBackendAndDispatcher(
   config: TalonConfig,
   frontend: Frontend,
 ): Promise<BackendAndDispatcherResult> {
+  // Sweep any MCP subprocesses orphaned by a prior Talon that died without
+  // cleaning up its children. These zombies hold ports/websockets that the
+  // fresh SDK subprocess is about to re-bind to — notably Camoufox's single
+  // shared ws path. If we don't clear them first, the new MCP clients race
+  // against the dead ones and tool calls can stall silently (2026-04-17).
+  try {
+    const sweep = await cleanOrphanedMcpProcesses();
+    if (sweep.found > 0) {
+      log(
+        "bot",
+        `Orphan sweep: found=${sweep.found} killed=${sweep.killed} failed=${sweep.failed}`,
+      );
+    }
+  } catch (err) {
+    log(
+      "bot",
+      `Orphan sweep failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
   let backend: QueryBackend;
 
   if (config.backend === "opencode") {
