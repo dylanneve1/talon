@@ -108,4 +108,20 @@ describe("log extras", () => {
       expect(["error", "fatal"].includes(r.level)).toBe(true);
     }
   });
+
+  it("child logger lines reach the ring buffer with component bindings", () => {
+    const child = childLogger({ component: "dispatcher", reqId: "rid" });
+    child.info("child-info");
+    child.error("child-err", new Error("oops"));
+    const records = getRecentLogs(50);
+    const info = records.find(
+      (r) => r.msg === "child-info" && r.level === "info",
+    );
+    const err = records.find(
+      (r) => r.msg === "child-err" && r.level === "error",
+    );
+    expect(info?.component).toBe("dispatcher");
+    expect(err?.component).toBe("dispatcher");
+    expect(err?.err).toBe("oops");
+  });
 });

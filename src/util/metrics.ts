@@ -29,6 +29,18 @@ function ringValues(buf: RingBuffer): number[] {
   return [...buf.data.slice(buf.head), ...buf.data.slice(0, buf.head)];
 }
 
+/**
+ * Normalize an untrusted label (e.g. a request-provided action name) for safe
+ * use inside a metric key. Collapses anything outside [A-Za-z0-9_] to "_",
+ * lowercases, truncates to 40 chars, and buckets empty / absurdly-long input
+ * as "unknown" so high-cardinality input can't exhaust MAX_METRIC_KEYS.
+ */
+export function sanitizeMetricLabel(raw: string): string {
+  if (!raw || typeof raw !== "string") return "unknown";
+  const cleaned = raw.toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 40);
+  return cleaned.replace(/^_+|_+$/g, "") || "unknown";
+}
+
 export function incrementCounter(name: string, amount = 1): void {
   // Only allow new keys up to the cap — existing keys always pass
   if (!counters.has(name) && counters.size >= MAX_METRIC_KEYS) return;

@@ -552,14 +552,20 @@ async function tailFile(
   console.log(
     `  ${pc.dim(`Tailing ${label}`)} ${pc.dim(filePath)}\n  ${pc.dim("Press Ctrl+C to stop")}\n`,
   );
-  const content = readFileSync(filePath, "utf-8");
-  const lines = content.trim().split("\n");
+  // An empty/whitespace-only file must yield 0 lines, not [""]. Otherwise
+  // lastSize starts at 1 and the first real appended line gets skipped.
+  const splitLines = (content: string): string[] => {
+    const trimmed = content.replace(/\n+$/, "");
+    return trimmed === "" ? [] : trimmed.split("\n");
+  };
+
+  const lines = splitLines(readFileSync(filePath, "utf-8"));
   for (const line of lines.slice(-initialLines))
     console.log(formatLogLine(line));
   let lastSize = lines.length;
   watchFile(filePath, { interval: 500 }, () => {
     try {
-      const nl = readFileSync(filePath, "utf-8").trim().split("\n");
+      const nl = splitLines(readFileSync(filePath, "utf-8"));
       for (let i = lastSize; i < nl.length; i++)
         console.log(formatLogLine(nl[i]));
       lastSize = nl.length;
@@ -739,9 +745,12 @@ async function runDebug(args: string[]): Promise<void> {
     case "metrics":
       await debugDumpMetrics();
       return;
-    case "spans":
-      await debugDumpSpans(parseInt(args[1] ?? "30", 10));
+    case "spans": {
+      const parsed = Number.parseInt(args[1] ?? "30", 10);
+      const limit = Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
+      await debugDumpSpans(limit);
       return;
+    }
     case "errors":
       await tailErrors();
       return;
