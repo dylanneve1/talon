@@ -216,11 +216,23 @@ describe("getWorkspaceDiskUsage — edge cases", () => {
     expect(usage).toBe(8);
   });
 
-  it("skips symlinks — entry.isFile() FALSE branch (L147)", () => {
+  it("skips symlinks — entry.isFile() FALSE branch (L147)", (ctx) => {
     mkdirSync(TEST_ROOT, { recursive: true });
     writeFileSync(join(TEST_ROOT, "real.txt"), "hello"); // 5 bytes
-    // symlink: isDirectory()=false, isFile()=false → skipped by walk
-    symlinkSync(join(TEST_ROOT, "real.txt"), join(TEST_ROOT, "link.txt"));
+    // symlink: isDirectory()=false, isFile()=false → skipped by walk.
+    // On Windows without Developer Mode / admin, symlinkSync throws EPERM;
+    // skip rather than fail since the branch is platform-neutral.
+    try {
+      symlinkSync(join(TEST_ROOT, "real.txt"), join(TEST_ROOT, "link.txt"));
+    } catch (err) {
+      if (
+        process.platform === "win32" &&
+        (err as NodeJS.ErrnoException).code === "EPERM"
+      ) {
+        ctx.skip();
+      }
+      throw err;
+    }
     const usage = getWorkspaceDiskUsage(TEST_ROOT);
     // Only real.txt counts (5 bytes); symlink is not counted
     expect(usage).toBe(5);
