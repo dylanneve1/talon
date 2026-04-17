@@ -49,6 +49,7 @@ vi.mock("../core/models.js", () => ({
 }));
 vi.mock("../util/trace.js", () => ({
   traceMessage: vi.fn(),
+  currentSpan: vi.fn(() => undefined),
 }));
 vi.mock("../util/time.js", () => ({
   formatFullDatetime: vi.fn(() => ""),
