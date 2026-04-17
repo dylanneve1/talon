@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 
+// Pin env before importing log.ts — log.ts resolves initial level and debug
+// namespaces at module-init time, so CI env bleeding would flake these tests.
+process.env.TALON_LOG_LEVEL = "trace";
+delete process.env.TALON_DEBUG;
+delete process.env.TALON_QUIET;
+
 const mockInfo = vi.fn();
 const mockError = vi.fn();
 const mockWarn = vi.fn();
