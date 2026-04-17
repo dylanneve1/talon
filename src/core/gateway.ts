@@ -30,7 +30,11 @@ import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "./plugin.js";
 import { withSpan } from "../util/trace.js";
 import { buildDebugSnapshot } from "../util/debug.js";
-import { incrementCounter, recordHistogram } from "../util/metrics.js";
+import {
+  incrementCounter,
+  recordHistogram,
+  sanitizeMetricLabel,
+} from "../util/metrics.js";
 import type { FrontendActionHandler, QueryBackend } from "./types.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
@@ -184,6 +188,10 @@ export class Gateway {
 
     const action = typeof body.action === "string" ? body.action : "";
     if (!action) return { ok: false, error: "Missing action" };
+    // Action names are bucketed for metric keys so untrusted/malformed input
+    // can't blow out the global MAX_METRIC_KEYS cap. The raw action is still
+    // logged and recorded as a span attribute for debugging.
+    const mAction = sanitizeMetricLabel(action);
     const t0 = Date.now();
 
     return withSpan(
@@ -199,8 +207,8 @@ export class Gateway {
               const ms = Date.now() - t0;
               span.setAttribute("route", "frontend");
               span.setAttribute("durationMs", ms);
-              recordHistogram(`gateway.${action}.ms`, ms);
-              incrementCounter(`gateway.${action}.ok`);
+              recordHistogram(`gateway.${mAction}.ms`, ms);
+              incrementCounter(`gateway.${mAction}.ok`);
               logDebug("gateway", `${action} chat=${chatId} ${ms}ms`);
               return result;
             }
@@ -212,8 +220,8 @@ export class Gateway {
             const ms = Date.now() - t0;
             span.setAttribute("route", "plugin");
             span.setAttribute("durationMs", ms);
-            recordHistogram(`gateway.${action}.ms`, ms);
-            incrementCounter(`gateway.${action}.ok`);
+            recordHistogram(`gateway.${mAction}.ms`, ms);
+            incrementCounter(`gateway.${mAction}.ok`);
             logDebug("gateway", `${action} chat=${chatId} ${ms}ms (plugin)`);
             return pluginResult;
           }
@@ -224,18 +232,18 @@ export class Gateway {
             const ms = Date.now() - t0;
             span.setAttribute("route", "shared");
             span.setAttribute("durationMs", ms);
-            recordHistogram(`gateway.${action}.ms`, ms);
-            incrementCounter(`gateway.${action}.ok`);
+            recordHistogram(`gateway.${mAction}.ms`, ms);
+            incrementCounter(`gateway.${mAction}.ok`);
             logDebug("gateway", `${action} chat=${chatId} ${ms}ms (shared)`);
             return shared;
           }
 
-          incrementCounter(`gateway.${action}.unknown`);
+          incrementCounter(`gateway.${mAction}.unknown`);
           span.setStatus("error", `Unknown action: ${action}`);
           return { ok: false, error: `Unknown action: ${action}` };
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          incrementCounter(`gateway.${action}.error`);
+          incrementCounter(`gateway.${mAction}.error`);
           span.setStatus("error", err);
           logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
           return { ok: false, error: `${action}: ${msg}` };
@@ -257,6 +265,16 @@ export class Gateway {
       res.end(JSON.stringify(body));
     };
 
+    // Clamp query-parsed limits to positive finite integers so malformed or
+    // absurdly large values can't return the whole in-memory buffer or allocate
+    // unbounded response arrays.
+    const parseLimit = (raw: string | null, def: number, max = 1000): number => {
+      if (raw === null) return def;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) return def;
+      return Math.min(Math.floor(n), max);
+    };
+
     try {
       const { getMetrics } = await import("../util/metrics.js");
       const { getRecentSpans } = await import("../util/trace.js");
@@ -272,12 +290,12 @@ export class Gateway {
         return;
       }
       if (route === "/debug/spans") {
-        const limit = Number(url.searchParams.get("limit") ?? "100");
+        const limit = parseLimit(url.searchParams.get("limit"), 100);
         writeJson(200, { spans: getRecentSpans(limit) });
         return;
       }
       if (route === "/debug/logs") {
-        const limit = Number(url.searchParams.get("limit") ?? "100");
+        const limit = parseLimit(url.searchParams.get("limit"), 100);
         const level = url.searchParams.get("level") as LogLevel | null;
         writeJson(200, {
           level: getLogLevel(),
@@ -286,7 +304,7 @@ export class Gateway {
         return;
       }
       if (route === "/debug/errors") {
-        const limit = Number(url.searchParams.get("limit") ?? "20");
+        const limit = parseLimit(url.searchParams.get("limit"), 20);
         writeJson(200, { errors: getRecentErrors(limit) });
         return;
       }

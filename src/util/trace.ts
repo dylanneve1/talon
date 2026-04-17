@@ -18,6 +18,11 @@
  *
  *    AsyncLocalStorage propagates the current span across awaits so child
  *    spans link to their parent automatically.
+ *
+ *    Persistence (spans-YYYY-MM-DD.jsonl) is opt-in via TALON_TRACE_PERSIST=1
+ *    because every span.end() would otherwise issue a blocking appendFileSync
+ *    from hot code paths (dispatcher, gateway). The in-memory ring buffer and
+ *    auto-emitted metrics are always available.
  */
 
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
@@ -113,7 +118,10 @@ function currentLogFile(): string {
   return resolve(dirs.traces, `${SPAN_LOG_PREFIX}-${y}-${m}-${day}.jsonl`);
 }
 
+const persistEnabled = process.env.TALON_TRACE_PERSIST === "1";
+
 function persistSpan(rec: SpanRecord): void {
+  if (!persistEnabled) return;
   try {
     ensureDir();
     appendFileSync(currentLogFile(), JSON.stringify(rec) + "\n");

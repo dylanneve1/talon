@@ -142,8 +142,9 @@ if (!quiet) {
 }
 
 // ── Namespace filter (TALON_DEBUG) ────────────────────────────────────────────
-// When set, only messages from matching components go to stdout and talon.log
-// at debug/trace levels. warn+ always passes through so errors are never lost.
+// When set, debug/trace messages are only emitted for matching components.
+// Info and warn+ always pass through so operational and error output is never
+// suppressed — this filter is purely for narrowing verbose debug output.
 
 function parseNamespaces(raw: string | undefined): RegExp[] {
   if (!raw) return [];
@@ -174,8 +175,13 @@ export function isDebugEnabled(component: string): boolean {
 
 const initialLevel = resolveInitialLevel();
 
+// Transport targets are intentionally open (level: "trace") so that the
+// logger-level gate (`logger.level`, updated at runtime by setLogLevel) is the
+// single source of truth. Errors.log is the one exception — it always filters
+// to warn+ regardless of the effective logger level, so the long-term error
+// record is never diluted when someone temporarily raises verbosity.
 const logger = pino({
-  level: "trace", // transport targets gate via their own level
+  level: initialLevel,
   base: { pid: process.pid, v: 1 },
   transport: {
     targets: [
@@ -184,7 +190,7 @@ const logger = pino({
         ? [
             {
               target: "pino-pretty",
-              level: initialLevel as string,
+              level: "trace" as const,
               options: {
                 colorize: true,
                 ignore: "pid,hostname",
@@ -193,16 +199,16 @@ const logger = pino({
             },
           ]
         : []),
-      // Full log file (all levels)
+      // Full log file — gated by logger.level
       {
         target: "pino/file",
-        level: initialLevel as string,
+        level: "trace" as const,
         options: {
           destination: LOG_FILE,
           mkdir: true,
         },
       },
-      // Error-only log file — preserved long-term for subtle error tracking
+      // Error-only log file — always warn+ for long-term retention
       {
         target: "pino/file",
         level: "warn" as const,
@@ -255,14 +261,21 @@ export function newRequestId(): string {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 function shouldEmit(component: string, level: LogLevel): boolean {
-  // Warn+ always emitted (important errors are never filtered away).
-  if (LEVEL_WEIGHTS[level] >= LEVEL_WEIGHTS.warn) return true;
+  // Only debug/trace are subject to the namespace filter; info and warn+ always
+  // emit so operational signals and errors are never suppressed.
+  if (LEVEL_WEIGHTS[level] >= LEVEL_WEIGHTS.info) return true;
   return isDebugEnabled(component);
 }
 
+function errMsg(err: unknown): string | undefined {
+  if (err instanceof Error) return err.message;
+  if (err !== undefined) return String(err);
+  return undefined;
+}
+
 export function log(component: LogComponent, message: string): void {
-  if (!shouldEmit(component, "info")) return;
   logger.info({ component }, message);
+  pushRecent({ ts: Date.now(), level: "info", component, msg: message });
 }
 
 export function logError(
@@ -277,22 +290,32 @@ export function logError(
   } else {
     logger.error({ component }, message);
   }
+  pushRecent({
+    ts: Date.now(),
+    level: "error",
+    component,
+    msg: message,
+    err: errMsg(err),
+  });
 }
 
 export function logWarn(component: LogComponent, message: string): void {
   logger.warn({ component }, message);
+  pushRecent({ ts: Date.now(), level: "warn", component, msg: message });
 }
 
 export function logDebug(component: LogComponent, message: string): void {
   if (!isLevelEnabled("debug")) return;
   if (!shouldEmit(component, "debug")) return;
   logger.debug({ component }, message);
+  pushRecent({ ts: Date.now(), level: "debug", component, msg: message });
 }
 
 export function logTrace(component: LogComponent, message: string): void {
   if (!isLevelEnabled("trace")) return;
   if (!shouldEmit(component, "trace")) return;
   logger.trace({ component }, message);
+  pushRecent({ ts: Date.now(), level: "trace", component, msg: message });
 }
 
 export function logFatal(
@@ -307,6 +330,13 @@ export function logFatal(
   } else {
     logger.fatal({ component }, message);
   }
+  pushRecent({
+    ts: Date.now(),
+    level: "fatal",
+    component,
+    msg: message,
+    err: errMsg(err),
+  });
 }
 
 // ── Child loggers with fixed bindings ─────────────────────────────────────────
@@ -331,23 +361,43 @@ export type ChildLogger = {
 
 function buildChild(bindings: Bindings): ChildLogger {
   const pinoChild = logger.child(bindings);
+  // Child-logger lines don't pass through the root wrap (that only taps the
+  // root pino instance), so capture to the ring buffer directly here.
+  const capture = (
+    level: LogLevel,
+    msg: string,
+    err?: unknown,
+    extra?: Record<string, unknown>,
+  ): void => {
+    pushRecent({
+      ts: Date.now(),
+      level,
+      component: String(bindings.component),
+      msg,
+      err: err instanceof Error ? err.message : err ? String(err) : undefined,
+      extra,
+    });
+  };
   return {
     trace: (msg, extra) => {
       if (!isLevelEnabled("trace")) return;
       if (!shouldEmit(bindings.component, "trace")) return;
       pinoChild.trace(extra ?? {}, msg);
+      capture("trace", msg, undefined, extra);
     },
     debug: (msg, extra) => {
       if (!isLevelEnabled("debug")) return;
       if (!shouldEmit(bindings.component, "debug")) return;
       pinoChild.debug(extra ?? {}, msg);
+      capture("debug", msg, undefined, extra);
     },
     info: (msg, extra) => {
-      if (!shouldEmit(bindings.component, "info")) return;
       pinoChild.info(extra ?? {}, msg);
+      capture("info", msg, undefined, extra);
     },
     warn: (msg, extra) => {
       pinoChild.warn(extra ?? {}, msg);
+      capture("warn", msg, undefined, extra);
     },
     error: (msg, err, extra) => {
       const body: Record<string, unknown> = { ...(extra ?? {}) };
@@ -358,6 +408,7 @@ function buildChild(bindings: Bindings): ChildLogger {
         body.err = String(err);
       }
       pinoChild.error(body, msg);
+      capture("error", msg, err, extra);
     },
     fatal: (msg, err, extra) => {
       const body: Record<string, unknown> = { ...(extra ?? {}) };
@@ -368,6 +419,7 @@ function buildChild(bindings: Bindings): ChildLogger {
         body.err = String(err);
       }
       pinoChild.fatal(body, msg);
+      capture("fatal", msg, err, extra);
     },
     child: (extra) => buildChild({ ...bindings, ...extra } as Bindings),
     bindings: () => bindings,
@@ -413,42 +465,11 @@ export function getRecentLogs(limit = 100, minLevel?: LogLevel): LogRecord[] {
   return filtered.slice(-limit);
 }
 
-// Tap pino so recent records stay accessible in-process.
-const ORIG_INFO = logger.info.bind(logger);
-const ORIG_WARN = logger.warn.bind(logger);
-const ORIG_ERROR = logger.error.bind(logger);
-const ORIG_DEBUG = logger.debug.bind(logger);
-const ORIG_TRACE = logger.trace.bind(logger);
-const ORIG_FATAL = logger.fatal.bind(logger);
-
-type PinoCall = (obj: Record<string, unknown>, msg?: string) => void;
-
-function wrap(orig: PinoCall, level: LogLevel): PinoCall {
-  return (obj, msg) => {
-    orig(obj, msg);
-    const component =
-      typeof obj === "object" && obj && "component" in obj
-        ? String((obj as { component?: unknown }).component ?? "?")
-        : "?";
-    pushRecent({
-      ts: Date.now(),
-      level,
-      component,
-      msg: msg ?? "",
-      err:
-        typeof obj === "object" && obj && "err" in obj
-          ? String((obj as { err?: unknown }).err)
-          : undefined,
-    });
-  };
-}
-
-(logger as unknown as { info: PinoCall }).info = wrap(ORIG_INFO, "info");
-(logger as unknown as { warn: PinoCall }).warn = wrap(ORIG_WARN, "warn");
-(logger as unknown as { error: PinoCall }).error = wrap(ORIG_ERROR, "error");
-(logger as unknown as { debug: PinoCall }).debug = wrap(ORIG_DEBUG, "debug");
-(logger as unknown as { trace: PinoCall }).trace = wrap(ORIG_TRACE, "trace");
-(logger as unknown as { fatal: PinoCall }).fatal = wrap(ORIG_FATAL, "fatal");
+// Ring-buffer capture is done explicitly by the log*() helpers and by each
+// childLogger method. Calling pino directly (outside those helpers) will skip
+// the in-memory buffer — that's intentional, since pino targets a flat
+// transport write path and avoiding a post-emit wrap keeps hot-path overhead
+// at a single function call.
 
 // ── Plugin access ─────────────────────────────────────────────────────────────
 

@@ -4,6 +4,7 @@ import {
   recordHistogram,
   getMetrics,
   resetMetrics,
+  sanitizeMetricLabel,
 } from "../util/metrics.js";
 
 describe("metrics", () => {
@@ -72,5 +73,28 @@ describe("metrics", () => {
     expect(Object.keys(getMetrics().histograms)).toHaveLength(500);
     recordHistogram("overflow_hist", 42);
     expect(getMetrics().histograms["overflow_hist"]).toBeUndefined();
+  });
+});
+
+describe("sanitizeMetricLabel", () => {
+  it("passes well-formed labels through (lowercased)", () => {
+    expect(sanitizeMetricLabel("send_message")).toBe("send_message");
+    expect(sanitizeMetricLabel("SendMessage")).toBe("sendmessage");
+  });
+
+  it("replaces unsafe characters with underscores", () => {
+    expect(sanitizeMetricLabel("foo.bar/baz")).toBe("foo_bar_baz");
+    expect(sanitizeMetricLabel("hello world!")).toBe("hello_world");
+  });
+
+  it("buckets empty / non-string / all-garbage input as 'unknown'", () => {
+    expect(sanitizeMetricLabel("")).toBe("unknown");
+    expect(sanitizeMetricLabel("!!!")).toBe("unknown");
+    expect(sanitizeMetricLabel(undefined as unknown as string)).toBe("unknown");
+  });
+
+  it("truncates long input to 40 chars", () => {
+    const result = sanitizeMetricLabel("a".repeat(200));
+    expect(result.length).toBeLessThanOrEqual(40);
   });
 });

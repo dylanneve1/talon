@@ -689,23 +689,24 @@ export async function handlePluginAction(
   chatId: string,
 ): Promise<ActionResult | null> {
   const action = typeof body.action === "string" ? body.action : "unknown";
+  const { recordHistogram, incrementCounter, sanitizeMetricLabel } =
+    await import("../util/metrics.js");
+  // Bucket untrusted action names for metric keys so a rogue plugin or garbage
+  // input can't fill MAX_METRIC_KEYS. The raw action stays in log messages.
+  const mAction = sanitizeMetricLabel(action);
   for (const { plugin } of registry.all) {
     if (!plugin.handleAction) continue;
+    const mPluginName = sanitizeMetricLabel(plugin.name);
     const t0 = Date.now();
     try {
       const result = await plugin.handleAction(body, chatId);
       if (result) {
         const ms = Date.now() - t0;
-        (await import("../util/metrics.js")).recordHistogram(
-          `plugin.${plugin.name}.${action}.ms`,
-          ms,
-        );
+        recordHistogram(`plugin.${mPluginName}.${mAction}.ms`, ms);
         return result;
       }
     } catch (err) {
-      (await import("../util/metrics.js")).incrementCounter(
-        `plugin.${plugin.name}.${action}.error`,
-      );
+      incrementCounter(`plugin.${mPluginName}.${mAction}.error`);
       logError(
         "plugin",
         `${plugin.name} action error: ${err instanceof Error ? err.message : err}`,
