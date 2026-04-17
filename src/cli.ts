@@ -29,7 +29,9 @@ import { dirs, files as pathFiles } from "./util/paths.js";
 const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 const CONFIG_FILE = pathFiles.config;
 const LOG_FILE = pathFiles.log;
-const HEALTH_URL = "http://127.0.0.1:19876/health";
+const ERROR_LOG_FILE = pathFiles.errorLog;
+const BASE_URL = "http://127.0.0.1:19876";
+const HEALTH_URL = `${BASE_URL}/health`;
 
 function printBanner(): void {
   console.log();
@@ -535,24 +537,28 @@ function formatLogLine(line: string): string {
   }
 }
 
-async function tailLogs(): Promise<void> {
+async function tailFile(
+  filePath: string,
+  label: string,
+  initialLines = 30,
+): Promise<void> {
   printBanner();
-  if (!existsSync(LOG_FILE)) {
+  if (!existsSync(filePath)) {
     console.log(
-      `  No log file. Start the bot first: ${pc.cyan("talon start")}\n`,
+      `  No ${label} file yet.  Start the bot first: ${pc.cyan("talon start")}\n`,
     );
     return;
   }
   console.log(
-    `  ${pc.dim("Tailing")} ${pc.dim(LOG_FILE)}\n  ${pc.dim("Press Ctrl+C to stop")}\n`,
+    `  ${pc.dim(`Tailing ${label}`)} ${pc.dim(filePath)}\n  ${pc.dim("Press Ctrl+C to stop")}\n`,
   );
-  const content = readFileSync(LOG_FILE, "utf-8");
+  const content = readFileSync(filePath, "utf-8");
   const lines = content.trim().split("\n");
-  for (const line of lines.slice(-30)) console.log(formatLogLine(line));
+  for (const line of lines.slice(-initialLines)) console.log(formatLogLine(line));
   let lastSize = lines.length;
-  watchFile(LOG_FILE, { interval: 500 }, () => {
+  watchFile(filePath, { interval: 500 }, () => {
     try {
-      const nl = readFileSync(LOG_FILE, "utf-8").trim().split("\n");
+      const nl = readFileSync(filePath, "utf-8").trim().split("\n");
       for (let i = lastSize; i < nl.length; i++)
         console.log(formatLogLine(nl[i]));
       lastSize = nl.length;
@@ -561,6 +567,219 @@ async function tailLogs(): Promise<void> {
     }
   });
   await new Promise(() => {});
+}
+
+async function tailLogs(): Promise<void> {
+  await tailFile(LOG_FILE, "log", 30);
+}
+
+async function tailErrors(): Promise<void> {
+  await tailFile(ERROR_LOG_FILE, "errors.log", 50);
+}
+
+// ── Debug ───────────────────────────────────────────────────────────────────
+
+async function fetchJson(url: string): Promise<unknown> {
+  const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+async function postJson(url: string, body: unknown): Promise<unknown> {
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!resp.ok) {
+    const text = await resp.text();
+    throw new Error(`HTTP ${resp.status}: ${text}`);
+  }
+  return resp.json();
+}
+
+async function debugDumpMetrics(): Promise<void> {
+  printBanner();
+  try {
+    const data = (await fetchJson(`${BASE_URL}/debug/metrics`)) as {
+      counters: Record<string, number>;
+      histograms: Record<
+        string,
+        { count: number; p50: number; p95: number; p99: number; avg: number }
+      >;
+    };
+    console.log(`  ${pc.bold("Counters")}`);
+    const counters = Object.entries(data.counters ?? {}).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    if (counters.length === 0) {
+      console.log(`    ${pc.dim("(none)")}`);
+    } else {
+      for (const [k, v] of counters) {
+        console.log(`    ${pc.dim(k.padEnd(40))} ${pc.cyan(String(v))}`);
+      }
+    }
+    console.log();
+    console.log(`  ${pc.bold("Histograms")} ${pc.dim("(p50 / p95 / p99 / avg, ms)")}`);
+    const histograms = Object.entries(data.histograms ?? {}).sort(([a], [b]) =>
+      a.localeCompare(b),
+    );
+    if (histograms.length === 0) {
+      console.log(`    ${pc.dim("(none)")}`);
+    } else {
+      for (const [k, h] of histograms) {
+        console.log(
+          `    ${pc.dim(k.padEnd(40))} ${pc.cyan(`${h.p50}`.padStart(5))} / ${pc.cyan(`${h.p95}`.padStart(5))} / ${pc.cyan(`${h.p99}`.padStart(5))} / ${pc.cyan(`${h.avg}`.padStart(5))} ${pc.dim(`n=${h.count}`)}`,
+        );
+      }
+    }
+    console.log();
+  } catch (err) {
+    console.log(
+      `  ${pc.red("✖")} Could not reach bot: ${err instanceof Error ? err.message : err}\n`,
+    );
+    console.log(
+      `  Is Talon running?  Start with ${pc.cyan("talon start")}.\n`,
+    );
+  }
+}
+
+async function debugDumpSpans(limit: number): Promise<void> {
+  printBanner();
+  try {
+    const data = (await fetchJson(
+      `${BASE_URL}/debug/spans?limit=${limit}`,
+    )) as {
+      spans: Array<{
+        name: string;
+        durationMs: number;
+        status: string;
+        attrs: Record<string, unknown>;
+        err?: string;
+        startMs: number;
+        traceId: string;
+      }>;
+    };
+    if (!data.spans?.length) {
+      console.log(`  ${pc.dim("(no spans)")}\n`);
+      return;
+    }
+    console.log(`  ${pc.bold(`Last ${data.spans.length} spans`)}\n`);
+    for (const s of data.spans) {
+      const ok = s.status === "ok" ? pc.green("✓") : pc.red("✗");
+      const when = pc.dim(new Date(s.startMs).toISOString().slice(11, 19));
+      const ms = pc.cyan(`${s.durationMs}ms`.padStart(8));
+      console.log(`  ${when} ${ok} ${ms} ${pc.bold(s.name)}`);
+      const keys = Object.keys(s.attrs).slice(0, 4);
+      if (keys.length) {
+        const summary = keys
+          .map((k) => `${pc.dim(k)}=${String(s.attrs[k]).slice(0, 40)}`)
+          .join(" ");
+        console.log(`            ${summary}`);
+      }
+      if (s.err) console.log(`            ${pc.red(s.err)}`);
+    }
+    console.log();
+  } catch (err) {
+    console.log(
+      `  ${pc.red("✖")} Could not reach bot: ${err instanceof Error ? err.message : err}\n`,
+    );
+  }
+}
+
+async function debugSetLogLevel(level: string): Promise<void> {
+  printBanner();
+  const valid = ["trace", "debug", "info", "warn", "error", "fatal", "silent"];
+  if (!valid.includes(level)) {
+    console.log(`  ${pc.red("✖")} Invalid level: ${level}`);
+    console.log(`  Valid: ${valid.join(", ")}\n`);
+    return;
+  }
+  try {
+    const res = (await postJson(`${BASE_URL}/debug/log-level`, { level })) as {
+      ok: boolean;
+      level?: string;
+      error?: string;
+    };
+    if (res.ok) {
+      console.log(`  ${pc.green("●")} Log level set to ${pc.bold(res.level ?? level)}\n`);
+    } else {
+      console.log(`  ${pc.red("✖")} ${res.error}\n`);
+    }
+  } catch (err) {
+    console.log(
+      `  ${pc.red("✖")} Could not reach bot: ${err instanceof Error ? err.message : err}\n`,
+    );
+  }
+}
+
+async function debugDumpState(): Promise<void> {
+  printBanner();
+  try {
+    const data = await fetchJson(`${BASE_URL}/debug/state`);
+    console.log(JSON.stringify(data, null, 2));
+    console.log();
+  } catch (err) {
+    console.log(
+      `  ${pc.red("✖")} Could not reach bot: ${err instanceof Error ? err.message : err}\n`,
+    );
+  }
+}
+
+async function runDebug(args: string[]): Promise<void> {
+  const sub = args[0];
+  switch (sub) {
+    case "state":
+      await debugDumpState();
+      return;
+    case "metrics":
+      await debugDumpMetrics();
+      return;
+    case "spans":
+      await debugDumpSpans(parseInt(args[1] ?? "30", 10));
+      return;
+    case "errors":
+      await tailErrors();
+      return;
+    case "log-level":
+      if (!args[1]) {
+        printBanner();
+        try {
+          const cur = (await fetchJson(`${BASE_URL}/debug/log-level`)) as {
+            level: string;
+          };
+          console.log(`  Current log level: ${pc.bold(cur.level)}\n`);
+        } catch (err) {
+          console.log(
+            `  ${pc.red("✖")} Could not reach bot: ${err instanceof Error ? err.message : err}\n`,
+          );
+        }
+        return;
+      }
+      await debugSetLogLevel(args[1]);
+      return;
+    default:
+      printBanner();
+      console.log("  Usage: talon debug <subcommand>\n");
+      console.log("  Subcommands:");
+      console.log(
+        `    ${pc.cyan("state")}               Full runtime snapshot (JSON)`,
+      );
+      console.log(
+        `    ${pc.cyan("metrics")}             Counters + histogram percentiles`,
+      );
+      console.log(
+        `    ${pc.cyan("spans [N]")}           Last N spans (default 30)`,
+      );
+      console.log(
+        `    ${pc.cyan("errors")}              Tail errors.log live`,
+      );
+      console.log(
+        `    ${pc.cyan("log-level [lvl]")}     Get/set runtime log level`,
+      );
+      console.log();
+  }
 }
 
 // ── Doctor ──────────────────────────────────────────────────────────────────
@@ -887,6 +1106,12 @@ switch (command) {
   case "logs":
     tailLogs();
     break;
+  case "errors":
+    tailErrors();
+    break;
+  case "debug":
+    runDebug(process.argv.slice(3));
+    break;
   case "start":
     printBanner();
     await daemonStart();
@@ -924,6 +1149,12 @@ switch (command) {
     console.log(`    ${pc.cyan("status")}     Show bot health`);
     console.log(`    ${pc.cyan("config")}     View/edit configuration`);
     console.log(`    ${pc.cyan("logs")}       Tail log file`);
+    console.log(
+      `    ${pc.cyan("errors")}     Tail errors-only log (errors.log)`,
+    );
+    console.log(
+      `    ${pc.cyan("debug")}      Runtime debug tools (state|metrics|spans|log-level|errors)`,
+    );
     console.log(`    ${pc.cyan("doctor")}     Validate environment`);
     console.log();
     console.log(

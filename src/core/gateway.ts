@@ -18,9 +18,19 @@ import { classify } from "./errors.js";
 import { getActiveCount } from "./dispatcher.js";
 import { getHealthStatus } from "../util/watchdog.js";
 import { getActiveSessionCount } from "../storage/sessions.js";
-import { log, logError, logDebug } from "../util/log.js";
+import {
+  log,
+  logError,
+  logDebug,
+  setLogLevel,
+  getLogLevel,
+  type LogLevel,
+} from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "./plugin.js";
+import { withSpan } from "../util/trace.js";
+import { buildDebugSnapshot } from "../util/debug.js";
+import { incrementCounter, recordHistogram } from "../util/metrics.js";
 import type { FrontendActionHandler, QueryBackend } from "./types.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
@@ -176,42 +186,150 @@ export class Gateway {
     if (!action) return { ok: false, error: "Missing action" };
     const t0 = Date.now();
 
-    try {
-      // Try frontend first — it has richer implementations (e.g. userbot history)
-      // and falls back to null when it can't handle the action.
-      if (this.frontendHandler) {
-        const result = await this.frontendHandler(body, chatId);
-        if (result) {
-          logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
-          return result;
+    return withSpan(
+      "gateway.action",
+      { action, chatId },
+      async (span): Promise<unknown> => {
+        try {
+          // Try frontend first — it has richer implementations (e.g. userbot history)
+          // and falls back to null when it can't handle the action.
+          if (this.frontendHandler) {
+            const result = await this.frontendHandler(body, chatId);
+            if (result) {
+              const ms = Date.now() - t0;
+              span.setAttribute("route", "frontend");
+              span.setAttribute("durationMs", ms);
+              recordHistogram(`gateway.${action}.ms`, ms);
+              incrementCounter(`gateway.${action}.ok`);
+              logDebug("gateway", `${action} chat=${chatId} ${ms}ms`);
+              return result;
+            }
+          }
+
+          // Try plugin actions (loaded from external plugin packages)
+          const pluginResult = await handlePluginAction(body, String(chatId));
+          if (pluginResult) {
+            const ms = Date.now() - t0;
+            span.setAttribute("route", "plugin");
+            span.setAttribute("durationMs", ms);
+            recordHistogram(`gateway.${action}.ms`, ms);
+            incrementCounter(`gateway.${action}.ok`);
+            logDebug(
+              "gateway",
+              `${action} chat=${chatId} ${ms}ms (plugin)`,
+            );
+            return pluginResult;
+          }
+
+          // Shared actions last — provides in-memory fallbacks for history, cron, etc.
+          const shared = await handleSharedAction(body, chatId, this.backend);
+          if (shared) {
+            const ms = Date.now() - t0;
+            span.setAttribute("route", "shared");
+            span.setAttribute("durationMs", ms);
+            recordHistogram(`gateway.${action}.ms`, ms);
+            incrementCounter(`gateway.${action}.ok`);
+            logDebug(
+              "gateway",
+              `${action} chat=${chatId} ${ms}ms (shared)`,
+            );
+            return shared;
+          }
+
+          incrementCounter(`gateway.${action}.unknown`);
+          span.setStatus("error", `Unknown action: ${action}`);
+          return { ok: false, error: `Unknown action: ${action}` };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          incrementCounter(`gateway.${action}.error`);
+          span.setStatus("error", err);
+          logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
+          return { ok: false, error: `${action}: ${msg}` };
         }
-      }
+      },
+    );
+  }
 
-      // Try plugin actions (loaded from external plugin packages)
-      const pluginResult = await handlePluginAction(body, String(chatId));
-      if (pluginResult) {
-        logDebug(
-          "gateway",
-          `${action} chat=${chatId} ${Date.now() - t0}ms (plugin)`,
-        );
-        return pluginResult;
-      }
+  // ── Debug endpoints ──────────────────────────────────────────────────────
 
-      // Shared actions last — provides in-memory fallbacks for history, cron, etc.
-      const shared = await handleSharedAction(body, chatId, this.backend);
-      if (shared) {
-        logDebug(
-          "gateway",
-          `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`,
-        );
-        return shared;
-      }
+  private async handleDebug(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const route = url.pathname;
+    const writeJson = (status: number, body: unknown): void => {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body));
+    };
 
-      return { ok: false, error: `Unknown action: ${action}` };
+    try {
+      const { getMetrics } = await import("../util/metrics.js");
+      const { getRecentSpans } = await import("../util/trace.js");
+      const { getRecentLogs } = await import("../util/log.js");
+      const { getRecentErrors } = await import("../util/watchdog.js");
+
+      if (route === "/debug/state") {
+        writeJson(200, buildDebugSnapshot());
+        return;
+      }
+      if (route === "/debug/metrics") {
+        writeJson(200, getMetrics());
+        return;
+      }
+      if (route === "/debug/spans") {
+        const limit = Number(url.searchParams.get("limit") ?? "100");
+        writeJson(200, { spans: getRecentSpans(limit) });
+        return;
+      }
+      if (route === "/debug/logs") {
+        const limit = Number(url.searchParams.get("limit") ?? "100");
+        const level = url.searchParams.get("level") as LogLevel | null;
+        writeJson(200, {
+          level: getLogLevel(),
+          logs: getRecentLogs(limit, level ?? undefined),
+        });
+        return;
+      }
+      if (route === "/debug/errors") {
+        const limit = Number(url.searchParams.get("limit") ?? "20");
+        writeJson(200, { errors: getRecentErrors(limit) });
+        return;
+      }
+      if (route === "/debug/log-level") {
+        writeJson(200, { level: getLogLevel() });
+        return;
+      }
+      writeJson(404, { ok: false, error: "Unknown debug route" });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
-      return { ok: false, error: `${action}: ${msg}` };
+      writeJson(500, { ok: false, error: msg });
+    }
+  }
+
+  private async handleSetLogLevel(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    try {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
+        level?: LogLevel;
+      };
+      if (!body.level) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Missing level" }));
+        return;
+      }
+      setLogLevel(body.level);
+      log("gateway", `Log level changed to ${body.level}`);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, level: body.level }));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: msg }));
     }
   }
 
@@ -241,6 +359,16 @@ export class Gateway {
                   : `${Math.round(w.msSinceLastMessage / 60000)}m ago`,
             }),
           );
+          return;
+        }
+
+        if (req.method === "GET" && req.url?.startsWith("/debug/")) {
+          await this.handleDebug(req, res);
+          return;
+        }
+
+        if (req.method === "POST" && req.url === "/debug/log-level") {
+          await this.handleSetLogLevel(req, res);
           return;
         }
 

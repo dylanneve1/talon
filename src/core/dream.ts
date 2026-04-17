@@ -19,6 +19,8 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
+import { withSpan } from "../util/trace.js";
+import { incrementCounter } from "../util/metrics.js";
 import { getPluginMcpServers } from "./plugin.js";
 import { DISALLOWED_TOOLS_BACKGROUND } from "./constants.js";
 import { getDefaultModel } from "./models.js";
@@ -99,19 +101,26 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
 
   dreaming = true;
   writeDreamState({ last_run: now, status: "running" });
+  incrementCounter(`dream.${trigger}.started`);
   log(
     "dream",
     `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`,
   );
 
   try {
-    const dreamLogPath = await runDreamAgent(state?.last_run ?? 0);
+    const dreamLogPath = await withSpan(
+      "dream.run",
+      { trigger, lastRun: state?.last_run ?? 0 },
+      () => runDreamAgent(state?.last_run ?? 0),
+    );
     writeDreamState({ last_run: Date.now(), status: "idle" });
+    incrementCounter(`dream.${trigger}.ok`);
     log(
       "dream",
       `Memory consolidation complete (${trigger}), log: ${dreamLogPath}`,
     );
   } catch (err) {
+    incrementCounter(`dream.${trigger}.error`);
     logError("dream", `Memory consolidation failed (${trigger})`, err);
     writeDreamState({ last_run: Date.now(), status: "idle" });
     if (trigger === "forced") throw err;

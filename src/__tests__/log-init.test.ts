@@ -29,6 +29,7 @@ describe("log.ts — module-level initialization branches", () => {
       dirs: { root: "/fake/.talon" },
       files: {
         log: "/fake/.talon/talon.log",
+        errorLog: "/fake/.talon/errors.log",
         config: "/fake/.talon/config.json",
       },
     }));
@@ -42,10 +43,22 @@ describe("log.ts — module-level initialization branches", () => {
     }));
     vi.doMock("pino", () => ({
       default: () => ({
+        level: "trace",
         info: mockLogFn,
         error: mockLogFn,
         warn: mockLogFn,
         debug: mockLogFn,
+        trace: mockLogFn,
+        fatal: mockLogFn,
+        child: vi.fn(() => ({
+          level: "trace",
+          info: mockLogFn,
+          error: mockLogFn,
+          warn: mockLogFn,
+          debug: mockLogFn,
+          trace: mockLogFn,
+          fatal: mockLogFn,
+        })),
       }),
     }));
 
@@ -62,6 +75,7 @@ describe("log.ts — module-level initialization branches", () => {
       dirs: { root: "/fake/.talon" },
       files: {
         log: "/fake/.talon/talon.log",
+        errorLog: "/fake/.talon/errors.log",
         config: "/fake/.talon/config.json",
       },
     }));
@@ -75,10 +89,22 @@ describe("log.ts — module-level initialization branches", () => {
     }));
     vi.doMock("pino", () => ({
       default: () => ({
+        level: "trace",
         info: mockLogFn,
         error: mockLogFn,
         warn: mockLogFn,
         debug: mockLogFn,
+        trace: mockLogFn,
+        fatal: mockLogFn,
+        child: vi.fn(() => ({
+          level: "trace",
+          info: mockLogFn,
+          error: mockLogFn,
+          warn: mockLogFn,
+          debug: mockLogFn,
+          trace: mockLogFn,
+          fatal: mockLogFn,
+        })),
       }),
     }));
 
@@ -97,6 +123,7 @@ describe("log.ts — module-level initialization branches", () => {
       dirs: { root: "/fake/.talon" },
       files: {
         log: "/fake/.talon/talon.log",
+        errorLog: "/fake/.talon/errors.log",
         config: "/fake/.talon/config.json",
       },
     }));
@@ -111,10 +138,22 @@ describe("log.ts — module-level initialization branches", () => {
     }));
     vi.doMock("pino", () => ({
       default: () => ({
+        level: "trace",
         info: mockLogFn,
         error: mockLogFn,
         warn: mockLogFn,
         debug: mockLogFn,
+        trace: mockLogFn,
+        fatal: mockLogFn,
+        child: vi.fn(() => ({
+          level: "trace",
+          info: mockLogFn,
+          error: mockLogFn,
+          warn: mockLogFn,
+          debug: mockLogFn,
+          trace: mockLogFn,
+          fatal: mockLogFn,
+        })),
       }),
     }));
 

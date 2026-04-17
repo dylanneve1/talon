@@ -16,6 +16,8 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
+import { withSpan } from "../util/trace.js";
+import { incrementCounter } from "../util/metrics.js";
 import { toYMD } from "../util/time.js";
 import { getPluginMcpServers } from "./plugin.js";
 import { DISALLOWED_TOOLS_BACKGROUND } from "./constants.js";
@@ -188,9 +190,14 @@ async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
 
   const run = (async () => {
     try {
-      const heartbeatLogPath = await runHeartbeatAgent(
-        previousLastRun,
-        previousRunCount + 1,
+      const heartbeatLogPath = await withSpan(
+        "heartbeat.run",
+        {
+          trigger,
+          runNumber: previousRunCount + 1,
+          lastRun: previousLastRun,
+        },
+        () => runHeartbeatAgent(previousLastRun, previousRunCount + 1),
       );
       // Only update last_run and increment run_count on success
       writeHeartbeatState({
@@ -199,11 +206,13 @@ async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
         status: "idle",
         run_count: previousRunCount + 1,
       });
+      incrementCounter(`heartbeat.${trigger}.ok`);
       log(
         "heartbeat",
         `Heartbeat #${previousRunCount + 1} complete (${trigger}), log: ${heartbeatLogPath}`,
       );
     } catch (err) {
+      incrementCounter(`heartbeat.${trigger}.error`);
       logError(
         "heartbeat",
         `Heartbeat #${previousRunCount + 1} failed (${trigger})`,

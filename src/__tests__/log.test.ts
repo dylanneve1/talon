@@ -8,10 +8,22 @@ const mockDebug = vi.fn();
 
 vi.mock("pino", () => ({
   default: () => ({
+    level: "trace",
     info: mockInfo,
     error: mockError,
     warn: mockWarn,
     debug: mockDebug,
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(() => ({
+      level: "trace",
+      info: mockInfo,
+      error: mockError,
+      warn: mockWarn,
+      debug: mockDebug,
+      trace: vi.fn(),
+      fatal: vi.fn(),
+    })),
   }),
 }));
 
@@ -78,6 +90,9 @@ describe("log", () => {
         { component: "bridge", err: "timeout", stack: err.stack },
         "request failed",
       );
+      // Stack trace is also captured for easier debugging.
+      const call = mockError.mock.calls[0];
+      expect((call[0] as { stack?: string }).stack).toBeDefined();
     });
 
     it("stringifies non-Error err values", () => {
