@@ -55,23 +55,40 @@ afterAll(() => {
   Object.defineProperty(process, "platform", originalPlatformDescriptor);
 });
 
-// Build a fake /proc/<pid> entry.
+// Build a fake /proc/<pid> entry. `starttime` is field 22 of stat (index 19
+// after the last paren) — expose it as a parameter so tests can simulate PID
+// recycling by mutating this value between the SIGTERM sweep and SIGKILL.
 function makeProc(
   root: string,
   pid: number,
   ppid: number,
   cmdline: string,
   comm = "node",
+  starttime = 1000,
 ): void {
   const dir = join(root, String(pid));
   mkdirSync(dir, { recursive: true });
-  // /proc/<pid>/stat — simulate kernel format: "pid (comm) state ppid ..."
+  // /proc/<pid>/stat — simulate kernel format:
+  //   pid (comm) state ppid pgrp session tty_nr tpgid flags
+  //   minflt cminflt majflt cmajflt utime stime cutime cstime
+  //   priority nice num_threads itrealvalue starttime ...
+  // After the last ')' we need state, ppid, then 17 padding fields so
+  // starttime lands at index 19 (= stat(5) field 22).
   writeFileSync(
     join(dir, "stat"),
-    `${pid} (${comm}) S ${ppid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n`,
+    `${pid} (${comm}) S ${ppid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 ${starttime}\n`,
   );
   // /proc/<pid>/cmdline — null-separated argv
   writeFileSync(join(dir, "cmdline"), cmdline.replace(/ /g, "\0") + "\0");
+}
+
+// Overwrite an existing /proc/<pid>/stat with a new starttime, simulating a
+// PID recycle. Used to exercise the SIGKILL identity check.
+function rewriteStat(root: string, pid: number, newStart: number, ppid = 1): void {
+  writeFileSync(
+    join(root, String(pid), "stat"),
+    `${pid} (node) S ${ppid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 ${newStart}\n`,
+  );
 }
 
 let procRoot: string;
@@ -273,14 +290,53 @@ describe("cleanOrphanedMcpProcesses", () => {
     expect(killMock).not.toHaveBeenCalledWith(process.pid, "SIGTERM");
   });
 
+  it("skips SIGKILL when PID was recycled during grace period", async () => {
+    // Simulate: sweep captures pid=1234 with starttime=5000 and SIGTERMs it.
+    // During the 500ms grace window, 1234 exits and gets reused by an
+    // unrelated new process with a fresh starttime. The follow-up SIGKILL
+    // must notice (starttime changed) and refuse to kill the impostor.
+    makeProc(
+      procRoot,
+      1234,
+      1,
+      "node /home/dylan/telegram-claude-agent/node_modules/@playwright/mcp/cli.js",
+      "node",
+      5000, // original starttime
+    );
+    const { cleanOrphanedMcpProcesses } = await import(
+      "../util/orphan-mcp-cleanup.js"
+    );
+    vi.useFakeTimers();
+    try {
+      const resultPromise = cleanOrphanedMcpProcesses(procRoot);
+      // Let the sweep SIGTERM the process (synchronous phase).
+      await Promise.resolve();
+      await Promise.resolve();
+      // Mutate the fixture BEFORE the 500ms timer fires — simulates the
+      // recycle happening during the grace window.
+      rewriteStat(procRoot, 1234, 9999);
+      await vi.advanceTimersByTimeAsync(500);
+      const result = await resultPromise;
+
+      // The SIGTERM fired (killed=1). The SIGKILL did NOT — starttime changed.
+      expect(result.killed).toBe(1);
+      const sigkills = killMock.mock.calls.filter((c) => c[1] === "SIGKILL");
+      expect(sigkills).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("parses cmdline with comm containing parens correctly", async () => {
-    // Write stat with weird comm — (node (worker))  — should still parse PPID
+    // Write stat with weird comm — (weird (evil) name) — should still parse
+    // PPID and starttime (kernel uses the *last* ')' as the comm terminator,
+    // so nested parens in the comm are handled).
     const pid = 7777;
     const dir = join(procRoot, String(pid));
     mkdirSync(dir, { recursive: true });
     writeFileSync(
       join(dir, "stat"),
-      `${pid} (weird (evil) name) S 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n`,
+      `${pid} (weird (evil) name) S 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 42000\n`,
     );
     writeFileSync(
       join(dir, "cmdline"),

@@ -60,6 +60,14 @@ export type OrphanCleanupResult = {
   details: { pid: number; cmd: string; killed: boolean }[];
 };
 
+/**
+ * Snapshot of a candidate MCP orphan. `starttime` is field 22 of
+ * /proc/<pid>/stat — monotonic jiffies since boot — and is the cheapest
+ * stable identifier we have for a Linux process. Capturing it up front
+ * lets us verify the PID hasn't been recycled before issuing SIGKILL.
+ */
+type OrphanSnapshot = { pid: number; cmd: string; starttime: number };
+
 /** Override the /proc root for tests. Defaults to "/proc". */
 export function cleanOrphanedMcpProcesses(
   procRoot = "/proc",
@@ -92,21 +100,21 @@ async function doCleanup(procRoot: string): Promise<OrphanCleanupResult> {
     return result;
   }
 
-  const orphans: { pid: number; cmd: string }[] = [];
+  const orphans: OrphanSnapshot[] = [];
   for (const dir of pidDirs) {
     const pid = Number.parseInt(dir, 10);
     // Skip self, direct parent.
     if (pid === process.pid || pid === process.ppid) continue;
 
-    const ppid = readPpid(`${procRoot}/${dir}/stat`);
-    if (ppid !== 1) continue;
+    const stat = readStat(`${procRoot}/${dir}/stat`);
+    if (!stat || stat.ppid !== 1) continue;
 
     const cmd = readCmdline(`${procRoot}/${dir}/cmdline`);
     if (!cmd) continue;
 
     if (!MCP_SIGNATURES.some((sig) => cmd.includes(sig))) continue;
 
-    orphans.push({ pid, cmd });
+    orphans.push({ pid, cmd, starttime: stat.starttime });
   }
 
   result.found = orphans.length;
@@ -117,18 +125,22 @@ async function doCleanup(procRoot: string): Promise<OrphanCleanupResult> {
     `Found ${orphans.length} orphaned MCP process(es); terminating`,
   );
 
-  // Track PIDs where a real SIGTERM went out vs ones that were already gone
-  // (ESRCH). Only the former can still be alive after the grace period, so
-  // the SIGKILL follow-up is skipped entirely when everything was ESRCH.
-  const sigtermed: number[] = [];
+  // Track orphans where a real SIGTERM went out vs ones that were already
+  // gone (ESRCH). Only the former can still be alive after the grace period,
+  // so the SIGKILL follow-up is skipped entirely when everything was ESRCH.
+  // We keep the full snapshot (not just pid) so we can verify identity via
+  // starttime before SIGKILL — prevents clobbering an unrelated process that
+  // happened to inherit a recycled PID during the 500ms grace window.
+  const sigtermed: OrphanSnapshot[] = [];
 
-  for (const { pid, cmd } of orphans) {
+  for (const orphan of orphans) {
+    const { pid, cmd } = orphan;
     let killed = false;
     try {
       process.kill(pid, "SIGTERM");
       killed = true;
       result.killed++;
-      sigtermed.push(pid);
+      sigtermed.push(orphan);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
       if (code === "ESRCH") {
@@ -153,13 +165,26 @@ async function doCleanup(procRoot: string): Promise<OrphanCleanupResult> {
   // no real SIGTERM was actually sent (e.g. all orphans were already-ESRCH).
   if (sigtermed.length > 0) {
     await new Promise((r) => setTimeout(r, 500));
-    for (const pid of sigtermed) {
+    for (const { pid, starttime: expectedStart } of sigtermed) {
+      // Re-read starttime and verify it hasn't changed. If the PID has been
+      // recycled (original exited, new unrelated process took the slot), the
+      // starttime value will differ — in that case, skip the SIGKILL instead
+      // of nuking a stranger. Also handles the vanished-entirely case: an
+      // ENOENT on /proc/<pid>/stat means the process is gone, nothing to do.
+      const currentStart = readStartTime(`${procRoot}/${pid}/stat`);
+      if (currentStart < 0) continue; // gone
+      if (currentStart !== expectedStart) {
+        logWarn(
+          "watchdog",
+          `  pid=${pid} starttime changed (${expectedStart} → ${currentStart}); PID recycled, skipping SIGKILL`,
+        );
+        continue;
+      }
       try {
-        process.kill(pid, 0); // existence check only
         process.kill(pid, "SIGKILL");
         log("watchdog", `  SIGKILL'd stubborn pid=${pid}`);
       } catch {
-        /* already gone */
+        /* raced with exit between starttime check and kill — fine */
       }
     }
   }
@@ -167,25 +192,57 @@ async function doCleanup(procRoot: string): Promise<OrphanCleanupResult> {
   return result;
 }
 
-/** Parse PPID from /proc/<pid>/stat. Returns -1 on failure. */
-function readPpid(statPath: string): number {
+/**
+ * Parse PPID and starttime from /proc/<pid>/stat, skipping past the
+ * parenthesised comm field which can contain spaces/parens of its own.
+ * Returns null on failure.
+ *
+ * Fields after the last ')' (0-indexed from the stat(5) layout minus the
+ * first three pid/comm/state columns):
+ *   [0] state
+ *   [1] ppid
+ *   [2] pgrp
+ *   [3] session
+ *   [4] tty_nr
+ *   [5] tpgid
+ *   [6] flags
+ *   [7] minflt
+ *   [8] cminflt
+ *   [9] majflt
+ *   [10] cmajflt
+ *   [11] utime
+ *   [12] stime
+ *   [13] cutime
+ *   [14] cstime
+ *   [15] priority
+ *   [16] nice
+ *   [17] num_threads
+ *   [18] itrealvalue
+ *   [19] starttime   ← field 22 of the full stat row
+ */
+function readStat(statPath: string): { ppid: number; starttime: number } | null {
   let raw: string;
   try {
     raw = readFileSync(statPath, "utf8");
   } catch {
-    return -1;
+    return null;
   }
-  // Format: "pid (comm) state ppid ..."  where comm can contain spaces and
-  // parens, so we find the last ')' and read from there.
   const lastParen = raw.lastIndexOf(")");
-  if (lastParen < 0) return -1;
+  if (lastParen < 0) return null;
   const after = raw
     .slice(lastParen + 2)
     .trim()
     .split(/\s+/);
-  // after[0] = state, after[1] = ppid
   const ppid = Number.parseInt(after[1] ?? "", 10);
-  return Number.isFinite(ppid) ? ppid : -1;
+  const starttime = Number.parseInt(after[19] ?? "", 10);
+  if (!Number.isFinite(ppid) || !Number.isFinite(starttime)) return null;
+  return { ppid, starttime };
+}
+
+/** Fast-path starttime lookup for the SIGKILL recycle check. Returns -1 on failure. */
+function readStartTime(statPath: string): number {
+  const stat = readStat(statPath);
+  return stat ? stat.starttime : -1;
 }
 
 /** Parse full command line from /proc/<pid>/cmdline (null-separated argv). */
