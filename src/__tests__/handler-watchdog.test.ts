@@ -8,7 +8,7 @@
  * called, and that the handler throws a meaningful timeout error.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Module mocks ────────────────────────────────────────────────────────────
 
@@ -144,32 +144,45 @@ beforeEach(() => {
 });
 
 describe("handler progress watchdog", () => {
+  // try/finally ensures real timers are restored even if assertions throw
+  // earlier — otherwise fake timers leak into subsequent tests in the same
+  // Vitest worker and cause hard-to-debug cross-test failures.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("fires watchdog, calls interrupt, and rejects with a timeout error", async () => {
     vi.useFakeTimers();
-    const { handleMessage } = await import("../backend/claude-sdk/handler.js");
+    try {
+      const { handleMessage } =
+        await import("../backend/claude-sdk/handler.js");
 
-    const p = handleMessage({
-      chatId: "wd-chat",
-      text: "hello",
-      senderName: "Dylan",
-      isGroup: false,
-    });
-    // Stop the promise from floating as unhandled while we advance timers —
-    // we re-await at the end for the actual assertion.
-    const settled = p.catch((err: unknown) => err);
+      const p = handleMessage({
+        chatId: "wd-chat",
+        text: "hello",
+        senderName: "Dylan",
+        isGroup: false,
+      });
+      // Stop the promise from floating as unhandled while we advance timers —
+      // we re-await at the end for the actual assertion.
+      const settled = p.catch((err: unknown) => err);
 
-    // Watchdog polls every 30s, fires at 5 min of silence. Advance 6 min.
-    for (let i = 0; i < 12; i++) {
-      await vi.advanceTimersByTimeAsync(30_000);
+      // Watchdog polls every 30s, fires at 5 min of silence. Advance 6 min.
+      for (let i = 0; i < 12; i++) {
+        await vi.advanceTimersByTimeAsync(30_000);
+      }
+      // Allow the post-race 2s drain-grace-period to elapse so handleMessage
+      // can finish in the finally block.
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      // The watchdog's Promise.race() rejects independently of the iterator
+      // unblocking, so we get a settled rejection every time.
+      const err = (await settled) as Error;
+      expect(err).toBeInstanceOf(Error);
+      expect(err.message).toMatch(/timed out after.*without progress/);
+      expect(interruptMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
     }
-
-    vi.useRealTimers();
-
-    // The watchdog's Promise.race() rejects independently of the iterator
-    // unblocking, so we get a settled rejection every time.
-    const err = (await settled) as Error;
-    expect(err).toBeInstanceOf(Error);
-    expect(err.message).toMatch(/timed out after.*of SDK silence/);
-    expect(interruptMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -93,15 +93,23 @@ export async function handleMessage(
   const state = createStreamState();
 
   // ── Progress watchdog ──────────────────────────────────────────────────
-  // A query is "making progress" whenever the SDK emits any message. If
-  // silence stretches beyond WATCHDOG_MS, something downstream is hung
-  // (MCP subprocess died, network stall, model API wedge, etc.).
+  // The handler is "making progress" whenever it consumes an SDK message. If
+  // that stretches past WATCHDOG_MS, something is stuck — MCP subprocess
+  // died, network stall, model API wedge, or (more commonly) a long await
+  // inside our own onTextBlock/onToolUse callbacks. Either way we want to
+  // abort rather than leave the typing spinner running forever.
   //
   // The watchdog is a Promise<never> that rejects on timeout. It's raced
   // against the iteration Promise so a hang aborts the handler even if
   // qi.interrupt() fails to unstick the SDK iterator. `interrupt()` is
   // still called best-effort as a cleanup signal.
-  const WATCHDOG_MS = 5 * 60 * 1000; // 5 minutes of total silence
+  //
+  // Note: bumpActivity() fires on every consumed SDK message. If the handler
+  // itself blocks inside `await onTextBlock(text)` (e.g. Telegram send
+  // stalls), the SDK may have more output buffered that we're simply not
+  // reading — so the "stall" the watchdog detects is the *handler's*, not
+  // necessarily the SDK's. That's still the right thing to abort.
+  const WATCHDOG_MS = 5 * 60 * 1000; // 5 minutes of stalled progress
   const WATCHDOG_CHECK_MS = 30_000; // check every 30s
   let lastActivityAt = Date.now();
   let resultReceived = false;
@@ -123,9 +131,10 @@ export async function handleMessage(
       if (watchdogCancelled) return;
       const silent = Date.now() - lastActivityAt;
       if (silent > WATCHDOG_MS) {
+        const silentSec = Math.round(silent / 1000);
         logWarn(
           "agent",
-          `[${chatId}] Watchdog: no SDK activity for ${Math.round(silent / 1000)}s — aborting`,
+          `[${chatId}] Watchdog: handler stalled for ${silentSec}s — aborting`,
         );
         incrementCounter("agent.watchdog_fired");
         // Best-effort: signal the SDK to unwind cleanly. If it doesn't
@@ -136,9 +145,12 @@ export async function handleMessage(
             `[${chatId}] Watchdog interrupt() failed: ${err instanceof Error ? err.message : String(err)}`,
           );
         });
+        // Report the actual measured silence — it can exceed WATCHDOG_MS by
+        // up to WATCHDOG_CHECK_MS (or more under event-loop pressure), so
+        // the message is more useful than a hardcoded threshold.
         reject(
           new Error(
-            `Query timed out after ${WATCHDOG_MS / 1000}s of SDK silence (likely a stuck tool call)`,
+            `Query timed out after ${silentSec}s without progress (likely a stuck tool call)`,
           ),
         );
         return;
@@ -190,6 +202,9 @@ export async function handleMessage(
             } catch {
               /* non-fatal — don't abort the stream loop */
             }
+            // Bump in case the send took a long time — it's progress from
+            // the user's perspective even if no SDK message arrived.
+            bumpActivity();
           }
         }
         continue;
@@ -203,8 +218,19 @@ export async function handleMessage(
     }
   };
 
+  // Capture the iterator promise separately so we can drain the loser of
+  // the race. Promise.race doesn't cancel the loser; if the watchdog wins
+  // and we don't drain the iterator, a later rejection (e.g. SDK throws
+  // after interrupt()) surfaces as an unhandled rejection, and any
+  // subprocess the SDK is still holding would leak until the handler
+  // returns. The drain is bounded by a short grace period so a truly
+  // stuck SDK can't hold the handler indefinitely.
+  const iterPromise = iterateStream();
+  // Silence "possibly unhandled" — the race below handles the real outcome.
+  iterPromise.catch(() => {});
+
   try {
-    await Promise.race([iterateStream(), watchdogPromise]);
+    await Promise.race([iterPromise, watchdogPromise]);
   } catch (err) {
     const classified = classify(err);
     incrementCounter(`errors.${classified.reason ?? "unknown"}`);
@@ -253,6 +279,14 @@ export async function handleMessage(
     throw classified;
   } finally {
     cancelWatchdog();
+    // If the watchdog won the race (or any other throw happened before
+    // iterPromise settled), give the SDK iterator up to 2s to unwind so
+    // it doesn't leak pending work after we've already thrown. We swallow
+    // errors here — the race has already reported the real outcome.
+    await Promise.race([
+      iterPromise.catch(() => {}),
+      new Promise((r) => setTimeout(r, 2000)),
+    ]);
     if (activeQueries.get(chatId) === qi) {
       activeQueries.delete(chatId);
     }

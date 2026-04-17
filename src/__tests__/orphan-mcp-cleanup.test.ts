@@ -119,16 +119,29 @@ describe("cleanOrphanedMcpProcesses", () => {
 
     const { cleanOrphanedMcpProcesses } =
       await import("../util/orphan-mcp-cleanup.js");
-    const result = await cleanOrphanedMcpProcesses(procRoot);
-    expect(result.found).toBe(2);
-    expect(result.killed).toBe(2);
-    expect(result.failed).toBe(0);
 
-    const sigterms = killMock.mock.calls
-      .filter((c) => c[1] === "SIGTERM")
-      .map((c) => c[0])
-      .sort((a, b) => (a as number) - (b as number));
-    expect(sigterms).toEqual([9999, 2578560]);
+    // Use fake timers so the 500ms SIGKILL grace period doesn't add
+    // wall-clock latency to the suite. try/finally guarantees the timers
+    // are restored even if assertions throw.
+    vi.useFakeTimers();
+    try {
+      const resultPromise = cleanOrphanedMcpProcesses(procRoot);
+      // Let synchronous reads complete, then fast-forward the grace sleep.
+      await vi.advanceTimersByTimeAsync(500);
+      const result = await resultPromise;
+
+      expect(result.found).toBe(2);
+      expect(result.killed).toBe(2);
+      expect(result.failed).toBe(0);
+
+      const sigterms = killMock.mock.calls
+        .filter((c) => c[1] === "SIGTERM")
+        .map((c) => c[0])
+        .sort((a, b) => (a as number) - (b as number));
+      expect(sigterms).toEqual([9999, 2578560]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("ignores processes whose parent is still alive (PPID != 1)", async () => {
