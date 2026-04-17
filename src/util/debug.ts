@@ -1,8 +1,7 @@
 /**
  * Debug snapshot — aggregates runtime state from across Talon subsystems into
  * a single JSON dump suitable for /debug/state and the `talon debug state`
- * CLI command. Kept free of cyclic imports by using dynamic imports where
- * needed.
+ * CLI command.
  */
 
 import {

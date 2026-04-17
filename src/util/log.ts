@@ -274,6 +274,7 @@ function errMsg(err: unknown): string | undefined {
 }
 
 export function log(component: LogComponent, message: string): void {
+  if (!isLevelEnabled("info")) return;
   logger.info({ component }, message);
   pushRecent({ ts: Date.now(), level: "info", component, msg: message });
 }
@@ -283,6 +284,7 @@ export function logError(
   message: string,
   err?: unknown,
 ): void {
+  if (!isLevelEnabled("error")) return;
   if (err instanceof Error) {
     logger.error({ component, err: err.message, stack: err.stack }, message);
   } else if (err !== undefined) {
@@ -300,6 +302,7 @@ export function logError(
 }
 
 export function logWarn(component: LogComponent, message: string): void {
+  if (!isLevelEnabled("warn")) return;
   logger.warn({ component }, message);
   pushRecent({ ts: Date.now(), level: "warn", component, msg: message });
 }
@@ -323,6 +326,7 @@ export function logFatal(
   message: string,
   err?: unknown,
 ): void {
+  if (!isLevelEnabled("fatal")) return;
   if (err instanceof Error) {
     logger.fatal({ component, err: err.message, stack: err.stack }, message);
   } else if (err !== undefined) {
@@ -392,14 +396,17 @@ function buildChild(bindings: Bindings): ChildLogger {
       capture("debug", msg, undefined, extra);
     },
     info: (msg, extra) => {
+      if (!isLevelEnabled("info")) return;
       pinoChild.info(extra ?? {}, msg);
       capture("info", msg, undefined, extra);
     },
     warn: (msg, extra) => {
+      if (!isLevelEnabled("warn")) return;
       pinoChild.warn(extra ?? {}, msg);
       capture("warn", msg, undefined, extra);
     },
     error: (msg, err, extra) => {
+      if (!isLevelEnabled("error")) return;
       const body: Record<string, unknown> = { ...(extra ?? {}) };
       if (err instanceof Error) {
         body.err = err.message;
@@ -411,6 +418,7 @@ function buildChild(bindings: Bindings): ChildLogger {
       capture("error", msg, err, extra);
     },
     fatal: (msg, err, extra) => {
+      if (!isLevelEnabled("fatal")) return;
       const body: Record<string, unknown> = { ...(extra ?? {}) };
       if (err instanceof Error) {
         body.err = err.message;

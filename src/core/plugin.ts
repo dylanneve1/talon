@@ -17,6 +17,11 @@
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { log, logError, logWarn } from "../util/log.js";
+import {
+  recordHistogram,
+  incrementCounter,
+  sanitizeMetricLabel,
+} from "../util/metrics.js";
 import type { ActionResult } from "./types.js";
 import type { TalonConfig } from "../util/config.js";
 
@@ -689,8 +694,6 @@ export async function handlePluginAction(
   chatId: string,
 ): Promise<ActionResult | null> {
   const action = typeof body.action === "string" ? body.action : "unknown";
-  const { recordHistogram, incrementCounter, sanitizeMetricLabel } =
-    await import("../util/metrics.js");
   // Bucket untrusted action names for metric keys so a rogue plugin or garbage
   // input can't fill MAX_METRIC_KEYS. The raw action stays in log messages.
   const mAction = sanitizeMetricLabel(action);
