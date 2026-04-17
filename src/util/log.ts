@@ -451,8 +451,11 @@ export function childLogger(bindings: Bindings): ChildLogger {
 }
 
 // ── Recent in-memory buffer ───────────────────────────────────────────────────
-// Small ring buffer of the most recent log records. Exposed by /debug/logs so
-// operators can peek at activity without tailing the file.
+// Fixed-size circular buffer of the most recent log records. Exposed by
+// /debug/logs so operators can peek at activity without tailing the file.
+//
+// Keyed on a write index + valid-count: inserts are O(1) with no Array#shift
+// cost, which matters at default level "trace" where this is on every log line.
 
 type LogRecord = {
   ts: number;
@@ -464,19 +467,34 @@ type LogRecord = {
 };
 
 const RECENT_BUFFER_SIZE = 500;
-const recentBuffer: LogRecord[] = [];
+const recentBuffer: (LogRecord | undefined)[] = new Array(RECENT_BUFFER_SIZE);
+let recentBufferHead = 0; // next write index
+let recentBufferSize = 0; // valid entries (≤ capacity)
 
 function pushRecent(rec: LogRecord): void {
-  recentBuffer.push(rec);
-  if (recentBuffer.length > RECENT_BUFFER_SIZE) recentBuffer.shift();
+  recentBuffer[recentBufferHead] = rec;
+  recentBufferHead = (recentBufferHead + 1) % RECENT_BUFFER_SIZE;
+  if (recentBufferSize < RECENT_BUFFER_SIZE) recentBufferSize++;
+}
+
+/** Snapshot of the ring in oldest-to-newest order. */
+function snapshotRecent(): LogRecord[] {
+  if (recentBufferSize === 0) return [];
+  if (recentBufferSize < RECENT_BUFFER_SIZE) {
+    return recentBuffer.slice(0, recentBufferSize) as LogRecord[];
+  }
+  // Full ring — head points at the oldest entry as well as the next slot.
+  return [
+    ...(recentBuffer.slice(recentBufferHead) as LogRecord[]),
+    ...(recentBuffer.slice(0, recentBufferHead) as LogRecord[]),
+  ];
 }
 
 export function getRecentLogs(limit = 100, minLevel?: LogLevel): LogRecord[] {
+  const ordered = snapshotRecent();
   const min = minLevel ? LEVEL_WEIGHTS[minLevel] : 0;
   const filtered =
-    min === 0
-      ? recentBuffer
-      : recentBuffer.filter((r) => LEVEL_WEIGHTS[r.level] >= min);
+    min === 0 ? ordered : ordered.filter((r) => LEVEL_WEIGHTS[r.level] >= min);
   return filtered.slice(-limit);
 }
 
