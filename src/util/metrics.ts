@@ -37,7 +37,10 @@ function ringValues(buf: RingBuffer): number[] {
  */
 export function sanitizeMetricLabel(raw: string): string {
   if (!raw || typeof raw !== "string") return "unknown";
-  const cleaned = raw.toLowerCase().replace(/[^a-z0-9_]+/g, "_").slice(0, 40);
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .slice(0, 40);
   return cleaned.replace(/^_+|_+$/g, "") || "unknown";
 }
 
