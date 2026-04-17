@@ -254,6 +254,12 @@ export function stripHtml(html: string): string {
     const $ = cheerio.load(html, { xml: false });
     return $.text().trim();
   } catch {
-    return html.replace(/<[^>]*>/g, "").trim();
+    let plain = html;
+    let prev: string;
+    do {
+      prev = plain;
+      plain = plain.replace(/<[^>]*>/g, "");
+    } while (plain !== prev);
+    return plain.trim();
   }
 }

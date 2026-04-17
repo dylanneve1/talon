@@ -635,7 +635,12 @@ async function sendHtml(
       "bot",
       `HTML send failed, falling back to plain text: ${err instanceof Error ? err.message : err}`,
     );
-    const plain = html.replace(/<[^>]+>/g, "");
+    let plain = html;
+    let prev: string;
+    do {
+      prev = plain;
+      plain = plain.replace(/<[^>]*>/g, "");
+    } while (plain !== prev);
     const sent = await bot.api.sendMessage(chatId, plain, {
       reply_parameters: replyToId ? { message_id: replyToId } : undefined,
     });

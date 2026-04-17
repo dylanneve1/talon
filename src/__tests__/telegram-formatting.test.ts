@@ -76,6 +76,10 @@ describe("escapeHtml", () => {
     expect(escapeHtml("<>&")).toBe("&lt;&gt;&amp;");
   });
 
+  it("escapes quotes so output is safe in attribute contexts", () => {
+    expect(escapeHtml(`"'`)).toBe("&quot;&#39;");
+  });
+
   it("passes through plain text unchanged", () => {
     expect(escapeHtml("hello world")).toBe("hello world");
   });
