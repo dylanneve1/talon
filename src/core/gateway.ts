@@ -343,13 +343,24 @@ export class Gateway {
   ): Promise<void> {
     // POST /debug/log-level bodies are tiny JSON — cap at 4KB so a local
     // client can't push arbitrary data and exhaust memory before we parse.
+    // Both the Content-Length header and the actual stream byte count are
+    // checked; the header is advisory (may be missing, lying, or absent for
+    // chunked transfers) so the stream-time check is what actually enforces.
     const MAX_BODY_BYTES = 4096;
+    const tooLarge = (): void => {
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "Payload too large" }));
+    };
+
     try {
-      // Early-reject on a large advertised Content-Length.
-      const declared = Number.parseInt(req.headers["content-length"] ?? "", 10);
+      // Node's types for req.headers values are `string | string[] | undefined`
+      // depending on duplicate-header handling. Content-Length should only
+      // ever be a single value, but normalize defensively anyway.
+      const clRaw = req.headers["content-length"];
+      const clStr = Array.isArray(clRaw) ? (clRaw[0] ?? "") : (clRaw ?? "");
+      const declared = Number.parseInt(clStr, 10);
       if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
-        res.writeHead(413, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, error: "Payload too large" }));
+        tooLarge();
         return;
       }
 
@@ -359,8 +370,12 @@ export class Gateway {
         const buf = chunk as Buffer;
         total += buf.length;
         if (total > MAX_BODY_BYTES) {
-          res.writeHead(413, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: "Payload too large" }));
+          // Free anything we already buffered so the oversize body doesn't
+          // stay pinned while the response drains.
+          chunks.length = 0;
+          // Stop reading further chunks.
+          req.destroy();
+          tooLarge();
           return;
         }
         chunks.push(buf);
