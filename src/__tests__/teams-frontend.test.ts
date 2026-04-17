@@ -1,11 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../util/log.js", () => ({
-  log: vi.fn(),
-  logError: vi.fn(),
-  logWarn: vi.fn(),
-  logDebug: vi.fn(),
-}));
+// Teams frontend transitively loads modules that import Gateway, which
+// statically pulls setLogLevel/getLogLevel/getRecentLogs from log.js.
+// Expose them defensively so ESM resolution doesn't trip on missing exports.
+vi.mock("../util/log.js", () => {
+  let currentLevel = "trace";
+  return {
+    log: vi.fn(),
+    logError: vi.fn(),
+    logWarn: vi.fn(),
+    logDebug: vi.fn(),
+    setLogLevel: vi.fn((lvl: string) => {
+      currentLevel = lvl;
+    }),
+    getLogLevel: vi.fn(() => currentLevel),
+    getRecentLogs: vi.fn(() => []),
+  };
+});
 
 vi.mock("../core/plugin.js", () => ({
   handlePluginAction: vi.fn(async () => null),
