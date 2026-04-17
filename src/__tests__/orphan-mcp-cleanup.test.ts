@@ -84,7 +84,12 @@ function makeProc(
 
 // Overwrite an existing /proc/<pid>/stat with a new starttime, simulating a
 // PID recycle. Used to exercise the SIGKILL identity check.
-function rewriteStat(root: string, pid: number, newStart: number, ppid = 1): void {
+function rewriteStat(
+  root: string,
+  pid: number,
+  newStart: number,
+  ppid = 1,
+): void {
   writeFileSync(
     join(root, String(pid), "stat"),
     `${pid} (node) S ${ppid} 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 ${newStart}\n`,
@@ -303,9 +308,8 @@ describe("cleanOrphanedMcpProcesses", () => {
       "node",
       5000, // original starttime
     );
-    const { cleanOrphanedMcpProcesses } = await import(
-      "../util/orphan-mcp-cleanup.js"
-    );
+    const { cleanOrphanedMcpProcesses } =
+      await import("../util/orphan-mcp-cleanup.js");
     vi.useFakeTimers();
     try {
       const resultPromise = cleanOrphanedMcpProcesses(procRoot);

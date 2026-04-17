@@ -220,7 +220,9 @@ async function doCleanup(procRoot: string): Promise<OrphanCleanupResult> {
  *   [18] itrealvalue
  *   [19] starttime   ← field 22 of the full stat row
  */
-function readStat(statPath: string): { ppid: number; starttime: number } | null {
+function readStat(
+  statPath: string,
+): { ppid: number; starttime: number } | null {
   let raw: string;
   try {
     raw = readFileSync(statPath, "utf8");
