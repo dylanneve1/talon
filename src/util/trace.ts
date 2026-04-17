@@ -102,12 +102,16 @@ export type Span = {
 };
 
 const SPAN_RING_SIZE = 1000;
-const recentSpans: SpanRecord[] = [];
+// Fixed-size circular buffer — O(1) insert, no Array#shift cost under load.
+const recentSpans: SpanRecord[] = new Array<SpanRecord>(SPAN_RING_SIZE);
+let recentSpansHead = 0; // next write position
+let recentSpansSize = 0; // valid entries (≤ capacity)
 const SPAN_LOG_PREFIX = "spans";
 
 function pushSpan(rec: SpanRecord): void {
-  recentSpans.push(rec);
-  if (recentSpans.length > SPAN_RING_SIZE) recentSpans.shift();
+  recentSpans[recentSpansHead] = rec;
+  recentSpansHead = (recentSpansHead + 1) % SPAN_RING_SIZE;
+  if (recentSpansSize < SPAN_RING_SIZE) recentSpansSize++;
 }
 
 function currentLogFile(): string {
@@ -254,10 +258,24 @@ export function currentSpan(): Span | undefined {
 
 /** Snapshot of recent spans (most recent last). */
 export function getRecentSpans(limit = 100): SpanRecord[] {
-  return recentSpans.slice(-limit);
+  if (recentSpansSize === 0) return [];
+  // Build an ordered snapshot from the ring. Head points at the next slot to
+  // write — when the buffer is full, it's also the oldest entry.
+  const ordered: SpanRecord[] =
+    recentSpansSize < SPAN_RING_SIZE
+      ? recentSpans.slice(0, recentSpansSize)
+      : [
+          ...recentSpans.slice(recentSpansHead),
+          ...recentSpans.slice(0, recentSpansHead),
+        ];
+  return ordered.slice(-limit);
 }
 
 /** Clear the in-memory span ring buffer. Intended for tests. */
 export function resetSpans(): void {
-  recentSpans.length = 0;
+  for (let i = 0; i < recentSpans.length; i++) {
+    recentSpans[i] = undefined as unknown as SpanRecord;
+  }
+  recentSpansHead = 0;
+  recentSpansSize = 0;
 }

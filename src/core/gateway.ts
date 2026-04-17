@@ -300,7 +300,24 @@ export class Gateway {
       }
       if (route === "/debug/logs") {
         const limit = parseLimit(url.searchParams.get("limit"), 100);
-        const level = url.searchParams.get("level") as LogLevel | null;
+        const levelRaw = url.searchParams.get("level");
+        const ALLOWED: LogLevel[] = [
+          "trace",
+          "debug",
+          "info",
+          "warn",
+          "error",
+          "fatal",
+          "silent",
+        ];
+        if (levelRaw !== null && !ALLOWED.includes(levelRaw as LogLevel)) {
+          writeJson(400, {
+            ok: false,
+            error: `Invalid level. Allowed: ${ALLOWED.join(", ")}`,
+          });
+          return;
+        }
+        const level = levelRaw as LogLevel | null;
         writeJson(200, {
           level: getLogLevel(),
           logs: getRecentLogs(limit, level ?? undefined),

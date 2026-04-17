@@ -11,6 +11,17 @@ vi.mock("node:fs", async () => {
   };
 });
 
+// Stub log.js so importing trace.js doesn't run module-level pino/file
+// transport initialization (which would touch the real user home).
+vi.mock("../util/log.js", () => ({
+  log: vi.fn(),
+  logError: vi.fn(),
+  logWarn: vi.fn(),
+  logDebug: vi.fn(),
+  logTrace: vi.fn(),
+  logFatal: vi.fn(),
+}));
+
 const { startSpan, withSpan, currentSpan, getRecentSpans, resetSpans } =
   await import("../util/trace.js");
 
