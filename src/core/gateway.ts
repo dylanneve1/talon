@@ -341,9 +341,31 @@ export class Gateway {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
+    // POST /debug/log-level bodies are tiny JSON — cap at 4KB so a local
+    // client can't push arbitrary data and exhaust memory before we parse.
+    const MAX_BODY_BYTES = 4096;
     try {
+      // Early-reject on a large advertised Content-Length.
+      const declared = Number.parseInt(req.headers["content-length"] ?? "", 10);
+      if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Payload too large" }));
+        return;
+      }
+
       const chunks: Buffer[] = [];
-      for await (const chunk of req) chunks.push(chunk as Buffer);
+      let total = 0;
+      for await (const chunk of req) {
+        const buf = chunk as Buffer;
+        total += buf.length;
+        if (total > MAX_BODY_BYTES) {
+          res.writeHead(413, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: "Payload too large" }));
+          return;
+        }
+        chunks.push(buf);
+      }
+
       const body = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
         level?: LogLevel;
       };
@@ -352,7 +374,23 @@ export class Gateway {
         res.end(JSON.stringify({ ok: false, error: "Missing level" }));
         return;
       }
-      setLogLevel(body.level);
+      try {
+        setLogLevel(body.level);
+      } catch (err) {
+        // Unknown level — setLogLevel throws. Surface as 400 without mutating
+        // current state so callers can distinguish "bad input" from "server
+        // error" and the level remains whatever it was.
+        res.writeHead(400, {
+          "Content-Type": "application/json",
+        });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: err instanceof Error ? err.message : "Invalid level",
+          }),
+        );
+        return;
+      }
       log("gateway", `Log level changed to ${body.level}`);
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, level: body.level }));

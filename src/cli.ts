@@ -631,8 +631,12 @@ async function debugDumpMetrics(): Promise<void> {
       }
     }
     console.log();
+    // Histogram keys mix time (e.g. `span.x.ms`, `dispatcher.duration.ms`)
+    // with non-time metrics (e.g. `tokens.input`). Derive the unit per-key
+    // from the `.ms` suffix so the header isn't a lie and per-row labels
+    // are honest. Anything else is shown unitless.
     console.log(
-      `  ${pc.bold("Histograms")} ${pc.dim("(p50 / p95 / p99 / avg, ms)")}`,
+      `  ${pc.bold("Histograms")} ${pc.dim("(p50 / p95 / p99 / avg)")}`,
     );
     const histograms = Object.entries(data.histograms ?? {}).sort(([a], [b]) =>
       a.localeCompare(b),
@@ -641,8 +645,9 @@ async function debugDumpMetrics(): Promise<void> {
       console.log(`    ${pc.dim("(none)")}`);
     } else {
       for (const [k, h] of histograms) {
+        const unit = k.endsWith(".ms") ? pc.dim("ms") : "";
         console.log(
-          `    ${pc.dim(k.padEnd(40))} ${pc.cyan(`${h.p50}`.padStart(5))} / ${pc.cyan(`${h.p95}`.padStart(5))} / ${pc.cyan(`${h.p99}`.padStart(5))} / ${pc.cyan(`${h.avg}`.padStart(5))} ${pc.dim(`n=${h.count}`)}`,
+          `    ${pc.dim(k.padEnd(40))} ${pc.cyan(`${h.p50}`.padStart(5))} / ${pc.cyan(`${h.p95}`.padStart(5))} / ${pc.cyan(`${h.p99}`.padStart(5))} / ${pc.cyan(`${h.avg}`.padStart(5))}${unit ? " " + unit : ""} ${pc.dim(`n=${h.count}`)}`,
         );
       }
     }

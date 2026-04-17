@@ -9,13 +9,25 @@ import {
 } from "vitest";
 
 vi.mock("../util/log.js", () => {
+  const VALID = new Set([
+    "trace",
+    "debug",
+    "info",
+    "warn",
+    "error",
+    "fatal",
+    "silent",
+  ]);
   let currentLevel = "trace";
   return {
     log: vi.fn(),
     logError: vi.fn(),
     logWarn: vi.fn(),
     logDebug: vi.fn(),
+    // Mirrors the real setLogLevel behavior: throws on unknown values so
+    // the gateway can translate that into a 400 without mutating state.
     setLogLevel: vi.fn((lvl: string) => {
+      if (!VALID.has(lvl)) throw new Error(`Invalid log level: ${lvl}`);
       currentLevel = lvl;
     }),
     getLogLevel: vi.fn(() => currentLevel),
@@ -528,6 +540,54 @@ describe("Gateway — debug endpoints", () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+  });
+
+  it("POST /debug/log-level rejects an invalid level without mutating state", async () => {
+    // First, set a known level so we can verify it stays put.
+    await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "warn" }),
+    });
+    const before = (await (
+      await fetch(`http://127.0.0.1:${port}/debug/log-level`)
+    ).json()) as { level: string };
+
+    // Attempt an invalid level — should 400, NOT change state.
+    const res = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "bogus" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/invalid/i);
+
+    // Verify the previous level is still in effect.
+    const after = (await (
+      await fetch(`http://127.0.0.1:${port}/debug/log-level`)
+    ).json()) as { level: string };
+    expect(after.level).toBe(before.level);
+
+    // Restore default for subsequent tests.
+    await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace" }),
+    });
+  });
+
+  it("POST /debug/log-level rejects an oversized body with 413", async () => {
+    const huge = "x".repeat(10_000);
+    const res = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace", pad: huge }),
+    });
+    expect(res.status).toBe(413);
     const body = await res.json();
     expect(body.ok).toBe(false);
   });
