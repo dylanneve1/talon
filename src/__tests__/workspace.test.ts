@@ -6,9 +6,43 @@ import {
   existsSync,
   readdirSync,
   symlinkSync,
+  unlinkSync,
 } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+
+// Probe whether this platform/user can create symlinks (Windows requires
+// Developer Mode or admin). Declaration-time gate via it.runIf avoids any
+// runtime skip call in tests.
+const canSymlink = (() => {
+  const probeDir = join(tmpdir(), `talon-ws-symlink-probe-${Date.now()}`);
+  const target = join(probeDir, "target");
+  const link = join(probeDir, "link");
+  try {
+    mkdirSync(probeDir, { recursive: true });
+    writeFileSync(target, "x");
+    symlinkSync(target, link);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    try {
+      unlinkSync(link);
+    } catch {
+      /* ignore */
+    }
+    try {
+      unlinkSync(target);
+    } catch {
+      /* ignore */
+    }
+    try {
+      rmSync(probeDir, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+})();
 
 // Mock log to prevent pino initialization issues
 vi.mock("../util/log.js", () => ({
@@ -216,15 +250,20 @@ describe("getWorkspaceDiskUsage — edge cases", () => {
     expect(usage).toBe(8);
   });
 
-  it("skips symlinks — entry.isFile() FALSE branch (L147)", () => {
-    mkdirSync(TEST_ROOT, { recursive: true });
-    writeFileSync(join(TEST_ROOT, "real.txt"), "hello"); // 5 bytes
-    // symlink: isDirectory()=false, isFile()=false → skipped by walk
-    symlinkSync(join(TEST_ROOT, "real.txt"), join(TEST_ROOT, "link.txt"));
-    const usage = getWorkspaceDiskUsage(TEST_ROOT);
-    // Only real.txt counts (5 bytes); symlink is not counted
-    expect(usage).toBe(5);
-  });
+  // Gated at declaration time via it.runIf — Windows without Developer
+  // Mode / admin throws EPERM on symlinkSync, so the test only runs where
+  // the platform actually supports the primitive.
+  it.runIf(canSymlink)(
+    "skips symlinks — entry.isFile() FALSE branch (L147)",
+    () => {
+      mkdirSync(TEST_ROOT, { recursive: true });
+      writeFileSync(join(TEST_ROOT, "real.txt"), "hello"); // 5 bytes
+      symlinkSync(join(TEST_ROOT, "real.txt"), join(TEST_ROOT, "link.txt"));
+      const usage = getWorkspaceDiskUsage(TEST_ROOT);
+      // Only real.txt counts (5 bytes); symlink is not counted
+      expect(usage).toBe(5);
+    },
+  );
 });
 
 describe("startUploadCleanup — setInterval callback (function coverage)", () => {

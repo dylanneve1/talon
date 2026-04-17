@@ -26,7 +26,7 @@ describe("markdownToTelegramHtml", () => {
     const input = "```python\nprint('hello')\n```";
     const result = markdownToTelegramHtml(input);
     expect(result).toContain('<code class="language-python">');
-    expect(result).toContain("print('hello')");
+    expect(result).toContain("print(&#39;hello&#39;)");
     expect(result).toContain("<pre>");
     expect(result).toContain("</pre>");
   });
@@ -46,9 +46,8 @@ describe("markdownToTelegramHtml", () => {
   });
 
   it("escapes HTML special characters in plain text", () => {
-    // escapeHtml handles &, <, > — single quotes are passed through
     expect(markdownToTelegramHtml("<script>alert('xss')</script>")).toBe(
-      "&lt;script&gt;alert('xss')&lt;/script&gt;",
+      "&lt;script&gt;alert(&#39;xss&#39;)&lt;/script&gt;",
     );
   });
 

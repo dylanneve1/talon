@@ -520,6 +520,34 @@ describe("teams formatting — default token type", () => {
     const result = stripHtmlFresh("<p>Hello <b>world</b></p>");
     expect(result).toBe("Hello world");
   });
+
+  it("stripHtml fallback iterates to remove nested tag sequences", async () => {
+    vi.resetModules();
+    vi.doMock("cheerio", () => ({
+      default: {},
+      load: vi.fn(() => {
+        throw new Error("cheerio unavailable");
+      }),
+    }));
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+      logDebug: vi.fn(),
+    }));
+
+    const { stripHtml: stripHtmlFresh } =
+      await import("../frontend/teams/formatting.js");
+    // Nested sequences must not leave any surviving `<...>` tag after the
+    // fallback runs. The iterative loop is what guarantees that — with a
+    // non-iterating single pass, certain crafted inputs can reconstruct a
+    // tag after the first removal.
+    const nested = "<scr<script>ipt>alert(1)</script>";
+    const result = stripHtmlFresh(nested);
+    expect(result).not.toMatch(/<[^<>]*>/); // no complete tag remains
+    expect(result).not.toContain("<");
+    expect(result).toContain("alert(1)");
+  });
 });
 
 // ── teams actions branch coverage ─────────────────────────────────────────
