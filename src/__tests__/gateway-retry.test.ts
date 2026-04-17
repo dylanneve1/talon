@@ -20,12 +20,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mocks (before any dynamic import) ─────────────────────────────────────
 
-vi.mock("../util/log.js", () => ({
-  log: vi.fn(),
-  logError: vi.fn(),
-  logWarn: vi.fn(),
-  logDebug: vi.fn(),
-}));
+// Gateway imports these on top-level for the /debug/* routes. Test mocks
+// must expose them even though this file only exercises withRetry, because
+// ESM throws on any "module does not provide an export" lookup during
+// resolution.
+vi.mock("../util/log.js", () => {
+  let currentLevel = "trace";
+  return {
+    log: vi.fn(),
+    logError: vi.fn(),
+    logWarn: vi.fn(),
+    logDebug: vi.fn(),
+    setLogLevel: vi.fn((lvl: string) => {
+      currentLevel = lvl;
+    }),
+    getLogLevel: vi.fn(() => currentLevel),
+    getRecentLogs: vi.fn(() => []),
+  };
+});
 
 vi.mock("../core/dispatcher.js", () => ({
   getActiveCount: vi.fn(() => 0),
@@ -38,6 +50,9 @@ vi.mock("../util/watchdog.js", () => ({
     recentErrorCount: 0,
     msSinceLastMessage: 0,
   })),
+  getRecentErrors: vi.fn(() => []),
+  getUptimeMs: vi.fn(() => 0),
+  getTotalMessagesProcessed: vi.fn(() => 0),
 }));
 
 vi.mock("../storage/sessions.js", () => ({

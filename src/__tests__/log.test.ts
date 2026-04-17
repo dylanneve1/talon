@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Pin the logger's initial level + namespace filter to a known state BEFORE
+// importing log.ts. log.ts resolves both at module-init time from env vars,
+// so leaving them to the CI environment makes these assertions flaky (e.g.
+// TALON_LOG_LEVEL=warn would cause log()/logDebug() to silently no-op).
+process.env.TALON_LOG_LEVEL = "trace";
+delete process.env.TALON_DEBUG;
+delete process.env.TALON_QUIET;
+
 // Mock pino before importing log module
 const mockInfo = vi.fn();
 const mockError = vi.fn();
