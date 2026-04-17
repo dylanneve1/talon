@@ -105,7 +105,6 @@ export async function handleMessage(
   const WATCHDOG_CHECK_MS = 30_000; // check every 30s
   let lastActivityAt = Date.now();
   let resultReceived = false;
-  let watchdogFired = false;
   let watchdogTimer: ReturnType<typeof setTimeout> | undefined;
   let watchdogCancelled = false;
   const bumpActivity = (): void => {
@@ -124,7 +123,6 @@ export async function handleMessage(
       if (watchdogCancelled) return;
       const silent = Date.now() - lastActivityAt;
       if (silent > WATCHDOG_MS) {
-        watchdogFired = true;
         logWarn(
           "agent",
           `[${chatId}] Watchdog: no SDK activity for ${Math.round(silent / 1000)}s — aborting`,
@@ -260,15 +258,15 @@ export async function handleMessage(
     }
   }
 
-  // Defensive: the race resolved cleanly but we never saw a `result`. This
-  // would mean the SDK iterator exited on its own between turns without
-  // emitting a terminal result. Unlikely in practice, but worth surfacing
-  // so a silent no-op can't masquerade as a successful turn.
+  // Defensive: if we're here, Promise.race resolved via iterateStream
+  // (the watchdog path always rejects and flows through the catch above),
+  // but we never saw a `result` message. That means the SDK iterator
+  // exited between turns without emitting a terminal result — unlikely in
+  // practice but worth surfacing so a silent no-op can't masquerade as
+  // a successful turn.
   if (!resultReceived) {
     incrementCounter("errors.no_result");
-    const msg = watchdogFired
-      ? `Query timed out after ${WATCHDOG_MS / 1000}s of SDK silence (likely a stuck tool call)`
-      : `SDK stream ended without a result message`;
+    const msg = "SDK stream ended without a result message";
     logError("agent", `[${chatId}] ${msg}`);
     throw new Error(msg);
   }

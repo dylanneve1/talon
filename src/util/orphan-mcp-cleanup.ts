@@ -33,7 +33,10 @@ const MCP_SIGNATURES: readonly string[] = [
   "/.npm-global/bin/brave-search-mcp-server",
   "/.npm-global/bin/ssh-mcp-server",
   "/.npm-global/bin/mcp-hetzner",
-  "/telegram-claude-agent/src/core/tools/mcp-server.ts",
+  // Path suffix, not project directory — the checkout dir is install-specific
+  // (can be anything), so matching "/telegram-claude-agent/" would miss forks
+  // or renamed clones.
+  "/src/core/tools/mcp-server.ts",
   "/.talon/wikipedia-mcp-venv/",
   "/.talon/mempalace-venv/",
   "/talon.plugins.extras/",
@@ -114,16 +117,23 @@ async function doCleanup(procRoot: string): Promise<OrphanCleanupResult> {
     `Found ${orphans.length} orphaned MCP process(es); terminating`,
   );
 
+  // Track PIDs where a real SIGTERM went out vs ones that were already gone
+  // (ESRCH). Only the former can still be alive after the grace period, so
+  // the SIGKILL follow-up is skipped entirely when everything was ESRCH.
+  const sigtermed: number[] = [];
+
   for (const { pid, cmd } of orphans) {
     let killed = false;
     try {
       process.kill(pid, "SIGTERM");
       killed = true;
       result.killed++;
+      sigtermed.push(pid);
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
       if (code === "ESRCH") {
-        // Already gone between listing and kill — count as success.
+        // Already gone between listing and kill — count as success but
+        // don't queue for a SIGKILL grace check.
         killed = true;
         result.killed++;
       } else {
@@ -139,10 +149,11 @@ async function doCleanup(procRoot: string): Promise<OrphanCleanupResult> {
     result.details.push({ pid, cmd, killed });
   }
 
-  // Follow-up: SIGKILL any stragglers after a short grace period.
-  if (result.killed > 0) {
+  // Follow-up SIGKILL on anything that ignored SIGTERM. Skip entirely when
+  // no real SIGTERM was actually sent (e.g. all orphans were already-ESRCH).
+  if (sigtermed.length > 0) {
     await new Promise((r) => setTimeout(r, 500));
-    for (const { pid } of orphans) {
+    for (const pid of sigtermed) {
       try {
         process.kill(pid, 0); // existence check only
         process.kill(pid, "SIGKILL");

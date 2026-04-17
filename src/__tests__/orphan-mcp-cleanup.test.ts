@@ -29,8 +29,30 @@ vi.mock("../util/log.js", () => ({
 // the same Vitest worker.
 const killMock = vi.spyOn(process, "kill").mockImplementation(() => true);
 
+// cleanOrphanedMcpProcesses no-ops on non-linux platforms. Tests here run the
+// Linux branch against a fake /proc fixture, so pin process.platform to
+// "linux" for the whole file and restore the original descriptor afterwards.
+// Using `configurable: true` so the same property can be redefined later
+// (the "non-linux no-op" test spoofs it per-case).
+const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(
+  process,
+  "platform",
+) ?? {
+  value: process.platform,
+  writable: false,
+  enumerable: true,
+  configurable: true,
+};
+Object.defineProperty(process, "platform", {
+  value: "linux",
+  writable: false,
+  enumerable: true,
+  configurable: true,
+});
+
 afterAll(() => {
   killMock.mockRestore();
+  Object.defineProperty(process, "platform", originalPlatformDescriptor);
 });
 
 // Build a fake /proc/<pid> entry.
@@ -172,9 +194,17 @@ describe("cleanOrphanedMcpProcesses", () => {
   });
 
   it("no-ops on non-linux platforms without touching the proc root", async () => {
-    // Spoof platform so the early-return branch runs.
-    const orig = process.platform;
-    Object.defineProperty(process, "platform", { value: "darwin" });
+    // Spoof platform so the early-return branch runs. configurable: true
+    // is required here (and in the file-level pin above) because the
+    // property needs to be redefined again after the try block — without
+    // it a subsequent Object.defineProperty throws on some Node versions.
+    const orig = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", {
+      value: "darwin",
+      writable: false,
+      enumerable: true,
+      configurable: true,
+    });
     try {
       makeProc(
         procRoot,
@@ -188,7 +218,7 @@ describe("cleanOrphanedMcpProcesses", () => {
       expect(result.found).toBe(0);
       expect(killMock).not.toHaveBeenCalled();
     } finally {
-      Object.defineProperty(process, "platform", { value: orig });
+      Object.defineProperty(process, "platform", orig);
     }
   });
 
