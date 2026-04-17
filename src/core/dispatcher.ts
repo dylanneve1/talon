@@ -15,7 +15,7 @@ import type {
   ExecuteParams,
   ExecuteResult,
 } from "./types.js";
-import { log, logWarn, newRequestId, childLogger } from "../util/log.js";
+import { log, newRequestId, childLogger } from "../util/log.js";
 import { withSpan } from "../util/trace.js";
 import { incrementCounter, recordHistogram } from "../util/metrics.js";
 import { maybeStartDream } from "./dream.js";
@@ -118,15 +118,13 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
       let typingTimer: ReturnType<typeof setInterval> | undefined;
       try {
         await sendTyping(params.numericChatId).catch((err: unknown) => {
-          logWarn(
-            "dispatcher",
+          logCtx.warn(
             `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`,
           );
         });
         typingTimer = setInterval(() => {
           sendTyping(params.numericChatId).catch((err: unknown) => {
-            logWarn(
-              "dispatcher",
+            logCtx.warn(
               `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`,
             );
           });

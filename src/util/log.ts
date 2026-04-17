@@ -171,13 +171,14 @@ export function isDebugEnabled(component: string): boolean {
 
 const initialLevel = resolveInitialLevel();
 
-// Transport targets are intentionally open (level: "trace") so that the
-// logger-level gate (`logger.level`, updated at runtime by setLogLevel) is the
-// single source of truth. Errors.log is the one exception — it always filters
-// to warn+ regardless of the effective logger level, so the long-term error
-// record is never diluted when someone temporarily raises verbosity.
+// Transport targets are intentionally open (level: "trace") so warn+ always
+// reach the errors.log transport's own warn-level gate, regardless of the
+// user-facing level set via setLogLevel. User-facing filtering is applied in
+// the wrapper functions below: info/debug/trace wrappers gate on currentLevel,
+// while warn/error/fatal wrappers always emit so the long-term error record
+// is never diluted when someone temporarily raises the display level.
 const logger = pino({
-  level: initialLevel,
+  level: "trace",
   base: { pid: process.pid, v: 1 },
   transport: {
     targets: [
@@ -195,7 +196,7 @@ const logger = pino({
             },
           ]
         : []),
-      // Full log file — gated by logger.level
+      // Full log file — accepts every level the wrappers let through
       {
         target: "pino/file",
         level: "trace" as const,
@@ -234,13 +235,17 @@ export function getLogLevel(): LogLevel {
   return currentLevel;
 }
 
-/** Runtime level change — affects pino and skip-expensive-work guards. */
+/**
+ * Runtime level change — gates the info/debug/trace wrappers. Warn/error/fatal
+ * always pass through so errors.log keeps a complete record (see logger
+ * construction above). `logger.level` stays at "trace" so transport-level
+ * filtering (e.g. errors.log's warn gate) remains the source of truth.
+ */
 export function setLogLevel(level: LogLevel): void {
   if (!VALID_LEVELS.includes(level)) {
     throw new Error(`Invalid log level: ${level}`);
   }
   currentLevel = level;
-  logger.level = level === "silent" ? "silent" : level;
 }
 
 export function isLevelEnabled(level: LogLevel): boolean {
@@ -280,7 +285,6 @@ export function logError(
   message: string,
   err?: unknown,
 ): void {
-  if (!isLevelEnabled("error")) return;
   if (err instanceof Error) {
     // Capture both the concise message (for log consumers that look at `err`)
     // and the full stack (for diagnostics). pino-pretty renders the `stack`
@@ -301,7 +305,6 @@ export function logError(
 }
 
 export function logWarn(component: LogComponent, message: string): void {
-  if (!isLevelEnabled("warn")) return;
   logger.warn({ component }, message);
   pushRecent({ ts: Date.now(), level: "warn", component, msg: message });
 }
@@ -325,7 +328,6 @@ export function logFatal(
   message: string,
   err?: unknown,
 ): void {
-  if (!isLevelEnabled("fatal")) return;
   if (err instanceof Error) {
     logger.fatal({ component, err: err.message, stack: err.stack }, message);
   } else if (err !== undefined) {
@@ -400,12 +402,10 @@ function buildChild(bindings: Bindings): ChildLogger {
       capture("info", msg, undefined, extra);
     },
     warn: (msg, extra) => {
-      if (!isLevelEnabled("warn")) return;
       pinoChild.warn(extra ?? {}, msg);
       capture("warn", msg, undefined, extra);
     },
     error: (msg, err, extra) => {
-      if (!isLevelEnabled("error")) return;
       const body: Record<string, unknown> = { ...(extra ?? {}) };
       if (err instanceof Error) {
         body.err = err.message;
@@ -417,7 +417,6 @@ function buildChild(bindings: Bindings): ChildLogger {
       capture("error", msg, err, extra);
     },
     fatal: (msg, err, extra) => {
-      if (!isLevelEnabled("fatal")) return;
       const body: Record<string, unknown> = { ...(extra ?? {}) };
       if (err instanceof Error) {
         body.err = err.message;
