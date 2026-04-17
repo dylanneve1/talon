@@ -475,9 +475,7 @@ describe("Gateway — debug endpoints", () => {
   });
 
   it("GET /debug/logs rejects an invalid level with 400", async () => {
-    const res = await fetch(
-      `http://127.0.0.1:${port}/debug/logs?level=bogus`,
-    );
+    const res = await fetch(`http://127.0.0.1:${port}/debug/logs?level=bogus`);
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.ok).toBe(false);
