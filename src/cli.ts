@@ -566,6 +566,9 @@ async function tailFile(
   watchFile(filePath, { interval: 500 }, () => {
     try {
       const nl = splitLines(readFileSync(filePath, "utf-8"));
+      // File shrank — rotated or truncated. Reset so we print everything that
+      // arrives after this point rather than silently halting forever.
+      if (nl.length < lastSize) lastSize = 0;
       for (let i = lastSize; i < nl.length; i++)
         console.log(formatLogLine(nl[i]));
       lastSize = nl.length;

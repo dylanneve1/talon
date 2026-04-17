@@ -16,7 +16,7 @@ import {
 import pRetry, { AbortError } from "p-retry";
 import { classify } from "./errors.js";
 import { getActiveCount } from "./dispatcher.js";
-import { getHealthStatus } from "../util/watchdog.js";
+import { getHealthStatus, getRecentErrors } from "../util/watchdog.js";
 import { getActiveSessionCount } from "../storage/sessions.js";
 import {
   log,
@@ -24,16 +24,18 @@ import {
   logDebug,
   setLogLevel,
   getLogLevel,
+  getRecentLogs,
   type LogLevel,
 } from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "./plugin.js";
-import { withSpan } from "../util/trace.js";
+import { withSpan, getRecentSpans } from "../util/trace.js";
 import { buildDebugSnapshot } from "../util/debug.js";
 import {
   incrementCounter,
   recordHistogram,
   sanitizeMetricLabel,
+  getMetrics,
 } from "../util/metrics.js";
 import type { FrontendActionHandler, QueryBackend } from "./types.js";
 
@@ -280,11 +282,6 @@ export class Gateway {
     };
 
     try {
-      const { getMetrics } = await import("../util/metrics.js");
-      const { getRecentSpans } = await import("../util/trace.js");
-      const { getRecentLogs } = await import("../util/log.js");
-      const { getRecentErrors } = await import("../util/watchdog.js");
-
       if (route === "/debug/state") {
         writeJson(200, buildDebugSnapshot());
         return;

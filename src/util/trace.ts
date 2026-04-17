@@ -159,20 +159,29 @@ function buildSpan(
   let errMsg: string | undefined;
   let ended = false;
 
+  // Cached snapshot built at end() — returned on any further end() calls so
+  // the ring-buffer record cannot be mutated by late attribute/event writes
+  // from code that still holds a reference to the span.
+  let endedRec: SpanRecord | undefined;
+
   return {
     traceId,
     spanId,
     name,
     setAttribute(key, value) {
+      if (ended) return;
       attributes[key] = value;
     },
     setAttributes(a) {
+      if (ended) return;
       Object.assign(attributes, a);
     },
     addEvent(evName, evAttrs) {
+      if (ended) return;
       events.push({ ts: Date.now(), name: evName, attrs: evAttrs });
     },
     setStatus(s, err) {
+      if (ended) return;
       status = s;
       if (s === "error") {
         if (err instanceof Error) errMsg = err.message;
@@ -180,25 +189,12 @@ function buildSpan(
       }
     },
     end() {
-      if (ended) {
-        // Prevent double-end from emitting a second record.
-        return {
-          traceId,
-          spanId,
-          parentSpanId: parent?.spanId,
-          name,
-          startMs,
-          endMs: startMs,
-          durationMs: 0,
-          status,
-          attrs: attributes,
-          events,
-          err: errMsg,
-        };
-      }
+      if (ended && endedRec) return endedRec;
       ended = true;
       const endMs = Date.now();
-      const rec: SpanRecord = {
+      // Snapshot attributes/events so post-end() mutations can't touch the
+      // record stored in the ring buffer or persisted to disk.
+      const rec: SpanRecord = Object.freeze({
         traceId,
         spanId,
         parentSpanId: parent?.spanId,
@@ -207,10 +203,11 @@ function buildSpan(
         endMs,
         durationMs: endMs - startMs,
         status,
-        attrs: attributes,
-        events,
+        attrs: Object.freeze({ ...attributes }) as SpanAttributes,
+        events: Object.freeze(events.slice()) as SpanEvent[],
         err: errMsg,
-      };
+      }) as SpanRecord;
+      endedRec = rec;
       pushSpan(rec);
       persistSpan(rec);
       // Emit metrics so histograms show up without every caller opting in.
