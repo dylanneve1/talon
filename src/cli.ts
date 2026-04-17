@@ -554,7 +554,8 @@ async function tailFile(
   );
   const content = readFileSync(filePath, "utf-8");
   const lines = content.trim().split("\n");
-  for (const line of lines.slice(-initialLines)) console.log(formatLogLine(line));
+  for (const line of lines.slice(-initialLines))
+    console.log(formatLogLine(line));
   let lastSize = lines.length;
   watchFile(filePath, { interval: 500 }, () => {
     try {
@@ -621,7 +622,9 @@ async function debugDumpMetrics(): Promise<void> {
       }
     }
     console.log();
-    console.log(`  ${pc.bold("Histograms")} ${pc.dim("(p50 / p95 / p99 / avg, ms)")}`);
+    console.log(
+      `  ${pc.bold("Histograms")} ${pc.dim("(p50 / p95 / p99 / avg, ms)")}`,
+    );
     const histograms = Object.entries(data.histograms ?? {}).sort(([a], [b]) =>
       a.localeCompare(b),
     );
@@ -639,9 +642,7 @@ async function debugDumpMetrics(): Promise<void> {
     console.log(
       `  ${pc.red("✖")} Could not reach bot: ${err instanceof Error ? err.message : err}\n`,
     );
-    console.log(
-      `  Is Talon running?  Start with ${pc.cyan("talon start")}.\n`,
-    );
+    console.log(`  Is Talon running?  Start with ${pc.cyan("talon start")}.\n`);
   }
 }
 
@@ -703,7 +704,9 @@ async function debugSetLogLevel(level: string): Promise<void> {
       error?: string;
     };
     if (res.ok) {
-      console.log(`  ${pc.green("●")} Log level set to ${pc.bold(res.level ?? level)}\n`);
+      console.log(
+        `  ${pc.green("●")} Log level set to ${pc.bold(res.level ?? level)}\n`,
+      );
     } else {
       console.log(`  ${pc.red("✖")} ${res.error}\n`);
     }
@@ -772,9 +775,7 @@ async function runDebug(args: string[]): Promise<void> {
       console.log(
         `    ${pc.cyan("spans [N]")}           Last N spans (default 30)`,
       );
-      console.log(
-        `    ${pc.cyan("errors")}              Tail errors.log live`,
-      );
+      console.log(`    ${pc.cyan("errors")}              Tail errors.log live`);
       console.log(
         `    ${pc.cyan("log-level [lvl]")}     Get/set runtime log level`,
       );

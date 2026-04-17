@@ -300,10 +300,7 @@ export function logFatal(
   err?: unknown,
 ): void {
   if (err instanceof Error) {
-    logger.fatal(
-      { component, err: err.message, stack: err.stack },
-      message,
-    );
+    logger.fatal({ component, err: err.message, stack: err.stack }, message);
   } else if (err !== undefined) {
     logger.fatal({ component, err: String(err) }, message);
   } else {

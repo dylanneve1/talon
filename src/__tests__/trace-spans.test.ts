@@ -11,13 +11,8 @@ vi.mock("node:fs", async () => {
   };
 });
 
-const {
-  startSpan,
-  withSpan,
-  currentSpan,
-  getRecentSpans,
-  resetSpans,
-} = await import("../util/trace.js");
+const { startSpan, withSpan, currentSpan, getRecentSpans, resetSpans } =
+  await import("../util/trace.js");
 
 describe("span tracing", () => {
   beforeEach(() => {
