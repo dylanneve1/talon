@@ -31,7 +31,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 import { dirs } from "./paths.js";
 import { logError } from "./log.js";
-import { recordHistogram, incrementCounter } from "./metrics.js";
+import {
+  recordHistogram,
+  incrementCounter,
+  sanitizeMetricLabel,
+} from "./metrics.js";
 
 function ensureDir(): void {
   if (!existsSync(dirs.traces)) mkdirSync(dirs.traces, { recursive: true });
@@ -103,7 +107,11 @@ export type Span = {
 
 const SPAN_RING_SIZE = 1000;
 // Fixed-size circular buffer — O(1) insert, no Array#shift cost under load.
-const recentSpans: SpanRecord[] = new Array<SpanRecord>(SPAN_RING_SIZE);
+// Slots start empty and can be explicitly cleared (resetSpans), so the slot
+// type is `SpanRecord | undefined` rather than a lie with casts.
+const recentSpans: (SpanRecord | undefined)[] = new Array<
+  SpanRecord | undefined
+>(SPAN_RING_SIZE);
 let recentSpansHead = 0; // next write position
 let recentSpansSize = 0; // valid entries (≤ capacity)
 const SPAN_LOG_PREFIX = "spans";
@@ -211,8 +219,12 @@ function buildSpan(
       pushSpan(rec);
       persistSpan(rec);
       // Emit metrics so histograms show up without every caller opting in.
-      recordHistogram(`span.${name}.ms`, rec.durationMs);
-      incrementCounter(`span.${name}.${status}`);
+      // Span names come from user code (including plugins) and can be
+      // dynamic; sanitize them so the per-span metric keys can't blow out
+      // MAX_METRIC_KEYS and crowd out more important metrics.
+      const mName = sanitizeMetricLabel(name);
+      recordHistogram(`span.${mName}.ms`, rec.durationMs);
+      incrementCounter(`span.${mName}.${status}`);
       return rec;
     },
   };
@@ -257,21 +269,24 @@ export function currentSpan(): Span | undefined {
 export function getRecentSpans(limit = 100): SpanRecord[] {
   if (recentSpansSize === 0) return [];
   // Build an ordered snapshot from the ring. Head points at the next slot to
-  // write — when the buffer is full, it's also the oldest entry.
-  const ordered: SpanRecord[] =
+  // write — when the buffer is full, it's also the oldest entry. Filter
+  // out any undefined holes defensively (shouldn't be any within the valid
+  // region, but the slot type allows undefined after resetSpans()).
+  const raw =
     recentSpansSize < SPAN_RING_SIZE
       ? recentSpans.slice(0, recentSpansSize)
       : [
           ...recentSpans.slice(recentSpansHead),
           ...recentSpans.slice(0, recentSpansHead),
         ];
+  const ordered = raw.filter((r): r is SpanRecord => r !== undefined);
   return ordered.slice(-limit);
 }
 
 /** Clear the in-memory span ring buffer. Intended for tests. */
 export function resetSpans(): void {
   for (let i = 0; i < recentSpans.length; i++) {
-    recentSpans[i] = undefined as unknown as SpanRecord;
+    recentSpans[i] = undefined;
   }
   recentSpansHead = 0;
   recentSpansSize = 0;
