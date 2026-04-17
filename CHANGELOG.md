@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/dylanneve1/talon/compare/v1.8.0...v1.8.1) (2026-04-17)
+
+
+### Bug Fixes
+
+* **security:** address CodeQL HTML sanitization findings ([#63](https://github.com/dylanneve1/talon/issues/63)) ([39ac20b](https://github.com/dylanneve1/talon/commit/39ac20b6f7ce7e33a3cfac75d1ac6cb4db93d680))
+
 ## [1.8.0](https://github.com/dylanneve1/talon/compare/v1.7.0...v1.8.0) (2026-04-16)
 
 
