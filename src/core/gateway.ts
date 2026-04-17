@@ -268,7 +268,11 @@ export class Gateway {
     // Clamp query-parsed limits to positive finite integers so malformed or
     // absurdly large values can't return the whole in-memory buffer or allocate
     // unbounded response arrays.
-    const parseLimit = (raw: string | null, def: number, max = 1000): number => {
+    const parseLimit = (
+      raw: string | null,
+      def: number,
+      max = 1000,
+    ): number => {
       if (raw === null) return def;
       const n = Number(raw);
       if (!Number.isFinite(n) || n <= 0) return def;
