@@ -373,9 +373,13 @@ export class Gateway {
           // Free anything we already buffered so the oversize body doesn't
           // stay pinned while the response drains.
           chunks.length = 0;
-          // Stop reading further chunks.
-          req.destroy();
+          // Send the 413 first, then drain-and-discard the remaining body
+          // without destroying the socket. `req.destroy()` would tear down
+          // the underlying TCP connection and the client would see ECONNRESET
+          // instead of our 413 JSON; `req.resume()` keeps the stream flowing
+          // in discard mode so HTTP can complete the response cleanly.
           tooLarge();
+          req.resume();
           return;
         }
         chunks.push(buf);
