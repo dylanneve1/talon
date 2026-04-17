@@ -296,8 +296,8 @@ export class Gateway {
       }
       writeJson(404, { ok: false, error: "Unknown debug route" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      writeJson(500, { ok: false, error: msg });
+      logError("gateway", `Debug endpoint ${route} failed`, err);
+      writeJson(500, { ok: false, error: "Internal error" });
     }
   }
 
@@ -321,9 +321,9 @@ export class Gateway {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, level: body.level }));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      logError("gateway", "Set log level failed", err);
       res.writeHead(400, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: false, error: msg }));
+      res.end(JSON.stringify({ ok: false, error: "Invalid request" }));
     }
   }
 
