@@ -62,6 +62,8 @@ export const files = {
   config: resolve(TALON_ROOT, "config.json"),
   /** Structured log: ~/.talon/talon.log */
   log: resolve(TALON_ROOT, "talon.log"),
+  /** Errors-only log (warn+), long-term retained: ~/.talon/errors.log */
+  errorLog: resolve(TALON_ROOT, "errors.log"),
   /** Session store: ~/.talon/data/sessions.json */
   sessions: resolve(TALON_ROOT, "data", "sessions.json"),
   /** Chat history: ~/.talon/data/history.json */

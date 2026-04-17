@@ -515,6 +515,17 @@ describe("typing indicator — interval error handling", () => {
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
@@ -589,6 +600,17 @@ describe("typing indicator — error handling", () => {
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("./dream.js", () => ({ maybeStartDream: vi.fn() }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
@@ -642,6 +664,17 @@ describe("typing indicator — non-Error throws", () => {
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
@@ -692,6 +725,17 @@ describe("typing indicator — non-Error throws", () => {
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
@@ -765,6 +809,17 @@ describe("dispatcher — uninitialized guard", () => {
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 

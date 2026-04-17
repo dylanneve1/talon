@@ -21,7 +21,7 @@ import { getFallbackModel } from "../../core/models.js";
 import { rebuildSystemPrompt } from "../../util/config.js";
 import { getPluginPromptAdditions } from "../../core/plugin.js";
 import { log, logError, logWarn } from "../../util/log.js";
-import { traceMessage } from "../../util/trace.js";
+import { traceMessage, currentSpan } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { formatFullDatetime } from "../../util/time.js";
 
@@ -87,6 +87,15 @@ export async function handleMessage(
     : `${nowTag}${msgIdHint} ${text}`;
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
+
+  const span = currentSpan();
+  span?.setAttributes({
+    backend: "claude-sdk",
+    model: activeModel,
+    sessionTurn: session.turns,
+    inputChars: text.length,
+  });
+  span?.addEvent("query-start");
 
   const qi = query({ prompt, options });
   activeQueries.set(chatId, qi);
@@ -246,6 +255,12 @@ export async function handleMessage(
     toolCalls: state.toolCalls,
     model: activeModel,
   });
+  span?.setAttributes({
+    cacheHitPct,
+    toolCalls: state.toolCalls,
+    numApiCalls: state.numApiCalls,
+  });
+  span?.addEvent("query-end");
 
   return {
     text: state.allResponseText.trim(),
