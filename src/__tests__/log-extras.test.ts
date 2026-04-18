@@ -130,4 +130,37 @@ describe("log extras", () => {
     expect(err?.component).toBe("dispatcher");
     expect(err?.err).toBe("oops");
   });
+
+  it("captures falsy err values (0, '', false) instead of dropping them", () => {
+    const child = childLogger({ component: "dispatcher" });
+    child.error("zero-err", 0);
+    child.error("empty-err", "");
+    child.error("false-err", false);
+    const records = getRecentLogs(50);
+    expect(records.find((r) => r.msg === "zero-err")?.err).toBe("0");
+    expect(records.find((r) => r.msg === "empty-err")?.err).toBe("");
+    expect(records.find((r) => r.msg === "false-err")?.err).toBe("false");
+  });
+
+  it("normalizes circular extra so getRecentLogs is JSON-serializable", () => {
+    const child = childLogger({ component: "dispatcher" });
+    const cyclic: Record<string, unknown> = { name: "A" };
+    cyclic.self = cyclic;
+    child.info("cycle-info", cyclic);
+    const rec = getRecentLogs(50).find((r) => r.msg === "cycle-info");
+    expect(rec).toBeDefined();
+    // The whole snapshot must round-trip through JSON without throwing.
+    expect(() => JSON.stringify(rec)).not.toThrow();
+    const safeExtra = rec?.extra as Record<string, unknown>;
+    expect(safeExtra.name).toBe("A");
+    expect(safeExtra.self).toBe("[circular]");
+  });
+
+  it("normalizes BigInt in extra so getRecentLogs is JSON-serializable", () => {
+    const child = childLogger({ component: "dispatcher" });
+    child.info("bigint-info", { n: 9999999999999999999n });
+    const rec = getRecentLogs(50).find((r) => r.msg === "bigint-info");
+    expect(() => JSON.stringify(rec)).not.toThrow();
+    expect((rec?.extra as Record<string, unknown>).n).toMatch(/n$/);
+  });
 });

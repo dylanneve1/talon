@@ -10,7 +10,8 @@
  *
  * Level control:
  *   - Default level is "trace" (maximum verbosity)
- *   - Override with TALON_LOG_LEVEL env var (trace|debug|info|warn|error|fatal)
+ *   - Override with TALON_LOG_LEVEL env var
+ *     (trace|debug|info|warn|error|fatal|silent)
  *   - Namespace filter via TALON_DEBUG env var (comma list of components,
  *     wildcard * accepted; e.g. "gateway,dispatcher" or "tele*")
  *   - setLogLevel() flips the level at runtime (used by /debug/log-level)
@@ -32,6 +33,7 @@ import {
 } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirs, files } from "./paths.js";
+import { toJsonSafe } from "./json-safe.js";
 
 export type LogComponent =
   | "bot"
@@ -385,8 +387,20 @@ function buildChild(bindings: Bindings): ChildLogger {
       level,
       component: String(bindings.component),
       msg,
-      err: err instanceof Error ? err.message : err ? String(err) : undefined,
-      extra,
+      // `err` can legitimately be any falsy non-undefined value (0, "", false)
+      // that a plugin mistakenly passed as the error argument — capture those
+      // as-is rather than dropping them silently.
+      err:
+        err instanceof Error
+          ? err.message
+          : err !== undefined
+            ? String(err)
+            : undefined,
+      // Normalize extra into a JSON-safe, size-bounded form so a plugin can't
+      // poison the ring with circular refs, BigInt, or megabyte payloads.
+      extra: extra
+        ? (toJsonSafe(extra) as Record<string, unknown>)
+        : undefined,
     });
   };
   return {

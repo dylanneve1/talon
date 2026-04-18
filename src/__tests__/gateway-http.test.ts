@@ -592,6 +592,28 @@ describe("Gateway — debug endpoints", () => {
     expect(body.ok).toBe(false);
   });
 
+  it("413 path drains the body so the connection stays healthy", async () => {
+    // After the early 413 (rejected on Content-Length without reading the
+    // body), subsequent requests must succeed — i.e. the server didn't
+    // destroy the socket or leave req paused with unread data.
+    const huge = "x".repeat(10_000);
+    const tooBig = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace", pad: huge }),
+    });
+    expect(tooBig.status).toBe(413);
+    // Drain the response body so the connection can be returned to the pool.
+    await tooBig.text();
+    // Health-check the gateway with a tiny normal request.
+    const ok = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace" }),
+    });
+    expect(ok.status).toBe(200);
+  });
+
   it("GET /debug/nonsense returns 404", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/debug/nonsense`);
     expect(res.status).toBe(404);
