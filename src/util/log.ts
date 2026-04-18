@@ -398,9 +398,7 @@ function buildChild(bindings: Bindings): ChildLogger {
             : undefined,
       // Normalize extra into a JSON-safe, size-bounded form so a plugin can't
       // poison the ring with circular refs, BigInt, or megabyte payloads.
-      extra: extra
-        ? (toJsonSafe(extra) as Record<string, unknown>)
-        : undefined,
+      extra: extra ? (toJsonSafe(extra) as Record<string, unknown>) : undefined,
     });
   };
   return {

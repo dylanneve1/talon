@@ -36,7 +36,9 @@ describe("toJsonSafe", () => {
     const safe = toJsonSafe(err) as Record<string, unknown>;
     expect(safe.name).toBe("Error");
     expect(safe.message).toBe("boom");
-    expect(typeof safe.stack === "string" || safe.stack === undefined).toBe(true);
+    expect(typeof safe.stack === "string" || safe.stack === undefined).toBe(
+      true,
+    );
   });
 
   it("converts Date to ISO string", () => {
@@ -53,7 +55,10 @@ describe("toJsonSafe", () => {
       ["a", 1],
       ["b", 2],
     ]);
-    const safe = toJsonSafe(m) as { __type: string; entries: [string, number][] };
+    const safe = toJsonSafe(m) as {
+      __type: string;
+      entries: [string, number][];
+    };
     expect(safe.__type).toBe("Map");
     expect(safe.entries).toEqual([
       ["a", 1],

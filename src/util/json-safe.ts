@@ -40,7 +40,10 @@ const DEFAULTS: Required<JsonSafeOptions> = {
  * functions, and symbols are stringified. Anything that somehow still slips
  * through becomes the string "[unserializable]" rather than throwing.
  */
-export function toJsonSafe(value: unknown, opts: JsonSafeOptions = {}): unknown {
+export function toJsonSafe(
+  value: unknown,
+  opts: JsonSafeOptions = {},
+): unknown {
   const o = { ...DEFAULTS, ...opts };
   const seen = new WeakSet<object>();
   return normalize(value, o, seen, 0);
@@ -98,7 +101,9 @@ function normalize(
 
   // Date — ISO string is round-trippable and compact.
   if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? "[Invalid Date]" : value.toISOString();
+    return Number.isNaN(value.getTime())
+      ? "[Invalid Date]"
+      : value.toISOString();
   }
 
   // Map / Set — JSON has no native form; flatten to arrays.
@@ -158,7 +163,12 @@ function normalize(
   for (let i = 0; i < kLen; i++) {
     const k = keys[i]!;
     try {
-      out[k] = normalize((obj as Record<string, unknown>)[k], o, seen, depth + 1);
+      out[k] = normalize(
+        (obj as Record<string, unknown>)[k],
+        o,
+        seen,
+        depth + 1,
+      );
     } catch {
       // Getter threw (e.g. proxy); swallow so one bad field doesn't kill the
       // whole payload.
