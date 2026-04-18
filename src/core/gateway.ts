@@ -360,7 +360,12 @@ export class Gateway {
       const clStr = Array.isArray(clRaw) ? (clRaw[0] ?? "") : (clRaw ?? "");
       const declared = Number.parseInt(clStr, 10);
       if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+        // Same rationale as the streaming oversize path below: send the
+        // 413 and drain the body in discard mode. Without `req.resume()`
+        // the connection can be left paused with unread data, which is
+        // cheap but measurable backpressure if an attacker keeps dialling.
         tooLarge();
+        req.resume();
         return;
       }
 

@@ -36,6 +36,7 @@ import {
   incrementCounter,
   sanitizeMetricLabel,
 } from "./metrics.js";
+import { toJsonSafe } from "./json-safe.js";
 
 function ensureDir(): void {
   if (!existsSync(dirs.traces)) mkdirSync(dirs.traces, { recursive: true });
@@ -201,7 +202,20 @@ function buildSpan(
       ended = true;
       const endMs = Date.now();
       // Snapshot attributes/events so post-end() mutations can't touch the
-      // record stored in the ring buffer or persisted to disk.
+      // record stored in the ring buffer or persisted to disk. Also run both
+      // through toJsonSafe so the spans-YYYY-MM-DD.jsonl appendFileSync and
+      // /debug/spans JSON.stringify can't be poisoned by a BigInt, circular
+      // ref, function, or megabyte blob passed via span.setAttribute /
+      // addEvent (plugins are allowed to set arbitrary unknowns).
+      const safeAttrs = toJsonSafe({ ...attributes }) as SpanAttributes;
+      const safeEvents = events.map((e) => ({
+        ts: e.ts,
+        name: e.name,
+        attrs:
+          e.attrs === undefined
+            ? undefined
+            : (toJsonSafe(e.attrs) as SpanAttributes),
+      })) as SpanEvent[];
       const rec: SpanRecord = Object.freeze({
         traceId,
         spanId,
@@ -211,8 +225,8 @@ function buildSpan(
         endMs,
         durationMs: endMs - startMs,
         status,
-        attrs: Object.freeze({ ...attributes }) as SpanAttributes,
-        events: Object.freeze(events.slice()) as SpanEvent[],
+        attrs: Object.freeze(safeAttrs) as SpanAttributes,
+        events: Object.freeze(safeEvents) as SpanEvent[],
         err: errMsg,
       }) as SpanRecord;
       endedRec = rec;

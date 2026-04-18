@@ -95,4 +95,28 @@ describe("span tracing", () => {
     expect(last3).toHaveLength(3);
     expect(last3[2].name).toBe("op-4");
   });
+
+  it("normalizes JSON-hostile attributes so /debug/spans is exportable", async () => {
+    const cyclic: Record<string, unknown> = { name: "node" };
+    cyclic.self = cyclic;
+    await withSpan("messy", undefined, (span) => {
+      span.setAttribute("cycle", cyclic);
+      span.setAttribute("big", 9999999999999999999n);
+      span.setAttribute("fn", () => 0);
+      span.addEvent("evt", { also_cyclic: cyclic });
+      return null;
+    });
+    const [rec] = getRecentSpans(1);
+    expect(rec.attrs.cycle).toEqual(
+      expect.objectContaining({ name: "node", self: "[circular]" }),
+    );
+    expect(rec.attrs.big).toMatch(/n$/);
+    expect(rec.attrs.fn).toMatch(/^\[Function/);
+    expect(rec.events[0]?.attrs?.also_cyclic).toEqual(
+      expect.objectContaining({ self: "[circular]" }),
+    );
+    // The whole record must round-trip through JSON.stringify, since that's
+    // what /debug/spans and the spans-YYYY-MM-DD.jsonl writer call on it.
+    expect(() => JSON.stringify(rec)).not.toThrow();
+  });
 });
