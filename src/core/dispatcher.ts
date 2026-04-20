@@ -9,14 +9,15 @@
  * frontend/ or backend/.
  */
 
-import { randomBytes } from "node:crypto";
 import type {
   QueryBackend,
   ContextManager,
   ExecuteParams,
   ExecuteResult,
 } from "./types.js";
-import { log, logDebug, logWarn } from "../util/log.js";
+import { log, newRequestId, childLogger } from "../util/log.js";
+import { withSpan } from "../util/trace.js";
+import { incrementCounter, recordHistogram } from "../util/metrics.js";
 import { maybeStartDream } from "./dream.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
@@ -87,58 +88,92 @@ async function run(params: ExecuteParams): Promise<ExecuteResult> {
 
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   const { backend, context, sendTyping, onActivity } = deps!;
-  const reqId = randomBytes(4).toString("hex");
+  const reqId = newRequestId();
+  const logCtx = childLogger({
+    component: "dispatcher",
+    reqId,
+    chatId: params.chatId,
+    source: params.source,
+  });
 
   // Dream check — fire-and-forget background memory consolidation if due
   maybeStartDream();
 
-  logDebug(
-    "dispatcher",
-    `[${reqId}] ${params.source} chat=${params.chatId} started (active=${activeCount})`,
-  );
-  context.acquire(params.numericChatId, params.chatId);
-
-  let typingTimer: ReturnType<typeof setInterval> | undefined;
-  try {
-    await sendTyping(params.numericChatId).catch((err: unknown) => {
-      logWarn(
-        "dispatcher",
-        `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
-    typingTimer = setInterval(() => {
-      sendTyping(params.numericChatId).catch((err: unknown) => {
-        logWarn(
-          "dispatcher",
-          `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
-    }, 4000);
-
-    const result = await backend.query({
+  return withSpan(
+    "dispatcher.execute",
+    {
+      reqId,
       chatId: params.chatId,
-      text: params.prompt,
-      senderName: params.senderName,
-      isGroup: params.isGroup,
-      messageId: params.messageId,
-      onStreamDelta: params.onStreamDelta,
-      onTextBlock: params.onTextBlock,
-      onToolUse: params.onToolUse,
-    });
+      source: params.source,
+      numericChatId: params.numericChatId,
+    },
+    async (span) => {
+      logCtx.debug(
+        `${params.source} chat=${params.chatId} started (active=${activeCount})`,
+      );
+      incrementCounter("dispatcher.queries");
+      incrementCounter(`dispatcher.source.${params.source}`);
+      context.acquire(params.numericChatId, params.chatId);
 
-    onActivity();
+      let typingTimer: ReturnType<typeof setInterval> | undefined;
+      try {
+        await sendTyping(params.numericChatId).catch((err: unknown) => {
+          logCtx.warn(
+            `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+        typingTimer = setInterval(() => {
+          sendTyping(params.numericChatId).catch((err: unknown) => {
+            logCtx.warn(
+              `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+        }, 4000);
 
-    logDebug(
-      "dispatcher",
-      `[${reqId}] completed in ${result.durationMs}ms (in=${result.inputTokens} out=${result.outputTokens})`,
-    );
+        span.addEvent("backend-query-start");
+        const result = await backend.query({
+          chatId: params.chatId,
+          text: params.prompt,
+          senderName: params.senderName,
+          isGroup: params.isGroup,
+          messageId: params.messageId,
+          onStreamDelta: params.onStreamDelta,
+          onTextBlock: params.onTextBlock,
+          onToolUse: params.onToolUse,
+        });
+        span.addEvent("backend-query-end");
+        span.setAttributes({
+          durationMs: result.durationMs,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+          cacheRead: result.cacheRead,
+          cacheWrite: result.cacheWrite,
+        });
+        recordHistogram("dispatcher.duration.ms", result.durationMs);
+        if (result.inputTokens !== undefined)
+          recordHistogram("tokens.input", result.inputTokens);
+        if (result.outputTokens !== undefined)
+          recordHistogram("tokens.output", result.outputTokens);
 
-    return {
-      ...result,
-      bridgeMessageCount: context.getMessageCount(params.numericChatId),
-    };
-  } finally {
-    clearInterval(typingTimer);
-    context.release(params.numericChatId);
-  }
+        onActivity();
+
+        logCtx.debug(
+          `completed in ${result.durationMs}ms (in=${result.inputTokens} out=${result.outputTokens})`,
+        );
+        incrementCounter("dispatcher.queries.ok");
+
+        return {
+          ...result,
+          bridgeMessageCount: context.getMessageCount(params.numericChatId),
+        };
+      } catch (err) {
+        incrementCounter("dispatcher.queries.error");
+        logCtx.error(`query failed`, err);
+        throw err;
+      } finally {
+        clearInterval(typingTimer);
+        context.release(params.numericChatId);
+      }
+    },
+  );
 }

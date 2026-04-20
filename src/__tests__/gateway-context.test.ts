@@ -1,11 +1,23 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("../util/log.js", () => ({
-  log: vi.fn(),
-  logError: vi.fn(),
-  logWarn: vi.fn(),
-  logDebug: vi.fn(),
-}));
+// Gateway statically imports setLogLevel/getLogLevel/getRecentLogs from
+// log.js for the /debug/* routes. ESM resolution throws on any missing
+// export even when the test doesn't exercise that path, so expose them
+// defensively alongside the legacy wrappers.
+vi.mock("../util/log.js", () => {
+  let currentLevel = "trace";
+  return {
+    log: vi.fn(),
+    logError: vi.fn(),
+    logWarn: vi.fn(),
+    logDebug: vi.fn(),
+    setLogLevel: vi.fn((lvl: string) => {
+      currentLevel = lvl;
+    }),
+    getLogLevel: vi.fn(() => currentLevel),
+    getRecentLogs: vi.fn(() => []),
+  };
+});
 
 vi.mock("../core/gateway-actions.js", () => ({
   handleSharedAction: vi.fn(async () => null),

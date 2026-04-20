@@ -16,11 +16,27 @@ import {
 import pRetry, { AbortError } from "p-retry";
 import { classify } from "./errors.js";
 import { getActiveCount } from "./dispatcher.js";
-import { getHealthStatus } from "../util/watchdog.js";
+import { getHealthStatus, getRecentErrors } from "../util/watchdog.js";
 import { getActiveSessionCount } from "../storage/sessions.js";
-import { log, logError, logDebug } from "../util/log.js";
+import {
+  log,
+  logError,
+  logDebug,
+  setLogLevel,
+  getLogLevel,
+  getRecentLogs,
+  type LogLevel,
+} from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "./plugin.js";
+import { withSpan, getRecentSpans } from "../util/trace.js";
+import { buildDebugSnapshot } from "../util/debug.js";
+import {
+  incrementCounter,
+  recordHistogram,
+  sanitizeMetricLabel,
+  getMetrics,
+} from "../util/metrics.js";
 import type { FrontendActionHandler, QueryBackend } from "./types.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
@@ -174,44 +190,238 @@ export class Gateway {
 
     const action = typeof body.action === "string" ? body.action : "";
     if (!action) return { ok: false, error: "Missing action" };
+    // Action names are bucketed for metric keys so untrusted/malformed input
+    // can't blow out the global MAX_METRIC_KEYS cap. The raw action is still
+    // logged and recorded as a span attribute for debugging.
+    const mAction = sanitizeMetricLabel(action);
     const t0 = Date.now();
 
-    try {
-      // Try frontend first — it has richer implementations (e.g. userbot history)
-      // and falls back to null when it can't handle the action.
-      if (this.frontendHandler) {
-        const result = await this.frontendHandler(body, chatId);
-        if (result) {
-          logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
-          return result;
+    return withSpan(
+      "gateway.action",
+      { action, chatId },
+      async (span): Promise<unknown> => {
+        try {
+          // Try frontend first — it has richer implementations (e.g. userbot history)
+          // and falls back to null when it can't handle the action.
+          if (this.frontendHandler) {
+            const result = await this.frontendHandler(body, chatId);
+            if (result) {
+              const ms = Date.now() - t0;
+              span.setAttribute("route", "frontend");
+              span.setAttribute("durationMs", ms);
+              recordHistogram(`gateway.${mAction}.ms`, ms);
+              incrementCounter(`gateway.${mAction}.ok`);
+              logDebug("gateway", `${action} chat=${chatId} ${ms}ms`);
+              return result;
+            }
+          }
+
+          // Try plugin actions (loaded from external plugin packages)
+          const pluginResult = await handlePluginAction(body, String(chatId));
+          if (pluginResult) {
+            const ms = Date.now() - t0;
+            span.setAttribute("route", "plugin");
+            span.setAttribute("durationMs", ms);
+            recordHistogram(`gateway.${mAction}.ms`, ms);
+            incrementCounter(`gateway.${mAction}.ok`);
+            logDebug("gateway", `${action} chat=${chatId} ${ms}ms (plugin)`);
+            return pluginResult;
+          }
+
+          // Shared actions last — provides in-memory fallbacks for history, cron, etc.
+          const shared = await handleSharedAction(body, chatId, this.backend);
+          if (shared) {
+            const ms = Date.now() - t0;
+            span.setAttribute("route", "shared");
+            span.setAttribute("durationMs", ms);
+            recordHistogram(`gateway.${mAction}.ms`, ms);
+            incrementCounter(`gateway.${mAction}.ok`);
+            logDebug("gateway", `${action} chat=${chatId} ${ms}ms (shared)`);
+            return shared;
+          }
+
+          incrementCounter(`gateway.${mAction}.unknown`);
+          span.setStatus("error", `Unknown action: ${action}`);
+          return { ok: false, error: `Unknown action: ${action}` };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          incrementCounter(`gateway.${mAction}.error`);
+          span.setStatus("error", err);
+          logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
+          return { ok: false, error: `${action}: ${msg}` };
         }
-      }
+      },
+    );
+  }
 
-      // Try plugin actions (loaded from external plugin packages)
-      const pluginResult = await handlePluginAction(body, String(chatId));
-      if (pluginResult) {
-        logDebug(
-          "gateway",
-          `${action} chat=${chatId} ${Date.now() - t0}ms (plugin)`,
-        );
-        return pluginResult;
-      }
+  // ── Debug endpoints ──────────────────────────────────────────────────────
 
-      // Shared actions last — provides in-memory fallbacks for history, cron, etc.
-      const shared = await handleSharedAction(body, chatId, this.backend);
-      if (shared) {
-        logDebug(
-          "gateway",
-          `${action} chat=${chatId} ${Date.now() - t0}ms (shared)`,
-        );
-        return shared;
-      }
+  private async handleDebug(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    const url = new URL(req.url ?? "/", "http://localhost");
+    const route = url.pathname;
+    const writeJson = (status: number, body: unknown): void => {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body));
+    };
 
-      return { ok: false, error: `Unknown action: ${action}` };
+    // Clamp query-parsed limits to positive finite integers so malformed or
+    // absurdly large values can't return the whole in-memory buffer or allocate
+    // unbounded response arrays.
+    const parseLimit = (
+      raw: string | null,
+      def: number,
+      max = 1000,
+    ): number => {
+      if (raw === null) return def;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n <= 0) return def;
+      return Math.min(Math.floor(n), max);
+    };
+
+    try {
+      if (route === "/debug/state") {
+        writeJson(200, buildDebugSnapshot());
+        return;
+      }
+      if (route === "/debug/metrics") {
+        writeJson(200, getMetrics());
+        return;
+      }
+      if (route === "/debug/spans") {
+        const limit = parseLimit(url.searchParams.get("limit"), 100);
+        writeJson(200, { spans: getRecentSpans(limit) });
+        return;
+      }
+      if (route === "/debug/logs") {
+        const limit = parseLimit(url.searchParams.get("limit"), 100);
+        const levelRaw = url.searchParams.get("level");
+        const ALLOWED: LogLevel[] = [
+          "trace",
+          "debug",
+          "info",
+          "warn",
+          "error",
+          "fatal",
+          "silent",
+        ];
+        if (levelRaw !== null && !ALLOWED.includes(levelRaw as LogLevel)) {
+          writeJson(400, {
+            ok: false,
+            error: `Invalid level. Allowed: ${ALLOWED.join(", ")}`,
+          });
+          return;
+        }
+        const level = levelRaw as LogLevel | null;
+        writeJson(200, {
+          level: getLogLevel(),
+          logs: getRecentLogs(limit, level ?? undefined),
+        });
+        return;
+      }
+      if (route === "/debug/errors") {
+        const limit = parseLimit(url.searchParams.get("limit"), 20);
+        writeJson(200, { errors: getRecentErrors(limit) });
+        return;
+      }
+      if (route === "/debug/log-level") {
+        writeJson(200, { level: getLogLevel() });
+        return;
+      }
+      writeJson(404, { ok: false, error: "Unknown debug route" });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
-      return { ok: false, error: `${action}: ${msg}` };
+      logError("gateway", `Debug endpoint ${route} failed`, err);
+      writeJson(500, { ok: false, error: "Internal error" });
+    }
+  }
+
+  private async handleSetLogLevel(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
+    // POST /debug/log-level bodies are tiny JSON — cap at 4KB so a local
+    // client can't push arbitrary data and exhaust memory before we parse.
+    // Both the Content-Length header and the actual stream byte count are
+    // checked; the header is advisory (may be missing, lying, or absent for
+    // chunked transfers) so the stream-time check is what actually enforces.
+    const MAX_BODY_BYTES = 4096;
+    const tooLarge = (): void => {
+      res.writeHead(413, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "Payload too large" }));
+    };
+
+    try {
+      // Node's types for req.headers values are `string | string[] | undefined`
+      // depending on duplicate-header handling. Content-Length should only
+      // ever be a single value, but normalize defensively anyway.
+      const clRaw = req.headers["content-length"];
+      const clStr = Array.isArray(clRaw) ? (clRaw[0] ?? "") : (clRaw ?? "");
+      const declared = Number.parseInt(clStr, 10);
+      if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+        // Same rationale as the streaming oversize path below: send the
+        // 413 and drain the body in discard mode. Without `req.resume()`
+        // the connection can be left paused with unread data, which is
+        // cheap but measurable backpressure if an attacker keeps dialling.
+        tooLarge();
+        req.resume();
+        return;
+      }
+
+      const chunks: Buffer[] = [];
+      let total = 0;
+      for await (const chunk of req) {
+        const buf = chunk as Buffer;
+        total += buf.length;
+        if (total > MAX_BODY_BYTES) {
+          // Free anything we already buffered so the oversize body doesn't
+          // stay pinned while the response drains.
+          chunks.length = 0;
+          // Send the 413 first, then drain-and-discard the remaining body
+          // without destroying the socket. `req.destroy()` would tear down
+          // the underlying TCP connection and the client would see ECONNRESET
+          // instead of our 413 JSON; `req.resume()` keeps the stream flowing
+          // in discard mode so HTTP can complete the response cleanly.
+          tooLarge();
+          req.resume();
+          return;
+        }
+        chunks.push(buf);
+      }
+
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf-8")) as {
+        level?: LogLevel;
+      };
+      if (!body.level) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: "Missing level" }));
+        return;
+      }
+      try {
+        setLogLevel(body.level);
+      } catch (err) {
+        // Unknown level — setLogLevel throws. Surface as 400 without mutating
+        // current state so callers can distinguish "bad input" from "server
+        // error" and the level remains whatever it was.
+        res.writeHead(400, {
+          "Content-Type": "application/json",
+        });
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: err instanceof Error ? err.message : "Invalid level",
+          }),
+        );
+        return;
+      }
+      log("gateway", `Log level changed to ${body.level}`);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, level: body.level }));
+    } catch (err) {
+      logError("gateway", "Set log level failed", err);
+      res.writeHead(400, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: false, error: "Invalid request" }));
     }
   }
 
@@ -241,6 +451,16 @@ export class Gateway {
                   : `${Math.round(w.msSinceLastMessage / 60000)}m ago`,
             }),
           );
+          return;
+        }
+
+        if (req.method === "GET" && req.url?.startsWith("/debug/")) {
+          await this.handleDebug(req, res);
+          return;
+        }
+
+        if (req.method === "POST" && req.url === "/debug/log-level") {
+          await this.handleSetLogLevel(req, res);
           return;
         }
 

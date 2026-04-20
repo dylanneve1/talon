@@ -17,6 +17,11 @@
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { log, logError, logWarn } from "../util/log.js";
+import {
+  recordHistogram,
+  incrementCounter,
+  sanitizeMetricLabel,
+} from "../util/metrics.js";
 import type { ActionResult } from "./types.js";
 import type { TalonConfig } from "../util/config.js";
 
@@ -263,23 +268,33 @@ export async function loadPlugins(
   pluginConfigs: PluginEntry[],
   activeFrontends?: string[],
 ): Promise<void> {
+  const t0 = Date.now();
+  let loaded = 0;
+  let failed = 0;
   for (const entry of pluginConfigs) {
     // Standalone MCP servers are registered for getPluginMcpServers, not loaded as modules
     if (isMcpPlugin(entry)) {
       if (registry.registerMcpEntry(entry)) {
         log("plugin", `Registered standalone MCP server: ${entry.name}`);
+        loaded++;
       }
       continue;
     }
     try {
       await loadSinglePlugin(entry, activeFrontends);
+      loaded++;
     } catch (err) {
+      failed++;
       logError(
         "plugin",
         `Failed to load plugin at ${entry.path}: ${err instanceof Error ? err.message : err}`,
       );
     }
   }
+  log(
+    "plugin",
+    `Plugin loading complete: ${loaded} loaded, ${failed} failed (${Date.now() - t0}ms)`,
+  );
 }
 
 function applyEnvVars(envVars: Record<string, string>): void {
@@ -678,12 +693,23 @@ export async function handlePluginAction(
   body: Record<string, unknown>,
   chatId: string,
 ): Promise<ActionResult | null> {
+  const action = typeof body.action === "string" ? body.action : "unknown";
+  // Bucket untrusted action names for metric keys so a rogue plugin or garbage
+  // input can't fill MAX_METRIC_KEYS. The raw action stays in log messages.
+  const mAction = sanitizeMetricLabel(action);
   for (const { plugin } of registry.all) {
     if (!plugin.handleAction) continue;
+    const mPluginName = sanitizeMetricLabel(plugin.name);
+    const t0 = Date.now();
     try {
       const result = await plugin.handleAction(body, chatId);
-      if (result) return result;
+      if (result) {
+        const ms = Date.now() - t0;
+        recordHistogram(`plugin.${mPluginName}.${mAction}.ms`, ms);
+        return result;
+      }
     } catch (err) {
+      incrementCounter(`plugin.${mPluginName}.${mAction}.error`);
       logError(
         "plugin",
         `${plugin.name} action error: ${err instanceof Error ? err.message : err}`,

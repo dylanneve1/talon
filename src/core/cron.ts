@@ -17,6 +17,8 @@ import {
 } from "../storage/cron-store.js";
 import { appendDailyLog } from "../storage/daily-log.js";
 import { log, logError, logWarn } from "../util/log.js";
+import { withSpan } from "../util/trace.js";
+import { incrementCounter, recordHistogram } from "../util/metrics.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -64,19 +66,37 @@ async function runCronTick(): Promise<void> {
     if (!isDue(job, now)) continue;
     if (getActiveCount() > 10) break;
 
+    const jobStart = Date.now();
     try {
       log(
         "cron",
         `Executing "${job.name}" [${job.id}] (${job.type}) in chat ${job.chatId}`,
       );
-      await executeJob(job);
+      await withSpan(
+        "cron.executeJob",
+        {
+          jobId: job.id,
+          jobName: job.name,
+          jobType: job.type,
+          chatId: job.chatId,
+          schedule: job.schedule,
+        },
+        () => executeJob(job),
+      );
       recordCronRun(job.id);
       appendDailyLog(
         "Cron",
         `Ran "${job.name}" (${job.type}) in chat ${job.chatId}`,
       );
-      log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
+      const ms = Date.now() - jobStart;
+      recordHistogram(`cron.${job.type}.ms`, ms);
+      incrementCounter(`cron.${job.type}.ok`);
+      log(
+        "cron",
+        `Executed "${job.name}" [${job.id}] in chat ${job.chatId} (${ms}ms)`,
+      );
     } catch (err) {
+      incrementCounter(`cron.${job.type}.error`);
       logError("cron", `Job "${job.name}" [${job.id}] failed`, err);
     }
   }

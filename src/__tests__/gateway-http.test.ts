@@ -8,12 +8,32 @@ import {
   vi,
 } from "vitest";
 
-vi.mock("../util/log.js", () => ({
-  log: vi.fn(),
-  logError: vi.fn(),
-  logWarn: vi.fn(),
-  logDebug: vi.fn(),
-}));
+vi.mock("../util/log.js", () => {
+  const VALID = new Set([
+    "trace",
+    "debug",
+    "info",
+    "warn",
+    "error",
+    "fatal",
+    "silent",
+  ]);
+  let currentLevel = "trace";
+  return {
+    log: vi.fn(),
+    logError: vi.fn(),
+    logWarn: vi.fn(),
+    logDebug: vi.fn(),
+    // Mirrors the real setLogLevel behavior: throws on unknown values so
+    // the gateway can translate that into a 400 without mutating state.
+    setLogLevel: vi.fn((lvl: string) => {
+      if (!VALID.has(lvl)) throw new Error(`Invalid log level: ${lvl}`);
+      currentLevel = lvl;
+    }),
+    getLogLevel: vi.fn(() => currentLevel),
+    getRecentLogs: vi.fn(() => []),
+  };
+});
 
 vi.mock("../core/plugin.js", () => ({
   handlePluginAction: vi.fn(async () => null),
@@ -26,6 +46,9 @@ vi.mock("../util/watchdog.js", () => ({
     recentErrorCount: 0,
     msSinceLastMessage: 0,
   })),
+  getRecentErrors: vi.fn(() => []),
+  getUptimeMs: vi.fn(() => 0),
+  getTotalMessagesProcessed: vi.fn(() => 0),
 }));
 
 vi.mock("../storage/sessions.js", () => ({
@@ -432,5 +455,167 @@ describe("gateway port retry — EADDRINUSE", () => {
         await new Promise<void>((resolve) => s.close(() => resolve()));
       }
     }
+  });
+});
+
+describe("Gateway — debug endpoints", () => {
+  it("GET /debug/state returns a JSON snapshot", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/debug/state`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(typeof body.ts).toBe("string");
+    expect(body.process).toBeDefined();
+    expect(body.metrics).toBeDefined();
+    expect(body.logs).toBeDefined();
+  });
+
+  it("GET /debug/metrics returns counters + histograms", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/debug/metrics`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.counters).toBeDefined();
+    expect(body.histograms).toBeDefined();
+  });
+
+  it("GET /debug/spans clamps invalid limit to default", async () => {
+    const res = await fetch(
+      `http://127.0.0.1:${port}/debug/spans?limit=not-a-number`,
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.spans)).toBe(true);
+  });
+
+  it("GET /debug/logs rejects an invalid level with 400", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/debug/logs?level=bogus`);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(String(body.error)).toMatch(/level/i);
+  });
+
+  it("GET /debug/logs accepts a valid level", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/debug/logs?level=warn`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(typeof body.level).toBe("string");
+    expect(Array.isArray(body.logs)).toBe(true);
+  });
+
+  it("GET /debug/log-level returns the current level", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/debug/log-level`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(typeof body.level).toBe("string");
+  });
+
+  it("POST /debug/log-level sets the level and persists", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "warn" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(body.level).toBe("warn");
+
+    // Verify the GET now reflects it
+    const get = await fetch(`http://127.0.0.1:${port}/debug/log-level`);
+    const getBody = await get.json();
+    expect(getBody.level).toBe("warn");
+
+    // Restore trace for subsequent tests
+    await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace" }),
+    });
+  });
+
+  it("POST /debug/log-level rejects a missing level with 400", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+  });
+
+  it("POST /debug/log-level rejects an invalid level without mutating state", async () => {
+    // First, set a known level so we can verify it stays put.
+    await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "warn" }),
+    });
+    const before = (await (
+      await fetch(`http://127.0.0.1:${port}/debug/log-level`)
+    ).json()) as { level: string };
+
+    // Attempt an invalid level — should 400, NOT change state.
+    const res = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "bogus" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toMatch(/invalid/i);
+
+    // Verify the previous level is still in effect.
+    const after = (await (
+      await fetch(`http://127.0.0.1:${port}/debug/log-level`)
+    ).json()) as { level: string };
+    expect(after.level).toBe(before.level);
+
+    // Restore default for subsequent tests.
+    await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace" }),
+    });
+  });
+
+  it("POST /debug/log-level rejects an oversized body with 413", async () => {
+    const huge = "x".repeat(10_000);
+    const res = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace", pad: huge }),
+    });
+    expect(res.status).toBe(413);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+  });
+
+  it("413 path drains the body so the connection stays healthy", async () => {
+    // After the early 413 (rejected on Content-Length without reading the
+    // body), subsequent requests must succeed — i.e. the server didn't
+    // destroy the socket or leave req paused with unread data.
+    const huge = "x".repeat(10_000);
+    const tooBig = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace", pad: huge }),
+    });
+    expect(tooBig.status).toBe(413);
+    // Drain the response body so the connection can be returned to the pool.
+    await tooBig.text();
+    // Health-check the gateway with a tiny normal request.
+    const ok = await fetch(`http://127.0.0.1:${port}/debug/log-level`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level: "trace" }),
+    });
+    expect(ok.status).toBe(200);
+  });
+
+  it("GET /debug/nonsense returns 404", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/debug/nonsense`);
+    expect(res.status).toBe(404);
   });
 });

@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+// Pin the logger's initial level + namespace filter to a known state BEFORE
+// importing log.ts. log.ts resolves both at module-init time from env vars,
+// so leaving them to the CI environment makes these assertions flaky (e.g.
+// TALON_LOG_LEVEL=warn would cause log()/logDebug() to silently no-op).
+process.env.TALON_LOG_LEVEL = "trace";
+delete process.env.TALON_DEBUG;
+delete process.env.TALON_QUIET;
+
 // Mock pino before importing log module
 const mockInfo = vi.fn();
 const mockError = vi.fn();
@@ -8,10 +16,22 @@ const mockDebug = vi.fn();
 
 vi.mock("pino", () => ({
   default: () => ({
+    level: "trace",
     info: mockInfo,
     error: mockError,
     warn: mockWarn,
     debug: mockDebug,
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    child: vi.fn(() => ({
+      level: "trace",
+      info: mockInfo,
+      error: mockError,
+      warn: mockWarn,
+      debug: mockDebug,
+      trace: vi.fn(),
+      fatal: vi.fn(),
+    })),
   }),
 }));
 
@@ -74,9 +94,12 @@ describe("log", () => {
     it("includes Error message in context", () => {
       logError("bridge", "request failed", new Error("timeout"));
       expect(mockError).toHaveBeenCalledWith(
-        { component: "bridge", err: "timeout" },
+        expect.objectContaining({ component: "bridge", err: "timeout" }),
         "request failed",
       );
+      // Stack trace is also captured for easier debugging.
+      const call = mockError.mock.calls[0];
+      expect((call[0] as { stack?: string }).stack).toBeDefined();
     });
 
     it("stringifies non-Error err values", () => {

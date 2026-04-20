@@ -510,18 +510,27 @@ describe("typing indicator — interval error handling", () => {
   it("logs warning when sendTyping interval callback rejects", async () => {
     vi.useFakeTimers();
     vi.resetModules();
+    const childWarn = vi.fn();
     vi.doMock("../util/log.js", () => ({
       log: vi.fn(),
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: childWarn,
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const { logWarn } = (await import("../util/log.js")) as unknown as {
-      logWarn: ReturnType<typeof vi.fn>;
-    };
 
     let typingCallCount = 0;
     let resolveQuery!: (v: {
@@ -572,8 +581,7 @@ describe("typing indicator — interval error handling", () => {
     });
     await p;
 
-    expect(logWarn).toHaveBeenCalledWith(
-      "dispatcher",
+    expect(childWarn).toHaveBeenCalledWith(
       expect.stringContaining("interval failed"),
     );
 
@@ -584,19 +592,28 @@ describe("typing indicator — interval error handling", () => {
 describe("typing indicator — error handling", () => {
   it("logs warning when sendTyping rejects (initial call)", async () => {
     vi.resetModules();
+    const childWarn = vi.fn();
     vi.doMock("../util/log.js", () => ({
       log: vi.fn(),
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: childWarn,
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("./dream.js", () => ({ maybeStartDream: vi.fn() }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
-      typeof vi.fn
-    >;
 
     const backend = {
       query: vi.fn(async () => ({
@@ -627,8 +644,7 @@ describe("typing indicator — error handling", () => {
       source: "message",
     });
 
-    expect(logWarn).toHaveBeenCalledWith(
-      "dispatcher",
+    expect(childWarn).toHaveBeenCalledWith(
       expect.stringContaining("sendTyping failed"),
     );
   });
@@ -637,18 +653,27 @@ describe("typing indicator — error handling", () => {
 describe("typing indicator — non-Error throws", () => {
   it("logs warning with String(err) when sendTyping throws a non-Error (initial call)", async () => {
     vi.resetModules();
+    const childWarn = vi.fn();
     vi.doMock("../util/log.js", () => ({
       log: vi.fn(),
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: childWarn,
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
-      typeof vi.fn
-    >;
 
     initDispatcher({
       backend: {
@@ -678,8 +703,7 @@ describe("typing indicator — non-Error throws", () => {
       source: "message",
     });
 
-    expect(logWarn).toHaveBeenCalledWith(
-      "dispatcher",
+    expect(childWarn).toHaveBeenCalledWith(
       expect.stringContaining("plain string typing error"),
     );
   });
@@ -687,18 +711,27 @@ describe("typing indicator — non-Error throws", () => {
   it("logs warning with String(err) when sendTyping interval throws a non-Error", async () => {
     vi.useFakeTimers();
     vi.resetModules();
+    const childWarn = vi.fn();
     vi.doMock("../util/log.js", () => ({
       log: vi.fn(),
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: childWarn,
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
-      typeof vi.fn
-    >;
 
     let callCount = 0;
     let resolveQuery!: (v: {
@@ -748,8 +781,7 @@ describe("typing indicator — non-Error throws", () => {
     });
     await p;
 
-    expect(logWarn).toHaveBeenCalledWith(
-      "dispatcher",
+    expect(childWarn).toHaveBeenCalledWith(
       expect.stringContaining("interval failed"),
     );
 
@@ -765,6 +797,17 @@ describe("dispatcher — uninitialized guard", () => {
       logDebug: vi.fn(),
       logWarn: vi.fn(),
       logError: vi.fn(),
+      newRequestId: vi.fn(() => "testid01"),
+      childLogger: vi.fn(() => ({
+        trace: vi.fn(),
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        fatal: vi.fn(),
+        child: vi.fn(),
+        bindings: vi.fn(() => ({ component: "dispatcher" })),
+      })),
     }));
     vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
 

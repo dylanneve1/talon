@@ -29,6 +29,26 @@ function ringValues(buf: RingBuffer): number[] {
   return [...buf.data.slice(buf.head), ...buf.data.slice(0, buf.head)];
 }
 
+/**
+ * Normalize an untrusted label (e.g. a request-provided action name) for safe
+ * use inside a metric key. Collapses anything outside [A-Za-z0-9_] to "_",
+ * lowercases, and truncates to 40 chars. Empty, non-string, or absurdly-long
+ * (>200 char) input is bucketed as "unknown". Together with MAX_METRIC_KEYS,
+ * this keeps high-cardinality input from exhausting the key budget.
+ *
+ * Typed as `unknown` so callers don't have to cast — the whole point is that
+ * the input is untrusted, which includes not being sure it's a string.
+ */
+export function sanitizeMetricLabel(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length === 0) return "unknown";
+  if (raw.length > 200) return "unknown";
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, "_")
+    .slice(0, 40);
+  return cleaned.replace(/^_+|_+$/g, "") || "unknown";
+}
+
 export function incrementCounter(name: string, amount = 1): void {
   // Only allow new keys up to the cap — existing keys always pass
   if (!counters.has(name) && counters.size >= MAX_METRIC_KEYS) return;
