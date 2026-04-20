@@ -15,6 +15,7 @@ mempalace_diary_write mempalace_diary_read mempalace_delete_drawer
 Protocol
 
 ### Palace location: \`{{palacePath}}\`
+### Entity-detection languages: \`{{entityLanguages}}\`
 `;
 
 describe("mempalace plugin", () => {
@@ -54,7 +55,7 @@ describe("mempalace plugin", () => {
     });
 
     expect(plugin.name).toBe("mempalace");
-    expect(plugin.version).toBe("1.0.0");
+    expect(plugin.version).toBe("1.1.0");
     expect(plugin.mcpServer).toEqual({
       command: "/venv/bin/python",
       args: ["-m", "mempalace.mcp_server", "--palace", "/data/palace"],
@@ -224,6 +225,33 @@ describe("mempalace plugin", () => {
     });
   });
 
+  it("getEnvVars includes MEMPALACE_ENTITY_LANGUAGES and MEMPAL_VERBOSE when configured", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => true),
+      mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
+    }));
+    vi.doMock("node:child_process", () => ({
+      execFileSync: vi.fn(),
+      execFile: vi.fn(),
+    }));
+
+    const { createMempalacePlugin } =
+      await import("../plugins/mempalace/index.js");
+    const plugin = createMempalacePlugin({
+      pythonPath: "/venv/bin/python",
+      palacePath: "/data/palace",
+      entityLanguages: ["en", "ja", "fr"],
+      verbose: true,
+    });
+
+    expect(plugin.getEnvVars!({})).toEqual({
+      MEMPALACE_PALACE_PATH: "/data/palace",
+      MEMPALACE_ENTITY_LANGUAGES: "en,ja,fr",
+      MEMPAL_VERBOSE: "1",
+    });
+  });
+
   it("getSystemPromptAddition loads from .md file and interpolates palacePath", async () => {
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn(() => true),
@@ -256,8 +284,35 @@ describe("mempalace plugin", () => {
     expect(addition).toContain("mempalace_delete_drawer");
     expect(addition).toContain("Protocol");
     expect(addition).toContain("/custom/palace");
+    // Default entity-language interpolation
+    expect(addition).toContain("en (default)");
     // Verify interpolation happened — no raw placeholder
     expect(addition).not.toContain("{{palacePath}}");
+    expect(addition).not.toContain("{{entityLanguages}}");
+  });
+
+  it("getSystemPromptAddition interpolates configured entity languages", async () => {
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn(() => true),
+      mkdirSync: vi.fn(),
+      readFileSync: vi.fn(() => PROMPT_TEMPLATE),
+    }));
+    vi.doMock("node:child_process", () => ({
+      execFileSync: vi.fn(),
+      execFile: vi.fn(),
+    }));
+
+    const { createMempalacePlugin } =
+      await import("../plugins/mempalace/index.js");
+    const plugin = createMempalacePlugin({
+      pythonPath: "/venv/bin/python",
+      palacePath: "/custom/palace",
+      entityLanguages: ["en", "ja"],
+    });
+
+    const addition = plugin.getSystemPromptAddition!({});
+    expect(addition).toContain("en, ja");
+    expect(addition).not.toContain("{{entityLanguages}}");
   });
 
   it("getSystemPromptAddition returns fallback when .md file is missing", async () => {

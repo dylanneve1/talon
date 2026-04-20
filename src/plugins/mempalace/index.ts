@@ -7,8 +7,10 @@
  * Configuration in ~/.talon/config.json:
  *   "mempalace": {
  *     "enabled": true,
- *     "palacePath": "/path/to/palace",   // optional, defaults to ~/.talon/workspace/palace/
- *     "pythonPath": "/path/to/python"     // optional, defaults to mempalace venv python (bin/python on Unix, Scripts/python.exe on Windows)
+ *     "palacePath": "/path/to/palace",         // optional, defaults to ~/.talon/workspace/palace/
+ *     "pythonPath": "/path/to/python",         // optional, defaults to mempalace venv python (bin/python on Unix, Scripts/python.exe on Windows)
+ *     "entityLanguages": ["en", "ja"],         // optional, BCP 47 codes (mempalace >= 3.3)
+ *     "verbose": false                          // optional, enables MEMPAL_VERBOSE diagnostics
  *   }
  */
 
@@ -32,14 +34,28 @@ const PROMPT_PATH = resolve(dirs.prompts, "mempalace.md");
 export function createMempalacePlugin(config: {
   pythonPath: string;
   palacePath: string;
+  /** BCP 47 codes passed via MEMPALACE_ENTITY_LANGUAGES (mempalace >= 3.3). */
+  entityLanguages?: readonly string[];
+  /** When true, sets MEMPAL_VERBOSE=1 so the MCP server logs diagnostic diaries. */
+  verbose?: boolean;
 }): TalonPlugin {
-  const { pythonPath, palacePath } = config;
+  const { pythonPath, palacePath, entityLanguages, verbose } = config;
+
+  const envVars: Record<string, string> = {
+    MEMPALACE_PALACE_PATH: palacePath,
+  };
+  if (entityLanguages && entityLanguages.length > 0) {
+    envVars.MEMPALACE_ENTITY_LANGUAGES = entityLanguages.join(",");
+  }
+  if (verbose) {
+    envVars.MEMPAL_VERBOSE = "1";
+  }
 
   return {
     name: "mempalace",
     description:
       "Memory palace — structured long-term memory with vector search",
-    version: "1.0.0",
+    version: "1.1.0",
 
     mcpServer: {
       command: pythonPath,
@@ -122,25 +138,33 @@ export function createMempalacePlugin(config: {
         );
       }
 
-      log("mempalace", `Ready (palace: ${palacePath})`);
+      const langSuffix =
+        entityLanguages && entityLanguages.length > 0
+          ? ` (languages: ${entityLanguages.join(",")})`
+          : "";
+      log("mempalace", `Ready (palace: ${palacePath})${langSuffix}`);
     },
 
     getEnvVars() {
-      return {
-        MEMPALACE_PALACE_PATH: palacePath,
-      };
+      return { ...envVars };
     },
 
     getSystemPromptAddition() {
+      const languagesLine =
+        entityLanguages && entityLanguages.length > 0
+          ? entityLanguages.join(", ")
+          : "en (default)";
       try {
         const template = readFileSync(PROMPT_PATH, "utf-8");
-        return template.replace(/\{\{palacePath\}\}/g, palacePath);
+        return template
+          .replace(/\{\{palacePath\}\}/g, palacePath)
+          .replace(/\{\{entityLanguages\}\}/g, languagesLine);
       } catch (err) {
         logWarn(
           "mempalace",
           `Failed to load prompt from ${PROMPT_PATH}: ${err instanceof Error ? err.message : err}`,
         );
-        return `## MemPalace — Long-term Memory\n\nPalace location: \`${palacePath}\``;
+        return `## MemPalace — Long-term Memory\n\nPalace location: \`${palacePath}\`\nEntity languages: ${languagesLine}`;
       }
     },
   };

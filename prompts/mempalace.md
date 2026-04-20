@@ -53,5 +53,7 @@ You have access to a local memory palace via MCP tools. The palace stores verbat
 - The knowledge graph stores typed relationships with **time windows**. It knows WHEN things were true.
 - Use `mempalace_check_duplicate` before storing new content to avoid clutter.
 - Diary entries accumulate across sessions. Write them to build continuity of self.
+- Entity detection runs per-language; results include `created_at` timestamps you can surface when the user asks "when did I last…".
 
 ### Palace location: `{{palacePath}}`
+### Entity-detection languages: `{{entityLanguages}}`

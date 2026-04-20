@@ -524,7 +524,12 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       const { dirs, files: pf } = await import("../util/paths.js");
       const pythonPath = mempalace.pythonPath ?? pf.mempalacePython;
       const palacePath = mempalace.palacePath ?? dirs.palace;
-      const mp = createMempalacePlugin({ pythonPath, palacePath });
+      const mp = createMempalacePlugin({
+        pythonPath,
+        palacePath,
+        entityLanguages: mempalace.entityLanguages,
+        verbose: mempalace.verbose,
+      });
       const mpConfig = mempalace as unknown as Record<string, unknown>;
       const loaded = registerPlugin(mp, mpConfig);
       if (loaded) {
