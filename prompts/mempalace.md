@@ -56,4 +56,5 @@ You have access to a local memory palace via MCP tools. The palace stores verbat
 - Entity detection runs per-language; results include `created_at` timestamps you can surface when the user asks "when did I last…".
 
 ### Palace location: `{{palacePath}}`
+
 ### Entity-detection languages: `{{entityLanguages}}`
