@@ -51,6 +51,56 @@ export function getActiveQuery(chatId: string): Query | undefined {
   return activeQueries.get(chatId);
 }
 
+// ── Silence watchdog ────────────────────────────────────────────────────────
+// Breaks the handler out of a stuck tool call. Resets on every SDK message;
+// if no message arrives for WATCHDOG_MS the race rejects, we call
+// qi.interrupt() as best-effort cleanup, and the handler returns a real error
+// instead of hanging the chat with a typing spinner.
+
+const WATCHDOG_MS = 5 * 60_000;
+const WATCHDOG_CHECK_MS = 30_000;
+
+type Watchdog = {
+  bump: () => void;
+  promise: Promise<never>;
+  stop: () => void;
+};
+
+function startWatchdog(qi: Query, chatId: string): Watchdog {
+  let lastActivity = Date.now();
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const promise = new Promise<never>((_, reject) => {
+    timer = setInterval(() => {
+      const silent = Date.now() - lastActivity;
+      if (silent < WATCHDOG_MS) return;
+      if (timer) clearInterval(timer);
+      // Best-effort interrupt. Wrapped in try/catch because any SDK version
+      // could throw synchronously; we still want to reject the race.
+      try {
+        qi.interrupt?.().catch(() => {});
+      } catch {
+        /* non-fatal */
+      }
+      logWarn("agent", `[${chatId}] SDK silent ${silent}ms — interrupting`);
+      reject(
+        new Error(
+          `Query stalled: no SDK activity for ${silent}ms (likely a stuck tool call)`,
+        ),
+      );
+    }, WATCHDOG_CHECK_MS);
+    timer.unref?.();
+  });
+  return {
+    bump: () => {
+      lastActivity = Date.now();
+    },
+    promise,
+    stop: () => {
+      if (timer) clearInterval(timer);
+    },
+  };
+}
+
 // ── Main handler ─────────────────────────────────────────────────────────────
 
 export async function handleMessage(
@@ -91,9 +141,11 @@ export async function handleMessage(
   const qi = query({ prompt, options });
   activeQueries.set(chatId, qi);
   const state = createStreamState();
+  const watchdog = startWatchdog(qi, chatId);
 
-  try {
+  const iterate = (async () => {
     for await (const message of qi) {
+      watchdog.bump();
       // Session ID capture
       if (isSystemInit(message)) {
         state.newSessionId = message.session_id;
@@ -127,6 +179,7 @@ export async function handleMessage(
           for (const text of result.progressTexts) {
             try {
               await onTextBlock(text);
+              watchdog.bump();
             } catch {
               /* non-fatal — don't abort the stream loop */
             }
@@ -140,6 +193,13 @@ export async function handleMessage(
         processResultMessage(message, state, options.model ?? activeModel);
       }
     }
+  })();
+
+  // Silence any post-race rejection from the iterator (watchdog won the race).
+  iterate.catch(() => {});
+
+  try {
+    await Promise.race([iterate, watchdog.promise]);
   } catch (err) {
     const classified = classify(err);
     incrementCounter(`errors.${classified.reason ?? "unknown"}`);
@@ -187,6 +247,7 @@ export async function handleMessage(
     logError("agent", `[${chatId}] SDK error: ${classified.message}`);
     throw classified;
   } finally {
+    watchdog.stop();
     if (activeQueries.get(chatId) === qi) {
       activeQueries.delete(chatId);
     }

@@ -17,6 +17,7 @@
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { log, logError, logWarn } from "../util/log.js";
+import { wrapMcpServer } from "../util/mcp-launcher.js";
 import type { ActionResult } from "./types.js";
 import type { TalonConfig } from "../util/config.js";
 
@@ -738,32 +739,32 @@ export function getPluginMcpServers(
 
     if (plugin.mcpServer) {
       // Custom command/args (Python, Go, etc.) — no tsx wrapper
-      servers[`${plugin.name}-tools`] = {
+      servers[`${plugin.name}-tools`] = wrapMcpServer({
         command: plugin.mcpServer.command,
         args: [...plugin.mcpServer.args],
         env: baseEnv,
-      };
+      });
     } else if (plugin.mcpServerPath) {
       // Existing Node/tsx pattern
-      servers[`${plugin.name}-tools`] = {
+      servers[`${plugin.name}-tools`] = wrapMcpServer({
         command: process.platform === "win32" ? "npx" : "node",
         args:
           process.platform === "win32"
             ? ["tsx", plugin.mcpServerPath]
             : ["--import", tsxPath, plugin.mcpServerPath],
         env: baseEnv,
-      };
+      });
     }
   }
 
   // Include standalone MCP server entries from config
   for (const entry of registry.mcpEntries) {
     if (only !== undefined && !only.includes(entry.name)) continue;
-    servers[`${entry.name}-tools`] = {
+    servers[`${entry.name}-tools`] = wrapMcpServer({
       command: entry.command,
       args: [...(entry.args ?? [])],
       env: buildBridgeEnv(bridgeUrl, chatId, entry.env),
-    };
+    });
   }
 
   return servers;

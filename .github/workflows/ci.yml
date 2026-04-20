@@ -156,6 +156,31 @@ jobs:
           path: coverage/
           retention-days: 14
 
+  # ── Cross-platform functional tests (subprocess spawn/teardown) ───────
+  # The MCP launcher relies on pipe-EOF-on-parent-death being a kernel
+  # guarantee on every OS Node supports. Validate that on macOS as well as
+  # Linux so we catch platform regressions before they hit users.
+  functional-cross-platform:
+    name: Functional (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run launcher functional tests
+        run: npx vitest run src/__tests__/mcp-launcher-functional.test.ts src/__tests__/mcp-launcher.test.ts
+
   # ── Fuzz testing (property-based with fast-check) ─────────────
   fuzz:
     name: Fuzz Testing
@@ -230,7 +255,7 @@ jobs:
   ci-ok:
     name: CI Status
     if: always()
-    needs: [quality, test, fuzz, security, docker]
+    needs: [quality, test, functional-cross-platform, fuzz, security, docker]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -238,6 +263,7 @@ jobs:
         run: |
           if [[ "${{ needs.quality.result }}" != "success" ]] || \
              [[ "${{ needs.test.result }}" != "success" ]] || \
+             [[ "${{ needs.functional-cross-platform.result }}" != "success" ]] || \
              [[ "${{ needs.fuzz.result }}" != "success" ]] || \
              [[ "${{ needs.security.result }}" != "success" ]] || \
              [[ "${{ needs.docker.result }}" != "success" ]]; then
@@ -254,6 +280,7 @@ jobs:
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Quality | ${{ needs.quality.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Tests | ${{ needs.test.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Functional | ${{ needs.functional-cross-platform.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Fuzz | ${{ needs.fuzz.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security | ${{ needs.security.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Docker | ${{ needs.docker.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
