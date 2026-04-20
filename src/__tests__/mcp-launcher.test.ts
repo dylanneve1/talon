@@ -95,11 +95,9 @@ describe("mcp-launcher", () => {
       process.stdin.resume();
     `;
 
-    const launcher = spawn(
-      "node",
-      [launcherPath, "node", "-e", childScript],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
+    const launcher = spawn("node", [launcherPath, "node", "-e", childScript], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
     // Wait for READY to confirm stdio proxy is up
     await new Promise<void>((resolve, reject) => {
@@ -138,11 +136,9 @@ describe("mcp-launcher", () => {
       process.stdin.on("data", (d) => process.stdout.write(d));
       process.stdin.resume();
     `;
-    const launcher = spawn(
-      "node",
-      [launcherPath, "node", "-e", childScript],
-      { stdio: ["pipe", "pipe", "pipe"] },
-    );
+    const launcher = spawn("node", [launcherPath, "node", "-e", childScript], {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
     const output: Buffer[] = [];
     launcher.stdout!.on("data", (c) => output.push(c));

@@ -96,7 +96,8 @@ export function ensureLauncher(): string {
   let needsWrite = true;
   if (existsSync(pathFiles.mcpLauncher)) {
     try {
-      needsWrite = readFileSync(pathFiles.mcpLauncher, "utf-8") !== LAUNCHER_SOURCE;
+      needsWrite =
+        readFileSync(pathFiles.mcpLauncher, "utf-8") !== LAUNCHER_SOURCE;
     } catch {
       /* unreadable — just rewrite */
     }

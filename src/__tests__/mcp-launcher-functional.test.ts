@@ -39,7 +39,10 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-async function waitForPidGone(pid: number, timeoutMs: number): Promise<boolean> {
+async function waitForPidGone(
+  pid: number,
+  timeoutMs: number,
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (!pidAlive(pid)) return true;
@@ -242,70 +245,86 @@ describe("launcher functional: no orphaned MCP processes", () => {
     });
   }
 
-  it("SIGKILL of parent cleans up every descendant (10 wrapped children)", async () => {
-    const idler = writeIdler(workDir);
-    const { harness, pids } = await spawnHarness({
-      workDir,
-      count: 10,
-      idlerPath: idler,
-    });
-    track(harness);
-    expect(pids).toHaveLength(20); // 10 launchers + 10 idlers
+  it(
+    "SIGKILL of parent cleans up every descendant (10 wrapped children)",
+    async () => {
+      const idler = writeIdler(workDir);
+      const { harness, pids } = await spawnHarness({
+        workDir,
+        count: 10,
+        idlerPath: idler,
+      });
+      track(harness);
+      expect(pids).toHaveLength(20); // 10 launchers + 10 idlers
 
-    harness.kill("SIGKILL");
-    await assertAllGone(pids, 5_000);
-  }, FUNCTIONAL_TIMEOUT_MS);
+      harness.kill("SIGKILL");
+      await assertAllGone(pids, 5_000);
+    },
+    FUNCTIONAL_TIMEOUT_MS,
+  );
 
-  it("graceful shutdown (stdin close) cleans up every descendant", async () => {
-    const idler = writeIdler(workDir);
-    const { harness, pids } = await spawnHarness({
-      workDir,
-      count: 3,
-      idlerPath: idler,
-    });
-    track(harness);
+  it(
+    "graceful shutdown (stdin close) cleans up every descendant",
+    async () => {
+      const idler = writeIdler(workDir);
+      const { harness, pids } = await spawnHarness({
+        workDir,
+        count: 3,
+        idlerPath: idler,
+      });
+      track(harness);
 
-    harness.stdin!.end();
-    const exitCode = await new Promise<number | null>((r) =>
-      harness.on("exit", (c) => r(c)),
-    );
-    expect(exitCode).toBe(0);
-    await assertAllGone(pids, 5_000);
-  }, FUNCTIONAL_TIMEOUT_MS);
+      harness.stdin!.end();
+      const exitCode = await new Promise<number | null>((r) =>
+        harness.on("exit", (c) => r(c)),
+      );
+      expect(exitCode).toBe(0);
+      await assertAllGone(pids, 5_000);
+    },
+    FUNCTIONAL_TIMEOUT_MS,
+  );
 
-  it("SIGKILLs stubborn children that ignore SIGTERM", async () => {
-    const stubborn = writeIdler(workDir, {
-      name: "stubborn.mjs",
-      ignoreSigterm: true,
-      exitOnStdinClose: false,
-    });
-    const { harness, pids } = await spawnHarness({
-      workDir,
-      count: 2,
-      idlerPath: stubborn,
-    });
-    track(harness);
+  it(
+    "SIGKILLs stubborn children that ignore SIGTERM",
+    async () => {
+      const stubborn = writeIdler(workDir, {
+        name: "stubborn.mjs",
+        ignoreSigterm: true,
+        exitOnStdinClose: false,
+      });
+      const { harness, pids } = await spawnHarness({
+        workDir,
+        count: 2,
+        idlerPath: stubborn,
+      });
+      track(harness);
 
-    harness.kill("SIGKILL");
-    // Launcher: SIGTERM → 1s grace → SIGKILL. Give 4s headroom.
-    await assertAllGone(pids, 4_000);
-  }, FUNCTIONAL_TIMEOUT_MS);
+      harness.kill("SIGKILL");
+      // Launcher: SIGTERM → 1s grace → SIGKILL. Give 4s headroom.
+      await assertAllGone(pids, 4_000);
+    },
+    FUNCTIONAL_TIMEOUT_MS,
+  );
 
-  it("launcher exits when its supervised child exits on its own", async () => {
-    const oneShot = writeIdler(workDir, {
-      name: "one-shot.mjs",
-      selfExitAfterMs: 200,
-    });
-    const { harness, pids } = await spawnHarness({
-      workDir,
-      count: 1,
-      idlerPath: oneShot,
-    });
-    track(harness);
+  it(
+    "launcher exits when its supervised child exits on its own",
+    async () => {
+      const oneShot = writeIdler(workDir, {
+        name: "one-shot.mjs",
+        selfExitAfterMs: 200,
+      });
+      const { harness, pids } = await spawnHarness({
+        workDir,
+        count: 1,
+        idlerPath: oneShot,
+      });
+      track(harness);
 
-    // Both launcher (pids[0]) and idler (pids[1]) must be gone within seconds
-    // even though the harness itself is still running.
-    await assertAllGone(pids, 5_000);
-    expect(pidAlive(harness.pid!)).toBe(true);
-  }, FUNCTIONAL_TIMEOUT_MS);
+      // Both launcher (pids[0]) and idler (pids[1]) must be gone within seconds
+      // even though the harness itself is still running.
+      await assertAllGone(pids, 5_000);
+      expect(pidAlive(harness.pid!)).toBe(true);
+    },
+    FUNCTIONAL_TIMEOUT_MS,
+  );
 });
