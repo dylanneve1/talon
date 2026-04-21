@@ -226,7 +226,11 @@ export async function handleMessage(
 
   // ── Build result ──────────────────────────────────────────────────────────
 
+  const undeliveredText = onTextBlock
+    ? state.currentBlockText.trim()
+    : (state.allResponseText + state.currentBlockText).trim();
   state.allResponseText += state.currentBlockText;
+  const fullResponseText = state.allResponseText.trim();
   const totalPrompt =
     state.sdkInputTokens + state.sdkCacheRead + state.sdkCacheWrite;
   const cacheHitPct =
@@ -237,7 +241,7 @@ export async function handleMessage(
     `[${chatId}] -> (${durationMs}ms, in=${state.sdkInputTokens} out=${state.sdkOutputTokens} cache=${cacheHitPct}%` +
       `${state.toolCalls > 0 ? ` tools=${state.toolCalls}` : ""})`,
   );
-  traceMessage(chatId, "out", state.allResponseText, {
+  traceMessage(chatId, "out", fullResponseText, {
     durationMs,
     inputTokens: state.sdkInputTokens,
     outputTokens: state.sdkOutputTokens,
@@ -248,7 +252,8 @@ export async function handleMessage(
   });
 
   return {
-    text: state.allResponseText.trim(),
+    text: fullResponseText,
+    undeliveredText,
     durationMs,
     inputTokens: state.sdkInputTokens,
     outputTokens: state.sdkOutputTokens,

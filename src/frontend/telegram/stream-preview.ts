@@ -13,7 +13,7 @@
  */
 
 import type { Bot } from "grammy";
-import { markdownToTelegramHtml } from "./formatting.js";
+import { markdownToTelegramHtml, splitMessage } from "./formatting.js";
 import { logWarn } from "../../util/log.js";
 import type { ResponseStream } from "../../core/types.js";
 
@@ -112,6 +112,87 @@ export function createTelegramStream(
     } catch {
       return trimmed;
     }
+  };
+
+  const stripHtmlTags = (html: string): string => {
+    let plain = html;
+    let prev: string;
+    do {
+      prev = plain;
+      plain = plain.replace(/<[^>]*>/g, "");
+    } while (plain !== prev);
+    return plain;
+  };
+
+  const splitCommittedChunks = (rawMarkdown: string): string[] => {
+    const trimmed = rawMarkdown.trimEnd();
+    if (!trimmed) return [];
+
+    const queue = splitMessage(trimmed, MAX_CHARS);
+    const chunks: string[] = [];
+
+    while (queue.length > 0) {
+      const chunk = queue.shift()!;
+      const html = renderHtml(chunk);
+      if (!html || html.length <= MAX_CHARS) {
+        chunks.push(chunk);
+        continue;
+      }
+      queue.unshift(...splitMessage(chunk, Math.max(1, Math.floor(chunk.length / 2))));
+    }
+
+    return chunks.filter((chunk) => chunk.trim().length > 0);
+  };
+
+  const sendCommittedMessage = async (
+    rawMarkdown: string,
+    params?: { replyToId?: number; editMessageId?: number },
+  ): Promise<number | undefined> => {
+    const html = renderHtml(rawMarkdown);
+    const plain = html ? stripHtmlTags(html) : rawMarkdown.trimEnd();
+
+    if (params?.editMessageId !== undefined) {
+      if (html && html.length <= MAX_CHARS) {
+        try {
+          await api.editMessageText(chatId, params.editMessageId, html, {
+            parse_mode: "HTML",
+          });
+          return params.editMessageId;
+        } catch (err) {
+          logWarn(
+            "bot",
+            `stream commit edit HTML failed, retrying as plain text: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      await api.editMessageText(chatId, params.editMessageId, plain);
+      return params.editMessageId;
+    }
+
+    if (html && html.length <= MAX_CHARS) {
+      try {
+        const sent = await api.sendMessage(chatId, html, {
+          parse_mode: "HTML",
+          reply_parameters: params?.replyToId
+            ? { message_id: params.replyToId }
+            : undefined,
+        });
+        return sent.message_id;
+      } catch (err) {
+        logWarn(
+          "bot",
+          `stream commit send HTML failed, retrying as plain text: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    const sent = await api.sendMessage(chatId, plain, {
+      reply_parameters: params?.replyToId
+        ? { message_id: params.replyToId }
+        : undefined,
+    });
+    return sent.message_id;
   };
 
   const sendPreviewDraft = async (html: string): Promise<void> => {
@@ -219,8 +300,8 @@ export function createTelegramStream(
     }
 
     const source = rawMarkdown ?? pendingRaw;
-    const html = renderHtml(source);
-    if (!html) {
+    const chunks = splitCommittedChunks(source);
+    if (chunks.length === 0) {
       // Nothing to commit; if a draft preview existed, clear it.
       if (transport === "draft" && draftApi && draftId !== undefined) {
         try {
@@ -235,28 +316,25 @@ export function createTelegramStream(
 
     try {
       if (transport === "message") {
-        if (html.length > MAX_CHARS) {
-          // Final text won't fit a single message: finish the existing preview
-          // (trimmed) and send the remainder as an additional message.
-          const first = html.slice(0, MAX_CHARS);
-          const rest = html.slice(MAX_CHARS);
-          await sendOrEditMessage(first);
-          await api.sendMessage(chatId, rest.slice(0, MAX_CHARS), {
-            parse_mode: "HTML",
+        for (const [index, chunk] of chunks.entries()) {
+          const sentId = await sendCommittedMessage(chunk, {
+            ...(index === 0 ? { replyToId } : {}),
+            ...(index === 0 && messageId !== undefined
+              ? { editMessageId: messageId }
+              : {}),
           });
-          resetForNextGeneration();
-          return;
+          if (index === 0 && sentId !== undefined) {
+            messageId = sentId;
+          }
         }
-        await sendOrEditMessage(html);
         resetForNextGeneration();
         return;
       }
 
       // Draft transport: materialize as a real message, then clear the draft.
-      await api.sendMessage(chatId, html.slice(0, MAX_CHARS), {
-        parse_mode: "HTML",
-        reply_parameters: replyToId ? { message_id: replyToId } : undefined,
-      });
+      for (const [index, chunk] of chunks.entries()) {
+        await sendCommittedMessage(chunk, index === 0 ? { replyToId } : undefined);
+      }
       if (draftApi && draftId !== undefined) {
         try {
           await draftApi(chatId, draftId, "");
@@ -268,24 +346,8 @@ export function createTelegramStream(
     } catch (err) {
       logWarn(
         "bot",
-        `stream commit failed, retrying as plain text: ${err instanceof Error ? err.message : String(err)}`,
+        `stream commit failed: ${err instanceof Error ? err.message : String(err)}`,
       );
-      let plain = html;
-      let prev: string;
-      do {
-        prev = plain;
-        plain = plain.replace(/<[^>]*>/g, "");
-      } while (plain !== prev);
-      try {
-        await api.sendMessage(chatId, plain.slice(0, MAX_CHARS), {
-          reply_parameters: replyToId ? { message_id: replyToId } : undefined,
-        });
-      } catch (err2) {
-        logWarn(
-          "bot",
-          `stream commit plain-text fallback failed: ${err2 instanceof Error ? err2.message : String(err2)}`,
-        );
-      }
       resetForNextGeneration();
     }
   };

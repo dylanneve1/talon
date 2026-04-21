@@ -111,6 +111,7 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     cwd: config.workspace,
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
+    includePartialMessages: true,
     ...(config.claudeBinary
       ? { pathToClaudeCodeExecutable: config.claudeBinary }
       : {}),

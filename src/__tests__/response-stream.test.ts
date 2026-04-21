@@ -34,21 +34,41 @@ function createFake(init: Partial<{ pending: boolean }> = {}): ResponseStream & 
 describe("finalizeTurn", () => {
   it("discards when a send_* tool delivered the answer, even if text is pending", async () => {
     const s = createFake({ pending: true });
-    await finalizeTurn(s, 2);
+    await finalizeTurn(s, { bridgeMessageCount: 2 });
     expect(s.committed).toEqual([]);
     expect(s.discarded).toBe(1);
   });
 
   it("commits pending text when no tool delivered the answer", async () => {
     const s = createFake({ pending: true });
-    await finalizeTurn(s, 0);
+    await finalizeTurn(s, { bridgeMessageCount: 0 });
     expect(s.committed).toEqual(["<pending>"]);
+    expect(s.discarded).toBe(0);
+  });
+
+  it("commits explicit undelivered text even when no preview was buffered", async () => {
+    const s = createFake({ pending: false });
+    await finalizeTurn(s, {
+      bridgeMessageCount: 0,
+      undeliveredText: "final assistant text",
+    });
+    expect(s.committed).toEqual(["final assistant text"]);
+    expect(s.discarded).toBe(0);
+  });
+
+  it("prefers explicit undelivered text over stale preview text", async () => {
+    const s = createFake({ pending: true });
+    await finalizeTurn(s, {
+      bridgeMessageCount: 0,
+      undeliveredText: "full final text",
+    });
+    expect(s.committed).toEqual(["full final text"]);
     expect(s.discarded).toBe(0);
   });
 
   it("discards when nothing is pending and no tool fired (empty turn)", async () => {
     const s = createFake({ pending: false });
-    await finalizeTurn(s, 0);
+    await finalizeTurn(s, { bridgeMessageCount: 0 });
     expect(s.committed).toEqual([]);
     expect(s.discarded).toBe(1);
   });

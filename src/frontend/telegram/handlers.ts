@@ -723,7 +723,7 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
     },
   });
 
-  await finalizeTurn(stream, result.bridgeMessageCount);
+  await finalizeTurn(stream, result);
 }
 
 // ── Shared media handler ──────────────────────────────────────────────────────

@@ -365,7 +365,7 @@ export function createTeamsFrontend(
               },
             })
               .then(async (result) => {
-                await finalizeTurn(stream, result.bridgeMessageCount);
+                await finalizeTurn(stream, result);
               })
               .catch(async (err) => {
                 await stream.discard();

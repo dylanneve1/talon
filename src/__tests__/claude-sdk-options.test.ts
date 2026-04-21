@@ -87,6 +87,15 @@ describe("buildSdkOptions", () => {
     expect(options.model).toBe("default");
   });
 
+  it("enables partial assistant messages for preview-capable frontends", async () => {
+    const { buildSdkOptions } =
+      await import("../backend/claude-sdk/options.js");
+
+    const { options } = buildSdkOptions("chat-stream");
+
+    expect(options.includePartialMessages).toBe(true);
+  });
+
   it("passes model through unchanged when no alias resolution needed", async () => {
     mockGetChatSettings.mockReturnValue({ model: "haiku" });
 

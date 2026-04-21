@@ -3,19 +3,24 @@
  *
  * One rule shared by every frontend: if a send_* tool delivered the answer
  * (bridgeMessageCount > 0), discard any leftover preview; otherwise, commit
- * whatever text the stream has buffered (trailing assistant text that wasn't
- * routed through a tool). This is what keeps the Teams/terminal/telegram
- * frontends consistent — no one-off "suppress fallback" branches.
+ * the explicit undelivered assistant block from the backend, or fall back to
+ * whatever preview text the stream has buffered. This is what keeps the
+ * Teams/terminal/telegram frontends consistent even when SDK partial events
+ * are disabled.
  */
 
-import type { ResponseStream } from "./types.js";
+import type { ExecuteResult, ResponseStream } from "./types.js";
 
 export async function finalizeTurn(
   stream: ResponseStream,
-  bridgeMessageCount: number,
+  result: Pick<ExecuteResult, "bridgeMessageCount" | "undeliveredText">,
 ): Promise<void> {
-  if (bridgeMessageCount > 0) {
+  if (result.bridgeMessageCount > 0) {
     await stream.discard();
+    return;
+  }
+  if (result.undeliveredText?.trim()) {
+    await stream.commit(result.undeliveredText);
     return;
   }
   if (stream.hasPending()) {

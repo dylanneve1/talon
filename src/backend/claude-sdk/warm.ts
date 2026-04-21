@@ -2,12 +2,11 @@
  * Session warm-up — cold-start optimization.
  *
  * Spawns a throwaway SDK subprocess in streaming input mode, calls
- * getContextUsage() to populate contextWindow and baseline contextTokens,
- * then tears it down. Fire-and-forget — does not block the caller.
+ * initializationResult() to complete the CLI handshake, then tears it down.
+ * Fire-and-forget — does not block the caller.
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { getSession } from "../../storage/sessions.js";
 import { rebuildSystemPrompt } from "../../util/config.js";
 import { getPluginPromptAdditions } from "../../core/plugin.js";
 import { log, logWarn } from "../../util/log.js";
@@ -54,7 +53,7 @@ export async function warmSession(chatId: string): Promise<void> {
       }
     })();
 
-    // Race getContextUsage against a timeout so /reset doesn't hang
+    // Race initialization against a timeout so /reset doesn't hang
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(
@@ -62,18 +61,15 @@ export async function warmSession(chatId: string): Promise<void> {
         15_000,
       );
     });
-    let ctx: Awaited<ReturnType<typeof q.getContextUsage>>;
+    let init: Awaited<ReturnType<typeof q.initializationResult>>;
     try {
-      ctx = await Promise.race([q.getContextUsage(), timeout]);
+      init = await Promise.race([q.initializationResult(), timeout]);
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
-    const session = getSession(chatId);
-    if (ctx.maxTokens > 0) session.usage.contextWindow = ctx.maxTokens;
-    if (ctx.totalTokens > 0) session.usage.contextTokens = ctx.totalTokens;
     log(
       "agent",
-      `[${chatId}] warm-up: context ${ctx.totalTokens}/${ctx.maxTokens} (${ctx.percentage.toFixed(1)}%) model=${ctx.model}`,
+      `[${chatId}] warm-up ready: models=${init.models.length} commands=${init.commands.length}`,
     );
 
     abort.abort();

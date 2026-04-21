@@ -384,10 +384,7 @@ export function createTelegramActionHandler(
               | boolean
               | undefined,
             type: body.type as "regular" | "quiz" | undefined,
-            correct_option_ids:
-              body.correct_option_id != null
-                ? [body.correct_option_id as number]
-                : undefined,
+            correct_option_id: body.correct_option_id as number | undefined,
             explanation: body.explanation as string | undefined,
           },
         );

@@ -1829,6 +1829,7 @@ describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", 
         await onTextBlock?.("Hi! 👋");
         return {
           text: "Hi! 👋",
+          undeliveredText: "",
           durationMs: 5,
           inputTokens: 1,
           outputTokens: 2,
@@ -1987,6 +1988,7 @@ describe("streaming preview (new TelegramStream)", () => {
         await onTextBlock?.("Here is the final text");
         return {
           text: "Here is the final text",
+          undeliveredText: "",
           durationMs: 10,
           inputTokens: 1,
           outputTokens: 1,
@@ -2056,10 +2058,9 @@ describe("streaming preview (new TelegramStream)", () => {
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (acc: string) => void;
-        onStreamDelta?.("trailing reasoning text");
         return {
           text: "trailing reasoning text",
+          undeliveredText: "trailing reasoning text",
           durationMs: 10,
           inputTokens: 1,
           outputTokens: 1,

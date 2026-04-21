@@ -22,7 +22,14 @@ export type QueryParams = {
 
 /** Result of a backend AI query. */
 export type QueryResult = {
+  /** Full assistant transcript for the turn (all blocks concatenated). */
   text: string;
+  /**
+   * Assistant text that has not already been emitted through `onTextBlock`.
+   * Frontends use this for end-of-turn fallback delivery when no send_* tool
+   * delivered the answer.
+   */
+  undeliveredText?: string;
   durationMs: number;
   inputTokens: number;
   outputTokens: number;

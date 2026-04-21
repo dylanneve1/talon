@@ -139,6 +139,7 @@ export async function handleMessage(
         "Sorry \u2014 I got an empty response from OpenCode. Please try again.";
     }
 
+    const deliveredViaTextBlock = Boolean(responseText && onTextBlock);
     if (responseText && onTextBlock) {
       await onTextBlock(responseText);
     }
@@ -177,6 +178,7 @@ export async function handleMessage(
 
     return {
       text: responseText.trim(),
+      undeliveredText: deliveredViaTextBlock ? "" : responseText.trim(),
       durationMs,
       inputTokens: usage.inputTokens,
       outputTokens: usage.outputTokens,

@@ -242,7 +242,7 @@ export function createTerminalFrontend(
             },
           });
 
-          await finalizeTurn(stream, result.bridgeMessageCount);
+          await finalizeTurn(stream, result);
           currentPhase = "idle";
 
           const info = getSessionInfo(terminalChatId);
