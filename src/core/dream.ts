@@ -149,7 +149,7 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
 Run this command using the Bash tool:
 
 \`\`\`bash
-'${configRef.mempalace.pythonPath.replace(/'/g, "'\\''")}' -m mempalace mine '${dirs.dailyMemory.replace(/'/g, "'\\''")}' --palace '${configRef.mempalace.palacePath.replace(/'/g, "'\\''")}' --mode convos --wing daily-notes
+'${configRef.mempalace.pythonPath.replace(/'/g, "'\\''")}' -m mempalace mine '${dirs.dailyMemory.replace(/'/g, "'\\''")}' --palace '${configRef.mempalace.palacePath.replace(/'/g, "'\\''")}' --mode convos --wing daily-notes --agent talon
 \`\`\`
 
 Then write a personal diary entry. This is YOUR journal — not a status report. Reflect on:
