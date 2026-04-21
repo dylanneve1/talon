@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.9.0](https://github.com/dylanneve1/talon/compare/v1.8.1...v1.9.0) (2026-04-21)
+
+
+### Features
+
+* **mempalace:** support 3.3.x multi-language entity detection ([#72](https://github.com/dylanneve1/talon/issues/72)) ([5da6e02](https://github.com/dylanneve1/talon/commit/5da6e02a500f8ce7fe2266160b4d5d5513f1aae5))
+
+
+### Bug Fixes
+
+* **robustness:** launcher-wrapped MCP spawns + minimal silence watchdog ([#73](https://github.com/dylanneve1/talon/issues/73)) ([37f41de](https://github.com/dylanneve1/talon/commit/37f41de4b5cd0707122eed5f055e5fa47a2b5bf8))
+
 ## [1.8.1](https://github.com/dylanneve1/talon/compare/v1.8.0...v1.8.1) (2026-04-17)
 
 
