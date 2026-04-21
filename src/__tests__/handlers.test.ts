@@ -1974,23 +1974,19 @@ describe("sendHtml — falls back to plain text on HTML send failure", () => {
   }, 3000);
 });
 
-describe("createStreamCallbacks — onStreamDelta streaming path", () => {
-  it("calls sendMessageDraft when state.started is true and delta is large enough", async () => {
-    // Reset sendMessageDraft mock and use a fresh spy
+describe("streaming preview (new TelegramStream)", () => {
+  it("commits a real message when onTextBlock fires (text-before-tool-boundary)", async () => {
     mockBot.api.sendMessageDraft = vi.fn(async () => {});
+    mockBot.api.sendMessage = vi.fn(async () => ({ message_id: 500 }));
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
-        // Wait 1100ms so the internal 1000ms stream.started timer fires first
-        await new Promise((r) => setTimeout(r, 1100));
-        // Now state.started = true; accumulated delta > 40 chars > lastSentLength=0
-        if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
+        const onStreamDelta = params.onStreamDelta as (acc: string) => void;
+        const onTextBlock = params.onTextBlock as (t: string) => Promise<void>;
+        onStreamDelta?.("partial response so far");
+        await onTextBlock?.("Here is the final text");
         return {
-          text: "",
+          text: "Here is the final text",
           durationMs: 10,
           inputTokens: 1,
           outputTokens: 1,
@@ -2002,176 +1998,33 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
     );
 
     const ctx = {
-      chat: { id: 98001, type: "private" },
-      message: {
-        text: "streaming test",
-        message_id: 970,
-        reply_to_message: null,
-      },
+      chat: { id: 98010, type: "private" },
+      message: { text: "stream onTextBlock", message_id: 981, reply_to_message: null },
       me: { id: 999, username: "testbot" },
-      from: { id: 95, first_name: "Stream" },
-    } as any;
-
-    await handleTextMessage(ctx, mockBot, mockConfig);
-    // Wait for debounce (500ms) + executeMock sleep (1100ms) + buffer
-    await new Promise((r) => setTimeout(r, 2000));
-
-    expect(mockBot.api.sendMessageDraft).toHaveBeenCalled();
-  }, 5000);
-
-  it("calls sendMessageDraft with truncated text when accumulated > 3900 chars", async () => {
-    mockBot.api.sendMessageDraft = vi.fn(async () => {});
-
-    executeMock.mockImplementationOnce(
-      async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
-        await new Promise((r) => setTimeout(r, 1100));
-        // accumulated.length > 3900 → triggers truncation + ellipsis
-        if (onStreamDelta) await onStreamDelta("b".repeat(4000), "text");
-        return {
-          text: "",
-          durationMs: 10,
-          inputTokens: 1,
-          outputTokens: 1,
-          cacheRead: 0,
-          cacheWrite: 0,
-          bridgeMessageCount: 0,
-        };
-      },
-    );
-
-    const ctx = {
-      chat: { id: 98002, type: "private" },
-      message: {
-        text: "long streaming test",
-        message_id: 971,
-        reply_to_message: null,
-      },
-      me: { id: 999, username: "testbot" },
-      from: { id: 95, first_name: "Stream" },
-    } as any;
-
-    await handleTextMessage(ctx, mockBot, mockConfig);
-    await new Promise((r) => setTimeout(r, 2000));
-
-    const calls = (mockBot.api.sendMessageDraft as ReturnType<typeof vi.fn>)
-      .mock.calls;
-    if (calls.length > 0) {
-      // Third arg is the display text — should be truncated with ellipsis
-      const displayText = calls[calls.length - 1][2] as string;
-      expect(displayText.length).toBeLessThanOrEqual(3901);
-    }
-  }, 5000);
-
-  it("disables streaming when sendMessageDraft throws on first attempt", async () => {
-    // This test relies on draftsSupported resetting to null — but it's module-level state.
-    // We test that even if it was set, the sendMessageDraft failure path (catch block) works.
-    mockBot.api.sendMessageDraft = vi.fn(async () => {
-      throw new Error("not supported");
-    });
-
-    executeMock.mockImplementationOnce(
-      async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
-        await new Promise((r) => setTimeout(r, 1100));
-        if (onStreamDelta) await onStreamDelta("c".repeat(50), "text");
-        return {
-          text: "",
-          durationMs: 10,
-          inputTokens: 1,
-          outputTokens: 1,
-          cacheRead: 0,
-          cacheWrite: 0,
-          bridgeMessageCount: 0,
-        };
-      },
-    );
-
-    const { logWarn } = await import("../util/log.js");
-    (logWarn as ReturnType<typeof vi.fn>).mockClear();
-
-    const ctx = {
-      chat: { id: 98003, type: "private" },
-      message: {
-        text: "streaming fail test",
-        message_id: 972,
-        reply_to_message: null,
-      },
-      me: { id: 999, username: "testbot" },
-      from: { id: 95, first_name: "Stream" },
-    } as any;
-
-    await handleTextMessage(ctx, mockBot, mockConfig);
-    await new Promise((r) => setTimeout(r, 2000));
-
-    // Either draftsSupported was already true (from prior test) and no warn is logged,
-    // OR it was null and now the warn is logged — both are valid code paths.
-    // Just verify no crash occurred.
-    expect(mockBot.api.sendMessageDraft).toHaveBeenCalled();
-
-    // Restore sendMessageDraft
-    mockBot.api.sendMessageDraft = vi.fn(async () => {});
-  }, 5000);
-
-  it("returns early from onStreamDelta when state.started is false (line 495 !state.started TRUE branch)", async () => {
-    mockBot.api.sendMessageDraft = vi.fn(async () => {});
-
-    executeMock.mockImplementationOnce(
-      async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
-        // Call IMMEDIATELY — state.started is still false (timer hasn't fired)
-        if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
-        return {
-          text: "",
-          durationMs: 10,
-          inputTokens: 1,
-          outputTokens: 1,
-          cacheRead: 0,
-          cacheWrite: 0,
-          bridgeMessageCount: 0,
-        };
-      },
-    );
-
-    const ctx = {
-      chat: { id: 98004, type: "private" },
-      message: {
-        text: "early delta test",
-        message_id: 973,
-        reply_to_message: null,
-      },
-      me: { id: 999, username: "testbot" },
-      from: { id: 95, first_name: "Stream" },
+      from: { id: 95, first_name: "Zoe" },
     } as any;
 
     await handleTextMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    // sendMessageDraft should NOT have been called since state.started was false
-    expect(mockBot.api.sendMessageDraft).not.toHaveBeenCalled();
+    expect(mockBot.api.sendMessage).toHaveBeenCalled();
   }, 3000);
 
-  it("returns early from onStreamDelta when delta < 40 chars (line 496 TRUE branch)", async () => {
-    mockBot.api.sendMessageDraft = vi.fn(async () => {});
+  it("falls back from sendMessageDraft to sendMessage+editMessageText when draft API is unavailable", async () => {
+    mockBot.api.sendMessageDraft = vi.fn(async () => {
+      throw new Error("sendMessageDraft: unknown method");
+    });
+    mockBot.api.sendMessage = vi.fn(async () => ({ message_id: 501 }));
+    mockBot.api.editMessageText = vi.fn(async () => ({}));
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
-        await new Promise((r) => setTimeout(r, 1100)); // wait for started
-        // Only 20 chars since lastSentLength=0 → 20 < 40 → early return
-        if (onStreamDelta) await onStreamDelta("a".repeat(20), "text");
+        const onStreamDelta = params.onStreamDelta as (acc: string) => void;
+        // Push enough updates to get past initial-delay + throttle gates
+        onStreamDelta?.("hello world");
+        await new Promise((r) => setTimeout(r, 1200));
+        onStreamDelta?.("hello world again");
+        await new Promise((r) => setTimeout(r, 1200));
         return {
           text: "",
           durationMs: 10,
@@ -2179,28 +2032,56 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
           outputTokens: 1,
           cacheRead: 0,
           cacheWrite: 0,
-          bridgeMessageCount: 0,
+          bridgeMessageCount: 1, // tool delivered the answer; no trailing commit
         };
       },
     );
 
     const ctx = {
-      chat: { id: 98005, type: "private" },
-      message: {
-        text: "small delta test",
-        message_id: 974,
-        reply_to_message: null,
-      },
+      chat: { id: 98011, type: "private" },
+      message: { text: "stream draft fallback", message_id: 982, reply_to_message: null },
       me: { id: 999, username: "testbot" },
-      from: { id: 95, first_name: "Stream" },
+      from: { id: 95, first_name: "Zoe" },
     } as any;
 
     await handleTextMessage(ctx, mockBot, mockConfig);
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 3000));
 
-    // sendMessageDraft should NOT have been called — delta < 40
-    expect(mockBot.api.sendMessageDraft).not.toHaveBeenCalled();
-  }, 5000);
+    // The draft failure triggers fallback → sendMessage gets called at least once.
+    expect(mockBot.api.sendMessage).toHaveBeenCalled();
+  }, 8000);
+
+  it("delivers trailing text when no send tool was used (no more 'suppressed fallback')", async () => {
+    mockBot.api.sendMessage = vi.fn(async () => ({ message_id: 502 }));
+
+    executeMock.mockImplementationOnce(
+      async (params: Record<string, unknown>) => {
+        const onStreamDelta = params.onStreamDelta as (acc: string) => void;
+        onStreamDelta?.("trailing reasoning text");
+        return {
+          text: "trailing reasoning text",
+          durationMs: 10,
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheRead: 0,
+          cacheWrite: 0,
+          bridgeMessageCount: 0, // nothing delivered via tools
+        };
+      },
+    );
+
+    const ctx = {
+      chat: { id: 98012, type: "private" },
+      message: { text: "trailing text test", message_id: 983, reply_to_message: null },
+      me: { id: 999, username: "testbot" },
+      from: { id: 95, first_name: "Zoe" },
+    } as any;
+
+    await handleTextMessage(ctx, mockBot, mockConfig);
+    await new Promise((r) => setTimeout(r, 700));
+
+    expect(mockBot.api.sendMessage).toHaveBeenCalled();
+  }, 3000);
 });
 
 describe("downloadReplyPhoto — success and error paths", () => {
@@ -2679,43 +2560,6 @@ describe("processAndReply — group message without senderId (L552 FALSE branch)
       .slice(before)
       .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
-  }, 3000);
-});
-
-describe("processAndReply — suppressed fallback text logged (L572 TRUE branch)", () => {
-  it("logs when bridgeMessageCount=0 and result.text is non-empty", async () => {
-    const { log } = await import("../util/log.js");
-    (log as ReturnType<typeof vi.fn>).mockClear();
-
-    executeMock.mockResolvedValueOnce({
-      text: "internal reasoning only",
-      durationMs: 10,
-      inputTokens: 1,
-      outputTokens: 1,
-      cacheRead: 0,
-      cacheWrite: 0,
-      bridgeMessageCount: 0,
-    });
-
-    const ctx = {
-      chat: { id: 99600, type: "private" },
-      message: {
-        text: "test suppressed fallback",
-        message_id: 1600,
-        reply_to_message: null,
-      },
-      me: { id: 999, username: "testbot" },
-      from: { id: 9902000, first_name: "Tom" },
-    } as any;
-
-    await handleTextMessage(ctx, mockBot, mockConfig);
-    await new Promise((r) => setTimeout(r, 700));
-
-    const logCalls = (log as ReturnType<typeof vi.fn>).mock.calls;
-    const suppressedLog = logCalls.find((c: unknown[]) =>
-      String(c[1]).includes("Suppressed fallback"),
-    );
-    expect(suppressedLog).toBeDefined();
   }, 3000);
 });
 

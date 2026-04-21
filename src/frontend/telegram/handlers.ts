@@ -5,7 +5,8 @@
 
 import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
-import { markdownToTelegramHtml, escapeHtml } from "./formatting.js";
+import { escapeHtml } from "./formatting.js";
+import { createTelegramStream } from "./stream-preview.js";
 import { execute } from "../../core/dispatcher.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import {
@@ -666,67 +667,9 @@ type ProcessAndReplyParams = {
   chatTitle?: string;
 };
 
-// ── Streaming state for Telegram message edits ──────────────────────────────
-
-type StreamState = {
-  draftId: number;
-  lastSentLength: number;
-  started: boolean;
-  editing: boolean;
-  sentTextBlock: boolean;
-};
-
-// Probe once at startup whether sendMessageDraft is supported
-let draftsSupported: boolean | null = null;
-
-function createStreamCallbacks(
-  bot: Bot,
-  chatId: number,
-  _replyToId: number,
-  state: StreamState,
-) {
-  const onStreamDelta = async (
-    accumulated: string,
-    _phase?: "thinking" | "text",
-  ) => {
-    // Skip if drafts not supported or not ready
-    if (draftsSupported === false || !state.started || state.editing) return;
-    if (accumulated.length - state.lastSentLength < 40) return;
-
-    state.editing = true;
-    try {
-      const display =
-        accumulated.length > 3900
-          ? accumulated.slice(0, 3900) + "\u2026"
-          : accumulated;
-
-      await bot.api.sendMessageDraft(chatId, state.draftId, display);
-      if (draftsSupported === null) draftsSupported = true;
-      state.lastSentLength = accumulated.length;
-    } catch {
-      // If first attempt fails, disable drafts entirely
-      if (draftsSupported === null) {
-        draftsSupported = false;
-        logWarn("bot", "sendMessageDraft not supported — streaming disabled");
-      }
-    } finally {
-      state.editing = false;
-    }
-  };
-
-  const onTextBlock = async (text: string) => {
-    await sendHtml(bot, chatId, markdownToTelegramHtml(text), _replyToId);
-    state.lastSentLength = 0;
-    state.sentTextBlock = true;
-  };
-
-  return { onStreamDelta, onTextBlock };
-}
-
 async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
     bot,
-    config,
     chatId,
     numericChatId,
     replyToId,
@@ -739,68 +682,54 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
     chatTitle,
   } = params;
 
-  const stream: StreamState = {
-    draftId: crypto.getRandomValues(new Uint32Array(1))[0] || 1,
-    lastSentLength: 0,
-    started: false,
-    editing: false,
-    sentTextBlock: false,
-  };
-  // Wait 1s before starting streaming — avoids flickering on fast responses
-  const streamTimer = setTimeout(() => {
-    stream.started = true;
-  }, 1000);
+  const stream = createTelegramStream({
+    bot,
+    chatId: numericChatId,
+    replyToId,
+  });
 
-  try {
-    const { onStreamDelta, onTextBlock } = createStreamCallbacks(
-      bot,
-      numericChatId,
-      replyToId,
-      stream,
-    );
+  // Enrich prompt with sender context
+  let enrichedPrompt = prompt;
+  if (!isGroup && senderName) {
+    enrichedPrompt = enrichDMPrompt(prompt, senderName, senderUsername);
+    if (senderId) trackDmUser(senderId, senderName, senderUsername);
+  } else if (isGroup && senderId) {
+    enrichedPrompt = enrichGroupPrompt(prompt, String(chatId), senderId);
+  }
 
-    // Enrich prompt with sender context
-    let enrichedPrompt = prompt;
-    if (!isGroup && senderName) {
-      enrichedPrompt = enrichDMPrompt(prompt, senderName, senderUsername);
-      if (senderId) trackDmUser(senderId, senderName, senderUsername);
-    } else if (isGroup && senderId) {
-      enrichedPrompt = enrichGroupPrompt(prompt, String(chatId), senderId);
-    }
+  const result = await execute({
+    chatId: String(chatId),
+    numericChatId,
+    prompt: enrichedPrompt,
+    senderName,
+    isGroup,
+    messageId,
+    source: "message",
+    onStreamDelta: (accumulated) => {
+      stream.update(accumulated);
+    },
+    onTextBlock: async (text) => {
+      await stream.commit(text);
+    },
+    onToolUse: (toolName, input) => {
+      if (
+        toolName === "send" &&
+        input.type === "text" &&
+        typeof input.text === "string"
+      ) {
+        appendDailyLogResponse("Talon", input.text, { chatTitle });
+      }
+    },
+  });
 
-    const result = await execute({
-      chatId: String(chatId),
-      numericChatId,
-      prompt: enrichedPrompt,
-      senderName,
-      isGroup,
-      messageId,
-      source: "message",
-      onStreamDelta,
-      onTextBlock,
-      onToolUse: (toolName, input) => {
-        if (
-          toolName === "send" &&
-          input.type === "text" &&
-          typeof input.text === "string"
-        ) {
-          appendDailyLogResponse("Talon", input.text, { chatTitle });
-        }
-      },
-    });
-
-    if (
-      result.bridgeMessageCount === 0 &&
-      !stream.sentTextBlock &&
-      result.text?.trim()
-    ) {
-      log(
-        "bot",
-        `Suppressed fallback text (${result.text.length} chars) — no send tool used`,
-      );
-    }
-  } finally {
-    clearTimeout(streamTimer);
+  // End-of-turn: if a send_* tool delivered the answer, drop the preview;
+  // otherwise materialize any remaining streamed text as a real message.
+  if (result.bridgeMessageCount > 0) {
+    await stream.discard();
+  } else if (stream.hasPending()) {
+    await stream.commit();
+  } else {
+    await stream.discard();
   }
 }
 
