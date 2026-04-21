@@ -8,6 +8,14 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
+// Identity-wrap so existing assertions can match the raw MCP server shape
+// without the launcher prefix. Dedicated wrap behavior is covered in
+// mcp-launcher.test.ts.
+vi.mock("../util/mcp-launcher.js", () => ({
+  wrapMcpServer: <T>(server: T) => server,
+  ensureLauncher: () => "/tmp/fake-launcher.mjs",
+}));
+
 describe("plugin system", () => {
   beforeEach(() => {
     vi.resetModules();

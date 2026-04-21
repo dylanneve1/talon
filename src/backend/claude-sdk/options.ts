@@ -11,6 +11,7 @@ import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
 import { resolveModelId } from "../../core/models.js";
+import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 
@@ -64,26 +65,26 @@ export function buildMcpServers(
       TALON_CHAT_ID: chatId,
       TALON_FRONTEND: frontend,
     };
-    servers[serverName] = {
+    servers[serverName] = wrapMcpServer({
       command: process.platform === "win32" ? "npx" : "node",
       args:
         process.platform === "win32"
           ? ["tsx", mcpServerPath]
           : ["--import", tsxImport, mcpServerPath],
       env: mcpEnv,
-    };
+    });
   }
 
   // Brave Search MCP server (if configured)
   if (config.braveApiKey) {
-    servers["brave-search"] = {
+    servers["brave-search"] = wrapMcpServer({
       command: resolve(
         import.meta.dirname ?? ".",
         "../../../node_modules/.bin/brave-search-mcp-server",
       ),
       args: [],
       env: { BRAVE_API_KEY: config.braveApiKey },
-    };
+    });
   }
 
   return servers;

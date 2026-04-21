@@ -12,15 +12,15 @@ Multi-platform agentic AI harness powered by Claude. Runs on **Telegram**, **Tea
 
 ## Features
 
-| | |
-|---|---|
-| **Multi-frontend** | Telegram (Grammy + GramJS userbot), Microsoft Teams (Bot Framework), Terminal with live tool visibility |
-| **Claude Agent SDK** | Streaming responses, extended thinking, adaptive effort, 1M token context, dynamic model discovery |
-| **MCP tools** | Messaging, media, history, search, web fetch, cron jobs, stickers, file system, admin controls |
-| **Plugins** | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search |
-| **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary) |
-| **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard |
-| **Model registry** | Models discovered from the SDK at startup --- new models appear in all pickers automatically |
+|                       |                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Multi-frontend**    | Telegram (Grammy + GramJS userbot), Microsoft Teams (Bot Framework), Terminal with live tool visibility |
+| **Claude Agent SDK**  | Streaming responses, extended thinking, adaptive effort, 1M token context, dynamic model discovery      |
+| **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, stickers, file system, admin controls          |
+| **Plugins**           | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search                     |
+| **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary)                               |
+| **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard                              |
+| **Model registry**    | Models discovered from the SDK at startup --- new models appear in all pickers automatically            |
 
 ---
 
@@ -39,8 +39,10 @@ npx talon chat        # terminal chat mode
 ```
 
 **Prerequisites:**
+
 - [Node.js 22+](https://nodejs.org/)
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude` CLI on PATH)
+- Talon runs from a normal source or package install; standalone compiled binaries are not supported.
 
 ---
 
@@ -161,9 +163,7 @@ Plugins add MCP tools and gateway actions without modifying core code. SOLID int
 
 ```json
 {
-  "plugins": [
-    { "path": "/path/to/my-plugin", "config": { "apiKey": "..." } }
-  ]
+  "plugins": [{ "path": "/path/to/my-plugin", "config": { "apiKey": "..." } }]
 }
 ```
 
@@ -172,12 +172,24 @@ export default {
   name: "my-plugin",
   version: "1.0.0",
   mcpServerPath: resolve(import.meta.dirname, "tools.ts"),
-  validateConfig(config) { /* return errors or undefined */ },
-  getEnvVars(config) { return { MY_KEY: config.apiKey }; },
-  handleAction(body, chatId) { /* gateway action handler */ },
-  getSystemPromptAddition(config) { return "## My Plugin\n..."; },
-  init(config) { /* one-time setup */ },
-  destroy() { /* cleanup */ },
+  validateConfig(config) {
+    /* return errors or undefined */
+  },
+  getEnvVars(config) {
+    return { MY_KEY: config.apiKey };
+  },
+  handleAction(body, chatId) {
+    /* gateway action handler */
+  },
+  getSystemPromptAddition(config) {
+    return "## My Plugin\n...";
+  },
+  init(config) {
+    /* one-time setup */
+  },
+  destroy() {
+    /* cleanup */
+  },
 };
 ```
 
@@ -204,25 +216,25 @@ talon doctor    Validate environment and dependencies
 
 Config file: `~/.talon/config.json`
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `frontend` | `"telegram"` | `"telegram"`, `"terminal"`, `"teams"`, or an array |
-| `backend` | `"claude"` | `"claude"` or `"opencode"` |
-| `botToken` | --- | Telegram bot token |
-| `model` | `"default"` | Default Claude model. Legacy `claude-*` aliases are still accepted. |
-| `concurrency` | `1` | Max concurrent AI queries (1--20) |
-| `pulse` | `true` | Periodic group engagement |
-| `heartbeat` | `false` | Background maintenance agent |
-| `heartbeatIntervalMinutes` | `60` | Heartbeat interval |
-| `braveApiKey` | --- | Brave Search API key |
-| `timezone` | --- | IANA timezone (e.g. `"Europe/London"`) |
-| `plugins` | `[]` | External plugin packages |
-| `adminUserId` | --- | Telegram user ID for `/admin` commands |
-| `allowedUsers` | --- | Whitelist of Telegram user IDs |
-| `apiId` / `apiHash` | --- | Telegram API credentials for full message history |
-| `github` | --- | GitHub plugin config (see above) |
-| `mempalace` | --- | MemPalace plugin config (see above) |
-| `playwright` | --- | Playwright plugin config (see above) |
+| Field                      | Default      | Description                                                         |
+| -------------------------- | ------------ | ------------------------------------------------------------------- |
+| `frontend`                 | `"telegram"` | `"telegram"`, `"terminal"`, `"teams"`, or an array                  |
+| `backend`                  | `"claude"`   | `"claude"` or `"opencode"`                                          |
+| `botToken`                 | ---          | Telegram bot token                                                  |
+| `model`                    | `"default"`  | Default Claude model. Legacy `claude-*` aliases are still accepted. |
+| `concurrency`              | `1`          | Max concurrent AI queries (1--20)                                   |
+| `pulse`                    | `true`       | Periodic group engagement                                           |
+| `heartbeat`                | `false`      | Background maintenance agent                                        |
+| `heartbeatIntervalMinutes` | `60`         | Heartbeat interval                                                  |
+| `braveApiKey`              | ---          | Brave Search API key                                                |
+| `timezone`                 | ---          | IANA timezone (e.g. `"Europe/London"`)                              |
+| `plugins`                  | `[]`         | External plugin packages                                            |
+| `adminUserId`              | ---          | Telegram user ID for `/admin` commands                              |
+| `allowedUsers`             | ---          | Whitelist of Telegram user IDs                                      |
+| `apiId` / `apiHash`        | ---          | Telegram API credentials for full message history                   |
+| `github`                   | ---          | GitHub plugin config (see above)                                    |
+| `mempalace`                | ---          | MemPalace plugin config (see above)                                 |
+| `playwright`               | ---          | Playwright plugin config (see above)                                |
 
 ---
 
@@ -241,6 +253,7 @@ Commands: `/model`, `/effort`, `/reset`, `/status`, `/help`
 ## Production
 
 **Docker:**
+
 ```bash
 docker compose up -d
 ```
