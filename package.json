@@ -36,7 +36,6 @@
     "tsconfig.json"
   ],
   "scripts": {
-    "build:binary": "bun build --compile --minify src/index.ts --outfile talon-bun",
     "start": "tsx src/index.ts",
     "cli": "tsx src/cli.ts",
     "setup": "tsx src/cli.ts setup",

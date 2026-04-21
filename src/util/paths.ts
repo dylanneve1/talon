@@ -80,8 +80,6 @@ export const files = {
   userSession: resolve(TALON_ROOT, ".user-session"),
   /** PID file for daemon mode: ~/.talon/talon.pid */
   pid: resolve(TALON_ROOT, "talon.pid"),
-  /** MCP supervisor script (auto-generated on startup): ~/.talon/mcp-launcher.mjs */
-  mcpLauncher: resolve(TALON_ROOT, "mcp-launcher.mjs"),
   /** MemPalace venv python binary (platform-dependent: bin/python on Unix, Scripts/python.exe on Windows) */
   mempalacePython: resolve(
     TALON_ROOT,

@@ -18,11 +18,15 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const LAUNCHER_MODULE = resolve(REPO_ROOT, "src/util/mcp-launcher.ts");
-const TSX_BIN = resolve(REPO_ROOT, "node_modules/.bin/tsx");
+const LAUNCHER_MODULE = pathToFileURL(
+  resolve(REPO_ROOT, "src/util/mcp-launcher.ts"),
+).href;
+const TSX_IMPORT = pathToFileURL(
+  resolve(REPO_ROOT, "node_modules/tsx/dist/esm/index.mjs"),
+).href;
 const FUNCTIONAL_TIMEOUT_MS = 30_000;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -188,7 +192,7 @@ async function spawnHarness(opts: {
     `,
   );
 
-  const harness = spawn(TSX_BIN, [harnessPath], {
+  const harness = spawn("node", ["--import", TSX_IMPORT, harnessPath], {
     stdio: ["pipe", "pipe", "pipe"],
     env: { ...process.env, HOME: workDir },
   });
