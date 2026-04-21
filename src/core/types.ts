@@ -63,6 +63,29 @@ export type UnifiedProviderInfo = {
 /** Keyboard button for model/settings UIs. */
 export type ModelButton = { text: string; callback_data: string };
 
+// ── Response streaming ──────────────────────────────────────────────────────
+
+/**
+ * Abstraction over how a frontend delivers an assistant response.
+ *
+ * Owned by the frontend, wired into execute(). Lifecycle:
+ * - update(): partial preview during streaming (no-op where the channel
+ *   can't show partials, e.g. Adaptive Cards or webhook-only chats).
+ * - commit(): finalize the current block as a visible message and reset
+ *   state for the next block (text-before-tool boundaries, or trailing
+ *   text at end-of-turn).
+ * - discard(): drop any buffered/preview state without delivering. Used at
+ *   end-of-turn when a send_* tool already delivered the answer.
+ * - hasPending(): true if update() has buffered text that hasn't been
+ *   committed or discarded yet.
+ */
+export interface ResponseStream {
+  update(text: string): void;
+  commit(text?: string): Promise<void>;
+  discard(): Promise<void>;
+  hasPending(): boolean;
+}
+
 /** Backend interface — any AI provider implements this. */
 export interface QueryBackend {
   query(params: QueryParams): Promise<QueryResult>;

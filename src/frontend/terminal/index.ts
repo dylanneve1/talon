@@ -20,6 +20,8 @@ import {
 import { resolveModel } from "../../core/models.js";
 import { createRenderer } from "./renderer.js";
 import { createInput } from "./input.js";
+import { createTerminalStream } from "./stream.js";
+import { finalizeTurn } from "../../core/response-stream.js";
 import {
   registerBuiltinCommands,
   tryRunCommand,
@@ -208,6 +210,8 @@ export function createTerminalFrontend(
         currentPhase = "thinking";
         renderer.startSpinner("thinking");
 
+        const stream = createTerminalStream(renderer);
+
         try {
           const result = await execute({
             chatId: terminalChatId,
@@ -216,7 +220,7 @@ export function createTerminalFrontend(
             senderName: "User",
             isGroup: false,
             source: "message",
-            onStreamDelta: (_accumulated, phase) => {
+            onStreamDelta: (accumulated, phase) => {
               if (phase === "thinking" && currentPhase !== "thinking") {
                 currentPhase = "thinking";
                 renderer.updateSpinnerLabel("thinking");
@@ -224,6 +228,7 @@ export function createTerminalFrontend(
                 currentPhase = "text";
                 renderer.updateSpinnerLabel("responding");
               }
+              stream.update(accumulated);
             },
             onToolUse: (toolName, toolInput) => {
               renderer.stopSpinner();
@@ -233,17 +238,12 @@ export function createTerminalFrontend(
               renderer.startSpinner("running tools");
             },
             onTextBlock: async (blockText) => {
-              renderer.stopSpinner();
-              renderer.renderAssistantMessage(blockText);
+              await stream.commit(blockText);
             },
           });
 
-          renderer.stopSpinner();
+          await finalizeTurn(stream, result.bridgeMessageCount);
           currentPhase = "idle";
-
-          if (result.bridgeMessageCount === 0 && result.text?.trim()) {
-            renderer.renderAssistantMessage(result.text);
-          }
 
           const info = getSessionInfo(terminalChatId);
           const u = info.usage;

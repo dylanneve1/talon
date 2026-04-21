@@ -15,7 +15,9 @@ import { log, logError } from "../../util/log.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
 import { resolveModel } from "../../core/models.js";
 import { createTeamsActionHandler } from "./actions.js";
+import { createTeamsStream } from "./stream.js";
 import { splitTeamsMessage, buildAdaptiveCard } from "./formatting.js";
+import { finalizeTurn } from "../../core/response-stream.js";
 import {
   initGraphClient,
   type GraphClient,
@@ -333,6 +335,7 @@ export function createTeamsFrontend(
               `[${msg.senderName}]: ${msg.text.slice(0, 80)}${msg.text.length > 80 ? "..." : ""}`,
             );
 
+            const stream = createTeamsStream({ webhookUrl });
             execute({
               chatId: talonChatId,
               numericChatId,
@@ -340,8 +343,12 @@ export function createTeamsFrontend(
               senderName: msg.senderName,
               isGroup: true,
               source: "message",
-              onStreamDelta: (_accumulated, phase) => {
+              onStreamDelta: (accumulated, phase) => {
                 if (phase) log("teams", `  phase: ${phase}`);
+                stream.update(accumulated);
+              },
+              onTextBlock: async (blockText) => {
+                await stream.commit(blockText);
               },
               onToolUse: (toolName, input) => {
                 const detail = (input.description ??
@@ -358,18 +365,10 @@ export function createTeamsFrontend(
               },
             })
               .then(async (result) => {
-                // Only deliver messages sent via the send_message tool.
-                // Do NOT send fallback text — if the model chose not to use send_message,
-                // it's either choosing not to respond or outputting internal reasoning
-                // that shouldn't be shown to users.
-                if (result.bridgeMessageCount === 0 && result.text?.trim()) {
-                  log(
-                    "teams",
-                    `Suppressed fallback text (${result.text.length} chars) — no send_message tool used`,
-                  );
-                }
+                await finalizeTurn(stream, result.bridgeMessageCount);
               })
-              .catch((err) => {
+              .catch(async (err) => {
+                await stream.discard();
                 logError(
                   "teams",
                   `execute failed: ${err instanceof Error ? err.message : err}`,

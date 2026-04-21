@@ -8,6 +8,7 @@ import type { TalonConfig } from "../../util/config.js";
 import { escapeHtml } from "./formatting.js";
 import { createTelegramStream } from "./stream-preview.js";
 import { execute } from "../../core/dispatcher.js";
+import { finalizeTurn } from "../../core/response-stream.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import {
   enrichDMPrompt,
@@ -722,15 +723,7 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
     },
   });
 
-  // End-of-turn: if a send_* tool delivered the answer, drop the preview;
-  // otherwise materialize any remaining streamed text as a real message.
-  if (result.bridgeMessageCount > 0) {
-    await stream.discard();
-  } else if (stream.hasPending()) {
-    await stream.commit();
-  } else {
-    await stream.discard();
-  }
+  await finalizeTurn(stream, result.bridgeMessageCount);
 }
 
 // ── Shared media handler ──────────────────────────────────────────────────────

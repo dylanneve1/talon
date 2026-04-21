@@ -15,6 +15,7 @@
 import type { Bot } from "grammy";
 import { markdownToTelegramHtml } from "./formatting.js";
 import { logWarn } from "../../util/log.js";
+import type { ResponseStream } from "../../core/types.js";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -46,21 +47,7 @@ type SendMessageDraftFn = (
   params?: { parse_mode?: "HTML" },
 ) => Promise<unknown>;
 
-export type TelegramStream = {
-  /** Feed the current accumulated assistant text. Throttled; may be a no-op. */
-  update(rawMarkdown: string): void;
-  /**
-   * Commit this block as a permanent message and reset for the next block.
-   * If `rawMarkdown` is omitted, commits whatever text is currently pending
-   * from `update()`. Returns the delivered message_id, or undefined if
-   * nothing was delivered.
-   */
-  commit(rawMarkdown?: string): Promise<number | undefined>;
-  /** True if there is buffered text from `update()` that has not been committed. */
-  hasPending(): boolean;
-  /** Discard the current preview (tool delivered the answer). */
-  discard(): Promise<void>;
-};
+export type TelegramStream = ResponseStream;
 
 // ── Transport resolution ────────────────────────────────────────────────────
 
@@ -220,8 +207,8 @@ export function createTelegramStream(
     }
   };
 
-  const commit = async (rawMarkdown?: string): Promise<number | undefined> => {
-    if (discarded) return undefined;
+  const commit = async (rawMarkdown?: string): Promise<void> => {
+    if (discarded) return;
     clearTimer();
     if (inFlight) {
       try {
@@ -243,33 +230,30 @@ export function createTelegramStream(
         }
       }
       resetForNextGeneration();
-      return undefined;
+      return;
     }
 
     try {
       if (transport === "message") {
-        // Edit the streamed message in-place, or send a fresh one.
         if (html.length > MAX_CHARS) {
           // Final text won't fit a single message: finish the existing preview
           // (trimmed) and send the remainder as an additional message.
           const first = html.slice(0, MAX_CHARS);
           const rest = html.slice(MAX_CHARS);
           await sendOrEditMessage(first);
-          const finalId = messageId;
-          const sent = await api.sendMessage(chatId, rest.slice(0, MAX_CHARS), {
+          await api.sendMessage(chatId, rest.slice(0, MAX_CHARS), {
             parse_mode: "HTML",
           });
           resetForNextGeneration();
-          return sent.message_id ?? finalId;
+          return;
         }
         await sendOrEditMessage(html);
-        const finalId = messageId;
         resetForNextGeneration();
-        return finalId;
+        return;
       }
 
       // Draft transport: materialize as a real message, then clear the draft.
-      const materialized = await api.sendMessage(chatId, html.slice(0, MAX_CHARS), {
+      await api.sendMessage(chatId, html.slice(0, MAX_CHARS), {
         parse_mode: "HTML",
         reply_parameters: replyToId ? { message_id: replyToId } : undefined,
       });
@@ -281,13 +265,11 @@ export function createTelegramStream(
         }
       }
       resetForNextGeneration();
-      return materialized.message_id;
     } catch (err) {
       logWarn(
         "bot",
         `stream commit failed, retrying as plain text: ${err instanceof Error ? err.message : String(err)}`,
       );
-      // Fall back to plain-text send, stripping HTML
       let plain = html;
       let prev: string;
       do {
@@ -295,19 +277,16 @@ export function createTelegramStream(
         plain = plain.replace(/<[^>]*>/g, "");
       } while (plain !== prev);
       try {
-        const sent = await api.sendMessage(chatId, plain.slice(0, MAX_CHARS), {
+        await api.sendMessage(chatId, plain.slice(0, MAX_CHARS), {
           reply_parameters: replyToId ? { message_id: replyToId } : undefined,
         });
-        resetForNextGeneration();
-        return sent.message_id;
       } catch (err2) {
         logWarn(
           "bot",
           `stream commit plain-text fallback failed: ${err2 instanceof Error ? err2.message : String(err2)}`,
         );
-        resetForNextGeneration();
-        return undefined;
       }
+      resetForNextGeneration();
     }
   };
 
