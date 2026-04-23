@@ -497,14 +497,19 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
   if (github?.enabled) {
     try {
       const { createGitHubPlugin } = await import("../plugins/github/index.js");
-      const gh = createGitHubPlugin({ token: github.token });
+      const gh = createGitHubPlugin({
+        token: github.token,
+        image: github.image,
+      });
       const ghConfig = github as unknown as Record<string, unknown>;
       const loaded = registerPlugin(gh, ghConfig);
       if (loaded) {
+        // github heal: docker info (fast) + docker pull (can be slow on
+        // first run). 6min inner timeout; outer is a safety net.
         await initPluginWithTimeout(
           loaded.plugin,
           loaded.config,
-          15_000,
+          7 * 60_000,
           "GitHub init",
           "GitHub init",
         );
@@ -522,11 +527,13 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
     try {
       const { createMempalacePlugin } =
         await import("../plugins/mempalace/index.js");
-      const { dirs, files: pf } = await import("../util/paths.js");
-      const pythonPath = mempalace.pythonPath ?? pf.mempalacePython;
+      const { dirs } = await import("../util/paths.js");
       const palacePath = mempalace.palacePath ?? dirs.palace;
+      // pythonPath is forwarded only if the user set it explicitly, so
+      // the plugin can distinguish managed (we own the venv) from
+      // verify-only (user-provided interpreter).
       const mp = createMempalacePlugin({
-        pythonPath,
+        pythonPath: mempalace.pythonPath,
         palacePath,
         entityLanguages: mempalace.entityLanguages,
         verbose: mempalace.verbose,
@@ -534,10 +541,13 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       const mpConfig = mempalace as unknown as Record<string, unknown>;
       const loaded = registerPlugin(mp, mpConfig);
       if (loaded) {
+        // mempalace heal: venv creation + pip install (chromadb,
+        // onnxruntime, numpy are big wheels — 2-5min on cold caches).
+        // Inner heal has 8min cap; outer is safety net.
         await initPluginWithTimeout(
           loaded.plugin,
           loaded.config,
-          30_000,
+          10 * 60_000,
           "MemPalace init",
           "MemPalace init",
         );
@@ -564,10 +574,13 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
       });
       const loaded = registerPlugin(pw, pwConfig);
       if (loaded) {
+        // playwright heal: npm version probe (fast) + optional browser
+        // install (hundreds of MB on cold cache). Inner heal has 12min
+        // cap for the first chromium install on slow networks.
         await initPluginWithTimeout(
           loaded.plugin,
           loaded.config,
-          15_000,
+          14 * 60_000,
           "Playwright init",
           "Playwright init",
         );

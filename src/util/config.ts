@@ -140,6 +140,13 @@ const configSchema = z.object({
       enabled: z.boolean().default(false),
       /** GitHub personal access token (default: from `gh auth token`) */
       token: z.string().min(1).optional(),
+      /**
+       * Advanced: override the pinned Docker image tag (see
+       * `GITHUB_MCP_IMAGE` in src/plugins/github/heal.ts). Primarily for
+       * testing against a pre-release image; production bumps go through
+       * the constant so CI smoke exercises the new tag.
+       */
+      image: z.string().min(1).optional(),
     })
     .optional(),
 
@@ -152,7 +159,7 @@ const configSchema = z.object({
       /** Python binary path (default: ~/.talon/mempalace-venv/bin/python) */
       pythonPath: z.string().min(1).optional(),
       /**
-       * BCP 47 language codes for entity detection (mempalace >= 3.3).
+       * BCP 47 language codes for entity detection (mempalace >= 3.3.2).
        * Supported: en, es, fr, de, ja, ko, zh-CN, zh-TW, pt-br, ru, it, hi, id.
        * Sets MEMPALACE_ENTITY_LANGUAGES for the MCP server.
        */
