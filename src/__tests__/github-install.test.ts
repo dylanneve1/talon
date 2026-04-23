@@ -79,7 +79,25 @@ describe("ensureGithubMcpAvailable", () => {
     });
     expect(status.ok).toBe(true);
     expect(status.steps.some((s) => s.startsWith("pulling"))).toBe(true);
-    expect(status.steps.some((s) => s.startsWith("image pulled"))).toBe(true);
+    expect(status.steps.some((s) => s.startsWith("image ready"))).toBe(true);
+  });
+
+  it("refreshes the tag (re-pulls) when autoPull=true and image is already present", async () => {
+    const exec = queueExec([
+      { stdout: "Containers: 0" }, // docker info
+      { stdout: "[{...}]" }, // first inspect → present
+      { stdout: "Status: Image is up to date" }, // docker pull (no-op)
+      { stdout: "[{...}]" }, // re-inspect
+    ]);
+    const status = await ensureGithubMcpAvailable({
+      autoPull: true,
+      execFileImpl: exec as unknown as never,
+    });
+    expect(status.ok).toBe(true);
+    expect(status.steps.some((s) => s.startsWith("refreshing"))).toBe(true);
+    expect(status.steps.some((s) => s.startsWith("image ready"))).toBe(true);
+    // 4 calls: info, inspect(present), pull, inspect(re-verify)
+    expect(exec).toHaveBeenCalledTimes(4);
   });
 
   it("surfaces pull failure with useful error text", async () => {

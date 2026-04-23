@@ -60,6 +60,24 @@ describe("ensurePlaywrightMcpAvailable", () => {
     expect(exec).not.toHaveBeenCalled();
   });
 
+  it("errors with an actionable message when installed CLI version doesn't match the pin", async () => {
+    // Need a real file so detectMcpVersion can read adjacent package.json.
+    // Simulate by pointing mcpBin at the node_modules/@playwright/mcp/cli.js
+    // but override expectedVersion to something we don't have installed.
+    const exec = queueExec([]);
+    const status = await ensurePlaywrightMcpAvailable({
+      mcpBin:
+        "/home/dylan/telegram-claude-agent/node_modules/@playwright/mcp/cli.js",
+      installBrowsers: false,
+      expectedVersion: "99.99.99",
+      existsSyncImpl: () => true,
+      execFileImpl: exec as unknown as never,
+    });
+    expect(status.ok).toBe(false);
+    expect(status.error).toContain("Talon pins 99.99.99");
+    expect(status.error).toContain("npm install");
+  });
+
   it("errors for unsupported browser names", async () => {
     const status = await ensurePlaywrightMcpAvailable({
       mcpBin: "/fake/cli.js",

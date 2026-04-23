@@ -132,12 +132,22 @@ export async function ensurePlaywrightMcpAvailable(
   steps.push(`@playwright/mcp CLI present: ${mcpBin}`);
 
   // 2. Version matches pin?
+  // @playwright/mcp is pinned in package.json; alignment is owned by npm,
+  // not by us. We deliberately don't mutate node_modules at runtime — that
+  // would desync with the lockfile and surface as bizarre behavior after
+  // the next `npm ci`. Instead we return an actionable error when drift
+  // is detected, so the plugin init surfaces it clearly.
   const version = detectMcpVersion(mcpBin);
   if (version && version !== expectedVersion) {
-    steps.push(
-      `@playwright/mcp ${version} (expected ${expectedVersion}) — run 'npm install' to align`,
-    );
-  } else if (version) {
+    return {
+      ok: false,
+      version,
+      browser,
+      steps,
+      error: `@playwright/mcp ${version} is installed but Talon pins ${expectedVersion}. Run: npm install in the Talon checkout to align.`,
+    };
+  }
+  if (version) {
     steps.push(`@playwright/mcp ${version} matches pin`);
   }
 

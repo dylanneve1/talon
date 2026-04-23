@@ -84,13 +84,17 @@ export async function ensureGithubMcpAvailable(
 
   // 2. Image present locally?
   const imagePresent = await isImagePresent(image, execFileImpl);
-  if (imagePresent) {
-    steps.push(`image present: ${image}`);
-    return { ok: true, image, steps };
-  }
 
-  // 3. Missing image — optionally pull
-  if (!autoPull) {
+  // 3. Decide whether to pull.
+  //    - missing + !autoPull → diagnostic error (user opts in or pulls manually)
+  //    - missing + autoPull  → pull
+  //    - present + autoPull  → re-pull to refresh digest. Upstream can
+  //                            force-push tags; pinning by tag alone is a
+  //                            floor, not a ceiling. `docker pull` is fast
+  //                            when the digest hasn't changed — no layers
+  //                            are re-downloaded.
+  //    - present + !autoPull → nothing to do, return ok
+  if (!imagePresent && !autoPull) {
     return {
       ok: false,
       image,
@@ -98,7 +102,12 @@ export async function ensureGithubMcpAvailable(
       error: `GitHub MCP image ${image} is not present locally. Run: docker pull ${image} — or set github.autoPull=true to pull automatically.`,
     };
   }
-  steps.push(`pulling ${image}`);
+  if (imagePresent && !autoPull) {
+    steps.push(`image present: ${image}`);
+    return { ok: true, image, steps };
+  }
+
+  steps.push(imagePresent ? `refreshing ${image}` : `pulling ${image}`);
   try {
     await execFileImpl("docker", ["pull", image], { timeout: timeoutMs });
   } catch (err) {
@@ -126,7 +135,7 @@ export async function ensureGithubMcpAvailable(
       error: `docker pull claimed success but image ${image} is still not present locally.`,
     };
   }
-  steps.push(`image pulled: ${image}`);
+  steps.push(`image ready: ${image}`);
   return { ok: true, image, steps };
 }
 
