@@ -152,7 +152,7 @@ const configSchema = z.object({
       /** Python binary path (default: ~/.talon/mempalace-venv/bin/python) */
       pythonPath: z.string().min(1).optional(),
       /**
-       * BCP 47 language codes for entity detection (mempalace >= 3.3).
+       * BCP 47 language codes for entity detection (mempalace >= 3.3.2).
        * Supported: en, es, fr, de, ja, ko, zh-CN, zh-TW, pt-br, ru, it, hi, id.
        * Sets MEMPALACE_ENTITY_LANGUAGES for the MCP server.
        */

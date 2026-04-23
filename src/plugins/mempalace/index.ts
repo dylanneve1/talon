@@ -9,7 +9,7 @@
  *     "enabled": true,
  *     "palacePath": "/path/to/palace",         // optional, defaults to ~/.talon/workspace/palace/
  *     "pythonPath": "/path/to/python",         // optional, defaults to mempalace venv python (bin/python on Unix, Scripts/python.exe on Windows)
- *     "entityLanguages": ["en", "ja"],         // optional, BCP 47 codes (mempalace >= 3.3)
+ *     "entityLanguages": ["en", "ja"],         // optional, BCP 47 codes (mempalace >= 3.3.2)
  *     "verbose": false                          // optional, enables MEMPAL_VERBOSE diagnostics
  *   }
  */
@@ -34,7 +34,7 @@ const PROMPT_PATH = resolve(dirs.prompts, "mempalace.md");
 export function createMempalacePlugin(config: {
   pythonPath: string;
   palacePath: string;
-  /** BCP 47 codes passed via MEMPALACE_ENTITY_LANGUAGES (mempalace >= 3.3). */
+  /** BCP 47 codes passed via MEMPALACE_ENTITY_LANGUAGES (mempalace >= 3.3.2). */
   entityLanguages?: readonly string[];
   /** When true, sets MEMPAL_VERBOSE=1 so the MCP server logs diagnostic diaries. */
   verbose?: boolean;
@@ -104,7 +104,7 @@ export function createMempalacePlugin(config: {
                 ? execErr.stderr.toString("utf-8").trim()
                 : "";
           errors.push(
-            `mempalace package not installed or mcp_server submodule missing. Run: ${pythonPath} -m pip install mempalace${stderr ? `. Details: ${stderr}` : ""}`,
+            `mempalace package not installed or mcp_server submodule missing. Run: ${pythonPath} -m pip install 'mempalace>=3.3.2'${stderr ? `. Details: ${stderr}` : ""}`,
           );
         }
       }
