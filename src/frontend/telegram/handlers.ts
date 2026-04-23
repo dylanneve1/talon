@@ -8,10 +8,6 @@ import type { TalonConfig } from "../../util/config.js";
 import { markdownToTelegramHtml, escapeHtml } from "./formatting.js";
 import { execute } from "../../core/dispatcher.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
-import {
-  enrichDMPrompt,
-  enrichGroupPrompt,
-} from "../../core/prompt-builder.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -759,19 +755,15 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       stream,
     );
 
-    // Enrich prompt with sender context
-    let enrichedPrompt = prompt;
-    if (!isGroup && senderName) {
-      enrichedPrompt = enrichDMPrompt(prompt, senderName, senderUsername);
-      if (senderId) trackDmUser(senderId, senderName, senderUsername);
-    } else if (isGroup && senderId) {
-      enrichedPrompt = enrichGroupPrompt(prompt, String(chatId), senderId);
+    // Track first-time DM users for logging (no prompt mutation).
+    if (!isGroup && senderName && senderId) {
+      trackDmUser(senderId, senderName, senderUsername);
     }
 
     const result = await execute({
       chatId: String(chatId),
       numericChatId,
-      prompt: enrichedPrompt,
+      prompt,
       senderName,
       isGroup,
       messageId,
