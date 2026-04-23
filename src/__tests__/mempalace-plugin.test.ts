@@ -128,10 +128,13 @@ describe("mempalace plugin", () => {
       palacePath: "/data/palace",
     });
 
+    // Install/import checks moved to async init() via ensureMempalaceInstalled.
+    // validateConfig now only fails synchronously for missing python binary
+    // (when autoInstall is off); mempalace-not-importable is surfaced at init
+    // as a logged error rather than a validation failure — so the MCP server
+    // can still try to come up and surface transient pip issues.
     const errors = plugin.validateConfig!({});
-    expect(errors).toBeDefined();
-    expect(errors!.length).toBeGreaterThan(0);
-    expect(errors![0]).toContain("mempalace package not installed");
+    expect(errors).toBeUndefined();
   });
 
   it("init creates palace directory if missing", async () => {
@@ -195,11 +198,12 @@ describe("mempalace plugin", () => {
       palacePath: "/data/palace",
     });
 
+    // Same as the previous test: import failures no longer surface through
+    // validateConfig; they're detected asynchronously in init(). This test
+    // now just confirms validateConfig doesn't spuriously block a python
+    // binary that exists.
     const errors = plugin.validateConfig!({});
-    expect(errors).toBeDefined();
-    expect(errors!.length).toBeGreaterThan(0);
-    expect(errors![0]).toContain("Cannot execute Python");
-    expect(errors![0]).toContain("ENOENT");
+    expect(errors).toBeUndefined();
   });
 
   it("getEnvVars returns MEMPALACE_PALACE_PATH", async () => {

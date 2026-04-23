@@ -1,0 +1,74 @@
+name: MemPalace Smoke
+
+# Functional smoke test for the MemPalace plugin on Linux, macOS, and Windows.
+# Verifies that:
+#   1. The Talon-pinned mempalace version installs cleanly from PyPI.
+#   2. The MCP server starts.
+#   3. The server responds to MCP initialize + tools/list over stdio.
+#   4. A representative tool (mempalace_status) returns valid JSON.
+#
+# Runs on PRs that touch mempalace code / config / this workflow, and nightly
+# against main to catch upstream regressions.
+
+on:
+  pull_request:
+    paths:
+      - "src/plugins/mempalace/**"
+      - "src/util/config.ts"
+      - ".github/workflows/mempalace-smoke.yml"
+      - "scripts/mempalace-smoke.mjs"
+  push:
+    branches: [main]
+    paths:
+      - "src/plugins/mempalace/**"
+      - ".github/workflows/mempalace-smoke.yml"
+      - "scripts/mempalace-smoke.mjs"
+  schedule:
+    # Every day at 05:30 UTC so we catch upstream PyPI/package breakage
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: mempalace-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: ${{ matrix.os }} (py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Show Talon-supported mempalace version
+        shell: bash
+        run: |
+          grep -E 'MEMPALACE_(INSTALL_TARGET|MIN_VERSION)' src/plugins/mempalace/install.ts
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Create mempalace venv and install pinned version
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/mempalace-smoke.mjs install
+
+      - name: MCP server responsiveness smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/mempalace-smoke.mjs smoke

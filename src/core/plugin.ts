@@ -530,6 +530,7 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
         palacePath,
         entityLanguages: mempalace.entityLanguages,
         verbose: mempalace.verbose,
+        autoInstall: mempalace.autoInstall,
       });
       const mpConfig = mempalace as unknown as Record<string, unknown>;
       const loaded = registerPlugin(mp, mpConfig);

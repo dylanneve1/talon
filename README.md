@@ -104,13 +104,27 @@ The token is optional --- defaults to the output of `gh auth token` if the GitHu
 
 Structured long-term memory with vector search. The agent can store, search, and retrieve memories semantically. Integrates with Dream mode for automatic memory consolidation and personal diary entries.
 
-**Requirements:** Python 3.10+ with the `mempalace` package.
+**Requirements:** Python 3.10+ with `mempalace >= 3.3.2` (Talon pins install against **3.3.2**).
+
+#### Option A — automatic onboarding (recommended)
+
+Set `autoInstall: true` and Talon creates the venv + pip installs the supported mempalace release on first run.
+
+```json
+{
+  "mempalace": {
+    "enabled": true,
+    "autoInstall": true
+  }
+}
+```
+
+#### Option B — manual
 
 ```bash
-# Set up a Python environment
 python -m venv ~/.talon/mempalace-venv
-~/.talon/mempalace-venv/bin/pip install mempalace    # Unix
-# or: ~/.talon/mempalace-venv/Scripts/pip install mempalace   # Windows
+~/.talon/mempalace-venv/bin/pip install 'mempalace==3.3.2'    # Unix
+# or: ~/.talon/mempalace-venv/Scripts/pip install 'mempalace==3.3.2'   # Windows
 ```
 
 ```json
@@ -123,7 +137,7 @@ python -m venv ~/.talon/mempalace-venv
 }
 ```
 
-Both paths are optional --- defaults to `~/.talon/workspace/palace/` and the venv Python respectively.
+All paths are optional --- defaults to `~/.talon/workspace/palace/` and the venv Python respectively. At startup the plugin verifies the installed version meets the supported floor and logs the detected version.
 
 ### Playwright
 
