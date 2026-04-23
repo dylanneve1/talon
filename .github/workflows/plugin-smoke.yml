@@ -1,0 +1,116 @@
+name: Plugin Smoke
+
+# Functional smoke tests for the internal self-healing plugins.
+# Each plugin gets an isolated job so a Docker/Playwright failure doesn't
+# hide a mempalace regression (and vice versa). Triggers: PRs touching
+# plugin code/config/workflow/scripts, pushes to main with the same paths,
+# nightly cron to catch upstream breakage, and manual dispatch.
+
+on:
+  pull_request:
+    paths:
+      - "src/plugins/**"
+      - "src/util/config.ts"
+      - ".github/workflows/plugin-smoke.yml"
+      - "scripts/smoke-*.mjs"
+      - "scripts/lib/**"
+      - "package.json"
+      - "package-lock.json"
+  push:
+    branches: [main]
+    paths:
+      - "src/plugins/**"
+      - ".github/workflows/plugin-smoke.yml"
+      - "scripts/smoke-*.mjs"
+      - "scripts/lib/**"
+  schedule:
+    # 05:30 UTC — catches upstream PyPI / ghcr / playwright CDN breakage
+    # before the first people of the day (Paweł, Dylan) see it in Talon.
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: plugin-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── MemPalace: Linux/macOS/Windows × Python 3.11/3.12 ──────────────
+  mempalace:
+    name: mempalace · ${{ matrix.os }} · py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Pinned target
+        shell: bash
+        run: grep MEMPALACE_TARGET src/plugins/mempalace/heal.ts
+      - name: npm ci
+        run: npm ci
+      - name: Create venv + install pinned mempalace
+        shell: bash
+        run: node scripts/smoke-mempalace.mjs install
+      - name: MCP responsiveness
+        shell: bash
+        run: node scripts/smoke-mempalace.mjs smoke
+
+  # ── GitHub MCP: Ubuntu only (Docker) ───────────────────────────────
+  github:
+    name: github · ubuntu-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Pinned image
+        shell: bash
+        run: grep GITHUB_MCP_IMAGE src/plugins/github/heal.ts
+      - name: npm ci
+        run: npm ci
+      - name: Pull pinned image
+        run: node scripts/smoke-github.mjs pull
+      - name: MCP responsiveness
+        run: node scripts/smoke-github.mjs smoke
+
+  # ── Playwright MCP: Linux/macOS/Windows × chromium ──────────────────
+  playwright:
+    name: playwright · ${{ matrix.os }} · ${{ matrix.browser }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        browser: [chromium]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Pinned @playwright/mcp
+        shell: bash
+        run: grep PLAYWRIGHT_MCP_VERSION src/plugins/playwright/heal.ts
+      - name: npm ci
+        run: npm ci
+      - name: Verify version + install browser
+        shell: bash
+        env:
+          PW_SMOKE_BROWSER: ${{ matrix.browser }}
+        run: node scripts/smoke-playwright.mjs install
+      - name: MCP responsiveness
+        shell: bash
+        env:
+          PW_SMOKE_BROWSER: ${{ matrix.browser }}
+        run: node scripts/smoke-playwright.mjs smoke

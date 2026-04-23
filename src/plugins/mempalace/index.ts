@@ -1,45 +1,71 @@
 /**
  * MemPalace plugin — structured long-term memory with vector search.
  *
- * Registers the mempalace Python MCP server, giving the agent access to
- * semantic memory search, knowledge graph operations, and diary entries.
+ * Enabling this plugin is sufficient to set it up. During init() Talon
+ * will create the Python venv at `~/.talon/mempalace-venv/`, install
+ * mempalace at the pinned version, and verify the MCP server submodule
+ * is importable. No opt-in flag — if you want mempalace, set `enabled: true`.
  *
  * Configuration in ~/.talon/config.json:
  *   "mempalace": {
  *     "enabled": true,
- *     "palacePath": "/path/to/palace",         // optional, defaults to ~/.talon/workspace/palace/
- *     "pythonPath": "/path/to/python",         // optional, defaults to mempalace venv python (bin/python on Unix, Scripts/python.exe on Windows)
- *     "entityLanguages": ["en", "ja"],         // optional, BCP 47 codes (mempalace >= 3.3)
- *     "verbose": false                          // optional, enables MEMPAL_VERBOSE diagnostics
+ *     "palacePath": "/path/to/palace",         // optional, default ~/.talon/workspace/palace/
+ *     "pythonPath": "/path/to/python",         // optional — supplying this disables self-heal (verify-only mode)
+ *     "entityLanguages": ["en", "ja"],         // optional, BCP 47 codes (mempalace >= 3.3.2)
+ *     "verbose": false                          // optional, sets MEMPAL_VERBOSE=1 for diagnostic diaries
  *   }
  */
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { execFile as execFileCb, execFileSync } from "node:child_process";
-import { promisify } from "node:util";
 import type { TalonPlugin } from "../../core/plugin.js";
-import { log, logWarn } from "../../util/log.js";
-import { dirs } from "../../util/paths.js";
+import { log, logError, logWarn } from "../../util/log.js";
+import { dirs, files as pathFiles } from "../../util/paths.js";
+import { createProgressLogger } from "../common/progress.js";
+import { runHeal } from "../common/lifecycle.js";
+import { formatError } from "../common/errors.js";
+import {
+  MEMPALACE_TARGET,
+  MEMPALACE_FLOOR,
+  createMempalaceHeal,
+} from "./heal.js";
 
-const execFile = promisify(execFileCb);
+export { MEMPALACE_TARGET, MEMPALACE_FLOOR } from "./heal.js";
 
-/** Load from ~/.talon/prompts/ (user-customisable, seeded on first run) */
 const PROMPT_PATH = resolve(dirs.prompts, "mempalace.md");
 
-/**
- * Create a mempalace plugin instance with resolved paths.
- * Uses a factory because MCP server command/args depend on runtime config.
- */
-export function createMempalacePlugin(config: {
-  pythonPath: string;
+export interface CreateMempalacePluginConfig {
+  pythonPath?: string;
   palacePath: string;
-  /** BCP 47 codes passed via MEMPALACE_ENTITY_LANGUAGES (mempalace >= 3.3). */
   entityLanguages?: readonly string[];
-  /** When true, sets MEMPAL_VERBOSE=1 so the MCP server logs diagnostic diaries. */
   verbose?: boolean;
-}): TalonPlugin {
-  const { pythonPath, palacePath, entityLanguages, verbose } = config;
+}
+
+/**
+ * Resolve the plugin's Python path + ownership semantics.
+ *
+ * The ownership bit ("managed") is the safety rail for self-heal:
+ * we only invoke pip when the pythonPath came from our default
+ * (i.e. we created and own the venv). If the user pointed at a
+ * custom interpreter we probe but never mutate.
+ */
+function resolvePython(config: CreateMempalacePluginConfig): {
+  pythonPath: string;
+  managed: boolean;
+} {
+  if (config.pythonPath && config.pythonPath.trim().length > 0) {
+    return { pythonPath: config.pythonPath, managed: false };
+  }
+  return { pythonPath: pathFiles.mempalacePython, managed: true };
+}
+
+export function createMempalacePlugin(
+  config: CreateMempalacePluginConfig,
+): TalonPlugin {
+  const { pythonPath, managed } = resolvePython(config);
+  const palacePath = config.palacePath;
+  const entityLanguages = config.entityLanguages;
+  const verbose = config.verbose;
 
   const envVars: Record<string, string> = {
     MEMPALACE_PALACE_PATH: palacePath,
@@ -55,7 +81,7 @@ export function createMempalacePlugin(config: {
     name: "mempalace",
     description:
       "Memory palace — structured long-term memory with vector search",
-    version: "1.1.0",
+    version: "1.2.0",
 
     mcpServer: {
       command: pythonPath,
@@ -63,86 +89,54 @@ export function createMempalacePlugin(config: {
     },
 
     validateConfig() {
-      const errors: string[] = [];
-      if (!existsSync(pythonPath)) {
-        errors.push(
-          `Python binary not found at ${pythonPath}. Create or select a Python environment, set "pythonPath" to that interpreter, then run: ${pythonPath} -m pip install mempalace`,
-        );
-        return errors;
-      }
-
-      // Verify mempalace.mcp_server is importable (the actual module spawned by MCP)
-      try {
-        execFileSync(pythonPath, ["-c", "import mempalace.mcp_server"], {
-          timeout: 15_000,
-          stdio: "pipe",
-        });
-      } catch (err: unknown) {
-        const execErr =
-          err && typeof err === "object"
-            ? (err as {
-                code?: string;
-                signal?: string;
-                killed?: boolean;
-                stderr?: string | Buffer;
-              })
-            : undefined;
-        const code = execErr?.code;
-        if (code === "ENOENT" || code === "EACCES" || code === "EPERM") {
-          errors.push(
-            `Cannot execute Python at ${pythonPath} (${code}). Check that the path is correct and the binary is executable.`,
-          );
-        } else if (code === "ETIMEDOUT" || execErr?.killed || execErr?.signal) {
-          errors.push(
-            `Python import check timed out or was killed. The interpreter at ${pythonPath} may be unresponsive.`,
-          );
-        } else {
-          const stderr =
-            typeof execErr?.stderr === "string"
-              ? execErr.stderr.trim()
-              : Buffer.isBuffer(execErr?.stderr)
-                ? execErr.stderr.toString("utf-8").trim()
-                : "";
-          errors.push(
-            `mempalace package not installed or mcp_server submodule missing. Run: ${pythonPath} -m pip install mempalace${stderr ? `. Details: ${stderr}` : ""}`,
-          );
-        }
-      }
-
-      return errors.length > 0 ? errors : undefined;
+      // Heal handles installability; validateConfig only fails the
+      // synchronous prerequisites that heal cannot fix (obviously bad
+      // paths). Runtime failures go through heal → structured log.
+      return undefined;
     },
 
     async init() {
-      // Ensure palace directory exists
       if (!existsSync(palacePath)) {
         mkdirSync(palacePath, { recursive: true });
-        log("mempalace", `Created palace directory: ${palacePath}`);
+        log("mempalace", `palace directory: ${palacePath} (created)`);
       }
 
-      // Quick smoke test — verify mempalace can import and access the palace path
-      try {
-        const { stdout } = await execFile(
-          pythonPath,
-          [
-            "-c",
-            `import mempalace; print(f"mempalace {mempalace.__version__}" if hasattr(mempalace, "__version__") else "mempalace ok")`,
-          ],
-          { timeout: 15_000 },
-        );
-        log("mempalace", stdout.trim() || "Module verified");
-      } catch {
-        // Non-fatal — MCP server handles lazy init
-        log(
-          "mempalace",
-          "Module import check skipped — MCP server will initialize on first use",
-        );
-      }
+      const logger = createProgressLogger({ component: "mempalace" });
+      const result = await runHeal(
+        "mempalace",
+        createMempalaceHeal({ pythonPath, managed }),
+        { logger, totalTimeoutMs: 8 * 60_000 },
+      );
 
       const langSuffix =
         entityLanguages && entityLanguages.length > 0
-          ? ` (languages: ${entityLanguages.join(",")})`
+          ? ` (entity languages: ${entityLanguages.join(",")})`
           : "";
-      log("mempalace", `Ready (palace: ${palacePath})${langSuffix}`);
+
+      switch (result.status) {
+        case "healthy":
+          log(
+            "mempalace",
+            `ready — ${result.identifier}${langSuffix} (heal ${
+              Math.round(result.elapsedMs / 100) / 10
+            }s)`,
+          );
+          return;
+        case "degraded":
+          logWarn(
+            "mempalace",
+            `starting in degraded mode — ${result.identifier}${langSuffix}`,
+          );
+          if (result.error) logWarn("mempalace", formatError(result.error));
+          return;
+        case "failed":
+          logError(
+            "mempalace",
+            `heal failed — MCP server will still spawn but expect errors. identifier=${result.identifier}${langSuffix}`,
+          );
+          if (result.error) logError("mempalace", formatError(result.error));
+          return;
+      }
     },
 
     getEnvVars() {
@@ -162,7 +156,7 @@ export function createMempalacePlugin(config: {
       } catch (err) {
         logWarn(
           "mempalace",
-          `Failed to load prompt from ${PROMPT_PATH}: ${err instanceof Error ? err.message : err}`,
+          `failed to load prompt from ${PROMPT_PATH}: ${err instanceof Error ? err.message : err}`,
         );
         return `## MemPalace — Long-term Memory\n\nPalace location: \`${palacePath}\`\nEntity languages: ${languagesLine}`;
       }

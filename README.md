@@ -83,9 +83,11 @@ index.ts                    Composition root
 
 ## Built-in Plugins
 
+Built-in plugins are **self-healing**: enable them and Talon takes care of installation, version pinning, and freshness checks at startup. No opt-in flags, no manual bootstrap. Every upstream version we ship against is pinned in source and exercised by the CI smoke matrix (Linux/macOS/Windows).
+
 ### GitHub
 
-GitHub API access via the official GitHub MCP server. Gives the agent access to repositories, issues, PRs, code search, and more.
+GitHub API access via the official GitHub MCP server.
 
 **Requirements:** Docker installed and running.
 
@@ -98,38 +100,36 @@ GitHub API access via the official GitHub MCP server. Gives the agent access to 
 }
 ```
 
-The token is optional --- defaults to the output of `gh auth token` if the GitHub CLI is authenticated.
+On startup Talon pulls the Talon-pinned `ghcr.io/github/github-mcp-server` tag (see `GITHUB_MCP_IMAGE` in `src/plugins/github/heal.ts`). The token is optional — falls back to `gh auth token` output.
 
 ### MemPalace
 
 Structured long-term memory with vector search. The agent can store, search, and retrieve memories semantically. Integrates with Dream mode for automatic memory consolidation and personal diary entries.
 
-**Requirements:** Python 3.10+ with the `mempalace` package.
-
-```bash
-# Set up a Python environment
-python -m venv ~/.talon/mempalace-venv
-~/.talon/mempalace-venv/bin/pip install mempalace    # Unix
-# or: ~/.talon/mempalace-venv/Scripts/pip install mempalace   # Windows
-```
+**Requirements:** Python 3.10+ on PATH (as `python3` on POSIX, `python` on Windows).
 
 ```json
 {
   "mempalace": {
-    "enabled": true,
-    "palacePath": "~/.talon/workspace/palace",
-    "pythonPath": "~/.talon/mempalace-venv/bin/python"
+    "enabled": true
   }
 }
 ```
 
-Both paths are optional --- defaults to `~/.talon/workspace/palace/` and the venv Python respectively.
+That's it. On first start Talon creates `~/.talon/mempalace-venv`, pip installs the pinned `mempalace` release (see `MEMPALACE_TARGET` in `src/plugins/mempalace/heal.ts`), and verifies the MCP submodule imports. Subsequent starts re-verify the version and realign to the pin if it drifted.
+
+Optional config:
+
+- `palacePath` — override the default palace directory (`~/.talon/workspace/palace/`).
+- `pythonPath` — point at your own Python interpreter. **Supplying this switches Talon to verify-only mode** — we'll probe the installed version but never mutate your environment.
+- `entityLanguages` — BCP 47 codes for non-English entity detection.
+- `verbose` — enable mempalace's diagnostic diaries.
 
 ### Playwright
 
-Headless browser automation via the Playwright MCP server. The agent can browse websites, take screenshots, generate PDFs, fill forms, and scrape content.
+Headless browser automation via the Playwright MCP server.
 
-**Requirements:** None --- `@playwright/mcp` is bundled with Talon.
+**Requirements:** None.
 
 ```json
 {
@@ -141,7 +141,9 @@ Headless browser automation via the Playwright MCP server. The agent can browse 
 }
 ```
 
-Supported browsers: `chromium` (default), `chrome`, `firefox`, `webkit`, `msedge`.
+On startup Talon verifies the pinned `@playwright/mcp` version (see `PLAYWRIGHT_MCP_VERSION` in `src/plugins/playwright/heal.ts`) and downloads the configured browser binary if missing. Supported browsers: `chromium` (default), `chrome`, `firefox`, `webkit`, `msedge`.
+
+For a remote browser (bring-your-own-CDP, anti-detect browsers, etc.) set `endpoint` or `endpointFile` — Talon skips the local browser install entirely.
 
 ### Brave Search
 

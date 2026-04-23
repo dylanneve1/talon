@@ -9,3 +9,5 @@ coverage/
 # Compiled binaries
 talon-bin
 talon-bun
+.playwright-mcp/
+.smoke-mempalace-venv/
