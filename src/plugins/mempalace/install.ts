@@ -208,13 +208,27 @@ export async function ensureMempalaceInstalled(
     Math.min(timeoutMs, 20_000),
   );
 
-  // 3. Install / upgrade if needed
+  // 3. Install / upgrade if needed. Three trigger cases:
+  //   - missing          → install from scratch
+  //   - below floor      → upgrade (mandatory, regardless of autoInstall
+  //                        we can only surface an error in off-mode)
+  //   - off-target       → realign to the tested pin. Only actioned when
+  //                        autoInstall is on; in off-mode we let a
+  //                        user-chosen newer-patch stick if it satisfies
+  //                        the floor.
   const needsInstall = currentVersion === null;
   const needsUpgrade =
     currentVersion !== null && !isVersionSupported(currentVersion, minVersion);
+  const needsAlign =
+    currentVersion !== null &&
+    !needsUpgrade &&
+    currentVersion !== installTarget &&
+    autoInstall;
 
-  if (needsInstall || needsUpgrade) {
+  if (needsInstall || needsUpgrade || needsAlign) {
     if (!autoInstall) {
+      // needsAlign requires autoInstall=true, so here we only hit install
+      // or below-floor.
       return {
         ok: false,
         version: currentVersion,
@@ -224,8 +238,14 @@ export async function ensureMempalaceInstalled(
           : `mempalace ${currentVersion} is below the supported minimum ${minVersion}. Run: ${pythonPath} -m pip install --upgrade 'mempalace==${installTarget}' — or enable mempalace.autoInstall.`,
       };
     }
-    const verb = needsInstall ? "installing" : "upgrading";
-    steps.push(`${verb} mempalace==${installTarget}`);
+    const verb = needsInstall
+      ? "installing"
+      : needsUpgrade
+        ? "upgrading"
+        : "aligning";
+    steps.push(
+      `${verb} mempalace==${installTarget}${currentVersion ? ` (was ${currentVersion})` : ""}`,
+    );
     try {
       await execFileImpl(
         pythonPath,

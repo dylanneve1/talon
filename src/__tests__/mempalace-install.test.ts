@@ -223,6 +223,58 @@ describe("ensureMempalaceInstalled", () => {
     );
   });
 
+  it("aligns to pinned target when autoInstall=true and current differs from target even if above floor", async () => {
+    const exec = makeExec([
+      { stdout: "3.4.0\n" }, // above floor but not equal to target (3.3.2)
+      { stdout: "" }, // pip install (realign/downgrade)
+      { stdout: "3.3.2\n" }, // re-detect
+    ]);
+    const status = await ensureMempalaceInstalled({
+      pythonPath: venvPython,
+      autoInstall: true,
+      installTarget: "3.3.2",
+      minVersion: "3.3.2",
+      existsSyncImpl: () => true,
+      isVenvImpl: () => true,
+      execFileImpl: exec as unknown as never,
+    });
+    expect(status.ok).toBe(true);
+    expect(status.version).toBe("3.3.2");
+    expect(status.steps.some((s) => s.includes("aligning mempalace"))).toBe(
+      true,
+    );
+    expect(status.steps.some((s) => s.includes("was 3.4.0"))).toBe(true);
+  });
+
+  it("leaves off-target alone when autoInstall=false if above floor", async () => {
+    const exec = makeExec([{ stdout: "3.4.0\n" }]);
+    const status = await ensureMempalaceInstalled({
+      pythonPath: venvPython,
+      autoInstall: false,
+      installTarget: "3.3.2",
+      minVersion: "3.3.2",
+      existsSyncImpl: () => true,
+      isVenvImpl: () => true,
+      execFileImpl: exec as unknown as never,
+    });
+    expect(status.ok).toBe(true);
+    expect(status.version).toBe("3.4.0");
+    expect(status.steps.some((s) => s.includes("aligning"))).toBe(false);
+  });
+
+  it("no-op when already at the exact target (single exec call)", async () => {
+    const exec = makeExec([{ stdout: "3.3.2\n" }]);
+    const status = await ensureMempalaceInstalled({
+      pythonPath: venvPython,
+      autoInstall: true,
+      existsSyncImpl: () => true,
+      isVenvImpl: () => true,
+      execFileImpl: exec as unknown as never,
+    });
+    expect(status.ok).toBe(true);
+    expect(exec).toHaveBeenCalledTimes(1);
+  });
+
   it("returns actionable error when pip install fails", async () => {
     const exec = makeExec([
       { stdout: "" }, // first detect → null
