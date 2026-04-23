@@ -7,11 +7,12 @@
  * Configuration in ~/.talon/config.json:
  *   "playwright": {
  *     "enabled": true,
- *     "browser": "chromium",     // optional, default "chromium"
- *     "headless": true           // optional, default true
+ *     "browser": "chromium",       // optional, default "chromium"
+ *     "headless": true,            // optional, default true
+ *     "installBrowsers": true       // optional, auto-download browser binaries on init
  *   }
  *
- * For Camoufox (anti-detect browser):
+ * For Camoufox / remote browser (no local binary needed):
  *   "playwright": {
  *     "enabled": true,
  *     "browser": "firefox",
@@ -22,16 +23,32 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { TalonPlugin } from "../../core/plugin.js";
-import { log } from "../../util/log.js";
+import { log, logError, logWarn } from "../../util/log.js";
+import {
+  PLAYWRIGHT_MCP_VERSION,
+  SUPPORTED_BROWSERS,
+  ensurePlaywrightMcpAvailable,
+  type SupportedBrowser,
+} from "./install.js";
+
+export { PLAYWRIGHT_MCP_VERSION, SUPPORTED_BROWSERS } from "./install.js";
 
 export function createPlaywrightPlugin(config: {
   browser?: string;
   headless?: boolean;
   endpoint?: string;
   endpointFile?: string;
+  /**
+   * When true, init() downloads the selected browser via
+   * `npx playwright install <browser>` if it's not already present.
+   * Default false — browser binaries are hundreds of MB and we don't
+   * touch the user's disk without consent.
+   */
+  installBrowsers?: boolean;
 }): TalonPlugin {
   const browser = config.browser ?? "chromium";
   const headless = config.headless !== false; // default true
+  const installBrowsers = config.installBrowsers === true;
 
   // Resolve endpoint: direct string or read from file
   let endpoint = config.endpoint;
@@ -83,23 +100,16 @@ export function createPlaywrightPlugin(config: {
       const errors: string[] = [];
 
       if (!endpoint) {
-        const validBrowsers = [
-          "chromium",
-          "chrome",
-          "firefox",
-          "webkit",
-          "msedge",
-        ];
-        if (!validBrowsers.includes(browser)) {
+        if (!(SUPPORTED_BROWSERS as readonly string[]).includes(browser)) {
           errors.push(
-            `Invalid browser "${browser}". Valid options: ${validBrowsers.join(", ")}`,
+            `Invalid browser "${browser}". Valid options: ${SUPPORTED_BROWSERS.join(", ")}`,
           );
         }
       }
 
       if (!existsSync(mcpBin)) {
         errors.push(
-          `@playwright/mcp not found at ${mcpBin} — run "npm install @playwright/mcp"`,
+          `@playwright/mcp not found at ${mcpBin} — run "npm install" in the Talon checkout.`,
         );
       }
 
@@ -107,9 +117,38 @@ export function createPlaywrightPlugin(config: {
     },
 
     async init() {
+      // Skip browser check when using a remote endpoint — no local binary
+      // needed. CLI presence / version pin is always checked.
+      const checkBrowser =
+        !endpoint && (SUPPORTED_BROWSERS as readonly string[]).includes(browser)
+          ? (browser as SupportedBrowser)
+          : undefined;
+      const status = await ensurePlaywrightMcpAvailable({
+        mcpBin,
+        browser: checkBrowser,
+        installBrowsers,
+      });
+      for (const step of status.steps) log("playwright", step);
+      if (!status.ok) {
+        if (installBrowsers) {
+          logError(
+            "playwright",
+            status.error ?? "playwright ensureAvailable failed",
+          );
+        } else {
+          logWarn(
+            "playwright",
+            status.error ??
+              "playwright browser not installed — set playwright.installBrowsers=true to auto-download",
+          );
+        }
+      }
+      const versionSuffix = status.version
+        ? ` [@playwright/mcp ${status.version}]`
+        : "";
       log(
         "playwright",
-        `Ready (${endpoint ? `Camoufox @ ${endpoint}` : `${browser}, headless=${headless}`})`,
+        `Ready (${endpoint ? `remote @ ${endpoint}` : `${browser}, headless=${headless}`})${versionSuffix}`,
       );
     },
   };

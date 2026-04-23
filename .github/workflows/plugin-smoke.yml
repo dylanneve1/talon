@@ -1,0 +1,99 @@
+name: Plugin Smoke (GitHub + Playwright)
+
+# Functional smoke tests for the GitHub and Playwright internal plugins.
+# Each plugin has an isolated job so failures don't mask each other.
+#
+# Triggers: PRs that touch the plugin code / config / this workflow, pushes
+# to main that touch the same paths, nightly cron, and manual dispatch.
+
+on:
+  pull_request:
+    paths:
+      - "src/plugins/github/**"
+      - "src/plugins/playwright/**"
+      - "src/util/config.ts"
+      - ".github/workflows/plugin-smoke.yml"
+      - "scripts/github-mcp-smoke.mjs"
+      - "scripts/playwright-mcp-smoke.mjs"
+      - "package.json"
+      - "package-lock.json"
+  push:
+    branches: [main]
+    paths:
+      - "src/plugins/github/**"
+      - "src/plugins/playwright/**"
+      - ".github/workflows/plugin-smoke.yml"
+      - "scripts/github-mcp-smoke.mjs"
+      - "scripts/playwright-mcp-smoke.mjs"
+  schedule:
+    # 05:45 UTC — catches upstream breakage (Docker image retag, upstream
+    # playwright release) the next morning.
+    - cron: "45 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: plugin-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  github-mcp:
+    name: github-mcp (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Show Talon-supported image tag
+        shell: bash
+        run: grep GITHUB_MCP_IMAGE src/plugins/github/install.ts
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Pull pinned image
+        run: node scripts/github-mcp-smoke.mjs pull
+
+      - name: MCP responsiveness smoke
+        run: node scripts/github-mcp-smoke.mjs smoke
+
+  playwright-mcp:
+    name: ${{ matrix.os }} (${{ matrix.browser }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        browser: [chromium]
+        # Extend with firefox/webkit here once we've pinned those too. Keeping
+        # to one browser per OS keeps CI cost reasonable while still covering
+        # all three platforms.
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Show Talon-supported @playwright/mcp pin
+        shell: bash
+        run: grep PLAYWRIGHT_MCP_VERSION src/plugins/playwright/install.ts
+
+      - name: npm ci
+        run: npm ci
+
+      - name: Install pinned version + browser
+        shell: bash
+        env:
+          PW_SMOKE_BROWSER: ${{ matrix.browser }}
+        run: node scripts/playwright-mcp-smoke.mjs install
+
+      - name: MCP responsiveness smoke
+        shell: bash
+        env:
+          PW_SMOKE_BROWSER: ${{ matrix.browser }}
+        run: node scripts/playwright-mcp-smoke.mjs smoke

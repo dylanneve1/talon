@@ -87,18 +87,21 @@ index.ts                    Composition root
 
 GitHub API access via the official GitHub MCP server. Gives the agent access to repositories, issues, PRs, code search, and more.
 
-**Requirements:** Docker installed and running.
+**Requirements:** Docker installed and running. Talon pins the upstream image tag (see `GITHUB_MCP_IMAGE` in `src/plugins/github/install.ts`).
 
 ```json
 {
   "github": {
     "enabled": true,
-    "token": "ghp_..."
+    "token": "ghp_...",
+    "autoPull": true
   }
 }
 ```
 
-The token is optional --- defaults to the output of `gh auth token` if the GitHub CLI is authenticated.
+- `token` is optional --- defaults to the output of `gh auth token` if the GitHub CLI is authenticated.
+- `autoPull` (default `false`) runs `docker pull` on the pinned image during startup if it's missing locally. Leave off to avoid surprising large downloads; the image will be pulled on first MCP call instead.
+- `image` is an advanced override --- prefer bumping `GITHUB_MCP_IMAGE` in source so CI covers the new tag.
 
 ### MemPalace
 
@@ -129,19 +132,22 @@ Both paths are optional --- defaults to `~/.talon/workspace/palace/` and the ven
 
 Headless browser automation via the Playwright MCP server. The agent can browse websites, take screenshots, generate PDFs, fill forms, and scrape content.
 
-**Requirements:** None --- `@playwright/mcp` is bundled with Talon.
+**Requirements:** `@playwright/mcp` is pinned in `package.json` and installed by `npm install`. Browser binaries (Chromium, Firefox, WebKit) are not pulled automatically; enable `installBrowsers` to have Talon run `npx playwright install <browser>` on startup.
 
 ```json
 {
   "playwright": {
     "enabled": true,
     "browser": "chromium",
-    "headless": true
+    "headless": true,
+    "installBrowsers": true
   }
 }
 ```
 
-Supported browsers: `chromium` (default), `chrome`, `firefox`, `webkit`, `msedge`.
+- Supported browsers: `chromium` (default), `chrome`, `firefox`, `webkit`, `msedge`.
+- `installBrowsers` (default `false`) downloads the chosen browser if it's missing. Browser binaries are hundreds of MB — opt in deliberately.
+- When using a remote browser via `endpoint` / `endpointFile` (e.g. a dockerized anti-detect browser), no local binary is needed and the browser check is skipped.
 
 ### Brave Search
 

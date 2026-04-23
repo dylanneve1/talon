@@ -497,7 +497,11 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
   if (github?.enabled) {
     try {
       const { createGitHubPlugin } = await import("../plugins/github/index.js");
-      const gh = createGitHubPlugin({ token: github.token });
+      const gh = createGitHubPlugin({
+        token: github.token,
+        autoPull: github.autoPull,
+        image: github.image,
+      });
       const ghConfig = github as unknown as Record<string, unknown>;
       const loaded = registerPlugin(gh, ghConfig);
       if (loaded) {
@@ -561,6 +565,7 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
         headless: playwright.headless,
         endpoint: playwright.endpoint,
         endpointFile: playwright.endpointFile,
+        installBrowsers: playwright.installBrowsers,
       });
       const loaded = registerPlugin(pw, pwConfig);
       if (loaded) {

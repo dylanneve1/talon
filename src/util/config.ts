@@ -110,6 +110,12 @@ const playwrightConfigSchema = z.object({
   endpoint: z.string().optional(),
   /** Read the browser websocket endpoint from a file. */
   endpointFile: z.string().optional(),
+  /**
+   * When true, init() downloads the selected browser binary via
+   * `npx playwright install <browser>` if it's not already present.
+   * Default false — opt-in to avoid surprising large downloads.
+   */
+  installBrowsers: z.boolean().optional(),
 });
 
 const configSchema = z.object({
@@ -140,6 +146,17 @@ const configSchema = z.object({
       enabled: z.boolean().default(false),
       /** GitHub personal access token (default: from `gh auth token`) */
       token: z.string().min(1).optional(),
+      /**
+       * When true, init() will `docker pull` the Talon-pinned image if it
+       * isn't present locally. Default false — opt-in to avoid surprising
+       * large downloads on first start.
+       */
+      autoPull: z.boolean().optional(),
+      /**
+       * Override the pinned Docker image tag. Advanced use only. Defaults
+       * to the constant GITHUB_MCP_IMAGE in src/plugins/github/install.ts.
+       */
+      image: z.string().min(1).optional(),
     })
     .optional(),
 

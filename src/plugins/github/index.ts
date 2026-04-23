@@ -1,19 +1,24 @@
 /**
  * GitHub plugin — GitHub API access via the official GitHub MCP server.
  *
- * Registers the GitHub MCP server (Docker image: ghcr.io/github/github-mcp-server),
+ * Registers the GitHub MCP server (Docker image: pinned by GITHUB_MCP_IMAGE),
  * giving the agent access to repository management, issues, PRs, code search, etc.
  *
  * Configuration in ~/.talon/config.json:
  *   "github": {
  *     "enabled": true,
- *     "token": "ghp_..."      // optional, defaults to `gh auth token` output
+ *     "token": "ghp_...",     // optional, defaults to `gh auth token` output
+ *     "autoPull": true,       // optional, docker pull the pinned image on init
+ *     "image": "ghcr.io/..."  // optional, advanced override of the pinned tag
  *   }
  */
 
 import { execFileSync } from "node:child_process";
 import type { TalonPlugin } from "../../core/plugin.js";
-import { log, logWarn } from "../../util/log.js";
+import { log, logError, logWarn } from "../../util/log.js";
+import { GITHUB_MCP_IMAGE, ensureGithubMcpAvailable } from "./install.js";
+
+export { GITHUB_MCP_IMAGE } from "./install.js";
 
 /**
  * Resolve a GitHub personal access token.
@@ -34,8 +39,22 @@ function resolveToken(configToken?: string): string | undefined {
   }
 }
 
-export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
+export function createGitHubPlugin(config: {
+  token?: string;
+  /**
+   * If true, `docker pull` the pinned image during init when it's missing.
+   * Default false — we don't move 200MB+ onto the user's disk without consent.
+   */
+  autoPull?: boolean;
+  /**
+   * Advanced: override the pinned image tag. Use only for testing; normal
+   * upgrades bump {@link GITHUB_MCP_IMAGE} so CI covers the new version.
+   */
+  image?: string;
+}): TalonPlugin {
   const token = resolveToken(config.token);
+  const image = config.image ?? GITHUB_MCP_IMAGE;
+  const autoPull = config.autoPull === true;
 
   return {
     name: "github",
@@ -44,14 +63,7 @@ export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
 
     mcpServer: {
       command: "docker",
-      args: [
-        "run",
-        "--rm",
-        "-i",
-        "-e",
-        "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "ghcr.io/github/github-mcp-server",
-      ],
+      args: ["run", "--rm", "-i", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", image],
     },
 
     validateConfig() {
@@ -63,7 +75,9 @@ export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
         );
       }
 
-      // Check Docker is available
+      // Check Docker is available — synchronous fast-fail check. The image
+      // presence / version check is deferred to async init() so we don't
+      // block startup for a pull.
       try {
         execFileSync("docker", ["info"], {
           timeout: 10_000,
@@ -79,22 +93,26 @@ export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
     },
 
     async init() {
-      // Verify the Docker image exists locally
-      try {
-        execFileSync(
-          "docker",
-          ["image", "inspect", "ghcr.io/github/github-mcp-server"],
-          { timeout: 10_000, stdio: "pipe" },
-        );
-        log("github", "Docker image verified");
-      } catch {
-        logWarn(
-          "github",
-          "Docker image not found locally — will pull on first use (may be slow)",
-        );
+      const status = await ensureGithubMcpAvailable({
+        autoPull,
+        image,
+      });
+      for (const step of status.steps) log("github", step);
+      if (!status.ok) {
+        if (autoPull) {
+          logError(
+            "github",
+            status.error ?? "github MCP ensureAvailable failed",
+          );
+        } else {
+          logWarn(
+            "github",
+            status.error ??
+              `Docker image ${image} not present — will pull on first use (may be slow). Set github.autoPull=true to pull at startup.`,
+          );
+        }
       }
-
-      log("github", "Ready");
+      log("github", `Ready [${image}]`);
     },
 
     getEnvVars() {
