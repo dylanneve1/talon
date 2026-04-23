@@ -104,6 +104,13 @@ export function detectInstalledMcpVersion(mcpBin: string): string | null {
 }
 
 /**
+ * Resolve the `npx` executable name. On Windows, npm ships `npx.cmd` rather
+ * than `npx` and Node's `spawn` doesn't auto-resolve `.cmd` extensions
+ * without `shell: true` — so we have to pick the right name explicitly.
+ */
+const NPX_BIN = process.platform === "win32" ? "npx.cmd" : "npx";
+
+/**
  * Probe `npx playwright install --dry-run <browser>`. Playwright prints
  * "is already installed" or otherwise shows "downloading" / "will download"
  * when the binary is missing. We only trust the positive signal to avoid
@@ -114,7 +121,7 @@ async function isBrowserInstalled(
   ctx: HealContext,
 ): Promise<boolean> {
   const result = await runProbe(
-    "npx",
+    NPX_BIN,
     ["playwright", "install", "--dry-run", browser],
     { timeoutMs: 60_000, spawnImpl: ctx.spawnImpl },
   );
@@ -226,7 +233,7 @@ export function createPlaywrightHeal(opts: PlaywrightHealOpts): HealFn {
       // ── Step 4: install missing browser ─────────────────────────────
       const installStep = logger.step(`install ${opts.browser}`);
       const result = await runStreaming(
-        "npx",
+        NPX_BIN,
         ["playwright", "install", opts.browser],
         runOpts(ctx, installStep, 10 * 60_000),
       );
