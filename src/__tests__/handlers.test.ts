@@ -5,10 +5,6 @@ const executeMock = vi.hoisted(() => vi.fn());
 vi.mock("../core/dispatcher.js", () => ({
   execute: executeMock,
 }));
-vi.mock("../core/prompt-builder.js", () => ({
-  enrichDMPrompt: vi.fn((p: string) => p),
-  enrichGroupPrompt: vi.fn((p: string) => p),
-}));
 vi.mock("../storage/daily-log.js", () => ({
   appendDailyLog: vi.fn(),
   appendDailyLogResponse: vi.fn(),
@@ -2641,11 +2637,8 @@ describe("handleStickerMessage — video sticker branch (L835 TRUE)", () => {
   }, 3000);
 });
 
-describe("processAndReply — group message without senderId (L552 FALSE branch)", () => {
-  it("skips enrichGroupPrompt when senderId is undefined in group", async () => {
-    const { enrichGroupPrompt } = await import("../core/prompt-builder.js");
-    (enrichGroupPrompt as ReturnType<typeof vi.fn>).mockClear();
-
+describe("processAndReply — group message without senderId", () => {
+  it("processes anonymous group messages without mutating the prompt", async () => {
     executeMock.mockResolvedValueOnce({
       text: "",
       durationMs: 10,
@@ -2672,13 +2665,14 @@ describe("processAndReply — group message without senderId (L552 FALSE branch)
     await handleTextMessage(ctx, mockBot, mockConfig);
     await new Promise((r) => setTimeout(r, 700));
 
-    // enrichGroupPrompt should NOT have been called (senderId falsy)
-    expect(enrichGroupPrompt).not.toHaveBeenCalled();
-    // But message was still processed
+    // Message was still processed, and the prompt is passed through verbatim.
     const calls = executeMock.mock.calls
       .slice(before)
       .filter((c) => (c[0] as { chatId: string }).chatId === String(chatId));
     expect(calls.length).toBe(1);
+    expect((calls[0][0] as { prompt: string }).prompt).toBe(
+      "@testbot anonymous message",
+    );
   }, 3000);
 });
 

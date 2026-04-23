@@ -29,11 +29,6 @@ vi.mock("../core/errors.js", () => ({
   TalonError: class TalonError extends Error {},
 }));
 
-vi.mock("../core/prompt-builder.js", () => ({
-  enrichDMPrompt: vi.fn((p: string) => p),
-  enrichGroupPrompt: vi.fn((p: string) => p),
-}));
-
 vi.mock("../storage/daily-log.js", () => ({
   appendDailyLog: vi.fn(),
   appendDailyLogResponse: vi.fn(),
