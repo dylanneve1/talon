@@ -174,7 +174,9 @@ describe("playwright heal — browser lifecycle", () => {
     const { impl, calls } = scriptedSpawn([
       {
         match: (cmd, args) =>
-          cmd === "npx" && args[0] === "playwright" && args[1] === "install",
+          (cmd === "npx" || cmd === "npx.cmd") &&
+          args[0] === "playwright" &&
+          args[1] === "install",
         response: {
           stdout: "browser: chromium\nInstall location: /home/u/.cache\n",
         },
@@ -200,13 +202,14 @@ describe("playwright heal — browser lifecycle", () => {
     const { impl, calls } = scriptedSpawn([
       // first dry-run: missing
       {
-        match: (cmd, args) => cmd === "npx" && args.includes("--dry-run"),
+        match: (cmd, args) =>
+          (cmd === "npx" || cmd === "npx.cmd") && args.includes("--dry-run"),
         response: { stdout: "downloading chromium 120 MB\n" },
       },
       // actual install
       {
         match: (cmd, args) =>
-          cmd === "npx" &&
+          (cmd === "npx" || cmd === "npx.cmd") &&
           args[0] === "playwright" &&
           args[1] === "install" &&
           !args.includes("--dry-run"),
@@ -214,7 +217,8 @@ describe("playwright heal — browser lifecycle", () => {
       },
       // confirm dry-run after: installed
       {
-        match: (cmd, args) => cmd === "npx" && args.includes("--dry-run"),
+        match: (cmd, args) =>
+          (cmd === "npx" || cmd === "npx.cmd") && args.includes("--dry-run"),
         response: {
           stdout: "browser: chromium\nInstall location: /home/u/.cache\n",
         },
@@ -237,19 +241,21 @@ describe("playwright heal — browser lifecycle", () => {
     const cli = stubMcpInstall("0.0.70");
     const { impl } = scriptedSpawn([
       {
-        match: (cmd, args) => cmd === "npx" && args.includes("--dry-run"),
+        match: (cmd, args) =>
+          (cmd === "npx" || cmd === "npx.cmd") && args.includes("--dry-run"),
         response: { stdout: "downloading chromium 120 MB\n" },
       },
       {
         match: (cmd, args) =>
-          cmd === "npx" &&
+          (cmd === "npx" || cmd === "npx.cmd") &&
           args[0] === "playwright" &&
           args[1] === "install" &&
           !args.includes("--dry-run"),
         response: { stdout: "installed chromium\n" },
       },
       {
-        match: (cmd, args) => cmd === "npx" && args.includes("--dry-run"),
+        match: (cmd, args) =>
+          (cmd === "npx" || cmd === "npx.cmd") && args.includes("--dry-run"),
         response: { stdout: "downloading chromium 120 MB\n" }, // still missing
       },
     ]);
@@ -269,12 +275,13 @@ describe("playwright heal — browser lifecycle", () => {
     const cli = stubMcpInstall("0.0.70");
     const { impl } = scriptedSpawn([
       {
-        match: (cmd, args) => cmd === "npx" && args.includes("--dry-run"),
+        match: (cmd, args) =>
+          (cmd === "npx" || cmd === "npx.cmd") && args.includes("--dry-run"),
         response: { stdout: "downloading chromium\n" },
       },
       {
         match: (cmd, args) =>
-          cmd === "npx" &&
+          (cmd === "npx" || cmd === "npx.cmd") &&
           args[0] === "playwright" &&
           args[1] === "install" &&
           !args.includes("--dry-run"),

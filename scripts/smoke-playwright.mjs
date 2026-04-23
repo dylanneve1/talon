@@ -21,6 +21,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, "..");
 const MCP_BIN = join(REPO_ROOT, "node_modules/@playwright/mcp/cli.js");
 
+// On Windows npm ships `npx.cmd` rather than `npx`; Node's spawn won't
+// resolve `.cmd` extensions without `shell: true`.
+const NPX_BIN = process.platform === "win32" ? "npx.cmd" : "npx";
+
 function pinnedVersion() {
   const src = readFileSync(
     join(REPO_ROOT, "src/plugins/playwright/heal.ts"),
@@ -61,7 +65,7 @@ async function install() {
     );
   }
   const browser = process.env.PW_SMOKE_BROWSER ?? "chromium";
-  await run("npx", ["playwright", "install", browser]);
+  await run(NPX_BIN, ["playwright", "install", browser]);
   log(`browser installed: ${browser}`);
 }
 
