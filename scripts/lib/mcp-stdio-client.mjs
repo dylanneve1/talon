@@ -134,14 +134,3 @@ export class StdioMcpClient {
   }
 }
 
-/** Pull a pinned constant from a TypeScript source file without tsc. */
-export function readPinnedConstant(sourcePath, constName) {
-  const { readFileSync } = require("node:fs");
-  const src = readFileSync(sourcePath, "utf-8");
-  const re = new RegExp(`${constName}\\s*=\\s*"([^"]+)"`);
-  const match = re.exec(src);
-  if (!match) {
-    throw new Error(`failed to parse ${constName} from ${sourcePath}`);
-  }
-  return match[1];
-}

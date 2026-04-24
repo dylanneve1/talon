@@ -28,7 +28,11 @@ export type HealResult = Readonly<{
    * - `healthy`: plugin is installed at the expected version and usable.
    * - `degraded`: plugin is usable but something is off (version drift,
    *               missing optional dep). The MCP server will still be spawned.
-   * - `failed`: plugin can't come up. The MCP server should not be spawned.
+   * - `failed`: plugin can't come up. Callers should treat this as an
+   *             unusable plugin state; whether the MCP server is still
+   *             spawned is determined by the loader/runtime (today the
+   *             loader logs the failure and lets the MCP subprocess try
+   *             anyway so transient heal issues don't brick startup).
    */
   status: HealStatus;
   /** Human-readable identifier — e.g. "mempalace 3.3.2" or "chromium+mcp 0.0.70". */
@@ -72,6 +76,21 @@ export async function runHeal(
 ): Promise<HealResult> {
   const timeout = ctx.totalTimeoutMs ?? 10 * 60 * 1000;
   const start = Date.now();
+
+  // Track the timer so we can clear it when heal resolves first —
+  // otherwise a short heal leaves a pending timer alive for minutes,
+  // keeping short-lived CLI processes running and accumulating timers
+  // across hot reloads.
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<{ kind: "timeout" }>((resolvePromise) => {
+    timeoutHandle = setTimeout(
+      () => resolvePromise({ kind: "timeout" }),
+      timeout,
+    );
+    // Don't keep the event loop alive just for this timer.
+    timeoutHandle.unref?.();
+  });
+
   const race = await Promise.race([
     heal(ctx).then(
       (result) => ({ kind: "done" as const, result }),
@@ -83,10 +102,12 @@ export async function runHeal(
             : new Error(typeof err === "string" ? err : JSON.stringify(err)),
       }),
     ),
-    new Promise<{ kind: "timeout" }>((resolvePromise) =>
-      setTimeout(() => resolvePromise({ kind: "timeout" }), timeout),
-    ),
+    timeoutPromise,
   ]);
+
+  // Always clear the timer once we have a winner — irrespective of which
+  // branch resolved first. Safe to call even if the timer already fired.
+  if (timeoutHandle) clearTimeout(timeoutHandle);
 
   if (race.kind === "done") return race.result;
 

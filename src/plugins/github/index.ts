@@ -66,16 +66,21 @@ export function createGitHubPlugin(
     },
 
     validateConfig() {
-      const errors: string[] = [];
-      if (!token) {
-        errors.push(
-          'no GitHub token found. set "token" in github config or run `gh auth login`',
-        );
-      }
-      return errors.length > 0 ? errors : undefined;
+      // Token is documented as optional (falls back to `gh auth token`), and
+      // the upstream MCP server will surface its own 401 on authenticated
+      // calls if nothing is set. Blocking plugin registration here would
+      // make `{ "github": { "enabled": true } }` unusable without a token,
+      // which contradicts the header docs — downgrade to a runtime warning.
+      return undefined;
     },
 
     async init() {
+      if (!token) {
+        logWarn(
+          "github",
+          'no GitHub token found — set "token" in config or run `gh auth login`; API calls will 401 until fixed',
+        );
+      }
       const logger = createProgressLogger({ component: "github" });
       const result = await runHeal("github", createGithubHeal({ image }), {
         logger,
