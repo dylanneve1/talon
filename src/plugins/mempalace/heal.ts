@@ -231,12 +231,17 @@ export function createMempalaceHeal(opts: MempalaceHealOpts): HealFn {
           installStep.fail(
             "mempalace is not installed at user-provided python",
           );
+          // Note: kind is "unknown" rather than "executable-not-found" —
+          // the Python executable exists, it's the *package* that's missing.
+          // "executable-not-found" is reserved for missing binaries and
+          // would mislead both user hints and any future telemetry slicing.
           return failed(
             identifier(),
             {
-              kind: "executable-not-found",
-              message: "mempalace not installed in user-provided interpreter",
-              hint: `run: ${opts.pythonPath} -m pip install 'mempalace==${MEMPALACE_TARGET}'`,
+              kind: "unknown",
+              message:
+                "mempalace package is not installed in the user-provided Python interpreter",
+              hint: `install it with: ${opts.pythonPath} -m pip install 'mempalace==${MEMPALACE_TARGET}'`,
             },
             Date.now() - start,
             summary,

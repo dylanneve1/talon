@@ -55,6 +55,19 @@ export function createGitHubPlugin(
   const token = resolveToken(config.token);
   const image = config.image ?? GITHUB_MCP_IMAGE;
 
+  // Only forward the env var when we actually have a token. Passing
+  // `-e GITHUB_PERSONAL_ACCESS_TOKEN` unconditionally would force the
+  // container to see it as an empty string, which auth layers interpret
+  // differently from "unset" (empty token → hard-fail 401; unset → may
+  // fall through to anonymous read paths). Keep the two states distinct.
+  const dockerArgs = [
+    "run",
+    "--rm",
+    "-i",
+    ...(token ? ["-e", "GITHUB_PERSONAL_ACCESS_TOKEN"] : []),
+    image,
+  ];
+
   return {
     name: "github",
     description: "GitHub API access via the official GitHub MCP server",
@@ -62,7 +75,7 @@ export function createGitHubPlugin(
 
     mcpServer: {
       command: "docker",
-      args: ["run", "--rm", "-i", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", image],
+      args: dockerArgs,
     },
 
     validateConfig() {
