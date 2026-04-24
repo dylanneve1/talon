@@ -140,6 +140,36 @@ describe("runStreaming", () => {
     ]);
   });
 
+  it("flushes trailing content that lacks a final newline", async () => {
+    // Regression: pip sometimes writes a status line without \n at the very
+    // end of output. Previously we'd hold it in the line buffer forever and
+    // the progress tracker never saw it — making logs incomplete.
+    const streamed: string[] = [];
+    const logger = createProgressLogger({
+      component: "plugin",
+      sink: () => {},
+      now: () => 0,
+    });
+    const step = logger.step("x");
+    step.stream = (line: string) => streamed.push(line);
+
+    const spawnImpl = fakeSpawn({
+      // No trailing newline on the last chunk — simulates a CLI that exits
+      // after printing a final status line unterminated.
+      stdoutChunks: ["Collecting mempalace\nSuccessfully installed"],
+      exitCode: 0,
+    });
+    await runStreaming("pip", ["install"], {
+      timeoutMs: 1_000,
+      tracker: step,
+      spawnImpl,
+    });
+    expect(streamed).toEqual([
+      "Collecting mempalace",
+      "Successfully installed",
+    ]);
+  });
+
   it("classifies spawn ENOENT as executable-not-found", async () => {
     const spawnImpl = fakeSpawn({
       emitError: Object.assign(new Error("spawn ENOENT"), {

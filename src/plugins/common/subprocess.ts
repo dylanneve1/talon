@@ -85,23 +85,38 @@ export async function runStreaming(
       shell: needsShell,
     });
 
+    const carries: Record<"stdout" | "stderr", string> = {
+      stdout: "",
+      stderr: "",
+    };
     const bufferFor = (sink: "stdout" | "stderr") => {
-      let carry = "";
       return (chunk: Buffer | string) => {
         const text =
           typeof chunk === "string" ? chunk : chunk.toString("utf-8");
         if (sink === "stdout") stdout += text;
         else stderr += text;
-        carry += text;
         // Normalize \r\n and \r (docker uses bare \r for progress bars).
-        carry = carry.replace(/\r\n?/g, "\n");
+        carries[sink] = (carries[sink] + text).replace(/\r\n?/g, "\n");
         let nl;
-        while ((nl = carry.indexOf("\n")) !== -1) {
-          const line = carry.slice(0, nl);
-          carry = carry.slice(nl + 1);
+        while ((nl = carries[sink].indexOf("\n")) !== -1) {
+          const line = carries[sink].slice(0, nl);
+          carries[sink] = carries[sink].slice(nl + 1);
           if (line.length > 0) opts.tracker.stream(line);
         }
       };
+    };
+
+    const flushCarry = () => {
+      // Some CLIs emit a final line without a trailing newline. Flush
+      // whatever's left so the tracker sees the complete output rather
+      // than silently swallowing the last status line.
+      for (const sink of ["stdout", "stderr"] as const) {
+        const remainder = carries[sink];
+        if (remainder.length > 0) {
+          carries[sink] = "";
+          opts.tracker.stream(remainder);
+        }
+      }
     };
 
     child.stdout?.on("data", bufferFor("stdout"));
@@ -116,6 +131,8 @@ export async function runStreaming(
       settled = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (killHandle) clearTimeout(killHandle);
+      // Final flush for any unterminated trailing content on either stream.
+      flushCarry();
 
       const elapsedMs = Date.now() - start;
       const failed =
