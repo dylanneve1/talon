@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import {
   PLAYWRIGHT_MCP_VERSION,
@@ -108,6 +109,27 @@ describe("detectInstalledMcpVersion", () => {
 describe("playwright heal — CLI presence / version", () => {
   it("constant is a valid pinned semver", () => {
     expect(PLAYWRIGHT_MCP_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it("PLAYWRIGHT_MCP_VERSION tracks package.json (dependabot drift guard)", () => {
+    // Heal reads the pin from package.json at module load so hand-edited
+    // constants can't drift when dependabot bumps the dep. This test
+    // enforces the contract: the exported constant must equal the
+    // sanitized package.json range — if it ever diverges, something
+    // regressed in readPinnedVersionFromPackageJson.
+    const repoRoot = resolve(
+      fileURLToPath(new URL(".", import.meta.url)),
+      "../../..",
+    );
+    const pkg = JSON.parse(
+      readFileSync(join(repoRoot, "package.json"), "utf-8"),
+    );
+    const rawRange = pkg.dependencies?.["@playwright/mcp"];
+    expect(rawRange).toBeTruthy();
+    const expected = String(rawRange)
+      .replace(/^[\^~=v]+/, "")
+      .trim();
+    expect(PLAYWRIGHT_MCP_VERSION).toBe(expected);
   });
 
   it("exports the canonical browser list so validateConfig stays in sync", () => {

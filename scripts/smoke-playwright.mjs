@@ -26,13 +26,22 @@ const MCP_BIN = join(REPO_ROOT, "node_modules/@playwright/mcp/cli.js");
 const NPX_BIN = process.platform === "win32" ? "npx.cmd" : "npx";
 
 function pinnedVersion() {
-  const src = readFileSync(
-    join(REPO_ROOT, "src/plugins/playwright/heal.ts"),
-    "utf-8",
+  // Single source of truth: Talon's package.json. Matches heal.ts, which
+  // reads the same field at module load. Dependabot bumps package.json
+  // + the lockfile in a single PR, so the smoke stays green automatically
+  // without any hand-edited constant drifting out of sync.
+  const parsed = JSON.parse(
+    readFileSync(join(REPO_ROOT, "package.json"), "utf-8"),
   );
-  const match = /PLAYWRIGHT_MCP_VERSION\s*=\s*"([^"]+)"/.exec(src);
-  if (!match) throw new Error("failed to parse PLAYWRIGHT_MCP_VERSION");
-  return match[1];
+  const raw = parsed.dependencies?.["@playwright/mcp"];
+  if (!raw) {
+    throw new Error(
+      "@playwright/mcp missing from package.json dependencies — run 'npm install @playwright/mcp'",
+    );
+  }
+  // Tolerate caret/tilde if someone relaxes the pin locally; heal.ts
+  // does the same strip so the two stay symmetric.
+  return raw.replace(/^[\^~=v]+/, "").trim();
 }
 
 function log(...args) {
@@ -60,10 +69,14 @@ async function install() {
   const target = pinnedVersion();
   log(`pinned @playwright/mcp: ${target}`);
   if (!existsSync(MCP_BIN)) {
-    throw new Error(`${MCP_BIN} missing — run 'npm ci' in the Talon checkout first`);
+    throw new Error(
+      `${MCP_BIN} missing — run 'npm ci' in the Talon checkout first`,
+    );
   }
   const pkgJsonPath = resolve(dirname(MCP_BIN), "package.json");
-  const installedVersion = JSON.parse(readFileSync(pkgJsonPath, "utf-8")).version;
+  const installedVersion = JSON.parse(
+    readFileSync(pkgJsonPath, "utf-8"),
+  ).version;
   log(`installed @playwright/mcp: ${installedVersion}`);
   if (installedVersion !== target) {
     throw new Error(
@@ -98,11 +111,7 @@ async function smoke() {
       }
     }
     log("browser_navigate about:blank…");
-    await client.callTool(
-      "browser_navigate",
-      { url: "about:blank" },
-      90_000,
-    );
+    await client.callTool("browser_navigate", { url: "about:blank" }, 90_000);
     log("browser_navigate OK");
     log("browser_close…");
     await client.callTool("browser_close", {}, 30_000);
