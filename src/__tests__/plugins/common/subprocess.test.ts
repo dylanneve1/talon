@@ -22,6 +22,8 @@ interface FakeOpts {
   signal?: NodeJS.Signals | null;
   emitError?: NodeJS.ErrnoException;
   emitAfterMs?: number;
+  /** Skip the `close` event — simulates a pre-spawn failure (ENOENT etc). */
+  suppressClose?: boolean;
 }
 
 function fakeSpawn(opts: FakeOpts = {}) {
@@ -47,7 +49,9 @@ function fakeSpawn(opts: FakeOpts = {}) {
       for (const c of opts.stderrChunks ?? []) child.stderr.write(c);
       child.stdout.end();
       child.stderr.end();
-      child.emit("close", opts.exitCode ?? 0, opts.signal ?? null);
+      if (!opts.suppressClose) {
+        child.emit("close", opts.exitCode ?? 0, opts.signal ?? null);
+      }
     });
 
     return child as unknown as ChildProcess;
@@ -168,6 +172,26 @@ describe("runStreaming", () => {
       "Collecting mempalace",
       "Successfully installed",
     ]);
+  });
+
+  it("settles even when pre-spawn 'error' fires without a following 'close' event", async () => {
+    // Regression: Node's docs say `close` *may or may not* fire after
+    // `error`. Previously we only resolved in the close handler, so a
+    // pre-spawn failure could leave the promise hanging until the outer
+    // heal timeout. Guarded by a microtask settle in the error handler.
+    const spawnImpl = fakeSpawn({
+      emitError: Object.assign(new Error("spawn ENOENT"), {
+        code: "ENOENT",
+      }) as NodeJS.ErrnoException,
+      suppressClose: true,
+    });
+    const result = await runStreaming("missing-binary", [], {
+      timeoutMs: 30_000, // deliberately long — test would hang if broken
+      tracker: silentTracker(),
+      spawnImpl,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error?.kind).toBe("executable-not-found");
   });
 
   it("classifies spawn ENOENT as executable-not-found", async () => {
