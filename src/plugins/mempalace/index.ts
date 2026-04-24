@@ -89,9 +89,12 @@ export function createMempalacePlugin(
     },
 
     validateConfig() {
-      // Heal handles installability; validateConfig only fails the
-      // synchronous prerequisites that heal cannot fix (obviously bad
-      // paths). Runtime failures go through heal → structured log.
+      // Every prerequisite — python binary, mempalace install, mcp_server
+      // importability — is checked asynchronously in init() via heal. There
+      // is nothing validateConfig can *cheaply* verify synchronously that
+      // heal doesn't already catch with better error context. Returning
+      // undefined here keeps the plugin registered so heal's structured
+      // logging is what users see on failure, not a short zod-style error.
       return undefined;
     },
 

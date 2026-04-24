@@ -20,9 +20,12 @@ on:
     branches: [main]
     paths:
       - "src/plugins/**"
+      - "src/util/config.ts"
       - ".github/workflows/plugin-smoke.yml"
       - "scripts/smoke-*.mjs"
       - "scripts/lib/**"
+      - "package.json"
+      - "package-lock.json"
   schedule:
     # 05:30 UTC — catches upstream PyPI / ghcr / playwright CDN breakage
     # before the first people of the day (Paweł, Dylan) see it in Talon.

@@ -119,30 +119,33 @@ export async function runStreaming(
       }
     };
 
-    child.stdout?.on("data", bufferFor("stdout"));
-    child.stderr?.on("data", bufferFor("stderr"));
-
-    child.on("error", (err: NodeJS.ErrnoException) => {
-      spawnError = err;
-    });
-
-    child.on("close", (exitCode, signal) => {
+    /**
+     * Settle the outer promise exactly once. Both `error` and `close` are
+     * wired here so a failed spawn (e.g. ENOENT where Node emits `error`
+     * without ever emitting `close`) doesn't leave us pending until the
+     * outer heal timeout.
+     */
+    const settleOnce = (outcome: {
+      exitCode: number | null;
+      signal: NodeJS.Signals | null;
+    }) => {
       if (settled) return;
       settled = true;
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (killHandle) clearTimeout(killHandle);
-      // Final flush for any unterminated trailing content on either stream.
       flushCarry();
 
       const elapsedMs = Date.now() - start;
       const failed =
-        exitCode !== 0 || signal !== null || spawnError !== undefined;
+        outcome.exitCode !== 0 ||
+        outcome.signal !== null ||
+        spawnError !== undefined;
 
       if (!failed) {
         resolvePromise({
           ok: true,
-          exitCode,
-          signal,
+          exitCode: outcome.exitCode,
+          signal: outcome.signal,
           stdout,
           stderr,
           elapsedMs,
@@ -153,21 +156,36 @@ export async function runStreaming(
       const error = classifySubprocessError({
         program: command,
         args,
-        exitCode,
-        signal,
+        exitCode: outcome.exitCode,
+        signal: outcome.signal,
         stdout,
         stderr,
         spawnError,
       });
       resolvePromise({
         ok: false,
-        exitCode,
-        signal,
+        exitCode: outcome.exitCode,
+        signal: outcome.signal,
         stdout,
         stderr,
         error,
         elapsedMs,
       });
+    };
+
+    child.stdout?.on("data", bufferFor("stdout"));
+    child.stderr?.on("data", bufferFor("stderr"));
+
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      spawnError = err;
+      // Node's contract is that `close` *usually* fires after `error`, but
+      // for pre-spawn failures (e.g. ENOENT) it sometimes doesn't. Schedule
+      // a microtask settle so if `close` never arrives we still resolve.
+      queueMicrotask(() => settleOnce({ exitCode: null, signal: null }));
+    });
+
+    child.on("close", (exitCode, signal) => {
+      settleOnce({ exitCode, signal });
     });
 
     timeoutHandle = setTimeout(() => {
