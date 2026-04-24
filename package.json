@@ -36,6 +36,7 @@
     "tsconfig.json"
   ],
   "scripts": {
+    "postinstall": "node scripts/prune-native-sdk.mjs",
     "start": "tsx src/index.ts",
     "cli": "tsx src/cli.ts",
     "setup": "tsx src/cli.ts setup",

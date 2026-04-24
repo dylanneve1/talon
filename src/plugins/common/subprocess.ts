@@ -69,10 +69,20 @@ export async function runStreaming(
     let timeoutHandle: NodeJS.Timeout | undefined;
     let killHandle: NodeJS.Timeout | undefined;
 
+    // Windows Node 20.19+ rejects `.cmd`/`.bat` via spawn without
+    // shell:true (CVE-2024-27980 mitigation). Detect that narrow case
+    // and enable the shell — we control the args so the usual shell
+    // injection surface doesn't apply here.
+    const needsShell =
+      process.platform === "win32" &&
+      (command.toLowerCase().endsWith(".cmd") ||
+        command.toLowerCase().endsWith(".bat"));
+
     const child = spawnFn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, ...opts.env },
       cwd: opts.cwd,
+      shell: needsShell,
     });
 
     const bufferFor = (sink: "stdout" | "stderr") => {
