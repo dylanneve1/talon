@@ -41,8 +41,14 @@ function log(...args) {
 
 async function run(cmd, args) {
   log(`$ ${cmd} ${args.join(" ")}`);
+  // Windows .cmd/.bat shim quirk — Node 20.19+ needs shell:true to
+  // spawn those without EINVAL.
+  const isWindowsShim =
+    process.platform === "win32" &&
+    (cmd.toLowerCase().endsWith(".cmd") || cmd.toLowerCase().endsWith(".bat"));
   const { stdout, stderr } = await execFileP(cmd, args, {
     maxBuffer: 50 * 1024 * 1024,
+    shell: isWindowsShim,
   });
   if (stdout.trim()) log(stdout.trim().split("\n").slice(0, 6).join("\n"));
   if (stderr.trim())
