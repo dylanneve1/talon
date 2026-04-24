@@ -154,7 +154,10 @@ export function createProgressLogger(
     },
 
     records() {
-      return records;
+      // Return a shallow copy — the outer `readonly` only applies to the
+      // TypeScript surface; at runtime callers could still push/splice
+      // the internal array and corrupt logger state. Copy guards us.
+      return records.slice();
     },
 
     totalElapsedMs() {

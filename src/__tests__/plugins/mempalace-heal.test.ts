@@ -306,9 +306,12 @@ describe("mempalace heal — verify-only mode (user-provided python)", () => {
     expect(result.error?.kind).toBe("executable-not-found");
   });
 
-  it("returns failed when mempalace not installed at user-provided python", async () => {
+  it("returns failed with a package-missing (kind: unknown) error when mempalace isn't installed at user-provided python", async () => {
+    // The Python *executable* is present — the missing piece is the
+    // mempalace package, so kind must NOT be "executable-not-found"
+    // (which is reserved for missing binaries). Regression guard for the
+    // misclassification caught in Copilot review round 3.
     const { impl } = scriptedSpawn([
-      // detect → import fails
       {
         match: (c, a) => c === "/usr/bin/python3" && a[0] === "-c",
         response: { exitCode: 42 },
@@ -323,7 +326,9 @@ describe("mempalace heal — verify-only mode (user-provided python)", () => {
       existsSyncImpl: () => true,
     });
     expect(result.status).toBe("failed");
-    expect(result.error?.kind).toBe("executable-not-found");
+    expect(result.error?.kind).toBe("unknown");
+    expect(result.error?.message).toContain("package is not installed");
+    expect(result.error?.hint).toContain("pip install");
   });
 });
 

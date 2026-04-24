@@ -213,10 +213,13 @@ export function createPlaywrightHeal(opts: PlaywrightHealOpts): HealFn {
     if (!SUPPORTED_BROWSERS.includes(opts.browser)) {
       const unsupportedStep = logger.step("validate browser name");
       unsupportedStep.fail(`unsupported browser: ${opts.browser}`);
+      // Invalid config, not a version issue — use "unknown" so logs/hints
+      // don't imply a drift/upgrade story. The hint makes the corrective
+      // action obvious regardless of kind.
       return failed(
         `@playwright/mcp ${installedVersion}`,
         {
-          kind: "version-mismatch",
+          kind: "unknown",
           message: `unsupported browser "${opts.browser}"`,
           hint: `choose one of: ${SUPPORTED_BROWSERS.join(", ")}`,
         },

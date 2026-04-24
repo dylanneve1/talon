@@ -39,7 +39,7 @@ export type HealResult = Readonly<{
   identifier: string;
   /** Populated when `status !== "healthy"`. */
   error?: PluginError;
-  /** Total wall-clock time for heal (sum of step elapsed). */
+  /** Total wall-clock time for the heal run in milliseconds. */
   elapsedMs: number;
   /**
    * Short summary lines suitable for a one-shot status emit (`info`):
