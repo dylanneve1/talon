@@ -24,7 +24,7 @@
  * there's nothing to download for a remote-driven session.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { TalonPlugin } from "../../core/plugin.js";
 import { log, logError, logWarn } from "../../util/log.js";
@@ -51,7 +51,12 @@ export interface CreatePlaywrightPluginConfig {
 export function createPlaywrightPlugin(
   config: CreatePlaywrightPluginConfig,
 ): TalonPlugin {
-  const browserName = config.browser ?? "chromium";
+  // Zod allows `browser: ""` through as a string; treat blank/whitespace as
+  // unset so the default applies instead of silently failing validation for
+  // the most common misconfiguration (empty string from a template or env).
+  const trimmedBrowser = config.browser?.trim();
+  const browserName =
+    trimmedBrowser && trimmedBrowser.length > 0 ? trimmedBrowser : "chromium";
   const headless = config.headless !== false;
 
   // Resolve endpoint: direct value or read-from-file.
@@ -59,10 +64,14 @@ export function createPlaywrightPlugin(
   if (!endpoint && config.endpointFile) {
     try {
       endpoint = readFileSync(config.endpointFile, "utf-8").trim();
-    } catch {
+    } catch (err) {
+      const detail =
+        err instanceof Error
+          ? `${(err as NodeJS.ErrnoException).code ?? ""} ${err.message}`.trim()
+          : String(err);
       logWarn(
         "playwright",
-        `could not read endpoint file ${config.endpointFile} — continuing without endpoint`,
+        `could not read endpoint file ${config.endpointFile} (${detail}) — continuing without endpoint`,
       );
     }
   }
@@ -97,18 +106,18 @@ export function createPlaywrightPlugin(
     },
 
     validateConfig() {
-      const errors: string[] = [];
+      // Consistent with mempalace/github: don't block plugin registration
+      // for anything heal() can diagnose and classify with better context.
+      // The only thing we fail here is an outright invalid browser name —
+      // heal can't recover from that, and it's deterministic from config
+      // alone (no IO needed). Missing @playwright/mcp and browser binary
+      // states are reported through heal's structured PluginError path.
       if (!endpoint && !browserKnown) {
-        errors.push(
+        return [
           `invalid browser "${browserName}". valid options: ${SUPPORTED_BROWSERS.join(", ")}`,
-        );
+        ];
       }
-      if (!existsSync(mcpBin)) {
-        errors.push(
-          `@playwright/mcp not found at ${mcpBin} — run 'npm install' in the Talon checkout`,
-        );
-      }
-      return errors.length > 0 ? errors : undefined;
+      return undefined;
     },
 
     async init() {
