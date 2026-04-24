@@ -28,13 +28,39 @@ import type { HealContext, HealFn, HealResult } from "../common/lifecycle.js";
 import type { PluginError } from "../common/errors.js";
 
 /**
- * Pinned `@playwright/mcp` version. MUST match the pin in Talon's
- * package.json. Both sites get updated together when bumping the
- * upstream release — CI smoke verifies they agree.
+ * Pinned `@playwright/mcp` version, sourced from Talon's `package.json`
+ * at module load so there is a single source of truth.
+ *
+ * Why dynamic: dependabot bumps the version in package.json + the
+ * lockfile but doesn't know about hand-maintained constants elsewhere.
+ * Hardcoding the version here would mean every dependabot PR goes red
+ * until someone hand-edits this file to match. Reading from
+ * package.json keeps them automatically in sync — the smoke matrix
+ * still runs against every bump, so we only merge when green.
  *
  * @see https://github.com/microsoft/playwright-mcp/releases
  */
-export const PLAYWRIGHT_MCP_VERSION = "0.0.70";
+export const PLAYWRIGHT_MCP_VERSION: string =
+  readPinnedVersionFromPackageJson();
+
+function readPinnedVersionFromPackageJson(): string {
+  try {
+    // src/plugins/playwright/heal.ts → walk up three levels to repo root.
+    const here = import.meta.dirname;
+    if (!here) return "unknown";
+    const pkgPath = pathResolve(here, "../../../package.json");
+    const parsed = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
+      dependencies?: Record<string, string>;
+    };
+    const raw = parsed.dependencies?.["@playwright/mcp"];
+    if (!raw) return "unknown";
+    // Strip caret/tilde range markers if someone relaxes the pin; the
+    // smoke/heal contract still wants a bare semver to compare against.
+    return raw.replace(/^[\^~=v]+/, "").trim();
+  } catch {
+    return "unknown";
+  }
+}
 
 export const SUPPORTED_BROWSERS = [
   "chromium",
