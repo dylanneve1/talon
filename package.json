@@ -36,6 +36,7 @@
     "tsconfig.json"
   ],
   "scripts": {
+    "postinstall": "node scripts/prune-native-sdk.mjs",
     "start": "tsx src/index.ts",
     "cli": "tsx src/cli.ts",
     "setup": "tsx src/cli.ts setup",
@@ -57,7 +58,7 @@
     "@grammyjs/transformer-throttler": "^1.2.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opencode-ai/sdk": "^1.4.0",
-    "@playwright/mcp": "^0.0.70",
+    "@playwright/mcp": "0.0.70",
     "big-integer": "^1.6.52",
     "cheerio": "^1.2.0",
     "croner": "^10.0.1",

@@ -1,23 +1,32 @@
 /**
  * GitHub plugin — GitHub API access via the official GitHub MCP server.
  *
- * Registers the GitHub MCP server (Docker image: ghcr.io/github/github-mcp-server),
- * giving the agent access to repository management, issues, PRs, code search, etc.
+ * Enabling this plugin is sufficient to set it up. During init Talon pulls
+ * the pinned `GITHUB_MCP_IMAGE` (always refreshed, to pick up digest
+ * changes) and verifies it resolves.
  *
  * Configuration in ~/.talon/config.json:
  *   "github": {
  *     "enabled": true,
- *     "token": "ghp_..."      // optional, defaults to `gh auth token` output
+ *     "token": "ghp_..."      // optional — defaults to `gh auth token` output
+ *     "image": "ghcr.io/..."  // advanced: override the pinned tag for testing
  *   }
  */
 
 import { execFileSync } from "node:child_process";
 import type { TalonPlugin } from "../../core/plugin.js";
-import { log, logWarn } from "../../util/log.js";
+import { log, logError, logWarn } from "../../util/log.js";
+import { createProgressLogger } from "../common/progress.js";
+import { runHeal } from "../common/lifecycle.js";
+import { formatError } from "../common/errors.js";
+import { GITHUB_MCP_IMAGE, createGithubHeal } from "./heal.js";
+
+export { GITHUB_MCP_IMAGE } from "./heal.js";
 
 /**
- * Resolve a GitHub personal access token.
- * Priority: explicit config > `gh auth token` CLI.
+ * Resolve a GitHub personal access token. Priority: explicit config >
+ * `gh auth token` CLI output. Absent token is not fatal — the github-mcp
+ * server will surface 401s itself if the user somehow runs an API tool.
  */
 function resolveToken(configToken?: string): string | undefined {
   const trimmed = configToken?.trim();
@@ -34,67 +43,82 @@ function resolveToken(configToken?: string): string | undefined {
   }
 }
 
-export function createGitHubPlugin(config: { token?: string }): TalonPlugin {
+export interface CreateGitHubPluginConfig {
+  token?: string;
+  /** Advanced: override the pinned image tag. */
+  image?: string;
+}
+
+export function createGitHubPlugin(
+  config: CreateGitHubPluginConfig,
+): TalonPlugin {
   const token = resolveToken(config.token);
+  const image = config.image ?? GITHUB_MCP_IMAGE;
+
+  // Only forward the env var when we actually have a token. Passing
+  // `-e GITHUB_PERSONAL_ACCESS_TOKEN` unconditionally would force the
+  // container to see it as an empty string, which auth layers interpret
+  // differently from "unset" (empty token → hard-fail 401; unset → may
+  // fall through to anonymous read paths). Keep the two states distinct.
+  const dockerArgs = [
+    "run",
+    "--rm",
+    "-i",
+    ...(token ? ["-e", "GITHUB_PERSONAL_ACCESS_TOKEN"] : []),
+    image,
+  ];
 
   return {
     name: "github",
     description: "GitHub API access via the official GitHub MCP server",
-    version: "1.0.0",
+    version: "1.1.0",
 
     mcpServer: {
       command: "docker",
-      args: [
-        "run",
-        "--rm",
-        "-i",
-        "-e",
-        "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "ghcr.io/github/github-mcp-server",
-      ],
+      args: dockerArgs,
     },
 
     validateConfig() {
-      const errors: string[] = [];
-
-      if (!token) {
-        errors.push(
-          'No GitHub token found. Set "token" in github config or run `gh auth login`.',
-        );
-      }
-
-      // Check Docker is available
-      try {
-        execFileSync("docker", ["info"], {
-          timeout: 10_000,
-          stdio: "pipe",
-        });
-      } catch {
-        errors.push(
-          "Docker is not available or not running. The GitHub MCP server requires Docker.",
-        );
-      }
-
-      return errors.length > 0 ? errors : undefined;
+      // Token is documented as optional (falls back to `gh auth token`), and
+      // the upstream MCP server will surface its own 401 on authenticated
+      // calls if nothing is set. Blocking plugin registration here would
+      // make `{ "github": { "enabled": true } }` unusable without a token,
+      // which contradicts the header docs — downgrade to a runtime warning.
+      return undefined;
     },
 
     async init() {
-      // Verify the Docker image exists locally
-      try {
-        execFileSync(
-          "docker",
-          ["image", "inspect", "ghcr.io/github/github-mcp-server"],
-          { timeout: 10_000, stdio: "pipe" },
-        );
-        log("github", "Docker image verified");
-      } catch {
+      if (!token) {
         logWarn(
           "github",
-          "Docker image not found locally — will pull on first use (may be slow)",
+          'no GitHub token found — set "token" in config or run `gh auth login`; API calls will 401 until fixed',
         );
       }
+      const logger = createProgressLogger({ component: "github" });
+      const result = await runHeal("github", createGithubHeal({ image }), {
+        logger,
+        totalTimeoutMs: 6 * 60_000,
+      });
 
-      log("github", "Ready");
+      switch (result.status) {
+        case "healthy":
+          log(
+            "github",
+            `ready — ${result.identifier} (heal ${Math.round(result.elapsedMs / 100) / 10}s)`,
+          );
+          return;
+        case "degraded":
+          logWarn("github", `starting degraded — ${result.identifier}`);
+          if (result.error) logWarn("github", formatError(result.error));
+          return;
+        case "failed":
+          logError(
+            "github",
+            `heal failed — MCP server spawn will likely fail. identifier=${result.identifier}`,
+          );
+          if (result.error) logError("github", formatError(result.error));
+          return;
+      }
     },
 
     getEnvVars() {

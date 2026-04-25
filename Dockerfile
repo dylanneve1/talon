@@ -5,9 +5,13 @@ WORKDIR /app
 # Install Claude Code (required for Agent SDK)
 RUN npm install -g @anthropic-ai/claude-code
 
-# Copy package files first for layer caching
-COPY package.json ./
-RUN npm install --omit=dev
+# Copy package files + postinstall scripts first (layer caching).
+# The `postinstall` hook runs `node scripts/prune-native-sdk.mjs` to strip
+# the wrong glibc/musl variant of @anthropic-ai/claude-agent-sdk — scripts/
+# must be present before `npm install`.
+COPY package.json package-lock.json ./
+COPY scripts/ scripts/
+RUN npm ci --omit=dev
 
 # Copy source
 COPY src/ src/
