@@ -447,7 +447,10 @@ describe("dispatcher", () => {
     await p;
   });
 
-  it("serializes same-chat queries (FIFO)", async () => {
+  it("serializes same-chat queries when backend.supportsInjection is false (FIFO)", async () => {
+    // Backends that don't support mid-flight injection (OpenCode) need the
+    // dispatcher to serialize same-chat queries so a shared session isn't
+    // corrupted by overlapping prompts.
     const order: string[] = [];
     const backend: QueryBackend = {
       query: vi.fn(async (params) => {
@@ -463,6 +466,7 @@ describe("dispatcher", () => {
           cacheWrite: 0,
         };
       }),
+      // supportsInjection omitted → defaults to false (OpenCode-style)
     };
 
     initDispatcher({
@@ -476,7 +480,6 @@ describe("dispatcher", () => {
       onActivity: () => {},
     });
 
-    // Fire two queries for the SAME chat — second must wait
     await Promise.all([
       execute({
         chatId: "X",
@@ -503,6 +506,65 @@ describe("dispatcher", () => {
       "start:second",
       "end:second",
     ]);
+  });
+
+  it("forwards concurrent same-chat queries in parallel when backend.supportsInjection is true", async () => {
+    // Backends that handle their own per-chat queueing (Claude SDK) get
+    // dispatched in parallel so they can fold concurrent calls into the
+    // same live conversation as adjacent turns.
+    const order: string[] = [];
+    const backend: QueryBackend = {
+      supportsInjection: true,
+      query: vi.fn(async (params) => {
+        order.push(`start:${params.text}`);
+        await new Promise((r) => setTimeout(r, 30));
+        order.push(`end:${params.text}`);
+        return {
+          text: "",
+          durationMs: 30,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      }),
+    };
+
+    initDispatcher({
+      backend,
+      context: {
+        acquire: () => {},
+        release: () => {},
+        getMessageCount: () => 0,
+      },
+      sendTyping: async () => {},
+      onActivity: () => {},
+    });
+
+    await Promise.all([
+      execute({
+        chatId: "X",
+        numericChatId: 1,
+        prompt: "first",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
+      execute({
+        chatId: "X",
+        numericChatId: 1,
+        prompt: "second",
+        senderName: "U",
+        isGroup: false,
+        source: "message",
+      }),
+    ]);
+
+    // Both should START before either ENDS — true concurrent dispatch.
+    expect(order[0]).toBe("start:first");
+    expect(order[1]).toBe("start:second");
+    expect(order.indexOf("end:first")).toBeGreaterThan(1);
+    expect(order.indexOf("end:second")).toBeGreaterThan(1);
   });
 });
 
