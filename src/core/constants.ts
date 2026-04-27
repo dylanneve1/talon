@@ -21,6 +21,11 @@ export const DISALLOWED_TOOLS_CORE = [
   "TaskOutput",
   "TaskStop",
   "AskUserQuestion",
+  // ScheduleWakeup is a /loop-skill-only tool. Calling it outside /loop dynamic
+  // mode registers a wakeup the runtime never fires, leaving the dispatcher
+  // wedged with the chat lock held until manual restart. Confirmed root cause
+  // of a 35-minute hang on 2026-04-27 (talon.log [e2589f7e]).
+  "ScheduleWakeup",
 ] as const;
 
 /** Disallowed tools for background agents — dream and heartbeat (core + Agent). */
