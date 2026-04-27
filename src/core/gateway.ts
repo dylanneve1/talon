@@ -31,6 +31,22 @@ type ChatContext = {
   stringId?: string;
 };
 
+/**
+ * Shared actions that don't read or mutate per-chat state and so don't
+ * require an active chat context to dispatch. Useful for external clients
+ * that need to fire global controls outside of a live conversation
+ * (notably the Claudius companion app's Settings tab).
+ *
+ * Add cautiously — anything that reads/writes `chatId`-scoped data
+ * (history queries, per-chat cron jobs, send_message) MUST stay off this
+ * list because it would silently use the 0 sentinel chatId.
+ */
+const CONTEXT_FREE_ACTIONS = new Set<string>([
+  "force_dream",
+  "set_config",
+  "reload_plugins",
+]);
+
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
 /**
@@ -158,22 +174,39 @@ export class Gateway {
   // ── Action dispatch ────────────────────────────────────────────────────────
 
   private async handleAction(body: Record<string, unknown>): Promise<unknown> {
+    const action = typeof body.action === "string" ? body.action : "";
+    if (!action) return { ok: false, error: "Missing action" };
+
     // Route by _chatId from the MCP subprocess request.
     // _chatId may be a string (Teams: "teams_chat_19:...") or numeric string (Telegram: "123456").
     // The context map is keyed by numeric chatId, so try direct parse first,
     // then fall back to searching active contexts.
+    //
+    // Some shared actions are *global* — they don't read or mutate per-chat
+    // state, so they don't need an active chat context to dispatch. The
+    // bridge itself is loopback-only (127.0.0.1), so the lack of a chat
+    // context isn't an authorization concern. Without this carve-out,
+    // external clients (the Claudius companion app, ad-hoc curl from a
+    // sysadmin) can't reach these actions outside of an active chat —
+    // which is exactly the moment they're most useful.
     const rawChatId = body._chatId ? String(body._chatId) : "";
     const numericId = Number(rawChatId);
-    const chatId =
+    const resolvedChatId =
       !isNaN(numericId) && this.chatContexts.has(numericId)
         ? numericId
         : this.findContextByStringId(rawChatId);
+    let chatId = resolvedChatId;
     if (!chatId) {
-      return { ok: false, error: "No active chat context" };
+      if (CONTEXT_FREE_ACTIONS.has(action)) {
+        // 0 sentinel: telegrams the downstream handler this is a global
+        // call. handleSharedAction's branches that reference chatId
+        // (history, cron) reject these by checking for missing fields
+        // first, so 0 only shows up in audit logs.
+        chatId = 0;
+      } else {
+        return { ok: false, error: "No active chat context" };
+      }
     }
-
-    const action = typeof body.action === "string" ? body.action : "";
-    if (!action) return { ok: false, error: "Missing action" };
     const t0 = Date.now();
 
     try {
