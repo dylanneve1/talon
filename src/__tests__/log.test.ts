@@ -154,6 +154,21 @@ describe("log", () => {
         "loaded",
       );
     });
+
+    it("does not let structured fields override the log component", () => {
+      log("gateway", "request handled", {
+        component: "bot",
+        requestId: "req-1",
+      });
+
+      expect(mockInfo).toHaveBeenCalledWith(
+        {
+          component: "gateway",
+          requestId: "req-1",
+        },
+        "request handled",
+      );
+    });
   });
 
   describe("logDebug(component, message)", () => {

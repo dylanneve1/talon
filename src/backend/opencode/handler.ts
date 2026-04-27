@@ -11,7 +11,7 @@ import {
   resetSession,
 } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
-import { classify } from "../../core/errors.js";
+import { classify, errorMessage } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { recordError } from "../../util/watchdog.js";
@@ -205,9 +205,7 @@ export async function handleMessage(
         chatId,
         server: chatMcpServerName,
       });
-      recordError(
-        `OpenCode MCP disconnect failed: ${err instanceof Error ? err.message : err}`,
-      );
+      recordError(`OpenCode MCP disconnect failed: ${errorMessage(err)}`);
     }
   }
 }
