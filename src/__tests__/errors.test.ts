@@ -95,7 +95,26 @@ describe("classify", () => {
     expect(err.reason).toBe("unknown");
   });
 
-  it("covers inner catch when String(err) throws — non-stringifiable object (L62)", () => {
+  it("classifies HTTP-style error objects with status and retry-after headers", () => {
+    const err = classify({
+      message: "Too Many Requests",
+      status: 429,
+      headers: { "retry-after": "12" },
+    });
+    expect(err.reason).toBe("rate_limit");
+    expect(err.status).toBe(429);
+    expect(err.retryAfterMs).toBe(12_000);
+    expect(err.metadata.status).toBe(429);
+  });
+
+  it("classifies Node-style network error codes", () => {
+    const err = classify({ code: "ECONNRESET" });
+    expect(err.reason).toBe("network");
+    expect(err.retryable).toBe(true);
+    expect(err.code).toBe("ECONNRESET");
+  });
+
+  it("serializes object inputs safely even when String(err) throws", () => {
     const bad = {
       toString() {
         throw new Error("no string");
@@ -106,7 +125,7 @@ describe("classify", () => {
     };
     const err = classify(bad);
     expect(err.reason).toBe("unknown");
-    expect(err.message).toBe("[non-stringifiable error]");
+    expect(err.message).toContain("[function]");
   });
 
   // Additional classify coverage for network variants

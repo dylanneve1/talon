@@ -504,6 +504,78 @@ describe("dispatcher", () => {
       "end:second",
     ]);
   });
+
+  it("keeps FIFO order per chat under interleaved load while allowing cross-chat overlap", async () => {
+    const events: string[] = [];
+    const backend: QueryBackend = {
+      query: vi.fn(async (params) => {
+        events.push(`start:${params.chatId}:${params.text}`);
+        await new Promise((r) => setTimeout(r, 5));
+        events.push(`end:${params.chatId}:${params.text}`);
+        return {
+          text: "",
+          durationMs: 5,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      }),
+    };
+
+    initDispatcher({
+      backend,
+      context: {
+        acquire: () => {},
+        release: () => {},
+        getMessageCount: () => 0,
+      },
+      sendTyping: async () => {},
+      onActivity: () => {},
+    });
+
+    const jobs = Array.from({ length: 8 }, (_, i) => [
+      execute({
+        chatId: "load-A",
+        numericChatId: 1,
+        prompt: `A-${i}`,
+        senderName: "U",
+        isGroup: false,
+        source: "message" as const,
+      }),
+      execute({
+        chatId: "load-B",
+        numericChatId: 2,
+        prompt: `B-${i}`,
+        senderName: "U",
+        isGroup: false,
+        source: "message" as const,
+      }),
+    ]).flat();
+
+    await Promise.all(jobs);
+
+    const eventsFor = (chatId: string) =>
+      events.filter((event) => event.includes(`:${chatId}:`));
+
+    expect(events.slice(0, 2).sort()).toEqual([
+      "start:load-A:A-0",
+      "start:load-B:B-0",
+    ]);
+    expect(eventsFor("load-A")).toEqual(
+      Array.from({ length: 8 }, (_, i) => [
+        `start:load-A:A-${i}`,
+        `end:load-A:A-${i}`,
+      ]).flat(),
+    );
+    expect(eventsFor("load-B")).toEqual(
+      Array.from({ length: 8 }, (_, i) => [
+        `start:load-B:B-${i}`,
+        `end:load-B:B-${i}`,
+      ]).flat(),
+    );
+    expect(getActiveCount()).toBe(0);
+  });
 });
 
 describe("typing indicator — interval error handling", () => {

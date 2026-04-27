@@ -23,8 +23,13 @@ import { initCron } from "./core/cron.js";
 import { initDream } from "./core/dream.js";
 import { initHeartbeat } from "./core/heartbeat.js";
 import { log } from "./util/log.js";
+import { errorMessage } from "./core/errors.js";
 import type { TalonConfig } from "./util/config.js";
-import type { QueryBackend, ContextManager } from "./core/types.js";
+import type {
+  QueryBackend,
+  ContextManager,
+  QueryParams,
+} from "./core/types.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,6 +105,67 @@ export async function bootstrap(
 
 // ── Backend + dispatcher wiring ──────────────────────────────────────────────
 
+function parseTestBackendAction(actionJson: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(actionJson);
+  } catch (err) {
+    throw new Error(
+      `Invalid TALON_TEST_BACKEND_ACTION_JSON: ${errorMessage(err)}`,
+    );
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("TALON_TEST_BACKEND_ACTION_JSON must be a JSON object");
+  }
+  const action = (parsed as Record<string, unknown>).action;
+  if (typeof action !== "string" || action.length === 0) {
+    throw new Error(
+      "TALON_TEST_BACKEND_ACTION_JSON must include a non-empty action string",
+    );
+  }
+  return parsed as Record<string, unknown>;
+}
+
+async function runTestBackendAction(params: QueryParams): Promise<void> {
+  const actionJson = process.env.TALON_TEST_BACKEND_ACTION_JSON;
+  if (!actionJson) return;
+
+  const configuredPort = Number(process.env.TALON_GATEWAY_PORT);
+  const port =
+    Number.isInteger(configuredPort) && configuredPort > 0
+      ? configuredPort
+      : 19877;
+  const body = {
+    ...parseTestBackendAction(actionJson),
+    _chatId: params.chatId,
+  };
+
+  const response = await fetch(`http://127.0.0.1:${port}/action`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(5_000),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Test backend action failed (${response.status}): ${text}`);
+  }
+
+  const payload = text ? (JSON.parse(text) as unknown) : undefined;
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "ok" in payload &&
+    payload.ok === false
+  ) {
+    const error =
+      "error" in payload && typeof payload.error === "string"
+        ? payload.error
+        : "unknown action failure";
+    throw new Error(`Test backend action returned ok=false: ${error}`);
+  }
+}
+
 /**
  * Create the AI backend and wire the dispatcher.
  * Call this after creating the frontend.
@@ -110,7 +176,39 @@ export async function initBackendAndDispatcher(
 ): Promise<BackendAndDispatcherResult> {
   let backend: QueryBackend;
 
-  if (config.backend === "opencode") {
+  if (
+    process.env.TALON_TEST_BACKEND === "1" &&
+    process.env.NODE_ENV === "test"
+  ) {
+    backend = {
+      query: async (params) => {
+        const delayMs = Number(process.env.TALON_TEST_BACKEND_DELAY_MS ?? 0);
+        if (Number.isFinite(delayMs) && delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+        if (process.env.TALON_TEST_BACKEND_ERROR) {
+          throw new Error(process.env.TALON_TEST_BACKEND_ERROR);
+        }
+        const text =
+          process.env.TALON_TEST_BACKEND_RESPONSE ??
+          `Test backend response: ${params.text}`;
+        await runTestBackendAction(params);
+        if (process.env.TALON_TEST_BACKEND_STREAM === "1") {
+          await params.onTextBlock?.(text);
+        }
+        return {
+          text,
+          durationMs: delayMs,
+          inputTokens: params.text.length,
+          outputTokens: text.length,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      },
+      backendLabel: "Test",
+    };
+    log("bot", "Backend: Test");
+  } else if (config.backend === "opencode") {
     const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } =
       await import("./backend/opencode/index.js");
     const ocModelProvider =

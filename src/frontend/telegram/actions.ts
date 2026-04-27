@@ -104,24 +104,23 @@ export function createTelegramActionHandler(
           typeof body.reply_to_message_id === "number"
             ? body.reply_to_message_id
             : undefined;
-        gateway.incrementMessages(chatId);
         const msgId = await withRetry(() =>
           sendText(bot, chatId, text, replyTo),
         );
+        gateway.incrementMessages(chatId);
         return { ok: true, message_id: msgId };
       }
 
       case "reply_to": {
         const msgId = Number(body.message_id);
-        gateway.incrementMessages(chatId);
         const sentId = await withRetry(() =>
           sendText(bot, chatId, String(body.text ?? ""), msgId),
         );
+        gateway.incrementMessages(chatId);
         return { ok: true, message_id: sentId };
       }
 
       case "react": {
-        gateway.incrementMessages(chatId);
         const emoji = String(body.emoji ?? "\uD83D\uDC4D");
         try {
           await withRetry(() =>
@@ -145,6 +144,7 @@ export function createTelegramActionHandler(
             };
           }
         }
+        gateway.incrementMessages(chatId);
         return { ok: true };
       }
 
@@ -225,7 +225,6 @@ export function createTelegramActionHandler(
         const rows = body.rows as Array<
           Array<{ text: string; url?: string; callback_data?: string }>
         >;
-        gateway.incrementMessages(chatId);
         const keyboard = rows.map((row) =>
           row.map((btn) =>
             btn.url
@@ -241,11 +240,13 @@ export function createTelegramActionHandler(
             parse_mode: "HTML",
             reply_markup: { inline_keyboard: keyboard },
           });
+          gateway.incrementMessages(chatId);
           return { ok: true, message_id: sent.message_id };
         } catch {
           const sent = await bot.api.sendMessage(chatId, text, {
             reply_markup: { inline_keyboard: keyboard },
           });
+          gateway.incrementMessages(chatId);
           return { ok: true, message_id: sent.message_id };
         }
       }

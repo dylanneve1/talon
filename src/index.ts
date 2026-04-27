@@ -21,8 +21,9 @@ import {
   awaitCurrentRun as awaitHeartbeat,
 } from "./core/heartbeat.js";
 import { startCronTimer, stopCronTimer } from "./core/cron.js";
-import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
+import { recordError, startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
+import { classify } from "./core/errors.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
 import { Gateway } from "./core/gateway.js";
 import type { Frontend } from "./bootstrap.js";
@@ -37,8 +38,11 @@ const { config } = await bootstrap();
 // Write PID file for daemon management
 try {
   writeFileSync(pathFiles.pid, String(process.pid));
-} catch {
-  /* ok */
+} catch (err) {
+  logWarn(
+    "bot",
+    `Failed to write PID file: ${err instanceof Error ? err.message : err}`,
+  );
 }
 
 // ── Create gateway + frontend ─────────────────────────────────────────────────
@@ -75,6 +79,38 @@ let shuttingDown = false;
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
 
+function flushAllState(): void {
+  flushSessions();
+  flushChatSettings();
+  flushCronJobs();
+  flushHistory();
+  flushMediaIndex();
+}
+
+function removePidFile(): void {
+  try {
+    unlinkSync(pathFiles.pid);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+  }
+}
+
+async function runShutdownStep(
+  name: string,
+  fn: () => void | Promise<void>,
+): Promise<boolean> {
+  try {
+    await fn();
+    return true;
+  } catch (err) {
+    logError("shutdown", `${name} failed`, err, { step: name });
+    recordError(
+      `Shutdown step ${name} failed: ${err instanceof Error ? err.message : err}`,
+    );
+    return false;
+  }
+}
+
 async function gracefulShutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -92,34 +128,52 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await new Promise((r) => setTimeout(r, 5000));
   }
 
-  await frontend.stop();
-  if (config.backend === "opencode") {
-    const { stopOpenCodeServer } = await import("./backend/opencode/index.js");
-    stopOpenCodeServer();
+  const hasPlugins =
+    config.plugins.length > 0 ||
+    config.github?.enabled === true ||
+    config.mempalace?.enabled === true ||
+    config.playwright?.enabled === true;
+
+  const shutdownSteps: Array<[string, () => void | Promise<void>]> = [
+    ["frontend.stop", () => frontend.stop()],
+    [
+      "opencode.stop",
+      async () => {
+        if (config.backend !== "opencode") return;
+        const { stopOpenCodeServer } =
+          await import("./backend/opencode/index.js");
+        stopOpenCodeServer();
+      },
+    ],
+    [
+      "plugins.destroy",
+      async () => {
+        if (!hasPlugins) return;
+        const { destroyPlugins } = await import("./core/plugin.js");
+        await destroyPlugins();
+      },
+    ],
+    ["pulse.stop", () => stopPulseTimer()],
+    [
+      "heartbeat.stop",
+      async () => {
+        stopHeartbeatTimer();
+        await awaitHeartbeat();
+      },
+    ],
+    ["cron.stop", () => stopCronTimer()],
+    ["watchdog.stop", () => stopWatchdog()],
+    ["uploads.stop", () => stopUploadCleanup()],
+    ["state.flush", () => flushAllState()],
+    ["pid.remove", () => removePidFile()],
+  ];
+
+  let ok = true;
+  for (const [name, fn] of shutdownSteps) {
+    ok = (await runShutdownStep(name, fn)) && ok;
   }
-  // Destroy plugins (cleanup resources)
-  if (config.plugins.length > 0) {
-    const { destroyPlugins } = await import("./core/plugin.js");
-    await destroyPlugins();
-  }
-  stopPulseTimer();
-  stopHeartbeatTimer();
-  await awaitHeartbeat();
-  stopCronTimer();
-  stopWatchdog();
-  stopUploadCleanup();
-  flushSessions();
-  flushChatSettings();
-  flushCronJobs();
-  flushHistory();
-  flushMediaIndex();
-  try {
-    unlinkSync(pathFiles.pid);
-  } catch {
-    /* ok */
-  }
-  log("shutdown", "State saved");
-  process.exit(0);
+  log("shutdown", ok ? "State saved" : "Shutdown completed with errors");
+  process.exit(ok ? 0 : 1);
 }
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
@@ -132,19 +186,25 @@ process.on("uncaughtException", (err) => {
     logWarn("bot", `Suppressed transient EPIPE error: ${err.message}`);
     return;
   }
-  logError("bot", "Uncaught exception", err);
-  flushSessions();
-  flushChatSettings();
-  flushCronJobs();
-  flushHistory();
-  flushMediaIndex();
+  const classified = classify(err);
+  logError("bot", "Uncaught exception", classified, {
+    reason: classified.reason,
+  });
+  recordError(
+    `Uncaught exception (${classified.reason}): ${classified.message}`,
+  );
+  flushAllState();
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
-  logWarn(
-    "bot",
-    `Unhandled rejection: ${reason instanceof Error ? reason.message : reason}`,
+  const classified = classify(reason);
+  logError("bot", "Unhandled promise rejection", classified, {
+    reason: classified.reason,
+    retryable: classified.retryable,
+  });
+  recordError(
+    `Unhandled rejection (${classified.reason}): ${classified.message}`,
   );
 });
 
@@ -164,6 +224,12 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logError("bot", "Fatal startup error", err);
+  const classified = classify(err);
+  logError("bot", "Fatal startup error", classified, {
+    reason: classified.reason,
+  });
+  recordError(
+    `Fatal startup error (${classified.reason}): ${classified.message}`,
+  );
   process.exit(1);
 });

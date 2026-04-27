@@ -4,7 +4,7 @@
  */
 
 import { existsSync, mkdirSync } from "node:fs";
-import { logWarn } from "./log.js";
+import { logError, logWarn } from "./log.js";
 
 // ── Message processing tracking ──────────────────────────────────────────────
 
@@ -71,8 +71,13 @@ export function startWatchdog(workspaceDir?: string): void {
       logWarn("watchdog", "Workspace directory missing — recreating");
       try {
         mkdirSync(workspaceDir, { recursive: true });
-      } catch {
-        /* ignore */
+      } catch (err) {
+        logError("watchdog", "Failed to recreate workspace directory", err, {
+          workspaceDir,
+        });
+        recordError(
+          `Workspace recreate failed: ${err instanceof Error ? err.message : err}`,
+        );
       }
     }
   }, 60_000); // Check every minute

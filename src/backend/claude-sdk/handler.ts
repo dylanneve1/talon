@@ -116,8 +116,11 @@ export async function handleMessage(
           if (onToolUse) {
             try {
               onToolUse(tool.name, tool.input);
-            } catch {
-              /* non-fatal */
+            } catch (err) {
+              logWarn(
+                "agent",
+                `[${chatId}] onToolUse callback failed: ${err instanceof Error ? err.message : err}`,
+              );
             }
           }
         }
@@ -127,8 +130,11 @@ export async function handleMessage(
           for (const text of result.progressTexts) {
             try {
               await onTextBlock(text);
-            } catch {
-              /* non-fatal — don't abort the stream loop */
+            } catch (err) {
+              logWarn(
+                "agent",
+                `[${chatId}] onTextBlock callback failed: ${err instanceof Error ? err.message : err}`,
+              );
             }
           }
         }
@@ -184,7 +190,11 @@ export async function handleMessage(
       }
     }
 
-    logError("agent", `[${chatId}] SDK error: ${classified.message}`);
+    logError("agent", `[${chatId}] SDK error`, classified, {
+      chatId,
+      reason: classified.reason,
+      retryable: classified.retryable,
+    });
     throw classified;
   } finally {
     if (activeQueries.get(chatId) === qi) {
