@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/dylanneve1/talon/compare/v1.9.0...v1.9.1) (2026-04-27)
+
+
+### Bug Fixes
+
+* **tools:** disallow ScheduleWakeup outside /loop mode ([#91](https://github.com/dylanneve1/talon/issues/91)) ([75b15f0](https://github.com/dylanneve1/talon/commit/75b15f0f1530fe3d457fc929317f40b649ef0ed2))
+
 ## [1.9.0](https://github.com/dylanneve1/talon/compare/v1.8.1...v1.9.0) (2026-04-21)
 
 
