@@ -39,26 +39,33 @@ function initNewChat(chatId?: string): void {
 
 // ── Action handler (bridge) ──────────────────────────────────────────────────
 
-function createActionHandler(
+type TerminalActionRenderer = Pick<
+  ReturnType<typeof createRenderer>,
+  "stopSpinner" | "renderAssistantMessage" | "writeln"
+>;
+
+export function createTerminalActionHandler(
   gateway: Gateway,
-  renderer: ReturnType<typeof createRenderer>,
+  renderer: TerminalActionRenderer,
 ): (
   body: Record<string, unknown>,
   chatId: number,
 ) => Promise<ActionResult | null> {
-  return async (body) => {
+  return async (body, chatId) => {
     const action = body.action as string;
+    const targetChatId =
+      Number.isFinite(chatId) && chatId > 0 ? chatId : terminalNumericId;
     switch (action) {
       case "send_message": {
         renderer.stopSpinner();
         renderer.renderAssistantMessage(String(body.text ?? ""));
-        gateway.incrementMessages(terminalNumericId);
+        gateway.incrementMessages(targetChatId);
         return { ok: true, message_id: Date.now() };
       }
       case "react": {
         renderer.stopSpinner();
         renderer.writeln(`  ${pc.cyan("▍")}  ${String(body.emoji ?? "👍")}`);
-        gateway.incrementMessages(terminalNumericId);
+        gateway.incrementMessages(targetChatId);
         return { ok: true };
       }
       case "send_message_with_buttons": {
@@ -72,7 +79,7 @@ function createActionHandler(
             );
           }
         }
-        gateway.incrementMessages(terminalNumericId);
+        gateway.incrementMessages(targetChatId);
         return { ok: true, message_id: Date.now() };
       }
       case "edit_message":
@@ -86,7 +93,7 @@ function createActionHandler(
       case "get_chat_info":
         return {
           ok: true,
-          id: terminalNumericId,
+          id: targetChatId,
           type: "private",
           title: "Terminal",
         };
@@ -138,8 +145,15 @@ export function createTerminalFrontend(
     getBridgePort: () => gateway.getPort(),
 
     async init() {
-      gateway.setFrontendHandler(createActionHandler(gateway, renderer));
-      const port = await gateway.start(19877);
+      gateway.setFrontendHandler(
+        createTerminalActionHandler(gateway, renderer),
+      );
+      const configuredPort = Number(process.env.TALON_GATEWAY_PORT);
+      const port = await gateway.start(
+        Number.isInteger(configuredPort) && configuredPort > 0
+          ? configuredPort
+          : 19877,
+      );
       log("bot", `Terminal gateway on port ${port}`);
     },
 

@@ -75,7 +75,16 @@ describe("log", () => {
       const err = new Error("timeout");
       logError("bridge", "request failed", err);
       expect(mockError).toHaveBeenCalledWith(
-        { component: "bridge", err: "timeout", stack: err.stack },
+        {
+          component: "bridge",
+          err: expect.objectContaining({
+            type: "Error",
+            message: "timeout",
+            reason: "unknown",
+            retryable: false,
+            stack: expect.stringContaining("Error: timeout"),
+          }),
+        },
         "request failed",
       );
     });
@@ -83,7 +92,14 @@ describe("log", () => {
     it("stringifies non-Error err values", () => {
       logError("sessions", "save failed", "disk full");
       expect(mockError).toHaveBeenCalledWith(
-        { component: "sessions", err: "disk full" },
+        {
+          component: "sessions",
+          err: expect.objectContaining({
+            type: "string",
+            message: "disk full",
+            reason: "unknown",
+          }),
+        },
         "save failed",
       );
     });
@@ -91,7 +107,14 @@ describe("log", () => {
     it("handles numeric err values", () => {
       logError("sessions", "exit code", 1);
       expect(mockError).toHaveBeenCalledWith(
-        { component: "sessions", err: "1" },
+        {
+          component: "sessions",
+          err: expect.objectContaining({
+            type: "number",
+            message: "1",
+            raw: "1",
+          }),
+        },
         "exit code",
       );
     });
@@ -112,6 +135,24 @@ describe("log", () => {
       expect(mockWarn).toHaveBeenCalledWith(
         { component: "watchdog" },
         "inactivity detected",
+      );
+    });
+  });
+
+  describe("structured fields", () => {
+    it("redacts secret-like field names", () => {
+      log("config", "loaded", {
+        botToken: "123456:secret",
+        nested: { apiKey: "key-value", safe: "visible" },
+      });
+
+      expect(mockInfo).toHaveBeenCalledWith(
+        {
+          component: "config",
+          botToken: "[redacted]",
+          nested: { apiKey: "[redacted]", safe: "visible" },
+        },
+        "loaded",
       );
     });
   });

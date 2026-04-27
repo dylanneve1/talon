@@ -7,6 +7,7 @@ import type { Gateway } from "../../core/gateway.js";
 import { buildAdaptiveCard, splitTeamsMessage } from "./formatting.js";
 import { log, logError } from "../../util/log.js";
 import { proxyFetch } from "./proxy-fetch.js";
+import { errorMessage } from "../../core/errors.js";
 
 /**
  * POST an Adaptive Card to the Power Automate workflow webhook URL.
@@ -45,8 +46,8 @@ export function createTeamsActionHandler(
           log("teams", `Sent message to chat ${chatId} (${text.length} chars)`);
           return { ok: true, message_id: Date.now() };
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          logError("teams", `send_message failed: ${msg}`);
+          const msg = errorMessage(err);
+          logError("teams", "send_message failed", err, { chatId });
           return { ok: false, error: msg };
         }
       }
@@ -69,8 +70,10 @@ export function createTeamsActionHandler(
           gateway.incrementMessages(chatId);
           return { ok: true, message_id: Date.now() };
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          logError("teams", `send_message_with_buttons failed: ${msg}`);
+          const msg = errorMessage(err);
+          logError("teams", "send_message_with_buttons failed", err, {
+            chatId,
+          });
           return { ok: false, error: msg };
         }
       }

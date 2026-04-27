@@ -14,6 +14,7 @@ import { getChatSettings } from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
+import { recordError } from "../../util/watchdog.js";
 import {
   ensureServer,
   ensureSession,
@@ -190,9 +191,23 @@ export async function handleMessage(
       resetSession(chatId);
       return handleMessage(params, true);
     }
-    logError("agent", `[${chatId}] OpenCode error: ${classified.message}`);
+    logError("agent", `[${chatId}] OpenCode error`, classified, {
+      chatId,
+      reason: classified.reason,
+      retryable: classified.retryable,
+    });
     throw classified;
   } finally {
-    await disconnectChatMcpServer(oc, chatMcpServerName);
+    try {
+      await disconnectChatMcpServer(oc, chatMcpServerName);
+    } catch (err) {
+      logError("agent", `[${chatId}] OpenCode MCP disconnect failed`, err, {
+        chatId,
+        server: chatMcpServerName,
+      });
+      recordError(
+        `OpenCode MCP disconnect failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 }

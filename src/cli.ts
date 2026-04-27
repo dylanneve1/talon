@@ -25,6 +25,7 @@ import {
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { dirs, files as pathFiles } from "./util/paths.js";
+import { errorMessage } from "./core/errors.js";
 
 const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 const CONFIG_FILE = pathFiles.config;
@@ -529,10 +530,24 @@ function formatLogLine(line: string): string {
       new Date(obj.time as number).toTimeString().slice(0, 8),
     );
     const comp = pc.cyan(((obj.component as string) ?? "?").padEnd(10));
-    return `  ${time} ${level} ${comp} ${obj.msg}${obj.err ? pc.red(` (${obj.err})`) : ""}`;
+    const err = formatLogError(obj.err);
+    return `  ${time} ${level} ${comp} ${obj.msg}${err ? pc.red(` (${err})`) : ""}`;
   } catch {
     return `  ${line}`;
   }
+}
+
+function formatLogError(err: unknown): string {
+  if (!err) return "";
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    const fields = err as Record<string, unknown>;
+    const message = typeof fields.message === "string" ? fields.message : "";
+    const reason = typeof fields.reason === "string" ? fields.reason : "";
+    if (message && reason) return `${message} [${reason}]`;
+    if (message) return message;
+  }
+  return String(err);
 }
 
 async function tailLogs(): Promise<void> {
@@ -669,14 +684,24 @@ async function startChat(): Promise<void> {
   const { backend } = await initBackendAndDispatcher(config, frontend);
   gateway.backend = backend;
 
-  process.on("SIGINT", () => {
-    flushSessions();
-    flushChatSettings();
-    flushCronJobs();
-    flushHistory();
-    flushMediaIndex();
-    frontend.stop();
-    process.exit(0);
+  let shuttingDown = false;
+  process.once("SIGINT", () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    void (async () => {
+      flushSessions();
+      flushChatSettings();
+      flushCronJobs();
+      flushHistory();
+      flushMediaIndex();
+      await frontend.stop();
+      process.exit(0);
+    })().catch((err) => {
+      console.error(
+        `\n  ${pc.red("✖")} Shutdown failed: ${errorMessage(err)}\n`,
+      );
+      process.exit(1);
+    });
   });
   await frontend.start();
 }
@@ -873,69 +898,75 @@ async function daemonRestart(): Promise<void> {
 
 // ── Entry point ─────────────────────────────────────────────────────────────
 
-const command = process.argv[2];
-switch (command) {
-  case "setup":
-    runSetup();
-    break;
-  case "status":
-    showStatus();
-    break;
-  case "config":
-    viewConfig();
-    break;
-  case "logs":
-    tailLogs();
-    break;
-  case "start":
-    printBanner();
-    await daemonStart();
-    break;
-  case "stop":
-    printBanner();
-    daemonStop();
-    break;
-  case "restart":
-    printBanner();
-    await daemonRestart();
-    break;
-  case "run":
-    process.chdir(PKG_ROOT);
-    import("./index.js");
-    break;
-  case "chat":
-    process.chdir(PKG_ROOT);
-    startChat();
-    break;
-  case "doctor":
-    runDoctor();
-    break;
-  case "--help":
-  case "-h":
-    printBanner();
-    console.log("  Usage: talon [command]\n");
-    console.log("  Commands:");
-    console.log(`    ${pc.cyan("setup")}      Guided setup wizard`);
-    console.log(`    ${pc.cyan("start")}      Start as background daemon`);
-    console.log(`    ${pc.cyan("stop")}       Stop the daemon`);
-    console.log(`    ${pc.cyan("restart")}    Restart the daemon`);
-    console.log(`    ${pc.cyan("run")}        Run in foreground (attached)`);
-    console.log(`    ${pc.cyan("chat")}       Terminal chat mode`);
-    console.log(`    ${pc.cyan("status")}     Show bot health`);
-    console.log(`    ${pc.cyan("config")}     View/edit configuration`);
-    console.log(`    ${pc.cyan("logs")}       Tail log file`);
-    console.log(`    ${pc.cyan("doctor")}     Validate environment`);
-    console.log();
-    console.log(
-      `  Run ${pc.cyan("talon")} with no args for interactive menu.\n`,
-    );
-    break;
-  case undefined:
-    mainMenu();
-    break;
-  default:
-    console.error(
-      `  Unknown command: ${command}\n  Run ${pc.cyan("talon --help")} for usage.\n`,
-    );
-    process.exit(1);
+async function runCommand(command: string | undefined): Promise<void> {
+  switch (command) {
+    case "setup":
+      await runSetup();
+      break;
+    case "status":
+      await showStatus();
+      break;
+    case "config":
+      await viewConfig();
+      break;
+    case "logs":
+      await tailLogs();
+      break;
+    case "start":
+      printBanner();
+      await daemonStart();
+      break;
+    case "stop":
+      printBanner();
+      daemonStop();
+      break;
+    case "restart":
+      printBanner();
+      await daemonRestart();
+      break;
+    case "run":
+      process.chdir(PKG_ROOT);
+      await import("./index.js");
+      break;
+    case "chat":
+      process.chdir(PKG_ROOT);
+      await startChat();
+      break;
+    case "doctor":
+      await runDoctor();
+      break;
+    case "--help":
+    case "-h":
+      printBanner();
+      console.log("  Usage: talon [command]\n");
+      console.log("  Commands:");
+      console.log(`    ${pc.cyan("setup")}      Guided setup wizard`);
+      console.log(`    ${pc.cyan("start")}      Start as background daemon`);
+      console.log(`    ${pc.cyan("stop")}       Stop the daemon`);
+      console.log(`    ${pc.cyan("restart")}    Restart the daemon`);
+      console.log(`    ${pc.cyan("run")}        Run in foreground (attached)`);
+      console.log(`    ${pc.cyan("chat")}       Terminal chat mode`);
+      console.log(`    ${pc.cyan("status")}     Show bot health`);
+      console.log(`    ${pc.cyan("config")}     View/edit configuration`);
+      console.log(`    ${pc.cyan("logs")}       Tail log file`);
+      console.log(`    ${pc.cyan("doctor")}     Validate environment`);
+      console.log();
+      console.log(
+        `  Run ${pc.cyan("talon")} with no args for interactive menu.\n`,
+      );
+      break;
+    case undefined:
+      await mainMenu();
+      break;
+    default:
+      console.error(
+        `  Unknown command: ${command}\n  Run ${pc.cyan("talon --help")} for usage.\n`,
+      );
+      process.exit(1);
+  }
 }
+
+await runCommand(process.argv[2]).catch((err) => {
+  console.error(`  ${pc.red("✖")} ${errorMessage(err)}\n`);
+  process.exit(1);
+});

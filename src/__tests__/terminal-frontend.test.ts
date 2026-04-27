@@ -1,81 +1,100 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Gateway } from "../core/gateway.js";
+import { createTerminalActionHandler } from "../frontend/terminal/index.js";
 
-// Mock dependencies before importing
-vi.mock("../../util/log.js", () => ({
+vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
   logDebug: vi.fn(),
 }));
 
-vi.mock("picocolors", () => ({
-  default: {
-    cyan: (s: string) => s,
-    green: (s: string) => s,
-    dim: (s: string) => s,
-    red: (s: string) => s,
-    bold: (s: string) => s,
-    underline: (s: string) => s,
-    yellow: (s: string) => s,
-  },
+vi.mock("../core/plugin.js", () => ({
+  handlePluginAction: vi.fn(async () => null),
 }));
 
-describe("terminal frontend — bridge actions", () => {
-  // Inline the action handler logic for testing without starting HTTP server.
-  // This mirrors the switch statement in createActionHandler.
-  function handleTerminalAction(body: Record<string, unknown>): unknown {
-    const action = body.action as string;
-    switch (action) {
-      case "send_message":
-        return { ok: true, message_id: Date.now() };
-      case "react":
-        return { ok: true };
-      case "send_message_with_buttons":
-        return { ok: true, message_id: Date.now() };
-      case "edit_message":
-      case "delete_message":
-      case "pin_message":
-      case "unpin_message":
-      case "forward_message":
-      case "copy_message":
-      case "send_chat_action":
-        return { ok: true };
-      case "get_chat_info":
-        // Now returns dynamic numeric ID; test the shape
-        return { ok: true, id: 12345, type: "private", title: "Terminal" };
-      default:
-        return null;
-    }
-  }
+vi.mock("../util/watchdog.js", () => ({
+  recordError: vi.fn(),
+  getHealthStatus: vi.fn(() => ({
+    healthy: true,
+    totalMessagesProcessed: 0,
+    recentErrorCount: 0,
+    msSinceLastMessage: 0,
+  })),
+}));
 
-  it("send_message returns ok with message_id", () => {
-    const result = handleTerminalAction({
-      action: "send_message",
-      text: "hello",
-    }) as Record<string, unknown>;
-    expect(result.ok).toBe(true);
-    expect(result.message_id).toBeDefined();
+vi.mock("../storage/sessions.js", () => ({
+  getActiveSessionCount: vi.fn(() => 0),
+}));
+
+function createRenderer() {
+  return {
+    stopSpinner: vi.fn(),
+    renderAssistantMessage: vi.fn(),
+    writeln: vi.fn(),
+  };
+}
+
+describe("terminal frontend bridge action handler", () => {
+  let gateway: Gateway;
+  let renderer: ReturnType<typeof createRenderer>;
+  let handler: ReturnType<typeof createTerminalActionHandler>;
+
+  beforeEach(() => {
+    gateway = new Gateway();
+    gateway.setContext(123);
+    renderer = createRenderer();
+    handler = createTerminalActionHandler(gateway, renderer);
   });
 
-  it("react returns ok", () => {
-    const result = handleTerminalAction({
-      action: "react",
-      emoji: "👍",
-    }) as Record<string, unknown>;
-    expect(result.ok).toBe(true);
+  it("renders send_message through the real action handler and records one bridge message", async () => {
+    const result = await handler(
+      { action: "send_message", text: "hello" },
+      123,
+    );
+
+    expect(result).toMatchObject({ ok: true, message_id: expect.any(Number) });
+    expect(renderer.stopSpinner).toHaveBeenCalledOnce();
+    expect(renderer.renderAssistantMessage).toHaveBeenCalledWith("hello");
+    expect(gateway.getMessageCount(123)).toBe(1);
   });
 
-  it("send_message_with_buttons returns ok", () => {
-    const result = handleTerminalAction({
-      action: "send_message_with_buttons",
-      text: "Pick one",
-      rows: [[{ text: "A" }, { text: "B" }]],
-    }) as Record<string, unknown>;
-    expect(result.ok).toBe(true);
-    expect(result.message_id).toBeDefined();
+  it("renders reactions and button rows without incrementing unrelated chat contexts", async () => {
+    gateway.setContext(456);
+
+    await handler({ action: "react", emoji: "✅" }, 123);
+    await handler(
+      {
+        action: "send_message_with_buttons",
+        text: "Pick",
+        rows: [[{ text: "A" }, { text: "B" }]],
+      },
+      123,
+    );
+
+    expect(renderer.writeln).toHaveBeenCalledWith(
+      expect.stringContaining("✅"),
+    );
+    expect(renderer.renderAssistantMessage).toHaveBeenCalledWith("Pick");
+    expect(
+      renderer.writeln.mock.calls.some(
+        ([line]) => line.includes("[A]") && line.includes("[B]"),
+      ),
+    ).toBe(true);
+    expect(gateway.getMessageCount(123)).toBe(2);
+    expect(gateway.getMessageCount(456)).toBe(0);
   });
 
-  it("edit/delete/pin/forward all return ok", () => {
+  it("returns the active chat info supplied by the gateway context", async () => {
+    await expect(handler({ action: "get_chat_info" }, 123)).resolves.toEqual({
+      ok: true,
+      id: 123,
+      type: "private",
+      title: "Terminal",
+    });
+  });
+
+  it("acknowledges no-op platform actions and lets unknown actions fall through", async () => {
     for (const action of [
       "edit_message",
       "delete_message",
@@ -85,57 +104,11 @@ describe("terminal frontend — bridge actions", () => {
       "copy_message",
       "send_chat_action",
     ]) {
-      const result = handleTerminalAction({ action }) as Record<
-        string,
-        unknown
-      >;
-      expect(result.ok).toBe(true);
+      await expect(handler({ action }, 123)).resolves.toEqual({ ok: true });
     }
-  });
 
-  it("get_chat_info returns terminal chat info shape", () => {
-    const result = handleTerminalAction({
-      action: "get_chat_info",
-    }) as Record<string, unknown>;
-    expect(typeof result.id).toBe("number");
-    expect(result.type).toBe("private");
-    expect(result.title).toBe("Terminal");
-  });
-
-  it("unknown action returns null for fallback handling", () => {
-    const result = handleTerminalAction({ action: "some_weird_action" });
-    expect(result).toBeNull();
-  });
-});
-
-describe("terminal frontend — context manager pattern", () => {
-  it("tracks acquire/release correctly", () => {
-    let acquired = false;
-    const context = {
-      acquire: () => {
-        acquired = true;
-      },
-      release: () => {
-        acquired = false;
-      },
-      getMessageCount: () => 0,
-    };
-
-    expect(acquired).toBe(false);
-    context.acquire();
-    expect(acquired).toBe(true);
-    context.release();
-    expect(acquired).toBe(false);
-  });
-
-  it("tracks message count", () => {
-    let count = 0;
-    const getCount = () => count;
-
-    expect(getCount()).toBe(0);
-    count++;
-    expect(getCount()).toBe(1);
-    count = 0;
-    expect(getCount()).toBe(0);
+    await expect(
+      handler({ action: "some_weird_action" }, 123),
+    ).resolves.toBeNull();
   });
 });

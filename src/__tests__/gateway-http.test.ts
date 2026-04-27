@@ -20,6 +20,7 @@ vi.mock("../core/plugin.js", () => ({
 }));
 
 vi.mock("../util/watchdog.js", () => ({
+  recordError: vi.fn(),
   getHealthStatus: vi.fn(() => ({
     healthy: true,
     totalMessagesProcessed: 0,
@@ -137,6 +138,23 @@ describe("gateway HTTP server", () => {
       const data = (await resp.json()) as Record<string, unknown>;
       expect(data.ok).toBe(false);
       expect(data.error).toContain("Invalid JSON");
+    });
+
+    it("returns 413 for oversized action bodies", async () => {
+      const resp = await fetch(`http://127.0.0.1:${port}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "send_message",
+          text: "x".repeat(1024 * 1024),
+        }),
+      });
+      expect(resp.status).toBe(413);
+      const data = (await resp.json()) as Record<string, unknown>;
+      expect(data.ok).toBe(false);
+      expect(data.error).toContain("too large");
+      expect(data.reason).toBe("bad_request");
+      expect(data.requestId).toBeTruthy();
     });
   });
 
