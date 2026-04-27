@@ -23,7 +23,7 @@ import {
 import { startCronTimer, stopCronTimer } from "./core/cron.js";
 import { recordError, startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
-import { classify } from "./core/errors.js";
+import { classify, errorMessage } from "./core/errors.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
 import { Gateway } from "./core/gateway.js";
 import type { Frontend } from "./bootstrap.js";
@@ -39,10 +39,7 @@ const { config } = await bootstrap();
 try {
   writeFileSync(pathFiles.pid, String(process.pid));
 } catch (err) {
-  logWarn(
-    "bot",
-    `Failed to write PID file: ${err instanceof Error ? err.message : err}`,
-  );
+  logWarn("bot", `Failed to write PID file: ${errorMessage(err)}`);
 }
 
 // ── Create gateway + frontend ─────────────────────────────────────────────────
@@ -104,9 +101,7 @@ async function runShutdownStep(
     return true;
   } catch (err) {
     logError("shutdown", `${name} failed`, err, { step: name });
-    recordError(
-      `Shutdown step ${name} failed: ${err instanceof Error ? err.message : err}`,
-    );
+    recordError(`Shutdown step ${name} failed: ${errorMessage(err)}`);
     return false;
   }
 }

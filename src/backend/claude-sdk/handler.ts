@@ -16,7 +16,7 @@ import {
   setSessionName,
 } from "../../storage/sessions.js";
 import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
-import { classify } from "../../core/errors.js";
+import { classify, errorMessage } from "../../core/errors.js";
 import { getFallbackModel } from "../../core/models.js";
 import { rebuildSystemPrompt } from "../../util/config.js";
 import { getPluginPromptAdditions } from "../../core/plugin.js";
@@ -155,7 +155,7 @@ export async function handleMessage(
             } catch (err) {
               logWarn(
                 "agent",
-                `[${chatId}] onToolUse callback failed: ${err instanceof Error ? err.message : err}`,
+                `[${chatId}] onToolUse callback failed: ${errorMessage(err)}`,
               );
             }
           }
@@ -169,7 +169,7 @@ export async function handleMessage(
             } catch (err) {
               logWarn(
                 "agent",
-                `[${chatId}] onTextBlock callback failed: ${err instanceof Error ? err.message : err}`,
+                `[${chatId}] onTextBlock callback failed: ${errorMessage(err)}`,
               );
             }
           }

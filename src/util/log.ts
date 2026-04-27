@@ -229,7 +229,7 @@ function serializeError(err: unknown, depth = 0): LogFields {
 }
 
 function payload(component: LogComponent, fields?: LogFields): LogFields {
-  return { component, ...redactFields(fields) };
+  return { ...redactFields(fields), component };
 }
 
 export function log(
