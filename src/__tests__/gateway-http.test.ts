@@ -191,6 +191,30 @@ describe("gateway HTTP server", () => {
       expect(body.ok).toBe(false);
       expect(body.error).toContain("No active chat context");
     });
+
+    it("dispatches context-free shared actions even with no active chat", async () => {
+      // set_config is in CONTEXT_FREE_ACTIONS so it bypasses the chat-
+      // context guard. Confirms the companion app can hit these from
+      // outside any conversation. Sending an unknown key forces the
+      // action's own validation to error — which is what we want here:
+      // the *gateway* shouldn't be the thing rejecting it.
+      const { body } = await post({
+        action: "set_config",
+        key: "totally_unknown_key",
+        value: "x",
+      });
+      expect(body.ok).toBe(false);
+      expect(String(body.error ?? "")).not.toContain("No active chat context");
+      expect(String(body.error ?? "")).toContain("must be one of");
+    });
+
+    it("still rejects context-bound shared actions when no chat is active", async () => {
+      // history queries are scoped to a chatId; they must NOT be in the
+      // CONTEXT_FREE_ACTIONS list, otherwise we'd silently use chatId=0.
+      const { body } = await post({ action: "read_history" });
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("No active chat context");
+    });
   });
 
   describe("concurrent chat contexts via HTTP", () => {
