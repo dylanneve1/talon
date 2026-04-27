@@ -1770,3 +1770,122 @@ describe("gateway-actions — additional branch coverage", () => {
     expect(result?.ok).toBe(true);
   });
 });
+
+describe("force_dream", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("returns ok:true and triggers forceDream() in the background", async () => {
+    const forceDream = vi.fn().mockResolvedValue(undefined);
+    vi.doMock("../core/dream.js", () => ({ forceDream }));
+    const mod = await import("../core/gateway-actions.js");
+    const result = await mod.handleSharedAction({ action: "force_dream" }, 123);
+    expect(result).toMatchObject({ ok: true });
+    expect(result?.text).toContain("Dream consolidation triggered");
+    // forceDream is fire-and-forget — at least be sure we attempted it.
+    expect(forceDream).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns ok:false if dream module import throws synchronously", async () => {
+    vi.doMock("../core/dream.js", () => {
+      throw new Error("simulated module load failure");
+    });
+    const mod = await import("../core/gateway-actions.js");
+    const result = await mod.handleSharedAction({ action: "force_dream" }, 123);
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("force_dream failed");
+  });
+});
+
+describe("set_config", () => {
+  // node:fs is mocked at the top of this test file (mockReadFileSync,
+  // mockWriteFileSync, mockExistsSync are the named exports). We swap the
+  // mock impls per-test to simulate a config file at a fake $HOME.
+  let writes: Array<{ path: string; content: string }> = [];
+
+  beforeEach(async () => {
+    const fs = await import("node:fs");
+    writes = [];
+    // Default config the handler reads back.
+    (fs.readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(
+      JSON.stringify(
+        { model: "claude-opus-4-6", pulse: true, heartbeat: false },
+        null,
+        2,
+      ),
+    );
+    (fs.writeFileSync as ReturnType<typeof vi.fn>).mockImplementation(
+      (path: unknown, content: unknown) => {
+        writes.push({ path: String(path), content: String(content) });
+      },
+    );
+  });
+
+  it("rejects unknown keys", async () => {
+    const result = await handleSharedAction(
+      { action: "set_config", key: "rmrf", value: "anything" },
+      123,
+    );
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("must be one of");
+  });
+
+  it("rejects model values with shell metacharacters", async () => {
+    const result = await handleSharedAction(
+      { action: "set_config", key: "model", value: "claude-opus; rm -rf /" },
+      123,
+    );
+    expect(result?.ok).toBe(false);
+    expect(result?.error).toContain("disallowed characters");
+  });
+
+  it("rejects type-mismatched values", async () => {
+    const wrongType = await handleSharedAction(
+      { action: "set_config", key: "pulse", value: "yes" },
+      123,
+    );
+    expect(wrongType?.ok).toBe(false);
+    expect(wrongType?.error).toContain("must be a boolean");
+  });
+
+  it("writes a valid model change and returns previous + current", async () => {
+    const result = await handleSharedAction(
+      { action: "set_config", key: "model", value: "claude-opus-4-7" },
+      123,
+    );
+    expect(result?.ok).toBe(true);
+    expect((result as Record<string, unknown>).previous).toBe(
+      "claude-opus-4-6",
+    );
+    expect((result as Record<string, unknown>).current).toBe("claude-opus-4-7");
+    expect((result as Record<string, unknown>).requiresRestart).toBe(true);
+    expect(writes).toHaveLength(1);
+    const persisted = JSON.parse(writes[0].content);
+    expect(persisted.model).toBe("claude-opus-4-7");
+  });
+
+  it("writes boolean flags successfully", async () => {
+    const result = await handleSharedAction(
+      { action: "set_config", key: "heartbeat", value: true },
+      123,
+    );
+    expect(result?.ok).toBe(true);
+    expect(writes).toHaveLength(1);
+    const persisted = JSON.parse(writes[0].content);
+    expect(persisted.heartbeat).toBe(true);
+  });
+
+  it("validates pulseIntervalMs is a number ≥1000", async () => {
+    const tooSmall = await handleSharedAction(
+      { action: "set_config", key: "pulseIntervalMs", value: 500 },
+      123,
+    );
+    expect(tooSmall?.ok).toBe(false);
+    const validValue = await handleSharedAction(
+      { action: "set_config", key: "pulseIntervalMs", value: 60000 },
+      123,
+    );
+    expect(validValue?.ok).toBe(true);
+  });
+});
