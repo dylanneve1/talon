@@ -85,10 +85,7 @@ export function createTeamsFrontend(
           });
         }
       } catch (err) {
-        logError(
-          "teams",
-          `sendMessage failed: ${err instanceof Error ? err.message : err}`,
-        );
+        logError("teams", "sendMessage failed", err);
       }
     },
 
@@ -227,7 +224,9 @@ export function createTeamsFrontend(
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(card),
                 signal: AbortSignal.timeout(15_000),
-              }).catch(() => {});
+              }).catch((err) =>
+                logError("teams", "Failed to send reset confirmation", err),
+              );
               continue;
             }
             if (trimmed === "/status") {
@@ -312,7 +311,9 @@ export function createTeamsFrontend(
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(card),
                 signal: AbortSignal.timeout(15_000),
-              }).catch(() => {});
+              }).catch((err) =>
+                logError("teams", "Failed to send status response", err),
+              );
               continue;
             }
             if (trimmed === "/help") {
@@ -324,7 +325,9 @@ export function createTeamsFrontend(
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(card),
                 signal: AbortSignal.timeout(15_000),
-              }).catch(() => {});
+              }).catch((err) =>
+                logError("teams", "Failed to send help response", err),
+              );
               continue;
             }
 
@@ -370,17 +373,13 @@ export function createTeamsFrontend(
                 }
               })
               .catch((err) => {
-                logError(
-                  "teams",
-                  `execute failed: ${err instanceof Error ? err.message : err}`,
-                );
+                logError("teams", "execute failed", err, {
+                  chatId: talonChatId,
+                });
               });
           }
         } catch (err) {
-          logError(
-            "teams",
-            `Poll error: ${err instanceof Error ? err.message : err}`,
-          );
+          logError("teams", "Poll error", err, { chatId });
         } finally {
           polling = false;
         }

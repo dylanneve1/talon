@@ -41,6 +41,7 @@ vi.mock("../core/dispatcher.js", () => ({
 }));
 
 vi.mock("../util/watchdog.js", () => ({
+  recordError: vi.fn(),
   getHealthStatus: vi.fn(() => ({
     healthy: true,
     totalMessagesProcessed: 0,

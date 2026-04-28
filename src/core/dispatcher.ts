@@ -16,7 +16,9 @@ import type {
   ExecuteParams,
   ExecuteResult,
 } from "./types.js";
-import { log, logDebug, logWarn } from "../util/log.js";
+import { classify } from "./errors.js";
+import { log, logDebug, logError, logWarn } from "../util/log.js";
+import { recordError } from "../util/watchdog.js";
 import { maybeStartDream } from "./dream.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
@@ -115,16 +117,32 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
       });
     }, 4000);
 
-    const result = await backend.query({
-      chatId: params.chatId,
-      text: params.prompt,
-      senderName: params.senderName,
-      isGroup: params.isGroup,
-      messageId: params.messageId,
-      onStreamDelta: params.onStreamDelta,
-      onTextBlock: params.onTextBlock,
-      onToolUse: params.onToolUse,
-    });
+    let result: Awaited<ReturnType<QueryBackend["query"]>>;
+    try {
+      result = await backend.query({
+        chatId: params.chatId,
+        text: params.prompt,
+        senderName: params.senderName,
+        isGroup: params.isGroup,
+        messageId: params.messageId,
+        onStreamDelta: params.onStreamDelta,
+        onTextBlock: params.onTextBlock,
+        onToolUse: params.onToolUse,
+      });
+    } catch (err) {
+      const classified = classify(err);
+      logError("dispatcher", `[${reqId}] backend query failed`, classified, {
+        reqId,
+        chatId: params.chatId,
+        source: params.source,
+        reason: classified.reason,
+        retryable: classified.retryable,
+      });
+      recordError(
+        `Dispatcher query failed (${classified.reason}): ${classified.message}`,
+      );
+      throw classified;
+    }
 
     onActivity();
 

@@ -13,10 +13,11 @@ import {
   type IncomingMessage,
   type ServerResponse,
 } from "node:http";
+import { randomUUID } from "node:crypto";
 import pRetry, { AbortError } from "p-retry";
-import { classify } from "./errors.js";
+import { classify, TalonError } from "./errors.js";
 import { getActiveCount } from "./dispatcher.js";
-import { getHealthStatus } from "../util/watchdog.js";
+import { getHealthStatus, recordError } from "../util/watchdog.js";
 import { getActiveSessionCount } from "../storage/sessions.js";
 import { log, logError, logDebug } from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
@@ -30,6 +31,8 @@ type ChatContext = {
   messagesSent: number;
   stringId?: string;
 };
+
+const MAX_ACTION_BODY_BYTES = 1024 * 1024;
 
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
@@ -209,19 +212,100 @@ export class Gateway {
 
       return { ok: false, error: `Unknown action: ${action}` };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logError("gateway", `${action} chat=${chatId} failed: ${msg}`);
-      return { ok: false, error: `${action}: ${msg}` };
+      const classified = classify(err);
+      logError("gateway", `${action} failed`, classified, {
+        action,
+        chatId,
+        durationMs: Date.now() - t0,
+        reason: classified.reason,
+      });
+      recordError(`Gateway action ${action} failed: ${classified.message}`);
+      return {
+        ok: false,
+        error: `${action}: ${classified.message}`,
+        reason: classified.reason,
+      };
     }
   }
 
   // ── HTTP server ──────────────────────────────────────────────────────────
+
+  private async readActionBody(
+    req: IncomingMessage,
+  ): Promise<Record<string, unknown>> {
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+
+    for await (const chunk of req) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.length;
+      if (totalBytes > MAX_ACTION_BODY_BYTES) {
+        throw new TalonError("Request body too large", {
+          reason: "bad_request",
+          retryable: false,
+          status: 413,
+          metadata: {
+            maxBytes: MAX_ACTION_BODY_BYTES,
+            receivedBytes: totalBytes,
+          },
+        });
+      }
+      chunks.push(buffer);
+    }
+
+    const raw = Buffer.concat(chunks).toString("utf-8").trim();
+    if (!raw) {
+      throw new TalonError("Missing JSON body", {
+        reason: "bad_request",
+        retryable: false,
+        status: 400,
+      });
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      throw new TalonError("Invalid JSON", {
+        reason: "bad_request",
+        retryable: false,
+        status: 400,
+        cause: err,
+      });
+    }
+
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new TalonError("JSON body must be an object", {
+        reason: "bad_request",
+        retryable: false,
+        status: 400,
+      });
+    }
+
+    return parsed as Record<string, unknown>;
+  }
+
+  private httpStatusForError(err: TalonError): number {
+    if (err.status && err.status >= 400 && err.status <= 599) {
+      return err.status;
+    }
+    if (err.reason === "rate_limit") return 429;
+    if (err.reason === "bad_request") return 400;
+    if (err.reason === "forbidden") return 403;
+    if (err.reason === "auth") return 401;
+    return 500;
+  }
+
+  private responseError(err: TalonError): string {
+    return err.reason === "bad_request" ? err.message : "Internal server error";
+  }
 
   async start(port = 19876): Promise<number> {
     if (this.server) return this.port;
 
     const httpServer = createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
+        const requestId = randomUUID().slice(0, 8);
         if (req.method === "GET" && req.url === "/health") {
           const w = getHealthStatus();
           res.writeHead(200, { "Content-Type": "application/json" });
@@ -251,25 +335,33 @@ export class Gateway {
         }
 
         try {
-          const chunks: Buffer[] = [];
-          for await (const chunk of req) chunks.push(chunk as Buffer);
-          let body: Record<string, unknown>;
-          try {
-            body = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
-          } catch {
-            res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
-            return;
-          }
+          const body = await this.readActionBody(req);
           const result = await this.handleAction(body);
           const json = JSON.stringify(result);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(json);
         } catch (err) {
           if (res.headersSent) return;
-          const msg = err instanceof Error ? err.message : String(err);
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: msg }));
+          const classified = classify(err);
+          const status = this.httpStatusForError(classified);
+          logError("gateway", "HTTP action request failed", classified, {
+            requestId,
+            method: req.method,
+            url: req.url,
+            status,
+          });
+          if (status >= 500) {
+            recordError(`Gateway HTTP failure: ${classified.message}`);
+          }
+          res.writeHead(status, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              ok: false,
+              error: this.responseError(classified),
+              reason: classified.reason,
+              requestId,
+            }),
+          );
         }
       },
     );
@@ -277,16 +369,35 @@ export class Gateway {
     return new Promise<number>((resolve, reject) => {
       let attempt = 0;
       const tryPort = (p: number) => {
-        httpServer.once("error", (err: NodeJS.ErrnoException) => {
+        const onListenError = (err: NodeJS.ErrnoException) => {
           if (err.code === "EADDRINUSE" && attempt < 5) {
             attempt++;
             httpServer.removeAllListeners("error");
+            log("gateway", `Port ${p} in use, trying ${p + 1}`, {
+              port: p,
+              nextPort: p + 1,
+              attempt,
+            });
             tryPort(p + 1);
           } else {
+            logError("gateway", "Failed to start action gateway", err, {
+              port: p,
+              attempt,
+            });
             reject(err);
           }
-        });
+        };
+        httpServer.once("error", onListenError);
         httpServer.listen(p, "127.0.0.1", () => {
+          httpServer.off("error", onListenError);
+          httpServer.on("error", (err) => {
+            logError("gateway", "Action gateway server error", err, {
+              port: this.port,
+            });
+            recordError(
+              `Gateway server error: ${err instanceof Error ? err.message : err}`,
+            );
+          });
           this.server = httpServer;
           this.port = p;
           log("gateway", `Action gateway on :${p}`);
