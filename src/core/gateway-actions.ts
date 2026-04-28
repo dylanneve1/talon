@@ -378,6 +378,113 @@ export async function handleSharedAction(
       }
     }
 
+    // ── Force a memory consolidation run now ──────────────────────────
+    // Same path the in-process auto-trigger and the /dream slash command
+    // take; we just bypass the 12-hour interval check. forceDream throws
+    // if a dream is already running, which we surface to the caller.
+    case "force_dream": {
+      try {
+        const { forceDream } = await import("./dream.js");
+        // Fire-and-forget — dreams take 3-10 minutes; we return immediately
+        // and the caller polls /api/me or the dream log to track progress.
+        // Errors are logged here for diagnostics; the caller sees a 200
+        // back from the gateway either way.
+        void forceDream().catch((err) => {
+          logWarn(
+            "gateway",
+            `force_dream agent failed: ${err instanceof Error ? err.message : err}`,
+          );
+        });
+        log("gateway", "force_dream: triggered");
+        return {
+          ok: true,
+          text: "Dream consolidation triggered.",
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: `force_dream failed: ${err instanceof Error ? err.message : err}`,
+        };
+      }
+    }
+
+    // ── Edit Talon's persistent config.json ───────────────────────────
+    // Returns the previous and new values so the caller can confirm.
+    // Most config keys (model, dreamModel, pulse, heartbeat) are read at
+    // boot and require a restart to take effect — the response includes a
+    // `requiresRestart: true` flag the UI can surface.
+    case "set_config": {
+      const key = String(body.key ?? "");
+      const value = body.value;
+      const ALLOWED_KEYS = [
+        "model",
+        "dreamModel",
+        "pulse",
+        "pulseIntervalMs",
+        "heartbeat",
+        "botDisplayName",
+      ] as const;
+      if (!ALLOWED_KEYS.includes(key as (typeof ALLOWED_KEYS)[number])) {
+        return {
+          ok: false,
+          error: `key must be one of: ${ALLOWED_KEYS.join(", ")}`,
+        };
+      }
+      // Type validation: model is string-with-shell-safe, flags are bool, intervals are number.
+      if (key === "model" || key === "dreamModel" || key === "botDisplayName") {
+        if (typeof value !== "string") {
+          return { ok: false, error: `${key} must be a string` };
+        }
+        if (!/^[a-zA-Z0-9._:\- ]+$/.test(value)) {
+          return { ok: false, error: `${key} contains disallowed characters` };
+        }
+      } else if (key === "pulse" || key === "heartbeat") {
+        if (typeof value !== "boolean") {
+          return { ok: false, error: `${key} must be a boolean` };
+        }
+      } else if (key === "pulseIntervalMs") {
+        if (
+          typeof value !== "number" ||
+          !Number.isFinite(value) ||
+          value < 1000
+        ) {
+          return { ok: false, error: `pulseIntervalMs must be ≥1000` };
+        }
+      }
+
+      try {
+        const { readFileSync, writeFileSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const path = join(
+          process.env.HOME ?? "/home/dylan",
+          ".talon",
+          "config.json",
+        );
+        const json = JSON.parse(readFileSync(path, "utf-8")) as Record<
+          string,
+          unknown
+        >;
+        const previous = json[key];
+        json[key] = value;
+        writeFileSync(path, JSON.stringify(json, null, 2) + "\n", {
+          mode: 0o600,
+        });
+        log("gateway", `set_config: ${key} → ${JSON.stringify(value)}`);
+        return {
+          ok: true,
+          text: `${key} = ${JSON.stringify(value)}. Restart Talon for the change to take effect.`,
+          previous,
+          current: value,
+          requiresRestart: true,
+        };
+      } catch (err) {
+        return {
+          ok: false,
+          error: `set_config failed: ${err instanceof Error ? err.message : err}`,
+        };
+      }
+    }
+
     default:
       return null; // not a shared action — delegate to frontend
   }
