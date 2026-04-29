@@ -14,8 +14,8 @@ const inMemoryFiles = new Map<string, string>();
 
 const existsSyncMock = vi.fn((p: string) => inMemoryFiles.has(p));
 const readFileSyncMock = vi.fn((p: string) => inMemoryFiles.get(p) ?? "");
-const writeFileSyncFsMock = vi.fn(
-  (p: string, body: string, _opts?: unknown) => inMemoryFiles.set(p, body),
+const writeFileSyncFsMock = vi.fn((p: string, body: string, _opts?: unknown) =>
+  inMemoryFiles.set(p, body),
 );
 const mkdirSyncMock = vi.fn();
 const rmSyncMock = vi.fn((p: string) => inMemoryFiles.delete(p));
