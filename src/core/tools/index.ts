@@ -14,6 +14,7 @@ import { memberTools } from "./members.js";
 import { mediaTools } from "./media.js";
 import { stickerTools } from "./stickers.js";
 import { schedulingTools } from "./scheduling.js";
+import { triggerTools } from "./triggers.js";
 import { webTools } from "./web.js";
 import { adminTools } from "./admin.js";
 
@@ -26,6 +27,7 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...mediaTools,
   ...stickerTools,
   ...schedulingTools,
+  ...triggerTools,
   ...webTools,
   ...adminTools,
 ];

@@ -19,6 +19,7 @@ export type ToolTag =
   | "media"
   | "stickers"
   | "scheduling"
+  | "triggers"
   | "web"
   | "admin";
 

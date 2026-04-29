@@ -14,12 +14,20 @@ import { initWorkspace } from "./util/workspace.js";
 import { loadSessions } from "./storage/sessions.js";
 import { loadChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs } from "./storage/cron-store.js";
+import { loadTriggers } from "./storage/trigger-store.js";
 import { loadHistory } from "./storage/history.js";
 import { loadMediaIndex } from "./storage/media-index.js";
 import { cleanupOldLogs } from "./storage/daily-log.js";
-import { initDispatcher } from "./core/dispatcher.js";
+import {
+  initDispatcher,
+  execute as dispatcherExecute,
+} from "./core/dispatcher.js";
 import { initPulse, resetPulseTimer } from "./core/pulse.js";
 import { initCron } from "./core/cron.js";
+import {
+  initTriggers,
+  resumeAfterRestart as resumeTriggersAfterRestart,
+} from "./core/triggers.js";
 import { initDream } from "./core/dream.js";
 import { initHeartbeat } from "./core/heartbeat.js";
 import { log } from "./util/log.js";
@@ -91,6 +99,7 @@ export async function bootstrap(
   loadSessions();
   loadChatSettings();
   loadCronJobs();
+  loadTriggers();
   loadHistory();
   loadMediaIndex();
   cleanupOldLogs();
@@ -198,6 +207,10 @@ export async function initBackendAndDispatcher(
 
   initPulse();
   initCron({ sendMessage: frontend.sendMessage });
+  initTriggers({ execute: dispatcherExecute });
+  resumeTriggersAfterRestart().catch((err) =>
+    log("triggers", `resumeAfterRestart failed: ${err}`),
+  );
 
   // Only enable mempalace dream integration if the plugin actually registered
   let mempalaceCfg: { pythonPath: string; palacePath: string } | undefined;
