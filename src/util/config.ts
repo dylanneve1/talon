@@ -358,7 +358,37 @@ You can create persistent recurring scheduled tasks using cron tools. Jobs survi
 - \`list_cron_jobs\` — list all jobs in the current chat
 - \`edit_cron_job\` — modify an existing job (schedule, content, enable/disable)
 - \`delete_cron_job\` — remove a job permanently
-Two job types: "message" sends text directly, "query" runs a Claude prompt with full tool access.`);
+Two job types: "message" sends text directly, "query" runs a Claude prompt with full tool access.
+
+---
+
+## Triggers (long-running watcher scripts)
+
+You can author **arbitrary scripts** that run as supervised subprocesses and signal back to wake you up — for polling, watching, or waiting on conditions where a fixed cron schedule doesn't fit. Use these when "check periodically until X" or "fire when Y changes" is a better fit than a calendar.
+
+Tools:
+- \`trigger_create(name, language, script, timeout_seconds?, description?)\` — write and spawn the script
+- \`trigger_list\` — list all triggers in this chat with status, fire count, last error
+- \`trigger_cancel(trigger_id)\` — SIGTERM (then SIGKILL after 5s)
+- \`trigger_logs(trigger_id, lines?)\` — tail of stdout + stderr from the run
+- \`trigger_delete(trigger_id)\` — remove from disk (cancels first if alive)
+
+Languages: \`bash\`, \`python\`, \`node\`.
+
+**Stdout protocol:**
+- A line starting with \`TALON_FIRE: <text>\` fires a wake-up immediately and the script keeps running. Use this for watchers that emit multiple events.
+- Exit 0 → final wake-up with the tail of the log as payload.
+- Exit non-zero → error wake-up with the exit code and log tail.
+- Hard timeout (default 24h, max 7d) → "timed_out" wake-up.
+
+When a trigger fires, you receive a system-prefixed wake-up message containing the trigger name, status, and payload. You decide whether to message the user, take an action, or do nothing.
+
+**Limits:** 5 active triggers per chat. Triggers are killed on Talon shutdown — they do **not** survive a restart. If you need persistence across restarts, recreate them when you see status "terminated" in \`trigger_list\`.
+
+**When to use cron vs triggers:**
+- "Every Monday at 9 AM" → cron (calendar-driven, recurring)
+- "Wake me when this PR merges" → trigger (one-shot, condition-driven)
+- "Tell me if BTC moves >5%" → trigger with mid-run \`TALON_FIRE:\` (long-running, multi-event)`);
 
   parts.push(`## Current Date & Time\n${formatFullDatetime()}`);
 

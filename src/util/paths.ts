@@ -53,6 +53,8 @@ export const dirs = {
   traces: resolve(TALON_ROOT, "data", "traces"),
   /** MemPalace palace: ~/.talon/workspace/palace/ */
   palace: resolve(TALON_ROOT, "workspace", "palace"),
+  /** Trigger scripts and run logs: ~/.talon/data/trigger-runs/ */
+  triggerRuns: resolve(TALON_ROOT, "data", "trigger-runs"),
 } as const;
 
 // ── Files ──────────────────────────────────────────────────────────────────
@@ -70,6 +72,8 @@ export const files = {
   chatSettings: resolve(TALON_ROOT, "data", "chat-settings.json"),
   /** Cron jobs: ~/.talon/data/cron.json */
   cron: resolve(TALON_ROOT, "data", "cron.json"),
+  /** Triggers metadata: ~/.talon/data/triggers.json */
+  triggers: resolve(TALON_ROOT, "data", "triggers.json"),
   /** Media index: ~/.talon/data/media-index.json */
   mediaIndex: resolve(TALON_ROOT, "data", "media-index.json"),
   /** Persistent memory: ~/.talon/workspace/memory/memory.md */

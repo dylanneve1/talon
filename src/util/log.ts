@@ -34,6 +34,7 @@ export type LogComponent =
   | "settings"
   | "commands"
   | "cron"
+  | "triggers"
   | "dream"
   | "heartbeat"
   | "dispatcher"
