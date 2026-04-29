@@ -11,6 +11,7 @@ import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
 import { flushSessions } from "./storage/sessions.js";
 import { flushChatSettings } from "./storage/chat-settings.js";
 import { flushCronJobs } from "./storage/cron-store.js";
+import { flushTriggers } from "./storage/trigger-store.js";
 import { flushHistory } from "./storage/history.js";
 import { flushMediaIndex } from "./storage/media-index.js";
 import { getActiveCount } from "./core/dispatcher.js";
@@ -21,6 +22,7 @@ import {
   awaitCurrentRun as awaitHeartbeat,
 } from "./core/heartbeat.js";
 import { startCronTimer, stopCronTimer } from "./core/cron.js";
+import { shutdownTriggers } from "./core/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
@@ -106,11 +108,13 @@ async function gracefulShutdown(signal: string): Promise<void> {
   stopHeartbeatTimer();
   await awaitHeartbeat();
   stopCronTimer();
+  await shutdownTriggers();
   stopWatchdog();
   stopUploadCleanup();
   flushSessions();
   flushChatSettings();
   flushCronJobs();
+  flushTriggers();
   flushHistory();
   flushMediaIndex();
   try {
@@ -136,6 +140,7 @@ process.on("uncaughtException", (err) => {
   flushSessions();
   flushChatSettings();
   flushCronJobs();
+  flushTriggers();
   flushHistory();
   flushMediaIndex();
   process.exit(1);

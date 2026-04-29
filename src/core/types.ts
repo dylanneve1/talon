@@ -139,7 +139,7 @@ export type ExecuteParams = {
   senderName: string;
   isGroup: boolean;
   messageId?: number;
-  source: "message" | "pulse" | "cron";
+  source: "message" | "pulse" | "cron" | "trigger";
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
   onToolUse?: (toolName: string, input: Record<string, unknown>) => void;

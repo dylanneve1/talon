@@ -16,6 +16,7 @@ describe("ALL_TOOLS registry", () => {
     expect(tags).toContain("media");
     expect(tags).toContain("stickers");
     expect(tags).toContain("scheduling");
+    expect(tags).toContain("triggers");
     expect(tags).toContain("web");
   });
 
