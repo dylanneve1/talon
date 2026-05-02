@@ -36,14 +36,14 @@ import type { PluginError } from "../common/errors.js";
  * only after the full smoke matrix (Linux/macOS/Windows × 3.11/3.12)
  * passes against the new version.
  */
-export const MEMPALACE_TARGET = "3.3.2";
+export const MEMPALACE_TARGET = "3.3.4";
 
 /**
  * Minimum mempalace version Talon will accept without remediation.
  * Must parse as semver. Below this we either upgrade (managed) or
  * downgrade our status to `degraded` (verify-only).
  */
-export const MEMPALACE_FLOOR = "3.3.2";
+export const MEMPALACE_FLOOR = "3.3.4";
 
 export interface MempalaceHealOpts {
   /** Absolute python executable path. */
