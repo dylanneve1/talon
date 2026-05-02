@@ -56,7 +56,10 @@ The set name will automatically get "_by_<botname>" appended if needed.
 
 Example: create_sticker_set(user_id=123, name="cool_pack", title="Cool Stickers", file_path="/path/to/sticker.png", emoji_list=["😎"])`,
     schema: {
-      user_id: z.number().describe("Telegram user ID who will own the pack"),
+      user_id: z.coerce
+        .number()
+        .int()
+        .describe("Telegram user ID who will own the pack"),
       name: z
         .string()
         .describe(
@@ -85,7 +88,10 @@ Example: create_sticker_set(user_id=123, name="cool_pack", title="Cool Stickers"
     description:
       "Add a new sticker to an existing sticker pack created by the bot.",
     schema: {
-      user_id: z.number().describe("Telegram user ID who owns the pack"),
+      user_id: z.coerce
+        .number()
+        .int()
+        .describe("Telegram user ID who owns the pack"),
       name: z.string().describe("Sticker set name (including _by_<botname>)"),
       file_path: z.string().describe("Path to the sticker image file"),
       emoji_list: z

@@ -43,7 +43,11 @@ Examples:
         .string()
         .optional()
         .describe("Message text (for type=text). Supports Markdown."),
-      reply_to: z.number().optional().describe("Message ID to reply to"),
+      reply_to: z.coerce
+        .number()
+        .int()
+        .optional()
+        .describe("Message ID to reply to"),
       file_path: z
         .string()
         .optional()
@@ -227,7 +231,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
     description:
       "Add an emoji reaction to a message. Valid: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷 🤷‍♂ 🤷‍♀ 😡",
     schema: {
-      message_id: z.number().describe("Message ID"),
+      message_id: z.coerce.number().int().describe("Message ID"),
       emoji: z.string().describe("Reaction emoji"),
     },
     execute: (params, bridge) => bridge("react", params),
@@ -239,7 +243,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
   {
     name: "edit_message",
     description: "Edit a previously sent message.",
-    schema: { message_id: z.number(), text: z.string() },
+    schema: { message_id: z.coerce.number().int(), text: z.string() },
     execute: (params, bridge) => bridge("edit_message", params),
     frontends: ["telegram"],
     tag: "messaging",
@@ -249,7 +253,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
   {
     name: "delete_message",
     description: "Delete a message.",
-    schema: { message_id: z.number() },
+    schema: { message_id: z.coerce.number().int() },
     execute: (params, bridge) => bridge("delete_message", params),
     frontends: ["telegram"],
     tag: "messaging",
@@ -259,7 +263,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
   {
     name: "forward_message",
     description: "Forward a message within the chat.",
-    schema: { message_id: z.number() },
+    schema: { message_id: z.coerce.number().int() },
     execute: (params, bridge) => bridge("forward_message", params),
     frontends: ["telegram"],
     tag: "messaging",
@@ -269,7 +273,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
   {
     name: "pin_message",
     description: "Pin a message.",
-    schema: { message_id: z.number() },
+    schema: { message_id: z.coerce.number().int() },
     execute: (params, bridge) => bridge("pin_message", params),
     frontends: ["telegram"],
     tag: "messaging",
@@ -279,7 +283,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
   {
     name: "unpin_message",
     description: "Unpin a message.",
-    schema: { message_id: z.number().optional() },
+    schema: { message_id: z.coerce.number().int().optional() },
     execute: (params, bridge) => bridge("unpin_message", params),
     frontends: ["telegram"],
     tag: "messaging",
@@ -291,7 +295,10 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
     description:
       "Stop an active poll and get the final results. Returns vote counts for each option.",
     schema: {
-      message_id: z.number().describe("Message ID of the poll to stop"),
+      message_id: z.coerce
+        .number()
+        .int()
+        .describe("Message ID of the poll to stop"),
     },
     execute: (params, bridge) => bridge("stop_poll", params),
     frontends: ["telegram"],
