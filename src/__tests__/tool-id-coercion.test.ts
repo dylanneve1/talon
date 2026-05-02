@@ -1,6 +1,6 @@
 /**
- * Regression test — ID-shaped tool params accept both numeric and
- * stringified-numeric values.
+ * Regression + audit tests — ID-shaped tool params use the strict
+ * shared `idSchema` from `core/tools/schemas.ts`.
  *
  * Background: some MCP transport / model paths deliver `message_id`,
  * `user_id`, `reply_to`, `offset_id` as JSON strings ("2081") rather
@@ -10,8 +10,11 @@
  * out of nowhere even when the model formatted the call correctly
  * for a number-typed JSON Schema field.
  *
- * Fix: ID fields use `z.coerce.number().int()`. Numbers pass through;
- * numeric strings coerce; non-numeric strings and non-integers fail.
+ * Initial fix used `z.coerce.number().int()`, but per Copilot review
+ * that was too lax — `""`/`null` coerce to 0 and `true` to 1, which
+ * then pass `.int()` and reach the bot API. The current `idSchema` is
+ * a union: `z.number().int().positive()` OR a digit-only string that
+ * gets transformed to a positive integer. Everything else is rejected.
  */
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
@@ -76,22 +79,58 @@ describe("ID-shaped tool params accept stringified numbers", () => {
   }
 });
 
-describe("Audit: every ID-shaped field in tool schemas is coerced", () => {
-  it("no ID field uses raw z.number() (must use z.coerce.number().int())", () => {
-    const violations: Array<{ tool: string; field: string }> = [];
-    for (const tool of ALL_TOOLS) {
-      const schema = tool.schema as Record<string, unknown>;
-      for (const field of Object.keys(schema)) {
-        if (!ID_FIELD_NAMES.has(field)) continue;
-        const zSchema = schema[field] as z.ZodTypeAny;
-        // A coerced number rejects "abc" but accepts "123" → that's our marker.
-        // A plain z.number() rejects both. Distinguish by parsing "123".
-        const result = zSchema.safeParse("123");
-        if (!result.success) {
-          violations.push({ tool: tool.name, field });
+describe("Audit: every ID-shaped field in tool schemas is the strict idSchema", () => {
+  /**
+   * For each ID field on every tool, this test asserts the full
+   * accept/reject contract of `idSchema` — not just "accepts a
+   * string." That guards against a future replacement that passes
+   * the loose check (`safeParse("123")` succeeds) but doesn't
+   * actually return a positive integer (e.g. `z.string()` would
+   * accept "123" and return the string "123").
+   */
+  for (const tool of ALL_TOOLS) {
+    const schema = tool.schema as Record<string, unknown>;
+    for (const field of Object.keys(schema)) {
+      if (!ID_FIELD_NAMES.has(field)) continue;
+      const zSchema = schema[field] as z.ZodTypeAny;
+
+      it(`${tool.name}.${field}: accepts a positive integer number`, () => {
+        const r = zSchema.safeParse(2081);
+        expect(r.success).toBe(true);
+        if (r.success) expect(r.data).toBe(2081);
+      });
+
+      it(`${tool.name}.${field}: accepts a digit string and returns a number`, () => {
+        const r = zSchema.safeParse("2081");
+        expect(r.success).toBe(true);
+        if (r.success) {
+          expect(typeof r.data).toBe("number");
+          expect(Number.isInteger(r.data as number)).toBe(true);
+          expect(r.data).toBe(2081);
         }
+      });
+
+      // Reject the inputs that bare `z.coerce.number().int()` was too
+      // permissive about — empty/whitespace/null/booleans coerce to
+      // 0/0/0/1 and would pass `.int()`. The strict union rejects all.
+      const rejectCases: Array<[unknown, string]> = [
+        ["", "empty string"],
+        ["   ", "whitespace string"],
+        ["abc", "non-numeric string"],
+        ["2081abc", "mixed string"],
+        [null, "null"],
+        [true, "true"],
+        [false, "false"],
+        [0, "zero"],
+        [-1, "negative integer"],
+        [1.5, "non-integer"],
+      ];
+      for (const [bad, label] of rejectCases) {
+        it(`${tool.name}.${field}: rejects ${label}`, () => {
+          const r = zSchema.safeParse(bad);
+          expect(r.success).toBe(false);
+        });
       }
     }
-    expect(violations).toEqual([]);
-  });
+  }
 });

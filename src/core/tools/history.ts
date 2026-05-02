@@ -4,6 +4,7 @@
 
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
+import { idSchema } from "./schemas.js";
 
 export const historyTools: ToolDefinition[] = [
   {
@@ -19,11 +20,7 @@ export const historyTools: ToolDefinition[] = [
         .string()
         .optional()
         .describe("Fetch messages before this date (ISO format)"),
-      offset_id: z.coerce
-        .number()
-        .int()
-        .optional()
-        .describe("Fetch before this message ID"),
+      offset_id: idSchema.optional().describe("Fetch before this message ID"),
     },
     execute: (params, bridge) =>
       bridge("read_history", {
@@ -62,7 +59,7 @@ export const historyTools: ToolDefinition[] = [
   {
     name: "get_message_by_id",
     description: "Get a specific message by ID.",
-    schema: { message_id: z.coerce.number().int() },
+    schema: { message_id: idSchema },
     execute: (params, bridge) => bridge("get_message_by_id", params),
     frontends: ["telegram"],
     tag: "history",
@@ -73,10 +70,9 @@ export const historyTools: ToolDefinition[] = [
     description:
       "Download a photo, document, or other media from a message by its ID. Saves the file to the workspace and returns the file path so you can read/analyze it. Use this when you see a [photo] or [document] in chat history but don't have the file.",
     schema: {
-      message_id: z.coerce
-        .number()
-        .int()
-        .describe("Message ID containing the media to download"),
+      message_id: idSchema.describe(
+        "Message ID containing the media to download",
+      ),
     },
     execute: (params, bridge) => bridge("download_media", params),
     frontends: ["telegram"],
