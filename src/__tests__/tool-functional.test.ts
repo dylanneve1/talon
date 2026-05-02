@@ -282,8 +282,7 @@ describe("Tool → bridge round-trip", () => {
         expect(bridge).toHaveBeenCalledTimes(1);
         const [action, params] = bridge.mock.calls[0]!;
         expect(action).toBe(c.bridgeAction);
-        if (c.paramShape)
-          c.paramShape(params as Record<string, unknown>);
+        if (c.paramShape) c.paramShape(params as Record<string, unknown>);
       });
     }
   });
@@ -431,10 +430,7 @@ describe("createTelegramActionHandler", () => {
   it("react with stringified message_id (post-coercion) still calls bot.api correctly", async () => {
     // Even if something upstream skipped coercion and delivered a string,
     // the handler does Number(body.message_id) and recovers.
-    await handler(
-      { action: "react", message_id: "2081", emoji: "🔥" },
-      chatId,
-    );
+    await handler({ action: "react", message_id: "2081", emoji: "🔥" }, chatId);
 
     expect(api.setMessageReaction).toHaveBeenCalledWith(chatId, 2081, [
       { type: "emoji", emoji: "🔥" },
