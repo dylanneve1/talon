@@ -71,10 +71,11 @@ describe("log", () => {
       );
     });
 
-    it("includes Error message in context", () => {
-      logError("bridge", "request failed", new Error("timeout"));
+    it("includes Error message and stack in context", () => {
+      const err = new Error("timeout");
+      logError("bridge", "request failed", err);
       expect(mockError).toHaveBeenCalledWith(
-        { component: "bridge", err: "timeout" },
+        { component: "bridge", err: "timeout", stack: err.stack },
         "request failed",
       );
     });

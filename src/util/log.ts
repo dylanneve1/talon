@@ -128,7 +128,10 @@ export function logError(
   err?: unknown,
 ): void {
   if (err instanceof Error) {
-    logger.error({ component, err: err.message }, message);
+    // Capture both the concise message (for log consumers that look at `err`)
+    // and the full stack (for diagnostics). pino-pretty renders the `stack`
+    // field on its own line; JSON consumers can read either field.
+    logger.error({ component, err: err.message, stack: err.stack }, message);
   } else if (err !== undefined) {
     logger.error({ component, err: String(err) }, message);
   } else {
