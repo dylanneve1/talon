@@ -278,7 +278,9 @@ export class Gateway {
             err,
           );
           res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: "Internal server error" }));
+          res.end(
+            JSON.stringify({ ok: false, error: "Internal server error" }),
+          );
         }
       },
     );
