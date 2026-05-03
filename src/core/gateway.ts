@@ -267,9 +267,18 @@ export class Gateway {
           res.end(json);
         } catch (err) {
           if (res.headersSent) return;
-          const msg = err instanceof Error ? err.message : String(err);
+          // Log full error (incl. stack) on the server; return a generic
+          // message to the client so we don't leak implementation details.
+          // CodeQL: js/stack-trace-exposure (alert #4).
+          const detail =
+            err instanceof Error ? (err.stack ?? err.message) : String(err);
+          logError(
+            "gateway",
+            `Unhandled error on ${req.method} ${req.url}: ${detail}`,
+            err,
+          );
           res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ ok: false, error: msg }));
+          res.end(JSON.stringify({ ok: false, error: "Internal server error" }));
         }
       },
     );
