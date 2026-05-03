@@ -9,8 +9,16 @@ services:
       # Claude Code credentials. The Agent SDK spawns claude as a subprocess and
       # reads $HOME/.claude/.credentials.json — mount the host's auth at the
       # container user's HOME, not /root, since we run as the node user.
-      # Read-only is enough; the SDK only reads creds at startup.
-      - ${HOME}/.claude:/home/node/.claude:ro
+      #
+      # Two bootstrap paths, both work with this rw mount:
+      #  1. You already ran `claude auth login` on the host: existing
+      #     ~/.claude/.credentials.json is reused inside the container.
+      #  2. Fresh setup, no host install: `docker compose exec talon bash` then
+      #     `claude auth login` — paste the OAuth URL into your host browser,
+      #     paste the code back, and creds land in this mount.
+      # Don't add :ro here — path 2 needs writes to land the OAuth callback,
+      # and Claude Code rotates its session/projects state inside this dir.
+      - ${HOME}/.claude:/home/node/.claude
     environment:
       - NODE_ENV=production
     # Optional: ANTHROPIC_API_KEY etc. as a fallback to OAuth-via-credentials.json.
