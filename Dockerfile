@@ -2,25 +2,39 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Install Claude Code (required for Agent SDK)
+# Install Claude Code CLI globally (required by the Agent SDK to spawn its
+# subprocess for streaming + model discovery).
 RUN npm install -g @anthropic-ai/claude-code
 
-# Copy package files first for layer caching
-COPY package.json ./
-RUN npm install --omit=dev
+# Install production dependencies using the lockfile for reproducibility.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-# Copy source
+# The Claude Agent SDK ships native `claude` binaries for both linux-x64-musl
+# (Alpine) and linux-x64 (glibc) and probes them in that order. node:22-slim is
+# Debian/glibc, so the musl variant is unusable but resolves first — when the
+# SDK tries to spawn it, the dynamic linker fails and Talon errors at startup
+# with "native binary not found". Remove the wrong variant so the SDK falls
+# through to the glibc binary. (Switch this if you ever rebase to alpine.)
+RUN rm -rf /app/node_modules/@anthropic-ai/claude-agent-sdk-linux-*-musl
+
+# Application source
 COPY src/ src/
 COPY prompts/ prompts/
 COPY bin/ bin/
 COPY tsconfig.json ./
 
-# Run as the existing non-root node user (UID 1000)
-RUN chown -R node:node /app
+# Run as the existing non-root node user (UID 1000). Set HOME explicitly so
+# the Claude Agent SDK's spawned `claude` subprocess can find auth at
+# $HOME/.claude/.credentials.json (mounted from the host — see compose).
+ENV HOME=/home/node
+RUN chown -R node:node /app /home/node
 USER node
 
-# Workspace persisted via volume
-VOLUME /app/workspace
+# Persistent state lives under ~/.talon/ — bind-mount this from the host so
+# config, sessions, workspace, palace, and userbot session survive container
+# restarts. See docker-compose.yml for the canonical mount layout.
+VOLUME /home/node/.talon
 
 EXPOSE 19876
 
