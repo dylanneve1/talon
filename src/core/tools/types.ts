@@ -58,4 +58,18 @@ export interface ToolDefinition {
 
   /** Grouping tag. */
   readonly tag: ToolTag;
+
+  /**
+   * This tool explicitly ends the model's turn. Backend handlers observe
+   * this flag to abort their stream loop cleanly after the tool's bridge
+   * call completes — without it, the model is free to keep producing
+   * trailing prose into private scratchpad after declaring "I'm done",
+   * which then trips the flow-violation re-prompt path. With this flag,
+   * an end_turn call genuinely ends the turn.
+   *
+   * Backend abort mechanism is backend-specific (Claude SDK uses
+   * Query.interrupt(); other backends manage their own loop) — this flag
+   * is the shared declarative signal, not the implementation.
+   */
+  readonly endsTurn?: boolean;
 }

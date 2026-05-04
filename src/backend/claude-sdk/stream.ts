@@ -52,6 +52,15 @@ export type StreamState = {
    * diagnostic when the prose just duplicates what was already delivered.
    */
   deliveredTextNorms: string[];
+  /**
+   * Set when a tool with `endsTurn: true` (e.g. `end_turn`) was observed
+   * in this turn. Once true, the handler invokes `qi.interrupt()` to abort
+   * the SDK loop cleanly — the model can't produce more trailing scratchpad
+   * after this point. Also gates the flow-violation re-prompt: if the model
+   * explicitly ended its turn, we don't re-prompt for trailing prose that
+   * may have appeared in the same assistant message before the terminator.
+   */
+  turnTerminated: boolean;
 };
 
 export function createStreamState(): StreamState {
@@ -70,6 +79,7 @@ export function createStreamState(): StreamState {
     lastStreamUpdate: 0,
     lastTrailingText: "",
     deliveredTextNorms: [],
+    turnTerminated: false,
   };
 }
 

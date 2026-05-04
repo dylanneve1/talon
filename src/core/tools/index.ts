@@ -30,6 +30,24 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...adminTools,
 ];
 
+/**
+ * Names of tools that explicitly terminate the model's turn.
+ *
+ * Backend handlers consume this set to abort their stream loop after
+ * observing one of these tools — without it, the model can keep producing
+ * trailing scratchpad prose after declaring "I'm done", which trips the
+ * flow-violation re-prompt path. Declaration is on the tool definition
+ * (`endsTurn: true`); detection is shared; abort is backend-specific.
+ */
+const TURN_TERMINATOR_NAMES: ReadonlySet<string> = new Set(
+  ALL_TOOLS.filter((t) => t.endsTurn).map((t) => t.name),
+);
+
+/** Whether a tool call by this name should terminate the model's turn. */
+export function isTurnTerminator(toolName: string): boolean {
+  return TURN_TERMINATOR_NAMES.has(toolName);
+}
+
 /** Filter options for composing a tool set. */
 export interface ComposeOptions {
   /** Include only tools available on this frontend. */

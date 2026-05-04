@@ -82,6 +82,7 @@ Notes:
     },
     frontends: ["telegram", "teams"],
     tag: "messaging",
+    endsTurn: true,
   },
 
   // ── Telegram unified send ─────────────────────────────────────────────

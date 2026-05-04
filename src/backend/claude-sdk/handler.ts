@@ -24,6 +24,7 @@ import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { formatFullDatetime } from "../../util/time.js";
+import { isTurnTerminator } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryParams, QueryResult } from "../../core/types.js";
@@ -145,6 +146,9 @@ export async function handleMessage(
         for (const tool of result.tools) {
           incrementCounter(`tool_calls.${tool.name}`);
           captureDeliveredText(tool.name, tool.input);
+          if (isTurnTerminator(tool.name)) {
+            state.turnTerminated = true;
+          }
           if (onToolUse) {
             try {
               onToolUse(tool.name, tool.input);
@@ -162,6 +166,26 @@ export async function handleMessage(
             } catch {
               /* non-fatal — don't abort the stream loop */
             }
+          }
+        }
+
+        // Turn-terminator tool was called (e.g. `end_turn`). Abort the SDK
+        // loop cleanly so the model can't keep producing trailing scratchpad
+        // after declaring "I'm done". Without this, the model is free to
+        // think more, call more tools, or write more prose — and any prose
+        // afterwards trips the flow-violation re-prompt path. Calling
+        // qi.interrupt() lets the SDK yield its terminal result and exit
+        // the for-await loop on the next iteration.
+        if (state.turnTerminated) {
+          try {
+            await qi.interrupt();
+          } catch (err) {
+            // Non-fatal: interrupt failures shouldn't break the turn,
+            // they just mean the natural end-of-stream path will run.
+            logWarn(
+              "agent",
+              `[${chatId}] qi.interrupt() after turn terminator failed: ${(err as Error)?.message ?? err}`,
+            );
           }
         }
         continue;
@@ -268,9 +292,17 @@ export async function handleMessage(
   // broken turn in history + a reminder of the contract, and gets a fresh
   // turn to deliver via end_turn. If it violates again on the retry, we
   // give up loudly and accept the silent drop.
+  //
+  // Exception: if a turn-terminator tool (e.g. end_turn) was called, the
+  // model explicitly declared "I'm done" — respect it. Any trailing prose
+  // that slipped in earlier in the same assistant message gets logged but
+  // does NOT re-prompt (would loop endlessly with a model that pairs prose
+  // with end_turn).
   const trailing = state.lastTrailingText.trim();
   const flowViolation =
-    trailing && !isDuplicateOfDelivered(trailing, state.deliveredTextNorms);
+    trailing &&
+    !state.turnTerminated &&
+    !isDuplicateOfDelivered(trailing, state.deliveredTextNorms);
 
   if (flowViolation) {
     incrementCounter("scratchpad.trailing_text_dropped");

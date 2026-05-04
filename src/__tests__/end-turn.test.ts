@@ -16,6 +16,7 @@ import {
   createStreamState,
 } from "../backend/claude-sdk/stream.js";
 import { messagingTools } from "../core/tools/messaging.js";
+import { isTurnTerminator, ALL_TOOLS } from "../core/tools/index.js";
 
 describe("normalizeForDedupe", () => {
   it("trims, lowercases, and collapses whitespace", () => {
@@ -86,6 +87,44 @@ describe("createStreamState", () => {
     const state = createStreamState();
     expect(state.lastTrailingText).toBe("");
     expect(state.deliveredTextNorms).toEqual([]);
+  });
+
+  it("initializes turnTerminated to false", () => {
+    const state = createStreamState();
+    expect(state.turnTerminated).toBe(false);
+  });
+});
+
+describe("turn-terminator declaration", () => {
+  it("end_turn is declared with endsTurn: true", () => {
+    const endTurn = messagingTools.find((t) => t.name === "end_turn");
+    expect(endTurn?.endsTurn).toBe(true);
+  });
+
+  it("send is NOT declared as a turn terminator", () => {
+    // `send` is for mid-turn rich content (photos, polls, scheduled messages,
+    // etc.) — calling it does NOT mean the model is done. Only end_turn
+    // declares the turn finished.
+    const send = messagingTools.find((t) => t.name === "send");
+    expect(send?.endsTurn).toBeFalsy();
+  });
+
+  it("isTurnTerminator returns true for end_turn", () => {
+    expect(isTurnTerminator("end_turn")).toBe(true);
+  });
+
+  it("isTurnTerminator returns false for non-terminator tools", () => {
+    expect(isTurnTerminator("send")).toBe(false);
+    expect(isTurnTerminator("react")).toBe(false);
+    expect(isTurnTerminator("fetch_url")).toBe(false);
+    expect(isTurnTerminator("nonexistent_tool")).toBe(false);
+  });
+
+  it("only one turn terminator currently exists (end_turn)", () => {
+    // If a future change adds a second terminator, this test should fail
+    // and the author should document why a new terminator is necessary.
+    const terminators = ALL_TOOLS.filter((t) => t.endsTurn).map((t) => t.name);
+    expect(terminators).toEqual(["end_turn"]);
   });
 });
 
