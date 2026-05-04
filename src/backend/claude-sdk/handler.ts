@@ -256,26 +256,45 @@ export async function handleMessage(
     }
   }
 
-  // ── Trailing-prose contract ──────────────────────────────────────────────
+  // ── Trailing-prose contract + flow-violation retry ──────────────────────
   // The output stream is private scratchpad by design. Final replies must go
   // through `end_turn` (canonical) or `send` (mid-turn rich content). When a
-  // turn ends without either being called, the user sees nothing — that's
-  // valid intentional silence (e.g. the model only used `react`, or had
-  // nothing to do). When the model wrote prose but didn't route it through
-  // a tool, the prose is dropped. No fallback delivery — the contract is
-  // intentional and silence-vs-forgetful is the model's responsibility per
-  // the prompt.
-  //
-  // We DO log a diagnostic when trailing prose was written without being
-  // delivered, so missed end_turn calls show up in metrics rather than
-  // silently dropping content with no trace.
+  // turn ends with no tool call AND no trailing prose, that's valid silent
+  // close (model only reacted, or had nothing to do). When the model wrote
+  // prose but didn't route it through a delivery tool, that's a flow
+  // violation — the prose is private scratchpad, dropped from the user's
+  // view. To prevent these from going unnoticed, we re-prompt the model
+  // ONCE with a synthetic system message in the same session: it sees its
+  // broken turn in history + a reminder of the contract, and gets a fresh
+  // turn to deliver via end_turn. If it violates again on the retry, we
+  // give up loudly and accept the silent drop.
   const trailing = state.lastTrailingText.trim();
-  if (trailing && !isDuplicateOfDelivered(trailing, state.deliveredTextNorms)) {
+  const flowViolation =
+    trailing && !isDuplicateOfDelivered(trailing, state.deliveredTextNorms);
+
+  if (flowViolation) {
     incrementCounter("scratchpad.trailing_text_dropped");
     log(
       "agent",
-      `[${chatId}] trailing prose dropped (${trailing.length} chars) — model wrote text but didn't call end_turn / send. Likely a missed end_turn call.`,
+      `[${chatId}] flow violation: trailing prose (${trailing.length} chars) without end_turn/send. ${
+        _retried
+          ? "Already retried — accepting silent drop."
+          : "Re-prompting with reminder."
+      }`,
     );
+
+    if (!_retried) {
+      incrementCounter("scratchpad.flow_violation_retried");
+      const reminder =
+        "[FLOW VIOLATION] You produced text content but didn't call `end_turn` or `send`. " +
+        "Pure prose in your output stream is private scratchpad — it's dropped, the user " +
+        "never sees it. Please retry with the proper flow: " +
+        "`end_turn(text=...)` to deliver a final reply, " +
+        "`end_turn()` (no args) to close silently, or " +
+        "`send(...)` for mid-turn rich content (photos, polls, etc.). " +
+        "Respond now using the correct tool call.";
+      return handleMessage({ ...params, text: reminder }, true);
+    }
   }
 
   // ── Build result ──────────────────────────────────────────────────────────
