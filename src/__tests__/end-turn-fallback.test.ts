@@ -64,10 +64,7 @@ describe("isDuplicateOfDelivered", () => {
   it("does not match unrelated content", () => {
     const delivered = [normalizeForDedupe("PR #106 merged")];
     expect(
-      isDuplicateOfDelivered(
-        "Got it, I'll look at the docker logs",
-        delivered,
-      ),
+      isDuplicateOfDelivered("Got it, I'll look at the docker logs", delivered),
     ).toBe(false);
   });
 
@@ -119,10 +116,7 @@ describe("end_turn tool definition", () => {
 
   it("dispatches text + reply_to via send_message bridge", async () => {
     const bridge = vi.fn(async () => ({ ok: true }));
-    await endTurn!.execute(
-      { text: "Yep", reply_to: 12345 },
-      bridge,
-    );
+    await endTurn!.execute({ text: "Yep", reply_to: 12345 }, bridge);
     expect(bridge).toHaveBeenCalledWith("send_message", {
       text: "Yep",
       reply_to_message_id: 12345,
