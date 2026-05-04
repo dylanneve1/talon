@@ -227,10 +227,9 @@ export async function handleMessage(
   // ── Build result ──────────────────────────────────────────────────────────
 
   state.allResponseText += state.currentBlockText;
-  const totalPrompt =
-    state.sdkInputTokens + state.sdkCacheRead + state.sdkCacheWrite;
+  const cacheTotal = state.sdkInputTokens + state.sdkCacheRead;
   const cacheHitPct =
-    totalPrompt > 0 ? Math.round((state.sdkCacheRead / totalPrompt) * 100) : 0;
+    cacheTotal > 0 ? Math.round((state.sdkCacheRead / cacheTotal) * 100) : 0;
 
   log(
     "agent",

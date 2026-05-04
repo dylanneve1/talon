@@ -529,10 +529,9 @@ export function registerCommands(
       "\u2588".repeat(filled) + "\u2591".repeat(barLen - filled);
     const contextWarn = ctxPct >= 80 ? " \u26A0\uFE0F consider /reset" : "";
 
-    const totalPrompt =
-      displayInputTokens + displayCacheRead + displayCacheWrite;
+    const cacheTotal = displayInputTokens + displayCacheRead;
     const cacheHitPct =
-      totalPrompt > 0 ? Math.round((displayCacheRead / totalPrompt) * 100) : 0;
+      cacheTotal > 0 ? Math.round((displayCacheRead / cacheTotal) * 100) : 0;
 
     const avgResponseMs =
       info.turns > 0 && u.totalResponseMs
