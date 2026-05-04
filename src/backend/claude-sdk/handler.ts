@@ -270,10 +270,7 @@ export async function handleMessage(
   // delivered, so missed end_turn calls show up in metrics rather than
   // silently dropping content with no trace.
   const trailing = state.lastTrailingText.trim();
-  if (
-    trailing &&
-    !isDuplicateOfDelivered(trailing, state.deliveredTextNorms)
-  ) {
+  if (trailing && !isDuplicateOfDelivered(trailing, state.deliveredTextNorms)) {
     incrementCounter("scratchpad.trailing_text_dropped");
     log(
       "agent",
