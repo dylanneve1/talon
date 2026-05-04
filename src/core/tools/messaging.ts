@@ -1,5 +1,6 @@
 /**
- * Messaging tools — send, react, edit, delete, forward, pin/unpin, stop poll.
+ * Messaging tools — send, end_turn, react, edit, delete, forward, pin/unpin,
+ * stop poll.
  */
 
 import { z } from "zod";
@@ -7,6 +8,80 @@ import type { ToolDefinition } from "./types.js";
 import { idSchema } from "./schemas.js";
 
 export const messagingTools: ToolDefinition[] = [
+  // ── end_turn — explicit final-reply delivery ──────────────────────────
+  // Schema-typed alternative to relying on a trailing-text fallback. The
+  // model is taught that this is the canonical way to deliver its final
+  // reply. Functionally a thin wrapper over send(type="text") + reply_to +
+  // buttons; the value is in the EXPLICIT semantic ("this ends my turn")
+  // and that the model sees a single tool whose purpose is unambiguous.
+  //
+  // The handler still falls back to delivering trailing prose when this
+  // tool isn't called (so silent turns are impossible), but `end_turn` is
+  // the documented happy path and avoids the "I wrote prose, what did the
+  // user see?" ambiguity.
+  {
+    name: "end_turn",
+    description: `End your current turn and deliver your final reply to the user. This is the canonical way to respond.
+
+Call this AT MOST ONCE per turn — it should be the last tool you call. Behaves like send(type="text") with reply_to and buttons support, but the name makes the intent explicit: this is the message that ends the turn.
+
+Examples:
+  end_turn(text="Got it sur") — plain reply
+  end_turn(text="On it", reply_to=12345) — reply to a specific message ID
+  end_turn(text="Pick one", buttons=[[{"text":"A","callback_data":"a"}]]) — with buttons
+  end_turn() — silent end (no message; useful when you already replied via earlier send/react calls)
+
+Notes:
+- For richer message types (photos, polls, voice, scheduled messages, multi-target), use the send tool — those don't fit "final reply" semantics.
+- If you forget to call end_turn AND you wrote prose in your output, the prose is delivered as a fallback so the user isn't left silent. But end_turn is the documented happy path.`,
+    schema: {
+      text: z
+        .string()
+        .optional()
+        .describe(
+          "Final reply text. Supports Markdown. Omit to end the turn silently (no message sent).",
+        ),
+      reply_to: idSchema
+        .optional()
+        .describe("Message ID to reply to (typically the user's [msg_id:N])"),
+      buttons: z
+        .array(
+          z.array(
+            z.object({
+              text: z.string(),
+              url: z.string().optional(),
+              callback_data: z.string().optional(),
+            }),
+          ),
+        )
+        .optional()
+        .describe("Inline keyboard button rows"),
+    },
+    execute: async (params, bridge) => {
+      // Telegram path: routes to the same bridge actions as send(type="text")
+      // so bridgeMessageCount, dedup, and audit logging all stay consistent.
+      if (typeof params.text !== "string" || params.text.trim() === "") {
+        // Silent end — no bridge call. The handler still sees the tool was
+        // invoked (via deliveredTextNorms staying empty), and trailing-text
+        // fallback won't fire because there was no trailing prose.
+        return { ok: true, silent: true };
+      }
+      if (params.buttons) {
+        return bridge("send_message_with_buttons", {
+          text: params.text,
+          rows: params.buttons,
+          reply_to_message_id: params.reply_to,
+        });
+      }
+      return bridge("send_message", {
+        text: params.text,
+        reply_to_message_id: params.reply_to,
+      });
+    },
+    frontends: ["telegram", "teams"],
+    tag: "messaging",
+  },
+
   // ── Telegram unified send ─────────────────────────────────────────────
   {
     name: "send",

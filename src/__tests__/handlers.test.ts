@@ -2676,13 +2676,19 @@ describe("processAndReply — group message without senderId", () => {
   }, 3000);
 });
 
-describe("processAndReply — suppressed fallback text logged (L572 TRUE branch)", () => {
-  it("logs when bridgeMessageCount=0 and result.text is non-empty", async () => {
+describe("processAndReply — fallback text no longer suppressed", () => {
+  // Pre-end_turn behavior: when bridgeMessageCount=0 and result.text was
+  // non-empty, the frontend logged "Suppressed fallback text" and dropped
+  // the content (the scratchpad bug). The handler now fires onTextBlock
+  // with trailing text instead, so:
+  //   - the "Suppressed fallback" log is gone entirely
+  //   - the delivery path is exercised by createStreamCallbacks tests above
+  it("does NOT log a 'Suppressed fallback' warning anymore", async () => {
     const { log } = await import("../util/log.js");
     (log as ReturnType<typeof vi.fn>).mockClear();
 
     executeMock.mockResolvedValueOnce({
-      text: "internal reasoning only",
+      text: "trailing prose that used to be suppressed",
       durationMs: 10,
       inputTokens: 1,
       outputTokens: 1,
@@ -2694,7 +2700,7 @@ describe("processAndReply — suppressed fallback text logged (L572 TRUE branch)
     const ctx = {
       chat: { id: 99600, type: "private" },
       message: {
-        text: "test suppressed fallback",
+        text: "test fallback delivery",
         message_id: 1600,
         reply_to_message: null,
       },
@@ -2709,7 +2715,7 @@ describe("processAndReply — suppressed fallback text logged (L572 TRUE branch)
     const suppressedLog = logCalls.find((c: unknown[]) =>
       String(c[1]).includes("Suppressed fallback"),
     );
-    expect(suppressedLog).toBeDefined();
+    expect(suppressedLog).toBeUndefined();
   }, 3000);
 });
 

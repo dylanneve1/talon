@@ -34,6 +34,21 @@ export type StreamState = {
   sdkCacheRead: number;
   sdkCacheWrite: number;
   lastStreamUpdate: number;
+  /**
+   * Trailing text from the most recent assistant message — text after all
+   * tool_use blocks (or the full text when no tools were called). Delivered
+   * by the handler at end-of-turn as a fallback when the model didn't route
+   * the response through `end_turn` / `send`. Without this, a prose-only
+   * assistant turn produces no user-visible message ("scratchpad bug").
+   */
+  lastTrailingText: string;
+  /**
+   * Normalized text args observed on `end_turn` / `send(type="text")` tool
+   * calls during this turn. Used to dedupe the trailing-text fallback so
+   * the user doesn't see the same content twice if the model both wrote
+   * prose AND called a delivery tool with similar text.
+   */
+  deliveredTextNorms: string[];
 };
 
 export function createStreamState(): StreamState {
@@ -50,6 +65,8 @@ export function createStreamState(): StreamState {
     sdkCacheRead: 0,
     sdkCacheWrite: 0,
     lastStreamUpdate: 0,
+    lastTrailingText: "",
+    deliveredTextNorms: [],
   };
 }
 
@@ -223,4 +240,41 @@ export function processResultMessage(
   ) {
     state.currentBlockText = msg.result;
   }
+}
+
+// ── Trailing-text fallback dedup ────────────────────────────────────────────
+
+/**
+ * Normalize text for fuzzy comparison — trim, lowercase, collapse whitespace,
+ * strip emoji. Used to detect whether trailing prose duplicates content
+ * already delivered via `end_turn` / `send(type="text")`.
+ */
+export function normalizeForDedupe(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const MIN_DEDUP_LENGTH = 10;
+
+/**
+ * Returns true if `candidate` is substantively the same as any text in
+ * `deliveredNorms`. "Substantively" = one is a substring of the other after
+ * normalization; both must be at least MIN_DEDUP_LENGTH chars to avoid
+ * dropping short legitimate replies.
+ */
+export function isDuplicateOfDelivered(
+  candidate: string,
+  deliveredNorms: string[],
+): boolean {
+  if (deliveredNorms.length === 0) return false;
+  const norm = normalizeForDedupe(candidate);
+  if (norm.length < MIN_DEDUP_LENGTH) return false;
+  return deliveredNorms.some(
+    (d) =>
+      d.length >= MIN_DEDUP_LENGTH && (norm.includes(d) || d.includes(norm)),
+  );
 }

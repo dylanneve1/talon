@@ -38,6 +38,8 @@ import {
   processStreamDelta,
   processAssistantMessage,
   processResultMessage,
+  normalizeForDedupe,
+  isDuplicateOfDelivered,
 } from "./stream.js";
 
 // ── Active query store ──────────────────────────────────────────────────────
@@ -92,6 +94,30 @@ export async function handleMessage(
   activeQueries.set(chatId, qi);
   const state = createStreamState();
 
+  // Capture text args from delivery tools (`end_turn`, `send(type="text")`)
+  // so the end-of-turn trailing-text fallback can dedupe against content
+  // already delivered. Without this, a model that writes prose AND calls a
+  // delivery tool with similar text would surface twice in the chat.
+  const captureDeliveredText = (
+    toolName: string,
+    input: Record<string, unknown>,
+  ): void => {
+    let deliveredText: string | undefined;
+    if (toolName === "end_turn" && typeof input.text === "string") {
+      deliveredText = input.text;
+    } else if (
+      toolName === "send" &&
+      input.type === "text" &&
+      typeof input.text === "string"
+    ) {
+      deliveredText = input.text;
+    }
+    if (deliveredText) {
+      const norm = normalizeForDedupe(deliveredText);
+      if (norm) state.deliveredTextNorms.push(norm);
+    }
+  };
+
   try {
     for await (const message of qi) {
       // Session ID capture
@@ -110,9 +136,15 @@ export async function handleMessage(
       if (isAssistant(message)) {
         const result = processAssistantMessage(message, state);
 
-        // Notify tool usage
+        // Track the trailing text from this assistant message. Multiple
+        // assistant messages can fire per turn (one per tool-use round-trip);
+        // only the LAST one's trailingText is the user-facing final reply.
+        state.lastTrailingText = result.trailingText;
+
+        // Notify tool usage + capture delivery-tool text for end-of-turn dedup
         for (const tool of result.tools) {
           incrementCounter(`tool_calls.${tool.name}`);
+          captureDeliveredText(tool.name, tool.input);
           if (onToolUse) {
             try {
               onToolUse(tool.name, tool.input);
@@ -221,6 +253,25 @@ export async function handleMessage(
       const name =
         cleanText.length > 30 ? cleanText.slice(0, 30) + "..." : cleanText;
       setSessionName(chatId, name);
+    }
+  }
+
+  // ── Trailing-text fallback ────────────────────────────────────────────────
+  // If the model's final assistant message had text after all tool_use blocks
+  // (or text-only with no tools) AND that text wasn't already delivered via
+  // `end_turn` / `send(type="text")`, deliver it via onTextBlock so the user
+  // actually sees it. Without this, prose-only turns silently produce no
+  // user-visible message — see "Suppressed fallback text" history.
+  const trailing = state.lastTrailingText.trim();
+  if (
+    onTextBlock &&
+    trailing &&
+    !isDuplicateOfDelivered(trailing, state.deliveredTextNorms)
+  ) {
+    try {
+      await onTextBlock(trailing);
+    } catch {
+      /* non-fatal */
     }
   }
 

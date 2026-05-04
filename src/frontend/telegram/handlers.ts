@@ -781,16 +781,10 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       },
     });
 
-    if (
-      result.bridgeMessageCount === 0 &&
-      !stream.sentTextBlock &&
-      result.text?.trim()
-    ) {
-      log(
-        "bot",
-        `Suppressed fallback text (${result.text.length} chars) — no send tool used`,
-      );
-    }
+    // Trailing prose is delivered by the SDK handler via onTextBlock
+    // (see src/backend/claude-sdk/handler.ts — "Trailing-text fallback").
+    // No suppression here: a turn that produced text always reaches the user,
+    // either through end_turn / send tool calls or via the fallback path.
   } finally {
     clearTimeout(streamTimer);
   }
