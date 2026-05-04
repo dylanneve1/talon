@@ -15,10 +15,12 @@ export const messagingTools: ToolDefinition[] = [
   // buttons; the value is in the EXPLICIT semantic ("this ends my turn")
   // and that the model sees a single tool whose purpose is unambiguous.
   //
-  // The handler still falls back to delivering trailing prose when this
-  // tool isn't called (so silent turns are impossible), but `end_turn` is
-  // the documented happy path and avoids the "I wrote prose, what did the
-  // user see?" ambiguity.
+  // The output stream is private scratchpad by contract. If the model
+  // writes trailing prose without calling end_turn or send, the handler
+  // re-prompts ONCE in the same session with a flow-violation reminder
+  // so the model can retry properly. Persistent violation after retry
+  // results in silent drop + `scratchpad.trailing_text_dropped` counter.
+  // `end_turn` is the documented happy path.
   {
     name: "end_turn",
     description: `End your current turn and deliver your final reply to the user. This is the canonical way to respond.
@@ -33,7 +35,7 @@ Examples:
 
 Notes:
 - For richer message types (photos, polls, voice, scheduled messages, multi-target), use the send tool — those don't fit "final reply" semantics.
-- If you forget to call end_turn AND you wrote prose in your output, the prose is delivered as a fallback so the user isn't left silent. But end_turn is the documented happy path.`,
+- The output stream is private scratchpad. If you write prose without calling end_turn or send, the handler re-prompts you ONCE with a flow-violation reminder so you can retry properly. Persistent violation drops the prose silently. end_turn is the documented happy path.`,
     schema: {
       text: z
         .string()
