@@ -36,17 +36,20 @@ export type StreamState = {
   lastStreamUpdate: number;
   /**
    * Trailing text from the most recent assistant message — text after all
-   * tool_use blocks (or the full text when no tools were called). Delivered
-   * by the handler at end-of-turn as a fallback when the model didn't route
-   * the response through `end_turn` / `send`. Without this, a prose-only
-   * assistant turn produces no user-visible message ("scratchpad bug").
+   * tool_use blocks (or the full text when no tools were called). NOT
+   * delivered to the user (the output stream is private scratchpad by
+   * contract). Tracked so the handler can log a diagnostic when the model
+   * wrote prose without routing it through `end_turn` / `send` — surfaces
+   * missed end_turn calls in metrics rather than silently dropping content.
    */
   lastTrailingText: string;
   /**
    * Normalized text args observed on `end_turn` / `send(type="text")` tool
-   * calls during this turn. Used to dedupe the trailing-text fallback so
-   * the user doesn't see the same content twice if the model both wrote
-   * prose AND called a delivery tool with similar text.
+   * calls during this turn. Cross-tool dedup: if both fire with similar
+   * content (e.g. model calls both with the same text mid-turn), the
+   * second one can be matched against this list to avoid the user seeing
+   * the same message twice. Also used to silence the trailing-prose
+   * diagnostic when the prose just duplicates what was already delivered.
    */
   deliveredTextNorms: string[];
 };

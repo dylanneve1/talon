@@ -374,11 +374,10 @@ export function createTeamsFrontend(
               },
             })
               .then(async (_result) => {
-                // Trailing prose is delivered by the SDK handler via
-                // onTextBlock (see src/backend/claude-sdk/handler.ts —
-                // "Trailing-text fallback"). No suppression: if the model
-                // wrote text without calling end_turn / send_message, the
-                // handler emits it via onTextBlock so the user still sees it.
+                // No fallback delivery — turns without end_turn / send_message
+                // are intentional silent ends. Trailing prose without a tool
+                // call is scratchpad and dropped; the SDK handler emits a
+                // `scratchpad.trailing_text_dropped` metric on those.
               })
               .catch((err) => {
                 logError(

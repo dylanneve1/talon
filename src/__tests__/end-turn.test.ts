@@ -1,10 +1,10 @@
 /**
- * Unit tests for the end_turn tool and the trailing-text fallback dedup
- * helpers introduced to fix the "scratchpad bug" — assistant prose silently
- * dropped when no send/end_turn tool was called.
+ * Unit tests for the `end_turn` tool and the cross-tool dedup helpers used to
+ * suppress duplicate deliveries when the model calls both `end_turn` and
+ * `send(type="text")` with similar content in the same turn.
  *
  * Covers:
- *   - normalizeForDedupe / isDuplicateOfDelivered (the dedup math)
+ *   - normalizeForDedupe / isDuplicateOfDelivered (dedup math)
  *   - end_turn tool definition (schema, dispatch, silent path)
  *   - StreamState carries lastTrailingText and deliveredTextNorms
  */

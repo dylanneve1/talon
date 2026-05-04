@@ -256,23 +256,29 @@ export async function handleMessage(
     }
   }
 
-  // ── Trailing-text fallback ────────────────────────────────────────────────
-  // If the model's final assistant message had text after all tool_use blocks
-  // (or text-only with no tools) AND that text wasn't already delivered via
-  // `end_turn` / `send(type="text")`, deliver it via onTextBlock so the user
-  // actually sees it. Without this, prose-only turns silently produce no
-  // user-visible message — see "Suppressed fallback text" history.
+  // ── Trailing-prose contract ──────────────────────────────────────────────
+  // The output stream is private scratchpad by design. Final replies must go
+  // through `end_turn` (canonical) or `send` (mid-turn rich content). When a
+  // turn ends without either being called, the user sees nothing — that's
+  // valid intentional silence (e.g. the model only used `react`, or had
+  // nothing to do). When the model wrote prose but didn't route it through
+  // a tool, the prose is dropped. No fallback delivery — the contract is
+  // intentional and silence-vs-forgetful is the model's responsibility per
+  // the prompt.
+  //
+  // We DO log a diagnostic when trailing prose was written without being
+  // delivered, so missed end_turn calls show up in metrics rather than
+  // silently dropping content with no trace.
   const trailing = state.lastTrailingText.trim();
   if (
-    onTextBlock &&
     trailing &&
     !isDuplicateOfDelivered(trailing, state.deliveredTextNorms)
   ) {
-    try {
-      await onTextBlock(trailing);
-    } catch {
-      /* non-fatal */
-    }
+    incrementCounter("scratchpad.trailing_text_dropped");
+    log(
+      "agent",
+      `[${chatId}] trailing prose dropped (${trailing.length} chars) — model wrote text but didn't call end_turn / send. Likely a missed end_turn call.`,
+    );
   }
 
   // ── Build result ──────────────────────────────────────────────────────────

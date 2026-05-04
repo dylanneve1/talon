@@ -781,10 +781,10 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       },
     });
 
-    // Trailing prose is delivered by the SDK handler via onTextBlock
-    // (see src/backend/claude-sdk/handler.ts — "Trailing-text fallback").
-    // No suppression here: a turn that produced text always reaches the user,
-    // either through end_turn / send tool calls or via the fallback path.
+    // No fallback delivery — turns that don't call `end_turn` / `send` are
+    // intentional silent ends. Trailing prose written without a tool call is
+    // scratchpad and dropped (the SDK handler logs a `scratchpad.trailing_
+    // text_dropped` metric so missed end_turn calls show up in counters).
   } finally {
     clearTimeout(streamTimer);
   }
