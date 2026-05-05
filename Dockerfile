@@ -7,7 +7,10 @@ WORKDIR /app
 RUN npm install -g @anthropic-ai/claude-code
 
 # Install production dependencies using the lockfile for reproducibility.
+# scripts/ must be present before npm ci because package.json has a
+# "postinstall" hook (scripts/prune-native-sdk.mjs) that runs automatically.
 COPY package.json package-lock.json ./
+COPY scripts/ scripts/
 RUN npm ci --omit=dev
 
 # The Claude Agent SDK ships native `claude` binaries for both linux-x64-musl
