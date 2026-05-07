@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.9.2](https://github.com/dylanneve1/talon/compare/v1.9.1...v1.9.2) (2026-05-07)
+
+
+### Bug Fixes
+
+* cache hit % shouldn't include cache writes in denominator ([#107](https://github.com/dylanneve1/talon/issues/107)) ([379eace](https://github.com/dylanneve1/talon/commit/379eace4b823bc824eed3f60242c396c1202752a))
+* **deps:** bump @anthropic-ai/sdk 0.86.1→0.95.0 to close Dependabot alert [#3](https://github.com/dylanneve1/talon/issues/3) ([#113](https://github.com/dylanneve1/talon/issues/113)) ([054516b](https://github.com/dylanneve1/talon/commit/054516be39e58fff1bac2ba42d0f2060c16ad06d))
+* **docker:** make container actually boot Talon end-to-end ([#106](https://github.com/dylanneve1/talon/issues/106)) ([f44d05c](https://github.com/dylanneve1/talon/commit/f44d05c7d688045a72a26cb68639dc6ff9be44c0))
+* **gateway:** don't leak error details on unhandled 500 ([#104](https://github.com/dylanneve1/talon/issues/104)) ([5a359db](https://github.com/dylanneve1/talon/commit/5a359db0ea1d09dee4f9017f2790aecf05f8a508))
+* **tools:** coerce stringified numeric IDs in tool input schemas ([#103](https://github.com/dylanneve1/talon/issues/103)) ([bd4b103](https://github.com/dylanneve1/talon/commit/bd4b10324419fcb41d35436a6ce8266523398032))
+
 ## [1.9.1](https://github.com/dylanneve1/talon/compare/v1.9.0...v1.9.1) (2026-04-27)
 
 
