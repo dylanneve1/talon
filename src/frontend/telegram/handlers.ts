@@ -14,6 +14,7 @@ import {
   appendDailyLog,
   appendDailyLogResponse,
 } from "../../storage/daily-log.js";
+import { stripMcpPrefix } from "../../core/tools/index.js";
 import { setMessageFilePath } from "../../storage/history.js";
 import { addMedia } from "../../storage/media-index.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
@@ -771,8 +772,17 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       onStreamDelta,
       onTextBlock,
       onToolUse: (toolName, input) => {
-        if (
-          toolName === "send" &&
+        // Tool names arrive MCP-prefixed (e.g. `mcp__telegram-tools__end_turn`)
+        // when routed through MCP — strip the prefix so equality checks
+        // match the registry's bare names. Both `end_turn(text=...)` and
+        // `send(type="text")` are user-facing text deliveries; capture
+        // both so the daily log records bot responses regardless of which
+        // delivery tool the model used.
+        const bareName = stripMcpPrefix(toolName);
+        if (bareName === "end_turn" && typeof input.text === "string") {
+          appendDailyLogResponse("Talon", input.text, { chatTitle });
+        } else if (
+          bareName === "send" &&
           input.type === "text" &&
           typeof input.text === "string"
         ) {

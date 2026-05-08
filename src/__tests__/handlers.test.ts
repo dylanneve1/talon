@@ -1731,45 +1731,103 @@ describe("handleAnimationMessage — downloads and enqueues", () => {
 });
 
 describe("processAndReply — onToolUse callback triggers appendDailyLogResponse", () => {
-  it("calls appendDailyLogResponse when execute invokes onToolUse with send tool", async () => {
-    const { appendDailyLogResponse } = await import("../storage/daily-log.js");
+  // The SDK emits MCP-prefixed tool names in production
+  // (`mcp__telegram-tools__send` etc.). Bare names like `send` are how the
+  // tool is registered but NOT what the handler actually receives. This
+  // test matrix exercises both shapes — the prefixed forms are what would
+  // catch a regression where the strip-prefix logic gets dropped.
+  const cases = [
+    {
+      label: "MCP-prefixed send (production shape)",
+      toolName: "mcp__telegram-tools__send",
+      input: { type: "text", text: "Production send text" },
+      expectedText: "Production send text",
+      shouldCapture: true,
+    },
+    {
+      label: "MCP-prefixed end_turn (production shape)",
+      toolName: "mcp__telegram-tools__end_turn",
+      input: { text: "Production end_turn text" },
+      expectedText: "Production end_turn text",
+      shouldCapture: true,
+    },
+    {
+      label: "bare send (defensive — registry-shape compat)",
+      toolName: "send",
+      input: { type: "text", text: "Bare send text" },
+      expectedText: "Bare send text",
+      shouldCapture: true,
+    },
+    {
+      label: "bare end_turn (defensive — registry-shape compat)",
+      toolName: "end_turn",
+      input: { text: "Bare end_turn text" },
+      expectedText: "Bare end_turn text",
+      shouldCapture: true,
+    },
+    {
+      label: "non-text send (photo) — should NOT capture",
+      toolName: "mcp__telegram-tools__send",
+      input: { type: "photo", file_path: "/x.jpg", caption: "ignored" },
+      expectedText: "",
+      shouldCapture: false,
+    },
+    {
+      label: "react tool — should NOT capture",
+      toolName: "mcp__telegram-tools__react",
+      input: { message_id: 1, emoji: "👍" },
+      expectedText: "",
+      shouldCapture: false,
+    },
+  ];
 
-    executeMock.mockImplementationOnce(
-      async (params: Record<string, unknown>) => {
-        // Simulate execute calling onToolUse with a "send" tool
-        const onToolUse = params.onToolUse as (
-          toolName: string,
-          input: Record<string, unknown>,
-        ) => void;
-        onToolUse?.("send", { type: "text", text: "Hello from Claude!" });
-        return {
-          text: "",
-          durationMs: 5,
-          inputTokens: 1,
-          outputTokens: 2,
-          cacheRead: 0,
-          cacheWrite: 0,
-          bridgeMessageCount: 1,
-        };
-      },
-    );
+  for (const c of cases) {
+    it(`${c.shouldCapture ? "captures" : "ignores"} ${c.label}`, async () => {
+      const { appendDailyLogResponse } =
+        await import("../storage/daily-log.js");
+      const mockedFn = vi.mocked(appendDailyLogResponse);
+      const before = mockedFn.mock.calls.length;
 
-    const ctx = {
-      chat: { id: 96001, type: "private" },
-      message: { text: "hi", message_id: 950, reply_to_message: null },
-      me: { id: 999, username: "testbot" },
-      from: { id: 93, first_name: "Yuki" },
-    } as any;
+      executeMock.mockImplementationOnce(
+        async (params: Record<string, unknown>) => {
+          const onToolUse = params.onToolUse as (
+            toolName: string,
+            input: Record<string, unknown>,
+          ) => void;
+          onToolUse?.(c.toolName, c.input);
+          return {
+            text: "",
+            durationMs: 5,
+            inputTokens: 1,
+            outputTokens: 2,
+            cacheRead: 0,
+            cacheWrite: 0,
+            bridgeMessageCount: 1,
+          };
+        },
+      );
 
-    await handleTextMessage(ctx, mockBot, mockConfig);
-    await new Promise((r) => setTimeout(r, 700));
+      const ctx = {
+        chat: { id: 96001, type: "private" },
+        message: { text: "hi", message_id: 950, reply_to_message: null },
+        me: { id: 999, username: "testbot" },
+        from: { id: 93, first_name: "Yuki" },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any;
 
-    expect(appendDailyLogResponse).toHaveBeenCalledWith(
-      "Talon",
-      "Hello from Claude!",
-      expect.anything(),
-    );
-  }, 3000);
+      await handleTextMessage(ctx, mockBot, mockConfig);
+      await new Promise((r) => setTimeout(r, 700));
+
+      const newCalls = mockedFn.mock.calls.slice(before);
+      if (c.shouldCapture) {
+        expect(newCalls).toHaveLength(1);
+        expect(newCalls[0][0]).toBe("Talon");
+        expect(newCalls[0][1]).toBe(c.expectedText);
+      } else {
+        expect(newCalls).toHaveLength(0);
+      }
+    }, 3000);
+  }
 });
 
 describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", () => {

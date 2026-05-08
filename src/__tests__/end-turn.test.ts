@@ -14,7 +14,9 @@ import {
   normalizeForDedupe,
   isDuplicateOfDelivered,
   createStreamState,
+  processAssistantMessage,
 } from "../backend/claude-sdk/stream.js";
+import type { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 import { messagingTools } from "../core/tools/messaging.js";
 import {
   isTurnTerminator,
@@ -225,5 +227,81 @@ describe("end_turn tool definition", () => {
     const result = await endTurn!.execute({ text: "   \n\t  " }, bridge);
     expect(bridge).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: true, silent: true });
+  });
+});
+
+// ── Production wire-shape contract ──────────────────────────────────────────
+//
+// These tests pin the integration between the SDK's actual emitted tool
+// names (always MCP-prefixed when served via MCP) and the registry checks
+// the handler runs against them. They are the tests that would have caught
+// the bug fixed in this PR — strict-equality `isTurnTerminator("end_turn")`
+// passed in unit tests but the production code path called
+// `isTurnTerminator("mcp__telegram-tools__end_turn")` and silently failed.
+//
+// Auto-derived from ALL_TOOLS so adding a new endsTurn tool or a new MCP
+// frontend stays covered without manually adding cases.
+
+describe("turn-terminator integration with SDK production tool name shapes", () => {
+  // Built-in MCP server names that the SDK is known to wire Talon's tools
+  // through. Keep this list in sync with the actual MCP server registration
+  // in src/core/tools/mcp-server.ts and frontend wiring.
+  const KNOWN_MCP_SERVERS = ["telegram-tools", "teams-tools"];
+
+  for (const tool of ALL_TOOLS.filter((t) => t.endsTurn)) {
+    for (const server of KNOWN_MCP_SERVERS) {
+      const sdkName = `mcp__${server}__${tool.name}`;
+
+      it(`isTurnTerminator(${sdkName}) === true`, () => {
+        // The SDK never emits bare names for MCP-served tools — it always
+        // includes the `mcp__<server>__` prefix. Strict equality against the
+        // registry's bare name was the production bug.
+        expect(isTurnTerminator(sdkName)).toBe(true);
+      });
+
+      it(`processAssistantMessage + isTurnTerminator: ${sdkName} flips state.turnTerminated`, () => {
+        // End-to-end check of the exact two-step the handler does:
+        //   block.name -> tools[].name (via processAssistantMessage)
+        //   tools[].name -> isTurnTerminator
+        // If either step normalizes inconsistently, this breaks.
+        const state = createStreamState();
+        const msg = {
+          type: "assistant",
+          message: {
+            content: [
+              {
+                type: "tool_use",
+                id: "tool_1",
+                name: sdkName,
+                input: { text: "Hello sur" },
+              },
+            ],
+          },
+        } as unknown as SDKAssistantMessage;
+
+        const result = processAssistantMessage(msg, state);
+        expect(result.tools).toHaveLength(1);
+        expect(result.tools[0].name).toBe(sdkName);
+
+        // This is the exact line in handler.ts:
+        //     if (isTurnTerminator(tool.name)) state.turnTerminated = true;
+        if (isTurnTerminator(result.tools[0].name)) {
+          state.turnTerminated = true;
+        }
+        expect(state.turnTerminated).toBe(true);
+      });
+    }
+  }
+
+  it("non-terminator tools stay non-terminator under MCP prefixing", () => {
+    // Make sure prefix-stripping doesn't accidentally promote arbitrary
+    // tools to terminators.
+    const nonTerminators = ALL_TOOLS.filter((t) => !t.endsTurn);
+    expect(nonTerminators.length).toBeGreaterThan(0);
+    for (const tool of nonTerminators.slice(0, 5)) {
+      for (const server of KNOWN_MCP_SERVERS) {
+        expect(isTurnTerminator(`mcp__${server}__${tool.name}`)).toBe(false);
+      }
+    }
   });
 });
