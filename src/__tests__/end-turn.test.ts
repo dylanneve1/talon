@@ -16,7 +16,11 @@ import {
   createStreamState,
 } from "../backend/claude-sdk/stream.js";
 import { messagingTools } from "../core/tools/messaging.js";
-import { isTurnTerminator, ALL_TOOLS } from "../core/tools/index.js";
+import {
+  isTurnTerminator,
+  stripMcpPrefix,
+  ALL_TOOLS,
+} from "../core/tools/index.js";
 
 describe("normalizeForDedupe", () => {
   it("trims, lowercases, and collapses whitespace", () => {
@@ -118,6 +122,42 @@ describe("turn-terminator declaration", () => {
     expect(isTurnTerminator("react")).toBe(false);
     expect(isTurnTerminator("fetch_url")).toBe(false);
     expect(isTurnTerminator("nonexistent_tool")).toBe(false);
+  });
+
+  it("isTurnTerminator handles MCP-prefixed names", () => {
+    // Tools served through MCP arrive with a `mcp__<server>__` prefix.
+    // The check must normalize the prefix so the SDK's actual tool names
+    // match the registry. Without this, qi.interrupt() never fires and
+    // the typing indicator lingers for the full SDK natural close
+    // (~3s+ from a wasted follow-up API call).
+    expect(isTurnTerminator("mcp__telegram-tools__end_turn")).toBe(true);
+    expect(isTurnTerminator("mcp__teams-tools__end_turn")).toBe(true);
+    // Non-terminators with the same prefix shape still return false
+    expect(isTurnTerminator("mcp__telegram-tools__send")).toBe(false);
+    expect(isTurnTerminator("mcp__telegram-tools__react")).toBe(false);
+    // Server name with hyphen + underscore must still match the boundary
+    expect(isTurnTerminator("mcp__some-server-name__end_turn")).toBe(true);
+  });
+
+  it("stripMcpPrefix strips the mcp__<server>__ prefix when present", () => {
+    expect(stripMcpPrefix("mcp__telegram-tools__end_turn")).toBe("end_turn");
+    expect(stripMcpPrefix("mcp__brave-search__brave_web_search")).toBe(
+      "brave_web_search",
+    );
+    // Non-greedy match takes the FIRST `__` after `mcp__` as the boundary
+    expect(stripMcpPrefix("mcp__a__b__c")).toBe("b__c");
+  });
+
+  it("stripMcpPrefix returns input unchanged when no prefix matches", () => {
+    expect(stripMcpPrefix("end_turn")).toBe("end_turn");
+    expect(stripMcpPrefix("send")).toBe("send");
+    expect(stripMcpPrefix("Read")).toBe("Read");
+    // Looks like a prefix but missing the trailing `__`
+    expect(stripMcpPrefix("mcp__incomplete")).toBe("mcp__incomplete");
+    // Different prefix shape
+    expect(stripMcpPrefix("not_mcp__server__tool")).toBe(
+      "not_mcp__server__tool",
+    );
   });
 
   it("only one turn terminator currently exists (end_turn)", () => {

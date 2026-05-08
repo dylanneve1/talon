@@ -43,9 +43,32 @@ const TURN_TERMINATOR_NAMES: ReadonlySet<string> = new Set(
   ALL_TOOLS.filter((t) => t.endsTurn).map((t) => t.name),
 );
 
-/** Whether a tool call by this name should terminate the model's turn. */
+/**
+ * Strip an MCP server prefix (`mcp__<server>__`) from a tool name.
+ *
+ * Tools served through MCP arrive at the SDK with the prefix attached
+ * (e.g. `mcp__telegram-tools__end_turn`), while the registry stores them
+ * by their bare name (`end_turn`). Callers that want to compare against
+ * the registry should normalize first.
+ *
+ * Returns the input unchanged if no prefix matches — safe to call on any
+ * tool name. The non-greedy `.+?` matches the FIRST `__` boundary after
+ * `mcp__`, which is the server-name terminator in MCP's naming scheme.
+ */
+export function stripMcpPrefix(toolName: string): string {
+  return toolName.replace(/^mcp__.+?__/, "");
+}
+
+/**
+ * Whether a tool call by this name should terminate the model's turn.
+ *
+ * Accepts both bare names (`end_turn`) and MCP-prefixed names
+ * (`mcp__telegram-tools__end_turn`) — the prefix is stripped before
+ * comparing against the terminator set.
+ */
 export function isTurnTerminator(toolName: string): boolean {
-  return TURN_TERMINATOR_NAMES.has(toolName);
+  if (TURN_TERMINATOR_NAMES.has(toolName)) return true;
+  return TURN_TERMINATOR_NAMES.has(stripMcpPrefix(toolName));
 }
 
 /** Filter options for composing a tool set. */

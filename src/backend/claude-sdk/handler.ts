@@ -24,7 +24,7 @@ import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { formatFullDatetime } from "../../util/time.js";
-import { isTurnTerminator } from "../../core/tools/index.js";
+import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryParams, QueryResult } from "../../core/types.js";
@@ -99,15 +99,20 @@ export async function handleMessage(
   // so the end-of-turn trailing-text fallback can dedupe against content
   // already delivered. Without this, a model that writes prose AND calls a
   // delivery tool with similar text would surface twice in the chat.
+  //
+  // Tool names arrive MCP-prefixed (e.g. `mcp__telegram-tools__end_turn`)
+  // when routed through MCP — strip the prefix so equality checks match
+  // the registry's bare names.
   const captureDeliveredText = (
     toolName: string,
     input: Record<string, unknown>,
   ): void => {
+    const bareName = stripMcpPrefix(toolName);
     let deliveredText: string | undefined;
-    if (toolName === "end_turn" && typeof input.text === "string") {
+    if (bareName === "end_turn" && typeof input.text === "string") {
       deliveredText = input.text;
     } else if (
-      toolName === "send" &&
+      bareName === "send" &&
       input.type === "text" &&
       typeof input.text === "string"
     ) {
