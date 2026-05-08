@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.0](https://github.com/dylanneve1/talon/compare/v1.9.2...v1.10.0) (2026-05-08)
+
+
+### Features
+
+* **messaging:** add end_turn tool + flow enforcement ([#108](https://github.com/dylanneve1/talon/issues/108)) ([6a4f8ac](https://github.com/dylanneve1/talon/commit/6a4f8aca8d7ca8d9528ce04bac38bea94a3080a2))
+
 ## [1.9.2](https://github.com/dylanneve1/talon/compare/v1.9.1...v1.9.2) (2026-05-07)
 
 
