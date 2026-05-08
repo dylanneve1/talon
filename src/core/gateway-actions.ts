@@ -8,7 +8,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as cheerio from "cheerio";
-import { dirs } from "../util/paths.js";
+import { dirs, files } from "../util/paths.js";
 import {
   getRecentFormatted,
   searchHistory,
@@ -454,12 +454,7 @@ export async function handleSharedAction(
 
       try {
         const { readFileSync, writeFileSync } = await import("node:fs");
-        const { join } = await import("node:path");
-        const path = join(
-          process.env.HOME ?? "/home/dylan",
-          ".talon",
-          "config.json",
-        );
+        const path = files.config;
         const json = JSON.parse(readFileSync(path, "utf-8")) as Record<
           string,
           unknown

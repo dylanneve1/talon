@@ -6,6 +6,8 @@ workspace/
 .env
 coverage/
 .stryker-tmp/
+# Playwright MCP session artifacts
+.playwright-mcp/
 # Compiled binaries
 talon-bin
 talon-bun
