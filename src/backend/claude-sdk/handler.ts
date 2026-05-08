@@ -300,7 +300,7 @@ export async function handleMessage(
   // with end_turn).
   const trailing = state.lastTrailingText.trim();
   const flowViolation =
-    trailing &&
+    trailing.length > 0 &&
     !state.turnTerminated &&
     !isDuplicateOfDelivered(trailing, state.deliveredTextNorms);
 
