@@ -49,7 +49,6 @@ jobs:
 
       - name: Format check
         run: npm run format:check
-        continue-on-error: true
 
   # ── Unit & integration tests + coverage ────────────────────────
   test:
