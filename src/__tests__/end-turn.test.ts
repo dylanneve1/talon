@@ -129,9 +129,9 @@ describe("turn-terminator declaration", () => {
   it("isTurnTerminator handles MCP-prefixed names", () => {
     // Tools served through MCP arrive with a `mcp__<server>__` prefix.
     // The check must normalize the prefix so the SDK's actual tool names
-    // match the registry. Without this, qi.interrupt() never fires and
-    // the typing indicator lingers for the full SDK natural close
-    // (~3s+ from a wasted follow-up API call).
+    // match the registry. Without this, downstream branches gated on
+    // `state.turnTerminated` silently never fire — the flow-violation
+    // re-prompt skip and trailing-prose dedup both break.
     expect(isTurnTerminator("mcp__telegram-tools__end_turn")).toBe(true);
     expect(isTurnTerminator("mcp__teams-tools__end_turn")).toBe(true);
     // Non-terminators with the same prefix shape still return false
