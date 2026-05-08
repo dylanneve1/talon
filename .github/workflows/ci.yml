@@ -18,12 +18,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v6
-        with:
-          ref: ${{ github.head_ref || github.ref_name }}
-          token: ${{ secrets.PAT || github.token }}
 
       - uses: actions/setup-node@v6
         with:
@@ -47,37 +44,34 @@ jobs:
           fi
 
       - name: Dead code analysis (informational)
-        run: npx knip --no-exit-code
+        run: npm run knip -- --no-exit-code
         continue-on-error: true
 
       - name: Format check
-        id: format-check
         run: npm run format:check
         continue-on-error: true
 
-      - name: Auto-format and push
-        if: steps.format-check.outcome == 'failure'
-        run: |
-          npm run format
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No formatting changes needed"
-            exit 0
-          fi
-          git commit -m "style: auto-format with prettier"
-          git push
-
   # ── Unit & integration tests + coverage ────────────────────────
   test:
-    name: Tests (Node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Tests (${{ matrix.os }}, Node ${{ matrix.node-version }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        node-version: [22, 24]
+        include:
+          - os: ubuntu-latest
+            node-version: 22
+            coverage: true
+          - os: ubuntu-latest
+            node-version: 24
+            coverage: false
+          - os: macos-latest
+            node-version: 22
+            coverage: false
+          - os: windows-latest
+            node-version: 22
+            coverage: false
     steps:
       - uses: actions/checkout@v6
 
@@ -89,67 +83,32 @@ jobs:
       - run: npm ci
 
       - name: Run tests
-        if: matrix.node-version != 22
-        run: npx vitest run --reporter=verbose --reporter=json --outputFile=test-results.json
+        if: ${{ !matrix.coverage }}
+        run: npm run test:ci
 
       - name: Run tests with coverage
-        if: matrix.node-version == 22
+        if: ${{ matrix.coverage }}
         run: npx vitest run --coverage --reporter=verbose --reporter=json --outputFile=test-results.json
 
       - name: Test summary
         if: always()
-        run: |
-          if [ -f test-results.json ]; then
-            PASSED=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); console.log(r.numPassedTests ?? 0)")
-            FAILED=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); console.log(r.numFailedTests ?? 0)")
-            TOTAL=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); console.log(r.numTotalTests ?? 0)")
-            SUITES=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); console.log(r.numTotalTestSuites ?? 0)")
-            DURATION=$(node -e "const r=JSON.parse(require('fs').readFileSync('test-results.json','utf8')); const ms=r.testResults?.reduce((s,t)=>s+(t.endTime-t.startTime),0)??0; console.log((ms/1000).toFixed(1))")
-            echo "### Test Results (Node ${{ matrix.node-version }})" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-            echo "| Suites | $SUITES |" >> $GITHUB_STEP_SUMMARY
-            echo "| Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
-            echo "| Failed | $FAILED |" >> $GITHUB_STEP_SUMMARY
-            echo "| Total  | $TOTAL |" >> $GITHUB_STEP_SUMMARY
-            echo "| Duration | ${DURATION}s |" >> $GITHUB_STEP_SUMMARY
-          fi
+        run: node .github/scripts/vitest-summary.mjs test-results.json "Tests (${{ matrix.os }}, Node ${{ matrix.node-version }})" coverage/coverage-summary.json
 
       - name: Validate coverage report
-        if: matrix.node-version == 22
+        if: ${{ matrix.coverage }}
         run: |
-          if [ ! -f coverage/coverage-summary.json ]; then
-            echo "::error::Coverage report not generated"
-            exit 1
-          fi
-
-      - name: Coverage summary
-        if: always() && matrix.node-version == 22
-        run: |
-          if [ -f coverage/coverage-summary.json ]; then
-            echo "### Coverage Report" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Category | Coverage |" >> $GITHUB_STEP_SUMMARY
-            echo "|----------|----------|" >> $GITHUB_STEP_SUMMARY
-            node -e "
-              const c = JSON.parse(require('fs').readFileSync('coverage/coverage-summary.json','utf8')).total;
-              for (const [k,v] of Object.entries(c)) {
-                console.log('| ' + k.charAt(0).toUpperCase() + k.slice(1) + ' | ' + v.pct + '% |');
-              }
-            " >> $GITHUB_STEP_SUMMARY
-          fi
+          node -e "if (!require('fs').existsSync('coverage/coverage-summary.json')) { console.error('Coverage report not generated'); process.exit(1); }"
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-results-node-${{ matrix.node-version }}
+          name: test-results-${{ matrix.os }}-node-${{ matrix.node-version }}
           path: test-results.json
           retention-days: 14
 
       - name: Upload coverage
-        if: always() && matrix.node-version == 22
+        if: always() && matrix.coverage
         uses: actions/upload-artifact@v7
         with:
           name: coverage-report
@@ -163,7 +122,7 @@ jobs:
   functional-cross-platform:
     name: Functional (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -178,8 +137,20 @@ jobs:
 
       - run: npm ci
 
-      - name: Run launcher functional tests
-        run: npx vitest run src/__tests__/mcp-launcher-functional.test.ts src/__tests__/mcp-launcher.test.ts
+      - name: Run cross-platform functional tests
+        run: npm run test:functional
+
+      - name: Functional summary
+        if: always()
+        run: node .github/scripts/vitest-summary.mjs functional-results.json "Functional (${{ matrix.os }})"
+
+      - name: Upload functional results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: functional-results-${{ matrix.os }}
+          path: functional-results.json
+          retention-days: 14
 
   # ── Fuzz testing (property-based with fast-check) ─────────────
   fuzz:
@@ -203,17 +174,15 @@ jobs:
 
       - name: Fuzz summary
         if: always()
-        run: |
-          if [ -f fuzz-results.json ]; then
-            PASSED=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numPassedTests ?? 0)")
-            FAILED=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numFailedTests ?? 0)")
-            TOTAL=$(node -e "const r=JSON.parse(require('fs').readFileSync('fuzz-results.json','utf8')); console.log(r.numTotalTests ?? 0)")
-            echo "### Fuzz Test Results (10,000 iterations/property)" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Passed | Failed | Total |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|--------|-------|" >> $GITHUB_STEP_SUMMARY
-            echo "| $PASSED | $FAILED | $TOTAL |" >> $GITHUB_STEP_SUMMARY
-          fi
+        run: node .github/scripts/vitest-summary.mjs fuzz-results.json "Fuzz Test Results (10,000 iterations/property)"
+
+      - name: Upload fuzz results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-results
+          path: fuzz-results.json
+          retention-days: 14
 
   # ── Security audit ────────────────────────────────────────────
   security:

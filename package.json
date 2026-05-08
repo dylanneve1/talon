@@ -41,13 +41,16 @@
     "setup": "tsx src/cli.ts setup",
     "dev": "tsx --watch src/index.ts",
     "test": "vitest run",
+    "test:ci": "vitest run --reporter=verbose --reporter=json --outputFile=test-results.json",
+    "test:functional": "vitest run --reporter=verbose --reporter=json --outputFile=functional-results.json src/__tests__/package.functional.test.ts src/__tests__/tool-functional.test.ts src/__tests__/mcp-launcher.test.ts src/__tests__/mcp-launcher-functional.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint src/",
     "knip": "knip",
     "format": "prettier --write src/ prompts/",
-    "format:check": "prettier --check src/ prompts/"
+    "format:check": "prettier --check src/ prompts/",
+    "ci:protect": "node .github/scripts/enforce-ci-gate.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.108",
