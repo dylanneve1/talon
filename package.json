@@ -74,7 +74,7 @@
     "telegram": "^2.26.22",
     "tsx": "^4.21.0",
     "undici": "^8.0.2",
-    "write-file-atomic": "^7.0.1",
+    "write-file-atomic": "^8.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
