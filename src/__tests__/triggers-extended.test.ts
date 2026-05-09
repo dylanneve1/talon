@@ -40,6 +40,7 @@ const {
   cancelTrigger,
   getRunningCount,
   resumeAfterRestart,
+  _internals,
 } = await import("../core/triggers.js");
 
 import type { Trigger } from "../storage/trigger-store.js";
@@ -49,11 +50,15 @@ const {
   getTrigger,
   updateTrigger,
   deleteTrigger,
+  getTriggerByName,
   _resetTriggersForTesting,
   DEFAULT_TIMEOUT_SECONDS,
   FIRE_PAYLOAD_MAX_BYTES,
   readTriggerLogTail,
   persistNow,
+  validateLanguage,
+  sanitizeChatId,
+  languageExtension,
 } = await import("../storage/trigger-store.js");
 
 let tmpRoot: string;
@@ -386,5 +391,70 @@ describe("triggers — dispatch error", () => {
     expect(["fired", "errored"]).toContain(getTrigger(t.id)!.status);
     // execute was called once (and rejected)
     expect(executeSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Empty output: (no output) path ────────────────────────────────────────
+
+describe("triggers — empty stdout", () => {
+  it("fires with (no output) label when script produces no stdout", async () => {
+    // bufferAsPayload returns "" → trimmed is "" → body uses (no output) branch
+    const t = makeTrigger({ body: "exit 0\n" }); // no echo
+    spawnTrigger(t);
+    await waitForStatus(t.id, (s) => s === "fired");
+    const call = executeSpy.mock.calls[0][0];
+    expect(call.prompt).toMatch(/\(no output\)/);
+  });
+});
+
+// ── Mid-run TALON_FIRE: signal ────────────────────────────────────────────
+
+describe("triggers — mid-run TALON_FIRE", () => {
+  it("fires a non-terminal wake when TALON_FIRE: prefix is emitted", async () => {
+    // handleStdoutLine true branch + fireWake terminal=false (header = "signalled")
+    const t = makeTrigger({
+      body: 'printf "TALON_FIRE: mid-run event\\n"\nexit 0\n',
+    });
+    spawnTrigger(t);
+    await waitForStatus(t.id, (s) => s === "fired");
+    // Allow the non-terminal fire microtask to settle
+    await new Promise((r) => setTimeout(r, 50));
+    // At least 2 execute calls: mid-run "signalled" + terminal "fired"
+    expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    const prompts = executeSpy.mock.calls.map((c) => c[0].prompt as string);
+    expect(prompts.some((p) => p.includes("signalled"))).toBe(true);
+  });
+});
+
+// ── trigger-store validation helpers ─────────────────────────────────────
+
+describe("trigger-store — validation branches", () => {
+  it("validateLanguage returns false for an unsupported string", () => {
+    // includes() false branch
+    expect(validateLanguage("ruby")).toBe(false);
+  });
+
+  it("validateLanguage returns false for a non-string value", () => {
+    // typeof !== 'string' short-circuit branch
+    expect(validateLanguage(42)).toBe(false);
+    expect(validateLanguage(null)).toBe(false);
+  });
+
+  it("sanitizeChatId replaces non-alphanumeric characters", () => {
+    // replace() call — confirms the regex path
+    expect(sanitizeChatId("chat@room!")).toBe("chat_room_");
+    expect(sanitizeChatId("valid-chat_123")).toBe("valid-chat_123");
+  });
+
+  it("languageExtension maps all three languages", () => {
+    // explicit switch arm coverage for the languageExtension function
+    expect(languageExtension("bash")).toBe("sh");
+    expect(languageExtension("python")).toBe("py");
+    expect(languageExtension("node")).toBe("js");
+  });
+
+  it("getTriggerByName returns undefined when no match exists", () => {
+    // find() returns undefined path
+    expect(getTriggerByName("no-such-chat", "no-such-name")).toBeUndefined();
   });
 });
