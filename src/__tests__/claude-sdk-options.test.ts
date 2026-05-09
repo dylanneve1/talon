@@ -202,6 +202,147 @@ describe("buildSdkOptions", () => {
       expect(result.continue).toBe(true);
     });
   });
+
+  describe("Notification hook", () => {
+    type HookCallback = (
+      input: unknown,
+      toolUseID?: string,
+      ctx?: { signal: AbortSignal },
+    ) => Promise<{ continue: boolean }>;
+
+    const getNotifHook = async (): Promise<HookCallback> => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-notif");
+      const matchers = options.hooks?.Notification;
+      expect(matchers).toBeDefined();
+      return matchers![0]!.hooks[0] as unknown as HookCallback;
+    };
+
+    it("registers a Notification hook on the options object", async () => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-notif-1");
+      expect(options.hooks?.Notification).toBeDefined();
+      expect(options.hooks!.Notification!.length).toBe(1);
+      expect(options.hooks!.Notification![0]!.hooks.length).toBe(1);
+    });
+
+    it("returns continue:true for Notification events", async () => {
+      const hook = await getNotifHook();
+      const result = await hook(
+        {
+          hook_event_name: "Notification",
+          message: "Compacting context...",
+          notification_type: "compaction",
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      expect(result.continue).toBe(true);
+    });
+
+    it("returns continue:true for Notification events with optional title", async () => {
+      const hook = await getNotifHook();
+      const result = await hook(
+        {
+          hook_event_name: "Notification",
+          message: "Switched to claude-haiku-4-5",
+          title: "Model switch",
+          notification_type: "model_switch",
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      expect(result.continue).toBe(true);
+    });
+
+    it("ignores non-Notification events defensively", async () => {
+      const hook = await getNotifHook();
+      const result = await hook(
+        {
+          hook_event_name: "PostToolBatch",
+          tool_calls: [],
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      expect(result.continue).toBe(true);
+    });
+  });
+
+  describe("StopFailure hook", () => {
+    type HookCallback = (
+      input: unknown,
+      toolUseID?: string,
+      ctx?: { signal: AbortSignal },
+    ) => Promise<{ continue: boolean }>;
+
+    const getStopFailureHook = async (): Promise<HookCallback> => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-sf");
+      const matchers = options.hooks?.StopFailure;
+      expect(matchers).toBeDefined();
+      return matchers![0]!.hooks[0] as unknown as HookCallback;
+    };
+
+    it("registers a StopFailure hook on the options object", async () => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-sf-1");
+      expect(options.hooks?.StopFailure).toBeDefined();
+      expect(options.hooks!.StopFailure!.length).toBe(1);
+      expect(options.hooks!.StopFailure![0]!.hooks.length).toBe(1);
+    });
+
+    it("returns continue:true for StopFailure events with error_details", async () => {
+      const hook = await getStopFailureHook();
+      const result = await hook(
+        {
+          hook_event_name: "StopFailure",
+          error: {
+            type: "error",
+            error: { type: "api_error", message: "upstream failure" },
+          },
+          error_details: "raw response body here",
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      expect(result.continue).toBe(true);
+    });
+
+    it("returns continue:true for StopFailure events without error_details", async () => {
+      const hook = await getStopFailureHook();
+      const result = await hook(
+        {
+          hook_event_name: "StopFailure",
+          error: {
+            type: "error",
+            error: { type: "overloaded_error", message: "rate limited" },
+          },
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      expect(result.continue).toBe(true);
+    });
+
+    it("ignores non-StopFailure events defensively", async () => {
+      const hook = await getStopFailureHook();
+      const result = await hook(
+        {
+          hook_event_name: "Notification",
+          message: "context compacting",
+          notification_type: "compaction",
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      expect(result.continue).toBe(true);
+    });
+  });
 });
 
 // ── getActiveFrontends ────────────────────────────────────────────────────

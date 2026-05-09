@@ -10,6 +10,8 @@ import { pathToFileURL } from "node:url";
 import type {
   Options,
   PostToolBatchHookInput,
+  NotificationHookInput,
+  StopFailureHookInput,
   HookCallback,
   HookJSONOutput,
 } from "@anthropic-ai/claude-agent-sdk";
@@ -19,7 +21,7 @@ import { getPluginMcpServers } from "../../core/plugin.js";
 import { resolveModelId } from "../../core/models.js";
 import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isTurnTerminator } from "../../core/tools/index.js";
-import { log } from "../../util/log.js";
+import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 
@@ -176,6 +178,60 @@ const turnTerminatorHook: HookCallback = async (
   return { continue: true };
 };
 
+/**
+ * Notification hook: log SDK-generated notifications (e.g. context compaction,
+ * model switches, rate-limit advisories) that are otherwise silently dropped.
+ *
+ * These events fire asynchronously during a query session and carry a
+ * `notification_type` string and a human-readable `message`. Surfacing them in
+ * the agent log makes the lifecycle of a session visible — previously the only
+ * evidence of compaction or a model switch was an increase in cache-write tokens
+ * in the post-turn accounting line.
+ *
+ * Returns `{ continue: true }` — the hook is purely observational.
+ */
+const notificationHook: HookCallback = async (
+  input,
+): Promise<HookJSONOutput> => {
+  if (input.hook_event_name !== "Notification") {
+    return { continue: true };
+  }
+  const n = input as NotificationHookInput;
+  const titlePart = n.title ? ` [${n.title}]` : "";
+  log(
+    "agent",
+    `[NOTIFICATION]${titlePart} type=${n.notification_type}: ${n.message}`,
+  );
+  return { continue: true };
+};
+
+/**
+ * StopFailure hook: log SDK stop-failure events for error telemetry.
+ *
+ * `StopFailure` fires when the SDK loop exits abnormally — e.g. an API error
+ * that bypasses the normal `result` message path. Without this hook the failure
+ * is swallowed by the SDK and only the downstream catch block in handler.ts
+ * sees it (as a thrown error), losing the `error_details` field that contains
+ * the raw API response. Logging it here preserves the full context.
+ *
+ * Returns `{ continue: true }` — this hook cannot prevent the failure, only
+ * record it.
+ */
+const stopFailureHook: HookCallback = async (
+  input,
+): Promise<HookJSONOutput> => {
+  if (input.hook_event_name !== "StopFailure") {
+    return { continue: true };
+  }
+  const sf = input as StopFailureHookInput;
+  logError(
+    "agent",
+    `[STOP_FAILURE] error=${JSON.stringify(sf.error)}` +
+      (sf.error_details ? ` details=${sf.error_details}` : ""),
+  );
+  return { continue: true };
+};
+
 // ── Options builder ─────────────────────────────────────────────────────────
 
 export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
@@ -208,6 +264,8 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     },
     hooks: {
       PostToolBatch: [{ hooks: [turnTerminatorHook] }],
+      Notification: [{ hooks: [notificationHook] }],
+      StopFailure: [{ hooks: [stopFailureHook] }],
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
   };
