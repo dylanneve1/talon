@@ -22,7 +22,7 @@ import {
 } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 
 // Silence the logger
 vi.mock("../util/log.js", () => ({
@@ -52,6 +52,8 @@ const {
   _resetTriggersForTesting,
   DEFAULT_TIMEOUT_SECONDS,
   FIRE_PAYLOAD_MAX_BYTES,
+  readTriggerLogTail,
+  persistNow,
 } = await import("../storage/trigger-store.js");
 
 let tmpRoot: string;
@@ -331,5 +333,58 @@ describe("triggers — finalizeExit status branch", () => {
     expect(call.prompt).toMatch(/Status: errored/);
     // exit-code header should be in the payload
     expect(call.prompt).toMatch(/exit 3/);
+  });
+});
+
+// ── persistNow ────────────────────────────────────────────────────────────
+
+describe("trigger-store — persistNow", () => {
+  it("marks the store dirty and flushes to disk without throwing", () => {
+    // Covers lines 159-160: dirty = true; save()
+    expect(() => persistNow()).not.toThrow();
+  });
+});
+
+// ── readTriggerLogTail error path ─────────────────────────────────────────
+
+describe("trigger-store — readTriggerLogTail", () => {
+  it("returns error string when log cannot be read (catch path)", () => {
+    // A directory path: existsSync returns true, readFileSync throws EISDIR/EPERM
+    const dirPath = mkdtempSync(join(tmpdir(), "trigger-log-err-"));
+    try {
+      const { tail, truncated } = readTriggerLogTail(dirPath, 20);
+      // Covers the catch block at line 329 of trigger-store.ts
+      expect(tail).toMatch(/Failed to read log/);
+      expect(truncated).toBe(false);
+    } finally {
+      rmSync(dirPath, { recursive: true });
+    }
+  });
+
+  it("returns truncated:true when file has more lines than requested", () => {
+    const logFile = resolve(tmpRoot, "truncate-test.log");
+    writeFileSync(logFile, "line1\nline2\nline3\nline4\nline5\n");
+    const { tail, truncated } = readTriggerLogTail(logFile, 2);
+    expect(truncated).toBe(true);
+    expect(tail).toContain("line5");
+  });
+});
+
+// ── fireWakeUp dispatch error ─────────────────────────────────────────────
+
+describe("triggers — dispatch error", () => {
+  it("logs when execute() rejects but the trigger still reaches terminal state", async () => {
+    // Make the dispatch call reject — exercises the catch at line 394 of triggers.ts
+    executeSpy.mockRejectedValueOnce(new Error("network failure"));
+    const t = makeTrigger({ body: "exit 0\n" });
+    spawnTrigger(t);
+    // Status is set before the dispatch in finalizeExit; waitForStatus resolves fast
+    await waitForStatus(t.id, (s) => s === "fired" || s === "errored");
+    // Give the rejection microtask a tick to land in the catch block
+    await new Promise((r) => setTimeout(r, 50));
+    // The trigger is in a terminal state regardless of the dispatch error
+    expect(["fired", "errored"]).toContain(getTrigger(t.id)!.status);
+    // execute was called once (and rejected)
+    expect(executeSpy).toHaveBeenCalledTimes(1);
   });
 });

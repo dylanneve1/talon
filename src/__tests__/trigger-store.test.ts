@@ -142,7 +142,9 @@ describe("trigger-store", () => {
 
     it("triggerScriptPath uses the language extension", () => {
       const id = generateTriggerId();
-      expect(triggerScriptPath("c1", id, "bash")).toMatch(
+      // Normalise path separators for cross-platform compat (Windows uses \)
+      const norm = (p: string) => p.replace(/\\/g, "/");
+      expect(norm(triggerScriptPath("c1", id, "bash"))).toMatch(
         new RegExp(`/c1/${id}\\.sh$`),
       );
       expect(triggerScriptPath("c1", id, "python")).toMatch(/\.py$/);
