@@ -18,6 +18,7 @@ import { getPluginMcpServers } from "../../core/plugin.js";
 import { resolveModelId } from "../../core/models.js";
 import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isTurnTerminator } from "../../core/tools/index.js";
+import { log } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 
@@ -127,8 +128,15 @@ const turnTerminatorHook: HookCallback = async (
     return { continue: true };
   }
   const batch = input as PostToolBatchHookInput;
-  const ended = batch.tool_calls.some((tc) => isTurnTerminator(tc.tool_name));
-  if (ended) {
+  const terminator = batch.tool_calls.find((tc) =>
+    isTurnTerminator(tc.tool_name),
+  );
+  if (terminator) {
+    log(
+      "agent",
+      `PostToolBatch: terminating SDK loop on ${terminator.tool_name} ` +
+        `(batch size: ${batch.tool_calls.length})`,
+    );
     return {
       continue: false,
       stopReason: "turn terminated by end_turn / send",
