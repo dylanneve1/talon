@@ -292,5 +292,102 @@ describe("trigger-store", () => {
       expect(result.truncated).toBe(false);
       expect(result.tail).toBe("a\nb\nc");
     });
+
+    it("uses String(err) when readFileSync throws a non-Error (Branch 32 false arm)", () => {
+      // A path that exists (so existsSync passes) but readFileSync throws a string
+      const path = "/tmp/trigger-runs/err-string.log";
+      inMemoryFiles.set(path, "dummy"); // existsSyncMock returns true
+      readFileSyncMock.mockImplementationOnce(() => {
+        throw "string readFileSync error"; // non-Error → false arm of err instanceof Error
+      });
+      const result = readTriggerLogTail(path, 10);
+      expect(result.tail).toMatch(/Failed to read log/);
+      expect(result.truncated).toBe(false);
+    });
+  });
+
+  // ── loadTriggers — file not present (Branch 0 false arm) ──────────────────
+
+  describe("loadTriggers — file not present", () => {
+    it("starts with empty store when triggers file does not exist", () => {
+      // inMemoryFiles is empty → existsSyncMock returns false → skip reading
+      _resetTriggersForTesting();
+      loadTriggers();
+      expect(getTrigger("any")).toBeUndefined();
+    });
+  });
+
+  // ── loadTriggers — non-object JSON (Branch 1 false arm) ───────────────────
+
+  describe("loadTriggers — non-object JSON", () => {
+    it("falls back to empty store when primary JSON is null", () => {
+      inMemoryFiles.set(pathFiles.triggers, "null");
+      _resetTriggersForTesting();
+      loadTriggers(); // Branch 0 true, Branch 1 false arm (null is not a valid store object)
+      expect(getTrigger("any")).toBeUndefined();
+    });
+  });
+
+  // ── loadTriggers — corrupt primary file (Branches 3, 4, 5) ───────────────
+
+  describe("loadTriggers — corrupt primary file", () => {
+    it("handles corrupt primary with no backup (outer catch, inner if-false)", () => {
+      inMemoryFiles.set(pathFiles.triggers, "{ invalid json }");
+      _resetTriggersForTesting();
+      loadTriggers(); // outer catch fired; existsSync(bakFile)=false → inner if false
+      expect(getTrigger("any")).toBeUndefined();
+    });
+
+    it("loads from backup when primary is corrupt and backup is valid", () => {
+      const id = generateTriggerId();
+      const t = makeTrigger({ id, status: "fired", exitCode: 0 });
+      inMemoryFiles.set(pathFiles.triggers, "{ bad json");
+      inMemoryFiles.set(
+        pathFiles.triggers + ".bak",
+        JSON.stringify({ [id]: t }),
+      );
+      _resetTriggersForTesting();
+      loadTriggers(); // outer catch; existsSync(bakFile)=true; backup loaded (Branches 3-5)
+      expect(getTrigger(id)?.status).toBe("fired");
+    });
+
+    it("handles corrupt primary AND corrupt backup gracefully (inner catch)", () => {
+      inMemoryFiles.set(pathFiles.triggers, "{ bad primary");
+      inMemoryFiles.set(pathFiles.triggers + ".bak", "{ bad backup");
+      _resetTriggersForTesting();
+      loadTriggers(); // outer catch; existsSync(bakFile)=true; JSON.parse throws → inner catch
+      expect(getTrigger("any")).toBeUndefined();
+    });
+
+    it("falls back to empty when backup parses as null (Branch 94 false arm: typeof raw === 'object' && raw !== null)", () => {
+      // backup file exists and is valid JSON, but parses to null → ternary false arm → store = {}
+      inMemoryFiles.set(pathFiles.triggers, "{ bad primary");
+      inMemoryFiles.set(pathFiles.triggers + ".bak", "null");
+      _resetTriggersForTesting();
+      loadTriggers();
+      expect(getTrigger("any")).toBeUndefined();
+    });
+  });
+
+  // ── save() error paths (Branch 15) ────────────────────────────────────────
+
+  describe("save() error paths", () => {
+    it("catches and logs when writeFileAtomic.sync throws an Error", () => {
+      writeAtomicSyncMock.mockImplementationOnce(() => {
+        throw new Error("disk full");
+      });
+      // addTrigger → save() → writeAtomicSyncMock throws → caught inside save()
+      expect(() => addTrigger(makeTrigger())).not.toThrow();
+      // The file was NOT written (write threw before setting inMemoryFiles)
+      expect(inMemoryFiles.has(pathFiles.triggers)).toBe(false);
+    });
+
+    it("catches and logs when writeFileAtomic.sync throws a non-Error (Branch 15 false arm)", () => {
+      writeAtomicSyncMock.mockImplementationOnce(() => {
+        throw "plain string disk error"; // non-Error → covers false arm of err instanceof Error
+      });
+      expect(() => addTrigger(makeTrigger())).not.toThrow();
+      expect(inMemoryFiles.has(pathFiles.triggers)).toBe(false);
+    });
   });
 });

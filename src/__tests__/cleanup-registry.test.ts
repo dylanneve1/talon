@@ -55,4 +55,16 @@ describe("cleanup-registry", () => {
     // Listener count must not grow — one listener handles all handlers
     expect(after).toBe(before);
   });
+
+  it("handler that throws a non-Error string uses String() path (false arm of err instanceof Error)", () => {
+    let afterCalled = false;
+    registerCleanup(() => {
+      throw "string error, not an Error object"; // non-Error → covers false arm of err instanceof Error
+    });
+    registerCleanup(() => {
+      afterCalled = true;
+    });
+    expect(() => process.emit("exit", 0)).not.toThrow();
+    expect(afterCalled).toBe(true);
+  });
 });

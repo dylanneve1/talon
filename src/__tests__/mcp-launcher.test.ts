@@ -126,6 +126,24 @@ describe("mcp-launcher", () => {
     await new Promise((r) => launcher.on("exit", r));
     expect(Buffer.concat(output).toString()).toContain("hello");
   }, 10_000);
+
+  it("ensureLauncher throws when launcher file does not exist on disk", async () => {
+    // Cover the if (!existsSync(LAUNCHER_PATH)) throw branch (false arm of line 30).
+    // Use vi.doMock to intercept node:fs before the fresh module import.
+    const { vi: v } = await import("vitest");
+    v.resetModules();
+    v.doMock("node:fs", () => ({
+      existsSync: () => false,
+    }));
+    try {
+      const { ensureLauncher: freshEnsure } =
+        await import("../util/mcp-launcher.js");
+      expect(() => freshEnsure()).toThrow(/MCP launcher missing/);
+    } finally {
+      v.unmock("node:fs");
+      v.resetModules();
+    }
+  });
 });
 
 /**

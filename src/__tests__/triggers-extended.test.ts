@@ -40,6 +40,7 @@ const {
   cancelTrigger,
   getRunningCount,
   resumeAfterRestart,
+  shutdownTriggers,
   _internals,
 } = await import("../core/triggers.js");
 
@@ -456,5 +457,187 @@ describe("trigger-store — validation branches", () => {
   it("getTriggerByName returns undefined when no match exists", () => {
     // find() returns undefined path
     expect(getTriggerByName("no-such-chat", "no-such-name")).toBeUndefined();
+  });
+});
+
+// ── fireWake with undefined payload (payload ?? "" false arm) ─────────────
+
+describe("triggers — fireWake with undefined payload", () => {
+  it("uses (no output) when trigger lastError is undefined (payload ?? '' covers false arm)", async () => {
+    // lastError is absent → resumeAfterRestart passes undefined to fireWake → payload ?? "" = ""
+    // → trimmed = "" → body becomes "(no output)"
+    const id = generateTriggerId();
+    const t: Trigger = {
+      id,
+      chatId: "chat-no-lastError",
+      numericChatId: 9,
+      name: "no-err-trig",
+      language: "bash",
+      scriptPath: "/tmp/no-err.sh",
+      logPath: "/tmp/no-err.log",
+      status: "terminated",
+      createdAt: Date.now() - 10_000,
+      endedAt: Date.now() - 5_000,
+      timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+      fireCount: 0,
+      // lastFireAt intentionally absent → satisfies resumeAfterRestart condition
+      // lastError intentionally absent → payload is undefined in fireWake
+    };
+    addTrigger(t);
+    await resumeAfterRestart();
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const call = executeSpy.mock.calls[0][0];
+    // With undefined payload, trimmed = "" → body includes "(no output)"
+    expect(call.prompt).toMatch(/\(no output\)/);
+  });
+});
+
+// ── fireCount ?? 0 false arm ──────────────────────────────────────────────
+
+describe("triggers — fireCount undefined (fireCount ?? 0 false arm)", () => {
+  it("treats undefined fireCount as 0 when incrementing", async () => {
+    // Set fireCount to undefined at runtime (TypeScript type says number, but JS allows undefined)
+    const id = generateTriggerId();
+    const t: Trigger = {
+      id,
+      chatId: "chat-fc-undef",
+      numericChatId: 10,
+      name: "fc-undef-trig",
+      language: "bash",
+      scriptPath: "/tmp/fc-undef.sh",
+      logPath: "/tmp/fc-undef.log",
+      status: "terminated",
+      createdAt: Date.now() - 10_000,
+      endedAt: Date.now() - 5_000,
+      timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+      fireCount: undefined as unknown as number, // runtime undefined → covers ?? 0 right arm
+      // lastFireAt absent → satisfies resumeAfterRestart condition
+    };
+    addTrigger(t);
+    await resumeAfterRestart();
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    // fireCount ?? 0 → 0, then +1 = 1
+    expect(getTrigger(id)!.fireCount).toBe(1);
+  });
+});
+
+// ── finalizeExit without prior spawn (Branches 16 + 17) ──────────────────
+
+describe("triggers — finalizeExit without prior spawn", () => {
+  it("handles absent logStream and lineBuffer (stream if-false + lineBuffers ?? [] false arm)", async () => {
+    // Add trigger to store but do NOT call spawnTrigger — so logStreams and lineBuffers have no entry.
+    // Directly invoking _internals.finalizeExit exercises the else/false arms:
+    //   Branch 16: if (stream) → false (stream is undefined)
+    //   Branch 17: lineBuffers.get(id) ?? [] → false arm (returns [] fallback)
+    const id = generateTriggerId();
+    const t: Trigger = {
+      id,
+      chatId: "chat-nospawn",
+      numericChatId: 11,
+      name: "no-spawn-ext",
+      language: "bash",
+      scriptPath: "/tmp/nospawn-ext.sh",
+      logPath: "/tmp/nospawn-ext.log",
+      status: "running", // running + code=0 → "fired"
+      createdAt: Date.now(),
+      timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+      fireCount: 0,
+    };
+    addTrigger(t);
+    // Directly call finalizeExit — no logStream, no lineBuffer, no child, no timeout
+    await _internals.finalizeExit(id, 0, null);
+    expect(getTrigger(id)!.status).toBe("fired");
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Timeout timer fires after child already exited (if(!c) true arm) ──────
+
+describe("triggers — timeout timer fires after child has already exited", () => {
+  it("if(!c) return true arm — child gone before timer fires", async () => {
+    // timeoutSeconds=0 → Math.max(0,1)*1000 = 1000ms timer
+    // Script exits immediately (~50ms), finalizeExit deletes child from the map.
+    // Timer fires at 1000ms → children.get(id) = undefined → if (!c) return (true arm).
+    const base = makeTrigger({ body: "exit 0\n" });
+    // Reduce timeout to 0 (→ 1s) so the timer fires within the test window
+    updateTrigger(base.id, { timeoutSeconds: 0 });
+    const t = getTrigger(base.id)!;
+    spawnTrigger(t);
+    await waitForStatus(t.id, (s) => s === "fired");
+    // Wait >1s so the timer fires and exercises the if(!c) return branch
+    await new Promise((r) => setTimeout(r, 1200));
+    // Only one execute call — the "fired" dispatch. Timer returned early.
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+  }, 6000);
+});
+
+// ── Child process emits 'error' event (line 152 handler) ─────────────────
+
+describe("triggers — child process error event", () => {
+  it("logs but does not crash when child emits an error event", async () => {
+    // Spawn a long-running script so the child stays alive long enough to emit error.
+    const t = makeTrigger({ body: "sleep 10\n" });
+    spawnTrigger(t);
+    await waitForStatus(t.id, (s) => s === "running");
+    // Grab the child process from _internals.children and emit an error.
+    const child = _internals.children.get(t.id);
+    expect(child).toBeDefined();
+    // Emit error — exercises the child.on("error", ...) handler at line 152.
+    child!.emit("error", new Error("simulated child io error"));
+    // Trigger should still be running (error event is logged, not fatal)
+    expect(getTrigger(t.id)!.status).toBe("running");
+    // Cancel to clean up
+    cancelTrigger(t.id);
+    await waitForStatus(t.id, (s) => s === "cancelled");
+  }, 8000);
+});
+
+// ── pushBufferLine: buf not found (Branch 9 true arm) ────────────────────
+
+describe("triggers — pushBufferLine with no buffer entry", () => {
+  it("handleStdoutLine silently returns when no lineBuffer exists for the id", () => {
+    // Calling handleStdoutLine with a non-existent triggerId exercises the
+    // `if (!buf) return` early-return branch in pushBufferLine (line 212).
+    expect(() =>
+      _internals.handleStdoutLine("nonexistent-trigger-id", "some line"),
+    ).not.toThrow();
+  });
+});
+
+// ── shutdownTriggers: no children (Branch 12 true arm) ───────────────────
+
+describe("triggers — shutdownTriggers with no children", () => {
+  it("shutdownTriggers returns immediately when no children are running", async () => {
+    // children.size === 0 → if (children.size === 0) return; (true arm, line 233)
+    await expect(shutdownTriggers()).resolves.toBeUndefined();
+  });
+});
+
+// ── finalizeExit with null exit code (code ?? undefined false arm) ────────
+
+describe("triggers — finalizeExit with null exit code", () => {
+  it("handles null exit code (SIGTERM kill) — exercises code ?? undefined false arm", async () => {
+    // When a running trigger is killed by signal, `code` is null.
+    // finalizeExit(id, null, "SIGTERM") → code !== 0 → status="errored"
+    // → bufferAsPayload(buffered, null ?? undefined) → the ?? false arm (null → undefined).
+    const id = generateTriggerId();
+    const t: Trigger = {
+      id,
+      chatId: "chat-nullexit",
+      numericChatId: 12,
+      name: "null-exit-trig",
+      language: "bash",
+      scriptPath: "/tmp/null-exit.sh",
+      logPath: "/tmp/null-exit.log",
+      status: "running",
+      createdAt: Date.now(),
+      timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+      fireCount: 0,
+    };
+    addTrigger(t);
+    // null code = killed by signal → errored
+    await _internals.finalizeExit(id, null, "SIGTERM");
+    expect(getTrigger(id)!.status).toBe("errored");
+    expect(executeSpy).toHaveBeenCalledTimes(1);
   });
 });
