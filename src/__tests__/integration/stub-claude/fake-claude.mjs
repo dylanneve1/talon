@@ -44,9 +44,12 @@ const loadScript = () => {
   }
   const path = process.env.STUB_CLAUDE_SCRIPT;
   if (!path || !existsSync(path)) {
-    throw new Error(
-      `stub-claude: STUB_CLAUDE_SCRIPT (or _INLINE) not provided or file missing: ${path}`,
+    // No script provided — degrade gracefully. Used for SDK model-discovery
+    // boots and other "init only, never receive user messages" flows.
+    log(
+      `no script provided (path=${path ?? "unset"}), running in init-only mode`,
     );
+    return { turns: [] };
   }
   return JSON.parse(readFileSync(path, "utf8"));
 };
@@ -68,7 +71,19 @@ const defaultInitResponse = {
   agents: [],
   output_style: "default",
   available_output_styles: ["default"],
-  models: [{ id: "claude-sonnet-4-6", display_name: "Sonnet 4.6" }],
+  // ModelInfo schema (per SDK's sdk.d.ts) is { value, displayName, description }.
+  models: [
+    {
+      value: "claude-sonnet-4-6",
+      displayName: "Sonnet 4.6 (stub)",
+      description: "Stub model for integration tests",
+    },
+    {
+      value: "default",
+      displayName: "Default (stub)",
+      description: "Stub model for integration tests",
+    },
+  ],
   account: { email: "stub@stub.test", organization: { name: "stub-org" } },
 };
 
@@ -228,6 +243,18 @@ const fillDefaults = (out) => {
     };
   }
   if (out.type === "result") {
+    // Talon's stream.ts reads token usage from `modelUsage[sdkModel]`. Build a
+    // matching shape from `usage` if the test didn't provide modelUsage explicitly.
+    const usage = out.usage ?? { input_tokens: 0, output_tokens: 0 };
+    const defaultModelUsage = {
+      "claude-sonnet-4-6": {
+        inputTokens: usage.input_tokens ?? 0,
+        outputTokens: usage.output_tokens ?? 0,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        contextWindow: 200_000,
+      },
+    };
     return {
       type: "result",
       subtype: out.subtype ?? "success",
@@ -238,7 +265,8 @@ const fillDefaults = (out) => {
       num_turns: out.num_turns ?? turnIndex,
       session_id: SESSION_ID,
       total_cost_usd: out.total_cost_usd ?? 0,
-      usage: out.usage ?? { input_tokens: 0, output_tokens: 0 },
+      usage,
+      modelUsage: out.modelUsage ?? defaultModelUsage,
     };
   }
   return out;
