@@ -2,14 +2,14 @@
  * Functional-test bootstrap for Talon's claude-sdk backend against the stub
  * binary.
  *
- * Boots `initAgent()` with a minimal config that wires `claudeBinary` to the
- * stub script and uses `registerClaudeModelsStatic` to skip the SDK's model
- * discovery round-trip (otherwise every test would have to handle the
- * `supportedModels()` control flow). The result is a real `handleMessage()`
- * call path: prompt enrichment, system-prompt rebuild, options builder,
- * SDK query, stream processing, dedup, session bookkeeping — all the same
- * code the production bot runs, just talking to a deterministic stub instead
- * of the live API.
+ * Calls the **production** `initAgent()` entry point with `claudeBinary`
+ * pointed at the stub. No workarounds — the stub advertises its mock models
+ * via the standard `SDKControlInitializeResponse.models` field, so
+ * `registerClaudeModels()` discovers them by spawning the stub and walking
+ * the real init handshake. The result is the entire production code path
+ * exercised end-to-end: model discovery, prompt enrichment, system-prompt
+ * rebuild, options builder, SDK query, stream processing, dedup, session
+ * bookkeeping — only the binary the SDK spawns is fake.
  *
  * Usage in tests:
  *
@@ -33,7 +33,6 @@ import { tmpdir } from "node:os";
 import type { TalonConfig } from "../../util/config.js";
 import { initAgent } from "../../backend/claude-sdk/state.js";
 import { handleMessage } from "../../backend/claude-sdk/handler.js";
-import { registerClaudeModelsStatic } from "../../backend/claude-sdk/models.js";
 import { resetSession } from "../../storage/sessions.js";
 
 import type { StubScript } from "./stub-claude/protocol.js";
@@ -79,18 +78,11 @@ export async function ensureBooted(): Promise<void> {
     workspace,
   };
 
-  // Skip SDK model discovery — registers a synthetic model list so handler.ts
-  // can resolve "claude-sonnet-4-6" without spawning the binary just to ask.
-  registerClaudeModelsStatic([
-    {
-      id: "claude-sonnet-4-6",
-      displayName: "Sonnet (stub)",
-      description: "Stub model for integration tests",
-      aliases: [],
-      provider: "anthropic",
-    },
-  ]);
-
+  // Run the production bootstrap — `initAgent` calls `registerClaudeModels`
+  // which spawns the stub binary, performs the init handshake, and pulls the
+  // model list out of the SDKControlInitializeResponse. The stub advertises
+  // its mock models in `defaultInitResponse.models` (`fake-claude.mjs`), so
+  // discovery resolves naturally without any test-side override.
   await initAgent(config);
   booted = true;
 }

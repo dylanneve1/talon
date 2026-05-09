@@ -48,6 +48,22 @@ const stubReady = existsSync(
   ),
 );
 
+describe.skipIf(!stubReady)("Talon functional — bootstrap", () => {
+  it("discovers the stub's advertised models through the production initAgent path", async () => {
+    // No `registerClaudeModelsStatic` workaround — the stub advertises models
+    // in its init handshake response, the production model-discovery path
+    // pulls them out of `q.supportedModels()`, tests run through unmodified
+    // bootstrap.
+    await import("./talon-bootstrap.js").then((m) => m.ensureBooted());
+    const { getModels } = await import("../../core/models.js");
+    const ids = getModels().map((m) => m.id);
+    expect(ids).toContain("claude-sonnet-4-6");
+    expect(ids).toContain("default");
+    // The stub also advertises an opus model; if discovery is real, we see it.
+    expect(ids).toContain("claude-opus-4-7");
+  }, 20000);
+});
+
 describe.skipIf(!stubReady)("Talon functional — single-turn", () => {
   afterAll(() => {
     teardownBootstrap();

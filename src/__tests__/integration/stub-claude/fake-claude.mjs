@@ -66,24 +66,41 @@ const send = (obj) => {
   process.stdout.write(line + "\n");
 };
 
+// Mock models the stub advertises through the standard
+// `SDKControlInitializeResponse.models` field. The production `registerClaudeModels`
+// path discovers these via `q.supportedModels()` exactly the same way it would
+// against a real `claude` binary. That's the whole point — tests run through
+// the unmodified bootstrap, no test-side overrides for model discovery.
+//
+// Schema per SDK's sdk.d.ts: `{ value, displayName, description }` (camelCase).
+const STUB_MODELS = [
+  {
+    value: "claude-sonnet-4-6",
+    displayName: "Sonnet 4.6 (stub)",
+    description:
+      "Stub model — integration test fixture. Always responds with whatever " +
+      "the test script in STUB_CLAUDE_SCRIPT specifies for this turn.",
+  },
+  {
+    value: "claude-opus-4-7",
+    displayName: "Opus 4.7 (stub)",
+    description:
+      "Stub model — integration test fixture (alias of sonnet stub).",
+  },
+  {
+    value: "default",
+    displayName: "Default (stub)",
+    description:
+      "Default stub model — used when tests don't specify one explicitly.",
+  },
+];
+
 const defaultInitResponse = {
   commands: [],
   agents: [],
   output_style: "default",
   available_output_styles: ["default"],
-  // ModelInfo schema (per SDK's sdk.d.ts) is { value, displayName, description }.
-  models: [
-    {
-      value: "claude-sonnet-4-6",
-      displayName: "Sonnet 4.6 (stub)",
-      description: "Stub model for integration tests",
-    },
-    {
-      value: "default",
-      displayName: "Default (stub)",
-      description: "Stub model for integration tests",
-    },
-  ],
+  models: STUB_MODELS,
   account: { email: "stub@stub.test", organization: { name: "stub-org" } },
 };
 
