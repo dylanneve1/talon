@@ -5,7 +5,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../..");
-const FUNCTIONAL_TIMEOUT_MS = 180_000;
+// 4 minutes — Windows runners regularly take 3+ minutes for `npm install` on
+// the published tarball (cold cache + Windows fs latency); 3min was right at
+// the edge. Bumped from 180k after a post-merge timeout on `main`
+// (run 25603848100, 2026-05-09).
+const FUNCTIONAL_TIMEOUT_MS = 240_000;
 const NPM_CLI = process.env.npm_execpath;
 
 type RunResult = {
