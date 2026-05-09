@@ -1,0 +1,62 @@
+name: Telegram Live Tests
+
+# Live-tier integration tests against the real Telegram Bot API. Off the
+# regular CI path because they (a) hit a real external service, (b) require
+# a dedicated test bot + chat, and (c) can run only one suite at a time per
+# bot to avoid clobbering message IDs across parallel runs.
+#
+# Triggered manually via `workflow_dispatch`. The repo secrets used here:
+#   - TALON_TEST_BOT_TOKEN: a dummy bot token (NOT the production claudiusjr
+#     userbot). The shape Dylan provided 2026-05-09 lives at
+#     ~/.config/talon-tests/secrets.env on the VPS.
+#   - TALON_TEST_CHAT_ID: numeric ID of a chat the bot can post into. Run
+#     `node src/__tests__/integration/telegram-live/discover-chat.mjs`
+#     locally after sending the bot any message — it prints chat IDs.
+#
+# If either secret is missing the suite exits cleanly via `describe.skipIf`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to test (default: current branch)"
+        required: false
+        default: ""
+
+concurrency:
+  # Single job at a time — concurrent runs would race on message IDs in the
+  # shared test chat.
+  group: telegram-live-tests
+  cancel-in-progress: false
+
+jobs:
+  live-telegram:
+    name: Live Telegram integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run live-tier suites
+        env:
+          # GitHub Actions strips empty-string secrets out of the env, so a
+          # missing secret means an undefined variable, which the loader
+          # gracefully treats as "skipped".
+          TALON_TEST_BOT_TOKEN: ${{ secrets.TALON_TEST_BOT_TOKEN }}
+          TALON_TEST_CHAT_ID: ${{ secrets.TALON_TEST_CHAT_ID }}
+        run: |
+          npx vitest run \
+            src/__tests__/integration/telegram-live.test.ts \
+            src/__tests__/integration/telegram-live-functional.test.ts \
+            --reporter=verbose
