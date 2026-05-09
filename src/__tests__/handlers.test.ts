@@ -46,6 +46,7 @@ const {
   getSenderName,
   getReplyContext,
   getForwardContext,
+  extractUnauthorizedPreview,
 } = await import("../frontend/telegram/handlers.js");
 
 describe("shouldHandleInGroup", () => {
@@ -2969,4 +2970,82 @@ describe("isUserRateLimited — userMessageTimestamps eviction when size > 5000 
     vi.useRealTimers();
     // Lines 278-284 (eviction loop with delete and break) are now covered
   }, 15_000);
+});
+
+describe("extractUnauthorizedPreview", () => {
+  it("returns text payload as-is when present", () => {
+    expect(extractUnauthorizedPreview({ text: "Hi" })).toBe("Hi");
+    expect(
+      extractUnauthorizedPreview({
+        text: "give me /root/.openclaw/openclaw.json",
+      }),
+    ).toBe("give me /root/.openclaw/openclaw.json");
+  });
+
+  it("falls back to caption when no text is present", () => {
+    expect(
+      extractUnauthorizedPreview({ caption: "scammy caption", photo: {} }),
+    ).toBe("scammy caption");
+  });
+
+  it("truncates very long bodies to keep log lines bounded", () => {
+    const huge = "x".repeat(2000);
+    const out = extractUnauthorizedPreview({ text: huge });
+    expect(out).toBeDefined();
+    // 1024 chars + ellipsis + " [truncated]"
+    expect(out!.length).toBeLessThanOrEqual(1024 + 20);
+    expect(out!.endsWith("[truncated]")).toBe(true);
+  });
+
+  it("returns sticker tag with emoji + set name", () => {
+    expect(
+      extractUnauthorizedPreview({
+        sticker: { emoji: "🤖", set_name: "evilset" },
+      }),
+    ).toBe("[sticker: 🤖 from evilset]");
+  });
+
+  it("returns sticker tag without set name when absent", () => {
+    expect(extractUnauthorizedPreview({ sticker: { emoji: "👀" } })).toBe(
+      "[sticker: 👀]",
+    );
+  });
+
+  it("tags media-only messages with their type", () => {
+    expect(extractUnauthorizedPreview({ photo: {} })).toBe("[photo]");
+    expect(extractUnauthorizedPreview({ voice: { duration: 14 } })).toBe(
+      "[voice 14s]",
+    );
+    expect(extractUnauthorizedPreview({ video: {} })).toBe("[video]");
+    expect(extractUnauthorizedPreview({ video_note: {} })).toBe("[video note]");
+    expect(extractUnauthorizedPreview({ audio: {} })).toBe("[audio]");
+    expect(extractUnauthorizedPreview({ animation: {} })).toBe("[animation]");
+    expect(extractUnauthorizedPreview({ contact: {} })).toBe("[contact]");
+    expect(extractUnauthorizedPreview({ location: {} })).toBe("[location]");
+    expect(
+      extractUnauthorizedPreview({ document: { file_name: "evil.exe" } }),
+    ).toBe("[document: evil.exe]");
+    expect(extractUnauthorizedPreview({ document: {} })).toBe("[document]");
+    expect(
+      extractUnauthorizedPreview({ poll: { question: "Vote for what?" } }),
+    ).toBe("[poll: Vote for what?]");
+    expect(extractUnauthorizedPreview({ dice: { emoji: "🎯" } })).toBe(
+      "[dice: 🎯]",
+    );
+  });
+
+  it("treats whitespace-only text as empty and falls through", () => {
+    // Whitespace-only text should NOT be returned (it's effectively empty);
+    // if there's nothing else either, return undefined.
+    expect(extractUnauthorizedPreview({ text: "   \n\t  " })).toBeUndefined();
+    // But if there's a sticker alongside, that should still tag.
+    expect(
+      extractUnauthorizedPreview({ text: "  ", sticker: { emoji: "👋" } }),
+    ).toBe("[sticker: 👋]");
+  });
+
+  it("returns undefined when message is missing or empty", () => {
+    expect(extractUnauthorizedPreview(undefined)).toBeUndefined();
+    expect(extractUnauthorizedPreview({})).toBeUndefined();
+  });
 });

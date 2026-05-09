@@ -159,11 +159,117 @@ export async function isAccessAllowed(
   return false;
 }
 
+/**
+ * Maximum length of an unauthorized message body to retain in logs.
+ * Keeps abusive payloads (large pastes, attachment captions etc.) bounded
+ * while still preserving enough context to understand what was sent.
+ */
+const UNAUTHORIZED_BODY_MAX_LEN = 1024;
+
+/**
+ * Best-effort preview of an unauthorized message for forensics.
+ *
+ * Returns the visible text payload (text or caption), a short tag for
+ * media-only messages (`[sticker: 🤖]`, `[photo]`, `[voice 14s]`, etc.),
+ * or `undefined` if there's nothing meaningful to capture (e.g. a service
+ * message or empty content).
+ *
+ * Truncated to UNAUTHORIZED_BODY_MAX_LEN to keep log lines bounded.
+ */
+export function extractUnauthorizedPreview(
+  message:
+    | {
+        text?: string;
+        caption?: string;
+        sticker?: { emoji?: string; set_name?: string };
+        photo?: unknown;
+        voice?: { duration?: number };
+        video?: unknown;
+        video_note?: unknown;
+        audio?: unknown;
+        animation?: unknown;
+        document?: { file_name?: string };
+        contact?: unknown;
+        location?: unknown;
+        poll?: { question?: string };
+        dice?: { emoji?: string };
+      }
+    | undefined,
+): string | undefined {
+  if (!message) return undefined;
+
+  const text = message.text ?? message.caption;
+  if (typeof text === "string" && text.trim().length > 0) {
+    return text.length > UNAUTHORIZED_BODY_MAX_LEN
+      ? `${text.slice(0, UNAUTHORIZED_BODY_MAX_LEN)}… [truncated]`
+      : text;
+  }
+
+  if (message.sticker) {
+    const emoji = message.sticker.emoji ?? "?";
+    const set = message.sticker.set_name
+      ? ` from ${message.sticker.set_name}`
+      : "";
+    return `[sticker: ${emoji}${set}]`;
+  }
+  if (message.photo) return "[photo]";
+  if (message.voice) {
+    const dur = message.voice.duration;
+    return dur ? `[voice ${dur}s]` : "[voice]";
+  }
+  if (message.video_note) return "[video note]";
+  if (message.video) return "[video]";
+  if (message.audio) return "[audio]";
+  if (message.animation) return "[animation]";
+  if (message.document) {
+    return message.document.file_name
+      ? `[document: ${message.document.file_name}]`
+      : "[document]";
+  }
+  if (message.contact) return "[contact]";
+  if (message.location) return "[location]";
+  if (message.poll) {
+    return message.poll.question
+      ? `[poll: ${message.poll.question}]`
+      : "[poll]";
+  }
+  if (message.dice) return `[dice: ${message.dice.emoji ?? "🎲"}]`;
+
+  return undefined;
+}
+
 async function notifyUnauthorized(
   bot: Bot,
   ctx: Context,
   type: "dm" | "group",
 ): Promise<void> {
+  const sender = getSenderName(ctx.from);
+  const username = ctx.from?.username ? ` (@${ctx.from.username})` : "";
+  const userId = ctx.from?.id ?? "unknown";
+
+  // Capture message body BEFORE the cooldown check — every unauthorized
+  // attempt should be recorded for forensics, even if the user-facing
+  // warning + admin notification are suppressed by cooldown. Without
+  // this, follow-up DMs from a known social-engineering account vanish
+  // entirely from logs.
+  const body = extractUnauthorizedPreview(
+    ctx.message as Parameters<typeof extractUnauthorizedPreview>[0],
+  );
+  if (body) {
+    try {
+      appendDailyLog(
+        `⚠️ UNAUTHORIZED ${sender}${username} [id:${userId}]`,
+        body,
+      );
+    } catch {
+      /* daily log unavailable — fall through to talon.log */
+    }
+    logWarn(
+      "access",
+      `Unauthorized ${type} body from ${sender}${username} [id:${userId}]: ${body.slice(0, 200)}`,
+    );
+  }
+
   const key = type === "dm" ? `dm:${ctx.from?.id}` : `group:${ctx.chat?.id}`;
   const now = Date.now();
   const lastWarned = unauthorizedCooldown.get(key);
@@ -172,10 +278,6 @@ async function notifyUnauthorized(
     unauthorizedCooldown.clear();
   }
   unauthorizedCooldown.set(key, now);
-
-  const sender = getSenderName(ctx.from);
-  const username = ctx.from?.username ? ` (@${ctx.from.username})` : "";
-  const userId = ctx.from?.id ?? "unknown";
 
   // Warn the user
   try {
@@ -193,8 +295,9 @@ async function notifyUnauthorized(
       type === "dm"
         ? `🚨 Unauthorized DM from ${sender}${username} [id:${userId}]`
         : `🚨 Unauthorized group access: "${(ctx.chat as { title?: string })?.title ?? ctx.chat!.id}" [id:${ctx.chat!.id}] by ${sender}${username}`;
+    const detailWithBody = body ? `${detail}\n\n${body.slice(0, 400)}` : detail;
     try {
-      await bot.api.sendMessage(adminId, detail);
+      await bot.api.sendMessage(adminId, detailWithBody);
     } catch {
       /* admin unreachable — ignore */
     }
