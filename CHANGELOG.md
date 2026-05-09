@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.1](https://github.com/dylanneve1/talon/compare/v1.10.0...v1.10.1) (2026-05-09)
+
+
+### Bug Fixes
+
+* **claude-sdk:** terminate SDK loop on end_turn (MCP-prefix match + PostToolBatch hook) ([#122](https://github.com/dylanneve1/talon/issues/122)) ([a92452a](https://github.com/dylanneve1/talon/commit/a92452af146ee7f73d6c8771e6e1509d0c71bf3d))
+* **deps:** bump ip-address 10.1.0→10.2.0 to close Dependabot alert [#4](https://github.com/dylanneve1/talon/issues/4) ([#120](https://github.com/dylanneve1/talon/issues/120)) ([31b6f9d](https://github.com/dylanneve1/talon/commit/31b6f9d1761a5d2526c748ed15a17e042e4189c0))
+
 ## [1.10.0](https://github.com/dylanneve1/talon/compare/v1.9.2...v1.10.0) (2026-05-08)
 
 
