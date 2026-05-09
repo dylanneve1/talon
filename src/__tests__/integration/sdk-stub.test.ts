@@ -24,15 +24,23 @@ import {
   fireHook,
 } from "./stub-claude/helpers.js";
 
-// Windows + Node 20.19+ refuses to spawn .cmd/.bat/.ps1 files via the
-// child_process.spawn API without `opts.shell = true` (CVE-2024-27980
-// mitigation). The Claude Agent SDK calls `spawn(claudeBinary, args)`
-// directly, so our `fake-claude.cmd` shim hits EINVAL on Windows runners.
-// Cross-platform coverage on macOS + Linux still gives us POSIX validation;
-// Windows would need a real .exe shim (e.g. via Node SEA) to participate.
-const skipOnWindows = process.platform === "win32";
+// On Windows the stub binary is a SEA-compiled `.exe` (built via
+// `npm run build:stub-sea`). On POSIX it's the `.mjs` source with shebang.
+// If the .exe isn't present (build step skipped), we skip the suite cleanly
+// rather than fail with `ENOENT`.
+import { existsSync } from "node:fs";
+import { resolve as resolvePath, dirname as dirnamePath } from "node:path";
+import { fileURLToPath as fileUrl } from "node:url";
+const __testDir = dirnamePath(fileUrl(import.meta.url));
+const stubBinaryPath = resolvePath(
+  __testDir,
+  process.platform === "win32"
+    ? "stub-claude/fake-claude.exe"
+    : "stub-claude/fake-claude.mjs",
+);
+const stubReady = existsSync(stubBinaryPath);
 
-describe.skipIf(skipOnWindows)("SDK integration (stub binary)", () => {
+describe.skipIf(!stubReady)("SDK integration (stub binary)", () => {
   it("completes a simple text-only turn", async () => {
     const result = await runWithStub({
       prompt: "say hi",

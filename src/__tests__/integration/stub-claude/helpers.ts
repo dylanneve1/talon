@@ -48,9 +48,13 @@ import type {
 // ── Fixture helpers ─────────────────────────────────────────────────────────
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// On Windows, Node 20.19+ refuses to spawn `.cmd` shims via child_process
+// (CVE-2024-27980 mitigation). The SDK calls `spawn` directly without
+// `shell: true`, so we use a SEA-compiled (.exe) binary instead. Build
+// it once before the test run via `npm run build:stub-sea`.
 const STUB_BINARY = resolve(
   __dirname,
-  process.platform === "win32" ? "fake-claude.cmd" : "fake-claude.mjs",
+  process.platform === "win32" ? "fake-claude.exe" : "fake-claude.mjs",
 );
 
 export function assistantText(text: string): StubAssistant {

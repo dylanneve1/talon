@@ -39,10 +39,11 @@ import { resetSession } from "../../storage/sessions.js";
 import type { StubScript } from "./stub-claude/protocol.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+// See stub-claude/helpers.ts for the Windows-vs-POSIX rationale.
 const STUB_BINARY = resolve(
   __dirname,
   process.platform === "win32"
-    ? "stub-claude/fake-claude.cmd"
+    ? "stub-claude/fake-claude.exe"
     : "stub-claude/fake-claude.mjs",
 );
 

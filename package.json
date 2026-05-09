@@ -43,6 +43,7 @@
     "test": "vitest run",
     "test:ci": "vitest run --reporter=verbose --reporter=json --outputFile=test-results.json",
     "test:functional": "vitest run --reporter=verbose --reporter=json --outputFile=functional-results.json src/__tests__/package.functional.test.ts src/__tests__/tool-functional.test.ts src/__tests__/mcp-launcher.test.ts src/__tests__/mcp-launcher-functional.test.ts src/__tests__/integration/sdk-stub.test.ts src/__tests__/integration/talon-functional.test.ts",
+    "build:stub-sea": "node src/__tests__/integration/stub-claude/build-sea.mjs",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",

@@ -136,6 +136,13 @@ jobs:
 
       - run: npm ci
 
+      # Stub claude SEA build — only required on Windows (where Node 20.19+
+      # CVE-2024-27980 blocks spawning .cmd shims via child_process.spawn).
+      # POSIX uses the .mjs directly via shebang and skips the build.
+      - name: Build stub claude SEA binary (Windows)
+        if: runner.os == 'Windows'
+        run: npm run build:stub-sea
+
       - name: Run cross-platform functional tests
         run: npm run test:functional
 

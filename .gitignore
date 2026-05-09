@@ -13,3 +13,9 @@ talon-bun
 # vitest reporter outputs
 functional-results.json
 test-results.json
+
+# Stub claude SEA build artifacts (built per-platform at test setup)
+src/__tests__/integration/stub-claude/fake-claude
+src/__tests__/integration/stub-claude/fake-claude.exe
+src/__tests__/integration/stub-claude/fake-claude.cjs
+src/__tests__/integration/stub-claude/sea-prep.blob

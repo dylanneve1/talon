@@ -32,11 +32,23 @@ function deliveredText(
     .join("");
 }
 
-// See sdk-stub.test.ts for the Windows skip rationale. tl;dr Node 20.19+
-// blocks spawning .cmd shims via child_process.spawn (CVE-2024-27980).
-const skipOnWindows = process.platform === "win32";
+// Skip if the stub binary isn't on disk (e.g. someone forgot to run
+// `npm run build:stub-sea` on Windows). On POSIX the .mjs source is always
+// shipped so this is effectively always true.
+import { existsSync } from "node:fs";
+import { resolve as resolvePath, dirname as dirnamePath } from "node:path";
+import { fileURLToPath as fileUrl } from "node:url";
+const __testDir = dirnamePath(fileUrl(import.meta.url));
+const stubReady = existsSync(
+  resolvePath(
+    __testDir,
+    process.platform === "win32"
+      ? "stub-claude/fake-claude.exe"
+      : "stub-claude/fake-claude.mjs",
+  ),
+);
 
-describe.skipIf(skipOnWindows)("Talon functional — single-turn", () => {
+describe.skipIf(!stubReady)("Talon functional — single-turn", () => {
   afterAll(() => {
     teardownBootstrap();
   });
