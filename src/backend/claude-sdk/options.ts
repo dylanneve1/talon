@@ -6,12 +6,18 @@
  */
 
 import { resolve } from "node:path";
-import type { Options } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  Options,
+  PostToolBatchHookInput,
+  HookCallback,
+  HookJSONOutput,
+} from "@anthropic-ai/claude-agent-sdk";
 import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
 import { resolveModelId } from "../../core/models.js";
 import { wrapMcpServer } from "../../util/mcp-launcher.js";
+import { isTurnTerminator } from "../../core/tools/index.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 
@@ -90,6 +96,47 @@ export function buildMcpServers(
   return servers;
 }
 
+// ── Hooks ───────────────────────────────────────────────────────────────────
+
+/**
+ * PostToolBatch hook: terminate the SDK query loop the moment a turn-terminator
+ * tool (e.g. `end_turn`) resolves in the assistant's tool batch.
+ *
+ * Why PostToolBatch and not PostToolUse:
+ *   - PostToolUse fires per-tool and may run concurrently for parallel tool
+ *     calls. Returning `continue: false` from there can race with sibling MCP
+ *     tools whose AbortControllers haven't yet completed — the same race that
+ *     killed the previous `qi.interrupt()` approach (see handler.ts comment
+ *     and commit `d5ce30f`).
+ *   - PostToolBatch fires exactly ONCE after every tool in the batch has
+ *     resolved. By definition there are no in-flight siblings to race with.
+ *
+ * What this saves:
+ *   - The ~2-3s "phantom typing" round-trip the SDK makes after `end_turn`
+ *     returns (the model has nothing to say, generates a stop_turn anyway).
+ *   - Trailing prose that gets generated during that round-trip and was
+ *     previously suppressed only at the delivery layer (real tokens spent).
+ *
+ * Returns `{ continue: false, stopReason: ... }` → SDK exits with TerminalReason
+ * `'hook_stopped'`, no further model generation.
+ */
+const turnTerminatorHook: HookCallback = async (
+  input,
+): Promise<HookJSONOutput> => {
+  if (input.hook_event_name !== "PostToolBatch") {
+    return { continue: true };
+  }
+  const batch = input as PostToolBatchHookInput;
+  const ended = batch.tool_calls.some((tc) => isTurnTerminator(tc.tool_name));
+  if (ended) {
+    return {
+      continue: false,
+      stopReason: "turn terminated by end_turn / send",
+    };
+  }
+  return { continue: true };
+};
+
 // ── Options builder ─────────────────────────────────────────────────────────
 
 export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
@@ -119,6 +166,9 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     mcpServers: {
       ...buildMcpServers(chatId),
       ...getPluginMcpServers(`http://127.0.0.1:${getBridgePort()}`, chatId),
+    },
+    hooks: {
+      PostToolBatch: [{ hooks: [turnTerminatorHook] }],
     },
     ...(session.sessionId ? { resume: session.sessionId } : {}),
   };

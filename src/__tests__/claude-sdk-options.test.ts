@@ -107,4 +107,99 @@ describe("buildSdkOptions", () => {
     expect(activeModel).toBe("claude-sonnet-4-6[1m]");
     expect(options.model).toBe("sonnet[1m]");
   });
+
+  describe("PostToolBatch turn-terminator hook", () => {
+    type HookCallback = (
+      input: unknown,
+      toolUseID?: string,
+      ctx?: { signal: AbortSignal },
+    ) => Promise<{ continue?: boolean; stopReason?: string }>;
+
+    const callHook = async (toolNames: string[]): Promise<unknown> => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-hook-test");
+
+      const matchers = options.hooks?.PostToolBatch;
+      expect(matchers).toBeDefined();
+      expect(matchers!.length).toBe(1);
+      const hook = matchers![0]!.hooks[0] as unknown as HookCallback;
+
+      return hook(
+        {
+          hook_event_name: "PostToolBatch",
+          tool_calls: toolNames.map((name, i) => ({
+            tool_name: name,
+            tool_input: {},
+            tool_use_id: `tu_${i}`,
+          })),
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+    };
+
+    it("registers a PostToolBatch hook on the options object", async () => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-hook-1");
+      expect(options.hooks?.PostToolBatch).toBeDefined();
+      expect(options.hooks!.PostToolBatch!.length).toBe(1);
+      expect(options.hooks!.PostToolBatch![0]!.hooks.length).toBe(1);
+    });
+
+    it("returns continue:false when an MCP-prefixed end_turn is in the batch", async () => {
+      const result = (await callHook([
+        "mcp__telegram-tools__send",
+        "mcp__telegram-tools__end_turn",
+      ])) as { continue: boolean; stopReason?: string };
+      expect(result.continue).toBe(false);
+      expect(result.stopReason).toMatch(/end_turn/i);
+    });
+
+    it("returns continue:false when a bare end_turn is in the batch", async () => {
+      const result = (await callHook(["end_turn"])) as {
+        continue: boolean;
+      };
+      expect(result.continue).toBe(false);
+    });
+
+    it("returns continue:true when no terminator is in the batch", async () => {
+      const result = (await callHook([
+        "mcp__telegram-tools__send",
+        "Read",
+        "Bash",
+      ])) as { continue: boolean };
+      expect(result.continue).toBe(true);
+    });
+
+    it("returns continue:true on an empty batch", async () => {
+      const result = (await callHook([])) as { continue: boolean };
+      expect(result.continue).toBe(true);
+    });
+
+    it("ignores non-PostToolBatch events defensively", async () => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-hook-defensive");
+      const hook = options.hooks!.PostToolBatch![0]!.hooks[0] as unknown as (
+        input: unknown,
+        id?: string,
+        ctx?: { signal: AbortSignal },
+      ) => Promise<{ continue: boolean }>;
+
+      const result = await hook(
+        {
+          hook_event_name: "PostToolUse",
+          tool_name: "mcp__telegram-tools__end_turn",
+          tool_input: {},
+          tool_response: {},
+          tool_use_id: "tu_0",
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      expect(result.continue).toBe(true);
+    });
+  });
 });
