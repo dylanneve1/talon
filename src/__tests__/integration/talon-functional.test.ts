@@ -32,7 +32,11 @@ function deliveredText(
     .join("");
 }
 
-describe("Talon functional — single-turn", () => {
+// See sdk-stub.test.ts for the Windows skip rationale. tl;dr Node 20.19+
+// blocks spawning .cmd shims via child_process.spawn (CVE-2024-27980).
+const skipOnWindows = process.platform === "win32";
+
+describe.skipIf(skipOnWindows)("Talon functional — single-turn", () => {
   afterAll(() => {
     teardownBootstrap();
   });
