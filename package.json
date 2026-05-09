@@ -91,6 +91,7 @@
   },
   "overrides": {
     "@anthropic-ai/sdk": "^0.95.0",
-    "ip-address": "^10.1.1"
+    "ip-address": "^10.1.1",
+    "fast-uri": "^3.1.2"
   }
 }
