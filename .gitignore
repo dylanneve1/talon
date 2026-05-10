@@ -13,6 +13,11 @@ talon-bun
 # vitest reporter outputs
 functional-results.json
 test-results.json
+integration-results.json
+fuzz-results.json
+
+# npm pack artifacts
+*.tgz
 
 # Stub claude SEA build artifacts (built per-platform at test setup)
 src/__tests__/integration/stub-claude/fake-claude
