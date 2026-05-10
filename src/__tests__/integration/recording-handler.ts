@@ -99,15 +99,23 @@ export function makeRecordingHandler(
       case "read_chat_history":
       case "search_chat_history":
       case "get_chat_info":
+      // Note: list_chat_members tool bridges to "list_known_users" (not
+      // "list_chat_members") — handle both for robustness.
+      case "list_known_users":
       case "list_chat_members":
       case "get_member_info":
       case "online_count":
       case "list_pinned":
+      case "get_pinned_messages":
       case "get_chat_admins":
       case "get_chat_member_count":
       case "get_message_by_id":
       case "list_media":
         return { ok: true, items: [] };
+
+      case "set_chat_title":
+      case "set_chat_description":
+        return { ok: true };
 
       default:
         return { ok: true };
