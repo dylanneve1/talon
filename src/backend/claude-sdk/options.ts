@@ -72,12 +72,14 @@ export function buildMcpServers(
       TALON_CHAT_ID: chatId,
       TALON_FRONTEND: frontend,
     };
+    // `node --import <tsx-loader>` everywhere — tsx as a Node loader works
+    // identically on Windows and POSIX, and avoids spawning `npx.cmd` (which
+    // Node 20.19+ refuses to execute via child_process.spawn without
+    // shell:true; CVE-2024-27980 mitigation). The wrapping launcher would
+    // hit the same .cmd ban when calling its child.
     servers[serverName] = wrapMcpServer({
-      command: process.platform === "win32" ? "npx" : "node",
-      args:
-        process.platform === "win32"
-          ? ["tsx", mcpServerPath]
-          : ["--import", tsxImport, mcpServerPath],
+      command: "node",
+      args: ["--import", tsxImport, mcpServerPath],
       env: mcpEnv,
     });
   }
