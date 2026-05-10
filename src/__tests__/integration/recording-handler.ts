@@ -117,6 +117,20 @@ export function makeRecordingHandler(
       case "set_chat_description":
         return { ok: true };
 
+      // Sticker read paths — return harmless empty payloads
+      case "get_sticker_pack":
+      case "save_sticker_pack":
+        return { ok: true, items: [] };
+
+      // Sticker write / management paths
+      case "download_sticker":
+      case "create_sticker_set":
+      case "add_sticker_to_set":
+      case "delete_sticker_from_set":
+      case "set_sticker_set_title":
+      case "delete_sticker_set":
+        return { ok: true };
+
       default:
         return { ok: true };
     }
