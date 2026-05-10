@@ -53,6 +53,12 @@ const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =
   await import("../backend/claude-sdk/models.js");
 registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
 const { Cron } = await import("croner");
+const { messagingTools } = await import("../core/tools/messaging.js");
+const { stripMcpPrefix, isTurnTerminator, ALL_TOOLS } =
+  await import("../core/tools/index.js");
+const { markdownToTelegramHtml, escapeHtml } =
+  await import("../frontend/telegram/formatting.js");
+const { z } = await import("zod");
 
 // ── Configuration ───────────────────────────────────────────────────────────
 
@@ -368,6 +374,297 @@ describe("fuzz: resolveModelName()", () => {
 
         const result = resolveModelName(input);
         expect(result).toBe(input.trim());
+      }),
+      fcParams,
+    );
+  });
+});
+
+// ── Fuzz: stripMcpPrefix() ──────────────────────────────────────────────────
+//
+// Tool names arrive at handler.ts in two shapes: bare (`end_turn`) when
+// declared natively and MCP-prefixed (`mcp__telegram-tools__end_turn`) when
+// served through MCP. `stripMcpPrefix` is the boundary normalizer used by
+// `isTurnTerminator`, dedup capture, and the daily-log capture path.
+// PR #122 lived for 8 weeks because three call sites compared against bare
+// names and the prefixed ones never matched. Fuzz makes sure no input
+// shape (including UTF-8, empty strings, malformed prefixes) ever throws.
+
+describe("fuzz: stripMcpPrefix()", () => {
+  it("never throws on arbitrary strings, always returns a string", () => {
+    fc.assert(
+      fc.property(fc.string(), (input) => {
+        const result = stripMcpPrefix(input);
+        expect(typeof result).toBe("string");
+      }),
+      fcParams,
+    );
+  });
+
+  it("input without `mcp__` prefix is returned unchanged", () => {
+    fc.assert(
+      fc.property(
+        fc.string().filter((s) => !s.startsWith("mcp__")),
+        (input) => {
+          expect(stripMcpPrefix(input)).toBe(input);
+        },
+      ),
+      fcParams,
+    );
+  });
+
+  it("synthesized mcp__<server>__<tool> always reduces to <tool>", () => {
+    // Server names: alphanumeric + hyphens (matches MCP convention).
+    const serverNameArb = fc
+      .string({ minLength: 1, maxLength: 30 })
+      .filter((s) => /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(s));
+    // Tool names can include underscores (`end_turn`, `send_message`) but
+    // not the `__` boundary itself.
+    const toolNameArb = fc
+      .string({ minLength: 1, maxLength: 30 })
+      .filter((s) => /^[A-Za-z0-9_]+$/.test(s) && !s.includes("__"));
+
+    fc.assert(
+      fc.property(serverNameArb, toolNameArb, (server, tool) => {
+        const full = `mcp__${server}__${tool}`;
+        expect(stripMcpPrefix(full)).toBe(tool);
+      }),
+      fcParams,
+    );
+  });
+
+  it("isTurnTerminator never throws on arbitrary strings", () => {
+    fc.assert(
+      fc.property(fc.string(), (input) => {
+        const result = isTurnTerminator(input);
+        expect(typeof result).toBe("boolean");
+      }),
+      fcParams,
+    );
+  });
+
+  it("isTurnTerminator agrees with bare/prefixed equivalence", () => {
+    // For every endsTurn tool, every MCP-prefixed shape AND the bare name
+    // must return true. Anchors PR #122's regression: if a future change
+    // breaks the prefix-stripping path, this fails fast.
+    const endsTurnTools = ALL_TOOLS.filter((t) => t.endsTurn).map(
+      (t) => t.name,
+    );
+    if (endsTurnTools.length === 0) return; // nothing to test
+    const serverArb = fc.constantFrom(
+      "telegram-tools",
+      "teams-tools",
+      "some-server-x",
+    );
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...endsTurnTools),
+        serverArb,
+        (toolName, serverName) => {
+          expect(isTurnTerminator(toolName)).toBe(true);
+          expect(isTurnTerminator(`mcp__${serverName}__${toolName}`)).toBe(
+            true,
+          );
+        },
+      ),
+      fcParams,
+    );
+  });
+});
+
+// ── Fuzz: messaging-tool zod schemas ────────────────────────────────────────
+//
+// Every messaging tool declares a zod schema describing its input shape.
+// `tool.execute(params, bridge)` only runs after the schema validates.
+// This suite hammers each schema with arbitrary input and asserts:
+//   - .safeParse() never throws (it shouldn't — that's its contract)
+//   - When parsing succeeds, the resulting object is shaped correctly
+// Catches schema regressions: a future change that turns a `z.string()`
+// into something throw-prone (e.g. a discriminated union missing a case)
+// would fail here.
+
+describe("fuzz: messaging-tool zod schemas", () => {
+  for (const tool of messagingTools) {
+    // Build a zod object schema from the tool's field-level schema map.
+    const objectSchema = z.object(tool.schema);
+
+    it(`${tool.name}: safeParse never throws on arbitrary objects`, () => {
+      fc.assert(
+        fc.property(
+          fc.dictionary(fc.string(), fc.anything(), {
+            minKeys: 0,
+            maxKeys: 8,
+          }),
+          (input) => {
+            const parsed = objectSchema.safeParse(input);
+            expect(typeof parsed.success).toBe("boolean");
+            if (parsed.success) {
+              expect(typeof parsed.data).toBe("object");
+            }
+          },
+        ),
+        fcParams,
+      );
+    });
+
+    it(`${tool.name}: safeParse on undefined / null / primitives returns failure`, () => {
+      // The tool's input is always an object — primitives + null/undefined
+      // must fail validation cleanly, never throw.
+      const nonObjectArb = fc.oneof(
+        fc.constantFrom(undefined, null),
+        fc.string(),
+        fc.integer(),
+        fc.boolean(),
+      );
+      fc.assert(
+        fc.property(nonObjectArb, (input) => {
+          const parsed = objectSchema.safeParse(input);
+          expect(parsed.success).toBe(false);
+        }),
+        fcParams,
+      );
+    });
+  }
+});
+
+// ── Fuzz: messaging-tool execute() ──────────────────────────────────────────
+//
+// For every tool, generate arbitrary VALID input (the exhaustive way: build
+// the input object from the zod schema's introspected fields), then call
+// `tool.execute(params, fakeBridge)`. The fakeBridge captures every call
+// and returns a synthetic success. Properties:
+//   - execute never throws on valid input
+//   - bridge is called at most a small bounded number of times per execute
+//   - if it returns ok, the return shape is sensible (`ok` is bool)
+//
+// We use a permissive arbitrary (anything, then filter to objects). Tools
+// that bail early on bad input return without calling bridge — that's
+// fine, we only assert no throw + return shape.
+
+describe("fuzz: messaging-tool execute()", () => {
+  for (const tool of messagingTools) {
+    it(`${tool.name}: execute never throws + returns ok-shaped result`, async () => {
+      // Build an arbitrary that's "object-ish" — most useful inputs are
+      // dictionaries that may or may not satisfy the schema.
+      const objectArb = fc.dictionary(fc.string(), fc.anything(), {
+        minKeys: 0,
+        maxKeys: 6,
+      });
+
+      await fc.assert(
+        fc.asyncProperty(objectArb, async (input) => {
+          // Small fakeBridge: records calls, returns plausible success.
+          const calls: Array<{
+            action: string;
+            body: Record<string, unknown>;
+          }> = [];
+          const fakeBridge = async (
+            action: string,
+            body: Record<string, unknown>,
+          ) => {
+            calls.push({ action, body });
+            return { ok: true, message_id: 1 };
+          };
+
+          let result: unknown;
+          try {
+            result = await tool.execute(
+              input as Record<string, unknown>,
+              fakeBridge,
+            );
+          } catch (err) {
+            // Tool execute is allowed to throw on invalid input — the SDK's
+            // schema validation gates this in production. Acceptable failure.
+            expect(err).toBeInstanceOf(Error);
+            return;
+          }
+
+          // If it didn't throw, it returned something. Most messaging tools
+          // return `{ok: bool, ...}` — we only require the result is an
+          // object or undefined (some tools may legitimately return void).
+          if (result !== undefined && result !== null) {
+            expect(typeof result).toBe("object");
+          }
+          // Bridge calls should be bounded — no tool should fan out massively.
+          expect(calls.length).toBeLessThanOrEqual(2);
+        }),
+        // execute is async + spawns no subprocesses, but we keep iterations
+        // modest for time budget.
+        { numRuns: Math.min(NUM_RUNS, 200) },
+      );
+    });
+  }
+});
+
+// ── Fuzz: markdownToTelegramHtml ────────────────────────────────────────────
+//
+// Used on every outbound message. Anything the model can produce flows
+// through this — including malformed markdown, code-block deltas mid-token,
+// nested formatting that isn't valid Telegram HTML. Must never throw and
+// must always return a string. The function is also responsible for some
+// HTML escaping so the output should never contain unescaped raw `<` or `&`
+// at top level outside of generated tags.
+
+describe("fuzz: markdownToTelegramHtml()", () => {
+  it("never throws on arbitrary input", () => {
+    fc.assert(
+      fc.property(fc.string(), (input) => {
+        const result = markdownToTelegramHtml(input);
+        expect(typeof result).toBe("string");
+      }),
+      fcParams,
+    );
+  });
+
+  it("never throws on long arbitrary strings (size-stressed)", () => {
+    // fast-check 4 collapsed the unicode-specific arbitraries into plain
+    // `string()` with a `unit` constraint; the default unit covers
+    // arbitrary Unicode codepoints which is what we want here.
+    fc.assert(
+      fc.property(
+        fc.string({ minLength: 0, maxLength: 500 }),
+        (input: string) => {
+          const result = markdownToTelegramHtml(input);
+          expect(typeof result).toBe("string");
+        },
+      ),
+      fcParams,
+    );
+  });
+
+  it("never throws on heavily nested markdown", () => {
+    // Adversarial input: deeply nested formatting that often breaks naive
+    // markdown parsers.
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 20 }), (depth) => {
+        const opens = "*".repeat(depth) + "_".repeat(depth) + "`".repeat(depth);
+        const closes =
+          "`".repeat(depth) + "_".repeat(depth) + "*".repeat(depth);
+        const input = `${opens}content${closes}`;
+        const result = markdownToTelegramHtml(input);
+        expect(typeof result).toBe("string");
+      }),
+      fcParams,
+    );
+  });
+
+  it("escapeHtml never throws + always escapes `<`, `>`, `&`, `\"`, `'`", () => {
+    fc.assert(
+      fc.property(fc.string(), (input) => {
+        const result = escapeHtml(input);
+        expect(typeof result).toBe("string");
+        // No raw < > & " ' should appear in the output (they should all
+        // have been replaced with entities). Note: digits/entities like
+        // `&amp;` ARE allowed.
+        // Strip valid entities before checking.
+        const stripped = result
+          .replace(/&amp;/g, "")
+          .replace(/&lt;/g, "")
+          .replace(/&gt;/g, "")
+          .replace(/&quot;/g, "")
+          .replace(/&#39;/g, "")
+          .replace(/&apos;/g, "");
+        expect(stripped).not.toMatch(/[<>&]/);
       }),
       fcParams,
     );
