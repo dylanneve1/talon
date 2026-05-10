@@ -6,6 +6,7 @@
  */
 
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import type {
   Options,
   PostToolBatchHookInput,
@@ -45,10 +46,17 @@ export function buildMcpServers(
   const config = getConfig();
   const bridgeUrl = `http://127.0.0.1:${getBridgePort()}`;
 
-  const tsxImport = resolve(
-    import.meta.dirname ?? ".",
-    "../../../node_modules/tsx/dist/esm/index.mjs",
-  );
+  // tsx as a Node loader is passed via `--import <url>`. Node accepts URLs
+  // or absolute paths, but on Windows a raw backslash path (`D:\…\tsx`) is
+  // ambiguous between path and URL — the loader hook fails to register and
+  // every subsequent `import` of a .ts file throws. `pathToFileURL` produces
+  // a cross-platform `file://` URL that Node always treats as a loader URL.
+  const tsxImport = pathToFileURL(
+    resolve(
+      import.meta.dirname ?? ".",
+      "../../../node_modules/tsx/dist/esm/index.mjs",
+    ),
+  ).href;
   const mcpServerPath = resolve(
     import.meta.dirname ?? ".",
     "../../core/tools/mcp-server.ts",
