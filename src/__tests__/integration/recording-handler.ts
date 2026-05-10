@@ -93,6 +93,9 @@ export function makeRecordingHandler(
         return { ok: true };
 
       // Read paths — return harmless empty payloads
+      // Note: the read_chat_history tool calls bridge("read_history", ...) —
+      // both names are handled here for correctness.
+      case "read_history":
       case "read_chat_history":
       case "search_chat_history":
       case "get_chat_info":
