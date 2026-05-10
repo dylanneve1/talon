@@ -240,9 +240,35 @@ async function runHeartbeatAgent(
   const lastRunIso =
     lastRunTimestamp > 0 ? new Date(lastRunTimestamp).toISOString() : "never";
 
+  // Re-read config on each run so runtime changes (e.g. set_config, direct edits)
+  // take effect without requiring a Talon restart. Falls back to startup configRef
+  // if the config file is unreadable.
+  let liveConfig = configRef;
+  try {
+    const raw = JSON.parse(readFileSync(pathFiles.config, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    liveConfig = {
+      model: typeof raw.model === "string" ? raw.model : configRef.model,
+      heartbeatModel:
+        typeof raw.heartbeatModel === "string"
+          ? raw.heartbeatModel
+          : configRef.heartbeatModel,
+      claudeBinary:
+        typeof raw.claudeBinary === "string"
+          ? raw.claudeBinary
+          : configRef.claudeBinary,
+      workspace:
+        typeof raw.workspace === "string" ? raw.workspace : configRef.workspace,
+    };
+  } catch {
+    // Config file unreadable — use startup values (logged below via model line)
+  }
+
   const logsDir = dirs.logs;
   const memoryFile = pathFiles.memory;
-  const workspace = configRef.workspace ?? dirs.workspace;
+  const workspace = liveConfig.workspace ?? dirs.workspace;
   const instructionsFile = resolve(workspace, "heartbeat-instructions.md");
   const dailyMemoryFile = resolve(dirs.dailyMemory, `${toYMD(new Date())}.md`);
 
@@ -265,7 +291,7 @@ async function runHeartbeatAgent(
   }
 
   const model =
-    configRef.heartbeatModel ?? configRef.model ?? getDefaultModel();
+    liveConfig.heartbeatModel ?? liveConfig.model ?? getDefaultModel();
 
   // Set up heartbeat log file
   const heartbeatLogFile = await createHeartbeatLogFile();
@@ -289,8 +315,8 @@ async function runHeartbeatAgent(
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
-    ...(configRef.claudeBinary
-      ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
+    ...(liveConfig.claudeBinary
+      ? { pathToClaudeCodeExecutable: liveConfig.claudeBinary }
       : {}),
     // Load all registered plugin MCP servers (excludes frontend-specific tools like telegram)
     mcpServers: getPluginMcpServers("", "heartbeat"),
