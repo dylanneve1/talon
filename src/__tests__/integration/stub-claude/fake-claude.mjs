@@ -36,6 +36,122 @@ const log = (msg) => {
   if (LOG_FILE) appendFileSync(LOG_FILE, msg + "\n");
 };
 
+// ── MCP config + client management ──────────────────────────────────────────
+//
+// The SDK passes `--mcp-config '<json>'` on the binary's argv based on the
+// `mcpServers` option. The real claude binary spawns those subprocesses and
+// dispatches tool_use → MCP `tools/call` round-trips. The stub does the same
+// when `script.dispatchMcp` is true — a real MCP client connection over stdio
+// to each configured server, lazy spawn on first use.
+
+const parseMcpConfig = () => {
+  const argv = process.argv;
+  const idx = argv.findIndex((a) => a === "--mcp-config");
+  if (idx === -1 || idx + 1 >= argv.length) return { mcpServers: {} };
+  try {
+    return JSON.parse(argv[idx + 1]);
+  } catch (e) {
+    log("--mcp-config parse error: " + e.message);
+    return { mcpServers: {} };
+  }
+};
+
+const MCP_CONFIG = parseMcpConfig();
+log(
+  "MCP_CONFIG servers: " +
+    JSON.stringify(Object.keys(MCP_CONFIG.mcpServers ?? {})),
+);
+
+/** Map of server name → {client, transport} once connected. */
+const mcpClients = new Map();
+
+const getMcpClient = async (serverName) => {
+  if (mcpClients.has(serverName)) return mcpClients.get(serverName);
+  const cfg = MCP_CONFIG.mcpServers?.[serverName];
+  if (!cfg) {
+    log(`getMcpClient: no config for server ${serverName}`);
+    return null;
+  }
+  try {
+    const { Client } =
+      await import("@modelcontextprotocol/sdk/client/index.js");
+    const { StdioClientTransport } =
+      await import("@modelcontextprotocol/sdk/client/stdio.js");
+    const transport = new StdioClientTransport({
+      command: cfg.command,
+      args: cfg.args ?? [],
+      env: cfg.env ? { ...process.env, ...cfg.env } : { ...process.env },
+      stderr: "pipe",
+    });
+    const client = new Client(
+      { name: "stub-claude", version: "0.0.0" },
+      { capabilities: {} },
+    );
+    await client.connect(transport);
+    log(`MCP connected: ${serverName}`);
+    const entry = { client, transport };
+    mcpClients.set(serverName, entry);
+    return entry;
+  } catch (e) {
+    log(`MCP connect error for ${serverName}: ${e.message}`);
+    return null;
+  }
+};
+
+/**
+ * Parse `mcp__<server>__<tool>` into [serverName, toolName]. The boundary is
+ * the first `__` after the leading `mcp__` — server names may contain
+ * hyphens (e.g. `telegram-tools`) but not `__` itself.
+ */
+const parseMcpToolName = (fullName) => {
+  if (!fullName.startsWith("mcp__")) return null;
+  const idx = fullName.indexOf("__", 5);
+  if (idx === -1) return null;
+  return [fullName.slice(5, idx), fullName.slice(idx + 2)];
+};
+
+const dispatchMcpToolUse = async (block) => {
+  const parsed = parseMcpToolName(block.name);
+  if (!parsed) {
+    log(`dispatchMcpToolUse: not MCP-routed: ${block.name}`);
+    return null;
+  }
+  const [serverName, toolName] = parsed;
+  const conn = await getMcpClient(serverName);
+  if (!conn) return null;
+  try {
+    log(
+      `MCP tools/call ${serverName}.${toolName} ` +
+        JSON.stringify(block.input).slice(0, 200),
+    );
+    const result = await conn.client.callTool({
+      name: toolName,
+      arguments: block.input,
+    });
+    log("MCP tools/call result: " + JSON.stringify(result).slice(0, 500));
+    return result;
+  } catch (e) {
+    log(`MCP tools/call error: ${e.message}`);
+    return { isError: true, content: [{ type: "text", text: e.message }] };
+  }
+};
+
+const closeAllMcpClients = async () => {
+  for (const [name, { client, transport }] of mcpClients) {
+    try {
+      await client.close();
+    } catch (e) {
+      log(`MCP close error ${name}: ${e.message}`);
+    }
+    try {
+      await transport.close();
+    } catch {
+      /* ignore */
+    }
+  }
+  mcpClients.clear();
+};
+
 // ── Load script ──────────────────────────────────────────────────────────────
 
 const loadScript = () => {
@@ -235,6 +351,45 @@ const handleUser = async (_msg) => {
     }
     const filled = fillDefaults(out);
     send(filled);
+
+    // ── MCP auto-dispatch ─────────────────────────────────────────────────
+    // After emitting the assistant message to the SDK, walk its tool_use
+    // blocks and dispatch any MCP-routed names through a real MCP client
+    // connection. The result lands in the protocol log and is also wrapped
+    // as a synthetic `user`/`tool_result` message back to the SDK so the
+    // handler.ts loop sees the round-trip the same way it would in
+    // production. Disabled by default — opt in via `script.dispatchMcp`.
+    if (
+      SCRIPT.dispatchMcp &&
+      filled.type === "assistant" &&
+      Array.isArray(filled.message?.content)
+    ) {
+      for (const block of filled.message.content) {
+        if (block?.type !== "tool_use") continue;
+        const result = await dispatchMcpToolUse(block);
+        if (result === null) continue;
+        // Synthesize a user/tool_result so the SDK can chain on it. The
+        // real binary sends this back through stdout when MCP returns.
+        send({
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: block.id,
+                content: Array.isArray(result.content)
+                  ? result.content
+                  : [{ type: "text", text: JSON.stringify(result) }],
+                is_error: Boolean(result.isError),
+              },
+            ],
+          },
+          session_id: SESSION_ID,
+          parent_tool_use_id: out.parent_tool_use_id ?? null,
+        });
+      }
+    }
   }
 };
 
@@ -338,15 +493,17 @@ process.stdin.on("data", (chunk) => {
   }
 });
 
-process.stdin.on("end", () => {
+process.stdin.on("end", async () => {
   log("STDIN ENDED");
+  await closeAllMcpClients();
   // Give pending stdout writes time to flush, then exit
   setTimeout(() => process.exit(0), 50);
 });
 
 // Safety: hard timeout so a misbehaving test doesn't hang CI
 const HARD_TIMEOUT_MS = Number(process.env.STUB_CLAUDE_TIMEOUT_MS ?? 10000);
-setTimeout(() => {
+setTimeout(async () => {
   log(`HARD TIMEOUT after ${HARD_TIMEOUT_MS}ms`);
+  await closeAllMcpClients();
   process.exit(2);
 }, HARD_TIMEOUT_MS).unref();

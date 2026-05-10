@@ -298,9 +298,16 @@ export class Gateway {
         });
         httpServer.listen(p, "127.0.0.1", () => {
           this.server = httpServer;
-          this.port = p;
-          log("gateway", `Action gateway on :${p}`);
-          resolve(p);
+          // When the caller asks for port 0 the OS assigns a random free
+          // port — read the actual port off the listening socket instead
+          // of saving the requested 0.
+          const addr = httpServer.address();
+          this.port =
+            typeof addr === "object" && addr !== null
+              ? (addr as { port: number }).port
+              : p;
+          log("gateway", `Action gateway on :${this.port}`);
+          resolve(this.port);
         });
       };
       tryPort(port);

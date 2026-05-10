@@ -20,6 +20,21 @@ export interface StubScript {
   systemInit?: Record<string, unknown>;
   /** Sequential turns. Turn N is consumed on the Nth user message received. */
   turns?: StubTurn[];
+  /**
+   * When true, the stub auto-dispatches every emitted `tool_use` block whose
+   * name matches the `mcp__<server>__<tool>` shape via a real MCP client
+   * connection to the configured server. The result is recorded in the
+   * protocol log and (optionally) inserted into the SDK stream as a
+   * synthetic `tool_result` so downstream assistant turns can chain on it.
+   *
+   * The MCP server config comes from `--mcp-config` on the stub's argv —
+   * the SDK passes that automatically based on the `mcpServers` option,
+   * which Talon's `buildMcpServers` populates when the bootstrap config
+   * uses a non-terminal frontend (e.g. `frontend: "telegram"`).
+   *
+   * Default: `false`. Existing tests don't need to opt in.
+   */
+  dispatchMcp?: boolean;
 }
 
 export interface StubTurn {
