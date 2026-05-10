@@ -164,12 +164,6 @@ jobs:
   # action handler. This is the tier that catches SDK→MCP→bridge→handler
   # integration bugs (e.g. PR #122's prefix mismatch) without needing a
   # live external service. See `talon-mcp-functional.test.ts`.
-  #
-  # Linux + macOS only. Windows is excluded because the stub's SEA-bundled
-  # MCP client + StdioClientTransport spawn-and-fetch chain doesn't reach
-  # the gateway under the SEA-on-Windows runtime — needs a follow-up dive.
-  # The other functional tests (sdk-stub, talon-functional) DO run on
-  # Windows because they don't exercise MCP dispatch.
   integration:
     name: Integration (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -177,7 +171,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
 
@@ -187,6 +181,10 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Build stub claude SEA binary (Windows)
+        if: runner.os == 'Windows'
+        run: npm run build:stub-sea
 
       - name: Run MCP-functional integration tests
         run: npm run test:integration
