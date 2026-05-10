@@ -31,6 +31,15 @@
 import { readFileSync, appendFileSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 
+// Static imports — esbuild's CJS bundle (used for the Windows SEA build)
+// keeps dynamic `await import(...)` as `require(...)` calls, but the SEA
+// binary doesn't ship `node_modules`, so dynamic imports fail at runtime
+// on Windows. Static imports force esbuild to inline the module bodies
+// into the bundle, which is what we need for SEA. POSIX uses the .mjs
+// directly so it doesn't matter there, but keeping it consistent.
+import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+
 const LOG_FILE = process.env.STUB_CLAUDE_LOG;
 const log = (msg) => {
   if (LOG_FILE) appendFileSync(LOG_FILE, msg + "\n");
@@ -73,17 +82,13 @@ const getMcpClient = async (serverName) => {
     return null;
   }
   try {
-    const { Client } =
-      await import("@modelcontextprotocol/sdk/client/index.js");
-    const { StdioClientTransport } =
-      await import("@modelcontextprotocol/sdk/client/stdio.js");
     const transport = new StdioClientTransport({
       command: cfg.command,
       args: cfg.args ?? [],
       env: cfg.env ? { ...process.env, ...cfg.env } : { ...process.env },
       stderr: "pipe",
     });
-    const client = new Client(
+    const client = new McpClient(
       { name: "stub-claude", version: "0.0.0" },
       { capabilities: {} },
     );

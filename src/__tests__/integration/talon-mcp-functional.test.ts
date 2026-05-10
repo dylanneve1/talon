@@ -64,6 +64,35 @@ const stubReady = existsSync(
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
+/**
+ * Helper: surface the stub binary's protocol log on assertion failure.
+ *
+ * The MCP-functional tier runs through several subprocess hops (SDK loop,
+ * MCP server spawn, bridge HTTP) that produce no Vitest assertion output
+ * when something goes wrong upstream of the test's actual `expect(...)`.
+ * Wrap each test body in this so a failure on `recording.captured` length
+ * doesn't leave us guessing what the MCP layer was doing — the protocol
+ * log shows whether the client connected, whether `tools/call` returned,
+ * whether the result was an error, etc.
+ */
+async function withProtocolLogOnFailure<
+  T extends { protocolLog: string[] } | undefined,
+>(turn: T, fn: () => void | Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    if (turn && turn.protocolLog?.length) {
+      // eslint-disable-next-line no-console
+      console.error(
+        "\n=== stub protocol log (last 60 lines) ===\n" +
+          turn.protocolLog.slice(-60).join("\n") +
+          "\n=== end protocol log ===\n",
+      );
+    }
+    throw err;
+  }
+}
+
 describe.skipIf(!stubReady)(
   "Stub backend + real MCP dispatch + recording handler",
   () => {
@@ -91,24 +120,26 @@ describe.skipIf(!stubReady)(
         },
       });
 
-      // The handler captured the assistant message + tool_use.
-      const endTurnCall = turn.toolUses.find((t) =>
-        t.name.endsWith("end_turn"),
-      );
-      expect(endTurnCall).toBeDefined();
-      expect(endTurnCall!.input.text).toBe(replyText);
+      await withProtocolLogOnFailure(turn, () => {
+        // The handler captured the assistant message + tool_use.
+        const endTurnCall = turn.toolUses.find((t) =>
+          t.name.endsWith("end_turn"),
+        );
+        expect(endTurnCall).toBeDefined();
+        expect(endTurnCall!.input.text).toBe(replyText);
 
-      // The recording action handler captured exactly one send_message,
-      // routed through the full SDK→MCP→bridge→gateway chain.
-      const sends = recording.byAction("send_message");
-      expect(sends.length).toBeGreaterThanOrEqual(1);
-      expect(sends[0].body.text).toBe(replyText);
+        // The recording action handler captured exactly one send_message,
+        // routed through the full SDK→MCP→bridge→gateway chain.
+        const sends = recording.byAction("send_message");
+        expect(sends.length).toBeGreaterThanOrEqual(1);
+        expect(sends[0].body.text).toBe(replyText);
 
-      // Stub's protocol log shows MCP dispatch happened.
-      const mcpLines = turn.protocolLog.filter((l) =>
-        l.includes("MCP tools/call"),
-      );
-      expect(mcpLines.length).toBeGreaterThanOrEqual(1);
+        // Stub's protocol log shows MCP dispatch happened.
+        const mcpLines = turn.protocolLog.filter((l) =>
+          l.includes("MCP tools/call"),
+        );
+        expect(mcpLines.length).toBeGreaterThanOrEqual(1);
+      });
 
       cleanupTurn(turn);
     }, 45_000);
