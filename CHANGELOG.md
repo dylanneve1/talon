@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.11.0](https://github.com/dylanneve1/talon/compare/v1.10.1...v1.11.0) (2026-05-11)
+
+
+### Features
+
+* **access:** capture unauthorized message bodies for forensics ([#135](https://github.com/dylanneve1/talon/issues/135)) ([49e1029](https://github.com/dylanneve1/talon/commit/49e10292b05ee1508a8221ac964662b72f415bb5))
+
+
+### Bug Fixes
+
+* **deps:** bump fast-uri 3.1.0→3.1.2 (Dependabot alerts [#7](https://github.com/dylanneve1/talon/issues/7) + [#11](https://github.com/dylanneve1/talon/issues/11)) ([#134](https://github.com/dylanneve1/talon/issues/134)) ([0709805](https://github.com/dylanneve1/talon/commit/0709805e7258d0306a061b603192e87ea1c2669b))
+
 ## [1.10.1](https://github.com/dylanneve1/talon/compare/v1.10.0...v1.10.1) (2026-05-09)
 
 
