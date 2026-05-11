@@ -9,7 +9,7 @@
  */
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -43,7 +43,36 @@ export type HeartbeatState = {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const HEARTBEAT_STATE_FILE = pathFiles.heartbeatState;
-const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute max
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute soft cap
+const DEFAULT_HEARTBEAT_ABORT_GRACE_MS = 30 * 1000;
+const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
+
+function envMs(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/** Overridable via env (eg integration tests). Falls back to 10 min. */
+const HEARTBEAT_TIMEOUT_MS = envMs(
+  "TALON_HEARTBEAT_TIMEOUT_MS",
+  DEFAULT_HEARTBEAT_TIMEOUT_MS,
+);
+/**
+ * After we abort the SDK on timeout, wait this long for the agent promise to
+ * settle gracefully. If it still hasn't settled we release the lock anyway
+ * (so the next heartbeat can fire) and trigger a subprocess sweep.
+ */
+const HEARTBEAT_ABORT_GRACE_MS = envMs(
+  "TALON_HEARTBEAT_ABORT_GRACE_MS",
+  DEFAULT_HEARTBEAT_ABORT_GRACE_MS,
+);
+/** SIGTERM → grace → SIGKILL window when force-killing orphan subprocesses. */
+const SUBPROCESS_KILL_GRACE_MS = envMs(
+  "TALON_HEARTBEAT_SUBPROCESS_KILL_GRACE_MS",
+  DEFAULT_SUBPROCESS_KILL_GRACE_MS,
+);
 const HEARTBEAT_LOGS_DIR = resolve(dirs.logs, "heartbeats");
 const STARTUP_DELAY_MS = 5 * 60 * 1000; // 5-minute delay before first run
 
@@ -329,12 +358,19 @@ async function runHeartbeatAgent(
     `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
   );
 
+  // AbortController is the SDK's canonical way to signal a cancellation. When
+  // .abort() is called the SDK should tear down its subprocess and the query()
+  // async iterator should throw. We still defend against the case where it
+  // doesn't — see HEARTBEAT_ABORT_GRACE_MS below.
+  const abortController = new AbortController();
+
   const options = {
     model,
     systemPrompt: buildHeartbeatSystemPrompt(),
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
+    abortController,
     ...(configRef.claudeBinary
       ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
       : {}),
@@ -361,16 +397,19 @@ async function runHeartbeatAgent(
     disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
   };
 
-  // NOTE: The timeout races against the agent promise but cannot abort the
-  // underlying Claude subprocess (the Agent SDK does not expose an abort
-  // mechanism). On timeout, we still await the agent promise to ensure the
-  // running lock is not released while the subprocess is still active.
+  // Timeout that requests eviction (graceful first, force-kill on grace exit).
+  let timeoutFired = false;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    const t = setTimeout(
-      () => reject(new Error("Heartbeat agent timed out")),
-      HEARTBEAT_TIMEOUT_MS,
-    );
+    const t = setTimeout(() => {
+      timeoutFired = true;
+      try {
+        abortController.abort();
+      } catch {
+        /* ignore */
+      }
+      reject(new Error("Heartbeat agent timed out"));
+    }, HEARTBEAT_TIMEOUT_MS);
     t.unref(); // Don't prevent Node.js from exiting cleanly during shutdown
     timeoutHandle = t;
   });
@@ -396,15 +435,144 @@ async function runHeartbeatAgent(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
-    // On timeout, wait for the agent to actually finish before releasing the lock
-    // to prevent overlapping heartbeat runs
-    await agentPromise.catch(() => {});
+    if (timeoutFired) {
+      // Give the SDK a bounded grace window to clean up its subprocess after
+      // the abort signal — but never wait indefinitely. If the SDK ignores
+      // the abort (this has happened in prod), release the lock anyway and
+      // launch an orphan-subprocess sweep in the background.
+      const settled = await raceWithTimeout(
+        agentPromise.catch(() => "settled"),
+        HEARTBEAT_ABORT_GRACE_MS,
+      );
+      if (settled === "timed_out") {
+        logWarn(
+          "heartbeat",
+          `Heartbeat #${runCount} SDK ignored abort after ${HEARTBEAT_ABORT_GRACE_MS}ms — releasing lock and evicting orphan subprocesses`,
+        );
+        // Fire-and-forget — we don't block the next heartbeat on subprocess
+        // cleanup. Any errors are logged inside the sweep itself.
+        evictOrphanHeartbeatSubprocesses().catch((sweepErr) => {
+          logError("heartbeat", "Orphan subprocess sweep failed", sweepErr);
+        });
+      }
+    } else {
+      // Non-timeout failure path — agentPromise has already rejected/resolved.
+      // No need to wait.
+      await agentPromise.catch(() => {});
+    }
     throw err;
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 
   return heartbeatLogFile;
+}
+
+// ── Eviction helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Race a promise against a timeout. Returns the promise's value on success,
+ * or the sentinel `"timed_out"` if the timeout fires first. Never throws.
+ */
+async function raceWithTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+): Promise<T | "timed_out"> {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<"timed_out">((resolve) => {
+        t = setTimeout(() => resolve("timed_out"), ms);
+        t.unref();
+      }),
+    ]);
+  } finally {
+    if (t) clearTimeout(t);
+  }
+}
+
+/**
+ * Find and kill any lingering `claude` subprocess (and its descendants) whose
+ * environment carries `TALON_CHAT_ID=heartbeat`. We identify them by reading
+ * /proc/<pid>/environ — that file is owned by the same uid as the spawner
+ * (us) and contains the env vars Talon set when launching the SDK subprocess
+ * via MCP launcher. SIGTERM with a short grace, then SIGKILL.
+ *
+ * Exported for tests; do not call from non-eviction code paths.
+ */
+export async function evictOrphanHeartbeatSubprocesses(): Promise<{
+  found: number;
+  termed: number;
+  killed: number;
+}> {
+  const result = { found: 0, termed: 0, killed: 0 };
+
+  if (process.platform !== "linux") {
+    // /proc is Linux-only. macOS/Windows: rely on SDK abort + grace alone.
+    return result;
+  }
+
+  const myPid = process.pid;
+  let entries: string[];
+  try {
+    entries = await readdir("/proc");
+  } catch {
+    return result;
+  }
+
+  const matched: number[] = [];
+  for (const entry of entries) {
+    const pid = Number(entry);
+    if (!Number.isInteger(pid) || pid === myPid) continue;
+    try {
+      const environRaw = await readFile(`/proc/${pid}/environ`, "utf-8");
+      // /proc/<pid>/environ is NUL-delimited. Looking for our heartbeat marker.
+      if (environRaw.includes("TALON_CHAT_ID=heartbeat")) {
+        matched.push(pid);
+      }
+    } catch {
+      // Process exited between readdir and readFile, or we don't own it. Skip.
+      continue;
+    }
+  }
+
+  result.found = matched.length;
+  if (matched.length === 0) return result;
+
+  // SIGTERM all matched pids.
+  for (const pid of matched) {
+    try {
+      process.kill(pid, "SIGTERM");
+      result.termed++;
+    } catch {
+      // ESRCH (already gone) or EPERM — ignore.
+    }
+  }
+
+  // Grace, then SIGKILL anything that hasn't exited.
+  await new Promise<void>((r) => {
+    const t = setTimeout(r, SUBPROCESS_KILL_GRACE_MS);
+    t.unref();
+  });
+
+  for (const pid of matched) {
+    try {
+      // process.kill with signal 0 just probes — throws ESRCH if gone.
+      process.kill(pid, 0);
+      // Still alive — escalate.
+      process.kill(pid, "SIGKILL");
+      result.killed++;
+    } catch {
+      // Already gone — no-op.
+    }
+  }
+
+  log(
+    "heartbeat",
+    `Subprocess sweep: found=${result.found} termed=${result.termed} killed=${result.killed}`,
+  );
+  return result;
 }
 
 // ── Logging helpers ─────────────────────────────────────────────────────────

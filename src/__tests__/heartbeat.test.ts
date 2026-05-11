@@ -264,6 +264,17 @@ describe("forceHeartbeat", () => {
   it("resolves successfully when agent mock yields no messages", async () => {
     await expect(forceHeartbeat()).resolves.toBeUndefined();
   });
+
+  it("passes an AbortController to the SDK query() options", async () => {
+    await forceHeartbeat();
+
+    const queryCall = queryMock.mock.calls[0] as unknown as [
+      { options: { abortController?: AbortController } },
+    ];
+    const ac = queryCall[0].options.abortController;
+    expect(ac).toBeInstanceOf(AbortController);
+    expect(ac?.signal.aborted).toBe(false);
+  });
 });
 
 describe("getHeartbeatStatus", () => {
@@ -489,5 +500,228 @@ describe("awaitCurrentRun", () => {
     await awaitPromise;
     await runPromise;
     expect(awaited).toBe(true);
+  });
+});
+
+// ── Eviction tests ────────────────────────────────────────────────────────
+//
+// These cover the fix for the wedged-heartbeat bug: when the SDK subprocess
+// hangs and ignores AbortController.abort(), the heartbeat must still
+// release its lock so the next interval can fire. Prior behaviour was to
+// `await agentPromise.catch(() => {})` indefinitely, which deadlocked the
+// lock for as long as the SDK was hung (in prod: 17+ hours on 2026-05-10).
+
+describe("heartbeat eviction (timeout + abort + orphan sweep)", () => {
+  let mod: typeof import("../core/heartbeat.js");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let evictionQueryMock: any;
+
+  beforeEach(async () => {
+    // Re-import the module with small timeouts so tests don't wait minutes.
+    process.env.TALON_HEARTBEAT_TIMEOUT_MS = "50";
+    process.env.TALON_HEARTBEAT_ABORT_GRACE_MS = "50";
+    process.env.TALON_HEARTBEAT_SUBPROCESS_KILL_GRACE_MS = "10";
+    vi.resetModules();
+
+    // Re-mock everything for the fresh module graph.
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
+    vi.doMock("node:fs", () => ({
+      existsSync: () => false,
+      readFileSync: (filePath: string) => {
+        const p = String(filePath).replace(/\\/g, "/");
+        if (p.endsWith("/heartbeat.md"))
+          return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
+        return "null";
+      },
+      mkdirSync: vi.fn(),
+    }));
+    vi.doMock("node:fs/promises", () => ({
+      appendFile: vi.fn(async () => {}),
+      mkdir: vi.fn(async () => undefined),
+      // Force readdir to return empty so the orphan sweep finds nothing.
+      readdir: vi.fn(async () => []),
+      readFile: vi.fn(async () => ""),
+    }));
+    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    evictionQueryMock = vi.fn<() => AsyncGenerator<any>>();
+    vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
+      query: evictionQueryMock,
+    }));
+    vi.doMock("../core/plugin.js", () => ({
+      getPluginMcpServers: vi.fn(() => ({})),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        heartbeatState: "/fake/.talon/workspace/memory/heartbeat_state.json",
+        dreamState: "/fake/.talon/workspace/memory/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
+        prompts: "/fake/.talon/prompts",
+      },
+    }));
+
+    mod = await import("../core/heartbeat.js");
+    mod.initHeartbeat({ model: "claude-sonnet-4-6" });
+  });
+
+  afterEach(() => {
+    delete process.env.TALON_HEARTBEAT_TIMEOUT_MS;
+    delete process.env.TALON_HEARTBEAT_ABORT_GRACE_MS;
+    delete process.env.TALON_HEARTBEAT_SUBPROCESS_KILL_GRACE_MS;
+    vi.doUnmock("../util/log.js");
+    vi.doUnmock("node:fs");
+    vi.doUnmock("node:fs/promises");
+    vi.doUnmock("write-file-atomic");
+    vi.doUnmock("@anthropic-ai/claude-agent-sdk");
+    vi.doUnmock("../core/plugin.js");
+    vi.doUnmock("../util/paths.js");
+  });
+
+  it("calls AbortController.abort() when the agent hangs past the timeout", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    evictionQueryMock.mockImplementationOnce(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (args: any) => {
+        capturedSignal = args.options.abortController?.signal;
+        // Hang: an async generator that yields forever but resolves cleanly
+        // when its signal aborts.
+        // eslint-disable-next-line require-yield
+        return (async function* () {
+          await new Promise<void>((resolve) => {
+            const onAbort = () => resolve();
+            capturedSignal?.addEventListener("abort", onAbort, { once: true });
+          });
+          // After abort, throw to mimic the SDK's behaviour.
+          throw new Error("aborted");
+        })();
+      },
+    );
+
+    await expect(mod.forceHeartbeat()).rejects.toThrow(
+      "Heartbeat agent timed out",
+    );
+
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal!.aborted).toBe(true);
+  });
+
+  it("releases the running lock even when the SDK ignores abort", async () => {
+    // Pathological SDK: never settles even after abort is signalled. This is
+    // the exact prod failure mode from 2026-05-10.
+    evictionQueryMock.mockImplementationOnce(() => {
+      return (async function* () {
+        // Never yields, never throws — wait on a promise that's never resolved.
+        await new Promise<void>(() => {
+          /* unresolved */
+        });
+        // eslint-disable-next-line @typescript-eslint/no-unreachable
+        yield undefined;
+      })();
+    });
+
+    await expect(mod.forceHeartbeat()).rejects.toThrow(
+      "Heartbeat agent timed out",
+    );
+
+    // The critical property: a second heartbeat must NOT be rejected with
+    // "Heartbeat already running" — the lock must have been released.
+    // Use a clean-yielding mock for the second call so the test stays bounded.
+    evictionQueryMock.mockImplementationOnce(async function* () {
+      // No yields == clean exit
+    });
+    await expect(mod.forceHeartbeat()).resolves.toBeUndefined();
+  }, 5000);
+
+  it("evictOrphanHeartbeatSubprocesses is a no-op on non-Linux platforms", async () => {
+    const originalPlatform = Object.getOwnPropertyDescriptor(
+      process,
+      "platform",
+    );
+    Object.defineProperty(process, "platform", {
+      value: "darwin",
+      configurable: true,
+    });
+
+    try {
+      const result = await mod.evictOrphanHeartbeatSubprocesses();
+      expect(result).toEqual({ found: 0, termed: 0, killed: 0 });
+    } finally {
+      if (originalPlatform) {
+        Object.defineProperty(process, "platform", originalPlatform);
+      }
+    }
+  });
+
+  it("evictOrphanHeartbeatSubprocesses scans /proc and identifies heartbeat-marked subprocesses on Linux", async () => {
+    // Override the mocked node:fs/promises specifically for this test
+    vi.doMock("node:fs/promises", () => ({
+      appendFile: vi.fn(async () => {}),
+      mkdir: vi.fn(async () => undefined),
+      readdir: vi.fn(async () => ["1", "2", "999", "self", "thread"]),
+      // PIDs 1 and 999 are heartbeat-marked; 2 isn't; thread errors.
+      readFile: vi.fn(async (path: string) => {
+        if (path === "/proc/1/environ")
+          return "TALON_CHAT_ID=heartbeat\0OTHER=x";
+        if (path === "/proc/2/environ") return "TALON_CHAT_ID=foo\0OTHER=x";
+        if (path === "/proc/999/environ")
+          return "FOO=bar\0TALON_CHAT_ID=heartbeat";
+        throw new Error("ESRCH");
+      }),
+    }));
+    vi.resetModules();
+    // Re-trigger initHeartbeat against the freshly remocked graph
+    const { initHeartbeat, evictOrphanHeartbeatSubprocesses } =
+      await import("../core/heartbeat.js");
+    initHeartbeat({ model: "claude-sonnet-4-6" });
+
+    const originalPlatform = Object.getOwnPropertyDescriptor(
+      process,
+      "platform",
+    );
+    Object.defineProperty(process, "platform", {
+      value: "linux",
+      configurable: true,
+    });
+
+    // Stub process.kill so we don't actually kill anything during the test.
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => true);
+    // Make the signal-0 probe in the SIGKILL escalation branch throw ESRCH,
+    // simulating "already exited after SIGTERM" so we don't count fake kills.
+    killSpy.mockImplementation((pid: number, signal?: string | number) => {
+      if (signal === 0) {
+        const e = new Error("ESRCH") as Error & { code?: string };
+        e.code = "ESRCH";
+        throw e;
+      }
+      return true;
+    });
+
+    try {
+      const result = await evictOrphanHeartbeatSubprocesses();
+      // PIDs 1 and 999 should both be found (own pid excluded).
+      // We exclude our own pid, but neither 1 nor 999 should match it.
+      expect(result.found).toBeGreaterThanOrEqual(1);
+      expect(result.termed).toBeGreaterThanOrEqual(1);
+      // killed should be 0 because we made signal-0 throw ESRCH
+      expect(result.killed).toBe(0);
+    } finally {
+      killSpy.mockRestore();
+      if (originalPlatform) {
+        Object.defineProperty(process, "platform", originalPlatform);
+      }
+    }
   });
 });
