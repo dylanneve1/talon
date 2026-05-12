@@ -337,6 +337,111 @@ describe("getHeartbeatStatus", () => {
   });
 });
 
+describe("buildHeartbeatSystemPrompt", () => {
+  // Snapshot the SDK-backend mock so we can swap getActiveFrontends per case.
+  // The default mock at the top of the file doesn't include it; we re-mock
+  // here for the prompt-shape tests specifically.
+  let getActiveFrontendsMock: ReturnType<typeof vi.fn>;
+  let mod: typeof import("../core/heartbeat.js");
+
+  beforeEach(async () => {
+    vi.resetModules();
+    getActiveFrontendsMock = vi.fn(() => []);
+    vi.doMock("../backend/claude-sdk/index.js", () => ({
+      buildMcpServers: vi.fn(() => ({})),
+      getActiveFrontends: getActiveFrontendsMock,
+    }));
+    // Carry through the other mocks the module needs at import time.
+    vi.doMock("../util/log.js", () => ({
+      log: vi.fn(),
+      logError: vi.fn(),
+      logWarn: vi.fn(),
+    }));
+    vi.doMock("../core/plugin.js", () => ({
+      getPluginMcpServers: vi.fn(() => ({})),
+    }));
+    vi.doMock("../util/paths.js", () => ({
+      files: {
+        heartbeatState: "/fake/.talon/workspace/memory/heartbeat_state.json",
+        dreamState: "/fake/.talon/workspace/memory/dream_state.json",
+        memory: "/fake/.talon/workspace/memory/memory.md",
+        log: "/fake/.talon/talon.log",
+      },
+      dirs: {
+        root: "/fake/.talon",
+        logs: "/fake/.talon/workspace/logs",
+        workspace: "/fake/.talon/workspace",
+        data: "/fake/.talon/data",
+        memory: "/fake/.talon/workspace/memory",
+        dailyMemory: "/fake/.talon/workspace/memory/daily",
+        prompts: "/fake/.talon/prompts",
+      },
+    }));
+    mod = await import("../core/heartbeat.js");
+  });
+
+  afterEach(() => {
+    vi.doUnmock("../backend/claude-sdk/index.js");
+    vi.doUnmock("../util/log.js");
+    vi.doUnmock("../core/plugin.js");
+    vi.doUnmock("../util/paths.js");
+  });
+
+  it("returns base prompt without outbound section when no frontends are configured", () => {
+    getActiveFrontendsMock.mockReturnValueOnce([]);
+    const prompt = mod.buildHeartbeatSystemPrompt();
+    expect(prompt).toContain("background heartbeat agent");
+    expect(prompt).not.toContain("OUTBOUND MESSAGING");
+    expect(prompt).not.toContain("telegram-tools");
+  });
+
+  it("returns base prompt without outbound section when config init throws", () => {
+    getActiveFrontendsMock.mockImplementationOnce(() => {
+      throw new Error("config not initialised");
+    });
+    const prompt = mod.buildHeartbeatSystemPrompt();
+    expect(prompt).toContain("background heartbeat agent");
+    expect(prompt).not.toContain("OUTBOUND MESSAGING");
+  });
+
+  it("references telegram-tools when telegram is the only frontend", () => {
+    getActiveFrontendsMock.mockReturnValueOnce(["telegram"]);
+    const prompt = mod.buildHeartbeatSystemPrompt();
+    expect(prompt).toContain("OUTBOUND MESSAGING");
+    expect(prompt).toContain("`telegram-tools`");
+    expect(prompt).not.toContain("`teams-tools`");
+  });
+
+  it("references teams-tools when teams is the only frontend", () => {
+    getActiveFrontendsMock.mockReturnValueOnce(["teams"]);
+    const prompt = mod.buildHeartbeatSystemPrompt();
+    expect(prompt).toContain("OUTBOUND MESSAGING");
+    expect(prompt).toContain("`teams-tools`");
+    expect(prompt).not.toContain("`telegram-tools`");
+  });
+
+  it("lists ALL active frontends when multiple are configured", () => {
+    getActiveFrontendsMock.mockReturnValueOnce(["telegram", "teams"]);
+    const prompt = mod.buildHeartbeatSystemPrompt();
+    expect(prompt).toContain("OUTBOUND MESSAGING");
+    expect(prompt).toContain("`telegram-tools`");
+    expect(prompt).toContain("`teams-tools`");
+  });
+
+  it("uses the first frontend in the example send() call", () => {
+    getActiveFrontendsMock.mockReturnValueOnce(["teams", "telegram"]);
+    const prompt = mod.buildHeartbeatSystemPrompt();
+    // `teams-tools` is first → it appears in the "from `teams-tools`" example
+    expect(prompt).toMatch(/from `teams-tools`/);
+  });
+
+  it("does not mention chat-id parameter when there are no frontends", () => {
+    getActiveFrontendsMock.mockReturnValueOnce([]);
+    const prompt = mod.buildHeartbeatSystemPrompt();
+    expect(prompt).not.toContain("chat_id");
+  });
+});
+
 describe("awaitCurrentRun", () => {
   beforeEach(() => {
     initHeartbeat({ model: "claude-sonnet-4-6" });

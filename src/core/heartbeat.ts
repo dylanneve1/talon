@@ -20,7 +20,10 @@ import { toYMD } from "../util/time.js";
 import { getPluginMcpServers } from "./plugin.js";
 import { DISALLOWED_TOOLS_BACKGROUND } from "./constants.js";
 import { getDefaultModel } from "./models.js";
-import { buildMcpServers } from "../backend/claude-sdk/index.js";
+import {
+  buildMcpServers,
+  getActiveFrontends,
+} from "../backend/claude-sdk/index.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -230,6 +233,49 @@ async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
 
 // ── Heartbeat agent ─────────────────────────────────────────────────────────
 
+/**
+ * Build the heartbeat agent system prompt. Adapts to whatever non-terminal
+ * frontends are currently configured — names each `${frontend}-tools` MCP
+ * server it actually has access to, instead of hard-coding "telegram-tools".
+ *
+ * Terminal-only deployments get a minimal prompt (no outbound section, since
+ * there's no chat to message). Multi-frontend deployments get a list of every
+ * `${frontend}-tools` server available.
+ *
+ * Exported for tests.
+ */
+export function buildHeartbeatSystemPrompt(): string {
+  const base = [
+    "You are a background heartbeat agent for Talon. You have access to",
+    "filesystem tools and all registered MCP plugins. Follow the",
+    "user-defined instructions precisely. Be efficient — you have limited time.",
+  ];
+
+  let frontends: readonly string[];
+  try {
+    frontends = getActiveFrontends();
+  } catch {
+    // Agent config not initialised (test paths) — no outbound surface.
+    frontends = [];
+  }
+
+  if (frontends.length === 0) {
+    return base.join("\n");
+  }
+
+  const toolList = frontends.map((f) => `\`${f}-tools\``).join(", ");
+  const exampleFrontend = frontends[0];
+  const outbound = [
+    "",
+    `OUTBOUND MESSAGING: You also have access to the frontend tool servers — ${toolList} — which expose \`send\`, \`react\`, and the rest of the messaging surface. Because there is NO ambient chat in heartbeat mode, every outbound tool call MUST include an explicit \`chat_id\` parameter. The bridge promotes that chat_id to the routing target, so \`send(type="text", text="...", chat_id=N)\` from \`${exampleFrontend}-tools\` delivers a message to chat N on that frontend. Known chat IDs live in your memory.md (per-frontend — for Telegram, Dylan's DM ID and group IDs are recorded; other frontends list their own). Without \`chat_id\`, the gateway returns 'No active chat context and no explicit numeric chat_id'.`,
+    "",
+    "Use outbound messaging sparingly — proactive pings should be",
+    "high-signal (e.g. 'PR ready, link: ...') and not status spam.",
+  ];
+
+  return [...base, ...outbound].join("\n");
+}
+
 async function runHeartbeatAgent(
   lastRunTimestamp: number,
   runCount: number,
@@ -285,24 +331,7 @@ async function runHeartbeatAgent(
 
   const options = {
     model,
-    systemPrompt: [
-      "You are a background heartbeat agent for Talon. You have access to",
-      "filesystem tools and all registered MCP plugins. Follow the",
-      "user-defined instructions precisely. Be efficient — you have limited time.",
-      "",
-      "OUTBOUND MESSAGING: You also have access to telegram-tools — `send`,",
-      "`react`, and the rest of the messaging surface. Because there is NO",
-      "ambient chat in heartbeat mode, every outbound tool call MUST include",
-      "an explicit `chat_id` parameter. The bridge promotes that chat_id to",
-      'the routing target, so a `send(type="text", text="...", chat_id=N)`',
-      "delivers a message to chat N. Known chat IDs live in your memory.md",
-      "(see the Users section — Dylan's Telegram ID is 352042062 for DM;",
-      "group IDs are recorded per-group). Without `chat_id`, the gateway",
-      "returns 'No active chat context and no explicit numeric chat_id'.",
-      "",
-      "Use outbound messaging sparingly — proactive pings should be",
-      "high-signal (e.g. 'PR ready, link: ...') and not status spam.",
-    ].join("\n"),
+    systemPrompt: buildHeartbeatSystemPrompt(),
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,

@@ -34,6 +34,26 @@ export type BuildSdkOptionsResult = {
 // ── MCP server construction ─────────────────────────────────────────────────
 
 /**
+ * Return the list of configured non-terminal frontends. Every entry here
+ * corresponds to an MCP server spawned by `buildMcpServers` as
+ * `${frontend}-tools` (e.g. `telegram-tools`, `teams-tools`).
+ *
+ * Returns an empty array when only `terminal` is configured (or when no
+ * frontends are configured at all). Terminal mode has no outbound messaging
+ * surface — the agent runs to stdout instead.
+ *
+ * Throws if the agent config hasn't been initialised (callers in test paths
+ * should wrap in try/catch and treat as "no frontends available").
+ */
+export function getActiveFrontends(): readonly string[] {
+  const config = getConfig();
+  const allFrontends = Array.isArray(config.frontend)
+    ? config.frontend
+    : [config.frontend];
+  return allFrontends.filter((f) => f !== "terminal");
+}
+
+/**
  * Build the MCP servers map for a chat query.
  * Includes frontend-specific tool servers and Brave Search, if configured.
  */
@@ -63,10 +83,7 @@ export function buildMcpServers(
   );
 
   // Frontend-specific MCP tool servers (one per non-terminal frontend)
-  const allFrontends = Array.isArray(config.frontend)
-    ? config.frontend
-    : [config.frontend];
-  const frontends = allFrontends.filter((f) => f !== "terminal");
+  const frontends = getActiveFrontends();
 
   const servers: Record<
     string,
