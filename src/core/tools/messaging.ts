@@ -303,21 +303,40 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
   // ── react ─────────────────────────────────────────────────────────────
   // Reacting is itself a final delivery action — the user sees the emoji
   // appear on their own message, same as receiving a reply. In practice
-  // every react call from the model is an acknowledgement-only response,
-  // followed by silent end_turn(). Marking endsTurn:true here collapses
-  // those two calls into one and — crucially — fixes a bug where batching
-  // react alongside end_turn could leave the SDK loop running past the
-  // terminator (typing indicator wouldn't drop until the next SDK
-  // round-trip naturally completed).
+  // most react calls are acknowledgement-only and end the turn naturally.
+  //
+  // Soft-terminator design: react is declared `endsTurn: true` so a
+  // react-only batch closes the SDK loop cleanly (no separate end_turn()
+  // needed, no typing-indicator race). BUT the model can pass
+  // `end_turn: false` if it wants to react and keep the turn alive — e.g.
+  // "let me look at that 🤔" then a subsequent fetch_url / search /
+  // analysis. The PostToolBatch hook honours that param: if every
+  // terminator in the batch is a react with `end_turn: false`, the loop
+  // continues; if a "real" terminator (end_turn) or a default react is
+  // also in the batch, it terminates as usual.
   {
     name: "react",
-    description:
-      "Add an emoji reaction to a message and end the current turn. Use this when a reaction is sufficient acknowledgement — no separate end_turn() call needed afterwards. Valid: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷 🤷‍♂ 🤷‍♀ 😡",
+    description: `Add an emoji reaction to a message. By default this also ends your turn (a reaction is usually a complete acknowledgement — no separate end_turn() needed).
+
+Pass \`end_turn: false\` if you want to react now and keep working on something afterwards (e.g. "🤔" then look something up, then respond). Use this sparingly — most reacts are turn-final.
+
+Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷 🤷‍♂ 🤷‍♀ 😡`,
     schema: {
       message_id: idSchema.describe("Message ID"),
       emoji: z.string().describe("Reaction emoji"),
+      end_turn: z
+        .boolean()
+        .optional()
+        .describe(
+          "Whether this reaction ends the turn. Defaults to true (omit). Pass false to keep the turn alive after reacting.",
+        ),
     },
-    execute: (params, bridge) => bridge("react", params),
+    // Strip end_turn before bridging — it's a hook-level signal, the
+    // backend action handler doesn't need to know about it.
+    execute: (params, bridge) => {
+      const { end_turn: _endTurn, ...rest } = params;
+      return bridge("react", rest);
+    },
     frontends: ["telegram"],
     tag: "messaging",
     endsTurn: true,

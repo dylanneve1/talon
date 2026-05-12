@@ -107,14 +107,24 @@ describe("turn-terminator declaration", () => {
     expect(endTurn?.endsTurn).toBe(true);
   });
 
-  it("react is declared with endsTurn: true", () => {
+  it("react is declared with endsTurn: true (default terminator)", () => {
     // Reacting is itself a final delivery — the user sees the emoji land on
     // their message, equivalent to receiving a reply. Marking react as a
     // terminator collapses the (react + silent end_turn) pattern into a
     // single tool call and fixes a bug where react+end_turn batches could
-    // leave the SDK loop running past the terminator.
+    // leave the SDK loop running past the terminator. The soft-terminator
+    // override (`end_turn: false`) lets the model opt out — see the
+    // isTurnTerminator tests below.
     const react = messagingTools.find((t) => t.name === "react");
     expect(react?.endsTurn).toBe(true);
+  });
+
+  it("react schema includes optional end_turn boolean for soft opt-out", () => {
+    // The opt-out param is what makes react a SOFT terminator — model can
+    // pass end_turn: false to react and keep the turn alive.
+    const react = messagingTools.find((t) => t.name === "react");
+    expect(react?.schema).toBeDefined();
+    expect(react?.schema.end_turn).toBeDefined();
   });
 
   it("send is NOT declared as a turn terminator", () => {
@@ -129,8 +139,50 @@ describe("turn-terminator declaration", () => {
     expect(isTurnTerminator("end_turn")).toBe(true);
   });
 
-  it("isTurnTerminator returns true for react", () => {
+  it("isTurnTerminator returns true for react (name-only, no input)", () => {
     expect(isTurnTerminator("react")).toBe(true);
+  });
+
+  it("isTurnTerminator returns true for react with end_turn omitted (defaults true)", () => {
+    expect(isTurnTerminator("react", { message_id: 1, emoji: "👍" })).toBe(
+      true,
+    );
+  });
+
+  it("isTurnTerminator returns true for react with end_turn: true (explicit)", () => {
+    expect(
+      isTurnTerminator("react", {
+        message_id: 1,
+        emoji: "👍",
+        end_turn: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("isTurnTerminator returns FALSE for react with end_turn: false (soft opt-out)", () => {
+    // The whole point of the soft-terminator design: model can react and
+    // keep the turn alive (e.g. react with 🤔, then look something up).
+    expect(
+      isTurnTerminator("react", {
+        message_id: 1,
+        emoji: "🤔",
+        end_turn: false,
+      }),
+    ).toBe(false);
+    // Same with the MCP-prefixed form.
+    expect(
+      isTurnTerminator("mcp__telegram-tools__react", {
+        message_id: 1,
+        emoji: "🤔",
+        end_turn: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("isTurnTerminator ignores end_turn: false on end_turn itself", () => {
+    // end_turn is a strict terminator — there's no opt-out for it.
+    // (Defensive: the soft override is react-only by design.)
+    expect(isTurnTerminator("end_turn", { end_turn: false })).toBe(true);
   });
 
   it("isTurnTerminator returns false for non-terminator tools", () => {
@@ -303,9 +355,11 @@ describe("turn-terminator integration with SDK production tool name shapes", () 
         expect(result.tools).toHaveLength(1);
         expect(result.tools[0].name).toBe(sdkName);
 
-        // This is the exact line in handler.ts:
-        //     if (isTurnTerminator(tool.name)) state.turnTerminated = true;
-        if (isTurnTerminator(result.tools[0].name)) {
+        // This is the exact line in handler.ts (with soft-terminator input):
+        //     if (isTurnTerminator(tool.name, tool.input)) state.turnTerminated = true;
+        if (
+          isTurnTerminator(result.tools[0].name, result.tools[0].input)
+        ) {
           state.turnTerminated = true;
         }
         expect(state.turnTerminated).toBe(true);
@@ -323,5 +377,39 @@ describe("turn-terminator integration with SDK production tool name shapes", () 
         expect(isTurnTerminator(`mcp__${server}__${tool.name}`)).toBe(false);
       }
     }
+  });
+
+  it("react with end_turn:false through processAssistantMessage keeps state alive", () => {
+    // End-to-end check that the soft-terminator path threads input
+    // through processAssistantMessage → isTurnTerminator → state.
+    // The bug this guards against: if either step drops the `input`
+    // payload, react-with-end_turn:false would silently terminate.
+    const state = createStreamState();
+    const msg = {
+      type: "assistant",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "tool_1",
+            name: "mcp__telegram-tools__react",
+            input: {
+              message_id: 12345,
+              emoji: "🤔",
+              end_turn: false,
+            },
+          },
+        ],
+      },
+    } as unknown as SDKAssistantMessage;
+
+    const result = processAssistantMessage(msg, state);
+    expect(result.tools).toHaveLength(1);
+
+    if (isTurnTerminator(result.tools[0].name, result.tools[0].input)) {
+      state.turnTerminated = true;
+    }
+    // Soft-opt-out wins: state stays open for follow-up tool calls.
+    expect(state.turnTerminated).toBe(false);
   });
 });

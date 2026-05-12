@@ -138,8 +138,12 @@ const turnTerminatorHook: HookCallback = async (
     return { continue: true };
   }
   const batch = input as PostToolBatchHookInput;
+  // Pass `tool_input` so the soft-terminator opt-out (e.g. react with
+  // `end_turn: false`) can keep the loop alive. Without the input, the
+  // check is name-only and reacts that meant to keep going would still
+  // terminate.
   const terminator = batch.tool_calls.find((tc) =>
-    isTurnTerminator(tc.tool_name),
+    isTurnTerminator(tc.tool_name, tc.tool_input),
   );
   if (terminator) {
     log(

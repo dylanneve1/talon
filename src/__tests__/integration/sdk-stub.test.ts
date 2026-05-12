@@ -278,4 +278,83 @@ describe.skipIf(!stubReady)("SDK integration (stub binary)", () => {
 
     cleanup(result);
   }, 15000);
+
+  it("react with end_turn:false does NOT terminate the loop (soft opt-out)", async () => {
+    // Soft-terminator coverage: when the model wants to react and keep
+    // working (e.g. "🤔 let me check"), passing `end_turn: false` should
+    // keep the SDK loop alive. The production hook reads `tc.tool_input`
+    // and defers to `isTurnTerminator(name, input)` which honours the
+    // override.
+    const { isTurnTerminator } = await import("../../core/tools/index.js");
+
+    let stopReason: string | null = null;
+    const result = await runWithStub({
+      prompt: "react and keep going",
+      script: {
+        turns: [
+          {
+            emit: [
+              assistantToolUse("mcp__telegram-tools__react", {
+                message_id: 12345,
+                emoji: "🤔",
+                end_turn: false,
+              }),
+              fireHook("PostToolBatch", {
+                tool_calls: [
+                  {
+                    tool_name: "mcp__telegram-tools__react",
+                    tool_input: {
+                      message_id: 12345,
+                      emoji: "🤔",
+                      end_turn: false,
+                    },
+                    tool_use_id: "tu_1",
+                  },
+                ],
+              }),
+              successResult(),
+            ],
+          },
+        ],
+      },
+      sdkOptions: {
+        hooks: {
+          PostToolBatch: [
+            {
+              hooks: [
+                async (input) => {
+                  type Batch = {
+                    hook_event_name: string;
+                    tool_calls: {
+                      tool_name: string;
+                      tool_input?: unknown;
+                    }[];
+                  };
+                  if ((input as Batch).hook_event_name !== "PostToolBatch") {
+                    return { continue: true };
+                  }
+                  const batch = input as Batch;
+                  const ended = batch.tool_calls.some((tc) =>
+                    isTurnTerminator(tc.tool_name, tc.tool_input),
+                  );
+                  if (ended) {
+                    stopReason = "terminated";
+                    return { continue: false, stopReason: "turn terminated" };
+                  }
+                  stopReason = "continued";
+                  return { continue: true };
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    // Hook should have fired and explicitly chosen NOT to terminate.
+    expect(result.hookFires.PostToolBatch).toBe(1);
+    expect(stopReason).toBe("continued");
+
+    cleanup(result);
+  }, 15000);
 });

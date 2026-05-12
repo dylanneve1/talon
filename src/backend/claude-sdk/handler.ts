@@ -151,7 +151,11 @@ export async function handleMessage(
         for (const tool of result.tools) {
           incrementCounter(`tool_calls.${tool.name}`);
           captureDeliveredText(tool.name, tool.input);
-          if (isTurnTerminator(tool.name)) {
+          // Pass tool.input so the soft-terminator opt-out (e.g. react
+          // with `end_turn: false`) keeps state.turnTerminated correctly
+          // false — otherwise the trailing-text dedup path mis-treats a
+          // mid-turn react as the final delivery.
+          if (isTurnTerminator(tool.name, tool.input)) {
             state.turnTerminated = true;
           }
           if (onToolUse) {

@@ -65,10 +65,31 @@ export function stripMcpPrefix(toolName: string): string {
  * Accepts both bare names (`end_turn`) and MCP-prefixed names
  * (`mcp__telegram-tools__end_turn`) — the prefix is stripped before
  * comparing against the terminator set.
+ *
+ * Soft-terminator override: some terminators (notably `react`) accept a
+ * per-call `end_turn: false` opt-out so the model can react and keep the
+ * turn alive (e.g. react-with-🤔 then look something up). When the second
+ * argument is provided and the call is one of the soft-terminator tools
+ * with `end_turn: false`, this returns `false` so the SDK loop keeps
+ * going. When omitted (or `end_turn !== false`), behaviour matches the
+ * name-only check — strict terminator.
  */
-export function isTurnTerminator(toolName: string): boolean {
-  if (TURN_TERMINATOR_NAMES.has(toolName)) return true;
-  return TURN_TERMINATOR_NAMES.has(stripMcpPrefix(toolName));
+export function isTurnTerminator(
+  toolName: string,
+  toolInput?: unknown,
+): boolean {
+  const matchedBare = TURN_TERMINATOR_NAMES.has(toolName);
+  const matchedStripped =
+    !matchedBare && TURN_TERMINATOR_NAMES.has(stripMcpPrefix(toolName));
+  if (!matchedBare && !matchedStripped) return false;
+
+  // Per-tool soft override: `react` honours an explicit `end_turn: false`.
+  const baseName = matchedBare ? toolName : stripMcpPrefix(toolName);
+  if (baseName === "react" && toolInput && typeof toolInput === "object") {
+    const flag = (toolInput as { end_turn?: unknown }).end_turn;
+    if (flag === false) return false;
+  }
+  return true;
 }
 
 /** Filter options for composing a tool set. */
