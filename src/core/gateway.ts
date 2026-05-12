@@ -159,15 +159,36 @@ export class Gateway {
 
   private async handleAction(body: Record<string, unknown>): Promise<unknown> {
     // Route by _chatId from the MCP subprocess request.
-    // _chatId may be a string (Teams: "teams_chat_19:...") or numeric string (Telegram: "123456").
-    // The context map is keyed by numeric chatId, so try direct parse first,
-    // then fall back to searching active contexts.
+    // _chatId may be a string (Teams: "teams_chat_19:...") or numeric string
+    // (Telegram: "123456"). The context map is keyed by numeric chatId, so
+    // try direct parse first, then fall back to searching active contexts.
+    //
+    // For heartbeat-initiated outbound (no active chat session), the bridge
+    // promotes the tool's explicit `chat_id` param into `_chatId` AND keeps
+    // `chat_id` in the body as a signal that this is explicit-routing. When
+    // `body.chat_id` is present and parses as numeric, we skip the
+    // active-context-required check — the action handler will reach the
+    // chat directly via the Telegram Bot API. The legacy context-required
+    // path remains for chat-mode calls where `chat_id` is absent.
     const rawChatId = body._chatId ? String(body._chatId) : "";
     const numericId = Number(rawChatId);
-    const chatId =
-      !isNaN(numericId) && this.chatContexts.has(numericId)
-        ? numericId
-        : this.findContextByStringId(rawChatId);
+    const explicitChatIdProvided = typeof body.chat_id !== "undefined";
+    let chatId: number | null = null;
+    if (
+      explicitChatIdProvided &&
+      !isNaN(numericId) &&
+      rawChatId !== "" &&
+      rawChatId !== "heartbeat"
+    ) {
+      // Explicit-routing branch: caller provided chat_id, trust it.
+      chatId = numericId;
+    } else if (!isNaN(numericId) && this.chatContexts.has(numericId)) {
+      // Chat-mode branch: ambient _chatId must match an active context.
+      chatId = numericId;
+    } else {
+      // String-id routing (Teams) — must match an active context.
+      chatId = this.findContextByStringId(rawChatId);
+    }
     if (!chatId) {
       return { ok: false, error: "No active chat context" };
     }

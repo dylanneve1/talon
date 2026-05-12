@@ -20,6 +20,7 @@ import { toYMD } from "../util/time.js";
 import { getPluginMcpServers } from "./plugin.js";
 import { DISALLOWED_TOOLS_BACKGROUND } from "./constants.js";
 import { getDefaultModel } from "./models.js";
+import { buildMcpServers } from "../backend/claude-sdk/index.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -284,16 +285,50 @@ async function runHeartbeatAgent(
 
   const options = {
     model,
-    systemPrompt:
-      "You are a background heartbeat agent for Talon. You have access to filesystem tools and all registered MCP plugins. Follow the user-defined instructions precisely. Be efficient — you have limited time.",
+    systemPrompt: [
+      "You are a background heartbeat agent for Talon. You have access to",
+      "filesystem tools and all registered MCP plugins. Follow the",
+      "user-defined instructions precisely. Be efficient — you have limited time.",
+      "",
+      "OUTBOUND MESSAGING: You also have access to telegram-tools — `send`,",
+      "`react`, and the rest of the messaging surface. Because there is NO",
+      "ambient chat in heartbeat mode, every outbound tool call MUST include",
+      "an explicit `chat_id` parameter. The bridge promotes that chat_id to",
+      "the routing target, so a `send(type=\"text\", text=\"...\", chat_id=N)`",
+      "delivers a message to chat N. Known chat IDs live in your memory.md",
+      "(see the Users section — Dylan's Telegram ID is 352042062 for DM;",
+      "group IDs are recorded per-group). Without `chat_id`, the gateway",
+      "returns 'No active chat context and no explicit numeric chat_id'.",
+      "",
+      "Use outbound messaging sparingly — proactive pings should be",
+      "high-signal (e.g. 'PR ready, link: ...') and not status spam.",
+    ].join("\n"),
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
     ...(configRef.claudeBinary
       ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
       : {}),
-    // Load all registered plugin MCP servers (excludes frontend-specific tools like telegram)
-    mcpServers: getPluginMcpServers("", "heartbeat"),
+    // Load plugin MCP servers + frontend-tools so the heartbeat can send
+    // messages, react, and read chat history with an explicit `chat_id`.
+    // The frontend MCP server is spawned with TALON_CHAT_ID="heartbeat" —
+    // a sentinel string telling the bridge there's no ambient chat, so
+    // every outbound tool call MUST include `chat_id` in its params.
+    //
+    // `buildMcpServers` throws if the agent config hasn't been initialised
+    // (e.g. tests that mock the agent). Treat that case as "no frontend
+    // MCP available" rather than crashing the whole heartbeat — the
+    // plugin MCP servers still load and the agent runs normally.
+    mcpServers: {
+      ...(() => {
+        try {
+          return buildMcpServers("heartbeat");
+        } catch {
+          return {};
+        }
+      })(),
+      ...getPluginMcpServers("", "heartbeat"),
+    },
     disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
   };
 

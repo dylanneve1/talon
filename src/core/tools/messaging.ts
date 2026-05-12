@@ -164,6 +164,11 @@ Examples:
         .number()
         .optional()
         .describe("Schedule: delay before sending (1-3600)"),
+      chat_id: idSchema
+        .optional()
+        .describe(
+          "Target chat ID. Omit to send to the current chat (chat mode). Required from heartbeat mode where there is no ambient chat — use list_chats or known IDs from memory.",
+        ),
     },
     execute: async (params, bridge) => {
       const { type } = params;
@@ -330,9 +335,15 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
         .describe(
           "Whether this reaction ends the turn. Defaults to true (omit). Pass false to keep the turn alive after reacting.",
         ),
+      chat_id: idSchema
+        .optional()
+        .describe(
+          "Target chat ID. Omit in chat mode (uses ambient chat). Required from heartbeat mode.",
+        ),
     },
     // Strip end_turn before bridging — it's a hook-level signal, the
-    // backend action handler doesn't need to know about it.
+    // backend action handler doesn't need to know about it. chat_id stays
+    // in the body; bridge.ts promotes it to the gateway's routing key.
     execute: (params, bridge) => {
       const { end_turn: _endTurn, ...rest } = params;
       return bridge("react", rest);

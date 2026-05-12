@@ -262,6 +262,57 @@ describe("gateway HTTP server", () => {
       expect(body.error).toContain("No active chat context");
       gateway.clearContext(123);
     });
+  });
+
+  // ── Heartbeat outbound: explicit chat_id routing ───────────────────────
+  //
+  // When the bridge promotes a tool's explicit `chat_id` param into both
+  // `_chatId` (the routing key) AND keeps `chat_id` in the body (the
+  // explicit-routing signal), the gateway should route to that chat
+  // WITHOUT requiring an active context. This is what enables heartbeat
+  // agents to send proactive messages to chats they're not in a live
+  // session with.
+
+  describe("explicit chat_id routing (heartbeat outbound)", () => {
+    it("accepts numeric chat_id without an active context", async () => {
+      // No setContext for chat 7777 — heartbeat-style outbound.
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "7777",
+        chat_id: 7777,
+        text: "hello from heartbeat",
+      });
+      expect(body.ok).toBe(true);
+      expect(mockFrontendHandler).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "send_message", chat_id: 7777 }),
+        7777,
+      );
+    });
+
+    it("still rejects when chat_id is absent AND no active context (chat-mode safety)", async () => {
+      // Without explicit chat_id and without an active context, the
+      // legacy guard kicks in to catch chat-mode misconfigurations.
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "8888",
+        text: "no chat_id, no context",
+      });
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("No active chat context");
+    });
+
+    it("explicit chat_id rejected when not numeric (defensive)", async () => {
+      // Defensive: a non-numeric explicit chat_id should fall through to
+      // the string-id lookup, which fails without a matching context.
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "not-a-number",
+        chat_id: "not-a-number",
+        text: "garbage chat_id",
+      });
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("No active chat context");
+    });
 
     it("returns 500 when handleAction result cannot be JSON-serialized", async () => {
       // Make frontendHandler return a circular reference so JSON.stringify throws
