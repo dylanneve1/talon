@@ -27,6 +27,7 @@ import { execute as dispatcherExecute } from "./dispatcher.js";
 import {
   getAllTriggers,
   getTrigger,
+  persistNow,
   updateTrigger,
   type Trigger,
   type TriggerStatus,
@@ -126,6 +127,13 @@ export function spawnTrigger(trigger: Trigger): void {
     flags: "a",
     mode: 0o600,
   });
+  // Without this handler, a disk/permission failure on the log file would emit
+  // an unhandled `error` event and crash the whole Node process. Log it instead
+  // and let the trigger keep running — the script's behaviour matters more than
+  // its diagnostic log.
+  logStream.on("error", (err) =>
+    logError("triggers", `log stream error [${trigger.id}]`, err),
+  );
   logStreams.set(trigger.id, logStream);
   logStream.write(
     `--- spawn ${new Date(startedAt).toISOString()} pid=${child.pid} ---\n`,
@@ -173,6 +181,9 @@ export function spawnTrigger(trigger: Trigger): void {
       status: "timed_out",
       lastError: `Timed out after ${trigger.timeoutSeconds}s`,
     });
+    // Terminal status — persist now so a crash before the 10s autosave
+    // doesn't leave us thinking this trigger is still "running" on next load.
+    persistNow();
     killChild(trigger.id, c);
   }, timeoutMs);
   timer.unref();
@@ -224,6 +235,8 @@ export function cancelTrigger(id: string): boolean {
     status: "cancelled",
     lastError: "Cancelled by user",
   });
+  // Terminal status — persist now so cancel survives a crash before autosave.
+  persistNow();
   killChild(id, child);
   return true;
 }
@@ -314,6 +327,9 @@ async function finalizeExit(
     pid: undefined,
     exitCode: code ?? undefined,
   });
+  // Terminal status reached — persist immediately so a crash between here and
+  // the next autosave tick doesn't lose the exit transition.
+  persistNow();
 
   log(
     "triggers",
@@ -344,9 +360,37 @@ function bufferAsPayload(buffer: string[], exitCode?: number): string {
   const head = exitCode != null ? `exit ${exitCode}` : undefined;
   const lines = head ? [head, ...buffer] : buffer;
   const text = lines.join("\n");
-  return text.length > FIRE_PAYLOAD_MAX_BYTES
-    ? text.slice(-FIRE_PAYLOAD_MAX_BYTES)
-    : text;
+  // Byte-correct truncation: keep the tail (most recent output) but never
+  // exceed FIRE_PAYLOAD_MAX_BYTES *bytes* and never split a multi-byte char.
+  return truncateUtf8Tail(text, FIRE_PAYLOAD_MAX_BYTES);
+}
+
+/**
+ * Keep the tail of `text` so the resulting UTF-8 encoding is at most
+ * `maxBytes` bytes. Never splits a multi-byte character — if the byte
+ * boundary lands inside one, the leading continuation bytes are skipped.
+ */
+function truncateUtf8Tail(text: string, maxBytes: number): string {
+  const buf = Buffer.from(text, "utf-8");
+  if (buf.length <= maxBytes) return text;
+  let start = buf.length - maxBytes;
+  // 10xxxxxx is a UTF-8 continuation byte — skip until we hit a lead byte.
+  while (start < buf.length && (buf[start] & 0xc0) === 0x80) start++;
+  return buf.toString("utf-8", start);
+}
+
+/**
+ * Keep the head of `text` so the resulting UTF-8 encoding is at most
+ * `maxBytes` bytes. Never splits a multi-byte character — if the byte
+ * boundary lands inside one, trailing partial bytes are dropped.
+ */
+function truncateUtf8Head(text: string, maxBytes: number): string {
+  const buf = Buffer.from(text, "utf-8");
+  if (buf.length <= maxBytes) return text;
+  let end = maxBytes;
+  // Walk backwards past any continuation byte we'd split on.
+  while (end > 0 && (buf[end] & 0xc0) === 0x80) end--;
+  return buf.toString("utf-8", 0, end);
 }
 
 // ── Wake-up firing ──────────────────────────────────────────────────────────
@@ -361,8 +405,10 @@ async function fireWake(
   const t = getTrigger(triggerId);
   if (!t) return;
 
-  // Truncate payload — we don't want a runaway script blowing out the prompt
-  const trimmed = (payload ?? "").slice(0, FIRE_PAYLOAD_MAX_BYTES);
+  // Truncate payload — we don't want a runaway script blowing out the prompt.
+  // Byte-correct (not UTF-16 code-unit) so the cap matches FIRE_PAYLOAD_MAX_BYTES
+  // and multi-byte characters don't get sliced mid-codepoint.
+  const trimmed = truncateUtf8Head(payload ?? "", FIRE_PAYLOAD_MAX_BYTES);
 
   updateTrigger(triggerId, {
     fireCount: (t.fireCount ?? 0) + 1,
@@ -370,13 +416,17 @@ async function fireWake(
     lastFirePayload: trimmed,
   });
 
-  const header = terminal
-    ? `[Trigger "${t.name}" (${t.id}) ${status}]`
-    : `[Trigger "${t.name}" (${t.id}) signalled]`;
+  // Mid-run TALON_FIRE: signals reuse the "fired" enum value because there
+  // isn't a distinct non-terminal status, but the prompt must not lie to the
+  // model — show "signalled" so downstream handling can't mistake a mid-run
+  // event for terminal completion.
+  const promptStatus = terminal ? status : "signalled";
+
+  const header = `[Trigger "${t.name}" (${t.id}) ${promptStatus}]`;
   const body = trimmed ? `${header}\n\n${trimmed}` : `${header}\n\n(no output)`;
 
   const prompt =
-    `[System: TRIGGER FIRED. Status: ${status}. ` +
+    `[System: TRIGGER FIRED. Status: ${promptStatus}. ` +
     `This is a wake-up message from a long-running script you started earlier. ` +
     `Decide whether to message the user, take an action, or do nothing.]` +
     `\n\n${body}`;
@@ -433,4 +483,8 @@ function failTrigger(t: Trigger, message: string): void {
     lastError: message,
     endedAt: Date.now(),
   });
+  // Terminal status — persist immediately. Callers like trigger_create re-read
+  // the store right after spawnTrigger() returns and must see "errored", not
+  // a stale snapshot from before the dirty flag is flushed.
+  persistNow();
 }

@@ -57,7 +57,8 @@ export type Trigger = {
   timeoutSeconds: number;
   /** Exit code on terminal status. */
   exitCode?: number;
-  /** Number of mid-run TALON_FIRE: lines emitted. */
+  /** Total wake-ups fired for this trigger — sum of mid-run TALON_FIRE: lines
+   *  plus the terminal exit fire. Incremented every time fireWake() runs. */
   fireCount: number;
   lastFireAt?: number;
   /** Truncated tail of the most recent fire payload (for diagnostics). */

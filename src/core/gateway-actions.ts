@@ -418,6 +418,20 @@ export async function handleSharedAction(
         };
       }
 
+      // spawnTrigger() can fail without throwing — e.g. an unsupported
+      // language slips past the validateLanguage() check (defence in depth),
+      // child.pid is undefined, or spawn() itself catches and routes through
+      // failTrigger(). In all of those paths the trigger lands in `errored`
+      // with `lastError` set. Re-read the store and surface the real status
+      // so callers never get a false "running" response.
+      const stored = getTrigger(id);
+      if (!stored || stored.status === "errored") {
+        return {
+          ok: false,
+          error: stored?.lastError ?? "Failed to spawn (unknown error)",
+        };
+      }
+
       log("gateway", `trigger_create: "${name}" [${id}] (${lang})`);
       return {
         ok: true,
@@ -425,7 +439,7 @@ export async function handleSharedAction(
           `Created trigger "${name}" (id: ${id})\n` +
           `Language: ${lang}\n` +
           `Timeout: ${timeoutSeconds}s\n` +
-          `Status: running`,
+          `Status: ${stored.status}`,
       };
     }
 

@@ -425,6 +425,59 @@ describe("triggers — mid-run TALON_FIRE", () => {
     const prompts = executeSpy.mock.calls.map((c) => c[0].prompt as string);
     expect(prompts.some((p) => p.includes("signalled"))).toBe(true);
   });
+
+  it("mid-run prompt says 'Status: signalled', NOT 'Status: fired'", async () => {
+    // Regression for Copilot review on PR #96: previously the prompt's
+    // "Status:" line said "fired" even for mid-run (non-terminal) signals,
+    // which could mislead downstream handling into treating an in-flight
+    // watcher as a completed run. The terminal "fired" exit still says
+    // "Status: fired" — only the mid-run case is decoupled.
+    const t = makeTrigger({
+      body: 'printf "TALON_FIRE: still alive\\n"\nsleep 30\n',
+    });
+    spawnTrigger(t);
+    // Wait for the mid-run fire to dispatch (it happens before the script exits)
+    await waitForStatus(t.id, (s) => s === "running");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
+    const midPrompt = executeSpy.mock.calls[0][0].prompt as string;
+    expect(midPrompt).toMatch(/Status: signalled/);
+    expect(midPrompt).not.toMatch(/Status: fired/);
+    // Header should also use "signalled" (this was already true, doc the invariant)
+    expect(midPrompt).toMatch(/signalled\]/);
+    // Cancel so we don't wait for the 30s sleep
+    cancelTrigger(t.id);
+    await waitForStatus(t.id, (s) => s === "cancelled");
+  });
+
+  it("byte-correct truncates a payload at FIRE_PAYLOAD_MAX_BYTES boundary", async () => {
+    // Regression for Copilot review on PR #96: previously the cap used
+    // String.prototype.slice (UTF-16 code units), so a payload of N multi-byte
+    // characters could exceed the byte cap and split a character mid-codepoint.
+    // Now: encode in UTF-8 and slice on a codepoint boundary.
+    //
+    // "💧" is U+1F4A7, encoded as 4 UTF-8 bytes (\xF0\x9F\x92\xA7) but counts
+    // as 2 UTF-16 code units in a JS string. A line of 2000 of these is
+    // 8000 bytes (above the 4096 cap) but 4000 string length (below the cap
+    // under the old code-unit slicer).
+    const dropletLine = "💧".repeat(2000);
+    const t = makeTrigger({
+      body: `printf '%s\\n' "${dropletLine}"\nexit 0\n`,
+    });
+    spawnTrigger(t);
+    await waitForStatus(t.id, (s) => s === "fired");
+    const call = executeSpy.mock.calls[0][0];
+    const prompt = call.prompt as string;
+    // Locate just the trimmed payload section (after the header line).
+    // We assert that the BYTE length of the prompt body stays bounded.
+    // 512 byte slack for the header + system prefix is generous.
+    const promptBytes = Buffer.byteLength(prompt, "utf-8");
+    expect(promptBytes).toBeLessThan(FIRE_PAYLOAD_MAX_BYTES + 1024);
+    // And critically: there must be no Unicode replacement character (�)
+    // anywhere in the payload, which would indicate we split a multi-byte
+    // sequence mid-codepoint when decoding back.
+    expect(prompt).not.toContain("�");
+  });
 });
 
 // ── trigger-store validation helpers ─────────────────────────────────────
