@@ -431,11 +431,21 @@ async function runHeartbeatAgent(
   try {
     await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
+    // Snapshot timeout state and clear the timer immediately, BEFORE any
+    // awaits in the error-handling path. Otherwise the timer can fire during
+    // the async log append below and flip `timeoutFired` to true for what
+    // was actually a non-timeout failure — causing a spurious abort + orphan
+    // sweep on every late-stage agent rejection. (Copilot review on #144.)
+    const wasTimeout = timeoutFired;
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+      timeoutHandle = null;
+    }
     await appendHeartbeatLog(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
-    if (timeoutFired) {
+    if (wasTimeout) {
       // Give the SDK a bounded grace window to clean up its subprocess after
       // the abort signal — but never wait indefinitely. If the SDK ignores
       // the abort (this has happened in prod), release the lock anyway and
@@ -462,6 +472,8 @@ async function runHeartbeatAgent(
     }
     throw err;
   } finally {
+    // Safety net — already cleared in catch on the error path, but a clean
+    // resolution of Promise.race() needs this too.
     if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 
@@ -471,8 +483,13 @@ async function runHeartbeatAgent(
 // ── Eviction helpers ─────────────────────────────────────────────────────────
 
 /**
- * Race a promise against a timeout. Returns the promise's value on success,
- * or the sentinel `"timed_out"` if the timeout fires first. Never throws.
+ * Race a promise against a timeout. Returns the promise's resolved value, or
+ * the sentinel `"timed_out"` if the timeout fires first.
+ *
+ * NOTE: if `p` rejects before the timeout fires, that rejection propagates —
+ * callers that need a never-throwing race should `.catch()` the input promise
+ * themselves (as the heartbeat eviction path does with
+ * `agentPromise.catch(() => "settled")`).
  */
 async function raceWithTimeout<T>(
   p: Promise<T>,
@@ -527,8 +544,12 @@ export async function evictOrphanHeartbeatSubprocesses(): Promise<{
     if (!Number.isInteger(pid) || pid === myPid) continue;
     try {
       const environRaw = await readFile(`/proc/${pid}/environ`, "utf-8");
-      // /proc/<pid>/environ is NUL-delimited. Looking for our heartbeat marker.
-      if (environRaw.includes("TALON_CHAT_ID=heartbeat")) {
+      // /proc/<pid>/environ is NUL-delimited. Split on \0 and match exact
+      // entries — a raw .includes() can false-positive on other vars whose
+      // value happens to contain the substring. Since this code can SIGKILL,
+      // err on the side of strict matching. (Copilot review on #144.)
+      const envEntries = environRaw.split("\0");
+      if (envEntries.includes("TALON_CHAT_ID=heartbeat")) {
         matched.push(pid);
       }
     } catch {

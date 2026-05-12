@@ -670,12 +670,17 @@ describe("heartbeat eviction (timeout + abort + orphan sweep)", () => {
     vi.doMock("node:fs/promises", () => ({
       appendFile: vi.fn(async () => {}),
       mkdir: vi.fn(async () => undefined),
-      readdir: vi.fn(async () => ["1", "2", "999", "self", "thread"]),
-      // PIDs 1 and 999 are heartbeat-marked; 2 isn't; thread errors.
+      readdir: vi.fn(async () => ["1", "2", "3", "999", "self", "thread"]),
+      // PIDs 1 and 999 are heartbeat-marked; 2 isn't; 3 is the regression
+      // case — an unrelated env var whose VALUE contains the marker substring
+      // (the old `includes(...)` check would false-positive and SIGKILL it).
+      // thread errors.
       readFile: vi.fn(async (path: string) => {
         if (path === "/proc/1/environ")
           return "TALON_CHAT_ID=heartbeat\0OTHER=x";
         if (path === "/proc/2/environ") return "TALON_CHAT_ID=foo\0OTHER=x";
+        if (path === "/proc/3/environ")
+          return "OTHER_VAR=TALON_CHAT_ID=heartbeat\0FOO=bar";
         if (path === "/proc/999/environ")
           return "FOO=bar\0TALON_CHAT_ID=heartbeat";
         throw new Error("ESRCH");
@@ -712,11 +717,18 @@ describe("heartbeat eviction (timeout + abort + orphan sweep)", () => {
     try {
       const result = await evictOrphanHeartbeatSubprocesses();
       // PIDs 1 and 999 should both be found (own pid excluded).
-      // We exclude our own pid, but neither 1 nor 999 should match it.
-      expect(result.found).toBeGreaterThanOrEqual(1);
-      expect(result.termed).toBeGreaterThanOrEqual(1);
+      // PID 3 has the marker only as a substring of another var's value —
+      // must NOT be matched (regression test for false-positive SIGKILL).
+      // We exclude our own pid, but neither 1, 3, nor 999 should match it.
+      expect(result.found).toBe(2);
+      expect(result.termed).toBe(2);
       // killed should be 0 because we made signal-0 throw ESRCH
       expect(result.killed).toBe(0);
+      // Verify PID 3 specifically was never targeted (no SIGTERM, no signal-0
+      // probe). If killSpy received any call for pid 3, the substring-vs-token
+      // distinction has regressed.
+      const pid3Calls = killSpy.mock.calls.filter((args) => args[0] === 3);
+      expect(pid3Calls).toEqual([]);
     } finally {
       killSpy.mockRestore();
       if (originalPlatform) {
