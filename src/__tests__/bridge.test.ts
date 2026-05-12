@@ -109,4 +109,100 @@ describe("createBridge", () => {
     );
     expect(body).toEqual({ action: "list_active_markets", _chatId: "456" });
   });
+
+  // ── Edge cases for chat_id values ────────────────────────────────────────
+
+  it("negative numeric chat_id (Telegram group ID) is preserved as negative", async () => {
+    // Telegram supergroup IDs are negative (e.g., -1001426819337). The bridge
+    // must not coerce sign — String(-1001426819337) keeps the minus prefix.
+    const bridge = createBridge("http://test/", "");
+    await bridge("send_message", {
+      text: "to group",
+      chat_id: -1001426819337,
+    });
+
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as { body: string }).body,
+    );
+    expect(body._chatId).toBe("-1001426819337");
+    expect(body.chat_id).toBe(-1001426819337);
+  });
+
+  it("chat_id=0 is promoted (gateway decides what to do)", async () => {
+    // The bridge doesn't validate chat_id — it just routes. Whether 0 is a
+    // valid chat ID is the gateway/handler's call (gateway rejects it via
+    // its `if (!chatId)` falsy guard, but the bridge correctly forwards).
+    const bridge = createBridge("http://test/", "");
+    await bridge("send_message", { text: "zero", chat_id: 0 });
+
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as { body: string }).body,
+    );
+    expect(body._chatId).toBe("0");
+    expect(body.chat_id).toBe(0);
+  });
+
+  it("chat_id=null is forwarded as-is (schema validates upstream)", async () => {
+    // chat_id is `optional()` in the messaging.ts schema, so a null value
+    // shouldn't reach here in practice. If it does, String(null) = "null"
+    // — gateway will reject (no matching context), but the bridge doesn't
+    // crash.
+    const bridge = createBridge("http://test/", "fallback");
+    await bridge("send_message", { text: "null id", chat_id: null });
+
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as { body: string }).body,
+    );
+    // null gets stringified to "null"; the explicit-routing path triggers
+    // because chat_id IS in the body (typeof !== "undefined"), even though
+    // its value is null.
+    expect(body._chatId).toBe("null");
+    expect(body.chat_id).toBeNull();
+  });
+
+  it("heartbeat sentinel default ('heartbeat') is overridden by explicit chat_id", async () => {
+    // The heartbeat-tier MCP server is spawned with TALON_CHAT_ID="heartbeat".
+    // When the model calls send() with an explicit chat_id, the bridge MUST
+    // overwrite the sentinel — otherwise the gateway would route to the
+    // sentinel string and fail.
+    const bridge = createBridge("http://test/", "heartbeat");
+    await bridge("send_message", {
+      text: "outbound from heartbeat",
+      chat_id: 352042062,
+    });
+
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as { body: string }).body,
+    );
+    expect(body._chatId).toBe("352042062");
+    // Critically NOT "heartbeat" — would be a routing-bypass bug.
+    expect(body._chatId).not.toBe("heartbeat");
+  });
+
+  it("heartbeat sentinel default is forwarded as _chatId when no explicit chat_id", async () => {
+    // When heartbeat-tier MCP server makes a call WITHOUT chat_id (a bug or
+    // a model mistake), the gateway must see _chatId="heartbeat" so its
+    // explicit-routing guard (rawChatId !== "heartbeat") kicks in and falls
+    // through to the rejection path. The bridge's job is just to forward.
+    const bridge = createBridge("http://test/", "heartbeat");
+    await bridge("send_message", { text: "no chat_id" });
+
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as { body: string }).body,
+    );
+    expect(body._chatId).toBe("heartbeat");
+    expect(body.chat_id).toBeUndefined();
+  });
+
+  it("string chat_id with leading zeros preserved exactly (no number coercion)", async () => {
+    // Edge case: user passes chat_id="000123" as a string. The bridge does
+    // String(chat_id) which is identity for strings, so "000123" stays.
+    const bridge = createBridge("http://test/", "");
+    await bridge("send_message", { text: "leading zeros", chat_id: "000123" });
+
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as { body: string }).body,
+    );
+    expect(body._chatId).toBe("000123");
+  });
 });

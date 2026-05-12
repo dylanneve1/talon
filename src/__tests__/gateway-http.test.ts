@@ -337,6 +337,91 @@ describe("gateway HTTP server", () => {
       gateway.clearContext(123);
       gateway.setFrontendHandler(mockFrontendHandler); // restore
     });
+
+    // ── Heartbeat outbound: edge cases ─────────────────────────────────
+
+    it("accepts NEGATIVE chat_id (Telegram supergroup) without active context", async () => {
+      // Telegram supergroups use -100<id> as their chat ID. These are
+      // legitimate routing targets and must not be rejected by the
+      // gateway's falsy guard or by sign-handling.
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "-1001426819337",
+        chat_id: -1001426819337,
+        text: "hello supergroup",
+      });
+      expect(body.ok).toBe(true);
+      expect(mockFrontendHandler).toHaveBeenCalledWith(
+        expect.objectContaining({ chat_id: -1001426819337 }),
+        -1001426819337,
+      );
+    });
+
+    it("rejects chat_id=0 (the gateway's falsy-guard catches it)", async () => {
+      // Number("0") = 0, which is falsy. The gateway uses `if (!chatId)`
+      // as its final guard so 0 always falls through to the rejection
+      // path — no real chat has ID 0.
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "0",
+        chat_id: 0,
+        text: "to zero",
+      });
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("No active chat context");
+    });
+
+    it("rejects the heartbeat sentinel even when chat_id property is present", async () => {
+      // The explicit-routing branch has an extra guard:
+      // `rawChatId !== "heartbeat"`. So if a heartbeat-tier MCP server
+      // ships a request with _chatId still set to the sentinel, we don't
+      // accidentally route to a numeric NaN. Instead we fall through to
+      // the string-id lookup, which fails without context.
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "heartbeat",
+        chat_id: "heartbeat",
+        text: "should never route",
+      });
+      expect(body.ok).toBe(false);
+      expect(body.error).toContain("No active chat context");
+    });
+
+    it("preserves negative chat_id sign through routing (no abs/truncation)", async () => {
+      // Defensive: ensure -100<id> isn't accidentally getting Math.abs'd
+      // or truncated. The handler receives the negative ID verbatim.
+      const { body } = await post({
+        action: "send_message",
+        _chatId: "-1001234567890",
+        chat_id: -1001234567890,
+        text: "sign-preserve",
+      });
+      expect(body.ok).toBe(true);
+      expect(mockFrontendHandler).toHaveBeenLastCalledWith(
+        expect.objectContaining({ chat_id: -1001234567890 }),
+        -1001234567890,
+      );
+    });
+
+    it("explicit chat_id with active context for SAME id still routes (no exception)", async () => {
+      // Defensive coexistence: when a chat has an active context AND the
+      // request carries an explicit chat_id matching that context, the
+      // explicit-routing branch takes precedence (no exception thrown,
+      // no double-dispatch).
+      gateway.setContext(7777);
+      try {
+        const { body } = await post({
+          action: "send_message",
+          _chatId: "7777",
+          chat_id: 7777,
+          text: "both signal active",
+        });
+        expect(body.ok).toBe(true);
+        expect(mockFrontendHandler).toHaveBeenCalledTimes(1);
+      } finally {
+        gateway.clearContext(7777);
+      }
+    });
   });
 
   describe("shared actions via HTTP", () => {
