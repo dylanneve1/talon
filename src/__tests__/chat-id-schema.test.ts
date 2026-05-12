@@ -134,3 +134,177 @@ describe("chat_id tool params (wired into send/react)", () => {
     expect(() => s.parse(0)).toThrow();
   });
 });
+
+describe("send.execute threads chat_id through to bridge", () => {
+  // Second-half of the PR #150 bug surfaced 2026-05-12: even after the
+  // schema accepts chat_id, send.execute builds per-case explicit
+  // bridge payloads. If any case forgets to include chat_id, the
+  // bridge falls back to the heartbeat sentinel and the gateway
+  // rejects with "No active chat context". These tests assert every
+  // type case forwards chat_id verbatim to the bridge call.
+  //
+  // react is unaffected — it does `bridge("react", rest)` with the
+  // full param spread, so chat_id passes through naturally.
+
+  type BridgeCall = [string, Record<string, unknown>];
+
+  function findSend() {
+    const t = ALL_TOOLS.find((x) => x.name === "send");
+    if (!t) throw new Error("send tool not found");
+    return t;
+  }
+
+  async function runSend(params: Record<string, unknown>): Promise<BridgeCall> {
+    const tool = findSend();
+    const captured: BridgeCall[] = [];
+    const fakeBridge = async (
+      action: string,
+      bridgeParams: Record<string, unknown> | undefined,
+    ) => {
+      captured.push([action, bridgeParams ?? {}]);
+      return { ok: true };
+    };
+    // The tool's typed execute expects its branded ToolParams /
+    // BridgeFunction; for a behavioural test of the per-case payload
+    // shape it's fine to cast through unknown.
+    await (
+      tool.execute as unknown as (
+        p: unknown,
+        b: unknown,
+      ) => Promise<{ ok: boolean }>
+    )(params, fakeBridge);
+    if (captured.length !== 1) {
+      throw new Error(
+        `expected exactly one bridge call, got ${captured.length}`,
+      );
+    }
+    return captured[0]!;
+  }
+
+  const cases: Array<[string, Record<string, unknown>, string]> = [
+    [
+      "text (plain)",
+      { type: "text", text: "hi", chat_id: -1001426819337 },
+      "send_message",
+    ],
+    [
+      "text (with reply_to)",
+      { type: "text", text: "hi", reply_to: 100, chat_id: -1001426819337 },
+      "send_message",
+    ],
+    [
+      "text (with buttons)",
+      {
+        type: "text",
+        text: "pick",
+        buttons: [[{ text: "A", callback_data: "a" }]],
+        chat_id: -1001426819337,
+      },
+      "send_message_with_buttons",
+    ],
+    [
+      "text (scheduled)",
+      {
+        type: "text",
+        text: "later",
+        delay_seconds: 60,
+        chat_id: -1001426819337,
+      },
+      "schedule_message",
+    ],
+    [
+      "photo",
+      { type: "photo", file_path: "/x.jpg", chat_id: -1001426819337 },
+      "send_photo",
+    ],
+    [
+      "file",
+      { type: "file", file_path: "/x.pdf", chat_id: -1001426819337 },
+      "send_file",
+    ],
+    [
+      "video",
+      { type: "video", file_path: "/x.mp4", chat_id: -1001426819337 },
+      "send_video",
+    ],
+    [
+      "voice",
+      { type: "voice", file_path: "/x.ogg", chat_id: -1001426819337 },
+      "send_voice",
+    ],
+    [
+      "audio",
+      { type: "audio", file_path: "/x.mp3", chat_id: -1001426819337 },
+      "send_audio",
+    ],
+    [
+      "animation",
+      { type: "animation", file_path: "/x.gif", chat_id: -1001426819337 },
+      "send_animation",
+    ],
+    [
+      "sticker",
+      { type: "sticker", file_id: "CAAC", chat_id: -1001426819337 },
+      "send_sticker",
+    ],
+    [
+      "poll",
+      {
+        type: "poll",
+        question: "?",
+        options: ["a", "b"],
+        chat_id: -1001426819337,
+      },
+      "send_poll",
+    ],
+    [
+      "location",
+      {
+        type: "location",
+        latitude: 37.7,
+        longitude: -122.4,
+        chat_id: -1001426819337,
+      },
+      "send_location",
+    ],
+    [
+      "contact",
+      {
+        type: "contact",
+        phone_number: "+1",
+        first_name: "Sur",
+        chat_id: -1001426819337,
+      },
+      "send_contact",
+    ],
+    [
+      "dice",
+      { type: "dice", emoji: "🎲", chat_id: -1001426819337 },
+      "send_dice",
+    ],
+  ];
+
+  for (const [label, params, expectedAction] of cases) {
+    it(`send ${label} forwards chat_id to bridge ${expectedAction}`, async () => {
+      const [action, payload] = await runSend(params);
+      expect(action).toBe(expectedAction);
+      expect(payload.chat_id).toBe(-1001426819337);
+    });
+  }
+
+  it("send positive chat_id (DM) also threaded", async () => {
+    const [action, payload] = await runSend({
+      type: "text",
+      text: "hi sur",
+      chat_id: 352042062,
+    });
+    expect(action).toBe("send_message");
+    expect(payload.chat_id).toBe(352042062);
+  });
+
+  it("send without chat_id passes undefined (chat-mode default path)", async () => {
+    const [action, payload] = await runSend({ type: "text", text: "hi" });
+    expect(action).toBe("send_message");
+    expect(payload.chat_id).toBeUndefined();
+  });
+});
