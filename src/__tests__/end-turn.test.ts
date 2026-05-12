@@ -357,9 +357,7 @@ describe("turn-terminator integration with SDK production tool name shapes", () 
 
         // This is the exact line in handler.ts (with soft-terminator input):
         //     if (isTurnTerminator(tool.name, tool.input)) state.turnTerminated = true;
-        if (
-          isTurnTerminator(result.tools[0].name, result.tools[0].input)
-        ) {
+        if (isTurnTerminator(result.tools[0].name, result.tools[0].input)) {
           state.turnTerminated = true;
         }
         expect(state.turnTerminated).toBe(true);
