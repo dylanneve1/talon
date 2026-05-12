@@ -40,7 +40,7 @@ import {
   formatUserPrompt,
   prepareSystemPrompt,
   extractSessionName,
-  detectFlowViolation,
+  isDuplicateOfDelivered,
   captureDeliveredText,
   classifyRetry,
   summarizeUsage,
@@ -59,9 +59,19 @@ export function getActiveQuery(chatId: string): Query | undefined {
 
 // ── Main handler ─────────────────────────────────────────────────────────────
 
+/**
+ * Maximum number of synthetic [FLOW VIOLATION] re-prompts before we give up
+ * and accept a silent drop. Set high enough that a well-behaved model with
+ * a one-off slip-up always recovers; low enough that a pathologically broken
+ * model doesn't loop indefinitely burning tokens. After this cap, the drop
+ * is still logged at ERROR level so it's visible in observability.
+ */
+const FLOW_VIOLATION_MAX_RETRIES = 3;
+
 export async function handleMessage(
   params: QueryParams,
-  _retried = false,
+  /** Internal: number of [FLOW VIOLATION] re-prompts already attempted. */
+  _retryCount: number = 0,
 ): Promise<QueryResult> {
   const config = getConfig();
 
@@ -202,7 +212,7 @@ export async function handleMessage(
     const decision = classifyRetry({
       error: classified,
       activeModel,
-      retried: _retried,
+      retried: _retryCount > 0,
     });
 
     if (decision.kind === "reset_and_retry") {
@@ -211,7 +221,7 @@ export async function handleMessage(
         `[${chatId}] ${decision.reason}, resetting session and retrying`,
       );
       resetSession(chatId);
-      return handleMessage(params, true);
+      return handleMessage(params, _retryCount + 1);
     }
 
     if (decision.kind === "fallback_model") {
@@ -223,7 +233,7 @@ export async function handleMessage(
       const originalModel = getChatSettings(chatId).model;
       setChatModel(chatId, decision.fallbackModelId);
       try {
-        return await handleMessage(params, true);
+        return await handleMessage(params, _retryCount + 1);
       } finally {
         setChatModel(chatId, originalModel);
       }
@@ -266,41 +276,89 @@ export async function handleMessage(
     if (name) setSessionName(chatId, name);
   }
 
-  // ── Trailing-prose contract + flow-violation retry ──────────────────────
-  // The output stream is private scratchpad by design. Final replies must go
-  // through `end_turn` (canonical) or `send` (mid-turn rich content). The
-  // shared `detectFlowViolation` decides whether trailing prose constitutes
-  // a missed delivery (and whether to re-prompt the model once with the
-  // synthetic reminder).
+  // ── Flow-violation contract + retry ─────────────────────────────────────
+  // The output stream is private scratchpad by design. Every turn must end
+  // by calling one of: `end_turn` (canonical reply terminator),
+  // `send` (mid-turn rich content that also terminates), or `react`
+  // (turn-terminating reaction). `end_turn()` with no args is the explicit
+  // "I chose not to reply" close — valid and the ONLY way to legitimately
+  // end a turn without delivering.
+  //
+  // If the SDK loop ends without `state.turnTerminated` being set, the
+  // model failed to commit:
+  //   - It may have written prose to its scratchpad without routing it
+  //     through a delivery tool (classic flow violation).
+  //   - It may have done tool calls but no terminator (e.g., ran Bash
+  //     then exited without `end_turn` — the user sees nothing).
+  //   - It may have done nothing at all (extremely unusual; usually
+  //     means an upstream error).
+  //
+  // ALL of these are flow violations. The system MUST re-prompt the model
+  // with a synthetic `[FLOW VIOLATION]` reminder so it can correct, up to
+  // FLOW_VIOLATION_MAX_RETRIES times. Silent drop without retry would
+  // mean the user gets no response and no observability — exactly the
+  // failure mode we're guarding against. After the cap is exhausted (a
+  // pathological model can't recover after 3 reminders), we log at
+  // ERROR level and accept the drop only as a last resort.
+  //
+  // Exception: if `state.turnTerminated` is true, the model explicitly
+  // closed the turn — respect it even if trailing prose slipped in
+  // earlier in the same assistant message (would loop endlessly with a
+  // model that habitually pairs prose with end_turn).
   //
   // `incrementTurns` is deferred until AFTER this check so the retry path
   // (which recurses through `handleMessage` and hits its own
   // `incrementTurns` at the end of that call) doesn't double-count a
   // single user message as two turns.
-  const violation = detectFlowViolation({
-    trailingText: state.lastTrailingText,
-    turnTerminated: state.turnTerminated,
-    deliveredTextNorms: state.deliveredTextNorms,
-    retried: _retried,
-  });
+  const trailing = state.lastTrailingText.trim();
+  const hadActivity = trailing.length > 0 || state.toolCalls > 0;
+  const isTrailingDuplicate =
+    trailing.length > 0 &&
+    isDuplicateOfDelivered(trailing, state.deliveredTextNorms);
 
-  if (violation.violated) {
-    incrementCounter("scratchpad.trailing_text_dropped");
-    log(
-      "agent",
-      `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
-        violation.shouldRetry
-          ? "Re-prompting with reminder."
-          : "Already retried — accepting silent drop."
-      }`,
-    );
+  // No flow violation: either the model explicitly terminated, or there
+  // was literally nothing to deliver (no prose, no tool calls — rare),
+  // or the trailing prose was a duplicate of what end_turn already
+  // delivered (model wrote text + called end_turn with the same text).
+  const flowViolation =
+    !state.turnTerminated && hadActivity && !isTrailingDuplicate;
 
-    if (violation.shouldRetry) {
+  if (flowViolation) {
+    const violationKind =
+      trailing.length > 0
+        ? `trailing prose (${trailing.length} chars)`
+        : `${state.toolCalls} tool call${state.toolCalls === 1 ? "" : "s"} with no terminator`;
+
+    if (_retryCount < FLOW_VIOLATION_MAX_RETRIES) {
       incrementCounter("scratchpad.flow_violation_retried");
-      // The recursive call owns the `incrementTurns` for this user message.
-      // We deliberately don't increment here.
-      return handleMessage({ ...params, text: violation.reminder }, true);
+      log(
+        "agent",
+        `[${chatId}] flow violation (retry ${_retryCount + 1}/${FLOW_VIOLATION_MAX_RETRIES}): ${violationKind} without end_turn/send. Re-prompting with reminder.`,
+      );
+      const reminder =
+        "[FLOW VIOLATION] Your previous turn ended without calling a delivery " +
+        "tool (`end_turn`, `send`, or `react`). Pure prose in your output " +
+        "stream is private scratchpad — the user never sees it. Tool calls " +
+        "alone do not close the turn. You MUST call one of these to commit:\n" +
+        "  • `end_turn(text=...)` — deliver a final reply\n" +
+        '  • `end_turn()` — close silently (explicit "no reply")\n' +
+        "  • `send(...)` — mid-turn rich content (photos, polls, etc.)\n" +
+        "  • `react(emoji=...)` — react and close\n" +
+        "Respond now with the correct tool call. If you intended to send no " +
+        "reply, call `end_turn()` with no arguments to commit that choice.";
+      return handleMessage({ ...params, text: reminder }, _retryCount + 1);
     }
+
+    // Cap exhausted — log at ERROR level so observability catches it.
+    // We accept the drop here only because we've exhausted retries; a
+    // model that can't commit after 3 reminders has a deeper problem
+    // worth investigating, not a transient slip-up.
+    incrementCounter("scratchpad.flow_violation_cap_exhausted");
+    logError(
+      "agent",
+      `[${chatId}] flow violation cap exhausted after ${FLOW_VIOLATION_MAX_RETRIES} retries: ${violationKind} without end_turn/send. Accepting silent drop — model may be malfunctioning.`,
+    );
+    incrementCounter("scratchpad.trailing_text_dropped");
   }
 
   // Reached the non-retry path — this turn counts as one user-visible turn.

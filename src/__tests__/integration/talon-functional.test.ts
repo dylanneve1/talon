@@ -188,3 +188,156 @@ describe.skipIf(!stubReady)("Talon functional — single-turn", () => {
     cleanupTurn(result);
   }, 20000);
 });
+
+// ── Flow-violation contract ────────────────────────────────────────────────
+//
+// These tests cover the production rule: every turn MUST call a turn-
+// terminator tool (`end_turn`, `send`, or `react`). When the SDK loop ends
+// without one, the handler re-prompts with `[FLOW VIOLATION]` so the model
+// can correct, up to FLOW_VIOLATION_MAX_RETRIES (3) times. Silent drop
+// without retry would mean the user gets no response with no observability
+// — the failure mode we explicitly guard against.
+
+describe.skipIf(!stubReady)("Talon functional — flow violation", () => {
+  afterAll(() => {
+    teardownBootstrap();
+  });
+
+  // Note on infrastructure: each call to `handleMessage` spawns a fresh stub
+  // subprocess, which resets its `turnIndex` to 0. So a recursive retry from
+  // the handler doesn't fire `script.turns[1]` — instead, the new stub
+  // re-fires `script.turns[0]`. This means we can verify that re-prompts
+  // FIRE (via protocol-log inspection of STDIN messages) but cannot test
+  // "model recovers via turn 2 of script" without infrastructure changes.
+  // The unit assertion that matters most — "re-prompt was attempted" — is
+  // fully testable via the protocol log.
+
+  it("re-prompts when model produces trailing prose without end_turn", async () => {
+    const result = await runTalonTurn({
+      prompt: "say hi",
+      script: {
+        // Every script turn fires the same broken assistant message — each
+        // recursive retry re-spawns the stub which starts at turnIndex=0.
+        turns: [
+          { emit: [assistantText("forgot to call end_turn"), successResult()] },
+        ],
+      },
+      resetSession: true,
+    });
+
+    // Re-prompt fired — the protocol log contains the synthetic reminder.
+    const reminderLine = result.protocolLog.find(
+      (line) =>
+        line.includes("STDIN:") &&
+        line.includes("Your previous turn ended without calling a delivery"),
+    );
+    expect(reminderLine).toBeDefined();
+    cleanupTurn(result);
+  }, 25000);
+
+  it("re-prompts when model does tool calls but no end_turn (the canonical no-delivery case)", async () => {
+    // This is the bug Dylan reported on 2026-05-12 — model ran a Bash-style
+    // tool, got the result, then exited without calling end_turn. Previously
+    // the handler would silently drop. Now it must re-prompt.
+    const result = await runTalonTurn({
+      prompt: "fetch something",
+      script: {
+        turns: [
+          {
+            emit: [
+              {
+                type: "assistant",
+                message: {
+                  stop_reason: "end_turn",
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "tu_bash_1",
+                      name: "Bash",
+                      input: { command: "echo hi" },
+                    },
+                  ],
+                },
+              },
+              {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [
+                    {
+                      type: "tool_result",
+                      tool_use_id: "tu_bash_1",
+                      content: [{ type: "text", text: "hi\n" }],
+                    },
+                  ],
+                },
+              },
+              successResult(),
+            ],
+          },
+        ],
+      },
+      resetSession: true,
+    });
+
+    const reminderLine = result.protocolLog.find(
+      (line) =>
+        line.includes("STDIN:") &&
+        line.includes("Your previous turn ended without calling a delivery"),
+    );
+    expect(reminderLine).toBeDefined();
+    cleanupTurn(result);
+  }, 25000);
+
+  it("re-prompts up to FLOW_VIOLATION_MAX_RETRIES (3) times before giving up", async () => {
+    // Previous behavior: re-prompt once, then silent-drop on the second
+    // violation. New behavior: re-prompt up to 3 times before accepting
+    // the drop. The script's single turn fires identically on each retry
+    // (the stub re-spawns at turnIndex=0), so a pathological model that
+    // never recovers gets exactly 3 reminders before the handler gives up.
+    const result = await runTalonTurn({
+      prompt: "stubborn model",
+      script: {
+        turns: [{ emit: [assistantText("never recovers"), successResult()] }],
+      },
+      resetSession: true,
+    });
+
+    // Exactly 3 [FLOW VIOLATION] reminders — one per retry. If the cap
+    // weren't enforced, this would loop indefinitely; if the old behavior
+    // were in place (single retry then accept drop), this would be 1.
+    const reminderCount = result.protocolLog.filter(
+      (line) =>
+        line.includes("STDIN:") &&
+        line.includes("Your previous turn ended without calling a delivery"),
+    ).length;
+    expect(reminderCount).toBe(3);
+    cleanupTurn(result);
+  }, 30000);
+
+  it("does NOT re-prompt when model explicitly closes with end_turn() (no args)", async () => {
+    // `end_turn()` with no arguments is the explicit "I chose not to reply"
+    // close. This is the ONLY legitimate way to end a turn without delivery,
+    // and the handler must respect it without re-prompting.
+    const result = await runTalonTurn({
+      prompt: "be quiet",
+      script: {
+        turns: [{ emit: [...endTurnWithText(""), successResult()] }],
+      },
+      resetSession: true,
+    });
+
+    // The reminder body has a distinctive phrase that only appears in the
+    // synthetic re-prompt; using a system-prompt-stable phrase risks false
+    // positives if Talon's system prompt ever mentions `[FLOW VIOLATION]`.
+    const reminderCount = result.protocolLog.filter(
+      (line) =>
+        line.includes("STDIN:") &&
+        line.includes("Your previous turn ended without calling a delivery"),
+    ).length;
+    expect(reminderCount).toBe(0);
+    // No user-visible text (empty end_turn).
+    expect(deliveredText(result.toolUses)).toBe("");
+    cleanupTurn(result);
+  }, 20000);
+});
