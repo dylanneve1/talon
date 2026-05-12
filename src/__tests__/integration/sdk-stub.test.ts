@@ -205,4 +205,77 @@ describe.skipIf(!stubReady)("SDK integration (stub binary)", () => {
 
     cleanup(result);
   }, 15000);
+
+  it("react is recognised as a turn terminator (mcp-prefixed)", async () => {
+    // Regression test for the bug where reacting + silently ending the turn
+    // left the SDK loop alive past the terminator (typing indicator stayed
+    // up). Marking `react` with `endsTurn: true` means a react-only batch
+    // is itself a clean termination — no separate end_turn() call needed.
+    // This test would have caught that bug at the integration boundary.
+    const { isTurnTerminator } = await import("../../core/tools/index.js");
+
+    const result = await runWithStub({
+      prompt: "react and end",
+      script: {
+        turns: [
+          {
+            emit: [
+              assistantToolUse("mcp__telegram-tools__react", {
+                message_id: 12345,
+                emoji: "👍",
+              }),
+              fireHook("PostToolBatch", {
+                tool_calls: [
+                  {
+                    tool_name: "mcp__telegram-tools__react",
+                    tool_input: { message_id: 12345, emoji: "👍" },
+                    tool_use_id: "tu_1",
+                  },
+                ],
+              }),
+              successResult(),
+            ],
+          },
+        ],
+      },
+      sdkOptions: {
+        hooks: {
+          PostToolBatch: [
+            {
+              hooks: [
+                async (input) => {
+                  type Batch = {
+                    hook_event_name: string;
+                    tool_calls: { tool_name: string }[];
+                  };
+                  if ((input as Batch).hook_event_name !== "PostToolBatch") {
+                    return { continue: true };
+                  }
+                  const batch = input as Batch;
+                  const ended = batch.tool_calls.some((tc) =>
+                    isTurnTerminator(tc.tool_name),
+                  );
+                  return ended
+                    ? { continue: false, stopReason: "turn terminated" }
+                    : { continue: true };
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+
+    // Hook should have fired exactly once for the react-only batch.
+    expect(result.hookFires.PostToolBatch).toBe(1);
+    const calls = result.hookInputs.PostToolBatch ?? [];
+    const firstInput = calls[0] as
+      | { tool_calls: { tool_name: string }[] }
+      | undefined;
+    expect(firstInput?.tool_calls.map((tc) => tc.tool_name)).toContain(
+      "mcp__telegram-tools__react",
+    );
+
+    cleanup(result);
+  }, 15000);
 });

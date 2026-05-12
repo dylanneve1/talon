@@ -107,10 +107,20 @@ describe("turn-terminator declaration", () => {
     expect(endTurn?.endsTurn).toBe(true);
   });
 
+  it("react is declared with endsTurn: true", () => {
+    // Reacting is itself a final delivery — the user sees the emoji land on
+    // their message, equivalent to receiving a reply. Marking react as a
+    // terminator collapses the (react + silent end_turn) pattern into a
+    // single tool call and fixes a bug where react+end_turn batches could
+    // leave the SDK loop running past the terminator.
+    const react = messagingTools.find((t) => t.name === "react");
+    expect(react?.endsTurn).toBe(true);
+  });
+
   it("send is NOT declared as a turn terminator", () => {
     // `send` is for mid-turn rich content (photos, polls, scheduled messages,
     // etc.) — calling it does NOT mean the model is done. Only end_turn
-    // declares the turn finished.
+    // and react declare the turn finished.
     const send = messagingTools.find((t) => t.name === "send");
     expect(send?.endsTurn).toBeFalsy();
   });
@@ -119,10 +129,14 @@ describe("turn-terminator declaration", () => {
     expect(isTurnTerminator("end_turn")).toBe(true);
   });
 
+  it("isTurnTerminator returns true for react", () => {
+    expect(isTurnTerminator("react")).toBe(true);
+  });
+
   it("isTurnTerminator returns false for non-terminator tools", () => {
     expect(isTurnTerminator("send")).toBe(false);
-    expect(isTurnTerminator("react")).toBe(false);
     expect(isTurnTerminator("fetch_url")).toBe(false);
+    expect(isTurnTerminator("edit_message")).toBe(false);
     expect(isTurnTerminator("nonexistent_tool")).toBe(false);
   });
 
@@ -134,9 +148,11 @@ describe("turn-terminator declaration", () => {
     // re-prompt skip and trailing-prose dedup both break.
     expect(isTurnTerminator("mcp__telegram-tools__end_turn")).toBe(true);
     expect(isTurnTerminator("mcp__teams-tools__end_turn")).toBe(true);
+    // react is also a terminator — same prefix-strip logic must catch it.
+    expect(isTurnTerminator("mcp__telegram-tools__react")).toBe(true);
     // Non-terminators with the same prefix shape still return false
     expect(isTurnTerminator("mcp__telegram-tools__send")).toBe(false);
-    expect(isTurnTerminator("mcp__telegram-tools__react")).toBe(false);
+    expect(isTurnTerminator("mcp__telegram-tools__edit_message")).toBe(false);
     // Server name with hyphen + underscore must still match the boundary
     expect(isTurnTerminator("mcp__some-server-name__end_turn")).toBe(true);
   });
@@ -162,11 +178,15 @@ describe("turn-terminator declaration", () => {
     );
   });
 
-  it("only one turn terminator currently exists (end_turn)", () => {
-    // If a future change adds a second terminator, this test should fail
+  it("turn terminators are exactly: end_turn, react", () => {
+    // If a future change adds a third terminator, this test should fail
     // and the author should document why a new terminator is necessary.
+    // Current set:
+    //   - end_turn: explicit final-reply tool, the documented happy path
+    //   - react: emoji reaction IS the delivery; user sees the emoji land
+    //     on their message and that's a complete acknowledgement turn
     const terminators = ALL_TOOLS.filter((t) => t.endsTurn).map((t) => t.name);
-    expect(terminators).toEqual(["end_turn"]);
+    expect(terminators.sort()).toEqual(["end_turn", "react"]);
   });
 });
 

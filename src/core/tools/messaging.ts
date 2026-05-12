@@ -301,10 +301,18 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
   },
 
   // ── react ─────────────────────────────────────────────────────────────
+  // Reacting is itself a final delivery action — the user sees the emoji
+  // appear on their own message, same as receiving a reply. In practice
+  // every react call from the model is an acknowledgement-only response,
+  // followed by silent end_turn(). Marking endsTurn:true here collapses
+  // those two calls into one and — crucially — fixes a bug where batching
+  // react alongside end_turn could leave the SDK loop running past the
+  // terminator (typing indicator wouldn't drop until the next SDK
+  // round-trip naturally completed).
   {
     name: "react",
     description:
-      "Add an emoji reaction to a message. Valid: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷 🤷‍♂ 🤷‍♀ 😡",
+      "Add an emoji reaction to a message and end the current turn. Use this when a reaction is sufficient acknowledgement — no separate end_turn() call needed afterwards. Valid: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷 🤷‍♂ 🤷‍♀ 😡",
     schema: {
       message_id: idSchema.describe("Message ID"),
       emoji: z.string().describe("Reaction emoji"),
@@ -312,6 +320,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
     execute: (params, bridge) => bridge("react", params),
     frontends: ["telegram"],
     tag: "messaging",
+    endsTurn: true,
   },
 
   // ── edit_message ──────────────────────────────────────────────────────
