@@ -157,18 +157,23 @@ function redactValue(
   if (typeof value === "object" && value !== null) {
     if (seen.has(value)) return "[circular]";
     seen.add(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, key, depth + 1, seen));
-  }
-  if (typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [childKey, childValue] of Object.entries(
-      value as Record<string, unknown>,
-    )) {
-      out[childKey] = redactValue(childValue, childKey, depth + 1, seen);
+    // Track only the current recursion stack: an object reached again via a
+    // sibling branch is repetition, not a cycle. Removing on unwind keeps
+    // `[circular]` reserved for true cycles. (Copilot review on PR #90.)
+    try {
+      if (Array.isArray(value)) {
+        return value.map((item) => redactValue(item, key, depth + 1, seen));
+      }
+      const out: Record<string, unknown> = {};
+      for (const [childKey, childValue] of Object.entries(
+        value as Record<string, unknown>,
+      )) {
+        out[childKey] = redactValue(childValue, childKey, depth + 1, seen);
+      }
+      return out;
+    } finally {
+      seen.delete(value);
     }
-    return out;
   }
   return String(value);
 }

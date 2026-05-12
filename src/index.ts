@@ -182,8 +182,12 @@ process.on("uncaughtException", (err) => {
     return;
   }
   const classified = classify(err);
-  logError("bot", "Uncaught exception", classified, {
+  // Pass the original `err` so the logged stack points at the true throw site;
+  // `classified.reason` and `retryable` go to structured fields. (Copilot
+  // review on PR #90.)
+  logError("bot", "Uncaught exception", err, {
     reason: classified.reason,
+    retryable: classified.retryable,
   });
   recordError(
     `Uncaught exception (${classified.reason}): ${classified.message}`,
@@ -194,7 +198,9 @@ process.on("uncaughtException", (err) => {
 
 process.on("unhandledRejection", (reason) => {
   const classified = classify(reason);
-  logError("bot", "Unhandled promise rejection", classified, {
+  // Same as uncaughtException above: log the original rejection reason, not
+  // the wrapped TalonError, so the stack is the rejection site.
+  logError("bot", "Unhandled promise rejection", reason, {
     reason: classified.reason,
     retryable: classified.retryable,
   });

@@ -150,6 +150,9 @@ describe("gateway HTTP server", () => {
         }),
       });
       expect(resp.status).toBe(413);
+      // PR #90 Copilot fix: oversize 413 must close the connection after
+      // flush so the still-streaming client doesn't keep the connection busy.
+      expect(resp.headers.get("connection")).toBe("close");
       const data = (await resp.json()) as Record<string, unknown>;
       expect(data.ok).toBe(false);
       expect(data.error).toContain("too large");

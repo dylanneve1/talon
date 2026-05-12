@@ -90,6 +90,29 @@ describe("log — extended redactValue / serializeError branch coverage", () => 
     expect(call.self).toBe("[circular]");
   });
 
+  it("does NOT mark sibling repeats as [circular] (PR #90 Copilot fix)", () => {
+    // Regression: prior to the seen.delete-on-unwind fix, the second branch
+    // pointing at the same shared object was incorrectly serialized as
+    // "[circular]" even though there was no actual cycle. Both branches must
+    // serialize fully.
+    const shared = { x: 1, y: "ok" };
+    log("bot", "sibling repeat", { a: shared, b: shared });
+    const call = mockInfo.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(call.a).toEqual({ x: 1, y: "ok" });
+    expect(call.b).toEqual({ x: 1, y: "ok" });
+    expect(call.a).not.toBe("[circular]");
+    expect(call.b).not.toBe("[circular]");
+  });
+
+  it("does NOT mark array repeats as [circular]", () => {
+    // Same regression, in an array context. `[shared, shared]` is repetition,
+    // not a cycle; both elements must serialize fully.
+    const shared = { n: 42 };
+    log("bot", "array repeat", { items: [shared, shared] });
+    const call = mockInfo.mock.calls.at(-1)![0] as Record<string, unknown>;
+    expect(call.items).toEqual([{ n: 42 }, { n: 42 }]);
+  });
+
   it("maps over Array field values", () => {
     log("bot", "array field", { items: [1, 2, 3] });
     const call = mockInfo.mock.calls.at(-1)![0] as Record<string, unknown>;

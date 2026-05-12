@@ -240,6 +240,12 @@ export class Gateway {
       const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       totalBytes += buffer.length;
       if (totalBytes > MAX_ACTION_BODY_BYTES) {
+        // Throwing here stops the for-await consumer so the request stream
+        // applies TCP backpressure. The outer handler sets `Connection: close`
+        // on the 413 response so Node closes the socket after the response is
+        // flushed — preventing an oversized client payload from keeping the
+        // connection busy after the 413 condition is detected. (Copilot
+        // review on PR #90.)
         throw new TalonError("Request body too large", {
           reason: "bad_request",
           retryable: false,
@@ -353,7 +359,14 @@ export class Gateway {
           if (status >= 500) {
             recordError(`Gateway HTTP failure: ${classified.message}`);
           }
-          res.writeHead(status, { "Content-Type": "application/json" });
+          // On 413 the client is still streaming a giant body; close the
+          // connection after the response flushes so we don't keep accepting
+          // bytes we've already decided to reject. (Copilot review on PR #90.)
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+          };
+          if (status === 413) headers.Connection = "close";
+          res.writeHead(status, headers);
           res.end(
             JSON.stringify({
               ok: false,
