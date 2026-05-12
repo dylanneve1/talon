@@ -294,7 +294,7 @@ async function runHeartbeatAgent(
       "`react`, and the rest of the messaging surface. Because there is NO",
       "ambient chat in heartbeat mode, every outbound tool call MUST include",
       "an explicit `chat_id` parameter. The bridge promotes that chat_id to",
-      "the routing target, so a `send(type=\"text\", text=\"...\", chat_id=N)`",
+      'the routing target, so a `send(type="text", text="...", chat_id=N)`',
       "delivers a message to chat N. Known chat IDs live in your memory.md",
       "(see the Users section — Dylan's Telegram ID is 352042062 for DM;",
       "group IDs are recorded per-group). Without `chat_id`, the gateway",
