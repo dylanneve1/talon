@@ -32,3 +32,43 @@ export const idSchema = z.union([
     .transform((s) => Number(s))
     .pipe(z.number().int().positive()),
 ]);
+
+/**
+ * Telegram-style chat ID. Unlike message/user IDs, chat IDs can be
+ * NEGATIVE: supergroups and channels use `-100xxxxxxxxxx`, basic
+ * groups use `-xxxxxxxxxx`, and private chats / DMs use the
+ * positive user ID. Zero is never a valid chat ID and is the
+ * sentinel the gateway already treats as falsy/unrouted.
+ *
+ * Accepts:
+ *   - actual non-zero integer numbers (`352042062`, `-1001426819337`)
+ *   - integer strings with optional leading minus (`"-1001426819337"`)
+ *
+ * Rejects:
+ *   - zero (`0`, `"0"`, `"-0"`)
+ *   - non-integer numbers (`1.5`)
+ *   - non-numeric strings, booleans, null, undefined
+ *
+ * Use this for `chat_id` fields on tool input schemas. The bare
+ * `idSchema` is for message/user/reply IDs (always positive) and
+ * would reject the negative IDs Telegram uses for groups/channels —
+ * which was the bug PR #150 shipped with: heartbeat outbound `send`
+ * to a supergroup got `expected number, received string` (the model
+ * sees a `number` JSON schema, but zod rejects negatives before the
+ * gateway sees the request). Gateway-side handling for negative
+ * chat_ids was already tested and correct — only the tool-input
+ * schema layer needed the fix.
+ */
+const nonZeroInt = z
+  .number()
+  .int()
+  .refine((n) => n !== 0, "chat_id cannot be zero");
+
+export const chatIdSchema = z.union([
+  nonZeroInt,
+  z
+    .string()
+    .regex(/^-?\d+$/, "must be an integer (negative for supergroups)")
+    .transform((s) => Number(s))
+    .pipe(nonZeroInt),
+]);

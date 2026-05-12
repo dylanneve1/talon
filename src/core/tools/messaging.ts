@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
-import { idSchema } from "./schemas.js";
+import { chatIdSchema, idSchema } from "./schemas.js";
 
 export const messagingTools: ToolDefinition[] = [
   // ── end_turn — explicit final-reply delivery ──────────────────────────
@@ -164,10 +164,10 @@ Examples:
         .number()
         .optional()
         .describe("Schedule: delay before sending (1-3600)"),
-      chat_id: idSchema
+      chat_id: chatIdSchema
         .optional()
         .describe(
-          "Target chat ID. Omit to send to the current chat (chat mode). Required from heartbeat mode where there is no ambient chat — use list_chats or known IDs from memory.",
+          "Target chat ID. Omit to send to the current chat (chat mode). Required from heartbeat mode where there is no ambient chat — use list_chats or known IDs from memory. Telegram supergroup/channel IDs are negative (e.g. -1001426819337); user DMs are positive.",
         ),
     },
     execute: async (params, bridge) => {
@@ -335,10 +335,10 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
         .describe(
           "Whether this reaction ends the turn. Defaults to true (omit). Pass false to keep the turn alive after reacting.",
         ),
-      chat_id: idSchema
+      chat_id: chatIdSchema
         .optional()
         .describe(
-          "Target chat ID. Omit in chat mode (uses ambient chat). Required from heartbeat mode.",
+          "Target chat ID. Omit in chat mode (uses ambient chat). Required from heartbeat mode. Supergroup/channel IDs are negative; user DMs are positive.",
         ),
     },
     // Strip end_turn before bridging — it's a hook-level signal, the
