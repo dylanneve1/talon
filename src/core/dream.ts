@@ -213,12 +213,15 @@ If commands fail, log the error and continue — this stage is optional.`
     disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
   };
 
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const t = setTimeout(
       () => reject(new Error("Dream agent timed out")),
       DREAM_TIMEOUT_MS,
-    ),
-  );
+    );
+    t.unref(); // Don't prevent Node.js from exiting cleanly during shutdown
+    timeoutHandle = t;
+  });
 
   const agentPromise = (async () => {
     const qi = query({
@@ -241,7 +244,12 @@ If commands fail, log the error and continue — this stage is optional.`
       dreamLogFile,
       `\n---\n**Dream FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
+    // On timeout, wait for the agent to actually finish before releasing the
+    // dreaming lock to prevent overlapping dream runs
+    await agentPromise.catch(() => {});
     throw err;
+  } finally {
+    if (timeoutHandle) clearTimeout(timeoutHandle);
   }
 
   return dreamLogFile;

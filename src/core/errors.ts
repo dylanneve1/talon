@@ -68,8 +68,10 @@ export function classify(err: unknown): TalonError {
   }
   const cause = err instanceof Error ? err : undefined;
 
-  // Extract HTTP status if present
-  const statusMatch = msg.match(/\b([2-5]\d{2})\b/);
+  // Extract HTTP error status if present (4xx/5xx only — success codes are
+  // not actionable and matching them from unrelated numbers, e.g. "200ms",
+  // would produce a spurious status on the returned TalonError)
+  const statusMatch = msg.match(/\b([45]\d{2})\b/);
   const status = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
 
   // Rate limit

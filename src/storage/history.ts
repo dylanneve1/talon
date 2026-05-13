@@ -56,7 +56,7 @@ export function loadHistory(): void {
         const trimmed = messages.slice(-MAX_HISTORY_PER_CHAT);
         chatHistories.set(chatId, trimmed);
       }
-      log("sessions", `Loaded history for ${chatHistories.size} chat(s)`);
+      log("history", `Loaded history for ${chatHistories.size} chat(s)`);
     }
   } catch {
     // Primary file corrupt — try backup
@@ -71,7 +71,7 @@ export function loadHistory(): void {
           chatHistories.set(chatId, messages.slice(-MAX_HISTORY_PER_CHAT));
         }
         logError(
-          "sessions",
+          "history",
           "Loaded history from backup (primary was corrupt)",
         );
         return;

@@ -111,6 +111,7 @@ registerCleanup(save);
 /** Flush settings to disk and stop the auto-save timer. */
 export function flushChatSettings(): void {
   clearInterval(autoSaveTimer);
+  dirty = true;
   save();
 }
 

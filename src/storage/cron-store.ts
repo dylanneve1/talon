@@ -126,6 +126,7 @@ registerCleanup(save);
 /** Flush cron jobs to disk and stop the auto-save timer. */
 export function flushCronJobs(): void {
   clearInterval(autoSaveTimer);
+  dirty = true;
   save();
 }
 
