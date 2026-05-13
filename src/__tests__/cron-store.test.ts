@@ -426,24 +426,21 @@ describe("cron-store", () => {
       });
     });
 
-    it("does not write when not dirty", () => {
-      // flushCronJobs calls save() which checks dirty flag.
-      // Since we haven't modified anything since last flush, the writeFileSync
-      // should not be called. But flushCronJobs doesn't set dirty=true like
-      // flushHistory does. Let's verify that behavior.
-      // Actually, looking at the code: flushCronJobs just calls save() directly
-      // without setting dirty=true. So if nothing was modified, it won't write.
+    it("always writes on flush, even when nothing changed (defensive flush pattern)", () => {
+      // flushCronJobs forces dirty=true before save() to guarantee the final
+      // write happens even if the auto-save timer ran just before shutdown
+      // and reset dirty to false. This matches the pattern in flushSessions /
+      // flushHistory and protects against silently dropping the last
+      // recordCronRun update on a SIGTERM that races the autosave window.
       writeFileSyncMock.mockClear();
-      existsSyncMock.mockReturnValue(true);
-
-      // Load cleans state, then flush immediately should be no-op
       existsSyncMock.mockReturnValue(false);
       loadCronJobs();
       writeFileSyncMock.mockClear();
       flushCronJobs();
 
-      // After loadCronJobs + no changes, dirty is false, so save() should not write
-      expect(writeFileSyncMock).not.toHaveBeenCalled();
+      // After loadCronJobs + no changes, dirty would be false, but
+      // flushCronJobs forces it to true so save() must still write.
+      expect(writeFileSyncMock).toHaveBeenCalled();
     });
   });
 });

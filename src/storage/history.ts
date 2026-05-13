@@ -70,10 +70,7 @@ export function loadHistory(): void {
         for (const [chatId, messages] of Object.entries(raw)) {
           chatHistories.set(chatId, messages.slice(-MAX_HISTORY_PER_CHAT));
         }
-        logError(
-          "history",
-          "Loaded history from backup (primary was corrupt)",
-        );
+        logError("history", "Loaded history from backup (primary was corrupt)");
         return;
       }
     } catch {

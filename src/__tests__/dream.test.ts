@@ -956,11 +956,19 @@ describe("runDreamAgent — timeout arrow fn fires after DREAM_TIMEOUT_MS", () =
         dailyMemory: "/fake/.talon/workspace/memory/daily",
       },
     }));
-    // query never resolves — so the 10-minute timeout wins the race
+    // query stays pending until we externally resolve `agentDone`. This lets
+    // the 10-minute timeout win the race, then we simulate the agent finishing
+    // so the `await agentPromise.catch(() => {})` in the catch block (which
+    // matches the heartbeat.ts pattern — wait for the underlying subprocess
+    // before releasing the lock) can complete instead of hanging the test.
+    let resolveAgent: () => void;
+    const agentDone = new Promise<void>((r) => {
+      resolveAgent = r;
+    });
     vi.doMock("@anthropic-ai/claude-agent-sdk", () => ({
       query: vi.fn(async function* () {
         yield; // satisfy require-yield
-        await new Promise(() => {}); // never resolves
+        await agentDone;
       }),
     }));
 
@@ -970,6 +978,10 @@ describe("runDreamAgent — timeout arrow fn fires after DREAM_TIMEOUT_MS", () =
     const dreamPromise = mod.forceDream().catch(() => {});
     // Advance past DREAM_TIMEOUT_MS (10 minutes) to fire the setTimeout reject callback
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1);
+    // Simulate the underlying agent subprocess finishing post-timeout so the
+    // catch block's `await agentPromise.catch(...)` resolves and the dream
+    // promise can reject with the timeout error.
+    resolveAgent!();
     await dreamPromise;
 
     vi.useRealTimers();

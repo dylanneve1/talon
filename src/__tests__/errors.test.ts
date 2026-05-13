@@ -201,10 +201,23 @@ describe("classify", () => {
   });
 
   it("uses extracted status instead of 429 default when status present", () => {
-    // "503" would match overloaded first, so use a message that hits rate_limit with a non-429 status
-    const err = classify(new Error("rate limit hit, error 200 ok"));
+    // The status regex now only matches 4xx/5xx error codes — 2xx/3xx values
+    // appearing in error messages (e.g. "took 200ms", "position 301") are
+    // ignored to avoid spurious status stamps. Use a 4xx code that does not
+    // trigger another classifier branch to verify extraction still works.
+    const err = classify(new Error("rate limit hit, error 418 teapot"));
     expect(err.reason).toBe("rate_limit");
-    expect(err.status).toBe(200);
+    expect(err.status).toBe(418);
+  });
+
+  it("ignores 2xx/3xx numbers in error messages (status regex narrowed to 4xx/5xx)", () => {
+    // Regression for the spurious-status bug: numbers like "200ms" or
+    // "position 301" used to be extracted as TalonError.status, polluting
+    // diagnostic logs. The classifier should fall back to the rate_limit
+    // default (429) instead of stamping the unrelated number.
+    const err = classify(new Error("rate limit hit, took 200ms"));
+    expect(err.reason).toBe("rate_limit");
+    expect(err.status).toBe(429);
   });
 
   // Mutant killers: overloaded/503/capacity branch
