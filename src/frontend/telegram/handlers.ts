@@ -993,8 +993,7 @@ async function handleMediaMessage(
     const replyCtx = getReplyContext(
       ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
       ctx.me.id,
-      (ctx.message as { quote?: { text?: string; is_manual?: boolean } })
-        .quote,
+      (ctx.message as { quote?: { text?: string; is_manual?: boolean } }).quote,
     );
     const replyPhotoCtx = await downloadReplyPhoto(
       ctx.message.reply_to_message as Parameters<typeof downloadReplyPhoto>[0],
