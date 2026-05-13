@@ -10,6 +10,7 @@ import { pathToFileURL } from "node:url";
 import type {
   Options,
   PostToolBatchHookInput,
+  PostToolUseFailureHookInput,
   NotificationHookInput,
   StopFailureHookInput,
   HookCallback,
@@ -129,42 +130,103 @@ export function buildMcpServers(
 // ── Hooks ───────────────────────────────────────────────────────────────────
 
 /**
- * PostToolBatch hook: terminate the SDK query loop the moment a turn-terminator
- * tool (e.g. `end_turn`) resolves in the assistant's tool batch.
+ * Build the turn-terminator hook pair (PostToolUseFailure + PostToolBatch).
  *
- * Why PostToolBatch and not PostToolUse:
- *   - PostToolUse fires per-tool and may run concurrently for parallel tool
- *     calls. Returning `continue: false` from there can race with sibling MCP
- *     tools whose AbortControllers haven't yet completed — the same race that
- *     killed the previous `qi.interrupt()` approach (see handler.ts comment
- *     and commit `d5ce30f`).
- *   - PostToolBatch fires exactly ONCE after every tool in the batch has
- *     resolved. By definition there are no in-flight siblings to race with.
+ * These two hooks coordinate through a per-session `Set<tool_use_id>` of
+ * terminator tools whose `execute()` threw. The set is shared by closure —
+ * one Set per `buildSdkOptions` call, so concurrent chat sessions never
+ * leak failure flags into each other.
  *
- * What this saves:
- *   - The ~2-3s "phantom typing" round-trip the SDK makes after `end_turn`
- *     returns (the model has nothing to say, generates a stop_turn anyway).
- *   - Trailing prose that gets generated during that round-trip and was
- *     previously suppressed only at the delivery layer (real tokens spent).
+ * Design choices:
  *
- * Returns `{ continue: false, stopReason: ... }` → SDK exits with TerminalReason
- * `'hook_stopped'`, no further model generation.
+ * - **Why PostToolBatch for the terminate decision** (vs PostToolUse): batch
+ *   fires exactly once after every tool in the batch has resolved, so there
+ *   are no in-flight siblings to race with. PostToolUse fires per-tool and
+ *   can race with sibling MCP tools whose AbortControllers haven't completed
+ *   — the same race that killed the earlier `qi.interrupt()` approach (commit
+ *   `d5ce30f`).
+ *
+ * - **Why also PostToolUseFailure**: when a terminator tool's `execute()`
+ *   throws (e.g. `end_turn` throws because the bridge returned `{ok:false}`),
+ *   the SDK fires PostToolUseFailure with `{tool_name, error, is_interrupt}`.
+ *   That's a typed, content-free signal that the call failed — vastly more
+ *   robust than sniffing `tool_response` bodies for `"ok":false` substrings.
+ *   The hook records the failed `tool_use_id`; PostToolBatch consults the
+ *   set when deciding whether to terminate.
+ *
+ * - **Why `is_interrupt: true` is ignored**: an interrupted tool isn't a
+ *   delivery failure — it's the user (or the harness) cancelling the call
+ *   mid-flight. Treating that as "preserve the loop" would leak interrupted
+ *   sessions into zombie state.
+ *
+ * What this preserves:
+ *
+ * - Happy path: terminator succeeds → loop terminates → no phantom-typing
+ *   round-trip (the ~2-3s perf win from PR #122).
+ * - Failure path: terminator's execute() threw → loop stays alive → model
+ *   sees the error in the next assistant turn and can retry / message the
+ *   user. The bug fixed: prior to this hook pair, a failed terminator
+ *   terminated the loop silently and the user saw nothing (canonical
+ *   incident: 2026-05-13 13:11Z 4096-char overflow).
  */
-const turnTerminatorHook: HookCallback = async (
-  input,
-): Promise<HookJSONOutput> => {
-  if (input.hook_event_name !== "PostToolBatch") {
+function buildTurnTerminatorHooks(): {
+  postToolUseFailureHook: HookCallback;
+  postToolBatchHook: HookCallback;
+} {
+  const failedTerminatorIds = new Set<string>();
+
+  const postToolUseFailureHook: HookCallback = async (
+    input,
+  ): Promise<HookJSONOutput> => {
+    if (input.hook_event_name !== "PostToolUseFailure") {
+      return { continue: true };
+    }
+    const failure = input as PostToolUseFailureHookInput;
+    // Interrupts are not delivery failures — don't treat them as recoverable.
+    if (failure.is_interrupt) return { continue: true };
+
+    // Pass tool_input so soft-terminator react (`end_turn: false`) doesn't
+    // get tracked here. If the call wasn't acting as a terminator, the
+    // PostToolBatch path would have continued the loop anyway.
+    if (!isTurnTerminator(failure.tool_name, failure.tool_input)) {
+      return { continue: true };
+    }
+
+    failedTerminatorIds.add(failure.tool_use_id);
+    log(
+      "agent",
+      `PostToolUseFailure: ${failure.tool_name} (${failure.tool_use_id}) ` +
+        `failed — flagging for loop preservation. error: ${failure.error}`,
+    );
     return { continue: true };
-  }
-  const batch = input as PostToolBatchHookInput;
-  // Pass `tool_input` so the soft-terminator opt-out (e.g. react with
-  // `end_turn: false`) can keep the loop alive. Without the input, the
-  // check is name-only and reacts that meant to keep going would still
-  // terminate.
-  const terminator = batch.tool_calls.find((tc) =>
-    isTurnTerminator(tc.tool_name, tc.tool_input),
-  );
-  if (terminator) {
+  };
+
+  const postToolBatchHook: HookCallback = async (
+    input,
+  ): Promise<HookJSONOutput> => {
+    if (input.hook_event_name !== "PostToolBatch") {
+      return { continue: true };
+    }
+    const batch = input as PostToolBatchHookInput;
+    const terminator = batch.tool_calls.find((tc) =>
+      isTurnTerminator(tc.tool_name, tc.tool_input),
+    );
+    if (!terminator) {
+      return { continue: true };
+    }
+
+    // If the terminator failed, the failure hook flagged its tool_use_id.
+    // Preserve the loop so the model can react to the error.
+    if (failedTerminatorIds.has(terminator.tool_use_id)) {
+      failedTerminatorIds.delete(terminator.tool_use_id);
+      log(
+        "agent",
+        `PostToolBatch: ${terminator.tool_name} failed — keeping SDK loop ` +
+          `alive so the model can read the error and retry`,
+      );
+      return { continue: true };
+    }
+
     log(
       "agent",
       `PostToolBatch: terminating SDK loop on ${terminator.tool_name} ` +
@@ -174,9 +236,10 @@ const turnTerminatorHook: HookCallback = async (
       continue: false,
       stopReason: "turn terminated by end_turn / send",
     };
-  }
-  return { continue: true };
-};
+  };
+
+  return { postToolUseFailureHook, postToolBatchHook };
+}
 
 /**
  * Notification hook: log SDK-generated notifications (e.g. context compaction,
@@ -247,6 +310,12 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
 
   const session = getSession(chatId);
 
+  // Per-session closure-shared state for the terminator hook pair (see
+  // buildTurnTerminatorHooks docstring). Each chat gets its own failure set
+  // so concurrent sessions never leak flags into each other.
+  const { postToolUseFailureHook, postToolBatchHook } =
+    buildTurnTerminatorHooks();
+
   const options: Options = {
     model: resolvedActiveModel,
     systemPrompt: config.systemPrompt,
@@ -263,7 +332,8 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
       ...getPluginMcpServers(`http://127.0.0.1:${getBridgePort()}`, chatId),
     },
     hooks: {
-      PostToolBatch: [{ hooks: [turnTerminatorHook] }],
+      PostToolUseFailure: [{ hooks: [postToolUseFailureHook] }],
+      PostToolBatch: [{ hooks: [postToolBatchHook] }],
       Notification: [{ hooks: [notificationHook] }],
       StopFailure: [{ hooks: [stopFailureHook] }],
     },

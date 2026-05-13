@@ -300,6 +300,98 @@ describe("end_turn tool definition", () => {
     expect(bridge).not.toHaveBeenCalled();
     expect(result).toEqual({ ok: true, silent: true });
   });
+
+  // Delivery-failure throw: when the bridge returns {ok:false}, end_turn.execute
+  // throws so the SDK fires PostToolUseFailure and the hook pair preserves the
+  // loop. Returning {ok:false} silently would let the PostToolBatch hook
+  // terminate the turn while the model never gets to react. Regression for
+  // the 4096-char overflow incident (2026-05-13 13:11Z).
+  it("throws when bridge returns {ok:false} on plain text", async () => {
+    const bridge = vi.fn(async () => ({
+      ok: false,
+      error: "Message too long (4326 chars, max 4096)",
+    }));
+    await expect(
+      endTurn!.execute({ text: "x".repeat(4326) }, bridge),
+    ).rejects.toThrow(/end_turn delivery failed/);
+    await expect(
+      endTurn!.execute({ text: "x".repeat(4326) }, bridge),
+    ).rejects.toThrow(/Message too long/);
+  });
+
+  it("throws when bridge returns {ok:false} on buttons path", async () => {
+    const bridge = vi.fn(async () => ({ ok: false, error: "Bad Request" }));
+    await expect(
+      endTurn!.execute(
+        {
+          text: "Pick",
+          buttons: [[{ text: "X", callback_data: "x" }]],
+        },
+        bridge,
+      ),
+    ).rejects.toThrow(/end_turn delivery failed/);
+  });
+
+  it("throws with generic message when bridge returns {ok:false} without error field", async () => {
+    const bridge = vi.fn(async () => ({ ok: false }));
+    await expect(
+      endTurn!.execute({ text: "anything" }, bridge),
+    ).rejects.toThrow(/delivery failed/);
+  });
+
+  it("does NOT throw when bridge returns {ok:true} — success path preserved", async () => {
+    const bridge = vi.fn(async () => ({ ok: true, message_id: 42 }));
+    const result = await endTurn!.execute({ text: "Got it" }, bridge);
+    expect(result).toEqual({ ok: true, message_id: 42 });
+  });
+});
+
+describe("react tool — delivery failure throws", () => {
+  const react = messagingTools.find((t) => t.name === "react");
+
+  it("throws when bridge returns {ok:false} on strict-terminator call", async () => {
+    const bridge = vi.fn(async () => ({
+      ok: false,
+      error: "REACTION_INVALID",
+    }));
+    await expect(
+      react!.execute({ message_id: 100, emoji: "👍" }, bridge),
+    ).rejects.toThrow(/react delivery failed/);
+    await expect(
+      react!.execute({ message_id: 100, emoji: "👍" }, bridge),
+    ).rejects.toThrow(/REACTION_INVALID/);
+  });
+
+  it("throws when bridge returns {ok:false} even with end_turn:false (soft)", async () => {
+    // Soft-terminator react still gets the delivery-failure throw — the
+    // model sees the failure as an error in the next turn either way, which
+    // is more useful than a silent {ok:false} it has to remember to inspect.
+    const bridge = vi.fn(async () => ({ ok: false, error: "Bad" }));
+    await expect(
+      react!.execute({ message_id: 100, emoji: "👍", end_turn: false }, bridge),
+    ).rejects.toThrow(/react delivery failed/);
+  });
+
+  it("does NOT throw when bridge returns {ok:true} — success path preserved", async () => {
+    const bridge = vi.fn(async () => ({ ok: true }));
+    const result = await react!.execute(
+      { message_id: 100, emoji: "❤" },
+      bridge,
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("strips end_turn before bridging (existing contract)", async () => {
+    const bridge = vi.fn(async () => ({ ok: true }));
+    await react!.execute(
+      { message_id: 200, emoji: "🎯", end_turn: false },
+      bridge,
+    );
+    expect(bridge).toHaveBeenCalledWith("react", {
+      message_id: 200,
+      emoji: "🎯",
+    });
+  });
 });
 
 // ── Production wire-shape contract ──────────────────────────────────────────

@@ -7,6 +7,33 @@ import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
 import { chatIdSchema, idSchema } from "./schemas.js";
 
+/**
+ * Throw a typed Error when a bridge response reports failure
+ * (`{ok: false, error: "..."}`).
+ *
+ * Used by turn-terminator tools (`end_turn`, strict `react`) so that delivery
+ * failure surfaces as a real exception, fires `PostToolUseFailure` in the SDK
+ * pipeline, and lets the SDK loop be preserved by the hook instead of
+ * terminating silently while the model never gets to react.
+ *
+ * Non-terminator tools (`send`, `edit_message`, etc.) intentionally do NOT
+ * use this — they return `{ok: false}` directly so the model can read the
+ * failure as a regular tool result and decide what to do. The bug only bites
+ * when the failing tool would otherwise short-circuit the SDK loop.
+ */
+function throwIfFailed(result: unknown, toolName: string): unknown {
+  if (
+    result != null &&
+    typeof result === "object" &&
+    (result as { ok?: unknown }).ok === false
+  ) {
+    const err = (result as { error?: unknown }).error;
+    const msg = typeof err === "string" ? err : "delivery failed";
+    throw new Error(`${toolName} delivery failed: ${msg}`);
+  }
+  return result;
+}
+
 export const messagingTools: ToolDefinition[] = [
   // ── end_turn — explicit final-reply delivery ──────────────────────────
   // Schema-typed alternative to relying on a trailing-text fallback. The
@@ -68,17 +95,20 @@ Notes:
         // fallback won't fire because there was no trailing prose.
         return { ok: true, silent: true };
       }
-      if (params.buttons) {
-        return bridge("send_message_with_buttons", {
-          text: params.text,
-          rows: params.buttons,
-          reply_to_message_id: params.reply_to,
-        });
-      }
-      return bridge("send_message", {
-        text: params.text,
-        reply_to_message_id: params.reply_to,
-      });
+      const result = params.buttons
+        ? await bridge("send_message_with_buttons", {
+            text: params.text,
+            rows: params.buttons,
+            reply_to_message_id: params.reply_to,
+          })
+        : await bridge("send_message", {
+            text: params.text,
+            reply_to_message_id: params.reply_to,
+          });
+      // Throw on delivery failure so PostToolUseFailure fires; the SDK hook
+      // pair then preserves the loop instead of terminating silently. See
+      // src/backend/claude-sdk/options.ts:turnTerminatorHook.
+      return throwIfFailed(result, "end_turn");
     },
     frontends: ["telegram", "teams"],
     tag: "messaging",
@@ -367,9 +397,18 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     // Strip end_turn before bridging — it's a hook-level signal, the
     // backend action handler doesn't need to know about it. chat_id stays
     // in the body; bridge.ts promotes it to the gateway's routing key.
-    execute: (params, bridge) => {
+    //
+    // Throw on `{ok: false}` regardless of the soft-terminator opt-out
+    // (`end_turn: false`). When react is acting as a strict terminator
+    // (the default), the throw triggers the SDK's PostToolUseFailure pipe
+    // and the hook preserves the loop. When react is soft (`end_turn:false`)
+    // the loop was going to stay alive anyway — throwing still gives the
+    // model a clear error signal in the next assistant turn rather than a
+    // silent `{ok:false}` it has to remember to inspect.
+    execute: async (params, bridge) => {
       const { end_turn: _endTurn, ...rest } = params;
-      return bridge("react", rest);
+      const result = await bridge("react", rest);
+      return throwIfFailed(result, "react");
     },
     frontends: ["telegram"],
     tag: "messaging",

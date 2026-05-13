@@ -203,6 +203,238 @@ describe("buildSdkOptions", () => {
     });
   });
 
+  // Failure-recovery regression suite. When a turn-terminator tool's
+  // `execute()` throws (e.g. `end_turn` throws because the bridge returned
+  // `{ok:false}`), the SDK fires PostToolUseFailure. The hook pair must
+  // preserve the loop so the model can read the error and retry / message
+  // the user. Without this, the failed terminator silently ends the turn
+  // and the user sees nothing — canonical incident 2026-05-13 13:11Z
+  // 4096-char overflow.
+  describe("PostToolUseFailure + PostToolBatch coordination", () => {
+    type HookCallback = (
+      input: unknown,
+      toolUseID?: string,
+      ctx?: { signal: AbortSignal },
+    ) => Promise<{ continue?: boolean; stopReason?: string }>;
+
+    interface HookPair {
+      failure: HookCallback;
+      batch: HookCallback;
+    }
+
+    const buildHookPair = async (chatId: string): Promise<HookPair> => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions(chatId);
+      const failure = options.hooks!.PostToolUseFailure![0]!
+        .hooks[0] as unknown as HookCallback;
+      const batch = options.hooks!.PostToolBatch![0]!
+        .hooks[0] as unknown as HookCallback;
+      return { failure, batch };
+    };
+
+    const fireFailure = (
+      failure: HookCallback,
+      tool_name: string,
+      tool_use_id: string,
+      opts: {
+        is_interrupt?: boolean;
+        tool_input?: unknown;
+        error?: string;
+      } = {},
+    ): Promise<unknown> =>
+      failure(
+        {
+          hook_event_name: "PostToolUseFailure",
+          tool_name,
+          tool_input: opts.tool_input ?? {},
+          tool_use_id,
+          error: opts.error ?? "delivery failed",
+          is_interrupt: opts.is_interrupt,
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+    const fireBatch = (
+      batch: HookCallback,
+      tools: { name: string; tool_use_id: string; tool_input?: unknown }[],
+    ): Promise<unknown> =>
+      batch(
+        {
+          hook_event_name: "PostToolBatch",
+          tool_calls: tools.map((t) => ({
+            tool_name: t.name,
+            tool_input: t.tool_input ?? {},
+            tool_use_id: t.tool_use_id,
+          })),
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      );
+
+    it("registers a PostToolUseFailure hook on the options object", async () => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-fail-1");
+      expect(options.hooks?.PostToolUseFailure).toBeDefined();
+      expect(options.hooks!.PostToolUseFailure!.length).toBe(1);
+      expect(options.hooks!.PostToolUseFailure![0]!.hooks.length).toBe(1);
+    });
+
+    it("flags failed end_turn → PostToolBatch preserves loop", async () => {
+      const { failure, batch } = await buildHookPair("chat-coord-1");
+
+      await fireFailure(failure, "mcp__telegram-tools__end_turn", "tu_failed", {
+        error: "Message too long (4326 chars, max 4096)",
+      });
+      const result = (await fireBatch(batch, [
+        { name: "mcp__telegram-tools__end_turn", tool_use_id: "tu_failed" },
+      ])) as { continue: boolean };
+
+      expect(result.continue).toBe(true);
+    });
+
+    it("flags failed react (strict) → PostToolBatch preserves loop", async () => {
+      const { failure, batch } = await buildHookPair("chat-coord-2");
+
+      await fireFailure(failure, "mcp__telegram-tools__react", "tu_react", {
+        error: "REACTION_INVALID",
+      });
+      const result = (await fireBatch(batch, [
+        { name: "mcp__telegram-tools__react", tool_use_id: "tu_react" },
+      ])) as { continue: boolean };
+
+      expect(result.continue).toBe(true);
+    });
+
+    it("end_turn that didn't fail → PostToolBatch terminates as usual", async () => {
+      const { batch } = await buildHookPair("chat-coord-3");
+
+      // No failure hook call — Set stays empty.
+      const result = (await fireBatch(batch, [
+        { name: "mcp__telegram-tools__end_turn", tool_use_id: "tu_ok" },
+      ])) as { continue: boolean; stopReason?: string };
+
+      expect(result.continue).toBe(false);
+      expect(result.stopReason).toMatch(/end_turn/i);
+    });
+
+    it("failure hook ignores is_interrupt=true (not a real failure)", async () => {
+      const { failure, batch } = await buildHookPair("chat-coord-4");
+
+      await fireFailure(
+        failure,
+        "mcp__telegram-tools__end_turn",
+        "tu_interrupted",
+        { is_interrupt: true, error: "aborted" },
+      );
+      // Set should be empty → batch terminates normally.
+      const result = (await fireBatch(batch, [
+        {
+          name: "mcp__telegram-tools__end_turn",
+          tool_use_id: "tu_interrupted",
+        },
+      ])) as { continue: boolean };
+
+      expect(result.continue).toBe(false);
+    });
+
+    it("failure hook ignores non-terminator tool failures", async () => {
+      const { failure, batch } = await buildHookPair("chat-coord-5");
+
+      // `send` is not a terminator. Even if it fails, the batch hook would
+      // never reach the terminate branch for it, so flagging it would be
+      // wasted state.
+      await fireFailure(failure, "mcp__telegram-tools__send", "tu_send", {
+        error: "Message too long",
+      });
+      // Now run a batch with a successful end_turn — should terminate
+      // (different tool_use_id, the send failure flag isn't in the set).
+      const result = (await fireBatch(batch, [
+        { name: "mcp__telegram-tools__send", tool_use_id: "tu_send" },
+        {
+          name: "mcp__telegram-tools__end_turn",
+          tool_use_id: "tu_end_turn",
+        },
+      ])) as { continue: boolean };
+
+      expect(result.continue).toBe(false);
+    });
+
+    it("failure hook ignores soft-terminator react with end_turn:false", async () => {
+      const { failure, batch } = await buildHookPair("chat-coord-6");
+
+      // react with end_turn:false is not a terminator → flagging it would
+      // confuse subsequent batches.
+      await fireFailure(failure, "mcp__telegram-tools__react", "tu_soft", {
+        tool_input: { end_turn: false },
+        error: "REACTION_INVALID",
+      });
+      const result = (await fireBatch(batch, [
+        {
+          name: "mcp__telegram-tools__end_turn",
+          tool_use_id: "tu_other_end",
+        },
+      ])) as { continue: boolean };
+
+      expect(result.continue).toBe(false);
+    });
+
+    it("ignores non-PostToolUseFailure events defensively", async () => {
+      const { failure } = await buildHookPair("chat-coord-7");
+      const result = (await failure(
+        {
+          hook_event_name: "PostToolUse",
+          tool_name: "anything",
+          tool_input: {},
+          tool_response: {},
+          tool_use_id: "tu_0",
+        },
+        undefined,
+        { signal: new AbortController().signal },
+      )) as { continue: boolean };
+      expect(result.continue).toBe(true);
+    });
+
+    it("flagged tool_use_id is consumed (deleted on first terminate match)", async () => {
+      const { failure, batch } = await buildHookPair("chat-coord-8");
+
+      await fireFailure(failure, "end_turn", "tu_once", {
+        error: "delivery failed",
+      });
+
+      // First batch with the failed id → loop preserved.
+      const first = (await fireBatch(batch, [
+        { name: "end_turn", tool_use_id: "tu_once" },
+      ])) as { continue: boolean };
+      expect(first.continue).toBe(true);
+
+      // Second batch with the SAME id (no new failure) → terminates.
+      // Defensive: prevents a stale flag from spuriously preserving the loop
+      // on a subsequent successful terminator.
+      const second = (await fireBatch(batch, [
+        { name: "end_turn", tool_use_id: "tu_once" },
+      ])) as { continue: boolean };
+      expect(second.continue).toBe(false);
+    });
+
+    it("per-session isolation: failure in chat A doesn't preserve chat B", async () => {
+      const a = await buildHookPair("chat-iso-A");
+      const b = await buildHookPair("chat-iso-B");
+
+      await fireFailure(a.failure, "end_turn", "tu_chat_a", {
+        error: "delivery failed",
+      });
+
+      // Same tool_use_id in chat B — shouldn't be in chat B's Set.
+      const result = (await fireBatch(b.batch, [
+        { name: "end_turn", tool_use_id: "tu_chat_a" },
+      ])) as { continue: boolean };
+      expect(result.continue).toBe(false);
+    });
+  });
+
   describe("Notification hook", () => {
     type HookCallback = (
       input: unknown,
