@@ -72,6 +72,7 @@
     "@clack/prompts": "^1.2.0",
     "@grammyjs/auto-retry": "^2.0.2",
     "@grammyjs/transformer-throttler": "^1.2.1",
+    "@kilocode/sdk": "^7.2.22",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opencode-ai/sdk": "^1.4.0",
     "@playwright/mcp": "^0.0.75",

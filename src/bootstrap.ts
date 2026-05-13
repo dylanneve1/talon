@@ -119,14 +119,19 @@ export async function initBackendAndDispatcher(
 ): Promise<BackendAndDispatcherResult> {
   let backend: QueryBackend;
 
-  if (config.backend === "opencode") {
-    const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } =
-      await import("./backend/opencode/index.js");
-    const ocModelProvider =
-      await import("./backend/opencode/model-provider.js");
+  if (config.backend === "opencode" || config.backend === "kilo") {
+    const isKilo = config.backend === "kilo";
+    const label = isKilo ? "Kilo" : "OpenCode";
+    const mod = isKilo
+      ? await import("./backend/kilo/index.js")
+      : await import("./backend/opencode/index.js");
+    const ocModelProvider = isKilo
+      ? await import("./backend/kilo/model-provider.js")
+      : await import("./backend/opencode/model-provider.js");
+    const { initOpenCodeAgent, handleMessage: ocHandleMessage } = mod;
     initOpenCodeAgent(config, frontend.getBridgePort, frontend.name);
     backend = {
-      query: (params) => opencodeHandleMessage(params),
+      query: (params) => ocHandleMessage(params),
       resolveModel: (q) => ocModelProvider.resolveModel(q),
       getModelInfo: (id) => ocModelProvider.getModelInfo(id),
       getSettingsPresentation: (m, prefix) =>
@@ -136,11 +141,9 @@ export async function initBackendAndDispatcher(
         ocModelProvider.getProviderModels(p, pg, ps),
       formatModelError: (q, r) => ocModelProvider.formatModelError(q, r),
       listModels: (f) => ocModelProvider.listModels(f),
-      backendLabel: "OpenCode",
+      backendLabel: label,
       getSessionSnapshot: async (sessionId) => {
-        const { getOpenCodeSessionSnapshot } =
-          await import("./backend/opencode/index.js");
-        const snap = await getOpenCodeSessionSnapshot(sessionId);
+        const snap = await mod.getOpenCodeSessionSnapshot(sessionId);
         if (!snap) return undefined;
         return {
           inputTokens: snap.usage?.totalInputTokens,
@@ -151,7 +154,7 @@ export async function initBackendAndDispatcher(
         };
       },
     };
-    log("bot", "Backend: OpenCode");
+    log("bot", `Backend: ${label}`);
   } else {
     const {
       initAgent: initClaudeAgent,

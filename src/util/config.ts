@@ -115,7 +115,7 @@ const playwrightConfigSchema = z.object({
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
-  backend: z.enum(["claude", "opencode"]).default("claude"),
+  backend: z.enum(["claude", "opencode", "kilo"]).default("claude"),
   claudeBinary: z.string().optional(),
   model: z.string().default("default"),
   dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)
