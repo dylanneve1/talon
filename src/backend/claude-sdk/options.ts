@@ -129,8 +129,60 @@ export function buildMcpServers(
 // ── Hooks ───────────────────────────────────────────────────────────────────
 
 /**
+ * Inspect a PostToolBatch `tool_response` and return true iff we can affirmatively
+ * determine the dispatch failed (e.g. `{ok: false, error: "..."}` from the bridge).
+ *
+ * Handles the two shapes the SDK can deliver:
+ *   - Already-parsed object: `{ok: false, ...}`
+ *   - MCP content envelope:  `[{type: "text", text: "<JSON>"}]` (with `<JSON>`
+ *     stringified by the MCP server).
+ *
+ * Conservative default — returns `false` (i.e. "treat as success") whenever the
+ * response is missing, unparseable, or has no `ok` field. The point is to
+ * preserve the perf win on the happy path while keeping the SDK loop alive on
+ * recognizable failures so the model can read the error and retry.
+ *
+ * Exported for unit testing.
+ */
+export function isFailedToolResponse(response: unknown): boolean {
+  if (response == null) return false;
+
+  // Recurse into MCP content arrays — `[{type:"text", text:"..."}]`.
+  if (Array.isArray(response)) {
+    for (const item of response) {
+      if (isFailedToolResponse(item)) return true;
+    }
+    return false;
+  }
+
+  if (typeof response === "string") {
+    // Cheap pre-check before JSON.parse: bail if the literal can't possibly
+    // be a JSON object indicating failure.
+    if (!response.includes('"ok"')) return false;
+    try {
+      return isFailedToolResponse(JSON.parse(response));
+    } catch {
+      return false;
+    }
+  }
+
+  if (typeof response === "object") {
+    const obj = response as Record<string, unknown>;
+    // MCP content block: `{type: "text", text: "<JSON>"}` — recurse into the
+    // wrapped JSON string.
+    if (typeof obj.text === "string" && obj.type === "text") {
+      return isFailedToolResponse(obj.text);
+    }
+    // Direct bridge response: `{ok: false, error: ...}`.
+    if (obj.ok === false) return true;
+  }
+
+  return false;
+}
+
+/**
  * PostToolBatch hook: terminate the SDK query loop the moment a turn-terminator
- * tool (e.g. `end_turn`) resolves in the assistant's tool batch.
+ * tool (e.g. `end_turn`) resolves successfully in the assistant's tool batch.
  *
  * Why PostToolBatch and not PostToolUse:
  *   - PostToolUse fires per-tool and may run concurrently for parallel tool
@@ -146,6 +198,14 @@ export function buildMcpServers(
  *     returns (the model has nothing to say, generates a stop_turn anyway).
  *   - Trailing prose that gets generated during that round-trip and was
  *     previously suppressed only at the delivery layer (real tokens spent).
+ *
+ * Failure recovery (added after the 4096-char overflow incident, 2026-05-13):
+ *   If the terminator's `tool_response` affirmatively indicates failure
+ *   (`{ok: false, error: ...}` from the bridge — e.g. Telegram rejected the
+ *   send for "message too long", invalid chat, network error), the hook keeps
+ *   the SDK loop alive so the model can read the error and retry. Without
+ *   this branch, a failed `send`/`end_turn` would terminate the turn silently
+ *   and the user would see nothing.
  *
  * Returns `{ continue: false, stopReason: ... }` → SDK exits with TerminalReason
  * `'hook_stopped'`, no further model generation.
@@ -164,18 +224,28 @@ const turnTerminatorHook: HookCallback = async (
   const terminator = batch.tool_calls.find((tc) =>
     isTurnTerminator(tc.tool_name, tc.tool_input),
   );
-  if (terminator) {
+  if (!terminator) {
+    return { continue: true };
+  }
+
+  if (isFailedToolResponse(terminator.tool_response)) {
     log(
       "agent",
-      `PostToolBatch: terminating SDK loop on ${terminator.tool_name} ` +
-        `(batch size: ${batch.tool_calls.length})`,
+      `PostToolBatch: ${terminator.tool_name} failed — keeping SDK loop ` +
+        `alive so the model can read the error and retry`,
     );
-    return {
-      continue: false,
-      stopReason: "turn terminated by end_turn / send",
-    };
+    return { continue: true };
   }
-  return { continue: true };
+
+  log(
+    "agent",
+    `PostToolBatch: terminating SDK loop on ${terminator.tool_name} ` +
+      `(batch size: ${batch.tool_calls.length})`,
+  );
+  return {
+    continue: false,
+    stopReason: "turn terminated by end_turn / send",
+  };
 };
 
 /**

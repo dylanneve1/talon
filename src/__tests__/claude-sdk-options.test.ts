@@ -115,7 +115,10 @@ describe("buildSdkOptions", () => {
       ctx?: { signal: AbortSignal },
     ) => Promise<{ continue?: boolean; stopReason?: string }>;
 
-    const callHook = async (toolNames: string[]): Promise<unknown> => {
+    const callHook = async (
+      toolNames: string[],
+      responses?: (unknown | undefined)[],
+    ): Promise<unknown> => {
       const { buildSdkOptions } =
         await import("../backend/claude-sdk/options.js");
       const { options } = buildSdkOptions("chat-hook-test");
@@ -132,6 +135,7 @@ describe("buildSdkOptions", () => {
             tool_name: name,
             tool_input: {},
             tool_use_id: `tu_${i}`,
+            tool_response: responses?.[i],
           })),
         },
         undefined,
@@ -200,6 +204,187 @@ describe("buildSdkOptions", () => {
         { signal: new AbortController().signal },
       );
       expect(result.continue).toBe(true);
+    });
+
+    // Failure-recovery regression: when a terminator tool fails (e.g. send
+    // returns `{ok: false, error: "Message too long..."}`), the loop must
+    // stay alive so the model can read the error and retry. Without this,
+    // the user sees a silent dropped turn — see 4096-char overflow incident
+    // 2026-05-13 13:11Z (Pandario reply 226264).
+    describe("preserves SDK loop on failed terminator", () => {
+      it("keeps loop alive when end_turn returns {ok:false} as bridge JSON object", async () => {
+        const result = (await callHook(
+          ["mcp__telegram-tools__end_turn"],
+          [{ ok: false, error: "send_message: Message too long (4326 chars)" }],
+        )) as { continue: boolean };
+        expect(result.continue).toBe(true);
+      });
+
+      it("keeps loop alive when end_turn returns {ok:false} as JSON string", async () => {
+        const result = (await callHook(
+          ["mcp__telegram-tools__end_turn"],
+          [JSON.stringify({ ok: false, error: "Network error" })],
+        )) as { continue: boolean };
+        expect(result.continue).toBe(true);
+      });
+
+      it("keeps loop alive when end_turn fails in an MCP content envelope", async () => {
+        // SDK can wrap the bridge JSON in `[{type:"text", text:"<JSON>"}]`.
+        const result = (await callHook(
+          ["mcp__telegram-tools__end_turn"],
+          [
+            [
+              {
+                type: "text",
+                text: JSON.stringify({ ok: false, error: "chat not found" }),
+              },
+            ],
+          ],
+        )) as { continue: boolean };
+        expect(result.continue).toBe(true);
+      });
+
+      it("keeps loop alive when react (strict-terminator) fails", async () => {
+        // react with end_turn omitted defaults to strict-terminator behaviour.
+        // If the reaction fails (REACTION_INVALID, message not found, etc.),
+        // the loop should stay alive so the model can react with a fallback
+        // emoji or message the user.
+        const result = (await callHook(
+          ["mcp__telegram-tools__react"],
+          [{ ok: false, error: "REACTION_INVALID" }],
+        )) as { continue: boolean };
+        expect(result.continue).toBe(true);
+      });
+
+      it("non-terminator failure (send) passes through unchanged — hook never fires", async () => {
+        // `send` does not have endsTurn:true. A failed `send` (e.g. the 4096
+        // overflow that motivated this fix) was always going to return
+        // continue:true from the hook because no terminator is in the batch.
+        // The bug only bites when a real terminator (`end_turn` / strict
+        // `react`) is the one that failed.
+        const result = (await callHook(
+          ["mcp__telegram-tools__send"],
+          [{ ok: false, error: "Message too long" }],
+        )) as { continue: boolean };
+        expect(result.continue).toBe(true);
+      });
+
+      it("still terminates when end_turn succeeds ({ok:true})", async () => {
+        const result = (await callHook(
+          ["mcp__telegram-tools__end_turn"],
+          [{ ok: true, message_id: 12345 }],
+        )) as { continue: boolean; stopReason?: string };
+        expect(result.continue).toBe(false);
+        expect(result.stopReason).toMatch(/end_turn/i);
+      });
+
+      it("still terminates when tool_response is missing (conservative default)", async () => {
+        // Unrecognizable / absent responses preserve the current happy-path
+        // perf behavior — no regression for tools that don't return ok-shaped
+        // JSON.
+        const result = (await callHook(
+          ["mcp__telegram-tools__end_turn"],
+          [undefined],
+        )) as { continue: boolean };
+        expect(result.continue).toBe(false);
+      });
+
+      it("still terminates when tool_response is unparseable garbage", async () => {
+        const result = (await callHook(
+          ["mcp__telegram-tools__end_turn"],
+          ["this is not JSON at all { broken"],
+        )) as { continue: boolean };
+        expect(result.continue).toBe(false);
+      });
+    });
+  });
+
+  describe("isFailedToolResponse helper", () => {
+    it("returns true for raw `{ok: false}` object", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(isFailedToolResponse({ ok: false })).toBe(true);
+      expect(isFailedToolResponse({ ok: false, error: "any" })).toBe(true);
+    });
+
+    it("returns false for raw `{ok: true}` object", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(isFailedToolResponse({ ok: true })).toBe(false);
+      expect(isFailedToolResponse({ ok: true, message_id: 1 })).toBe(false);
+    });
+
+    it("returns true for stringified `{ok: false}` JSON", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(isFailedToolResponse('{"ok":false,"error":"too long"}')).toBe(
+        true,
+      );
+    });
+
+    it("returns false for stringified `{ok: true}` JSON", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(isFailedToolResponse('{"ok":true,"message_id":42}')).toBe(false);
+    });
+
+    it("returns true for MCP content envelope wrapping a failure", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(
+        isFailedToolResponse([
+          { type: "text", text: '{"ok":false,"error":"x"}' },
+        ]),
+      ).toBe(true);
+    });
+
+    it("returns false for MCP content envelope wrapping a success", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(
+        isFailedToolResponse([
+          { type: "text", text: '{"ok":true,"message_id":1}' },
+        ]),
+      ).toBe(false);
+    });
+
+    it("returns false for null / undefined / empty string", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(isFailedToolResponse(null)).toBe(false);
+      expect(isFailedToolResponse(undefined)).toBe(false);
+      expect(isFailedToolResponse("")).toBe(false);
+    });
+
+    it('returns false for strings without `"ok"` substring (cheap skip)', async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(isFailedToolResponse("plain text result")).toBe(false);
+      expect(isFailedToolResponse("Tool ran fine")).toBe(false);
+    });
+
+    it('returns false for unparseable strings containing `"ok"`', async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(isFailedToolResponse('garbage "ok": no really')).toBe(false);
+    });
+
+    it("returns false for objects without `ok` field", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(isFailedToolResponse({ message_id: 1 })).toBe(false);
+      expect(isFailedToolResponse({})).toBe(false);
+    });
+
+    it("recurses into nested arrays of content blocks", async () => {
+      const { isFailedToolResponse } =
+        await import("../backend/claude-sdk/options.js");
+      expect(
+        isFailedToolResponse([
+          { type: "text", text: "preamble noise" },
+          { type: "text", text: '{"ok":false}' },
+        ]),
+      ).toBe(true);
     });
   });
 
