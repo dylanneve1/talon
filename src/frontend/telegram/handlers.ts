@@ -334,6 +334,7 @@ export function getReplyContext(
       }
     | undefined,
   botId: number,
+  quote?: { text?: string; is_manual?: boolean } | undefined,
 ): string {
   if (!replyMsg) return "";
 
@@ -367,9 +368,19 @@ export function getReplyContext(
   // Build context — always include if there's a message_id (even if no text)
   const textPart = text ? `: "${text.slice(0, 500)}"` : "";
 
-  if (!textPart && !mediaPart && !msgIdTag) return "";
+  // Telegram lets users highlight a specific portion of a message when
+  // replying (Bot API 7.0+). When present, surface it explicitly so the model
+  // sees which part the user is pointing at, not just the whole replied-to
+  // message. `is_manual=false` means Telegram chose the snippet automatically
+  // (long messages) — still useful signal, so include either way.
+  const quoteText = quote?.text?.trim();
+  const quotePart = quoteText
+    ? `\n[Quoted portion: "${quoteText.slice(0, 500)}"]`
+    : "";
 
-  return `[Replying to ${author}${textPart}${mediaPart}${msgIdTag}]\n\n`;
+  if (!textPart && !mediaPart && !msgIdTag && !quotePart) return "";
+
+  return `[Replying to ${author}${textPart}${mediaPart}${msgIdTag}]${quotePart}\n\n`;
 }
 
 /**
@@ -982,6 +993,8 @@ async function handleMediaMessage(
     const replyCtx = getReplyContext(
       ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
       ctx.me.id,
+      (ctx.message as { quote?: { text?: string; is_manual?: boolean } })
+        .quote,
     );
     const replyPhotoCtx = await downloadReplyPhoto(
       ctx.message.reply_to_message as Parameters<typeof downloadReplyPhoto>[0],
@@ -1044,6 +1057,7 @@ export async function handleTextMessage(
   const replyCtx = getReplyContext(
     ctx.message.reply_to_message as Parameters<typeof getReplyContext>[0],
     ctx.me.id,
+    (ctx.message as { quote?: { text?: string; is_manual?: boolean } }).quote,
   );
   const replyPhotoCtx = await downloadReplyPhoto(
     ctx.message.reply_to_message as Parameters<typeof downloadReplyPhoto>[0],

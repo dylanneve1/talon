@@ -325,6 +325,91 @@ describe("getReplyContext — edge cases", () => {
   });
 });
 
+describe("getReplyContext — quoted portions (Bot API 7.0)", () => {
+  it("appends manual quote portion when user highlights a substring", () => {
+    const result = getReplyContext(
+      {
+        message_id: 10,
+        from: { id: 123, first_name: "Alice" },
+        text: "this is the full original message with several parts to it",
+      },
+      999,
+      { text: "several parts", is_manual: true },
+    );
+    expect(result).toContain("Alice");
+    expect(result).toContain("this is the full original message");
+    expect(result).toContain('[Quoted portion: "several parts"]');
+  });
+
+  it("appends server-auto quote (is_manual=false) the same way", () => {
+    const result = getReplyContext(
+      {
+        message_id: 11,
+        from: { id: 123, first_name: "Bob" },
+        text: "long message",
+      },
+      999,
+      { text: "long", is_manual: false },
+    );
+    expect(result).toContain('[Quoted portion: "long"]');
+  });
+
+  it("omits quote line when quote is undefined (current default)", () => {
+    const result = getReplyContext(
+      {
+        message_id: 12,
+        from: { id: 123, first_name: "Carol" },
+        text: "plain reply, no quote",
+      },
+      999,
+    );
+    expect(result).not.toContain("Quoted portion");
+    expect(result).toContain('"plain reply, no quote"');
+  });
+
+  it("omits quote line when quote.text is missing or empty", () => {
+    const noText = getReplyContext(
+      { message_id: 13, from: { id: 123, first_name: "Dan" }, text: "x" },
+      999,
+      { is_manual: true },
+    );
+    const emptyText = getReplyContext(
+      { message_id: 14, from: { id: 123, first_name: "Dan" }, text: "x" },
+      999,
+      { text: "   ", is_manual: true },
+    );
+    expect(noText).not.toContain("Quoted portion");
+    expect(emptyText).not.toContain("Quoted portion");
+  });
+
+  it("truncates quote text to 500 chars to match full-text limit", () => {
+    const longQuote = "q".repeat(800);
+    const result = getReplyContext(
+      { message_id: 15, from: { id: 123, first_name: "Eve" }, text: "src" },
+      999,
+      { text: longQuote, is_manual: true },
+    );
+    expect(result).toContain("Quoted portion");
+    // The substring should be exactly 500 q's, no more.
+    const match = result.match(/\[Quoted portion: "(q+)"\]/);
+    expect(match?.[1].length).toBe(500);
+  });
+
+  it("surfaces quote even when replied-to message has no text (media-only)", () => {
+    const result = getReplyContext(
+      {
+        message_id: 16,
+        from: { id: 123, first_name: "Faye" },
+        photo: [{}] as unknown[],
+      },
+      999,
+      { text: "caption excerpt", is_manual: true },
+    );
+    expect(result).toContain("[photo]");
+    expect(result).toContain('[Quoted portion: "caption excerpt"]');
+  });
+});
+
 describe("shouldHandleInGroup — edge cases", () => {
   const ctx = (overrides: Record<string, unknown> = {}) =>
     ({
