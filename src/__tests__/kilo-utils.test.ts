@@ -1,6 +1,5 @@
 /**
- * Pure-function unit tests for src/backend/kilo/models.ts and
- * src/backend/kilo/server.ts helpers.
+ * Pure-function unit tests for src/backend/kilo/models.ts helpers.
  *
  * Covers the small utility functions that aren't exercised by the higher-level
  * resolveOpenCodeModelInput / catalog tests:
@@ -8,10 +7,8 @@
  *   - getBucketPriority          — provider-bucket ordering for resolveProviderID
  *   - normalizeModelLookup       — query canonicalisation
  *   - parseOpenCodeModelQuery    — "<provider>/<model>" splitter
- *   - parseStoredOpenCodeModelSelection
- *                                — kilo always stores the whole slug as modelID
  *
- * These are pure functions over strings — no SDK, no server, no catalog.
+ * These are pure functions over strings — no SDK and no catalog.
  * They're cheap to test and they're exactly where a refactor regression
  * is most likely to slip past tsc.
  */
@@ -29,10 +26,6 @@ const {
   normalizeModelLookup,
   parseOpenCodeModelQuery,
 } = await import("../backend/kilo/models.js");
-
-const { parseStoredOpenCodeModelSelection } = await import(
-  "../backend/kilo/server.js"
-);
 
 // ---------------------------------------------------------------------------
 // guessProviderID — string-pattern heuristic mapping a model.id to a provider.
@@ -214,80 +207,5 @@ describe("parseOpenCodeModelQuery", () => {
     // " /foo" → providerQuery would be "", modelQuery "foo". The splitter
     // bails to the whole-string fallback because providerQuery is blank.
     expect(parseOpenCodeModelQuery(" /foo")).toEqual({ modelQuery: "/foo" });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// parseStoredOpenCodeModelSelection — Kilo IDs frequently embed "/" and ":"
-// in the model.id itself (e.g. "inclusionai/ling-2.6-1t:free"). Unlike the
-// OpenCode backend's parseStoredModelSelection, the Kilo version MUST NOT
-// split on "/" — it always returns the entire string as modelID and lets
-// resolveProviderID look up the real provider from the live catalog.
-//
-// This is the regression test for the "/" + ":" handling that's the
-// difference between Kilo and OpenCode's stored-selection parsing.
-// ---------------------------------------------------------------------------
-describe("parseStoredOpenCodeModelSelection (Kilo)", () => {
-  it("returns the whole slug as modelID for a bare model ID", () => {
-    expect(parseStoredOpenCodeModelSelection("big-pickle")).toEqual({
-      providerID: undefined,
-      modelID: "big-pickle",
-    });
-  });
-
-  it("does NOT split on '/' for kilo-style provider/model slugs", () => {
-    // The OpenCode backend would split this into provider=inclusionai,
-    // model=ling-2.6-1t:free. Kilo doesn't — the whole thing is the model.id
-    // and resolveProviderID looks up the real provider from the catalog.
-    expect(
-      parseStoredOpenCodeModelSelection("inclusionai/ling-2.6-1t:free"),
-    ).toEqual({
-      providerID: undefined,
-      modelID: "inclusionai/ling-2.6-1t:free",
-    });
-  });
-
-  it("does NOT split on ':' either", () => {
-    expect(parseStoredOpenCodeModelSelection("corethink:free")).toEqual({
-      providerID: undefined,
-      modelID: "corethink:free",
-    });
-  });
-
-  it("does NOT split when both / and : are present", () => {
-    // The fast-path's reason for existing — these slugs round-trip through
-    // chat settings without losing the suffix.
-    expect(
-      parseStoredOpenCodeModelSelection("openrouter/qwen3-235b-a22b:free"),
-    ).toEqual({
-      providerID: undefined,
-      modelID: "openrouter/qwen3-235b-a22b:free",
-    });
-  });
-
-  it("trims surrounding whitespace before storing", () => {
-    expect(
-      parseStoredOpenCodeModelSelection("  big-pickle  "),
-    ).toEqual({
-      providerID: undefined,
-      modelID: "big-pickle",
-    });
-  });
-
-  it("never returns a defined providerID — always undefined for Kilo", () => {
-    // Same invariant as above, asserted explicitly: callers downstream MUST
-    // call resolveProviderID() to get the real provider. If this regresses
-    // to a parser that ever returns a providerID, kilo backend lookups will
-    // silently target the wrong provider.
-    for (const id of [
-      "gpt-5",
-      "kilo/big-pickle",
-      "kilo/big-pickle:free",
-      "claude-opus-4-7",
-      "  ",
-    ]) {
-      const parsed = parseStoredOpenCodeModelSelection(id);
-      expect(parsed.providerID).toBeUndefined();
-    }
   });
 });

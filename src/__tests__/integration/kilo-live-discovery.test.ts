@@ -79,11 +79,8 @@ let testClient: KiloClient;
 // We mock at module scope BEFORE importing Talon's kilo modules so the mock
 // is in place when `models.ts` reads its `ensureServer` dependency. The mock
 // resolves the live client built in `beforeAll` once it's been assigned.
-vi.mock("../../backend/kilo/server.js", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("../../backend/kilo/server.js")>();
+vi.mock("../../backend/kilo/server.js", () => {
   return {
-    ...original,
     ensureServer: vi.fn(async (): Promise<KiloClient> => {
       if (!testClient) {
         throw new Error(
