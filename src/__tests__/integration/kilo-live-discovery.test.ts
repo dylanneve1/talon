@@ -37,14 +37,7 @@
  *   gate on every commit.
  */
 
-import {
-  afterAll,
-  beforeAll,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { createKiloClient, type KiloClient } from "@kilocode/sdk/v2";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -213,7 +206,9 @@ describe.skipIf(!KILO_PRESENT)("Kilo live discovery (integration)", () => {
     const keys = Object.keys(data);
     expect(keys.length).toBeGreaterThan(0);
     // At least one provider should advertise an auth method.
-    const withAuth = keys.filter((k) => Array.isArray(data[k]) && data[k].length > 0);
+    const withAuth = keys.filter(
+      (k) => Array.isArray(data[k]) && data[k].length > 0,
+    );
     expect(withAuth.length).toBeGreaterThan(0);
   });
 

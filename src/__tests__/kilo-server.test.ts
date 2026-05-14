@@ -34,7 +34,11 @@ const {
 } = await import("../backend/kilo/server.js");
 
 type MockKiloClient = {
-  mcp: { status: ReturnType<typeof vi.fn>; add: ReturnType<typeof vi.fn>; disconnect: ReturnType<typeof vi.fn> };
+  mcp: {
+    status: ReturnType<typeof vi.fn>;
+    add: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+  };
   tool: { ids: ReturnType<typeof vi.fn> };
   session: { get: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
   provider: { list: ReturnType<typeof vi.fn> };
@@ -128,7 +132,9 @@ describe("kilo server helpers", () => {
       alpha: { command: "node", args: ["alpha.js"], env: { A: "1" } },
       beta: { command: "node", args: ["beta.js"], env: { B: "1" } },
     });
-    oc.mcp.status.mockResolvedValue({ data: { alpha: { status: "connected" } } });
+    oc.mcp.status.mockResolvedValue({
+      data: { alpha: { status: "connected" } },
+    });
 
     const registered = await ensurePluginMcpServers(oc as never, "chat-1");
 
@@ -148,7 +154,9 @@ describe("kilo server helpers", () => {
 
     getSessionMock.mockReturnValueOnce({ sessionId: "existing-1" });
     oc.session.get.mockResolvedValueOnce({ data: { id: "existing-1" } });
-    await expect(ensureSession(oc as never, "chat-a")).resolves.toBe("existing-1");
+    await expect(ensureSession(oc as never, "chat-a")).resolves.toBe(
+      "existing-1",
+    );
     expect(oc.session.create).not.toHaveBeenCalled();
 
     getSessionMock.mockReturnValueOnce({ sessionId: "expired-1" });
@@ -180,8 +188,12 @@ describe("kilo server helpers", () => {
       },
     });
 
-    await expect(resolveProviderID(oc as never, "gpt-5")).resolves.toBe("openai");
-    await expect(resolveProviderID(oc as never, "gpt-5")).resolves.toBe("openai");
+    await expect(resolveProviderID(oc as never, "gpt-5")).resolves.toBe(
+      "openai",
+    );
+    await expect(resolveProviderID(oc as never, "gpt-5")).resolves.toBe(
+      "openai",
+    );
     expect(oc.provider.list).toHaveBeenCalledTimes(1);
   });
 
@@ -193,9 +205,9 @@ describe("kilo server helpers", () => {
       },
     });
 
-    await expect(resolveProviderID(oc as never, "gemini-2.5-pro")).resolves.toBe(
-      "google",
-    );
+    await expect(
+      resolveProviderID(oc as never, "gemini-2.5-pro"),
+    ).resolves.toBe("google");
   });
 
   it("parseStoredOpenCodeModelSelection keeps full slug and trims whitespace", () => {

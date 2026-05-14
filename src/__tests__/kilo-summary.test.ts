@@ -20,9 +20,8 @@ vi.mock("../backend/kilo/server.js", () => ({
 const { summarizeOpenCodeAssistantMessages } =
   await import("../backend/kilo/index.js");
 
-const { extractPartsSummary, extractAssistantUsage } = await import(
-  "../backend/kilo/sessions.js"
-);
+const { extractPartsSummary, extractAssistantUsage } =
+  await import("../backend/kilo/sessions.js");
 
 // ---------------------------------------------------------------------------
 // extractPartsSummary — pulls assistant text + tool-call count out of the raw

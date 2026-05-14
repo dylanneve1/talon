@@ -109,7 +109,7 @@ describe("normalizeModelLookup", () => {
     expect(normalizeModelLookup("`gpt-5`")).toBe("gpt-5");
     expect(normalizeModelLookup("'gpt-5'")).toBe("gpt-5");
     expect(normalizeModelLookup('"gpt-5"')).toBe("gpt-5");
-    expect(normalizeModelLookup("`\"gpt-5'\"")).toBe("gpt-5");
+    expect(normalizeModelLookup('`"gpt-5\'"')).toBe("gpt-5");
   });
 
   it("collapses runs of whitespace into a single hyphen", () => {

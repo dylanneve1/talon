@@ -44,9 +44,7 @@ vi.mock("../backend/kilo/server.js", () => ({
   stopOpenCodeServer: vi.fn(),
 }));
 
-const { getOpenCodeQuickPickModels } = await import(
-  "../backend/kilo/index.js"
-);
+const { getOpenCodeQuickPickModels } = await import("../backend/kilo/index.js");
 
 type Entry = Parameters<typeof getOpenCodeQuickPickModels>[0]["models"][number];
 
@@ -119,7 +117,11 @@ describe("getOpenCodeQuickPickModels", () => {
   });
 
   it("orders free models before non-free connected models", () => {
-    const paid = makeEntry({ id: "claude", free: false, providerID: "anthropic" });
+    const paid = makeEntry({
+      id: "claude",
+      free: false,
+      providerID: "anthropic",
+    });
     const free = makeEntry({ id: "big-pickle", free: true });
     const catalog = buildCatalog([paid, free]);
     const picks = getOpenCodeQuickPickModels(catalog as any);
