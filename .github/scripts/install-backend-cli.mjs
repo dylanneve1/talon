@@ -4,7 +4,7 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const backend = process.argv[2];
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const npm = "npm";
 
 const backends = {
   kilo: {
@@ -61,8 +61,23 @@ function readPackageJson(packageName) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
+function quoteCmd(value) {
+  return `"${value.replace(/"/g, '\\"')}"`;
+}
+
+function shellCommand(command, args) {
+  return [quoteCmd(command), ...args.map(quoteCmd)].join(" ");
+}
+
+function runNpm(args, options = {}) {
+  if (process.platform === "win32") {
+    return execSync(shellCommand(npm, args), options);
+  }
+  return execFileSync(npm, args, options);
+}
+
 function npmOutput(args) {
-  return execFileSync(npm, args, { encoding: "utf8" }).trim();
+  return runNpm(args, { encoding: "utf8" }).trim();
 }
 
 function genericExecutableCandidates(binary, prefix) {
@@ -104,14 +119,6 @@ function needsShell(command) {
   );
 }
 
-function quoteCmd(value) {
-  return `"${value.replace(/"/g, '\\"')}"`;
-}
-
-function shellCommand(command, args) {
-  return [quoteCmd(command), ...args.map(quoteCmd)].join(" ");
-}
-
 function runVersion(command) {
   if (needsShell(command)) {
     execSync(shellCommand(command, ["--version"]), { stdio: "inherit" });
@@ -128,7 +135,7 @@ const spec =
 
 console.log(`${config.sdkPackage} ${sdk.version}`);
 console.log(`Installing ${spec}`);
-execFileSync(npm, ["install", "--global", spec], { stdio: "inherit" });
+runNpm(["install", "--global", spec], { stdio: "inherit" });
 
 const root = npmOutput(["root", "--global"]);
 const prefix = npmOutput(["prefix", "--global"]);
