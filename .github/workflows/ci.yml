@@ -201,18 +201,19 @@ jobs:
           path: integration-results.json
           retention-days: 14
 
-  # ── Kilo backend live integration tier ───────────────────────
-  # Installs the real Kilo Code CLI, boots `kilo serve`, and runs Talon's
-  # Kilo backend discovery parser against the live HTTP backend. This catches
-  # SDK/backend schema drift that unit fixtures and mocked server tests miss.
-  kilo-backend:
-    name: Kilo Backend (${{ matrix.os }})
+  # ── Real backend live integration tier ───────────────────────
+  # Installs the real backend CLI, then exercises the deployed backend surface
+  # that fixture tests cannot fully represent: Kilo/OpenCode live HTTP model
+  # discovery and Claude Code's real SDK subprocess/model-discovery bridge.
+  backend-live:
+    name: Backend Live (${{ matrix.backend }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        backend: [kilo, opencode, claude]
     steps:
       - uses: actions/checkout@v6
 
@@ -223,30 +224,26 @@ jobs:
 
       - run: npm ci
 
-      - name: Install Kilo Code CLI
-        run: |
-          node -e "const { execFileSync } = require('node:child_process'); const sdk = require('./node_modules/@kilocode/sdk/package.json'); const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'; console.log('Installing @kilocode/cli@' + sdk.version); execFileSync(npm, ['install', '--global', '@kilocode/cli@' + sdk.version], { stdio: 'inherit' });"
+      - name: Install backend CLI
+        run: node .github/scripts/install-backend-cli.mjs ${{ matrix.backend }}
 
-      - name: Verify Kilo Code CLI
-        run: |
-          node -e "console.log('@kilocode/sdk ' + require('./node_modules/@kilocode/sdk/package.json').version)"
-          kilo --version
-
-      - name: Run Kilo backend live tests
-        run: npm run test:kilo:backend
+      - name: Run backend live tests
+        run: npm run test:${{ matrix.backend }}:backend
         env:
+          CLAUDE_LIVE_REQUIRED: "1"
           KILO_LIVE_REQUIRED: "1"
+          OPENCODE_LIVE_REQUIRED: "1"
 
-      - name: Kilo backend summary
+      - name: Backend live summary
         if: always()
-        run: node .github/scripts/vitest-summary.mjs kilo-backend-results.json "Kilo Backend (${{ matrix.os }})"
+        run: node .github/scripts/vitest-summary.mjs ${{ matrix.backend }}-backend-results.json "Backend Live (${{ matrix.backend }}, ${{ matrix.os }})"
 
-      - name: Upload Kilo backend results
+      - name: Upload backend live results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: kilo-backend-results-${{ matrix.os }}
-          path: kilo-backend-results.json
+          name: backend-live-${{ matrix.backend }}-${{ matrix.os }}
+          path: ${{ matrix.backend }}-backend-results.json
           retention-days: 14
 
   # ── Fuzz testing (property-based with fast-check) ─────────────
@@ -427,7 +424,7 @@ jobs:
       - test
       - functional-cross-platform
       - integration
-      - kilo-backend
+      - backend-live
       - fuzz
       - security
       - secrets
@@ -452,7 +449,7 @@ jobs:
           check "Tests" "${{ needs.test.result }}"
           check "Functional" "${{ needs.functional-cross-platform.result }}"
           check "Integration" "${{ needs.integration.result }}"
-          check "Kilo Backend" "${{ needs.kilo-backend.result }}"
+          check "Backend Live" "${{ needs.backend-live.result }}"
           check "Fuzz" "${{ needs.fuzz.result }}"
           check "Security" "${{ needs.security.result }}"
           check "Secrets" "${{ needs.secrets.result }}"
@@ -476,7 +473,7 @@ jobs:
           echo "| Tests | ${{ needs.test.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Functional | ${{ needs.functional-cross-platform.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration | ${{ needs.integration.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Kilo Backend | ${{ needs.kilo-backend.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend Live | ${{ needs.backend-live.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Fuzz | ${{ needs.fuzz.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security | ${{ needs.security.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Secrets | ${{ needs.secrets.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY

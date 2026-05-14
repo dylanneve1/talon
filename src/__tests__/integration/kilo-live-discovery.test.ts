@@ -37,22 +37,19 @@
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { spawn, execSync, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { createKiloClient, type KiloClient } from "@kilocode/sdk/v2";
-import { setTimeout as sleep } from "node:timers/promises";
+import {
+  cliAvailable,
+  spawnCli,
+  stopProcess,
+  waitForHealthy,
+} from "./live-backend-helpers.js";
 
 // ── Preflight: locate the kilo CLI. ────────────────────────────────────────
 // If it's missing we skip the whole suite — there's nothing to test without it.
 function kiloAvailable(): boolean {
-  try {
-    execSync("kilo --version", {
-      stdio: ["ignore", "ignore", "ignore"],
-      timeout: 5000,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  return cliAvailable("kilo");
 }
 
 const KILO_PRESENT = kiloAvailable();
@@ -68,7 +65,6 @@ const HEALTH_TIMEOUT_MS = 15_000;
 
 let kiloProc: ChildProcess | null = null;
 let testClient: KiloClient;
-const KILO_COMMAND = process.platform === "win32" ? "kilo.cmd" : "kilo";
 
 // ── ensureServer mock — points Talon's kilo backend at our test server. ────
 // We mock at module scope BEFORE importing Talon's kilo modules so the mock
@@ -100,24 +96,6 @@ const {
   clearModelCatalogCache,
 } = await import("../../backend/kilo/models.js");
 
-async function waitForHealthy(url: string, deadlineMs: number): Promise<void> {
-  const stopAt = Date.now() + deadlineMs;
-  let lastError: unknown;
-  while (Date.now() < stopAt) {
-    try {
-      const resp = await fetch(`${url}/global/health`);
-      if (resp.ok) return;
-      lastError = `HTTP ${resp.status}`;
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-    }
-    await sleep(250);
-  }
-  throw new Error(
-    `kilo server at ${url} never reported healthy within ${deadlineMs}ms (last: ${lastError})`,
-  );
-}
-
 kiloDescribe("Kilo live discovery (integration)", () => {
   beforeAll(async () => {
     if (!KILO_PRESENT) {
@@ -129,19 +107,12 @@ kiloDescribe("Kilo live discovery (integration)", () => {
     // Spawn `kilo serve` in detached-style stdio so its output doesn't
     // contaminate our test output. We capture stdout/stderr to a buffer
     // we can include in failure messages.
-    kiloProc = spawn(
-      KILO_COMMAND,
-      [
-        "serve",
-        `--hostname=127.0.0.1`,
-        `--port=${TEST_PORT}`,
-        "--log-level=ERROR",
-      ],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-        shell: process.platform === "win32",
-      },
-    );
+    kiloProc = spawnCli("kilo", [
+      "serve",
+      `--hostname=127.0.0.1`,
+      `--port=${TEST_PORT}`,
+      "--log-level=ERROR",
+    ]);
     let stderr = "";
     kiloProc.stdout?.on("data", () => {
       /* drain */
@@ -169,20 +140,7 @@ kiloDescribe("Kilo live discovery (integration)", () => {
   }, HEALTH_TIMEOUT_MS + 5_000);
 
   afterAll(async () => {
-    if (kiloProc && !kiloProc.killed) {
-      kiloProc.kill("SIGTERM");
-      // Give it 2s to wind down before we SIGKILL.
-      await new Promise<void>((resolve) => {
-        const t = setTimeout(() => {
-          if (kiloProc && !kiloProc.killed) kiloProc.kill("SIGKILL");
-          resolve();
-        }, 2000);
-        kiloProc?.on("exit", () => {
-          clearTimeout(t);
-          resolve();
-        });
-      });
-    }
+    await stopProcess(kiloProc);
     kiloProc = null;
   });
 
