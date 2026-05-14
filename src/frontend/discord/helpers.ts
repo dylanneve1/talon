@@ -186,4 +186,3 @@ export function renderSettingsText(
     `**🔔 Pulse:** ${proactive ? "on" : "off"} (every ${intervalStr})`,
   ].join("\n");
 }
-

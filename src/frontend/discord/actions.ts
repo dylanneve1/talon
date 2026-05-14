@@ -494,8 +494,7 @@ export function createDiscordActionHandler(client: Client, gateway: Gateway) {
         if (ch.type === ChannelType.DM)
           return { ok: false, error: "DM has no members beyond participants" };
         const guild = (ch as { guild?: import("discord.js").Guild }).guild;
-        if (!guild)
-          return { ok: false, error: "Channel has no guild context" };
+        if (!guild) return { ok: false, error: "Channel has no guild context" };
         return tryAction("get_chat_member", async () => {
           const m =
             guild.members.cache.get(userId) ??

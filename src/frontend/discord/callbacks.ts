@@ -345,7 +345,10 @@ async function refreshSettingsPanel(
       .addOptions(
         modelButtons.slice(0, 25).map((b) => ({
           label: safeSlice(b.text.replace(/^✓ /, ""), 100),
-          value: safeSlice(b.callback_data.replace(/^settings:model:/, ""), 100),
+          value: safeSlice(
+            b.callback_data.replace(/^settings:model:/, ""),
+            100,
+          ),
           default: b.text.startsWith("✓"),
         })),
       );

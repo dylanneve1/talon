@@ -511,11 +511,7 @@ async function handleMemory(i: ChatInputCommandInteraction): Promise<void> {
     }
     const content = readFileSync(memoryPath, "utf-8").trim();
     if (!content) {
-      await reply(
-        i,
-        "Memory file is empty. I'll update it as we chat.",
-        true,
-      );
+      await reply(i, "Memory file is empty. I'll update it as we chat.", true);
       return;
     }
     const budget = DISCORD_MAX_TEXT - DISCORD_SAFE_RESERVE;
@@ -894,7 +890,10 @@ async function handleSettings(
       .addOptions(
         modelButtons.slice(0, 25).map((b) => ({
           label: safeSlice(b.text.replace(/^✓ /, ""), 100),
-          value: safeSlice(b.callback_data.replace(/^settings:model:/, ""), 100),
+          value: safeSlice(
+            b.callback_data.replace(/^settings:model:/, ""),
+            100,
+          ),
           default: b.text.startsWith("✓"),
         })),
       );
