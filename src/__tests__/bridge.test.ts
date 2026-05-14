@@ -130,8 +130,9 @@ describe("createBridge", () => {
 
   it("chat_id=0 is promoted (gateway decides what to do)", async () => {
     // The bridge doesn't validate chat_id — it just routes. Whether 0 is a
-    // valid chat ID is the gateway/handler's call (gateway rejects it via
-    // its `if (!chatId)` falsy guard, but the bridge correctly forwards).
+    // valid chat ID is the gateway/handler's call (gateway now passes 0
+    // through via its `chatId === null` guard; the bridge correctly forwards
+    // either way).
     const bridge = createBridge("http://test/", "");
     await bridge("send_message", { text: "zero", chat_id: 0 });
 

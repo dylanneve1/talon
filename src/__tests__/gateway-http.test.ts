@@ -357,18 +357,23 @@ describe("gateway HTTP server", () => {
       );
     });
 
-    it("rejects chat_id=0 (the gateway's falsy-guard catches it)", async () => {
-      // Number("0") = 0, which is falsy. The gateway uses `if (!chatId)`
-      // as its final guard so 0 always falls through to the rejection
-      // path — no real chat has ID 0.
+    it("accepts chat_id=0 (no longer rejected by falsy guard; uses chatId === null)", async () => {
+      // Number("0") = 0, which is falsy but a valid resolved value. The
+      // gateway now uses `if (chatId === null)` as its routing guard so 0
+      // passes through correctly. (Chat ID 0 doesn't appear in practice
+      // for Telegram or Teams, but the type contract is `number | null`
+      // and the previous `!chatId` check conflated the two.)
       const { body } = await post({
         action: "send_message",
         _chatId: "0",
         chat_id: 0,
         text: "to zero",
       });
-      expect(body.ok).toBe(false);
-      expect(body.error).toContain("No active chat context");
+      expect(body.ok).toBe(true);
+      expect(mockFrontendHandler).toHaveBeenCalledWith(
+        expect.objectContaining({ chat_id: 0 }),
+        0,
+      );
     });
 
     it("rejects the heartbeat sentinel even when chat_id property is present", async () => {
