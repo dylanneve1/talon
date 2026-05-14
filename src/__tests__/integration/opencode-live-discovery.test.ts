@@ -29,7 +29,7 @@ const opencodeDescribe =
 
 const TEST_PORT = Number(process.env.OPENCODE_TEST_PORT ?? 4197);
 const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;
-const HEALTH_TIMEOUT_MS = 15_000;
+const HEALTH_TIMEOUT_MS = 45_000;
 
 let opencodeProc: ChildProcess | null = null;
 let testClient: OpencodeClient;
@@ -99,7 +99,7 @@ opencodeDescribe("OpenCode live discovery (integration)", () => {
       throwOnError: true,
     });
     clearModelCatalogCache();
-  }, HEALTH_TIMEOUT_MS + 5_000);
+  }, HEALTH_TIMEOUT_MS + 10_000);
 
   afterAll(async () => {
     await stopProcess(opencodeProc);

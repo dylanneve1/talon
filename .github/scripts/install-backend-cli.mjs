@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -62,11 +62,15 @@ function readPackageJson(packageName) {
 }
 
 function quoteCmd(value) {
-  return `"${value.replace(/"/g, '\\"')}"`;
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
-function shellCommand(command, args) {
-  return [quoteCmd(command), ...args.map(quoteCmd)].join(" ");
+function cmdCallArgs(command, args) {
+  return [
+    "/d",
+    "/c",
+    ["call", quoteCmd(command), ...args.map(quoteCmd)].join(" "),
+  ];
 }
 
 function resolveWindowsNpm() {
@@ -100,7 +104,7 @@ function runNpm(args, options = {}) {
     if (resolved.kind === "cmd") {
       return execFileSync(
         "cmd.exe",
-        ["/d", "/s", "/c", shellCommand(resolved.command, args)],
+        cmdCallArgs(resolved.command, args),
         options,
       );
     }
@@ -158,7 +162,9 @@ function needsShell(command) {
 
 function runVersion(command) {
   if (needsShell(command)) {
-    execSync(shellCommand(command, ["--version"]), { stdio: "inherit" });
+    execFileSync("cmd.exe", cmdCallArgs(command, ["--version"]), {
+      stdio: "inherit",
+    });
   } else {
     execFileSync(command, ["--version"], { stdio: "inherit" });
   }

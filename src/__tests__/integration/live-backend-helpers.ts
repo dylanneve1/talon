@@ -1,9 +1,4 @@
-import {
-  execFileSync,
-  execSync,
-  spawn,
-  type ChildProcess,
-} from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 
 function resolveWindowsCommand(binary: string): string {
@@ -43,18 +38,22 @@ function needsShell(command: string): boolean {
 }
 
 function quoteCmd(value: string): string {
-  return `"${value.replace(/"/g, '\\"')}"`;
+  return `"${value.replace(/"/g, '""')}"`;
 }
 
-function shellCommand(command: string, args: string[]): string {
-  return [quoteCmd(command), ...args.map(quoteCmd)].join(" ");
+function cmdCallArgs(command: string, args: string[]): string[] {
+  return [
+    "/d",
+    "/c",
+    ["call", quoteCmd(command), ...args.map(quoteCmd)].join(" "),
+  ];
 }
 
 export function cliAvailable(binary: string, envVar?: string): boolean {
   const command = cliCommand(binary, envVar);
   try {
     if (needsShell(command)) {
-      execSync(shellCommand(command, ["--version"]), {
+      execFileSync("cmd.exe", cmdCallArgs(command, ["--version"]), {
         stdio: ["ignore", "ignore", "ignore"],
         timeout: 5000,
       });
@@ -73,7 +72,7 @@ export function cliAvailable(binary: string, envVar?: string): boolean {
 export function cliVersion(binary: string, envVar?: string): string {
   const command = cliCommand(binary, envVar);
   if (needsShell(command)) {
-    return execSync(shellCommand(command, ["--version"]), {
+    return execFileSync("cmd.exe", cmdCallArgs(command, ["--version"]), {
       encoding: "utf8",
       timeout: 5000,
     }).trim();
@@ -91,9 +90,8 @@ export function spawnCli(
 ): ChildProcess {
   const command = cliCommand(binary, envVar);
   if (needsShell(command)) {
-    return spawn(shellCommand(command, args), {
+    return spawn("cmd.exe", cmdCallArgs(command, args), {
       stdio: ["ignore", "pipe", "pipe"],
-      shell: true,
     });
   }
 
@@ -127,6 +125,18 @@ export async function waitForHealthy(
 
 export async function stopProcess(proc: ChildProcess | null): Promise<void> {
   if (!proc || proc.killed) return;
+
+  if (process.platform === "win32" && proc.pid) {
+    try {
+      execFileSync("taskkill.exe", ["/pid", String(proc.pid), "/t", "/f"], {
+        stdio: ["ignore", "ignore", "ignore"],
+        timeout: 5000,
+      });
+    } catch {
+      proc.kill();
+    }
+    return;
+  }
 
   proc.kill("SIGTERM");
   await new Promise<void>((resolve) => {
