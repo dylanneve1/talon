@@ -49,12 +49,24 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
           // Wrap in AbortError to prevent further retries
           throw new AbortError(classified);
         }
-        const delayMs =
-          classified.retryAfterMs ?? 1000 * Math.pow(2, attempt - 1);
+        const pRetryDelay = 1000 * Math.pow(2, attempt - 1);
+        const delayMs = classified.retryAfterMs ?? pRetryDelay;
         log(
           "gateway",
           `Retry ${attempt}/3 (${classified.reason}) after ${delayMs}ms`,
         );
+        // When retryAfterMs exceeds p-retry's own backoff (e.g. a Retry-After
+        // header from the Telegram API), sleep the difference here so the
+        // actual wait matches what was advertised. Without this, p-retry uses
+        // only its own short backoff and the retry arrives before the
+        // rate-limit window has expired.
+        if (classified.retryAfterMs && classified.retryAfterMs > pRetryDelay) {
+          const extra = classified.retryAfterMs - pRetryDelay;
+          await new Promise<void>((resolve) => {
+            const t = setTimeout(resolve, extra);
+            if (typeof t === "object" && t !== null && "unref" in t) t.unref();
+          });
+        }
         throw classified; // rethrow to trigger p-retry delay
       }
     },
@@ -189,7 +201,7 @@ export class Gateway {
       // String-id routing (Teams) — must match an active context.
       chatId = this.findContextByStringId(rawChatId);
     }
-    if (!chatId) {
+    if (chatId === null) {
       return { ok: false, error: "No active chat context" };
     }
 
