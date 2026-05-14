@@ -31,10 +31,9 @@
  *      free model) resolves cleanly via the fast-path.
  *
  * Skipping:
- *   If the `kilo` binary isn't on `PATH`, the whole suite is skipped via
- *   `describe.skipIf`. The kilo install on a CI runner without it should not
- *   fail this test — it's an instrumentation / live-environment check, not a
- *   gate on every commit.
+ *   Ordinary test runs skip this suite if the `kilo` binary isn't on `PATH`.
+ *   The dedicated CI job sets KILO_LIVE_REQUIRED=1 after installing Kilo Code,
+ *   so missing CLI/backends fail there instead of being silently skipped.
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -57,6 +56,8 @@ function kiloAvailable(): boolean {
 }
 
 const KILO_PRESENT = kiloAvailable();
+const KILO_REQUIRED = process.env.KILO_LIVE_REQUIRED === "1";
+const kiloDescribe = KILO_PRESENT || KILO_REQUIRED ? describe : describe.skip;
 // Pick a high port that's unlikely to collide with the prod Talon Kilo/OpenCode
 // servers (4096/4097 are reserved by default for those). 4198 is well clear.
 const TEST_PORT = Number(process.env.KILO_TEST_PORT ?? 4198);
@@ -67,6 +68,7 @@ const HEALTH_TIMEOUT_MS = 15_000;
 
 let kiloProc: ChildProcess | null = null;
 let testClient: KiloClient;
+const KILO_COMMAND = process.platform === "win32" ? "kilo.cmd" : "kilo";
 
 // ── ensureServer mock — points Talon's kilo backend at our test server. ────
 // We mock at module scope BEFORE importing Talon's kilo modules so the mock
@@ -116,20 +118,29 @@ async function waitForHealthy(url: string, deadlineMs: number): Promise<void> {
   );
 }
 
-describe.skipIf(!KILO_PRESENT)("Kilo live discovery (integration)", () => {
+kiloDescribe("Kilo live discovery (integration)", () => {
   beforeAll(async () => {
+    if (!KILO_PRESENT) {
+      throw new Error(
+        "Kilo CLI is required for this test but `kilo --version` failed. Install @kilocode/cli or unset KILO_LIVE_REQUIRED.",
+      );
+    }
+
     // Spawn `kilo serve` in detached-style stdio so its output doesn't
     // contaminate our test output. We capture stdout/stderr to a buffer
     // we can include in failure messages.
     kiloProc = spawn(
-      "kilo",
+      KILO_COMMAND,
       [
         "serve",
         `--hostname=127.0.0.1`,
         `--port=${TEST_PORT}`,
         "--log-level=ERROR",
       ],
-      { stdio: ["ignore", "pipe", "pipe"] },
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        shell: process.platform === "win32",
+      },
     );
     let stderr = "";
     kiloProc.stdout?.on("data", () => {

@@ -201,6 +201,51 @@ jobs:
           path: integration-results.json
           retention-days: 14
 
+  # ── Kilo backend live integration tier ───────────────────────
+  # Installs the real Kilo Code CLI, boots `kilo serve`, and runs Talon's
+  # Kilo backend discovery parser against the live HTTP backend. This catches
+  # SDK/backend schema drift that unit fixtures and mocked server tests miss.
+  kilo-backend:
+    name: Kilo Backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Kilo Code CLI
+        run: npm install --global @kilocode/cli
+
+      - name: Verify Kilo Code CLI
+        run: kilo --version
+
+      - name: Run Kilo backend live tests
+        run: npm run test:kilo:backend
+        env:
+          KILO_LIVE_REQUIRED: "1"
+
+      - name: Kilo backend summary
+        if: always()
+        run: node .github/scripts/vitest-summary.mjs kilo-backend-results.json "Kilo Backend (${{ matrix.os }})"
+
+      - name: Upload Kilo backend results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kilo-backend-results-${{ matrix.os }}
+          path: kilo-backend-results.json
+          retention-days: 14
+
   # ── Fuzz testing (property-based with fast-check) ─────────────
   fuzz:
     name: Fuzz Testing
@@ -379,6 +424,7 @@ jobs:
       - test
       - functional-cross-platform
       - integration
+      - kilo-backend
       - fuzz
       - security
       - secrets
@@ -403,6 +449,7 @@ jobs:
           check "Tests" "${{ needs.test.result }}"
           check "Functional" "${{ needs.functional-cross-platform.result }}"
           check "Integration" "${{ needs.integration.result }}"
+          check "Kilo Backend" "${{ needs.kilo-backend.result }}"
           check "Fuzz" "${{ needs.fuzz.result }}"
           check "Security" "${{ needs.security.result }}"
           check "Secrets" "${{ needs.secrets.result }}"
@@ -426,6 +473,7 @@ jobs:
           echo "| Tests | ${{ needs.test.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Functional | ${{ needs.functional-cross-platform.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration | ${{ needs.integration.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Kilo Backend | ${{ needs.kilo-backend.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Fuzz | ${{ needs.fuzz.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security | ${{ needs.security.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Secrets | ${{ needs.secrets.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
