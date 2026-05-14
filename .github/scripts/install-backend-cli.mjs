@@ -69,9 +69,46 @@ function shellCommand(command, args) {
   return [quoteCmd(command), ...args.map(quoteCmd)].join(" ");
 }
 
+function resolveWindowsNpm() {
+  if (process.env.npm_execpath && existsSync(process.env.npm_execpath)) {
+    return {
+      kind: "node",
+      command: process.env.npm_node_execpath || process.execPath,
+      argsPrefix: [process.env.npm_execpath],
+    };
+  }
+
+  const npmCmd = execFileSync("where.exe", ["npm.cmd"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  })
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean);
+
+  if (!npmCmd) throw new Error("Could not resolve npm.cmd on PATH");
+  return {
+    kind: "cmd",
+    command: npmCmd,
+    argsPrefix: [],
+  };
+}
+
 function runNpm(args, options = {}) {
   if (process.platform === "win32") {
-    return execSync(shellCommand(npm, args), options);
+    const resolved = resolveWindowsNpm();
+    if (resolved.kind === "cmd") {
+      return execFileSync(
+        "cmd.exe",
+        ["/d", "/s", "/c", shellCommand(resolved.command, args)],
+        options,
+      );
+    }
+    return execFileSync(
+      resolved.command,
+      [...resolved.argsPrefix, ...args],
+      options,
+    );
   }
   return execFileSync(npm, args, options);
 }
