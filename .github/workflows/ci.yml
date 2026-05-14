@@ -224,10 +224,13 @@ jobs:
       - run: npm ci
 
       - name: Install Kilo Code CLI
-        run: npm install --global @kilocode/cli
+        run: |
+          node -e "const { execFileSync } = require('node:child_process'); const sdk = require('./node_modules/@kilocode/sdk/package.json'); const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'; console.log('Installing @kilocode/cli@' + sdk.version); execFileSync(npm, ['install', '--global', '@kilocode/cli@' + sdk.version], { stdio: 'inherit' });"
 
       - name: Verify Kilo Code CLI
-        run: kilo --version
+        run: |
+          node -e "console.log('@kilocode/sdk ' + require('./node_modules/@kilocode/sdk/package.json').version)"
+          kilo --version
 
       - name: Run Kilo backend live tests
         run: npm run test:kilo:backend
