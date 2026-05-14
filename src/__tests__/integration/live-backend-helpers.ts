@@ -49,11 +49,23 @@ function cmdCallArgs(command: string, args: string[]): string[] {
   ];
 }
 
+function runCmd(
+  command: string,
+  args: string[],
+  options: Parameters<typeof execFileSync>[2] = {},
+): Buffer | string {
+  const cmdOptions = {
+    ...options,
+    windowsVerbatimArguments: true,
+  } as Parameters<typeof execFileSync>[2];
+  return execFileSync("cmd.exe", cmdCallArgs(command, args), cmdOptions);
+}
+
 export function cliAvailable(binary: string, envVar?: string): boolean {
   const command = cliCommand(binary, envVar);
   try {
     if (needsShell(command)) {
-      execFileSync("cmd.exe", cmdCallArgs(command, ["--version"]), {
+      runCmd(command, ["--version"], {
         stdio: ["ignore", "ignore", "ignore"],
         timeout: 5000,
       });
@@ -72,10 +84,12 @@ export function cliAvailable(binary: string, envVar?: string): boolean {
 export function cliVersion(binary: string, envVar?: string): string {
   const command = cliCommand(binary, envVar);
   if (needsShell(command)) {
-    return execFileSync("cmd.exe", cmdCallArgs(command, ["--version"]), {
+    return runCmd(command, ["--version"], {
       encoding: "utf8",
       timeout: 5000,
-    }).trim();
+    })
+      .toString()
+      .trim();
   }
   return execFileSync(command, ["--version"], {
     encoding: "utf8",
@@ -92,6 +106,7 @@ export function spawnCli(
   if (needsShell(command)) {
     return spawn("cmd.exe", cmdCallArgs(command, args), {
       stdio: ["ignore", "pipe", "pipe"],
+      windowsVerbatimArguments: true,
     });
   }
 

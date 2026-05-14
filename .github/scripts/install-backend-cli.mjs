@@ -73,6 +73,13 @@ function cmdCallArgs(command, args) {
   ];
 }
 
+function runCmd(command, args, options = {}) {
+  return execFileSync("cmd.exe", cmdCallArgs(command, args), {
+    ...options,
+    windowsVerbatimArguments: true,
+  });
+}
+
 function resolveWindowsNpm() {
   if (process.env.npm_execpath && existsSync(process.env.npm_execpath)) {
     return {
@@ -102,11 +109,7 @@ function runNpm(args, options = {}) {
   if (process.platform === "win32") {
     const resolved = resolveWindowsNpm();
     if (resolved.kind === "cmd") {
-      return execFileSync(
-        "cmd.exe",
-        cmdCallArgs(resolved.command, args),
-        options,
-      );
+      return runCmd(resolved.command, args, options);
     }
     return execFileSync(
       resolved.command,
@@ -162,7 +165,7 @@ function needsShell(command) {
 
 function runVersion(command) {
   if (needsShell(command)) {
-    execFileSync("cmd.exe", cmdCallArgs(command, ["--version"]), {
+    runCmd(command, ["--version"], {
       stdio: "inherit",
     });
   } else {
