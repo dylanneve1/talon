@@ -219,7 +219,7 @@ export function registerCommands(
           modelInfo?.displayName ?? formatModelLabel(activeModel);
         const lines = [
           `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
-          ...pres.modelDetails,
+          ...pres.modelDetails.map(escapeHtml),
         ];
         await ctx.reply(lines.join("\n"), {
           parse_mode: "HTML",

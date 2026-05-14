@@ -197,7 +197,7 @@ export function renderSettingsText(
     "<b>\uD83E\uDD85 Settings</b>",
     "",
     `<b>Model:</b> <code>${escapeHtml(formatModelLabel(model))}</code>`,
-    ...(modelDetails?.length ? modelDetails : []),
+    ...(modelDetails?.length ? modelDetails.map(escapeHtml) : []),
     `<b>Effort:</b> ${effort}`,
     `<b>Pulse:</b> ${proactive ? "on" : "off"} (every ${intervalStr})`,
   ].join("\n");

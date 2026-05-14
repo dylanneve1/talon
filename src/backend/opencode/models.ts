@@ -632,7 +632,7 @@ export async function getOpenCodeSettingsPresentation(
       `Login available: ${preview}${catalog.loginProviders.length > 4 ? "\u2026" : ""}`,
     );
   }
-  details.push("Hint: use /model &lt;name&gt; to switch.");
+  details.push("Hint: use /model <name> to switch.");
   return { modelButtons, modelDetails: details };
 }
 

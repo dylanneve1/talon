@@ -9,6 +9,7 @@ import {
   isSelectedModel,
   renderMetricsMessages,
   renderSettingsKeyboard,
+  renderSettingsText,
 } from "../frontend/telegram/helpers.js";
 
 describe("telegram helpers", () => {
@@ -102,6 +103,23 @@ describe("formatDuration", () => {
   it("keeps second-and-up formatting intact", () => {
     expect(formatDuration(1_500)).toBe("1s");
     expect(formatDuration(65_000)).toBe("1m 5s");
+  });
+});
+
+describe("renderSettingsText", () => {
+  // Telegram parses messages with parse_mode=HTML; any literal `<word>` in a
+  // detail line (e.g. backend hints like "use /model <name>") would be
+  // mis-read as a tag and reject the entire send. Detail strings come from
+  // backends that also feed Discord (Markdown), so they stay plain text and
+  // the Telegram frontend escapes per-line.
+  it("escapes HTML special chars in modelDetails", () => {
+    const out = renderSettingsText("default", "high", true, 60_000, [
+      "Hint: use /model <name> to switch.",
+      "Provider: A & B",
+    ]);
+    expect(out).not.toMatch(/<name>/);
+    expect(out).toContain("&lt;name&gt;");
+    expect(out).toContain("A &amp; B");
   });
 });
 
