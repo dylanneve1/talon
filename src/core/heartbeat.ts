@@ -9,21 +9,14 @@
  */
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { appendFile, mkdir, readdir, readFile } from "node:fs/promises";
+import { appendFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
 import { toYMD } from "../util/time.js";
-import { getPluginMcpServers } from "./plugin.js";
-import { DISALLOWED_TOOLS_BACKGROUND } from "./constants.js";
 import { getDefaultModel } from "./models.js";
-import {
-  buildMcpServers,
-  getActiveFrontends,
-} from "../backend/claude-sdk/index.js";
+import type { OneShotAgentParams, QueryBackend } from "./types.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -45,7 +38,6 @@ export type HeartbeatState = {
 const HEARTBEAT_STATE_FILE = pathFiles.heartbeatState;
 const DEFAULT_HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute soft cap
 const DEFAULT_HEARTBEAT_ABORT_GRACE_MS = 30 * 1000;
-const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
 
 function envMs(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -60,18 +52,14 @@ const HEARTBEAT_TIMEOUT_MS = envMs(
   DEFAULT_HEARTBEAT_TIMEOUT_MS,
 );
 /**
- * After we abort the SDK on timeout, wait this long for the agent promise to
- * settle gracefully. If it still hasn't settled we release the lock anyway
- * (so the next heartbeat can fire) and trigger a subprocess sweep.
+ * After we abort the agent on timeout, wait this long for the agent promise
+ * to settle gracefully. If it still hasn't settled we release the lock anyway
+ * (so the next heartbeat can fire) and ask the backend to evict any orphan
+ * subprocesses it spawned.
  */
 const HEARTBEAT_ABORT_GRACE_MS = envMs(
   "TALON_HEARTBEAT_ABORT_GRACE_MS",
   DEFAULT_HEARTBEAT_ABORT_GRACE_MS,
-);
-/** SIGTERM → grace → SIGKILL window when force-killing orphan subprocesses. */
-const SUBPROCESS_KILL_GRACE_MS = envMs(
-  "TALON_HEARTBEAT_SUBPROCESS_KILL_GRACE_MS",
-  DEFAULT_SUBPROCESS_KILL_GRACE_MS,
 );
 const HEARTBEAT_LOGS_DIR = resolve(dirs.logs, "heartbeats");
 const STARTUP_DELAY_MS = 5 * 60 * 1000; // 5-minute delay before first run
@@ -86,16 +74,25 @@ let intervalMinutesRef = 60; // stored from startHeartbeatTimer
 let configRef: {
   model?: string;
   heartbeatModel?: string;
-  claudeBinary?: string;
   workspace?: string;
+  backend?: QueryBackend | null;
+  /**
+   * Non-terminal frontends present at startup. Used to render the outbound
+   * messaging section of the heartbeat system prompt. Empty for terminal-only
+   * deployments (the agent runs to stdout, not a chat).
+   */
+  frontends?: readonly string[];
 } | null = null;
 
 export function initHeartbeat(cfg: {
   model?: string;
   /** Override model for heartbeat (e.g. a cheaper model). Falls back to main model. */
   heartbeatModel?: string;
-  claudeBinary?: string;
   workspace?: string;
+  /** The active backend — heartbeat agent runs through backend.runOneShotAgent. */
+  backend?: QueryBackend | null;
+  /** Non-terminal frontends present at startup (telegram, discord, …). */
+  frontends?: readonly string[];
 }): void {
   configRef = cfg;
 }
@@ -280,13 +277,7 @@ export function buildHeartbeatSystemPrompt(): string {
     "user-defined instructions precisely. Be efficient — you have limited time.",
   ];
 
-  let frontends: readonly string[];
-  try {
-    frontends = getActiveFrontends();
-  } catch {
-    // Agent config not initialised (test paths) — no outbound surface.
-    frontends = [];
-  }
+  const frontends = configRef?.frontends ?? [];
 
   if (frontends.length === 0) {
     return base.join("\n");
@@ -343,6 +334,13 @@ async function runHeartbeatAgent(
   const model =
     configRef.heartbeatModel ?? configRef.model ?? getDefaultModel();
 
+  const backend = configRef.backend;
+  if (!backend?.runOneShotAgent) {
+    throw new Error(
+      "Heartbeat requires a backend that implements runOneShotAgent",
+    );
+  }
+
   // Set up heartbeat log file
   const heartbeatLogFile = await createHeartbeatLogFile();
   await appendHeartbeatLog(
@@ -358,43 +356,20 @@ async function runHeartbeatAgent(
     `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
   );
 
-  // AbortController is the SDK's canonical way to signal a cancellation. When
-  // .abort() is called the SDK should tear down its subprocess and the query()
-  // async iterator should throw. We still defend against the case where it
-  // doesn't — see HEARTBEAT_ABORT_GRACE_MS below.
+  // AbortController is the canonical way to signal a cancellation to a backend.
+  // .abort() should tear down any spawned subprocess (Claude SDK) or stop
+  // streaming further parts (Kilo/OpenCode). We defend against backends that
+  // ignore it — see HEARTBEAT_ABORT_GRACE_MS below.
   const abortController = new AbortController();
 
-  const options = {
-    model,
+  const oneShotParams: OneShotAgentParams = {
+    prompt,
     systemPrompt: buildHeartbeatSystemPrompt(),
-    cwd: workspace,
-    permissionMode: "bypassPermissions" as const,
-    allowDangerouslySkipPermissions: true,
+    workspace,
+    model,
+    contextLabel: "heartbeat",
     abortController,
-    ...(configRef.claudeBinary
-      ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
-      : {}),
-    // Load plugin MCP servers + frontend-tools so the heartbeat can send
-    // messages, react, and read chat history with an explicit `chat_id`.
-    // The frontend MCP server is spawned with TALON_CHAT_ID="heartbeat" —
-    // a sentinel string telling the bridge there's no ambient chat, so
-    // every outbound tool call MUST include `chat_id` in its params.
-    //
-    // `buildMcpServers` throws if the agent config hasn't been initialised
-    // (e.g. tests that mock the agent). Treat that case as "no frontend
-    // MCP available" rather than crashing the whole heartbeat — the
-    // plugin MCP servers still load and the agent runs normally.
-    mcpServers: {
-      ...(() => {
-        try {
-          return buildMcpServers("heartbeat");
-        } catch {
-          return {};
-        }
-      })(),
-      ...getPluginMcpServers("", "heartbeat"),
-    },
-    disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
+    appendLog: (text) => appendHeartbeatLog(heartbeatLogFile, text),
   };
 
   // Timeout that requests eviction (graceful first, force-kill on grace exit).
@@ -415,13 +390,7 @@ async function runHeartbeatAgent(
   });
 
   const agentPromise = (async () => {
-    const qi = query({
-      prompt,
-      options: options as Parameters<typeof query>[0]["options"],
-    });
-    for await (const msg of qi) {
-      await logHeartbeatMessage(heartbeatLogFile, msg);
-    }
+    await backend.runOneShotAgent!(oneShotParams);
     await appendHeartbeatLog(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} completed at ${new Date().toISOString()}**\n`,
@@ -446,10 +415,10 @@ async function runHeartbeatAgent(
       `\n---\n**Heartbeat #${runCount} FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
     if (wasTimeout) {
-      // Give the SDK a bounded grace window to clean up its subprocess after
-      // the abort signal — but never wait indefinitely. If the SDK ignores
-      // the abort (this has happened in prod), release the lock anyway and
-      // launch an orphan-subprocess sweep in the background.
+      // Give the backend a bounded grace window to clean up after the abort
+      // signal — but never wait indefinitely. If the backend ignores the
+      // abort (this has happened in prod with the Claude SDK), release the
+      // lock anyway and ask the backend to evict any orphan subprocesses.
       const settled = await raceWithTimeout(
         agentPromise.catch(() => "settled"),
         HEARTBEAT_ABORT_GRACE_MS,
@@ -457,13 +426,17 @@ async function runHeartbeatAgent(
       if (settled === "timed_out") {
         logWarn(
           "heartbeat",
-          `Heartbeat #${runCount} SDK ignored abort after ${HEARTBEAT_ABORT_GRACE_MS}ms — releasing lock and evicting orphan subprocesses`,
+          `Heartbeat #${runCount} backend ignored abort after ${HEARTBEAT_ABORT_GRACE_MS}ms — releasing lock and evicting orphan subprocesses`,
         );
         // Fire-and-forget — we don't block the next heartbeat on subprocess
-        // cleanup. Any errors are logged inside the sweep itself.
-        evictOrphanHeartbeatSubprocesses().catch((sweepErr) => {
-          logError("heartbeat", "Orphan subprocess sweep failed", sweepErr);
-        });
+        // cleanup. Backends that don't spawn per-run subprocesses (Kilo,
+        // OpenCode) leave evictOrphanSubprocesses unimplemented; that's fine.
+        const evict = backend.evictOrphanSubprocesses;
+        if (evict) {
+          evict("heartbeat").catch((sweepErr) => {
+            logError("heartbeat", "Orphan subprocess sweep failed", sweepErr);
+          });
+        }
       }
     } else {
       // Non-timeout failure path — agentPromise has already rejected/resolved.
@@ -509,92 +482,10 @@ async function raceWithTimeout<T>(
   }
 }
 
-/**
- * Find and kill any lingering `claude` subprocess (and its descendants) whose
- * environment carries `TALON_CHAT_ID=heartbeat`. We identify them by reading
- * /proc/<pid>/environ — that file is owned by the same uid as the spawner
- * (us) and contains the env vars Talon set when launching the SDK subprocess
- * via MCP launcher. SIGTERM with a short grace, then SIGKILL.
- *
- * Exported for tests; do not call from non-eviction code paths.
- */
-export async function evictOrphanHeartbeatSubprocesses(): Promise<{
-  found: number;
-  termed: number;
-  killed: number;
-}> {
-  const result = { found: 0, termed: 0, killed: 0 };
-
-  if (process.platform !== "linux") {
-    // /proc is Linux-only. macOS/Windows: rely on SDK abort + grace alone.
-    return result;
-  }
-
-  const myPid = process.pid;
-  let entries: string[];
-  try {
-    entries = await readdir("/proc");
-  } catch {
-    return result;
-  }
-
-  const matched: number[] = [];
-  for (const entry of entries) {
-    const pid = Number(entry);
-    if (!Number.isInteger(pid) || pid === myPid) continue;
-    try {
-      const environRaw = await readFile(`/proc/${pid}/environ`, "utf-8");
-      // /proc/<pid>/environ is NUL-delimited. Split on \0 and match exact
-      // entries — a raw .includes() can false-positive on other vars whose
-      // value happens to contain the substring. Since this code can SIGKILL,
-      // err on the side of strict matching. (Copilot review on #144.)
-      const envEntries = environRaw.split("\0");
-      if (envEntries.includes("TALON_CHAT_ID=heartbeat")) {
-        matched.push(pid);
-      }
-    } catch {
-      // Process exited between readdir and readFile, or we don't own it. Skip.
-      continue;
-    }
-  }
-
-  result.found = matched.length;
-  if (matched.length === 0) return result;
-
-  // SIGTERM all matched pids.
-  for (const pid of matched) {
-    try {
-      process.kill(pid, "SIGTERM");
-      result.termed++;
-    } catch {
-      // ESRCH (already gone) or EPERM — ignore.
-    }
-  }
-
-  // Grace, then SIGKILL anything that hasn't exited.
-  await new Promise<void>((r) => {
-    const t = setTimeout(r, SUBPROCESS_KILL_GRACE_MS);
-    t.unref();
-  });
-
-  for (const pid of matched) {
-    try {
-      // process.kill with signal 0 just probes — throws ESRCH if gone.
-      process.kill(pid, 0);
-      // Still alive — escalate.
-      process.kill(pid, "SIGKILL");
-      result.killed++;
-    } catch {
-      // Already gone — no-op.
-    }
-  }
-
-  log(
-    "heartbeat",
-    `Subprocess sweep: found=${result.found} termed=${result.termed} killed=${result.killed}`,
-  );
-  return result;
-}
+// Subprocess eviction lives on the backend now (each backend knows what its
+// own subprocess shape looks like — only the Claude SDK actually spawns
+// per-query subprocesses, which the heartbeat tags via TALON_CHAT_ID).
+// See backend/claude-sdk/one-shot.ts.
 
 // ── Logging helpers ─────────────────────────────────────────────────────────
 
@@ -621,85 +512,9 @@ async function appendHeartbeatLog(
   }
 }
 
-async function logHeartbeatMessage(
-  logFile: string,
-  msg: SDKMessage,
-): Promise<void> {
-  try {
-    const ts = new Date().toISOString().slice(11, 19);
-
-    switch (msg.type) {
-      case "assistant": {
-        const textBlocks = msg.message.content
-          .filter((b) => b.type === "text")
-          .map((b) => ("text" in b ? (b as { text: string }).text : ""));
-        const toolUseBlocks = msg.message.content
-          .filter((b) => b.type === "tool_use")
-          .map((b) => {
-            const tu = b as { name: string; input: unknown };
-            return `**Tool call:** \`${tu.name}\`\n\`\`\`json\n${JSON.stringify(tu.input, null, 2)}\n\`\`\``;
-          });
-
-        if (textBlocks.length > 0) {
-          await appendHeartbeatLog(
-            logFile,
-            `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`,
-          );
-        }
-        if (toolUseBlocks.length > 0) {
-          await appendHeartbeatLog(
-            logFile,
-            `\n${toolUseBlocks.join("\n\n")}\n`,
-          );
-        }
-        break;
-      }
-      case "result": {
-        const result =
-          "result" in msg
-            ? (msg as { result: string }).result
-            : JSON.stringify(msg);
-        const truncated =
-          result.length > 2000
-            ? result.slice(0, 2000) + "\n... (truncated)"
-            : result;
-        await appendHeartbeatLog(
-          logFile,
-          `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`,
-        );
-        break;
-      }
-      case "system": {
-        await appendHeartbeatLog(
-          logFile,
-          `\n### [${ts}] System (${msg.subtype})\n`,
-        );
-        break;
-      }
-      case "user": {
-        if (msg.tool_use_result != null) {
-          const raw =
-            typeof msg.tool_use_result === "string"
-              ? msg.tool_use_result
-              : JSON.stringify(msg.tool_use_result, null, 2);
-          const truncated =
-            raw.length > 2000 ? raw.slice(0, 2000) + "\n... (truncated)" : raw;
-          await appendHeartbeatLog(
-            logFile,
-            `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`,
-          );
-        }
-        break;
-      }
-      default:
-        break;
-    }
-  } catch (err) {
-    process.stderr.write(
-      `[heartbeat] Log write error: ${err instanceof Error ? err.message : err}\n`,
-    );
-  }
-}
+// Per-message log formatting now lives on the backend — each backend writes
+// its own message format directly to the log file via the appendLog callback
+// passed in OneShotAgentParams. See backend/<name>/one-shot.ts.
 
 // ── State helpers ────────────────────────────────────────────────────────────
 
