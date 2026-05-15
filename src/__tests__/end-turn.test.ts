@@ -224,9 +224,28 @@ describe("turn-terminator declaration", () => {
     expect(stripMcpPrefix("Read")).toBe("Read");
     // Looks like a prefix but missing the trailing `__`
     expect(stripMcpPrefix("mcp__incomplete")).toBe("mcp__incomplete");
-    // Different prefix shape
-    expect(stripMcpPrefix("not_mcp__server__tool")).toBe(
-      "not_mcp__server__tool",
+  });
+
+  it("stripMcpPrefix handles Kilo's `<server>_<bare>` convention", () => {
+    // Kilo / OpenCode use `<server-name>_<tool>` instead of MCP's
+    // canonical `mcp__<server>__<tool>`. Without this branch every
+    // tool-delivered reply was being duplicated by the handler's
+    // text-part fallback because `captureDeliveredText` failed to
+    // recognise the tool as a delivery tool. Walk underscore boundaries
+    // from the right and match against the registered tool catalog.
+    expect(stripMcpPrefix("talon-tools-352042062_send")).toBe("send");
+    expect(stripMcpPrefix("talon-tools-352042062_end_turn")).toBe("end_turn");
+    expect(stripMcpPrefix("talon-tools-heartbeat_react")).toBe("react");
+    // Bare-name suffix `turn` is NOT a tool — must NOT mis-resolve
+    // `..._end_turn` as `turn`.
+    expect(stripMcpPrefix("foo_end_turn")).toBe("end_turn");
+  });
+
+  it("stripMcpPrefix leaves unknown Kilo-style names alone", () => {
+    // No `_<bare>` suffix that matches the registered tool set →
+    // return the input unchanged so callers can decide what to do.
+    expect(stripMcpPrefix("talon-tools-352042062_unknown_tool")).toBe(
+      "talon-tools-352042062_unknown_tool",
     );
   });
 
