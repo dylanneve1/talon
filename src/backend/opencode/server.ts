@@ -77,6 +77,21 @@ export function initOpenCodeAgent(
   config = cfg;
   if (getGatewayPort) gatewayPortFn = getGatewayPort;
   if (frontend) frontendName = frontend;
+
+  // Pre-warm plugin MCP servers in the background so the first chat
+  // message doesn't pay the ~12s subprocess-spawn cost. See the
+  // equivalent block in src/backend/kilo/server.ts for the rationale.
+  prewarmPluginMcpServers().catch((err) => {
+    logWarn(
+      "agent",
+      `Plugin MCP pre-warm failed (non-fatal): ${errMsg(err)}`,
+    );
+  });
+}
+
+async function prewarmPluginMcpServers(): Promise<void> {
+  const oc = await ensureServer();
+  await ensurePluginMcpServers(oc, "prewarm");
 }
 
 export async function ensureServer(): Promise<OpencodeClient> {

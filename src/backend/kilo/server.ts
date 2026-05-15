@@ -163,6 +163,39 @@ export function initKiloAgent(
   config = cfg;
   if (getGatewayPort) gatewayPortFn = getGatewayPort;
   if (frontend) frontendName = frontend;
+
+  // Pre-warm plugin MCP servers in the background so the first chat
+  // message doesn't pay the ~12s subprocess-spawn cost. We don't pre-warm
+  // chat-namespaced servers (those depend on chatId, not known yet); the
+  // first turn for any chat still incurs ~800ms for that one server, but
+  // the dominant cost (16+ plugin servers in series) is amortised away.
+  // Errors are swallowed — pre-warm is best-effort, the per-turn ensure
+  // still runs and would log any real failures.
+  prewarmPluginMcpServers().catch((err) => {
+    logWarn(
+      "agent",
+      `Plugin MCP pre-warm failed (non-fatal): ${errMsg(err)}`,
+    );
+  });
+}
+
+/**
+ * Background pre-warm of plugin MCP servers. Connects each
+ * plugin-provided MCP server to the Kilo HTTP server eagerly so the
+ * first turn doesn't spend 12+ seconds spawning subprocesses in
+ * series. Per-chat MCP servers can't be pre-warmed (they're
+ * chat-namespaced) but those are spawned once per process and cached.
+ */
+async function prewarmPluginMcpServers(): Promise<void> {
+  // Defer until the Kilo server is alive — `ensureServer()` will lazy-spawn
+  // it on the first call. We deliberately don't await here on the fast
+  // path; the catch in initKiloAgent handles any spawn failures.
+  const oc = await ensureServer();
+  // Use a sentinel chat id for the pre-warm so plugin MCP servers don't
+  // bind their bridge calls to a real chat — those calls would fail the
+  // gateway's active-context check anyway. Plugin tools that genuinely
+  // need a chat context get re-bound when a real chat starts.
+  await ensurePluginMcpServers(oc, "prewarm");
 }
 
 /** @deprecated Use {@link initKiloAgent} — kept for backward compatibility. */
