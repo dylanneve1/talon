@@ -8,11 +8,10 @@
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { getSession } from "../../storage/sessions.js";
-import { rebuildSystemPrompt } from "../../util/config.js";
-import { getPluginPromptAdditions } from "../../core/plugin.js";
 import { log, logWarn } from "../../util/log.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions } from "./options.js";
+import { prepareSystemPrompt } from "../shared/index.js";
 
 export async function warmSession(chatId: string): Promise<void> {
   // Guard against being called before initAgent()
@@ -24,7 +23,9 @@ export async function warmSession(chatId: string): Promise<void> {
 
   const abort = new AbortController();
   try {
-    rebuildSystemPrompt(getConfig(), getPluginPromptAdditions());
+    // Warm-up always rebuilds the system prompt (it's effectively a
+    // fresh session). `previousTurns: 0` triggers the rebuild branch.
+    prepareSystemPrompt({ config: getConfig(), previousTurns: 0 });
     const { options } = buildSdkOptions(chatId);
 
     // Streaming input mode: pass an async iterable that never yields a user message

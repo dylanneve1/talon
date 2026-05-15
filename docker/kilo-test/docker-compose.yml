@@ -1,0 +1,50 @@
+# Live-tier Kilo backend test harness.
+#
+# Spins up a Talon instance configured for the Kilo backend, against a
+# dedicated `@talondebugbot` Telegram bot. Designed to coexist with the
+# production Talon process on the same VPS:
+#
+#   - Different bot token (TALON_TEST_BOT_TOKEN) → separate Telegram surface
+#   - Different workspace mount (~/.talon-kilo-test) → no state collision
+#   - Different gateway port (19878 vs prod's 19876) → no port clash
+#   - Different container name (talon-kilo-test) → docker ps stays readable
+#
+# Usage:
+#   1. Source the test bot token (gitignored, lives outside the repo):
+#        set -a && source ~/.config/talon-tests/secrets.env && set +a
+#   2. Build + start:
+#        cd docker/kilo-test
+#        docker compose up --build -d
+#   3. DM @talondebugbot from any Telegram account once so it has a chat
+#      to reply in.
+#   4. Watch logs:
+#        docker compose logs -f talon-kilo-test
+#   5. Tear down:
+#        docker compose down
+
+services:
+  talon-kilo-test:
+    container_name: talon-kilo-test
+    build:
+      context: ../..
+      dockerfile: docker/kilo-test/Dockerfile
+    restart: unless-stopped
+    volumes:
+      # Persistent test workspace — kept on host so sessions/state
+      # survive `docker compose down && up`.
+      - ${HOME}/.talon-kilo-test:/home/node/.talon
+    environment:
+      - NODE_ENV=production
+      # Bot token piped through from the test secrets file. Talon picks
+      # this up via `process.env.TALON_TEST_BOT_TOKEN` → reads talon.json
+      # botToken if env-var-substitution is configured, OR you can set
+      # the botToken directly in the workspace's talon.json.
+      - TALON_TEST_BOT_TOKEN=${TALON_TEST_BOT_TOKEN:?TALON_TEST_BOT_TOKEN is required - source ~/.config/talon-tests/secrets.env}
+      # Internal-only gateway port for this test container. Doesn't
+      # collide with prod's default 19876.
+      - TALON_BRIDGE_PORT=19878
+    mem_limit: 1g
+    cpus: "1.0"
+    # NOT publishing port 19878 — bridge stays internal. The container
+    # talks Telegram outbound for messages and Kilo's HTTP server
+    # listens on 127.0.0.1:4097 inside the container only.
