@@ -2,11 +2,11 @@
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode-D97706)](#backends)
+[![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex-D97706)](#backends)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/dylanneve1/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
 
-Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsoft Teams**, and the **Terminal**, with a pluggable backend (**Claude Agent SDK**, **Kilo**, or **OpenCode**) and full tool access through MCP.
+Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsoft Teams**, and the **Terminal**, with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, or **Codex**) and full tool access through MCP.
 
 ---
 
@@ -46,6 +46,7 @@ npx talon chat        # terminal chat mode
   - `claude` backend: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude` CLI on PATH).
   - `kilo` backend: nothing extra — `@kilocode/sdk` spawns a local server. Free models are accessible without auth; routed models use Kilo's own credentials.
   - `opencode` backend: nothing extra — `@opencode-ai/sdk` spawns a local server.
+  - `codex` backend: install the `codex` CLI (`npm i -g @openai/codex`) and authenticate with `codex login` (ChatGPT auth or `OPENAI_API_KEY`).
 - Talon runs from a normal source or package install; standalone compiled binaries are not supported.
 
 ---
@@ -76,6 +77,7 @@ index.ts                    Composition root
   |   +-- claude-sdk/       Claude Agent SDK (in-process MCP, hooks)
   |   +-- kilo/             Kilo HTTP server backend (streaming via SSE)
   |   +-- opencode/         OpenCode HTTP server backend
+  |   +-- codex/            Codex CLI backend (`@openai/codex-sdk`)
   |
   +-- frontend/
   |   +-- telegram/         Grammy bot + GramJS userbot
@@ -96,13 +98,14 @@ index.ts                    Composition root
 
 Select via the `backend` field in `~/.talon/config.json`. All backends implement the same `QueryBackend` interface — heartbeat, dream, and chat handlers are backend-agnostic.
 
-| Backend    | `backend` value | Transport                                       | Notes                                                                   |
-| ---------- | --------------- | ----------------------------------------------- | ----------------------------------------------------------------------- |
-| Claude SDK | `"claude"`      | In-process via `@anthropic-ai/claude-agent-sdk` | Requires the `claude` CLI on `PATH`. Hook-based turn termination.       |
-| Kilo       | `"kilo"`        | Local HTTP server via `@kilocode/sdk`           | SSE-streamed turns. Routes to many model providers via Kilo's auth.     |
-| OpenCode   | `"opencode"`    | Local HTTP server via `@opencode-ai/sdk`        | Synchronous prompt; same MCP and session shape as Kilo (upstream fork). |
+| Backend    | `backend` value | Transport                                              | Notes                                                                   |
+| ---------- | --------------- | ------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Claude SDK | `"claude"`      | In-process via `@anthropic-ai/claude-agent-sdk`        | Requires the `claude` CLI on `PATH`. Hook-based turn termination.       |
+| Kilo       | `"kilo"`        | Local HTTP server via `@kilocode/sdk`                  | SSE-streamed turns. Routes to many model providers via Kilo's auth.     |
+| OpenCode   | `"opencode"`    | Local HTTP server via `@opencode-ai/sdk`               | SSE-streamed turns; same MCP and session shape as Kilo (upstream fork). |
+| Codex      | `"codex"`       | Per-turn subprocess via `@openai/codex-sdk`            | Requires the `codex` CLI from `@openai/codex` and an OpenAI API key (or ChatGPT auth). MCP servers configured via TOML overrides at thread start. |
 
-The Kilo and OpenCode backends share infrastructure (`backend/remote-server/`) since the upstream HTTP API is the same; each backend supplies its own SDK client, port, and delivery suffix.
+The Kilo and OpenCode backends share infrastructure (`backend/remote-server/`) since the upstream HTTP API is the same; each backend supplies its own SDK client, port, and delivery suffix. Codex is its own integration on top of the Codex CLI's JSONL event stream.
 
 ---
 
@@ -244,7 +247,7 @@ Config file: `~/.talon/config.json`
 | Field                      | Default      | Description                                                     |
 | -------------------------- | ------------ | --------------------------------------------------------------- |
 | `frontend`                 | `"telegram"` | `"telegram"`, `"discord"`, `"teams"`, `"terminal"`, or an array |
-| `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, or `"opencode"`                           |
+| `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, `"opencode"`, or `"codex"`                |
 | `botToken`                 | ---          | Telegram bot token                                              |
 | `model`                    | `"default"`  | Default model. Interpretation depends on the active backend.    |
 | `concurrency`              | `1`          | Max concurrent AI queries (1--20)                               |

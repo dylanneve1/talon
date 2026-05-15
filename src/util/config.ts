@@ -148,7 +148,7 @@ const playwrightConfigSchema = z.object({
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
-  backend: z.enum(["claude", "opencode", "kilo"]).default("claude"),
+  backend: z.enum(["claude", "opencode", "kilo", "codex"]).default("claude"),
   claudeBinary: z.string().optional(),
   model: z.string().default("default"),
   dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)
@@ -164,6 +164,8 @@ const configSchema = z.object({
   heartbeatIntervalMinutes: z.number().int().min(5).default(60),
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)
   braveApiKey: z.string().optional(),
+  /** OpenAI API key — used by the Codex backend. Falls back to OPENAI_API_KEY env. */
+  openaiApiKey: z.string().optional(),
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 

@@ -77,6 +77,7 @@
     "@grammyjs/transformer-throttler": "^1.2.1",
     "@kilocode/sdk": "^7.2.22",
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "@openai/codex-sdk": "^0.130.0",
     "@opencode-ai/sdk": "^1.4.0",
     "@playwright/mcp": "^0.0.75",
     "big-integer": "^1.6.52",

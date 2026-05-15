@@ -123,6 +123,7 @@ export async function initBackendAndDispatcher(
   await import("./backend/claude-sdk/factory.js");
   await import("./backend/opencode/factory.js");
   await import("./backend/kilo/factory.js");
+  await import("./backend/codex/factory.js");
 
   const { getBackend, listBackends } = await import("./backend/registry.js");
 
