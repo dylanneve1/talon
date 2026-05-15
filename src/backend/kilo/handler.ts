@@ -36,7 +36,6 @@ import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
-import { stripMcpPrefix } from "../../core/tools/index.js";
 
 import {
   ensureServer,
@@ -312,17 +311,18 @@ export async function handleMessage(
     chars: number;
   };
 
-  if (state.deliveredTextNorms.length > 0) {
-    // A delivery tool (`end_turn` / `send` / `react`) already shipped
+  if (state.deliveredTextNorms.length > 0 || state.hadBridgeDelivery) {
+    // A bridge-delivering tool (`end_turn` / `send`) already shipped
     // the message via the bridge. Drop any text-part content — Kilo
     // models routinely emit a follow-up text part after a tool call
     // that contains the model's chain-of-thought commentary
     // ("That worked. The 'No active chat context' error needed the
     // chat_id explicitly — already fixed.") rather than a separate
     // reply. Surfacing both produces a visible double-message in
-    // Telegram. The dedup-by-substring check we used to do here only
-    // caught the case where the model echoed the same text twice; the
-    // commentary case slipped through.
+    // Telegram. We check both `deliveredTextNorms` (tracks `end_turn`
+    // and `send(type="text")` for dedup-by-substring) and
+    // `hadBridgeDelivery` (catches `send(type="photo"|"poll"|...)`
+    // which still puts a message in chat but doesn't carry text args).
     delivery = {
       route: "tool",
       chars: state.deliveredTextNorms.reduce((n, d) => n + d.length, 0),
@@ -792,7 +792,9 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
       });
 
       if (outcome.kind === "terminator_fired") {
-        incrementCounter(`tool_calls.${stripMcpPrefix(outcome.toolName)}`);
+        // tool_calls counter increment happens per-tool inside
+        // events.ts processPartUpdate (parity with claude-sdk's
+        // count-every-tool semantics). Don't double-count here.
         // Fire-and-forget — abort the session so the model's post-
         // end_turn wrap-up doesn't burn another API call.
         onTerminator().catch(() => {});

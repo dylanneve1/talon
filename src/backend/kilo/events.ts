@@ -26,6 +26,8 @@ import {
 } from "../shared/index.js";
 import { extractPartsSummary } from "./sessions.js";
 import { log } from "../../util/log.js";
+import { incrementCounter } from "../../util/metrics.js";
+import { stripMcpPrefix } from "../../core/tools/index.js";
 
 // ── Streaming timing ───────────────────────────────────────────────────────
 
@@ -200,6 +202,11 @@ async function processPartUpdate(
       /* non-fatal — never break the stream loop on a UI callback */
     }
   }
+  // Count every tool the model calls — parity with claude-sdk which
+  // increments per tool. Without this, kilo only ever recorded the
+  // terminator (end_turn / send / react), so `read_history`, `get_*`,
+  // etc. never showed up in `/metrics`.
+  incrementCounter(`tool_calls.${stripMcpPrefix(toolName)}`);
   recordToolUse(ctx.state, toolName, input);
   if (ctx.onToolUse) {
     try {

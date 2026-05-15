@@ -119,6 +119,52 @@ describe("recordToolUse", () => {
     });
     expect(s.turnTerminated).toBe(true);
   });
+
+  // ── hadBridgeDelivery — catches non-text sends so the handler can
+  //   suppress a doubled text-part on the same turn (the live bug
+  //   where send(type="photo") landed alongside an assistant text-part).
+  it("flips hadBridgeDelivery for end_turn", () => {
+    const s = createStreamState();
+    recordToolUse(s, "end_turn", { text: "bye" });
+    expect(s.hadBridgeDelivery).toBe(true);
+  });
+
+  it("flips hadBridgeDelivery for send(type='text')", () => {
+    const s = createStreamState();
+    recordToolUse(s, "send", { type: "text", text: "hi" });
+    expect(s.hadBridgeDelivery).toBe(true);
+  });
+
+  it("flips hadBridgeDelivery for send(type='photo')", () => {
+    const s = createStreamState();
+    recordToolUse(s, "send", { type: "photo", url: "https://example.com/a.jpg" });
+    expect(s.hadBridgeDelivery).toBe(true);
+    // photo doesn't carry text, so deliveredTextNorms stays empty
+    expect(s.deliveredTextNorms).toHaveLength(0);
+  });
+
+  it("flips hadBridgeDelivery for MCP-prefixed send", () => {
+    const s = createStreamState();
+    recordToolUse(s, "talon-tools--1001426819337_send", {
+      type: "poll",
+      question: "?",
+    });
+    expect(s.hadBridgeDelivery).toBe(true);
+  });
+
+  it("does NOT flip hadBridgeDelivery for react", () => {
+    const s = createStreamState();
+    recordToolUse(s, "react", { message_id: 1, emoji: "👍" });
+    // react annotates the user's message; it's not a separate reply,
+    // so a follow-up text-part delivery should NOT be suppressed.
+    expect(s.hadBridgeDelivery).toBe(false);
+  });
+
+  it("does NOT flip hadBridgeDelivery for read_history", () => {
+    const s = createStreamState();
+    recordToolUse(s, "read_history", { count: 5 });
+    expect(s.hadBridgeDelivery).toBe(false);
+  });
 });
 
 describe("recordTokens", () => {
