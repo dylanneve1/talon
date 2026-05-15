@@ -365,7 +365,7 @@ describe("backend conformance — routeDelivery", () => {
     expect(kiloDecision.chars).toBe(opencodeDecision.chars);
 
     // Tool route
-    const stateC = createStreamState({ deliveredTextNorms: ["x"] } as never);
+    const stateC = createStreamState();
     Object.assign(stateC, { deliveredTextNorms: ["delivered"] });
     const stateD = createStreamState();
     Object.assign(stateD, { deliveredTextNorms: ["delivered"] });
