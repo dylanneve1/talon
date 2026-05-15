@@ -58,46 +58,46 @@ export const KILO_BASE_URL = `http://${KILO_HOSTNAME}:${KILO_PORT}`;
 export const TALON_MCP_SERVER_NAME = "talon-tools";
 
 /**
+ * MCP add() calls slower than this get a `[slow]` annotation in the log
+ * so operators can spot misbehaving plugins or a sluggish Kilo server.
+ * Picked as a soft threshold — most local subprocess spawns finish in
+ * <500ms; the outliers are the ones worth investigating.
+ */
+const SLOW_MCP_REGISTRATION_MS = 1000;
+
+/**
  * System-prompt suffix appended to the user-configured system prompt.
  *
- * Talon's Telegram frontend supports two delivery flows in parallel:
+ * Strict tool-driven delivery contract — matches the Claude SDK backend
+ * (which gets the same behaviour from how Claude Code's tools are
+ * trained, no system-prompt instruction needed). Kilo runs against
+ * weaker models that don't know the contract by default, so we spell it
+ * out: every reply MUST go through `end_turn` / `send` / `react`.
  *
- *   1. **Tool-driven delivery** (preferred — matches Claude SDK):
- *      Call `end_turn(text=...)` or `send(type="text", text=...)` to ship
- *      a final reply. This route preserves message-id targeting, button
- *      attachments, mid-turn `send` calls (photos, polls), and the
- *      scratchpad-by-contract that drops accidental prose silently.
- *
- *   2. **Text-as-reply fallback** (legacy OpenCode behaviour):
- *      Plain assistant text is delivered as a message at the end of the
- *      turn. Useful when the model is doing pure conversational replies
- *      and doesn't need rich-message control. The handler dedups against
- *      tool-emitted text so you can't accidentally double-send by using
- *      both paths.
- *
- * The suffix tells the model both routes work; the Talon delivery layer
- * sorts out the rest.
+ * The previous wording offered "plain assistant text" as a second
+ * delivery path. The handler never honoured that — trailing prose
+ * without a delivery tool was treated as a flow violation and dropped —
+ * so weaker models (e.g. DeepSeek free) believed they had replied while
+ * the user saw nothing. The suffix below makes the contract explicit.
  */
 export const KILO_SYSTEM_PROMPT_SUFFIX = `
 
-## Kilo Delivery
+## Kilo Delivery — every reply must go through a delivery tool
 
-You are running through Talon's Kilo backend (a fork of OpenCode).
+Talon delivers user-facing replies via tool calls only. Every turn must
+end with one of these — text written outside a tool call does not reach
+the user.
 
-Two ways to deliver a reply, pick whichever fits the message best:
+- \`end_turn(text="...")\` — final reply that closes the turn. Use this
+  for normal conversational responses.
+- \`end_turn()\` (no args) — close the turn silently (no reply needed).
+- \`send(type="text", text="...")\` — mid-turn message (photos, polls,
+  buttons, multiple bubbles). Always close the turn afterwards with
+  \`end_turn()\`.
+- \`react(emoji="...")\` — one-shot emoji acknowledgement.
 
-1. **end_turn / send** (preferred) — call \`end_turn(text="...")\` for a
-   final reply, \`send(type="text", text="...")\` for mid-turn rich
-   messages (photos, polls, buttons), or \`react\` for one-shot emoji
-   acknowledgements. These give you reply-id targeting, button support,
-   and explicit "I am done" semantics.
-
-2. **Plain assistant text** — anything you write outside of a tool call
-   is delivered as a single Telegram message at end of turn. Use this for
-   quick conversational replies that don't need rich features.
-
-Pick one path per turn — the handler dedups identical text across both,
-but it's cleaner to commit to a single delivery route per reply.
+If you draft prose, wrap it in \`end_turn(text=...)\` before finishing —
+otherwise the turn ends with no message delivered.
 `;
 
 // ── Backward-compat aliases ────────────────────────────────────────────────
@@ -195,6 +195,7 @@ export async function ensureServer(): Promise<KiloClient> {
     }
 
     log("agent", "Starting Kilo server...");
+    const spawnStartedAt = Date.now();
 
     try {
       const server = await createKiloServer({
@@ -204,7 +205,10 @@ export async function ensureServer(): Promise<KiloClient> {
       });
       client = createStrictKiloClient(server.url);
       serverHandle = server;
-      log("agent", `Kilo server running at ${server.url}`);
+      log(
+        "agent",
+        `Kilo server running at ${server.url} (spawned in ${Date.now() - spawnStartedAt}ms)`,
+      );
     } catch (err) {
       const reusedClient = await reuseExistingServer();
       if (!reusedClient) throw err;
@@ -269,6 +273,7 @@ export async function ensureChatMcpServer(
   chatId: string,
 ): Promise<string> {
   const serverName = getChatMcpServerName(chatId);
+  const startedAt = Date.now();
 
   try {
     const statusResp = await oc.mcp.status();
@@ -295,7 +300,12 @@ export async function ensureChatMcpServer(
         },
       },
     });
-    log("agent", `Registered ${serverName} MCP server with Kilo`);
+    const ms = Date.now() - startedAt;
+    log(
+      "agent",
+      `Registered ${serverName} MCP server with Kilo (${ms}ms)` +
+        (ms > SLOW_MCP_REGISTRATION_MS ? " [slow]" : ""),
+    );
   } catch (err) {
     logWarn(
       "agent",
@@ -343,6 +353,7 @@ export async function ensurePluginMcpServers(
       continue;
     }
     try {
+      const startedAt = Date.now();
       await oc.mcp.add({
         name,
         config: {
@@ -352,7 +363,12 @@ export async function ensurePluginMcpServers(
         },
       });
       registered.push(name);
-      log("agent", `Registered plugin MCP server: ${name}`);
+      const ms = Date.now() - startedAt;
+      log(
+        "agent",
+        `Registered plugin MCP server: ${name} (${ms}ms)` +
+          (ms > SLOW_MCP_REGISTRATION_MS ? " [slow]" : ""),
+      );
     } catch (err) {
       logWarn(
         "agent",

@@ -90,10 +90,10 @@ describe("detectFlowViolation", () => {
     }
   });
 
-  it("FLOW_VIOLATION_REMINDER mentions end_turn, send, and scratchpad", () => {
+  it("FLOW_VIOLATION_REMINDER names every delivery tool the model can use", () => {
     expect(FLOW_VIOLATION_REMINDER).toContain("FLOW VIOLATION");
     expect(FLOW_VIOLATION_REMINDER).toContain("end_turn");
     expect(FLOW_VIOLATION_REMINDER).toContain("send");
-    expect(FLOW_VIOLATION_REMINDER).toContain("scratchpad");
+    expect(FLOW_VIOLATION_REMINDER).toContain("react");
   });
 });

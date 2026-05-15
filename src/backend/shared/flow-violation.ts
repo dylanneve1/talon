@@ -23,13 +23,13 @@ import { isDuplicateOfDelivered } from "./delivered-text.js";
 
 /** The synthetic system reminder shipped back to the model on a flow violation. */
 export const FLOW_VIOLATION_REMINDER =
-  "[FLOW VIOLATION] You produced text content but didn't call `end_turn` or `send`. " +
-  "Pure prose in your output stream is private scratchpad — it's dropped, the user " +
-  "never sees it. Please retry with the proper flow: " +
-  "`end_turn(text=...)` to deliver a final reply, " +
-  "`end_turn()` (no args) to close silently, or " +
-  "`send(...)` for mid-turn rich content (photos, polls, etc.). " +
-  "Respond now using the correct tool call.";
+  "[FLOW VIOLATION] Your previous turn ended without a delivery tool, so the " +
+  "user saw nothing. Replies must go through a tool call: " +
+  "`end_turn(text=...)` for a final reply, " +
+  "`end_turn()` (no args) to close silently, " +
+  "`send(...)` for mid-turn rich content (photos, polls, etc.), or " +
+  "`react(emoji=...)` for an emoji acknowledgement. " +
+  "Retry now using the correct tool call.";
 
 // ── Public API ──────────────────────────────────────────────────────────────
 

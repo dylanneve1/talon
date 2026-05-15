@@ -25,6 +25,7 @@ import {
   type StreamState,
 } from "../shared/index.js";
 import { extractPartsSummary } from "./sessions.js";
+import { log } from "../../util/log.js";
 
 // ── Streaming timing ───────────────────────────────────────────────────────
 
@@ -89,6 +90,14 @@ export async function processStreamEvent(
     typeof props.sessionID === "string" ? props.sessionID : undefined;
   if (evtSessionID && evtSessionID !== ctx.sessionId) {
     return { kind: "stop", reason: "out_of_scope" };
+  }
+
+  // Count this event for the per-turn diagnostic summary the handler logs
+  // at end-of-turn. Helps debug "stuck" turns by showing which event types
+  // actually fired (e.g. `delta×42 part.updated×1` vs zero events).
+  if (typeof event.type === "string") {
+    ctx.state.eventCounts[event.type] =
+      (ctx.state.eventCounts[event.type] ?? 0) + 1;
   }
 
   switch (event.type) {
@@ -173,9 +182,34 @@ async function processPartUpdate(
     }
   }
   if (ctx.state.turnTerminated) {
+    log(
+      "agent",
+      `[Kilo] terminator fired: ${describeToolCall(toolName, input)}`,
+    );
     return { kind: "terminator_fired", toolName };
   }
   return { kind: "continue" };
+}
+
+/**
+ * One-line summary of a tool call for diagnostic logs. Shows the args
+ * operators care about (text length, type, emoji) without dumping the
+ * whole JSON payload. Long text inputs are summarised by character count.
+ */
+function describeToolCall(
+  toolName: string,
+  input: Record<string, unknown>,
+): string {
+  const parts: string[] = [toolName];
+  if (typeof input.type === "string") parts.push(`type=${input.type}`);
+  if (typeof input.text === "string") {
+    parts.push(`text=${input.text.length}chars`);
+  }
+  if (typeof input.emoji === "string") parts.push(`emoji=${input.emoji}`);
+  if (typeof input.end_turn === "boolean") {
+    parts.push(`end_turn=${input.end_turn}`);
+  }
+  return parts.join(" ");
 }
 
 /**

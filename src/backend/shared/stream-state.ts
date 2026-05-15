@@ -67,6 +67,15 @@ export interface StreamState {
   // ── Streaming bookkeeping ─────────────────────────────────────────────────
   /** Timestamp (ms) of the last delta callback — used to throttle UI updates. */
   lastStreamUpdate: number;
+
+  // ── Diagnostics ───────────────────────────────────────────────────────────
+  /**
+   * Per-event-type counts observed on the backend's stream this turn (e.g.
+   * Kilo SSE: `message.part.delta` × N). Backends increment this; the
+   * handler logs a summary at end-of-turn so operators can diagnose
+   * stuck/empty turns by inspecting which event types fired.
+   */
+  eventCounts: Record<string, number>;
 }
 
 // ── Factories ───────────────────────────────────────────────────────────────
@@ -88,6 +97,7 @@ export function createStreamState(): StreamState {
     contextWindow: undefined,
     numApiCalls: 0,
     lastStreamUpdate: 0,
+    eventCounts: {},
   };
 }
 

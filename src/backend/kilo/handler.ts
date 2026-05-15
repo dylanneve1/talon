@@ -117,6 +117,11 @@ export async function handleMessage(
   const oc = await ensureServer();
   const providerID =
     selectedProviderID ?? (await resolveProviderID(oc, modelID));
+  log(
+    "agent",
+    `[${chatId}] Kilo model resolved: provider=${providerID} model=${modelID}` +
+      (selectedProviderID ? "" : " (provider via catalog lookup)"),
+  );
   const sessionId = await ensureSession(oc, chatId);
   const chatMcpServerName = await ensureChatMcpServer(oc, chatId);
   await ensurePluginMcpServers(oc, chatId);
@@ -147,10 +152,14 @@ export async function handleMessage(
   const seenQuestionIds = new Set<string>();
   const seenToolCallIds = new Set<string>();
 
+  const setupMs = Date.now() - t0;
+  let promptMs = 0;
+
   try {
     // Drive the Kilo turn: subscribe to SSE events in parallel with
     // promptAsync, surface deltas + tool calls into shared state, and
     // exit when the turn closes / goes idle.
+    const turnStart = Date.now();
     await runKiloTurn({
       oc,
       sessionId,
@@ -167,6 +176,7 @@ export async function handleMessage(
       onTextBlock,
       onToolUse,
     });
+    promptMs = Date.now() - turnStart;
   } catch (err) {
     const classified = classify(err);
     incrementCounter(`errors.${classified.reason ?? "unknown"}`);
@@ -283,7 +293,7 @@ export async function handleMessage(
           violation.shouldRetry
             ? "Re-prompting with reminder."
             : "Already retried — accepting silent drop."
-        }`,
+        } preview: ${formatProsePreview(violation.trailing)}`,
     );
     if (violation.shouldRetry) {
       incrementCounter("scratchpad.flow_violation_retried");
@@ -328,7 +338,11 @@ export async function handleMessage(
         cacheWrite: state.sdkCacheWrite,
       },
       { durationMs, toolCalls: state.toolCalls },
-    )})`,
+    )} terminator=${state.turnTerminated ? "yes" : "no"} ` +
+      `delivered=${state.deliveredTextNorms.length} ` +
+      `respLen=${responseText.length} ` +
+      `setup=${setupMs}ms turn=${promptMs}ms ` +
+      `events=${formatEventCounts(state.eventCounts)})`,
   );
   traceMessage(chatId, "out", responseText, {
     durationMs,
@@ -343,6 +357,39 @@ export async function handleMessage(
     cacheRead: state.sdkCacheRead,
     cacheWrite: state.sdkCacheWrite,
   };
+}
+
+// ── Logging helpers ────────────────────────────────────────────────────────
+
+/**
+ * Render the first ~120 chars of dropped trailing prose for the violation
+ * log. Newlines collapse to spaces, leading/trailing whitespace trims, and
+ * an ellipsis is appended when the content was longer than the cap.
+ *
+ * Surfaced so operators can tell at a glance whether the model's dropped
+ * text was a meaningful reply (worth chasing the contract violation) or
+ * idle filler (mostly cosmetic).
+ */
+function formatProsePreview(text: string, max = 120): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return JSON.stringify(collapsed);
+  return JSON.stringify(collapsed.slice(0, max) + "…");
+}
+
+/**
+ * Compact summary of which SSE event types fired this turn. `{}` for a
+ * silent turn (which is itself a useful diagnostic — the SSE socket
+ * either dropped or never matched our session id). Otherwise renders as
+ * `delta×42,part.updated×1,turn.close×1` style.
+ */
+function formatEventCounts(counts: Record<string, number>): string {
+  const entries = Object.entries(counts);
+  if (entries.length === 0) return "none";
+  // Trim the noisy `message.` / `session.` prefixes so the line stays
+  // readable in the live log tail.
+  return entries
+    .map(([type, n]) => `${type.replace(/^(message|session)\./, "")}×${n}`)
+    .join(",");
 }
 
 // ── Internal: run one Kilo turn with SSE streaming ─────────────────────────
@@ -600,11 +647,23 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
       // session.error is observed here for logging; everything else goes
       // through the shared pure helper.
       if (event.type === "session.error") {
-        const errProp = (event.properties ?? {}).error as
-          | { name?: string }
+        const props = event.properties ?? {};
+        const errProp = props.error as
+          | {
+              name?: string;
+              message?: string;
+              data?: Record<string, unknown>;
+            }
           | undefined;
-        if (errProp?.name) {
-          logWarn("agent", `[${chatId}] Kilo session.error: ${errProp.name}`);
+        if (errProp) {
+          const detail = [
+            errProp.name && `name=${errProp.name}`,
+            errProp.message && `message=${errProp.message}`,
+            errProp.data && `data=${JSON.stringify(errProp.data)}`,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          logWarn("agent", `[${chatId}] Kilo session.error: ${detail}`);
         }
         continue;
       }
