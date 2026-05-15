@@ -51,7 +51,9 @@ const TURN_TERMINATOR_NAMES: ReadonlySet<string> = new Set(
  * the tool with its MCP server identifier in a non-standard way (e.g.
  * Kilo's `<server>_<bare>` instead of MCP's canonical `mcp__<server>__<bare>`).
  */
-const ALL_TOOL_NAMES: ReadonlySet<string> = new Set(ALL_TOOLS.map((t) => t.name));
+const ALL_TOOL_NAMES: ReadonlySet<string> = new Set(
+  ALL_TOOLS.map((t) => t.name),
+);
 
 /**
  * Strip a backend's MCP server prefix from a tool name.
