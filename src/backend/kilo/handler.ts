@@ -36,6 +36,7 @@ import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
+import { stripMcpPrefix } from "../../core/tools/index.js";
 
 import {
   ensureServer,
@@ -791,7 +792,7 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
       });
 
       if (outcome.kind === "terminator_fired") {
-        incrementCounter(`tool_calls.${outcome.toolName}`);
+        incrementCounter(`tool_calls.${stripMcpPrefix(outcome.toolName)}`);
         // Fire-and-forget — abort the session so the model's post-
         // end_turn wrap-up doesn't burn another API call.
         onTerminator().catch(() => {});

@@ -20,7 +20,7 @@ import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
-import { isTurnTerminator } from "../../core/tools/index.js";
+import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryParams, QueryResult } from "../../core/types.js";
@@ -142,7 +142,7 @@ export async function handleMessage(
 
         // Notify tool usage + capture delivery-tool text for end-of-turn dedup
         for (const tool of result.tools) {
-          incrementCounter(`tool_calls.${tool.name}`);
+          incrementCounter(`tool_calls.${stripMcpPrefix(tool.name)}`);
           captureIntoState(tool.name, tool.input);
           // Pass tool.input so the soft-terminator opt-out (e.g. react
           // with `end_turn: false`) keeps state.turnTerminated correctly
