@@ -1,10 +1,14 @@
 /**
- * OpenCode model catalog — types, resolution, formatting, and cache.
+ * Kilo model catalog — types, resolution, formatting, and cache.
+ *
+ * Kilo's underlying provider-bucket API is forked from OpenCode's, so
+ * the internal type names retain the `OpenCode*` prefix to make the
+ * provenance obvious. The exported public symbols are `Kilo*` so callers
+ * see a self-consistent surface.
  *
  * Extracted from index.ts to keep model-catalog concerns in one module.
  */
 
-import type { KiloClient } from "@kilocode/sdk/v2";
 import { ensureServer } from "./server.js";
 
 // ---------------------------------------------------------------------------

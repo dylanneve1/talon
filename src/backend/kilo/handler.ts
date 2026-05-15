@@ -61,8 +61,6 @@ import {
 import {
   createStreamState,
   appendText,
-  closeCurrentSegment,
-  recordToolUse,
   recordTokens,
   finalizeResponseText,
   detectFlowViolation,
@@ -72,6 +70,7 @@ import {
   classifyRetry,
   summarizeUsage,
 } from "../shared/index.js";
+import { processStreamEvent, finalizePartsIntoState } from "./events.js";
 
 // ── Active session registry ─────────────────────────────────────────────────
 //
@@ -85,13 +84,6 @@ const activeSessions = new Map<string, string>();
 export function getActiveSession(chatId: string): string | undefined {
   return activeSessions.get(chatId);
 }
-
-// ── Streaming constants ─────────────────────────────────────────────────────
-
-/** Minimum interval (ms) between streaming delta callbacks. Throttles
- * Telegram edit_message calls so the frontend doesn't spam updates and
- * hit rate limits during fast-token generation. */
-const STREAM_INTERVAL_MS = 1000;
 
 // ── Main handler ────────────────────────────────────────────────────────────
 
@@ -481,7 +473,6 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
       parts,
       state,
       seenToolCallIds,
-      onTextBlock,
       onToolUse,
     });
 
@@ -600,95 +591,44 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
     for await (const evt of stream) {
       if (abortSignal.aborted) break;
       if (!evt || typeof evt !== "object") continue;
+
       const event = evt as {
         type?: string;
         properties?: Record<string, unknown>;
       };
-      const props = event.properties ?? {};
-      // Scope to our session only
-      const evtSessionID =
-        typeof props.sessionID === "string" ? props.sessionID : undefined;
-      if (evtSessionID && evtSessionID !== sessionId) continue;
 
-      switch (event.type) {
-        case "message.part.delta": {
-          const field = typeof props.field === "string" ? props.field : "";
-          const delta = typeof props.delta === "string" ? props.delta : "";
-          if (!delta) break;
-          if (field === "text") {
-            appendText(state, delta);
-            maybeFireStreamDelta(state, onStreamDelta, "text");
-          } else if (field === "thinking" || field === "reasoning") {
-            // Thinking deltas don't accumulate into response text; they
-            // just signal "model is still working" for UI feedback.
-            maybeFireStreamDelta(state, onStreamDelta, "thinking");
-          }
-          break;
+      // session.error is observed here for logging; everything else goes
+      // through the shared pure helper.
+      if (event.type === "session.error") {
+        const errProp = (event.properties ?? {}).error as
+          | { name?: string }
+          | undefined;
+        if (errProp?.name) {
+          logWarn("agent", `[${chatId}] Kilo session.error: ${errProp.name}`);
         }
-        case "message.part.updated": {
-          const part = props.part as Record<string, unknown> | undefined;
-          if (!part) break;
-          if (part.type === "tool") {
-            const callID = typeof part.callID === "string" ? part.callID : "";
-            const toolName = typeof part.tool === "string" ? part.tool : "tool";
-            const stateObj = part.state as
-              | { status?: string; input?: Record<string, unknown> }
-              | undefined;
-            // Fire onToolUse ONCE when the tool transitions to running
-            // (with input available). Subsequent state changes (completed,
-            // error) are observed but don't re-fire.
-            if (
-              stateObj &&
-              (stateObj.status === "running" ||
-                stateObj.status === "completed") &&
-              callID &&
-              !seenToolCallIds.has(callID)
-            ) {
-              seenToolCallIds.add(callID);
-              const input = stateObj.input ?? {};
-              // Emit any pre-tool progress text BEFORE recording the
-              // tool — so the user sees "let me check…" land before the
-              // tool's typing indicator.
-              const progress = closeCurrentSegment(state);
-              if (progress && onTextBlock) {
-                try {
-                  await onTextBlock(progress);
-                } catch (err) {
-                  logWarn(
-                    "agent",
-                    `[${chatId}] onTextBlock progress failed: ${errMsg(err)}`,
-                  );
-                }
-              }
-              recordToolUse(state, toolName, input);
-              incrementCounter(`tool_calls.${toolName}`);
-              if (onToolUse) {
-                try {
-                  onToolUse(toolName, input);
-                } catch {
-                  /* non-fatal */
-                }
-              }
-              if (state.turnTerminated) {
-                // Fire-and-forget — abort the session so the model's
-                // post-end_turn wrap-up doesn't burn another API call.
-                onTerminator().catch(() => {});
-              }
-            }
-          }
-          break;
-        }
-        case "session.turn.close":
-        case "session.idle": {
-          return; // turn ended, stop iterating
-        }
-        case "session.error": {
-          const errProp = props.error as { name?: string } | undefined;
-          if (errProp?.name) {
-            logWarn("agent", `[${chatId}] Kilo session.error: ${errProp.name}`);
-          }
-          break;
-        }
+        continue;
+      }
+
+      const outcome = await processStreamEvent(event, {
+        sessionId,
+        state,
+        seenToolCallIds,
+        onStreamDelta,
+        onTextBlock,
+        onToolUse,
+      });
+
+      if (outcome.kind === "terminator_fired") {
+        incrementCounter(`tool_calls.${outcome.toolName}`);
+        // Fire-and-forget — abort the session so the model's post-
+        // end_turn wrap-up doesn't burn another API call.
+        onTerminator().catch(() => {});
+        continue;
+      }
+
+      if (outcome.kind === "stop") {
+        if (outcome.reason === "out_of_scope") continue;
+        return; // turn.close or idle — stop iterating
       }
     }
   } catch (err) {
@@ -696,112 +636,6 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
     // of truth for the turn result.
     if (!abortSignal.aborted) {
       logWarn("agent", `[${chatId}] SSE iteration failed: ${errMsg(err)}`);
-    }
-  }
-}
-
-function maybeFireStreamDelta(
-  state: ReturnType<typeof createStreamState>,
-  onStreamDelta: SubscribeInputs["onStreamDelta"],
-  phase: "thinking" | "text",
-): void {
-  if (!onStreamDelta) return;
-  const now = Date.now();
-  if (now - state.lastStreamUpdate < STREAM_INTERVAL_MS) return;
-  state.lastStreamUpdate = now;
-  try {
-    onStreamDelta(state.currentBlockText, phase);
-  } catch {
-    /* non-fatal — never break the stream loop on a UI callback */
-  }
-}
-
-// ── Final-parts fallback ───────────────────────────────────────────────────
-
-/**
- * Drain the sync `prompt()` response into the stream state.
- *
- * SSE may have already captured most of this content, but `prompt()`'s
- * parts list is authoritative — anything SSE missed (e.g. text emitted
- * after the SSE socket dropped) needs to land in state before we return.
- *
- * The dedup discipline:
- *   - Tools already seen via `seenToolCallIds` are skipped (SSE already
- *     fired callbacks for them).
- *   - Text already accumulated in `state.allResponseText` is skipped —
- *     we replace `currentBlockText` with the trailing tail.
- *   - Tools fired here (i.e. SSE missed them entirely) get full
- *     callback treatment via `recordToolUse` + `onToolUse`.
- */
-function finalizePartsIntoState(inputs: {
-  parts: Array<Record<string, unknown>>;
-  state: ReturnType<typeof createStreamState>;
-  seenToolCallIds: Set<string>;
-  onTextBlock?: (text: string) => Promise<void>;
-  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
-}): void {
-  const { parts, state, seenToolCallIds, onToolUse } = inputs;
-
-  // If SSE already captured this turn, allResponseText is non-empty;
-  // we still walk parts to pick up trailing text but skip already-seen
-  // tools. If SSE missed everything (failure on subscribe), this is the
-  // canonical path.
-  const sseCapturedText = state.allResponseText.length > 0;
-
-  if (!sseCapturedText) {
-    // SSE missed — drive the full reconstruction through state mutators.
-    const { text, toolCalls } = extractPartsSummary(parts);
-    state.toolCalls = Math.max(state.toolCalls, toolCalls);
-
-    for (const part of parts) {
-      if (part.type === "tool") {
-        const stateObj = part.state as
-          | { status?: string; input?: Record<string, unknown> }
-          | undefined;
-        const callID = typeof part.callID === "string" ? part.callID : "";
-        const toolName = typeof part.tool === "string" ? part.tool : "tool";
-        if (callID && seenToolCallIds.has(callID)) continue;
-        if (stateObj?.input) {
-          recordToolUse(state, toolName, stateObj.input);
-          incrementCounter(`tool_calls.${toolName}`);
-          if (onToolUse) {
-            try {
-              onToolUse(toolName, stateObj.input);
-            } catch {
-              /* non-fatal */
-            }
-          }
-        }
-      }
-    }
-
-    if (text) {
-      appendText(state, text);
-    }
-    return;
-  }
-
-  // SSE captured most of it; pick up any tools SSE missed.
-  for (const part of parts) {
-    if (part.type !== "tool") continue;
-    const callID = typeof part.callID === "string" ? part.callID : "";
-    if (!callID || seenToolCallIds.has(callID)) continue;
-
-    seenToolCallIds.add(callID);
-    const stateObj = part.state as
-      | { status?: string; input?: Record<string, unknown> }
-      | undefined;
-    const toolName = typeof part.tool === "string" ? part.tool : "tool";
-    if (stateObj?.input) {
-      recordToolUse(state, toolName, stateObj.input);
-      incrementCounter(`tool_calls.${toolName}`);
-      if (onToolUse) {
-        try {
-          onToolUse(toolName, stateObj.input);
-        } catch {
-          /* non-fatal */
-        }
-      }
     }
   }
 }
