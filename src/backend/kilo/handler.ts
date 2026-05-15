@@ -100,7 +100,6 @@ export async function handleMessage(
     isGroup,
     messageId,
     onTextBlock,
-    onStreamDelta,
     onToolUse,
   } = params;
   const t0 = Date.now();
@@ -156,8 +155,17 @@ export async function handleMessage(
 
   try {
     // Drive the Kilo turn: subscribe to SSE events in parallel with
-    // promptAsync, surface deltas + tool calls into shared state, and
+    // promptAsync, surface tool calls + terminator into shared state, and
     // exit when the turn closes / goes idle.
+    //
+    // Note: `onStreamDelta` is intentionally NOT forwarded. Telegram's
+    // delivery contract is "send the final reply once" — Talon doesn't
+    // want live edit_message updates exposing the model's chain-of-thought
+    // scratchpad to the user. We still process delta events (for tool-call
+    // detection and the eventCounts diagnostic), just without the UI
+    // callback firing per token. Final delivery happens through `end_turn`
+    // / `send` tool calls, which call `onTextBlock` once with the
+    // committed message.
     const turnStart = Date.now();
     await runKiloTurn({
       oc,
@@ -171,7 +179,7 @@ export async function handleMessage(
       chatId,
       seenQuestionIds,
       seenToolCallIds,
-      onStreamDelta,
+      onStreamDelta: undefined,
       onTextBlock,
       onToolUse,
     });
