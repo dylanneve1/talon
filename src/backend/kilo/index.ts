@@ -8,13 +8,16 @@
  *   - `models.ts`         — model catalog, search, resolution, presentation
  *   - `sessions.ts`       — message parsing, usage summaries, snapshots
  *   - `server.ts`         — server lifecycle, MCP, session management
- *   - `handler.ts`        — main message handler (with streaming + end_turn)
+ *   - `events.ts`         — Kilo-side configurator over shared SSE events
+ *   - `handler.ts`        — main message handler (streaming, end_turn,
+ *                           delivery routing)
  *   - `one-shot.ts`       — heartbeat / dream one-shot runner
  *   - `model-provider.ts` — adapts the catalog to the QueryBackend interface
  *
- * Both Kilo-prefixed names (e.g. `initKiloAgent`) and the legacy
- * OpenCode-prefixed names (e.g. `initOpenCodeAgent`) are re-exported so
- * existing call sites in `bootstrap.ts` keep working while we migrate.
+ * Note: internal `OpenCode*` type names in `models.ts` (e.g.
+ * `OpenCodeModelCatalogEntry`) are retained on purpose — Kilo's
+ * provider-bucket API is forked from OpenCode's wire shape, so the
+ * names match what the upstream actually emits.
  */
 
 // ── Models ─────────────────────────────────────────────────────────────────
@@ -37,7 +40,6 @@ export {
 
 // ── Sessions ───────────────────────────────────────────────────────────────
 export {
-  // Kilo-prefixed (preferred)
   summarizeKiloAssistantMessages,
   getKiloSessionSnapshot,
   getKiloTurnSummary,
@@ -48,12 +50,6 @@ export {
   waitForPromptWithQuestionGuard,
   type KiloAssistantInfo,
   type KiloSessionSnapshot,
-  // Back-compat aliases
-  summarizeOpenCodeAssistantMessages,
-  getOpenCodeSessionSnapshot,
-  getOpenCodeTurnSummary,
-  type OpenCodeAssistantInfo,
-  type OpenCodeSessionSnapshot,
 } from "./sessions.js";
 
 // ── Server / lifecycle ─────────────────────────────────────────────────────
@@ -68,21 +64,11 @@ export {
   disconnectChatMcpServer,
   resolveProviderID,
   parseStoredKiloModelSelection,
-  // Back-compat aliases
-  initOpenCodeAgent,
-  stopOpenCodeServer,
-  parseStoredOpenCodeModelSelection,
-  // Constants
   KILO_HOSTNAME,
   KILO_PORT,
   KILO_BASE_URL,
   KILO_SYSTEM_PROMPT_SUFFIX,
   TALON_MCP_SERVER_NAME,
-  // Back-compat constant aliases
-  OPENCODE_HOSTNAME,
-  OPENCODE_PORT,
-  OPENCODE_BASE_URL,
-  OPENCODE_SYSTEM_PROMPT_SUFFIX,
 } from "./server.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────

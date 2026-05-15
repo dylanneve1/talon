@@ -16,8 +16,8 @@ vi.mock("../backend/kilo/server.js", () => ({
     throw new Error("ensureServer should not be called from kilo-models tests");
   }),
   getConfig: vi.fn(() => undefined),
-  initOpenCodeAgent: vi.fn(),
-  stopOpenCodeServer: vi.fn(),
+  initKiloAgent: vi.fn(),
+  stopKiloServer: vi.fn(),
 }));
 
 const { getOpenCodeModelSelectionValue, resolveOpenCodeModelInput } =

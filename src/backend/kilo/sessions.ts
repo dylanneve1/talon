@@ -25,9 +25,6 @@ const errMsg = (e: unknown): string =>
  * paginate by default; we pull the most recent slice and dedupe. */
 export const KILO_SESSION_MESSAGE_LIMIT = 5000;
 
-/** @deprecated Use {@link KILO_SESSION_MESSAGE_LIMIT}. */
-export const OPENCODE_SESSION_MESSAGE_LIMIT = KILO_SESSION_MESSAGE_LIMIT;
-
 // ── Types ───────────────────────────────────────────────────────────────────
 
 /**
@@ -56,9 +53,6 @@ export type KiloAssistantInfo = {
   modelID?: string;
 };
 
-/** @deprecated Use {@link KiloAssistantInfo}. */
-export type OpenCodeAssistantInfo = KiloAssistantInfo;
-
 export type KiloSessionSnapshot = {
   sessionId: string;
   createdAt?: number;
@@ -86,9 +80,6 @@ export type KiloSessionSnapshot = {
     totalCostUsd: number;
   };
 };
-
-/** @deprecated Use {@link KiloSessionSnapshot}. */
-export type OpenCodeSessionSnapshot = KiloSessionSnapshot;
 
 type ParsedAssistantMessage = {
   createdAt: number;
@@ -277,10 +268,6 @@ export function summarizeKiloAssistantMessages(
   return { latestAssistant, usage };
 }
 
-/** @deprecated Use {@link summarizeKiloAssistantMessages}. */
-export const summarizeOpenCodeAssistantMessages =
-  summarizeKiloAssistantMessages;
-
 // ── Session-messages fetch ──────────────────────────────────────────────────
 
 async function listSessionMessages(
@@ -327,9 +314,6 @@ export async function getKiloTurnSummary(
   const messages = await listSessionMessages(oc, sessionId);
   return summarizeKiloAssistantMessages(messages, minCreatedAt);
 }
-
-/** @deprecated Use {@link getKiloTurnSummary}. */
-export const getOpenCodeTurnSummary = getKiloTurnSummary;
 
 /**
  * Build a {@link KiloSessionSnapshot} for the given session id.
@@ -392,9 +376,6 @@ export async function getKiloSessionSnapshot(
     },
   };
 }
-
-/** @deprecated Use {@link getKiloSessionSnapshot}. */
-export const getOpenCodeSessionSnapshot = getKiloSessionSnapshot;
 
 // ── Pending-question guard ──────────────────────────────────────────────────
 

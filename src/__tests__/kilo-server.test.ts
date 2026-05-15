@@ -22,15 +22,15 @@ vi.mock("../util/log.js", () => ({
 }));
 
 const {
-  initOpenCodeAgent,
+  initKiloAgent,
   ensureChatMcpServer,
   ensurePluginMcpServers,
   buildToolOverrides,
   disconnectChatMcpServer,
   ensureSession,
   resolveProviderID,
-  parseStoredOpenCodeModelSelection,
-  stopOpenCodeServer,
+  parseStoredKiloModelSelection,
+  stopKiloServer,
 } = await import("../backend/kilo/server.js");
 
 type MockKiloClient = {
@@ -57,10 +57,10 @@ function makeClient(): MockKiloClient {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  stopOpenCodeServer();
+  stopKiloServer();
   getSessionMock.mockReturnValue({});
   getPluginMcpServersMock.mockReturnValue({});
-  initOpenCodeAgent({} as never, () => 17777, "discord");
+  initKiloAgent({} as never, () => 17777, "discord");
 });
 
 describe("kilo server helpers", () => {
@@ -308,24 +308,22 @@ describe("kilo server helpers", () => {
     ).resolves.toBe("google");
   });
 
-  it("parseStoredOpenCodeModelSelection keeps non-kilo slug and trims whitespace", () => {
+  it("parseStoredKiloModelSelection keeps non-kilo slug and trims whitespace", () => {
     expect(
-      parseStoredOpenCodeModelSelection("  openrouter/qwen3-235b-a22b:free  "),
+      parseStoredKiloModelSelection("  openrouter/qwen3-235b-a22b:free  "),
     ).toEqual({
       providerID: undefined,
       modelID: "openrouter/qwen3-235b-a22b:free",
     });
   });
 
-  it("parseStoredOpenCodeModelSelection strips the leading kilo/ prefix and pins providerID", () => {
+  it("parseStoredKiloModelSelection strips the leading kilo/ prefix and pins providerID", () => {
     // Talon stored `kilo/...` as a hint that the model is kilo-routed.
     // The Kilo upstream router doesn't want that prefix in the model id —
     // passing it through produces the bug surfaced in prod as
     // `Model not found: opencode/kilo/deepseek/deepseek-v4-flash:free`.
     expect(
-      parseStoredOpenCodeModelSelection(
-        " kilo/deepseek/deepseek-v4-flash:free ",
-      ),
+      parseStoredKiloModelSelection(" kilo/deepseek/deepseek-v4-flash:free "),
     ).toEqual({
       providerID: "kilo",
       modelID: "deepseek/deepseek-v4-flash:free",

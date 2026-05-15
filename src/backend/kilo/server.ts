@@ -57,7 +57,7 @@ export const KILO_HOSTNAME = "127.0.0.1";
 export const KILO_PORT = Number(process.env.KILO_PORT ?? 4097);
 /** Convenience URL composed from KILO_HOSTNAME + KILO_PORT. */
 export const KILO_BASE_URL = `http://${KILO_HOSTNAME}:${KILO_PORT}`;
-/** Backwards-compat re-export of the chat MCP server name prefix. */
+/** Re-export of the chat MCP server name prefix shared across backends. */
 export const TALON_MCP_SERVER_NAME = SHARED_TALON_MCP_SERVER_NAME;
 
 /**
@@ -94,22 +94,6 @@ Two ways to deliver a reply — pick whichever fits:
 If you call a delivery tool, don't also repeat the same text in plain
 output — Talon dedupes but it's cleaner to commit to one route.
 `;
-
-// ── Backward-compat aliases ────────────────────────────────────────────────
-//
-// Existing code (bootstrap.ts, opencode test utilities, the kilo handler
-// itself) imports the OPENCODE_-prefixed names. We keep those exported as
-// aliases so the rename is a non-breaking change — callers can migrate to
-// the KILO_ names at their leisure.
-
-/** @deprecated Use {@link KILO_HOSTNAME} instead. */
-export const OPENCODE_HOSTNAME = KILO_HOSTNAME;
-/** @deprecated Use {@link KILO_PORT} instead. */
-export const OPENCODE_PORT = KILO_PORT;
-/** @deprecated Use {@link KILO_BASE_URL} instead. */
-export const OPENCODE_BASE_URL = KILO_BASE_URL;
-/** @deprecated Use {@link KILO_SYSTEM_PROMPT_SUFFIX} instead. */
-export const OPENCODE_SYSTEM_PROMPT_SUFFIX = KILO_SYSTEM_PROMPT_SUFFIX;
 
 // ── State ───────────────────────────────────────────────────────────────────
 
@@ -161,9 +145,6 @@ export function initKiloAgent(
   });
 }
 
-/** @deprecated Use {@link initKiloAgent} — kept for backward compatibility. */
-export const initOpenCodeAgent = initKiloAgent;
-
 /**
  * Background pre-warm of plugin MCP servers. Connects each
  * plugin-provided MCP server to the Kilo HTTP server eagerly so the
@@ -188,9 +169,6 @@ async function prewarmPluginMcpServers(): Promise<void> {
 export function stopKiloServer(): void {
   stopRemoteServer(state, clearModelCatalogCache);
 }
-
-/** @deprecated Use {@link stopKiloServer} — kept for backward compatibility. */
-export const stopOpenCodeServer = stopKiloServer;
 
 // ── Server lifecycle ────────────────────────────────────────────────────────
 
@@ -315,9 +293,6 @@ export function parseStoredKiloModelSelection(value: string): {
     modelID: trimmed,
   };
 }
-
-/** @deprecated Use {@link parseStoredKiloModelSelection} — alias for back-compat. */
-export const parseStoredOpenCodeModelSelection = parseStoredKiloModelSelection;
 
 // ── Internal accessors ─────────────────────────────────────────────────────
 

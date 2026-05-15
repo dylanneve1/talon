@@ -13,11 +13,11 @@ vi.mock("../backend/kilo/server.js", () => ({
     );
   }),
   getConfig: vi.fn(() => undefined),
-  initOpenCodeAgent: vi.fn(),
-  stopOpenCodeServer: vi.fn(),
+  initKiloAgent: vi.fn(),
+  stopKiloServer: vi.fn(),
 }));
 
-const { summarizeOpenCodeAssistantMessages } =
+const { summarizeKiloAssistantMessages } =
   await import("../backend/kilo/index.js");
 
 const { extractPartsSummary, extractAssistantUsage } =
@@ -167,7 +167,7 @@ describe("extractAssistantUsage", () => {
 
 describe("Kilo assistant summaries", () => {
   it("aggregates usage across the full assistant chain for a turn", () => {
-    const summary = summarizeOpenCodeAssistantMessages(
+    const summary = summarizeKiloAssistantMessages(
       [
         {
           info: {
@@ -216,7 +216,7 @@ describe("Kilo assistant summaries", () => {
   });
 
   it("ignores incomplete placeholder assistant messages when selecting the latest snapshot", () => {
-    const summary = summarizeOpenCodeAssistantMessages([
+    const summary = summarizeKiloAssistantMessages([
       {
         info: {
           role: "assistant",
@@ -260,7 +260,7 @@ describe("Kilo assistant summaries", () => {
   });
 
   it("filters out user / system / tool-role messages", () => {
-    const summary = summarizeOpenCodeAssistantMessages([
+    const summary = summarizeKiloAssistantMessages([
       {
         info: { role: "user", time: { created: 50 } },
         parts: [{ type: "text", text: "hi" }],
@@ -287,7 +287,7 @@ describe("Kilo assistant summaries", () => {
   });
 
   it("honours the minCreatedAt cutoff for prior-turn assistant messages", () => {
-    const summary = summarizeOpenCodeAssistantMessages(
+    const summary = summarizeKiloAssistantMessages(
       [
         {
           info: {

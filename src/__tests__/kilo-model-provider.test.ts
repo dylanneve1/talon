@@ -23,8 +23,8 @@ vi.mock("../backend/kilo/server.js", () => ({
     );
   }),
   getConfig: vi.fn(() => undefined),
-  initOpenCodeAgent: vi.fn(),
-  stopOpenCodeServer: vi.fn(),
+  initKiloAgent: vi.fn(),
+  stopKiloServer: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
