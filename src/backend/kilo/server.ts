@@ -67,8 +67,10 @@ const registeredMcpServers = new Set<string>();
 
 /** Loopback hostname Talon binds the Kilo server on — never exposed externally. */
 export const KILO_HOSTNAME = "127.0.0.1";
-/** Default TCP port for the local Kilo server. */
-export const KILO_PORT = 4097;
+/** Default TCP port for the local Kilo server. Overridable via `KILO_PORT`
+ *  env var so integration tests can spawn an isolated Kilo server alongside
+ *  a running production Talon (which holds the default 4097). */
+export const KILO_PORT = Number(process.env.KILO_PORT ?? 4097);
 /** Convenience URL composed from KILO_HOSTNAME + KILO_PORT. */
 export const KILO_BASE_URL = `http://${KILO_HOSTNAME}:${KILO_PORT}`;
 /** MCP server name prefix used to namespace Talon's per-chat MCP registrations. */

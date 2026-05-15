@@ -47,7 +47,9 @@ const modelProviderCache = new Map<string, string>();
 const registeredMcpServers = new Set<string>();
 
 const OPENCODE_HOSTNAME = "127.0.0.1";
-const OPENCODE_PORT = 4096;
+// Overridable via `OPENCODE_PORT` env so integration tests can spawn an
+// isolated server alongside a running production Talon (which holds 4096).
+const OPENCODE_PORT = Number(process.env.OPENCODE_PORT ?? 4096);
 const OPENCODE_BASE_URL = `http://${OPENCODE_HOSTNAME}:${OPENCODE_PORT}`;
 const TALON_MCP_SERVER_NAME = "talon-tools";
 const OPENCODE_SYSTEM_PROMPT_SUFFIX = `
