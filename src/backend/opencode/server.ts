@@ -9,6 +9,7 @@ import {
   createOpencodeClient,
   createOpencodeServer,
   type OpencodeClient,
+  type PermissionRule,
 } from "@opencode-ai/sdk/v2";
 import type { TalonConfig } from "../../util/config.js";
 import {
@@ -32,6 +33,18 @@ let serverHandle: { url: string; close(): void } | null = null;
 let gatewayPortFn: () => number = () => 19876;
 let frontendName: "telegram" | "terminal" | "teams" | "discord" = "telegram";
 const modelProviderCache = new Map<string, string>();
+
+/**
+ * Names of MCP servers we have registered with the OpenCode HTTP server
+ * during this Talon process. OpenCode's `GET /mcp` (what `oc.mcp.status()`
+ * hits) empirically returns `{}` regardless of the actual state, so we
+ * can't trust the server's view — we cache it locally instead. Cleared
+ * on `stopOpenCodeServer` so a fresh process starts over.
+ *
+ * Mirrors the same machinery on the Kilo backend (see
+ * `src/backend/kilo/server.ts`'s `registeredMcpServers`).
+ */
+const registeredMcpServers = new Set<string>();
 
 const OPENCODE_HOSTNAME = "127.0.0.1";
 const OPENCODE_PORT = 4096;
@@ -140,17 +153,43 @@ export async function ensureChatMcpServer(
 ): Promise<string> {
   const serverName = getChatMcpServerName(chatId);
 
-  try {
-    const statusResp = await oc.mcp.status();
-    const mcpServers =
-      (statusResp.data as Record<string, { status?: string }> | undefined) ??
-      {};
-    const talonTools = mcpServers[serverName];
-
-    if (talonTools?.status === "connected") {
-      return serverName;
+  // Disconnect every other chat-namespaced MCP server before connecting
+  // ours. OpenCode (like Kilo) exposes every connected MCP server's
+  // tools to every session — and per-session permission rules only
+  // block *execution*, not *visibility*. With multiple chat servers
+  // connected, a model in chat A could see and call
+  // `talon-tools-<chatB>_send`. Holding only one chat-namespaced
+  // server connected at a time is the only way to actually hide
+  // cross-chat tools from the model.  Plugin servers and the heartbeat
+  // sentinel server are exempt.
+  for (const other of [...registeredMcpServers]) {
+    if (
+      !other.startsWith(`${TALON_MCP_SERVER_NAME}-`) ||
+      other === serverName ||
+      other === `${TALON_MCP_SERVER_NAME}-heartbeat`
+    ) {
+      continue;
     }
+    try {
+      await oc.mcp.disconnect({ name: other });
+      registeredMcpServers.delete(other);
+      log("agent", `Disconnected ${other} MCP server (chat switch)`);
+    } catch (err) {
+      logWarn(
+        "agent",
+        `Failed to disconnect ${other} during chat switch: ${errMsg(err)}`,
+      );
+    }
+  }
 
+  // Local cache short-circuit. OpenCode's GET /mcp returns {} regardless
+  // of state, so we trust our own record of what we registered earlier
+  // in this process.
+  if (registeredMcpServers.has(serverName)) {
+    return serverName;
+  }
+
+  try {
     const toolsPath = new URL("../../core/tools/mcp-server.ts", import.meta.url)
       .pathname;
     await oc.mcp.add({
@@ -165,6 +204,7 @@ export async function ensureChatMcpServer(
         },
       },
     });
+    registeredMcpServers.add(serverName);
     log("agent", `Registered ${serverName} MCP server with OpenCode`);
   } catch (err) {
     logWarn(
@@ -185,19 +225,12 @@ export async function ensurePluginMcpServers(
   const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
   const registered: string[] = [];
 
-  // Check which are already connected
-  let existingServers: Record<string, { status?: string }> = {};
-  try {
-    const statusResp = await oc.mcp.status();
-    existingServers =
-      (statusResp.data as Record<string, { status?: string }> | undefined) ??
-      {};
-  } catch {
-    // status check failed — try to register anyway
-  }
-
+  // Local cache short-circuit. OpenCode's GET /mcp returns {} regardless
+  // of state, so the previous status-walking version of this function
+  // re-registered all 16 plugin MCP servers per turn (~12s of wasted
+  // setup per message). We track our own registrations now.
   for (const [name, cfg] of Object.entries(pluginServers)) {
-    if (existingServers[name]?.status === "connected") {
+    if (registeredMcpServers.has(name)) {
       registered.push(name);
       continue;
     }
@@ -211,6 +244,7 @@ export async function ensurePluginMcpServers(
         },
       });
       registered.push(name);
+      registeredMcpServers.add(name);
       log("agent", `Registered plugin MCP server: ${name}`);
     } catch (err) {
       logWarn(
@@ -258,6 +292,10 @@ export async function disconnectChatMcpServer(
 ): Promise<void> {
   try {
     await oc.mcp.disconnect({ name: serverName });
+    // Drop from the local cache so a future ensureChatMcpServer
+    // re-registers (cache short-circuit otherwise skips a server
+    // OpenCode no longer has).
+    registeredMcpServers.delete(serverName);
   } catch (err) {
     logWarn("agent", `Failed to disconnect ${serverName}: ${errMsg(err)}`);
   }
@@ -266,6 +304,7 @@ export async function disconnectChatMcpServer(
 export function stopOpenCodeServer(): void {
   clientPromise = null;
   modelProviderCache.clear();
+  registeredMcpServers.clear();
   clearModelCatalogCache();
   if (serverHandle) {
     serverHandle.close();
@@ -294,11 +333,38 @@ export async function ensureSession(
     }
   }
 
-  const resp = await oc.session.create({ title: `Chat ${chatId}` });
+  // Per-session permission ruleset. See the equivalent block in
+  // src/backend/kilo/server.ts for the full rationale; in summary:
+  //   1. Allow this chat's MCP tools (`talon-tools-<chatId>_*`).
+  //   2. Deny every other chat's tools (defense in depth — the
+  //      chat-switch disconnect above is the primary mechanism).
+  //   3-5. Auto-allow Kilo/OpenCode built-ins (`tool *`, `edit *`,
+  //      `bash *`) so they don't hang on `permission.asked` waiting
+  //      for a watchdog reply Talon doesn't fire.
+  const ourServerName = getChatMcpServerName(chatId);
+  const permission: PermissionRule[] = [
+    { permission: "tool", pattern: `${ourServerName}_*`, action: "allow" },
+    {
+      permission: "tool",
+      pattern: `${TALON_MCP_SERVER_NAME}-*`,
+      action: "deny",
+    },
+    { permission: "tool", pattern: "*", action: "allow" },
+    { permission: "edit", pattern: "*", action: "allow" },
+    { permission: "bash", pattern: "*", action: "allow" },
+  ];
+
+  const resp = await oc.session.create({
+    title: `Chat ${chatId}`,
+    permission,
+  });
   const data = resp.data as Record<string, unknown> | undefined;
   const newId = (data?.id as string) ?? String(Date.now());
   setSessionId(chatId, newId);
-  log("agent", `[${chatId}] Created OpenCode session: ${newId}`);
+  log(
+    "agent",
+    `[${chatId}] Created OpenCode session: ${newId} (scoped to ${ourServerName}_*)`,
+  );
   return newId;
 }
 

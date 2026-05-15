@@ -174,9 +174,9 @@ describe("kilo server helpers", () => {
 
     // heartbeat MUST never get disconnected — it's the sentinel for
     // outbound tool calls from background agents (heartbeat / dream).
-    const disconnectNames = oc.mcp.disconnect.mock.calls.map(
-      (c: [{ name: string }]) => c[0].name,
-    );
+    const disconnectNames = (
+      oc.mcp.disconnect.mock.calls as Array<[{ name: string }]>
+    ).map((c) => c[0].name);
     expect(disconnectNames).not.toContain("talon-tools-heartbeat");
   });
 
