@@ -84,36 +84,36 @@ const SLOW_MCP_REGISTRATION_MS = 1000;
 /**
  * System-prompt suffix appended to the user-configured system prompt.
  *
- * Strict tool-driven delivery contract — matches the Claude SDK backend
- * (which gets the same behaviour from how Claude Code's tools are
- * trained, no system-prompt instruction needed). Kilo runs against
- * weaker models that don't know the contract by default, so we spell it
- * out: every reply MUST go through `end_turn` / `send` / `react`.
+ * Kilo delivery model: the model's reply reaches the user via either
  *
- * The previous wording offered "plain assistant text" as a second
- * delivery path. The handler never honoured that — trailing prose
- * without a delivery tool was treated as a flow violation and dropped —
- * so weaker models (e.g. DeepSeek free) believed they had replied while
- * the user saw nothing. The suffix below makes the contract explicit.
+ *   1. A `type: "text"` part — what most Kilo-routed models emit by
+ *      default (DeepSeek, GLM, openrouter routes). Talon walks the
+ *      `parts` list at end of turn and ships text-part content via
+ *      `onTextBlock`. Reasoning parts are dropped as scratchpad.
+ *
+ *   2. A delivery tool — `end_turn` / `send` / `react`. The tool itself
+ *      bridges to Telegram, so it's the right path when you need
+ *      reply-to targeting, buttons, photos, polls, etc.
+ *
+ * Both routes work; pick whichever fits the message. The suffix below
+ * keeps it short — the tool descriptions themselves carry the detail.
  */
 export const KILO_SYSTEM_PROMPT_SUFFIX = `
 
-## Kilo Delivery — every reply must go through a delivery tool
+## Kilo Delivery
 
-Talon delivers user-facing replies via tool calls only. Every turn must
-end with one of these — text written outside a tool call does not reach
-the user.
+Two ways to deliver a reply — pick whichever fits:
 
-- \`end_turn(text="...")\` — final reply that closes the turn. Use this
-  for normal conversational responses.
-- \`end_turn()\` (no args) — close the turn silently (no reply needed).
-- \`send(type="text", text="...")\` — mid-turn message (photos, polls,
-  buttons, multiple bubbles). Always close the turn afterwards with
-  \`end_turn()\`.
-- \`react(emoji="...")\` — one-shot emoji acknowledgement.
+- **Plain text** — your assistant text is the reply. Just answer
+  normally. (Reasoning content stays private.)
+- **Delivery tools** — call \`end_turn(text="...", reply_to=N)\` for
+  threaded replies, \`send(type="text"|"photo"|"poll"|...)\` for rich
+  content, or \`react(emoji="...")\` for emoji acknowledgements. Use
+  these when you need reply targeting, buttons, attachments, or
+  multiple bubbles.
 
-If you draft prose, wrap it in \`end_turn(text=...)\` before finishing —
-otherwise the turn ends with no message delivered.
+If you call a delivery tool, don't also repeat the same text in plain
+output — Talon dedupes but it's cleaner to commit to one route.
 `;
 
 // ── Backward-compat aliases ────────────────────────────────────────────────

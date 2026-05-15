@@ -62,7 +62,6 @@ import {
   appendText,
   recordTokens,
   finalizeResponseText,
-  detectFlowViolation,
   formatUserPrompt,
   prepareSystemPrompt,
   extractSessionName,
@@ -290,53 +289,60 @@ export async function handleMessage(
 
   // ── Delivery ──────────────────────────────────────────────────────────────
   //
-  // Kilo's delivery model is fundamentally different from Claude SDK's:
+  // Two routes a reply can reach the user:
   //
-  //   - Claude calls `end_turn(text=...)` as a tool. The text input IS the
-  //     reply; the SDK fires our tool-batch hook which delivers via
-  //     `onTextBlock`. `state.allResponseText` (the model's open-stream
-  //     text) is private scratchpad and dropped.
+  //   1. Delivery tool — `end_turn` / `send` / `react`. The tool itself
+  //      bridges to Telegram (see core/tools/messaging.ts), so the
+  //      message has already been sent by the time we get here. Talon
+  //      records `state.deliveredTextNorms` for dedup; we don't re-emit.
   //
-  //   - Kilo models (DeepSeek, GLM, openrouter routes) emit a
-  //     `type: "text"` part as the natural reply — no end_turn call.
-  //     `finalizePartsIntoState` extracts ONLY text-part content (not
-  //     reasoning) into `state.allResponseText`, and we ship that here
-  //     via `onTextBlock`.
+  //   2. Plain text part — Kilo's default for routed models (DeepSeek,
+  //      GLM, openrouter). `finalizePartsIntoState` extracts text-part
+  //      content (reasoning stays private) into `state.allResponseText`.
+  //      We ship that here via `onTextBlock`.
   //
-  // The flow-violation check (which is meaningful for Claude — there
-  // "trailing prose without end_turn" really is a missed delivery) is
-  // skipped: `responseText` already comes from text parts only,
-  // reasoning never lands in the buffer in the first place. If end_turn
-  // fired anyway (some models do both), `state.deliveredTextNorms`
-  // dedups against `responseText`.
+  // Empty turn fallback: if neither path produced anything, the model
+  // either crashed mid-reasoning or went into a tool-call loop without
+  // delivering. Surface a concise notice so the user isn't left staring
+  // at silence.
+
+  let delivery: { route: "text-part" | "tool" | "empty"; chars: number };
 
   if (
-    onTextBlock &&
-    !state.turnTerminated &&
-    responseText &&
-    !state.deliveredTextNorms.some((d) =>
-      responseText.toLowerCase().includes(d.toLowerCase()),
-    )
+    state.deliveredTextNorms.length > 0 &&
+    (!responseText ||
+      state.deliveredTextNorms.some((d) =>
+        responseText.toLowerCase().includes(d.toLowerCase()),
+      ))
   ) {
-    try {
-      await onTextBlock(responseText);
-    } catch (err) {
-      logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
+    // Tool already delivered (and any text-part content is a duplicate).
+    delivery = {
+      route: "tool",
+      chars: state.deliveredTextNorms.reduce((n, d) => n + d.length, 0),
+    };
+  } else if (responseText && !state.turnTerminated) {
+    // Plain text part — ship it.
+    delivery = { route: "text-part", chars: responseText.length };
+    if (onTextBlock) {
+      try {
+        await onTextBlock(responseText);
+      } catch (err) {
+        logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
+      }
     }
   } else if (
     !state.turnTerminated &&
     !responseText &&
     state.deliveredTextNorms.length === 0
   ) {
-    // Truly empty turn — no text part, no delivery tool. Tell the user
-    // something happened so they aren't staring at silence.
+    delivery = { route: "empty", chars: 0 };
     incrementCounter("scratchpad.empty_turn");
     if (onTextBlock) {
       try {
         await onTextBlock(
-          "⚠️ The model produced no reply (no text part, no delivery tool). " +
-            "This usually means the model went into a reasoning loop without " +
-            "emitting output. Try /model to switch.",
+          state.toolCalls > 0
+            ? "(no reply — model called tools but didn't produce output text)"
+            : "(no reply — model returned no output)",
         );
       } catch (err) {
         logWarn(
@@ -345,13 +351,17 @@ export async function handleMessage(
         );
       }
     }
+  } else {
+    // Edge case: terminated turn with no text and no delivered norms.
+    // Nothing to send (the model legitimately ended silently, e.g.
+    // `end_turn()` with no text). Don't surface the empty-turn warning.
+    delivery = { route: "tool", chars: 0 };
   }
-  // Suppress unused-import warning: detectFlowViolation/formatProsePreview
-  // are still exported helpers used elsewhere (e.g. for diagnostic dumps),
-  // but this handler no longer invokes them on the hot path.
-  void detectFlowViolation;
-  void formatProsePreview;
-  void _retried;
+
+  log(
+    "agent",
+    `[${chatId}] delivery: ${delivery.route} (${delivery.chars} chars)`,
+  );
 
   log(
     "agent",
@@ -385,21 +395,6 @@ export async function handleMessage(
 }
 
 // ── Logging helpers ────────────────────────────────────────────────────────
-
-/**
- * Render the first ~120 chars of dropped trailing prose for the violation
- * log. Newlines collapse to spaces, leading/trailing whitespace trims, and
- * an ellipsis is appended when the content was longer than the cap.
- *
- * Surfaced so operators can tell at a glance whether the model's dropped
- * text was a meaningful reply (worth chasing the contract violation) or
- * idle filler (mostly cosmetic).
- */
-function formatProsePreview(text: string, max = 120): string {
-  const collapsed = text.replace(/\s+/g, " ").trim();
-  if (collapsed.length <= max) return JSON.stringify(collapsed);
-  return JSON.stringify(collapsed.slice(0, max) + "…");
-}
 
 /**
  * Compact summary of which SSE event types fired this turn. `{}` for a
