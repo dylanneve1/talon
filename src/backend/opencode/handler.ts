@@ -10,7 +10,7 @@ import {
   setSessionName,
   resetSession,
 } from "../../storage/sessions.js";
-import { getChatSettings } from "../../storage/chat-settings.js";
+import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -34,6 +34,13 @@ import {
   getOpenCodeTurnSummary,
   type OpenCodeAssistantInfo,
 } from "./sessions.js";
+import {
+  formatUserPrompt,
+  prepareSystemPrompt,
+  extractSessionName,
+  classifyRetry,
+  summarizeUsage,
+} from "../shared/index.js";
 
 export async function handleMessage(
   params: QueryParams,
@@ -60,10 +67,20 @@ export async function handleMessage(
   const toolOverrides = await buildToolOverrides(oc, chatMcpServerName);
   const seenQuestionIds = new Set<string>();
 
-  const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
-  const prompt = isGroup
-    ? `[${senderName}]${msgIdHint}: ${text}`
-    : `${text}${msgIdHint}`;
+  // First-turn system-prompt rebuild + backend suffix. The OpenCode
+  // delivery suffix tells the model to reply as plain text.
+  const systemPrompt = prepareSystemPrompt({
+    config,
+    previousTurns,
+    backendSuffix: OPENCODE_SYSTEM_PROMPT_SUFFIX,
+  });
+
+  const prompt = formatUserPrompt({
+    text,
+    senderName: senderName ?? "user",
+    isGroup,
+    messageId: params.messageId,
+  });
 
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
@@ -76,7 +93,7 @@ export async function handleMessage(
         sessionID: sessionId,
         parts: [{ type: "text", text: prompt }],
         model: { providerID, modelID },
-        system: config.systemPrompt + OPENCODE_SYSTEM_PROMPT_SUFFIX,
+        system: systemPrompt,
         ...(toolOverrides ? { tools: toolOverrides } : {}),
       },
       chatId,
@@ -157,21 +174,21 @@ export async function handleMessage(
     });
 
     if (previousTurns === 0 && text) {
-      const cleanText = text
-        .replace(/^\[.*?\]\s*/g, "")
-        .replace(/\[msg_id:\d+\]\s*/g, "")
-        .trim();
-      if (cleanText) {
-        setSessionName(
-          chatId,
-          cleanText.length > 30 ? cleanText.slice(0, 30) + "..." : cleanText,
-        );
-      }
+      const name = extractSessionName(text);
+      if (name) setSessionName(chatId, name);
     }
 
     log(
       "agent",
-      `[${chatId}] -> (${durationMs}ms${toolCalls > 0 ? ` tools=${toolCalls}` : ""})`,
+      `[${chatId}] -> (${summarizeUsage(
+        {
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheRead: usage.cacheRead,
+          cacheWrite: usage.cacheWrite,
+        },
+        { durationMs, toolCalls },
+      )})`,
     );
     traceMessage(chatId, "out", responseText, { durationMs, toolCalls });
 
@@ -185,11 +202,37 @@ export async function handleMessage(
     };
   } catch (err) {
     const classified = classify(err);
-    if (classified.reason === "session_expired" && !_retried) {
-      logWarn("agent", `[${chatId}] OpenCode session expired, retrying`);
+
+    const decision = classifyRetry({
+      error: classified,
+      activeModel,
+      retried: _retried,
+    });
+
+    if (decision.kind === "reset_and_retry") {
+      logWarn(
+        "agent",
+        `[${chatId}] OpenCode ${decision.reason}, resetting session and retrying`,
+      );
       resetSession(chatId);
       return handleMessage(params, true);
     }
+
+    if (decision.kind === "fallback_model") {
+      logWarn(
+        "agent",
+        `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
+      );
+      resetSession(chatId);
+      const originalModel = getChatSettings(chatId).model;
+      setChatModel(chatId, decision.fallbackModelId);
+      try {
+        return await handleMessage(params, true);
+      } finally {
+        setChatModel(chatId, originalModel);
+      }
+    }
+
     logError("agent", `[${chatId}] OpenCode error: ${classified.message}`);
     throw classified;
   } finally {

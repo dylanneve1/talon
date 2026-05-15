@@ -17,14 +17,10 @@ import {
 } from "../../storage/sessions.js";
 import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
-import { getFallbackModel } from "../../core/models.js";
-import { rebuildSystemPrompt } from "../../util/config.js";
-import { getPluginPromptAdditions } from "../../core/plugin.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
-import { formatFullDatetime } from "../../util/time.js";
-import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
+import { isTurnTerminator } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryParams, QueryResult } from "../../core/types.js";
@@ -39,9 +35,16 @@ import {
   processStreamDelta,
   processAssistantMessage,
   processResultMessage,
-  normalizeForDedupe,
-  isDuplicateOfDelivered,
 } from "./stream.js";
+import {
+  formatUserPrompt,
+  prepareSystemPrompt,
+  extractSessionName,
+  detectFlowViolation,
+  captureDeliveredText,
+  classifyRetry,
+  summarizeUsage,
+} from "../shared/index.js";
 
 // ── Active query store ──────────────────────────────────────────────────────
 // Holds the Query reference for each in-flight chat so gateway actions
@@ -75,19 +78,20 @@ export async function handleMessage(
   const t0 = Date.now();
 
   // Rebuild system prompt on first turn of a new/reset session so identity,
-  // memory, and workspace listing are fresh
-  if (session.turns === 0) {
-    rebuildSystemPrompt(config, getPluginPromptAdditions());
-  }
+  // memory, and workspace listing are fresh. `prepareSystemPrompt` does
+  // this in place (mutates config.systemPrompt) — the Claude SDK reads
+  // from config.systemPrompt later via `buildSdkOptions`, so the rebuild
+  // has to land before that call.
+  prepareSystemPrompt({ config, previousTurns: session.turns });
 
   const { options, activeModel } = buildSdkOptions(chatId);
 
-  const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
-  const nowTag = `[${formatFullDatetime()}]`;
-
-  const prompt = isGroup
-    ? `${nowTag} [${senderName}]${msgIdHint}: ${text}`
-    : `${nowTag}${msgIdHint} ${text}`;
+  const prompt = formatUserPrompt({
+    text,
+    senderName: senderName ?? "user",
+    isGroup,
+    messageId: params.messageId,
+  });
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
 
@@ -103,25 +107,14 @@ export async function handleMessage(
   // Tool names arrive MCP-prefixed (e.g. `mcp__telegram-tools__end_turn`)
   // when routed through MCP — strip the prefix so equality checks match
   // the registry's bare names.
-  const captureDeliveredText = (
+  // `captureDeliveredText` (from shared/) returns the normalized text
+  // norm — push it into state for the post-turn dedup check.
+  const captureIntoState = (
     toolName: string,
     input: Record<string, unknown>,
   ): void => {
-    const bareName = stripMcpPrefix(toolName);
-    let deliveredText: string | undefined;
-    if (bareName === "end_turn" && typeof input.text === "string") {
-      deliveredText = input.text;
-    } else if (
-      bareName === "send" &&
-      input.type === "text" &&
-      typeof input.text === "string"
-    ) {
-      deliveredText = input.text;
-    }
-    if (deliveredText) {
-      const norm = normalizeForDedupe(deliveredText);
-      if (norm) state.deliveredTextNorms.push(norm);
-    }
+    const norm = captureDeliveredText(toolName, input);
+    if (norm) state.deliveredTextNorms.push(norm);
   };
 
   try {
@@ -150,7 +143,7 @@ export async function handleMessage(
         // Notify tool usage + capture delivery-tool text for end-of-turn dedup
         for (const tool of result.tools) {
           incrementCounter(`tool_calls.${tool.name}`);
-          captureDeliveredText(tool.name, tool.input);
+          captureIntoState(tool.name, tool.input);
           // Pass tool.input so the soft-terminator opt-out (e.g. react
           // with `end_turn: false`) keeps state.turnTerminated correctly
           // false — otherwise the trailing-text dedup path mis-treats a
@@ -208,43 +201,33 @@ export async function handleMessage(
     const classified = classify(err);
     incrementCounter(`errors.${classified.reason ?? "unknown"}`);
 
-    // Session expired — reset and retry once
-    if (classified.reason === "session_expired" && !_retried) {
+    const decision = classifyRetry({
+      error: classified,
+      activeModel,
+      retried: _retried,
+    });
+
+    if (decision.kind === "reset_and_retry") {
       logWarn(
         "agent",
-        `[${chatId}] Stale session, retrying with fresh session`,
+        `[${chatId}] ${decision.reason}, resetting session and retrying`,
       );
       resetSession(chatId);
       return handleMessage(params, true);
     }
 
-    // Context length exceeded — safety net for edge cases where SDK
-    // auto-compaction doesn't prevent overflow
-    if (classified.reason === "context_length" && !_retried) {
+    if (decision.kind === "fallback_model") {
       logWarn(
         "agent",
-        `[${chatId}] Context length exceeded, resetting session and retrying`,
+        `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
       );
       resetSession(chatId);
-      return handleMessage(params, true);
-    }
-
-    // Model fallback: if overloaded/timeout, retry with the configured fallback
-    if (!_retried && classified.retryable) {
-      const fallback = getFallbackModel(activeModel);
-      if (fallback) {
-        logWarn(
-          "agent",
-          `[${chatId}] ${classified.reason}, falling back to ${fallback}`,
-        );
-        resetSession(chatId);
-        const originalModel = getChatSettings(chatId).model;
-        setChatModel(chatId, fallback);
-        try {
-          return await handleMessage(params, true);
-        } finally {
-          setChatModel(chatId, originalModel);
-        }
+      const originalModel = getChatSettings(chatId).model;
+      setChatModel(chatId, decision.fallbackModelId);
+      try {
+        return await handleMessage(params, true);
+      } finally {
+        setChatModel(chatId, originalModel);
       }
     }
 
@@ -277,77 +260,55 @@ export async function handleMessage(
 
   // Set a descriptive session name from the first message
   if (session.turns === 0 && text) {
-    const cleanText = text
-      .replace(/^\[.*?\]\s*/g, "")
-      .replace(/\[msg_id:\d+\]\s*/g, "")
-      .trim();
-    if (cleanText) {
-      const name =
-        cleanText.length > 30 ? cleanText.slice(0, 30) + "..." : cleanText;
-      setSessionName(chatId, name);
-    }
+    const name = extractSessionName(text);
+    if (name) setSessionName(chatId, name);
   }
 
   // ── Trailing-prose contract + flow-violation retry ──────────────────────
   // The output stream is private scratchpad by design. Final replies must go
-  // through `end_turn` (canonical) or `send` (mid-turn rich content). When a
-  // turn ends with no tool call AND no trailing prose, that's valid silent
-  // close (model only reacted, or had nothing to do). When the model wrote
-  // prose but didn't route it through a delivery tool, that's a flow
-  // violation — the prose is private scratchpad, dropped from the user's
-  // view. To prevent these from going unnoticed, we re-prompt the model
-  // ONCE with a synthetic system message in the same session: it sees its
-  // broken turn in history + a reminder of the contract, and gets a fresh
-  // turn to deliver via end_turn. If it violates again on the retry, we
-  // give up loudly and accept the silent drop.
-  //
-  // Exception: if a turn-terminator tool (e.g. end_turn) was called, the
-  // model explicitly declared "I'm done" — respect it. Any trailing prose
-  // that slipped in earlier in the same assistant message gets logged but
-  // does NOT re-prompt (would loop endlessly with a model that pairs prose
-  // with end_turn).
-  const trailing = state.lastTrailingText.trim();
-  const flowViolation =
-    trailing.length > 0 &&
-    !state.turnTerminated &&
-    !isDuplicateOfDelivered(trailing, state.deliveredTextNorms);
+  // through `end_turn` (canonical) or `send` (mid-turn rich content). The
+  // shared `detectFlowViolation` decides whether trailing prose constitutes
+  // a missed delivery (and whether to re-prompt the model once with the
+  // synthetic reminder).
+  const violation = detectFlowViolation({
+    trailingText: state.lastTrailingText,
+    turnTerminated: state.turnTerminated,
+    deliveredTextNorms: state.deliveredTextNorms,
+    retried: _retried,
+  });
 
-  if (flowViolation) {
+  if (violation.violated) {
     incrementCounter("scratchpad.trailing_text_dropped");
     log(
       "agent",
-      `[${chatId}] flow violation: trailing prose (${trailing.length} chars) without end_turn/send. ${
-        _retried
-          ? "Already retried — accepting silent drop."
-          : "Re-prompting with reminder."
+      `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
+        violation.shouldRetry
+          ? "Re-prompting with reminder."
+          : "Already retried — accepting silent drop."
       }`,
     );
 
-    if (!_retried) {
+    if (violation.shouldRetry) {
       incrementCounter("scratchpad.flow_violation_retried");
-      const reminder =
-        "[FLOW VIOLATION] You produced text content but didn't call `end_turn` or `send`. " +
-        "Pure prose in your output stream is private scratchpad — it's dropped, the user " +
-        "never sees it. Please retry with the proper flow: " +
-        "`end_turn(text=...)` to deliver a final reply, " +
-        "`end_turn()` (no args) to close silently, or " +
-        "`send(...)` for mid-turn rich content (photos, polls, etc.). " +
-        "Respond now using the correct tool call.";
-      return handleMessage({ ...params, text: reminder }, true);
+      return handleMessage({ ...params, text: violation.reminder }, true);
     }
   }
 
   // ── Build result ──────────────────────────────────────────────────────────
 
   state.allResponseText += state.currentBlockText;
-  const cacheTotal = state.sdkInputTokens + state.sdkCacheRead;
-  const cacheHitPct =
-    cacheTotal > 0 ? Math.round((state.sdkCacheRead / cacheTotal) * 100) : 0;
 
   log(
     "agent",
-    `[${chatId}] -> (${durationMs}ms, in=${state.sdkInputTokens} out=${state.sdkOutputTokens} cache=${cacheHitPct}%` +
-      `${state.toolCalls > 0 ? ` tools=${state.toolCalls}` : ""})`,
+    `[${chatId}] -> (${summarizeUsage(
+      {
+        inputTokens: state.sdkInputTokens,
+        outputTokens: state.sdkOutputTokens,
+        cacheRead: state.sdkCacheRead,
+        cacheWrite: state.sdkCacheWrite,
+      },
+      { durationMs, toolCalls: state.toolCalls },
+    )})`,
   );
   traceMessage(chatId, "out", state.allResponseText, {
     durationMs,
