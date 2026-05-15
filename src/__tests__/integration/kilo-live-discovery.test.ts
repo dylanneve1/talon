@@ -47,6 +47,8 @@ import {
   waitForHealthy,
 } from "./live-backend-helpers.js";
 
+type KiloModelsModule = typeof import("../../backend/kilo/models.js");
+
 const KILO_EXECUTABLE_ENV = "KILO_CODE_EXECUTABLE";
 
 // ── Preflight: locate the kilo CLI. ────────────────────────────────────────
@@ -68,6 +70,9 @@ const HEALTH_TIMEOUT_MS = 15_000;
 
 let kiloProc: ChildProcess | null = null;
 let testClient: KiloClient;
+let getOpenCodeModelCatalog: KiloModelsModule["getOpenCodeModelCatalog"];
+let resolveOpenCodeModelInput: KiloModelsModule["resolveOpenCodeModelInput"];
+let clearModelCatalogCache: KiloModelsModule["clearModelCatalogCache"];
 
 // ── ensureServer mock — points Talon's kilo backend at our test server. ────
 // We mock at module scope BEFORE importing Talon's kilo modules so the mock
@@ -92,13 +97,6 @@ vi.mock("../../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-// Import AFTER the mocks register so the catalog module picks them up.
-const {
-  getOpenCodeModelCatalog,
-  resolveOpenCodeModelInput,
-  clearModelCatalogCache,
-} = await import("../../backend/kilo/models.js");
-
 kiloDescribe("Kilo live discovery (integration)", () => {
   beforeAll(async () => {
     if (!KILO_PRESENT) {
@@ -106,6 +104,13 @@ kiloDescribe("Kilo live discovery (integration)", () => {
         "Kilo CLI is required for this test but `kilo --version` failed. Install @kilocode/cli or unset KILO_LIVE_REQUIRED.",
       );
     }
+
+    // Import AFTER the mocks register so the catalog module picks them up.
+    ({
+      getOpenCodeModelCatalog,
+      resolveOpenCodeModelInput,
+      clearModelCatalogCache,
+    } = await import("../../backend/kilo/models.js"));
 
     // Spawn `kilo serve` in detached-style stdio so its output doesn't
     // contaminate our test output. We capture stdout/stderr to a buffer

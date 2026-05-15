@@ -22,6 +22,8 @@ import {
   waitForHealthy,
 } from "./live-backend-helpers.js";
 
+type OpenCodeModelsModule = typeof import("../../backend/opencode/models.js");
+
 const OPENCODE_EXECUTABLE_ENV = "OPENCODE_EXECUTABLE";
 const OPENCODE_PRESENT = cliAvailable("opencode", OPENCODE_EXECUTABLE_ENV);
 const OPENCODE_REQUIRED = process.env.OPENCODE_LIVE_REQUIRED === "1";
@@ -34,6 +36,10 @@ const HEALTH_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 45_000;
 
 let opencodeProc: ChildProcess | null = null;
 let testClient: OpencodeClient;
+let getOpenCodeModelCatalog: OpenCodeModelsModule["getOpenCodeModelCatalog"];
+let getOpenCodeModelSelectionValue: OpenCodeModelsModule["getOpenCodeModelSelectionValue"];
+let resolveOpenCodeModelInput: OpenCodeModelsModule["resolveOpenCodeModelInput"];
+let clearModelCatalogCache: OpenCodeModelsModule["clearModelCatalogCache"];
 
 vi.mock("../../backend/opencode/server.js", () => {
   return {
@@ -54,13 +60,6 @@ vi.mock("../../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-const {
-  getOpenCodeModelCatalog,
-  getOpenCodeModelSelectionValue,
-  resolveOpenCodeModelInput,
-  clearModelCatalogCache,
-} = await import("../../backend/opencode/models.js");
-
 opencodeDescribe("OpenCode live discovery (integration)", () => {
   beforeAll(async () => {
     if (!OPENCODE_PRESENT) {
@@ -68,6 +67,13 @@ opencodeDescribe("OpenCode live discovery (integration)", () => {
         "OpenCode CLI is required for this test but `opencode --version` failed. Install opencode-ai or unset OPENCODE_LIVE_REQUIRED.",
       );
     }
+
+    ({
+      getOpenCodeModelCatalog,
+      getOpenCodeModelSelectionValue,
+      resolveOpenCodeModelInput,
+      clearModelCatalogCache,
+    } = await import("../../backend/opencode/models.js"));
 
     opencodeProc = spawnCli(
       "opencode",
