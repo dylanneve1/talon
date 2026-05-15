@@ -565,18 +565,33 @@ export async function resolveProviderID(
  * Parse the stored model-selection string into a `{providerID?, modelID}` pair.
  *
  * Kilo model ids frequently contain `/` and `:` inside the model.id itself
- * (e.g. `inclusionai/ling-2.6-1t:free`). A naive `provider/model` splitter
- * mis-treats the `inclusionai/` prefix as the provider, so we always
- * return the whole string as the model id and let `resolveProviderID`
- * look up the real provider from the live catalog.
+ * (e.g. `inclusionai/ling-2.6-1t:free`, `deepseek/deepseek-v4-flash:free`).
+ * A naive `provider/model` splitter mis-treats those vendor prefixes as
+ * the provider, so we generally return the whole string as the model id
+ * and let `resolveProviderID` look up the real provider from the live
+ * catalog.
+ *
+ * Exception: if the value starts with the literal `kilo/` prefix
+ * (Talon's old hint that "this is a kilo-routed model"), strip it AND
+ * pin providerID to `"kilo"`. Otherwise the upstream Kilo router gets
+ * `kilo/deepseek/deepseek-v4-flash:free` as the model id and concats
+ * its own provider in front, producing
+ * `Model not found: opencode/kilo/deepseek/deepseek-v4-flash:free`.
  */
 export function parseStoredKiloModelSelection(value: string): {
   providerID?: string;
   modelID: string;
 } {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("kilo/")) {
+    return {
+      providerID: "kilo",
+      modelID: trimmed.slice("kilo/".length),
+    };
+  }
   return {
     providerID: undefined,
-    modelID: value.trim(),
+    modelID: trimmed,
   };
 }
 

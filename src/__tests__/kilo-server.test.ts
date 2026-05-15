@@ -228,12 +228,27 @@ describe("kilo server helpers", () => {
     ).resolves.toBe("google");
   });
 
-  it("parseStoredOpenCodeModelSelection keeps full slug and trims whitespace", () => {
+  it("parseStoredOpenCodeModelSelection keeps non-kilo slug and trims whitespace", () => {
     expect(
       parseStoredOpenCodeModelSelection("  openrouter/qwen3-235b-a22b:free  "),
     ).toEqual({
       providerID: undefined,
       modelID: "openrouter/qwen3-235b-a22b:free",
+    });
+  });
+
+  it("parseStoredOpenCodeModelSelection strips the leading kilo/ prefix and pins providerID", () => {
+    // Talon stored `kilo/...` as a hint that the model is kilo-routed.
+    // The Kilo upstream router doesn't want that prefix in the model id —
+    // passing it through produces the bug surfaced in prod as
+    // `Model not found: opencode/kilo/deepseek/deepseek-v4-flash:free`.
+    expect(
+      parseStoredOpenCodeModelSelection(
+        " kilo/deepseek/deepseek-v4-flash:free ",
+      ),
+    ).toEqual({
+      providerID: "kilo",
+      modelID: "deepseek/deepseek-v4-flash:free",
     });
   });
 });

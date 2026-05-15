@@ -675,9 +675,20 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
       };
 
       // session.error is observed here for logging; everything else goes
-      // through the shared pure helper.
+      // through the shared pure helper. Kilo's SSE stream is global —
+      // session.error events fire for every session, including the
+      // background heartbeat session — so scope-filter to our own
+      // sessionId before attributing the error to this chat. Without
+      // the scope filter, a heartbeat session.error would get logged
+      // under the chat's [chatId] prefix, which is misleading enough
+      // that it derailed an entire debugging session.
       if (event.type === "session.error") {
         const props = event.properties ?? {};
+        const evtSessionID =
+          typeof props.sessionID === "string" ? props.sessionID : undefined;
+        if (evtSessionID && evtSessionID !== sessionId) {
+          continue;
+        }
         const errProp = props.error as
           | {
               name?: string;
