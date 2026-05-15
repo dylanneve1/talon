@@ -63,6 +63,7 @@ import {
   extractSessionName,
   classifyRetry,
   summarizeUsage,
+  routeDelivery,
 } from "../shared/index.js";
 import { processStreamEvent, finalizePartsIntoState } from "./events.js";
 
@@ -289,106 +290,16 @@ export async function handleMessage(
 
   // ── Delivery ──────────────────────────────────────────────────────────────
   //
-  // Two routes a reply can reach the user:
-  //
-  //   1. Delivery tool — `end_turn` / `send` / `react`. The tool itself
-  //      bridges to Telegram (see core/tools/messaging.ts), so the
-  //      message has already been sent by the time we get here. Talon
-  //      records `state.deliveredTextNorms` for dedup; we don't re-emit.
-  //
-  //   2. Plain text part — Kilo's default for routed models (DeepSeek,
-  //      GLM, openrouter). `finalizePartsIntoState` extracts text-part
-  //      content (reasoning stays private) into `state.allResponseText`.
-  //      We ship that here via `onTextBlock`.
-  //
-  // Empty turn fallback: if neither path produced anything, the model
-  // either crashed mid-reasoning or went into a tool-call loop without
-  // delivering. Surface a concise notice so the user isn't left staring
-  // at silence.
-
-  let delivery: {
-    route: "text-part" | "tool" | "synthetic-error" | "empty";
-    chars: number;
-  };
-
-  if (state.deliveredTextNorms.length > 0 || state.hadBridgeDelivery) {
-    // A bridge-delivering tool (`end_turn` / `send`) already shipped
-    // the message via the bridge. Drop any text-part content — Kilo
-    // models routinely emit a follow-up text part after a tool call
-    // that contains the model's chain-of-thought commentary
-    // ("That worked. The 'No active chat context' error needed the
-    // chat_id explicitly — already fixed.") rather than a separate
-    // reply. Surfacing both produces a visible double-message in
-    // Telegram. We check both `deliveredTextNorms` (tracks `end_turn`
-    // and `send(type="text")` for dedup-by-substring) and
-    // `hadBridgeDelivery` (catches `send(type="photo"|"poll"|...)`
-    // which still puts a message in chat but doesn't carry text args).
-    delivery = {
-      route: "tool",
-      chars: state.deliveredTextNorms.reduce((n, d) => n + d.length, 0),
-    };
-  } else if (state.syntheticError && !responseText) {
-    // Kilo hit an internal failure (e.g. "model hit its output limit
-    // while reasoning") and emitted a synthetic text part instead of a
-    // real reply. We don't ship the raw upstream string — it reads as
-    // if the model itself answered with technical advice. Convert into
-    // a Talon error message that points at the actionable bits.
-    delivery = {
-      route: "synthetic-error",
-      chars: state.syntheticError.length,
-    };
-    incrementCounter("kilo.synthetic_error");
-    logWarn(
-      "agent",
-      `[${chatId}] Kilo synthetic error in response: ${formatSyntheticPreview(state.syntheticError)}`,
-    );
-    if (onTextBlock) {
-      try {
-        await onTextBlock(`⚠️ Kilo: ${state.syntheticError}`);
-      } catch (err) {
-        logWarn(
-          "agent",
-          `[${chatId}] onTextBlock (synthetic-error) failed: ${errMsg(err)}`,
-        );
-      }
-    }
-  } else if (responseText && !state.turnTerminated) {
-    // Plain text part — ship it.
-    delivery = { route: "text-part", chars: responseText.length };
-    if (onTextBlock) {
-      try {
-        await onTextBlock(responseText);
-      } catch (err) {
-        logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
-      }
-    }
-  } else if (
-    !state.turnTerminated &&
-    !responseText &&
-    state.deliveredTextNorms.length === 0
-  ) {
-    delivery = { route: "empty", chars: 0 };
-    incrementCounter("scratchpad.empty_turn");
-    if (onTextBlock) {
-      try {
-        await onTextBlock(
-          state.toolCalls > 0
-            ? "(no reply — model called tools but didn't produce output text)"
-            : "(no reply — model returned no output)",
-        );
-      } catch (err) {
-        logWarn(
-          "agent",
-          `[${chatId}] onTextBlock (empty-turn error) failed: ${errMsg(err)}`,
-        );
-      }
-    }
-  } else {
-    // Edge case: terminated turn with no text and no delivered norms.
-    // Nothing to send (the model legitimately ended silently, e.g.
-    // `end_turn()` with no text). Don't surface the empty-turn warning.
-    delivery = { route: "tool", chars: 0 };
-  }
+  // Decision tree shared with the OpenCode backend — see
+  // `backend/shared/delivery.ts` for the full rationale + the four
+  // routes (tool / synthetic-error / text-part / empty).
+  const delivery = await routeDelivery({
+    backendLabel: "Kilo",
+    chatId,
+    state,
+    responseText,
+    onTextBlock,
+  });
 
   log(
     "agent",
@@ -427,18 +338,6 @@ export async function handleMessage(
 }
 
 // ── Logging helpers ────────────────────────────────────────────────────────
-
-/**
- * One-line preview (~120 chars, whitespace-collapsed) of a synthetic
- * error message for the operator log. Same shape as the prose-preview
- * helper used elsewhere — short enough to fit in a tail, long enough
- * to recognise the underlying Kilo error category at a glance.
- */
-function formatSyntheticPreview(text: string, max = 120): string {
-  const collapsed = text.replace(/\s+/g, " ").trim();
-  if (collapsed.length <= max) return JSON.stringify(collapsed);
-  return JSON.stringify(collapsed.slice(0, max) + "…");
-}
 
 /**
  * Compact summary of which SSE event types fired this turn. `{}` for a

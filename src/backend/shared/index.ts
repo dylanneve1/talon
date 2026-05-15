@@ -64,3 +64,10 @@ export {
   finalizeResponseText,
   type StreamState,
 } from "./stream-state.js";
+
+export {
+  routeDelivery,
+  type DeliveryRoute,
+  type DeliveryDecision,
+  type RouteDeliveryInputs,
+} from "./delivery.js";

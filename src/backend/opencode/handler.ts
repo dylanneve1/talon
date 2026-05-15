@@ -65,6 +65,7 @@ import {
   extractSessionName,
   classifyRetry,
   summarizeUsage,
+  routeDelivery,
 } from "../shared/index.js";
 import {
   processStreamEvent,
@@ -295,86 +296,16 @@ export async function handleMessage(
 
   // ── Delivery ──────────────────────────────────────────────────────────────
   //
-  // Two routes a reply can reach the user:
-  //
-  //   1. Delivery tool — `end_turn` / `send` / `react`. The tool itself
-  //      bridges to Telegram (see core/tools/messaging.ts), so the
-  //      message has already been sent by the time we get here. Talon
-  //      records `state.deliveredTextNorms` for dedup; we don't re-emit.
-  //
-  //   2. Plain text part — OpenCode's default for routed models.
-  //      `finalizePartsIntoState` extracts text-part content (reasoning
-  //      stays private) into `state.allResponseText`. We ship that here
-  //      via `onTextBlock`.
-  //
-  // Empty turn fallback: if neither path produced anything, the model
-  // either crashed mid-reasoning or went into a tool-call loop without
-  // delivering. Surface a concise notice so the user isn't left staring
-  // at silence.
-
-  let delivery: {
-    route: "text-part" | "tool" | "synthetic-error" | "empty";
-    chars: number;
-  };
-
-  if (state.deliveredTextNorms.length > 0 || state.hadBridgeDelivery) {
-    delivery = {
-      route: "tool",
-      chars: state.deliveredTextNorms.reduce((n, d) => n + d.length, 0),
-    };
-  } else if (state.syntheticError && !responseText) {
-    delivery = {
-      route: "synthetic-error",
-      chars: state.syntheticError.length,
-    };
-    incrementCounter("opencode.synthetic_error");
-    logWarn(
-      "agent",
-      `[${chatId}] OpenCode synthetic error in response: ${formatSyntheticPreview(state.syntheticError)}`,
-    );
-    if (onTextBlock) {
-      try {
-        await onTextBlock(`⚠️ OpenCode: ${state.syntheticError}`);
-      } catch (err) {
-        logWarn(
-          "agent",
-          `[${chatId}] onTextBlock (synthetic-error) failed: ${errMsg(err)}`,
-        );
-      }
-    }
-  } else if (responseText && !state.turnTerminated) {
-    delivery = { route: "text-part", chars: responseText.length };
-    if (onTextBlock) {
-      try {
-        await onTextBlock(responseText);
-      } catch (err) {
-        logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
-      }
-    }
-  } else if (
-    !state.turnTerminated &&
-    !responseText &&
-    state.deliveredTextNorms.length === 0
-  ) {
-    delivery = { route: "empty", chars: 0 };
-    incrementCounter("scratchpad.empty_turn");
-    if (onTextBlock) {
-      try {
-        await onTextBlock(
-          state.toolCalls > 0
-            ? "(no reply — model called tools but didn't produce output text)"
-            : "(no reply — model returned no output)",
-        );
-      } catch (err) {
-        logWarn(
-          "agent",
-          `[${chatId}] onTextBlock (empty-turn error) failed: ${errMsg(err)}`,
-        );
-      }
-    }
-  } else {
-    delivery = { route: "tool", chars: 0 };
-  }
+  // Decision tree shared with the Kilo backend — see
+  // `backend/shared/delivery.ts` for the full rationale + the four
+  // routes (tool / synthetic-error / text-part / empty).
+  const delivery = await routeDelivery({
+    backendLabel: "OpenCode",
+    chatId,
+    state,
+    responseText,
+    onTextBlock,
+  });
 
   log(
     "agent",
@@ -413,12 +344,6 @@ export async function handleMessage(
 }
 
 // ── Logging helpers ────────────────────────────────────────────────────────
-
-function formatSyntheticPreview(text: string, max = 120): string {
-  const collapsed = text.replace(/\s+/g, " ").trim();
-  if (collapsed.length <= max) return JSON.stringify(collapsed);
-  return JSON.stringify(collapsed.slice(0, max) + "…");
-}
 
 function formatEventCounts(counts: Record<string, number>): string {
   const entries = Object.entries(counts);
