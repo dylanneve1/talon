@@ -111,6 +111,23 @@ function waitForRunningCount(target: number, timeoutMs = 5000): Promise<void> {
   });
 }
 
+function waitForExecuteCalls(count: number, timeoutMs = 5000): Promise<void> {
+  return new Promise((res, rej) => {
+    const start = Date.now();
+    const tick = () => {
+      if (executeSpy.mock.calls.length >= count) return res();
+      if (Date.now() - start > timeoutMs)
+        return rej(
+          new Error(
+            `timeout waiting for ${count} execute call(s), got ${executeSpy.mock.calls.length}`,
+          ),
+        );
+      setTimeout(tick, 25);
+    };
+    tick();
+  });
+}
+
 beforeAll(() => {
   tmpRoot = mkdtempSync(resolve(tmpdir(), "talon-trigger-test-"));
   mkdirSync(tmpRoot, { recursive: true });
@@ -177,8 +194,7 @@ describe("trigger supervisor", () => {
     spawnTrigger(t);
     await waitForStatus(t.id, (s) => s === "fired");
 
-    // The terminal fire is async, so wait a beat for the dispatcher call to land
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForExecuteCalls(2);
     expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
     const prompts = executeSpy.mock.calls.map((c) => c[0].prompt as string);
     expect(prompts.some((p) => p.includes("alpha"))).toBe(true);
@@ -227,6 +243,7 @@ describe("trigger supervisor", () => {
     await shutdownTriggers();
     await waitForStatus(a.id, (s) => s === "terminated");
     await waitForStatus(b.id, (s) => s === "terminated");
+    await waitForRunningCount(0);
     expect(getRunningCount()).toBe(0);
   });
 

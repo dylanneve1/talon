@@ -113,6 +113,23 @@ function waitForStatus(
   });
 }
 
+function waitForExecuteCalls(count: number, timeoutMs = 8000): Promise<void> {
+  return new Promise((res, rej) => {
+    const start = Date.now();
+    const tick = () => {
+      if (executeSpy.mock.calls.length >= count) return res();
+      if (Date.now() - start > timeoutMs)
+        return rej(
+          new Error(
+            `timeout waiting for ${count} execute call(s), got ${executeSpy.mock.calls.length}`,
+          ),
+        );
+      setTimeout(tick, 25);
+    };
+    tick();
+  });
+}
+
 beforeAll(() => {
   tmpRoot = mkdtempSync(resolve(tmpdir(), "talon-trig-ext-"));
   mkdirSync(tmpRoot, { recursive: true });
@@ -386,8 +403,7 @@ describe("triggers — dispatch error", () => {
     spawnTrigger(t);
     // Status is set before the dispatch in finalizeExit; waitForStatus resolves fast
     await waitForStatus(t.id, (s) => s === "fired" || s === "errored");
-    // Give the rejection microtask a tick to land in the catch block
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForExecuteCalls(1);
     // The trigger is in a terminal state regardless of the dispatch error
     expect(["fired", "errored"]).toContain(getTrigger(t.id)!.status);
     // execute was called once (and rejected)
@@ -418,8 +434,7 @@ describe("triggers — mid-run TALON_FIRE", () => {
     });
     spawnTrigger(t);
     await waitForStatus(t.id, (s) => s === "fired");
-    // Allow the non-terminal fire microtask to settle
-    await new Promise((r) => setTimeout(r, 50));
+    await waitForExecuteCalls(2);
     // At least 2 execute calls: mid-run "signalled" + terminal "fired"
     expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
     const prompts = executeSpy.mock.calls.map((c) => c[0].prompt as string);
@@ -438,7 +453,7 @@ describe("triggers — mid-run TALON_FIRE", () => {
     spawnTrigger(t);
     // Wait for the mid-run fire to dispatch (it happens before the script exits)
     await waitForStatus(t.id, (s) => s === "running");
-    await new Promise((r) => setTimeout(r, 200));
+    await waitForExecuteCalls(1);
     expect(executeSpy.mock.calls.length).toBeGreaterThanOrEqual(1);
     const midPrompt = executeSpy.mock.calls[0][0].prompt as string;
     expect(midPrompt).toMatch(/Status: signalled/);
@@ -607,21 +622,23 @@ describe("triggers — finalizeExit without prior spawn", () => {
 // ── Timeout timer fires after child already exited (if(!c) true arm) ──────
 
 describe("triggers — timeout timer fires after child has already exited", () => {
-  it("if(!c) return true arm — child gone before timer fires", async () => {
-    // timeoutSeconds=0 → Math.max(0,1)*1000 = 1000ms timer
-    // Script exits immediately (~50ms), finalizeExit deletes child from the map.
-    // Timer fires at 1000ms → children.get(id) = undefined → if (!c) return (true arm).
+  it("if(!c) return true arm — child gone before timer fires", () => {
     const base = makeTrigger({ body: "exit 0\n" });
-    // Reduce timeout to 0 (→ 1s) so the timer fires within the test window
-    updateTrigger(base.id, { timeoutSeconds: 0 });
+    const strayTimer = setTimeout(() => undefined, 60_000);
+    strayTimer.unref();
+
+    updateTrigger(base.id, { status: "running", timeoutSeconds: 0 });
     const t = getTrigger(base.id)!;
-    spawnTrigger(t);
-    await waitForStatus(t.id, (s) => s === "fired");
-    // Wait >1s so the timer fires and exercises the if(!c) return branch
-    await new Promise((r) => setTimeout(r, 1200));
-    // Only one execute call — the "fired" dispatch. Timer returned early.
-    expect(executeSpy).toHaveBeenCalledTimes(1);
-  }, 6000);
+    _internals.timeouts.set(t.id, strayTimer);
+
+    _internals.handleTimeout(t);
+
+    clearTimeout(strayTimer);
+    expect(_internals.timeouts.has(t.id)).toBe(false);
+    expect(getTrigger(t.id)!.status).toBe("running");
+    expect(getTrigger(t.id)!.lastError).toBeUndefined();
+    expect(executeSpy).not.toHaveBeenCalled();
+  });
 });
 
 // ── Child process emits 'error' event (line 152 handler) ─────────────────

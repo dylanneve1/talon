@@ -103,11 +103,30 @@ export function spawnTrigger(trigger: Trigger): void {
     return;
   }
 
+  let started = false;
+  let failedBeforeStart = false;
+  const failBeforeStart = (message: string) => {
+    if (failedBeforeStart) return;
+    failedBeforeStart = true;
+    failTrigger(trigger, message);
+  };
+
+  child.on("error", (err) => {
+    if (!started) {
+      failBeforeStart(
+        `spawn failed: ${err instanceof Error ? err.message : err}`,
+      );
+      return;
+    }
+    logError("triggers", `Child error [${trigger.id}]`, err);
+  });
+
   if (!child.pid) {
-    failTrigger(trigger, "spawn returned without a PID");
+    failBeforeStart("spawn returned without a PID");
     return;
   }
 
+  started = true;
   children.set(trigger.id, child);
   lineBuffers.set(trigger.id, []);
 
@@ -156,10 +175,6 @@ export function spawnTrigger(trigger: Trigger): void {
     });
   }
 
-  child.on("error", (err) => {
-    logError("triggers", `Child error [${trigger.id}]`, err);
-  });
-
   child.on("exit", (code, signal) => {
     finalizeExit(trigger.id, code, signal).catch((err) =>
       logError("triggers", `finalizeExit failed [${trigger.id}]`, err),
@@ -169,25 +184,27 @@ export function spawnTrigger(trigger: Trigger): void {
   // Hard timeout
   const timeoutMs =
     Math.min(Math.max(trigger.timeoutSeconds, 1), 7 * 24 * 60 * 60) * 1000;
-  const timer = setTimeout(() => {
-    timeouts.delete(trigger.id);
-    const c = children.get(trigger.id);
-    if (!c) return;
-    log(
-      "triggers",
-      `Timeout for "${trigger.name}" [${trigger.id}] after ${trigger.timeoutSeconds}s — killing`,
-    );
-    updateTrigger(trigger.id, {
-      status: "timed_out",
-      lastError: `Timed out after ${trigger.timeoutSeconds}s`,
-    });
-    // Terminal status — persist now so a crash before the 10s autosave
-    // doesn't leave us thinking this trigger is still "running" on next load.
-    persistNow();
-    killChild(trigger.id, c);
-  }, timeoutMs);
+  const timer = setTimeout(() => handleTimeout(trigger), timeoutMs);
   timer.unref();
   timeouts.set(trigger.id, timer);
+}
+
+function handleTimeout(trigger: Trigger): void {
+  timeouts.delete(trigger.id);
+  const c = children.get(trigger.id);
+  if (!c) return;
+  log(
+    "triggers",
+    `Timeout for "${trigger.name}" [${trigger.id}] after ${trigger.timeoutSeconds}s — killing`,
+  );
+  updateTrigger(trigger.id, {
+    status: "timed_out",
+    lastError: `Timed out after ${trigger.timeoutSeconds}s`,
+  });
+  // Terminal status — persist now so a crash before the 10s autosave
+  // doesn't leave us thinking this trigger is still "running" on next load.
+  persistNow();
+  killChild(trigger.id, c);
 }
 
 function commandForLanguage(
@@ -197,7 +214,10 @@ function commandForLanguage(
     case "bash":
       return { cmd: "bash", args: [] };
     case "python":
-      return { cmd: "python3", args: [] };
+      return {
+        cmd: process.platform === "win32" ? "python" : "python3",
+        args: [],
+      };
     case "node":
       return { cmd: "node", args: [] };
   }
@@ -473,6 +493,7 @@ export const _internals = {
   timeouts,
   logStreams,
   handleStdoutLine,
+  handleTimeout,
   finalizeExit,
 };
 

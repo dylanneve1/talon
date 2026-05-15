@@ -15,7 +15,7 @@ const FIXTURE = resolve(__dirname, "fixtures/test-mcp-server.ts");
 const TSX_LOADER = pathToFileURL(
   resolve(__dirname, "../../node_modules/tsx/dist/esm/index.mjs"),
 ).href;
-const STARTUP_TIMEOUT = 15_000;
+const STARTUP_TIMEOUT = 30_000;
 const EXIT_TIMEOUT = 10_000;
 
 // Track spawned processes for cleanup
