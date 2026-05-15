@@ -146,9 +146,12 @@ export function validateCronExpression(
   try {
     const cron = new Cron(expr, { timezone: timezone ?? undefined });
     const nextDate = cron.nextRun();
+    if (!nextDate) {
+      return { valid: false, error: "Expression has no future occurrences" };
+    }
     return {
       valid: true,
-      next: (nextDate as Date).toISOString(),
+      next: nextDate.toISOString(),
     };
   } catch (err) {
     return {

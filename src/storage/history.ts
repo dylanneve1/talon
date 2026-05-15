@@ -77,7 +77,7 @@ export function loadHistory(): void {
       /* backup also corrupt */
     }
     logError(
-      "sessions",
+      "history",
       "History data corrupt and no valid backup — starting fresh",
     );
   }

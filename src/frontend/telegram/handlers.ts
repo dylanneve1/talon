@@ -1162,6 +1162,7 @@ export async function handleStickerMessage(
 ): Promise<void> {
   if (!ctx.message || !ctx.chat || !shouldHandleInGroup(ctx)) return;
   if (!(await isAccessAllowed(ctx, bot))) return;
+  if (ctx.from?.id && isUserRateLimited(ctx.from.id)) return;
 
   const chatId = String(ctx.chat.id);
   const isGroup = ctx.chat.type === "group" || ctx.chat.type === "supergroup";

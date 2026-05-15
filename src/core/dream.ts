@@ -30,6 +30,8 @@ export type DreamState = {
   last_run: number;
   /** Human-readable ISO timestamp of the last completed dream run. */
   last_run_at?: string;
+  /** Unix millisecond timestamp of the last time a dream was started (success or failure). */
+  last_started?: number;
   /** "idle" when no dream is running, "running" while one is active. */
   status: "idle" | "running";
 };
@@ -39,6 +41,7 @@ export type DreamState = {
 const DREAM_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const DREAM_STATE_FILE = pathFiles.dreamState;
 const DREAM_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute max
+const DREAM_ABORT_GRACE_MS = 30 * 1000; // wait up to 30s for SDK to honour abort
 const DREAM_LOGS_DIR = resolve(dirs.logs, "dreams");
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -96,24 +99,29 @@ export async function forceDream(): Promise<void> {
 async function executeDream(trigger: "auto" | "forced"): Promise<void> {
   const state = readDreamState();
   const now = Date.now();
+  const previousLastRun = state?.last_run ?? 0;
 
   dreaming = true;
-  writeDreamState({ last_run: now, status: "running" });
+  // Preserve last_run from the previous completed run so a crash between here
+  // and completion doesn't reset the 12-hour interval to the start of the
+  // failed run (which would suppress the next dream for up to 12h from the
+  // crash). Use a separate last_started to track when this attempt began.
+  writeDreamState({ last_run: previousLastRun, last_started: now, status: "running" });
   log(
     "dream",
-    `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`,
+    `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${previousLastRun ? new Date(previousLastRun).toISOString() : "never"})`,
   );
 
   try {
-    const dreamLogPath = await runDreamAgent(state?.last_run ?? 0);
-    writeDreamState({ last_run: Date.now(), status: "idle" });
+    const dreamLogPath = await runDreamAgent(previousLastRun);
+    writeDreamState({ last_run: Date.now(), last_started: now, status: "idle" });
     log(
       "dream",
       `Memory consolidation complete (${trigger}), log: ${dreamLogPath}`,
     );
   } catch (err) {
     logError("dream", `Memory consolidation failed (${trigger})`, err);
-    writeDreamState({ last_run: Date.now(), status: "idle" });
+    writeDreamState({ last_run: previousLastRun, last_started: now, status: "idle" });
     if (trigger === "forced") throw err;
   } finally {
     dreaming = false;
@@ -195,6 +203,8 @@ If commands fail, log the error and continue — this stage is optional.`
     `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
   );
 
+  const abortController = new AbortController();
+
   const options = {
     model,
     systemPrompt: configRef.mempalace
@@ -203,6 +213,7 @@ If commands fail, log the error and continue — this stage is optional.`
     cwd: workspace,
     permissionMode: "bypassPermissions" as const,
     allowDangerouslySkipPermissions: true,
+    abortController,
     ...(configRef.claudeBinary
       ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
       : {}),
@@ -213,12 +224,18 @@ If commands fail, log the error and continue — this stage is optional.`
     disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
   };
 
+  let timeoutFired = false;
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    const t = setTimeout(
-      () => reject(new Error("Dream agent timed out")),
-      DREAM_TIMEOUT_MS,
-    );
+    const t = setTimeout(() => {
+      timeoutFired = true;
+      try {
+        abortController.abort();
+      } catch {
+        /* ignore */
+      }
+      reject(new Error("Dream agent timed out"));
+    }, DREAM_TIMEOUT_MS);
     t.unref(); // Don't prevent Node.js from exiting cleanly during shutdown
     timeoutHandle = t;
   });
@@ -240,13 +257,33 @@ If commands fail, log the error and continue — this stage is optional.`
   try {
     await Promise.race([agentPromise, timeoutPromise]);
   } catch (err) {
+    const wasTimeout = timeoutFired;
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+      timeoutHandle = null;
+    }
     appendDreamLog(
       dreamLogFile,
       `\n---\n**Dream FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
-    // On timeout, wait for the agent to actually finish before releasing the
-    // dreaming lock to prevent overlapping dream runs
-    await agentPromise.catch(() => {});
+    if (wasTimeout) {
+      // Give the SDK a bounded grace window to honour the abort signal.
+      // If it still hasn't settled we release the dreaming lock anyway —
+      // better to allow the next dream than hang forever.
+      const settled = await raceWithTimeout(
+        agentPromise.catch(() => "settled" as const),
+        DREAM_ABORT_GRACE_MS,
+      );
+      if (settled === "timed_out") {
+        logWarn(
+          "dream",
+          `Dream SDK ignored abort after ${DREAM_ABORT_GRACE_MS}ms — releasing lock`,
+        );
+      }
+    } else {
+      // Non-timeout failure — agentPromise has already settled.
+      await agentPromise.catch(() => {});
+    }
     throw err;
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -377,5 +414,25 @@ function writeDreamState(state: DreamState): void {
     );
   } catch (err) {
     logError("dream", "Failed to write dream state", err);
+  }
+}
+
+// ── Async helpers ────────────────────────────────────────────────────────────
+
+async function raceWithTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+): Promise<T | "timed_out"> {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<"timed_out">((resolve) => {
+        t = setTimeout(() => resolve("timed_out"), ms);
+        t.unref();
+      }),
+    ]);
+  } finally {
+    if (t) clearTimeout(t);
   }
 }

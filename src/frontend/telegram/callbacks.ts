@@ -18,7 +18,7 @@ import {
   enablePulse,
   isPulseEnabled,
 } from "../../core/pulse.js";
-import { handleCallbackQuery } from "./handlers.js";
+import { handleCallbackQuery, isAccessAllowed } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
 import {
   renderSettingsText,
@@ -279,7 +279,11 @@ export function registerCallbacks(
       return;
     }
 
-    // Forward other callbacks to the AI backend
+    // Forward other callbacks to the AI backend — access-controlled
+    if (!(await isAccessAllowed(ctx, bot))) {
+      await ctx.answerCallbackQuery().catch(() => {});
+      return;
+    }
     handleCallbackQuery(ctx, bot, config);
   });
 }

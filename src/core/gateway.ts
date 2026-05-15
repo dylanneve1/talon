@@ -47,7 +47,7 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
         const classified = classify(err);
         if (!classified.retryable) {
           // Wrap in AbortError to prevent further retries
-          throw new AbortError(classified);
+          throw new AbortError(classified.message);
         }
         const delayMs =
           classified.retryAfterMs ?? 1000 * Math.pow(2, attempt - 1);
@@ -189,7 +189,7 @@ export class Gateway {
       // String-id routing (Teams) — must match an active context.
       chatId = this.findContextByStringId(rawChatId);
     }
-    if (!chatId) {
+    if (chatId == null) {
       return { ok: false, error: "No active chat context" };
     }
 
