@@ -16,6 +16,7 @@ import {
   createKiloClient,
   createKiloServer,
   type KiloClient,
+  type PermissionRule,
 } from "@kilocode/sdk/v2";
 import type { TalonConfig } from "../../util/config.js";
 import {
@@ -482,29 +483,50 @@ export async function ensureSession(
     }
   }
 
-  const resp = await oc.session.create({ title: `Chat ${chatId}` });
+  // Per-session permission rules. Two jobs:
+  //
+  //   1. Hide other chats' MCP tools from this session. Kilo exposes
+  //      every registered MCP server's tools to every session by default,
+  //      so a model in chat A would happily call
+  //      `talon-tools-<chatB>_send`. The bridge then routes to chat B,
+  //      which fails the gateway's active-context check and returns
+  //      "No active chat context". Or, in the cross-chat case where
+  //      chat B IS active, the model in chat A could leak content into
+  //      chat B. Deny pattern blocks both.
+  //
+  //   2. Auto-allow Kilo's built-in tools (read / bash / glob / ...) so
+  //      they don't sit in `permission.asked` waiting for a reply that
+  //      never arrives — Talon's question watchdog only handles
+  //      `question.*` events, not `permission.*`. Without an allow
+  //      rule the model's first `read` call hung the entire turn.
+  //
+  // Rules are evaluated in order; first match wins. (See Kilo's
+  // `PermissionRule` type — `permission` is the rule category, `pattern`
+  // is a glob.)
+  const ourServerName = getChatMcpServerName(chatId);
+  const permission: PermissionRule[] = [
+    { permission: "tool", pattern: `${ourServerName}_*`, action: "allow" },
+    {
+      permission: "tool",
+      pattern: `${TALON_MCP_SERVER_NAME}-*`,
+      action: "deny",
+    },
+    { permission: "tool", pattern: "*", action: "allow" },
+    { permission: "edit", pattern: "*", action: "allow" },
+    { permission: "bash", pattern: "*", action: "allow" },
+  ];
+
+  const resp = await oc.session.create({
+    title: `Chat ${chatId}`,
+    permission,
+  });
   const data = resp.data as Record<string, unknown> | undefined;
   const newId = (data?.id as string) ?? String(Date.now());
   setSessionId(chatId, newId);
-  log("agent", `[${chatId}] Created Kilo session: ${newId}`);
-
-  // Auto-grant all permissions for this session. Talon manages its own
-  // tool authorisation via the per-chat MCP tool overrides; Kilo's
-  // permission prompts add a second gate that nobody answers, which
-  // hangs Kilo's built-in tools (`read`, `bash`, etc.) in
-  // `permission.asked` state forever. Symptom in prod: a group turn
-  // where the model called `read` sat with `tool=read status=running`
-  // and the SSE iterator waited for a `turn.close` that never arrived.
-  // Equivalent to the Claude SDK backend's `permissionMode:
-  // "bypassPermissions"`.
-  try {
-    await oc.permission.allowEverything({ enable: true, sessionID: newId });
-  } catch (err) {
-    logWarn(
-      "agent",
-      `[${chatId}] permission.allowEverything failed for ${newId}: ${errMsg(err)}`,
-    );
-  }
+  log(
+    "agent",
+    `[${chatId}] Created Kilo session: ${newId} (scoped to ${ourServerName}_*)`,
+  );
 
   return newId;
 }

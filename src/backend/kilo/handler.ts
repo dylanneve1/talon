@@ -42,7 +42,6 @@ import {
   ensureSession,
   ensureChatMcpServer,
   ensurePluginMcpServers,
-  buildToolOverrides,
   resolveProviderID,
   parseStoredKiloModelSelection,
   getConfig,
@@ -117,9 +116,14 @@ export async function handleMessage(
       (selectedProviderID ? "" : " (provider via catalog lookup)"),
   );
   const sessionId = await ensureSession(oc, chatId);
-  const chatMcpServerName = await ensureChatMcpServer(oc, chatId);
+  await ensureChatMcpServer(oc, chatId);
   await ensurePluginMcpServers(oc, chatId);
-  const toolOverrides = await buildToolOverrides(oc, chatMcpServerName);
+  // Note: we deliberately don't pass `tools` to promptAsync below.
+  // The session was created with a `permission` ruleset
+  // (see ensureSession in server.ts) that allow-lists *this* chat's
+  // MCP tools and deny-lists other chats' tools, plus auto-allows
+  // built-in `read` / `bash` / `edit`. The deprecated `tools` map
+  // and the per-prompt overrides it required are subsumed by that.
 
   // Build the prompt (time tag + sender + msg_id reference)
   const prompt = formatUserPrompt({
@@ -170,7 +174,6 @@ export async function handleMessage(
       systemPrompt,
       providerID,
       modelID,
-      toolOverrides,
       state,
       chatId,
       seenQuestionIds,
@@ -461,7 +464,6 @@ interface RunKiloTurnInputs {
   systemPrompt: string;
   providerID: string;
   modelID: string;
-  toolOverrides: Record<string, boolean> | undefined;
   state: ReturnType<typeof createStreamState>;
   chatId: string;
   seenQuestionIds: Set<string>;
@@ -506,7 +508,6 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     systemPrompt,
     providerID,
     modelID,
-    toolOverrides,
     state,
     chatId,
     seenQuestionIds,
@@ -563,12 +564,15 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
   try {
     // Fire and forget — promptAsync returns immediately. The HTTP POST
     // itself can't hang us; the await below is on the SSE close event.
+    // No `tools` field: the deprecated per-prompt tool override map has
+    // been merged into session-level `permission` rules, which we set in
+    // ensureSession (server.ts). That ruleset already constrains tool
+    // visibility per chat — passing `tools` here would be redundant.
     await oc.session.promptAsync({
       sessionID: sessionId,
       parts: [{ type: "text", text: prompt }],
       model: { providerID, modelID },
       system: systemPrompt,
-      ...(toolOverrides ? { tools: toolOverrides } : {}),
     });
 
     // Await turn completion via SSE. Resolves when the iterator hits a

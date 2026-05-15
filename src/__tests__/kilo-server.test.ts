@@ -187,36 +187,36 @@ describe("kilo server helpers", () => {
     expect(setSessionIdMock).toHaveBeenCalledWith("chat-a", "new-1");
   });
 
-  it("ensureSession enables permission.allowEverything for newly created sessions", async () => {
-    // Without this, Kilo's built-in tools (`read`, `bash`, ...) raise a
-    // `permission.asked` event mid-turn. Talon doesn't auto-reply to
-    // permission events (only to `question.*`), so the tool sits in
-    // `running` forever and the SSE iterator never sees a `turn.close`
-    // — the symptom that made every group-chat turn hang in prod.
+  it("ensureSession scopes the new session's permission ruleset to this chat's MCP server", async () => {
+    // Per-session permission rules do two jobs:
+    //   1. Hide other chats' MCP tools so a model in chat A can't call
+    //      `talon-tools-<chatB>_send` (cross-chat leak / "No active
+    //      chat context" gateway error).
+    //   2. Auto-allow Kilo's built-ins (`read`, `bash`, `edit`) so
+    //      they don't sit in `permission.asked` waiting for a reply
+    //      that never comes — Talon's question watchdog only handles
+    //      `question.*` events, not `permission.*`.
+    // The deprecated per-prompt `tools` map and the previous
+    // `permission.allowEverything` workaround are subsumed by this.
     const oc = makeClient();
     getSessionMock.mockReturnValueOnce({});
     oc.session.create.mockResolvedValueOnce({ data: { id: "new-perm-1" } });
 
-    await ensureSession(oc as never, "chat-a");
+    await ensureSession(oc as never, "chat/a");
 
-    expect(oc.permission.allowEverything).toHaveBeenCalledWith({
-      enable: true,
-      sessionID: "new-perm-1",
-    });
-  });
-
-  it("ensureSession swallows permission.allowEverything failures", async () => {
-    // Kilo versions without the allowEverything endpoint must not crash
-    // the session creation path — the worst case is permission prompts
-    // hang the next turn, which is no worse than today's behaviour.
-    const oc = makeClient();
-    getSessionMock.mockReturnValueOnce({});
-    oc.session.create.mockResolvedValueOnce({ data: { id: "new-perm-2" } });
-    oc.permission.allowEverything.mockRejectedValueOnce(new Error("404"));
-
-    await expect(ensureSession(oc as never, "chat-a")).resolves.toBe(
-      "new-perm-2",
-    );
+    expect(oc.session.create).toHaveBeenCalledTimes(1);
+    const args = oc.session.create.mock.calls[0][0] as {
+      title?: string;
+      permission?: Array<{ permission: string; pattern: string; action: string }>;
+    };
+    expect(args.title).toBe("Chat chat/a");
+    expect(args.permission).toEqual([
+      { permission: "tool", pattern: "talon-tools-chat_a_*", action: "allow" },
+      { permission: "tool", pattern: "talon-tools-*", action: "deny" },
+      { permission: "tool", pattern: "*", action: "allow" },
+      { permission: "edit", pattern: "*", action: "allow" },
+      { permission: "bash", pattern: "*", action: "allow" },
+    ]);
   });
 
   it("disconnectChatMcpServer swallows disconnect errors", async () => {
