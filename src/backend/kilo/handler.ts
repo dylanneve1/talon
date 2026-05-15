@@ -648,7 +648,17 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
       if (abortSignal.aborted) break;
       if (!evt || typeof evt !== "object") continue;
 
-      const event = evt as {
+      // Kilo's SSE wire format wraps every event in `{payload: {type, properties}}`
+      // — confirmed by curling `/global/event` directly. The earlier handler
+      // read `evt.type` directly which was always undefined, so EVERY event
+      // got dropped (the `events=none` summary was a 100% miss rate). Unwrap
+      // here so type/properties land where the rest of the loop expects them.
+      const payload =
+        evt && typeof evt === "object" && "payload" in evt
+          ? (evt as { payload?: unknown }).payload
+          : evt;
+      if (!payload || typeof payload !== "object") continue;
+      const event = payload as {
         type?: string;
         properties?: Record<string, unknown>;
       };
