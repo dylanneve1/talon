@@ -743,7 +743,19 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
               data?: Record<string, unknown>;
             }
           | undefined;
-        if (errProp) {
+        // MessageAbortedError is OUR own abort signal — fired when a
+        // terminator tool (`end_turn` / `send` / `react`) led us to call
+        // `oc.session.abort` to short-circuit the model's wrap-up
+        // round-trip. It's the EXPECTED close path, not an upstream
+        // failure. Don't stash it on syntheticError (would surface as
+        // `⚠️ Kilo: MessageAbortedError` to the user) and don't log it
+        // as a warning. Just exit the SSE loop cleanly.
+        const isOurAbort =
+          state.turnTerminated &&
+          (errProp?.name === "MessageAbortedError" ||
+            /abort/i.test(errProp?.name ?? "") ||
+            /abort/i.test(errProp?.message ?? ""));
+        if (errProp && !isOurAbort) {
           const detail = [
             errProp.name && `name=${errProp.name}`,
             errProp.message && `message=${errProp.message}`,
