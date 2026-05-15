@@ -283,7 +283,7 @@ Commands: `/model`, `/effort`, `/reset`, `/status`, `/help`
 docker compose up -d
 ```
 
-**Systemd:** `talon.service` included in the repository.
+**Systemd:** unit file at `packaging/systemd/talon.service` — copy to `/etc/systemd/system/`, set `User=` and `WorkingDirectory=`, then `systemctl enable --now talon`.
 
 **Health endpoint:** `GET http://localhost:19876/health` returns JSON with uptime, memory, queue depth, active sessions, and last activity timestamp.
 
