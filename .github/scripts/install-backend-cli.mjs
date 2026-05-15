@@ -136,6 +136,10 @@ function genericExecutableCandidates(binary, prefix) {
     : [join(prefix, "bin", binary)];
 }
 
+function globalBinDir(prefix) {
+  return process.platform === "win32" ? prefix : join(prefix, "bin");
+}
+
 function commandFor(binary) {
   if (process.platform !== "win32") return binary;
 
@@ -185,8 +189,21 @@ console.log(`${config.sdkPackage} ${sdk.version}`);
 console.log(`Installing ${spec}`);
 runNpm(["install", "--global", spec], { stdio: "inherit" });
 
+console.log(`Verifying global npm install for ${config.cliPackage}`);
+runNpm(["list", "--global", "--depth=0", config.cliPackage], {
+  stdio: "inherit",
+});
+
 const root = npmOutput(["root", "--global"]);
 const prefix = npmOutput(["prefix", "--global"]);
+const binDir = globalBinDir(prefix);
+console.log(`Global npm root: ${root}`);
+console.log(`Global npm prefix: ${prefix}`);
+console.log(`Global npm bin: ${binDir}`);
+if (process.env.GITHUB_PATH) {
+  appendFileSync(process.env.GITHUB_PATH, `${binDir}\n`);
+}
+
 const installedCandidates = [
   ...(config.executableCandidates?.(root, prefix) ?? []),
   ...genericExecutableCandidates(config.binary, prefix),
