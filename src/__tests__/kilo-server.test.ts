@@ -207,7 +207,11 @@ describe("kilo server helpers", () => {
     expect(oc.session.create).toHaveBeenCalledTimes(1);
     const args = oc.session.create.mock.calls[0][0] as {
       title?: string;
-      permission?: Array<{ permission: string; pattern: string; action: string }>;
+      permission?: Array<{
+        permission: string;
+        pattern: string;
+        action: string;
+      }>;
     };
     expect(args.title).toBe("Chat chat/a");
     expect(args.permission).toEqual([
