@@ -172,10 +172,7 @@ export function initKiloAgent(
   // Errors are swallowed — pre-warm is best-effort, the per-turn ensure
   // still runs and would log any real failures.
   prewarmPluginMcpServers().catch((err) => {
-    logWarn(
-      "agent",
-      `Plugin MCP pre-warm failed (non-fatal): ${errMsg(err)}`,
-    );
+    logWarn("agent", `Plugin MCP pre-warm failed (non-fatal): ${errMsg(err)}`);
   });
 }
 

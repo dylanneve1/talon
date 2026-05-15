@@ -82,10 +82,7 @@ export function initOpenCodeAgent(
   // message doesn't pay the ~12s subprocess-spawn cost. See the
   // equivalent block in src/backend/kilo/server.ts for the rationale.
   prewarmPluginMcpServers().catch((err) => {
-    logWarn(
-      "agent",
-      `Plugin MCP pre-warm failed (non-fatal): ${errMsg(err)}`,
-    );
+    logWarn("agent", `Plugin MCP pre-warm failed (non-fatal): ${errMsg(err)}`);
   });
 }
 
