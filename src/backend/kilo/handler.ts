@@ -288,62 +288,70 @@ export async function handleMessage(
     if (name) setSessionName(chatId, name);
   }
 
-  // ── Flow-violation re-prompt ──────────────────────────────────────────────
+  // ── Delivery ──────────────────────────────────────────────────────────────
+  //
+  // Kilo's delivery model is fundamentally different from Claude SDK's:
+  //
+  //   - Claude calls `end_turn(text=...)` as a tool. The text input IS the
+  //     reply; the SDK fires our tool-batch hook which delivers via
+  //     `onTextBlock`. `state.allResponseText` (the model's open-stream
+  //     text) is private scratchpad and dropped.
+  //
+  //   - Kilo models (DeepSeek, GLM, openrouter routes) emit a
+  //     `type: "text"` part as the natural reply — no end_turn call.
+  //     `finalizePartsIntoState` extracts ONLY text-part content (not
+  //     reasoning) into `state.allResponseText`, and we ship that here
+  //     via `onTextBlock`.
+  //
+  // The flow-violation check (which is meaningful for Claude — there
+  // "trailing prose without end_turn" really is a missed delivery) is
+  // skipped: `responseText` already comes from text parts only,
+  // reasoning never lands in the buffer in the first place. If end_turn
+  // fired anyway (some models do both), `state.deliveredTextNorms`
+  // dedups against `responseText`.
 
-  const violation = detectFlowViolation({
-    trailingText: state.lastTrailingText || responseText,
-    turnTerminated: state.turnTerminated,
-    deliveredTextNorms: state.deliveredTextNorms,
-    retried: _retried,
-  });
-
-  if (violation.violated) {
-    incrementCounter("scratchpad.trailing_text_dropped");
-    log(
-      "agent",
-      `[${chatId}] flow violation (Kilo): trailing prose (${violation.trailing.length} chars) ` +
-        `without end_turn/send. ${
-          violation.shouldRetry
-            ? "Re-prompting with reminder."
-            : "Already retried — surfacing error to user."
-        } preview: ${formatProsePreview(violation.trailing)}`,
-    );
-    if (violation.shouldRetry) {
-      incrementCounter("scratchpad.flow_violation_retried");
-      return handleMessage({ ...params, text: violation.reminder }, true);
+  if (
+    onTextBlock &&
+    !state.turnTerminated &&
+    responseText &&
+    !state.deliveredTextNorms.some((d) =>
+      responseText.toLowerCase().includes(d.toLowerCase()),
+    )
+  ) {
+    try {
+      await onTextBlock(responseText);
+    } catch (err) {
+      logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
     }
-    // Retry exhausted: deliver a visible error so the user knows the model
-    // failed to use a delivery tool, instead of staring at silence. This
-    // closes the "stuck and not replying" symptom for weak models that
-    // can't follow the strict tool contract reliably.
-    incrementCounter("scratchpad.flow_violation_dropped");
+  } else if (
+    !state.turnTerminated &&
+    !responseText &&
+    state.deliveredTextNorms.length === 0
+  ) {
+    // Truly empty turn — no text part, no delivery tool. Tell the user
+    // something happened so they aren't staring at silence.
+    incrementCounter("scratchpad.empty_turn");
     if (onTextBlock) {
       try {
         await onTextBlock(
-          "⚠️ The model wrote a reply but didn't deliver it through a tool call, " +
-            "so it was dropped. Try a different model with /model — strong tool-use " +
-            "models (Sonnet, Opus, GPT-4) follow the contract reliably.",
+          "⚠️ The model produced no reply (no text part, no delivery tool). " +
+            "This usually means the model went into a reasoning loop without " +
+            "emitting output. Try /model to switch.",
         );
       } catch (err) {
         logWarn(
           "agent",
-          `[${chatId}] onTextBlock (violation error) failed: ${errMsg(err)}`,
+          `[${chatId}] onTextBlock (empty-turn error) failed: ${errMsg(err)}`,
         );
       }
     }
   }
-
-  // ── Final delivery ────────────────────────────────────────────────────────
-  //
-  // Tool-driven delivery (`end_turn` / `send`) ships text to the user
-  // inside the tool call. `state.deliveredTextNorms` is non-empty and
-  // `responseText` may also contain a duplicate of the delivered text —
-  // dedup in the flow-violation check above prevents double-emission.
-  //
-  // The handler doesn't re-emit `responseText` here: the model's open-stream
-  // text is private scratchpad per the strict delivery contract (see
-  // KILO_SYSTEM_PROMPT_SUFFIX). Anything not routed through a delivery tool
-  // either landed via the violation-recovery path above or was dropped.
+  // Suppress unused-import warning: detectFlowViolation/formatProsePreview
+  // are still exported helpers used elsewhere (e.g. for diagnostic dumps),
+  // but this handler no longer invokes them on the hot path.
+  void detectFlowViolation;
+  void formatProsePreview;
+  void _retried;
 
   log(
     "agent",

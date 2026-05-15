@@ -76,6 +76,23 @@ export interface StreamState {
    * stuck/empty turns by inspecting which event types fired.
    */
   eventCounts: Record<string, number>;
+
+  /**
+   * partID → part type lookup populated from `message.part.updated` events.
+   *
+   * Kilo's `message.part.delta` events carry only `partID` and `field` —
+   * they don't say what type of part the delta belongs to. A delta with
+   * `field: "text"` could be filling the `text` field of a `TextPart`
+   * (the actual user-facing reply) OR the `text` field of a
+   * `ReasoningPart` (private scratchpad). Without the part-type lookup
+   * the SSE consumer can't tell them apart and ends up treating
+   * reasoning content as the reply.
+   *
+   * Backends populate this on every part.updated; the delta handler uses
+   * it to classify each delta against its source part. Empty for
+   * backends that don't have the same delta/part split.
+   */
+  partTypes: Map<string, string>;
 }
 
 // ── Factories ───────────────────────────────────────────────────────────────
@@ -98,6 +115,7 @@ export function createStreamState(): StreamState {
     numApiCalls: 0,
     lastStreamUpdate: 0,
     eventCounts: {},
+    partTypes: new Map(),
   };
 }
 

@@ -124,13 +124,29 @@ function processPartDelta(
 ): ProcessEventOutcome {
   const field = typeof props.field === "string" ? props.field : "";
   const delta = typeof props.delta === "string" ? props.delta : "";
+  const partID = typeof props.partID === "string" ? props.partID : "";
   if (!delta) return { kind: "continue" };
+
+  // `field: "text"` deltas can fire for either a TextPart (user-facing
+  // reply) OR a ReasoningPart (private scratchpad — both part types use
+  // a `text` field). The delta event itself doesn't say which one. We
+  // accumulate optimistically here for streaming UX continuity, then
+  // `finalizePartsIntoState` rewrites `state.allResponseText` from the
+  // authoritative parts list (text-parts only) at end-of-turn — so any
+  // reasoning content that leaked in during the stream gets cleaned up
+  // before the handler reads it. The exception: when we already know
+  // the partID belongs to a reasoning/thinking part (from a prior
+  // message.part.updated), don't pollute allResponseText now either.
   if (field === "text") {
-    appendText(ctx.state, delta);
-    maybeFireStreamDelta(ctx.state, ctx.onStreamDelta, "text");
+    const partType = partID ? ctx.state.partTypes.get(partID) : undefined;
+    if (partType === "reasoning" || partType === "thinking") {
+      maybeFireStreamDelta(ctx.state, ctx.onStreamDelta, "thinking");
+    } else {
+      appendText(ctx.state, delta);
+      maybeFireStreamDelta(ctx.state, ctx.onStreamDelta, "text");
+    }
   } else if (field === "thinking" || field === "reasoning") {
-    // Thinking deltas don't accumulate into response text; just signal
-    // "model is still working" for UI feedback.
+    // Explicit reasoning/thinking field — never accumulate.
     maybeFireStreamDelta(ctx.state, ctx.onStreamDelta, "thinking");
   }
   return { kind: "continue" };
@@ -141,7 +157,18 @@ async function processPartUpdate(
   ctx: EventProcessingContext,
 ): Promise<ProcessEventOutcome> {
   const part = props.part as Record<string, unknown> | undefined;
-  if (!part || part.type !== "tool") return { kind: "continue" };
+  if (!part) return { kind: "continue" };
+
+  // Track every part's type by id so processPartDelta can distinguish
+  // text-part text content from reasoning-part text content (Kilo uses
+  // the same `text` field name in both).
+  const partType = typeof part.type === "string" ? part.type : "";
+  const partID = typeof part.id === "string" ? part.id : "";
+  if (partID && partType) {
+    ctx.state.partTypes.set(partID, partType);
+  }
+
+  if (part.type !== "tool") return { kind: "continue" };
 
   const callID = typeof part.callID === "string" ? part.callID : "";
   const toolName = typeof part.tool === "string" ? part.tool : "tool";
@@ -247,16 +274,29 @@ export interface FinalizePartsInputs {
 /**
  * Drain the sync `session.prompt()` response into the stream state.
  *
- * SSE may have already captured most of this content, but `prompt()`'s
- * parts list is authoritative — anything SSE missed (e.g. text emitted
- * after the SSE socket dropped, or the whole turn if SSE subscribe
- * failed) needs to land in state before we return.
+ * The `parts` list returned by `session.prompt()` is the authoritative
+ * snapshot of what the model produced this turn. Kilo emits parts in
+ * one of three categories that map to Talon's delivery model:
  *
- * Two modes:
- *   - SSE captured something (`allResponseText.length > 0`) — only
- *     replay tools we haven't seen.
- *   - SSE captured nothing — drive the full reconstruction through state
- *     mutators (text + tools).
+ *   - `text` — user-facing reply. Kilo models (DeepSeek, GLM, etc.)
+ *     emit text parts as their natural delivery; they don't call
+ *     `end_turn` the way Claude does. We accumulate text-part content
+ *     into `state.allResponseText` so the handler ships it via
+ *     `onTextBlock` after the turn closes.
+ *   - `tool` — side-effect tool call (end_turn for explicit close,
+ *     send for rich content, react for emoji, plus arbitrary plugin
+ *     tools). Goes through `recordToolUse` which sets
+ *     `turnTerminated` for end_turn and captures delivered-text norms
+ *     for dedup.
+ *   - `reasoning` / `step-start` / `step-finish` / etc. — internal
+ *     plumbing or scratchpad. Ignored.
+ *
+ * Why we re-extract text here even when SSE captured deltas: SSE
+ * deltas can arrive before the matching `message.part.updated` (so we
+ * don't yet know the part type) or after the connection blips —
+ * walking the final parts list is the safe source of truth. We
+ * replace any partial SSE-accumulated text with the part-walk text to
+ * avoid double-counting or partial-fragment leaks.
  *
  * Returns the number of tool calls processed this pass (mostly for tests).
  */
@@ -266,55 +306,28 @@ export function finalizePartsIntoState(inputs: FinalizePartsInputs): {
   const { parts, state, seenToolCallIds, onToolUse } = inputs;
   let toolsProcessed = 0;
 
-  const sseCapturedText = state.allResponseText.length > 0;
-
-  if (!sseCapturedText) {
-    // SSE missed — drive the full reconstruction through state mutators.
-    // `recordToolUse` handles the toolCalls increment + delivered-text
-    // capture + turnTerminated flag, so we don't pre-seed `toolCalls`
-    // from `extractPartsSummary` (would double-count).
-    const { text } = extractPartsSummary(parts);
-
-    for (const part of parts) {
-      if (part.type !== "tool") continue;
-      const stateObj = part.state as
-        | { status?: string; input?: Record<string, unknown> }
-        | undefined;
-      const callID = typeof part.callID === "string" ? part.callID : "";
-      const toolName = typeof part.tool === "string" ? part.tool : "tool";
-      if (callID && seenToolCallIds.has(callID)) continue;
-      if (stateObj?.input) {
-        if (callID) seenToolCallIds.add(callID);
-        recordToolUse(state, toolName, stateObj.input);
-        toolsProcessed++;
-        if (onToolUse) {
-          try {
-            onToolUse(toolName, stateObj.input);
-          } catch {
-            /* non-fatal */
-          }
-        }
-      }
-    }
-
-    if (text) {
-      appendText(state, text);
-    }
-    return { toolsProcessed };
+  // Authoritative text from text parts only — `extractPartsSummary` already
+  // filters to `part.type === "text"`, so reasoning content can't leak in
+  // even if a delta classifier missed it earlier in the turn.
+  const { text } = extractPartsSummary(parts);
+  if (text) {
+    state.allResponseText = text;
+    state.lastTrailingText = text;
+    state.currentBlockText = "";
   }
 
-  // SSE captured most of it; pick up any tools SSE missed.
+  // Process tool parts — recordToolUse handles the toolCalls increment,
+  // delivered-text capture, and the turnTerminated flag for end_turn.
   for (const part of parts) {
     if (part.type !== "tool") continue;
-    const callID = typeof part.callID === "string" ? part.callID : "";
-    if (!callID || seenToolCallIds.has(callID)) continue;
-
-    seenToolCallIds.add(callID);
     const stateObj = part.state as
       | { status?: string; input?: Record<string, unknown> }
       | undefined;
+    const callID = typeof part.callID === "string" ? part.callID : "";
     const toolName = typeof part.tool === "string" ? part.tool : "tool";
+    if (callID && seenToolCallIds.has(callID)) continue;
     if (stateObj?.input) {
+      if (callID) seenToolCallIds.add(callID);
       recordToolUse(state, toolName, stateObj.input);
       toolsProcessed++;
       if (onToolUse) {
@@ -326,5 +339,6 @@ export function finalizePartsIntoState(inputs: FinalizePartsInputs): {
       }
     }
   }
+
   return { toolsProcessed };
 }

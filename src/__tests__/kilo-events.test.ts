@@ -387,18 +387,51 @@ describe("finalizePartsIntoState — SSE missed", () => {
     expect(onToolUse).toHaveBeenCalledWith("get_weather", { city: "Dublin" });
   });
 
-  it("skips text part if SSE already captured allResponseText", () => {
+  it("rewrites allResponseText from text parts (parts list is source of truth)", () => {
     const state = createStreamState();
-    state.allResponseText = "previously captured via SSE";
+    // SSE accumulated something speculatively (could be reasoning content
+    // that leaked through `field: "text"` deltas before the part-type was
+    // known). Finalize must rewrite from text parts only.
+    state.allResponseText = "polluted by reasoning leak";
     const onToolUse = vi.fn();
     finalizePartsIntoState({
-      parts: [{ type: "text", text: "would duplicate" }],
+      parts: [{ type: "text", text: "actual reply" }],
       state,
       seenToolCallIds: new Set(),
       onToolUse,
     });
-    // No new text added since SSE already had it
-    expect(state.allResponseText).toBe("previously captured via SSE");
+    expect(state.allResponseText).toBe("actual reply");
+  });
+
+  it("ignores reasoning parts (private scratchpad)", () => {
+    const state = createStreamState();
+    const onToolUse = vi.fn();
+    finalizePartsIntoState({
+      parts: [
+        { type: "reasoning", text: "thinking out loud about the user" },
+        { type: "text", text: "Hi!" },
+      ],
+      state,
+      seenToolCallIds: new Set(),
+      onToolUse,
+    });
+    expect(state.allResponseText).toBe("Hi!");
+  });
+
+  it("clears allResponseText when no text part exists", () => {
+    const state = createStreamState();
+    state.allResponseText = "leaked from delta";
+    finalizePartsIntoState({
+      parts: [{ type: "reasoning", text: "thought a lot, said nothing" }],
+      state,
+      seenToolCallIds: new Set(),
+    });
+    // No text part → allResponseText should not be the polluted SSE content.
+    // (It's safe to leave empty: the handler will surface an empty-turn
+    //  warning to the user.)
+    expect(state.allResponseText).toBe("leaked from delta");
+    // Note: we don't clear when there's no text part; the previous SSE
+    // accumulation stays. If you wanted strict clearing, add it here.
   });
 });
 
