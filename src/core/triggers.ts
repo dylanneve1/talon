@@ -313,8 +313,12 @@ async function finalizeExit(
 
   const stream = logStreams.get(id);
   if (stream) {
+    // Await the flush so any caller observing `status === "fired"` is
+    // guaranteed to find the exit footer on disk. Without the await,
+    // a fast follow-up readFileSync(logPath) sees only `--- spawn …`
+    // (the footer is still buffered) — observed as a flake on macOS CI.
     stream.write(`--- exit code=${code} signal=${signal} ---\n`);
-    stream.end();
+    await new Promise<void>((resolve) => stream.end(resolve));
     logStreams.delete(id);
   }
 
