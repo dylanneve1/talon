@@ -33,10 +33,7 @@ export {
   type FlowViolationResult,
 } from "./flow-violation.js";
 
-export {
-  formatUserPrompt,
-  type PromptFormatInputs,
-} from "./prompt-format.js";
+export { formatUserPrompt, type PromptFormatInputs } from "./prompt-format.js";
 
 export { extractSessionName } from "./session-name.js";
 

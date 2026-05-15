@@ -50,7 +50,10 @@ describe("classifyRetry", () => {
   });
 
   it("retryable error with fallback → fallback_model", () => {
-    const err = new TalonError("rate", { reason: "rate_limit", retryable: true });
+    const err = new TalonError("rate", {
+      reason: "rate_limit",
+      retryable: true,
+    });
     getFallbackModelMock.mockReturnValue("sonnet-4-6");
 
     const res = classifyRetry({
@@ -66,7 +69,10 @@ describe("classifyRetry", () => {
   });
 
   it("retryable error with no fallback → propagate", () => {
-    const err = new TalonError("rate", { reason: "rate_limit", retryable: true });
+    const err = new TalonError("rate", {
+      reason: "rate_limit",
+      retryable: true,
+    });
     getFallbackModelMock.mockReturnValue(null);
 
     const res = classifyRetry({

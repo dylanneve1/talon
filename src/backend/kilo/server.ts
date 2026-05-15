@@ -563,9 +563,18 @@ export function getGatewayPortFn(): () => number {
   return gatewayPortFn;
 }
 
-export function getFrontendName(): "telegram" | "terminal" | "teams" | "discord" {
+export function getFrontendName():
+  | "telegram"
+  | "terminal"
+  | "teams"
+  | "discord" {
   return frontendName;
 }
 
 // Re-export the model-helper imports for kilo-internal consumers
-export { guessProviderID, getBucketPriority, normalizeModelLookup, parseOpenCodeModelQuery };
+export {
+  guessProviderID,
+  getBucketPriority,
+  normalizeModelLookup,
+  parseOpenCodeModelQuery,
+};

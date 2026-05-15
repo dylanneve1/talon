@@ -102,8 +102,16 @@ export async function handleMessage(
   const config = getConfig();
   if (!config) throw new Error("Kilo agent not initialized");
 
-  const { chatId, text, senderName, isGroup, messageId, onTextBlock,
-          onStreamDelta, onToolUse } = params;
+  const {
+    chatId,
+    text,
+    senderName,
+    isGroup,
+    messageId,
+    onTextBlock,
+    onStreamDelta,
+    onToolUse,
+  } = params;
   const t0 = Date.now();
   const session = getSession(chatId);
   const previousTurns = session.turns;
@@ -424,10 +432,7 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
       try {
         await oc.session.abort({ sessionID: sessionId });
       } catch (err) {
-        logWarn(
-          "agent",
-          `[${chatId}] session.abort failed: ${errMsg(err)}`,
-        );
+        logWarn("agent", `[${chatId}] session.abort failed: ${errMsg(err)}`);
       }
     },
     abortSignal: sseAbort.signal,
@@ -499,7 +504,11 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     // entirely (race between session.prompt close and message persist).
     // The fallback poll waits up to 10s for the assistant message to land
     // in the session-messages endpoint.
-    if (!state.allResponseText && !state.currentBlockText && !state.turnTerminated) {
+    if (
+      !state.allResponseText &&
+      !state.currentBlockText &&
+      !state.turnTerminated
+    ) {
       const fallback = await waitForAssistantReply(
         oc,
         sessionId,
@@ -621,8 +630,7 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
           if (!part) break;
           if (part.type === "tool") {
             const callID = typeof part.callID === "string" ? part.callID : "";
-            const toolName =
-              typeof part.tool === "string" ? part.tool : "tool";
+            const toolName = typeof part.tool === "string" ? part.tool : "tool";
             const stateObj = part.state as
               | { status?: string; input?: Record<string, unknown> }
               | undefined;
@@ -677,10 +685,7 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
         case "session.error": {
           const errProp = props.error as { name?: string } | undefined;
           if (errProp?.name) {
-            logWarn(
-              "agent",
-              `[${chatId}] Kilo session.error: ${errProp.name}`,
-            );
+            logWarn("agent", `[${chatId}] Kilo session.error: ${errProp.name}`);
           }
           break;
         }

@@ -63,10 +63,7 @@ export interface BackendFactory {
   /** Display label used in `/status` and agent logs (e.g. "Kilo"). */
   label: string;
   /** Initialise the backend; called exactly once per Talon process. */
-  init(
-    config: TalonConfig,
-    ctx: BackendInitContext,
-  ): Promise<BackendInstance>;
+  init(config: TalonConfig, ctx: BackendInitContext): Promise<BackendInstance>;
 }
 
 // ── State ───────────────────────────────────────────────────────────────────

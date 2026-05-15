@@ -57,9 +57,9 @@ describe("isDuplicateOfDelivered", () => {
     const delivered = [
       normalizeForDedupe("Here is the complete response with all the details"),
     ];
-    expect(isDuplicateOfDelivered("here is the complete response", delivered)).toBe(
-      true,
-    );
+    expect(
+      isDuplicateOfDelivered("here is the complete response", delivered),
+    ).toBe(true);
   });
 
   it("detects substring containment (delivered within candidate)", () => {
@@ -74,9 +74,9 @@ describe("isDuplicateOfDelivered", () => {
 
   it("returns false when nothing meaningful overlaps", () => {
     const delivered = [normalizeForDedupe("completely different content")];
-    expect(isDuplicateOfDelivered("an unrelated message reply", delivered)).toBe(
-      false,
-    );
+    expect(
+      isDuplicateOfDelivered("an unrelated message reply", delivered),
+    ).toBe(false);
   });
 
   it("ignores delivered entries that are themselves too short", () => {
@@ -114,7 +114,9 @@ describe("captureDeliveredText", () => {
 
   it("returns undefined for non-delivery tools", () => {
     expect(captureDeliveredText("react", { emoji: "👍" })).toBeUndefined();
-    expect(captureDeliveredText("get_weather", { city: "Dublin" })).toBeUndefined();
+    expect(
+      captureDeliveredText("get_weather", { city: "Dublin" }),
+    ).toBeUndefined();
   });
 
   it("returns undefined for send(type=photo)", () => {

@@ -95,10 +95,10 @@ describe("backend registry", () => {
     const factory = makeStubFactory("stub");
     registerBackend(factory);
     const got = getBackend("stub")!;
-    const { backend } = await got.init(
-      {} as never,
-      { getBridgePort: () => 0, frontendName: "telegram" },
-    );
+    const { backend } = await got.init({} as never, {
+      getBridgePort: () => 0,
+      frontendName: "telegram",
+    });
     const result = await backend.query({
       chatId: "1",
       text: "x",

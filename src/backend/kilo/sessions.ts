@@ -114,9 +114,10 @@ type KiloUsageSummary = {
  * Returns the joined text (with `\n\n` between adjacent text parts to
  * preserve paragraph structure) and the count of tool-use blocks.
  */
-export function extractPartsSummary(
-  parts: Array<Record<string, unknown>>,
-): { text: string; toolCalls: number } {
+export function extractPartsSummary(parts: Array<Record<string, unknown>>): {
+  text: string;
+  toolCalls: number;
+} {
   const textParts: string[] = [];
   let toolCalls = 0;
 
@@ -158,11 +159,11 @@ export function extractAssistantUsage(info: KiloAssistantInfo | undefined): {
 function hasAssistantUsage(info: KiloAssistantInfo | undefined): boolean {
   return Boolean(
     info?.tokens?.input ||
-      info?.tokens?.output ||
-      info?.tokens?.reasoning ||
-      info?.tokens?.cache?.read ||
-      info?.tokens?.cache?.write ||
-      info?.cost,
+    info?.tokens?.output ||
+    info?.tokens?.reasoning ||
+    info?.tokens?.cache?.read ||
+    info?.tokens?.cache?.write ||
+    info?.cost,
   );
 }
 
@@ -202,8 +203,8 @@ function isMeaningfulAssistantMessage(
 ): boolean {
   return Boolean(
     message.parts.length > 0 ||
-      message.info?.time?.completed ||
-      hasAssistantUsage(message.info),
+    message.info?.time?.completed ||
+    hasAssistantUsage(message.info),
   );
 }
 
@@ -250,7 +251,8 @@ export function summarizeKiloAssistantMessages(
 }
 
 /** @deprecated Use {@link summarizeKiloAssistantMessages}. */
-export const summarizeOpenCodeAssistantMessages = summarizeKiloAssistantMessages;
+export const summarizeOpenCodeAssistantMessages =
+  summarizeKiloAssistantMessages;
 
 // ── Session-messages fetch ──────────────────────────────────────────────────
 
