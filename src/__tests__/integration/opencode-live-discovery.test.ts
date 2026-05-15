@@ -30,7 +30,7 @@ const opencodeDescribe =
 
 const TEST_PORT = Number(process.env.OPENCODE_TEST_PORT ?? 4197);
 const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;
-const HEALTH_TIMEOUT_MS = 45_000;
+const HEALTH_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 45_000;
 
 let opencodeProc: ChildProcess | null = null;
 let testClient: OpencodeClient;
@@ -80,9 +80,10 @@ opencodeDescribe("OpenCode live discovery (integration)", () => {
       OPENCODE_EXECUTABLE_ENV,
     );
 
+    let stdout = "";
     let stderr = "";
-    opencodeProc.stdout?.on("data", () => {
-      /* drain */
+    opencodeProc.stdout?.on("data", (chunk) => {
+      stdout += String(chunk);
     });
     opencodeProc.stderr?.on("data", (chunk) => {
       stderr += String(chunk);
@@ -95,7 +96,7 @@ opencodeDescribe("OpenCode live discovery (integration)", () => {
       await waitForHealthy(BASE_URL, HEALTH_TIMEOUT_MS);
     } catch (err) {
       throw new Error(
-        `${(err as Error).message}\nopencode stderr:\n${stderr || "(empty)"}`,
+        `${(err as Error).message}\nopencode stdout:\n${stdout || "(empty)"}\nopencode stderr:\n${stderr || "(empty)"}`,
       );
     }
 

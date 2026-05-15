@@ -124,7 +124,9 @@ export async function waitForHealthy(
 
   while (Date.now() < stopAt) {
     try {
-      const resp = await fetch(`${url}/global/health`);
+      const resp = await fetch(`${url}/global/health`, {
+        signal: AbortSignal.timeout(2000),
+      });
       if (resp.ok) return;
       lastError = `HTTP ${resp.status}`;
     } catch (err) {
