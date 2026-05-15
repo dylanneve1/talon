@@ -31,9 +31,10 @@
  *      free model) resolves cleanly via the fast-path.
  *
  * Skipping:
- *   Ordinary test runs skip this suite if the `kilo` binary isn't on `PATH`.
- *   The dedicated CI job sets KILO_LIVE_REQUIRED=1 after installing Kilo Code,
- *   so missing CLI/backends fail there instead of being silently skipped.
+ *   Ordinary test runs skip this suite if the `kilo` binary isn't available.
+ *   The dedicated CI job sets KILO_LIVE_REQUIRED=1 and KILO_CODE_EXECUTABLE
+ *   after installing Kilo Code, so missing CLI/backends fail there instead of
+ *   being silently skipped.
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -46,10 +47,12 @@ import {
   waitForHealthy,
 } from "./live-backend-helpers.js";
 
+const KILO_EXECUTABLE_ENV = "KILO_CODE_EXECUTABLE";
+
 // ── Preflight: locate the kilo CLI. ────────────────────────────────────────
 // If it's missing we skip the whole suite — there's nothing to test without it.
 function kiloAvailable(): boolean {
-  return cliAvailable("kilo");
+  return cliAvailable("kilo", KILO_EXECUTABLE_ENV);
 }
 
 const KILO_PRESENT = kiloAvailable();
@@ -107,12 +110,16 @@ kiloDescribe("Kilo live discovery (integration)", () => {
     // Spawn `kilo serve` in detached-style stdio so its output doesn't
     // contaminate our test output. We capture stdout/stderr to a buffer
     // we can include in failure messages.
-    kiloProc = spawnCli("kilo", [
-      "serve",
-      `--hostname=127.0.0.1`,
-      `--port=${TEST_PORT}`,
-      "--log-level=ERROR",
-    ]);
+    kiloProc = spawnCli(
+      "kilo",
+      [
+        "serve",
+        `--hostname=127.0.0.1`,
+        `--port=${TEST_PORT}`,
+        "--log-level=ERROR",
+      ],
+      KILO_EXECUTABLE_ENV,
+    );
     let stderr = "";
     kiloProc.stdout?.on("data", () => {
       /* drain */

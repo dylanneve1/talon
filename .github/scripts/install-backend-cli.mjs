@@ -11,6 +11,7 @@ const backends = {
     sdkPackage: "@kilocode/sdk",
     cliPackage: "@kilocode/cli",
     binary: "kilo",
+    envExecutable: "KILO_CODE_EXECUTABLE",
     version(sdk) {
       return sdk.version;
     },
@@ -19,6 +20,7 @@ const backends = {
     sdkPackage: "@opencode-ai/sdk",
     cliPackage: "opencode-ai",
     binary: "opencode",
+    envExecutable: "OPENCODE_EXECUTABLE",
     version(sdk) {
       return sdk.version;
     },

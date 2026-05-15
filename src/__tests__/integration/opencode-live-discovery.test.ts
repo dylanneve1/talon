@@ -7,9 +7,9 @@
  * unit tests by catching CLI/SDK/schema drift against the real deployed
  * backend binary.
  *
- * Ordinary test runs skip this suite if `opencode` is not on PATH. CI installs
- * the matching `opencode-ai` CLI and sets OPENCODE_LIVE_REQUIRED=1, so the
- * backend cannot silently skip there.
+ * Ordinary test runs skip this suite if `opencode` is not available. CI
+ * installs the matching `opencode-ai` CLI and sets OPENCODE_LIVE_REQUIRED=1
+ * plus OPENCODE_EXECUTABLE, so the backend cannot silently skip there.
  */
 
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -22,7 +22,8 @@ import {
   waitForHealthy,
 } from "./live-backend-helpers.js";
 
-const OPENCODE_PRESENT = cliAvailable("opencode");
+const OPENCODE_EXECUTABLE_ENV = "OPENCODE_EXECUTABLE";
+const OPENCODE_PRESENT = cliAvailable("opencode", OPENCODE_EXECUTABLE_ENV);
 const OPENCODE_REQUIRED = process.env.OPENCODE_LIVE_REQUIRED === "1";
 const opencodeDescribe =
   OPENCODE_PRESENT || OPENCODE_REQUIRED ? describe : describe.skip;
@@ -68,12 +69,16 @@ opencodeDescribe("OpenCode live discovery (integration)", () => {
       );
     }
 
-    opencodeProc = spawnCli("opencode", [
-      "serve",
-      "--hostname=127.0.0.1",
-      `--port=${TEST_PORT}`,
-      "--log-level=ERROR",
-    ]);
+    opencodeProc = spawnCli(
+      "opencode",
+      [
+        "serve",
+        "--hostname=127.0.0.1",
+        `--port=${TEST_PORT}`,
+        "--log-level=ERROR",
+      ],
+      OPENCODE_EXECUTABLE_ENV,
+    );
 
     let stderr = "";
     opencodeProc.stdout?.on("data", () => {
