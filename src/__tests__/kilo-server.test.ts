@@ -92,23 +92,8 @@ describe("kilo server helpers", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("ensureChatMcpServer returns existing connected server without adding", async () => {
+  it("ensureChatMcpServer registers the chat server with the right env", async () => {
     const oc = makeClient();
-    oc.mcp.status.mockResolvedValue({
-      data: { "talon-tools-chat_1": { status: "connected" } },
-    });
-
-    const serverName = await ensureChatMcpServer(oc as never, "chat/1");
-
-    expect(serverName).toBe("talon-tools-chat_1");
-    expect(oc.mcp.add).not.toHaveBeenCalled();
-  });
-
-  it("ensureChatMcpServer registers server when not connected", async () => {
-    const oc = makeClient();
-    oc.mcp.status.mockResolvedValue({
-      data: { "talon-tools-chat_1": { status: "disconnected" } },
-    });
 
     const serverName = await ensureChatMcpServer(oc as never, "chat/1");
 
@@ -126,27 +111,60 @@ describe("kilo server helpers", () => {
     });
   });
 
-  it("ensurePluginMcpServers keeps connected servers and registers missing ones", async () => {
+  it("ensureChatMcpServer skips the add when the server is already cached locally", async () => {
+    const oc = makeClient();
+
+    await ensureChatMcpServer(oc as never, "chat/1");
+    expect(oc.mcp.add).toHaveBeenCalledTimes(1);
+
+    // Second call uses the local cache — no new add. Kilo's GET /mcp
+    // returns {} regardless of state, so we trust our own record of what
+    // we registered earlier in this process.
+    await ensureChatMcpServer(oc as never, "chat/1");
+    expect(oc.mcp.add).toHaveBeenCalledTimes(1);
+  });
+
+  it("disconnectChatMcpServer clears the cache so a future ensure re-registers", async () => {
+    const oc = makeClient();
+
+    await ensureChatMcpServer(oc as never, "chat/1");
+    await disconnectChatMcpServer(oc as never, "talon-tools-chat_1");
+    await ensureChatMcpServer(oc as never, "chat/1");
+
+    // Two adds: the initial registration and the post-disconnect one.
+    expect(oc.mcp.add).toHaveBeenCalledTimes(2);
+    expect(oc.mcp.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("ensurePluginMcpServers registers all named servers on first call", async () => {
     const oc = makeClient();
     getPluginMcpServersMock.mockReturnValue({
       alpha: { command: "node", args: ["alpha.js"], env: { A: "1" } },
       beta: { command: "node", args: ["beta.js"], env: { B: "1" } },
     });
-    oc.mcp.status.mockResolvedValue({
-      data: { alpha: { status: "connected" } },
-    });
 
     const registered = await ensurePluginMcpServers(oc as never, "chat-1");
 
     expect(registered).toEqual(["alpha", "beta"]);
-    expect(oc.mcp.add).toHaveBeenCalledTimes(1);
-    expect(oc.mcp.add.mock.calls[0][0]).toMatchObject({
-      name: "beta",
-      config: {
-        command: ["node", "beta.js"],
-        environment: { B: "1" },
-      },
+    expect(oc.mcp.add).toHaveBeenCalledTimes(2);
+  });
+
+  it("ensurePluginMcpServers skips already-cached servers on subsequent calls", async () => {
+    const oc = makeClient();
+    getPluginMcpServersMock.mockReturnValue({
+      alpha: { command: "node", args: ["alpha.js"], env: { A: "1" } },
+      beta: { command: "node", args: ["beta.js"], env: { B: "1" } },
     });
+
+    await ensurePluginMcpServers(oc as never, "chat-1");
+    expect(oc.mcp.add).toHaveBeenCalledTimes(2);
+
+    // Second call: both alpha and beta are cached from the first call,
+    // so no new adds. This is the path that recovers the ~12s/turn we
+    // were burning before the cache existed.
+    const reRegistered = await ensurePluginMcpServers(oc as never, "chat-1");
+    expect(reRegistered).toEqual(["alpha", "beta"]);
+    expect(oc.mcp.add).toHaveBeenCalledTimes(2);
   });
 
   it("ensureSession reuses a valid existing session and creates a new one when expired", async () => {

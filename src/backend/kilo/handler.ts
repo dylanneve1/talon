@@ -43,7 +43,6 @@ import {
   ensureChatMcpServer,
   ensurePluginMcpServers,
   buildToolOverrides,
-  disconnectChatMcpServer,
   resolveProviderID,
   parseStoredKiloModelSelection,
   getConfig,
@@ -217,7 +216,13 @@ export async function handleMessage(
     if (activeSessions.get(chatId) === sessionId) {
       activeSessions.delete(chatId);
     }
-    await disconnectChatMcpServer(oc, chatMcpServerName);
+    // Note: we deliberately do NOT disconnect the chat MCP server here.
+    // The server is named per-chat (`talon-tools-<chatId>`) so it's safe
+    // to keep across turns of the same chat, and re-spawning the
+    // subprocess each turn was costing ~800ms per message. The local
+    // registration cache (server.ts) skips the duplicate `add` calls now.
+    // `disconnectChatMcpServer` remains exported for explicit teardown
+    // (shutdown, plugin reload).
   }
 
   // ── Post-loop accounting ──────────────────────────────────────────────────
@@ -292,41 +297,45 @@ export async function handleMessage(
         `without end_turn/send. ${
           violation.shouldRetry
             ? "Re-prompting with reminder."
-            : "Already retried — accepting silent drop."
+            : "Already retried — surfacing error to user."
         } preview: ${formatProsePreview(violation.trailing)}`,
     );
     if (violation.shouldRetry) {
       incrementCounter("scratchpad.flow_violation_retried");
       return handleMessage({ ...params, text: violation.reminder }, true);
     }
+    // Retry exhausted: deliver a visible error so the user knows the model
+    // failed to use a delivery tool, instead of staring at silence. This
+    // closes the "stuck and not replying" symptom for weak models that
+    // can't follow the strict tool contract reliably.
+    incrementCounter("scratchpad.flow_violation_dropped");
+    if (onTextBlock) {
+      try {
+        await onTextBlock(
+          "⚠️ The model wrote a reply but didn't deliver it through a tool call, " +
+            "so it was dropped. Try a different model with /model — strong tool-use " +
+            "models (Sonnet, Opus, GPT-4) follow the contract reliably.",
+        );
+      } catch (err) {
+        logWarn(
+          "agent",
+          `[${chatId}] onTextBlock (violation error) failed: ${errMsg(err)}`,
+        );
+      }
+    }
   }
 
   // ── Final delivery ────────────────────────────────────────────────────────
   //
-  // Two delivery paths converge here:
+  // Tool-driven delivery (`end_turn` / `send`) ships text to the user
+  // inside the tool call. `state.deliveredTextNorms` is non-empty and
+  // `responseText` may also contain a duplicate of the delivered text —
+  // dedup in the flow-violation check above prevents double-emission.
   //
-  //   1. Tool-driven delivery (`end_turn` / `send`) — text already shipped
-  //      to the user inside the tool call. `state.deliveredTextNorms` is
-  //      non-empty and `responseText` may also contain a duplicate. We
-  //      DON'T re-emit through onTextBlock in this case (dedup short-
-  //      circuits in flow-violation check above).
-  //
-  //   2. Plain assistant text — no delivery tool fired. The model returned
-  //      a conversational reply as raw text. We emit it via onTextBlock so
-  //      the frontend ships it as a regular Telegram message.
-
-  if (
-    onTextBlock &&
-    !state.turnTerminated &&
-    responseText &&
-    !violation.violated
-  ) {
-    try {
-      await onTextBlock(responseText);
-    } catch (err) {
-      logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
-    }
-  }
+  // The handler doesn't re-emit `responseText` here: the model's open-stream
+  // text is private scratchpad per the strict delivery contract (see
+  // KILO_SYSTEM_PROMPT_SUFFIX). Anything not routed through a delivery tool
+  // either landed via the violation-recovery path above or was dropped.
 
   log(
     "agent",

@@ -46,6 +46,22 @@ let frontendName: "telegram" | "terminal" | "teams" | "discord" = "telegram";
  * against the fresh provider catalog. */
 const modelProviderCache = new Map<string, string>();
 
+/**
+ * Names of MCP servers we have already registered with the Kilo HTTP server
+ * during this Talon process. Kilo's `GET /mcp` (what `oc.mcp.status()` hits)
+ * empirically always returns `{}` regardless of the actual state, so we can't
+ * rely on the server to tell us what's already registered — we cache it
+ * locally instead. Cleared on `stopKiloServer` so a fresh process starts
+ * over.
+ *
+ * Kilo's POST /mcp is idempotent (a second `add` for an existing name
+ * returns the current state without re-spawning the subprocess), so the
+ * worst case of a stale cache is one wasted POST, not a crash. The benefit
+ * is large: skipping ~16 redundant POSTs per turn cuts ~12s off every
+ * Kilo turn's setup phase.
+ */
+const registeredMcpServers = new Set<string>();
+
 // ── Constants ───────────────────────────────────────────────────────────────
 
 /** Loopback hostname Talon binds the Kilo server on — never exposed externally. */
@@ -161,6 +177,7 @@ export const initOpenCodeAgent = initKiloAgent;
 export function stopKiloServer(): void {
   clientPromise = null;
   modelProviderCache.clear();
+  registeredMcpServers.clear();
   clearModelCatalogCache();
   if (serverHandle) {
     serverHandle.close();
@@ -273,19 +290,16 @@ export async function ensureChatMcpServer(
   chatId: string,
 ): Promise<string> {
   const serverName = getChatMcpServerName(chatId);
+
+  // Local cache short-circuit. Kilo's GET /mcp returns {} regardless of
+  // actual state, so we trust our own record of what we registered earlier
+  // in this process — see the registeredMcpServers comment above.
+  if (registeredMcpServers.has(serverName)) {
+    return serverName;
+  }
+
   const startedAt = Date.now();
-
   try {
-    const statusResp = await oc.mcp.status();
-    const mcpServers =
-      (statusResp.data as Record<string, { status?: string }> | undefined) ??
-      {};
-    const talonTools = mcpServers[serverName];
-
-    if (talonTools?.status === "connected") {
-      return serverName;
-    }
-
     const toolsPath = new URL("../../core/tools/mcp-server.ts", import.meta.url)
       .pathname;
     await oc.mcp.add({
@@ -300,6 +314,7 @@ export async function ensureChatMcpServer(
         },
       },
     });
+    registeredMcpServers.add(serverName);
     const ms = Date.now() - startedAt;
     log(
       "agent",
@@ -336,19 +351,13 @@ export async function ensurePluginMcpServers(
   const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
   const registered: string[] = [];
 
-  // Check which are already connected
-  let existingServers: Record<string, { status?: string }> = {};
-  try {
-    const statusResp = await oc.mcp.status();
-    existingServers =
-      (statusResp.data as Record<string, { status?: string }> | undefined) ??
-      {};
-  } catch {
-    // status check failed — try to register anyway
-  }
-
+  // Local cache short-circuit. Kilo's GET /mcp returns {} regardless of
+  // actual state, so the previous "ask the server what's connected"
+  // version always re-registered all 16 plugin servers per turn (~12s of
+  // wasted setup). We track our own registrations now and only POST when
+  // we haven't seen this server name before in this process.
   for (const [name, cfg] of Object.entries(pluginServers)) {
-    if (existingServers[name]?.status === "connected") {
+    if (registeredMcpServers.has(name)) {
       registered.push(name);
       continue;
     }
@@ -363,6 +372,7 @@ export async function ensurePluginMcpServers(
         },
       });
       registered.push(name);
+      registeredMcpServers.add(name);
       const ms = Date.now() - startedAt;
       log(
         "agent",
@@ -435,6 +445,10 @@ export async function disconnectChatMcpServer(
 ): Promise<void> {
   try {
     await oc.mcp.disconnect({ name: serverName });
+    // Drop from the local cache so a future ensureChatMcpServer call
+    // re-registers (otherwise the cache would short-circuit and we'd
+    // happily skip a server Kilo no longer has).
+    registeredMcpServers.delete(serverName);
   } catch (err) {
     logWarn("agent", `Failed to disconnect ${serverName}: ${errMsg(err)}`);
   }
