@@ -709,6 +709,17 @@ export function getConfig(): TalonConfig {
   return config;
 }
 
+/**
+ * Snapshot of the locally-cached MCP server registrations. Test-only:
+ * the `registeredMcpServers` Set is module-private state that integration
+ * tests need to inspect to assert chat-switch isolation actually fired
+ * (Kilo's GET /mcp returns {} regardless of state, so we can't query the
+ * server itself). Don't rely on this in production code.
+ */
+export function getRegisteredMcpServerNames(): string[] {
+  return [...registeredMcpServers];
+}
+
 export function getGatewayPortFn(): () => number {
   return gatewayPortFn;
 }

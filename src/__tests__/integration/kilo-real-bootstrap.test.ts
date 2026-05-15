@@ -436,4 +436,111 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     },
     180_000,
   );
+
+  // ── Test 2: cross-chat MCP isolation ─────────────────────────────────────
+  //
+  // Per-session permission rules block tool *execution* but not *visibility*
+  // — Kilo exposes every registered MCP server's tools to every session.
+  // The fix (`ensureChatMcpServer` in server.ts) holds at most one chat
+  // `talon-tools-<chatId>` registered at a time, disconnecting any other
+  // when a new chat starts.
+  //
+  // This test exercises the disconnect path against a real `kilo serve`:
+  // run a turn for chat A, then a turn for chat B, then assert that only
+  // chat B's MCP server remains registered (chat A's was disconnected
+  // before chat B's was added). Talon's local `registeredMcpServers` Set
+  // is the source of truth — Kilo's `GET /mcp` returns `{}` regardless of
+  // state, so we read the cache directly via `getRegisteredMcpServerNames`.
+
+  it(
+    "chat-switch disconnects the previous chat's MCP server",
+    async () => {
+      recording.reset();
+      const { execute } = await import("../../core/dispatcher.js");
+      const { getRegisteredMcpServerNames } = await import(
+        "../../backend/kilo/server.js"
+      );
+
+      // Turn 1 — chat A. The model's reply doesn't matter; we just need
+      // its MCP server to get registered.
+      await execute({
+        chatId: "isolation-chat-a",
+        numericChatId: 991_010,
+        prompt: "Reply with the single word 'a'.",
+        senderName: "Test",
+        isGroup: false,
+        source: "message",
+      });
+
+      const afterA = getRegisteredMcpServerNames().filter((n) =>
+        n.startsWith("talon-tools-"),
+      );
+      expect(
+        afterA,
+        `expected chat A's MCP to be registered after turn 1; got [${afterA.join(", ")}]`,
+      ).toContain("talon-tools-isolation-chat-a");
+
+      // Turn 2 — chat B. Chat A's MCP must be disconnected before chat B's
+      // is added; production logs `Disconnected talon-tools-... (chat switch)`
+      // when this fires.
+      await execute({
+        chatId: "isolation-chat-b",
+        numericChatId: 991_011,
+        prompt: "Reply with the single word 'b'.",
+        senderName: "Test",
+        isGroup: false,
+        source: "message",
+      });
+
+      const afterB = getRegisteredMcpServerNames();
+      const chatServers = afterB.filter((n) =>
+        n.startsWith("talon-tools-"),
+      );
+
+      expect(chatServers).toContain("talon-tools-isolation-chat-b");
+      expect(
+        chatServers,
+        `chat A's MCP must be disconnected after switch; cache=[${chatServers.join(", ")}]`,
+      ).not.toContain("talon-tools-isolation-chat-a");
+
+      // Heartbeat sentinel (if present) is exempt from the chat-switch
+      // disconnect, but should be the ONLY non-chat talon-tools-* in the
+      // cache. Anything else means a stale chat MCP wasn't disconnected.
+      const nonHeartbeat = chatServers.filter(
+        (n) => n !== "talon-tools-heartbeat",
+      );
+      expect(nonHeartbeat).toEqual(["talon-tools-isolation-chat-b"]);
+    },
+    240_000,
+  );
+
+  // ── Test 3: synthetic output-cap path (best-effort, skipped) ─────────────
+  //
+  // `synthetic: true` text parts are Kilo's signal that something went
+  // sideways upstream (output cap hit, model rambled past its budget, etc.)
+  // — they should surface to the user as `⚠️ Kilo: <error>` rather than
+  // being mistaken for a regular reply (the bug from earlier in the PR).
+  //
+  // We can't reliably trigger Kilo's synthetic-part injection from a real
+  // upstream model — it's gated on provider-side anomalies we don't control.
+  // The end-to-end coverage we DO have:
+  //   - `kilo-events.test.ts` asserts `extractPartsSummary` peels
+  //     `synthetic: true` parts into `syntheticErrorText`.
+  //   - `kilo-server.test.ts` asserts the handler routes synthetic into
+  //     the `delivery: synthetic-error` branch.
+  //
+  // This skipped test documents what the live coverage *would* look like
+  // if we could reach into Kilo and stamp a synthetic part — kept as a
+  // marker so a future Kilo with a debug-inject endpoint can fill it in.
+
+  it.skip(
+    "surfaces synthetic: true parts as ⚠️ Kilo: prefix (requires Kilo debug-inject endpoint)",
+    async () => {
+      // Sketch: write a session message via Kilo's API with
+      //   parts: [{ type: "text", synthetic: true, text: "Output cap hit." }]
+      // then assert the resulting onTextBlock receives `⚠️ Kilo: ...`.
+      // Currently no Kilo public endpoint accepts synthetic parts on write,
+      // so this stays as test.skip until upstream supports it.
+    },
+  );
 });

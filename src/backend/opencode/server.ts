@@ -452,6 +452,16 @@ export function getConfig(): TalonConfig {
   return config;
 }
 
+/**
+ * Snapshot of the locally-cached MCP server registrations. Test-only
+ * (mirrors the kilo backend's `getRegisteredMcpServerNames`). OpenCode's
+ * `GET /mcp` returns `{}` regardless of state, so integration tests need
+ * this to assert chat-switch isolation actually fired.
+ */
+export function getRegisteredMcpServerNames(): string[] {
+  return [...registeredMcpServers];
+}
+
 export {
   OPENCODE_HOSTNAME,
   OPENCODE_PORT,
