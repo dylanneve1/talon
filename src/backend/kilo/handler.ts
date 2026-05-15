@@ -311,14 +311,17 @@ export async function handleMessage(
     chars: number;
   };
 
-  if (
-    state.deliveredTextNorms.length > 0 &&
-    (!responseText ||
-      state.deliveredTextNorms.some((d) =>
-        responseText.toLowerCase().includes(d.toLowerCase()),
-      ))
-  ) {
-    // Tool already delivered (and any text-part content is a duplicate).
+  if (state.deliveredTextNorms.length > 0) {
+    // A delivery tool (`end_turn` / `send` / `react`) already shipped
+    // the message via the bridge. Drop any text-part content — Kilo
+    // models routinely emit a follow-up text part after a tool call
+    // that contains the model's chain-of-thought commentary
+    // ("That worked. The 'No active chat context' error needed the
+    // chat_id explicitly — already fixed.") rather than a separate
+    // reply. Surfacing both produces a visible double-message in
+    // Telegram. The dedup-by-substring check we used to do here only
+    // caught the case where the model echoed the same text twice; the
+    // commentary case slipped through.
     delivery = {
       route: "tool",
       chars: state.deliveredTextNorms.reduce((n, d) => n + d.length, 0),
