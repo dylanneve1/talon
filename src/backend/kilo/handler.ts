@@ -50,16 +50,13 @@ import {
   errMsg,
 } from "./server.js";
 import {
-  extractPartsSummary,
   extractAssistantUsage,
   getKiloTurnSummary,
-  waitForAssistantReply,
   rejectPendingQuestions,
   type KiloAssistantInfo,
 } from "./sessions.js";
 import {
   createStreamState,
-  appendText,
   recordTokens,
   finalizeResponseText,
   formatUserPrompt,
@@ -477,24 +474,29 @@ interface RunKiloTurnInputs {
 /**
  * Run one Kilo turn end-to-end.
  *
- * Strategy:
- *   1. Send the prompt via `session.prompt` (the Kilo HTTP API returns
- *      after the turn completes; long timeouts are normal).
- *   2. In parallel, parse the response parts as they accumulate into the
- *      stream state. Kilo's REST `prompt` does NOT stream — but the parts
- *      list lands once the turn closes, and SSE events run alongside for
- *      mid-turn progress.
- *   3. When `end_turn` / `send` / `react` is detected, optionally call
- *      `session.abort()` to short-circuit the model's "wrap up" round
- *      trip the way Claude SDK's PostToolBatch hook does.
+ * Strategy (post-refactor):
+ *   1. Subscribe to SSE BEFORE issuing the prompt so no early events are
+ *      lost. The subscription tracks state mutations (tool calls,
+ *      synthetic errors, partID→type lookups) and resolves its promise
+ *      when the turn ends — `session.turn.close`, `session.idle`, or
+ *      `session.error` for our session.
+ *   2. Fire the prompt via `session.promptAsync`. That POST returns
+ *      immediately with a messageID; Kilo runs the model task in the
+ *      background and emits SSE events as it goes.
+ *   3. Await the SSE close event. Talon's await is therefore on event
+ *      iteration we control — never on a long-running HTTP call we
+ *      can't interrupt. If the upstream stalls, Kilo eventually fires
+ *      `session.error` (rate limit, timeout, model-not-found, etc.)
+ *      which closes the turn from the same path.
+ *   4. Read the authoritative parts list via `session.messages` and
+ *      drain it through `finalizePartsIntoState`.
  *
- * Why we still call `prompt` (not `promptAsync` + SSE-only):
- *   The synchronous `session.prompt` endpoint atomically returns the full
- *   `parts` array on completion. Combining it with SSE for progress
- *   updates gives us streaming UX (deltas, mid-turn tool callbacks) AND
- *   bulletproof final-state capture. Using `promptAsync` would force us
- *   to recover the final parts via a follow-up `session.messages` call —
- *   one more round-trip with no benefit for non-aborted turns.
+ * Why we don't use `session.prompt` (sync):
+ *   The sync endpoint holds the connection open until the upstream
+ *   model finishes. When the upstream stalls (free providers, network
+ *   blips), the HTTP POST hangs and our `await` blocks forever. With
+ *   `promptAsync` + SSE, "the model is taking too long" becomes "no
+ *   events arriving" — observable and abortable.
  */
 async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
   const {
@@ -514,7 +516,9 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     onToolUse,
   } = inputs;
 
-  // Set up SSE subscription for mid-turn deltas + tool detection
+  // SSE subscription FIRST — Kilo can fire `session.turn.open` and
+  // early `message.part.updated` events immediately after promptAsync
+  // returns, so the iterator must already be alive.
   const sseAbort = new AbortController();
   const sseDone = subscribeToTurnEvents({
     oc,
@@ -526,11 +530,10 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     onTextBlock,
     onToolUse,
     onTerminator: async () => {
-      // End_turn fired — abort the in-flight session so the model
-      // doesn't burn another round-trip "wrapping up" after declaring
-      // done. The prompt() call below will reject with an abort error
-      // which the caller's retry classifier ignores (turnTerminated is
-      // set).
+      // End_turn fired — abort the in-flight session so Kilo doesn't
+      // burn another round-trip "wrapping up" after the model declared
+      // done. session.idle then fires for our session and the SSE
+      // iterator exits cleanly.
       try {
         await oc.session.abort({ sessionID: sessionId });
       } catch (err) {
@@ -540,9 +543,9 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     abortSignal: sseAbort.signal,
   });
 
-  // Watchdog: reject pending Kilo questions in the background. Talon
-  // manages its own tool permissions, so any question Kilo raises mid-
-  // turn (tool approval, follow-up clarification) is auto-handled.
+  // Question watchdog (existing): Talon manages its own tool permissions,
+  // so any Kilo-side question (tool approval, clarification) is rejected
+  // automatically.
   const questionWatchdog = (async () => {
     while (!sseAbort.signal.aborted) {
       try {
@@ -558,8 +561,9 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
   })();
 
   try {
-    // Synchronous prompt — returns when the turn closes (success or abort)
-    const resp = await oc.session.prompt({
+    // Fire and forget — promptAsync returns immediately. The HTTP POST
+    // itself can't hang us; the await below is on the SSE close event.
+    await oc.session.promptAsync({
       sessionID: sessionId,
       parts: [{ type: "text", text: prompt }],
       model: { providerID, modelID },
@@ -567,17 +571,22 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
       ...(toolOverrides ? { tools: toolOverrides } : {}),
     });
 
-    // Post-turn: process the final parts list as authoritative state.
-    // The SSE handler may have caught some of these mid-flight, but the
-    // sync response is the source of truth for what landed.
-    const data = resp.data as Record<string, unknown> | undefined;
-    const parts = Array.isArray(data?.parts)
-      ? (data.parts as Array<Record<string, unknown>>)
+    // Await turn completion via SSE. Resolves when the iterator hits a
+    // `session.turn.close` / `session.idle` / `session.error` event for
+    // our sessionId, or when sseAbort fires (manual abort path).
+    await sseDone;
+
+    // Read authoritative final state from the messages endpoint. The
+    // SSE handler already populated state.allResponseText / tool calls
+    // mid-flight; this re-reads to fill anything SSE missed (race
+    // between turn.close and message persist) and to confirm parts.
+    const messagesResp = await oc.session.messages({ sessionID: sessionId });
+    const messages = Array.isArray(messagesResp.data)
+      ? (messagesResp.data as Array<Record<string, unknown>>)
       : [];
-    const assistantInfo =
-      data?.info && typeof data.info === "object"
-        ? (data.info as KiloAssistantInfo)
-        : undefined;
+    const lastAssistant = findLastAssistantMessage(messages);
+    const parts = lastAssistant?.parts ?? [];
+    const assistantInfo = lastAssistant?.info;
 
     finalizePartsIntoState({
       parts,
@@ -588,9 +597,6 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
 
     if (assistantInfo) {
       const usage = extractAssistantUsage(assistantInfo);
-      // Only fill from sync response when SSE didn't already set non-zero
-      // counts (avoids double-attributing on backends that emit usage in
-      // both places).
       if (state.sdkInputTokens === 0 && state.sdkOutputTokens === 0) {
         recordTokens(state, {
           inputTokens: usage.inputTokens,
@@ -600,32 +606,8 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
         });
       }
     }
-
-    // Some Kilo turns return a parts list missing the assistant text
-    // entirely (race between session.prompt close and message persist).
-    // The fallback poll waits up to 10s for the assistant message to land
-    // in the session-messages endpoint.
-    if (
-      !state.allResponseText &&
-      !state.currentBlockText &&
-      !state.turnTerminated
-    ) {
-      const fallback = await waitForAssistantReply(
-        oc,
-        sessionId,
-        Date.now() - 60_000,
-        chatId,
-        seenQuestionIds,
-      );
-      if (fallback.text) {
-        // Replay through the same state-mutator path so dedup + tool
-        // tracking stay consistent.
-        appendText(state, fallback.text);
-      }
-    }
   } catch (err) {
-    // If the model called end_turn, we intentionally aborted — the
-    // resulting "request aborted" error must NOT propagate.
+    // If the model called end_turn we aborted intentionally — swallow.
     if (state.turnTerminated && /abort/i.test(errMsg(err))) {
       return;
     }
@@ -634,14 +616,36 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
     sseAbort.abort();
     await sseDone.catch(() => {});
     await questionWatchdog.catch(() => {});
-    // Final cleanup: reject any pending questions that landed in the
-    // brief window between abort and finally.
     try {
       await rejectPendingQuestions(oc, sessionId, chatId, seenQuestionIds);
     } catch {
       /* noop */
     }
   }
+}
+
+/**
+ * Find the most recent assistant message in a session-messages list
+ * and surface its parts + assistant info in a uniform shape.
+ *
+ * Kilo's `session.messages` returns the chronological list of all
+ * messages this session has ever produced. We only care about the
+ * last assistant message (the one that just landed via the prompt
+ * we issued).
+ */
+function findLastAssistantMessage(
+  messages: Array<Record<string, unknown>>,
+): { parts: Array<Record<string, unknown>>; info?: KiloAssistantInfo } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const info = m?.info as { role?: string } | undefined;
+    if (info?.role !== "assistant") continue;
+    const parts = Array.isArray(m.parts)
+      ? (m.parts as Array<Record<string, unknown>>)
+      : [];
+    return { parts, info: info as unknown as KiloAssistantInfo };
+  }
+  return null;
 }
 
 // ── SSE subscription ───────────────────────────────────────────────────────
@@ -748,8 +752,17 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
             .filter(Boolean)
             .join(" ");
           logWarn("agent", `[${chatId}] Kilo session.error: ${detail}`);
+          // Stash the error message on the stream state so the handler's
+          // delivery branch can surface it as `⚠️ Kilo: <message>`
+          // instead of leaving the user with silence.
+          const msg = errProp.message ?? errProp.name;
+          if (msg) state.syntheticError = msg;
         }
-        continue;
+        // session.error for OUR session ends the turn — Kilo isn't going
+        // to produce any more events for this prompt. Without this break
+        // the SSE iterator would wait for a `turn.close` / `idle` that
+        // never arrives.
+        return;
       }
 
       const outcome = await processStreamEvent(event, {
