@@ -433,9 +433,7 @@ describe("finalizePartsIntoState — SSE missed", () => {
     // (counterintuitive) deliver-anyway behaviour with a test.
     const state = createStreamState();
     finalizePartsIntoState({
-      parts: [
-        { type: "text", ignored: true, text: "this IS the reply" },
-      ],
+      parts: [{ type: "text", ignored: true, text: "this IS the reply" }],
       state,
       seenToolCallIds: new Set(),
     });
