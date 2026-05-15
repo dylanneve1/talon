@@ -138,6 +138,48 @@ describe("kilo server helpers", () => {
     expect(oc.mcp.disconnect).toHaveBeenCalledTimes(1);
   });
 
+  it("ensureChatMcpServer disconnects OTHER chat MCP servers when switching chats", async () => {
+    // Per-session permission rules block tool *execution* but not
+    // *visibility* — Kilo still lists every connected MCP server's
+    // tools in the model's catalog. So `talon-tools-chat_a` AND
+    // `talon-tools-chat_b` connected at once means a model in chat A
+    // can see and call `talon-tools-chat_b_send`. Holding only one
+    // chat-namespaced server connected at a time is the only way to
+    // hide cross-chat tools. The heartbeat sentinel server is exempt
+    // (always allowed to coexist).
+    const oc = makeClient();
+
+    await ensureChatMcpServer(oc as never, "chat-a");
+    await ensureChatMcpServer(oc as never, "heartbeat");
+    expect(oc.mcp.add).toHaveBeenCalledTimes(2);
+
+    // Switching to chat-b should disconnect chat-a but leave heartbeat
+    // (heartbeat is the sentinel for background agent outbound calls).
+    await ensureChatMcpServer(oc as never, "chat-b");
+
+    expect(oc.mcp.disconnect).toHaveBeenCalledTimes(1);
+    expect(oc.mcp.disconnect.mock.calls[0][0]).toEqual({
+      name: "talon-tools-chat-a",
+    });
+    // chat-b registered now.
+    expect(oc.mcp.add).toHaveBeenCalledTimes(3);
+  });
+
+  it("ensureChatMcpServer leaves heartbeat MCP server connected across chat switches", async () => {
+    const oc = makeClient();
+
+    await ensureChatMcpServer(oc as never, "heartbeat");
+    await ensureChatMcpServer(oc as never, "chat-a");
+    await ensureChatMcpServer(oc as never, "chat-b");
+
+    // heartbeat MUST never get disconnected — it's the sentinel for
+    // outbound tool calls from background agents (heartbeat / dream).
+    const disconnectNames = oc.mcp.disconnect.mock.calls.map(
+      (c: [{ name: string }]) => c[0].name,
+    );
+    expect(disconnectNames).not.toContain("talon-tools-heartbeat");
+  });
+
   it("ensurePluginMcpServers registers all named servers on first call", async () => {
     const oc = makeClient();
     getPluginMcpServersMock.mockReturnValue({

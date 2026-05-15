@@ -292,9 +292,41 @@ export async function ensureChatMcpServer(
 ): Promise<string> {
   const serverName = getChatMcpServerName(chatId);
 
+  // Disconnect any OTHER chat's MCP server first. Kilo exposes every
+  // registered MCP server's tools to every session — and per-session
+  // permission rules only block *execution*, not *visibility*. So if
+  // both `talon-tools-A` and `talon-tools-B` are connected, the model
+  // in chat A can still see `talon-tools-B_send` in its tool catalog
+  // and try to call it (observed in prod: model in group calling
+  // `talon-tools-352042062_react`, hitting either a deny or a
+  // wrong-chat bridge route). Holding only one chat-namespaced server
+  // connected at a time is the only way to actually hide cross-chat
+  // tools from the model. Plugin servers (extras-tools, github-tools,
+  // ...) and the heartbeat sentinel server stay connected; only chat
+  // servers get rotated out.
+  for (const other of [...registeredMcpServers]) {
+    if (
+      !other.startsWith(`${TALON_MCP_SERVER_NAME}-`) ||
+      other === serverName
+    ) {
+      continue;
+    }
+    if (other === `${TALON_MCP_SERVER_NAME}-heartbeat`) continue;
+    try {
+      await oc.mcp.disconnect({ name: other });
+      registeredMcpServers.delete(other);
+      log("agent", `Disconnected ${other} MCP server (chat switch)`);
+    } catch (err) {
+      logWarn(
+        "agent",
+        `Failed to disconnect ${other} during chat switch: ${errMsg(err)}`,
+      );
+    }
+  }
+
   // Local cache short-circuit. Kilo's GET /mcp returns {} regardless of
-  // actual state, so we trust our own record of what we registered earlier
-  // in this process — see the registeredMcpServers comment above.
+  // actual state, so we trust our own record of what we registered
+  // earlier in this process — see the registeredMcpServers comment.
   if (registeredMcpServers.has(serverName)) {
     return serverName;
   }
