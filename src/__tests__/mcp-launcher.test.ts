@@ -46,6 +46,31 @@ describe("mcp-launcher", () => {
     expect(content).toContain('process.stdin.on("end"');
   });
 
+  // ── Single-array shape used by Kilo + OpenCode SDK mcp.add({command:[…]})
+  it("wrapMcpCommand prepends node + launcher to a single-array command", async () => {
+    const { wrapMcpCommand } = await freshLauncher();
+    const wrapped = wrapMcpCommand([
+      "node",
+      "--import",
+      "tsx",
+      "/path/to/mcp-server.ts",
+    ]);
+
+    expect(wrapped[0]).toBe("node");
+    expect(wrapped[1]).toMatch(/mcp-launcher\.mjs$/);
+    expect(wrapped.slice(2)).toEqual([
+      "node",
+      "--import",
+      "tsx",
+      "/path/to/mcp-server.ts",
+    ]);
+  });
+
+  it("wrapMcpCommand throws on empty array (caller bug)", async () => {
+    const { wrapMcpCommand } = await freshLauncher();
+    expect(() => wrapMcpCommand([])).toThrow(/must not be empty/);
+  });
+
   // ── Integration: real launcher + real child ────────────────────────────
 
   it("terminates the supervised child when parent stdin closes", async () => {

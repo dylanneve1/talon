@@ -25,7 +25,7 @@ import {
   setSessionId,
 } from "../../storage/sessions.js";
 import { log, logWarn } from "../../util/log.js";
-import { stripMcpPrefix } from "../../core/tools/index.js";
+import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { clearModelCatalogCache } from "./models.js";
 import {
   guessProviderID,
@@ -191,70 +191,11 @@ async function prewarmPluginMcpServers(): Promise<void> {
   // it on the first call. We deliberately don't await here on the fast
   // path; the catch in initKiloAgent handles any spawn failures.
   const oc = await ensureServer();
-  // First, evict orphan chat MCP servers left over from a previous Talon
-  // process. Without this the model in the new process can see (and call)
-  // tools from chat sessions of the previous process — observed in prod
-  // as `talon-tools-<otherChatId>_react` showing up in the new chat's
-  // tool list right after a Talon restart.
-  await disconnectOrphanChatMcpServers(oc);
   // Use a sentinel chat id for the pre-warm so plugin MCP servers don't
   // bind their bridge calls to a real chat — those calls would fail the
   // gateway's active-context check anyway. Plugin tools that genuinely
   // need a chat context get re-bound when a real chat starts.
   await ensurePluginMcpServers(oc, "prewarm");
-}
-
-/**
- * Discover and disconnect any `talon-tools-<chatId>` MCP servers Kilo has
- * cached from a previous Talon process. Kilo persists registered MCP
- * servers across Talon restarts (its state lives outside our process),
- * so on first startup we can find sessions/tools from the previous run
- * still wired up. Without this, the new process's `registeredMcpServers`
- * cache is empty so the chat-switch disconnect logic in
- * `ensureChatMcpServer` doesn't see anything to clear, and the model in
- * a brand-new chat sees stale per-chat tools from prior sessions.
- *
- * Strategy: query `oc.tool.ids()` (the only Kilo endpoint that surfaces
- * registered tools — `GET /mcp` returns `{}`), filter to talon-tools-*
- * tool ids, derive the per-chat MCP server name by stripping the bare
- * tool suffix, and disconnect each. The heartbeat sentinel (always
- * called `talon-tools-heartbeat`) is exempt — heartbeat re-registers it
- * lazily.
- */
-async function disconnectOrphanChatMcpServers(oc: KiloClient): Promise<void> {
-  let toolIds: unknown[];
-  try {
-    const resp = await oc.tool.ids();
-    toolIds = Array.isArray(resp.data) ? resp.data : [];
-  } catch (err) {
-    logWarn("agent", `Orphan-MCP discovery failed: ${errMsg(err)}`);
-    return;
-  }
-
-  const orphans = new Set<string>();
-  for (const toolId of toolIds) {
-    if (typeof toolId !== "string") continue;
-    if (!toolId.startsWith(`${TALON_MCP_SERVER_NAME}-`)) continue;
-    const bare = stripMcpPrefix(toolId);
-    if (bare === toolId) continue; // not a recognised bare tool name
-    const serverName = toolId.slice(0, toolId.length - bare.length - 1);
-    if (!serverName.startsWith(`${TALON_MCP_SERVER_NAME}-`)) continue;
-    if (serverName === `${TALON_MCP_SERVER_NAME}-heartbeat`) continue;
-    orphans.add(serverName);
-  }
-
-  for (const serverName of orphans) {
-    try {
-      await oc.mcp.disconnect({ name: serverName });
-      registeredMcpServers.delete(serverName);
-      log("agent", `Disconnected orphan MCP server: ${serverName}`);
-    } catch (err) {
-      logWarn(
-        "agent",
-        `Failed to disconnect orphan ${serverName}: ${errMsg(err)}`,
-      );
-    }
-  }
 }
 
 /** @deprecated Use {@link initKiloAgent} — kept for backward compatibility. */
@@ -431,7 +372,10 @@ export async function ensureChatMcpServer(
       name: serverName,
       config: {
         type: "local",
-        command: ["node", "--import", "tsx", toolsPath],
+        // Run the MCP server under Talon's launcher supervisor so the
+        // child dies cleanly when the SDK pipe closes OR Talon's bridge
+        // URL stops responding (catches the kilo-outlives-Talon case).
+        command: wrapMcpCommand(["node", "--import", "tsx", toolsPath]),
         environment: {
           TALON_BRIDGE_URL: `http://127.0.0.1:${gatewayPortFn()}`,
           TALON_CHAT_ID: chatId,
@@ -492,7 +436,7 @@ export async function ensurePluginMcpServers(
         name,
         config: {
           type: "local",
-          command: [cfg.command, ...cfg.args],
+          command: wrapMcpCommand([cfg.command, ...cfg.args]),
           environment: cfg.env ?? {},
         },
       });

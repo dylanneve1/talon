@@ -18,7 +18,7 @@ import {
   setSessionId,
 } from "../../storage/sessions.js";
 import { log, logWarn } from "../../util/log.js";
-import { stripMcpPrefix } from "../../core/tools/index.js";
+import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { clearModelCatalogCache } from "./models.js";
 import {
   guessProviderID,
@@ -91,48 +91,7 @@ export function initOpenCodeAgent(
 
 async function prewarmPluginMcpServers(): Promise<void> {
   const oc = await ensureServer();
-  // Evict orphan chat MCP servers from a previous Talon process — see the
-  // equivalent helper in kilo/server.ts for the rationale.
-  await disconnectOrphanChatMcpServers(oc);
   await ensurePluginMcpServers(oc, "prewarm");
-}
-
-async function disconnectOrphanChatMcpServers(
-  oc: OpencodeClient,
-): Promise<void> {
-  let toolIds: unknown[];
-  try {
-    const resp = await oc.tool.ids();
-    toolIds = Array.isArray(resp.data) ? resp.data : [];
-  } catch (err) {
-    logWarn("agent", `Orphan-MCP discovery failed: ${errMsg(err)}`);
-    return;
-  }
-
-  const orphans = new Set<string>();
-  for (const toolId of toolIds) {
-    if (typeof toolId !== "string") continue;
-    if (!toolId.startsWith(`${TALON_MCP_SERVER_NAME}-`)) continue;
-    const bare = stripMcpPrefix(toolId);
-    if (bare === toolId) continue;
-    const serverName = toolId.slice(0, toolId.length - bare.length - 1);
-    if (!serverName.startsWith(`${TALON_MCP_SERVER_NAME}-`)) continue;
-    if (serverName === `${TALON_MCP_SERVER_NAME}-heartbeat`) continue;
-    orphans.add(serverName);
-  }
-
-  for (const serverName of orphans) {
-    try {
-      await oc.mcp.disconnect({ name: serverName });
-      registeredMcpServers.delete(serverName);
-      log("agent", `Disconnected orphan MCP server: ${serverName}`);
-    } catch (err) {
-      logWarn(
-        "agent",
-        `Failed to disconnect orphan ${serverName}: ${errMsg(err)}`,
-      );
-    }
-  }
 }
 
 export async function ensureServer(): Promise<OpencodeClient> {
@@ -252,7 +211,9 @@ export async function ensureChatMcpServer(
       name: serverName,
       config: {
         type: "local",
-        command: ["node", "--import", "tsx", toolsPath],
+        // Run under the launcher supervisor — see kilo/server.ts for
+        // the lifecycle rationale (mirrors Claude SDK's wrapMcpServer).
+        command: wrapMcpCommand(["node", "--import", "tsx", toolsPath]),
         environment: {
           TALON_BRIDGE_URL: `http://127.0.0.1:${gatewayPortFn()}`,
           TALON_CHAT_ID: chatId,
@@ -295,7 +256,7 @@ export async function ensurePluginMcpServers(
         name,
         config: {
           type: "local",
-          command: [cfg.command, ...cfg.args],
+          command: wrapMcpCommand([cfg.command, ...cfg.args]),
           environment: cfg.env ?? {},
         },
       });

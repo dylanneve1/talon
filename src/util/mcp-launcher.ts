@@ -49,10 +49,22 @@ type StdioServer = {
  * deliver when the parent end of a pipe is closed.
  */
 export function wrapMcpServer<T extends StdioServer>(server: T): T {
-  const launcher = ensureLauncher();
   return {
     ...server,
     command: "node",
-    args: [launcher, server.command, ...server.args],
+    args: [ensureLauncher(), server.command, ...server.args],
   };
+}
+
+/**
+ * Same wrap, single-array shape used by `@kilocode/sdk` and
+ * `@opencode-ai/sdk` `oc.mcp.add({config: {command: [cmd, ...args]}})`.
+ * Returns `["node", <launcher>, ...originalCommand]` so kilo / opencode
+ * spawn the MCP server under the same supervisor Claude SDK uses.
+ */
+export function wrapMcpCommand(command: readonly string[]): string[] {
+  if (command.length === 0) {
+    throw new Error("wrapMcpCommand: command array must not be empty");
+  }
+  return ["node", ensureLauncher(), ...command];
 }
