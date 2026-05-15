@@ -1,7 +1,30 @@
 /**
- * OpenCode main message handler — orchestrates server, sessions, and models.
+ * OpenCode main message handler.
+ *
+ * Orchestrates the full turn lifecycle on top of OpenCode's HTTP API +
+ * SSE event stream. Behaviour mirrors `kilo/handler.ts` and shares its
+ * non-SDK-specific primitives via `../shared/` and `../remote-server/`:
+ *
+ *   - Stream state accumulator (text, tool calls, trailing prose, etc.)
+ *   - Tool-use detection + turn-terminator handling (end_turn / send / react)
+ *   - Progress-text emission before each tool call
+ *   - Model fallback on rate-limit / overload / network
+ *   - Context-overflow + session-expiry recovery
+ *   - First-turn system-prompt rebuild + plugin prompt additions
+ *   - `[YYYY-MM-DD HH:MM:SS] [Name] [msg_id:N]` prompt formatting
+ *
+ * What's OpenCode-specific (lives here, not in shared):
+ *
+ *   - Reading events from OpenCode's SSE stream (`global.event()`).
+ *   - Calling `session.abort()` to terminate on `end_turn`.
+ *   - Provider lookup against OpenCode's `/provider/list` endpoint.
+ *
+ * The streaming + event-processing logic is shared with the Kilo backend
+ * (both wrap forks of the same upstream HTTP API). See
+ * `backend/remote-server/events.ts`.
  */
 
+import type { OpencodeClient } from "@opencode-ai/sdk/v2";
 import type { QueryParams, QueryResult } from "../../core/types.js";
 import {
   getSession,
@@ -14,13 +37,13 @@ import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
+import { incrementCounter, recordHistogram } from "../../util/metrics.js";
+
 import {
   ensureServer,
   ensureSession,
   ensureChatMcpServer,
   ensurePluginMcpServers,
-  buildToolOverrides,
-  disconnectChatMcpServer,
   resolveProviderID,
   parseStoredOpenCodeModelSelection,
   getConfig,
@@ -29,18 +52,44 @@ import {
 import {
   extractPartsSummary,
   extractAssistantUsage,
-  waitForPromptWithQuestionGuard,
-  waitForAssistantReply,
   getOpenCodeTurnSummary,
+  rejectPendingQuestions,
   type OpenCodeAssistantInfo,
 } from "./sessions.js";
 import {
+  createStreamState,
+  recordTokens,
+  finalizeResponseText,
   formatUserPrompt,
   prepareSystemPrompt,
   extractSessionName,
   classifyRetry,
   summarizeUsage,
 } from "../shared/index.js";
+import {
+  processStreamEvent,
+  finalizePartsIntoState,
+} from "../remote-server/events.js";
+
+// ── Local utility ───────────────────────────────────────────────────────────
+
+const errMsg = (e: unknown): string =>
+  e instanceof Error ? e.message : String(e);
+
+// ── Active session registry ─────────────────────────────────────────────────
+//
+// Tracks the in-flight OpenCode session id per chat so gateway actions
+// (e.g. abort on user `/cancel`, refresh MCP on plugin reload) can reach
+// into a running turn without going through chat state.
+
+const activeSessions = new Map<string, string>();
+
+/** Get the in-flight OpenCode session id for a chat, if a turn is running. */
+export function getActiveSession(chatId: string): string | undefined {
+  return activeSessions.get(chatId);
+}
+
+// ── Main handler ────────────────────────────────────────────────────────────
 
 export async function handleMessage(
   params: QueryParams,
@@ -49,10 +98,20 @@ export async function handleMessage(
   const config = getConfig();
   if (!config) throw new Error("OpenCode agent not initialized");
 
-  const { chatId, text, senderName, isGroup, onTextBlock } = params;
+  const {
+    chatId,
+    text,
+    senderName,
+    isGroup,
+    messageId,
+    onTextBlock,
+    onToolUse,
+  } = params;
   const t0 = Date.now();
-  const previousTurns = getSession(chatId).turns;
+  const session = getSession(chatId);
+  const previousTurns = session.turns;
 
+  // Resolve active model + provider lookup against OpenCode's catalog
   const chatSettings = getChatSettings(chatId);
   const activeModel = chatSettings.model ?? config.model;
   const { providerID: selectedProviderID, modelID } =
@@ -61,147 +120,76 @@ export async function handleMessage(
   const oc = await ensureServer();
   const providerID =
     selectedProviderID ?? (await resolveProviderID(oc, modelID));
+  log(
+    "agent",
+    `[${chatId}] OpenCode model resolved: provider=${providerID} model=${modelID}` +
+      (selectedProviderID ? "" : " (provider via catalog lookup)"),
+  );
   const sessionId = await ensureSession(oc, chatId);
-  const chatMcpServerName = await ensureChatMcpServer(oc, chatId);
+  await ensureChatMcpServer(oc, chatId);
   await ensurePluginMcpServers(oc, chatId);
-  const toolOverrides = await buildToolOverrides(oc, chatMcpServerName);
-  const seenQuestionIds = new Set<string>();
 
-  // First-turn system-prompt rebuild + backend suffix. The OpenCode
-  // delivery suffix tells the model to reply as plain text.
+  // Build the prompt (time tag + sender + msg_id reference)
+  const prompt = formatUserPrompt({
+    text,
+    senderName: senderName ?? "user",
+    isGroup,
+    messageId,
+  });
+
+  // First-turn system-prompt rebuild + OpenCode-specific delivery suffix
   const systemPrompt = prepareSystemPrompt({
     config,
     previousTurns,
     backendSuffix: OPENCODE_SYSTEM_PROMPT_SUFFIX,
   });
 
-  const prompt = formatUserPrompt({
-    text,
-    senderName: senderName ?? "user",
-    isGroup,
-    messageId: params.messageId,
-  });
-
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
+  activeSessions.set(chatId, sessionId);
+
+  const state = createStreamState();
+  state.newSessionId = sessionId;
+  const promptStartedAt = Date.now();
+  const seenQuestionIds = new Set<string>();
+  const seenToolCallIds = new Set<string>();
+
+  const setupMs = Date.now() - t0;
+  let promptMs = 0;
 
   try {
-    const promptStartedAt = Date.now();
-    const resp = await waitForPromptWithQuestionGuard(
-      oc,
-      {
-        sessionID: sessionId,
-        parts: [{ type: "text", text: prompt }],
-        model: { providerID, modelID },
-        system: systemPrompt,
-        ...(toolOverrides ? { tools: toolOverrides } : {}),
-      },
-      chatId,
-      seenQuestionIds,
-    );
-
-    const data = resp.data as Record<string, unknown> | undefined;
-    const parts = Array.isArray(data?.parts)
-      ? (data.parts as Array<Record<string, unknown>>)
-      : [];
-    let assistantInfo =
-      data?.info && typeof data.info === "object"
-        ? (data.info as OpenCodeAssistantInfo)
-        : undefined;
-
-    let { text: responseText, toolCalls } = extractPartsSummary(parts);
-
-    if (!responseText) {
-      const fallbackReply = await waitForAssistantReply(
-        oc,
-        sessionId,
-        promptStartedAt,
-        chatId,
-        seenQuestionIds,
-      );
-      responseText = fallbackReply.text;
-      toolCalls = Math.max(toolCalls, fallbackReply.toolCalls);
-      assistantInfo = fallbackReply.info ?? assistantInfo;
-    }
-
-    const turnSummary = await getOpenCodeTurnSummary(
+    // Drive the OpenCode turn: subscribe to SSE events in parallel with
+    // promptAsync, surface tool calls + terminator into shared state,
+    // and exit when the turn closes / goes idle.
+    //
+    // Note: `onStreamDelta` is intentionally NOT forwarded. Telegram's
+    // delivery contract is "send the final reply once" — Talon doesn't
+    // want live edit_message updates exposing the model's chain-of-thought
+    // scratchpad to the user. We still process delta events (for tool-call
+    // detection and the eventCounts diagnostic), just without the UI
+    // callback firing per token. Final delivery happens through `end_turn`
+    // / `send` tool calls, which call `onTextBlock` once with the
+    // committed message.
+    const turnStart = Date.now();
+    await runOpenCodeTurn({
       oc,
       sessionId,
-      promptStartedAt,
-    );
-    const fallbackUsage = extractAssistantUsage(assistantInfo);
-    const usage =
-      turnSummary.usage.assistantMessages > 0
-        ? {
-            inputTokens: turnSummary.usage.inputTokens,
-            outputTokens: turnSummary.usage.outputTokens,
-            cacheRead: turnSummary.usage.cacheRead,
-            cacheWrite: turnSummary.usage.cacheWrite,
-            costUsd: turnSummary.usage.costUsd,
-            providerID:
-              turnSummary.latestAssistant?.info?.providerID ??
-              fallbackUsage.providerID,
-            modelID:
-              turnSummary.latestAssistant?.info?.modelID ??
-              fallbackUsage.modelID,
-          }
-        : fallbackUsage;
-
-    if (!responseText) {
-      logWarn(
-        "agent",
-        `[${chatId}] OpenCode returned no assistant text for ${providerID}/${modelID}`,
-      );
-      responseText =
-        "Sorry \u2014 I got an empty response from OpenCode. Please try again.";
-    }
-
-    if (responseText && onTextBlock) {
-      await onTextBlock(responseText);
-    }
-
-    const durationMs = Date.now() - t0;
-
-    incrementTurns(chatId);
-    recordUsage(chatId, {
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cacheRead: usage.cacheRead,
-      cacheWrite: usage.cacheWrite,
-      durationMs,
-      model: usage.modelID ?? activeModel,
-      costUsd: usage.costUsd,
+      prompt,
+      systemPrompt,
+      providerID,
+      modelID,
+      state,
+      chatId,
+      seenQuestionIds,
+      seenToolCallIds,
+      onStreamDelta: undefined,
+      onTextBlock,
+      onToolUse,
     });
-
-    if (previousTurns === 0 && text) {
-      const name = extractSessionName(text);
-      if (name) setSessionName(chatId, name);
-    }
-
-    log(
-      "agent",
-      `[${chatId}] -> (${summarizeUsage(
-        {
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cacheRead: usage.cacheRead,
-          cacheWrite: usage.cacheWrite,
-        },
-        { durationMs, toolCalls },
-      )})`,
-    );
-    traceMessage(chatId, "out", responseText, { durationMs, toolCalls });
-
-    return {
-      text: responseText.trim(),
-      durationMs,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cacheRead: usage.cacheRead,
-      cacheWrite: usage.cacheWrite,
-    };
+    promptMs = Date.now() - turnStart;
   } catch (err) {
     const classified = classify(err);
+    incrementCounter(`errors.${classified.reason ?? "unknown"}`);
 
     const decision = classifyRetry({
       error: classified,
@@ -236,6 +224,544 @@ export async function handleMessage(
     logError("agent", `[${chatId}] OpenCode error: ${classified.message}`);
     throw classified;
   } finally {
-    await disconnectChatMcpServer(oc, chatMcpServerName);
+    if (activeSessions.get(chatId) === sessionId) {
+      activeSessions.delete(chatId);
+    }
+    // Note: we deliberately do NOT disconnect the chat MCP server here.
+    // The server is named per-chat (`talon-tools-<chatId>`) so it's safe
+    // to keep across turns of the same chat, and re-spawning the
+    // subprocess each turn was costing ~800ms per message. The local
+    // registration cache (server.ts) skips the duplicate `add` calls now.
+    // The chat-switch disconnect dance (see `remote-server/mcp.ts`) handles
+    // visibility scoping when the active chat changes.
   }
+
+  // ── Post-loop accounting ──────────────────────────────────────────────────
+
+  // If the SSE loop missed any usage info, fall back to the session
+  // summary endpoint (which always reflects the final state on the server).
+  if (
+    state.sdkInputTokens === 0 &&
+    state.sdkOutputTokens === 0 &&
+    state.sdkCacheRead === 0
+  ) {
+    try {
+      const summary = await getOpenCodeTurnSummary(
+        oc,
+        sessionId,
+        promptStartedAt,
+      );
+      if (summary.usage.assistantMessages > 0) {
+        recordTokens(state, {
+          inputTokens: summary.usage.inputTokens,
+          outputTokens: summary.usage.outputTokens,
+          cacheRead: summary.usage.cacheRead,
+          cacheWrite: summary.usage.cacheWrite,
+        });
+      }
+    } catch {
+      // best-effort — session summaries can race on cancellation
+    }
+  }
+
+  const responseText = finalizeResponseText(state);
+  const durationMs = Date.now() - t0;
+  recordHistogram("response_latency_ms", durationMs);
+  incrementCounter("queries_total");
+
+  if (state.newSessionId) {
+    const stored = getSession(chatId).sessionId;
+    if (stored !== state.newSessionId) {
+      const { setSessionId } = await import("../../storage/sessions.js");
+      setSessionId(chatId, state.newSessionId);
+    }
+  }
+
+  incrementTurns(chatId);
+  recordUsage(chatId, {
+    inputTokens: state.sdkInputTokens,
+    outputTokens: state.sdkOutputTokens,
+    cacheRead: state.sdkCacheRead,
+    cacheWrite: state.sdkCacheWrite,
+    durationMs,
+    model: activeModel,
+  });
+
+  // Set a descriptive session name from the user's first message
+  if (previousTurns === 0) {
+    const name = extractSessionName(text);
+    if (name) setSessionName(chatId, name);
+  }
+
+  // ── Delivery ──────────────────────────────────────────────────────────────
+  //
+  // Two routes a reply can reach the user:
+  //
+  //   1. Delivery tool — `end_turn` / `send` / `react`. The tool itself
+  //      bridges to Telegram (see core/tools/messaging.ts), so the
+  //      message has already been sent by the time we get here. Talon
+  //      records `state.deliveredTextNorms` for dedup; we don't re-emit.
+  //
+  //   2. Plain text part — OpenCode's default for routed models.
+  //      `finalizePartsIntoState` extracts text-part content (reasoning
+  //      stays private) into `state.allResponseText`. We ship that here
+  //      via `onTextBlock`.
+  //
+  // Empty turn fallback: if neither path produced anything, the model
+  // either crashed mid-reasoning or went into a tool-call loop without
+  // delivering. Surface a concise notice so the user isn't left staring
+  // at silence.
+
+  let delivery: {
+    route: "text-part" | "tool" | "synthetic-error" | "empty";
+    chars: number;
+  };
+
+  if (state.deliveredTextNorms.length > 0 || state.hadBridgeDelivery) {
+    delivery = {
+      route: "tool",
+      chars: state.deliveredTextNorms.reduce((n, d) => n + d.length, 0),
+    };
+  } else if (state.syntheticError && !responseText) {
+    delivery = {
+      route: "synthetic-error",
+      chars: state.syntheticError.length,
+    };
+    incrementCounter("opencode.synthetic_error");
+    logWarn(
+      "agent",
+      `[${chatId}] OpenCode synthetic error in response: ${formatSyntheticPreview(state.syntheticError)}`,
+    );
+    if (onTextBlock) {
+      try {
+        await onTextBlock(`⚠️ OpenCode: ${state.syntheticError}`);
+      } catch (err) {
+        logWarn(
+          "agent",
+          `[${chatId}] onTextBlock (synthetic-error) failed: ${errMsg(err)}`,
+        );
+      }
+    }
+  } else if (responseText && !state.turnTerminated) {
+    delivery = { route: "text-part", chars: responseText.length };
+    if (onTextBlock) {
+      try {
+        await onTextBlock(responseText);
+      } catch (err) {
+        logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
+      }
+    }
+  } else if (
+    !state.turnTerminated &&
+    !responseText &&
+    state.deliveredTextNorms.length === 0
+  ) {
+    delivery = { route: "empty", chars: 0 };
+    incrementCounter("scratchpad.empty_turn");
+    if (onTextBlock) {
+      try {
+        await onTextBlock(
+          state.toolCalls > 0
+            ? "(no reply — model called tools but didn't produce output text)"
+            : "(no reply — model returned no output)",
+        );
+      } catch (err) {
+        logWarn(
+          "agent",
+          `[${chatId}] onTextBlock (empty-turn error) failed: ${errMsg(err)}`,
+        );
+      }
+    }
+  } else {
+    delivery = { route: "tool", chars: 0 };
+  }
+
+  log(
+    "agent",
+    `[${chatId}] delivery: ${delivery.route} (${delivery.chars} chars)`,
+  );
+
+  log(
+    "agent",
+    `[${chatId}] -> (${summarizeUsage(
+      {
+        inputTokens: state.sdkInputTokens,
+        outputTokens: state.sdkOutputTokens,
+        cacheRead: state.sdkCacheRead,
+        cacheWrite: state.sdkCacheWrite,
+      },
+      { durationMs, toolCalls: state.toolCalls },
+    )} terminator=${state.turnTerminated ? "yes" : "no"} ` +
+      `delivered=${state.deliveredTextNorms.length} ` +
+      `respLen=${responseText.length} ` +
+      `setup=${setupMs}ms turn=${promptMs}ms ` +
+      `events=${formatEventCounts(state.eventCounts)})`,
+  );
+  traceMessage(chatId, "out", responseText, {
+    durationMs,
+    toolCalls: state.toolCalls,
+  });
+
+  return {
+    text: responseText,
+    durationMs,
+    inputTokens: state.sdkInputTokens,
+    outputTokens: state.sdkOutputTokens,
+    cacheRead: state.sdkCacheRead,
+    cacheWrite: state.sdkCacheWrite,
+  };
+}
+
+// ── Logging helpers ────────────────────────────────────────────────────────
+
+function formatSyntheticPreview(text: string, max = 120): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return JSON.stringify(collapsed);
+  return JSON.stringify(collapsed.slice(0, max) + "…");
+}
+
+function formatEventCounts(counts: Record<string, number>): string {
+  const entries = Object.entries(counts);
+  if (entries.length === 0) return "none";
+  return entries
+    .map(([type, n]) => `${type.replace(/^(message|session)\./, "")}×${n}`)
+    .join(",");
+}
+
+// ── Internal: run one OpenCode turn with SSE streaming ─────────────────────
+
+interface RunOpenCodeTurnInputs {
+  oc: OpencodeClient;
+  sessionId: string;
+  prompt: string;
+  systemPrompt: string;
+  providerID: string;
+  modelID: string;
+  state: ReturnType<typeof createStreamState>;
+  chatId: string;
+  seenQuestionIds: Set<string>;
+  seenToolCallIds: Set<string>;
+  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
+  onTextBlock?: (text: string) => Promise<void>;
+  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
+}
+
+/**
+ * Run one OpenCode turn end-to-end.
+ *
+ * Strategy:
+ *   1. Subscribe to SSE BEFORE issuing the prompt so no early events are
+ *      lost. The subscription tracks state mutations (tool calls,
+ *      synthetic errors, partID→type lookups) and resolves its promise
+ *      when the turn ends — `session.turn.close`, `session.idle`, or
+ *      `session.error` for our session.
+ *   2. Fire the prompt via `session.promptAsync`. That POST returns
+ *      immediately with a messageID; OpenCode runs the model task in
+ *      the background and emits SSE events as it goes.
+ *   3. Await the SSE close event. Talon's await is therefore on event
+ *      iteration we control — never on a long-running HTTP call we
+ *      can't interrupt. If the upstream stalls, OpenCode eventually
+ *      fires `session.error` (rate limit, timeout, model-not-found,
+ *      etc.) which closes the turn from the same path.
+ *   4. Read the authoritative parts list via `session.messages` and
+ *      drain it through `finalizePartsIntoState`.
+ *
+ * Why we don't use `session.prompt` (sync):
+ *   The sync endpoint holds the connection open until the upstream
+ *   model finishes. When the upstream stalls (free providers, network
+ *   blips), the HTTP POST hangs and our `await` blocks forever. With
+ *   `promptAsync` + SSE, "the model is taking too long" becomes "no
+ *   events arriving" — observable and abortable.
+ */
+async function runOpenCodeTurn(inputs: RunOpenCodeTurnInputs): Promise<void> {
+  const {
+    oc,
+    sessionId,
+    prompt,
+    systemPrompt,
+    providerID,
+    modelID,
+    state,
+    chatId,
+    seenQuestionIds,
+    seenToolCallIds,
+    onStreamDelta,
+    onTextBlock,
+    onToolUse,
+  } = inputs;
+
+  // SSE subscription FIRST — early `session.turn.open` and
+  // `message.part.updated` events can fire immediately after
+  // promptAsync returns, so the iterator must already be alive.
+  const sseAbort = new AbortController();
+  const sseDone = subscribeToTurnEvents({
+    oc,
+    sessionId,
+    state,
+    chatId,
+    seenToolCallIds,
+    onStreamDelta,
+    onTextBlock,
+    onToolUse,
+    onTerminator: async () => {
+      // End_turn fired — abort the in-flight session so OpenCode doesn't
+      // burn another round-trip "wrapping up" after the model declared
+      // done. session.idle then fires for our session and the SSE
+      // iterator exits cleanly.
+      try {
+        await oc.session.abort({ sessionID: sessionId });
+      } catch (err) {
+        logWarn("agent", `[${chatId}] session.abort failed: ${errMsg(err)}`);
+      }
+    },
+    abortSignal: sseAbort.signal,
+  });
+
+  // Question watchdog: Talon manages its own tool permissions, so any
+  // upstream-side question (tool approval, clarification) is auto-handled.
+  const questionWatchdog = (async () => {
+    while (!sseAbort.signal.aborted) {
+      try {
+        await rejectPendingQuestions(oc, sessionId, chatId, seenQuestionIds);
+      } catch (err) {
+        logWarn(
+          "agent",
+          `[${chatId}] question watchdog failed: ${errMsg(err)}`,
+        );
+      }
+      await sleep(350, sseAbort.signal);
+    }
+  })();
+
+  try {
+    // Fire and forget — promptAsync returns immediately. The HTTP POST
+    // itself can't hang us; the await below is on the SSE close event.
+    await oc.session.promptAsync({
+      sessionID: sessionId,
+      parts: [{ type: "text", text: prompt }],
+      model: { providerID, modelID },
+      system: systemPrompt,
+    });
+
+    // Await turn completion via SSE.
+    await sseDone;
+
+    // Read authoritative final state from the messages endpoint.
+    const messagesResp = await oc.session.messages({ sessionID: sessionId });
+    const messages = Array.isArray(messagesResp.data)
+      ? (messagesResp.data as Array<Record<string, unknown>>)
+      : [];
+    const lastAssistant = findLastAssistantMessage(messages);
+    const parts = lastAssistant?.parts ?? [];
+    const assistantInfo = lastAssistant?.info;
+
+    finalizePartsIntoState({
+      parts,
+      state,
+      seenToolCallIds,
+      extractPartsSummary,
+      onToolUse,
+    });
+
+    if (assistantInfo) {
+      const usage = extractAssistantUsage(assistantInfo);
+      if (state.sdkInputTokens === 0 && state.sdkOutputTokens === 0) {
+        recordTokens(state, {
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+          cacheRead: usage.cacheRead,
+          cacheWrite: usage.cacheWrite,
+        });
+      }
+    }
+  } catch (err) {
+    // If the model called end_turn we aborted intentionally — swallow.
+    if (state.turnTerminated && /abort/i.test(errMsg(err))) {
+      return;
+    }
+    throw err;
+  } finally {
+    sseAbort.abort();
+    await sseDone.catch(() => {});
+    await questionWatchdog.catch(() => {});
+    try {
+      await rejectPendingQuestions(oc, sessionId, chatId, seenQuestionIds);
+    } catch {
+      /* noop */
+    }
+  }
+}
+
+/**
+ * Find the most recent assistant message in a session-messages list
+ * and surface its parts + assistant info in a uniform shape.
+ */
+function findLastAssistantMessage(messages: Array<Record<string, unknown>>): {
+  parts: Array<Record<string, unknown>>;
+  info?: OpenCodeAssistantInfo;
+} | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const info = m?.info as { role?: string } | undefined;
+    if (info?.role !== "assistant") continue;
+    const parts = Array.isArray(m.parts)
+      ? (m.parts as Array<Record<string, unknown>>)
+      : [];
+    return { parts, info: info as unknown as OpenCodeAssistantInfo };
+  }
+  return null;
+}
+
+// ── SSE subscription ───────────────────────────────────────────────────────
+
+interface SubscribeInputs {
+  oc: OpencodeClient;
+  sessionId: string;
+  state: ReturnType<typeof createStreamState>;
+  chatId: string;
+  seenToolCallIds: Set<string>;
+  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
+  onTextBlock?: (text: string) => Promise<void>;
+  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
+  onTerminator: () => Promise<void>;
+  abortSignal: AbortSignal;
+}
+
+/**
+ * Subscribe to OpenCode's global SSE event stream and translate
+ * relevant events into stream-state mutations / callback firings.
+ *
+ * Only events scoped to our `sessionId` are processed; others get
+ * dropped silently. The subscription is closed via `abortSignal` and
+ * any error is logged but does not propagate.
+ */
+async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
+  const {
+    oc,
+    sessionId,
+    state,
+    chatId,
+    seenToolCallIds,
+    onStreamDelta,
+    onTextBlock,
+    onToolUse,
+    onTerminator,
+    abortSignal,
+  } = inputs;
+
+  let stream: AsyncIterable<unknown> | undefined;
+  try {
+    const sse = (await oc.global.event()) as unknown as {
+      stream?: AsyncIterable<unknown>;
+    };
+    stream = sse?.stream;
+  } catch (err) {
+    logWarn("agent", `[${chatId}] SSE subscribe failed: ${errMsg(err)}`);
+    return;
+  }
+
+  if (!stream) return;
+
+  try {
+    for await (const evt of stream) {
+      if (abortSignal.aborted) break;
+      if (!evt || typeof evt !== "object") continue;
+
+      // OpenCode's SSE wire format wraps every event in
+      // `{payload: {type, properties}}` — same as Kilo.
+      const payload =
+        evt && typeof evt === "object" && "payload" in evt
+          ? (evt as { payload?: unknown }).payload
+          : evt;
+      if (!payload || typeof payload !== "object") continue;
+      const event = payload as {
+        type?: string;
+        properties?: Record<string, unknown>;
+      };
+
+      // session.error scope-filter to our own sessionId before
+      // attributing the error to this chat — the SSE stream is global
+      // and a heartbeat session.error would otherwise pollute the
+      // chat's log.
+      if (event.type === "session.error") {
+        const props = event.properties ?? {};
+        const evtSessionID =
+          typeof props.sessionID === "string" ? props.sessionID : undefined;
+        if (evtSessionID && evtSessionID !== sessionId) {
+          continue;
+        }
+        const errProp = props.error as
+          | {
+              name?: string;
+              message?: string;
+              data?: Record<string, unknown>;
+            }
+          | undefined;
+        // MessageAbortedError is our own abort signal when a terminator
+        // tool fired; expected close path, not an upstream failure.
+        const isOurAbort =
+          state.turnTerminated &&
+          (errProp?.name === "MessageAbortedError" ||
+            /abort/i.test(errProp?.name ?? "") ||
+            /abort/i.test(errProp?.message ?? ""));
+        if (errProp && !isOurAbort) {
+          const detail = [
+            errProp.name && `name=${errProp.name}`,
+            errProp.message && `message=${errProp.message}`,
+            errProp.data && `data=${JSON.stringify(errProp.data)}`,
+          ]
+            .filter(Boolean)
+            .join(" ");
+          logWarn("agent", `[${chatId}] OpenCode session.error: ${detail}`);
+          const msg = errProp.message ?? errProp.name;
+          if (msg) state.syntheticError = msg;
+        }
+        return;
+      }
+
+      const outcome = await processStreamEvent(event, {
+        sessionId,
+        state,
+        seenToolCallIds,
+        backendLabel: "OpenCode",
+        onStreamDelta,
+        onTextBlock,
+        onToolUse,
+      });
+
+      if (outcome.kind === "terminator_fired") {
+        onTerminator().catch(() => {});
+        continue;
+      }
+
+      if (outcome.kind === "stop") {
+        if (outcome.reason === "out_of_scope") continue;
+        return; // turn.close or idle — stop iterating
+      }
+    }
+  } catch (err) {
+    if (!abortSignal.aborted) {
+      logWarn("agent", `[${chatId}] SSE iteration failed: ${errMsg(err)}`);
+    }
+  }
+}
+
+// ── Sleep with abort ────────────────────────────────────────────────────────
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(() => resolve(), ms);
+    if (signal) {
+      const onAbort = (): void => {
+        clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
 }

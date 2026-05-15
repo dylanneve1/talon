@@ -327,27 +327,31 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
     }
   }, 240_000);
 
-  // ── Test 2: per-turn MCP teardown ────────────────────────────────────────
+  // ── Test 2: cross-chat MCP isolation ─────────────────────────────────────
   //
-  // OpenCode's isolation model differs from kilo's:
-  //   - Kilo keeps the chat MCP connected and disconnects others on
-  //     chat-switch (`ensureChatMcpServer` rotates one in at a time).
-  //   - OpenCode disconnects the chat MCP at the END of every turn
-  //     (`finally { await disconnectChatMcpServer(...) }` in handler.ts).
+  // Per-session permission rules block tool *execution* but not *visibility*
+  // — OpenCode exposes every registered MCP server's tools to every session.
+  // The fix (`ensureChatMcpServer` in `remote-server/mcp.ts`) holds at most
+  // one chat `talon-tools-<chatId>` registered at a time, disconnecting any
+  // other when a new chat starts. Same model as the Kilo backend; both
+  // wrap forks of the same upstream HTTP API.
   //
-  // Both achieve the same end state: the model in chat B can't see
-  // chat A's tools. The test invariant is opencode-shaped: after any
-  // turn finishes, no `talon-tools-<chatId>_*` server should remain in
-  // the cache (heartbeat is exempt; plugin servers are kept). Run
-  // turns for two different chats and confirm the cache is clean
-  // after each.
+  // This test exercises the disconnect path against a real `opencode`
+  // server: run a turn for chat A, then a turn for chat B, then assert
+  // that only chat B's MCP server remains registered (chat A's was
+  // disconnected before chat B's was added). Talon's local
+  // `registeredMcpServers` Set is the source of truth — OpenCode's
+  // `GET /mcp` returns `{}` regardless of state, so we read the cache
+  // directly via `getRegisteredMcpServerNames`.
 
-  it("per-turn MCP teardown leaves no chat servers connected after the turn", async () => {
+  it("chat-switch disconnects the previous chat's MCP server", async () => {
     recording.reset();
     const { execute } = await import("../../core/dispatcher.js");
     const { getRegisteredMcpServerNames } =
       await import("../../backend/opencode/server.js");
 
+    // Turn 1 — chat A. The model's reply doesn't matter; we just need
+    // its MCP server to get registered.
     await execute({
       chatId: "opencode-isolation-a",
       numericChatId: 992_010,
@@ -357,14 +361,17 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
       source: "message",
     });
 
-    const afterA = getRegisteredMcpServerNames().filter(
-      (n) => n.startsWith("talon-tools-") && n !== "talon-tools-heartbeat",
+    const afterA = getRegisteredMcpServerNames().filter((n) =>
+      n.startsWith("talon-tools-"),
     );
     expect(
       afterA,
-      `chat A's MCP should be disconnected after the turn (per-turn teardown). cache=[${afterA.join(", ")}]`,
-    ).toEqual([]);
+      `expected chat A's MCP to be registered after turn 1; got [${afterA.join(", ")}]`,
+    ).toContain("talon-tools-opencode-isolation-a");
 
+    // Turn 2 — chat B. Chat A's MCP must be disconnected before chat B's
+    // is added; production logs `Disconnected talon-tools-... (chat switch)`
+    // when this fires.
     await execute({
       chatId: "opencode-isolation-b",
       numericChatId: 992_011,
@@ -374,12 +381,21 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
       source: "message",
     });
 
-    const afterB = getRegisteredMcpServerNames().filter(
-      (n) => n.startsWith("talon-tools-") && n !== "talon-tools-heartbeat",
-    );
+    const afterB = getRegisteredMcpServerNames();
+    const chatServers = afterB.filter((n) => n.startsWith("talon-tools-"));
+
+    expect(chatServers).toContain("talon-tools-opencode-isolation-b");
     expect(
-      afterB,
-      `chat B's MCP should be disconnected after the turn (per-turn teardown). cache=[${afterB.join(", ")}]`,
-    ).toEqual([]);
+      chatServers,
+      `chat A's MCP must be disconnected after switch; cache=[${chatServers.join(", ")}]`,
+    ).not.toContain("talon-tools-opencode-isolation-a");
+
+    // Heartbeat sentinel (if present) is exempt from the chat-switch
+    // disconnect, but should be the ONLY non-chat talon-tools-* in the
+    // cache. Anything else means a stale chat MCP wasn't disconnected.
+    const nonHeartbeat = chatServers.filter(
+      (n) => n !== "talon-tools-heartbeat",
+    );
+    expect(nonHeartbeat).toEqual(["talon-tools-opencode-isolation-b"]);
   }, 300_000);
 });

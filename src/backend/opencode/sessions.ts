@@ -349,7 +349,7 @@ function isToolApprovalQuestion(
   });
 }
 
-async function rejectPendingQuestions(
+export async function rejectPendingQuestions(
   oc: OpencodeClient,
   sessionId: string,
   chatId: string,
