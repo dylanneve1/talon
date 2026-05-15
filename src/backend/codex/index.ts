@@ -28,4 +28,6 @@ export { initCodexAgent, ensureCodex } from "./init.js";
 
 export { handleMessage, getActiveAbort } from "./handler.js";
 
+export { runOneShotAgent } from "./one-shot.js";
+
 export { buildCodexMcpServers, type CodexMcpServer } from "./mcp-config.js";

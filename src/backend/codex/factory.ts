@@ -14,6 +14,16 @@ import { log } from "../../util/log.js";
 
 import { initCodexAgent } from "./init.js";
 import { handleMessage as codexHandleMessage } from "./handler.js";
+import { runOneShotAgent as codexRunOneShotAgent } from "./one-shot.js";
+import {
+  resolveModel,
+  getModelInfo,
+  getSettingsPresentation,
+  getProviders,
+  getProviderModels,
+  formatModelError,
+  listModels,
+} from "./models.js";
 
 const codexFactory: BackendFactory = {
   id: "codex",
@@ -25,6 +35,16 @@ const codexFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: (params) => codexHandleMessage(params),
+      resolveModel: (q) => Promise.resolve(resolveModel(q)),
+      getModelInfo: (id) => Promise.resolve(getModelInfo(id)),
+      getSettingsPresentation: (m, prefix) =>
+        Promise.resolve(getSettingsPresentation(m, prefix)),
+      getProviders: () => Promise.resolve(getProviders()),
+      getProviderModels: (p, pg, ps) =>
+        Promise.resolve(getProviderModels(p, pg, ps)),
+      formatModelError: (q, r) => formatModelError(q, r),
+      listModels: (f) => Promise.resolve(listModels(f)),
+      runOneShotAgent: (p) => codexRunOneShotAgent(p),
       backendLabel: "Codex",
     };
 
