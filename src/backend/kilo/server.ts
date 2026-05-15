@@ -487,6 +487,25 @@ export async function ensureSession(
   const newId = (data?.id as string) ?? String(Date.now());
   setSessionId(chatId, newId);
   log("agent", `[${chatId}] Created Kilo session: ${newId}`);
+
+  // Auto-grant all permissions for this session. Talon manages its own
+  // tool authorisation via the per-chat MCP tool overrides; Kilo's
+  // permission prompts add a second gate that nobody answers, which
+  // hangs Kilo's built-in tools (`read`, `bash`, etc.) in
+  // `permission.asked` state forever. Symptom in prod: a group turn
+  // where the model called `read` sat with `tool=read status=running`
+  // and the SSE iterator waited for a `turn.close` that never arrived.
+  // Equivalent to the Claude SDK backend's `permissionMode:
+  // "bypassPermissions"`.
+  try {
+    await oc.permission.allowEverything({ enable: true, sessionID: newId });
+  } catch (err) {
+    logWarn(
+      "agent",
+      `[${chatId}] permission.allowEverything failed for ${newId}: ${errMsg(err)}`,
+    );
+  }
+
   return newId;
 }
 

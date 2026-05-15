@@ -42,6 +42,7 @@ type MockKiloClient = {
   tool: { ids: ReturnType<typeof vi.fn> };
   session: { get: ReturnType<typeof vi.fn>; create: ReturnType<typeof vi.fn> };
   provider: { list: ReturnType<typeof vi.fn> };
+  permission: { allowEverything: ReturnType<typeof vi.fn> };
 };
 
 function makeClient(): MockKiloClient {
@@ -50,6 +51,7 @@ function makeClient(): MockKiloClient {
     tool: { ids: vi.fn() },
     session: { get: vi.fn(), create: vi.fn() },
     provider: { list: vi.fn() },
+    permission: { allowEverything: vi.fn().mockResolvedValue({}) },
   };
 }
 
@@ -183,6 +185,38 @@ describe("kilo server helpers", () => {
     await expect(ensureSession(oc as never, "chat-a")).resolves.toBe("new-1");
     expect(resetSessionMock).toHaveBeenCalledWith("chat-a");
     expect(setSessionIdMock).toHaveBeenCalledWith("chat-a", "new-1");
+  });
+
+  it("ensureSession enables permission.allowEverything for newly created sessions", async () => {
+    // Without this, Kilo's built-in tools (`read`, `bash`, ...) raise a
+    // `permission.asked` event mid-turn. Talon doesn't auto-reply to
+    // permission events (only to `question.*`), so the tool sits in
+    // `running` forever and the SSE iterator never sees a `turn.close`
+    // — the symptom that made every group-chat turn hang in prod.
+    const oc = makeClient();
+    getSessionMock.mockReturnValueOnce({});
+    oc.session.create.mockResolvedValueOnce({ data: { id: "new-perm-1" } });
+
+    await ensureSession(oc as never, "chat-a");
+
+    expect(oc.permission.allowEverything).toHaveBeenCalledWith({
+      enable: true,
+      sessionID: "new-perm-1",
+    });
+  });
+
+  it("ensureSession swallows permission.allowEverything failures", async () => {
+    // Kilo versions without the allowEverything endpoint must not crash
+    // the session creation path — the worst case is permission prompts
+    // hang the next turn, which is no worse than today's behaviour.
+    const oc = makeClient();
+    getSessionMock.mockReturnValueOnce({});
+    oc.session.create.mockResolvedValueOnce({ data: { id: "new-perm-2" } });
+    oc.permission.allowEverything.mockRejectedValueOnce(new Error("404"));
+
+    await expect(ensureSession(oc as never, "chat-a")).resolves.toBe(
+      "new-perm-2",
+    );
   });
 
   it("disconnectChatMcpServer swallows disconnect errors", async () => {
