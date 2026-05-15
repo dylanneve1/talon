@@ -1,0 +1,92 @@
+/**
+ * Flow-violation detection and synthetic-retry construction.
+ *
+ * "Flow violation" = the model produced text content in its output stream
+ * (private scratchpad by contract) without routing it through a delivery
+ * tool (`end_turn` / `send(type="text")` / `react`). The text would be
+ * dropped invisibly, so we surface the miss by re-prompting the model
+ * once with a synthetic system reminder describing the correct flow.
+ *
+ * The retry is one-shot: a second flow violation after the reminder is
+ * accepted as a silent drop + telemetry counter. Without the cap, models
+ * that habitually pair prose with the wrong tool would loop indefinitely.
+ *
+ * Backends call `detectFlowViolation(...)` after the stream loop ends.
+ * If it returns a reminder string, the handler re-runs the message with
+ * that reminder text in place of the original prompt (and `retried = true`
+ * so the next call short-circuits the retry path).
+ */
+
+import { isDuplicateOfDelivered } from "./delivered-text.js";
+
+// ── Constants ───────────────────────────────────────────────────────────────
+
+/** The synthetic system reminder shipped back to the model on a flow violation. */
+export const FLOW_VIOLATION_REMINDER =
+  "[FLOW VIOLATION] You produced text content but didn't call `end_turn` or `send`. " +
+  "Pure prose in your output stream is private scratchpad — it's dropped, the user " +
+  "never sees it. Please retry with the proper flow: " +
+  "`end_turn(text=...)` to deliver a final reply, " +
+  "`end_turn()` (no args) to close silently, or " +
+  "`send(...)` for mid-turn rich content (photos, polls, etc.). " +
+  "Respond now using the correct tool call.";
+
+// ── Public API ──────────────────────────────────────────────────────────────
+
+/** Inputs needed to decide whether a turn violated the delivery contract. */
+export type FlowViolationInputs = {
+  /** Text accumulated after the last tool call (or the full text if none). */
+  trailingText: string;
+  /** Whether a turn-terminator tool already fired in this turn. */
+  turnTerminated: boolean;
+  /** Already-delivered text norms used for dedup. */
+  deliveredTextNorms: readonly string[];
+  /** Whether this is already a retry (prevents looping). */
+  retried: boolean;
+};
+
+/** Outcome of the flow-violation check. */
+export type FlowViolationResult =
+  | {
+      /** True when the model wrote prose and skipped the delivery tool. */
+      violated: true;
+      /** Trimmed scratchpad prose that would be dropped. */
+      trailing: string;
+      /** Whether the handler should re-prompt with `reminder`. False when retried. */
+      shouldRetry: boolean;
+      /** Reminder string to send as the next user prompt (when retrying). */
+      reminder: string;
+    }
+  | {
+      violated: false;
+    };
+
+/**
+ * Classify a stream-loop outcome against the delivery contract.
+ *
+ * A turn is in violation when ALL of the following hold:
+ *   - The trailing text (after trim) is non-empty.
+ *   - No turn-terminator tool fired (e.g. `end_turn`).
+ *   - The trailing text isn't a duplicate of content already delivered
+ *     through a tool call in the same turn.
+ *
+ * The third condition handles the legitimate "model wrote text AND called
+ * `end_turn(text=...)` with the same text" pattern — that's not a missed
+ * delivery, it's redundant double-emission. The deliveredTextNorms list
+ * captures this and dedup short-circuits the retry.
+ */
+export function detectFlowViolation(
+  inputs: FlowViolationInputs,
+): FlowViolationResult {
+  const trailing = inputs.trailingText.trim();
+  if (trailing.length === 0) return { violated: false };
+  if (inputs.turnTerminated) return { violated: false };
+  if (isDuplicateOfDelivered(trailing, inputs.deliveredTextNorms))
+    return { violated: false };
+  return {
+    violated: true,
+    trailing,
+    shouldRetry: !inputs.retried,
+    reminder: FLOW_VIOLATION_REMINDER,
+  };
+}

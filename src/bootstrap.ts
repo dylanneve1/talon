@@ -117,102 +117,29 @@ export async function initBackendAndDispatcher(
   config: TalonConfig,
   frontend: Frontend,
 ): Promise<BackendAndDispatcherResult> {
-  let backend: QueryBackend;
+  // Register all built-in backends via side-effect import. Adding a new
+  // backend is now strictly additive: drop a `factory.ts` under the new
+  // backend dir and import it here. No conditionals here change.
+  await import("./backend/claude-sdk/factory.js");
+  await import("./backend/opencode/factory.js");
+  await import("./backend/kilo/factory.js");
 
-  if (config.backend === "opencode" || config.backend === "kilo") {
-    const isKilo = config.backend === "kilo";
-    const label = isKilo ? "Kilo" : "OpenCode";
-    const mod = isKilo
-      ? await import("./backend/kilo/index.js")
-      : await import("./backend/opencode/index.js");
-    const ocModelProvider = isKilo
-      ? await import("./backend/kilo/model-provider.js")
-      : await import("./backend/opencode/model-provider.js");
-    const {
-      initOpenCodeAgent,
-      handleMessage: ocHandleMessage,
-      runOneShotAgent: ocRunOneShotAgent,
-    } = mod;
-    initOpenCodeAgent(config, frontend.getBridgePort, frontend.name);
-    backend = {
-      query: (params) => ocHandleMessage(params),
-      resolveModel: (q) => ocModelProvider.resolveModel(q),
-      getModelInfo: (id) => ocModelProvider.getModelInfo(id),
-      getSettingsPresentation: (m, prefix) =>
-        ocModelProvider.getSettingsPresentation(m, prefix),
-      getProviders: () => ocModelProvider.getProviders(),
-      getProviderModels: (p, pg, ps) =>
-        ocModelProvider.getProviderModels(p, pg, ps),
-      formatModelError: (q, r) => ocModelProvider.formatModelError(q, r),
-      listModels: (f) => ocModelProvider.listModels(f),
-      backendLabel: label,
-      getSessionSnapshot: async (sessionId) => {
-        const snap = await mod.getOpenCodeSessionSnapshot(sessionId);
-        if (!snap) return undefined;
-        return {
-          inputTokens: snap.usage?.totalInputTokens,
-          outputTokens: snap.usage?.totalOutputTokens,
-          cacheRead: snap.usage?.totalCacheRead,
-          cacheWrite: snap.usage?.totalCacheWrite,
-          contextModelId: snap.assistant?.modelID,
-        };
-      },
-      runOneShotAgent: (p) => ocRunOneShotAgent(p),
-      // Kilo/OpenCode use a long-running shared HTTP server, so there are
-      // no per-query subprocesses to evict — `evictOrphanSubprocesses` is
-      // intentionally not implemented.
-    };
-    log("bot", `Backend: ${label}`);
-  } else {
-    const {
-      initAgent: initClaudeAgent,
-      handleMessage: claudeHandleMessage,
-      warmSession: claudeWarmSession,
-      updateSystemPrompt: claudeUpdateSystemPrompt,
-      getActiveQuery,
-      buildMcpServers,
-      runOneShotAgent: claudeRunOneShotAgent,
-      evictOrphanSubprocesses: claudeEvictOrphanSubprocesses,
-      initClaudeOneShot,
-    } = await import("./backend/claude-sdk/index.js");
-    const { getPluginMcpServers } = await import("./core/plugin.js");
-    const claudeModelProvider =
-      await import("./backend/claude-sdk/model-provider.js");
-    await initClaudeAgent(config, frontend.getBridgePort);
-    backend = {
-      query: (params) => claudeHandleMessage(params),
-      warmSession: (chatId) => claudeWarmSession(chatId),
-      updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
-      resolveModel: (q) => claudeModelProvider.resolveModel(q),
-      getModelInfo: (id) => claudeModelProvider.getModelInfo(id),
-      getSettingsPresentation: (m, prefix) =>
-        claudeModelProvider.getSettingsPresentation(m, prefix),
-      getProviders: () => claudeModelProvider.getProviders(),
-      getProviderModels: (p, pg, ps) =>
-        claudeModelProvider.getProviderModels(p, pg, ps),
-      formatModelError: (q, r) => claudeModelProvider.formatModelError(q, r),
-      listModels: (f) => claudeModelProvider.listModels(f),
-      backendLabel: "Anthropic",
-      refreshMcpServers: async (chatId) => {
-        const qi = getActiveQuery(chatId);
-        if (!qi) return null;
-        // Two-phase teardown: first remove all MCP servers so the SDK
-        // sends a close/shutdown to each subprocess via stdio (OS-agnostic),
-        // then install the fresh set. This ensures old processes receive an
-        // explicit termination message and exit before new ones spawn.
-        await qi.setMcpServers({});
-        const bridgeUrl = `http://127.0.0.1:${frontend.getBridgePort()}`;
-        const freshServers = {
-          ...buildMcpServers(chatId),
-          ...getPluginMcpServers(bridgeUrl, chatId),
-        };
-        return qi.setMcpServers(freshServers);
-      },
-      runOneShotAgent: (p) => claudeRunOneShotAgent(p),
-      evictOrphanSubprocesses: (label) => claudeEvictOrphanSubprocesses(label),
-    };
-    log("bot", "Backend: Claude SDK");
+  const { getBackend, listBackends } = await import("./backend/registry.js");
+
+  const factory = getBackend(config.backend);
+  if (!factory) {
+    const known = listBackends()
+      .map((b) => `"${b.id}"`)
+      .join(", ");
+    throw new Error(
+      `Unknown backend "${config.backend}" — known: ${known}. Check config.backend in talon.json.`,
+    );
   }
+
+  const { backend } = await factory.init(config, {
+    getBridgePort: frontend.getBridgePort,
+    frontendName: frontend.name,
+  });
 
   initDispatcher({
     backend,

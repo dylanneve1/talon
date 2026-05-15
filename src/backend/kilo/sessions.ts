@@ -1,6 +1,12 @@
 /**
- * OpenCode session helpers — message parsing, usage summarization,
- * snapshot retrieval, and the question-rejection guard used during prompts.
+ * Kilo session helpers — message parsing, usage summarization, snapshot
+ * retrieval, and the pending-question rejection guard used during prompts.
+ *
+ * Kilo organises a session as an ordered list of `messages`, each with a
+ * typed parts array (text / tool / reasoning / step-start / step-finish).
+ * Helpers in this module translate that shape into the shared
+ * stream-state primitives + a usage summary suitable for Talon's
+ * accounting layer.
  */
 
 import { setTimeout as sleep } from "node:timers/promises";
@@ -8,23 +14,27 @@ import type { KiloClient } from "@kilocode/sdk/v2";
 import { logWarn } from "../../util/log.js";
 import { ensureServer } from "./server.js";
 
-// ---------------------------------------------------------------------------
-// Local utility
-// ---------------------------------------------------------------------------
+// ── Local utility ───────────────────────────────────────────────────────────
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const errMsg = (e: unknown): string =>
+  e instanceof Error ? e.message : String(e);
 
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
+// ── Constants ───────────────────────────────────────────────────────────────
 
-export const OPENCODE_SESSION_MESSAGE_LIMIT = 5000;
+/** Hard cap on messages fetched per `session.messages` call. Kilo doesn't
+ * paginate by default; we pull the most recent slice and dedupe. */
+export const KILO_SESSION_MESSAGE_LIMIT = 5000;
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
+/** @deprecated Use {@link KILO_SESSION_MESSAGE_LIMIT}. */
+export const OPENCODE_SESSION_MESSAGE_LIMIT = KILO_SESSION_MESSAGE_LIMIT;
 
-export type OpenCodeAssistantInfo = {
+// ── Types ───────────────────────────────────────────────────────────────────
+
+/**
+ * Subset of Kilo's `Message.info` used by Talon for usage accounting.
+ * The full type comes from the SDK; we narrow to the fields we read.
+ */
+export type KiloAssistantInfo = {
   role?: string;
   finish?: string;
   time?: {
@@ -46,7 +56,10 @@ export type OpenCodeAssistantInfo = {
   modelID?: string;
 };
 
-type OpenCodeSessionSnapshot = {
+/** @deprecated Use {@link KiloAssistantInfo}. */
+export type OpenCodeAssistantInfo = KiloAssistantInfo;
+
+export type KiloSessionSnapshot = {
   sessionId: string;
   createdAt?: number;
   updatedAt?: number;
@@ -74,13 +87,16 @@ type OpenCodeSessionSnapshot = {
   };
 };
 
+/** @deprecated Use {@link KiloSessionSnapshot}. */
+export type OpenCodeSessionSnapshot = KiloSessionSnapshot;
+
 type ParsedAssistantMessage = {
   createdAt: number;
-  info?: OpenCodeAssistantInfo;
+  info?: KiloAssistantInfo;
   parts: Array<Record<string, unknown>>;
 };
 
-type OpenCodeUsageSummary = {
+type KiloUsageSummary = {
   assistantMessages: number;
   inputTokens: number;
   outputTokens: number;
@@ -90,14 +106,17 @@ type OpenCodeUsageSummary = {
   costUsd: number;
 };
 
-// ---------------------------------------------------------------------------
-// Functions
-// ---------------------------------------------------------------------------
+// ── Public: parts → summary ─────────────────────────────────────────────────
 
-export function extractPartsSummary(parts: Array<Record<string, unknown>>): {
-  text: string;
-  toolCalls: number;
-} {
+/**
+ * Walk a parts list, concatenating text and counting tool calls.
+ *
+ * Returns the joined text (with `\n\n` between adjacent text parts to
+ * preserve paragraph structure) and the count of tool-use blocks.
+ */
+export function extractPartsSummary(
+  parts: Array<Record<string, unknown>>,
+): { text: string; toolCalls: number } {
   const textParts: string[] = [];
   let toolCalls = 0;
 
@@ -115,9 +134,8 @@ export function extractPartsSummary(parts: Array<Record<string, unknown>>): {
   };
 }
 
-export function extractAssistantUsage(
-  info: OpenCodeAssistantInfo | undefined,
-): {
+/** Extract token / cost counters from a Kilo assistant `info` blob. */
+export function extractAssistantUsage(info: KiloAssistantInfo | undefined): {
   inputTokens: number;
   outputTokens: number;
   cacheRead: number;
@@ -137,18 +155,18 @@ export function extractAssistantUsage(
   };
 }
 
-function hasAssistantUsage(info: OpenCodeAssistantInfo | undefined): boolean {
+function hasAssistantUsage(info: KiloAssistantInfo | undefined): boolean {
   return Boolean(
     info?.tokens?.input ||
-    info?.tokens?.output ||
-    info?.tokens?.reasoning ||
-    info?.tokens?.cache?.read ||
-    info?.tokens?.cache?.write ||
-    info?.cost,
+      info?.tokens?.output ||
+      info?.tokens?.reasoning ||
+      info?.tokens?.cache?.read ||
+      info?.tokens?.cache?.write ||
+      info?.cost,
   );
 }
 
-function createEmptyUsageSummary(): OpenCodeUsageSummary {
+function createEmptyUsageSummary(): KiloUsageSummary {
   return {
     assistantMessages: 0,
     inputTokens: 0,
@@ -166,7 +184,7 @@ function parseAssistantMessage(
   if (!message || typeof message !== "object") return null;
 
   const data = message as {
-    info?: OpenCodeAssistantInfo;
+    info?: KiloAssistantInfo;
     parts?: Array<Record<string, unknown>>;
   };
 
@@ -184,17 +202,24 @@ function isMeaningfulAssistantMessage(
 ): boolean {
   return Boolean(
     message.parts.length > 0 ||
-    message.info?.time?.completed ||
-    hasAssistantUsage(message.info),
+      message.info?.time?.completed ||
+      hasAssistantUsage(message.info),
   );
 }
 
-export function summarizeOpenCodeAssistantMessages(
+/**
+ * Summarise a batch of session messages into per-turn usage totals.
+ *
+ * Filters to assistant messages newer than `minCreatedAt`. Returns the
+ * latest such message (for context-window/model lookup) and the cumulative
+ * token/cost totals across all qualifying messages.
+ */
+export function summarizeKiloAssistantMessages(
   messages: Array<unknown>,
   minCreatedAt = 0,
 ): {
   latestAssistant?: ParsedAssistantMessage;
-  usage: OpenCodeUsageSummary;
+  usage: KiloUsageSummary;
 } {
   const usage = createEmptyUsageSummary();
   const assistants = messages
@@ -224,10 +249,15 @@ export function summarizeOpenCodeAssistantMessages(
   return { latestAssistant, usage };
 }
 
+/** @deprecated Use {@link summarizeKiloAssistantMessages}. */
+export const summarizeOpenCodeAssistantMessages = summarizeKiloAssistantMessages;
+
+// ── Session-messages fetch ──────────────────────────────────────────────────
+
 async function listSessionMessages(
   oc: KiloClient,
   sessionId: string,
-  limit = OPENCODE_SESSION_MESSAGE_LIMIT,
+  limit = KILO_SESSION_MESSAGE_LIMIT,
 ): Promise<Array<unknown>> {
   const resp = await oc.session.messages({
     sessionID: sessionId,
@@ -238,32 +268,50 @@ async function listSessionMessages(
   const seenMessageIds = new Set<string>();
 
   for (const message of page) {
-    const messageId = (message as Record<string, any>)?.info?.id as
-      | string
+    const messageId = (message as Record<string, unknown>)?.info as
+      | { id?: string }
       | undefined;
-    if (messageId && seenMessageIds.has(messageId)) continue;
-    if (messageId) seenMessageIds.add(messageId);
+    const id = messageId?.id;
+    if (id && seenMessageIds.has(id)) continue;
+    if (id) seenMessageIds.add(id);
     messages.push(message);
   }
 
   return messages;
 }
 
-export async function getOpenCodeTurnSummary(
+/**
+ * Aggregate the most recent turn's assistant messages into a usage summary.
+ *
+ * `minCreatedAt` filters out messages older than the current turn — the
+ * caller typically passes the timestamp of the user message that started
+ * the turn.
+ */
+export async function getKiloTurnSummary(
   oc: KiloClient,
   sessionId: string,
   minCreatedAt: number,
 ): Promise<{
   latestAssistant?: ParsedAssistantMessage;
-  usage: OpenCodeUsageSummary;
+  usage: KiloUsageSummary;
 }> {
   const messages = await listSessionMessages(oc, sessionId);
-  return summarizeOpenCodeAssistantMessages(messages, minCreatedAt);
+  return summarizeKiloAssistantMessages(messages, minCreatedAt);
 }
 
-export async function getOpenCodeSessionSnapshot(
+/** @deprecated Use {@link getKiloTurnSummary}. */
+export const getOpenCodeTurnSummary = getKiloTurnSummary;
+
+/**
+ * Build a {@link KiloSessionSnapshot} for the given session id.
+ *
+ * Returns `undefined` if no session id was provided (caller convenience —
+ * lets `bootstrap.ts` write `getKiloSessionSnapshot(session?.sessionId)`
+ * without a null-check before).
+ */
+export async function getKiloSessionSnapshot(
   sessionId: string,
-): Promise<OpenCodeSessionSnapshot | undefined> {
+): Promise<KiloSessionSnapshot | undefined> {
   if (!sessionId) return undefined;
 
   const oc = await ensureServer();
@@ -281,7 +329,7 @@ export async function getOpenCodeSessionSnapshot(
           };
         }
       | undefined) ?? {};
-  const summary = summarizeOpenCodeAssistantMessages(messages);
+  const summary = summarizeKiloAssistantMessages(messages);
   const latestAssistant = summary.latestAssistant;
   const usage = extractAssistantUsage(latestAssistant?.info);
 
@@ -316,6 +364,11 @@ export async function getOpenCodeSessionSnapshot(
   };
 }
 
+/** @deprecated Use {@link getKiloSessionSnapshot}. */
+export const getOpenCodeSessionSnapshot = getKiloSessionSnapshot;
+
+// ── Pending-question guard ──────────────────────────────────────────────────
+
 function summarizeQuestionHeaders(
   questions: Array<Record<string, unknown>>,
 ): string {
@@ -324,11 +377,9 @@ function summarizeQuestionHeaders(
       if (typeof question.header === "string" && question.header.trim()) {
         return question.header.trim();
       }
-
       if (typeof question.question === "string" && question.question.trim()) {
         return question.question.trim();
       }
-
       return null;
     })
     .filter((value): value is string => Boolean(value))
@@ -349,7 +400,21 @@ function isToolApprovalQuestion(
   });
 }
 
-async function rejectPendingQuestions(
+/**
+ * Auto-respond to pending Kilo questions for this session.
+ *
+ * Talon manages its own tool permissions, so any "approve this tool?"
+ * Kilo asks is auto-approved with "always". Non-tool questions (which
+ * shouldn't normally occur with our config but might appear if the
+ * model decided to ask the user something) are rejected so the model
+ * gets a definitive answer and keeps moving.
+ *
+ * Idempotent via `seenQuestionIds`: a question already handled in this
+ * turn is not re-handled (Kilo lists pending questions until they're
+ * answered, so the loop in the handler can call this every 350ms
+ * without re-firing the same answer).
+ */
+export async function rejectPendingQuestions(
   oc: KiloClient,
   sessionId: string,
   chatId: string,
@@ -384,68 +449,41 @@ async function rejectPendingQuestions(
         await oc.question.reply({ requestID: requestId, answers });
         logWarn(
           "agent",
-          `[${chatId}] Auto-approved OpenCode tool question ${requestId}${summary ? `: ${summary}` : ""}`,
+          `[${chatId}] Auto-approved Kilo tool question ${requestId}${
+            summary ? `: ${summary}` : ""
+          }`,
         );
       } else {
         await oc.question.reject({ requestID: requestId });
         logWarn(
           "agent",
-          `[${chatId}] Rejected OpenCode question ${requestId}${summary ? `: ${summary}` : ""}`,
+          `[${chatId}] Rejected Kilo question ${requestId}${
+            summary ? `: ${summary}` : ""
+          }`,
         );
       }
     } catch (err) {
       logWarn(
         "agent",
-        `[${chatId}] Failed to handle OpenCode question ${requestId}: ${errMsg(err)}`,
+        `[${chatId}] Failed to handle Kilo question ${requestId}: ${errMsg(err)}`,
       );
     }
   }
 }
 
-export async function waitForPromptWithQuestionGuard(
-  oc: KiloClient,
-  parameters: Parameters<KiloClient["session"]["prompt"]>[0],
-  chatId: string,
-  seenQuestionIds: Set<string>,
-) {
-  let finished = false;
+// ── Assistant-reply fallback poll ───────────────────────────────────────────
 
-  const watchdog = (async () => {
-    while (!finished) {
-      try {
-        await rejectPendingQuestions(
-          oc,
-          parameters.sessionID,
-          chatId,
-          seenQuestionIds,
-        );
-      } catch (err) {
-        logWarn(
-          "agent",
-          `[${chatId}] Failed while polling OpenCode questions: ${errMsg(err)}`,
-        );
-      }
-
-      if (!finished) {
-        await sleep(350);
-      }
-    }
-  })();
-
-  try {
-    return await oc.session.prompt(parameters);
-  } finally {
-    finished = true;
-    await watchdog;
-    await rejectPendingQuestions(
-      oc,
-      parameters.sessionID,
-      chatId,
-      seenQuestionIds,
-    );
-  }
-}
-
+/**
+ * Wait up to 10s for an assistant message to land in the session.
+ *
+ * Used by the handler as a safety net when `session.prompt` returns but
+ * the response parts list is empty (Kilo occasionally closes the prompt
+ * before the assistant message has been persisted to the messages
+ * endpoint — a race condition we work around by polling).
+ *
+ * Returns the first qualifying assistant message's text + tool count,
+ * or `{ text: "", toolCalls: 0 }` if the deadline passes without one.
+ */
 export async function waitForAssistantReply(
   oc: KiloClient,
   sessionId: string,
@@ -455,7 +493,7 @@ export async function waitForAssistantReply(
 ): Promise<{
   text: string;
   toolCalls: number;
-  info?: OpenCodeAssistantInfo;
+  info?: KiloAssistantInfo;
 }> {
   const deadline = Date.now() + 10_000;
 
@@ -489,4 +527,57 @@ export async function waitForAssistantReply(
   }
 
   return { text: "", toolCalls: 0 };
+}
+
+// ── Legacy: question-guarded prompt wrapper ─────────────────────────────────
+//
+// The legacy `waitForPromptWithQuestionGuard` shipped pre-streaming Kilo.
+// The streaming handler in `handler.ts` runs the question watchdog and
+// the prompt() call directly, so this wrapper is no longer used by the
+// chat handler. It's still exported for the one-shot runner, which uses
+// the simpler "prompt → answer questions" loop (no streaming UX needed
+// for heartbeat / dream runs).
+
+export async function waitForPromptWithQuestionGuard(
+  oc: KiloClient,
+  parameters: Parameters<KiloClient["session"]["prompt"]>[0],
+  chatId: string,
+  seenQuestionIds: Set<string>,
+): Promise<Awaited<ReturnType<KiloClient["session"]["prompt"]>>> {
+  let finished = false;
+
+  const watchdog = (async () => {
+    while (!finished) {
+      try {
+        await rejectPendingQuestions(
+          oc,
+          parameters.sessionID,
+          chatId,
+          seenQuestionIds,
+        );
+      } catch (err) {
+        logWarn(
+          "agent",
+          `[${chatId}] Failed while polling Kilo questions: ${errMsg(err)}`,
+        );
+      }
+
+      if (!finished) {
+        await sleep(350);
+      }
+    }
+  })();
+
+  try {
+    return await oc.session.prompt(parameters);
+  } finally {
+    finished = true;
+    await watchdog;
+    await rejectPendingQuestions(
+      oc,
+      parameters.sessionID,
+      chatId,
+      seenQuestionIds,
+    );
+  }
 }

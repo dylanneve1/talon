@@ -11,11 +11,11 @@
  * no orphan subprocesses to evict — the corresponding `evictOrphanSubprocesses`
  * is intentionally not implemented.
  *
- * Note on abort semantics: the Kilo SDK does not surface a per-prompt
- * cancellation API, so once `oc.session.prompt()` is in flight the heartbeat
- * timeout's `abortController.abort()` is best-effort — we stop iterating but
- * the in-flight prompt continues until the underlying provider returns. The
- * heartbeat module's outer abort grace is what actually unblocks the lock.
+ * Note on abort semantics: the Kilo SDK does expose `session.abort` but the
+ * REST `prompt` endpoint blocks until the underlying provider returns. The
+ * heartbeat module's outer abort grace is what actually unblocks the lock
+ * — we call `session.abort` as a best-effort cleanup so the model stops
+ * spending tokens once the timeout fires.
  */
 
 import type { OneShotAgentParams } from "../../core/types.js";
@@ -27,9 +27,11 @@ import {
   buildToolOverrides,
   disconnectChatMcpServer,
   resolveProviderID,
-  parseStoredOpenCodeModelSelection,
-  OPENCODE_SYSTEM_PROMPT_SUFFIX,
+  parseStoredKiloModelSelection,
+  KILO_SYSTEM_PROMPT_SUFFIX,
+  errMsg,
 } from "./server.js";
+import { appendBackendSuffix } from "../shared/index.js";
 
 export async function runOneShotAgent(
   params: OneShotAgentParams,
@@ -45,7 +47,7 @@ export async function runOneShotAgent(
 
   const oc = await ensureServer();
   const { providerID: selectedProviderID, modelID } =
-    parseStoredOpenCodeModelSelection(model);
+    parseStoredKiloModelSelection(model);
   const providerID =
     selectedProviderID ?? (await resolveProviderID(oc, modelID));
 
@@ -60,16 +62,35 @@ export async function runOneShotAgent(
   const sessionID =
     typeof sessionData?.id === "string" ? sessionData.id : String(Date.now());
 
+  // Abort handler: when the heartbeat timeout fires, ask Kilo to stop
+  // generating. The await on `session.prompt` will reject; we propagate.
+  const onAbort = (): void => {
+    oc.session
+      .abort({ sessionID })
+      .catch((err) =>
+        logWarn(
+          "agent",
+          `One-shot session.abort failed for ${sessionID}: ${errMsg(err)}`,
+        ),
+      );
+  };
+  abortController.signal.addEventListener("abort", onAbort, { once: true });
+
   try {
     if (abortController.signal.aborted) {
       throw new Error("Aborted before prompt was sent");
     }
 
+    const finalSystemPrompt = appendBackendSuffix(
+      systemPrompt,
+      KILO_SYSTEM_PROMPT_SUFFIX,
+    );
+
     const resp = await oc.session.prompt({
       sessionID,
       parts: [{ type: "text", text: prompt }],
       model: { providerID, modelID },
-      system: systemPrompt + OPENCODE_SYSTEM_PROMPT_SUFFIX,
+      system: finalSystemPrompt,
       ...(toolOverrides ? { tools: toolOverrides } : {}),
     });
 
@@ -82,15 +103,14 @@ export async function runOneShotAgent(
       await appendKiloPart(appendLog, part);
     }
   } finally {
+    abortController.signal.removeEventListener("abort", onAbort);
     await disconnectChatMcpServer(oc, chatMcpServerName);
     try {
       await oc.session.delete({ sessionID });
     } catch (err) {
       logWarn(
         "agent",
-        `Failed to delete one-shot Kilo session ${sessionID}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `Failed to delete one-shot Kilo session ${sessionID}: ${errMsg(err)}`,
       );
     }
   }
