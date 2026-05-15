@@ -39,6 +39,10 @@ function childEnv(home: string): NodeJS.ProcessEnv {
     USERPROFILE: home,
     TALON_QUIET: "1",
     NO_COLOR: "1",
+    // Point the status probe at a port nothing's listening on so a
+    // co-tenant Talon daemon (e.g. the developer's running prod bot on
+    // 19876) doesn't get reported as the test's own running instance.
+    TALON_HEALTH_PORT: "19877",
   };
 }
 

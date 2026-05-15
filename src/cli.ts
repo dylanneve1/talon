@@ -29,7 +29,10 @@ import { dirs, files as pathFiles } from "./util/paths.js";
 const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 const CONFIG_FILE = pathFiles.config;
 const LOG_FILE = pathFiles.log;
-const HEALTH_URL = "http://127.0.0.1:19876/health";
+// Health endpoint is the dispatcher's gateway, default 19876. Overridable
+// via TALON_HEALTH_PORT so tests can probe a port nothing's listening on
+// (otherwise `talon status` reports a co-tenant's running daemon as ours).
+const HEALTH_URL = `http://127.0.0.1:${process.env.TALON_HEALTH_PORT ?? "19876"}/health`;
 
 function printBanner(): void {
   console.log();
