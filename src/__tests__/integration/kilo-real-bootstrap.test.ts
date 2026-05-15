@@ -514,33 +514,12 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     240_000,
   );
 
-  // ── Test 3: synthetic output-cap path (best-effort, skipped) ─────────────
-  //
-  // `synthetic: true` text parts are Kilo's signal that something went
-  // sideways upstream (output cap hit, model rambled past its budget, etc.)
-  // — they should surface to the user as `⚠️ Kilo: <error>` rather than
-  // being mistaken for a regular reply (the bug from earlier in the PR).
-  //
-  // We can't reliably trigger Kilo's synthetic-part injection from a real
-  // upstream model — it's gated on provider-side anomalies we don't control.
-  // The end-to-end coverage we DO have:
-  //   - `kilo-events.test.ts` asserts `extractPartsSummary` peels
+  // Synthetic output-cap path coverage lives at the unit level:
+  //   - kilo-events.test.ts asserts `extractPartsSummary` peels
   //     `synthetic: true` parts into `syntheticErrorText`.
-  //   - `kilo-server.test.ts` asserts the handler routes synthetic into
+  //   - kilo-server.test.ts asserts the handler routes synthetic into
   //     the `delivery: synthetic-error` branch.
-  //
-  // This skipped test documents what the live coverage *would* look like
-  // if we could reach into Kilo and stamp a synthetic part — kept as a
-  // marker so a future Kilo with a debug-inject endpoint can fill it in.
-
-  it.skip(
-    "surfaces synthetic: true parts as ⚠️ Kilo: prefix (requires Kilo debug-inject endpoint)",
-    async () => {
-      // Sketch: write a session message via Kilo's API with
-      //   parts: [{ type: "text", synthetic: true, text: "Output cap hit." }]
-      // then assert the resulting onTextBlock receives `⚠️ Kilo: ...`.
-      // Currently no Kilo public endpoint accepts synthetic parts on write,
-      // so this stays as test.skip until upstream supports it.
-    },
-  );
+  // We can't reliably trigger Kilo's synthetic-part injection from a
+  // real upstream model — it's gated on provider-side anomalies we
+  // don't control. No live test for it here on purpose.
 });
