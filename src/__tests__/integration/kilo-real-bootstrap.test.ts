@@ -37,20 +37,8 @@
  *   missing CLI fails there instead of being silently skipped.
  */
 
-import {
-  vi,
-  describe,
-  it,
-  beforeAll,
-  afterAll,
-  expect,
-} from "vitest";
-import {
-  mkdirSync,
-  mkdtempSync,
-  writeFileSync,
-  rmSync,
-} from "node:fs";
+import { vi, describe, it, beforeAll, afterAll, expect } from "vitest";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -169,10 +157,7 @@ const HEALTH_TIMEOUT_MS = 15_000;
  * sessions) and the model in our test sees + happily calls those tools,
  * routing bridge calls to the wrong context.
  */
-function spawnIsolatedKilo(
-  port: number,
-  stateDir: string,
-): ChildProcess {
+function spawnIsolatedKilo(port: number, stateDir: string): ChildProcess {
   const command = cliCommand("kilo", KILO_EXECUTABLE_ENV);
   return spawn(
     command,
@@ -246,9 +231,8 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     //    `getOpenCodeModelCatalog()` calls `ensureServer()` internally, which
     //    spawns the test-port `kilo serve` on the very first invocation. So
     //    this also doubles as the server warm-up.
-    const { getOpenCodeModelCatalog, clearModelCatalogCache } = await import(
-      "../../backend/kilo/models.js"
-    );
+    const { getOpenCodeModelCatalog, clearModelCatalogCache } =
+      await import("../../backend/kilo/models.js");
     clearModelCatalogCache();
     const catalog = await getOpenCodeModelCatalog(/* forceRefresh */ true);
     const free = catalog.connectedFreeModels[0];
@@ -327,9 +311,8 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     };
 
     // 5. Run the REAL production bootstrap. Same code path as `index.ts`.
-    const { bootstrap, initBackendAndDispatcher } = await import(
-      "../../bootstrap.js"
-    );
+    const { bootstrap, initBackendAndDispatcher } =
+      await import("../../bootstrap.js");
     await bootstrap();
     const { loadConfig } = await import("../../util/config.js");
     await initBackendAndDispatcher(loadConfig(), frontend);
@@ -375,67 +358,63 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
   // assertions catch real wiring bugs (chatId mismatches, missing emoji
   // arg propagation, etc.) and are skipped when the model went text-only.
 
-  it(
-    "real bootstrap delivers a response from a live free-tier model",
-    async () => {
-      recording.reset();
-      const textBlocks: string[] = [];
-      const toolUses: { name: string; input: Record<string, unknown> }[] = [];
-      const { execute } = await import("../../core/dispatcher.js");
+  it("real bootstrap delivers a response from a live free-tier model", async () => {
+    recording.reset();
+    const textBlocks: string[] = [];
+    const toolUses: { name: string; input: Record<string, unknown> }[] = [];
+    const { execute } = await import("../../core/dispatcher.js");
 
-      const result = await execute({
-        chatId: "real-bootstrap-test-1",
-        numericChatId: 991_001,
-        prompt:
-          "Answer with the single word 'hello'. " +
-          "If you can call tools, prefer calling react with the 👋 emoji " +
-          "followed by end_turn(text='hello').",
-        senderName: "Test",
-        isGroup: false,
-        source: "message",
-        onTextBlock: async (text) => {
-          textBlocks.push(text);
-        },
-        onToolUse: (name, input) => {
-          toolUses.push({ name, input });
-        },
-      });
+    const result = await execute({
+      chatId: "real-bootstrap-test-1",
+      numericChatId: 991_001,
+      prompt:
+        "Answer with the single word 'hello'. " +
+        "If you can call tools, prefer calling react with the 👋 emoji " +
+        "followed by end_turn(text='hello').",
+      senderName: "Test",
+      isGroup: false,
+      source: "message",
+      onTextBlock: async (text) => {
+        textBlocks.push(text);
+      },
+      onToolUse: (name, input) => {
+        toolUses.push({ name, input });
+      },
+    });
 
-      expect(result.durationMs).toBeGreaterThan(0);
+    expect(result.durationMs).toBeGreaterThan(0);
 
-      const reacts = recording.byAction("react");
-      const sends = recording.byAction("send_message");
-      const replies = recording.byAction("reply_to");
-      const totalBridgeCalls = reacts.length + sends.length + replies.length;
-      const totalText = textBlocks.join("").trim();
+    const reacts = recording.byAction("react");
+    const sends = recording.byAction("send_message");
+    const replies = recording.byAction("reply_to");
+    const totalBridgeCalls = reacts.length + sends.length + replies.length;
+    const totalText = textBlocks.join("").trim();
 
-      // The wiring is healthy iff Talon received SOMETHING — either a
-      // text-part delivery or a bridged tool call. Both flow through the
-      // same real pipeline; either reaching us proves the chain is intact.
-      expect(
-        totalBridgeCalls + totalText.length,
-        `model produced no delivery. ` +
-          `bridgeCalls=${totalBridgeCalls} textLen=${totalText.length} ` +
-          `actions=[${recording.captured.map((c) => c.body.action).join(", ")}] ` +
-          `tools=[${toolUses.map((t) => t.name).join(", ")}]`,
-      ).toBeGreaterThan(0);
+    // The wiring is healthy iff Talon received SOMETHING — either a
+    // text-part delivery or a bridged tool call. Both flow through the
+    // same real pipeline; either reaching us proves the chain is intact.
+    expect(
+      totalBridgeCalls + totalText.length,
+      `model produced no delivery. ` +
+        `bridgeCalls=${totalBridgeCalls} textLen=${totalText.length} ` +
+        `actions=[${recording.captured.map((c) => c.body.action).join(", ")}] ` +
+        `tools=[${toolUses.map((t) => t.name).join(", ")}]`,
+    ).toBeGreaterThan(0);
 
-      // If the model picked the tool route, verify the bridged shape — this
-      // catches chatId-mapping bugs and bridge body-shape regressions.
-      if (reacts.length > 0) {
-        const r = reacts[0];
-        expect(r.body.action).toBe("react");
-        expect(typeof r.body.emoji).toBe("string");
-        expect(r.chatId).toBe(991_001);
-      }
-      if (sends.length > 0) {
-        const s = sends[0];
-        expect(s.body.action).toBe("send_message");
-        expect(s.chatId).toBe(991_001);
-      }
-    },
-    180_000,
-  );
+    // If the model picked the tool route, verify the bridged shape — this
+    // catches chatId-mapping bugs and bridge body-shape regressions.
+    if (reacts.length > 0) {
+      const r = reacts[0];
+      expect(r.body.action).toBe("react");
+      expect(typeof r.body.emoji).toBe("string");
+      expect(r.chatId).toBe(991_001);
+    }
+    if (sends.length > 0) {
+      const s = sends[0];
+      expect(s.body.action).toBe("send_message");
+      expect(s.chatId).toBe(991_001);
+    }
+  }, 180_000);
 
   // ── Test 2: cross-chat MCP isolation ─────────────────────────────────────
   //
@@ -452,67 +431,60 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
   // is the source of truth — Kilo's `GET /mcp` returns `{}` regardless of
   // state, so we read the cache directly via `getRegisteredMcpServerNames`.
 
-  it(
-    "chat-switch disconnects the previous chat's MCP server",
-    async () => {
-      recording.reset();
-      const { execute } = await import("../../core/dispatcher.js");
-      const { getRegisteredMcpServerNames } = await import(
-        "../../backend/kilo/server.js"
-      );
+  it("chat-switch disconnects the previous chat's MCP server", async () => {
+    recording.reset();
+    const { execute } = await import("../../core/dispatcher.js");
+    const { getRegisteredMcpServerNames } =
+      await import("../../backend/kilo/server.js");
 
-      // Turn 1 — chat A. The model's reply doesn't matter; we just need
-      // its MCP server to get registered.
-      await execute({
-        chatId: "isolation-chat-a",
-        numericChatId: 991_010,
-        prompt: "Reply with the single word 'a'.",
-        senderName: "Test",
-        isGroup: false,
-        source: "message",
-      });
+    // Turn 1 — chat A. The model's reply doesn't matter; we just need
+    // its MCP server to get registered.
+    await execute({
+      chatId: "isolation-chat-a",
+      numericChatId: 991_010,
+      prompt: "Reply with the single word 'a'.",
+      senderName: "Test",
+      isGroup: false,
+      source: "message",
+    });
 
-      const afterA = getRegisteredMcpServerNames().filter((n) =>
-        n.startsWith("talon-tools-"),
-      );
-      expect(
-        afterA,
-        `expected chat A's MCP to be registered after turn 1; got [${afterA.join(", ")}]`,
-      ).toContain("talon-tools-isolation-chat-a");
+    const afterA = getRegisteredMcpServerNames().filter((n) =>
+      n.startsWith("talon-tools-"),
+    );
+    expect(
+      afterA,
+      `expected chat A's MCP to be registered after turn 1; got [${afterA.join(", ")}]`,
+    ).toContain("talon-tools-isolation-chat-a");
 
-      // Turn 2 — chat B. Chat A's MCP must be disconnected before chat B's
-      // is added; production logs `Disconnected talon-tools-... (chat switch)`
-      // when this fires.
-      await execute({
-        chatId: "isolation-chat-b",
-        numericChatId: 991_011,
-        prompt: "Reply with the single word 'b'.",
-        senderName: "Test",
-        isGroup: false,
-        source: "message",
-      });
+    // Turn 2 — chat B. Chat A's MCP must be disconnected before chat B's
+    // is added; production logs `Disconnected talon-tools-... (chat switch)`
+    // when this fires.
+    await execute({
+      chatId: "isolation-chat-b",
+      numericChatId: 991_011,
+      prompt: "Reply with the single word 'b'.",
+      senderName: "Test",
+      isGroup: false,
+      source: "message",
+    });
 
-      const afterB = getRegisteredMcpServerNames();
-      const chatServers = afterB.filter((n) =>
-        n.startsWith("talon-tools-"),
-      );
+    const afterB = getRegisteredMcpServerNames();
+    const chatServers = afterB.filter((n) => n.startsWith("talon-tools-"));
 
-      expect(chatServers).toContain("talon-tools-isolation-chat-b");
-      expect(
-        chatServers,
-        `chat A's MCP must be disconnected after switch; cache=[${chatServers.join(", ")}]`,
-      ).not.toContain("talon-tools-isolation-chat-a");
+    expect(chatServers).toContain("talon-tools-isolation-chat-b");
+    expect(
+      chatServers,
+      `chat A's MCP must be disconnected after switch; cache=[${chatServers.join(", ")}]`,
+    ).not.toContain("talon-tools-isolation-chat-a");
 
-      // Heartbeat sentinel (if present) is exempt from the chat-switch
-      // disconnect, but should be the ONLY non-chat talon-tools-* in the
-      // cache. Anything else means a stale chat MCP wasn't disconnected.
-      const nonHeartbeat = chatServers.filter(
-        (n) => n !== "talon-tools-heartbeat",
-      );
-      expect(nonHeartbeat).toEqual(["talon-tools-isolation-chat-b"]);
-    },
-    240_000,
-  );
+    // Heartbeat sentinel (if present) is exempt from the chat-switch
+    // disconnect, but should be the ONLY non-chat talon-tools-* in the
+    // cache. Anything else means a stale chat MCP wasn't disconnected.
+    const nonHeartbeat = chatServers.filter(
+      (n) => n !== "talon-tools-heartbeat",
+    );
+    expect(nonHeartbeat).toEqual(["talon-tools-isolation-chat-b"]);
+  }, 240_000);
 
   // Synthetic output-cap path coverage lives at the unit level:
   //   - kilo-events.test.ts asserts `extractPartsSummary` peels

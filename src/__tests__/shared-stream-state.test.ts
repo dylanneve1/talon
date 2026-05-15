@@ -137,7 +137,10 @@ describe("recordToolUse", () => {
 
   it("flips hadBridgeDelivery for send(type='photo')", () => {
     const s = createStreamState();
-    recordToolUse(s, "send", { type: "photo", url: "https://example.com/a.jpg" });
+    recordToolUse(s, "send", {
+      type: "photo",
+      url: "https://example.com/a.jpg",
+    });
     expect(s.hadBridgeDelivery).toBe(true);
     // photo doesn't carry text, so deliveredTextNorms stays empty
     expect(s.deliveredTextNorms).toHaveLength(0);

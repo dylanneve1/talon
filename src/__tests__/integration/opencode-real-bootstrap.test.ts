@@ -20,20 +20,8 @@
  * OPENCODE_EXECUTABLE pointing at it). CI sets OPENCODE_LIVE_REQUIRED=1.
  */
 
-import {
-  vi,
-  describe,
-  it,
-  beforeAll,
-  afterAll,
-  expect,
-} from "vitest";
-import {
-  mkdirSync,
-  mkdtempSync,
-  writeFileSync,
-  rmSync,
-} from "node:fs";
+import { vi, describe, it, beforeAll, afterAll, expect } from "vitest";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -125,19 +113,11 @@ let opencodeProc: ChildProcess | null = null;
 let opencodeStateDir: string | null = null;
 const recording = makeRecordingHandler();
 
-function spawnIsolatedOpencode(
-  port: number,
-  stateDir: string,
-): ChildProcess {
+function spawnIsolatedOpencode(port: number, stateDir: string): ChildProcess {
   const command = cliCommand("opencode", OPENCODE_EXECUTABLE_ENV);
   return spawn(
     command,
-    [
-      "serve",
-      "--hostname=127.0.0.1",
-      `--port=${port}`,
-      "--log-level=ERROR",
-    ],
+    ["serve", "--hostname=127.0.0.1", `--port=${port}`, "--log-level=ERROR"],
     {
       cwd: stateDir,
       env: {
@@ -162,9 +142,8 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
     }
 
     // Sanity: env override took effect before opencode/server.js loaded.
-    const { OPENCODE_BASE_URL } = await import(
-      "../../backend/opencode/server.js"
-    );
+    const { OPENCODE_BASE_URL } =
+      await import("../../backend/opencode/server.js");
     if (OPENCODE_BASE_URL !== TEST_BASE_URL) {
       throw new Error(
         `OPENCODE_PORT env override didn't take effect. Expected base ${TEST_BASE_URL}, got ${OPENCODE_BASE_URL}. ` +
@@ -195,9 +174,8 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
     }
 
     // Pick a free model from the live opencode catalog.
-    const { getOpenCodeModelCatalog, clearModelCatalogCache } = await import(
-      "../../backend/opencode/models.js"
-    );
+    const { getOpenCodeModelCatalog, clearModelCatalogCache } =
+      await import("../../backend/opencode/models.js");
     clearModelCatalogCache();
     const catalog = await getOpenCodeModelCatalog(/* forceRefresh */ true);
     const free = catalog.connectedFreeModels[0];
@@ -260,9 +238,8 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
       stop: async () => {},
     };
 
-    const { bootstrap, initBackendAndDispatcher } = await import(
-      "../../bootstrap.js"
-    );
+    const { bootstrap, initBackendAndDispatcher } =
+      await import("../../bootstrap.js");
     await bootstrap();
     const { loadConfig } = await import("../../util/config.js");
     await initBackendAndDispatcher(loadConfig(), frontend);
@@ -297,62 +274,58 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
 
   // ── Test 1: real wiring delivers a response ──────────────────────────────
 
-  it(
-    "real bootstrap delivers a response from a live free-tier model",
-    async () => {
-      recording.reset();
-      const textBlocks: string[] = [];
-      const toolUses: { name: string; input: Record<string, unknown> }[] = [];
-      const { execute } = await import("../../core/dispatcher.js");
+  it("real bootstrap delivers a response from a live free-tier model", async () => {
+    recording.reset();
+    const textBlocks: string[] = [];
+    const toolUses: { name: string; input: Record<string, unknown> }[] = [];
+    const { execute } = await import("../../core/dispatcher.js");
 
-      const result = await execute({
-        chatId: "opencode-real-bootstrap-1",
-        numericChatId: 992_001,
-        prompt:
-          "Answer with the single word 'hello'. " +
-          "If you can call tools, prefer calling react with the 👋 emoji " +
-          "followed by end_turn(text='hello').",
-        senderName: "Test",
-        isGroup: false,
-        source: "message",
-        onTextBlock: async (text) => {
-          textBlocks.push(text);
-        },
-        onToolUse: (name, input) => {
-          toolUses.push({ name, input });
-        },
-      });
+    const result = await execute({
+      chatId: "opencode-real-bootstrap-1",
+      numericChatId: 992_001,
+      prompt:
+        "Answer with the single word 'hello'. " +
+        "If you can call tools, prefer calling react with the 👋 emoji " +
+        "followed by end_turn(text='hello').",
+      senderName: "Test",
+      isGroup: false,
+      source: "message",
+      onTextBlock: async (text) => {
+        textBlocks.push(text);
+      },
+      onToolUse: (name, input) => {
+        toolUses.push({ name, input });
+      },
+    });
 
-      expect(result.durationMs).toBeGreaterThan(0);
+    expect(result.durationMs).toBeGreaterThan(0);
 
-      const reacts = recording.byAction("react");
-      const sends = recording.byAction("send_message");
-      const replies = recording.byAction("reply_to");
-      const totalBridgeCalls = reacts.length + sends.length + replies.length;
-      const totalText = textBlocks.join("").trim();
+    const reacts = recording.byAction("react");
+    const sends = recording.byAction("send_message");
+    const replies = recording.byAction("reply_to");
+    const totalBridgeCalls = reacts.length + sends.length + replies.length;
+    const totalText = textBlocks.join("").trim();
 
-      expect(
-        totalBridgeCalls + totalText.length,
-        `model produced no delivery. ` +
-          `bridgeCalls=${totalBridgeCalls} textLen=${totalText.length} ` +
-          `actions=[${recording.captured.map((c) => c.body.action).join(", ")}] ` +
-          `tools=[${toolUses.map((t) => t.name).join(", ")}]`,
-      ).toBeGreaterThan(0);
+    expect(
+      totalBridgeCalls + totalText.length,
+      `model produced no delivery. ` +
+        `bridgeCalls=${totalBridgeCalls} textLen=${totalText.length} ` +
+        `actions=[${recording.captured.map((c) => c.body.action).join(", ")}] ` +
+        `tools=[${toolUses.map((t) => t.name).join(", ")}]`,
+    ).toBeGreaterThan(0);
 
-      if (reacts.length > 0) {
-        const r = reacts[0];
-        expect(r.body.action).toBe("react");
-        expect(typeof r.body.emoji).toBe("string");
-        expect(r.chatId).toBe(992_001);
-      }
-      if (sends.length > 0) {
-        const s = sends[0];
-        expect(s.body.action).toBe("send_message");
-        expect(s.chatId).toBe(992_001);
-      }
-    },
-    240_000,
-  );
+    if (reacts.length > 0) {
+      const r = reacts[0];
+      expect(r.body.action).toBe("react");
+      expect(typeof r.body.emoji).toBe("string");
+      expect(r.chatId).toBe(992_001);
+    }
+    if (sends.length > 0) {
+      const s = sends[0];
+      expect(s.body.action).toBe("send_message");
+      expect(s.chatId).toBe(992_001);
+    }
+  }, 240_000);
 
   // ── Test 2: per-turn MCP teardown ────────────────────────────────────────
   //
@@ -369,53 +342,44 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
   // turns for two different chats and confirm the cache is clean
   // after each.
 
-  it(
-    "per-turn MCP teardown leaves no chat servers connected after the turn",
-    async () => {
-      recording.reset();
-      const { execute } = await import("../../core/dispatcher.js");
-      const { getRegisteredMcpServerNames } = await import(
-        "../../backend/opencode/server.js"
-      );
+  it("per-turn MCP teardown leaves no chat servers connected after the turn", async () => {
+    recording.reset();
+    const { execute } = await import("../../core/dispatcher.js");
+    const { getRegisteredMcpServerNames } =
+      await import("../../backend/opencode/server.js");
 
-      await execute({
-        chatId: "opencode-isolation-a",
-        numericChatId: 992_010,
-        prompt: "Reply with the single word 'a'.",
-        senderName: "Test",
-        isGroup: false,
-        source: "message",
-      });
+    await execute({
+      chatId: "opencode-isolation-a",
+      numericChatId: 992_010,
+      prompt: "Reply with the single word 'a'.",
+      senderName: "Test",
+      isGroup: false,
+      source: "message",
+    });
 
-      const afterA = getRegisteredMcpServerNames().filter(
-        (n) =>
-          n.startsWith("talon-tools-") &&
-          n !== "talon-tools-heartbeat",
-      );
-      expect(
-        afterA,
-        `chat A's MCP should be disconnected after the turn (per-turn teardown). cache=[${afterA.join(", ")}]`,
-      ).toEqual([]);
+    const afterA = getRegisteredMcpServerNames().filter(
+      (n) => n.startsWith("talon-tools-") && n !== "talon-tools-heartbeat",
+    );
+    expect(
+      afterA,
+      `chat A's MCP should be disconnected after the turn (per-turn teardown). cache=[${afterA.join(", ")}]`,
+    ).toEqual([]);
 
-      await execute({
-        chatId: "opencode-isolation-b",
-        numericChatId: 992_011,
-        prompt: "Reply with the single word 'b'.",
-        senderName: "Test",
-        isGroup: false,
-        source: "message",
-      });
+    await execute({
+      chatId: "opencode-isolation-b",
+      numericChatId: 992_011,
+      prompt: "Reply with the single word 'b'.",
+      senderName: "Test",
+      isGroup: false,
+      source: "message",
+    });
 
-      const afterB = getRegisteredMcpServerNames().filter(
-        (n) =>
-          n.startsWith("talon-tools-") &&
-          n !== "talon-tools-heartbeat",
-      );
-      expect(
-        afterB,
-        `chat B's MCP should be disconnected after the turn (per-turn teardown). cache=[${afterB.join(", ")}]`,
-      ).toEqual([]);
-    },
-    300_000,
-  );
+    const afterB = getRegisteredMcpServerNames().filter(
+      (n) => n.startsWith("talon-tools-") && n !== "talon-tools-heartbeat",
+    );
+    expect(
+      afterB,
+      `chat B's MCP should be disconnected after the turn (per-turn teardown). cache=[${afterB.join(", ")}]`,
+    ).toEqual([]);
+  }, 300_000);
 });
