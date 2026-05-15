@@ -1,0 +1,33 @@
+# Codex-backend Docker harness. See ./README.md for full usage.
+#
+# Designed to coexist with a production Talon process on the same host:
+# distinct workspace mount, distinct Telegram bot, distinct gateway
+# port, distinct container name.
+
+services:
+  talon-codex-test:
+    container_name: talon-codex-test
+    build:
+      context: ../..
+      dockerfile: docker/codex-test/Dockerfile
+    restart: unless-stopped
+    volumes:
+      # Persistent workspace on the host. Survives `docker compose down`.
+      - ${HOME}/.talon-codex-test:/home/node/.talon
+      # Mount the host's Codex auth if present so ChatGPT-auth flows
+      # work in the container without re-logging-in. Falls back to
+      # OPENAI_API_KEY if no auth file is mounted (compose tolerates
+      # a missing source path; remove this line if you don't have one).
+      - ${HOME}/.codex:/home/node/.codex
+    environment:
+      - NODE_ENV=production
+      # Test bot token. Sourced from a gitignored file outside the repo:
+      #   set -a && source ~/.config/talon-tests/secrets.env && set +a
+      - TALON_TEST_BOT_TOKEN=${TALON_TEST_BOT_TOKEN:?TALON_TEST_BOT_TOKEN required (see README)}
+      # OpenAI API key (alternative to mounted ~/.codex auth).
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Container-internal gateway port. Not published — does not
+      # collide with a host-side prod Talon on the default 19876.
+      - TALON_BRIDGE_PORT=19879
+    mem_limit: 1g
+    cpus: "1.0"
