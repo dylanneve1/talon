@@ -46,8 +46,6 @@ export {
   extractPartsSummary,
   extractAssistantUsage,
   rejectPendingQuestions,
-  waitForAssistantReply,
-  waitForPromptWithQuestionGuard,
   type KiloAssistantInfo,
   type KiloSessionSnapshot,
 } from "./sessions.js";

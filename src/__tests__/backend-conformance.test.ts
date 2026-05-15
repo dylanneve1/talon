@@ -308,7 +308,12 @@ describe("backend conformance — finalizePartsIntoState", () => {
     expect(kiloState.toolCalls).toBe(opencodeState.toolCalls);
   });
 
-  it("kilo extractor catches synthetic-error parts; opencode does not", () => {
+  it("both backends now catch synthetic-error parts via the shared extractor", () => {
+    // Previous behaviour: only the kilo extractor recognised
+    // `synthetic: true`; opencode shipped it as a real reply. Once both
+    // backends route their `extractPartsSummary` through the shared
+    // `remote-server/session-helpers.ts`, the synthetic-detection is
+    // symmetric — both surface the marker through `syntheticErrorText`.
     const parts = [{ type: "text", text: "model output", synthetic: true }];
 
     const kiloState = createStreamState();
@@ -328,17 +333,13 @@ describe("backend conformance — finalizePartsIntoState", () => {
       extractPartsSummary: opencodeExtract,
     });
 
-    // Kilo recognises the synthetic flag → routes to syntheticError state
     expect(kiloResult.syntheticErrorText).toBe("model output");
     expect(kiloState.syntheticError).toBe("model output");
     expect(kiloState.allResponseText).toBe("");
 
-    // OpenCode doesn't recognise the flag (yet) → ships text as real reply.
-    // This documents a known divergence — when OpenCode's upstream gains
-    // synthetic markers, port the kilo extractor change to opencode and
-    // this test will need updating.
-    expect(opencodeResult.syntheticErrorText).toBeUndefined();
-    expect(opencodeState.allResponseText).toBe("model output");
+    expect(opencodeResult.syntheticErrorText).toBe("model output");
+    expect(opencodeState.syntheticError).toBe("model output");
+    expect(opencodeState.allResponseText).toBe("");
   });
 });
 
