@@ -42,3 +42,5 @@ export {
   getProviderModels,
   formatModelError,
 } from "./model-provider.js";
+
+export { runOneShotAgent } from "./one-shot.js";

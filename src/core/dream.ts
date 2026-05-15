@@ -15,13 +15,10 @@ import { existsSync, readFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import writeFileAtomic from "write-file-atomic";
-import { query } from "@anthropic-ai/claude-agent-sdk";
-import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
-import { getPluginMcpServers } from "./plugin.js";
-import { DISALLOWED_TOOLS_BACKGROUND } from "./constants.js";
 import { getDefaultModel } from "./models.js";
+import type { OneShotAgentParams, QueryBackend } from "./types.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,8 +44,13 @@ let dreaming = false; // in-process guard (one dream at a time)
 let configRef: {
   model?: string;
   dreamModel?: string;
-  claudeBinary?: string;
   workspace?: string;
+  backend?: QueryBackend | null;
+  /**
+   * MemPalace presence flag — controls the system-prompt copy that tells the
+   * dream agent whether mempalace MCP tools are available. The actual MCP
+   * server registration lives in the backend's runOneShotAgent.
+   */
   mempalace?: { pythonPath: string; palacePath: string };
 } | null = null;
 
@@ -56,8 +58,9 @@ export function initDream(cfg: {
   model?: string;
   /** Override model for dream consolidation (e.g. a cheaper model). Falls back to main model. */
   dreamModel?: string;
-  claudeBinary?: string;
   workspace?: string;
+  /** The active backend — dream agent runs through backend.runOneShotAgent. */
+  backend?: QueryBackend | null;
   /** MemPalace config for mining logs into the palace during dream runs. */
   mempalace?: { pythonPath: string; palacePath: string };
 }): void {
@@ -183,6 +186,11 @@ If commands fail, log the error and continue — this stage is optional.`
   const model = configRef.dreamModel ?? configRef.model ?? getDefaultModel();
   const workspace = configRef.workspace ?? dirs.workspace;
 
+  const backend = configRef.backend;
+  if (!backend?.runOneShotAgent) {
+    throw new Error("Dream requires a backend that implements runOneShotAgent");
+  }
+
   // Set up dream log file
   const dreamLogFile = createDreamLogFile();
   appendDreamLog(dreamLogFile, `# Dream Run — ${new Date().toISOString()}\n`);
@@ -195,42 +203,42 @@ If commands fail, log the error and continue — this stage is optional.`
     `**Prompt:**\n\`\`\`\n${prompt}\n\`\`\`\n\n---\n`,
   );
 
-  const options = {
+  const systemPrompt = configRef.mempalace
+    ? "You are a background memory consolidation agent for Talon. Use filesystem tools and MemPalace MCP tools. Do NOT use Telegram or messaging tools. Be precise and surgical — update memory.md without losing existing accurate information."
+    : "You are a background memory consolidation agent for Talon. Use only filesystem tools. Be precise and surgical — update memory.md without losing existing accurate information.";
+
+  const abortController = new AbortController();
+
+  const oneShotParams: OneShotAgentParams = {
+    prompt,
+    systemPrompt,
+    workspace,
     model,
-    systemPrompt: configRef.mempalace
-      ? "You are a background memory consolidation agent for Talon. Use filesystem tools and MemPalace MCP tools. Do NOT use Telegram or messaging tools. Be precise and surgical — update memory.md without losing existing accurate information."
-      : "You are a background memory consolidation agent for Talon. Use only filesystem tools. Be precise and surgical — update memory.md without losing existing accurate information.",
-    cwd: workspace,
-    permissionMode: "bypassPermissions" as const,
-    allowDangerouslySkipPermissions: true,
-    ...(configRef.claudeBinary
-      ? { pathToClaudeCodeExecutable: configRef.claudeBinary }
-      : {}),
-    // Only load mempalace MCP server for dream — no other plugins needed
-    mcpServers: configRef.mempalace
-      ? getPluginMcpServers("", "dream", ["mempalace"])
-      : {},
-    disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
+    contextLabel: "dream",
+    abortController,
+    // appendDreamLog is sync (writeFileSync) — wrap to satisfy the async
+    // contract; callers don't need a real flush guarantee per line.
+    appendLog: async (text) => {
+      appendDreamLog(dreamLogFile, text);
+    },
   };
 
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    const t = setTimeout(
-      () => reject(new Error("Dream agent timed out")),
-      DREAM_TIMEOUT_MS,
-    );
+    const t = setTimeout(() => {
+      try {
+        abortController.abort();
+      } catch {
+        /* ignore */
+      }
+      reject(new Error("Dream agent timed out"));
+    }, DREAM_TIMEOUT_MS);
     t.unref(); // Don't prevent Node.js from exiting cleanly during shutdown
     timeoutHandle = t;
   });
 
   const agentPromise = (async () => {
-    const qi = query({
-      prompt,
-      options: options as Parameters<typeof query>[0]["options"],
-    });
-    for await (const msg of qi) {
-      logDreamMessage(dreamLogFile, msg);
-    }
+    await backend.runOneShotAgent!(oneShotParams);
     appendDreamLog(
       dreamLogFile,
       `\n---\n**Dream completed at ${new Date().toISOString()}**\n`,
@@ -274,80 +282,9 @@ function appendDreamLog(logFile: string, text: string): void {
   }
 }
 
-function logDreamMessage(logFile: string, msg: SDKMessage): void {
-  try {
-    const ts = new Date().toISOString().slice(11, 19); // HH:MM:SS
-
-    switch (msg.type) {
-      case "assistant": {
-        // Extract text content from the assistant message
-        const textBlocks = msg.message.content
-          .filter((b) => b.type === "text")
-          .map((b) => ("text" in b ? (b as { text: string }).text : ""));
-        const toolUseBlocks = msg.message.content
-          .filter((b) => b.type === "tool_use")
-          .map((b) => {
-            const tu = b as { name: string; input: unknown };
-            return `**Tool call:** \`${tu.name}\`\n\`\`\`json\n${JSON.stringify(tu.input, null, 2)}\n\`\`\``;
-          });
-
-        if (textBlocks.length > 0) {
-          appendDreamLog(
-            logFile,
-            `\n## [${ts}] Assistant\n${textBlocks.join("\n")}\n`,
-          );
-        }
-        if (toolUseBlocks.length > 0) {
-          appendDreamLog(logFile, `\n${toolUseBlocks.join("\n\n")}\n`);
-        }
-        break;
-      }
-      case "result": {
-        // Final result of the dream agent run
-        const result =
-          "result" in msg
-            ? (msg as { result: string }).result
-            : JSON.stringify(msg);
-        const truncated =
-          result.length > 2000
-            ? result.slice(0, 2000) + "\n... (truncated)"
-            : result;
-        appendDreamLog(
-          logFile,
-          `\n### [${ts}] Result (${msg.subtype})\n\`\`\`\n${truncated}\n\`\`\`\n`,
-        );
-        break;
-      }
-      case "system": {
-        appendDreamLog(logFile, `\n### [${ts}] System (${msg.subtype})\n`);
-        break;
-      }
-      case "user": {
-        // Tool results come back as user messages
-        if (msg.tool_use_result != null) {
-          const raw =
-            typeof msg.tool_use_result === "string"
-              ? msg.tool_use_result
-              : JSON.stringify(msg.tool_use_result, null, 2);
-          const truncated =
-            raw.length > 2000 ? raw.slice(0, 2000) + "\n... (truncated)" : raw;
-          appendDreamLog(
-            logFile,
-            `\n### [${ts}] Tool Result\n\`\`\`\n${truncated}\n\`\`\`\n`,
-          );
-        }
-        break;
-      }
-      default:
-        // Skip stream_event and other noisy message types
-        break;
-    }
-  } catch (err) {
-    process.stderr.write(
-      `[dream] Log write error: ${err instanceof Error ? err.message : err}\n`,
-    );
-  }
-}
+// Per-message log formatting now lives on the backend — each backend writes
+// its own message format directly to the log file via the appendLog callback
+// passed in OneShotAgentParams. See backend/<name>/one-shot.ts.
 
 // ── State helpers ────────────────────────────────────────────────────────────
 

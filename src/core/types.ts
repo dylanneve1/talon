@@ -66,6 +66,34 @@ export type UnifiedProviderInfo = {
 /** Keyboard button for model/settings UIs. */
 export type ModelButton = { text: string; callback_data: string };
 
+/**
+ * Parameters for one-shot agent runs (heartbeat, dream).
+ *
+ * Unlike `query()` which is tied to a chat session and history, this is a
+ * fire-and-forget agent invocation: spawn an agent with a prompt, let it run
+ * tools, log everything to a file, return when it finishes (or when aborted).
+ */
+export type OneShotAgentParams = {
+  /** The user prompt the agent should execute. */
+  prompt: string;
+  /** Additional system prompt prepended to the backend's defaults. */
+  systemPrompt: string;
+  /** Working directory for the agent (cwd for tool execution). */
+  workspace: string;
+  /** Model id (interpretation is backend-specific). */
+  model: string;
+  /**
+   * Sentinel chat ID for outbound MCP tool calls (e.g. "heartbeat", "dream").
+   * Frontend MCP servers use this to enforce explicit `chat_id` on outbound
+   * tools when there's no ambient chat.
+   */
+  contextLabel: string;
+  /** Aborts the agent run mid-flight (signal will be delivered to subprocesses). */
+  abortController: AbortController;
+  /** Append a string to the run log (markdown). */
+  appendLog: (text: string) => Promise<void>;
+};
+
 /** Backend interface — any AI provider implements this. */
 export interface QueryBackend {
   query(params: QueryParams): Promise<QueryResult>;
@@ -119,6 +147,25 @@ export interface QueryBackend {
   }>;
   /** Human-readable backend label for UIs (e.g. "Anthropic", "OpenCode"). */
   backendLabel?: string;
+  /**
+   * Run a one-shot agent task (heartbeat / dream). Optional — backends that
+   * don't implement this will cause the heartbeat/dream timer to skip with a
+   * warning at startup rather than throw at runtime.
+   */
+  runOneShotAgent?(params: OneShotAgentParams): Promise<void>;
+  /**
+   * Evict any orphaned subprocesses spawned by this backend that are tagged
+   * with the given context label. Called when `runOneShotAgent` was aborted
+   * but its subprocess didn't exit gracefully within the abort grace window.
+   * Optional — only relevant for backends that spawn per-query subprocesses
+   * (Claude SDK). Backends with a long-running shared server (Kilo, OpenCode)
+   * have nothing to evict.
+   */
+  evictOrphanSubprocesses?(contextLabel: string): Promise<{
+    found: number;
+    termed: number;
+    killed: number;
+  }>;
 }
 
 // ── Execution context ───────────────────────────────────────────────────────

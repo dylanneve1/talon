@@ -128,7 +128,11 @@ export async function initBackendAndDispatcher(
     const ocModelProvider = isKilo
       ? await import("./backend/kilo/model-provider.js")
       : await import("./backend/opencode/model-provider.js");
-    const { initOpenCodeAgent, handleMessage: ocHandleMessage } = mod;
+    const {
+      initOpenCodeAgent,
+      handleMessage: ocHandleMessage,
+      runOneShotAgent: ocRunOneShotAgent,
+    } = mod;
     initOpenCodeAgent(config, frontend.getBridgePort, frontend.name);
     backend = {
       query: (params) => ocHandleMessage(params),
@@ -153,6 +157,10 @@ export async function initBackendAndDispatcher(
           contextModelId: snap.assistant?.modelID,
         };
       },
+      runOneShotAgent: (p) => ocRunOneShotAgent(p),
+      // Kilo/OpenCode use a long-running shared HTTP server, so there are
+      // no per-query subprocesses to evict — `evictOrphanSubprocesses` is
+      // intentionally not implemented.
     };
     log("bot", `Backend: ${label}`);
   } else {
@@ -163,6 +171,9 @@ export async function initBackendAndDispatcher(
       updateSystemPrompt: claudeUpdateSystemPrompt,
       getActiveQuery,
       buildMcpServers,
+      runOneShotAgent: claudeRunOneShotAgent,
+      evictOrphanSubprocesses: claudeEvictOrphanSubprocesses,
+      initClaudeOneShot,
     } = await import("./backend/claude-sdk/index.js");
     const { getPluginMcpServers } = await import("./core/plugin.js");
     const claudeModelProvider =
@@ -197,6 +208,8 @@ export async function initBackendAndDispatcher(
         };
         return qi.setMcpServers(freshServers);
       },
+      runOneShotAgent: (p) => claudeRunOneShotAgent(p),
+      evictOrphanSubprocesses: (label) => claudeEvictOrphanSubprocesses(label),
     };
     log("bot", "Backend: Claude SDK");
   }
@@ -233,18 +246,37 @@ export async function initBackendAndDispatcher(
     }
   }
 
+  // Configure the Claude SDK one-shot runner once we know mempalace state.
+  // Loaded unconditionally because dream/heartbeat may target the Claude SDK
+  // backend even when the chat backend is Kilo/OpenCode in some setups.
+  // For Kilo/OpenCode chat backends this is dead state — harmless.
+  const { initClaudeOneShot } =
+    await import("./backend/claude-sdk/one-shot.js");
+  initClaudeOneShot({
+    claudeBinary: config.claudeBinary,
+    mempalace: mempalaceCfg,
+  });
+
   initDream({
     model: config.model,
     dreamModel: config.dreamModel,
-    claudeBinary: config.claudeBinary,
     workspace: config.workspace,
-    mempalace: mempalaceCfg,
+    backend,
   });
+  // Heartbeat needs to know which non-terminal frontends are wired so it can
+  // tell the agent it has outbound `${frontend}-tools` MCP servers available.
+  // Terminal-only deployments get a stripped-down system prompt with no
+  // outbound section.
+  const frontendNames = (
+    Array.isArray(config.frontend) ? config.frontend : [config.frontend]
+  ).filter((f) => f !== "terminal");
+
   initHeartbeat({
     model: config.model,
     heartbeatModel: config.heartbeatModel,
-    claudeBinary: config.claudeBinary,
     workspace: config.workspace,
+    backend,
+    frontends: frontendNames,
   });
 
   return { backend };
