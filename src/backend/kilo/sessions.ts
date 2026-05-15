@@ -117,22 +117,44 @@ type KiloUsageSummary = {
 export function extractPartsSummary(parts: Array<Record<string, unknown>>): {
   text: string;
   toolCalls: number;
+  syntheticErrorText?: string;
 } {
   const textParts: string[] = [];
+  const syntheticTexts: string[] = [];
   let toolCalls = 0;
 
   for (const part of parts) {
     if (part.type === "text" && typeof part.text === "string") {
-      textParts.push(part.text);
+      // Kilo flags self-generated synthetic text parts (e.g.
+      // "The model hit its output limit while reasoning and produced
+      // no actionable output. Try disabling reasoning or increasing
+      // the output limit.") with `synthetic: true`. Those aren't a
+      // reply from the model — they're Kilo telling us the request
+      // failed. Surface them through a separate channel so the
+      // handler can convert them into a meaningful Talon error
+      // instead of shipping them verbatim to the user.
+      if (part.synthetic === true) {
+        syntheticTexts.push(part.text);
+      } else if (part.ignored !== true) {
+        textParts.push(part.text);
+      }
     } else if (part.type === "tool") {
       toolCalls++;
     }
   }
 
-  return {
+  const result: {
+    text: string;
+    toolCalls: number;
+    syntheticErrorText?: string;
+  } = {
     text: textParts.join("\n\n").trim(),
     toolCalls,
   };
+  if (syntheticTexts.length > 0) {
+    result.syntheticErrorText = syntheticTexts.join("\n\n").trim();
+  }
+  return result;
 }
 
 /** Extract token / cost counters from a Kilo assistant `info` blob. */

@@ -78,6 +78,15 @@ export interface StreamState {
   eventCounts: Record<string, number>;
 
   /**
+   * Backend-generated error text peeled off the response (e.g. Kilo's
+   * synthetic "model hit its output limit while reasoning" message).
+   * The handler converts this into a user-friendly Talon error instead
+   * of shipping the raw upstream string as a chat reply. Empty when the
+   * turn produced no synthetic error.
+   */
+  syntheticError?: string;
+
+  /**
    * partID → part type lookup populated from `message.part.updated` events.
    *
    * Kilo's `message.part.delta` events carry only `partID` and `field` —

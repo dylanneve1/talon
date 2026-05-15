@@ -403,6 +403,40 @@ describe("finalizePartsIntoState — SSE missed", () => {
     expect(state.allResponseText).toBe("actual reply");
   });
 
+  it("surfaces synthetic error text parts via state.syntheticError, not as the reply", () => {
+    const state = createStreamState();
+    finalizePartsIntoState({
+      parts: [
+        {
+          type: "text",
+          synthetic: true,
+          text: "The model hit its output limit while reasoning and produced no actionable output.",
+        },
+      ],
+      state,
+      seenToolCallIds: new Set(),
+    });
+    // Synthetic Kilo error must NOT land in allResponseText (where it
+    // would be shipped to the user as if the model itself had
+    // answered with technical advice). It moves to state.syntheticError
+    // for the handler to convert into a Talon error message.
+    expect(state.allResponseText).toBe("");
+    expect(state.syntheticError).toContain("output limit while reasoning");
+  });
+
+  it("ignores `ignored: true` text parts", () => {
+    const state = createStreamState();
+    finalizePartsIntoState({
+      parts: [
+        { type: "text", ignored: true, text: "irrelevant intermediate text" },
+        { type: "text", text: "actual reply" },
+      ],
+      state,
+      seenToolCallIds: new Set(),
+    });
+    expect(state.allResponseText).toBe("actual reply");
+  });
+
   it("ignores reasoning parts (private scratchpad)", () => {
     const state = createStreamState();
     const onToolUse = vi.fn();

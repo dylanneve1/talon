@@ -306,7 +306,10 @@ export async function handleMessage(
   // delivering. Surface a concise notice so the user isn't left staring
   // at silence.
 
-  let delivery: { route: "text-part" | "tool" | "empty"; chars: number };
+  let delivery: {
+    route: "text-part" | "tool" | "synthetic-error" | "empty";
+    chars: number;
+  };
 
   if (
     state.deliveredTextNorms.length > 0 &&
@@ -320,6 +323,31 @@ export async function handleMessage(
       route: "tool",
       chars: state.deliveredTextNorms.reduce((n, d) => n + d.length, 0),
     };
+  } else if (state.syntheticError && !responseText) {
+    // Kilo hit an internal failure (e.g. "model hit its output limit
+    // while reasoning") and emitted a synthetic text part instead of a
+    // real reply. We don't ship the raw upstream string — it reads as
+    // if the model itself answered with technical advice. Convert into
+    // a Talon error message that points at the actionable bits.
+    delivery = {
+      route: "synthetic-error",
+      chars: state.syntheticError.length,
+    };
+    incrementCounter("kilo.synthetic_error");
+    logWarn(
+      "agent",
+      `[${chatId}] Kilo synthetic error in response: ${formatSyntheticPreview(state.syntheticError)}`,
+    );
+    if (onTextBlock) {
+      try {
+        await onTextBlock(`⚠️ Kilo: ${state.syntheticError}`);
+      } catch (err) {
+        logWarn(
+          "agent",
+          `[${chatId}] onTextBlock (synthetic-error) failed: ${errMsg(err)}`,
+        );
+      }
+    }
   } else if (responseText && !state.turnTerminated) {
     // Plain text part — ship it.
     delivery = { route: "text-part", chars: responseText.length };
@@ -395,6 +423,18 @@ export async function handleMessage(
 }
 
 // ── Logging helpers ────────────────────────────────────────────────────────
+
+/**
+ * One-line preview (~120 chars, whitespace-collapsed) of a synthetic
+ * error message for the operator log. Same shape as the prose-preview
+ * helper used elsewhere — short enough to fit in a tail, long enough
+ * to recognise the underlying Kilo error category at a glance.
+ */
+function formatSyntheticPreview(text: string, max = 120): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return JSON.stringify(collapsed);
+  return JSON.stringify(collapsed.slice(0, max) + "…");
+}
 
 /**
  * Compact summary of which SSE event types fired this turn. `{}` for a

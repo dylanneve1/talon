@@ -302,18 +302,32 @@ export interface FinalizePartsInputs {
  */
 export function finalizePartsIntoState(inputs: FinalizePartsInputs): {
   toolsProcessed: number;
+  syntheticErrorText?: string;
 } {
   const { parts, state, seenToolCallIds, onToolUse } = inputs;
   let toolsProcessed = 0;
 
   // Authoritative text from text parts only — `extractPartsSummary` already
   // filters to `part.type === "text"`, so reasoning content can't leak in
-  // even if a delta classifier missed it earlier in the turn.
-  const { text } = extractPartsSummary(parts);
-  if (text) {
-    state.allResponseText = text;
-    state.lastTrailingText = text;
+  // even if a delta classifier missed it earlier in the turn. It also
+  // peels off `synthetic: true` parts (Kilo's internal failure messages
+  // like "model hit its output limit while reasoning") and surfaces them
+  // via `syntheticErrorText` so the caller can show a Talon error
+  // instead of shipping the raw Kilo string as a chat reply.
+  const summary = extractPartsSummary(parts);
+  if (summary.text) {
+    state.allResponseText = summary.text;
+    state.lastTrailingText = summary.text;
     state.currentBlockText = "";
+  } else if (summary.syntheticErrorText) {
+    // No real text part — make sure SSE-accumulated speculative text
+    // doesn't leak through as if it were the reply.
+    state.allResponseText = "";
+    state.lastTrailingText = "";
+    state.currentBlockText = "";
+  }
+  if (summary.syntheticErrorText) {
+    state.syntheticError = summary.syntheticErrorText;
   }
 
   // Process tool parts — recordToolUse handles the toolCalls increment,
@@ -340,5 +354,10 @@ export function finalizePartsIntoState(inputs: FinalizePartsInputs): {
     }
   }
 
-  return { toolsProcessed };
+  return {
+    toolsProcessed,
+    ...(summary.syntheticErrorText
+      ? { syntheticErrorText: summary.syntheticErrorText }
+      : {}),
+  };
 }
