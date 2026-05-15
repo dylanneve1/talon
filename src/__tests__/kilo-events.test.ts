@@ -424,17 +424,22 @@ describe("finalizePartsIntoState — SSE missed", () => {
     expect(state.syntheticError).toContain("output limit while reasoning");
   });
 
-  it("ignores `ignored: true` text parts", () => {
+  it("delivers `ignored: true` text parts (Kilo flags real replies with this)", () => {
+    // The Kilo schema documents `ignored?: boolean` on TextPart, but
+    // observation against deepseek/deepseek-v4-flash:free shows the
+    // flag is set on the genuine reply text parts (137 chars at end of
+    // a `step-start, reasoning, step-finish, text` sequence). Filtering
+    // on it killed every reply for that model in prod. Document the
+    // (counterintuitive) deliver-anyway behaviour with a test.
     const state = createStreamState();
     finalizePartsIntoState({
       parts: [
-        { type: "text", ignored: true, text: "irrelevant intermediate text" },
-        { type: "text", text: "actual reply" },
+        { type: "text", ignored: true, text: "this IS the reply" },
       ],
       state,
       seenToolCallIds: new Set(),
     });
-    expect(state.allResponseText).toBe("actual reply");
+    expect(state.allResponseText).toBe("this IS the reply");
   });
 
   it("ignores reasoning parts (private scratchpad)", () => {

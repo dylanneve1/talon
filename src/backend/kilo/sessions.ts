@@ -133,9 +133,14 @@ export function extractPartsSummary(parts: Array<Record<string, unknown>>): {
       // failed. Surface them through a separate channel so the
       // handler can convert them into a meaningful Talon error
       // instead of shipping them verbatim to the user.
+      //
+      // The schema also has `ignored: true` but observation shows it's
+      // set on regular text-part replies too (Kilo internal flag, not
+      // a "skip me" hint as one would assume from the name). Don't
+      // filter on it — that wiped out legitimate replies in prod.
       if (part.synthetic === true) {
         syntheticTexts.push(part.text);
-      } else if (part.ignored !== true) {
+      } else {
         textParts.push(part.text);
       }
     } else if (part.type === "tool") {
