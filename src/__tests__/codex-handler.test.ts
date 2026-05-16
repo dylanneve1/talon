@@ -13,6 +13,9 @@
  * These tests verify each path with hand-built event sequences.
  */
 
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Shared mock state ───────────────────────────────────────────────────────
@@ -1371,22 +1374,54 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
   // the model passed validation but Codex returned a 400 anyway.
 
   it("pre-emptively swaps gpt-5-codex → gpt-5.5 under ChatGPT auth", async () => {
-    // No openaiApiKey + no OPENAI_API_KEY env → init reads the host
-    // auth file. The host machine running this test has Dylan's real
-    // `~/.codex/auth.json` in chatgpt mode (see `codex-auth.test.ts`
-    // for the test-controlled equivalent). With `gpt-5-codex` set in
-    // config, the handler should detect the mismatch before calling
-    // `runStreamed` and pass `gpt-5.5` to ThreadOptions.
-    initCodexAgent(
-      {
-        model: "gpt-5-codex",
-        workspace: "/tmp",
-        systemPrompt: "Test system prompt.",
-        frontend: "telegram",
-      } as never,
-      () => 19876,
-      "telegram",
+    // Set up a fake HOME with a chatgpt auth.json so this test is
+    // self-contained and works on CI (not just on Dylan's machine where
+    // the real ~/.codex/auth.json happens to be in chatgpt mode).
+    const fakeHome = mkdtempSync(join(tmpdir(), "talon-codex-handler-"));
+    mkdirSync(join(fakeHome, ".codex"), { recursive: true });
+    writeFileSync(
+      join(fakeHome, ".codex", "auth.json"),
+      '{"auth_mode":"chatgpt"}',
     );
+    const origHome = process.env.HOME;
+    const origUserProfile = process.env.USERPROFILE;
+    const origApiKey = process.env.OPENAI_API_KEY;
+    process.env.HOME = fakeHome;
+    delete process.env.USERPROFILE;
+    // Suppress OPENAI_API_KEY so detectCodexAuth doesn't short-circuit
+    // to api-key mode before reaching the auth-file check.
+    delete process.env.OPENAI_API_KEY;
+    try {
+      // No openaiApiKey + no OPENAI_API_KEY env → init reads the fake
+      // ~/.codex/auth.json we just created (chatgpt mode). With
+      // `gpt-5-codex` set in config, the handler should detect the
+      // mismatch before calling `runStreamed` and pass `gpt-5.5` to
+      // ThreadOptions.
+      initCodexAgent(
+        {
+          model: "gpt-5-codex",
+          workspace: "/tmp",
+          systemPrompt: "Test system prompt.",
+          frontend: "telegram",
+        } as never,
+        () => 19876,
+        "telegram",
+      );
+    } finally {
+      // Restore environment regardless of init outcome.
+      if (origHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = origHome;
+      }
+      if (origUserProfile !== undefined) {
+        process.env.USERPROFILE = origUserProfile;
+      }
+      if (origApiKey !== undefined) {
+        process.env.OPENAI_API_KEY = origApiKey;
+      }
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
 
     MOCK_EVENTS = [
       { type: "thread.started", thread_id: "thr_preempt" },
