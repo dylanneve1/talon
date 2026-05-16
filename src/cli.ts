@@ -63,6 +63,16 @@ type Config = {
   teamsWebhookSecret?: string;
   teamsWebhookPort?: number;
   teamsBotDisplayName?: string;
+  // Discord
+  discord?: {
+    botToken: string;
+    applicationId: string;
+    allowedUsers?: string[];
+    allowedGuilds?: string[];
+    allowedChannels?: string[];
+    adminUserIds?: string[];
+    [key: string]: unknown;
+  };
 };
 
 const DEFAULTS: Config = {
@@ -289,6 +299,45 @@ async function runSetup(): Promise<void> {
     if (botName) teamsBotDisplayName = botName;
   }
 
+  let discordBotToken: string | undefined;
+  let discordApplicationId: string | undefined;
+
+  if (selectedFrontends.includes("discord")) {
+    p.note(
+      "Get bot token + application ID from\n" +
+        "https://discord.com/developers/applications → your app → Bot",
+      "Discord Setup",
+    );
+
+    const token = await p.text({
+      message: "Discord bot token",
+      placeholder: "MTxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      initialValue: config.discord?.botToken || undefined,
+      validate: (v) => {
+        if (!v) return "Bot token is required";
+      },
+    });
+    if (p.isCancel(token)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    discordBotToken = token as string;
+
+    const appId = await p.text({
+      message: "Discord application ID",
+      placeholder: "1234567890123456789",
+      initialValue: config.discord?.applicationId || undefined,
+      validate: (v) => {
+        if (!v) return "Application ID is required";
+      },
+    });
+    if (p.isCancel(appId)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    discordApplicationId = appId as string;
+  }
+
   // Discover models from SDK; fall back to static list if SDK isn't available
   const {
     registerClaudeModels,
@@ -376,6 +425,19 @@ async function runSetup(): Promise<void> {
     teamsBotDisplayName: selectedFrontends.includes("teams")
       ? teamsBotDisplayName
       : undefined,
+    // Discord — bot token + applicationId. Allowlists / admin IDs /
+    // mention vs channel-wide reply behaviour are left as defaults in
+    // the wizard; advanced users hand-edit talon.json.
+    discord:
+      selectedFrontends.includes("discord") &&
+      discordBotToken &&
+      discordApplicationId
+        ? {
+            ...config.discord,
+            botToken: discordBotToken,
+            applicationId: discordApplicationId,
+          }
+        : config.discord,
   };
 
   const s = p.spinner();
