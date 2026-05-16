@@ -43,11 +43,11 @@ function printBanner(): void {
 
 type Config = {
   frontend: string | string[];
-  /** Active backend (`claude` / `kilo` / `opencode` / `codex`). */
-  backend?: "claude" | "kilo" | "opencode" | "codex";
+  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents`). */
+  backend?: "claude" | "kilo" | "opencode" | "codex" | "openai-agents";
   botToken?: string;
   claudeBinary?: string;
-  /** OpenAI API key — used by the Codex backend. */
+  /** OpenAI API key — used by Codex + OpenAI Agents backends. */
   openaiApiKey?: string;
   model: string;
   concurrency: number;
@@ -411,6 +411,10 @@ async function runSetup(): Promise<void> {
         value: "codex",
         label: `Codex     ${pc.dim("— OpenAI Codex CLI (@openai/codex)")}`,
       },
+      {
+        value: "openai-agents",
+        label: `OpenAI Agents ${pc.dim("— @openai/agents (Responses API, requires API key)")}`,
+      },
     ],
   });
   if (p.isCancel(backendSelection)) {
@@ -439,6 +443,17 @@ async function runSetup(): Promise<void> {
       message: "OpenAI API key",
       placeholder:
         "leave empty to use OPENAI_API_KEY env or `codex login` auth",
+      initialValue: config.openaiApiKey || "",
+    });
+    if (p.isCancel(keyInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    openaiApiKey = (keyInput as string).trim() || undefined;
+  } else if (backend === "openai-agents") {
+    const keyInput = await p.text({
+      message: "OpenAI API key (required — no ChatGPT-OAuth fallback)",
+      placeholder: "leave empty to use OPENAI_API_KEY env",
       initialValue: config.openaiApiKey || "",
     });
     if (p.isCancel(keyInput)) {
@@ -615,6 +630,7 @@ async function viewConfig(): Promise<void> {
     kilo: "Kilo (@kilocode/sdk)",
     opencode: "OpenCode (@opencode-ai/sdk)",
     codex: "OpenAI Codex CLI",
+    "openai-agents": "OpenAI Agents (@openai/agents)",
   };
   console.log(
     `  ${pc.dim("Backend")}          ${pc.green(backendLabel[config.backend ?? "claude"])}`,
