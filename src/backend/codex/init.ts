@@ -43,6 +43,10 @@ export function initCodexAgent(
   state.config = cfg;
   if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
   if (frontend) state.frontendName = frontend;
+  // Invalidate any cached Codex instance — the new config may carry
+  // different MCP servers / API key / frontend wiring. The next
+  // `ensureCodex(chatId)` call will rebuild from scratch.
+  state.codex = null;
 }
 
 /**
