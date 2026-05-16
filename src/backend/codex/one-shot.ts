@@ -50,6 +50,9 @@ export async function runOneShotAgent(
   const thread = codex.startThread({
     model,
     skipGitRepoCheck: true,
+    sandboxMode: "read-only",
+    approvalPolicy: "never",
+    networkAccessEnabled: false,
   });
 
   try {

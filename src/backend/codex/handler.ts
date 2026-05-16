@@ -145,15 +145,29 @@ export async function handleMessage(
   // persists threads under `~/.codex/sessions/`; we store the thread
   // id in Talon's session storage so `resumeThread()` keeps the
   // conversation continuous across turns.
+  //
+  // ThreadOptions:
+  //   - `skipGitRepoCheck` — Codex normally insists on running inside
+  //     a git repo. We're an assistant, not a coding session.
+  //   - `sandboxMode: "read-only"` — Talon's tool surface comes from
+  //     MCP plugins (mempalace, brave, github, etc.); Codex's own
+  //     filesystem / shell tools aren't part of the assistant's job.
+  //     Sandbox blocks them silently.
+  //   - `approvalPolicy: "never"` — auto-deny any tool that would
+  //     otherwise prompt the user. MCP tools execute through the
+  //     bridge and bypass this policy entirely.
+  //   - `networkAccessEnabled: false` — same reasoning as sandboxMode.
+  //     If Codex needs net it goes through the brave-search MCP.
+  const threadOptions = {
+    model: activeModel,
+    skipGitRepoCheck: true,
+    sandboxMode: "read-only" as const,
+    approvalPolicy: "never" as const,
+    networkAccessEnabled: false,
+  };
   const thread: Thread = session.sessionId
-    ? codex.resumeThread(session.sessionId, {
-        model: activeModel,
-        skipGitRepoCheck: true,
-      })
-    : codex.startThread({
-        model: activeModel,
-        skipGitRepoCheck: true,
-      });
+    ? codex.resumeThread(session.sessionId, threadOptions)
+    : codex.startThread(threadOptions);
 
   const streamState = createStreamState();
   const seenToolCallIds = new Set<string>();
