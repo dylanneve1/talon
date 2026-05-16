@@ -64,8 +64,11 @@ import {
   classifyRetry,
   summarizeUsage,
   routeDelivery,
+  sleep,
 } from "../shared/index.js";
 import { processStreamEvent, finalizePartsIntoState } from "./events.js";
+import { subscribeSseStream } from "../remote-server/sse-stream.js";
+import { findLastAssistantMessage as findLastAssistantMessageShared } from "../remote-server/messages.js";
 
 // ── Active session registry ─────────────────────────────────────────────────
 //
@@ -537,20 +540,15 @@ async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
  * last assistant message (the one that just landed via the prompt
  * we issued).
  */
-function findLastAssistantMessage(
+// Shared walker — see `remote-server/messages.ts`. The runtime guard +
+// `info` typing live there once; the generic `Info` parameter labels
+// what we consume.
+const findLastAssistantMessage = (
   messages: Array<Record<string, unknown>>,
-): { parts: Array<Record<string, unknown>>; info?: KiloAssistantInfo } | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    const info = m?.info as { role?: string } | undefined;
-    if (info?.role !== "assistant") continue;
-    const parts = Array.isArray(m.parts)
-      ? (m.parts as Array<Record<string, unknown>>)
-      : [];
-    return { parts, info: info as unknown as KiloAssistantInfo };
-  }
-  return null;
-}
+): {
+  parts: Array<Record<string, unknown>>;
+  info?: KiloAssistantInfo;
+} | null => findLastAssistantMessageShared<KiloAssistantInfo>(messages);
 
 // ── SSE subscription ───────────────────────────────────────────────────────
 
@@ -590,19 +588,11 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
     abortSignal,
   } = inputs;
 
-  let stream: AsyncIterable<unknown> | undefined;
-  try {
-    // The SDK's `global.event()` returns a `ServerSentEventsResult` whose
-    // `stream` field is an async iterable of typed events.
-    const sse = (await oc.global.event()) as unknown as {
-      stream?: AsyncIterable<unknown>;
-    };
-    stream = sse?.stream;
-  } catch (err) {
-    logWarn("agent", `[${chatId}] SSE subscribe failed: ${errMsg(err)}`);
-    return;
-  }
-
+  // `subscribeSseStream` handles the `as unknown as { stream }` narrowing
+  // with a runtime guard + the subscribe-failed warning. Returns
+  // `undefined` for both "subscribe rejected" and "no iterable in the
+  // response shape" — either way we exit without iterating.
+  const stream = await subscribeSseStream(oc, chatId);
   if (!stream) return;
 
   try {
@@ -714,22 +704,4 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
   }
 }
 
-// ── Sleep with abort ────────────────────────────────────────────────────────
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(() => resolve(), ms);
-    if (signal) {
-      const onAbort = (): void => {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-  });
-}
+// (`sleep` lives in `../shared/sleep.ts` — see import at the top.)

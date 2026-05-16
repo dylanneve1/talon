@@ -20,19 +20,33 @@
  * cache amortises that to one spawn per chat lifetime.
  */
 
-import { Codex, type CodexOptions } from "@openai/codex-sdk";
+import { Codex } from "@openai/codex-sdk";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { log, logWarn } from "../../util/log.js";
 import { getState } from "./state.js";
-import { buildCodexMcpServers } from "./mcp-config.js";
+import { asCodexConfig, buildCodexMcpServers } from "./mcp-config.js";
+import { detectCodexAuth, type CodexAuthInfo } from "./auth.js";
+
+/** Cached auth-mode detection result — updated on every `initCodexAgent`. */
+let cachedAuthInfo: CodexAuthInfo | null = null;
+
+/**
+ * Return the auth-mode detection result captured at the last
+ * `initCodexAgent` call. Used by the handler to pick the right default
+ * model and by tests to assert init-time behaviour.
+ */
+export function getCodexAuthInfo(): CodexAuthInfo | null {
+  return cachedAuthInfo;
+}
 
 /**
  * Initialise the Codex backend.
  *
  * Stores config + gateway-port resolver + frontend label. Spawning the
  * Codex CLI is deferred until the first message arrives (lazy
- * initialisation).
+ * initialisation). Auth-mode detection runs synchronously here so the
+ * startup log surfaces the result before any turn fires.
  */
 export function initCodexAgent(
   cfg: TalonConfig,
@@ -48,32 +62,42 @@ export function initCodexAgent(
   // `ensureCodex(chatId)` call will rebuild from scratch.
   state.codex = null;
 
-  // Friendly startup check: warn early if neither the env var nor a
-  // configured key nor the host's `~/.codex/auth.json` is available.
-  // Codex will fail per-turn with a less helpful error otherwise.
-  const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
-  const hasCfgKey = Boolean(cfg.openaiApiKey);
-  // Lazy: only check the auth.json file if neither key is present
-  // (avoids spurious filesystem reads on the happy path).
-  if (!hasEnvKey && !hasCfgKey) {
-    void checkCodexAuthFile();
-  }
+  // Detect auth mode synchronously so the startup line carries it.
+  // Knowing whether we're on api-key vs chatgpt vs nothing drives both
+  // the default-model pick and the handler's recovery decisions.
+  const authInfo = detectCodexAuth(cfg.openaiApiKey);
+  cachedAuthInfo = authInfo;
+  logAuthInfo(authInfo);
 }
 
-async function checkCodexAuthFile(): Promise<void> {
-  if (!process.env.HOME) return;
-  try {
-    const { existsSync } = await import("node:fs");
-    if (!existsSync(`${process.env.HOME}/.codex/auth.json`)) {
+function logAuthInfo(info: CodexAuthInfo): void {
+  switch (info.mode) {
+    case "api-key":
+      log("agent", `Codex auth: api-key (source: ${info.source})`);
+      return;
+    case "chatgpt":
+      log(
+        "agent",
+        `Codex auth: chatgpt OAuth (source: ${info.source}). ` +
+          `Note: gpt-5-codex is unavailable on this auth mode — ` +
+          `gpt-5.5 will be used as the default.`,
+      );
+      return;
+    case "none":
       logWarn(
         "agent",
         "Codex: no OPENAI_API_KEY env, no openaiApiKey in talon.json, " +
-          "and no ~/.codex/auth.json — first turn will fail. " +
-          "Run `codex login` or set OPENAI_API_KEY.",
+          "and no usable ~/.codex/auth.json — first turn will fail. " +
+          "Run `codex login` (for ChatGPT OAuth) or set OPENAI_API_KEY " +
+          "(for API-key billing).",
       );
-    }
-  } catch {
-    /* non-fatal — auth check is best-effort */
+      if (info.authFilePath && !info.authFileParsed && info.parseError) {
+        logWarn(
+          "agent",
+          `Codex: ~/.codex/auth.json exists but failed to parse: ${info.parseError}`,
+        );
+      }
+      return;
   }
 }
 
@@ -104,12 +128,10 @@ export function ensureCodex(chatId: string): Codex {
 
   // The Codex CLI's `--config` flag flattens dotted JSON paths into
   // TOML. We provide `mcp_servers.<name>.{command,args,env}` and the
-  // SDK serialises it for us. CodexConfigObject only accepts
-  // primitives + arrays + nested objects, so the cast is type-safe at
-  // runtime even if the compiler can't prove it.
-  const codexConfig: CodexOptions["config"] = {
-    mcp_servers: mcpServers as unknown as Record<string, never>,
-  };
+  // SDK serialises it for us. The type narrowing (SDK's
+  // `CodexConfigObject` vs our `CodexMcpServer` shape) is centralised
+  // in `asCodexConfig`.
+  const codexConfig = asCodexConfig(mcpServers);
 
   // Cache key: the chat id. When it changes, we rebuild.
   const cached = state.codex;

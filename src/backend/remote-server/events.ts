@@ -31,7 +31,12 @@ import {
   recordToolUse,
   type StreamState,
 } from "../shared/index.js";
-import { log } from "../../util/log.js";
+import { log, logDebug } from "../../util/log.js";
+
+/** Format an error for a debug log line. */
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 import { incrementCounter } from "../../util/metrics.js";
 import { stripMcpPrefix } from "../../core/tools/index.js";
 
@@ -208,8 +213,15 @@ async function processPartUpdate(
   if (progress && ctx.onTextBlock) {
     try {
       await ctx.onTextBlock(progress);
-    } catch {
-      /* non-fatal — never break the stream loop on a UI callback */
+    } catch (err) {
+      // Non-fatal — never break the stream loop on a UI callback. Logged
+      // at debug level so a repeatedly-failing frontend is visible to
+      // anyone tailing with LOG_LEVEL=debug, without polluting the
+      // default operator log.
+      logDebug(
+        "agent",
+        `[${ctx.backendLabel}] onTextBlock (progress) threw: ${errMsg(err)}`,
+      );
     }
   }
   // Count every tool the model calls — parity with claude-sdk which
@@ -219,8 +231,11 @@ async function processPartUpdate(
   if (ctx.onToolUse) {
     try {
       ctx.onToolUse(toolName, input);
-    } catch {
-      /* non-fatal */
+    } catch (err) {
+      logDebug(
+        "agent",
+        `[${ctx.backendLabel}] onToolUse(${toolName}) threw: ${errMsg(err)}`,
+      );
     }
   }
   if (ctx.state.turnTerminated) {
@@ -271,8 +286,8 @@ export function maybeFireStreamDelta(
   state.lastStreamUpdate = now;
   try {
     onStreamDelta(state.currentBlockText, phase);
-  } catch {
-    /* non-fatal */
+  } catch (err) {
+    logDebug("agent", `onStreamDelta threw: ${errMsg(err)}`);
   }
 }
 
@@ -376,8 +391,11 @@ export function finalizePartsIntoState(inputs: FinalizePartsInputs): {
       if (onToolUse) {
         try {
           onToolUse(toolName, stateObj.input);
-        } catch {
-          /* non-fatal */
+        } catch (err) {
+          logDebug(
+            "agent",
+            `onToolUse(${toolName}) (parts backfill) threw: ${errMsg(err)}`,
+          );
         }
       }
     }

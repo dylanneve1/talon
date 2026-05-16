@@ -73,14 +73,61 @@ import {
 import {
   CODEX_SYSTEM_PROMPT_SUFFIX,
   CODEX_DEFAULT_MODEL,
+  CODEX_CHATGPT_DEFAULT_MODEL,
 } from "./constants.js";
 import { getState } from "./state.js";
-import { ensureCodex } from "./init.js";
+import { ensureCodex, getCodexAuthInfo } from "./init.js";
+import { isChatGptModelMismatchError } from "./auth.js";
+import { chatGptFallbackFor, isCodexApiKeyOnlyModel } from "./models.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
 
 const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
+
+/**
+ * One-shot ChatGPT-OAuth model-mismatch recovery.
+ *
+ * Returns a retry promise when the error text indicates Codex rejected
+ * an api-key-only model on a ChatGPT account AND we haven't already
+ * retried. Returns `undefined` otherwise (caller falls through to its
+ * normal error handling).
+ *
+ * Shared between the catch block (when the SDK rethrows the 400) and
+ * the post-event-loop check (when the SDK only emits `turn.failed`
+ * without rethrowing). The retry side-effects are confined here:
+ * session reset, transient `setChatModel` flip, `_retried = true`
+ * sentinel on the recursive call.
+ */
+async function maybeFallbackForChatGptMismatch(
+  probeText: string,
+  activeModel: string,
+  params: QueryParams,
+  retried: boolean,
+  chatId: string,
+): Promise<QueryResult | undefined> {
+  if (retried) return undefined;
+  if (!isChatGptModelMismatchError(probeText)) return undefined;
+
+  const fallbackModel =
+    chatGptFallbackFor(activeModel) ?? CODEX_CHATGPT_DEFAULT_MODEL;
+  if (fallbackModel === activeModel) return undefined;
+
+  logWarn(
+    "agent",
+    `[${chatId}] Codex returned ChatGPT model-mismatch for ${activeModel}; ` +
+      `resetting thread and retrying on ${fallbackModel}. ` +
+      `Set OPENAI_API_KEY for billing-based access to api-key-only models.`,
+  );
+  resetSession(chatId);
+  const originalModel = getChatSettings(chatId).model;
+  setChatModel(chatId, fallbackModel);
+  try {
+    return await handleMessage(params, true);
+  } finally {
+    setChatModel(chatId, originalModel);
+  }
+}
 
 // ── Active session registry ─────────────────────────────────────────────────
 
@@ -119,9 +166,37 @@ export async function handleMessage(
   const previousTurns = session.turns;
 
   // Resolve active model. Codex accepts arbitrary model strings; we
-  // pass through whatever the chat settings hold (default `gpt-5-codex`).
+  // pass through whatever the chat settings hold. The fallback chain
+  // is: chat-settings → config → auth-aware default. The auth-aware
+  // default is `gpt-5-codex` when an API key is present, `gpt-5.5`
+  // when only ChatGPT OAuth is configured (because `gpt-5-codex` is
+  // rejected with a 400 on ChatGPT-mode accounts).
   const chatSettings = getChatSettings(chatId);
-  const activeModel = chatSettings.model ?? config.model ?? CODEX_DEFAULT_MODEL;
+  const authInfo = getCodexAuthInfo();
+  const authAwareDefault =
+    authInfo?.mode === "chatgpt"
+      ? CODEX_CHATGPT_DEFAULT_MODEL
+      : CODEX_DEFAULT_MODEL;
+  const requestedModel = chatSettings.model ?? config.model ?? authAwareDefault;
+  // If the resolved model is api-key-only AND we're on ChatGPT OAuth,
+  // pre-emptively swap to the chatgpt-compatible fallback rather than
+  // letting the first turn fail. This is the "user configured
+  // gpt-5-codex in talon.json and then ran codex login" case — the
+  // handler's retry ladder will catch it post-hoc but doing it here
+  // saves the 400 round-trip + makes the resolved-model log line
+  // match what Codex actually sees.
+  let activeModel = requestedModel;
+  if (authInfo?.mode === "chatgpt" && isCodexApiKeyOnlyModel(requestedModel)) {
+    const fallback =
+      chatGptFallbackFor(requestedModel) ?? CODEX_CHATGPT_DEFAULT_MODEL;
+    logWarn(
+      "agent",
+      `[${chatId}] Codex model ${requestedModel} is api-key-only and ` +
+        `current auth is ChatGPT OAuth — pre-emptively falling back to ${fallback}. ` +
+        `Set OPENAI_API_KEY or change the configured model to silence this.`,
+    );
+    activeModel = fallback;
+  }
   log("agent", `[${chatId}] Codex model resolved: ${activeModel}`);
 
   // First-turn system-prompt rebuild + Codex-specific delivery suffix.
@@ -243,6 +318,19 @@ export async function handleMessage(
     ) {
       // Swallow — turn completed via terminator tool.
     } else {
+      // ChatGPT-OAuth model-mismatch path: a 400 invalid_request_error
+      // saying "not supported when using Codex with a ChatGPT account".
+      // Check both the captured event-stream message and the thrown
+      // error — Codex SDK surfaces it via both channels.
+      const fallback = await maybeFallbackForChatGptMismatch(
+        `${turnFailedError ?? ""} ${errMsg(err)}`,
+        activeModel,
+        params,
+        _retried,
+        chatId,
+      );
+      if (fallback) return fallback;
+
       const classified = classify(err);
       incrementCounter(`errors.${classified.reason ?? "unknown"}`);
 
@@ -286,6 +374,22 @@ export async function handleMessage(
   }
 
   // ── Post-loop accounting ──────────────────────────────────────────────────
+
+  // Event-only ChatGPT-mismatch recovery: if the SDK emitted a
+  // `turn.failed` carrying the mismatch text but DIDN'T rethrow, the
+  // catch block above never fired. Catch it here too. (Current SDK
+  // rethrows in this case, but this path defends against a future
+  // change where it only surfaces via the event stream.)
+  if (turnFailedError && !_retried) {
+    const fallback = await maybeFallbackForChatGptMismatch(
+      turnFailedError,
+      activeModel,
+      params,
+      _retried,
+      chatId,
+    );
+    if (fallback) return fallback;
+  }
 
   if (resolvedThreadId) {
     const stored = getSession(chatId).sessionId;

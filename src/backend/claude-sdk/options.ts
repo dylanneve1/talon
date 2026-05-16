@@ -251,6 +251,15 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     model: resolvedActiveModel,
     systemPrompt: config.systemPrompt,
     cwd: config.workspace,
+    // The SDK's permission system is designed for an interactive Claude
+    // Code IDE session where a human approves each tool call. Talon runs
+    // the SDK as a server-side bot — there's no human at the keyboard
+    // to confirm Bash/Edit/etc., and our security boundary is the bot
+    // account itself (its OS user, its workspace dir, its mempalace),
+    // not the SDK's per-tool prompts. `bypassPermissions` skips the
+    // interactive prompts; `allowDangerouslySkipPermissions` is the
+    // explicit acknowledgement the SDK requires alongside it. Treat
+    // these as a unit — flipping either alone is a configuration bug.
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
     ...(config.claudeBinary

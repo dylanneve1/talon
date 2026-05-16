@@ -1,10 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ALL_TOOLS, composeTools } from "../core/tools/index.js";
-import type {
-  ToolDefinition,
-  ToolFrontend,
-  ToolTag,
-} from "../core/tools/types.js";
+import type { ToolFrontend, ToolTag } from "../core/tools/types.js";
 
 describe("ALL_TOOLS registry", () => {
   it("contains tools from every domain", () => {

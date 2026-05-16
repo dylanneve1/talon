@@ -171,24 +171,22 @@ export async function handleMessage(
           }
         }
 
-        // Note: we previously called `qi.interrupt()` here when a turn-
-        // terminator tool fired, intending to short-circuit the SDK's
-        // wasted "wrap up after end_turn tool_result" follow-up API call
-        // (~3s of phantom typing while the model says nothing useful).
-        // That interrupt races with in-flight MCP tool dispatches in the
-        // same assistant message — `end_turn` itself is an MCP tool, and
-        // the model frequently emits sibling tool_use blocks in the same
-        // message. interrupt cancels their AbortController mid-flight,
-        // which surfaces as `MCP error -32001: AbortError` in the SDK
-        // result and bubbles up to the user as "Something went wrong".
+        // Turn-terminator detection happens here (sets `state.turnTerminated`
+        // for the flow-violation check below) but the actual SDK loop exit
+        // is owned by the `PostToolBatch` hook in `options.ts`. The hook
+        // fires after every tool in the batch has resolved, returns
+        // `{ continue: false }`, and the SDK exits with TerminalReason
+        // `'hook_stopped'` — no extra "wrap up after end_turn" round-trip,
+        // no phantom typing, no token spend on a stop_turn.
         //
-        // The natural-close path is fine: the SDK does one more API call
-        // after end_turn returns (the model has nothing to say so it
-        // returns a stop turn quickly, ~2-3s typing lag), then yields a
-        // result message and exits the iterator cleanly. We accept the
-        // typing lag in exchange for not breaking turns. `state.turnTerminated`
-        // is still tracked so the flow-violation re-prompt path below can
-        // skip its retry when the model explicitly ended its turn.
+        // Historical note: an earlier implementation called `qi.interrupt()`
+        // here directly. That raced with in-flight MCP tool dispatches in
+        // the same assistant message — `end_turn` itself is an MCP tool,
+        // and the model frequently emits sibling tool_use blocks alongside
+        // it. `interrupt()` cancelled their AbortController mid-flight,
+        // surfacing as `MCP error -32001: AbortError` and bubbling up as
+        // "Something went wrong". The `PostToolBatch` hook avoids the race
+        // by definition (it fires once the entire batch has resolved).
         continue;
       }
 
@@ -245,7 +243,11 @@ export async function handleMessage(
   recordHistogram("response_latency_ms", durationMs);
   incrementCounter("queries_total");
   if (state.newSessionId) setSessionId(chatId, state.newSessionId);
-  incrementTurns(chatId);
+  // Token usage is recorded for THIS attempt unconditionally — the running
+  // session totals are additive, so a flow-violation retry that recurses
+  // through this same path will record its own tokens on top. The turn
+  // counter, in contrast, must only increment ONCE per user message (see
+  // the post-violation block below).
   recordUsage(chatId, {
     inputTokens: state.sdkInputTokens,
     outputTokens: state.sdkOutputTokens,
@@ -270,6 +272,11 @@ export async function handleMessage(
   // shared `detectFlowViolation` decides whether trailing prose constitutes
   // a missed delivery (and whether to re-prompt the model once with the
   // synthetic reminder).
+  //
+  // `incrementTurns` is deferred until AFTER this check so the retry path
+  // (which recurses through `handleMessage` and hits its own
+  // `incrementTurns` at the end of that call) doesn't double-count a
+  // single user message as two turns.
   const violation = detectFlowViolation({
     trailingText: state.lastTrailingText,
     turnTerminated: state.turnTerminated,
@@ -290,9 +297,14 @@ export async function handleMessage(
 
     if (violation.shouldRetry) {
       incrementCounter("scratchpad.flow_violation_retried");
+      // The recursive call owns the `incrementTurns` for this user message.
+      // We deliberately don't increment here.
       return handleMessage({ ...params, text: violation.reminder }, true);
     }
   }
+
+  // Reached the non-retry path — this turn counts as one user-visible turn.
+  incrementTurns(chatId);
 
   // ── Build result ──────────────────────────────────────────────────────────
 

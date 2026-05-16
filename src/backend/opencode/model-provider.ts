@@ -18,7 +18,6 @@ import {
   getOpenCodeModelSelectionValue,
   resolveOpenCodeModelInput,
   getOpenCodeSettingsPresentation,
-  formatOpenCodeSelectionError,
   formatOpenCodeUnavailableModel,
   type OpenCodeModelCatalogEntry,
   type OpenCodeModelCatalog,

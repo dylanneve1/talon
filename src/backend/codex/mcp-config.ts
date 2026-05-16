@@ -25,6 +25,7 @@
 
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { CodexOptions } from "@openai/codex-sdk";
 import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
 
@@ -33,6 +34,27 @@ export interface CodexMcpServer {
   command: string;
   args: string[];
   env?: Record<string, string>;
+}
+
+/**
+ * Wrap a `Record<string, CodexMcpServer>` in the `{ mcp_servers: ... }`
+ * envelope the Codex SDK expects on `CodexOptions.config`.
+ *
+ * The SDK's `CodexConfigObject` type recursively narrows values to
+ * `string | number | boolean | array | object`. Our `CodexMcpServer`
+ * shape satisfies that at runtime (every leaf is a string or string
+ * array), but TypeScript can't prove the structural compatibility
+ * because `Record<string, CodexMcpServer>` isn't a direct subtype of
+ * the recursive `CodexConfigObject` type. The cast through `unknown`
+ * is centralised here so the lie lives in exactly one documented spot
+ * — both `init.ts` and any future caller use this helper.
+ */
+export function asCodexConfig(
+  mcpServers: Record<string, CodexMcpServer>,
+): CodexOptions["config"] {
+  return {
+    mcp_servers: mcpServers,
+  } as unknown as CodexOptions["config"];
 }
 
 /**
