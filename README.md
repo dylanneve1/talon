@@ -15,7 +15,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 |                       |                                                                                                                                       |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | **Multi-frontend**    | Telegram (Grammy + GramJS userbot), Discord (discord.js), Microsoft Teams (Bot Framework), Terminal with live tool visibility         |
-| **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
+| **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
 | **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, triggers, stickers, file system, admin controls                              |
 | **Plugins**           | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search                                                   |
 | **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary) — backend-agnostic                                          |
@@ -90,7 +90,7 @@ index.ts                    Composition root
   +-- util/                 Config, logging, workspace, paths, time
 ```
 
-**Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. Both backend families (Claude SDK and remote-server) implement the same `QueryBackend` interface in `core/types.ts`.
+**Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. All four backends (Claude SDK, Kilo, OpenCode, Codex) implement the same `QueryBackend` interface in `core/types.ts`. Kilo and OpenCode additionally share the `remote-server/` infrastructure because they wrap forks of the same upstream HTTP agent server.
 
 ---
 
