@@ -43,8 +43,12 @@ function printBanner(): void {
 
 type Config = {
   frontend: string | string[];
+  /** Active backend (`claude` / `kilo` / `opencode` / `codex`). */
+  backend?: "claude" | "kilo" | "opencode" | "codex";
   botToken?: string;
   claudeBinary?: string;
+  /** OpenAI API key — used by the Codex backend. */
+  openaiApiKey?: string;
   model: string;
   concurrency: number;
   pulse: boolean;
@@ -599,32 +603,76 @@ async function runDoctor(): Promise<void> {
       ? `  ${pc.green("\u2713")} Workspace: ${pc.dim(dirs.root)}`
       : `  ${pc.yellow("!")} Workspace missing`,
   );
-  try {
-    const { execSync } = await import("node:child_process");
-    const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
-    if (doctorConfig?.claudeBinary) {
-      // Check if it's a PATH command or an absolute/relative file path
-      const cmd = process.platform === "win32" ? "where" : "which";
-      try {
-        execSync(`${cmd} ${doctorConfig.claudeBinary}`, { stdio: "pipe" });
-        console.log(
-          `  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`,
+  // Backend-specific binary check (only required for the active backend).
+  const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
+  const activeBackend = doctorConfig?.backend ?? "claude";
+  if (activeBackend === "claude") {
+    try {
+      const { execSync } = await import("node:child_process");
+      if (doctorConfig?.claudeBinary) {
+        const cmd = process.platform === "win32" ? "where" : "which";
+        try {
+          execSync(`${cmd} ${doctorConfig.claudeBinary}`, { stdio: "pipe" });
+          console.log(
+            `  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`,
+          );
+        } catch {
+          console.log(
+            `  ${pc.red("\u2717")} Claude Code binary not found: ${pc.dim(doctorConfig.claudeBinary)}`,
+          );
+          issues++;
+        }
+      } else {
+        execSync(
+          process.platform === "win32" ? "where claude" : "which claude",
+          {
+            stdio: "pipe",
+          },
         );
-      } catch {
+        console.log(`  ${pc.green("\u2713")} Claude Code installed`);
+      }
+    } catch {
+      console.log(`  ${pc.red("\u2717")} Claude Code not found`);
+      issues++;
+    }
+  } else if (activeBackend === "codex") {
+    try {
+      const { execSync } = await import("node:child_process");
+      execSync(process.platform === "win32" ? "where codex" : "which codex", {
+        stdio: "pipe",
+      });
+      console.log(`  ${pc.green("\u2713")} Codex CLI installed`);
+      // Auth check \u2014 either OPENAI_API_KEY env, config.openaiApiKey,
+      // or a non-empty ~/.codex/auth.json.
+      const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
+      const hasCfgKey = Boolean(doctorConfig?.openaiApiKey);
+      const codexAuthFile =
+        process.env.HOME && existsSync(`${process.env.HOME}/.codex/auth.json`);
+      if (hasEnvKey || hasCfgKey || codexAuthFile) {
+        const sources: string[] = [];
+        if (hasEnvKey) sources.push("OPENAI_API_KEY env");
+        if (hasCfgKey) sources.push("openaiApiKey in talon.json");
+        if (codexAuthFile) sources.push("~/.codex/auth.json");
         console.log(
-          `  ${pc.red("\u2717")} Claude Code binary not found: ${pc.dim(doctorConfig.claudeBinary)}`,
+          `  ${pc.green("\u2713")} Codex auth: ${pc.dim(sources.join(", "))}`,
+        );
+      } else {
+        console.log(
+          `  ${pc.yellow("!")} Codex auth missing (set OPENAI_API_KEY or run \`codex login\`)`,
         );
         issues++;
       }
-    } else {
-      execSync(process.platform === "win32" ? "where claude" : "which claude", {
-        stdio: "pipe",
-      });
-      console.log(`  ${pc.green("\u2713")} Claude Code installed`);
+    } catch {
+      console.log(
+        `  ${pc.red("\u2717")} Codex CLI not found (npm i -g @openai/codex)`,
+      );
+      issues++;
     }
-  } catch {
-    console.log(`  ${pc.red("\u2717")} Claude Code not found`);
-    issues++;
+  } else if (activeBackend === "kilo" || activeBackend === "opencode") {
+    // Kilo / OpenCode are bundled as npm deps \u2014 no external binary to check.
+    console.log(
+      `  ${pc.green("\u2713")} ${activeBackend === "kilo" ? "Kilo" : "OpenCode"} SDK bundled`,
+    );
   }
   try {
     const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) });
