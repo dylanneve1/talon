@@ -71,3 +71,5 @@ export {
   type DeliveryDecision,
   type RouteDeliveryInputs,
 } from "./delivery.js";
+
+export { sleep } from "./sleep.js";

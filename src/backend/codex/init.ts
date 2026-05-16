@@ -20,12 +20,12 @@
  * cache amortises that to one spawn per chat lifetime.
  */
 
-import { Codex, type CodexOptions } from "@openai/codex-sdk";
+import { Codex } from "@openai/codex-sdk";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { log, logWarn } from "../../util/log.js";
 import { getState } from "./state.js";
-import { buildCodexMcpServers } from "./mcp-config.js";
+import { asCodexConfig, buildCodexMcpServers } from "./mcp-config.js";
 
 /**
  * Initialise the Codex backend.
@@ -104,12 +104,10 @@ export function ensureCodex(chatId: string): Codex {
 
   // The Codex CLI's `--config` flag flattens dotted JSON paths into
   // TOML. We provide `mcp_servers.<name>.{command,args,env}` and the
-  // SDK serialises it for us. CodexConfigObject only accepts
-  // primitives + arrays + nested objects, so the cast is type-safe at
-  // runtime even if the compiler can't prove it.
-  const codexConfig: CodexOptions["config"] = {
-    mcp_servers: mcpServers as unknown as Record<string, never>,
-  };
+  // SDK serialises it for us. The type narrowing (SDK's
+  // `CodexConfigObject` vs our `CodexMcpServer` shape) is centralised
+  // in `asCodexConfig`.
+  const codexConfig = asCodexConfig(mcpServers);
 
   // Cache key: the chat id. When it changes, we rebuild.
   const cached = state.codex;

@@ -3,6 +3,12 @@
  *
  * Mirrors src/backend/kilo/one-shot.ts (Kilo is a fork of OpenCode and the
  * SDK shape is the same). See that file's header for the design notes.
+ *
+ * Note on abort semantics: the OpenCode SDK exposes `session.abort` but the
+ * REST `prompt` endpoint blocks until the underlying provider returns. The
+ * heartbeat module's outer abort grace is what actually unblocks the lock
+ * — we call `session.abort` as a best-effort cleanup so the model stops
+ * spending tokens once the timeout fires.
  */
 
 import type { OneShotAgentParams } from "../../core/types.js";
@@ -16,7 +22,9 @@ import {
   resolveProviderID,
   parseStoredOpenCodeModelSelection,
   OPENCODE_SYSTEM_PROMPT_SUFFIX,
+  errMsg,
 } from "./server.js";
+import { appendBackendSuffix } from "../shared/index.js";
 
 export async function runOneShotAgent(
   params: OneShotAgentParams,
@@ -47,16 +55,38 @@ export async function runOneShotAgent(
   const sessionID =
     typeof sessionData?.id === "string" ? sessionData.id : String(Date.now());
 
+  // Abort handler: when the heartbeat timeout fires, ask OpenCode to stop
+  // generating. The await on `session.prompt` will reject; we propagate.
+  // Without this, runaway generation on a hung heartbeat keeps spending
+  // tokens until the provider returns naturally — kilo/one-shot.ts has the
+  // same handler and this file got out of sync with it.
+  const onAbort = (): void => {
+    oc.session
+      .abort({ sessionID })
+      .catch((err) =>
+        logWarn(
+          "agent",
+          `One-shot session.abort failed for ${sessionID}: ${errMsg(err)}`,
+        ),
+      );
+  };
+  abortController.signal.addEventListener("abort", onAbort, { once: true });
+
   try {
     if (abortController.signal.aborted) {
       throw new Error("Aborted before prompt was sent");
     }
 
+    const finalSystemPrompt = appendBackendSuffix(
+      systemPrompt,
+      OPENCODE_SYSTEM_PROMPT_SUFFIX,
+    );
+
     const resp = await oc.session.prompt({
       sessionID,
       parts: [{ type: "text", text: prompt }],
       model: { providerID, modelID },
-      system: systemPrompt + OPENCODE_SYSTEM_PROMPT_SUFFIX,
+      system: finalSystemPrompt,
       ...(toolOverrides ? { tools: toolOverrides } : {}),
     });
 
@@ -69,15 +99,14 @@ export async function runOneShotAgent(
       await appendOpenCodePart(appendLog, part);
     }
   } finally {
+    abortController.signal.removeEventListener("abort", onAbort);
     await disconnectChatMcpServer(oc, chatMcpServerName);
     try {
       await oc.session.delete({ sessionID });
     } catch (err) {
       logWarn(
         "agent",
-        `Failed to delete one-shot OpenCode session ${sessionID}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `Failed to delete one-shot OpenCode session ${sessionID}: ${errMsg(err)}`,
       );
     }
   }
