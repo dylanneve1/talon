@@ -145,4 +145,78 @@ describe("codex factory — QueryBackend wiring", () => {
     expect(providers).toHaveLength(1);
     expect(providers[0].id).toBe("openai");
   });
+
+  it("cleanup hook resets module state for hot-reload", async () => {
+    const { getState } = await import("../backend/codex/state.js");
+    const factory = getBackend("codex");
+
+    const result = await factory!.init(
+      {
+        model: "gpt-5-codex",
+        workspace: "/tmp",
+        systemPrompt: "test",
+        frontend: "telegram",
+        openaiApiKey: "test-key",
+      } as never,
+      {
+        getBridgePort: () => 19876,
+        frontendName: "telegram",
+      },
+    );
+
+    // After init, state should be populated.
+    const stateBefore = getState();
+    expect(stateBefore.config).not.toBeNull();
+    expect(stateBefore.frontendName).toBe("telegram");
+
+    // Cleanup hook should be callable and reset module state.
+    expect(typeof result.cleanup).toBe("function");
+    result.cleanup!();
+
+    const stateAfter = getState();
+    expect(stateAfter.config).toBeNull();
+    expect(stateAfter.codex).toBeNull();
+  });
+
+  it("init twice with different config re-populates state without leakage", async () => {
+    const { getState } = await import("../backend/codex/state.js");
+    const factory = getBackend("codex");
+
+    // First init: discord frontend
+    await factory!.init(
+      {
+        model: "gpt-5-codex",
+        workspace: "/tmp",
+        systemPrompt: "first",
+        frontend: "discord",
+        openaiApiKey: "key-1",
+      } as never,
+      {
+        getBridgePort: () => 11111,
+        frontendName: "discord",
+      },
+    );
+    const stateFirst = getState();
+    expect(stateFirst.frontendName).toBe("discord");
+    expect(stateFirst.gatewayPortFn()).toBe(11111);
+
+    // Re-init: telegram frontend should fully overwrite.
+    await factory!.init(
+      {
+        model: "gpt-5-codex",
+        workspace: "/tmp",
+        systemPrompt: "second",
+        frontend: "telegram",
+        openaiApiKey: "key-2",
+      } as never,
+      {
+        getBridgePort: () => 22222,
+        frontendName: "telegram",
+      },
+    );
+    const stateSecond = getState();
+    expect(stateSecond.frontendName).toBe("telegram");
+    expect(stateSecond.gatewayPortFn()).toBe(22222);
+    expect(stateSecond.config?.systemPrompt).toBe("second");
+  });
 });
