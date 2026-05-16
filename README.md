@@ -300,7 +300,7 @@ docker compose up -d
 
 ```bash
 npm run dev              # watch mode
-npm test                 # 2200+ tests across unit / SDK-stub / MCP-functional / integration tiers
+npm test                 # 2300+ tests across unit / SDK-stub / MCP-functional / integration tiers
 npm run test:coverage    # with coverage report
 npm run typecheck        # tsc --noEmit
 npm run lint             # oxlint
