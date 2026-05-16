@@ -544,8 +544,9 @@ export function registerCommands(
     const diskBytes = getWorkspaceDiskUsage(config.workspace);
     const diskStr = formatBytes(diskBytes);
 
+    const backendLabel = be?.backendLabel ?? "";
     const lines = [
-      `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code> \u00B7 effort: ${effortName}`,
+      `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code>${backendLabel ? ` \u00B7 <i>${escapeHtml(backendLabel)}</i>` : ""} \u00B7 effort: ${effortName}`,
       "",
       `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
       `<code>${contextBar}</code>`,
