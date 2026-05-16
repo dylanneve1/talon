@@ -38,7 +38,7 @@ const claudeSdkFactory: BackendFactory = {
 
   async init(config, ctx) {
     await initClaudeAgent(config, ctx.getBridgePort);
-    log("bot", "Backend: Claude SDK");
+    log("bot", "Backend: Claude SDK (@anthropic-ai/claude-agent-sdk)");
 
     const backend: QueryBackend = {
       query: (params) => claudeHandleMessage(params),

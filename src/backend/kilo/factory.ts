@@ -39,7 +39,7 @@ const kiloFactory: BackendFactory = {
 
   async init(config, ctx) {
     initKiloAgent(config, ctx.getBridgePort, ctx.frontendName);
-    log("bot", "Backend: Kilo");
+    log("bot", "Backend: Kilo (@kilocode/sdk)");
 
     const backend: QueryBackend = {
       query: (params) => kiloHandleMessage(params),

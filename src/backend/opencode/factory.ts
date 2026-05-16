@@ -34,7 +34,7 @@ const opencodeFactory: BackendFactory = {
 
   async init(config, ctx) {
     initOpenCodeAgent(config, ctx.getBridgePort, ctx.frontendName);
-    log("bot", "Backend: OpenCode");
+    log("bot", "Backend: OpenCode (@opencode-ai/sdk)");
 
     const backend: QueryBackend = {
       query: (params) => ocHandleMessage(params),
