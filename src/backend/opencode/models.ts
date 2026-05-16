@@ -4,7 +4,6 @@
  * Extracted from index.ts to keep model-catalog concerns in one module.
  */
 
-import type { OpencodeClient } from "@opencode-ai/sdk/v2";
 import { ensureServer } from "./server.js";
 
 // ---------------------------------------------------------------------------

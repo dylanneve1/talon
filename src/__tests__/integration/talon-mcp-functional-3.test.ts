@@ -35,11 +35,7 @@ import {
   cleanupTurn,
   teardownBootstrap,
 } from "./talon-bootstrap.js";
-import {
-  endTurnWithText,
-  successResult,
-  assistantBlocks,
-} from "./stub-claude/helpers.js";
+import { successResult, assistantBlocks } from "./stub-claude/helpers.js";
 import { makeRecordingHandler } from "./recording-handler.js";
 
 const __testDir = dirnamePath(fileUrl(import.meta.url));
