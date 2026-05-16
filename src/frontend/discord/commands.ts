@@ -629,8 +629,9 @@ async function handleStatus(
   const diskBytes = getWorkspaceDiskUsage(config.workspace);
   const diskStr = formatBytes(diskBytes);
 
+  const backendLabel = be?.backendLabel ?? "";
   const lines = [
-    `**🦅 Talon** · \`${formatModelLabel(activeModel)}\` · effort: ${effortName}`,
+    `**🦅 Talon** · \`${formatModelLabel(activeModel)}\`${backendLabel ? ` · *${backendLabel}*` : ""} · effort: ${effortName}`,
     "",
     `**Context** ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
     `\`${contextBar}\``,
