@@ -69,6 +69,12 @@ const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;
 // startup and localhost binding is significantly slower (mirrors the same
 // platform gate used in opencode-live-discovery.test.ts).
 const HEALTH_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 15_000;
+// Individual test timeout for calls that hit live Kilo network endpoints
+// (/provider, /provider/auth). These involve kilo making upstream API calls
+// to discover providers — on Windows CI runners the external round-trip can
+// exceed vitest's 20s default. 60s gives enough headroom without masking
+// actual hangs.
+const TEST_TIMEOUT_MS = process.platform === "win32" ? 60_000 : 20_000;
 
 let kiloProc: ChildProcess | null = null;
 let testClient: KiloClient;
@@ -167,33 +173,42 @@ kiloDescribe("Kilo live discovery (integration)", () => {
   });
 
   // ── 2. /provider returns the expected shape with non-zero entries. ───────
-  it("provider.list() returns {all, connected, default} with content", async () => {
-    const resp = await testClient.provider.list();
-    const data = resp.data as {
-      all?: Array<unknown>;
-      connected?: Array<string>;
-      default?: Record<string, string>;
-    };
-    expect(Array.isArray(data.all)).toBe(true);
-    expect((data.all ?? []).length).toBeGreaterThan(0);
-    expect(Array.isArray(data.connected)).toBe(true);
-    expect((data.connected ?? []).length).toBeGreaterThan(0);
-    expect(typeof data.default).toBe("object");
-  });
+  it(
+    "provider.list() returns {all, connected, default} with content",
+    async () => {
+      const resp = await testClient.provider.list();
+      const data = resp.data as {
+        all?: Array<unknown>;
+        connected?: Array<string>;
+        default?: Record<string, string>;
+      };
+      expect(Array.isArray(data.all)).toBe(true);
+      expect((data.all ?? []).length).toBeGreaterThan(0);
+      expect(Array.isArray(data.connected)).toBe(true);
+      expect((data.connected ?? []).length).toBeGreaterThan(0);
+      expect(typeof data.default).toBe("object");
+    },
+    TEST_TIMEOUT_MS,
+  );
 
   // ── 3. /provider/auth has at least one provider with auth methods. ───────
-  it("provider.auth() returns at least one provider with auth methods", async () => {
-    const resp = await testClient.provider.auth();
-    const data =
-      (resp.data as Record<string, Array<{ type?: string }>> | undefined) ?? {};
-    const keys = Object.keys(data);
-    expect(keys.length).toBeGreaterThan(0);
-    // At least one provider should advertise an auth method.
-    const withAuth = keys.filter(
-      (k) => Array.isArray(data[k]) && data[k].length > 0,
-    );
-    expect(withAuth.length).toBeGreaterThan(0);
-  });
+  it(
+    "provider.auth() returns at least one provider with auth methods",
+    async () => {
+      const resp = await testClient.provider.auth();
+      const data =
+        (resp.data as Record<string, Array<{ type?: string }>> | undefined) ??
+        {};
+      const keys = Object.keys(data);
+      expect(keys.length).toBeGreaterThan(0);
+      // At least one provider should advertise an auth method.
+      const withAuth = keys.filter(
+        (k) => Array.isArray(data[k]) && data[k].length > 0,
+      );
+      expect(withAuth.length).toBeGreaterThan(0);
+    },
+    TEST_TIMEOUT_MS,
+  );
 
   // ── 4. Talon's parser consumes the live data without throwing. ───────────
   it("getOpenCodeModelCatalog() parses live data without throwing", async () => {
