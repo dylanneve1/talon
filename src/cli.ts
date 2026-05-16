@@ -140,12 +140,16 @@ async function runSetup(): Promise<void> {
         label: `Telegram  ${pc.dim("\u2014 bot via @BotFather")}`,
       },
       {
-        value: "terminal",
-        label: `Terminal  ${pc.dim("\u2014 local CLI chat")}`,
+        value: "discord",
+        label: `Discord   ${pc.dim("\u2014 bot via Developer Portal (discord.js v14)")}`,
       },
       {
         value: "teams",
         label: `Teams     ${pc.dim("\u2014 Microsoft Teams via Power Automate")}`,
+      },
+      {
+        value: "terminal",
+        label: `Terminal  ${pc.dim("\u2014 local CLI chat")}`,
       },
     ],
     required: true,
@@ -386,23 +390,74 @@ async function runSetup(): Promise<void> {
     process.exit(0);
   }
 
-  // ── Claude binary path ──
-  const claudeBinaryInput = await p.text({
-    message: "Claude Code binary path",
-    placeholder: "leave empty for default (claude)",
-    initialValue: config.claudeBinary || "",
+  // ── Backend selection ──
+  const backendSelection = await p.select({
+    message: "AI backend",
+    initialValue: config.backend ?? "claude",
+    options: [
+      {
+        value: "claude",
+        label: `Claude    ${pc.dim("— Anthropic Claude Agent SDK")}`,
+      },
+      {
+        value: "kilo",
+        label: `Kilo      ${pc.dim("— @kilocode/sdk (multi-provider routing)")}`,
+      },
+      {
+        value: "opencode",
+        label: `OpenCode  ${pc.dim("— @opencode-ai/sdk")}`,
+      },
+      {
+        value: "codex",
+        label: `Codex     ${pc.dim("— OpenAI Codex CLI (@openai/codex)")}`,
+      },
+    ],
   });
-  if (p.isCancel(claudeBinaryInput)) {
+  if (p.isCancel(backendSelection)) {
     p.cancel("Cancelled.");
     process.exit(0);
   }
-  const claudeBinary = (claudeBinaryInput as string).trim() || undefined;
+  const backend = backendSelection as Config["backend"];
+
+  // ── Backend-specific config ──
+  let claudeBinary: string | undefined;
+  let openaiApiKey: string | undefined;
+
+  if (backend === "claude") {
+    const claudeBinaryInput = await p.text({
+      message: "Claude Code binary path",
+      placeholder: "leave empty for default (claude)",
+      initialValue: config.claudeBinary || "",
+    });
+    if (p.isCancel(claudeBinaryInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    claudeBinary = (claudeBinaryInput as string).trim() || undefined;
+  } else if (backend === "codex") {
+    const keyInput = await p.text({
+      message: "OpenAI API key",
+      placeholder:
+        "leave empty to use OPENAI_API_KEY env or `codex login` auth",
+      initialValue: config.openaiApiKey || "",
+    });
+    if (p.isCancel(keyInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    openaiApiKey = (keyInput as string).trim() || undefined;
+  }
+  // kilo / opencode need no extra prompts — bundled SDK + per-provider
+  // creds configured separately (kilo via `kilo login`, opencode via
+  // its own auth flow).
 
   const newConfig: Config = {
     frontend:
       selectedFrontends.length === 1 ? selectedFrontends[0] : selectedFrontends,
+    backend,
     botToken: selectedFrontends.includes("telegram") ? botToken : undefined,
     claudeBinary,
+    openaiApiKey,
     model: model as string,
     concurrency: config.concurrency,
     pulse: pulse as boolean,
