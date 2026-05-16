@@ -65,8 +65,10 @@ const kiloDescribe = KILO_PRESENT || KILO_REQUIRED ? describe : describe.skip;
 const TEST_PORT = Number(process.env.KILO_TEST_PORT ?? 4198);
 const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;
 // Healthcheck loop: kilo serve typically responds within 1-2s; give ourselves
-// 15s of headroom for CI cold-start.
-const HEALTH_TIMEOUT_MS = 15_000;
+// 15s of headroom for CI cold-start, or 120s on Windows where subprocess
+// startup and localhost binding is significantly slower (mirrors the same
+// platform gate used in opencode-live-discovery.test.ts).
+const HEALTH_TIMEOUT_MS = process.platform === "win32" ? 120_000 : 15_000;
 
 let kiloProc: ChildProcess | null = null;
 let testClient: KiloClient;
