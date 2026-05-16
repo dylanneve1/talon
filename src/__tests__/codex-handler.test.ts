@@ -28,12 +28,32 @@ let MOCK_RUN_STREAMED_CALLS: Array<{ input: string; signal?: AbortSignal }> =
 let MOCK_THREAD_OPTIONS_SEEN: Array<Record<string, unknown>> = [];
 let MOCK_RESUME_CALLS: string[] = [];
 let MOCK_RUN_STREAMED_THROWS: Error | null = null;
+// Per-call throw queue. Shifted on each runStreamed call; null entries
+// behave like a normal (non-throwing) call. Empty queue → no throws.
+// Lets retry-path tests configure "throw first, succeed second".
+let MOCK_RUN_STREAMED_THROW_QUEUE: Array<Error | null> = [];
+// Fires while `runStreamed` is mid-await — exposed so the
+// active-abort-registry tests can inspect the handler's internal
+// registry DURING the turn (before the `finally` cleanup runs). The
+// callback receives no arguments; the test owns the chatId(s) it cares
+// about and queries `getActiveAbort(chatId)` itself.
+let MOCK_ACTIVE_ABORT_DURING_TURN: (() => void) | null = null;
+let MOCK_ACTIVE_ABORT_SNAPSHOT: AbortController | undefined;
 
 vi.mock("@openai/codex-sdk", () => {
   class MockThread {
     constructor(public id: string | null = null) {}
     async runStreamed(input: string, options?: { signal?: AbortSignal }) {
       MOCK_RUN_STREAMED_CALLS.push({ input, signal: options?.signal });
+      // Snapshot the registry while the turn is mid-flight (before
+      // the finally-block cleanup runs).
+      if (MOCK_ACTIVE_ABORT_DURING_TURN) {
+        MOCK_ACTIVE_ABORT_DURING_TURN();
+      }
+      if (MOCK_RUN_STREAMED_THROW_QUEUE.length > 0) {
+        const next = MOCK_RUN_STREAMED_THROW_QUEUE.shift();
+        if (next) throw next;
+      }
       if (MOCK_RUN_STREAMED_THROWS) {
         throw MOCK_RUN_STREAMED_THROWS;
       }
@@ -71,10 +91,13 @@ vi.mock("../util/trace.js", () => ({
 }));
 
 // Modules under test (imported after mocks are wired)
-const { handleMessage } = await import("../backend/codex/handler.js");
+const { handleMessage, getActiveAbort } =
+  await import("../backend/codex/handler.js");
 const { initCodexAgent } = await import("../backend/codex/init.js");
 const { resetState } = await import("../backend/codex/state.js");
 const sessions = await import("../storage/sessions.js");
+const chatSettings = await import("../storage/chat-settings.js");
+const coreModels = await import("../core/models.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -97,6 +120,9 @@ function resetMocks(): void {
   MOCK_THREAD_OPTIONS_SEEN = [];
   MOCK_RESUME_CALLS = [];
   MOCK_RUN_STREAMED_THROWS = null;
+  MOCK_RUN_STREAMED_THROW_QUEUE = [];
+  MOCK_ACTIVE_ABORT_DURING_TURN = null;
+  MOCK_ACTIVE_ABORT_SNAPSHOT = undefined;
 }
 
 beforeEach(() => {
@@ -392,6 +418,894 @@ describe("codex / handleMessage — tool use", () => {
 
     // The signal should have been aborted by the terminator path
     expect(MOCK_RUN_STREAMED_CALLS[0].signal?.aborted).toBe(true);
+  });
+});
+
+describe("codex / handleMessage — thread options", () => {
+  it("propagates the hard-coded thread options on a fresh thread", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_opts_1" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "ping",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    expect(MOCK_THREAD_OPTIONS_SEEN).toHaveLength(1);
+    const opts = MOCK_THREAD_OPTIONS_SEEN[0];
+    // Model passthrough — defaults to config.model
+    expect(opts.model).toBe("gpt-5-codex");
+    // Codex normally insists on git; Talon is an assistant, not a coding session.
+    expect(opts.skipGitRepoCheck).toBe(true);
+    // Codex's own filesystem / shell tools are not part of the assistant's job.
+    expect(opts.sandboxMode).toBe("read-only");
+    // Auto-deny any tool that would otherwise prompt the user. MCP tools
+    // execute through the bridge and bypass approvalPolicy entirely.
+    expect(opts.approvalPolicy).toBe("never");
+    // Net access flows through brave-search MCP, not Codex's CLI shell.
+    expect(opts.networkAccessEnabled).toBe(false);
+  });
+
+  it("passes the same options when resuming an existing thread", async () => {
+    setupHandler();
+    sessions.setSessionId("test-chat", "thr_resumed");
+    sessions.incrementTurns("test-chat");
+
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_resumed" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "ping",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    expect(MOCK_RESUME_CALLS).toEqual(["thr_resumed"]);
+    // resumeThread receives the same threadOptions shape as startThread.
+    expect(MOCK_THREAD_OPTIONS_SEEN[0]).toMatchObject({
+      model: "gpt-5-codex",
+      skipGitRepoCheck: true,
+      sandboxMode: "read-only",
+      approvalPolicy: "never",
+      networkAccessEnabled: false,
+    });
+  });
+});
+
+describe("codex / handleMessage — active abort registry", () => {
+  it("getActiveAbort returns undefined for a chat with no in-flight turn", () => {
+    expect(getActiveAbort("idle-chat")).toBeUndefined();
+  });
+
+  it("registers an abort controller while the turn is in flight", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_abort_lifecycle" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    // Capture the controller at the moment the runStreamed mock is reached.
+    MOCK_ACTIVE_ABORT_DURING_TURN = () => {
+      MOCK_ACTIVE_ABORT_SNAPSHOT = getActiveAbort("test-chat");
+    };
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // While the SDK loop ran, the registry had a controller for the chat.
+    expect(MOCK_ACTIVE_ABORT_SNAPSHOT).toBeInstanceOf(AbortController);
+    // The signal hooked into runStreamed is the SAME controller's signal.
+    expect(MOCK_RUN_STREAMED_CALLS[0].signal).toBe(
+      MOCK_ACTIVE_ABORT_SNAPSHOT?.signal,
+    );
+    // After the turn completes, the registry no longer holds it.
+    expect(getActiveAbort("test-chat")).toBeUndefined();
+  });
+
+  it("scopes abort controllers per chat — different chats get different controllers", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_chat_a" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "a" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const seen: AbortController[] = [];
+    MOCK_ACTIVE_ABORT_DURING_TURN = () => {
+      // The mock fires once per turn; query both possible chats and push
+      // whichever one is currently registered.
+      const a = getActiveAbort("chat-a");
+      if (a) seen.push(a);
+      const b = getActiveAbort("chat-b");
+      if (b) seen.push(b);
+    };
+
+    // Two sequential turns for distinct chats — each registers its own
+    // controller and tears it down before the next runs.
+    await handleMessage({
+      chatId: "chat-a",
+      text: "hi",
+      senderName: "A",
+      isGroup: false,
+    });
+    sessions.resetSession("chat-a");
+    await handleMessage({
+      chatId: "chat-b",
+      text: "hi",
+      senderName: "B",
+      isGroup: false,
+    });
+
+    // Both turns saw a distinct controller while in flight, neither leaked
+    // into the other's registry slot.
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).not.toBe(seen[1]);
+    expect(getActiveAbort("chat-a")).toBeUndefined();
+    expect(getActiveAbort("chat-b")).toBeUndefined();
+    // Cleanup
+    sessions.resetSession("chat-a");
+    sessions.resetSession("chat-b");
+  });
+});
+
+describe("codex / handleMessage — tool call accounting", () => {
+  it("dedups tool calls by id when the same id arrives twice", async () => {
+    setupHandler();
+    const dupItem = {
+      id: "tool_dup",
+      type: "mcp_tool_call",
+      server: "telegram-tools",
+      tool: "react",
+      arguments: { emoji: "🔥" },
+      status: "completed",
+    };
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_dedup" },
+      { type: "turn.started" },
+      { type: "item.completed", item: dupItem },
+      // Same tool_use_id arriving again — Codex sometimes emits the same
+      // item as both `in_progress` and `completed` updates. The handler
+      // must only count it once.
+      { type: "item.completed", item: dupItem },
+      {
+        type: "item.completed",
+        item: { id: "i2", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const tools: Array<{ name: string; input: Record<string, unknown> }> = [];
+    await handleMessage({
+      chatId: "test-chat",
+      text: "react please",
+      senderName: "Dylan",
+      isGroup: false,
+      onToolUse: (name, input) => {
+        tools.push({ name, input });
+      },
+    });
+
+    expect(tools).toHaveLength(1);
+    expect(tools[0].name).toBe("react");
+  });
+
+  it("skips mcp_tool_call items with status `failed`", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_failed_status" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: {
+          id: "tool_failed",
+          type: "mcp_tool_call",
+          server: "telegram-tools",
+          tool: "react",
+          arguments: { emoji: "💩" },
+          status: "failed",
+        },
+      },
+      {
+        type: "item.completed",
+        item: { id: "i2", type: "agent_message", text: "tried but failed" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 5,
+          output_tokens: 3,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const tools: string[] = [];
+    await handleMessage({
+      chatId: "test-chat",
+      text: "react please",
+      senderName: "Dylan",
+      isGroup: false,
+      onToolUse: (name) => {
+        tools.push(name);
+      },
+    });
+
+    // Failed tool calls don't fire onToolUse — the model didn't actually
+    // execute them so we shouldn't count them against the turn.
+    expect(tools).toEqual([]);
+  });
+
+  it("processes multiple tool calls in order in a single turn", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_multi_tool" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: {
+          id: "tool_1",
+          type: "mcp_tool_call",
+          server: "mempalace-tools",
+          tool: "mempalace_search",
+          arguments: { query: "Dylan" },
+          status: "completed",
+        },
+      },
+      {
+        type: "item.completed",
+        item: {
+          id: "tool_2",
+          type: "mcp_tool_call",
+          server: "telegram-tools",
+          tool: "react",
+          arguments: { emoji: "👍" },
+          status: "completed",
+        },
+      },
+      {
+        type: "item.completed",
+        item: {
+          id: "tool_3",
+          type: "mcp_tool_call",
+          server: "telegram-tools",
+          tool: "end_turn",
+          arguments: { text: "found it" },
+          status: "completed",
+        },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 100,
+          output_tokens: 30,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const calls: string[] = [];
+    await handleMessage({
+      chatId: "test-chat",
+      text: "look up Dylan and react",
+      senderName: "Dylan",
+      isGroup: false,
+      onToolUse: (name) => {
+        calls.push(name);
+      },
+    });
+
+    // Order preserved — important for the rate-limiter and metrics view.
+    expect(calls).toEqual(["mempalace_search", "react", "end_turn"]);
+    // Terminator fired on the last tool — the signal got aborted.
+    expect(MOCK_RUN_STREAMED_CALLS[0].signal?.aborted).toBe(true);
+  });
+});
+
+describe("codex / handleMessage — model resolution", () => {
+  it("prefers the chat-settings model over config.model", async () => {
+    setupHandler();
+    chatSettings.setChatModel("test-chat", "gpt-5");
+
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_chatmodel" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    expect(MOCK_THREAD_OPTIONS_SEEN[0].model).toBe("gpt-5");
+    // Reset for downstream tests
+    chatSettings.setChatModel("test-chat", undefined);
+  });
+
+  it("falls back to CODEX_DEFAULT_MODEL when config.model is absent", async () => {
+    // Init without an explicit model — handler should fall back to
+    // CODEX_DEFAULT_MODEL ("gpt-5-codex").
+    initCodexAgent(
+      {
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_defmodel" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    expect(MOCK_THREAD_OPTIONS_SEEN[0].model).toBe("gpt-5-codex");
+  });
+});
+
+describe("codex / handleMessage — agent_message edge cases", () => {
+  it("ignores agent_message items with empty text", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_empty_text" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 5,
+          output_tokens: 0,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 5,
+        },
+      },
+    ];
+
+    const delivered: string[] = [];
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "say nothing",
+      senderName: "Dylan",
+      isGroup: false,
+      onTextBlock: async (t) => {
+        delivered.push(t);
+      },
+    });
+
+    // Empty agent_message → no response text → empty-turn notice via shared.
+    expect(result.text).toBe("");
+    expect(delivered[0]).toContain("no reply");
+  });
+
+  it("ignores agent_message items with whitespace-only text", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_ws_text" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "   \n\t   " },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 5,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const delivered: string[] = [];
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "say nothing",
+      senderName: "Dylan",
+      isGroup: false,
+      onTextBlock: async (t) => {
+        delivered.push(t);
+      },
+    });
+
+    expect(result.text).toBe("");
+    expect(delivered[0]).toContain("no reply");
+  });
+});
+
+describe("codex / handleMessage — non-MCP items", () => {
+  it("silently ignores reasoning / command / file / web / todo items", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_other_items" },
+      { type: "turn.started" },
+      // None of these item types should affect the assistant's reply
+      // surface — they're CLI ambient activity from Codex's shell mode
+      // that doesn't map to Talon's chat channel.
+      {
+        type: "item.completed",
+        item: { id: "r1", type: "reasoning", text: "thinking…" },
+      },
+      {
+        type: "item.completed",
+        item: {
+          id: "c1",
+          type: "command_execution",
+          command: "ls",
+          status: "completed",
+          exit_code: 0,
+        },
+      },
+      {
+        type: "item.completed",
+        item: {
+          id: "f1",
+          type: "file_change",
+          changes: [{ kind: "modify", path: "/tmp/x" }],
+        },
+      },
+      {
+        type: "item.completed",
+        item: { id: "w1", type: "web_search", query: "anthropic" },
+      },
+      {
+        type: "item.completed",
+        item: {
+          id: "t1",
+          type: "todo_list",
+          items: [{ text: "step 1", completed: true }],
+        },
+      },
+      {
+        type: "item.completed",
+        item: { id: "a1", type: "agent_message", text: "done" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 30,
+          output_tokens: 5,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 10,
+        },
+      },
+    ];
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "do a thing",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Only the agent_message contributes to the reply text.
+    expect(result.text).toBe("done");
+  });
+
+  it("logs `error` items as warnings but does not break the turn", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_error_item" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "e1", type: "error", message: "tool call failed upstream" },
+      },
+      {
+        type: "item.completed",
+        item: { id: "a1", type: "agent_message", text: "continued" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 5,
+          output_tokens: 2,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "go",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // `error` item is informational — the turn proceeds and the
+    // agent_message becomes the reply.
+    expect(result.text).toBe("continued");
+  });
+});
+
+describe("codex / handleMessage — session name", () => {
+  it("derives the session name from text on the first turn only", async () => {
+    setupHandler();
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_name_1" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "Help me debug the gateway please",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    const info = sessions.getSessionInfo("test-chat");
+    // `extractSessionName` produces a short label from the first message.
+    expect(info.sessionName).toBeTruthy();
+    expect(info.sessionName?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("does not overwrite the session name on subsequent turns", async () => {
+    setupHandler();
+    sessions.setSessionName("test-chat", "Original name");
+    // Mark a previous turn so the handler treats this as a continuation.
+    sessions.incrementTurns("test-chat");
+
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_name_2" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "A totally different second-turn topic about Marrow",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    const info = sessions.getSessionInfo("test-chat");
+    expect(info.sessionName).toBe("Original name");
+  });
+});
+
+describe("codex / handleMessage — error recovery", () => {
+  // The classifyRetry-driven recovery ladder is shared with every other
+  // backend (see backend/shared/model-retry.ts). These tests verify that
+  // the Codex handler routes its errors through it correctly — resets
+  // the session on session_expired / context_length, falls back on
+  // retryable, propagates after a single retry.
+  it("resets the session and retries on a session_expired error", async () => {
+    setupHandler();
+    sessions.setSessionId("test-chat", "thr_will_be_reset");
+    sessions.incrementTurns("test-chat");
+
+    // First runStreamed throws session_expired; second call (after reset
+    // + retry) is the happy path.
+    MOCK_RUN_STREAMED_THROW_QUEUE = [
+      new Error("session expired or invalid resume"),
+      null,
+    ];
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_fresh_after_reset" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "back online" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 5,
+          output_tokens: 3,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "resume me",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Two runStreamed calls — the original + the retry after reset.
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+    // After reset, the second call hits startThread (no session id).
+    // First call hit resumeThread (we'd set a sessionId), so the call
+    // sequence reads: resume → reset → start.
+    expect(MOCK_RESUME_CALLS).toEqual(["thr_will_be_reset"]);
+    // The retry's reply lands in the result.
+    expect(result.text).toBe("back online");
+    // After the successful retry, the new thread id was persisted.
+    expect(sessions.getSession("test-chat").sessionId).toBe(
+      "thr_fresh_after_reset",
+    );
+  });
+
+  it("resets the session and retries on a context_length error", async () => {
+    setupHandler();
+    sessions.setSessionId("test-chat", "thr_too_long");
+    sessions.incrementTurns("test-chat");
+
+    MOCK_RUN_STREAMED_THROW_QUEUE = [
+      new Error("context length exceeded — too long"),
+      null,
+    ];
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_fresh_after_overflow" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "starting over" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 5,
+          output_tokens: 3,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "huge message",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+    expect(result.text).toBe("starting over");
+  });
+
+  it("falls back to the configured fallback model on a retryable error", async () => {
+    setupHandler();
+    // Register a Codex-shaped model with a fallback in the global model
+    // registry so `getFallbackModel("gpt-5-codex")` returns "gpt-5". The
+    // handler's recovery ladder calls this for retryable errors.
+    coreModels.registerModels([
+      {
+        id: "gpt-5-codex",
+        aliases: [],
+        provider: "openai",
+        displayName: "GPT-5 Codex",
+        fallback: "gpt-5",
+      },
+      {
+        id: "gpt-5",
+        aliases: [],
+        provider: "openai",
+        displayName: "GPT-5",
+      },
+    ]);
+
+    try {
+      // First call: network blip (retryable). Second call: succeeds on
+      // the fallback model.
+      MOCK_RUN_STREAMED_THROW_QUEUE = [
+        new Error("fetch failed — network unreachable"),
+        null,
+      ];
+      MOCK_EVENTS = [
+        { type: "thread.started", thread_id: "thr_after_fallback" },
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: { id: "i1", type: "agent_message", text: "on fallback" },
+        },
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 5,
+            output_tokens: 3,
+            cached_input_tokens: 0,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ];
+
+      const result = await handleMessage({
+        chatId: "test-chat",
+        text: "retry me",
+        senderName: "Dylan",
+        isGroup: false,
+      });
+
+      expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+      // First attempt was on the primary model, retry on the fallback.
+      expect(MOCK_THREAD_OPTIONS_SEEN[0].model).toBe("gpt-5-codex");
+      expect(MOCK_THREAD_OPTIONS_SEEN[1].model).toBe("gpt-5");
+      expect(result.text).toBe("on fallback");
+
+      // Critical: the chat's persisted model is RESTORED after the retry
+      // — the fallback was a one-shot, not a permanent switch.
+      expect(chatSettings.getChatSettings("test-chat").model).toBeUndefined();
+    } finally {
+      // Restore the global registry for downstream tests.
+      coreModels.clearModels();
+    }
+  });
+
+  it("propagates the original error when the retry also fails", async () => {
+    setupHandler();
+    sessions.setSessionId("test-chat", "thr_doomed");
+    sessions.incrementTurns("test-chat");
+
+    // Both attempts throw the same session_expired error — the second
+    // attempt has `_retried = true` so classifyRetry returns
+    // `{ kind: "propagate" }` and the handler throws.
+    const sessionExpired = new Error("session expired again");
+    MOCK_RUN_STREAMED_THROW_QUEUE = [sessionExpired, sessionExpired];
+
+    await expect(
+      handleMessage({
+        chatId: "test-chat",
+        text: "doomed",
+        senderName: "Dylan",
+        isGroup: false,
+      }),
+    ).rejects.toThrow();
+    // Confirms the retry actually fired (two calls), but the second
+    // failure was propagated rather than triggering a third attempt.
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+  });
+
+  it("propagates non-recoverable errors without retrying", async () => {
+    setupHandler();
+
+    // A 401 auth error is classified as non-retryable + not a
+    // reset-eligible reason. classifyRetry returns `propagate`, the
+    // handler throws on the first attempt.
+    MOCK_RUN_STREAMED_THROW_QUEUE = [
+      new Error("unauthorized — invalid api key"),
+    ];
+
+    await expect(
+      handleMessage({
+        chatId: "test-chat",
+        text: "auth failure",
+        senderName: "Dylan",
+        isGroup: false,
+      }),
+    ).rejects.toThrow();
+    // Only one attempt — no retry on non-recoverable errors.
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(1);
   });
 });
 
