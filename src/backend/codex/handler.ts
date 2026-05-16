@@ -122,6 +122,7 @@ export async function handleMessage(
   // pass through whatever the chat settings hold (default `gpt-5-codex`).
   const chatSettings = getChatSettings(chatId);
   const activeModel = chatSettings.model ?? config.model ?? CODEX_DEFAULT_MODEL;
+  log("agent", `[${chatId}] Codex model resolved: ${activeModel}`);
 
   // First-turn system-prompt rebuild + Codex-specific delivery suffix.
   const systemPrompt = prepareSystemPrompt({

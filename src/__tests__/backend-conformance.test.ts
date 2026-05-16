@@ -345,10 +345,11 @@ describe("backend conformance — finalizePartsIntoState", () => {
 // ── Conformance: delivery routing ──────────────────────────────────────────
 
 describe("backend conformance — routeDelivery", () => {
-  it("returns the same route for both backends given equivalent state", async () => {
-    // Text-part route
+  it("returns the same route for all three remote-server backends given equivalent state", async () => {
+    // Text-part route — Kilo / OpenCode / Codex all use shared routeDelivery
     const stateA = createStreamState();
     const stateB = createStreamState();
+    const stateC = createStreamState();
     const kiloDecision = await routeDelivery({
       backendLabel: "Kilo",
       chatId: "c",
@@ -361,38 +362,58 @@ describe("backend conformance — routeDelivery", () => {
       state: stateB,
       responseText: "Hello",
     });
+    const codexDecision = await routeDelivery({
+      backendLabel: "Codex",
+      chatId: "c",
+      state: stateC,
+      responseText: "Hello",
+    });
     expect(kiloDecision.route).toBe(opencodeDecision.route);
+    expect(kiloDecision.route).toBe(codexDecision.route);
     expect(kiloDecision.chars).toBe(opencodeDecision.chars);
+    expect(kiloDecision.chars).toBe(codexDecision.chars);
 
     // Tool route
-    const stateC = createStreamState();
-    Object.assign(stateC, { deliveredTextNorms: ["delivered"] });
-    const stateD = createStreamState();
-    Object.assign(stateD, { deliveredTextNorms: ["delivered"] });
+    const toolStateA = createStreamState();
+    Object.assign(toolStateA, { deliveredTextNorms: ["delivered"] });
+    const toolStateB = createStreamState();
+    Object.assign(toolStateB, { deliveredTextNorms: ["delivered"] });
+    const toolStateC = createStreamState();
+    Object.assign(toolStateC, { deliveredTextNorms: ["delivered"] });
     const kT = await routeDelivery({
       backendLabel: "Kilo",
       chatId: "c",
-      state: stateC,
+      state: toolStateA,
       responseText: "ignored",
     });
     const oT = await routeDelivery({
       backendLabel: "OpenCode",
       chatId: "c",
-      state: stateD,
+      state: toolStateB,
+      responseText: "ignored",
+    });
+    const cT = await routeDelivery({
+      backendLabel: "Codex",
+      chatId: "c",
+      state: toolStateC,
       responseText: "ignored",
     });
     expect(kT.route).toBe(oT.route);
+    expect(kT.route).toBe(cT.route);
     expect(kT.route).toBe("tool");
   });
 
-  it("uses backend label in synthetic-error message prefix", async () => {
+  it("uses backend label in synthetic-error message prefix (all three remote-server backends)", async () => {
     const kiloMessages: string[] = [];
     const opencodeMessages: string[] = [];
+    const codexMessages: string[] = [];
 
     const stateA = createStreamState();
     Object.assign(stateA, { syntheticError: "boom" });
     const stateB = createStreamState();
     Object.assign(stateB, { syntheticError: "boom" });
+    const stateC = createStreamState();
+    Object.assign(stateC, { syntheticError: "boom" });
 
     await routeDelivery({
       backendLabel: "Kilo",
@@ -414,8 +435,19 @@ describe("backend conformance — routeDelivery", () => {
       },
     });
 
+    await routeDelivery({
+      backendLabel: "Codex",
+      chatId: "c",
+      state: stateC,
+      responseText: "",
+      onTextBlock: async (text) => {
+        codexMessages.push(text);
+      },
+    });
+
     expect(kiloMessages[0]).toBe("⚠️ Kilo: boom");
     expect(opencodeMessages[0]).toBe("⚠️ OpenCode: boom");
+    expect(codexMessages[0]).toBe("⚠️ Codex: boom");
   });
 });
 
