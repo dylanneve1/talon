@@ -23,6 +23,11 @@ interface MockEvent {
 }
 
 let MOCK_EVENTS: MockEvent[] = [];
+// Per-call event queue. When non-empty, each `runStreamed` call shifts
+// one entry off the front and yields those events INSTEAD of
+// `MOCK_EVENTS`. Lets retry-path tests configure
+// "fail-with-events-on-call-1, succeed-with-different-events-on-call-2".
+let MOCK_EVENTS_QUEUE: MockEvent[][] = [];
 let MOCK_RUN_STREAMED_CALLS: Array<{ input: string; signal?: AbortSignal }> =
   [];
 let MOCK_THREAD_OPTIONS_SEEN: Array<Record<string, unknown>> = [];
@@ -57,8 +62,12 @@ vi.mock("@openai/codex-sdk", () => {
       if (MOCK_RUN_STREAMED_THROWS) {
         throw MOCK_RUN_STREAMED_THROWS;
       }
+      const eventsForThisCall =
+        MOCK_EVENTS_QUEUE.length > 0
+          ? (MOCK_EVENTS_QUEUE.shift() ?? MOCK_EVENTS)
+          : MOCK_EVENTS;
       const events = (async function* (): AsyncGenerator<MockEvent> {
-        for (const event of MOCK_EVENTS) {
+        for (const event of eventsForThisCall) {
           yield event;
         }
       })();
@@ -101,13 +110,19 @@ const coreModels = await import("../core/models.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function setupHandler(): void {
+function setupHandler(overrides: Record<string, unknown> = {}): void {
+  // Pass an explicit `openaiApiKey` so `detectCodexAuth` lands in
+  // api-key mode (and doesn't read the host's `~/.codex/auth.json`,
+  // which on developer machines may be in chatgpt OAuth mode and
+  // would otherwise change the auth-aware default model under us).
   initCodexAgent(
     {
       model: "gpt-5-codex",
+      openaiApiKey: "test-api-key",
       workspace: "/tmp",
       systemPrompt: "Test system prompt.",
       frontend: "telegram",
+      ...overrides,
     } as never,
     () => 19876,
     "telegram",
@@ -116,6 +131,7 @@ function setupHandler(): void {
 
 function resetMocks(): void {
   MOCK_EVENTS = [];
+  MOCK_EVENTS_QUEUE = [];
   MOCK_RUN_STREAMED_CALLS = [];
   MOCK_THREAD_OPTIONS_SEEN = [];
   MOCK_RESUME_CALLS = [];
@@ -811,9 +827,12 @@ describe("codex / handleMessage — model resolution", () => {
 
   it("falls back to CODEX_DEFAULT_MODEL when config.model is absent", async () => {
     // Init without an explicit model — handler should fall back to
-    // CODEX_DEFAULT_MODEL ("gpt-5-codex").
+    // CODEX_DEFAULT_MODEL ("gpt-5-codex") on the api-key auth path.
+    // `openaiApiKey` forces api-key mode so the auth-aware default
+    // is the api-key default and not the chatgpt fallback.
     initCodexAgent(
       {
+        openaiApiKey: "test-api-key",
         workspace: "/tmp",
         systemPrompt: "Test system prompt.",
         frontend: "telegram",
@@ -1342,5 +1361,193 @@ describe("codex / handleMessage — usage propagation", () => {
     expect(result.cacheRead).toBe(89);
     // Codex doesn't surface cache writes
     expect(result.cacheWrite).toBe(0);
+  });
+});
+
+describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
+  // These tests assert the two recovery paths around ChatGPT-OAuth
+  // accounts: (1) pre-emptive swap at request build time when the
+  // configured model is known-incompatible, (2) post-hoc retry when
+  // the model passed validation but Codex returned a 400 anyway.
+
+  it("pre-emptively swaps gpt-5-codex → gpt-5.5 under ChatGPT auth", async () => {
+    // No openaiApiKey + no OPENAI_API_KEY env → init reads the host
+    // auth file. The host machine running this test has Dylan's real
+    // `~/.codex/auth.json` in chatgpt mode (see `codex-auth.test.ts`
+    // for the test-controlled equivalent). With `gpt-5-codex` set in
+    // config, the handler should detect the mismatch before calling
+    // `runStreamed` and pass `gpt-5.5` to ThreadOptions.
+    initCodexAgent(
+      {
+        model: "gpt-5-codex",
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_preempt" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // ThreadOptions saw `gpt-5.5` even though config said `gpt-5-codex`.
+    expect(MOCK_THREAD_OPTIONS_SEEN[0].model).toBe("gpt-5.5");
+    // No retry needed — the pre-emptive swap means runStreamed is
+    // called exactly once.
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(1);
+  });
+
+  it("post-hoc retries with gpt-5.5 when Codex returns the ChatGPT 400", async () => {
+    // Api-key auth so the pre-emptive swap doesn't fire — the handler
+    // believes gpt-5-codex is valid, hands it to Codex, and Codex
+    // returns the chatgpt-mismatch 400. The handler should classify
+    // the error, reset the session, and retry on gpt-5.5.
+    setupHandler();
+
+    const chatgptMismatch = new Error(
+      `Codex Exec exited with code 1: Reading prompt from stdin...\n` +
+        `{"type":"error","status":400,"error":{"type":"invalid_request_error",` +
+        `"message":"The 'gpt-5-codex' model is not supported when using Codex ` +
+        `with a ChatGPT account."}}`,
+    );
+    MOCK_RUN_STREAMED_THROW_QUEUE = [chatgptMismatch, null];
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_after_fallback" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "on fallback" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "force the 400",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Two runStreamed calls — the original + the retry on the
+    // chatgpt-compatible model.
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+    expect(MOCK_THREAD_OPTIONS_SEEN[0].model).toBe("gpt-5-codex");
+    expect(MOCK_THREAD_OPTIONS_SEEN[1].model).toBe("gpt-5.5");
+    expect(result.text).toBe("on fallback");
+
+    // Chat-settings restored to the original after the retry — the
+    // fallback is one-shot, not a permanent switch.
+    expect(chatSettings.getChatSettings("test-chat").model).toBeUndefined();
+  });
+
+  it("retries via the turn.failed event channel (no thrown error)", async () => {
+    // Some failure modes surface only as `turn.failed` events without
+    // the SDK rethrowing — the handler still has to detect the
+    // mismatch text and retry. (The current SDK does both; this test
+    // covers the event-only path defensively via the post-loop check.)
+    setupHandler();
+
+    // First call: events include the mismatch turn.failed, then the
+    // generator ends cleanly (no throw). The handler sets
+    // `turnFailedError` during iteration, the loop exits normally,
+    // the post-loop ChatGPT-mismatch check fires the retry.
+    // Second call: clean recovery on gpt-5.5.
+    MOCK_EVENTS_QUEUE = [
+      // Call 1 — events only, no throw
+      [
+        { type: "thread.started", thread_id: "thr_event_path_1" },
+        { type: "turn.started" },
+        {
+          type: "turn.failed",
+          error: {
+            message:
+              'The "gpt-5-codex" model is not supported when using Codex with a ChatGPT account.',
+          },
+        },
+      ],
+      // Call 2 — clean recovery
+      [
+        { type: "thread.started", thread_id: "thr_event_path_2" },
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: { id: "i1", type: "agent_message", text: "recovered" },
+        },
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 1,
+            output_tokens: 1,
+            cached_input_tokens: 0,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ],
+    ];
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "force the event-path failure",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+    expect(MOCK_THREAD_OPTIONS_SEEN[1].model).toBe("gpt-5.5");
+    expect(result.text).toBe("recovered");
+  });
+
+  it("does not retry when the chatgpt-mismatch fires a second time", async () => {
+    // Defensive: if the post-hoc retry ALSO returns the 400 (shouldn't
+    // happen since gpt-5.5 is supported, but guards against a future
+    // breakage), don't loop. `_retried` is true on the recursive call
+    // so the chatgpt-mismatch branch short-circuits.
+    setupHandler();
+
+    const mismatch = new Error(
+      "not supported when using Codex with a ChatGPT account",
+    );
+    MOCK_RUN_STREAMED_THROW_QUEUE = [mismatch, mismatch];
+
+    await expect(
+      handleMessage({
+        chatId: "test-chat",
+        text: "double-failure",
+        senderName: "Dylan",
+        isGroup: false,
+      }),
+    ).rejects.toThrow();
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
   });
 });

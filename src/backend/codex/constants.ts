@@ -33,11 +33,36 @@ output — Talon dedupes but it's cleaner to commit to one route.
 `;
 
 /**
- * Default model used by the Codex backend when none is configured. The
- * Codex CLI ships with `gpt-5-codex` and `gpt-5` (high-reasoning) as
- * its primary models.
+ * Default model used by the Codex backend when none is configured AND
+ * an API key is present (`OPENAI_API_KEY` env or `openaiApiKey` in
+ * config). The `gpt-5-codex` model is the highest-quality coding model
+ * available through the Codex CLI but requires API-key billing — it is
+ * not granted to ChatGPT subscription accounts.
  */
 export const CODEX_DEFAULT_MODEL = "gpt-5-codex";
+
+/**
+ * Default model used by the Codex backend when the user is signed in
+ * via ChatGPT OAuth (`~/.codex/auth.json` `auth_mode: "chatgpt"`).
+ * The `gpt-5-codex` model is rejected with a 400
+ * `invalid_request_error` ("not supported when using Codex with a
+ * ChatGPT account") on this auth path; `gpt-5.5` is the supported
+ * flagship for ChatGPT users.
+ */
+export const CODEX_CHATGPT_DEFAULT_MODEL = "gpt-5.5";
+
+/**
+ * Set of Codex models that require an API key (i.e. won't work under
+ * ChatGPT OAuth). Used by the handler's recovery ladder to detect a
+ * model-not-supported error and automatically fall back to a
+ * chatgpt-compatible model on retry.
+ *
+ * Keep this list in sync with `CODEX_MODELS` in `models.ts` — every
+ * entry there with `apiKeyOnly: true` should appear here.
+ */
+export const CODEX_API_KEY_ONLY_MODELS: ReadonlySet<string> = new Set([
+  "gpt-5-codex",
+]);
 
 /**
  * Default working directory for thread runs. Codex enforces a git-repo

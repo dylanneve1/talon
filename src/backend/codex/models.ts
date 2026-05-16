@@ -19,16 +19,38 @@ import type {
   ModelButton,
 } from "../../core/types.js";
 
-/** Models available through the Codex CLI. */
-export const CODEX_MODELS: UnifiedModelInfo[] = [
+/**
+ * Codex-specific model metadata extension.
+ *
+ * The Codex CLI accepts a fixed set of model strings, but which ones
+ * actually resolve depends on the auth mode in use. `apiKeyOnly: true`
+ * marks models that the OpenAI API rejects with a 400 when called from
+ * a ChatGPT-OAuth account (`auth_mode: "chatgpt"` in `~/.codex/auth.json`).
+ * The handler's recovery ladder reads this flag.
+ */
+export interface CodexModelInfo extends UnifiedModelInfo {
+  /** True if this model requires API-key billing (not available on ChatGPT OAuth). */
+  apiKeyOnly?: boolean;
+}
+
+/**
+ * Models available through the Codex CLI.
+ *
+ * Order matters: `getSettingsPresentation` lists models in this order,
+ * and `gpt-5.5` is intentionally first because it's the broadest-access
+ * model (works on both auth modes) — it's the safe default for
+ * Talon-on-Codex deployments where the operator hasn't explicitly
+ * picked a model.
+ */
+export const CODEX_MODELS: CodexModelInfo[] = [
   {
-    id: "gpt-5-codex",
-    displayName: "GPT-5 Codex",
+    id: "gpt-5.5",
+    displayName: "GPT-5.5",
     provider: "openai",
     providerName: "OpenAI",
     selectable: true,
     reasoning: true,
-    contextWindow: 200_000,
+    contextWindow: 400_000,
   },
   {
     id: "gpt-5",
@@ -37,7 +59,7 @@ export const CODEX_MODELS: UnifiedModelInfo[] = [
     providerName: "OpenAI",
     selectable: true,
     reasoning: true,
-    contextWindow: 200_000,
+    contextWindow: 400_000,
   },
   {
     id: "gpt-5-mini",
@@ -46,7 +68,17 @@ export const CODEX_MODELS: UnifiedModelInfo[] = [
     providerName: "OpenAI",
     selectable: true,
     reasoning: true,
-    contextWindow: 200_000,
+    contextWindow: 400_000,
+  },
+  {
+    id: "gpt-5-codex",
+    displayName: "GPT-5 Codex",
+    provider: "openai",
+    providerName: "OpenAI",
+    selectable: true,
+    reasoning: true,
+    contextWindow: 400_000,
+    apiKeyOnly: true,
   },
   {
     id: "o4-mini",
@@ -58,6 +90,27 @@ export const CODEX_MODELS: UnifiedModelInfo[] = [
     contextWindow: 128_000,
   },
 ];
+
+/**
+ * True when the given model id is in the catalog AND flagged as
+ * api-key-only. Returns `false` for unknown models — the caller should
+ * not over-correct on unrecognised inputs.
+ */
+export function isCodexApiKeyOnlyModel(id: string): boolean {
+  return CODEX_MODELS.some((m) => m.id === id && m.apiKeyOnly === true);
+}
+
+/**
+ * Return a chatgpt-OAuth-compatible fallback for an api-key-only model.
+ * Returns `undefined` when the model isn't recognised as api-key-only
+ * (caller can skip the fallback path) or when no compatible fallback
+ * exists. Currently the only api-key-only entry is `gpt-5-codex`; this
+ * function points it at `gpt-5.5` as the broadest-access flagship.
+ */
+export function chatGptFallbackFor(id: string): string | undefined {
+  if (!isCodexApiKeyOnlyModel(id)) return undefined;
+  return "gpt-5.5";
+}
 
 /**
  * Resolve a user query string against the Codex model catalog.
