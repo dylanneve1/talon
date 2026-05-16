@@ -44,6 +44,26 @@ const backends = {
       ];
     },
   },
+  // Codex spawns the `codex` CLI per `runStreamed` call rather than
+  // running a long-lived server. The SDK pins its CLI to an exact
+  // version via its own `@openai/codex` dependency — we install that
+  // pinned version so live discovery catches SDK ↔ CLI drift.
+  codex: {
+    sdkPackage: "@openai/codex-sdk",
+    cliPackage: "@openai/codex",
+    binary: "codex",
+    envExecutable: "CODEX_CODE_EXECUTABLE",
+    version(sdk) {
+      return sdk.dependencies?.["@openai/codex"] ?? "latest";
+    },
+    executableCandidates(root, prefix) {
+      return [
+        join(root, "@openai", "codex", "bin", "codex.exe"),
+        join(root, "@openai", "codex", "bin", "codex"),
+        join(prefix, process.platform === "win32" ? "codex.cmd" : "bin/codex"),
+      ];
+    },
+  },
 };
 
 if (!backend || !Object.hasOwn(backends, backend)) {

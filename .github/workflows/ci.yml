@@ -213,7 +213,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        backend: [kilo, opencode, claude]
+        backend: [kilo, opencode, claude, codex]
     steps:
       - uses: actions/checkout@v6
 
@@ -233,6 +233,7 @@ jobs:
           CLAUDE_LIVE_REQUIRED: "1"
           KILO_LIVE_REQUIRED: "1"
           OPENCODE_LIVE_REQUIRED: "1"
+          CODEX_LIVE_REQUIRED: "1"
 
       - name: Backend live summary
         if: always()
