@@ -124,6 +124,7 @@ export async function initBackendAndDispatcher(
   await import("./backend/opencode/factory.js");
   await import("./backend/kilo/factory.js");
   await import("./backend/codex/factory.js");
+  await import("./backend/openai-agents/factory.js");
 
   const { getBackend, listBackends } = await import("./backend/registry.js");
 
