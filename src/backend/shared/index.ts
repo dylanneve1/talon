@@ -73,3 +73,9 @@ export {
 } from "./delivery.js";
 
 export { sleep } from "./sleep.js";
+
+export {
+  applyRetryDecision,
+  type ApplyRetryDecisionInputs,
+  type ApplyRetryDecisionResult,
+} from "./handle-retry.js";
