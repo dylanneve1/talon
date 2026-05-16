@@ -23,7 +23,7 @@
 import { Codex, type CodexOptions } from "@openai/codex-sdk";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
-import { log } from "../../util/log.js";
+import { log, logWarn } from "../../util/log.js";
 import { getState } from "./state.js";
 import { buildCodexMcpServers } from "./mcp-config.js";
 
@@ -47,6 +47,34 @@ export function initCodexAgent(
   // different MCP servers / API key / frontend wiring. The next
   // `ensureCodex(chatId)` call will rebuild from scratch.
   state.codex = null;
+
+  // Friendly startup check: warn early if neither the env var nor a
+  // configured key nor the host's `~/.codex/auth.json` is available.
+  // Codex will fail per-turn with a less helpful error otherwise.
+  const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
+  const hasCfgKey = Boolean(cfg.openaiApiKey);
+  // Lazy: only check the auth.json file if neither key is present
+  // (avoids spurious filesystem reads on the happy path).
+  if (!hasEnvKey && !hasCfgKey) {
+    void checkCodexAuthFile();
+  }
+}
+
+async function checkCodexAuthFile(): Promise<void> {
+  if (!process.env.HOME) return;
+  try {
+    const { existsSync } = await import("node:fs");
+    if (!existsSync(`${process.env.HOME}/.codex/auth.json`)) {
+      logWarn(
+        "agent",
+        "Codex: no OPENAI_API_KEY env, no openaiApiKey in talon.json, " +
+          "and no ~/.codex/auth.json — first turn will fail. " +
+          "Run `codex login` or set OPENAI_API_KEY.",
+      );
+    }
+  } catch {
+    /* non-fatal — auth check is best-effort */
+  }
 }
 
 /**
