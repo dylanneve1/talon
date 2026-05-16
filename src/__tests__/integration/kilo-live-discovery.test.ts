@@ -60,6 +60,12 @@ function kiloAvailable(): boolean {
 const KILO_PRESENT = kiloAvailable();
 const KILO_REQUIRED = process.env.KILO_LIVE_REQUIRED === "1";
 const kiloDescribe = KILO_PRESENT || KILO_REQUIRED ? describe : describe.skip;
+
+// Per-test timeout — kilo serve's `/provider` and `/provider/auth` endpoints
+// hit upstream catalogues and are slow on Windows cold-start (5s default isn't
+// enough; bumping kilo 7.2.x → 7.3.0 nudged it past). 20s is well within CI
+// wall-clock budget but gives us headroom for slow Windows boots.
+const LIVE_TEST_TIMEOUT_MS = 20_000;
 // Pick a high port that's unlikely to collide with the prod Talon Kilo/OpenCode
 // servers (4096/4097 are reserved by default for those). 4198 is well clear.
 const TEST_PORT = Number(process.env.KILO_TEST_PORT ?? 4198);
@@ -157,131 +163,168 @@ kiloDescribe("Kilo live discovery (integration)", () => {
   });
 
   // ── 1. Server health endpoint responds. ──────────────────────────────────
-  it("kilo serve responds to /global/health", async () => {
-    const resp = await fetch(`${BASE_URL}/global/health`);
-    expect(resp.ok).toBe(true);
-    const body = (await resp.json()) as { healthy?: boolean };
-    expect(body.healthy).toBe(true);
-  });
+  it(
+    "kilo serve responds to /global/health",
+    async () => {
+      const resp = await fetch(`${BASE_URL}/global/health`);
+      expect(resp.ok).toBe(true);
+      const body = (await resp.json()) as { healthy?: boolean };
+      expect(body.healthy).toBe(true);
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
   // ── 2. /provider returns the expected shape with non-zero entries. ───────
-  it("provider.list() returns {all, connected, default} with content", async () => {
-    const resp = await testClient.provider.list();
-    const data = resp.data as {
-      all?: Array<unknown>;
-      connected?: Array<string>;
-      default?: Record<string, string>;
-    };
-    expect(Array.isArray(data.all)).toBe(true);
-    expect((data.all ?? []).length).toBeGreaterThan(0);
-    expect(Array.isArray(data.connected)).toBe(true);
-    expect((data.connected ?? []).length).toBeGreaterThan(0);
-    expect(typeof data.default).toBe("object");
-  });
+  it(
+    "provider.list() returns {all, connected, default} with content",
+    async () => {
+      const resp = await testClient.provider.list();
+      const data = resp.data as {
+        all?: Array<unknown>;
+        connected?: Array<string>;
+        default?: Record<string, string>;
+      };
+      expect(Array.isArray(data.all)).toBe(true);
+      expect((data.all ?? []).length).toBeGreaterThan(0);
+      expect(Array.isArray(data.connected)).toBe(true);
+      expect((data.connected ?? []).length).toBeGreaterThan(0);
+      expect(typeof data.default).toBe("object");
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
   // ── 3. /provider/auth has at least one provider with auth methods. ───────
-  it("provider.auth() returns at least one provider with auth methods", async () => {
-    const resp = await testClient.provider.auth();
-    const data =
-      (resp.data as Record<string, Array<{ type?: string }>> | undefined) ?? {};
-    const keys = Object.keys(data);
-    expect(keys.length).toBeGreaterThan(0);
-    // At least one provider should advertise an auth method.
-    const withAuth = keys.filter(
-      (k) => Array.isArray(data[k]) && data[k].length > 0,
-    );
-    expect(withAuth.length).toBeGreaterThan(0);
-  });
+  it(
+    "provider.auth() returns at least one provider with auth methods",
+    async () => {
+      const resp = await testClient.provider.auth();
+      const data =
+        (resp.data as Record<string, Array<{ type?: string }>> | undefined) ??
+        {};
+      const keys = Object.keys(data);
+      expect(keys.length).toBeGreaterThan(0);
+      // At least one provider should advertise an auth method.
+      const withAuth = keys.filter(
+        (k) => Array.isArray(data[k]) && data[k].length > 0,
+      );
+      expect(withAuth.length).toBeGreaterThan(0);
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
   // ── 4. Talon's parser consumes the live data without throwing. ───────────
-  it("getOpenCodeModelCatalog() parses live data without throwing", async () => {
-    const catalog = await getOpenCodeModelCatalog(/* forceRefresh */ true);
-    expect(catalog).toBeDefined();
-    expect(Array.isArray(catalog.providers)).toBe(true);
-    expect(Array.isArray(catalog.models)).toBe(true);
-    expect(catalog.providers.length).toBeGreaterThan(0);
-    expect(catalog.models.length).toBeGreaterThan(0);
-  });
+  it(
+    "getOpenCodeModelCatalog() parses live data without throwing",
+    async () => {
+      const catalog = await getOpenCodeModelCatalog(/* forceRefresh */ true);
+      expect(catalog).toBeDefined();
+      expect(Array.isArray(catalog.providers)).toBe(true);
+      expect(Array.isArray(catalog.models)).toBe(true);
+      expect(catalog.providers.length).toBeGreaterThan(0);
+      expect(catalog.models.length).toBeGreaterThan(0);
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
   // ── 5. Out-of-the-box discovery yields free, selectable models. ──────────
   // This is the contract Dylan called out explicitly: "expect models to
   // return non zero and not throw an error."
-  it("discovers at least one selectable model out of the box", async () => {
-    const catalog = await getOpenCodeModelCatalog();
-    expect(catalog.connectedModels.length).toBeGreaterThan(0);
-    for (const m of catalog.connectedModels) {
-      expect(m.selectable).toBe(true);
-      // Every selectable model has a provider (sanity: parser didn't drop
-      // the providerID).
-      expect(m.providerID).toBeTruthy();
-      expect(m.providerName).toBeTruthy();
-    }
-  });
+  it(
+    "discovers at least one selectable model out of the box",
+    async () => {
+      const catalog = await getOpenCodeModelCatalog();
+      expect(catalog.connectedModels.length).toBeGreaterThan(0);
+      for (const m of catalog.connectedModels) {
+        expect(m.selectable).toBe(true);
+        // Every selectable model has a provider (sanity: parser didn't drop
+        // the providerID).
+        expect(m.providerID).toBeTruthy();
+        expect(m.providerName).toBeTruthy();
+      }
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
-  it("discovers at least one free model out of the box", async () => {
-    const catalog = await getOpenCodeModelCatalog();
-    expect(catalog.connectedFreeModels.length).toBeGreaterThan(0);
-    for (const m of catalog.connectedFreeModels) {
-      expect(m.free).toBe(true);
-      expect(m.selectable).toBe(true);
-      // Free-model invariant: at least one of cost.input / cost.output must
-      // be zero. The other can be non-zero (some providers price asymmetrically
-      // but mark the model as free via a "free" tag in id/name).
-      expect(m.costInput === 0 || m.costOutput === 0).toBe(true);
-    }
-  });
+  it(
+    "discovers at least one free model out of the box",
+    async () => {
+      const catalog = await getOpenCodeModelCatalog();
+      expect(catalog.connectedFreeModels.length).toBeGreaterThan(0);
+      for (const m of catalog.connectedFreeModels) {
+        expect(m.free).toBe(true);
+        expect(m.selectable).toBe(true);
+        // Free-model invariant: at least one of cost.input / cost.output must
+        // be zero. The other can be non-zero (some providers price asymmetrically
+        // but mark the model as free via a "free" tag in id/name).
+        expect(m.costInput === 0 || m.costOutput === 0).toBe(true);
+      }
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
-  it("surfaces the default 'kilo' connected provider", async () => {
-    const catalog = await getOpenCodeModelCatalog();
-    const connectedIds = catalog.connectedProviders.map((p) => p.id);
-    // A fresh Kilo install always ships 'kilo' as a connected provider
-    // (no login required — its built-in free models are the discovery hook
-    // Dylan called out). 'opencode' often appears too but its connected
-    // status depends on whether the binary has cached an opencode-zen
-    // session, which isn't reproducible across machines.
-    expect(connectedIds).toContain("kilo");
-    // Sanity: at least one connected provider has free models. If 'kilo'
-    // ever stops shipping free models, the assertion above will catch it
-    // first, but this one catches the case where 'kilo' is present but
-    // empty of free models.
-    const withFreeModels = catalog.connectedProviders.filter((p) =>
-      catalog.connectedFreeModels.some((m) => m.providerID === p.id),
-    );
-    expect(withFreeModels.length).toBeGreaterThan(0);
-  });
+  it(
+    "surfaces the default 'kilo' connected provider",
+    async () => {
+      const catalog = await getOpenCodeModelCatalog();
+      const connectedIds = catalog.connectedProviders.map((p) => p.id);
+      // A fresh Kilo install always ships 'kilo' as a connected provider
+      // (no login required — its built-in free models are the discovery hook
+      // Dylan called out). 'opencode' often appears too but its connected
+      // status depends on whether the binary has cached an opencode-zen
+      // session, which isn't reproducible across machines.
+      expect(connectedIds).toContain("kilo");
+      // Sanity: at least one connected provider has free models. If 'kilo'
+      // ever stops shipping free models, the assertion above will catch it
+      // first, but this one catches the case where 'kilo' is present but
+      // empty of free models.
+      const withFreeModels = catalog.connectedProviders.filter((p) =>
+        catalog.connectedFreeModels.some((m) => m.providerID === p.id),
+      );
+      expect(withFreeModels.length).toBeGreaterThan(0);
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
   // ── 6. A real model.id round-trips through resolveOpenCodeModelInput. ────
-  it("round-trips a live model.id through resolveOpenCodeModelInput", async () => {
-    const catalog = await getOpenCodeModelCatalog();
-    expect(catalog.connectedModels.length).toBeGreaterThan(0);
-    const sample = catalog.connectedModels[0];
-    const resolution = resolveOpenCodeModelInput(sample.id, catalog);
-    expect(resolution.kind).toBe("exact");
-    if (resolution.kind !== "exact") return;
-    expect(resolution.model.id).toBe(sample.id);
-    expect(resolution.model.providerID).toBe(sample.providerID);
-  });
+  it(
+    "round-trips a live model.id through resolveOpenCodeModelInput",
+    async () => {
+      const catalog = await getOpenCodeModelCatalog();
+      expect(catalog.connectedModels.length).toBeGreaterThan(0);
+      const sample = catalog.connectedModels[0];
+      const resolution = resolveOpenCodeModelInput(sample.id, catalog);
+      expect(resolution.kind).toBe("exact");
+      if (resolution.kind !== "exact") return;
+      expect(resolution.model.id).toBe(sample.id);
+      expect(resolution.model.providerID).toBe(sample.providerID);
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
   // ── 7. Fast-path regression: full ID containing / and : resolves. ────────
-  it("resolves a real ':free'-suffixed model via the full-ID fast path", async () => {
-    const catalog = await getOpenCodeModelCatalog();
-    // Find a connected free model whose ID actually contains ":". If none
-    // exists in the catalog (rare), skip — the fast path is exercised by
-    // the unit tests too.
-    const colonIdModel = catalog.connectedFreeModels.find((m) =>
-      m.id.includes(":"),
-    );
-    if (!colonIdModel) {
-      // Surface that the fast-path wasn't exercised live, but don't fail —
-      // the unit test in kilo-models.test.ts asserts the same property
-      // against a hand-built catalog.
-      return;
-    }
-    const resolution = resolveOpenCodeModelInput(colonIdModel.id, catalog);
-    expect(resolution.kind).toBe("exact");
-    if (resolution.kind !== "exact") return;
-    expect(resolution.model.id).toBe(colonIdModel.id);
-  });
+  it(
+    "resolves a real ':free'-suffixed model via the full-ID fast path",
+    async () => {
+      const catalog = await getOpenCodeModelCatalog();
+      // Find a connected free model whose ID actually contains ":". If none
+      // exists in the catalog (rare), skip — the fast path is exercised by
+      // the unit tests too.
+      const colonIdModel = catalog.connectedFreeModels.find((m) =>
+        m.id.includes(":"),
+      );
+      if (!colonIdModel) {
+        // Surface that the fast-path wasn't exercised live, but don't fail —
+        // the unit test in kilo-models.test.ts asserts the same property
+        // against a hand-built catalog.
+        return;
+      }
+      const resolution = resolveOpenCodeModelInput(colonIdModel.id, catalog);
+      expect(resolution.kind).toBe("exact");
+      if (resolution.kind !== "exact") return;
+      expect(resolution.model.id).toBe(colonIdModel.id);
+    },
+    LIVE_TEST_TIMEOUT_MS,
+  );
 
   // ── 8. Cache TTL — the second call inside the TTL window returns the same
   // catalog reference (cache hit). Documents the existing behaviour so a
