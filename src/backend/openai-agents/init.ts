@@ -4,20 +4,35 @@
  * No long-running server, no per-chat instance cache — the SDK is
  * stateless from Talon's side. We only capture config + frontend +
  * gateway-port resolver at init, plus surface an auth-mode log line
- * so operators know whether `OPENAI_API_KEY` actually resolves.
+ * so operators know whether `OPENAI_API_KEY` (or `OPENROUTER_API_KEY`)
+ * actually resolves.
+ *
+ * OpenRouter: if `openrouterApiKey` or `OPENROUTER_API_KEY` env is set,
+ * a custom `OpenAI` client is injected via `setDefaultOpenAIClient()`.
+ * The Agents SDK picks this up globally — no handler changes needed.
+ * Set `model` in talon.json to any OpenRouter model ID, e.g.:
+ *   "meta-llama/llama-3.3-70b-instruct"  ← best free-tier general pick
+ *   "deepseek/deepseek-v4-flash"          ← free, reasoning-capable
  */
 
+import OpenAI from "openai";
+import { setDefaultOpenAIClient } from "@openai/agents";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { log, logWarn } from "../../util/log.js";
 import { getState } from "./state.js";
+import { OPENAI_AGENTS_OPENROUTER_BASE_URL } from "./constants.js";
 
 /**
  * Initialise the OpenAI Agents backend.
  *
- * The agents SDK speaks to OpenAI's Responses API and requires an
- * API key. This function records whether one is available so the
- * startup log surfaces the result before any turn fires.
+ * Auth priority (first match wins):
+ *   1. OPENROUTER_API_KEY env / config.openrouterApiKey
+ *      → custom OpenAI client pointed at OpenRouter; no OpenAI key needed
+ *   2. OPENAI_API_KEY env / config.openaiApiKey
+ *      → SDK's built-in default client (direct OpenAI billing)
+ *   3. Neither set
+ *      → startup warning; first turn will fail with an auth error
  */
 export function initOpenAIAgentsAgent(
   cfg: TalonConfig,
@@ -29,6 +44,30 @@ export function initOpenAIAgentsAgent(
   if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
   if (frontend) state.frontendName = frontend;
 
+  // ── OpenRouter redirect ─────────────────────────────────────────────────
+  // If an OpenRouter API key is configured, point the Agents SDK's default
+  // client at OpenRouter's OpenAI-compatible endpoint. This enables free-
+  // tier models (e.g. `meta-llama/llama-3.3-70b-instruct`) without direct
+  // OpenAI billing. Set `model` in talon.json to the desired OpenRouter
+  // model ID; `gpt-5.5` (the openai-agents default) won't resolve there.
+  const openrouterKey =
+    process.env.OPENROUTER_API_KEY ?? cfg.openrouterApiKey ?? undefined;
+  if (openrouterKey) {
+    const baseURL =
+      cfg.openrouterBaseUrl ?? OPENAI_AGENTS_OPENROUTER_BASE_URL;
+    const client = new OpenAI({ apiKey: openrouterKey, baseURL });
+    setDefaultOpenAIClient(client);
+    const source = process.env.OPENROUTER_API_KEY
+      ? "env:OPENROUTER_API_KEY"
+      : "config:openrouterApiKey";
+    log(
+      "agent",
+      `OpenAI Agents auth: openrouter (source: ${source}, baseUrl: ${baseURL})`,
+    );
+    return;
+  }
+
+  // ── Direct OpenAI API ───────────────────────────────────────────────────
   // Auth check at boot — same shape as the Codex backend's `none`
   // path, just simpler (no auth.json file flow; OpenAI Agents SDK
   // wants OPENAI_API_KEY from env or constructor option).
@@ -55,6 +94,10 @@ export function initOpenAIAgentsAgent(
  * (via the `openai` package's default client) — we still surface
  * config-based keys here so the handler can pass them explicitly to
  * the model constructor.
+ *
+ * Note: returns `undefined` when OpenRouter is configured
+ * (`openrouterApiKey` / `OPENROUTER_API_KEY`). In that case the SDK
+ * uses the custom client injected by `initOpenAIAgentsAgent`.
  */
 export function getOpenAIApiKey(): string | undefined {
   const state = getState();

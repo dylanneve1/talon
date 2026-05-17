@@ -8,6 +8,12 @@
  *
  * Talon uses it as a single-agent backend (no handoffs, no agent
  * orchestration) with MCP servers wired from the plugin system.
+ *
+ * OpenRouter compatibility: when `openrouterApiKey` / OPENROUTER_API_KEY
+ * is configured, `initOpenAIAgentsAgent` redirects the SDK's default
+ * client to `OPENAI_AGENTS_OPENROUTER_BASE_URL`. Any model ID that
+ * OpenRouter accepts (e.g. `meta-llama/llama-3.3-70b-instruct`) can
+ * then be set via `model` in talon.json.
  */
 
 /**
@@ -37,6 +43,12 @@ output — Talon dedupes but it's cleaner to commit to one route.
  * configured. The Agents SDK speaks to the Responses API which
  * supports the standard `gpt-5*` family; `gpt-5.5` is the broadest-
  * access flagship that most billing accounts have.
+ *
+ * When routing through OpenRouter (`openrouterApiKey` set), override
+ * this via `model` in talon.json — e.g.
+ * `meta-llama/llama-3.3-70b-instruct` for the best free-tier
+ * general-purpose option, or `deepseek/deepseek-v4-flash` for a
+ * reasoning-capable free model.
  */
 export const OPENAI_AGENTS_DEFAULT_MODEL = "gpt-5.5";
 
@@ -52,3 +64,14 @@ export const OPENAI_AGENTS_MAX_TURNS = 50;
 
 /** Default agent name surfaced in OpenAI traces / observability. */
 export const OPENAI_AGENTS_AGENT_NAME = "Talon";
+
+/**
+ * Default base URL when routing through OpenRouter.
+ *
+ * OpenRouter exposes an OpenAI-compatible `/v1` API, so the Agents SDK
+ * works without code changes — only the client's base URL and API key
+ * need to change. Override via `openrouterBaseUrl` in talon.json for
+ * custom OpenAI-compatible deployments (Azure OpenAI, local Ollama
+ * proxy, etc.).
+ */
+export const OPENAI_AGENTS_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";

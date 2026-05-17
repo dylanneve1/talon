@@ -166,8 +166,24 @@ const configSchema = z.object({
   heartbeatIntervalMinutes: z.number().int().min(5).default(60),
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)
   braveApiKey: z.string().optional(),
-  /** OpenAI API key — used by the Codex backend. Falls back to OPENAI_API_KEY env. */
+  /** OpenAI API key — used by the Codex and OpenAI Agents backends. Falls back to OPENAI_API_KEY env. */
   openaiApiKey: z.string().optional(),
+  /**
+   * OpenRouter API key — routes the `openai-agents` backend through
+   * OpenRouter's OpenAI-compatible endpoint, enabling free-tier models.
+   * Falls back to OPENROUTER_API_KEY env. When set, takes priority over
+   * openaiApiKey / OPENAI_API_KEY for the openai-agents backend.
+   *
+   * Recommended free-tier model (set as `model` in talon.json):
+   *   "meta-llama/llama-3.3-70b-instruct"
+   */
+  openrouterApiKey: z.string().optional(),
+  /**
+   * Base URL for an OpenAI-compatible API endpoint.
+   * Defaults to "https://openrouter.ai/api/v1" when openrouterApiKey is set.
+   * Override for custom deployments (Azure OpenAI, local Ollama + proxy, etc.).
+   */
+  openrouterBaseUrl: z.string().url().optional(),
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
