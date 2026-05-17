@@ -155,7 +155,10 @@ export async function handleMessage(
             try {
               onToolUse(tool.name, tool.input);
             } catch (err) {
-              logWarn("agent", `onToolUse callback threw for ${tool.name}: ${err instanceof Error ? err.message : err}`);
+              logWarn(
+                "agent",
+                `onToolUse callback threw for ${tool.name}: ${err instanceof Error ? err.message : err}`,
+              );
             }
           }
         }
