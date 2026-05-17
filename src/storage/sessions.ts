@@ -156,7 +156,8 @@ export function getSession(chatId: string): SessionState {
     session.usage.lastResponseMs = 0;
   if (
     session.usage.fastestResponseMs === undefined ||
-    session.usage.fastestResponseMs === 0
+    session.usage.fastestResponseMs === 0 ||
+    session.usage.fastestResponseMs === null
   )
     session.usage.fastestResponseMs = Infinity;
   // Migrate sessions from before context tracking was added
