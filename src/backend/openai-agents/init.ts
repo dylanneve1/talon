@@ -43,8 +43,8 @@ import OpenAI from "openai";
 import { setDefaultOpenAIClient, setOpenAIAPI } from "@openai/agents";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
-import { log, logWarn } from "../../util/log.js";
-import { getState } from "./state.js";
+import { log, logWarn, logDebug } from "../../util/log.js";
+import { getState, type EndpointModelCapabilities } from "./state.js";
 
 /**
  * Initialise the OpenAI Agents backend.
@@ -138,6 +138,98 @@ export function initOpenAIAgentsAgent(
         "first turn will fail. Set one of these to enable the backend.",
     );
   }
+
+  // Fire-and-forget: enrich the in-memory model catalog with whatever
+  // the remote endpoint advertises via `GET /models`. Lets /status,
+  // /settings, and the model picker show real context windows for
+  // any OpenAI-compatible endpoint (OpenRouter, Ollama, LiteLLM,
+  // vLLM, Azure with deployments) without Talon having to maintain a
+  // per-provider catalog. No-op for the default OpenAI endpoint —
+  // its /models response doesn't include `context_length`, so the
+  // built-in OPENAI_AGENTS_MODELS catalog stays authoritative there.
+  if (baseURL) {
+    fetchEndpointModels(baseURL, apiKey).catch((err) => {
+      logDebug(
+        "agent",
+        `Endpoint model enrichment skipped: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+  }
+}
+
+// ── Endpoint model enrichment ───────────────────────────────────────────────
+
+interface EndpointModelEntry {
+  id?: string;
+  name?: string;
+  context_length?: number;
+  top_provider?: { context_length?: number };
+  pricing?: { prompt?: string | number; completion?: string | number };
+}
+
+/**
+ * Query the OpenAI-compatible `/models` endpoint and stash the
+ * advertised model metadata (context window, display name, free
+ * flag) into `state.endpointModels`. Called once at backend init.
+ *
+ * Designed to be tolerant: the spec is loose enough that endpoints
+ * shape responses differently (OpenRouter has `top_provider.context_length`
+ * and `pricing.prompt`, vLLM has just `context_length`, Ollama has
+ * neither). We grab whatever's present and ignore the rest.
+ */
+async function fetchEndpointModels(
+  baseURL: string,
+  apiKey: string | undefined,
+): Promise<void> {
+  const url = baseURL.replace(/\/+$/, "") + "/models";
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  let res: Response;
+  try {
+    res = await fetch(url, { headers, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    throw new Error(`/models returned ${res.status}`);
+  }
+  const json = (await res.json()) as { data?: EndpointModelEntry[] };
+  const data = Array.isArray(json?.data) ? json.data : [];
+
+  const state = getState();
+  let enriched = 0;
+  for (const entry of data) {
+    if (!entry || typeof entry.id !== "string") continue;
+    const caps: EndpointModelCapabilities = {};
+    const ctx =
+      typeof entry.context_length === "number"
+        ? entry.context_length
+        : typeof entry.top_provider?.context_length === "number"
+          ? entry.top_provider.context_length
+          : undefined;
+    if (ctx && ctx > 0) caps.contextWindow = ctx;
+    if (typeof entry.name === "string" && entry.name) caps.displayName = entry.name;
+    const promptPrice = entry.pricing?.prompt;
+    if (
+      promptPrice !== undefined &&
+      (promptPrice === "0" || promptPrice === 0)
+    ) {
+      caps.free = true;
+    }
+    if (Object.keys(caps).length === 0) continue;
+    state.endpointModels.set(entry.id, caps);
+    enriched += 1;
+  }
+
+  log(
+    "agent",
+    `OpenAI Agents: enriched ${enriched} models from ${url}`,
+  );
 }
 
 /**

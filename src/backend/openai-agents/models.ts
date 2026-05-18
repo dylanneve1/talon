@@ -21,23 +21,29 @@ import type {
   ModelButton,
 } from "../../core/types.js";
 import { getOpenAIBaseUrl } from "./init.js";
+import { getState } from "./state.js";
 
 /**
- * Build a synthetic `UnifiedModelInfo` for an arbitrary model id when
- * the backend is talking to a custom OpenAI-compatible endpoint.
+ * Build a `UnifiedModelInfo` for an arbitrary model id when the
+ * backend is talking to a custom OpenAI-compatible endpoint.
  *
- * We don't know the model's capabilities or context window from the
- * id alone, so the display name is the id verbatim and capability
- * flags stay false. This is purely a passthrough.
+ * If `init.ts`'s `fetchEndpointModels()` has finished, we enrich the
+ * passthrough with whatever the endpoint advertised (real context
+ * window, display name, free flag). Otherwise we fall back to a bare
+ * passthrough — the id verbatim, no capabilities — so /status and
+ * /settings stay rendererable even before the catalog fetch lands.
  */
 function makePassthroughModel(id: string): UnifiedModelInfo {
+  const caps = getState().endpointModels.get(id);
   return {
     id,
-    displayName: id,
+    displayName: caps?.displayName ?? id,
     provider: "openai-compatible",
     providerName: "OpenAI-compatible endpoint",
     selectable: true,
     reasoning: false,
+    ...(caps?.contextWindow ? { contextWindow: caps.contextWindow } : {}),
+    ...(caps?.free ? { free: true } : {}),
   };
 }
 
@@ -173,11 +179,41 @@ export function getProviderModels(
   pageSize = 50,
 ): { models: UnifiedModelInfo[]; total: number } {
   if (providerId !== "openai") return { models: [], total: 0 };
+  const merged = mergedCatalog();
   const start = (page - 1) * pageSize;
   return {
-    models: OPENAI_AGENTS_MODELS.slice(start, start + pageSize),
-    total: OPENAI_AGENTS_MODELS.length,
+    models: merged.slice(start, start + pageSize),
+    total: merged.length,
   };
+}
+
+/**
+ * Return the visible model catalog: the built-in OpenAI catalog plus
+ * anything the remote endpoint advertised via `GET /models` (see
+ * `init.ts#fetchEndpointModels`). Built-ins win for shared ids so we
+ * don't trample the OpenAI display names with whatever raw id the
+ * proxy returns.
+ */
+function mergedCatalog(): UnifiedModelInfo[] {
+  const builtIns = new Map<string, UnifiedModelInfo>();
+  for (const m of OPENAI_AGENTS_MODELS) builtIns.set(m.id, m);
+
+  const endpoint = getState().endpointModels;
+  const out: UnifiedModelInfo[] = [...OPENAI_AGENTS_MODELS];
+  for (const [id, caps] of endpoint) {
+    if (builtIns.has(id)) continue;
+    out.push({
+      id,
+      displayName: caps.displayName ?? id,
+      provider: "openai-compatible",
+      providerName: "OpenAI-compatible endpoint",
+      selectable: true,
+      reasoning: false,
+      ...(caps.contextWindow ? { contextWindow: caps.contextWindow } : {}),
+      ...(caps.free ? { free: true } : {}),
+    });
+  }
+  return out;
 }
 
 /** Format a human-readable error for an unresolvable model query. */
@@ -206,10 +242,10 @@ export function listModels(filter?: "free" | "all"): {
   models: UnifiedModelInfo[];
   total: number;
 } {
-  // No free models on the OpenAI Responses API.
-  if (filter === "free") return { models: [], total: 0 };
-  return {
-    models: OPENAI_AGENTS_MODELS,
-    total: OPENAI_AGENTS_MODELS.length,
-  };
+  const merged = mergedCatalog();
+  if (filter === "free") {
+    const free = merged.filter((m) => m.free === true);
+    return { models: free, total: free.length };
+  }
+  return { models: merged, total: merged.length };
 }

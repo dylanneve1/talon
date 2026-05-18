@@ -73,6 +73,7 @@ import {
 import { getState } from "./state.js";
 import { getActiveFrontends } from "./init.js";
 import { buildOpenAIAgentsMcpServers } from "./mcp.js";
+import { OPENAI_AGENTS_BUILTIN_TOOLS } from "./builtins.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
 
@@ -172,13 +173,17 @@ export async function handleMessage(
   try {
     const turnStart = Date.now();
 
-    // Build the agent. Per the SDK contract: name + instructions +
-    // model + mcpServers is enough. No handoffs, no guardrails — single
-    // agent, single conversation.
+    // Build the agent. `tools` carries the filesystem + shell built-ins
+    // (Read / Write / Edit / Bash / Glob / Grep) so this backend has
+    // parity with the Claude SDK backend, which gets equivalent tools
+    // bundled by Claude Code. `mcpServers` carries the Talon frontend
+    // + plugin MCP servers (Telegram tools, Discord tools, mempalace,
+    // etc.). Single agent, no handoffs, no guardrails.
     const agent = new Agent({
       name: OPENAI_AGENTS_AGENT_NAME,
       instructions: systemPrompt,
       model: activeModel,
+      tools: [...OPENAI_AGENTS_BUILTIN_TOOLS],
       mcpServers: mcpBundle.servers,
     });
 
