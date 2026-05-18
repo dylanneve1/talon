@@ -131,16 +131,23 @@ export async function initBackendAndDispatcher(
   await import("./backend/codex/factory.js");
   await import("./backend/openai-agents/factory.js");
 
-  const { initBackendController, getActiveBackend } =
-    await import("./core/backend-controller.js");
+  const { initBackendPool, getBackendForRole } = await import(
+    "./core/backend-controller.js"
+  );
 
-  const backend = await initBackendController(config.backend, config, {
+  // Boot the backend pool — binds the chat / heartbeat / dream roles
+  // from `config.backend`, `config.heartbeatBackend`,
+  // `config.dreamBackend`. When two roles point at the same id the
+  // pool reuses one instance (refcounted) — a single-backend setup
+  // still spins up exactly one instance.
+  await initBackendPool(config, {
     getBridgePort: frontend.getBridgePort,
     frontendName: frontend.name,
   });
+  const backend = getBackendForRole("chat");
 
   initDispatcher({
-    getBackend: getActiveBackend,
+    getBackend: () => getBackendForRole("chat"),
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),
@@ -186,7 +193,7 @@ export async function initBackendAndDispatcher(
     model: config.model,
     dreamModel: config.dreamModel,
     workspace: config.workspace,
-    getBackend: getActiveBackend,
+    getBackend: () => getBackendForRole("dream"),
   });
   // Heartbeat needs to know which non-terminal frontends are wired so it can
   // tell the agent it has outbound `${frontend}-tools` MCP servers available.
@@ -200,7 +207,7 @@ export async function initBackendAndDispatcher(
     model: config.model,
     heartbeatModel: config.heartbeatModel,
     workspace: config.workspace,
-    getBackend: getActiveBackend,
+    getBackend: () => getBackendForRole("heartbeat"),
     frontends: frontendNames,
   });
 

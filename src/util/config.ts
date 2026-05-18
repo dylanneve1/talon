@@ -151,6 +151,23 @@ const configSchema = z.object({
   backend: z
     .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
     .default("claude"),
+  /**
+   * Backend used by the heartbeat agent. Falls back to `backend` when
+   * unset. Pair with `heartbeatModel` — the heartbeat agent reads the
+   * model field against the heartbeat backend's catalog. Useful for
+   * keeping heartbeats on Claude Sonnet for quality while chat runs
+   * on a cheaper / free backend.
+   */
+  heartbeatBackend: z
+    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
+    .optional(),
+  /**
+   * Backend used by the dream / memory-consolidation agent. Falls
+   * back to `backend` when unset. Pair with `dreamModel`.
+   */
+  dreamBackend: z
+    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
+    .optional(),
   claudeBinary: z.string().optional(),
   model: z.string().default("default"),
   dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)

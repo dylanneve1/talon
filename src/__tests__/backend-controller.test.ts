@@ -120,7 +120,7 @@ describe("backend-controller", () => {
     expect(getActiveBackend()).toBe(alpha);
 
     const result = await switchBackend("beta", STUB_CONFIG);
-    expect(result).toEqual({ ok: true, from: "alpha", to: "beta" });
+    expect(result).toMatchObject({ ok: true, from: "alpha", to: "beta" });
     expect(getActiveBackendId()).toBe("beta");
     expect(getActiveBackend()).not.toBe(alpha);
     expect(cleanups).toEqual(["cleanup:alpha"]);
@@ -193,7 +193,7 @@ describe("backend-controller", () => {
     await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
 
     const calls: Array<{ id: string; label: string }> = [];
-    onBackendChange((_b, info) => {
+    onBackendChange((_role, _b, info) => {
       calls.push(info);
     });
 
@@ -207,7 +207,7 @@ describe("backend-controller", () => {
     await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
 
     const calls: Array<{ id: string }> = [];
-    onBackendChange((_b, info) => calls.push({ id: info.id }));
+    onBackendChange((_role, _b, info) => calls.push({ id: info.id }));
 
     await switchBackend("beta", STUB_CONFIG);
     expect(calls).toEqual([]);
@@ -235,7 +235,9 @@ describe("backend-controller", () => {
     await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
 
     const calls: string[] = [];
-    const unsubscribe = onBackendChange((_b, info) => calls.push(info.id));
+    const unsubscribe = onBackendChange((_role, _b, info) =>
+      calls.push(info.id),
+    );
 
     await switchBackend("beta", STUB_CONFIG);
     unsubscribe();

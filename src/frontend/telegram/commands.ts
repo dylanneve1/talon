@@ -52,10 +52,10 @@ import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
 import {
-  switchBackend,
   listAvailableBackends,
-  getActiveBackendId,
-  getActiveBackendLabel,
+  rebindRole,
+  getPoolSnapshot,
+  type BackendRole,
 } from "../../core/backend-controller.js";
 import { writeFileSync } from "node:fs";
 
@@ -628,103 +628,170 @@ export function registerCommands(
   });
 
   bot.command("backend", async (ctx) => {
-    // Hot-swap the active QueryBackend at runtime. No-arg form prints
-    // the active backend + the list of registered alternatives;
-    // arg form attempts a switch and persists `config.backend` back
-    // to `~/.talon/config.json` so the next restart honours the choice.
+    // Per-role backend rebinding via the pool.
+    //
+    //   /backend                       show pool snapshot + available backends
+    //   /backend <id>                  rebind the chat role (shorthand)
+    //   /backend <role>                show the binding for one role
+    //   /backend <role> <id>           rebind a specific role (chat | heartbeat | dream)
+    //
+    // Persistence: chat rebinds write `config.backend`; heartbeat /
+    // dream rebinds write their respective `*Backend` fields.
     if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
       await ctx.reply("Not authorized.");
       return;
     }
-    const arg = ctx.match?.trim();
-    const activeId = getActiveBackendId();
-    const activeLabel = getActiveBackendLabel();
+    const arg = ctx.match?.trim() ?? "";
+    const parts = arg.split(/\s+/).filter(Boolean);
     const available = listAvailableBackends();
+    const knownBackendIds = new Set(available.map((b) => b.id));
+    const validRoles: BackendRole[] = ["chat", "heartbeat", "dream"];
 
-    if (!arg) {
-      const lines = available.map((b) =>
-        b.id === activeId
-          ? `  <b>${escapeHtml(b.label)}</b> (active) — <code>${escapeHtml(b.id)}</code>`
-          : `  ${escapeHtml(b.label)} — <code>${escapeHtml(b.id)}</code>`,
+    if (parts.length === 0) {
+      // No-arg: render snapshot.
+      const snap = getPoolSnapshot();
+      const bindingLines = validRoles.map((r) => {
+        const id = snap.bindings[r];
+        const label = snap.instances.find((i) => i.id === id)?.label ?? id;
+        return `  ${r.padEnd(9)} → <b>${escapeHtml(label)}</b> <code>${escapeHtml(id)}</code>`;
+      });
+      const instanceLines = snap.instances.map(
+        (i) =>
+          `  • <b>${escapeHtml(i.label)}</b> <code>${escapeHtml(i.id)}</code> — bound by: ${i.roles.join(", ")}`,
+      );
+      const availableLines = available.map(
+        (b) => `  ${escapeHtml(b.label)} <code>${escapeHtml(b.id)}</code>`,
       );
       await ctx.reply(
         [
-          `<b>🔀 Backend</b>`,
-          `Active: <b>${escapeHtml(activeLabel)}</b> (<code>${escapeHtml(activeId)}</code>)`,
+          `<b>🔀 Backend pool</b>`,
+          ``,
+          `<b>Bindings:</b>`,
+          ...bindingLines,
+          ``,
+          `<b>Live instances:</b>`,
+          ...instanceLines,
           ``,
           `<b>Available:</b>`,
-          ...lines,
+          ...availableLines,
           ``,
-          `Switch with: <code>/backend &lt;id&gt;</code>`,
-          `Switching resets the active session.`,
+          `Rebind chat:      <code>/backend &lt;id&gt;</code>`,
+          `Rebind a role:    <code>/backend &lt;chat|heartbeat|dream&gt; &lt;id&gt;</code>`,
         ].join("\n"),
         { parse_mode: "HTML" },
       );
       return;
     }
 
-    if (arg === activeId) {
-      await ctx.reply(`Already on <b>${escapeHtml(activeLabel)}</b>.`, {
-        parse_mode: "HTML",
-      });
-      return;
+    // Resolve (role, id).
+    let role: BackendRole;
+    let newId: string;
+    if (parts.length === 1) {
+      if ((validRoles as string[]).includes(parts[0])) {
+        // `/backend heartbeat` — show binding for that role only.
+        const r = parts[0] as BackendRole;
+        const snap = getPoolSnapshot();
+        const id = snap.bindings[r];
+        const label = snap.instances.find((i) => i.id === id)?.label ?? id;
+        await ctx.reply(
+          `<b>${r}</b>: <b>${escapeHtml(label)}</b> (<code>${escapeHtml(id)}</code>)`,
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+      role = "chat";
+      newId = parts[0];
+    } else {
+      const r = parts[0];
+      if (!(validRoles as string[]).includes(r)) {
+        await ctx.reply(
+          `Unknown role <code>${escapeHtml(r)}</code>. Valid: ${validRoles.join(", ")}.`,
+          { parse_mode: "HTML" },
+        );
+        return;
+      }
+      role = r as BackendRole;
+      newId = parts[1];
     }
 
-    const target = available.find((b) => b.id === arg);
-    if (!target) {
+    if (!knownBackendIds.has(newId)) {
       const known = available
         .map((b) => `<code>${escapeHtml(b.id)}</code>`)
         .join(", ");
       await ctx.reply(
-        `Unknown backend <code>${escapeHtml(arg)}</code>. Known: ${known}.`,
-        {
-          parse_mode: "HTML",
-        },
-      );
-      return;
-    }
-
-    await ctx.reply(
-      `Switching backend: ${escapeHtml(activeLabel)} → ${escapeHtml(target.label)}…`,
-      { parse_mode: "HTML" },
-    );
-
-    const result = await switchBackend(arg, config);
-    if (!result.ok) {
-      await ctx.reply(
-        `❌ Switch failed: ${escapeHtml(result.error ?? "unknown error")}\n\nStill on <b>${escapeHtml(activeLabel)}</b>.`,
+        `Unknown backend <code>${escapeHtml(newId)}</code>. Known: ${known}.`,
         { parse_mode: "HTML" },
       );
       return;
     }
 
-    // Persist backend choice so the next restart honours it. Keep this
-    // best-effort — a failed write shouldn't roll back the hot-swap.
-    // The cast is safe: the controller validated `target.id` against
-    // the registered factory set, which mirrors the config zod enum.
+    const prevSnap = getPoolSnapshot();
+    const prevId = prevSnap.bindings[role];
+    const prevLabel =
+      prevSnap.instances.find((i) => i.id === prevId)?.label ?? prevId;
+    const targetLabel = available.find((b) => b.id === newId)?.label ?? newId;
+
+    await ctx.reply(
+      `Rebinding <b>${role}</b>: ${escapeHtml(prevLabel)} → ${escapeHtml(targetLabel)}…`,
+      { parse_mode: "HTML" },
+    );
+
+    const result = await rebindRole(role, newId, config);
+    if (!result.ok) {
+      await ctx.reply(
+        `❌ Rebind failed: ${escapeHtml(result.error ?? "unknown error")}\n\n<b>${role}</b> still on <b>${escapeHtml(prevLabel)}</b>.`,
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
+
+    // Persist the per-role binding so the next restart honours it.
+    // The cast is safe — the controller validated `newId` against the
+    // registered factory set, which mirrors the config zod enum.
     try {
-      config.backend = target.id as TalonConfig["backend"];
+      const id = newId as TalonConfig["backend"];
+      if (role === "chat") {
+        config.backend = id;
+      } else if (role === "heartbeat") {
+        config.heartbeatBackend = id;
+      } else if (role === "dream") {
+        config.dreamBackend = id;
+      }
       writeFileSync(files.config, JSON.stringify(config, null, 2) + "\n");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await ctx.reply(
-        `⚠️ Backend switched, but persisting <code>config.backend</code> failed: ${escapeHtml(msg)}\n` +
-          `Will revert on next restart.`,
+        `⚠️ Rebind succeeded, but persisting config failed: ${escapeHtml(msg)}\nWill revert on next restart.`,
         { parse_mode: "HTML" },
       );
     }
 
-    // Reset the active chat session — the previous backend's per-chat
-    // session state isn't portable across backends.
-    const cid = String(ctx.chat.id);
-    resetSession(cid);
-    clearHistory(cid);
-    resetPulseCheckpoint(cid);
+    const detail = [
+      result.newReused
+        ? "new instance reused from pool"
+        : "new instance spun up",
+      result.previousReused
+        ? `previous instance kept (still bound elsewhere)`
+        : `previous instance cleaned up`,
+    ].join(" · ");
 
-    await ctx.reply(
-      `✅ Backend switched to <b>${escapeHtml(target.label)}</b>. Session reset.`,
-      { parse_mode: "HTML" },
-    );
+    if (role === "chat") {
+      // Chat rebinds reset the chat session — previous backend's per-
+      // chat state isn't portable across backends.
+      const cid = String(ctx.chat.id);
+      resetSession(cid);
+      clearHistory(cid);
+      resetPulseCheckpoint(cid);
+      await ctx.reply(
+        `✅ <b>chat</b> rebound to <b>${escapeHtml(targetLabel)}</b>. Session reset.\n<i>${detail}</i>`,
+        { parse_mode: "HTML" },
+      );
+    } else {
+      await ctx.reply(
+        `✅ <b>${role}</b> rebound to <b>${escapeHtml(targetLabel)}</b>.\n<i>${detail}</i>`,
+        { parse_mode: "HTML" },
+      );
+    }
   });
 
   bot.command("plugins", async (ctx) => {

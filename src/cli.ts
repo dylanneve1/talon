@@ -948,9 +948,10 @@ async function startChat(): Promise<void> {
   gateway.backend = backend;
 
   // Mirror the index.ts wiring: keep the gateway's cached backend
-  // reference in sync with hot-swaps performed via the controller.
+  // reference in sync with chat-role rebinds.
   const { onBackendChange } = await import("./core/backend-controller.js");
-  onBackendChange((newBackend) => {
+  onBackendChange((role, newBackend) => {
+    if (role !== "chat") return;
     gateway.backend = newBackend;
   });
 

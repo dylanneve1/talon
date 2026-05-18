@@ -75,11 +75,13 @@ if (selectedFrontend === "terminal") {
 const { backend } = await initBackendAndDispatcher(config, frontend);
 gateway.backend = backend;
 
-// Subscribe the gateway to backend hot-swaps so `/model`, `/settings`,
+// Subscribe the gateway to chat-role rebinds so `/model`, `/settings`,
 // shared-action dispatch, etc. all see the new backend the moment a
-// `switchBackend` resolves.
+// rebind resolves. Heartbeat and dream rebinds don't touch the
+// gateway — those roles run from their own getBackend providers.
 const { onBackendChange } = await import("./core/backend-controller.js");
-onBackendChange((newBackend, info) => {
+onBackendChange((role, newBackend, info) => {
+  if (role !== "chat") return;
   gateway.backend = newBackend;
   log("bot", `Gateway backend reference updated → ${info.label}`);
 });
