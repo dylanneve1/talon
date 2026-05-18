@@ -12,24 +12,28 @@
  *
  * The `@openai/agents` SDK targets OpenAI's API by default but accepts
  * any OpenAI-compatible endpoint via a custom `OpenAI` client. Talon
- * exposes this through two config fields (or env vars):
+ * exposes three knobs, each resolvable from a Talon-specific env var
+ * or `talon.json` (env wins):
  *
- *   - `openaiBaseUrl` / `OPENAI_BASE_URL`
- *       Redirects the SDK at any OpenAI-compatible service —
- *       OpenRouter, Azure OpenAI, local Ollama, LiteLLM, etc.
- *   - `openaiApiMode` / `OPENAI_API_MODE`
- *       Which OpenAI API surface to target. "responses" (OpenAI native)
- *       or "chat_completions" (most third parties). When `openaiBaseUrl`
- *       is set and the mode is unset, defaults to "chat_completions"
- *       because most non-OpenAI endpoints don't implement Responses.
+ *   key:      TALON_AGENTS_KEY      > config.openaiApiKey
+ *   baseURL:  TALON_AGENTS_URL      > config.openaiBaseUrl
+ *   apiMode:  TALON_AGENTS_API_MODE > config.openaiApiMode
  *
- * Auth priority (first match wins):
+ * Talon deliberately ignores the OpenAI-standard `OPENAI_API_KEY` /
+ * `OPENAI_BASE_URL` / `OPENAI_API_MODE` env vars: operators frequently
+ * have those exported for other tools (e.g. an OpenAI dev key in
+ * their shell rc) and pointing Talon at a different endpoint would
+ * otherwise conflict silently. Set the `TALON_AGENTS_*` aliases or
+ * put the values in `~/.talon/config.json`.
  *
- *   1. `OPENAI_API_KEY` env / `config.openaiApiKey`
- *      → injected client (custom baseURL if configured, OpenAI default
- *        otherwise). Required for any non-trivial setup.
- *   2. No key set
- *      → startup warning; first turn fails with an auth error.
+ *   - baseURL — redirects the SDK at any OpenAI-compatible service.
+ *   - apiMode — "responses" (OpenAI native) or "chat_completions"
+ *       (most third parties). When a custom baseURL is set and mode is
+ *       unset, defaults to "chat_completions" because most non-OpenAI
+ *       endpoints don't implement Responses.
+ *
+ * With no key resolved Talon emits a startup warning; first turn
+ * fails with an auth error.
  *
  * The SDK's `setDefaultOpenAIClient()` is global — all subsequent
  * `new Agent({...})` instances inherit the redirect.
@@ -59,13 +63,28 @@ export function initOpenAIAgentsAgent(
   if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
   if (frontend) state.frontendName = frontend;
 
-  // Resolve endpoint configuration. Env vars take precedence over
-  // talon.json so operators can override per-invocation without
-  // editing config.
-  const apiKey = process.env.OPENAI_API_KEY ?? cfg.openaiApiKey ?? undefined;
-  const baseURL = process.env.OPENAI_BASE_URL ?? cfg.openaiBaseUrl ?? undefined;
+  // Resolve endpoint configuration. Talon-specific env vars only, so
+  // an unrelated `OPENAI_API_KEY` (or `OPENAI_BASE_URL`) exported in
+  // the operator's shell — common when they also use OpenAI directly
+  // for other tools — can't silently override what's in `talon.json`.
+  //   key:      TALON_AGENTS_KEY      > config.openaiApiKey
+  //   baseURL:  TALON_AGENTS_URL      > config.openaiBaseUrl
+  //   apiMode:  TALON_AGENTS_API_MODE > config.openaiApiMode
+  const keyEnv = process.env.TALON_AGENTS_KEY
+    ? { value: process.env.TALON_AGENTS_KEY, source: "env:TALON_AGENTS_KEY" }
+    : cfg.openaiApiKey
+      ? { value: cfg.openaiApiKey, source: "config:openaiApiKey" }
+      : { value: undefined, source: "none" };
+  const apiKey = keyEnv.value;
 
-  const envMode = process.env.OPENAI_API_MODE;
+  const urlEnv = process.env.TALON_AGENTS_URL
+    ? { value: process.env.TALON_AGENTS_URL, source: "env:TALON_AGENTS_URL" }
+    : cfg.openaiBaseUrl
+      ? { value: cfg.openaiBaseUrl, source: "config:openaiBaseUrl" }
+      : { value: undefined, source: "default (api.openai.com)" };
+  const baseURL = urlEnv.value;
+
+  const envMode = process.env.TALON_AGENTS_API_MODE;
   const resolvedApiMode: "responses" | "chat_completions" =
     envMode === "chat_completions" || envMode === "responses"
       ? envMode
@@ -95,35 +114,28 @@ export function initOpenAIAgentsAgent(
     });
     setDefaultOpenAIClient(client);
 
-    const keySource = process.env.OPENAI_API_KEY
-      ? "env:OPENAI_API_KEY"
-      : cfg.openaiApiKey
-        ? "config:openaiApiKey"
-        : "none";
-    const urlSource = process.env.OPENAI_BASE_URL
-      ? `env:OPENAI_BASE_URL (${baseURL})`
-      : cfg.openaiBaseUrl
-        ? `config:openaiBaseUrl (${baseURL})`
-        : "default (api.openai.com)";
+    const urlSourceWithValue = baseURL
+      ? `${urlEnv.source} (${baseURL})`
+      : urlEnv.source;
 
     log(
       "agent",
-      `OpenAI Agents auth: key=${keySource} baseURL=${urlSource} api=${resolvedApiMode}`,
+      `OpenAI Agents auth: key=${keyEnv.source} baseURL=${urlSourceWithValue} api=${resolvedApiMode}`,
     );
 
     if (!apiKey) {
       logWarn(
         "agent",
         "OpenAI Agents: custom baseURL is set but no API key was provided. " +
-          "If your endpoint requires auth, first turn will fail. Set OPENAI_API_KEY " +
-          "or openaiApiKey in talon.json.",
+          "If your endpoint requires auth, first turn will fail. Set " +
+          "TALON_AGENTS_KEY or openaiApiKey in talon.json.",
       );
     }
   } else {
     logWarn(
       "agent",
-      "OpenAI Agents: no OPENAI_API_KEY env, no openaiApiKey in talon.json — " +
-        "first turn will fail. Set OPENAI_API_KEY or add openaiApiKey to talon.json.",
+      "OpenAI Agents: no TALON_AGENTS_KEY env and no openaiApiKey in talon.json — " +
+        "first turn will fail. Set one of these to enable the backend.",
     );
   }
 }
@@ -131,25 +143,29 @@ export function initOpenAIAgentsAgent(
 /**
  * Get the OpenAI API key Talon should use for the Agents SDK.
  *
- * Priority: `OPENAI_API_KEY` env > `openaiApiKey` in Talon config >
- * `undefined`. The SDK reads `OPENAI_API_KEY` from env on its own
- * (via the `openai` package's default client) — we still surface
- * config-based keys here so the handler can pass them explicitly to
- * the model constructor.
+ * Priority: `TALON_AGENTS_KEY` env > `openaiApiKey` in Talon config >
+ * `undefined`. Talon ignores the generic `OPENAI_API_KEY` env var to
+ * avoid silent conflicts with operators who export it for other tools.
  */
 export function getOpenAIApiKey(): string | undefined {
   const state = getState();
-  return process.env.OPENAI_API_KEY ?? state.config?.openaiApiKey ?? undefined;
+  return (
+    process.env.TALON_AGENTS_KEY ?? state.config?.openaiApiKey ?? undefined
+  );
 }
 
 /**
  * Get the configured OpenAI-compatible base URL, if any. Returns
  * `undefined` when targeting OpenAI's production API directly.
+ *
+ * Priority: `TALON_AGENTS_URL` env > `openaiBaseUrl` in Talon config >
+ * `undefined`. Talon ignores `OPENAI_BASE_URL` for the same reason it
+ * ignores `OPENAI_API_KEY`.
  */
 export function getOpenAIBaseUrl(): string | undefined {
   const state = getState();
   return (
-    process.env.OPENAI_BASE_URL ?? state.config?.openaiBaseUrl ?? undefined
+    process.env.TALON_AGENTS_URL ?? state.config?.openaiBaseUrl ?? undefined
   );
 }
 
