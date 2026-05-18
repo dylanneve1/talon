@@ -189,6 +189,13 @@ function runShell(
       child.kill("SIGKILL");
     }, timeoutMs);
     let timedOut = false;
+    child.on("error", (err) => {
+      // spawn failed (e.g. bash not in PATH on Windows). Resolve instead
+      // of letting Node emit an uncaught error — the tool returns the
+      // diagnostic so callers can surface it rather than crashing.
+      clearTimeout(killer);
+      resolveResult({ stdout, stderr: err.message, code: -1, timedOut: false });
+    });
     child.on("close", (code) => {
       clearTimeout(killer);
       resolveResult({ stdout, stderr, code: code ?? -1, timedOut });

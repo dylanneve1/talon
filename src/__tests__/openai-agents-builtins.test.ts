@@ -12,10 +12,16 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { RunContext } from "@openai/agents";
 
 import { OPENAI_AGENTS_BUILTIN_TOOLS } from "../backend/openai-agents/builtins.js";
+
+// Bash and Grep rely on `spawn("bash", ["-lc", ...])`. On Windows the
+// Bash tool itself works correctly (spawn error is now handled), but the
+// tool's output degrades to an error message rather than the expected shell
+// output, so the tests are skipped on that platform.
+const isWindows = process.platform === "win32";
 
 type FunctionTool = {
   name: string;
@@ -208,7 +214,7 @@ describe("openai-agents / builtins / Edit", () => {
 
 // ── Bash ────────────────────────────────────────────────────────────────────
 
-describe("openai-agents / builtins / Bash", () => {
+describe.skipIf(isWindows)("openai-agents / builtins / Bash", () => {
   it("captures stdout and reports exit 0 on success", async () => {
     const out = await call("Bash", {
       command: "echo hello-from-bash",
@@ -258,7 +264,8 @@ describe("openai-agents / builtins / Glob", () => {
     // Sorted alphabetically; the leading absolute path makes /nested/
     // sort before /src so use Set membership rather than positional
     // checks for stability across platforms.
-    const names = lines.map((l) => l.split("/").pop());
+    // Use path.basename to handle both POSIX ("/") and Windows ("\") separators.
+    const names = lines.map((l) => basename(l));
     expect(new Set(names)).toEqual(new Set(["a.ts", "c.ts", "d.ts"]));
   });
 
@@ -273,7 +280,7 @@ describe("openai-agents / builtins / Glob", () => {
 
 // ── Grep ────────────────────────────────────────────────────────────────────
 
-describe("openai-agents / builtins / Grep", () => {
+describe.skipIf(isWindows)("openai-agents / builtins / Grep", () => {
   beforeEach(async () => {
     await writeFile(
       join(workdir, "haystack.txt"),
