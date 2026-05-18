@@ -896,7 +896,13 @@ async function mainMenu(): Promise<void> {
     : [config.frontend];
   const frontendLabel = fes
     .map((f) =>
-      f === "telegram" ? "Telegram" : f === "teams" ? "Teams" : "Terminal",
+      f === "telegram"
+        ? "Telegram"
+        : f === "teams"
+          ? "Teams"
+          : f === "discord"
+            ? "Discord"
+            : "Terminal",
     )
     .join(" + ");
 

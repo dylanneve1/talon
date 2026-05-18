@@ -80,7 +80,7 @@ Notes:
         reply_to_message_id: params.reply_to,
       });
     },
-    frontends: ["telegram", "teams"],
+    frontends: ["telegram", "teams", "discord"],
     tag: "messaging",
     endsTurn: true,
   },
@@ -284,7 +284,7 @@ Examples:
           return { ok: false, error: `Unknown type: ${type}` };
       }
     },
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -371,7 +371,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
       const { end_turn: _endTurn, ...rest } = params;
       return bridge("react", rest);
     },
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
     endsTurn: true,
   },
@@ -382,7 +382,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Edit a previously sent message.",
     schema: { message_id: idSchema, text: z.string() },
     execute: (params, bridge) => bridge("edit_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -392,7 +392,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Delete a message.",
     schema: { message_id: idSchema },
     execute: (params, bridge) => bridge("delete_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -402,7 +402,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Forward a message within the chat.",
     schema: { message_id: idSchema },
     execute: (params, bridge) => bridge("forward_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -412,7 +412,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Pin a message.",
     schema: { message_id: idSchema },
     execute: (params, bridge) => bridge("pin_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -422,7 +422,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Unpin a message.",
     schema: { message_id: idSchema.optional() },
     execute: (params, bridge) => bridge("unpin_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
