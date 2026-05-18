@@ -135,7 +135,15 @@ describe("openai-agents live (dummy) / endpoint discovery", () => {
 // ── 2. Plain text turn ─────────────────────────────────────────────────────
 
 describe("openai-agents live (dummy) / plain text turn", () => {
-  it("delivers a single assistant message via the trailing-prose path", async () => {
+  it("captures the model's response text in the result but does NOT deliver it as a fallback", async () => {
+    // Strict tool-only delivery contract: trailing prose is scratchpad
+    // and NEVER reaches the frontend via a "text-part" fallback. The
+    // model's text is still recorded in `result.text` for logging /
+    // tracing, but `onTextBlock` is not called. To actually reach the
+    // user, models must use a delivery tool (`end_turn` / `send` /
+    // `react`); those aren't registered for `frontend: "terminal"` (the
+    // test bootstrap), so this configuration is effectively
+    // delivery-tool-less and the prose is silently dropped on purpose.
     bootBackend();
     await fetchEndpointModels(server.url, "sk-test-fake");
     server.setScript([{ text: "Hello back!", finishReason: "stop" }]);
@@ -153,7 +161,7 @@ describe("openai-agents live (dummy) / plain text turn", () => {
     });
 
     expect(result.text).toContain("Hello back");
-    expect(blocks.length).toBeGreaterThan(0);
+    expect(blocks).toEqual([]);
 
     const reqs = server
       .getRequests()

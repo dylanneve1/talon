@@ -63,6 +63,7 @@ import {
   summarizeUsage,
   routeDelivery,
 } from "../shared/index.js";
+import { detectFlowViolation } from "../shared/flow-violation.js";
 
 import {
   OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX,
@@ -333,7 +334,6 @@ export async function handleMessage(
   recordHistogram("response_latency_ms", durationMs);
   incrementCounter("queries_total");
 
-  incrementTurns(chatId);
   recordUsage(chatId, {
     inputTokens: streamState.sdkInputTokens,
     outputTokens: streamState.sdkOutputTokens,
@@ -343,6 +343,56 @@ export async function handleMessage(
     model: activeModel,
   });
 
+  // ── Trailing-prose contract + flow-violation retry ──────────────────────
+  // Mirrors the claude-sdk handler. The model's output stream is private
+  // scratchpad: replies MUST go through `end_turn` (canonical) or `send`
+  // (mid-turn rich content; doesn't close the turn). If the model wrote
+  // prose without calling either, the user would see nothing — so we
+  // re-prompt once with a synthetic reminder describing the correct
+  // flow. A second violation after the retry accepts a silent drop.
+  //
+  // Only enforced when delivery tools are actually registered. With
+  // `frontend: "terminal"` (and the integration-test bootstrap), no
+  // frontend MCP server spawns and there's no `end_turn` to call —
+  // forcing the contract there would loop forever. Production frontends
+  // (Telegram, Discord, Teams) always wire at least one MCP server, so
+  // a non-empty `mcpBundle.servers` is the cheap signal we have
+  // delivery tools available.
+  //
+  // `incrementTurns` is deferred until AFTER the check so the retry path
+  // (which recurses through `handleMessage` and increments there) doesn't
+  // double-count a single user message.
+  const violation =
+    mcpBundle.servers.length > 0
+      ? detectFlowViolation({
+          trailingText: streamState.lastTrailingText,
+          turnTerminated: streamState.turnTerminated,
+          deliveredTextNorms: streamState.deliveredTextNorms,
+          retried: _retried,
+        })
+      : ({ violated: false } as const);
+
+  if (violation.violated) {
+    incrementCounter("scratchpad.trailing_text_dropped");
+    log(
+      "agent",
+      `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
+        violation.shouldRetry
+          ? "Re-prompting with reminder."
+          : "Already retried — accepting silent drop."
+      }`,
+    );
+
+    if (violation.shouldRetry) {
+      incrementCounter("scratchpad.flow_violation_retried");
+      // Recursive call owns the `incrementTurns` for this user message.
+      return handleMessage({ ...params, text: violation.reminder }, true);
+    }
+  }
+
+  // Reached the non-retry path — this turn counts as one user-visible turn.
+  incrementTurns(chatId);
+
   // Set a descriptive session name from the user's first message.
   if (previousTurns === 0) {
     const name = extractSessionName(text);
@@ -350,13 +400,27 @@ export async function handleMessage(
   }
 
   // ── Delivery ──────────────────────────────────────────────────────────────
-  const delivery = await routeDelivery({
-    backendLabel: "OpenAI Agents",
-    chatId,
-    state: streamState,
-    responseText,
-    onTextBlock,
-  });
+  // Strict tool-only contract — same as claude-sdk. Replies must reach
+  // the user via tool calls (`end_turn` / `send` / `react`); trailing
+  // prose is scratchpad and is NOT delivered as a fallback. The
+  // flow-violation handler above already gave the model one chance to
+  // retry; persistent violators get silently dropped.
+  //
+  // routeDelivery is only invoked when there's something to ship via
+  // its established routes (delivered-via-tools text or a synthetic
+  // upstream error). Empty turns and trailing-prose-only turns return
+  // without any "(no reply)" sentinel.
+  const hasDeliverable =
+    streamState.deliveredTextNorms.length > 0 || !!streamState.syntheticError;
+  const delivery = hasDeliverable
+    ? await routeDelivery({
+        backendLabel: "OpenAI Agents",
+        chatId,
+        state: streamState,
+        responseText: "",
+        onTextBlock,
+      })
+    : { route: "silent" as const, chars: 0 };
 
   log(
     "agent",
