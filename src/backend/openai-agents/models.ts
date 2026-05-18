@@ -248,12 +248,75 @@ export function getSettingsPresentation(
   };
 }
 
+/**
+ * Pattern table for inferring a provider from a model id.
+ *
+ * Two id conventions appear in practice:
+ *
+ *   1. `vendor/model` — OpenRouter, NVIDIA, vLLM, some Azure deployments.
+ *      The slash-prefix is the canonical provider name; this is the
+ *      easy case.
+ *
+ *   2. Flat `family-version-variant` ids — Zen, OpenAI itself, some
+ *      LiteLLM proxies. The provider is implicit in the family
+ *      prefix (`gpt-` → OpenAI, `claude-` → Anthropic, …). Without
+ *      this lookup the picker would lump every flat id under a
+ *      single bucket and the provider chips become useless.
+ *
+ * Each entry is `[regex, provider-slug]`. First match wins, so order
+ * patterns from most-specific to least.
+ *
+ * Adding a new prefix is cheap; this is the supported extension point
+ * for new flat-id endpoints. Do NOT special-case here based on the
+ * baseURL — the rule should fall out of the id alone so the same
+ * model resolves the same way regardless of how the user reaches it.
+ */
+const FLAT_ID_PROVIDER_PATTERNS: ReadonlyArray<[RegExp, string]> = [
+  // Anthropic Claude family — both modern (`claude-opus-4-7`) and
+  // legacy dotted (`claude-3.5-sonnet`).
+  [/^claude[-.]/i, "anthropic"],
+  // OpenAI GPT + Codex variants — `gpt-5.5`, `gpt-5-codex`, `o1`,
+  // `o3-mini`, etc.
+  [/^(gpt|o\d)[-.]/i, "openai"],
+  // Google
+  [/^gemini[-.]/i, "google"],
+  [/^gemma[-.]/i, "google"],
+  // NVIDIA
+  [/^nemotron[-.]/i, "nvidia"],
+  // DeepSeek
+  [/^deepseek[-.]/i, "deepseek"],
+  // Alibaba Qwen
+  [/^qwen/i, "alibaba"],
+  // Moonshot AI
+  [/^kimi[-.]/i, "moonshot"],
+  // MiniMax
+  [/^minimax[-.]/i, "minimax"],
+  // Z.ai GLM family
+  [/^glm[-.]/i, "z-ai"],
+  // Mistral AI
+  [/^(mistral|mixtral|codestral|ministral)[-.]/i, "mistral"],
+  // Meta Llama
+  [/^(llama|codellama)[-.]/i, "meta"],
+  // Microsoft Phi
+  [/^phi[-.]/i, "microsoft"],
+  // xAI Grok
+  [/^grok[-.]/i, "x-ai"],
+];
+
 function providerOf(id: string): string {
-  // OpenRouter ids look like `vendor/model`. Some have a leading
-  // tilde (router shortcuts) — treat `~vendor/model` as `vendor`.
+  // Strip the router-shortcut tilde prefix (`~vendor/model`).
   const stripped = id.startsWith("~") ? id.slice(1) : id;
+  // Case 1: explicit `vendor/model` form — take whatever is before
+  // the first slash.
   const slash = stripped.indexOf("/");
-  return slash >= 0 ? stripped.slice(0, slash) : "openai";
+  if (slash >= 0) return stripped.slice(0, slash);
+  // Case 2: flat id — pattern-match the family prefix.
+  for (const [pattern, provider] of FLAT_ID_PROVIDER_PATTERNS) {
+    if (pattern.test(stripped)) return provider;
+  }
+  // Unknown flat id — bucket as "other" so it doesn't collide with
+  // anything specific.
+  return "other";
 }
 
 function groupByProvider(
@@ -276,7 +339,21 @@ function groupByProvider(
   return groups;
 }
 
+/**
+ * Display-name overrides for cases where the title-casing rule below
+ * produces something awkward (e.g. "X Ai" instead of "xAI").
+ */
+const PROVIDER_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  "x-ai": "xAI",
+  "z-ai": "Z.ai",
+  openai: "OpenAI",
+  deepseek: "DeepSeek",
+  minimax: "MiniMax",
+};
+
 function humanizeProvider(p: string): string {
+  const override = PROVIDER_DISPLAY_NAMES[p];
+  if (override) return override;
   // Title-case ids like "anthropic" → "Anthropic", "aion-labs" → "Aion Labs".
   return p
     .split(/[-_]/)

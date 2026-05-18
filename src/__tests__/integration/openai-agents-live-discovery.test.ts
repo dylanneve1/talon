@@ -136,14 +136,15 @@ describe("openai-agents live (dummy) / endpoint discovery", () => {
 
 describe("openai-agents live (dummy) / plain text turn", () => {
   it("captures the model's response text in the result but does NOT deliver it as a fallback", async () => {
-    // Strict tool-only delivery contract: trailing prose is scratchpad
-    // and NEVER reaches the frontend via a "text-part" fallback. The
-    // model's text is still recorded in `result.text` for logging /
-    // tracing, but `onTextBlock` is not called. To actually reach the
-    // user, models must use a delivery tool (`end_turn` / `send` /
-    // `react`); those aren't registered for `frontend: "terminal"` (the
-    // test bootstrap), so this configuration is effectively
-    // delivery-tool-less and the prose is silently dropped on purpose.
+    // Strict tool-only delivery: trailing prose is private scratchpad
+    // and NEVER reaches the frontend. The model's text is still
+    // recorded in `result.text` for tracing, but `onTextBlock` is
+    // never called for trailing prose. To actually reach the user,
+    // models must call a delivery tool (`end_turn` / `send` /
+    // `react`); those aren't registered for `frontend: "terminal"`
+    // (the test bootstrap), so this configuration is effectively
+    // delivery-tool-less and the prose is silently dropped on
+    // purpose.
     bootBackend();
     await fetchEndpointModels(server.url, "sk-test-fake");
     server.setScript([{ text: "Hello back!", finishReason: "stop" }]);

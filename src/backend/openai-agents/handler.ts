@@ -180,6 +180,32 @@ export async function handleMessage(
     // bundled by Claude Code. `mcpServers` carries the Talon frontend
     // + plugin MCP servers (Telegram tools, Discord tools, mempalace,
     // etc.). Single agent, no handoffs, no guardrails.
+    // Diagnostic — enumerate every tool the model will see this turn
+    // (both built-in function tools and any MCP server tools). Critical
+    // for tracking down "model never calls end_turn" complaints: if
+    // end_turn isn't in this list, the model literally cannot call it
+    // and the problem is in the MCP server registration, not the model.
+    try {
+      const builtinNames = OPENAI_AGENTS_BUILTIN_TOOLS.map((t) => t.name);
+      const mcpToolLists = await Promise.all(
+        mcpBundle.servers.map((s) =>
+          s
+            .listTools()
+            .then((ts: Array<{ name?: string }>) =>
+              ts.map((t) => t.name ?? "?"),
+            )
+            .catch(() => [] as string[]),
+        ),
+      );
+      const mcpNames = mcpToolLists.flat();
+      log(
+        "agent",
+        `[${chatId}] tools registered: builtins=[${builtinNames.join(", ")}] mcp=[${mcpNames.join(", ")}]`,
+      );
+    } catch {
+      /* best-effort diagnostic */
+    }
+
     const agent = new Agent({
       name: OPENAI_AGENTS_AGENT_NAME,
       instructions: systemPrompt,
@@ -217,13 +243,30 @@ export async function handleMessage(
       // streaming would expose private chain-of-thought scratchpad
       // to the chat; the final-message event is enough.
 
-      // Terminator-driven abort: a delivery tool already shipped the
-      // reply via the bridge. Cancel the SDK loop so it doesn't burn
-      // a wrap-up round-trip.
-      if (streamState.turnTerminated && !abortController.signal.aborted) {
+      // Terminator-driven abort. The SDK emits TWO events for each
+      // tool call:
+      //   1. `tool_called`  — model decided to invoke; RPC about to run.
+      //                       `recordToolUse` flips `turnTerminated`
+      //                       when the tool is `end_turn` / `react`.
+      //   2. `tool_output`  — RPC has completed; the message has
+      //                       reached Telegram (for delivery tools).
+      //
+      // We must NOT abort on `tool_called` — that cancels the
+      // in-flight RPC and the message never ships. Aborting on
+      // `tool_output` after we've already flagged the turn as
+      // terminated means the delivery happened AND we skip the SDK's
+      // natural wrap-up round-trip, which otherwise burns 5–10s of
+      // typing-indicator with no user-visible output (visible to the
+      // user as "Jeff is typing…" lingering after the reply lands).
+      if (
+        streamState.turnTerminated &&
+        event.type === "run_item_stream_event" &&
+        (event as { name?: string }).name === "tool_output" &&
+        !abortController.signal.aborted
+      ) {
         log(
           "agent",
-          `[${chatId}] terminator fired — aborting OpenAI Agents turn`,
+          `[${chatId}] terminator tool result received — aborting wrap-up`,
         );
         try {
           abortController.abort();
@@ -403,16 +446,17 @@ export async function handleMessage(
   }
 
   // ── Delivery ──────────────────────────────────────────────────────────────
-  // Strict tool-only contract — same as claude-sdk. Replies must reach
-  // the user via tool calls (`end_turn` / `send` / `react`); trailing
-  // prose is scratchpad and is NOT delivered as a fallback. The
-  // flow-violation handler above already gave the model one chance to
-  // retry; persistent violators get silently dropped.
+  // Strict tool-only delivery — replies must reach the user via a
+  // delivery tool (`end_turn` / `send` / `react`). Trailing prose
+  // is private scratchpad and is NEVER shipped as a fallback. The
+  // flow-violation retry above gave the model one chance; persistent
+  // violators get silently dropped, which is the documented
+  // contract.
   //
   // routeDelivery is only invoked when there's something to ship via
   // its established routes (delivered-via-tools text or a synthetic
   // upstream error). Empty turns and trailing-prose-only turns return
-  // without any "(no reply)" sentinel.
+  // without any output.
   const hasDeliverable =
     streamState.deliveredTextNorms.length > 0 || !!streamState.syntheticError;
   const delivery = hasDeliverable
@@ -509,6 +553,19 @@ function handleToolCalled(item: unknown, ctx: HandleRunItemContext): void {
   if (!item || typeof item !== "object") return;
   const raw = (item as { rawItem?: Record<string, unknown> }).rawItem;
   if (!raw || typeof raw !== "object") return;
+  // Log a compact view of every tool call so we can correlate
+  // tools=N / terminator / delivered numbers with the model's actual
+  // intent in production. Truncated to keep the log light.
+  try {
+    const rawName = typeof raw.name === "string" ? raw.name : "?";
+    const rawArgs =
+      typeof raw.arguments === "string"
+        ? raw.arguments.slice(0, 200)
+        : JSON.stringify(raw.arguments ?? {}).slice(0, 200);
+    log("agent", `[${ctx.chatId}] tool_call ${rawName} args=${rawArgs}`);
+  } catch {
+    /* skip */
+  }
 
   // MCP tool calls expose `name` (the bare tool name) and `arguments`
   // (the JSON-decoded input). Function tool calls use the same fields.

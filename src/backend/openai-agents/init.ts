@@ -111,6 +111,20 @@ export function initOpenAIAgentsAgent(
       // ignore auth (some local Ollama setups). Placeholder if missing.
       apiKey: apiKey ?? "missing-key",
       ...(baseURL ? { baseURL } : {}),
+      // Disable the SDK's built-in 429 retry-after wait. Some
+      // free-tier proxies (e.g. opencode.ai's Zen) return
+      // `retry-after: 15000+` seconds on quota exhaustion, and the
+      // SDK literally sleeps for that long — which manifests as the
+      // bot hanging silently for hours. With `maxRetries: 0` the 429
+      // surfaces immediately as a RateLimitError that our handler
+      // classifies and reports to the user.
+      maxRetries: 0,
+      // Cap the per-request wait. Default is 10 minutes — far too
+      // long for an interactive chat bot. 120s comfortably covers
+      // the slowest reasonable model turn (including thinking
+      // models) without leaving the user staring at "typing…" for
+      // hours when the upstream genuinely wedges.
+      timeout: 120_000,
     });
     setDefaultOpenAIClient(client);
 
@@ -161,10 +175,34 @@ export function initOpenAIAgentsAgent(
 
 interface EndpointModelEntry {
   id?: string;
+  /** OpenRouter + most providers — human display name. */
   name?: string;
+  /** Gemini's OpenAI-compatible endpoint uses this instead of `name`. */
+  display_name?: string;
   context_length?: number;
   top_provider?: { context_length?: number };
   pricing?: { prompt?: string | number; completion?: string | number };
+}
+
+/**
+ * Normalise the id Talon stores + sends back to the endpoint.
+ *
+ * Gemini's OpenAI-compatible `/models` returns ids like
+ * `models/gemini-2.5-flash`, but the chat-completions route accepts
+ * either form. Stripping the `models/` prefix:
+ *
+ *   1. Keeps the picker label clean (`gemini-2.5-flash`, not
+ *      `models/gemini-2.5-flash`).
+ *   2. Lets the flat-id provider-inference table in `models.ts` match
+ *      the `gemini-` prefix and bucket the entry under Google,
+ *      instead of treating "models" as a provider name from the
+ *      slash split.
+ *
+ * Other endpoints aren't affected — the prefix only appears on
+ * Gemini.
+ */
+function normaliseModelId(id: string): string {
+  return id.startsWith("models/") ? id.slice("models/".length) : id;
 }
 
 /**
@@ -202,9 +240,11 @@ export async function fetchEndpointModels(
   const data = Array.isArray(json?.data) ? json.data : [];
 
   const state = getState();
+  let discovered = 0;
   let enriched = 0;
   for (const entry of data) {
     if (!entry || typeof entry.id !== "string") continue;
+    const id = normaliseModelId(entry.id);
     const caps: EndpointModelCapabilities = {};
     const ctx =
       typeof entry.context_length === "number"
@@ -213,8 +253,14 @@ export async function fetchEndpointModels(
           ? entry.top_provider.context_length
           : undefined;
     if (ctx && ctx > 0) caps.contextWindow = ctx;
-    if (typeof entry.name === "string" && entry.name)
-      caps.displayName = entry.name;
+    // `name` (OpenRouter, others) and `display_name` (Gemini) both
+    // mean the human label. Prefer `name` when both are present; fall
+    // back to `display_name` so Gemini gets nice labels too.
+    const displayName =
+      (typeof entry.name === "string" && entry.name) ||
+      (typeof entry.display_name === "string" && entry.display_name) ||
+      undefined;
+    if (displayName) caps.displayName = displayName;
     const promptPrice = entry.pricing?.prompt;
     if (
       promptPrice !== undefined &&
@@ -222,12 +268,22 @@ export async function fetchEndpointModels(
     ) {
       caps.free = true;
     }
-    if (Object.keys(caps).length === 0) continue;
-    state.endpointModels.set(entry.id, caps);
-    enriched += 1;
+    // Always record the id — sparse-response endpoints (NVIDIA NIM,
+    // bare Ollama, some Azure deployments) advertise just `id` with
+    // no context_length / pricing / display name, but the picker still
+    // needs to list them. Storing with an empty caps record gives the
+    // picker something to render; caps is purely additive metadata.
+    state.endpointModels.set(id, caps);
+    discovered += 1;
+    if (Object.keys(caps).length > 0) enriched += 1;
   }
 
-  log("agent", `OpenAI Agents: enriched ${enriched} models from ${url}`);
+  log(
+    "agent",
+    `OpenAI Agents: discovered ${discovered} model${
+      discovered === 1 ? "" : "s"
+    } (${enriched} enriched) from ${url}`,
+  );
 }
 
 /**

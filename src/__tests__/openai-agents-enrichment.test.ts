@@ -131,10 +131,11 @@ describe("openai-agents / fetchEndpointModels / response shapes", () => {
     expect(catalog.get("Qwen/Qwen-7B")?.contextWindow).toBe(32_768);
   });
 
-  it("skips entries with neither context_length nor name nor pricing", async () => {
-    // OpenAI's /v1/models returns just `{id, object, created, owned_by}`.
-    // There's nothing to enrich, so the entry isn't useful and is
-    // dropped to keep /status from rendering a meaningless row.
+  it("still records bare entries (id only, no enrichment fields)", async () => {
+    // OpenAI's /v1/models — and NVIDIA NIM's — returns just
+    // `{id, object, created, owned_by}`. The picker still needs these
+    // ids to list them; we just store them with empty caps so the UI
+    // renders an id-only entry without context-window / pricing badges.
     stubFetchWith(() => ({
       status: 200,
       body: {
@@ -146,7 +147,10 @@ describe("openai-agents / fetchEndpointModels / response shapes", () => {
     }));
 
     await fetchEndpointModels("https://api.openai.com/v1", "sk-test");
-    expect(getState().endpointModels.size).toBe(0);
+    const catalog = getState().endpointModels;
+    expect(catalog.size).toBe(2);
+    expect(catalog.get("gpt-4o")).toEqual({});
+    expect(catalog.get("gpt-4o-mini")).toEqual({});
   });
 
   it("includes entries that have a display name even without context_length", async () => {
