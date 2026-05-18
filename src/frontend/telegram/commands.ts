@@ -51,6 +51,13 @@ import {
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
+import {
+  switchBackend,
+  listAvailableBackends,
+  getActiveBackendId,
+  getActiveBackendLabel,
+} from "../../core/backend-controller.js";
+import { writeFileSync } from "node:fs";
 
 // Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
 let ADMIN_USER_ID = 0;
@@ -100,6 +107,7 @@ export function registerCommands(
         "<b>\uD83E\uDD85 Settings</b>",
         "  /settings -- view and change all chat settings",
         "  /model -- show or change model",
+        "  /backend -- show or hot-swap the active backend",
         "  /effort -- set thinking effort (off, low, medium, high, max)",
         "  /pulse -- toggle periodic check-ins (on/off)",
         "",
@@ -617,6 +625,101 @@ export function registerCommands(
     }
     await ctx.reply("♻️ Restarting...");
     respawnSelf("telegram /restart");
+  });
+
+  bot.command("backend", async (ctx) => {
+    // Hot-swap the active QueryBackend at runtime. No-arg form prints
+    // the active backend + the list of registered alternatives;
+    // arg form attempts a switch and persists `config.backend` back
+    // to `~/.talon/config.json` so the next restart honours the choice.
+    if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
+      await ctx.reply("Not authorized.");
+      return;
+    }
+    const arg = ctx.match?.trim();
+    const activeId = getActiveBackendId();
+    const activeLabel = getActiveBackendLabel();
+    const available = listAvailableBackends();
+
+    if (!arg) {
+      const lines = available.map((b) =>
+        b.id === activeId
+          ? `  <b>${escapeHtml(b.label)}</b> (active) — <code>${escapeHtml(b.id)}</code>`
+          : `  ${escapeHtml(b.label)} — <code>${escapeHtml(b.id)}</code>`,
+      );
+      await ctx.reply(
+        [
+          `<b>🔀 Backend</b>`,
+          `Active: <b>${escapeHtml(activeLabel)}</b> (<code>${escapeHtml(activeId)}</code>)`,
+          ``,
+          `<b>Available:</b>`,
+          ...lines,
+          ``,
+          `Switch with: <code>/backend &lt;id&gt;</code>`,
+          `Switching resets the active session.`,
+        ].join("\n"),
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
+
+    if (arg === activeId) {
+      await ctx.reply(`Already on <b>${escapeHtml(activeLabel)}</b>.`, {
+        parse_mode: "HTML",
+      });
+      return;
+    }
+
+    const target = available.find((b) => b.id === arg);
+    if (!target) {
+      const known = available.map((b) => `<code>${escapeHtml(b.id)}</code>`).join(", ");
+      await ctx.reply(`Unknown backend <code>${escapeHtml(arg)}</code>. Known: ${known}.`, {
+        parse_mode: "HTML",
+      });
+      return;
+    }
+
+    await ctx.reply(
+      `Switching backend: ${escapeHtml(activeLabel)} → ${escapeHtml(target.label)}…`,
+      { parse_mode: "HTML" },
+    );
+
+    const result = await switchBackend(arg, config);
+    if (!result.ok) {
+      await ctx.reply(
+        `❌ Switch failed: ${escapeHtml(result.error ?? "unknown error")}\n\nStill on <b>${escapeHtml(activeLabel)}</b>.`,
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
+
+    // Persist backend choice so the next restart honours it. Keep this
+    // best-effort — a failed write shouldn't roll back the hot-swap.
+    // The cast is safe: the controller validated `target.id` against
+    // the registered factory set, which mirrors the config zod enum.
+    try {
+      config.backend = target.id as TalonConfig["backend"];
+      writeFileSync(files.config, JSON.stringify(config, null, 2) + "\n");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await ctx.reply(
+        `⚠️ Backend switched, but persisting <code>config.backend</code> failed: ${escapeHtml(msg)}\n` +
+          `Will revert on next restart.`,
+        { parse_mode: "HTML" },
+      );
+    }
+
+    // Reset the active chat session — the previous backend's per-chat
+    // session state isn't portable across backends.
+    const cid = String(ctx.chat.id);
+    resetSession(cid);
+    clearHistory(cid);
+    resetPulseCheckpoint(cid);
+
+    await ctx.reply(
+      `✅ Backend switched to <b>${escapeHtml(target.label)}</b>. Session reset.`,
+      { parse_mode: "HTML" },
+    );
   });
 
   bot.command("plugins", async (ctx) => {

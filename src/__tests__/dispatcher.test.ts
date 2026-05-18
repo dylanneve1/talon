@@ -30,7 +30,15 @@ function createMockDeps() {
   const sendTyping = vi.fn(async () => {});
   const onActivity = vi.fn();
 
-  return { backend, context, sendTyping, onActivity, acquired, released };
+  return {
+    backend,
+    getBackend: () => backend,
+    context,
+    sendTyping,
+    onActivity,
+    acquired,
+    released,
+  };
 }
 
 describe("dispatcher", () => {
@@ -230,7 +238,7 @@ describe("dispatcher", () => {
     };
 
     initDispatcher({
-      backend,
+      getBackend: () => backend,
       context: {
         acquire: () => {},
         release: () => {},
@@ -283,7 +291,7 @@ describe("dispatcher", () => {
     };
 
     initDispatcher({
-      backend,
+      getBackend: () => backend,
       context: {
         acquire: () => {},
         release: () => {},
@@ -323,7 +331,7 @@ describe("dispatcher", () => {
     };
 
     initDispatcher({
-      backend,
+      getBackend: () => backend,
       context: {
         acquire: () => {},
         release: () => {},
@@ -360,7 +368,7 @@ describe("dispatcher", () => {
     };
 
     initDispatcher({
-      backend,
+      getBackend: () => backend,
       context: {
         acquire: () => {},
         release: () => {},
@@ -466,7 +474,7 @@ describe("dispatcher", () => {
     };
 
     initDispatcher({
-      backend,
+      getBackend: () => backend,
       context: {
         acquire: () => {},
         release: () => {},
@@ -534,14 +542,14 @@ describe("typing indicator — interval error handling", () => {
     }) => void;
 
     initDispatcher({
-      backend: {
+      getBackend: () => ({
         query: vi.fn(
           () =>
             new Promise((r) => {
               resolveQuery = r;
             }),
         ) as never,
-      },
+      }),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {
         typingCallCount++;
@@ -610,7 +618,7 @@ describe("typing indicator — error handling", () => {
     };
 
     initDispatcher({
-      backend,
+      getBackend: () => backend,
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {
         throw new Error("typing API error");
@@ -651,7 +659,7 @@ describe("typing indicator — non-Error throws", () => {
     >;
 
     initDispatcher({
-      backend: {
+      getBackend: () => ({
         query: vi.fn(async () => ({
           text: "ok",
           durationMs: 10,
@@ -660,7 +668,7 @@ describe("typing indicator — non-Error throws", () => {
           cacheRead: 0,
           cacheWrite: 0,
         })),
-      },
+      }),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // Throw a plain string (non-Error) to hit the `String(err)` branch at line 99
       sendTyping: vi.fn(async () => {
@@ -711,14 +719,14 @@ describe("typing indicator — non-Error throws", () => {
     }) => void;
 
     initDispatcher({
-      backend: {
+      getBackend: () => ({
         query: vi.fn(
           () =>
             new Promise((r) => {
               resolveQuery = r;
             }),
         ) as never,
-      },
+      }),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // First call OK, subsequent calls throw a non-Error string (covers line 103 String(err) branch)
       sendTyping: vi.fn(async () => {

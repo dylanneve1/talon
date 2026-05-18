@@ -21,8 +21,14 @@ import { maybeStartDream } from "./dream.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
+/**
+ * `getBackend` is a function rather than a direct reference so the
+ * dispatcher transparently picks up hot-swaps performed by the
+ * backend controller — no `setBackend` plumbing required. See
+ * `core/backend-controller.ts`.
+ */
 type DispatcherDeps = {
-  backend: QueryBackend;
+  getBackend: () => QueryBackend;
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   onActivity: () => void;
@@ -86,7 +92,11 @@ async function run(params: ExecuteParams): Promise<ExecuteResult> {
 }
 
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
-  const { backend, context, sendTyping, onActivity } = deps!;
+  const { getBackend, context, sendTyping, onActivity } = deps!;
+  // Read the backend fresh per call so a backend switch performed
+  // mid-conversation (`switchBackend` from the controller) takes
+  // effect on the very next query without a dispatcher re-init.
+  const backend = getBackend();
   const reqId = randomBytes(4).toString("hex");
 
   // Dream check — fire-and-forget background memory consolidation if due

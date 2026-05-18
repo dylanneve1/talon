@@ -112,6 +112,11 @@ export async function bootstrap(
 /**
  * Create the AI backend and wire the dispatcher.
  * Call this after creating the frontend.
+ *
+ * The backend controller (`core/backend-controller.ts`) is the single
+ * source of truth for the active backend. Dispatcher / dream /
+ * heartbeat all read through `getActiveBackend()` so a runtime swap
+ * via `switchBackend(id, config)` propagates without any re-init.
  */
 export async function initBackendAndDispatcher(
   config: TalonConfig,
@@ -126,25 +131,17 @@ export async function initBackendAndDispatcher(
   await import("./backend/codex/factory.js");
   await import("./backend/openai-agents/factory.js");
 
-  const { getBackend, listBackends } = await import("./backend/registry.js");
+  const { initBackendController, getActiveBackend } = await import(
+    "./core/backend-controller.js"
+  );
 
-  const factory = getBackend(config.backend);
-  if (!factory) {
-    const known = listBackends()
-      .map((b) => `"${b.id}"`)
-      .join(", ");
-    throw new Error(
-      `Unknown backend "${config.backend}" — known: ${known}. Check config.backend in talon.json.`,
-    );
-  }
-
-  const { backend } = await factory.init(config, {
+  const backend = await initBackendController(config.backend, config, {
     getBridgePort: frontend.getBridgePort,
     frontendName: frontend.name,
   });
 
   initDispatcher({
-    backend,
+    getBackend: getActiveBackend,
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),
@@ -190,7 +187,7 @@ export async function initBackendAndDispatcher(
     model: config.model,
     dreamModel: config.dreamModel,
     workspace: config.workspace,
-    backend,
+    getBackend: getActiveBackend,
   });
   // Heartbeat needs to know which non-terminal frontends are wired so it can
   // tell the agent it has outbound `${frontend}-tools` MCP servers available.
@@ -204,7 +201,7 @@ export async function initBackendAndDispatcher(
     model: config.model,
     heartbeatModel: config.heartbeatModel,
     workspace: config.workspace,
-    backend,
+    getBackend: getActiveBackend,
     frontends: frontendNames,
   });
 

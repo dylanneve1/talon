@@ -947,6 +947,13 @@ async function startChat(): Promise<void> {
   const { backend } = await initBackendAndDispatcher(config, frontend);
   gateway.backend = backend;
 
+  // Mirror the index.ts wiring: keep the gateway's cached backend
+  // reference in sync with hot-swaps performed via the controller.
+  const { onBackendChange } = await import("./core/backend-controller.js");
+  onBackendChange((newBackend) => {
+    gateway.backend = newBackend;
+  });
+
   process.on("SIGINT", () => {
     flushSessions();
     flushChatSettings();

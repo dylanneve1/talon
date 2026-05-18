@@ -75,7 +75,12 @@ let configRef: {
   model?: string;
   heartbeatModel?: string;
   workspace?: string;
-  backend?: QueryBackend | null;
+  /**
+   * Accessor for the active backend — invoked each time a heartbeat
+   * fires so backend hot-swaps performed by the controller take
+   * effect on the next heartbeat without an `initHeartbeat` recall.
+   */
+  getBackend?: () => QueryBackend | null;
   /**
    * Non-terminal frontends present at startup. Used to render the outbound
    * messaging section of the heartbeat system prompt. Empty for terminal-only
@@ -89,8 +94,12 @@ export function initHeartbeat(cfg: {
   /** Override model for heartbeat (e.g. a cheaper model). Falls back to main model. */
   heartbeatModel?: string;
   workspace?: string;
-  /** The active backend — heartbeat agent runs through backend.runOneShotAgent. */
-  backend?: QueryBackend | null;
+  /**
+   * Provider for the active backend — heartbeat runs `backend.runOneShotAgent`.
+   * Passed as a function (rather than a backend reference) so a backend
+   * swap mid-cycle is picked up on the next heartbeat.
+   */
+  getBackend?: () => QueryBackend | null;
   /** Non-terminal frontends present at startup (telegram, discord, …). */
   frontends?: readonly string[];
 }): void {
@@ -334,7 +343,7 @@ async function runHeartbeatAgent(
   const model =
     configRef.heartbeatModel ?? configRef.model ?? getDefaultModel();
 
-  const backend = configRef.backend;
+  const backend = configRef.getBackend?.() ?? null;
   if (!backend?.runOneShotAgent) {
     throw new Error(
       "Heartbeat requires a backend that implements runOneShotAgent",

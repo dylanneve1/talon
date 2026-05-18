@@ -38,7 +38,7 @@ function setup(
   };
 
   initDispatcher({
-    backend,
+    getBackend: () => backend,
     context,
     sendTyping: vi.fn(async (id: number) => {
       typingCalls.push(id);
@@ -162,7 +162,7 @@ describe("integration: dispatcher lifecycle", () => {
     };
 
     initDispatcher({
-      backend,
+      getBackend: () => backend,
       context: {
         acquire: () => {},
         release: () => {},

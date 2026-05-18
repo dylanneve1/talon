@@ -80,7 +80,12 @@ export class Gateway {
   private server: ReturnType<typeof createServer> | null = null;
   private port = 0;
 
-  /** The active backend — set by bootstrap after initialization. */
+  /**
+   * The active backend — set initially by bootstrap and updated by
+   * the backend controller on hot-swap (`switchBackend`). Reads route
+   * through this field so command handlers, callbacks, and shared-
+   * action dispatch all see the same instance the dispatcher does.
+   */
   backend: QueryBackend | null = null;
 
   // ── Frontend handler registration ────────────────────────────────────────

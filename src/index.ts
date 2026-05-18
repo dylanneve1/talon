@@ -75,6 +75,15 @@ if (selectedFrontend === "terminal") {
 const { backend } = await initBackendAndDispatcher(config, frontend);
 gateway.backend = backend;
 
+// Subscribe the gateway to backend hot-swaps so `/model`, `/settings`,
+// shared-action dispatch, etc. all see the new backend the moment a
+// `switchBackend` resolves.
+const { onBackendChange } = await import("./core/backend-controller.js");
+onBackendChange((newBackend, info) => {
+  gateway.backend = newBackend;
+  log("bot", `Gateway backend reference updated → ${info.label}`);
+});
+
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 
 let shuttingDown = false;

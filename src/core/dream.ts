@@ -45,7 +45,12 @@ let configRef: {
   model?: string;
   dreamModel?: string;
   workspace?: string;
-  backend?: QueryBackend | null;
+  /**
+   * Accessor for the active backend — invoked each time a dream fires
+   * so backend hot-swaps performed by the controller take effect on
+   * the next dream without an `initDream` recall.
+   */
+  getBackend?: () => QueryBackend | null;
   /**
    * MemPalace presence flag — controls the system-prompt copy that tells the
    * dream agent whether mempalace MCP tools are available. The actual MCP
@@ -59,8 +64,12 @@ export function initDream(cfg: {
   /** Override model for dream consolidation (e.g. a cheaper model). Falls back to main model. */
   dreamModel?: string;
   workspace?: string;
-  /** The active backend — dream agent runs through backend.runOneShotAgent. */
-  backend?: QueryBackend | null;
+  /**
+   * Provider for the active backend — dream runs `backend.runOneShotAgent`.
+   * Passed as a function (rather than a backend reference) so a backend
+   * swap mid-cycle is picked up on the next dream invocation.
+   */
+  getBackend?: () => QueryBackend | null;
   /** MemPalace config for mining logs into the palace during dream runs. */
   mempalace?: { pythonPath: string; palacePath: string };
 }): void {
@@ -186,7 +195,7 @@ If commands fail, log the error and continue — this stage is optional.`
   const model = configRef.dreamModel ?? configRef.model ?? getDefaultModel();
   const workspace = configRef.workspace ?? dirs.workspace;
 
-  const backend = configRef.backend;
+  const backend = configRef.getBackend?.() ?? null;
   if (!backend?.runOneShotAgent) {
     throw new Error("Dream requires a backend that implements runOneShotAgent");
   }
