@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
-import { idSchema } from "./schemas.js";
+import { snowflakeOrIdSchema } from "./schemas.js";
 
 export const memberTools: ToolDefinition[] = [
   {
@@ -20,7 +20,7 @@ export const memberTools: ToolDefinition[] = [
   {
     name: "get_member_info",
     description: "Get detailed info about a user by ID.",
-    schema: { user_id: idSchema },
+    schema: { user_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("get_member_info", params),
     frontends: ["telegram", "discord"],
     tag: "members",
