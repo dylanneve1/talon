@@ -675,7 +675,9 @@ async function handleModel(
       return;
     }
     if (be?.getSettingsPresentation) {
-      const pres = await be.getSettingsPresentation(activeModel, "model:");
+      const pres = await be.getSettingsPresentation(activeModel, {
+        callbackPrefix: "model:",
+      });
       const modelInfo = await be.getModelInfo?.(activeModel);
       const displayName =
         modelInfo?.displayName ?? formatModelLabel(activeModel);

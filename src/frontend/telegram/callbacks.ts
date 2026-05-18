@@ -2,12 +2,14 @@
  * All callback_query handlers (settings panel, model/effort selectors, proactive toggle).
  */
 
-import type { Bot } from "grammy";
+import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
+import { logWarn } from "../../util/log.js";
 import {
   getChatSettings,
   setChatModel,
   setChatEffort,
+  setChatFreeOnly,
   resolveModelName,
   EFFORT_LEVELS,
   type EffortLevel,
@@ -23,8 +25,39 @@ import { escapeHtml } from "./formatting.js";
 import {
   renderSettingsText,
   renderSettingsKeyboard,
+  renderModelPickerControlRows,
+  renderModelMenuText,
+  renderModelMenuKeyboard,
+  renderModelBrowseKeyboard,
+  buildModelMenuState,
   type SettingsButton,
 } from "./helpers.js";
+import { parseModelCallback } from "./model-callbacks.js";
+
+/**
+ * Wrapper around `editMessageText` that swallows Telegram's
+ * "message is not modified" noise (we hit it whenever a user
+ * taps a button that doesn't actually change the rendered state)
+ * while still surfacing real failures to the operator log. Without
+ * this distinction, buttons silently fail to update and the symptom
+ * is "I clicked X and nothing happened".
+ */
+async function editOrIgnoreSame(
+  ctx: Context,
+  text: string,
+  inlineKeyboard: Array<Array<SettingsButton>>,
+): Promise<void> {
+  try {
+    await ctx.editMessageText(text, {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: inlineKeyboard },
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/message is not modified/i.test(msg)) return;
+    logWarn("bot", `editMessageText failed: ${msg}`);
+  }
+}
 
 export function registerCallbacks(
   bot: Bot,
@@ -37,7 +70,11 @@ export function registerCallbacks(
     const data = ctx.callbackQuery.data;
     const cid = String(ctx.chat?.id ?? ctx.from.id);
 
-    // Handle unified /settings callbacks
+    // Handle /settings callbacks (effort, pulse, done). Model selection
+    // is intentionally NOT here — that lives entirely under /model now.
+    // Legacy `settings:model:*` and `settings:models:*` callbacks from
+    // old messages are silently dismissed so stale buttons don't fire
+    // the model dispatcher path.
     if (data.startsWith("settings:")) {
       const parts = data.split(":");
       if (!parts[1]) {
@@ -47,42 +84,30 @@ export function registerCallbacks(
       const category = parts[1];
       const value = parts[2] ?? "";
 
-      if (category === "done") {
-        await ctx.answerCallbackQuery({ text: "Done" });
-        try {
-          await ctx.deleteMessage();
-        } catch {
-          // might not have permission to delete
-        }
+      if (category === "noop") {
+        await ctx.answerCallbackQuery();
         return;
       }
 
-      if (category === "model") {
-        if (value === "reset") {
-          setChatModel(cid, undefined);
-        } else if (gateway?.backend?.resolveModel) {
-          const resolution = await gateway.backend.resolveModel(value);
-          if (resolution.kind !== "exact") {
-            await ctx.answerCallbackQuery({ text: "Model is unavailable" });
-            return;
-          }
-          if (!resolution.model.selectable) {
-            await ctx.answerCallbackQuery({
-              text: resolution.model.unavailableReason ?? "Unavailable",
-            });
-            return;
-          }
-          setChatModel(cid, resolution.storedValue);
-        } else {
-          setChatModel(cid, resolveModelName(value));
-        }
-        const settingsModel = getChatSettings(cid).model ?? config.model;
-        const settingsModelInfo =
-          await gateway?.backend?.getModelInfo?.(settingsModel);
+      // Stale `settings:done` payloads from older bot versions that
+      // shipped a Done button. Quietly ack — the user can dismiss the
+      // message via Telegram's UI now.
+      if (category === "done") {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      // Stale model-picker callbacks (`settings:model:*`, `settings:models:*`)
+      // emitted by older Talon builds. Quietly ack — the user can re-open
+      // /model to get the current picker.
+      if (category === "model" || category === "models") {
         await ctx.answerCallbackQuery({
-          text: `Model: ${settingsModelInfo?.displayName ?? settingsModel}`,
+          text: "Picker moved — use /model",
         });
-      } else if (category === "effort") {
+        return;
+      }
+
+      if (category === "effort") {
         if (value === "adaptive") {
           setChatEffort(cid, undefined);
         } else if (EFFORT_LEVELS.includes(value as EffortLevel)) {
@@ -105,15 +130,6 @@ export function registerCallbacks(
       const activeModel = chatSets.model ?? config.model;
       const effortName = chatSets.effort ?? "adaptive";
       const pulseOn = isPulseEnabled(cid);
-      let modelDetails: Array<string> | undefined;
-      let modelButtons: Array<SettingsButton> | undefined;
-
-      if (gateway?.backend?.getSettingsPresentation) {
-        const presentation =
-          await gateway.backend.getSettingsPresentation(activeModel);
-        modelDetails = presentation.modelDetails;
-        modelButtons = presentation.modelButtons;
-      }
 
       try {
         await ctx.editMessageText(
@@ -122,7 +138,6 @@ export function registerCallbacks(
             effortName,
             pulseOn,
             chatSets.pulseIntervalMs,
-            modelDetails,
           ),
           {
             parse_mode: "HTML",
@@ -131,7 +146,6 @@ export function registerCallbacks(
                 activeModel,
                 effortName,
                 pulseOn,
-                modelButtons,
               ),
             },
           },
@@ -231,51 +245,171 @@ export function registerCallbacks(
       return;
     }
 
-    // Handle model callbacks (from /model quick-pick buttons)
+    // Handle /model callbacks via the pure parser. The dispatch
+    // below stays narrow — each branch mutates at most one piece of
+    // chat-settings state, then either re-renders the main menu or
+    // the browse view. Everything routes through the same two
+    // renderers so the UX stays consistent regardless of entry path.
     if (data.startsWith("model:")) {
-      const model = data.slice(6);
-      if (model === "reset") {
-        setChatModel(cid, undefined);
-        await ctx.answerCallbackQuery({
-          text: `Model: ${config.model} (default)`,
-        });
-      } else if (gateway?.backend?.resolveModel) {
-        const resolution = await gateway.backend.resolveModel(model);
-        if (resolution.kind === "exact" && resolution.model.selectable) {
-          setChatModel(cid, resolution.storedValue);
-          await ctx.answerCallbackQuery({
-            text: `Model: ${resolution.model.displayName}`,
-          });
-        } else {
-          await ctx.answerCallbackQuery({ text: "Model is unavailable" });
-          return;
-        }
-      } else {
-        setChatModel(cid, resolveModelName(model));
-        await ctx.answerCallbackQuery({
-          text: `Model: ${getChatSettings(cid).model ?? config.model}`,
-        });
-      }
-      // Refresh the model picker buttons
-      const current = getChatSettings(cid).model ?? config.model;
-      const be = gateway?.backend;
-      if (be?.getSettingsPresentation) {
-        const pres = await be.getSettingsPresentation(current, "model:");
-        const modelInfo = await be.getModelInfo?.(current);
-        const displayName = modelInfo?.displayName ?? current;
-        const rows: Array<Array<{ text: string; callback_data: string }>> = [];
-        for (let i = 0; i < pres.modelButtons.length; i += 2) {
-          rows.push(pres.modelButtons.slice(i, i + 2));
-        }
+      const action = parseModelCallback(data);
+
+      // Acknowledge fast (within Telegram's 30s window) so the user
+      // doesn't see a perpetual loading spinner.
+      if (action.kind === "done") {
+        await ctx.answerCallbackQuery({ text: "Done" });
         try {
-          await ctx.editMessageText(
-            `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
-            { parse_mode: "HTML", reply_markup: { inline_keyboard: rows } },
-          );
+          await ctx.deleteMessage();
         } catch {
-          /* message unchanged */
+          /* might lack delete permission */
         }
+        return;
       }
+      if (action.kind === "noop" || action.kind === "unknown") {
+        await ctx.answerCallbackQuery();
+        return;
+      }
+
+      const be = gateway?.backend;
+
+      // State-mutating actions.
+      let toast: string | undefined;
+      let viewAfter: "menu" | "browse" = "menu";
+      let browsePage: number | undefined;
+      let browseFilter: "all" | "free" | undefined;
+      let browseProvider: string | undefined;
+      let browseBackToGroups = false;
+
+      if (action.kind === "select") {
+        if (be?.resolveModel) {
+          const resolution = await be.resolveModel(action.modelId);
+          if (resolution.kind !== "exact" || !resolution.model.selectable) {
+            await ctx.answerCallbackQuery({
+              text:
+                resolution.kind === "exact"
+                  ? (resolution.model.unavailableReason ?? "Unavailable")
+                  : "Model is unavailable",
+            });
+            return;
+          }
+          setChatModel(cid, resolution.storedValue);
+          toast = `Model: ${resolution.model.displayName}`;
+        } else {
+          setChatModel(cid, resolveModelName(action.modelId));
+          toast = `Model: ${getChatSettings(cid).model ?? config.model}`;
+        }
+      } else if (action.kind === "reset") {
+        setChatModel(cid, undefined);
+        toast = `Model reset to default`;
+      } else if (action.kind === "toggle-free") {
+        const next = !getChatSettings(cid).freeOnly;
+        setChatFreeOnly(cid, next ? true : undefined);
+        toast = `Free only: ${next ? "on" : "off"}`;
+      } else if (action.kind === "menu") {
+        viewAfter = "menu";
+      } else if (action.kind === "browse") {
+        viewAfter = "browse";
+      } else if (action.kind === "nav-back-to-providers") {
+        viewAfter = "browse";
+        browseBackToGroups = true;
+        browsePage = 1;
+      } else if (action.kind === "nav-provider") {
+        viewAfter = "browse";
+        browseProvider = action.provider;
+        browsePage = 1;
+      } else if (action.kind === "nav-page") {
+        viewAfter = "browse";
+        browsePage = action.page;
+        browseFilter = action.filter;
+        browseProvider = action.provider;
+      } else if (action.kind === "nav-filter") {
+        // Legacy support — current UX promotes free-toggle on the main
+        // menu, but a `model:nav:filter:*` payload from an old message
+        // still routes to the browse view with that filter applied.
+        viewAfter = "browse";
+        browseFilter = action.filter;
+        browsePage = 1;
+      }
+
+      // Selection / reset / toggle confirmations toast briefly.
+      if (toast !== undefined) {
+        await ctx.answerCallbackQuery({ text: toast });
+      } else {
+        await ctx.answerCallbackQuery();
+      }
+
+      // Re-render the message in the appropriate view.
+      const currentModel = getChatSettings(cid).model ?? config.model;
+      const freeOnly = getChatSettings(cid).freeOnly === true;
+
+      if (!be?.getSettingsPresentation) return;
+
+      if (viewAfter === "menu") {
+        const state = await buildModelMenuState({
+          chatId: cid,
+          activeModel: currentModel,
+          defaultModel: config.model,
+          freeOnly,
+          fetchSnapshot: async () => {
+            const pres = await be.getSettingsPresentation!(currentModel, {
+              callbackPrefix: "model:",
+              navCallbackPrefix: "model:nav",
+              filter: freeOnly ? "free" : "all",
+            });
+            return {
+              freeCount: pres.freeCount,
+              totalCount: pres.totalCount,
+              modelDetails: pres.modelDetails,
+            };
+          },
+          fetchActiveDisplay: async () =>
+            (await be.getModelInfo?.(currentModel))?.displayName,
+        });
+        await editOrIgnoreSame(
+          ctx,
+          renderModelMenuText(state),
+          renderModelMenuKeyboard(state),
+        );
+        return;
+      }
+
+      // browse view — fetch picker with chat's freeOnly applied as filter
+      const filter: "all" | "free" =
+        browseFilter ?? (freeOnly ? "free" : "all");
+      const pres = await be.getSettingsPresentation(currentModel, {
+        callbackPrefix: "model:",
+        navCallbackPrefix: "model:nav",
+        filter,
+        ...(browsePage !== undefined ? { page: browsePage } : {}),
+        ...(browseProvider !== undefined && !browseBackToGroups
+          ? { provider: browseProvider }
+          : {}),
+      });
+      const modelInfo = await be.getModelInfo?.(currentModel);
+      const displayName = modelInfo?.displayName ?? currentModel;
+      const lines = [
+        `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
+        ...pres.modelDetails.map(escapeHtml),
+        ...(filter === "free" && pres.freeCount > 0
+          ? ["<i>Filter: free-tier only.</i>"]
+          : []),
+      ];
+      await editOrIgnoreSame(
+        ctx,
+        lines.join("\n"),
+        renderModelBrowseKeyboard(
+          pres.modelButtons,
+          {
+            page: pres.page,
+            totalPages: pres.totalPages,
+            filter: pres.filter,
+            freeCount: pres.freeCount,
+            totalCount: pres.totalCount,
+          },
+          pres.view,
+          pres.provider,
+          "model:menu",
+        ),
+      );
       return;
     }
 

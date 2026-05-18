@@ -154,49 +154,179 @@ describe("openai-agents / getModelInfo", () => {
 
 // ── /settings presentation ──────────────────────────────────────────────────
 
-describe("openai-agents / getSettingsPresentation", () => {
-  it("marks the active model with a bullet and includes it first", () => {
+describe("openai-agents / getSettingsPresentation — small catalog (flat view)", () => {
+  it('returns view="models" with the active model bullet-marked', () => {
     seedCatalog([
       ["gpt-5.5", { displayName: "GPT-5.5", contextWindow: 400_000 }],
       ["gpt-5", { displayName: "GPT-5", contextWindow: 400_000 }],
     ]);
     const pres = getSettingsPresentation("gpt-5.5");
-    expect(pres.modelButtons[0].text).toContain("● ");
-    expect(pres.modelButtons[0].callback_data).toBe("settings:model:gpt-5.5");
+    expect(pres.view).toBe("models");
+    const activeBtn = pres.modelButtons.find((b) =>
+      b.callback_data.endsWith("gpt-5.5"),
+    );
+    expect(activeBtn?.text.startsWith("● ")).toBe(true);
+    expect(activeBtn?.callback_data).toBe("settings:model:gpt-5.5");
   });
 
-  it("caps the visible button list to a sensible number", () => {
+  it("paginates correctly", () => {
     const entries: Array<[string, EndpointModelCapabilities]> = [];
-    for (let i = 0; i < 50; i++) entries.push([`m${i}`, {}]);
+    for (let i = 0; i < 25; i++)
+      entries.push([`m${String(i).padStart(2, "0")}`, {}]);
     seedCatalog(entries);
-    const pres = getSettingsPresentation("m0");
-    expect(pres.modelButtons.length).toBeLessThanOrEqual(12);
-    expect(pres.modelButtons.length).toBeGreaterThan(0);
+    const page1 = getSettingsPresentation("m00", { pageSize: 8 });
+    const page2 = getSettingsPresentation("m00", { pageSize: 8, page: 2 });
+    expect(page1.view).toBe("models");
+    expect(page1.page).toBe(1);
+    expect(page2.page).toBe(2);
+    expect(page1.modelButtons).not.toEqual(page2.modelButtons);
+    expect(page1.totalPages).toBe(Math.ceil(25 / 8));
   });
 
-  it("prefers entries with known context windows over bare passthroughs", () => {
+  it("clamps page > totalPages to the last page", () => {
+    const entries: Array<[string, EndpointModelCapabilities]> = [];
+    for (let i = 0; i < 12; i++) entries.push([`m${i}`, {}]);
+    seedCatalog(entries);
+    const pres = getSettingsPresentation("m0", { pageSize: 4, page: 999 });
+    expect(pres.page).toBe(3);
+    expect(pres.totalPages).toBe(3);
+  });
+
+  it("applies the free filter and reports freeCount as a hint", () => {
     seedCatalog([
-      ["bare", {}],
-      ["enriched", { contextWindow: 128_000 }],
+      ["paid-a", {}],
+      ["paid-b", {}],
+      ["free-a", { free: true }],
+      ["free-b", { free: true }],
     ]);
-    const pres = getSettingsPresentation("(unset)");
-    // The enriched entry should appear ahead of the bare one
-    const enrichedIdx = pres.modelButtons.findIndex((b) =>
-      b.callback_data.endsWith("enriched"),
-    );
-    const bareIdx = pres.modelButtons.findIndex((b) =>
-      b.callback_data.endsWith("bare"),
-    );
-    expect(enrichedIdx).toBeGreaterThanOrEqual(0);
-    expect(bareIdx).toBeGreaterThanOrEqual(0);
-    expect(enrichedIdx).toBeLessThan(bareIdx);
+    const all = getSettingsPresentation("(none)");
+    expect(all.freeCount).toBe(2);
+    expect(all.totalCount).toBe(4);
+    const free = getSettingsPresentation("(none)", { filter: "free" });
+    expect(free.filter).toBe("free");
+    expect(free.modelButtons).toHaveLength(2);
+    for (const b of free.modelButtons) {
+      expect(b.callback_data).toMatch(/free-/);
+    }
   });
 
-  it("formats context window and free flag in details when present", () => {
-    seedCatalog([["m", { contextWindow: 128_000, free: true }]]);
-    const pres = getSettingsPresentation("m");
-    expect(pres.modelDetails[0]).toContain("128k ctx");
-    expect(pres.modelDetails[0]).toContain("free");
+  it("modelDetails carries plain-text backend status (no markup)", () => {
+    seedCatalog([["m1", { contextWindow: 128_000, free: true }]]);
+    const pres = getSettingsPresentation("m1");
+    for (const line of pres.modelDetails) {
+      expect(line).not.toContain("<b>");
+      expect(line).not.toContain("**");
+      expect(line).not.toContain("`");
+    }
+    expect(pres.modelDetails.some((l) => /discovered/.test(l))).toBe(true);
+  });
+
+  it("button labels strip vendor prefix and surface ctx + free flag", () => {
+    seedCatalog([
+      ["openrouter/owl-alpha", { contextWindow: 1_000_000, free: true }],
+    ]);
+    const pres = getSettingsPresentation("(none)");
+    const btn = pres.modelButtons[0];
+    expect(btn.text).toContain("owl-alpha");
+    expect(btn.text).not.toContain("openrouter/");
+    expect(btn.text).toMatch(/1M/);
+    expect(btn.text).toContain("🆓");
+  });
+
+  it("hides models whose `<prefix><id>` would overflow Telegram's 64-byte callback_data limit", () => {
+    // 61-char id + `model:` (6) = 67 bytes — over Telegram's limit.
+    // OpenRouter ships exactly one such id today
+    // (`cognitivecomputations/dolphin-mistral-24b-venice-edition:free`),
+    // which crashed BUTTON_DATA_INVALID before this guard.
+    const overflow = "a".repeat(61);
+    const ok = "short-id";
+    seedCatalog([
+      [overflow, { contextWindow: 8192 }],
+      [ok, { contextWindow: 8192 }],
+    ]);
+    const pres = getSettingsPresentation("(none)", {
+      callbackPrefix: "model:",
+    });
+    for (const b of pres.modelButtons) {
+      expect(Buffer.byteLength(b.callback_data, "utf8")).toBeLessThanOrEqual(
+        64,
+      );
+    }
+    expect(pres.modelButtons.some((b) => b.callback_data.endsWith(ok))).toBe(
+      true,
+    );
+    expect(
+      pres.modelButtons.some((b) => b.callback_data.includes(overflow)),
+    ).toBe(false);
+    // The totalCount reflects what's *renderable*, not the raw catalog,
+    // so /status and the menu status line don't lie about visibility.
+    expect(pres.totalCount).toBe(1);
+  });
+});
+
+describe("openai-agents / getSettingsPresentation — large catalog (provider groups)", () => {
+  function seedLarge(): void {
+    // Build a 60-model catalog spread across 4 providers — well over
+    // the 30-model PROVIDER_GROUP_THRESHOLD.
+    const entries: Array<[string, EndpointModelCapabilities]> = [];
+    for (let i = 0; i < 20; i++)
+      entries.push([`anthropic/m${i}`, { contextWindow: 200_000 }]);
+    for (let i = 0; i < 15; i++)
+      entries.push([`openai/m${i}`, { contextWindow: 400_000 }]);
+    for (let i = 0; i < 15; i++)
+      entries.push([`google/m${i}`, { contextWindow: 1_000_000 }]);
+    for (let i = 0; i < 10; i++)
+      entries.push([`mistralai/m${i}`, { contextWindow: 64_000 }]);
+    seedCatalog(entries);
+  }
+
+  it('returns view="groups" with provider chips when no provider is selected', () => {
+    seedLarge();
+    const pres = getSettingsPresentation("(none)");
+    expect(pres.view).toBe("groups");
+    expect(pres.modelButtons.length).toBe(4); // anthropic / openai / google / mistralai
+    expect(pres.modelButtons[0].text).toMatch(/\((\d+)\)/);
+  });
+
+  it("provider buttons carry a `:provider:` drill callback under the default navPrefix", () => {
+    seedLarge();
+    const pres = getSettingsPresentation("(none)");
+    for (const b of pres.modelButtons) {
+      expect(b.callback_data).toMatch(/^settings:models:provider:/);
+    }
+  });
+
+  it("honors an explicit navCallbackPrefix", () => {
+    seedLarge();
+    const pres = getSettingsPresentation("(none)", {
+      callbackPrefix: "model:",
+      navCallbackPrefix: "model:nav",
+    });
+    for (const b of pres.modelButtons) {
+      expect(b.callback_data).toMatch(/^model:nav:provider:/);
+    }
+  });
+
+  it("drills into a provider via options.provider", () => {
+    seedLarge();
+    const pres = getSettingsPresentation("(none)", { provider: "google" });
+    expect(pres.view).toBe("models");
+    expect(pres.provider).toBe("google");
+    for (const b of pres.modelButtons) {
+      expect(b.callback_data).toMatch(/settings:model:google\//);
+    }
+  });
+
+  it("skips the group view when the filtered catalog is small (free filter)", () => {
+    // Only one free model — under the threshold even before grouping.
+    const entries: Array<[string, EndpointModelCapabilities]> = [];
+    for (let i = 0; i < 40; i++)
+      entries.push([`p/m${i}`, { contextWindow: 100_000 }]);
+    entries.push(["free/only", { free: true, contextWindow: 50_000 }]);
+    seedCatalog(entries);
+    const pres = getSettingsPresentation("(none)", { filter: "free" });
+    expect(pres.view).toBe("models");
+    expect(pres.modelButtons).toHaveLength(1);
   });
 });
 

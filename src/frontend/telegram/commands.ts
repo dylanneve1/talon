@@ -43,6 +43,9 @@ import {
   renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
+  renderModelMenuText,
+  renderModelMenuKeyboard,
+  buildModelMenuState,
   type SettingsButton,
 } from "./helpers.js";
 import { handleAdminCommand } from "./admin.js";
@@ -208,20 +211,33 @@ export function registerCommands(
         );
         return;
       }
-      // Show current model + quick-pick buttons via backend
+      // Render the main /model menu. Browsing the catalog happens
+      // behind the "Browse models" button — see callbacks.ts.
       if (be?.getSettingsPresentation) {
-        const pres = await be.getSettingsPresentation(activeModel, "model:");
-        const rows = chunkButtons(pres.modelButtons);
-        const modelInfo = await be.getModelInfo?.(activeModel);
-        const displayName =
-          modelInfo?.displayName ?? formatModelLabel(activeModel);
-        const lines = [
-          `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
-          ...pres.modelDetails.map(escapeHtml),
-        ];
-        await ctx.reply(lines.join("\n"), {
+        const freeOnly = getChatSettings(cid).freeOnly === true;
+        const state = await buildModelMenuState({
+          chatId: cid,
+          activeModel,
+          defaultModel: config.model,
+          freeOnly,
+          fetchSnapshot: async () => {
+            const pres = await be.getSettingsPresentation!(activeModel, {
+              callbackPrefix: "model:",
+              navCallbackPrefix: "model:nav",
+              filter: freeOnly ? "free" : "all",
+            });
+            return {
+              freeCount: pres.freeCount,
+              totalCount: pres.totalCount,
+              modelDetails: pres.modelDetails,
+            };
+          },
+          fetchActiveDisplay: async () =>
+            (await be.getModelInfo?.(activeModel))?.displayName,
+        });
+        await ctx.reply(renderModelMenuText(state), {
           parse_mode: "HTML",
-          reply_markup: { inline_keyboard: rows },
+          reply_markup: { inline_keyboard: renderModelMenuKeyboard(state) },
         });
       } else {
         await ctx.reply(
@@ -426,23 +442,15 @@ export function registerCommands(
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
-    let modelDetails: Array<string> | undefined;
-    let modelButtons: Array<SettingsButton> | undefined;
 
-    if (gateway?.backend?.getSettingsPresentation) {
-      const presentation =
-        await gateway.backend.getSettingsPresentation(activeModel);
-      modelDetails = presentation.modelDetails;
-      modelButtons = presentation.modelButtons;
-    }
-
+    // /settings is for Talon-level toggles only: effort, pulse, etc.
+    // Model selection lives entirely under /model — no picker here.
     await ctx.reply(
       renderSettingsText(
         activeModel,
         effortName,
         pulseOn,
         chatSets.pulseIntervalMs,
-        modelDetails,
       ),
       {
         parse_mode: "HTML",
@@ -451,7 +459,6 @@ export function registerCommands(
             activeModel,
             effortName,
             pulseOn,
-            modelButtons,
           ),
         },
       },

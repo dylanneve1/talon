@@ -45,8 +45,25 @@ const kiloFactory: BackendFactory = {
       query: (params) => kiloHandleMessage(params),
       resolveModel: (q) => resolveModel(q),
       getModelInfo: (id) => getModelInfo(id),
-      getSettingsPresentation: (m, prefix) =>
-        getSettingsPresentation(m, prefix),
+      getSettingsPresentation: async (m, options) => {
+        // Kilo's existing helper returns legacy `{modelButtons,
+        // modelDetails}`. Wrap into the new ModelPickerResult shape;
+        // Kilo doesn't expose pagination or a free-tier filter so the
+        // result is always page 1 of 1 with filter "all".
+        const legacy = await getSettingsPresentation(
+          m,
+          options?.callbackPrefix,
+        );
+        return {
+          ...legacy,
+          view: "models" as const,
+          page: 1,
+          totalPages: 1,
+          filter: "all" as const,
+          freeCount: 0,
+          totalCount: legacy.modelButtons.length,
+        };
+      },
       getProviders: () => getProviders(),
       getProviderModels: (p, pg, ps) => getProviderModels(p, pg, ps),
       formatModelError: (q, r) => formatModelError(q, r),

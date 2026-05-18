@@ -24,6 +24,12 @@ export type ChatSettings = {
   pulseIntervalMs?: number;
   /** Last message ID checked by pulse (persisted to avoid reprocessing on restart). */
   pulseLastCheckMsgId?: number;
+  /**
+   * When true, the model picker filters to free-tier models by default.
+   * Only meaningful for backends that report free-tier metadata (currently
+   * `openai-agents` against OpenRouter); other backends ignore the flag.
+   */
+  freeOnly?: boolean;
 };
 
 const STORE_FILE = files.chatSettings;
@@ -169,6 +175,18 @@ export function setChatEffort(
     store[chatId].effort = effort;
   } else {
     delete store[chatId].effort;
+    cleanupEmpty(chatId);
+  }
+  dirty = true;
+  save();
+}
+
+export function setChatFreeOnly(chatId: string, on: boolean | undefined): void {
+  if (!store[chatId]) store[chatId] = {};
+  if (on) {
+    store[chatId].freeOnly = true;
+  } else {
+    delete store[chatId].freeOnly;
     cleanupEmpty(chatId);
   }
   dirty = true;

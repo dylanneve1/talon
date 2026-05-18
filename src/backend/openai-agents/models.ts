@@ -26,6 +26,8 @@ import type {
   UnifiedModelResolution,
   UnifiedProviderInfo,
   ModelButton,
+  ModelPickerOptions,
+  ModelPickerResult,
 } from "../../core/types.js";
 import { getState, type EndpointModelCapabilities } from "./state.js";
 
@@ -139,53 +141,187 @@ export function getModelInfo(id: string): UnifiedModelInfo | undefined {
 
 // ── /settings presentation ──────────────────────────────────────────────────
 
-const SETTINGS_PICKER_LIMIT = 12;
+const DEFAULT_PAGE_SIZE = 8;
+const MAX_PAGE_SIZE = 24;
+/**
+ * Catalog size beyond which we surface provider chips instead of a
+ * flat paginated model list. Matches openclaw's `PROVIDER_FILTER_THRESHOLD`
+ * (`/tmp/openclaw/src/flows/model-picker.ts`) so the UX scales the
+ * same way: small catalogs stay flat, large ones get a provider
+ * grouping step first.
+ */
+const PROVIDER_GROUP_THRESHOLD = 30;
 
 /**
- * Inline-button picker shown in /settings. The discovered catalog
- * can be huge (OpenRouter ships 350+ models); we cap the picker at
- * a handful for visibility and let operators set unlisted ids
- * directly in `talon.json` or via `/model <id>`.
+ * Inline-button picker for /settings. The picker is two-stage when
+ * the filtered catalog has more than `PROVIDER_GROUP_THRESHOLD`
+ * entries (typical for OpenRouter with 350+ models):
  *
- * Selection heuristic: prefer the active model, then anything with a
- * known context window (more useful than bare passthroughs), then
- * everything else. Stable id-sorted within each tier.
+ *   1. `view: "groups"` — provider chips (Anthropic, OpenAI, Google…).
+ *      Tapping one re-invokes with `options.provider` set.
+ *   2. `view: "models"` — that provider's models, paginated.
+ *
+ * Smaller catalogs (and any catalog drilled into a single provider)
+ * skip step 1 and render the model list directly. `modelDetails`
+ * carries only a backend-status line; the caller renders the active
+ * model header from its own data.
  */
 export function getSettingsPresentation(
   activeModel: string,
-  callbackPrefix = "settings:model:",
-): { modelButtons: ModelButton[]; modelDetails: string[] } {
-  const all = snapshot();
-  const active = all.find((m) => m.id === activeModel);
-
-  const enriched = all.filter(
-    (m) => m.id !== activeModel && m.contextWindow !== undefined,
+  options: ModelPickerOptions = {},
+): ModelPickerResult {
+  const callbackPrefix = options.callbackPrefix ?? "settings:model:";
+  const navPrefix = options.navCallbackPrefix ?? "settings:models";
+  const filter = options.filter ?? "all";
+  // Telegram's inline-button `callback_data` is capped at 64 bytes
+  // (https://core.telegram.org/bots/api#inlinekeyboardbutton). Other
+  // chat platforms (Discord, Slack) typically allow more, but 64 is
+  // the lowest common denominator so we treat it as the universal
+  // budget. Any model whose `<prefix><id>` payload would overflow is
+  // hidden from the button surface; operators can still target it
+  // via `/model <id>`.
+  const PLATFORM_CALLBACK_BUDGET = 64;
+  const callbackBudget = PLATFORM_CALLBACK_BUDGET - byteLen(callbackPrefix);
+  const pageSize = clamp(
+    options.pageSize ?? DEFAULT_PAGE_SIZE,
+    1,
+    MAX_PAGE_SIZE,
   );
-  const bare = all.filter(
-    (m) => m.id !== activeModel && m.contextWindow === undefined,
-  );
 
-  const ordered: UnifiedModelInfo[] = [];
-  if (active) ordered.push(active);
-  ordered.push(...enriched, ...bare);
-  const visible = ordered.slice(0, SETTINGS_PICKER_LIMIT);
+  const all = snapshot().filter((m) => byteLen(m.id) <= callbackBudget);
+  const filtered = filter === "free" ? all.filter((m) => m.free) : all;
+  const freeCount = all.reduce((n, m) => (m.free ? n + 1 : n), 0);
+
+  const modelDetails = buildStatusDetails(all);
+  const baseResult = {
+    modelDetails,
+    filter,
+    freeCount,
+    totalCount: all.length,
+  } as const;
+
+  // Group-view branch: only when no provider is selected AND the
+  // filtered catalog is big enough to benefit. Tapping a provider
+  // sends the same callbackPrefix scheme back, but with the prefix
+  // changed to a "drill" form (`settings:models:provider:<id>`)
+  // which the frontend recognises.
+  const useGroupView =
+    !options.provider && filtered.length > PROVIDER_GROUP_THRESHOLD;
+  if (useGroupView) {
+    const groups = groupByProvider(filtered);
+    const modelButtons: ModelButton[] = groups.map(({ provider, count }) => ({
+      text: `${humanizeProvider(provider)} (${count})`,
+      callback_data: `${navPrefix}:provider:${provider}`,
+    }));
+    return {
+      ...baseResult,
+      modelButtons,
+      view: "groups",
+      page: 1,
+      totalPages: 1,
+    };
+  }
+
+  // Model-view branch: either we drilled into a provider, the
+  // catalog is small enough not to need grouping, or the free
+  // filter has reduced it below the grouping threshold.
+  const scoped = options.provider
+    ? filtered.filter((m) => providerOf(m.id) === options.provider)
+    : filtered;
+  const totalPages = Math.max(1, Math.ceil(scoped.length / pageSize));
+  const page = clamp(options.page ?? 1, 1, totalPages);
+  const start = (page - 1) * pageSize;
+  const visible = scoped.slice(start, start + pageSize);
 
   const modelButtons: ModelButton[] = visible.map((m) => ({
-    text: `${m.id === activeModel ? "● " : ""}${m.displayName}`,
+    text: formatButtonLabel(m, m.id === activeModel),
     callback_data: `${callbackPrefix}${m.id}`,
   }));
 
-  const modelDetails = visible.map((m) => {
-    const flags: string[] = [];
-    if (m.reasoning) flags.push("reasoning");
-    if (m.contextWindow)
-      flags.push(`${Math.round(m.contextWindow / 1000)}k ctx`);
-    if (m.free) flags.push("free");
-    const tag = flags.length > 0 ? ` — ${flags.join(" · ")}` : "";
-    return `**${m.displayName}** (\`${m.id}\`)${tag}`;
-  });
+  return {
+    ...baseResult,
+    modelButtons,
+    view: "models",
+    page,
+    totalPages,
+    ...(options.provider ? { provider: options.provider } : {}),
+  };
+}
 
-  return { modelButtons, modelDetails };
+function providerOf(id: string): string {
+  // OpenRouter ids look like `vendor/model`. Some have a leading
+  // tilde (router shortcuts) — treat `~vendor/model` as `vendor`.
+  const stripped = id.startsWith("~") ? id.slice(1) : id;
+  const slash = stripped.indexOf("/");
+  return slash >= 0 ? stripped.slice(0, slash) : "openai";
+}
+
+function groupByProvider(
+  models: UnifiedModelInfo[],
+): Array<{ provider: string; count: number }> {
+  const counts = new Map<string, number>();
+  for (const m of models) {
+    const p = providerOf(m.id);
+    counts.set(p, (counts.get(p) ?? 0) + 1);
+  }
+  const groups = Array.from(counts, ([provider, count]) => ({
+    provider,
+    count,
+  }));
+  // Largest first — common providers (anthropic, openai, google)
+  // float to the top; long-tail providers fall after.
+  groups.sort(
+    (a, b) => b.count - a.count || a.provider.localeCompare(b.provider),
+  );
+  return groups;
+}
+
+function humanizeProvider(p: string): string {
+  // Title-case ids like "anthropic" → "Anthropic", "aion-labs" → "Aion Labs".
+  return p
+    .split(/[-_]/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function buildStatusDetails(all: UnifiedModelInfo[]): string[] {
+  if (all.length === 0) return [];
+  const enriched = all.reduce(
+    (n, m) => (m.contextWindow !== undefined ? n + 1 : n),
+    0,
+  );
+  return [
+    `${all.length} model${all.length === 1 ? "" : "s"} discovered via OpenAI Agents endpoint` +
+      (enriched > 0 ? `, ${enriched} with context info` : ""),
+  ];
+}
+
+function formatButtonLabel(m: UnifiedModelInfo, isActive: boolean): string {
+  const prefix = isActive ? "● " : "";
+  // Strip vendor prefix (e.g. "openrouter/owl-alpha" → "owl-alpha") to
+  // keep button text short; full id is in the callback data anyway.
+  const slash = m.id.lastIndexOf("/");
+  const short = slash >= 0 ? m.id.slice(slash + 1) : m.id;
+  const ctx = m.contextWindow ? ` ${formatTokens(m.contextWindow)}` : "";
+  const free = m.free ? " ·🆓" : "";
+  return `${prefix}${short}${ctx}${free}`;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${Math.round(n / 1_000_000)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(n);
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  if (Number.isNaN(n)) return lo;
+  return Math.min(hi, Math.max(lo, Math.floor(n)));
+}
+
+function byteLen(s: string): number {
+  // Telegram counts callback_data in UTF-8 bytes, not characters.
+  // Reuse Buffer to match server-side accounting exactly.
+  return Buffer.byteLength(s, "utf8");
 }
 
 // ── Provider / list ────────────────────────────────────────────────────────

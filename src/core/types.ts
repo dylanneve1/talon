@@ -67,6 +67,70 @@ export type UnifiedProviderInfo = {
 export type ModelButton = { text: string; callback_data: string };
 
 /**
+ * Options for `getSettingsPresentation()`. The picker has two
+ * navigational axes — *provider* (when a catalog is large enough to
+ * benefit from grouping) and *page within a provider*. Backends with
+ * small catalogs may ignore everything except `callbackPrefix`.
+ */
+export interface ModelPickerOptions {
+  /** Callback-data prefix used on each model button. Defaults to `settings:model:`. */
+  callbackPrefix?: string;
+  /**
+   * Callback-data prefix used for navigation buttons (provider drill,
+   * pagination, filter toggles). Defaults to `settings:models`. Must
+   * match the prefix the frontend's callback router decodes — for
+   * example `/model` uses `model:nav` so its router recognises
+   * `model:nav:provider:openai` as a drill action.
+   */
+  navCallbackPrefix?: string;
+  /** 1-indexed page within the current provider/filter. Defaults to 1. */
+  page?: number;
+  /** Buttons per page. Backends may clamp to a sensible range. */
+  pageSize?: number;
+  /** Filter the catalog before grouping/paginating. `free` keeps only free-tier models. */
+  filter?: "all" | "free";
+  /**
+   * When set, render that provider's models directly. When omitted
+   * and the filtered catalog is "large" (backend-defined threshold),
+   * the backend returns provider chips instead of model buttons —
+   * the frontend drills in by sending this option back.
+   */
+  provider?: string;
+}
+
+/**
+ * Result returned by `getSettingsPresentation()`. `view` tells the
+ * frontend whether `modelButtons` is a list of providers ("groups")
+ * or a list of models ("models"). The frontend reads `page` /
+ * `totalPages` / `freeCount` / `provider` to render the appropriate
+ * navigation controls.
+ */
+export interface ModelPickerResult {
+  /** Buttons to render. Interpretation depends on `view`. Empty for `menu`. */
+  modelButtons: ModelButton[];
+  /** Optional supplementary text (backend status, etc.). Plain text. */
+  modelDetails: string[];
+  /**
+   * Which axis the buttons represent:
+   *   - `groups`: provider chips (drill by tapping).
+   *   - `models`: the model list (paginated).
+   */
+  view: "groups" | "models";
+  /** Current 1-indexed page (always 1 for `groups`). */
+  page: number;
+  /** Total pages in the current view. */
+  totalPages: number;
+  /** The filter actually applied (normalised). */
+  filter: "all" | "free";
+  /** Total free-flagged models in the (unfiltered) catalog. */
+  freeCount: number;
+  /** Total models in the (unfiltered) catalog. */
+  totalCount: number;
+  /** When `view === "models"`, the provider the buttons belong to (if any). */
+  provider?: string;
+}
+
+/**
  * Parameters for one-shot agent runs (heartbeat, dream).
  *
  * Unlike `query()` which is tied to a chat session and history, this is a
@@ -111,14 +175,18 @@ export interface QueryBackend {
   resolveModel?(query: string): Promise<UnifiedModelResolution>;
   /** Get info for a model by its stored ID. */
   getModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
-  /** Get quick-pick buttons for model selection. callbackPrefix defaults to "settings:model:". */
+  /**
+   * Get the quick-pick model picker for /settings. Backends with
+   * large catalogs (e.g. OpenRouter via openai-agents) should honour
+   * `options.page` / `options.filter` so the picker is browseable;
+   * small-catalog backends may ignore them and always return the
+   * full set on page 1. The frontend reads `page` / `totalPages` /
+   * `freeCount` off the result to render Prev/Next + filter chips.
+   */
   getSettingsPresentation?(
     activeModel: string,
-    callbackPrefix?: string,
-  ): Promise<{
-    modelButtons: ModelButton[];
-    modelDetails: string[];
-  }>;
+    options?: ModelPickerOptions,
+  ): Promise<ModelPickerResult>;
   /** List available providers. */
   getProviders?(): Promise<UnifiedProviderInfo[]>;
   /** List models for a given provider (paginated). */

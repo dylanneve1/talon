@@ -46,8 +46,8 @@ const claudeSdkFactory: BackendFactory = {
       updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
       resolveModel: (q) => modelProvider.resolveModel(q),
       getModelInfo: (id) => modelProvider.getModelInfo(id),
-      getSettingsPresentation: (m, prefix) =>
-        modelProvider.getSettingsPresentation(m, prefix),
+      getSettingsPresentation: (m, options) =>
+        modelProvider.getSettingsPresentation(m, options),
       getProviders: () => modelProvider.getProviders(),
       getProviderModels: (p, pg, ps) =>
         modelProvider.getProviderModels(p, pg, ps),

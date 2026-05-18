@@ -269,7 +269,9 @@ export async function handleComponentInteraction(
     const current = getChatSettings(chatId).model ?? config.model;
     const be = gateway?.backend;
     if (be?.getSettingsPresentation) {
-      const pres = await be.getSettingsPresentation(current, "model:");
+      const pres = await be.getSettingsPresentation(current, {
+        callbackPrefix: "model:",
+      });
       const modelInfo = await be.getModelInfo?.(current);
       const displayName = modelInfo?.displayName ?? current;
       const menu = new StringSelectMenuBuilder()
@@ -552,7 +554,9 @@ async function loadModelList(gateway: Gateway): Promise<string[]> {
   }
   const be = gateway?.backend;
   if (!be?.getSettingsPresentation) return [];
-  const pres = await be.getSettingsPresentation("", "model:");
+  const pres = await be.getSettingsPresentation("", {
+    callbackPrefix: "model:",
+  });
   const values = pres.modelButtons.map((b) =>
     b.callback_data.replace(/^model:/, ""),
   );

@@ -17,6 +17,8 @@ import type {
   UnifiedModelResolution,
   UnifiedProviderInfo,
   ModelButton,
+  ModelPickerOptions,
+  ModelPickerResult,
 } from "../../core/types.js";
 
 /**
@@ -146,24 +148,41 @@ export function getModelInfo(id: string): UnifiedModelInfo | undefined {
   return CODEX_MODELS.find((m) => m.id === id);
 }
 
-/** Quick-pick buttons for the `/settings` model picker. */
+/**
+ * Quick-pick buttons for the `/settings` model picker. Codex ships a
+ * small fixed catalog so pagination + the free-tier filter are
+ * no-ops; we satisfy the contract by returning fixed metadata.
+ */
 export function getSettingsPresentation(
   activeModel: string,
-  callbackPrefix = "settings:model:",
-): { modelButtons: ModelButton[]; modelDetails: string[] } {
+  options: ModelPickerOptions = {},
+): ModelPickerResult {
+  const callbackPrefix = options.callbackPrefix ?? "settings:model:";
   const modelButtons: ModelButton[] = CODEX_MODELS.map((m) => ({
     text: `${m.id === activeModel ? "● " : ""}${m.displayName}`,
     callback_data: `${callbackPrefix}${m.id}`,
   }));
 
-  const modelDetails = CODEX_MODELS.map((m) => {
-    const flags: string[] = [];
-    if (m.reasoning) flags.push("reasoning");
-    if (m.contextWindow) flags.push(`${m.contextWindow / 1000}k ctx`);
-    return `**${m.displayName}** (${m.id}) — ${flags.join(" · ")}`;
-  });
+  const active = CODEX_MODELS.find((m) => m.id === activeModel);
+  const modelDetails: string[] = [];
+  if (active) {
+    const ctx = active.contextWindow
+      ? ` — ${Math.round(active.contextWindow / 1000)}k ctx`
+      : "";
+    modelDetails.push(`Active: ${active.displayName} (${active.id})${ctx}`);
+  }
+  modelDetails.push(`Backend: Codex — ${CODEX_MODELS.length} models`);
 
-  return { modelButtons, modelDetails };
+  return {
+    modelButtons,
+    modelDetails,
+    view: "models",
+    page: 1,
+    totalPages: 1,
+    filter: "all",
+    freeCount: 0,
+    totalCount: CODEX_MODELS.length,
+  };
 }
 
 /** List Codex's providers (one — OpenAI). */
