@@ -163,6 +163,14 @@ export interface QueryBackend {
   query(params: QueryParams): Promise<QueryResult>;
   /** Pre-warm a session (cold-start optimization). Optional — not all backends support this. */
   warmSession?(chatId: string): Promise<void>;
+  /**
+   * Drop any in-process conversation memory the backend holds for a
+   * chat. Called from `/reset`. Backends that lean on the SDK's own
+   * session abstraction (openai-agents `MemorySession`, etc.) need
+   * this hook so a reset actually wipes the model's working memory;
+   * stateless backends can ignore it.
+   */
+  resetChat?(chatId: string): void;
   /** Update the system prompt on the live backend config. Optional — used by plugin hot-reload. */
   updateSystemPrompt?(prompt: string): void;
   /** Hot-swap MCP servers on the active query for a chat. Optional — used by plugin hot-reload. */

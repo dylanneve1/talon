@@ -42,7 +42,7 @@ export async function handleAdminSubcommand(
   subcommand: string,
   argsRaw: string,
   config: TalonConfig,
-  _gateway: Gateway,
+  gateway: Gateway,
   send: Send,
 ): Promise<void> {
   const rest = argsRaw.split(/\s+/).filter(Boolean);
@@ -85,6 +85,7 @@ export async function handleAdminSubcommand(
       if (!target) return send("Usage: /admin kill <chatId>");
       resetSession(target);
       clearHistory(target);
+      gateway?.backend?.resetChat?.(target);
       return send(`Session ${target} reset.`);
     }
 

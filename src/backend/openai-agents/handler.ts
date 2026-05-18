@@ -70,7 +70,7 @@ import {
   OPENAI_AGENTS_MAX_TURNS,
   OPENAI_AGENTS_AGENT_NAME,
 } from "./constants.js";
-import { getState } from "./state.js";
+import { getState, getOrCreateSession } from "./state.js";
 import { getActiveFrontends } from "./init.js";
 import { buildOpenAIAgentsMcpServers } from "./mcp.js";
 import { OPENAI_AGENTS_BUILTIN_TOOLS } from "./builtins.js";
@@ -187,10 +187,17 @@ export async function handleMessage(
       mcpServers: mcpBundle.servers,
     });
 
+    // Per-chat MemorySession so the SDK preserves the full
+    // multi-turn record (model outputs, tool calls + results,
+    // reasoning items where the provider supplies them). Without
+    // this, every turn starts blind to what was said or done before
+    // and the model hallucinates context — e.g. claiming it can't
+    // access a file it wrote in the previous turn.
     const stream = await run(agent, prompt, {
       stream: true,
       maxTurns: OPENAI_AGENTS_MAX_TURNS,
       signal: abortController.signal,
+      session: getOrCreateSession(chatId),
     });
 
     for await (const event of stream) {

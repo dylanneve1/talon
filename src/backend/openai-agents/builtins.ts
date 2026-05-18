@@ -21,20 +21,8 @@ import { tool } from "@openai/agents";
 import { z } from "zod";
 import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, glob } from "node:fs/promises";
-import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
-import { homedir } from "node:os";
-
-// ── Path resolution ─────────────────────────────────────────────────────────
-//
-// Tool inputs may be absolute, ~/-prefixed, or relative. Normalize to
-// absolute paths so behavior doesn't depend on Talon's cwd.
-
-function expandPath(input: string): string {
-  if (input.startsWith("~/")) return resolvePath(homedir(), input.slice(2));
-  if (input === "~") return homedir();
-  if (isAbsolute(input)) return input;
-  return resolvePath(process.cwd(), input);
-}
+import { dirname, resolve as resolvePath } from "node:path";
+import { expandFsPath as expandPath } from "../../util/fs-path.js";
 
 // ── Read ────────────────────────────────────────────────────────────────────
 

@@ -161,6 +161,9 @@ export function registerCommands(
     resetSession(cid);
     clearHistory(cid);
     resetPulseCheckpoint(cid);
+    // Wipe any in-process backend memory (e.g. openai-agents'
+    // MemorySession). Stateless backends ignore this.
+    gateway?.backend?.resetChat?.(cid);
     // Warm up the new session so /status has context data immediately
     await gateway?.backend?.warmSession?.(cid);
     await ctx.reply("Session cleared.");

@@ -13,7 +13,7 @@ import { log } from "../../util/log.js";
 
 import { initOpenAIAgentsAgent } from "./init.js";
 import { handleMessage as openAIAgentsHandleMessage } from "./handler.js";
-import { resetState } from "./state.js";
+import { resetState, clearChatSession } from "./state.js";
 import {
   resolveModel,
   getModelInfo,
@@ -34,6 +34,7 @@ const openAIAgentsFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: (params) => openAIAgentsHandleMessage(params),
+      resetChat: (chatId) => clearChatSession(chatId),
       resolveModel: (q) => Promise.resolve(resolveModel(q)),
       getModelInfo: (id) => Promise.resolve(getModelInfo(id)),
       getSettingsPresentation: (m, options) =>

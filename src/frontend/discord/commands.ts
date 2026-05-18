@@ -560,6 +560,7 @@ async function handleReset(
   resetSession(chatId);
   clearHistory(chatId);
   resetPulseCheckpoint(chatId);
+  gateway?.backend?.resetChat?.(chatId);
   await gateway?.backend?.warmSession?.(chatId);
   await reply(i, "Session cleared.", true);
 }
