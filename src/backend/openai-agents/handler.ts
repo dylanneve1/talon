@@ -393,8 +393,11 @@ export async function handleMessage(
   // Reached the non-retry path — this turn counts as one user-visible turn.
   incrementTurns(chatId);
 
-  // Set a descriptive session name from the user's first message.
-  if (previousTurns === 0) {
+  // Set a descriptive session name from the user's *first* message.
+  // Guarded by `!_retried` so the FLOW_VIOLATION_REMINDER doesn't get
+  // captured as the session name when the retry recurses through this
+  // path with `params.text = reminder`.
+  if (previousTurns === 0 && !_retried) {
     const name = extractSessionName(text);
     if (name) setSessionName(chatId, name);
   }
