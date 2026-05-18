@@ -12,7 +12,6 @@ export { initOpenAIAgentsAgent, getOpenAIApiKey } from "./init.js";
 export { handleMessage, getActiveAbort } from "./handler.js";
 export { resetState, getState } from "./state.js";
 export {
-  OPENAI_AGENTS_MODELS,
   resolveModel,
   getModelInfo,
   getSettingsPresentation,

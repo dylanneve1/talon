@@ -1,17 +1,24 @@
 /**
- * OpenAI Agents backend model catalog.
+ * OpenAI Agents backend model surface.
  *
- * The Agents SDK speaks to OpenAI's Responses (or Chat Completions)
- * API and accepts any model identifier the endpoint exposes. The
- * built-in catalog covers the OpenAI-native models; when a custom
- * `openaiBaseUrl` is configured (OpenRouter, Azure, Ollama, etc.),
- * arbitrary model ids are accepted as passthrough so users can target
- * e.g. `meta-llama/llama-3.3-70b-instruct` without us maintaining a
- * separate catalog per third-party provider.
+ * Design note: there is **no** hardcoded model catalog here. The
+ * Agents SDK speaks to any OpenAI-compatible endpoint (OpenAI itself,
+ * OpenRouter, Azure, Ollama, LiteLLM, vLLM, etc.), each of which
+ * advertises its own model set via `GET /models`. Maintaining a
+ * static list in Talon would either be wrong-by-default (the day
+ * OpenAI ships a new model) or wrong-by-provider (OpenRouter's 350+
+ * models, Ollama's user-installed models, Azure's deployment ids).
  *
- * Note: `gpt-5-codex` is intentionally NOT in this catalog. That
- * model is exposed via the Codex CLI only, not the public Responses
- * API. Users who want `gpt-5-codex` should use the `codex` backend.
+ * Instead, `init.ts#fetchEndpointModels` populates
+ * `state.endpointModels` at startup with whatever the active
+ * endpoint reports. Every public function in this file derives its
+ * answer from that map. If a query asks about a model the endpoint
+ * never mentioned, we still hand back a bare passthrough — the user
+ * (or `talon.json`) may know about ids the discovery call missed.
+ *
+ * Note: `gpt-5-codex` is intentionally NOT used here. That model is
+ * exposed via the Codex CLI only, not the public Responses API.
+ * Users who want `gpt-5-codex` should pick the `codex` backend.
  */
 
 import type {
@@ -20,21 +27,22 @@ import type {
   UnifiedProviderInfo,
   ModelButton,
 } from "../../core/types.js";
-import { getOpenAIBaseUrl } from "./init.js";
-import { getState } from "./state.js";
+import { getState, type EndpointModelCapabilities } from "./state.js";
+
+// ── Internal: id → ModelInfo projection ─────────────────────────────────────
 
 /**
- * Build a `UnifiedModelInfo` for an arbitrary model id when the
- * backend is talking to a custom OpenAI-compatible endpoint.
- *
- * If `init.ts`'s `fetchEndpointModels()` has finished, we enrich the
- * passthrough with whatever the endpoint advertised (real context
- * window, display name, free flag). Otherwise we fall back to a bare
- * passthrough — the id verbatim, no capabilities — so /status and
- * /settings stay rendererable even before the catalog fetch lands.
+ * Build a `UnifiedModelInfo` from a model id and its discovered
+ * capabilities. Capabilities are optional — when absent, the model
+ * is treated as a bare passthrough (id only, no context window, no
+ * free-pricing flag). The `provider` / `providerName` fields fall
+ * back to a generic "OpenAI-compatible endpoint" since this backend
+ * is by design provider-agnostic.
  */
-function makePassthroughModel(id: string): UnifiedModelInfo {
-  const caps = getState().endpointModels.get(id);
+function makeModelInfo(
+  id: string,
+  caps?: EndpointModelCapabilities,
+): UnifiedModelInfo {
   return {
     id,
     displayName: caps?.displayName ?? id,
@@ -47,127 +55,156 @@ function makePassthroughModel(id: string): UnifiedModelInfo {
   };
 }
 
-/** Models available through the OpenAI Agents SDK. */
-export const OPENAI_AGENTS_MODELS: UnifiedModelInfo[] = [
-  {
-    id: "gpt-5.5",
-    displayName: "GPT-5.5",
-    provider: "openai",
-    providerName: "OpenAI",
-    selectable: true,
-    reasoning: true,
-    contextWindow: 400_000,
-  },
-  {
-    id: "gpt-5",
-    displayName: "GPT-5",
-    provider: "openai",
-    providerName: "OpenAI",
-    selectable: true,
-    reasoning: true,
-    contextWindow: 400_000,
-  },
-  {
-    id: "gpt-5-mini",
-    displayName: "GPT-5 Mini",
-    provider: "openai",
-    providerName: "OpenAI",
-    selectable: true,
-    reasoning: true,
-    contextWindow: 400_000,
-  },
-  {
-    id: "o4-mini",
-    displayName: "o4-mini",
-    provider: "openai",
-    providerName: "OpenAI",
-    selectable: true,
-    reasoning: true,
-    contextWindow: 128_000,
-  },
-];
+/**
+ * Snapshot of the discovered catalog as a sorted list. Sorted by id
+ * for stable UI ordering; the underlying Map preserves insertion
+ * order from the `/models` response which is arbitrary across
+ * providers.
+ */
+function snapshot(): UnifiedModelInfo[] {
+  const out: UnifiedModelInfo[] = [];
+  for (const [id, caps] of getState().endpointModels) {
+    out.push(makeModelInfo(id, caps));
+  }
+  out.sort((a, b) => a.id.localeCompare(b.id));
+  return out;
+}
+
+// ── Resolution ──────────────────────────────────────────────────────────────
 
 /**
- * Resolve a user query against the catalog. Exact-id match first,
- * then case-insensitive prefix on id or display name; ambiguous when
- * multiple match.
+ * Resolve a user query against the discovered catalog.
  *
- * When a custom `openaiBaseUrl` is configured the catalog isn't
- * authoritative — anything the user types is passed through to the
- * endpoint verbatim. The prefix-matching pass still runs first so
- * `gpt-5` resolves cleanly on OpenAI-compatible proxies that happen
- * to mirror OpenAI's namespace.
+ *   1. Exact id match  — returned immediately.
+ *   2. Case-insensitive prefix match on id or display name —
+ *      returned when exactly one model matches; ambiguous when more
+ *      than one.
+ *   3. No match — accepted as a passthrough so operators can target
+ *      ids that the discovery call missed (e.g. brand-new releases,
+ *      private deployments, Ollama models added after Talon started).
+ *
+ * Returns `missing` only for an empty/whitespace query, since any
+ * non-empty id can be passed through.
  */
 export function resolveModel(query: string): UnifiedModelResolution {
   const q = query.trim();
   if (!q) return { kind: "missing" };
 
-  const exact = OPENAI_AGENTS_MODELS.find((m) => m.id === q);
-  if (exact) return { kind: "exact", model: exact, storedValue: exact.id };
+  const catalog = getState().endpointModels;
+
+  const exact = catalog.get(q);
+  if (exact !== undefined) {
+    return { kind: "exact", model: makeModelInfo(q, exact), storedValue: q };
+  }
 
   const qLower = q.toLowerCase();
-  const matches = OPENAI_AGENTS_MODELS.filter(
-    (m) =>
-      m.id.toLowerCase().startsWith(qLower) ||
-      m.displayName.toLowerCase().startsWith(qLower),
-  );
+  const matches: Array<{ id: string; caps: EndpointModelCapabilities }> = [];
+  for (const [id, caps] of catalog) {
+    const idMatch = id.toLowerCase().startsWith(qLower);
+    const nameMatch = (caps.displayName ?? "").toLowerCase().startsWith(qLower);
+    if (idMatch || nameMatch) matches.push({ id, caps });
+  }
 
   if (matches.length === 1) {
-    return { kind: "exact", model: matches[0], storedValue: matches[0].id };
+    const m = matches[0];
+    return {
+      kind: "exact",
+      model: makeModelInfo(m.id, m.caps),
+      storedValue: m.id,
+    };
   }
   if (matches.length > 1) {
-    return { kind: "ambiguous", matches };
+    return {
+      kind: "ambiguous",
+      matches: matches.map((m) => makeModelInfo(m.id, m.caps)),
+    };
   }
 
-  // No catalog hit. If a custom endpoint is configured, accept the
-  // raw id as a passthrough — third-party endpoints (OpenRouter,
-  // Azure, Ollama, LiteLLM) use namespaces we don't track.
-  if (getOpenAIBaseUrl()) {
-    const passthrough = makePassthroughModel(q);
-    return { kind: "exact", model: passthrough, storedValue: passthrough.id };
-  }
-
-  return { kind: "missing" };
+  // No catalog hit — fall through to a bare passthrough. The endpoint
+  // may legitimately accept ids it doesn't advertise.
+  return { kind: "exact", model: makeModelInfo(q), storedValue: q };
 }
 
-/** Look up a model by stored id. */
+/**
+ * Look up a model by stored id. Returns enriched metadata when the
+ * discovery call covered this id, otherwise a bare passthrough so
+ * /status and /settings can render something for unknown-but-valid
+ * ids instead of "unknown model".
+ */
 export function getModelInfo(id: string): UnifiedModelInfo | undefined {
-  const found = OPENAI_AGENTS_MODELS.find((m) => m.id === id);
-  if (found) return found;
-  // Custom-endpoint passthrough — surface the id back so /settings can
-  // render something instead of "unknown model".
-  if (getOpenAIBaseUrl()) return makePassthroughModel(id);
-  return undefined;
+  if (!id) return undefined;
+  const caps = getState().endpointModels.get(id);
+  return makeModelInfo(id, caps);
 }
 
-/** Quick-pick buttons for the `/settings` model picker. */
+// ── /settings presentation ──────────────────────────────────────────────────
+
+const SETTINGS_PICKER_LIMIT = 12;
+
+/**
+ * Inline-button picker shown in /settings. The discovered catalog
+ * can be huge (OpenRouter ships 350+ models); we cap the picker at
+ * a handful for visibility and let operators set unlisted ids
+ * directly in `talon.json` or via `/model <id>`.
+ *
+ * Selection heuristic: prefer the active model, then anything with a
+ * known context window (more useful than bare passthroughs), then
+ * everything else. Stable id-sorted within each tier.
+ */
 export function getSettingsPresentation(
   activeModel: string,
   callbackPrefix = "settings:model:",
 ): { modelButtons: ModelButton[]; modelDetails: string[] } {
-  const modelButtons: ModelButton[] = OPENAI_AGENTS_MODELS.map((m) => ({
+  const all = snapshot();
+  const active = all.find((m) => m.id === activeModel);
+
+  const enriched = all.filter(
+    (m) => m.id !== activeModel && m.contextWindow !== undefined,
+  );
+  const bare = all.filter(
+    (m) => m.id !== activeModel && m.contextWindow === undefined,
+  );
+
+  const ordered: UnifiedModelInfo[] = [];
+  if (active) ordered.push(active);
+  ordered.push(...enriched, ...bare);
+  const visible = ordered.slice(0, SETTINGS_PICKER_LIMIT);
+
+  const modelButtons: ModelButton[] = visible.map((m) => ({
     text: `${m.id === activeModel ? "● " : ""}${m.displayName}`,
     callback_data: `${callbackPrefix}${m.id}`,
   }));
 
-  const modelDetails = OPENAI_AGENTS_MODELS.map((m) => {
+  const modelDetails = visible.map((m) => {
     const flags: string[] = [];
     if (m.reasoning) flags.push("reasoning");
-    if (m.contextWindow) flags.push(`${m.contextWindow / 1000}k ctx`);
-    return `**${m.displayName}** (${m.id}) — ${flags.join(" · ")}`;
+    if (m.contextWindow)
+      flags.push(`${Math.round(m.contextWindow / 1000)}k ctx`);
+    if (m.free) flags.push("free");
+    const tag = flags.length > 0 ? ` — ${flags.join(" · ")}` : "";
+    return `**${m.displayName}** (\`${m.id}\`)${tag}`;
   });
 
   return { modelButtons, modelDetails };
 }
 
-/** OpenAI is the sole provider for this backend. */
+// ── Provider / list ────────────────────────────────────────────────────────
+
+/**
+ * A single "provider" entry covering whichever endpoint is currently
+ * configured. The backend stays provider-agnostic so we don't try to
+ * split this further by inferring from baseURL — operators who care
+ * see the actual endpoint url in `OpenAI Agents auth: ...` at
+ * startup.
+ */
 export function getProviders(): UnifiedProviderInfo[] {
+  const count = getState().endpointModels.size;
   return [
     {
       id: "openai",
-      name: "OpenAI",
+      name: "OpenAI Agents endpoint",
       connected: true,
-      modelCount: OPENAI_AGENTS_MODELS.length,
+      modelCount: count,
     },
   ];
 }
@@ -179,41 +216,12 @@ export function getProviderModels(
   pageSize = 50,
 ): { models: UnifiedModelInfo[]; total: number } {
   if (providerId !== "openai") return { models: [], total: 0 };
-  const merged = mergedCatalog();
+  const all = snapshot();
   const start = (page - 1) * pageSize;
   return {
-    models: merged.slice(start, start + pageSize),
-    total: merged.length,
+    models: all.slice(start, start + pageSize),
+    total: all.length,
   };
-}
-
-/**
- * Return the visible model catalog: the built-in OpenAI catalog plus
- * anything the remote endpoint advertised via `GET /models` (see
- * `init.ts#fetchEndpointModels`). Built-ins win for shared ids so we
- * don't trample the OpenAI display names with whatever raw id the
- * proxy returns.
- */
-function mergedCatalog(): UnifiedModelInfo[] {
-  const builtIns = new Map<string, UnifiedModelInfo>();
-  for (const m of OPENAI_AGENTS_MODELS) builtIns.set(m.id, m);
-
-  const endpoint = getState().endpointModels;
-  const out: UnifiedModelInfo[] = [...OPENAI_AGENTS_MODELS];
-  for (const [id, caps] of endpoint) {
-    if (builtIns.has(id)) continue;
-    out.push({
-      id,
-      displayName: caps.displayName ?? id,
-      provider: "openai-compatible",
-      providerName: "OpenAI-compatible endpoint",
-      selectable: true,
-      reasoning: false,
-      ...(caps.contextWindow ? { contextWindow: caps.contextWindow } : {}),
-      ...(caps.free ? { free: true } : {}),
-    });
-  }
-  return out;
 }
 
 /** Format a human-readable error for an unresolvable model query. */
@@ -225,16 +233,9 @@ export function formatModelError(
     const list = resolution.matches.map((m) => `\`${m.id}\``).join(", ");
     return `Multiple OpenAI Agents models match \`${query}\`: ${list}. Pick one.`;
   }
-  if (getOpenAIBaseUrl()) {
-    return (
-      `No catalog entry matches \`${query}\`. A custom \`openaiBaseUrl\` is set, ` +
-      `so any id your endpoint accepts is valid — set \`model\` directly in talon.json.`
-    );
-  }
-  return (
-    `No OpenAI Agents model matches \`${query}\`. ` +
-    `Available: ${OPENAI_AGENTS_MODELS.map((m) => m.id).join(", ")}.`
-  );
+  // `missing` only fires for empty queries since unknown non-empty
+  // ids resolve to a passthrough.
+  return `No model id supplied — provide one (e.g. \`gpt-5.5\`, \`openrouter/owl-alpha\`).`;
 }
 
 /** Filter the catalog by a coarse-grained tag. */
@@ -242,10 +243,10 @@ export function listModels(filter?: "free" | "all"): {
   models: UnifiedModelInfo[];
   total: number;
 } {
-  const merged = mergedCatalog();
+  const all = snapshot();
   if (filter === "free") {
-    const free = merged.filter((m) => m.free === true);
+    const free = all.filter((m) => m.free === true);
     return { models: free, total: free.length };
   }
-  return { models: merged, total: merged.length };
+  return { models: all, total: all.length };
 }

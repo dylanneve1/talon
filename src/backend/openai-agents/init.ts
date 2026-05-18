@@ -139,22 +139,22 @@ export function initOpenAIAgentsAgent(
     );
   }
 
-  // Fire-and-forget: enrich the in-memory model catalog with whatever
-  // the remote endpoint advertises via `GET /models`. Lets /status,
-  // /settings, and the model picker show real context windows for
-  // any OpenAI-compatible endpoint (OpenRouter, Ollama, LiteLLM,
-  // vLLM, Azure with deployments) without Talon having to maintain a
-  // per-provider catalog. No-op for the default OpenAI endpoint —
-  // its /models response doesn't include `context_length`, so the
-  // built-in OPENAI_AGENTS_MODELS catalog stays authoritative there.
-  if (baseURL) {
-    fetchEndpointModels(baseURL, apiKey).catch((err) => {
-      logDebug(
-        "agent",
-        `Endpoint model enrichment skipped: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
-  }
+  // Fire-and-forget: populate the in-memory model catalog from
+  // whatever the active endpoint advertises via `GET /models`. The
+  // backend is fully provider-agnostic — there's no hardcoded model
+  // list — so /status, /settings, and the model picker all read from
+  // this map. Runs against the default OpenAI endpoint too; OpenAI's
+  // /models response is sparse (no context_length) but at least lets
+  // us list discovered ids. Operators can still target any model id
+  // their endpoint accepts even if /models doesn't mention it —
+  // unknown ids fall through to a bare passthrough.
+  const effectiveBaseURL = baseURL ?? "https://api.openai.com/v1";
+  fetchEndpointModels(effectiveBaseURL, apiKey).catch((err) => {
+    logDebug(
+      "agent",
+      `Endpoint model enrichment skipped: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  });
 }
 
 // ── Endpoint model enrichment ───────────────────────────────────────────────
@@ -177,7 +177,7 @@ interface EndpointModelEntry {
  * and `pricing.prompt`, vLLM has just `context_length`, Ollama has
  * neither). We grab whatever's present and ignore the rest.
  */
-async function fetchEndpointModels(
+export async function fetchEndpointModels(
   baseURL: string,
   apiKey: string | undefined,
 ): Promise<void> {
