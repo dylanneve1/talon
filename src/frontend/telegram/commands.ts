@@ -4,9 +4,7 @@
 
 import type { Bot } from "grammy";
 import { readFileSync, existsSync } from "node:fs";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { resolve, dirname } from "node:path";
+import { respawnSelf } from "../../util/respawn.js";
 import type { TalonConfig } from "../../util/config.js";
 import { files } from "../../util/paths.js";
 import {
@@ -611,32 +609,7 @@ export function registerCommands(
       return;
     }
     await ctx.reply("♻️ Restarting...");
-
-    setTimeout(() => {
-      // Try `talon restart` (handles daemon stop+start cleanly).
-      // Fall back to the local bin if talon isn't on PATH globally.
-      const projectRoot = resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        "../../../..",
-      );
-      const localBin = resolve(projectRoot, "bin/talon.js");
-
-      const trySpawn = (cmd: string, args: string[]): Promise<void> =>
-        new Promise((res, rej) => {
-          const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
-          child.on("error", rej);
-          child.on("spawn", () => {
-            child.unref();
-            res();
-          });
-        });
-
-      // Try global first, then local bin, then just exit (let process manager restart)
-      trySpawn("talon", ["restart"])
-        .catch(() => trySpawn(process.execPath, [localBin, "restart"]))
-        .catch(() => {})
-        .finally(() => process.exit(0));
-    }, 500);
+    respawnSelf("telegram /restart");
   });
 
   bot.command("plugins", async (ctx) => {

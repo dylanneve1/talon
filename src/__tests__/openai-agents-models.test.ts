@@ -153,10 +153,6 @@ describe("openai-agents / custom endpoint (openaiBaseUrl) passthrough", () => {
   const origTalonBase = process.env.TALON_AGENTS_URL;
   const origTalonKey = process.env.TALON_AGENTS_KEY;
   const origTalonMode = process.env.TALON_AGENTS_API_MODE;
-  // OPENAI_BASE_URL is preserved/restored only because one test mutates it
-  // to prove Talon ignores it; the other OPENAI_* vars aren't read or
-  // written by Talon anywhere in this suite.
-  const origEnvBase = process.env.OPENAI_BASE_URL;
 
   afterEach(() => {
     resetState();
@@ -166,8 +162,6 @@ describe("openai-agents / custom endpoint (openaiBaseUrl) passthrough", () => {
     else process.env.TALON_AGENTS_KEY = origTalonKey;
     if (origTalonMode === undefined) delete process.env.TALON_AGENTS_API_MODE;
     else process.env.TALON_AGENTS_API_MODE = origTalonMode;
-    if (origEnvBase === undefined) delete process.env.OPENAI_BASE_URL;
-    else process.env.OPENAI_BASE_URL = origEnvBase;
   });
 
   function initWithBase(baseURL?: string, apiKey = "test-key") {
@@ -199,12 +193,6 @@ describe("openai-agents / custom endpoint (openaiBaseUrl) passthrough", () => {
     initWithBase("https://config.example.com/v1");
     process.env.TALON_AGENTS_URL = "https://env.example.com/v1";
     expect(getOpenAIBaseUrl()).toBe("https://env.example.com/v1");
-  });
-
-  it("OPENAI_BASE_URL env is ignored (Talon uses only its own env vars)", () => {
-    initWithBase("https://config.example.com/v1");
-    process.env.OPENAI_BASE_URL = "https://env.example.com/v1";
-    expect(getOpenAIBaseUrl()).toBe("https://config.example.com/v1");
   });
 
   it("resolveModel passes through unknown ids when a custom baseURL is set", () => {

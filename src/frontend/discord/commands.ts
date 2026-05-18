@@ -18,9 +18,7 @@
  * /admin <subcommand>.
  */
 
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { resolve, dirname } from "node:path";
+import { respawnSelf } from "../../util/respawn.js";
 import { readFileSync, existsSync } from "node:fs";
 import {
   type Client,
@@ -953,26 +951,7 @@ async function handleRestart(i: ChatInputCommandInteraction): Promise<void> {
     return;
   }
   await reply(i, "♻️ Restarting...", true);
-  setTimeout(() => {
-    const projectRoot = resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      "../../../..",
-    );
-    const localBin = resolve(projectRoot, "bin/talon.js");
-    const trySpawn = (cmd: string, args: string[]): Promise<void> =>
-      new Promise((res, rej) => {
-        const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
-        child.on("error", rej);
-        child.on("spawn", () => {
-          child.unref();
-          res();
-        });
-      });
-    trySpawn("talon", ["restart"])
-      .catch(() => trySpawn(process.execPath, [localBin, "restart"]))
-      .catch(() => {})
-      .finally(() => process.exit(0));
-  }, 500);
+  respawnSelf("discord /restart");
 }
 
 async function handleMetrics(i: ChatInputCommandInteraction): Promise<void> {
