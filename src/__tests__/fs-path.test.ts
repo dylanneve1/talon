@@ -8,7 +8,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { homedir } from "node:os";
-import { resolve, isAbsolute } from "node:path";
+import { resolve, isAbsolute, sep } from "node:path";
 import { expandFsPath } from "../util/fs-path.js";
 
 describe("expandFsPath", () => {
@@ -22,15 +22,23 @@ describe("expandFsPath", () => {
     );
   });
 
-  it("returns absolute paths unchanged", () => {
-    const abs = "/tmp/some/abs/path";
+  it("returns absolute POSIX-style paths unchanged on POSIX, absolute Windows paths unchanged on Windows", () => {
+    // `path.isAbsolute` accepts `/foo` as absolute on both platforms
+    // (it's the POSIX shape), but `path.resolve` on Windows will
+    // prepend the current drive letter — so equality is only safe
+    // when we compare against an actually-absolute-on-this-platform
+    // input. Build one from the test's own resolved cwd.
+    const abs = resolve(process.cwd(), "abs-test-file");
     expect(expandFsPath(abs)).toBe(abs);
   });
 
   it("resolves relative paths against process.cwd()", () => {
     const out = expandFsPath("relative/file.txt");
     expect(isAbsolute(out)).toBe(true);
-    expect(out.endsWith("relative/file.txt")).toBe(true);
+    // path.resolve normalises separators to the platform default
+    // (backslashes on Windows), so use the resolved comparison value
+    // rather than a hard-coded POSIX suffix.
+    expect(out).toBe(resolve(process.cwd(), "relative/file.txt"));
   });
 
   it("returns an empty string unchanged", () => {
@@ -40,9 +48,12 @@ describe("expandFsPath", () => {
   it("preserves the leading tilde on `~foo` (NOT a home-relative path)", () => {
     // `~foo` is NOT a home-relative path (that would be `~/foo`) —
     // it's a literal filename starting with a tilde. We must NOT
-    // expand it as if the user meant `~/foo`; resolve it as a
-    // relative path with the tilde intact.
+    // expand it as if the user meant `~/foo`. Resolve as relative;
+    // the resulting absolute path ends with `<sep>~weird` on both
+    // POSIX (sep=`/`) and Windows (sep=`\`). If the expander had
+    // mistakenly treated `~weird` as home-relative the path would
+    // end with `~weird` directly (without a preceding separator).
     const out = expandFsPath("~weird");
-    expect(out.endsWith("/~weird")).toBe(true);
+    expect(out.endsWith(`${sep}~weird`)).toBe(true);
   });
 });
