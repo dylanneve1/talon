@@ -148,7 +148,7 @@ export function validateCronExpression(
     const nextDate = cron.nextRun();
     return {
       valid: true,
-      next: (nextDate as Date).toISOString(),
+      next: nextDate != null ? nextDate.toISOString() : undefined,
     };
   } catch (err) {
     return {

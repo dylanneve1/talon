@@ -55,14 +55,19 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
           "gateway",
           `Retry ${attempt}/3 (${classified.reason}) after ${delayMs}ms`,
         );
-        throw classified; // rethrow to trigger p-retry delay
+        // Actually wait for the computed delay before rethrowing so that
+        // rate-limit retry-after hints (often 60 s) are honoured rather than
+        // silently ignored.  p-retry's own minTimeout/factor backoff would
+        // otherwise cap the wait at 1–2 s regardless of the API's instruction.
+        await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+        throw classified; // rethrow; p-retry records the attempt
       }
     },
     {
       retries: 2, // 3 total attempts
-      minTimeout: 1000,
-      maxTimeout: 60_000,
-      factor: 2,
+      minTimeout: 0, // delay is applied manually above
+      maxTimeout: 0,
+      factor: 1,
       onFailedAttempt: (err) => {
         if (err.retriesLeft === 0) {
           logError("gateway", `All retries exhausted: ${err.error.message}`);

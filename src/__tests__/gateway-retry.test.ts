@@ -244,19 +244,20 @@ describe("withRetry", () => {
 
   describe("exhausting all retries", () => {
     it("throws the last error after 3 total attempts for retryable errors", async () => {
-      const networkErr = talonErr("network");
+      // retryAfterMs: 1 keeps real delays to ~1 ms each so no fake timers needed
+      const networkErr = talonErr("network", 1);
       const fn = vi.fn(async () => {
         throw networkErr;
       });
 
-      await expect(withRetry(fn)).rejects.toThrow();
       // withRetry is configured with retries: 2 (3 total attempts)
+      await expect(withRetry(fn)).rejects.toThrow();
       expect(fn).toHaveBeenCalledTimes(3);
     });
 
     it("throws the last error after 3 total attempts for overloaded errors", async () => {
       const fn = vi.fn(async () => {
-        throw talonErr("overloaded");
+        throw talonErr("overloaded", 1);
       });
 
       await expect(withRetry(fn)).rejects.toThrow();
@@ -310,11 +311,10 @@ describe("withRetry", () => {
     });
 
     it("after exhausted retries the thrown error is a TalonError", async () => {
-      await expect(
-        withRetry(async () => {
-          throw talonErr("network");
-        }),
-      ).rejects.toBeInstanceOf(TalonError);
+      const fn = async () => {
+        throw talonErr("network", 1);
+      };
+      await expect(withRetry(fn)).rejects.toBeInstanceOf(TalonError);
     });
 
     it("non-Error throws are classified and the TalonError is thrown for non-retryable", async () => {
