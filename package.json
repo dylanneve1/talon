@@ -58,6 +58,7 @@
     "test:kilo:backend": "vitest run --reporter=verbose --reporter=json --outputFile=kilo-backend-results.json src/__tests__/integration/kilo-live-discovery.test.ts",
     "test:opencode:backend": "vitest run --reporter=verbose --reporter=json --outputFile=opencode-backend-results.json src/__tests__/integration/opencode-live-discovery.test.ts",
     "test:codex:backend": "vitest run --reporter=verbose --reporter=json --outputFile=codex-backend-results.json src/__tests__/integration/codex-live-discovery.test.ts",
+    "test:openai-agents:backend": "vitest run --reporter=verbose --reporter=json --outputFile=openai-agents-backend-results.json src/__tests__/integration/openai-agents-live-discovery.test.ts",
     "tarball:check": "node .github/scripts/tarball-check.mjs",
     "build:stub-sea": "node src/__tests__/integration/stub-claude/build-sea.mjs",
     "test:watch": "vitest",

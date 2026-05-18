@@ -213,7 +213,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        backend: [kilo, opencode, claude, codex]
+        backend: [kilo, opencode, claude, codex, openai-agents]
     steps:
       - uses: actions/checkout@v6
 
