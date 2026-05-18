@@ -153,9 +153,10 @@ describe("openai-agents / custom endpoint (openaiBaseUrl) passthrough", () => {
   const origTalonBase = process.env.TALON_AGENTS_URL;
   const origTalonKey = process.env.TALON_AGENTS_KEY;
   const origTalonMode = process.env.TALON_AGENTS_API_MODE;
+  // OPENAI_BASE_URL is preserved/restored only because one test mutates it
+  // to prove Talon ignores it; the other OPENAI_* vars aren't read or
+  // written by Talon anywhere in this suite.
   const origEnvBase = process.env.OPENAI_BASE_URL;
-  const origEnvKey = process.env.OPENAI_API_KEY;
-  const origEnvMode = process.env.OPENAI_API_MODE;
 
   afterEach(() => {
     resetState();
@@ -167,19 +168,12 @@ describe("openai-agents / custom endpoint (openaiBaseUrl) passthrough", () => {
     else process.env.TALON_AGENTS_API_MODE = origTalonMode;
     if (origEnvBase === undefined) delete process.env.OPENAI_BASE_URL;
     else process.env.OPENAI_BASE_URL = origEnvBase;
-    if (origEnvKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = origEnvKey;
-    if (origEnvMode === undefined) delete process.env.OPENAI_API_MODE;
-    else process.env.OPENAI_API_MODE = origEnvMode;
   });
 
   function initWithBase(baseURL?: string, apiKey = "test-key") {
     delete process.env.TALON_AGENTS_URL;
     delete process.env.TALON_AGENTS_KEY;
     delete process.env.TALON_AGENTS_API_MODE;
-    delete process.env.OPENAI_BASE_URL;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_MODE;
     initOpenAIAgentsAgent(
       {
         model: "gpt-5.5",
