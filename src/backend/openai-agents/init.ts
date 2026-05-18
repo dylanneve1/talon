@@ -213,7 +213,8 @@ async function fetchEndpointModels(
           ? entry.top_provider.context_length
           : undefined;
     if (ctx && ctx > 0) caps.contextWindow = ctx;
-    if (typeof entry.name === "string" && entry.name) caps.displayName = entry.name;
+    if (typeof entry.name === "string" && entry.name)
+      caps.displayName = entry.name;
     const promptPrice = entry.pricing?.prompt;
     if (
       promptPrice !== undefined &&
@@ -226,10 +227,7 @@ async function fetchEndpointModels(
     enriched += 1;
   }
 
-  log(
-    "agent",
-    `OpenAI Agents: enriched ${enriched} models from ${url}`,
-  );
+  log("agent", `OpenAI Agents: enriched ${enriched} models from ${url}`);
 }
 
 /**

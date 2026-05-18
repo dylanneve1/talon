@@ -164,7 +164,12 @@ const BASH_MAX_TIMEOUT_MS = 600_000;
 function runShell(
   command: string,
   timeoutMs: number,
-): Promise<{ stdout: string; stderr: string; code: number; timedOut: boolean }> {
+): Promise<{
+  stdout: string;
+  stderr: string;
+  code: number;
+  timedOut: boolean;
+}> {
   return new Promise((resolveResult) => {
     const child = spawn("bash", ["-lc", command], {
       cwd: process.cwd(),
@@ -214,7 +219,9 @@ const bashTool = tool({
       .min(1000)
       .max(BASH_MAX_TIMEOUT_MS)
       .nullable()
-      .describe(`Optional timeout in milliseconds (max ${BASH_MAX_TIMEOUT_MS}).`),
+      .describe(
+        `Optional timeout in milliseconds (max ${BASH_MAX_TIMEOUT_MS}).`,
+      ),
   }),
   async execute({ command, timeout_ms }) {
     const timeout = timeout_ms ?? BASH_DEFAULT_TIMEOUT_MS;
@@ -222,7 +229,9 @@ const bashTool = tool({
     const parts: string[] = [];
     if (result.stdout) parts.push(`--- stdout ---\n${result.stdout}`);
     if (result.stderr) parts.push(`--- stderr ---\n${result.stderr}`);
-    parts.push(`--- exit ${result.code}${result.timedOut ? " (timed out)" : ""} ---`);
+    parts.push(
+      `--- exit ${result.code}${result.timedOut ? " (timed out)" : ""} ---`,
+    );
     return parts.join("\n");
   },
 });
@@ -237,9 +246,7 @@ const globTool = tool({
     "alphabetically. Searches under `path` if provided, otherwise " +
     "under the current working directory.",
   parameters: z.object({
-    pattern: z
-      .string()
-      .describe("Glob pattern to match (e.g. `src/**/*.ts`)."),
+    pattern: z.string().describe("Glob pattern to match (e.g. `src/**/*.ts`)."),
     path: z
       .string()
       .nullable()
@@ -292,7 +299,9 @@ const grepTool = tool({
       const includeFlag = include ? ` --glob ${JSON.stringify(include)}` : "";
       command = `rg -n --no-heading${includeFlag} ${JSON.stringify(pattern)} ${JSON.stringify(target)}`;
     } else {
-      const includeFlag = include ? ` --include=${JSON.stringify(include)}` : "";
+      const includeFlag = include
+        ? ` --include=${JSON.stringify(include)}`
+        : "";
       command = `grep -RIn${includeFlag} -E ${JSON.stringify(pattern)} ${JSON.stringify(target)}`;
     }
     const result = await runShell(command, 30_000);
