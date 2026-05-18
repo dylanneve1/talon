@@ -166,8 +166,37 @@ const configSchema = z.object({
   heartbeatIntervalMinutes: z.number().int().min(5).default(60),
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)
   braveApiKey: z.string().optional(),
-  /** OpenAI API key — used by the Codex backend. Falls back to OPENAI_API_KEY env. */
+  /**
+   * OpenAI API key — used by the Codex and OpenAI Agents backends. Falls
+   * back to OPENAI_API_KEY env. For OpenAI-compatible endpoints
+   * (OpenRouter, Azure, Ollama, custom proxy), set this to the endpoint's
+   * key and configure `openaiBaseUrl` below.
+   */
   openaiApiKey: z.string().optional(),
+  /**
+   * Base URL for an OpenAI-compatible API endpoint, used by the
+   * `openai-agents` backend. When unset, the SDK targets OpenAI's
+   * production API. Set this to redirect at any OpenAI-compatible
+   * service — examples:
+   *   - OpenRouter:  https://openrouter.ai/api/v1
+   *   - Azure:       https://<resource>.openai.azure.com/openai/v1
+   *   - Ollama:      http://localhost:11434/v1
+   *   - LiteLLM/etc: http://localhost:4000/v1
+   *
+   * Falls back to OPENAI_BASE_URL env. Most third-party endpoints
+   * implement Chat Completions but not Responses — see `openaiApiMode`.
+   */
+  openaiBaseUrl: z.string().url().optional(),
+  /**
+   * Which OpenAI API surface the `openai-agents` backend should target.
+   *   - "responses"        — Responses API (default; OpenAI native)
+   *   - "chat_completions" — Chat Completions API (most third parties)
+   *
+   * When `openaiBaseUrl` is set and this is unset, defaults to
+   * "chat_completions" automatically (broadest compatibility). Set
+   * explicitly to "responses" only if your proxy supports it.
+   */
+  openaiApiMode: z.enum(["responses", "chat_completions"]).optional(),
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 

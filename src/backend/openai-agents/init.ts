@@ -4,9 +4,39 @@
  * No long-running server, no per-chat instance cache — the SDK is
  * stateless from Talon's side. We only capture config + frontend +
  * gateway-port resolver at init, plus surface an auth-mode log line
- * so operators know whether `OPENAI_API_KEY` actually resolves.
+ * so operators know whether `OPENAI_API_KEY` (or a custom-endpoint
+ * configuration) actually resolves.
+ *
+ * Endpoint selection
+ * ──────────────────
+ *
+ * The `@openai/agents` SDK targets OpenAI's API by default but accepts
+ * any OpenAI-compatible endpoint via a custom `OpenAI` client. Talon
+ * exposes this through two config fields (or env vars):
+ *
+ *   - `openaiBaseUrl` / `OPENAI_BASE_URL`
+ *       Redirects the SDK at any OpenAI-compatible service —
+ *       OpenRouter, Azure OpenAI, local Ollama, LiteLLM, etc.
+ *   - `openaiApiMode` / `OPENAI_API_MODE`
+ *       Which OpenAI API surface to target. "responses" (OpenAI native)
+ *       or "chat_completions" (most third parties). When `openaiBaseUrl`
+ *       is set and the mode is unset, defaults to "chat_completions"
+ *       because most non-OpenAI endpoints don't implement Responses.
+ *
+ * Auth priority (first match wins):
+ *
+ *   1. `OPENAI_API_KEY` env / `config.openaiApiKey`
+ *      → injected client (custom baseURL if configured, OpenAI default
+ *        otherwise). Required for any non-trivial setup.
+ *   2. No key set
+ *      → startup warning; first turn fails with an auth error.
+ *
+ * The SDK's `setDefaultOpenAIClient()` is global — all subsequent
+ * `new Agent({...})` instances inherit the redirect.
  */
 
+import OpenAI from "openai";
+import { setDefaultOpenAIClient, setOpenAIAPI } from "@openai/agents";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { log, logWarn } from "../../util/log.js";
@@ -15,9 +45,9 @@ import { getState } from "./state.js";
 /**
  * Initialise the OpenAI Agents backend.
  *
- * The agents SDK speaks to OpenAI's Responses API and requires an
- * API key. This function records whether one is available so the
- * startup log surfaces the result before any turn fires.
+ * Records config + frontend, then wires the SDK's default client and
+ * API surface based on resolved endpoint/key/mode. No turns fire here;
+ * the actual agent loop runs in `handler.ts`.
  */
 export function initOpenAIAgentsAgent(
   cfg: TalonConfig,
@@ -29,15 +59,66 @@ export function initOpenAIAgentsAgent(
   if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
   if (frontend) state.frontendName = frontend;
 
-  // Auth check at boot — same shape as the Codex backend's `none`
-  // path, just simpler (no auth.json file flow; OpenAI Agents SDK
-  // wants OPENAI_API_KEY from env or constructor option).
+  // Resolve endpoint configuration. Env vars take precedence over
+  // talon.json so operators can override per-invocation without
+  // editing config.
   const apiKey = process.env.OPENAI_API_KEY ?? cfg.openaiApiKey ?? undefined;
-  if (apiKey) {
-    const source = process.env.OPENAI_API_KEY
+  const baseURL = process.env.OPENAI_BASE_URL ?? cfg.openaiBaseUrl ?? undefined;
+
+  const envMode = process.env.OPENAI_API_MODE;
+  const resolvedApiMode: "responses" | "chat_completions" =
+    envMode === "chat_completions" || envMode === "responses"
+      ? envMode
+      : (cfg.openaiApiMode ??
+        // When a custom baseURL is set, default to chat_completions —
+        // most third-party endpoints (OpenRouter, Ollama, LiteLLM, most
+        // Azure deployments) only implement Chat Completions. Operators
+        // can opt back into Responses explicitly if their proxy
+        // supports it.
+        (baseURL ? "chat_completions" : "responses"));
+
+  // Apply API-surface toggle. Cheap; safe to call unconditionally so
+  // the log line below accurately reflects what subsequent `run()`
+  // calls will use.
+  setOpenAIAPI(resolvedApiMode);
+
+  // Inject a custom OpenAI client when we have a key, a baseURL, or
+  // both. Without either we leave the SDK's default in place (so a
+  // bare `OPENAI_API_KEY` set later still works) — the warning below
+  // covers the empty case.
+  if (apiKey || baseURL) {
+    const client = new OpenAI({
+      // OpenAI client requires *some* apiKey, even for endpoints that
+      // ignore auth (some local Ollama setups). Placeholder if missing.
+      apiKey: apiKey ?? "missing-key",
+      ...(baseURL ? { baseURL } : {}),
+    });
+    setDefaultOpenAIClient(client);
+
+    const keySource = process.env.OPENAI_API_KEY
       ? "env:OPENAI_API_KEY"
-      : "config:openaiApiKey";
-    log("agent", `OpenAI Agents auth: api-key (source: ${source})`);
+      : cfg.openaiApiKey
+        ? "config:openaiApiKey"
+        : "none";
+    const urlSource = process.env.OPENAI_BASE_URL
+      ? `env:OPENAI_BASE_URL (${baseURL})`
+      : cfg.openaiBaseUrl
+        ? `config:openaiBaseUrl (${baseURL})`
+        : "default (api.openai.com)";
+
+    log(
+      "agent",
+      `OpenAI Agents auth: key=${keySource} baseURL=${urlSource} api=${resolvedApiMode}`,
+    );
+
+    if (!apiKey) {
+      logWarn(
+        "agent",
+        "OpenAI Agents: custom baseURL is set but no API key was provided. " +
+          "If your endpoint requires auth, first turn will fail. Set OPENAI_API_KEY " +
+          "or openaiApiKey in talon.json.",
+      );
+    }
   } else {
     logWarn(
       "agent",
@@ -59,6 +140,17 @@ export function initOpenAIAgentsAgent(
 export function getOpenAIApiKey(): string | undefined {
   const state = getState();
   return process.env.OPENAI_API_KEY ?? state.config?.openaiApiKey ?? undefined;
+}
+
+/**
+ * Get the configured OpenAI-compatible base URL, if any. Returns
+ * `undefined` when targeting OpenAI's production API directly.
+ */
+export function getOpenAIBaseUrl(): string | undefined {
+  const state = getState();
+  return (
+    process.env.OPENAI_BASE_URL ?? state.config?.openaiBaseUrl ?? undefined
+  );
 }
 
 /**

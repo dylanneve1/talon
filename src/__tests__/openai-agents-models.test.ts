@@ -7,7 +7,7 @@
  * `formatModelError` / `listModels` behaviour.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   OPENAI_AGENTS_MODELS,
   resolveModel,
@@ -18,6 +18,11 @@ import {
   formatModelError,
   listModels,
 } from "../backend/openai-agents/models.js";
+import {
+  initOpenAIAgentsAgent,
+  getOpenAIBaseUrl,
+} from "../backend/openai-agents/init.js";
+import { resetState } from "../backend/openai-agents/state.js";
 
 describe("openai-agents / model catalog", () => {
   it("exposes at least the gpt-5.5 flagship", () => {
@@ -141,5 +146,91 @@ describe("openai-agents / listModels", () => {
 
   it("returns all for the `all` filter", () => {
     expect(listModels("all").models.length).toBe(OPENAI_AGENTS_MODELS.length);
+  });
+});
+
+describe("openai-agents / custom endpoint (openaiBaseUrl) passthrough", () => {
+  const origEnvBase = process.env.OPENAI_BASE_URL;
+  const origEnvKey = process.env.OPENAI_API_KEY;
+  const origEnvMode = process.env.OPENAI_API_MODE;
+
+  afterEach(() => {
+    resetState();
+    if (origEnvBase === undefined) delete process.env.OPENAI_BASE_URL;
+    else process.env.OPENAI_BASE_URL = origEnvBase;
+    if (origEnvKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = origEnvKey;
+    if (origEnvMode === undefined) delete process.env.OPENAI_API_MODE;
+    else process.env.OPENAI_API_MODE = origEnvMode;
+  });
+
+  function initWithBase(baseURL?: string, apiKey = "test-key") {
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_MODE;
+    initOpenAIAgentsAgent(
+      {
+        model: "gpt-5.5",
+        openaiApiKey: apiKey,
+        ...(baseURL ? { openaiBaseUrl: baseURL } : {}),
+      } as never,
+      () => 12345,
+      "telegram",
+    );
+  }
+
+  it("getOpenAIBaseUrl returns the configured baseURL", () => {
+    initWithBase("https://openrouter.ai/api/v1");
+    expect(getOpenAIBaseUrl()).toBe("https://openrouter.ai/api/v1");
+  });
+
+  it("getOpenAIBaseUrl returns undefined when no baseURL is set", () => {
+    initWithBase(undefined);
+    expect(getOpenAIBaseUrl()).toBeUndefined();
+  });
+
+  it("env OPENAI_BASE_URL overrides config", () => {
+    initWithBase("https://config.example.com/v1");
+    process.env.OPENAI_BASE_URL = "https://env.example.com/v1";
+    expect(getOpenAIBaseUrl()).toBe("https://env.example.com/v1");
+  });
+
+  it("resolveModel passes through unknown ids when a custom baseURL is set", () => {
+    initWithBase("https://openrouter.ai/api/v1");
+    const r = resolveModel("meta-llama/llama-3.3-70b-instruct");
+    expect(r.kind).toBe("exact");
+    if (r.kind !== "exact") return;
+    expect(r.model.id).toBe("meta-llama/llama-3.3-70b-instruct");
+    expect(r.model.provider).toBe("openai-compatible");
+  });
+
+  it("resolveModel still returns missing for unknown ids when no baseURL is set", () => {
+    initWithBase(undefined);
+    expect(resolveModel("meta-llama/llama-3.3-70b-instruct").kind).toBe(
+      "missing",
+    );
+  });
+
+  it("resolveModel still prefers exact catalog hits when a baseURL is set", () => {
+    initWithBase("https://openrouter.ai/api/v1");
+    const r = resolveModel("gpt-5.5");
+    expect(r.kind).toBe("exact");
+    if (r.kind !== "exact") return;
+    expect(r.model.id).toBe("gpt-5.5");
+    expect(r.model.provider).toBe("openai");
+  });
+
+  it("getModelInfo returns a synthetic entry for arbitrary ids when baseURL is set", () => {
+    initWithBase("https://openrouter.ai/api/v1");
+    const info = getModelInfo("qwen/qwen3-coder");
+    expect(info?.id).toBe("qwen/qwen3-coder");
+    expect(info?.displayName).toBe("qwen/qwen3-coder");
+  });
+
+  it("formatModelError points to direct-config when baseURL is set", () => {
+    initWithBase("https://openrouter.ai/api/v1");
+    const msg = formatModelError("typo-model", { kind: "missing" });
+    expect(msg).toContain("openaiBaseUrl");
+    expect(msg).toContain("talon.json");
   });
 });
