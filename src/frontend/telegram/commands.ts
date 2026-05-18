@@ -53,11 +53,9 @@ import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
 import {
   listAvailableBackends,
-  rebindRole,
-  getPoolSnapshot,
-  type BackendRole,
+  getBackendIdForChat,
+  hasChatBackendOverride,
 } from "../../core/backend-controller.js";
-import { writeFileSync } from "node:fs";
 
 // Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
 let ADMIN_USER_ID = 0;
@@ -106,8 +104,7 @@ export function registerCommands(
         "",
         "<b>\uD83E\uDD85 Settings</b>",
         "  /settings -- view and change all chat settings",
-        "  /model -- show or change model",
-        "  /backend -- show or hot-swap the active backend",
+        "  /model -- show or change model and backend",
         "  /effort -- set thinking effort (off, low, medium, high, max)",
         "  /pulse -- toggle periodic check-ins (on/off)",
         "",
@@ -223,6 +220,13 @@ export function registerCommands(
       // behind the "Browse models" button — see callbacks.ts.
       if (be?.getSettingsPresentation) {
         const freeOnly = getChatSettings(cid).freeOnly === true;
+        const activeBackendId = getBackendIdForChat(cid);
+        const availableBackends = listAvailableBackends(config);
+        const activeBackendEntry =
+          availableBackends.find((b) => b.id === activeBackendId) ?? {
+            id: activeBackendId,
+            label: activeBackendId,
+          };
         const state = await buildModelMenuState({
           chatId: cid,
           activeModel,
@@ -242,6 +246,9 @@ export function registerCommands(
           },
           fetchActiveDisplay: async () =>
             (await be.getModelInfo?.(activeModel))?.displayName,
+          activeBackend: activeBackendEntry,
+          hasBackendOverride: hasChatBackendOverride(cid),
+          showBackendButton: availableBackends.length > 1,
         });
         await ctx.reply(renderModelMenuText(state), {
           parse_mode: "HTML",
@@ -625,173 +632,6 @@ export function registerCommands(
     }
     await ctx.reply("♻️ Restarting...");
     respawnSelf("telegram /restart");
-  });
-
-  bot.command("backend", async (ctx) => {
-    // Per-role backend rebinding via the pool.
-    //
-    //   /backend                       show pool snapshot + available backends
-    //   /backend <id>                  rebind the chat role (shorthand)
-    //   /backend <role>                show the binding for one role
-    //   /backend <role> <id>           rebind a specific role (chat | heartbeat | dream)
-    //
-    // Persistence: chat rebinds write `config.backend`; heartbeat /
-    // dream rebinds write their respective `*Backend` fields.
-    if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
-      await ctx.reply("Not authorized.");
-      return;
-    }
-    const arg = ctx.match?.trim() ?? "";
-    const parts = arg.split(/\s+/).filter(Boolean);
-    const available = listAvailableBackends();
-    const knownBackendIds = new Set(available.map((b) => b.id));
-    const validRoles: BackendRole[] = ["chat", "heartbeat", "dream"];
-
-    if (parts.length === 0) {
-      // No-arg: render snapshot.
-      const snap = getPoolSnapshot();
-      const bindingLines = validRoles.map((r) => {
-        const id = snap.bindings[r];
-        const label = snap.instances.find((i) => i.id === id)?.label ?? id;
-        return `  ${r.padEnd(9)} → <b>${escapeHtml(label)}</b> <code>${escapeHtml(id)}</code>`;
-      });
-      const instanceLines = snap.instances.map(
-        (i) =>
-          `  • <b>${escapeHtml(i.label)}</b> <code>${escapeHtml(i.id)}</code> — bound by: ${i.roles.join(", ")}`,
-      );
-      const availableLines = available.map(
-        (b) => `  ${escapeHtml(b.label)} <code>${escapeHtml(b.id)}</code>`,
-      );
-      await ctx.reply(
-        [
-          `<b>🔀 Backend pool</b>`,
-          ``,
-          `<b>Bindings:</b>`,
-          ...bindingLines,
-          ``,
-          `<b>Live instances:</b>`,
-          ...instanceLines,
-          ``,
-          `<b>Available:</b>`,
-          ...availableLines,
-          ``,
-          `Rebind chat:      <code>/backend &lt;id&gt;</code>`,
-          `Rebind a role:    <code>/backend &lt;chat|heartbeat|dream&gt; &lt;id&gt;</code>`,
-        ].join("\n"),
-        { parse_mode: "HTML" },
-      );
-      return;
-    }
-
-    // Resolve (role, id).
-    let role: BackendRole;
-    let newId: string;
-    if (parts.length === 1) {
-      if ((validRoles as string[]).includes(parts[0])) {
-        // `/backend heartbeat` — show binding for that role only.
-        const r = parts[0] as BackendRole;
-        const snap = getPoolSnapshot();
-        const id = snap.bindings[r];
-        const label = snap.instances.find((i) => i.id === id)?.label ?? id;
-        await ctx.reply(
-          `<b>${r}</b>: <b>${escapeHtml(label)}</b> (<code>${escapeHtml(id)}</code>)`,
-          { parse_mode: "HTML" },
-        );
-        return;
-      }
-      role = "chat";
-      newId = parts[0];
-    } else {
-      const r = parts[0];
-      if (!(validRoles as string[]).includes(r)) {
-        await ctx.reply(
-          `Unknown role <code>${escapeHtml(r)}</code>. Valid: ${validRoles.join(", ")}.`,
-          { parse_mode: "HTML" },
-        );
-        return;
-      }
-      role = r as BackendRole;
-      newId = parts[1];
-    }
-
-    if (!knownBackendIds.has(newId)) {
-      const known = available
-        .map((b) => `<code>${escapeHtml(b.id)}</code>`)
-        .join(", ");
-      await ctx.reply(
-        `Unknown backend <code>${escapeHtml(newId)}</code>. Known: ${known}.`,
-        { parse_mode: "HTML" },
-      );
-      return;
-    }
-
-    const prevSnap = getPoolSnapshot();
-    const prevId = prevSnap.bindings[role];
-    const prevLabel =
-      prevSnap.instances.find((i) => i.id === prevId)?.label ?? prevId;
-    const targetLabel = available.find((b) => b.id === newId)?.label ?? newId;
-
-    await ctx.reply(
-      `Rebinding <b>${role}</b>: ${escapeHtml(prevLabel)} → ${escapeHtml(targetLabel)}…`,
-      { parse_mode: "HTML" },
-    );
-
-    const result = await rebindRole(role, newId, config);
-    if (!result.ok) {
-      await ctx.reply(
-        `❌ Rebind failed: ${escapeHtml(result.error ?? "unknown error")}\n\n<b>${role}</b> still on <b>${escapeHtml(prevLabel)}</b>.`,
-        { parse_mode: "HTML" },
-      );
-      return;
-    }
-
-    // Persist the per-role binding so the next restart honours it.
-    // The cast is safe — the controller validated `newId` against the
-    // registered factory set, which mirrors the config zod enum.
-    try {
-      const id = newId as TalonConfig["backend"];
-      if (role === "chat") {
-        config.backend = id;
-      } else if (role === "heartbeat") {
-        config.heartbeatBackend = id;
-      } else if (role === "dream") {
-        config.dreamBackend = id;
-      }
-      writeFileSync(files.config, JSON.stringify(config, null, 2) + "\n");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      await ctx.reply(
-        `⚠️ Rebind succeeded, but persisting config failed: ${escapeHtml(msg)}\nWill revert on next restart.`,
-        { parse_mode: "HTML" },
-      );
-    }
-
-    const detail = [
-      result.newReused
-        ? "new instance reused from pool"
-        : "new instance spun up",
-      result.previousReused
-        ? `previous instance kept (still bound elsewhere)`
-        : `previous instance cleaned up`,
-    ].join(" · ");
-
-    if (role === "chat") {
-      // Chat rebinds reset the chat session — previous backend's per-
-      // chat state isn't portable across backends.
-      const cid = String(ctx.chat.id);
-      resetSession(cid);
-      clearHistory(cid);
-      resetPulseCheckpoint(cid);
-      await ctx.reply(
-        `✅ <b>chat</b> rebound to <b>${escapeHtml(targetLabel)}</b>. Session reset.\n<i>${detail}</i>`,
-        { parse_mode: "HTML" },
-      );
-    } else {
-      await ctx.reply(
-        `✅ <b>${role}</b> rebound to <b>${escapeHtml(targetLabel)}</b>.\n<i>${detail}</i>`,
-        { parse_mode: "HTML" },
-      );
-    }
   });
 
   bot.command("plugins", async (ctx) => {

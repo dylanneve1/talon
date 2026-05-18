@@ -77,11 +77,15 @@ gateway.backend = backend;
 
 // Subscribe the gateway to chat-role rebinds so `/model`, `/settings`,
 // shared-action dispatch, etc. all see the new backend the moment a
-// rebind resolves. Heartbeat and dream rebinds don't touch the
-// gateway — those roles run from their own getBackend providers.
-const { onBackendChange } = await import("./core/backend-controller.js");
-onBackendChange((role, newBackend, info) => {
-  if (role !== "chat") return;
+// rebind resolves. Heartbeat / dream / per-chat-override rebinds don't
+// touch the gateway field — those roles run from their own getBackend
+// providers (dispatcher routes per chat).
+const { onBackendChange, roleHolder } = await import(
+  "./core/backend-controller.js"
+);
+const CHAT_ROLE_HOLDER = roleHolder("chat");
+onBackendChange((holder, newBackend, info) => {
+  if (holder !== CHAT_ROLE_HOLDER) return;
   gateway.backend = newBackend;
   log("bot", `Gateway backend reference updated → ${info.label}`);
 });

@@ -282,23 +282,106 @@ describe("backend pool — multi-role bindings", () => {
     expect(hasBackendPool()).toBe(false);
   });
 
-  it("listener receives the role that changed", async () => {
+  it("listener receives the holder that changed", async () => {
     registerBackend(makeFactory("alpha", "Alpha"));
     registerBackend(makeFactory("beta", "Beta"));
     registerBackend(makeFactory("gamma", "Gamma"));
     await initBackendPool(configFor("alpha"), STUB_CTX);
 
-    const calls: Array<{ role: string; id: string }> = [];
-    onBackendChange((role, _b, info) => {
-      calls.push({ role, id: info.id });
+    const calls: Array<{ holder: string; id: string }> = [];
+    onBackendChange((holder, _b, info) => {
+      calls.push({ holder, id: info.id });
     });
 
     await rebindRole("chat", "beta", configFor("alpha"));
     await rebindRole("heartbeat", "gamma", configFor("alpha"));
+    // The listener receives the holder string (`role:<role>`), not
+    // the bare role name — that's what lets per-chat overrides
+    // surface to listeners alongside role rebinds.
     expect(calls).toEqual([
-      { role: "chat", id: "beta" },
-      { role: "heartbeat", id: "gamma" },
+      { holder: "role:chat", id: "beta" },
+      { holder: "role:heartbeat", id: "gamma" },
     ]);
+  });
+
+  it("per-chat overrides share pool entries with role bindings", async () => {
+    const inits: string[] = [];
+    const cleanups: string[] = [];
+    registerBackend(
+      makeFactory("alpha", "Alpha", {
+        initSpy: (id) => inits.push(id),
+        cleanupSpy: (id) => cleanups.push(id),
+      }),
+    );
+    registerBackend(
+      makeFactory("beta", "Beta", {
+        initSpy: (id) => inits.push(id),
+        cleanupSpy: (id) => cleanups.push(id),
+      }),
+    );
+    // initBackendPool isn't imported with a side door here, so reach
+    // via the existing helpers — same exports.
+    const ctrl = await import("../core/backend-controller.js");
+
+    await ctrl.initBackendPool(configFor("alpha"), STUB_CTX);
+    // Chat A pins beta as an override; pool now has 2 instances.
+    await ctrl.rebindChat("chat-A", "beta", configFor("alpha"));
+    expect(inits).toEqual(["alpha", "beta"]);
+    expect(ctrl.getBackendIdForChat("chat-A")).toBe("beta");
+    // Chat B has no override → falls back to global chat role (alpha).
+    expect(ctrl.getBackendIdForChat("chat-B")).toBe("alpha");
+    expect(ctrl.hasChatBackendOverride("chat-A")).toBe(true);
+    expect(ctrl.hasChatBackendOverride("chat-B")).toBe(false);
+
+    // Releasing chat A's override drops beta's refcount to 0 → cleanup.
+    await ctrl.releaseChat("chat-A");
+    expect(cleanups).toEqual(["beta"]);
+    expect(ctrl.getBackendIdForChat("chat-A")).toBe("alpha");
+    expect(ctrl.hasChatBackendOverride("chat-A")).toBe(false);
+  });
+
+  it("two chats on two backends both stay alive concurrently", async () => {
+    const cleanups: string[] = [];
+    registerBackend(
+      makeFactory("alpha", "Alpha", { cleanupSpy: (id) => cleanups.push(id) }),
+    );
+    registerBackend(
+      makeFactory("beta", "Beta", { cleanupSpy: (id) => cleanups.push(id) }),
+    );
+    registerBackend(
+      makeFactory("gamma", "Gamma", { cleanupSpy: (id) => cleanups.push(id) }),
+    );
+    const ctrl = await import("../core/backend-controller.js");
+
+    await ctrl.initBackendPool(configFor("alpha"), STUB_CTX);
+    await ctrl.rebindChat("chat-A", "beta", configFor("alpha"));
+    await ctrl.rebindChat("chat-B", "gamma", configFor("alpha"));
+
+    // 3 instances live: alpha (chat-role + heartbeat + dream), beta
+    // (chat-A), gamma (chat-B).
+    const snap = ctrl.getPoolSnapshot();
+    expect(snap.instances).toHaveLength(3);
+    expect(snap.instances.find((i) => i.id === "beta")?.chats).toEqual([
+      "chat-A",
+    ]);
+    expect(snap.instances.find((i) => i.id === "gamma")?.chats).toEqual([
+      "chat-B",
+    ]);
+
+    // Releasing chat A doesn't affect chat B or alpha.
+    await ctrl.releaseChat("chat-A");
+    expect(cleanups).toEqual(["beta"]);
+    expect(ctrl.getBackendIdForChat("chat-B")).toBe("gamma");
+  });
+
+  it("releaseChat on an unbound chat is a no-op", async () => {
+    registerBackend(makeFactory("alpha", "Alpha"));
+    const ctrl = await import("../core/backend-controller.js");
+    await ctrl.initBackendPool(configFor("alpha"), STUB_CTX);
+
+    // Doesn't throw, doesn't break the pool.
+    await ctrl.releaseChat("ghost-chat");
+    expect(ctrl.getBackendIdForChat("ghost-chat")).toBe("alpha");
   });
 
   it("getBackendForRole throws when the role isn't bound", () => {

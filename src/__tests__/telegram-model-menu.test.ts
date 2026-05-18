@@ -109,6 +109,9 @@ describe("telegram /model — buildModelMenuState", () => {
         modelDetails: opts.statusLines ?? [],
       }),
       fetchActiveDisplay: async () => opts.display,
+      activeBackend: { id: "claude", label: "Claude SDK" },
+      hasBackendOverride: false,
+      showBackendButton: false,
     };
   }
 
@@ -173,6 +176,9 @@ describe("telegram /model — buildModelMenuState", () => {
         throw new Error("backend offline");
       },
       fetchActiveDisplay: async () => "Active",
+      activeBackend: { id: "claude", label: "Claude SDK" },
+      hasBackendOverride: false,
+      showBackendButton: false,
     });
     expect(state.statusLines).toEqual([]);
     expect(state.showFreeToggle).toBe(false);
@@ -190,6 +196,9 @@ function baseState(overrides: Partial<ModelMenuState> = {}): ModelMenuState {
     hasOverride: false,
     showFreeToggle: true,
     freeOnly: false,
+    activeBackend: { id: "openai-agents", label: "OpenAI Agents" },
+    hasBackendOverride: false,
+    showBackendButton: false,
     ...overrides,
   };
 }

@@ -131,9 +131,8 @@ export async function initBackendAndDispatcher(
   await import("./backend/codex/factory.js");
   await import("./backend/openai-agents/factory.js");
 
-  const { initBackendPool, getBackendForRole } = await import(
-    "./core/backend-controller.js"
-  );
+  const { initBackendPool, getBackendForRole, getBackendForChat, rebindChat } =
+    await import("./core/backend-controller.js");
 
   // Boot the backend pool — binds the chat / heartbeat / dream roles
   // from `config.backend`, `config.heartbeatBackend`,
@@ -146,8 +145,31 @@ export async function initBackendAndDispatcher(
   });
   const backend = getBackendForRole("chat");
 
+  // Re-acquire any persisted per-chat backend overrides so chats that
+  // were on a non-default backend before restart resume on that
+  // backend without waiting for the user to re-pick. Best-effort: a
+  // failed re-acquire (e.g. unknown id) is logged but doesn't block
+  // bootstrap.
+  const { getAllChatSettings } = await import("./storage/chat-settings.js");
+  for (const [cid, settings] of Object.entries(getAllChatSettings())) {
+    if (!settings.backend) continue;
+    const result = await rebindChat(cid, settings.backend, config);
+    if (!result.ok) {
+      log(
+        "bot",
+        `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error}`,
+      );
+    }
+  }
+
   initDispatcher({
-    getBackend: () => getBackendForRole("chat"),
+    // Dispatcher reads the backend per query so per-chat overrides
+    // and chat-role rebinds both propagate without re-init. The
+    // chat id is always present from the dispatcher, but the type
+    // is `chatId?: string` to keep test stubs simple — fall back to
+    // the chat-role default if a caller ever passes `undefined`.
+    getBackend: (chatId?: string) =>
+      chatId ? getBackendForChat(chatId) : getBackendForRole("chat"),
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),

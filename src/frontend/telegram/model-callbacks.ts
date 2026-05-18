@@ -17,6 +17,9 @@
  *   model:nav:filter:<all|free>        — change filter (legacy; toggle owns it now)
  *   model:nav:page:<N>:<filter>:<P?>   — navigate to a page
  *   model:<id>                         — select that model
+ *   model:backends                     — show backend submenu
+ *   model:backend:<id>                 — rebind chat to backend <id>
+ *   model:backend-default              — clear per-chat backend override
  *
  * Telegram Bot API limit: 1–64 bytes per callback_data
  * (https://core.telegram.org/bots/api#inlinekeyboardbutton). The
@@ -41,6 +44,9 @@ export type ModelCallback =
       provider?: string;
     }
   | { kind: "select"; modelId: string }
+  | { kind: "backends" }
+  | { kind: "backend-select"; backendId: string }
+  | { kind: "backend-default" }
   | { kind: "unknown" };
 
 const FILTERS = new Set(["all", "free"]);
@@ -55,6 +61,14 @@ export function parseModelCallback(data: string): ModelCallback {
   if (rest === "browse") return { kind: "browse" };
   if (rest === "toggle-free") return { kind: "toggle-free" };
   if (rest === "reset") return { kind: "reset" };
+  if (rest === "backends") return { kind: "backends" };
+  if (rest === "backend-default") return { kind: "backend-default" };
+
+  if (rest.startsWith("backend:")) {
+    const backendId = rest.slice("backend:".length);
+    if (!backendId) return { kind: "unknown" };
+    return { kind: "backend-select", backendId };
+  }
 
   if (rest.startsWith("nav:")) {
     const parts = rest.split(":");

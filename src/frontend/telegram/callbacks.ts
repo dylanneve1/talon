@@ -8,17 +8,28 @@ import { logWarn } from "../../util/log.js";
 import {
   getChatSettings,
   setChatModel,
+  setChatBackend,
   setChatEffort,
   setChatFreeOnly,
   resolveModelName,
   EFFORT_LEVELS,
   type EffortLevel,
 } from "../../storage/chat-settings.js";
+import { resetSession } from "../../storage/sessions.js";
+import { clearHistory } from "../../storage/history.js";
+import {
+  listAvailableBackends,
+  getBackendIdForChat,
+  hasChatBackendOverride,
+  rebindChat,
+  releaseChat,
+} from "../../core/backend-controller.js";
 import {
   registerChat,
   disablePulse,
   enablePulse,
   isPulseEnabled,
+  resetPulseCheckpoint,
 } from "../../core/pulse.js";
 import { handleCallbackQuery } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
@@ -29,6 +40,8 @@ import {
   renderModelMenuText,
   renderModelMenuKeyboard,
   renderModelBrowseKeyboard,
+  renderBackendMenuKeyboard,
+  renderBackendMenuText,
   buildModelMenuState,
   type SettingsButton,
 } from "./helpers.js";
@@ -273,7 +286,7 @@ export function registerCallbacks(
 
       // State-mutating actions.
       let toast: string | undefined;
-      let viewAfter: "menu" | "browse" = "menu";
+      let viewAfter: "menu" | "browse" | "backends" = "menu";
       let browsePage: number | undefined;
       let browseFilter: "all" | "free" | undefined;
       let browseProvider: string | undefined;
@@ -328,6 +341,52 @@ export function registerCallbacks(
         viewAfter = "browse";
         browseFilter = action.filter;
         browsePage = 1;
+      } else if (action.kind === "backends") {
+        viewAfter = "backends";
+      } else if (action.kind === "backend-select") {
+        // Rebind chat to the chosen backend. Verify the requested id
+        // is on the enabled list to keep the menu and the operation
+        // in sync — `config.enabledBackends` is a UX filter and we
+        // honour it here too.
+        const available = listAvailableBackends(config);
+        if (!available.some((b) => b.id === action.backendId)) {
+          await ctx.answerCallbackQuery({
+            text: "Backend not available",
+          });
+          return;
+        }
+        const result = await rebindChat(cid, action.backendId, config);
+        if (!result.ok) {
+          await ctx.answerCallbackQuery({
+            text: result.error?.slice(0, 200) ?? "Rebind failed",
+          });
+          return;
+        }
+        setChatBackend(cid, action.backendId);
+        // Switching backends drops the previous backend's per-chat
+        // session state (it's not portable across backends) and
+        // clears the per-chat model override so the new backend's
+        // default model takes effect.
+        resetSession(cid);
+        clearHistory(cid);
+        resetPulseCheckpoint(cid);
+        setChatModel(cid, undefined);
+        const label =
+          available.find((b) => b.id === action.backendId)?.label ??
+          action.backendId;
+        toast = `Backend: ${label}`;
+        viewAfter = "menu";
+      } else if (action.kind === "backend-default") {
+        // Drop the per-chat override; the chat reverts to the global
+        // chat-role backend on the next query.
+        await releaseChat(cid);
+        setChatBackend(cid, undefined);
+        resetSession(cid);
+        clearHistory(cid);
+        resetPulseCheckpoint(cid);
+        setChatModel(cid, undefined);
+        toast = "Backend reset to default";
+        viewAfter = "menu";
       }
 
       // Selection / reset / toggle confirmations toast briefly.
@@ -344,6 +403,11 @@ export function registerCallbacks(
       if (!be?.getSettingsPresentation) return;
 
       if (viewAfter === "menu") {
+        const activeBackendId = getBackendIdForChat(cid);
+        const availableBackends = listAvailableBackends(config);
+        const activeBackend = availableBackends.find(
+          (b) => b.id === activeBackendId,
+        ) ?? { id: activeBackendId, label: activeBackendId };
         const state = await buildModelMenuState({
           chatId: cid,
           activeModel: currentModel,
@@ -363,11 +427,39 @@ export function registerCallbacks(
           },
           fetchActiveDisplay: async () =>
             (await be.getModelInfo?.(currentModel))?.displayName,
+          activeBackend,
+          hasBackendOverride: hasChatBackendOverride(cid),
+          showBackendButton: availableBackends.length > 1,
         });
         await editOrIgnoreSame(
           ctx,
           renderModelMenuText(state),
           renderModelMenuKeyboard(state),
+        );
+        return;
+      }
+
+      if (viewAfter === "backends") {
+        const activeBackendId = getBackendIdForChat(cid);
+        const availableBackends = listAvailableBackends(config);
+        const activeBackend = availableBackends.find(
+          (b) => b.id === activeBackendId,
+        ) ?? { id: activeBackendId, label: activeBackendId };
+        const defaultBackendLabel =
+          availableBackends.find((b) => b.id === config.backend)?.label ??
+          config.backend;
+        await editOrIgnoreSame(
+          ctx,
+          renderBackendMenuText({
+            activeBackend,
+            hasBackendOverride: hasChatBackendOverride(cid),
+            defaultBackendLabel,
+          }),
+          renderBackendMenuKeyboard({
+            available: availableBackends,
+            activeBackendId,
+            hasBackendOverride: hasChatBackendOverride(cid),
+          }),
         );
         return;
       }

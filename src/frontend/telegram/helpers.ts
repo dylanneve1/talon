@@ -316,6 +316,18 @@ export interface ModelMenuState {
   showFreeToggle: boolean;
   /** Current persisted free-only setting for this chat. */
   freeOnly: boolean;
+  /**
+   * Backend currently serving this chat (override → role default).
+   * `id` is the registry slug; `label` is the display name.
+   */
+  activeBackend: { id: string; label: string };
+  /** True when this chat has a per-chat backend override. */
+  hasBackendOverride: boolean;
+  /**
+   * Whether the picker should offer a "Change backend" button. False
+   * when `enabledBackends` limits the menu to a single backend.
+   */
+  showBackendButton: boolean;
 }
 
 /** Inputs needed to build a `ModelMenuState`. Pure-function shape so tests can stub everything. */
@@ -336,6 +348,15 @@ export interface BuildModelMenuStateArgs {
   }>;
   /** Resolve display name for the active model. Falls back to the raw id. */
   fetchActiveDisplay: () => Promise<string | undefined>;
+  /** Backend currently serving this chat — id and human label. */
+  activeBackend: { id: string; label: string };
+  /** Whether this chat has a per-chat backend override pinned in the pool. */
+  hasBackendOverride: boolean;
+  /**
+   * Whether more than one backend is offered to the user. Drives the
+   * "Change backend" button — hide it when there's nothing to switch to.
+   */
+  showBackendButton: boolean;
 }
 
 export async function buildModelMenuState(
@@ -357,6 +378,9 @@ export async function buildModelMenuState(
     hasOverride: args.activeModel !== args.defaultModel,
     showFreeToggle: snapshot.freeCount > 0,
     freeOnly: args.freeOnly,
+    activeBackend: args.activeBackend,
+    hasBackendOverride: args.hasBackendOverride,
+    showBackendButton: args.showBackendButton,
   };
 }
 
@@ -367,6 +391,15 @@ export function renderModelMenuKeyboard(
   const rows: Array<Array<SettingsButton>> = [];
 
   rows.push([{ text: "Browse models", callback_data: "model:browse" }]);
+
+  if (state.showBackendButton) {
+    rows.push([
+      {
+        text: `Backend: ${state.activeBackend.label}`,
+        callback_data: "model:backends",
+      },
+    ]);
+  }
 
   if (state.showFreeToggle) {
     rows.push([
@@ -382,6 +415,63 @@ export function renderModelMenuKeyboard(
   }
 
   return rows;
+}
+
+/**
+ * Build the backend-submenu keyboard. Reached via the "Backend" button
+ * on the main `/model` menu; each row is a candidate backend the chat
+ * can switch to (plus a "Use default" row when overridden, and a
+ * "Back" row).
+ */
+export function renderBackendMenuKeyboard(opts: {
+  available: Array<{ id: string; label: string }>;
+  activeBackendId: string;
+  hasBackendOverride: boolean;
+}): Array<Array<SettingsButton>> {
+  const rows: Array<Array<SettingsButton>> = [];
+  for (const b of opts.available) {
+    const active = b.id === opts.activeBackendId;
+    rows.push([
+      {
+        text: active ? `✅ ${b.label} (active)` : b.label,
+        callback_data: active ? "model:noop" : `model:backend:${b.id}`,
+      },
+    ]);
+  }
+  if (opts.hasBackendOverride) {
+    rows.push([
+      {
+        text: "Reset to default backend",
+        callback_data: "model:backend-default",
+      },
+    ]);
+  }
+  rows.push([{ text: "← Back to /model", callback_data: "model:menu" }]);
+  return rows;
+}
+
+/** Body text for the backend submenu. */
+export function renderBackendMenuText(opts: {
+  activeBackend: { id: string; label: string };
+  hasBackendOverride: boolean;
+  defaultBackendLabel: string;
+}): string {
+  const lines = [
+    `<b>Backend</b>`,
+    `Active: <b>${opts.activeBackend.label}</b> (<code>${opts.activeBackend.id}</code>)`,
+  ];
+  if (opts.hasBackendOverride) {
+    lines.push(
+      `<i>Per-chat override — default is <b>${opts.defaultBackendLabel}</b>.</i>`,
+    );
+  } else {
+    lines.push(`<i>Using the global default.</i>`);
+  }
+  lines.push(
+    "",
+    "Switching the backend resets this chat's session — model choice will fall back to the new backend's default.",
+  );
+  return lines.join("\n");
 }
 
 /** Format the body text of the `/model` main menu. */
