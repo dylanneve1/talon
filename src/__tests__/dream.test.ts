@@ -94,7 +94,10 @@ describe("initDream", () => {
 
 describe("maybeStartDream", () => {
   beforeEach(() => {
-    initDream({ model: "claude-sonnet-4-6", getBackend: () => makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReturnValue("dream prompt template");
   });
@@ -123,7 +126,10 @@ describe("maybeStartDream", () => {
 
 describe("forceDream", () => {
   beforeEach(() => {
-    initDream({ model: "claude-sonnet-4-6", getBackend: () => makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReturnValue("dream prompt template");
     writeAtomicSyncMock.mockClear();
@@ -168,7 +174,10 @@ describe("forceDream", () => {
   });
 
   it("rejects when backend has no runOneShotAgent", async () => {
-    initDream({ model: "claude-sonnet-4-6", getBackend: () => ({ query: vi.fn() }) });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => ({ query: vi.fn() }),
+    });
     await expect(forceDream()).rejects.toThrow("runOneShotAgent");
   });
 
@@ -180,7 +189,10 @@ describe("forceDream", () => {
 
 describe("readDreamState — edge cases", () => {
   beforeEach(() => {
-    initDream({ model: "claude-sonnet-4-6", getBackend: () => makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     readFileSyncMock.mockReturnValue("dream prompt template");
   });
 
@@ -285,7 +297,10 @@ describe("dream timeout", () => {
 
 describe("mempalace section gating in dream prompt", () => {
   beforeEach(() => {
-    initDream({ model: "claude-sonnet-4-6", getBackend: () => makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     readFileSyncMock.mockReturnValue(
       "PROMPT START {{mempalaceSection}} PROMPT END",
     );
@@ -311,7 +326,10 @@ describe("mempalace section gating in dream prompt", () => {
   });
 
   it("includes skip message when mempalace is not configured", async () => {
-    initDream({ model: "claude-sonnet-4-6", getBackend: () => makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     await forceDream();
 
     expect(runOneShotAgentMock).toHaveBeenCalled();

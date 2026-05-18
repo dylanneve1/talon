@@ -116,11 +116,7 @@ describe("backend-controller", () => {
     );
     registerBackend(makeFactory("beta", "Beta"));
 
-    const alpha = await initBackendController(
-      "alpha",
-      STUB_CONFIG,
-      STUB_CTX,
-    );
+    const alpha = await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
     expect(getActiveBackend()).toBe(alpha);
 
     const result = await switchBackend("beta", STUB_CONFIG);
@@ -160,11 +156,7 @@ describe("backend-controller", () => {
     );
     registerBackend(makeFactory("beta", "Beta", { failInit: true }));
 
-    const alpha = await initBackendController(
-      "alpha",
-      STUB_CONFIG,
-      STUB_CTX,
-    );
+    const alpha = await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
     const result = await switchBackend("beta", STUB_CONFIG);
 
     expect(result.ok).toBe(false);

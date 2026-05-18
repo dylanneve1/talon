@@ -131,9 +131,8 @@ export async function initBackendAndDispatcher(
   await import("./backend/codex/factory.js");
   await import("./backend/openai-agents/factory.js");
 
-  const { initBackendController, getActiveBackend } = await import(
-    "./core/backend-controller.js"
-  );
+  const { initBackendController, getActiveBackend } =
+    await import("./core/backend-controller.js");
 
   const backend = await initBackendController(config.backend, config, {
     getBridgePort: frontend.getBridgePort,

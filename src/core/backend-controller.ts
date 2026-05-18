@@ -67,7 +67,10 @@ let initCtx: BackendInitContext | null = null;
  * register — they read the active backend through `getActiveBackend`
  * each call.
  */
-type BackendChangeListener = (backend: QueryBackend, ctx: { id: string; label: string }) => void;
+type BackendChangeListener = (
+  backend: QueryBackend,
+  ctx: { id: string; label: string },
+) => void;
 const listeners = new Set<BackendChangeListener>();
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -103,10 +106,7 @@ export async function initBackendController(
     cleanup: instance.cleanup,
   };
   initCtx = ctx;
-  log(
-    "backend-controller",
-    `Active backend: ${factory.label} (${factory.id})`,
-  );
+  log("backend-controller", `Active backend: ${factory.label} (${factory.id})`);
   return instance.backend;
 }
 

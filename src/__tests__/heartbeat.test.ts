@@ -115,7 +115,10 @@ describe("initHeartbeat", () => {
 describe("startHeartbeatTimer", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    initHeartbeat({ model: "claude-sonnet-4-6", getBackend: () => makeMockBackend() });
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
   });
 
   afterEach(() => {
@@ -160,7 +163,10 @@ describe("startHeartbeatTimer", () => {
 
 describe("forceHeartbeat", () => {
   beforeEach(() => {
-    initHeartbeat({ model: "claude-sonnet-4-6", getBackend: () => makeMockBackend() });
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReset();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -418,7 +424,10 @@ describe("buildHeartbeatSystemPrompt", () => {
 
 describe("awaitCurrentRun", () => {
   beforeEach(() => {
-    initHeartbeat({ model: "claude-sonnet-4-6", getBackend: () => makeMockBackend() });
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReset();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

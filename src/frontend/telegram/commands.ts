@@ -672,10 +672,15 @@ export function registerCommands(
 
     const target = available.find((b) => b.id === arg);
     if (!target) {
-      const known = available.map((b) => `<code>${escapeHtml(b.id)}</code>`).join(", ");
-      await ctx.reply(`Unknown backend <code>${escapeHtml(arg)}</code>. Known: ${known}.`, {
-        parse_mode: "HTML",
-      });
+      const known = available
+        .map((b) => `<code>${escapeHtml(b.id)}</code>`)
+        .join(", ");
+      await ctx.reply(
+        `Unknown backend <code>${escapeHtml(arg)}</code>. Known: ${known}.`,
+        {
+          parse_mode: "HTML",
+        },
+      );
       return;
     }
 
