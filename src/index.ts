@@ -80,9 +80,8 @@ gateway.backend = backend;
 // rebind resolves. Heartbeat / dream / per-chat-override rebinds don't
 // touch the gateway field — those roles run from their own getBackend
 // providers (dispatcher routes per chat).
-const { onBackendChange, roleHolder } = await import(
-  "./core/backend-controller.js"
-);
+const { onBackendChange, roleHolder } =
+  await import("./core/backend-controller.js");
 const CHAT_ROLE_HOLDER = roleHolder("chat");
 onBackendChange((holder, newBackend, info) => {
   if (holder !== CHAT_ROLE_HOLDER) return;

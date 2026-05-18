@@ -178,7 +178,11 @@ describe("backend pool — multi-role bindings", () => {
 
     // Rebind dream from alpha → beta. beta is already pooled, so no
     // new init. alpha still has chat using it, so no cleanup.
-    const result = await rebindRole("dream", "beta", configFor("alpha", "beta"));
+    const result = await rebindRole(
+      "dream",
+      "beta",
+      configFor("alpha", "beta"),
+    );
     expect(result.ok).toBe(true);
     expect(result.newReused).toBe(true);
     expect(result.previousReused).toBe(true);

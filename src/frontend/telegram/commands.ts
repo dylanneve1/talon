@@ -222,11 +222,12 @@ export function registerCommands(
         const freeOnly = getChatSettings(cid).freeOnly === true;
         const activeBackendId = getBackendIdForChat(cid);
         const availableBackends = listAvailableBackends(config);
-        const activeBackendEntry =
-          availableBackends.find((b) => b.id === activeBackendId) ?? {
-            id: activeBackendId,
-            label: activeBackendId,
-          };
+        const activeBackendEntry = availableBackends.find(
+          (b) => b.id === activeBackendId,
+        ) ?? {
+          id: activeBackendId,
+          label: activeBackendId,
+        };
         const state = await buildModelMenuState({
           chatId: cid,
           activeModel,
