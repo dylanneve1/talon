@@ -50,7 +50,6 @@ import {
   resetSession,
 } from "../../storage/sessions.js";
 import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
-import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
@@ -64,9 +63,9 @@ import {
   formatUserPrompt,
   prepareSystemPrompt,
   extractSessionName,
-  classifyRetry,
   summarizeUsage,
   routeDelivery,
+  applyRetryDecision,
   type StreamState,
 } from "../shared/index.js";
 
@@ -331,41 +330,23 @@ export async function handleMessage(
       );
       if (fallback) return fallback;
 
-      const classified = classify(err);
-      incrementCounter(`errors.${classified.reason ?? "unknown"}`);
-
-      const decision = classifyRetry({
-        error: classified,
+      const outcome = await applyRetryDecision({
+        err,
+        chatId,
         activeModel,
         retried: _retried,
+        params,
+        recurseWithRetried: (p) => handleMessage(p, true),
+        backendLabel: "Codex",
+        resetNoun: "thread",
       });
+      if (outcome.retry) return outcome.retry;
 
-      if (decision.kind === "reset_and_retry") {
-        logWarn(
-          "agent",
-          `[${chatId}] Codex ${decision.reason}, resetting thread and retrying`,
-        );
-        resetSession(chatId);
-        return handleMessage(params, true);
-      }
-
-      if (decision.kind === "fallback_model") {
-        logWarn(
-          "agent",
-          `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
-        );
-        resetSession(chatId);
-        const originalModel = getChatSettings(chatId).model;
-        setChatModel(chatId, decision.fallbackModelId);
-        try {
-          return await handleMessage(params, true);
-        } finally {
-          setChatModel(chatId, originalModel);
-        }
-      }
-
-      logError("agent", `[${chatId}] Codex error: ${classified.message}`);
-      throw classified;
+      logError(
+        "agent",
+        `[${chatId}] Codex error: ${outcome.classified.message}`,
+      );
+      throw outcome.classified;
     }
   } finally {
     if (activeAborts.get(chatId) === abortController) {

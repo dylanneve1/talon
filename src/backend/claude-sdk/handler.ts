@@ -11,13 +11,10 @@ import {
   getSession,
   incrementTurns,
   recordUsage,
-  resetSession,
   setSessionId,
   setSessionName,
 } from "../../storage/sessions.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
-import { classify } from "../../core/errors.js";
-import { log, logError, logWarn } from "../../util/log.js";
+import { log, logError } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
@@ -42,8 +39,8 @@ import {
   extractSessionName,
   detectFlowViolation,
   captureDeliveredText,
-  classifyRetry,
   summarizeUsage,
+  applyRetryDecision,
 } from "../shared/index.js";
 
 // ── Active query store ──────────────────────────────────────────────────────
@@ -196,41 +193,20 @@ export async function handleMessage(
       }
     }
   } catch (err) {
-    const classified = classify(err);
-    incrementCounter(`errors.${classified.reason ?? "unknown"}`);
-
-    const decision = classifyRetry({
-      error: classified,
+    const outcome = await applyRetryDecision({
+      err,
+      chatId,
       activeModel,
       retried: _retried,
+      params,
+      recurseWithRetried: (p) => handleMessage(p, true),
+      // No backendLabel — historical claude-sdk log shape was un-prefixed
+      // (just `[chatId] session_expired, resetting…`). Preserving that.
     });
+    if (outcome.retry) return outcome.retry;
 
-    if (decision.kind === "reset_and_retry") {
-      logWarn(
-        "agent",
-        `[${chatId}] ${decision.reason}, resetting session and retrying`,
-      );
-      resetSession(chatId);
-      return handleMessage(params, true);
-    }
-
-    if (decision.kind === "fallback_model") {
-      logWarn(
-        "agent",
-        `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
-      );
-      resetSession(chatId);
-      const originalModel = getChatSettings(chatId).model;
-      setChatModel(chatId, decision.fallbackModelId);
-      try {
-        return await handleMessage(params, true);
-      } finally {
-        setChatModel(chatId, originalModel);
-      }
-    }
-
-    logError("agent", `[${chatId}] SDK error: ${classified.message}`);
-    throw classified;
+    logError("agent", `[${chatId}] SDK error: ${outcome.classified.message}`);
+    throw outcome.classified;
   } finally {
     if (activeQueries.get(chatId) === qi) {
       activeQueries.delete(chatId);

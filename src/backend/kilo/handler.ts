@@ -29,10 +29,8 @@ import {
   incrementTurns,
   recordUsage,
   setSessionName,
-  resetSession,
 } from "../../storage/sessions.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
-import { classify } from "../../core/errors.js";
+import { getChatSettings } from "../../storage/chat-settings.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
@@ -61,10 +59,10 @@ import {
   formatUserPrompt,
   prepareSystemPrompt,
   extractSessionName,
-  classifyRetry,
   summarizeUsage,
   routeDelivery,
   sleep,
+  applyRetryDecision,
 } from "../shared/index.js";
 import { processStreamEvent, finalizePartsIntoState } from "./events.js";
 import { subscribeSseStream } from "../remote-server/sse-stream.js";
@@ -188,41 +186,19 @@ export async function handleMessage(
     });
     promptMs = Date.now() - turnStart;
   } catch (err) {
-    const classified = classify(err);
-    incrementCounter(`errors.${classified.reason ?? "unknown"}`);
-
-    const decision = classifyRetry({
-      error: classified,
+    const outcome = await applyRetryDecision({
+      err,
+      chatId,
       activeModel,
       retried: _retried,
+      params,
+      recurseWithRetried: (p) => handleMessage(p, true),
+      backendLabel: "Kilo",
     });
+    if (outcome.retry) return outcome.retry;
 
-    if (decision.kind === "reset_and_retry") {
-      logWarn(
-        "agent",
-        `[${chatId}] Kilo ${decision.reason}, resetting session and retrying`,
-      );
-      resetSession(chatId);
-      return handleMessage(params, true);
-    }
-
-    if (decision.kind === "fallback_model") {
-      logWarn(
-        "agent",
-        `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
-      );
-      resetSession(chatId);
-      const originalModel = getChatSettings(chatId).model;
-      setChatModel(chatId, decision.fallbackModelId);
-      try {
-        return await handleMessage(params, true);
-      } finally {
-        setChatModel(chatId, originalModel);
-      }
-    }
-
-    logError("agent", `[${chatId}] Kilo error: ${classified.message}`);
-    throw classified;
+    logError("agent", `[${chatId}] Kilo error: ${outcome.classified.message}`);
+    throw outcome.classified;
   } finally {
     if (activeSessions.get(chatId) === sessionId) {
       activeSessions.delete(chatId);
