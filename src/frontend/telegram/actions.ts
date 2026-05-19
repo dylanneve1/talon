@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { basename, resolve } from "node:path";
 import { dirs } from "../../util/paths.js";
+import { expandFsPath } from "../../util/fs-path.js";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import { markdownToTelegramHtml } from "./formatting.js";
 import {
@@ -286,7 +287,7 @@ export function createTelegramActionHandler(
       case "send_animation":
       case "send_voice":
       case "send_audio": {
-        const filePath = String(body.file_path ?? "");
+        const filePath = expandFsPath(String(body.file_path ?? ""));
         const caption = body.caption
           ? markdownToTelegramHtml(String(body.caption))
           : undefined;
@@ -622,7 +623,7 @@ export function createTelegramActionHandler(
         const userId = Number(body.user_id);
         const name = String(body.name ?? "");
         const title = String(body.title ?? "");
-        const filePath = String(body.file_path ?? "");
+        const filePath = expandFsPath(String(body.file_path ?? ""));
         const emojis = (body.emoji_list as string[]) ?? ["🎨"];
         const format =
           (body.format as "static" | "animated" | "video") ?? "static";
@@ -653,7 +654,7 @@ export function createTelegramActionHandler(
       case "add_sticker_to_set": {
         const userId = Number(body.user_id);
         const name = String(body.name ?? "");
-        const filePath = String(body.file_path ?? "");
+        const filePath = expandFsPath(String(body.file_path ?? ""));
         const emojis = (body.emoji_list as string[]) ?? ["🎨"];
         const format =
           (body.format as "static" | "animated" | "video") ?? "static";

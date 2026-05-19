@@ -287,9 +287,15 @@ describe("Tool → bridge round-trip", () => {
     }
   });
 
-  // ── Coercion goes end-to-end through execute() ───────────────────────────
-  describe("ID coercion survives the schema → execute pipeline", () => {
-    it("react with stringified message_id arrives at bridge as a number", async () => {
+  // ── ID forwarding goes end-to-end through execute() ──────────────────────
+  // Tools shared with the Discord frontend use `snowflakeOrIdSchema` which
+  // passes digit strings through verbatim (snowflakes can't survive a
+  // Number() round-trip). Telegram-only tools still coerce via `idSchema`.
+  // The bridge layer normalizes at its boundary, so both shapes are valid
+  // on the wire — these tests just assert the value semantically equals
+  // the input ID, accepting either representation.
+  describe("ID values survive the schema → execute pipeline", () => {
+    it("react with stringified message_id arrives at bridge intact", async () => {
       const tool = getTool("react");
       const bridge = makeBridge();
       const parsed = parseSchema(tool, {
@@ -300,10 +306,8 @@ describe("Tool → bridge round-trip", () => {
       await tool.execute(parsed, bridge);
 
       const [, params] = bridge.mock.calls[0]!;
-      expect((params as { message_id: unknown }).message_id).toBe(2081);
-      expect(typeof (params as { message_id: unknown }).message_id).toBe(
-        "number",
-      );
+      const messageId = (params as { message_id: unknown }).message_id;
+      expect(messageId === 2081 || messageId === "2081").toBe(true);
     });
 
     it("send.reply_to with stringified value survives to send_message", async () => {
@@ -318,12 +322,12 @@ describe("Tool → bridge round-trip", () => {
       await tool.execute(parsed, bridge);
 
       const [, params] = bridge.mock.calls[0]!;
-      expect(
-        (params as { reply_to_message_id: unknown }).reply_to_message_id,
-      ).toBe(2081);
+      const replyTo = (params as { reply_to_message_id: unknown })
+        .reply_to_message_id;
+      expect(replyTo === 2081 || replyTo === "2081").toBe(true);
     });
 
-    it("get_member_info with stringified user_id arrives as number", async () => {
+    it("get_member_info with stringified user_id arrives at bridge intact", async () => {
       const tool = getTool("get_member_info");
       const bridge = makeBridge();
       const parsed = parseSchema(tool, { user_id: "352042062" });
@@ -331,7 +335,8 @@ describe("Tool → bridge round-trip", () => {
       await tool.execute(parsed, bridge);
 
       const [, params] = bridge.mock.calls[0]!;
-      expect((params as { user_id: unknown }).user_id).toBe(352042062);
+      const userId = (params as { user_id: unknown }).user_id;
+      expect(userId === 352042062 || userId === "352042062").toBe(true);
     });
   });
 });

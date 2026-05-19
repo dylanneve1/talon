@@ -4,7 +4,6 @@
  * Extracted from index.ts to keep model-catalog concerns in one module.
  */
 
-import type { OpencodeClient } from "@opencode-ai/sdk/v2";
 import { ensureServer } from "./server.js";
 
 // ---------------------------------------------------------------------------
@@ -632,7 +631,7 @@ export async function getOpenCodeSettingsPresentation(
       `Login available: ${preview}${catalog.loginProviders.length > 4 ? "\u2026" : ""}`,
     );
   }
-  details.push("Hint: use /model &lt;name&gt; to switch.");
+  details.push("Hint: use /model <name> to switch.");
   return { modelButtons, modelDetails: details };
 }
 

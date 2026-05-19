@@ -1,0 +1,166 @@
+/**
+ * Codex backend initialisation.
+ *
+ * Spins up a long-lived `Codex` instance configured with:
+ *
+ *   - The MCP server map for the active chat, supplied as TOML config
+ *     overrides via Codex's `--config` mechanism.
+ *   - The OpenAI API key (from `OPENAI_API_KEY` env or Talon config).
+ *   - The working directory (defaults to the user's home so Codex's
+ *     `skipGitRepoCheck` covers operation outside a git repo).
+ *
+ * Codex's MCP servers are configured ONCE at thread-creation time. To
+ * keep per-chat MCP isolation working with this constraint, Talon
+ * re-creates the underlying `Codex` instance the first time it sees a
+ * different chat id. Subsequent runs in the same chat reuse the cached
+ * instance.
+ *
+ * Why not re-create per turn: spawning a fresh Codex subprocess per
+ * message would cost ~1-2s of CLI startup overhead. The chat-id-keyed
+ * cache amortises that to one spawn per chat lifetime.
+ */
+
+import { Codex } from "@openai/codex-sdk";
+import type { TalonConfig } from "../../util/config.js";
+import type { FrontendName } from "../registry.js";
+import { log, logWarn } from "../../util/log.js";
+import { getState } from "./state.js";
+import { asCodexConfig, buildCodexMcpServers } from "./mcp-config.js";
+import { detectCodexAuth, type CodexAuthInfo } from "./auth.js";
+
+/** Cached auth-mode detection result — updated on every `initCodexAgent`. */
+let cachedAuthInfo: CodexAuthInfo | null = null;
+
+/**
+ * Return the auth-mode detection result captured at the last
+ * `initCodexAgent` call. Used by the handler to pick the right default
+ * model and by tests to assert init-time behaviour.
+ */
+export function getCodexAuthInfo(): CodexAuthInfo | null {
+  return cachedAuthInfo;
+}
+
+/**
+ * Initialise the Codex backend.
+ *
+ * Stores config + gateway-port resolver + frontend label. Spawning the
+ * Codex CLI is deferred until the first message arrives (lazy
+ * initialisation). Auth-mode detection runs synchronously here so the
+ * startup log surfaces the result before any turn fires.
+ */
+export function initCodexAgent(
+  cfg: TalonConfig,
+  getGatewayPort?: () => number,
+  frontend?: FrontendName,
+): void {
+  const state = getState();
+  state.config = cfg;
+  if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
+  if (frontend) state.frontendName = frontend;
+  // Invalidate any cached Codex instance — the new config may carry
+  // different MCP servers / API key / frontend wiring. The next
+  // `ensureCodex(chatId)` call will rebuild from scratch.
+  state.codex = null;
+
+  // Detect auth mode synchronously so the startup line carries it.
+  // Knowing whether we're on api-key vs chatgpt vs nothing drives both
+  // the default-model pick and the handler's recovery decisions.
+  const authInfo = detectCodexAuth(cfg.openaiApiKey);
+  cachedAuthInfo = authInfo;
+  logAuthInfo(authInfo);
+}
+
+function logAuthInfo(info: CodexAuthInfo): void {
+  switch (info.mode) {
+    case "api-key":
+      log("agent", `Codex auth: api-key (source: ${info.source})`);
+      return;
+    case "chatgpt":
+      log(
+        "agent",
+        `Codex auth: chatgpt OAuth (source: ${info.source}). ` +
+          `Note: gpt-5-codex is unavailable on this auth mode — ` +
+          `gpt-5.5 will be used as the default.`,
+      );
+      return;
+    case "none":
+      logWarn(
+        "agent",
+        "Codex: no OPENAI_API_KEY env, no openaiApiKey in talon.json, " +
+          "and no usable ~/.codex/auth.json — first turn will fail. " +
+          "Run `codex login` (for ChatGPT OAuth) or set OPENAI_API_KEY " +
+          "(for API-key billing).",
+      );
+      if (info.authFilePath && !info.authFileParsed && info.parseError) {
+        logWarn(
+          "agent",
+          `Codex: ~/.codex/auth.json exists but failed to parse: ${info.parseError}`,
+        );
+      }
+      return;
+  }
+}
+
+/**
+ * Lazily build (or rebuild) the `Codex` instance for the active chat.
+ *
+ * Called by the handler at the top of each turn. Cheap when the active
+ * chat hasn't changed (returns the cached instance); expensive on
+ * first call or chat switch (rebuilds with the new MCP config).
+ */
+export function ensureCodex(chatId: string): Codex {
+  const state = getState();
+  if (!state.config) {
+    throw new Error("Codex agent not initialized — call initCodexAgent first");
+  }
+
+  // Build the MCP server map for THIS chat. The map is baked into the
+  // CLI config that the Codex instance ships with — i.e. it's
+  // chat-specific from the moment the instance is constructed.
+  const bridgeUrl = `http://127.0.0.1:${state.gatewayPortFn()}`;
+  const frontends = getActiveFrontends(state.config.frontend);
+  const mcpServers = buildCodexMcpServers({
+    chatId,
+    bridgeUrl,
+    frontends,
+    braveApiKey: state.config.braveApiKey,
+  });
+
+  // The Codex CLI's `--config` flag flattens dotted JSON paths into
+  // TOML. We provide `mcp_servers.<name>.{command,args,env}` and the
+  // SDK serialises it for us. The type narrowing (SDK's
+  // `CodexConfigObject` vs our `CodexMcpServer` shape) is centralised
+  // in `asCodexConfig`.
+  const codexConfig = asCodexConfig(mcpServers);
+
+  // Cache key: the chat id. When it changes, we rebuild.
+  const cached = state.codex;
+  if (
+    cached &&
+    (cached as Codex & { __talonChatId?: string }).__talonChatId === chatId
+  ) {
+    return cached;
+  }
+
+  const apiKey =
+    process.env.OPENAI_API_KEY ?? state.config.openaiApiKey ?? undefined;
+
+  const codex = new Codex({
+    apiKey,
+    config: codexConfig,
+  });
+  // Stash chat id on the instance for cache-key matching above.
+  (codex as Codex & { __talonChatId?: string }).__talonChatId = chatId;
+
+  state.codex = codex;
+  log("agent", `Codex instance built for chat ${chatId}`);
+
+  return codex;
+}
+
+function getActiveFrontends(
+  frontend: TalonConfig["frontend"],
+): readonly string[] {
+  const all = Array.isArray(frontend) ? frontend : [frontend];
+  return all.filter((f) => f !== "terminal");
+}

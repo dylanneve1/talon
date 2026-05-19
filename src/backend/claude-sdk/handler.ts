@@ -11,19 +11,12 @@ import {
   getSession,
   incrementTurns,
   recordUsage,
-  resetSession,
   setSessionId,
   setSessionName,
 } from "../../storage/sessions.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
-import { classify } from "../../core/errors.js";
-import { getFallbackModel } from "../../core/models.js";
-import { rebuildSystemPrompt } from "../../util/config.js";
-import { getPluginPromptAdditions } from "../../core/plugin.js";
-import { log, logError, logWarn } from "../../util/log.js";
+import { log, logError } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
-import { formatFullDatetime } from "../../util/time.js";
 import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
@@ -39,9 +32,16 @@ import {
   processStreamDelta,
   processAssistantMessage,
   processResultMessage,
-  normalizeForDedupe,
-  isDuplicateOfDelivered,
 } from "./stream.js";
+import {
+  formatUserPrompt,
+  prepareSystemPrompt,
+  extractSessionName,
+  detectFlowViolation,
+  captureDeliveredText,
+  summarizeUsage,
+  applyRetryDecision,
+} from "../shared/index.js";
 
 // ── Active query store ──────────────────────────────────────────────────────
 // Holds the Query reference for each in-flight chat so gateway actions
@@ -75,19 +75,20 @@ export async function handleMessage(
   const t0 = Date.now();
 
   // Rebuild system prompt on first turn of a new/reset session so identity,
-  // memory, and workspace listing are fresh
-  if (session.turns === 0) {
-    rebuildSystemPrompt(config, getPluginPromptAdditions());
-  }
+  // memory, and workspace listing are fresh. `prepareSystemPrompt` does
+  // this in place (mutates config.systemPrompt) — the Claude SDK reads
+  // from config.systemPrompt later via `buildSdkOptions`, so the rebuild
+  // has to land before that call.
+  prepareSystemPrompt({ config, previousTurns: session.turns });
 
   const { options, activeModel } = buildSdkOptions(chatId);
 
-  const msgIdHint = params.messageId ? ` [msg_id:${params.messageId}]` : "";
-  const nowTag = `[${formatFullDatetime()}]`;
-
-  const prompt = isGroup
-    ? `${nowTag} [${senderName}]${msgIdHint}: ${text}`
-    : `${nowTag}${msgIdHint} ${text}`;
+  const prompt = formatUserPrompt({
+    text,
+    senderName: senderName ?? "user",
+    isGroup,
+    messageId: params.messageId,
+  });
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
 
@@ -103,25 +104,14 @@ export async function handleMessage(
   // Tool names arrive MCP-prefixed (e.g. `mcp__telegram-tools__end_turn`)
   // when routed through MCP — strip the prefix so equality checks match
   // the registry's bare names.
-  const captureDeliveredText = (
+  // `captureDeliveredText` (from shared/) returns the normalized text
+  // norm — push it into state for the post-turn dedup check.
+  const captureIntoState = (
     toolName: string,
     input: Record<string, unknown>,
   ): void => {
-    const bareName = stripMcpPrefix(toolName);
-    let deliveredText: string | undefined;
-    if (bareName === "end_turn" && typeof input.text === "string") {
-      deliveredText = input.text;
-    } else if (
-      bareName === "send" &&
-      input.type === "text" &&
-      typeof input.text === "string"
-    ) {
-      deliveredText = input.text;
-    }
-    if (deliveredText) {
-      const norm = normalizeForDedupe(deliveredText);
-      if (norm) state.deliveredTextNorms.push(norm);
-    }
+    const norm = captureDeliveredText(toolName, input);
+    if (norm) state.deliveredTextNorms.push(norm);
   };
 
   try {
@@ -149,8 +139,8 @@ export async function handleMessage(
 
         // Notify tool usage + capture delivery-tool text for end-of-turn dedup
         for (const tool of result.tools) {
-          incrementCounter(`tool_calls.${tool.name}`);
-          captureDeliveredText(tool.name, tool.input);
+          incrementCounter(`tool_calls.${stripMcpPrefix(tool.name)}`);
+          captureIntoState(tool.name, tool.input);
           // Pass tool.input so the soft-terminator opt-out (e.g. react
           // with `end_turn: false`) keeps state.turnTerminated correctly
           // false — otherwise the trailing-text dedup path mis-treats a
@@ -178,24 +168,22 @@ export async function handleMessage(
           }
         }
 
-        // Note: we previously called `qi.interrupt()` here when a turn-
-        // terminator tool fired, intending to short-circuit the SDK's
-        // wasted "wrap up after end_turn tool_result" follow-up API call
-        // (~3s of phantom typing while the model says nothing useful).
-        // That interrupt races with in-flight MCP tool dispatches in the
-        // same assistant message — `end_turn` itself is an MCP tool, and
-        // the model frequently emits sibling tool_use blocks in the same
-        // message. interrupt cancels their AbortController mid-flight,
-        // which surfaces as `MCP error -32001: AbortError` in the SDK
-        // result and bubbles up to the user as "Something went wrong".
+        // Turn-terminator detection happens here (sets `state.turnTerminated`
+        // for the flow-violation check below) but the actual SDK loop exit
+        // is owned by the `PostToolBatch` hook in `options.ts`. The hook
+        // fires after every tool in the batch has resolved, returns
+        // `{ continue: false }`, and the SDK exits with TerminalReason
+        // `'hook_stopped'` — no extra "wrap up after end_turn" round-trip,
+        // no phantom typing, no token spend on a stop_turn.
         //
-        // The natural-close path is fine: the SDK does one more API call
-        // after end_turn returns (the model has nothing to say so it
-        // returns a stop turn quickly, ~2-3s typing lag), then yields a
-        // result message and exits the iterator cleanly. We accept the
-        // typing lag in exchange for not breaking turns. `state.turnTerminated`
-        // is still tracked so the flow-violation re-prompt path below can
-        // skip its retry when the model explicitly ended its turn.
+        // Historical note: an earlier implementation called `qi.interrupt()`
+        // here directly. That raced with in-flight MCP tool dispatches in
+        // the same assistant message — `end_turn` itself is an MCP tool,
+        // and the model frequently emits sibling tool_use blocks alongside
+        // it. `interrupt()` cancelled their AbortController mid-flight,
+        // surfacing as `MCP error -32001: AbortError` and bubbling up as
+        // "Something went wrong". The `PostToolBatch` hook avoids the race
+        // by definition (it fires once the entire batch has resolved).
         continue;
       }
 
@@ -205,51 +193,20 @@ export async function handleMessage(
       }
     }
   } catch (err) {
-    const classified = classify(err);
-    incrementCounter(`errors.${classified.reason ?? "unknown"}`);
+    const outcome = await applyRetryDecision({
+      err,
+      chatId,
+      activeModel,
+      retried: _retried,
+      params,
+      recurseWithRetried: (p) => handleMessage(p, true),
+      // No backendLabel — historical claude-sdk log shape was un-prefixed
+      // (just `[chatId] session_expired, resetting…`). Preserving that.
+    });
+    if (outcome.retry) return outcome.retry;
 
-    // Session expired — reset and retry once
-    if (classified.reason === "session_expired" && !_retried) {
-      logWarn(
-        "agent",
-        `[${chatId}] Stale session, retrying with fresh session`,
-      );
-      resetSession(chatId);
-      return handleMessage(params, true);
-    }
-
-    // Context length exceeded — safety net for edge cases where SDK
-    // auto-compaction doesn't prevent overflow
-    if (classified.reason === "context_length" && !_retried) {
-      logWarn(
-        "agent",
-        `[${chatId}] Context length exceeded, resetting session and retrying`,
-      );
-      resetSession(chatId);
-      return handleMessage(params, true);
-    }
-
-    // Model fallback: if overloaded/timeout, retry with the configured fallback
-    if (!_retried && classified.retryable) {
-      const fallback = getFallbackModel(activeModel);
-      if (fallback) {
-        logWarn(
-          "agent",
-          `[${chatId}] ${classified.reason}, falling back to ${fallback}`,
-        );
-        resetSession(chatId);
-        const originalModel = getChatSettings(chatId).model;
-        setChatModel(chatId, fallback);
-        try {
-          return await handleMessage(params, true);
-        } finally {
-          setChatModel(chatId, originalModel);
-        }
-      }
-    }
-
-    logError("agent", `[${chatId}] SDK error: ${classified.message}`);
-    throw classified;
+    logError("agent", `[${chatId}] SDK error: ${outcome.classified.message}`);
+    throw outcome.classified;
   } finally {
     if (activeQueries.get(chatId) === qi) {
       activeQueries.delete(chatId);
@@ -262,7 +219,11 @@ export async function handleMessage(
   recordHistogram("response_latency_ms", durationMs);
   incrementCounter("queries_total");
   if (state.newSessionId) setSessionId(chatId, state.newSessionId);
-  incrementTurns(chatId);
+  // Token usage is recorded for THIS attempt unconditionally — the running
+  // session totals are additive, so a flow-violation retry that recurses
+  // through this same path will record its own tokens on top. The turn
+  // counter, in contrast, must only increment ONCE per user message (see
+  // the post-violation block below).
   recordUsage(chatId, {
     inputTokens: state.sdkInputTokens,
     outputTokens: state.sdkOutputTokens,
@@ -277,77 +238,65 @@ export async function handleMessage(
 
   // Set a descriptive session name from the first message
   if (session.turns === 0 && text) {
-    const cleanText = text
-      .replace(/^\[.*?\]\s*/g, "")
-      .replace(/\[msg_id:\d+\]\s*/g, "")
-      .trim();
-    if (cleanText) {
-      const name =
-        cleanText.length > 30 ? cleanText.slice(0, 30) + "..." : cleanText;
-      setSessionName(chatId, name);
-    }
+    const name = extractSessionName(text);
+    if (name) setSessionName(chatId, name);
   }
 
   // ── Trailing-prose contract + flow-violation retry ──────────────────────
   // The output stream is private scratchpad by design. Final replies must go
-  // through `end_turn` (canonical) or `send` (mid-turn rich content). When a
-  // turn ends with no tool call AND no trailing prose, that's valid silent
-  // close (model only reacted, or had nothing to do). When the model wrote
-  // prose but didn't route it through a delivery tool, that's a flow
-  // violation — the prose is private scratchpad, dropped from the user's
-  // view. To prevent these from going unnoticed, we re-prompt the model
-  // ONCE with a synthetic system message in the same session: it sees its
-  // broken turn in history + a reminder of the contract, and gets a fresh
-  // turn to deliver via end_turn. If it violates again on the retry, we
-  // give up loudly and accept the silent drop.
+  // through `end_turn` (canonical) or `send` (mid-turn rich content). The
+  // shared `detectFlowViolation` decides whether trailing prose constitutes
+  // a missed delivery (and whether to re-prompt the model once with the
+  // synthetic reminder).
   //
-  // Exception: if a turn-terminator tool (e.g. end_turn) was called, the
-  // model explicitly declared "I'm done" — respect it. Any trailing prose
-  // that slipped in earlier in the same assistant message gets logged but
-  // does NOT re-prompt (would loop endlessly with a model that pairs prose
-  // with end_turn).
-  const trailing = state.lastTrailingText.trim();
-  const flowViolation =
-    trailing.length > 0 &&
-    !state.turnTerminated &&
-    !isDuplicateOfDelivered(trailing, state.deliveredTextNorms);
+  // `incrementTurns` is deferred until AFTER this check so the retry path
+  // (which recurses through `handleMessage` and hits its own
+  // `incrementTurns` at the end of that call) doesn't double-count a
+  // single user message as two turns.
+  const violation = detectFlowViolation({
+    trailingText: state.lastTrailingText,
+    turnTerminated: state.turnTerminated,
+    deliveredTextNorms: state.deliveredTextNorms,
+    retried: _retried,
+  });
 
-  if (flowViolation) {
+  if (violation.violated) {
     incrementCounter("scratchpad.trailing_text_dropped");
     log(
       "agent",
-      `[${chatId}] flow violation: trailing prose (${trailing.length} chars) without end_turn/send. ${
-        _retried
-          ? "Already retried — accepting silent drop."
-          : "Re-prompting with reminder."
+      `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
+        violation.shouldRetry
+          ? "Re-prompting with reminder."
+          : "Already retried — accepting silent drop."
       }`,
     );
 
-    if (!_retried) {
+    if (violation.shouldRetry) {
       incrementCounter("scratchpad.flow_violation_retried");
-      const reminder =
-        "[FLOW VIOLATION] You produced text content but didn't call `end_turn` or `send`. " +
-        "Pure prose in your output stream is private scratchpad — it's dropped, the user " +
-        "never sees it. Please retry with the proper flow: " +
-        "`end_turn(text=...)` to deliver a final reply, " +
-        "`end_turn()` (no args) to close silently, or " +
-        "`send(...)` for mid-turn rich content (photos, polls, etc.). " +
-        "Respond now using the correct tool call.";
-      return handleMessage({ ...params, text: reminder }, true);
+      // The recursive call owns the `incrementTurns` for this user message.
+      // We deliberately don't increment here.
+      return handleMessage({ ...params, text: violation.reminder }, true);
     }
   }
+
+  // Reached the non-retry path — this turn counts as one user-visible turn.
+  incrementTurns(chatId);
 
   // ── Build result ──────────────────────────────────────────────────────────
 
   state.allResponseText += state.currentBlockText;
-  const cacheTotal = state.sdkInputTokens + state.sdkCacheRead;
-  const cacheHitPct =
-    cacheTotal > 0 ? Math.round((state.sdkCacheRead / cacheTotal) * 100) : 0;
 
   log(
     "agent",
-    `[${chatId}] -> (${durationMs}ms, in=${state.sdkInputTokens} out=${state.sdkOutputTokens} cache=${cacheHitPct}%` +
-      `${state.toolCalls > 0 ? ` tools=${state.toolCalls}` : ""})`,
+    `[${chatId}] -> (${summarizeUsage(
+      {
+        inputTokens: state.sdkInputTokens,
+        outputTokens: state.sdkOutputTokens,
+        cacheRead: state.sdkCacheRead,
+        cacheWrite: state.sdkCacheWrite,
+      },
+      { durationMs, toolCalls: state.toolCalls },
+    )})`,
   );
   traceMessage(chatId, "out", state.allResponseText, {
     durationMs,

@@ -4,9 +4,7 @@
 
 import type { Bot } from "grammy";
 import { readFileSync, existsSync } from "node:fs";
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { resolve, dirname } from "node:path";
+import { respawnSelf } from "../../util/respawn.js";
 import type { TalonConfig } from "../../util/config.js";
 import { files } from "../../util/paths.js";
 import {
@@ -45,8 +43,14 @@ import {
   renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
+  renderModelMenuText,
+  renderModelMenuKeyboard,
   type SettingsButton,
 } from "./helpers.js";
+import {
+  buildModelMenuViewForChat,
+  resolveBackendForChat,
+} from "./model-menu.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
@@ -98,7 +102,7 @@ export function registerCommands(
         "",
         "<b>\uD83E\uDD85 Settings</b>",
         "  /settings -- view and change all chat settings",
-        "  /model -- show or change model",
+        "  /model -- show or change model and backend",
         "  /effort -- set thinking effort (off, low, medium, high, max)",
         "  /pulse -- toggle periodic check-ins (on/off)",
         "",
@@ -160,8 +164,14 @@ export function registerCommands(
     resetSession(cid);
     clearHistory(cid);
     resetPulseCheckpoint(cid);
-    // Warm up the new session so /status has context data immediately
-    await gateway?.backend?.warmSession?.(cid);
+    // Resolve the per-chat backend so the reset+warm hits the correct
+    // provider when this chat has a backend override pinned.
+    const chatBackend = resolveBackendForChat(cid, gateway);
+    // Wipe any in-process backend memory (e.g. openai-agents'
+    // MemorySession). Stateless backends ignore this.
+    chatBackend?.resetChat?.(cid);
+    // Warm up the new session so /status has context data immediately.
+    await chatBackend?.warmSession?.(cid);
     await ctx.reply("Session cleared.");
   });
 
@@ -195,7 +205,6 @@ export function registerCommands(
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim();
     const activeModel = getChatSettings(cid).model ?? config.model;
-    const be = gateway?.backend;
 
     if (
       !arg ||
@@ -210,20 +219,18 @@ export function registerCommands(
         );
         return;
       }
-      // Show current model + quick-pick buttons via backend
-      if (be?.getSettingsPresentation) {
-        const pres = await be.getSettingsPresentation(activeModel, "model:");
-        const rows = chunkButtons(pres.modelButtons);
-        const modelInfo = await be.getModelInfo?.(activeModel);
-        const displayName =
-          modelInfo?.displayName ?? formatModelLabel(activeModel);
-        const lines = [
-          `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
-          ...pres.modelDetails,
-        ];
-        await ctx.reply(lines.join("\n"), {
+      // Render the main /model menu. Browsing the catalog happens
+      // behind the "Browse models" button — see callbacks.ts. The
+      // controller resolves the per-chat backend so the menu reflects
+      // any active per-chat override (e.g. a chat switched to
+      // openai-agents in a Claude-default install).
+      const view = await buildModelMenuViewForChat(cid, config, gateway);
+      if (view) {
+        await ctx.reply(renderModelMenuText(view.state), {
           parse_mode: "HTML",
-          reply_markup: { inline_keyboard: rows },
+          reply_markup: {
+            inline_keyboard: renderModelMenuKeyboard(view.state),
+          },
         });
       } else {
         await ctx.reply(
@@ -236,7 +243,9 @@ export function registerCommands(
       return;
     }
 
-    // Resolve model query via backend
+    // Resolve `/model <id>` against the *per-chat* backend — that's
+    // the one currently serving this chat, override-aware.
+    const be = resolveBackendForChat(cid, gateway);
     if (be?.resolveModel) {
       const resolution = await be.resolveModel(arg);
       if (resolution.kind !== "exact") {
@@ -428,23 +437,15 @@ export function registerCommands(
     const activeModel = chatSets.model ?? config.model;
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
-    let modelDetails: Array<string> | undefined;
-    let modelButtons: Array<SettingsButton> | undefined;
 
-    if (gateway?.backend?.getSettingsPresentation) {
-      const presentation =
-        await gateway.backend.getSettingsPresentation(activeModel);
-      modelDetails = presentation.modelDetails;
-      modelButtons = presentation.modelButtons;
-    }
-
+    // /settings is for Talon-level toggles only: effort, pulse, etc.
+    // Model selection lives entirely under /model — no picker here.
     await ctx.reply(
       renderSettingsText(
         activeModel,
         effortName,
         pulseOn,
         chatSets.pulseIntervalMs,
-        modelDetails,
       ),
       {
         parse_mode: "HTML",
@@ -453,7 +454,6 @@ export function registerCommands(
             activeModel,
             effortName,
             pulseOn,
-            modelButtons,
           ),
         },
       },
@@ -489,8 +489,10 @@ export function registerCommands(
     let displayCacheWrite = u.totalCacheWrite;
     let turnsModelLabel = info.lastModel;
 
-    // Enrich context/usage data from backend when available
-    const be = gateway?.backend;
+    // Enrich context/usage data from the per-chat backend so /status
+    // reports the active provider's context window, not the global
+    // default's.
+    const be = resolveBackendForChat(cid, gateway);
     if (be?.getModelInfo) {
       const modelInfo = await be
         .getModelInfo(activeModel)
@@ -544,8 +546,9 @@ export function registerCommands(
     const diskBytes = getWorkspaceDiskUsage(config.workspace);
     const diskStr = formatBytes(diskBytes);
 
+    const backendLabel = be?.backendLabel ?? "";
     const lines = [
-      `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code> \u00B7 effort: ${effortName}`,
+      `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code>${backendLabel ? ` \u00B7 <i>${escapeHtml(backendLabel)}</i>` : ""} \u00B7 effort: ${effortName}`,
       "",
       `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
       `<code>${contextBar}</code>`,
@@ -610,32 +613,7 @@ export function registerCommands(
       return;
     }
     await ctx.reply("♻️ Restarting...");
-
-    setTimeout(() => {
-      // Try `talon restart` (handles daemon stop+start cleanly).
-      // Fall back to the local bin if talon isn't on PATH globally.
-      const projectRoot = resolve(
-        dirname(fileURLToPath(import.meta.url)),
-        "../../../..",
-      );
-      const localBin = resolve(projectRoot, "bin/talon.js");
-
-      const trySpawn = (cmd: string, args: string[]): Promise<void> =>
-        new Promise((res, rej) => {
-          const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
-          child.on("error", rej);
-          child.on("spawn", () => {
-            child.unref();
-            res();
-          });
-        });
-
-      // Try global first, then local bin, then just exit (let process manager restart)
-      trySpawn("talon", ["restart"])
-        .catch(() => trySpawn(process.execPath, [localBin, "restart"]))
-        .catch(() => {})
-        .finally(() => process.exit(0));
-    }, 500);
+    respawnSelf("telegram /restart");
   });
 
   bot.command("plugins", async (ctx) => {

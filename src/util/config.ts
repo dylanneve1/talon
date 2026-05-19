@@ -98,7 +98,40 @@ const pluginEntrySchema = z
   })
   .pipe(z.union([pluginPathSchema, pluginMcpSchema]));
 
-const frontendEnum = z.enum(["telegram", "terminal", "teams"]);
+const frontendEnum = z.enum(["telegram", "terminal", "teams", "discord"]);
+
+const discordConfigSchema = z
+  .object({
+    /** Discord bot token (from https://discord.com/developers/applications). */
+    botToken: z.string(),
+    /**
+     * Discord application (client) ID. Found on the same Developer Portal
+     * page as the bot token. Required for slash-command registration via
+     * `Routes.applicationCommands(...)`.
+     */
+    applicationId: z.string(),
+    /** User IDs allowed to DM the bot. Empty array disables DM access. */
+    allowedUsers: z.array(z.string()).default([]),
+    /** Guild IDs the bot is permitted to operate in. */
+    allowedGuilds: z.array(z.string()).default([]),
+    /** Optional channel ID allowlist within `allowedGuilds`. Empty = all channels. */
+    allowedChannels: z.array(z.string()).default([]),
+    /** User IDs with /admin command access. */
+    adminUserIds: z.array(z.string()).default([]),
+    /**
+     * In guilds, when does the bot reply?
+     *   - "mention"  reply only when @mentioned or in a reply chain (default)
+     *   - "channel"  reply to every message in allowedChannels
+     */
+    respondMode: z.enum(["mention", "channel"]).default("mention"),
+    /** Auto-leave guilds not on `allowedGuilds`. */
+    leaveUnauthorizedGuilds: z.boolean().default(true),
+    /** Custom status text shown under the bot's name. */
+    presence: z.string().optional(),
+    /** Enable global slash command + DM command registration. */
+    enableDmCommands: z.boolean().default(true),
+  })
+  .strict();
 
 const playwrightConfigSchema = z.object({
   enabled: z.boolean().default(false),
@@ -115,7 +148,39 @@ const playwrightConfigSchema = z.object({
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
-  backend: z.enum(["claude", "opencode"]).default("claude"),
+  backend: z
+    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
+    .default("claude"),
+  /**
+   * Backend used by the heartbeat agent. Falls back to `backend` when
+   * unset. Pair with `heartbeatModel` — the heartbeat agent reads the
+   * model field against the heartbeat backend's catalog. Useful for
+   * keeping heartbeats on Claude Sonnet for quality while chat runs
+   * on a cheaper / free backend.
+   */
+  heartbeatBackend: z
+    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
+    .optional(),
+  /**
+   * Backend used by the dream / memory-consolidation agent. Falls
+   * back to `backend` when unset. Pair with `dreamModel`.
+   */
+  dreamBackend: z
+    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
+    .optional(),
+  /**
+   * Whitelist of backends surfaced in the `/model` picker's backend
+   * submenu. Unset → every registered backend is offered. Set →
+   * only the listed ids appear (useful when you want to hide
+   * kilo / opencode in favour of openai-agents + claude).
+   *
+   * NOTE: this is a UX filter only. The pool still permits any
+   * registered backend to be bound at runtime via direct API calls;
+   * the whitelist just keeps the menu tidy.
+   */
+  enabledBackends: z
+    .array(z.enum(["claude", "opencode", "kilo", "codex", "openai-agents"]))
+    .optional(),
   claudeBinary: z.string().optional(),
   model: z.string().default("default"),
   dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)
@@ -131,6 +196,37 @@ const configSchema = z.object({
   heartbeatIntervalMinutes: z.number().int().min(5).default(60),
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)
   braveApiKey: z.string().optional(),
+  /**
+   * OpenAI API key — used by the Codex and OpenAI Agents backends. Falls
+   * back to OPENAI_API_KEY env. For OpenAI-compatible endpoints
+   * (OpenRouter, Azure, Ollama, custom proxy), set this to the endpoint's
+   * key and configure `openaiBaseUrl` below.
+   */
+  openaiApiKey: z.string().optional(),
+  /**
+   * Base URL for an OpenAI-compatible API endpoint, used by the
+   * `openai-agents` backend. When unset, the SDK targets OpenAI's
+   * production API. Set this to redirect at any OpenAI-compatible
+   * service — examples:
+   *   - OpenRouter:  https://openrouter.ai/api/v1
+   *   - Azure:       https://<resource>.openai.azure.com/openai/v1
+   *   - Ollama:      http://localhost:11434/v1
+   *   - LiteLLM/etc: http://localhost:4000/v1
+   *
+   * Falls back to OPENAI_BASE_URL env. Most third-party endpoints
+   * implement Chat Completions but not Responses — see `openaiApiMode`.
+   */
+  openaiBaseUrl: z.string().url().optional(),
+  /**
+   * Which OpenAI API surface the `openai-agents` backend should target.
+   *   - "responses"        — Responses API (default; OpenAI native)
+   *   - "chat_completions" — Chat Completions API (most third parties)
+   *
+   * When `openaiBaseUrl` is set and this is unset, defaults to
+   * "chat_completions" automatically (broadest compatibility). Set
+   * explicitly to "responses" only if your proxy supports it.
+   */
+  openaiApiMode: z.enum(["responses", "chat_completions"]).optional(),
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
@@ -164,6 +260,9 @@ const configSchema = z.object({
 
   // Playwright — headless browser automation via MCP
   playwright: playwrightConfigSchema.optional(),
+
+  // Discord — discord.js v14-based frontend
+  discord: discordConfigSchema.optional(),
 
   // Display name shown in terminal UI (defaults to "Talon")
   botDisplayName: z.string().default("Talon"),

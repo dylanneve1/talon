@@ -37,7 +37,7 @@ import type { QueryBackend, ContextManager } from "./core/types.js";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type Frontend = {
-  name: "telegram" | "terminal" | "teams";
+  name: "telegram" | "terminal" | "teams" | "discord";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -112,94 +112,64 @@ export async function bootstrap(
 /**
  * Create the AI backend and wire the dispatcher.
  * Call this after creating the frontend.
+ *
+ * The backend controller (`core/backend-controller.ts`) is the single
+ * source of truth for the active backend. Dispatcher / dream /
+ * heartbeat all read through `getActiveBackend()` so a runtime swap
+ * via `switchBackend(id, config)` propagates without any re-init.
  */
 export async function initBackendAndDispatcher(
   config: TalonConfig,
   frontend: Frontend,
 ): Promise<BackendAndDispatcherResult> {
-  let backend: QueryBackend;
+  // Register all built-in backends via side-effect import. Adding a new
+  // backend is now strictly additive: drop a `factory.ts` under the new
+  // backend dir and import it here. No conditionals here change.
+  await import("./backend/claude-sdk/factory.js");
+  await import("./backend/opencode/factory.js");
+  await import("./backend/kilo/factory.js");
+  await import("./backend/codex/factory.js");
+  await import("./backend/openai-agents/factory.js");
 
-  if (config.backend === "opencode") {
-    const { initOpenCodeAgent, handleMessage: opencodeHandleMessage } =
-      await import("./backend/opencode/index.js");
-    const ocModelProvider =
-      await import("./backend/opencode/model-provider.js");
-    initOpenCodeAgent(config, frontend.getBridgePort, frontend.name);
-    backend = {
-      query: (params) => opencodeHandleMessage(params),
-      resolveModel: (q) => ocModelProvider.resolveModel(q),
-      getModelInfo: (id) => ocModelProvider.getModelInfo(id),
-      getSettingsPresentation: (m, prefix) =>
-        ocModelProvider.getSettingsPresentation(m, prefix),
-      getProviders: () => ocModelProvider.getProviders(),
-      getProviderModels: (p, pg, ps) =>
-        ocModelProvider.getProviderModels(p, pg, ps),
-      formatModelError: (q, r) => ocModelProvider.formatModelError(q, r),
-      listModels: (f) => ocModelProvider.listModels(f),
-      backendLabel: "OpenCode",
-      getSessionSnapshot: async (sessionId) => {
-        const { getOpenCodeSessionSnapshot } =
-          await import("./backend/opencode/index.js");
-        const snap = await getOpenCodeSessionSnapshot(sessionId);
-        if (!snap) return undefined;
-        return {
-          inputTokens: snap.usage?.totalInputTokens,
-          outputTokens: snap.usage?.totalOutputTokens,
-          cacheRead: snap.usage?.totalCacheRead,
-          cacheWrite: snap.usage?.totalCacheWrite,
-          contextModelId: snap.assistant?.modelID,
-        };
-      },
-    };
-    log("bot", "Backend: OpenCode");
-  } else {
-    const {
-      initAgent: initClaudeAgent,
-      handleMessage: claudeHandleMessage,
-      warmSession: claudeWarmSession,
-      updateSystemPrompt: claudeUpdateSystemPrompt,
-      getActiveQuery,
-      buildMcpServers,
-    } = await import("./backend/claude-sdk/index.js");
-    const { getPluginMcpServers } = await import("./core/plugin.js");
-    const claudeModelProvider =
-      await import("./backend/claude-sdk/model-provider.js");
-    await initClaudeAgent(config, frontend.getBridgePort);
-    backend = {
-      query: (params) => claudeHandleMessage(params),
-      warmSession: (chatId) => claudeWarmSession(chatId),
-      updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
-      resolveModel: (q) => claudeModelProvider.resolveModel(q),
-      getModelInfo: (id) => claudeModelProvider.getModelInfo(id),
-      getSettingsPresentation: (m, prefix) =>
-        claudeModelProvider.getSettingsPresentation(m, prefix),
-      getProviders: () => claudeModelProvider.getProviders(),
-      getProviderModels: (p, pg, ps) =>
-        claudeModelProvider.getProviderModels(p, pg, ps),
-      formatModelError: (q, r) => claudeModelProvider.formatModelError(q, r),
-      listModels: (f) => claudeModelProvider.listModels(f),
-      backendLabel: "Anthropic",
-      refreshMcpServers: async (chatId) => {
-        const qi = getActiveQuery(chatId);
-        if (!qi) return null;
-        // Two-phase teardown: first remove all MCP servers so the SDK
-        // sends a close/shutdown to each subprocess via stdio (OS-agnostic),
-        // then install the fresh set. This ensures old processes receive an
-        // explicit termination message and exit before new ones spawn.
-        await qi.setMcpServers({});
-        const bridgeUrl = `http://127.0.0.1:${frontend.getBridgePort()}`;
-        const freshServers = {
-          ...buildMcpServers(chatId),
-          ...getPluginMcpServers(bridgeUrl, chatId),
-        };
-        return qi.setMcpServers(freshServers);
-      },
-    };
-    log("bot", "Backend: Claude SDK");
+  const { initBackendPool, getBackendForRole, getBackendForChat, rebindChat } =
+    await import("./core/backend-controller.js");
+
+  // Boot the backend pool — binds the chat / heartbeat / dream roles
+  // from `config.backend`, `config.heartbeatBackend`,
+  // `config.dreamBackend`. When two roles point at the same id the
+  // pool reuses one instance (refcounted) — a single-backend setup
+  // still spins up exactly one instance.
+  await initBackendPool(config, {
+    getBridgePort: frontend.getBridgePort,
+    frontendName: frontend.name,
+  });
+  const backend = getBackendForRole("chat");
+
+  // Re-acquire any persisted per-chat backend overrides so chats that
+  // were on a non-default backend before restart resume on that
+  // backend without waiting for the user to re-pick. Best-effort: a
+  // failed re-acquire (e.g. unknown id) is logged but doesn't block
+  // bootstrap.
+  const { getAllChatSettings } = await import("./storage/chat-settings.js");
+  for (const [cid, settings] of Object.entries(getAllChatSettings())) {
+    if (!settings.backend) continue;
+    const result = await rebindChat(cid, settings.backend, config);
+    if (!result.ok) {
+      log(
+        "bot",
+        `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error}`,
+      );
+    }
   }
 
   initDispatcher({
-    backend,
+    // Dispatcher reads the backend per query so per-chat overrides
+    // and chat-role rebinds both propagate without re-init. The
+    // chat id is always present from the dispatcher, but the type
+    // is `chatId?: string` to keep test stubs simple — fall back to
+    // the chat-role default if a caller ever passes `undefined`.
+    getBackend: (chatId?: string) =>
+      chatId ? getBackendForChat(chatId) : getBackendForRole("chat"),
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),
@@ -230,18 +200,37 @@ export async function initBackendAndDispatcher(
     }
   }
 
+  // Configure the Claude SDK one-shot runner once we know mempalace state.
+  // Loaded unconditionally because dream/heartbeat may target the Claude SDK
+  // backend even when the chat backend is Kilo/OpenCode in some setups.
+  // For Kilo/OpenCode chat backends this is dead state — harmless.
+  const { initClaudeOneShot } =
+    await import("./backend/claude-sdk/one-shot.js");
+  initClaudeOneShot({
+    claudeBinary: config.claudeBinary,
+    mempalace: mempalaceCfg,
+  });
+
   initDream({
     model: config.model,
     dreamModel: config.dreamModel,
-    claudeBinary: config.claudeBinary,
     workspace: config.workspace,
-    mempalace: mempalaceCfg,
+    getBackend: () => getBackendForRole("dream"),
   });
+  // Heartbeat needs to know which non-terminal frontends are wired so it can
+  // tell the agent it has outbound `${frontend}-tools` MCP servers available.
+  // Terminal-only deployments get a stripped-down system prompt with no
+  // outbound section.
+  const frontendNames = (
+    Array.isArray(config.frontend) ? config.frontend : [config.frontend]
+  ).filter((f) => f !== "terminal");
+
   initHeartbeat({
     model: config.model,
     heartbeatModel: config.heartbeatModel,
-    claudeBinary: config.claudeBinary,
     workspace: config.workspace,
+    getBackend: () => getBackendForRole("heartbeat"),
+    frontends: frontendNames,
   });
 
   return { backend };

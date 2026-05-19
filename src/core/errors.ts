@@ -186,9 +186,10 @@ export function classify(err: unknown): TalonError {
 
 const FRIENDLY_MESSAGES: Record<ErrorReason, string> = {
   rate_limit: "Rate limited. Try again in a moment.",
-  overloaded: "Claude is busy right now. Retrying with a faster model...",
+  overloaded:
+    "Upstream model is busy right now. Retrying with a faster fallback...",
   network: "Connection issue. Retrying shortly.",
-  auth: "API key error. Bot operator: check your Claude credentials.",
+  auth: "API key error. Bot operator: check the backend's credentials.",
   context_length:
     "Conversation too long for the context window. Use /reset to start fresh.",
   session_expired: "Session expired. Retrying automatically...",

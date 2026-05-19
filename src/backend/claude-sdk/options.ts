@@ -24,7 +24,7 @@ import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isTurnTerminator } from "../../core/tools/index.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
-import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
+import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -320,12 +320,25 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     model: resolvedActiveModel,
     systemPrompt: config.systemPrompt,
     cwd: config.workspace,
+    // The SDK's permission system is designed for an interactive Claude
+    // Code IDE session where a human approves each tool call. Talon runs
+    // the SDK as a server-side bot — there's no human at the keyboard
+    // to confirm Bash/Edit/etc., and our security boundary is the bot
+    // account itself (its OS user, its workspace dir, its mempalace),
+    // not the SDK's per-tool prompts. `bypassPermissions` skips the
+    // interactive prompts; `allowDangerouslySkipPermissions` is the
+    // explicit acknowledgement the SDK requires alongside it. Treat
+    // these as a unit — flipping either alone is a configuration bug.
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
     ...(config.claudeBinary
       ? { pathToClaudeCodeExecutable: config.claudeBinary }
       : {}),
-    disallowedTools: [...DISALLOWED_TOOLS_CHAT],
+    // Whitelist of SDK built-in tools. Anything not listed (e.g. WebSearch,
+    // WebFetch, Monitor, PushNotification, RemoteTrigger, Plan/Worktree/Todo
+    // helpers, AskUserQuestion, ScheduleWakeup) is unavailable to the model.
+    // MCP tools are governed independently via `mcpServers` below.
+    tools: [...ALLOWED_TOOLS_CHAT],
     ...thinkingConfig,
     mcpServers: {
       ...buildMcpServers(chatId),

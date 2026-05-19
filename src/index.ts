@@ -59,6 +59,10 @@ if (selectedFrontend === "terminal") {
   const { createTeamsFrontend } = await import("./frontend/teams/index.js");
   frontend = createTeamsFrontend(config, gateway);
   log("bot", "Frontend: Teams");
+} else if (selectedFrontend === "discord") {
+  const { createDiscordFrontend } = await import("./frontend/discord/index.js");
+  frontend = createDiscordFrontend(config, gateway);
+  log("bot", "Frontend: Discord");
 } else {
   const { createTelegramFrontend } =
     await import("./frontend/telegram/index.js");
@@ -70,6 +74,20 @@ if (selectedFrontend === "terminal") {
 
 const { backend } = await initBackendAndDispatcher(config, frontend);
 gateway.backend = backend;
+
+// Subscribe the gateway to chat-role rebinds so `/model`, `/settings`,
+// shared-action dispatch, etc. all see the new backend the moment a
+// rebind resolves. Heartbeat / dream / per-chat-override rebinds don't
+// touch the gateway field — those roles run from their own getBackend
+// providers (dispatcher routes per chat).
+const { onBackendChange, roleHolder } =
+  await import("./core/backend-controller.js");
+const CHAT_ROLE_HOLDER = roleHolder("chat");
+onBackendChange((holder, newBackend, info) => {
+  if (holder !== CHAT_ROLE_HOLDER) return;
+  gateway.backend = newBackend;
+  log("bot", `Gateway backend reference updated → ${info.label}`);
+});
 
 // ── Graceful shutdown ────────────────────────────────────────────────────────
 

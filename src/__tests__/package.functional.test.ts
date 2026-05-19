@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const REPO_ROOT = resolve(import.meta.dirname, "../..");
-// 4 minutes — Windows runners regularly take 3+ minutes for `npm install` on
-// the published tarball (cold cache + Windows fs latency); 3min was right at
-// the edge. Bumped from 180k after a post-merge timeout on `main`
-// (run 25603848100, 2026-05-09).
-const FUNCTIONAL_TIMEOUT_MS = 240_000;
+// 8 minutes — Windows runners regularly take 4+ minutes for `npm install`
+// on the published tarball (cold cache + Windows fs latency); 240s was at
+// the cliff (multiple 256–258s runs killing it). Bumped from 240k after
+// repeated Windows-only flakes on PR #208 (runs 26037452792, 26038493696,
+// 26038706000).
+const FUNCTIONAL_TIMEOUT_MS = 480_000;
 const NPM_CLI = process.env.npm_execpath;
 
 type RunResult = {
@@ -39,6 +40,10 @@ function childEnv(home: string): NodeJS.ProcessEnv {
     USERPROFILE: home,
     TALON_QUIET: "1",
     NO_COLOR: "1",
+    // Point the status probe at a port nothing's listening on so a
+    // co-tenant Talon daemon (e.g. the developer's running prod bot on
+    // 19876) doesn't get reported as the test's own running instance.
+    TALON_HEALTH_PORT: "19877",
   };
 }
 

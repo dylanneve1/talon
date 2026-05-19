@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
-import { chatIdSchema, idSchema } from "./schemas.js";
+import { chatIdSchema, idSchema, snowflakeOrIdSchema } from "./schemas.js";
 
 /**
  * Throw a typed Error when a bridge response reports failure
@@ -70,7 +70,7 @@ Notes:
         .describe(
           "Final reply text. Supports Markdown. Omit to end the turn silently (no message sent).",
         ),
-      reply_to: idSchema
+      reply_to: snowflakeOrIdSchema
         .optional()
         .describe("Message ID to reply to (typically the user's [msg_id:N])"),
       buttons: z
@@ -110,7 +110,7 @@ Notes:
       // src/backend/claude-sdk/options.ts:turnTerminatorHook.
       return throwIfFailed(result, "end_turn");
     },
-    frontends: ["telegram", "teams"],
+    frontends: ["telegram", "teams", "discord"],
     tag: "messaging",
     endsTurn: true,
   },
@@ -152,7 +152,9 @@ Examples:
         .string()
         .optional()
         .describe("Message text (for type=text). Supports Markdown."),
-      reply_to: idSchema.optional().describe("Message ID to reply to"),
+      reply_to: snowflakeOrIdSchema
+        .optional()
+        .describe("Message ID to reply to"),
       file_path: z
         .string()
         .optional()
@@ -314,7 +316,7 @@ Examples:
           return { ok: false, error: `Unknown type: ${type}` };
       }
     },
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -380,7 +382,7 @@ Pass \`end_turn: false\` if you want to react now and keep working on something 
 
 Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 🤩 🤮 💩 🙏 👌 🕊 🤡 🥱 🥴 😍 🐳 ❤‍🔥 🌚 🌭 💯 🤣 ⚡ 🍌 🏆 💔 🤨 😐 🍓 🍾 💋 🖕 😈 😴 😭 🤓 👻 👨‍💻 👀 🎃 🙈 😇 😨 🤝 ✍ 🤗 🫡 🎅 🎄 ☃ 💅 🤪 🗿 🆒 💘 🙉 🦄 😘 💊 🙊 😎 👾 🤷 🤷‍♂ 🤷‍♀ 😡`,
     schema: {
-      message_id: idSchema.describe("Message ID"),
+      message_id: snowflakeOrIdSchema.describe("Message ID"),
       emoji: z.string().describe("Reaction emoji"),
       end_turn: z
         .boolean()
@@ -410,7 +412,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
       const result = await bridge("react", rest);
       return throwIfFailed(result, "react");
     },
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
     endsTurn: true,
   },
@@ -419,9 +421,9 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   {
     name: "edit_message",
     description: "Edit a previously sent message.",
-    schema: { message_id: idSchema, text: z.string() },
+    schema: { message_id: snowflakeOrIdSchema, text: z.string() },
     execute: (params, bridge) => bridge("edit_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -429,9 +431,9 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   {
     name: "delete_message",
     description: "Delete a message.",
-    schema: { message_id: idSchema },
+    schema: { message_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("delete_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -439,9 +441,9 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   {
     name: "forward_message",
     description: "Forward a message within the chat.",
-    schema: { message_id: idSchema },
+    schema: { message_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("forward_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -449,9 +451,9 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   {
     name: "pin_message",
     description: "Pin a message.",
-    schema: { message_id: idSchema },
+    schema: { message_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("pin_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 
@@ -459,9 +461,9 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
   {
     name: "unpin_message",
     description: "Unpin a message.",
-    schema: { message_id: idSchema.optional() },
+    schema: { message_id: snowflakeOrIdSchema.optional() },
     execute: (params, bridge) => bridge("unpin_message", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "messaging",
   },
 

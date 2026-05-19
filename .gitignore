@@ -15,6 +15,7 @@ functional-results.json
 test-results.json
 integration-results.json
 fuzz-results.json
+*-backend-results.json
 
 # npm pack artifacts
 *.tgz

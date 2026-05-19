@@ -1,0 +1,26 @@
+# Kilo-backend Docker harness. See ./README.md for full usage.
+#
+# Designed to coexist with a production Talon process on the same host:
+# distinct workspace mount, distinct Telegram bot, distinct gateway
+# port, distinct container name.
+
+services:
+  talon-kilo-test:
+    container_name: talon-kilo-test
+    build:
+      context: ../..
+      dockerfile: docker/kilo-test/Dockerfile
+    restart: unless-stopped
+    volumes:
+      # Persistent workspace on the host. Survives `docker compose down`.
+      - ${HOME}/.talon-kilo-test:/home/node/.talon
+    environment:
+      - NODE_ENV=production
+      # Test bot token. Sourced from a gitignored file outside the repo:
+      #   set -a && source ~/.config/talon-tests/secrets.env && set +a
+      - TALON_TEST_BOT_TOKEN=${TALON_TEST_BOT_TOKEN:?TALON_TEST_BOT_TOKEN required (see README)}
+      # Container-internal gateway port. Not published — does not
+      # collide with a host-side prod Talon on the default 19876.
+      - TALON_BRIDGE_PORT=19878
+    mem_limit: 1g
+    cpus: "1.0"

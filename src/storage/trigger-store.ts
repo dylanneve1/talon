@@ -53,6 +53,12 @@ export type Trigger = {
   endedAt?: number;
   /** PID of the child process while running (cleared on exit). */
   pid?: number;
+  /** Linux /proc/<pid>/stat field 22 (start time in jiffies) captured at
+   *  spawn. Used by killOrphan to defend against PID reuse — start time is
+   *  monotonic per boot and unchanged by exec(), so a match guarantees the
+   *  current owner of the PID is the same process we spawned. Undefined on
+   *  non-Linux platforms. */
+  pidStarttime?: number;
   /** Hard timeout in seconds. Default 24h, max 7d. */
   timeoutSeconds: number;
   /** Exit code on terminal status. */
@@ -64,6 +70,12 @@ export type Trigger = {
   /** Truncated tail of the most recent fire payload (for diagnostics). */
   lastFirePayload?: string;
   lastError?: string;
+  /** If true, the trigger is respawned on Talon startup if it was still
+   *  active when Talon went down. Triggers in any terminal state
+   *  (fired/errored/cancelled) are NOT respawned — only ones interrupted
+   *  by Talon shutdown or crash. (Persistent triggers have no hard timeout,
+   *  so timed_out is unreachable for them — see spawnTrigger.) */
+  persistent?: boolean;
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -100,26 +112,46 @@ export function loadTriggers(): void {
     }
   }
 
-  // On startup any "running" trigger from a previous process is dead — its
-  // child PID was orphaned (we kill children on shutdown, but a crash bypasses
-  // that path). Mark as terminated so the bot can see what happened.
+  // On startup any "running" trigger from a previous process needs handling.
+  // For non-persistent we treat it as dead and mark "terminated" so the bot
+  // gets a wake fire about what happened — its child was either killed on
+  // clean shutdown, or torn down with a Docker/systemd cgroup on crash.
+  // (Outside a cgroup, a crash could leave the child orphaned and alive, but
+  // we don't try to recover non-persistent triggers — that's what persistent
+  // is for.) Persistent triggers are parked in "pending" so resumeAfterRestart
+  // can probe the stored pid, SIGKILL any surviving orphan, and re-spawn.
   let resurrected = 0;
+  let respawnable = 0;
   for (const t of Object.values(store)) {
     if (t.status === "running" || t.status === "pending") {
-      t.status = "terminated";
-      t.endedAt = t.endedAt ?? Date.now();
-      t.lastError = t.lastError ?? "Talon restarted while trigger was running";
-      t.pid = undefined;
-      dirty = true;
-      resurrected++;
+      if (t.persistent) {
+        // Keep the stored pid — resumeAfterRestart() probes it to detect an
+        // orphaned previous child (possible outside cgroup-managed setups,
+        // where a Talon crash leaves the child reparented to init still alive)
+        // and SIGKILLs it before respawning, to avoid duplicates.
+        t.status = "pending";
+        dirty = true;
+        respawnable++;
+      } else {
+        t.pid = undefined;
+        t.status = "terminated";
+        t.endedAt = t.endedAt ?? Date.now();
+        t.lastError =
+          t.lastError ?? "Talon restarted while trigger was running";
+        dirty = true;
+        resurrected++;
+      }
     }
   }
 
   const count = Object.keys(store).length;
   if (count > 0) {
+    const notes: string[] = [];
+    if (resurrected > 0) notes.push(`${resurrected} terminated by restart`);
+    if (respawnable > 0) notes.push(`${respawnable} persistent → will respawn`);
     log(
       "triggers",
-      `Loaded ${count} trigger(s)${resurrected > 0 ? ` (${resurrected} terminated by previous restart)` : ""}`,
+      `Loaded ${count} trigger(s)${notes.length ? ` (${notes.join(", ")})` : ""}`,
     );
   }
 }

@@ -21,8 +21,14 @@ import { maybeStartDream } from "./dream.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
+/**
+ * `getBackend` takes the string chat id so it can route per-chat —
+ * a chat with a backend override returns its override backend, others
+ * fall through to the global chat-role backend. Tests can pass a
+ * stub that ignores the chat id. See `core/backend-controller.ts`.
+ */
 type DispatcherDeps = {
-  backend: QueryBackend;
+  getBackend: (chatId?: string) => QueryBackend;
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   onActivity: () => void;
@@ -86,7 +92,11 @@ async function run(params: ExecuteParams): Promise<ExecuteResult> {
 }
 
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
-  const { backend, context, sendTyping, onActivity } = deps!;
+  const { getBackend, context, sendTyping, onActivity } = deps!;
+  // Read the backend fresh per call so backend swaps (chat-role
+  // rebinds or per-chat overrides via the controller) take effect on
+  // the next query without a dispatcher re-init.
+  const backend = getBackend(params.chatId);
   const reqId = randomBytes(4).toString("hex");
 
   // Dream check — fire-and-forget background memory consolidation if due

@@ -1,8 +1,19 @@
 /**
- * OpenCode server lifecycle — manages the OpenCode server process,
- * MCP server registration, session management, and provider resolution.
+ * OpenCode server lifecycle — thin wrapper around `backend/remote-server/`.
  *
- * Extracted from index.ts to keep the main module focused on query handling.
+ * The MCP / session / provider plumbing is identical to Kilo (Kilo is a
+ * fork of OpenCode that exposes the same HTTP API), so this module
+ * keeps only the OpenCode-specific bits:
+ *
+ *   - Constants (port 4096, system-prompt suffix wording).
+ *   - SDK-specific client factory (`createOpencodeClient` +
+ *     `createOpencodeServer`).
+ *   - Backend-specific model parser (the fuzzy `provider/model` splitter
+ *     from `./models.ts`).
+ *   - Pre-warm hook that triggers immediately at init.
+ *
+ * The shared machinery (server spawn, MCP registration, session creation,
+ * provider resolution) lives in `backend/remote-server/`.
  */
 
 import {
@@ -11,12 +22,8 @@ import {
   type OpencodeClient,
 } from "@opencode-ai/sdk/v2";
 import type { TalonConfig } from "../../util/config.js";
-import {
-  getSession,
-  resetSession,
-  setSessionId,
-} from "../../storage/sessions.js";
-import { log, logWarn } from "../../util/log.js";
+import type { FrontendName } from "../registry.js";
+import { logWarn } from "../../util/log.js";
 import { clearModelCatalogCache } from "./models.js";
 import {
   guessProviderID,
@@ -24,19 +31,30 @@ import {
   normalizeModelLookup,
   parseOpenCodeModelQuery,
 } from "./models.js";
+import {
+  createRemoteServerState,
+  ensureRemoteServer as ensureRemoteServerShared,
+  stopRemoteServer,
+  ensureChatMcpServer as ensureChatMcpServerShared,
+  ensurePluginMcpServers as ensurePluginMcpServersShared,
+  buildToolOverrides as buildToolOverridesShared,
+  disconnectChatMcpServer as disconnectChatMcpServerShared,
+  ensureRemoteSession,
+  resolveProviderID as resolveProviderIDShared,
+  getRegisteredMcpServerNames as getRegisteredMcpServerNamesShared,
+  errMsg as sharedErrMsg,
+  TALON_MCP_SERVER_NAME as SHARED_TALON_MCP_SERVER_NAME,
+  type RemoteServerState,
+} from "../remote-server/index.js";
 
-let config: TalonConfig;
-let client: OpencodeClient | null = null;
-let clientPromise: Promise<OpencodeClient> | null = null;
-let serverHandle: { url: string; close(): void } | null = null;
-let gatewayPortFn: () => number = () => 19876;
-let frontendName: "telegram" | "terminal" | "teams" = "telegram";
-const modelProviderCache = new Map<string, string>();
+// ── Constants ───────────────────────────────────────────────────────────────
 
 const OPENCODE_HOSTNAME = "127.0.0.1";
-const OPENCODE_PORT = 4096;
+// Overridable via `OPENCODE_PORT` env so integration tests can spawn an
+// isolated server alongside a running production Talon (which holds 4096).
+const OPENCODE_PORT = Number(process.env.OPENCODE_PORT ?? 4096);
 const OPENCODE_BASE_URL = `http://${OPENCODE_HOSTNAME}:${OPENCODE_PORT}`;
-const TALON_MCP_SERVER_NAME = "talon-tools";
+const TALON_MCP_SERVER_NAME = SHARED_TALON_MCP_SERVER_NAME;
 const OPENCODE_SYSTEM_PROMPT_SUFFIX = `
 
 ## OpenCode Delivery Override
@@ -47,7 +65,14 @@ const OPENCODE_SYSTEM_PROMPT_SUFFIX = `
 - Use tools only when they are genuinely needed for side effects or extra capabilities.
 `;
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// ── State ───────────────────────────────────────────────────────────────────
+
+const state: RemoteServerState<OpencodeClient> =
+  createRemoteServerState<OpencodeClient>({
+    label: "OpenCode",
+    hostname: OPENCODE_HOSTNAME,
+    port: OPENCODE_PORT,
+  });
 
 function createStrictOpencodeClient(baseUrl: string): OpencodeClient {
   return createOpencodeClient({
@@ -56,307 +81,107 @@ function createStrictOpencodeClient(baseUrl: string): OpencodeClient {
   });
 }
 
+// ── Init / teardown ─────────────────────────────────────────────────────────
+
 export function initOpenCodeAgent(
   cfg: TalonConfig,
   getGatewayPort?: () => number,
-  frontend?: "telegram" | "terminal" | "teams",
+  frontend?: FrontendName,
 ): void {
-  config = cfg;
-  if (getGatewayPort) gatewayPortFn = getGatewayPort;
-  if (frontend) frontendName = frontend;
-}
+  state.config = cfg;
+  if (getGatewayPort) state.gatewayPortFn = getGatewayPort;
+  if (frontend) state.frontendName = frontend;
 
-export async function ensureServer(): Promise<OpencodeClient> {
-  if (client) return client;
-  if (clientPromise) return clientPromise;
-
-  clientPromise = (async () => {
-    const existingClient = await reuseExistingServer();
-    if (existingClient) {
-      client = existingClient;
-      return existingClient;
-    }
-
-    log("agent", "Starting OpenCode server...");
-
-    try {
-      const server = await createOpencodeServer({
-        hostname: OPENCODE_HOSTNAME,
-        port: OPENCODE_PORT,
-        timeout: 10_000,
-      });
-      client = createStrictOpencodeClient(server.url);
-      serverHandle = server;
-      log("agent", `OpenCode server running at ${server.url}`);
-    } catch (err) {
-      const reusedClient = await reuseExistingServer();
-      if (!reusedClient) throw err;
-
-      client = reusedClient;
-      logWarn(
-        "agent",
-        `OpenCode server already became available at ${OPENCODE_BASE_URL}; reusing it`,
-      );
-    }
-
-    return client;
-  })();
-
-  try {
-    return await clientPromise;
-  } finally {
-    clientPromise = null;
-  }
-}
-
-async function reuseExistingServer(): Promise<OpencodeClient | null> {
-  try {
-    const response = await fetch(`${OPENCODE_BASE_URL}/global/health`);
-    if (!response.ok) return null;
-
-    const existingClient = createStrictOpencodeClient(OPENCODE_BASE_URL);
-    log("agent", `Reusing OpenCode server at ${OPENCODE_BASE_URL}`);
-    return existingClient;
-  } catch {
-    return null;
-  }
-}
-
-function getChatMcpServerName(chatId: string): string {
-  const safeChatId = chatId.replace(/[^a-zA-Z0-9_-]+/g, "_") || "chat";
-  return `${TALON_MCP_SERVER_NAME}-${safeChatId}`;
-}
-
-function isTalonToolID(toolID: string): boolean {
-  return (
-    toolID.startsWith(`${TALON_MCP_SERVER_NAME}_`) ||
-    toolID.startsWith(`${TALON_MCP_SERVER_NAME}-`)
-  );
-}
-
-export async function ensureChatMcpServer(
-  oc: OpencodeClient,
-  chatId: string,
-): Promise<string> {
-  const serverName = getChatMcpServerName(chatId);
-
-  try {
-    const statusResp = await oc.mcp.status();
-    const mcpServers =
-      (statusResp.data as Record<string, { status?: string }> | undefined) ??
-      {};
-    const talonTools = mcpServers[serverName];
-
-    if (talonTools?.status === "connected") {
-      return serverName;
-    }
-
-    const toolsPath = new URL("../../core/tools/mcp-server.ts", import.meta.url)
-      .pathname;
-    await oc.mcp.add({
-      name: serverName,
-      config: {
-        type: "local",
-        command: ["node", "--import", "tsx", toolsPath],
-        environment: {
-          TALON_BRIDGE_URL: `http://127.0.0.1:${gatewayPortFn()}`,
-          TALON_CHAT_ID: chatId,
-          TALON_FRONTEND: frontendName,
-        },
-      },
-    });
-    log("agent", `Registered ${serverName} MCP server with OpenCode`);
-  } catch (err) {
+  // Pre-warm plugin MCP servers in the background. Same rationale as
+  // the Kilo backend's init pre-warm.
+  prewarmPluginMcpServers().catch((err) => {
     logWarn(
       "agent",
-      `MCP registration failed for ${serverName} (tools may not be available): ${errMsg(err)}`,
+      `Plugin MCP pre-warm failed (non-fatal): ${sharedErrMsg(err)}`,
     );
-  }
-
-  return serverName;
+  });
 }
 
-export async function ensurePluginMcpServers(
-  oc: OpencodeClient,
-  chatId: string,
-): Promise<string[]> {
-  const { getPluginMcpServers } = await import("../../core/plugin.js");
-  const bridgeUrl = `http://127.0.0.1:${gatewayPortFn()}`;
-  const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
-  const registered: string[] = [];
-
-  // Check which are already connected
-  let existingServers: Record<string, { status?: string }> = {};
-  try {
-    const statusResp = await oc.mcp.status();
-    existingServers =
-      (statusResp.data as Record<string, { status?: string }> | undefined) ??
-      {};
-  } catch {
-    // status check failed — try to register anyway
-  }
-
-  for (const [name, cfg] of Object.entries(pluginServers)) {
-    if (existingServers[name]?.status === "connected") {
-      registered.push(name);
-      continue;
-    }
-    try {
-      await oc.mcp.add({
-        name,
-        config: {
-          type: "local",
-          command: [cfg.command, ...cfg.args],
-          environment: cfg.env ?? {},
-        },
-      });
-      registered.push(name);
-      log("agent", `Registered plugin MCP server: ${name}`);
-    } catch (err) {
-      logWarn(
-        "agent",
-        `Plugin MCP registration failed for ${name}: ${errMsg(err)}`,
-      );
-    }
-  }
-
-  return registered;
-}
-
-export async function buildToolOverrides(
-  oc: OpencodeClient,
-  chatServerName: string,
-): Promise<Record<string, boolean> | undefined> {
-  try {
-    const toolIdsResp = await oc.tool.ids();
-    const toolIds = Array.isArray(toolIdsResp.data) ? toolIdsResp.data : [];
-    const overrides: Record<string, boolean> = {};
-    const chatToolPrefix = `${chatServerName}_`;
-    let matchedChatTool = false;
-
-    for (const toolId of toolIds) {
-      if (typeof toolId !== "string" || !isTalonToolID(toolId)) continue;
-
-      const enabled = toolId.startsWith(chatToolPrefix);
-      overrides[toolId] = enabled;
-      matchedChatTool ||= enabled;
-    }
-
-    return matchedChatTool ? overrides : undefined;
-  } catch (err) {
-    logWarn(
-      "agent",
-      `Failed to build OpenCode tool overrides for ${chatServerName}: ${errMsg(err)}`,
-    );
-    return undefined;
-  }
-}
-
-export async function disconnectChatMcpServer(
-  oc: OpencodeClient,
-  serverName: string,
-): Promise<void> {
-  try {
-    await oc.mcp.disconnect({ name: serverName });
-  } catch (err) {
-    logWarn("agent", `Failed to disconnect ${serverName}: ${errMsg(err)}`);
-  }
+async function prewarmPluginMcpServers(): Promise<void> {
+  const client = await ensureServer();
+  await ensurePluginMcpServers(client, "prewarm");
 }
 
 export function stopOpenCodeServer(): void {
-  clientPromise = null;
-  modelProviderCache.clear();
-  clearModelCatalogCache();
-  if (serverHandle) {
-    serverHandle.close();
-    serverHandle = null;
-    client = null;
-    log("agent", "OpenCode server stopped");
-  }
+  stopRemoteServer(state, clearModelCatalogCache);
 }
 
-export async function ensureSession(
+// ── Server lifecycle ────────────────────────────────────────────────────────
+
+export function ensureServer(): Promise<OpencodeClient> {
+  return ensureRemoteServerShared({
+    state,
+    createClient: createStrictOpencodeClient,
+    createServer: ({ hostname, port, timeout }) =>
+      createOpencodeServer({ hostname, port, timeout }),
+  });
+}
+
+// ── MCP server registration ─────────────────────────────────────────────────
+
+export function ensureChatMcpServer(
   oc: OpencodeClient,
   chatId: string,
 ): Promise<string> {
-  const session = getSession(chatId);
-
-  if (session.sessionId) {
-    try {
-      await oc.session.get({ sessionID: session.sessionId });
-      return session.sessionId;
-    } catch {
-      logWarn(
-        "agent",
-        `[${chatId}] Session ${session.sessionId} expired, creating new`,
-      );
-      resetSession(chatId);
-    }
-  }
-
-  const resp = await oc.session.create({ title: `Chat ${chatId}` });
-  const data = resp.data as Record<string, unknown> | undefined;
-  const newId = (data?.id as string) ?? String(Date.now());
-  setSessionId(chatId, newId);
-  log("agent", `[${chatId}] Created OpenCode session: ${newId}`);
-  return newId;
+  return ensureChatMcpServerShared(oc, state, chatId);
 }
 
-export async function resolveProviderID(
+export function ensurePluginMcpServers(
+  oc: OpencodeClient,
+  chatId: string,
+): Promise<string[]> {
+  return ensurePluginMcpServersShared(oc, state, chatId);
+}
+
+export function buildToolOverrides(
+  oc: OpencodeClient,
+  chatServerName: string,
+): Promise<Record<string, boolean> | undefined> {
+  return buildToolOverridesShared(oc, state, chatServerName);
+}
+
+export function disconnectChatMcpServer(
+  oc: OpencodeClient,
+  serverName: string,
+): Promise<void> {
+  return disconnectChatMcpServerShared(oc, state, serverName);
+}
+
+// ── Session management ─────────────────────────────────────────────────────
+
+export function ensureSession(
+  oc: OpencodeClient,
+  chatId: string,
+): Promise<string> {
+  return ensureRemoteSession(oc, state, chatId);
+}
+
+// ── Provider resolution ────────────────────────────────────────────────────
+
+export function resolveProviderID(
   oc: OpencodeClient,
   modelID: string,
 ): Promise<string> {
-  const cachedProviderID = modelProviderCache.get(modelID);
-  if (cachedProviderID) return cachedProviderID;
-
-  const providerResp = await oc.provider.list();
-  const providerBuckets =
-    (providerResp.data as Record<string, unknown> | undefined) ?? {};
-  const guessedProviderID = guessProviderID(modelID);
-  const matches: Array<{ providerID: string; bucketName: string }> = [];
-
-  for (const [bucketName, bucket] of Object.entries(providerBuckets)) {
-    if (!Array.isArray(bucket)) continue;
-
-    for (const provider of bucket) {
-      if (!provider || typeof provider !== "object") continue;
-
-      const providerData = provider as {
-        id?: string;
-        models?: Record<string, { providerID?: string }>;
-      };
-
-      const modelEntry = providerData.models?.[modelID];
-      if (!modelEntry) continue;
-
-      const providerID = modelEntry.providerID ?? providerData.id;
-      if (!providerID) continue;
-
-      matches.push({ providerID, bucketName });
-    }
-  }
-
-  if (matches.length > 0) {
-    const score = (m: (typeof matches)[0]) =>
-      (m.providerID === guessedProviderID ? 0 : 2) +
-      (m.providerID === "opencode" ? 0 : 1) +
-      getBucketPriority(m.bucketName) * 0.1;
-    matches.sort((a, b) => score(a) - score(b));
-
-    const resolvedProviderID = matches[0].providerID;
-    modelProviderCache.set(modelID, resolvedProviderID);
-    return resolvedProviderID;
-  }
-
-  const fallbackProviderID = guessProviderID(modelID);
-  modelProviderCache.set(modelID, fallbackProviderID);
-  logWarn(
-    "agent",
-    `Could not resolve provider for model ${modelID}; falling back to ${fallbackProviderID}`,
-  );
-  return fallbackProviderID;
+  return resolveProviderIDShared(oc, state, modelID, {
+    guessProviderID,
+    getBucketPriority,
+  });
 }
 
+/**
+ * Parse the stored model-selection string into a `{providerID?, modelID}` pair.
+ *
+ * OpenCode model ids occasionally encode the provider as a `provider/model`
+ * prefix (e.g. `openrouter/anthropic/claude-3.5-sonnet`). The parser here
+ * is fuzzy — it tries to extract a provider hint from the prefix while
+ * preserving the full model id when ambiguous. See `./models.ts` for the
+ * underlying `parseOpenCodeModelQuery` logic.
+ */
 export function parseStoredOpenCodeModelSelection(value: string): {
   providerID?: string;
   modelID: string;
@@ -368,9 +193,25 @@ export function parseStoredOpenCodeModelSelection(value: string): {
   };
 }
 
+// ── Internal accessors ─────────────────────────────────────────────────────
+
 export function getConfig(): TalonConfig {
-  return config;
+  if (!state.config) {
+    throw new Error(
+      "OpenCode agent not initialized — call initOpenCodeAgent first",
+    );
+  }
+  return state.config;
 }
+
+/**
+ * Snapshot of the locally-cached MCP server registrations. Test-only.
+ */
+export function getRegisteredMcpServerNames(): string[] {
+  return getRegisteredMcpServerNamesShared(state);
+}
+
+const errMsg = sharedErrMsg;
 
 export {
   OPENCODE_HOSTNAME,

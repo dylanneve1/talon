@@ -10,3 +10,8 @@ export { warmSession } from "./warm.js";
 export { handleMessage, getActiveQuery } from "./handler.js";
 export { buildMcpServers, getActiveFrontends } from "./options.js";
 export { getBridgePort } from "./state.js";
+export {
+  runOneShotAgent,
+  evictOrphanSubprocesses,
+  initClaudeOneShot,
+} from "./one-shot.js";

@@ -2,9 +2,13 @@
 
 ## Supported Versions
 
+Only the latest minor release is supported. Talon is on a continuous-release
+cadence — see [CHANGELOG.md](CHANGELOG.md) for the current version.
+
 | Version | Supported |
-|---------|-----------|
-| 1.0.x   | Yes       |
+| ------- | --------- |
+| Latest  | Yes       |
+| Older   | No        |
 
 ## Reporting a Vulnerability
 

@@ -29,7 +29,10 @@ import { dirs, files as pathFiles } from "./util/paths.js";
 const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 const CONFIG_FILE = pathFiles.config;
 const LOG_FILE = pathFiles.log;
-const HEALTH_URL = "http://127.0.0.1:19876/health";
+// Health endpoint is the dispatcher's gateway, default 19876. Overridable
+// via TALON_HEALTH_PORT so tests can probe a port nothing's listening on
+// (otherwise `talon status` reports a co-tenant's running daemon as ours).
+const HEALTH_URL = `http://127.0.0.1:${process.env.TALON_HEALTH_PORT ?? "19876"}/health`;
 
 function printBanner(): void {
   console.log();
@@ -40,8 +43,16 @@ function printBanner(): void {
 
 type Config = {
   frontend: string | string[];
+  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents`). */
+  backend?: "claude" | "kilo" | "opencode" | "codex" | "openai-agents";
   botToken?: string;
   claudeBinary?: string;
+  /** OpenAI API key — used by Codex + OpenAI Agents backends. */
+  openaiApiKey?: string;
+  /** OpenAI-compatible base URL — OpenRouter, Azure, Ollama, LiteLLM, etc. */
+  openaiBaseUrl?: string;
+  /** OpenAI API surface — "responses" (default) or "chat_completions" (most third parties). */
+  openaiApiMode?: "responses" | "chat_completions";
   model: string;
   concurrency: number;
   pulse: boolean;
@@ -56,6 +67,16 @@ type Config = {
   teamsWebhookSecret?: string;
   teamsWebhookPort?: number;
   teamsBotDisplayName?: string;
+  // Discord
+  discord?: {
+    botToken: string;
+    applicationId: string;
+    allowedUsers?: string[];
+    allowedGuilds?: string[];
+    allowedChannels?: string[];
+    adminUserIds?: string[];
+    [key: string]: unknown;
+  };
 };
 
 const DEFAULTS: Config = {
@@ -123,12 +144,16 @@ async function runSetup(): Promise<void> {
         label: `Telegram  ${pc.dim("\u2014 bot via @BotFather")}`,
       },
       {
-        value: "terminal",
-        label: `Terminal  ${pc.dim("\u2014 local CLI chat")}`,
+        value: "discord",
+        label: `Discord   ${pc.dim("\u2014 bot via Developer Portal (discord.js v14)")}`,
       },
       {
         value: "teams",
         label: `Teams     ${pc.dim("\u2014 Microsoft Teams via Power Automate")}`,
+      },
+      {
+        value: "terminal",
+        label: `Terminal  ${pc.dim("\u2014 local CLI chat")}`,
       },
     ],
     required: true,
@@ -282,6 +307,45 @@ async function runSetup(): Promise<void> {
     if (botName) teamsBotDisplayName = botName;
   }
 
+  let discordBotToken: string | undefined;
+  let discordApplicationId: string | undefined;
+
+  if (selectedFrontends.includes("discord")) {
+    p.note(
+      "Get bot token + application ID from\n" +
+        "https://discord.com/developers/applications → your app → Bot",
+      "Discord Setup",
+    );
+
+    const token = await p.text({
+      message: "Discord bot token",
+      placeholder: "MTxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      initialValue: config.discord?.botToken || undefined,
+      validate: (v) => {
+        if (!v) return "Bot token is required";
+      },
+    });
+    if (p.isCancel(token)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    discordBotToken = token as string;
+
+    const appId = await p.text({
+      message: "Discord application ID",
+      placeholder: "1234567890123456789",
+      initialValue: config.discord?.applicationId || undefined,
+      validate: (v) => {
+        if (!v) return "Application ID is required";
+      },
+    });
+    if (p.isCancel(appId)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    discordApplicationId = appId as string;
+  }
+
   // Discover models from SDK; fall back to static list if SDK isn't available
   const {
     registerClaudeModels,
@@ -330,23 +394,131 @@ async function runSetup(): Promise<void> {
     process.exit(0);
   }
 
-  // ── Claude binary path ──
-  const claudeBinaryInput = await p.text({
-    message: "Claude Code binary path",
-    placeholder: "leave empty for default (claude)",
-    initialValue: config.claudeBinary || "",
+  // ── Backend selection ──
+  const backendSelection = await p.select({
+    message: "AI backend",
+    initialValue: config.backend ?? "claude",
+    options: [
+      {
+        value: "claude",
+        label: `Claude    ${pc.dim("— Anthropic Claude Agent SDK")}`,
+      },
+      {
+        value: "kilo",
+        label: `Kilo      ${pc.dim("— @kilocode/sdk (multi-provider routing)")}`,
+      },
+      {
+        value: "opencode",
+        label: `OpenCode  ${pc.dim("— @opencode-ai/sdk")}`,
+      },
+      {
+        value: "codex",
+        label: `Codex     ${pc.dim("— OpenAI Codex CLI (@openai/codex)")}`,
+      },
+      {
+        value: "openai-agents",
+        label: `OpenAI Agents ${pc.dim("— @openai/agents (OpenAI or any OpenAI-compatible endpoint)")}`,
+      },
+    ],
   });
-  if (p.isCancel(claudeBinaryInput)) {
+  if (p.isCancel(backendSelection)) {
     p.cancel("Cancelled.");
     process.exit(0);
   }
-  const claudeBinary = (claudeBinaryInput as string).trim() || undefined;
+  const backend = backendSelection as Config["backend"];
+
+  // ── Backend-specific config ──
+  let claudeBinary: string | undefined;
+  let openaiApiKey: string | undefined;
+  let openaiBaseUrl: string | undefined;
+  let openaiApiMode: "responses" | "chat_completions" | undefined;
+
+  if (backend === "claude") {
+    const claudeBinaryInput = await p.text({
+      message: "Claude Code binary path",
+      placeholder: "leave empty for default (claude)",
+      initialValue: config.claudeBinary || "",
+    });
+    if (p.isCancel(claudeBinaryInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    claudeBinary = (claudeBinaryInput as string).trim() || undefined;
+  } else if (backend === "codex") {
+    const keyInput = await p.text({
+      message: "OpenAI API key",
+      placeholder:
+        "leave empty to use OPENAI_API_KEY env or `codex login` auth",
+      initialValue: config.openaiApiKey || "",
+    });
+    if (p.isCancel(keyInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    openaiApiKey = (keyInput as string).trim() || undefined;
+  } else if (backend === "openai-agents") {
+    const keyInput = await p.text({
+      message:
+        "API key (OpenAI, OpenRouter, Azure, or whatever your endpoint requires)",
+      placeholder: "leave empty to use OPENAI_API_KEY env",
+      initialValue: config.openaiApiKey || "",
+    });
+    if (p.isCancel(keyInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    openaiApiKey = (keyInput as string).trim() || undefined;
+
+    const baseUrlInput = await p.text({
+      message:
+        "Base URL " +
+        pc.dim(
+          "(leave empty for OpenAI direct; e.g. https://openrouter.ai/api/v1)",
+        ),
+      placeholder: "https://openrouter.ai/api/v1",
+      initialValue: config.openaiBaseUrl || "",
+    });
+    if (p.isCancel(baseUrlInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    openaiBaseUrl = (baseUrlInput as string).trim() || undefined;
+
+    if (openaiBaseUrl) {
+      const modeSelection = await p.select({
+        message: "OpenAI API surface",
+        options: [
+          {
+            value: "chat_completions",
+            label: `Chat Completions ${pc.dim("— most third parties (OpenRouter, Ollama, LiteLLM, most Azure)")}`,
+          },
+          {
+            value: "responses",
+            label: `Responses ${pc.dim("— OpenAI native, requires proxy support")}`,
+          },
+        ],
+        initialValue: config.openaiApiMode ?? "chat_completions",
+      });
+      if (p.isCancel(modeSelection)) {
+        p.cancel("Cancelled.");
+        process.exit(0);
+      }
+      openaiApiMode = modeSelection as "responses" | "chat_completions";
+    }
+  }
+  // kilo / opencode need no extra prompts — bundled SDK + per-provider
+  // creds configured separately (kilo via `kilo login`, opencode via
+  // its own auth flow).
 
   const newConfig: Config = {
     frontend:
       selectedFrontends.length === 1 ? selectedFrontends[0] : selectedFrontends,
+    backend,
     botToken: selectedFrontends.includes("telegram") ? botToken : undefined,
     claudeBinary,
+    openaiApiKey,
+    openaiBaseUrl,
+    openaiApiMode,
     model: model as string,
     concurrency: config.concurrency,
     pulse: pulse as boolean,
@@ -369,6 +541,19 @@ async function runSetup(): Promise<void> {
     teamsBotDisplayName: selectedFrontends.includes("teams")
       ? teamsBotDisplayName
       : undefined,
+    // Discord — bot token + applicationId. Allowlists / admin IDs /
+    // mention vs channel-wide reply behaviour are left as defaults in
+    // the wizard; advanced users hand-edit talon.json.
+    discord:
+      selectedFrontends.includes("discord") &&
+      discordBotToken &&
+      discordApplicationId
+        ? {
+            ...config.discord,
+            botToken: discordBotToken,
+            applicationId: discordApplicationId,
+          }
+        : config.discord,
   };
 
   const s = p.spinner();
@@ -486,9 +671,31 @@ async function viewConfig(): Promise<void> {
       `  ${pc.dim("Teams bot name")}   ${config.teamsBotDisplayName || pc.dim("not set")}`,
     );
   }
+  const backendLabel: Record<NonNullable<Config["backend"]>, string> = {
+    claude: "Anthropic Claude SDK",
+    kilo: "Kilo (@kilocode/sdk)",
+    opencode: "OpenCode (@opencode-ai/sdk)",
+    codex: "OpenAI Codex CLI",
+    "openai-agents": "OpenAI Agents (@openai/agents)",
+  };
+  console.log(
+    `  ${pc.dim("Backend")}          ${pc.green(backendLabel[config.backend ?? "claude"])}`,
+  );
   if (config.claudeBinary)
     console.log(
       `  ${pc.dim("Claude binary")}    ${pc.green(config.claudeBinary)}`,
+    );
+  if (config.openaiApiKey)
+    console.log(
+      `  ${pc.dim("OpenAI API key")}   ${maskToken(config.openaiApiKey)}`,
+    );
+  if (config.openaiBaseUrl)
+    console.log(`  ${pc.dim("OpenAI base URL")}  ${config.openaiBaseUrl}`);
+  if (config.openaiApiMode)
+    console.log(`  ${pc.dim("OpenAI API mode")}  ${config.openaiApiMode}`);
+  if (config.discord?.botToken)
+    console.log(
+      `  ${pc.dim("Discord bot")}      ${maskToken(config.discord.botToken)} (app ${config.discord.applicationId.slice(0, 6)}…)`,
     );
   console.log(`  ${pc.dim("Model")}            ${config.model}`);
   console.log(`  ${pc.dim("Concurrency")}      ${config.concurrency}`);
@@ -596,32 +803,103 @@ async function runDoctor(): Promise<void> {
       ? `  ${pc.green("\u2713")} Workspace: ${pc.dim(dirs.root)}`
       : `  ${pc.yellow("!")} Workspace missing`,
   );
-  try {
-    const { execSync } = await import("node:child_process");
-    const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
-    if (doctorConfig?.claudeBinary) {
-      // Check if it's a PATH command or an absolute/relative file path
-      const cmd = process.platform === "win32" ? "where" : "which";
-      try {
-        execSync(`${cmd} ${doctorConfig.claudeBinary}`, { stdio: "pipe" });
-        console.log(
-          `  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`,
+  // Backend-specific binary check (only required for the active backend).
+  const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
+  const activeBackend = doctorConfig?.backend ?? "claude";
+  if (activeBackend === "claude") {
+    try {
+      const { execSync } = await import("node:child_process");
+      if (doctorConfig?.claudeBinary) {
+        const cmd = process.platform === "win32" ? "where" : "which";
+        try {
+          execSync(`${cmd} ${doctorConfig.claudeBinary}`, { stdio: "pipe" });
+          console.log(
+            `  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`,
+          );
+        } catch {
+          console.log(
+            `  ${pc.red("\u2717")} Claude Code binary not found: ${pc.dim(doctorConfig.claudeBinary)}`,
+          );
+          issues++;
+        }
+      } else {
+        execSync(
+          process.platform === "win32" ? "where claude" : "which claude",
+          {
+            stdio: "pipe",
+          },
         );
-      } catch {
+        console.log(`  ${pc.green("\u2713")} Claude Code installed`);
+      }
+    } catch {
+      console.log(`  ${pc.red("\u2717")} Claude Code not found`);
+      issues++;
+    }
+  } else if (activeBackend === "codex") {
+    try {
+      const { execSync } = await import("node:child_process");
+      execSync(process.platform === "win32" ? "where codex" : "which codex", {
+        stdio: "pipe",
+      });
+      console.log(`  ${pc.green("\u2713")} Codex CLI installed`);
+      // Auth check \u2014 either OPENAI_API_KEY env, config.openaiApiKey,
+      // or a non-empty ~/.codex/auth.json.
+      const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
+      const hasCfgKey = Boolean(doctorConfig?.openaiApiKey);
+      const codexAuthFile =
+        process.env.HOME && existsSync(`${process.env.HOME}/.codex/auth.json`);
+      if (hasEnvKey || hasCfgKey || codexAuthFile) {
+        const sources: string[] = [];
+        if (hasEnvKey) sources.push("OPENAI_API_KEY env");
+        if (hasCfgKey) sources.push("openaiApiKey in talon.json");
+        if (codexAuthFile) sources.push("~/.codex/auth.json");
         console.log(
-          `  ${pc.red("\u2717")} Claude Code binary not found: ${pc.dim(doctorConfig.claudeBinary)}`,
+          `  ${pc.green("\u2713")} Codex auth: ${pc.dim(sources.join(", "))}`,
+        );
+      } else {
+        console.log(
+          `  ${pc.yellow("!")} Codex auth missing (set OPENAI_API_KEY or run \`codex login\`)`,
         );
         issues++;
       }
-    } else {
-      execSync(process.platform === "win32" ? "where claude" : "which claude", {
-        stdio: "pipe",
-      });
-      console.log(`  ${pc.green("\u2713")} Claude Code installed`);
+    } catch {
+      console.log(
+        `  ${pc.red("\u2717")} Codex CLI not found (npm i -g @openai/codex)`,
+      );
+      issues++;
     }
-  } catch {
-    console.log(`  ${pc.red("\u2717")} Claude Code not found`);
-    issues++;
+  } else if (activeBackend === "kilo" || activeBackend === "opencode") {
+    // Kilo / OpenCode are bundled as npm deps \u2014 no external binary to check.
+    console.log(
+      `  ${pc.green("\u2713")} ${activeBackend === "kilo" ? "Kilo" : "OpenCode"} SDK bundled`,
+    );
+  } else if (activeBackend === "openai-agents") {
+    console.log(`  ${pc.green("\u2713")} OpenAI Agents SDK bundled`);
+    const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
+    const hasCfgKey = Boolean(doctorConfig?.openaiApiKey);
+    const envBase = process.env.OPENAI_BASE_URL;
+    const cfgBase = doctorConfig?.openaiBaseUrl;
+    if (hasEnvKey || hasCfgKey) {
+      const sources: string[] = [];
+      if (hasEnvKey) sources.push("OPENAI_API_KEY env");
+      if (hasCfgKey) sources.push("openaiApiKey in talon.json");
+      console.log(
+        `  ${pc.green("\u2713")} OpenAI Agents auth: ${pc.dim(sources.join(", "))}`,
+      );
+    } else {
+      console.log(
+        `  ${pc.yellow("!")} OpenAI Agents auth missing (set OPENAI_API_KEY or openaiApiKey in talon.json)`,
+      );
+      issues++;
+    }
+    if (envBase || cfgBase) {
+      const baseSrc = envBase ? `env (${envBase})` : `config (${cfgBase})`;
+      console.log(
+        `  ${pc.green("\u2713")} OpenAI-compatible endpoint: ${pc.dim(baseSrc)}`,
+      );
+    } else {
+      console.log(`  ${pc.dim("-")} Endpoint: api.openai.com (default)`);
+    }
   }
   try {
     const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) });
@@ -669,6 +947,16 @@ async function startChat(): Promise<void> {
   const { backend } = await initBackendAndDispatcher(config, frontend);
   gateway.backend = backend;
 
+  // Mirror the index.ts wiring: keep the gateway's cached backend
+  // reference in sync with chat-role rebinds.
+  const { onBackendChange, roleHolder } =
+    await import("./core/backend-controller.js");
+  const CHAT_ROLE_HOLDER = roleHolder("chat");
+  onBackendChange((holder, newBackend) => {
+    if (holder !== CHAT_ROLE_HOLDER) return;
+    gateway.backend = newBackend;
+  });
+
   process.on("SIGINT", () => {
     flushSessions();
     flushChatSettings();
@@ -711,7 +999,13 @@ async function mainMenu(): Promise<void> {
     : [config.frontend];
   const frontendLabel = fes
     .map((f) =>
-      f === "telegram" ? "Telegram" : f === "teams" ? "Teams" : "Terminal",
+      f === "telegram"
+        ? "Telegram"
+        : f === "teams"
+          ? "Teams"
+          : f === "discord"
+            ? "Discord"
+            : "Terminal",
     )
     .join(" + ");
 

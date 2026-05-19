@@ -11,7 +11,7 @@ export const schedulingTools: ToolDefinition[] = [
     description: "Cancel a scheduled message.",
     schema: { schedule_id: z.string() },
     execute: (params, bridge) => bridge("cancel_scheduled", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "scheduling",
   },
 

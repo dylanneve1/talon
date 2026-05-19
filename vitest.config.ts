@@ -18,6 +18,13 @@ export default defineConfig({
         "src/login.ts",
         "src/setup.ts",
         "src/bootstrap.ts",
+        // Kilo/OpenCode process-entry handlers are covered by the dedicated
+        // integration and backend-live CI tiers. Keep unit coverage focused on
+        // parser/session/server logic where isolated tests give useful signal.
+        "src/backend/kilo/handler.ts",
+        "src/backend/kilo/one-shot.ts",
+        "src/backend/opencode/handler.ts",
+        "src/backend/opencode/one-shot.ts",
         "**/*.d.ts",
         "**/dist/**",
       ],

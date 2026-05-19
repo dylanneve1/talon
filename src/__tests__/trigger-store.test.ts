@@ -243,6 +243,37 @@ describe("trigger-store", () => {
       loadTriggers();
       expect(getTrigger(t.id)!.status).toBe("fired");
     });
+
+    it("parks persistent running triggers as pending and preserves pid for orphan check", () => {
+      const t = makeTrigger({ status: "running", pid: 1234, persistent: true });
+      inMemoryFiles.set(pathFiles.triggers, JSON.stringify({ [t.id]: t }));
+
+      _resetTriggersForTesting();
+      loadTriggers();
+
+      const restored = getTrigger(t.id)!;
+      expect(restored.status).toBe("pending");
+      // pid is kept so resumeAfterRestart() can detect/kill an orphaned child
+      expect(restored.pid).toBe(1234);
+      expect(restored.lastError).toBeUndefined();
+      expect(restored.endedAt).toBeUndefined();
+    });
+
+    it("does not touch persistent triggers already in terminal state", () => {
+      const t = makeTrigger({
+        status: "cancelled",
+        persistent: true,
+        endedAt: Date.now() - 1000,
+        lastError: "Cancelled by user",
+      });
+      inMemoryFiles.set(pathFiles.triggers, JSON.stringify({ [t.id]: t }));
+
+      _resetTriggersForTesting();
+      loadTriggers();
+
+      // Cancelled persistent stays cancelled — only running/pending are converted
+      expect(getTrigger(t.id)!.status).toBe("cancelled");
+    });
   });
 
   describe("flushTriggers", () => {

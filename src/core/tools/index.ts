@@ -46,19 +46,54 @@ const TURN_TERMINATOR_NAMES: ReadonlySet<string> = new Set(
 );
 
 /**
- * Strip an MCP server prefix (`mcp__<server>__`) from a tool name.
+ * All tool names registered in Talon's tool catalog. Used by
+ * `stripMcpPrefix` to recognise the bare name when a backend prefixes
+ * the tool with its MCP server identifier in a non-standard way (e.g.
+ * Kilo's `<server>_<bare>` instead of MCP's canonical `mcp__<server>__<bare>`).
+ */
+const ALL_TOOL_NAMES: ReadonlySet<string> = new Set(
+  ALL_TOOLS.map((t) => t.name),
+);
+
+/**
+ * Strip a backend's MCP server prefix from a tool name.
  *
- * Tools served through MCP arrive at the SDK with the prefix attached
- * (e.g. `mcp__telegram-tools__end_turn`), while the registry stores them
- * by their bare name (`end_turn`). Callers that want to compare against
- * the registry should normalize first.
+ * Two prefix conventions are in the wild:
  *
- * Returns the input unchanged if no prefix matches — safe to call on any
- * tool name. The non-greedy `.+?` matches the FIRST `__` boundary after
- * `mcp__`, which is the server-name terminator in MCP's naming scheme.
+ *   1. **Claude SDK / MCP canonical:** `mcp__<server>__<tool>`
+ *      e.g. `mcp__telegram-tools__end_turn` → `end_turn`.
+ *
+ *   2. **Kilo / OpenCode:** `<server>_<tool>` (single underscore boundary,
+ *      no `mcp__` prefix). e.g. `talon-tools-352042062_send` → `send`,
+ *      `talon-tools-heartbeat_end_turn` → `end_turn`. Bare names that
+ *      contain underscores (`end_turn`) make a "split on _" approach
+ *      ambiguous, so we resolve by checking whether the trailing segment
+ *      matches a known tool name and walking backward through underscore
+ *      boundaries until we hit one.
+ *
+ * Returns the input unchanged when no recognised prefix matches — safe
+ * to call on any tool name. Without the Kilo branch, deliveries via
+ * `talon-tools-<chat>_send` were not deduped against the model's
+ * trailing prose, so every tool-delivered reply was emitted twice
+ * (once by the tool's bridge call, once by the handler's text-part
+ * fallback).
  */
 export function stripMcpPrefix(toolName: string): string {
-  return toolName.replace(/^mcp__.+?__/, "");
+  const mcpStripped = toolName.replace(/^mcp__.+?__/, "");
+  if (mcpStripped !== toolName) return mcpStripped;
+
+  // Kilo / OpenCode `<server>_<bare>` form. Walk underscore boundaries
+  // from the right; the longest tail that matches a registered tool name
+  // is the bare name. Prevents `talon-tools-352042062_end_turn` from
+  // resolving to `turn` (which isn't a tool).
+  const segments = toolName.split("_");
+  for (let i = 1; i < segments.length; i++) {
+    const tail = segments.slice(i).join("_");
+    if (ALL_TOOL_NAMES.has(tail)) {
+      return tail;
+    }
+  }
+  return toolName;
 }
 
 /**

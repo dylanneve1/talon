@@ -41,11 +41,13 @@ export type LogComponent =
   | "gateway"
   | "plugin"
   | "teams"
+  | "discord"
   | "config"
   | "access"
   | "github"
   | "mempalace"
-  | "playwright";
+  | "playwright"
+  | "backend-controller";
 
 const LOG_FILE = files.log;
 

@@ -1,9 +1,12 @@
-# Talon systemd service — edit paths before installing.
-# Install: sudo cp talon.service /etc/systemd/system/
-#          sudo systemctl daemon-reload && sudo systemctl enable --now talon
+# Talon systemd service — edit User= and WorkingDirectory= before installing.
+#
+# Install:
+#   sudo cp packaging/systemd/talon.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now talon
 
 [Unit]
-Description=Talon — Claude-powered Telegram bot
+Description=Talon — multi-platform agentic AI harness
 After=network.target
 
 [Service]

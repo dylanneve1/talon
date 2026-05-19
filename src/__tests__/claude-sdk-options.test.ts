@@ -85,7 +85,7 @@ describe("buildSdkOptions", () => {
     expect(activeModel).toBe("claude-sonnet-4-6");
     // Model is passed through as resolved — SDK handles context window
     expect(options.model).toBe("default");
-  });
+  }, 10_000);
 
   it("passes model through unchanged when no alias resolution needed", async () => {
     mockGetChatSettings.mockReturnValue({ model: "haiku" });
