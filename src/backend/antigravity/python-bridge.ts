@@ -329,7 +329,7 @@ export class AntigravityBridge {
     let evt: BridgeEvent;
     try {
       evt = JSON.parse(line);
-    } catch (e) {
+    } catch {
       logWarn(
         "agent",
         `[${this.chatId}] non-JSON stdout line: ${line.slice(0, 200)}`,

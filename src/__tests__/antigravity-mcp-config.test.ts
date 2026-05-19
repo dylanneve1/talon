@@ -2,7 +2,7 @@
  * Antigravity MCP-config builder tests.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { buildAntigravityMcpServers } from "../backend/antigravity/mcp-config.js";
 
 vi.mock("../core/plugin.js", () => ({

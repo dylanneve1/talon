@@ -32,7 +32,7 @@ vi.mock("../backend/antigravity/init.js", () => {
 
 import { handleMessage } from "../backend/antigravity/handler.js";
 import { ensureBridge } from "../backend/antigravity/init.js";
-import { getState, resetState } from "../backend/antigravity/state.js";
+import { getState } from "../backend/antigravity/state.js";
 import type {
   BridgeTurnResult,
   ChatOptions,

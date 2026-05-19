@@ -10,7 +10,6 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
-import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
