@@ -18,7 +18,7 @@
  * header).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { fetchEndpointModels } from "../backend/openai-agents/init.js";
+import { fetchEndpointModels } from "../backend/openai-agents/discovery.js";
 import { getState, resetState } from "../backend/openai-agents/state.js";
 
 type FetchInput = { url: string; init?: RequestInit };

@@ -8,7 +8,20 @@
 
 import "./factory.js";
 
-export { initOpenAIAgentsAgent, getOpenAIApiKey } from "./init.js";
+export {
+  initOpenAIAgentsAgent,
+  getOpenAIApiKey,
+  getOpenAIBaseUrl,
+  triggerDiscoveryRefresh,
+} from "./init.js";
+export {
+  awaitDiscovery,
+  startDiscovery,
+  refreshDiscovery,
+  hasDiscoveredCatalog,
+  fetchEndpointModels,
+  extractCapabilities,
+} from "./discovery.js";
 export { handleMessage, getActiveAbort } from "./handler.js";
 export { resetState, getState } from "./state.js";
 export {

@@ -155,12 +155,12 @@ describe("openai-agents / getModelInfo", () => {
 // ── /settings presentation ──────────────────────────────────────────────────
 
 describe("openai-agents / getSettingsPresentation — small catalog (flat view)", () => {
-  it('returns view="models" with the active model bullet-marked', () => {
+  it('returns view="models" with the active model bullet-marked', async () => {
     seedCatalog([
       ["gpt-5.5", { displayName: "GPT-5.5", contextWindow: 400_000 }],
       ["gpt-5", { displayName: "GPT-5", contextWindow: 400_000 }],
     ]);
-    const pres = getSettingsPresentation("gpt-5.5");
+    const pres = await getSettingsPresentation("gpt-5.5");
     expect(pres.view).toBe("models");
     const activeBtn = pres.modelButtons.find((b) =>
       b.callback_data.endsWith("gpt-5.5"),
@@ -169,13 +169,16 @@ describe("openai-agents / getSettingsPresentation — small catalog (flat view)"
     expect(activeBtn?.callback_data).toBe("settings:model:gpt-5.5");
   });
 
-  it("paginates correctly", () => {
+  it("paginates correctly", async () => {
     const entries: Array<[string, EndpointModelCapabilities]> = [];
     for (let i = 0; i < 25; i++)
       entries.push([`m${String(i).padStart(2, "0")}`, {}]);
     seedCatalog(entries);
-    const page1 = getSettingsPresentation("m00", { pageSize: 8 });
-    const page2 = getSettingsPresentation("m00", { pageSize: 8, page: 2 });
+    const page1 = await getSettingsPresentation("m00", { pageSize: 8 });
+    const page2 = await getSettingsPresentation("m00", {
+      pageSize: 8,
+      page: 2,
+    });
     expect(page1.view).toBe("models");
     expect(page1.page).toBe(1);
     expect(page2.page).toBe(2);
@@ -183,26 +186,29 @@ describe("openai-agents / getSettingsPresentation — small catalog (flat view)"
     expect(page1.totalPages).toBe(Math.ceil(25 / 8));
   });
 
-  it("clamps page > totalPages to the last page", () => {
+  it("clamps page > totalPages to the last page", async () => {
     const entries: Array<[string, EndpointModelCapabilities]> = [];
     for (let i = 0; i < 12; i++) entries.push([`m${i}`, {}]);
     seedCatalog(entries);
-    const pres = getSettingsPresentation("m0", { pageSize: 4, page: 999 });
+    const pres = await getSettingsPresentation("m0", {
+      pageSize: 4,
+      page: 999,
+    });
     expect(pres.page).toBe(3);
     expect(pres.totalPages).toBe(3);
   });
 
-  it("applies the free filter and reports freeCount as a hint", () => {
+  it("applies the free filter and reports freeCount as a hint", async () => {
     seedCatalog([
       ["paid-a", {}],
       ["paid-b", {}],
       ["free-a", { free: true }],
       ["free-b", { free: true }],
     ]);
-    const all = getSettingsPresentation("(none)");
+    const all = await getSettingsPresentation("(none)");
     expect(all.freeCount).toBe(2);
     expect(all.totalCount).toBe(4);
-    const free = getSettingsPresentation("(none)", { filter: "free" });
+    const free = await getSettingsPresentation("(none)", { filter: "free" });
     expect(free.filter).toBe("free");
     expect(free.modelButtons).toHaveLength(2);
     for (const b of free.modelButtons) {
@@ -210,9 +216,9 @@ describe("openai-agents / getSettingsPresentation — small catalog (flat view)"
     }
   });
 
-  it("modelDetails carries plain-text backend status (no markup)", () => {
+  it("modelDetails carries plain-text backend status (no markup)", async () => {
     seedCatalog([["m1", { contextWindow: 128_000, free: true }]]);
-    const pres = getSettingsPresentation("m1");
+    const pres = await getSettingsPresentation("m1");
     for (const line of pres.modelDetails) {
       expect(line).not.toContain("<b>");
       expect(line).not.toContain("**");
@@ -221,11 +227,11 @@ describe("openai-agents / getSettingsPresentation — small catalog (flat view)"
     expect(pres.modelDetails.some((l) => /discovered/.test(l))).toBe(true);
   });
 
-  it("button labels strip vendor prefix and surface ctx + free flag", () => {
+  it("button labels strip vendor prefix and surface ctx + free flag", async () => {
     seedCatalog([
       ["openrouter/owl-alpha", { contextWindow: 1_000_000, free: true }],
     ]);
-    const pres = getSettingsPresentation("(none)");
+    const pres = await getSettingsPresentation("(none)");
     const btn = pres.modelButtons[0];
     expect(btn.text).toContain("owl-alpha");
     expect(btn.text).not.toContain("openrouter/");
@@ -233,7 +239,7 @@ describe("openai-agents / getSettingsPresentation — small catalog (flat view)"
     expect(btn.text).toContain("🆓");
   });
 
-  it("hides models whose `<prefix><id>` would overflow Telegram's 64-byte callback_data limit", () => {
+  it("hides models whose `<prefix><id>` would overflow Telegram's 64-byte callback_data limit", async () => {
     // 61-char id + `model:` (6) = 67 bytes — over Telegram's limit.
     // OpenRouter ships exactly one such id today
     // (`cognitivecomputations/dolphin-mistral-24b-venice-edition:free`),
@@ -244,7 +250,7 @@ describe("openai-agents / getSettingsPresentation — small catalog (flat view)"
       [overflow, { contextWindow: 8192 }],
       [ok, { contextWindow: 8192 }],
     ]);
-    const pres = getSettingsPresentation("(none)", {
+    const pres = await getSettingsPresentation("(none)", {
       callbackPrefix: "model:",
     });
     for (const b of pres.modelButtons) {
@@ -280,25 +286,25 @@ describe("openai-agents / getSettingsPresentation — large catalog (provider gr
     seedCatalog(entries);
   }
 
-  it('returns view="groups" with provider chips when no provider is selected', () => {
+  it('returns view="groups" with provider chips when no provider is selected', async () => {
     seedLarge();
-    const pres = getSettingsPresentation("(none)");
+    const pres = await getSettingsPresentation("(none)");
     expect(pres.view).toBe("groups");
     expect(pres.modelButtons.length).toBe(4); // anthropic / openai / google / mistralai
     expect(pres.modelButtons[0].text).toMatch(/\((\d+)\)/);
   });
 
-  it("provider buttons carry a `:provider:` drill callback under the default navPrefix", () => {
+  it("provider buttons carry a `:provider:` drill callback under the default navPrefix", async () => {
     seedLarge();
-    const pres = getSettingsPresentation("(none)");
+    const pres = await getSettingsPresentation("(none)");
     for (const b of pres.modelButtons) {
       expect(b.callback_data).toMatch(/^settings:models:provider:/);
     }
   });
 
-  it("honors an explicit navCallbackPrefix", () => {
+  it("honors an explicit navCallbackPrefix", async () => {
     seedLarge();
-    const pres = getSettingsPresentation("(none)", {
+    const pres = await getSettingsPresentation("(none)", {
       callbackPrefix: "model:",
       navCallbackPrefix: "model:nav",
     });
@@ -307,9 +313,11 @@ describe("openai-agents / getSettingsPresentation — large catalog (provider gr
     }
   });
 
-  it("drills into a provider via options.provider", () => {
+  it("drills into a provider via options.provider", async () => {
     seedLarge();
-    const pres = getSettingsPresentation("(none)", { provider: "google" });
+    const pres = await getSettingsPresentation("(none)", {
+      provider: "google",
+    });
     expect(pres.view).toBe("models");
     expect(pres.provider).toBe("google");
     for (const b of pres.modelButtons) {
@@ -317,14 +325,14 @@ describe("openai-agents / getSettingsPresentation — large catalog (provider gr
     }
   });
 
-  it("skips the group view when the filtered catalog is small (free filter)", () => {
+  it("skips the group view when the filtered catalog is small (free filter)", async () => {
     // Only one free model — under the threshold even before grouping.
     const entries: Array<[string, EndpointModelCapabilities]> = [];
     for (let i = 0; i < 40; i++)
       entries.push([`p/m${i}`, { contextWindow: 100_000 }]);
     entries.push(["free/only", { free: true, contextWindow: 50_000 }]);
     seedCatalog(entries);
-    const pres = getSettingsPresentation("(none)", { filter: "free" });
+    const pres = await getSettingsPresentation("(none)", { filter: "free" });
     expect(pres.view).toBe("models");
     expect(pres.modelButtons).toHaveLength(1);
   });

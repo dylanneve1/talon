@@ -10,7 +10,6 @@ import {
   setChatModel,
   setChatBackend,
   setChatEffort,
-  setChatFreeOnly,
   resolveModelName,
   EFFORT_LEVELS,
   type EffortLevel,
@@ -19,8 +18,6 @@ import { resetSession } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";
 import {
   listAvailableBackends,
-  getBackendIdForChat,
-  hasChatBackendOverride,
   rebindChat,
   releaseChat,
 } from "../../core/backend-controller.js";
@@ -36,16 +33,21 @@ import { escapeHtml } from "./formatting.js";
 import {
   renderSettingsText,
   renderSettingsKeyboard,
-  renderModelPickerControlRows,
   renderModelMenuText,
   renderModelMenuKeyboard,
   renderModelBrowseKeyboard,
   renderBackendMenuKeyboard,
   renderBackendMenuText,
-  buildModelMenuState,
   type SettingsButton,
 } from "./helpers.js";
 import { parseModelCallback } from "./model-callbacks.js";
+import {
+  buildModelMenuViewForChat,
+  buildModelBrowseViewForChat,
+  buildBackendMenuViewForChat,
+  resolveBackendForChat,
+  toggleChatFreeOnly,
+} from "./model-menu.js";
 
 /**
  * Wrapper around `editMessageText` that swallows Telegram's
@@ -258,11 +260,13 @@ export function registerCallbacks(
       return;
     }
 
-    // Handle /model callbacks via the pure parser. The dispatch
-    // below stays narrow — each branch mutates at most one piece of
-    // chat-settings state, then either re-renders the main menu or
-    // the browse view. Everything routes through the same two
-    // renderers so the UX stays consistent regardless of entry path.
+    // Handle /model callbacks via the pure parser. Each branch
+    // mutates at most one piece of chat-settings (or pool) state and
+    // then re-renders one of three views — main menu, backend
+    // submenu, or browse — via the `model-menu` controller. The
+    // controller always resolves the *per-chat* backend so the menu
+    // reflects active per-chat overrides instead of the global
+    // chat-role default.
     if (data.startsWith("model:")) {
       const action = parseModelCallback(data);
 
@@ -282,8 +286,6 @@ export function registerCallbacks(
         return;
       }
 
-      const be = gateway?.backend;
-
       // State-mutating actions.
       let toast: string | undefined;
       let viewAfter: "menu" | "browse" | "backends" = "menu";
@@ -293,6 +295,10 @@ export function registerCallbacks(
       let browseBackToGroups = false;
 
       if (action.kind === "select") {
+        // Resolve selection against the *per-chat* backend — if the
+        // chat has switched to openai-agents we must validate the id
+        // against that catalog, not the global default's.
+        const be = resolveBackendForChat(cid, gateway);
         if (be?.resolveModel) {
           const resolution = await be.resolveModel(action.modelId);
           if (resolution.kind !== "exact" || !resolution.model.selectable) {
@@ -314,8 +320,7 @@ export function registerCallbacks(
         setChatModel(cid, undefined);
         toast = `Model reset to default`;
       } else if (action.kind === "toggle-free") {
-        const next = !getChatSettings(cid).freeOnly;
-        setChatFreeOnly(cid, next ? true : undefined);
+        const next = toggleChatFreeOnly(cid);
         toast = `Free only: ${next ? "on" : "off"}`;
       } else if (action.kind === "menu") {
         viewAfter = "menu";
@@ -397,91 +402,56 @@ export function registerCallbacks(
       }
 
       // Re-render the message in the appropriate view.
-      const currentModel = getChatSettings(cid).model ?? config.model;
-      const freeOnly = getChatSettings(cid).freeOnly === true;
-
-      if (!be?.getSettingsPresentation) return;
-
       if (viewAfter === "menu") {
-        const activeBackendId = getBackendIdForChat(cid);
-        const availableBackends = listAvailableBackends(config);
-        const activeBackend = availableBackends.find(
-          (b) => b.id === activeBackendId,
-        ) ?? { id: activeBackendId, label: activeBackendId };
-        const state = await buildModelMenuState({
-          chatId: cid,
-          activeModel: currentModel,
-          defaultModel: config.model,
-          freeOnly,
-          fetchSnapshot: async () => {
-            const pres = await be.getSettingsPresentation!(currentModel, {
-              callbackPrefix: "model:",
-              navCallbackPrefix: "model:nav",
-              filter: freeOnly ? "free" : "all",
-            });
-            return {
-              freeCount: pres.freeCount,
-              totalCount: pres.totalCount,
-              modelDetails: pres.modelDetails,
-            };
-          },
-          fetchActiveDisplay: async () =>
-            (await be.getModelInfo?.(currentModel))?.displayName,
-          activeBackend,
-          hasBackendOverride: hasChatBackendOverride(cid),
-          showBackendButton: availableBackends.length > 1,
-        });
+        const view = await buildModelMenuViewForChat(cid, config, gateway);
+        if (!view) return;
         await editOrIgnoreSame(
           ctx,
-          renderModelMenuText(state),
-          renderModelMenuKeyboard(state),
+          renderModelMenuText(view.state),
+          renderModelMenuKeyboard(view.state),
         );
         return;
       }
 
       if (viewAfter === "backends") {
-        const activeBackendId = getBackendIdForChat(cid);
-        const availableBackends = listAvailableBackends(config);
-        const activeBackend = availableBackends.find(
-          (b) => b.id === activeBackendId,
-        ) ?? { id: activeBackendId, label: activeBackendId };
-        const defaultBackendLabel =
-          availableBackends.find((b) => b.id === config.backend)?.label ??
-          config.backend;
+        const menu = buildBackendMenuViewForChat(cid, config);
         await editOrIgnoreSame(
           ctx,
           renderBackendMenuText({
-            activeBackend,
-            hasBackendOverride: hasChatBackendOverride(cid),
-            defaultBackendLabel,
+            activeBackend: menu.activeBackend,
+            hasBackendOverride: menu.hasBackendOverride,
+            defaultBackendLabel: menu.defaultBackendLabel,
           }),
           renderBackendMenuKeyboard({
-            available: availableBackends,
-            activeBackendId,
-            hasBackendOverride: hasChatBackendOverride(cid),
+            available: menu.available,
+            activeBackendId: menu.activeBackend.id,
+            hasBackendOverride: menu.hasBackendOverride,
           }),
         );
         return;
       }
 
-      // browse view — fetch picker with chat's freeOnly applied as filter
-      const filter: "all" | "free" =
-        browseFilter ?? (freeOnly ? "free" : "all");
-      const pres = await be.getSettingsPresentation(currentModel, {
-        callbackPrefix: "model:",
-        navCallbackPrefix: "model:nav",
-        filter,
-        ...(browsePage !== undefined ? { page: browsePage } : {}),
-        ...(browseProvider !== undefined && !browseBackToGroups
-          ? { provider: browseProvider }
-          : {}),
-      });
-      const modelInfo = await be.getModelInfo?.(currentModel);
-      const displayName = modelInfo?.displayName ?? currentModel;
+      // browse view — controller picks the per-chat backend and
+      // applies the chat's freeOnly preference when the caller
+      // doesn't override the filter explicitly. `browseBackToGroups`
+      // means "drop any cached provider drill" so we omit `provider`.
+      const browse = await buildModelBrowseViewForChat(
+        cid,
+        config,
+        {
+          ...(browseFilter !== undefined ? { filter: browseFilter } : {}),
+          ...(browsePage !== undefined ? { page: browsePage } : {}),
+          ...(browseProvider !== undefined && !browseBackToGroups
+            ? { provider: browseProvider }
+            : {}),
+        },
+        gateway,
+      );
+      if (!browse) return;
       const lines = [
-        `<b>Model:</b> <code>${escapeHtml(displayName)}</code>`,
-        ...pres.modelDetails.map(escapeHtml),
-        ...(filter === "free" && pres.freeCount > 0
+        `<b>Model:</b> <code>${escapeHtml(browse.activeDisplay)}</code>`,
+        ...browse.modelDetails.map(escapeHtml),
+        ...(browse.filter === "free" && browse.freeCount > 0
           ? ["<i>Filter: free-tier only.</i>"]
           : []),
       ];
@@ -489,16 +459,16 @@ export function registerCallbacks(
         ctx,
         lines.join("\n"),
         renderModelBrowseKeyboard(
-          pres.modelButtons,
+          browse.modelButtons,
           {
-            page: pres.page,
-            totalPages: pres.totalPages,
-            filter: pres.filter,
-            freeCount: pres.freeCount,
-            totalCount: pres.totalCount,
+            page: browse.page,
+            totalPages: browse.totalPages,
+            filter: browse.filter,
+            freeCount: browse.freeCount,
+            totalCount: browse.totalCount,
           },
-          pres.view,
-          pres.provider,
+          browse.view,
+          browse.provider,
           "model:menu",
         ),
       );

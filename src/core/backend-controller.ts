@@ -517,6 +517,35 @@ export function hasChatBackendOverride(chatId: string): boolean {
 }
 
 /**
+ * Safe variant of `getBackendForChat` that never throws — returns
+ * the per-chat / role:chat backend when the pool is initialised, or
+ * `fallback` (typically `gateway?.backend`) when it isn't.
+ *
+ * The pool is always initialised in production at bootstrap; this
+ * helper exists so unit tests and legacy code paths that wire the
+ * frontend before the pool can degrade gracefully instead of
+ * throwing on every `/model` command. Frontends should call this
+ * everywhere they previously read `gateway?.backend` for /model,
+ * /status, and warmSession — otherwise per-chat backend overrides
+ * silently lose effect.
+ */
+export function resolveChatBackend(
+  chatId: string,
+  fallback?: QueryBackend | null,
+): QueryBackend | null {
+  if (hasBackendPool()) {
+    try {
+      return getBackendForChat(chatId);
+    } catch {
+      // Pool initialised but the chat-role binding is somehow missing —
+      // shouldn't happen in practice, but degrade to fallback rather
+      // than crash a /model render.
+    }
+  }
+  return fallback ?? null;
+}
+
+/**
  * Register a backend-change listener.
  *
  * Listener receives the holder that changed (`role:chat`, `chat:1234`,

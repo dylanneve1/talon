@@ -58,6 +58,7 @@ import {
 } from "./helpers.js";
 import { execute } from "../../core/dispatcher.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
+import { resolveChatBackend } from "../../core/backend-controller.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { logError } from "../../util/log.js";
 import {
@@ -126,10 +127,11 @@ export async function handleComponentInteraction(
 
     if (category === "model" && interaction.isStringSelectMenu()) {
       const value = interaction.values[0];
+      const settingsBe = resolveChatBackend(chatId, gateway?.backend);
       if (value === "reset") {
         setChatModel(chatId, undefined);
-      } else if (gateway?.backend?.resolveModel) {
-        const resolution = await gateway.backend.resolveModel(value);
+      } else if (settingsBe?.resolveModel) {
+        const resolution = await settingsBe.resolveModel(value);
         if (resolution.kind !== "exact" || !resolution.model.selectable) {
           await interaction.reply({
             content: `Model unavailable.`,
@@ -248,11 +250,16 @@ export async function handleComponentInteraction(
   // ── /model select-menu (separate from settings) ─────────────────────────
   if (customId === "model:select" && interaction.isStringSelectMenu()) {
     const value = interaction.values[0];
+    // Resolve and snapshot against the per-chat backend — never the
+    // global default — so this works in channels with a backend
+    // override pinned (e.g. switched to openai-agents to use
+    // OpenRouter models).
+    const be = resolveChatBackend(chatId, gateway?.backend);
 
     if (value === "reset") {
       setChatModel(chatId, undefined);
-    } else if (gateway?.backend?.resolveModel) {
-      const resolution = await gateway.backend.resolveModel(value);
+    } else if (be?.resolveModel) {
+      const resolution = await be.resolveModel(value);
       if (resolution.kind === "exact" && resolution.model.selectable) {
         setChatModel(chatId, resolution.storedValue);
       } else {
@@ -267,7 +274,6 @@ export async function handleComponentInteraction(
     }
 
     const current = getChatSettings(chatId).model ?? config.model;
-    const be = gateway?.backend;
     if (be?.getSettingsPresentation) {
       const pres = await be.getSettingsPresentation(current, {
         callbackPrefix: "model:",
@@ -330,8 +336,11 @@ async function refreshSettingsPanel(
 
   let modelDetails: Array<string> | undefined;
   let modelButtons: Array<{ text: string; callback_data: string }> | undefined;
-  if (gateway?.backend?.getSettingsPresentation) {
-    const pres = await gateway.backend.getSettingsPresentation(activeModel);
+  // Per-chat backend so the settings panel reflects the actual
+  // catalog this chat draws from when a backend override is pinned.
+  const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+  if (settingsBe?.getSettingsPresentation) {
+    const pres = await settingsBe.getSettingsPresentation(activeModel);
     modelDetails = pres.modelDetails;
     modelButtons = pres.modelButtons;
   }

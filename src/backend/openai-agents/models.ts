@@ -9,12 +9,20 @@
  * OpenAI ships a new model) or wrong-by-provider (OpenRouter's 350+
  * models, Ollama's user-installed models, Azure's deployment ids).
  *
- * Instead, `init.ts#fetchEndpointModels` populates
- * `state.endpointModels` at startup with whatever the active
- * endpoint reports. Every public function in this file derives its
- * answer from that map. If a query asks about a model the endpoint
- * never mentioned, we still hand back a bare passthrough — the user
- * (or `talon.json`) may know about ids the discovery call missed.
+ * Instead, `discovery.ts#fetchEndpointModels` populates
+ * `state.endpointModels` at startup (and on demand) with whatever
+ * the active endpoint reports. Every public function in this file
+ * derives its answer from that map. If a query asks about a model
+ * the endpoint never mentioned, we still hand back a bare passthrough
+ * — the user (or `talon.json`) may know about ids the discovery call
+ * missed.
+ *
+ * `getSettingsPresentation` is async because it awaits an in-flight
+ * discovery (with a short timeout) so the very first /model menu
+ * render after backend init isn't empty when the user is faster than
+ * the network. The resolver / `getModelInfo` paths stay synchronous
+ * — they're called from hot paths and a discovery race on those
+ * silently falls through to passthrough, which is the right answer.
  *
  * Note: `gpt-5-codex` is intentionally NOT used here. That model is
  * exposed via the Codex CLI only, not the public Responses API.
@@ -30,6 +38,7 @@ import type {
   ModelPickerResult,
 } from "../../core/types.js";
 import { getState, type EndpointModelCapabilities } from "./state.js";
+import { awaitDiscovery } from "./discovery.js";
 
 // ── Internal: id → ModelInfo projection ─────────────────────────────────────
 
@@ -165,11 +174,23 @@ const PROVIDER_GROUP_THRESHOLD = 30;
  * skip step 1 and render the model list directly. `modelDetails`
  * carries only a backend-status line; the caller renders the active
  * model header from its own data.
+ *
+ * Awaits an in-flight `/models` fetch (with a short soft timeout)
+ * before snapshotting so the first render after a backend switch
+ * doesn't race the discovery network call. Already-populated
+ * catalogs short-circuit immediately.
  */
-export function getSettingsPresentation(
+export async function getSettingsPresentation(
   activeModel: string,
   options: ModelPickerOptions = {},
-): ModelPickerResult {
+): Promise<ModelPickerResult> {
+  // Wait briefly for an in-flight catalog fetch. No-op once discovery
+  // has settled (success or failure). Empty catalog after the wait
+  // still renders fine — buttons are empty and `modelDetails` shows
+  // a "0 models discovered" status line so operators can see at a
+  // glance that the endpoint hasn't surfaced anything.
+  await awaitDiscovery();
+
   const callbackPrefix = options.callbackPrefix ?? "settings:model:";
   const navPrefix = options.navCallbackPrefix ?? "settings:models";
   const filter = options.filter ?? "all";
