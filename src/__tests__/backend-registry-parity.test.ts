@@ -1,10 +1,10 @@
 /**
  * Backend registry parity tests.
  *
- * Verifies that ALL five backends (Claude SDK, Kilo, OpenCode, Codex,
- * OpenAI Agents) register themselves into the registry with the same
- * QueryBackend surface — so the dispatcher can swap backends without
- * leaking backend-specific behaviour upstream.
+ * Verifies that ALL six backends (Claude SDK, Kilo, OpenCode, Codex,
+ * OpenAI Agents, Antigravity) register themselves into the registry
+ * with the same QueryBackend surface — so the dispatcher can swap
+ * backends without leaking backend-specific behaviour upstream.
  *
  * Each backend factory's `init(config, ctx)` returns a `QueryBackend`
  * whose required + optional methods Talon's core relies on. This file
@@ -27,6 +27,7 @@ const ALL_BACKENDS = [
   "opencode",
   "codex",
   "openai-agents",
+  "antigravity",
 ] as const;
 
 beforeAll(async () => {
@@ -38,10 +39,11 @@ beforeAll(async () => {
   await import("../backend/opencode/factory.js");
   await import("../backend/codex/factory.js");
   await import("../backend/openai-agents/factory.js");
+  await import("../backend/antigravity/factory.js");
 });
 
-describe("backend registry parity — all five backends present", () => {
-  it("registers Claude, Kilo, OpenCode, Codex, and OpenAI Agents", () => {
+describe("backend registry parity — all six backends present", () => {
+  it("registers Claude, Kilo, OpenCode, Codex, OpenAI Agents, and Antigravity", () => {
     for (const id of ALL_BACKENDS) {
       expect(hasBackend(id), `expected backend "${id}" registered`).toBe(true);
     }
@@ -80,6 +82,7 @@ describe("backend registry parity — all five backends present", () => {
     expect(getBackend("opencode")?.label).toBe("OpenCode");
     expect(getBackend("codex")?.label).toBe("Codex");
     expect(getBackend("openai-agents")?.label).toBe("OpenAI Agents");
+    expect(getBackend("antigravity")?.label).toBe("Antigravity");
   });
 });
 

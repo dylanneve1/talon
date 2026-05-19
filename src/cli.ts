@@ -43,8 +43,14 @@ function printBanner(): void {
 
 type Config = {
   frontend: string | string[];
-  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents`). */
-  backend?: "claude" | "kilo" | "opencode" | "codex" | "openai-agents";
+  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents` / `antigravity`). */
+  backend?:
+    | "claude"
+    | "kilo"
+    | "opencode"
+    | "codex"
+    | "openai-agents"
+    | "antigravity";
   botToken?: string;
   claudeBinary?: string;
   /** OpenAI API key — used by Codex + OpenAI Agents backends. */
@@ -53,6 +59,12 @@ type Config = {
   openaiBaseUrl?: string;
   /** OpenAI API surface — "responses" (default) or "chat_completions" (most third parties). */
   openaiApiMode?: "responses" | "chat_completions";
+  /** Gemini API key — used by the Antigravity backend. */
+  geminiApiKey?: string;
+  /** Path to python3 binary inside the venv that has google-antigravity. */
+  antigravityPython?: string;
+  /** Filesystem workspace path for the Antigravity localharness binary. */
+  antigravityWorkspace?: string;
   model: string;
   concurrency: number;
   pulse: boolean;
@@ -419,6 +431,10 @@ async function runSetup(): Promise<void> {
         value: "openai-agents",
         label: `OpenAI Agents ${pc.dim("— @openai/agents (OpenAI or any OpenAI-compatible endpoint)")}`,
       },
+      {
+        value: "antigravity",
+        label: `Antigravity ${pc.dim("— google-antigravity SDK (Gemini, via Python bridge)")}`,
+      },
     ],
   });
   if (p.isCancel(backendSelection)) {
@@ -506,6 +522,49 @@ async function runSetup(): Promise<void> {
       openaiApiMode = modeSelection as "responses" | "chat_completions";
     }
   }
+
+  let geminiApiKey: string | undefined;
+  let antigravityPython: string | undefined;
+  let antigravityWorkspace: string | undefined;
+  if (backend === "antigravity") {
+    const keyInput = await p.text({
+      message: "Gemini API key",
+      placeholder:
+        "leave empty to use GEMINI_API_KEY env (get one at aistudio.google.com)",
+      initialValue: config.geminiApiKey || "",
+    });
+    if (p.isCancel(keyInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    geminiApiKey = (keyInput as string).trim() || undefined;
+
+    const pythonInput = await p.text({
+      message:
+        "Path to python3 binary with google-antigravity installed " +
+        pc.dim("(empty = ~/.talon-antigravity/venv/bin/python3)"),
+      placeholder: "/home/you/.talon-antigravity/venv/bin/python3",
+      initialValue: config.antigravityPython || "",
+    });
+    if (p.isCancel(pythonInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    antigravityPython = (pythonInput as string).trim() || undefined;
+
+    const wsInput = await p.text({
+      message:
+        "Workspace directory for the agent " +
+        pc.dim("(must NOT contain hidden path segments — empty = ~/talon-antigravity-workspace)"),
+      placeholder: "~/talon-antigravity-workspace",
+      initialValue: config.antigravityWorkspace || "",
+    });
+    if (p.isCancel(wsInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    antigravityWorkspace = (wsInput as string).trim() || undefined;
+  }
   // kilo / opencode need no extra prompts — bundled SDK + per-provider
   // creds configured separately (kilo via `kilo login`, opencode via
   // its own auth flow).
@@ -519,6 +578,9 @@ async function runSetup(): Promise<void> {
     openaiApiKey,
     openaiBaseUrl,
     openaiApiMode,
+    geminiApiKey,
+    antigravityPython,
+    antigravityWorkspace,
     model: model as string,
     concurrency: config.concurrency,
     pulse: pulse as boolean,
@@ -677,6 +739,7 @@ async function viewConfig(): Promise<void> {
     opencode: "OpenCode (@opencode-ai/sdk)",
     codex: "OpenAI Codex CLI",
     "openai-agents": "OpenAI Agents (@openai/agents)",
+    antigravity: "Antigravity (google-antigravity, Python bridge)",
   };
   console.log(
     `  ${pc.dim("Backend")}          ${pc.green(backendLabel[config.backend ?? "claude"])}`,
@@ -693,6 +756,18 @@ async function viewConfig(): Promise<void> {
     console.log(`  ${pc.dim("OpenAI base URL")}  ${config.openaiBaseUrl}`);
   if (config.openaiApiMode)
     console.log(`  ${pc.dim("OpenAI API mode")}  ${config.openaiApiMode}`);
+  if (config.geminiApiKey)
+    console.log(
+      `  ${pc.dim("Gemini API key")}   ${maskToken(config.geminiApiKey)}`,
+    );
+  if (config.antigravityPython)
+    console.log(
+      `  ${pc.dim("Antigrav python")}  ${config.antigravityPython}`,
+    );
+  if (config.antigravityWorkspace)
+    console.log(
+      `  ${pc.dim("Antigrav workspace")} ${config.antigravityWorkspace}`,
+    );
   if (config.discord?.botToken)
     console.log(
       `  ${pc.dim("Discord bot")}      ${maskToken(config.discord.botToken)} (app ${config.discord.applicationId.slice(0, 6)}…)`,
@@ -899,6 +974,53 @@ async function runDoctor(): Promise<void> {
       );
     } else {
       console.log(`  ${pc.dim("-")} Endpoint: api.openai.com (default)`);
+    }
+  } else if (activeBackend === "antigravity") {
+    const cfgRecord = doctorConfig as unknown as Record<string, unknown>;
+    const pythonPath =
+      (typeof cfgRecord?.antigravityPython === "string"
+        ? (cfgRecord.antigravityPython as string)
+        : undefined) ??
+      `${process.env.HOME ?? ""}/.talon-antigravity/venv/bin/python3`;
+    const pyOk = existsSync(pythonPath);
+    if (pyOk) {
+      console.log(
+        `  ${pc.green("\u2713")} Antigravity venv: ${pc.dim(pythonPath)}`,
+      );
+    } else {
+      console.log(
+        `  ${pc.red("\u2717")} Antigravity venv missing (expected ${pythonPath}; \`python3 -m venv ~/.talon-antigravity/venv && ~/.talon-antigravity/venv/bin/pip install google-antigravity\`)`,
+      );
+      issues++;
+    }
+    const hasEnvKey = Boolean(process.env.GEMINI_API_KEY);
+    const hasCfgKey = Boolean(cfgRecord?.geminiApiKey);
+    if (hasEnvKey || hasCfgKey) {
+      const sources: string[] = [];
+      if (hasEnvKey) sources.push("GEMINI_API_KEY env");
+      if (hasCfgKey) sources.push("geminiApiKey in talon.json");
+      console.log(
+        `  ${pc.green("\u2713")} Antigravity auth: ${pc.dim(sources.join(", "))}`,
+      );
+    } else {
+      console.log(
+        `  ${pc.yellow("!")} Antigravity auth missing (set GEMINI_API_KEY or geminiApiKey in talon.json \u2014 get one at aistudio.google.com)`,
+      );
+      issues++;
+    }
+    const wsPath =
+      (typeof cfgRecord?.antigravityWorkspace === "string"
+        ? (cfgRecord.antigravityWorkspace as string)
+        : undefined) ?? `${process.env.HOME ?? ""}/talon-antigravity-workspace`;
+    if (/(^|\/)\./.test(wsPath)) {
+      console.log(
+        `  ${pc.red("\u2717")} Antigravity workspace path contains a hidden segment: ${pc.dim(wsPath)} \u2014 localharness will refuse it (pick a path without dot-segments)`,
+      );
+      issues++;
+    } else {
+      console.log(
+        `  ${pc.green("\u2713")} Antigravity workspace: ${pc.dim(wsPath)}`,
+      );
     }
   }
   try {
