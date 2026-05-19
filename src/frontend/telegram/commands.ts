@@ -164,10 +164,14 @@ export function registerCommands(
     resetSession(cid);
     clearHistory(cid);
     resetPulseCheckpoint(cid);
+    // Resolve the per-chat backend so the reset+warm hits the correct
+    // provider when this chat has a backend override pinned.
+    const chatBackend = resolveBackendForChat(cid, gateway);
+    // Wipe any in-process backend memory (e.g. openai-agents'
+    // MemorySession). Stateless backends ignore this.
+    chatBackend?.resetChat?.(cid);
     // Warm up the new session so /status has context data immediately.
-    // Use the per-chat backend so the warm hits the correct provider
-    // when this chat has a backend override pinned.
-    await resolveBackendForChat(cid, gateway)?.warmSession?.(cid);
+    await chatBackend?.warmSession?.(cid);
     await ctx.reply("Session cleared.");
   });
 

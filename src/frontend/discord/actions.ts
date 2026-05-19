@@ -25,6 +25,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
+import { expandFsPath } from "../../util/fs-path.js";
 import {
   type Client,
   type TextBasedChannel,
@@ -337,7 +338,7 @@ export function createDiscordActionHandler(client: Client, gateway: Gateway) {
       case "send_animation":
       case "send_voice":
       case "send_audio": {
-        const filePath = String(body.file_path ?? "");
+        const filePath = expandFsPath(String(body.file_path ?? ""));
         const caption = body.caption ? String(body.caption) : "";
         const stat = statSync(filePath);
         // Per-guild attachment cap based on boost tier. DMs use Tier-0 (10 MB).

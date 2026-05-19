@@ -115,6 +115,20 @@ export function initOpenAIAgentsAgent(
       // ignore auth (some local Ollama setups). Placeholder if missing.
       apiKey: apiKey ?? "missing-key",
       ...(baseURL ? { baseURL } : {}),
+      // Disable the SDK's built-in 429 retry-after wait. Some
+      // free-tier proxies (e.g. opencode.ai's Zen) return
+      // `retry-after: 15000+` seconds on quota exhaustion, and the
+      // SDK literally sleeps for that long — which manifests as the
+      // bot hanging silently for hours. With `maxRetries: 0` the 429
+      // surfaces immediately as a RateLimitError that our handler
+      // classifies and reports to the user.
+      maxRetries: 0,
+      // Cap the per-request wait. Default is 10 minutes — far too
+      // long for an interactive chat bot. 120s comfortably covers
+      // the slowest reasonable model turn (including thinking
+      // models) without leaving the user staring at "typing…" for
+      // hours when the upstream genuinely wedges.
+      timeout: 120_000,
     });
     setDefaultOpenAIClient(client);
 

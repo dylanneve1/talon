@@ -45,7 +45,10 @@ import { getState, type EndpointModelCapabilities } from "./state.js";
  */
 interface EndpointModelEntry {
   id?: string;
+  /** OpenRouter + most providers — human display name. */
   name?: string;
+  /** Gemini's OpenAI-compatible endpoint uses this instead of `name`. */
+  display_name?: string;
   context_length?: number;
   top_provider?: { context_length?: number };
   pricing?: { prompt?: string | number; completion?: string | number };
@@ -191,13 +194,34 @@ export async function fetchEndpointModels(
   let enriched = 0;
   for (const entry of data) {
     if (!entry || typeof entry.id !== "string") continue;
+    const id = normaliseModelId(entry.id);
     const caps = extractCapabilities(entry);
-    if (Object.keys(caps).length === 0) continue;
-    state.endpointModels.set(entry.id, caps);
-    enriched += 1;
+    // Always record the id — sparse-response endpoints (OpenAI's
+    // /v1/models, NVIDIA NIM, bare Ollama, some Azure deployments)
+    // advertise just `id` with no context_length / pricing / display
+    // name, but the picker still needs to list them. Storing with an
+    // empty caps record gives the picker something to render; caps is
+    // purely additive metadata.
+    state.endpointModels.set(id, caps);
+    if (Object.keys(caps).length > 0) enriched += 1;
   }
 
   log("agent", `OpenAI Agents: enriched ${enriched} models from ${url}`);
+}
+
+/**
+ * Normalise the id Talon stores + sends back to the endpoint.
+ *
+ * Gemini's OpenAI-compatible `/models` returns ids like
+ * `models/gemini-2.5-flash`, but the chat-completions route accepts
+ * either form. Stripping the `models/` prefix keeps the picker label
+ * clean and lets the flat-id provider-inference table in `models.ts`
+ * bucket the entry under Google instead of treating "models" as a
+ * provider name from the slash split. Other endpoints aren't
+ * affected — the prefix only appears on Gemini.
+ */
+function normaliseModelId(id: string): string {
+  return id.startsWith("models/") ? id.slice("models/".length) : id;
 }
 
 /**
@@ -216,8 +240,14 @@ export function extractCapabilities(
         ? entry.top_provider.context_length
         : undefined;
   if (ctx && ctx > 0) caps.contextWindow = ctx;
-  if (typeof entry.name === "string" && entry.name)
-    caps.displayName = entry.name;
+  // `name` (OpenRouter, most providers) and `display_name` (Gemini)
+  // both mean the human label. Prefer `name` when both are present;
+  // fall back to `display_name` so Gemini gets nice labels too.
+  const displayName =
+    (typeof entry.name === "string" && entry.name) ||
+    (typeof entry.display_name === "string" && entry.display_name) ||
+    undefined;
+  if (displayName) caps.displayName = displayName;
   if (isFreePrompt(entry.pricing?.prompt)) {
     caps.free = true;
   }

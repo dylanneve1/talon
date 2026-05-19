@@ -63,6 +63,7 @@ import {
   summarizeUsage,
   routeDelivery,
 } from "../shared/index.js";
+import { detectFlowViolation } from "../shared/flow-violation.js";
 
 import {
   OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX,
@@ -70,7 +71,7 @@ import {
   OPENAI_AGENTS_MAX_TURNS,
   OPENAI_AGENTS_AGENT_NAME,
 } from "./constants.js";
-import { getState } from "./state.js";
+import { getState, getOrCreateSession } from "./state.js";
 import { getActiveFrontends } from "./init.js";
 import { getOrCreateBundle } from "./mcp-pool.js";
 import { OPENAI_AGENTS_BUILTIN_TOOLS } from "./builtins.js";
@@ -192,6 +193,34 @@ export async function handleMessage(
     // available to the model rather than silently dropping the loser.
     // Built-in tools (Read/Write/Edit/Bash/...) stay unprefixed —
     // the SDK only renames MCP-sourced tools.
+
+    // Diagnostic — enumerate every tool the model will see this turn
+    // (both built-in function tools and any MCP server tools). Critical
+    // for tracking down "model never calls end_turn" complaints: if
+    // end_turn isn't in this list, the model literally cannot call it
+    // and the problem is in the MCP server registration, not the model.
+    // Note: with namespacing on, names appear as `mcp_<server>__<tool>`.
+    try {
+      const builtinNames = OPENAI_AGENTS_BUILTIN_TOOLS.map((t) => t.name);
+      const mcpToolLists = await Promise.all(
+        mcpBundle.servers.map((s) =>
+          s
+            .listTools()
+            .then((ts: Array<{ name?: string }>) =>
+              ts.map((t) => t.name ?? "?"),
+            )
+            .catch(() => [] as string[]),
+        ),
+      );
+      const mcpNames = mcpToolLists.flat();
+      log(
+        "agent",
+        `[${chatId}] tools registered: builtins=[${builtinNames.join(", ")}] mcp=[${mcpNames.join(", ")}]`,
+      );
+    } catch {
+      /* best-effort diagnostic */
+    }
+
     const agent = new Agent({
       name: OPENAI_AGENTS_AGENT_NAME,
       instructions: systemPrompt,
@@ -201,10 +230,17 @@ export async function handleMessage(
       mcpConfig: { includeServerInToolNames: true },
     });
 
+    // Per-chat MemorySession so the SDK preserves the full
+    // multi-turn record (model outputs, tool calls + results,
+    // reasoning items where the provider supplies them). Without
+    // this, every turn starts blind to what was said or done before
+    // and the model hallucinates context — e.g. claiming it can't
+    // access a file it wrote in the previous turn.
     const stream = await run(agent, prompt, {
       stream: true,
       maxTurns: OPENAI_AGENTS_MAX_TURNS,
       signal: abortController.signal,
+      session: getOrCreateSession(chatId),
     });
 
     for await (const event of stream) {
@@ -223,13 +259,30 @@ export async function handleMessage(
       // streaming would expose private chain-of-thought scratchpad
       // to the chat; the final-message event is enough.
 
-      // Terminator-driven abort: a delivery tool already shipped the
-      // reply via the bridge. Cancel the SDK loop so it doesn't burn
-      // a wrap-up round-trip.
-      if (streamState.turnTerminated && !abortController.signal.aborted) {
+      // Terminator-driven abort. The SDK emits TWO events for each
+      // tool call:
+      //   1. `tool_called`  — model decided to invoke; RPC about to run.
+      //                       `recordToolUse` flips `turnTerminated`
+      //                       when the tool is `end_turn` / `react`.
+      //   2. `tool_output`  — RPC has completed; the message has
+      //                       reached Telegram (for delivery tools).
+      //
+      // We must NOT abort on `tool_called` — that cancels the
+      // in-flight RPC and the message never ships. Aborting on
+      // `tool_output` after we've already flagged the turn as
+      // terminated means the delivery happened AND we skip the SDK's
+      // natural wrap-up round-trip, which otherwise burns 5–10s of
+      // typing-indicator with no user-visible output (visible to the
+      // user as "Jeff is typing…" lingering after the reply lands).
+      if (
+        streamState.turnTerminated &&
+        event.type === "run_item_stream_event" &&
+        (event as { name?: string }).name === "tool_output" &&
+        !abortController.signal.aborted
+      ) {
         log(
           "agent",
-          `[${chatId}] terminator fired — aborting OpenAI Agents turn`,
+          `[${chatId}] terminator tool result received — aborting wrap-up`,
         );
         try {
           abortController.abort();
@@ -336,7 +389,6 @@ export async function handleMessage(
   recordHistogram("response_latency_ms", durationMs);
   incrementCounter("queries_total");
 
-  incrementTurns(chatId);
   recordUsage(chatId, {
     inputTokens: streamState.sdkInputTokens,
     outputTokens: streamState.sdkOutputTokens,
@@ -346,20 +398,88 @@ export async function handleMessage(
     model: activeModel,
   });
 
-  // Set a descriptive session name from the user's first message.
-  if (previousTurns === 0) {
+  // ── Trailing-prose contract + flow-violation retry ──────────────────────
+  // Mirrors the claude-sdk handler. The model's output stream is private
+  // scratchpad: replies MUST go through `end_turn` (canonical) or `send`
+  // (mid-turn rich content; doesn't close the turn). If the model wrote
+  // prose without calling either, the user would see nothing — so we
+  // re-prompt once with a synthetic reminder describing the correct
+  // flow. A second violation after the retry accepts a silent drop.
+  //
+  // Only enforced when delivery tools are actually registered. With
+  // `frontend: "terminal"` (and the integration-test bootstrap), no
+  // frontend MCP server spawns and there's no `end_turn` to call —
+  // forcing the contract there would loop forever. Production frontends
+  // (Telegram, Discord, Teams) always wire at least one MCP server, so
+  // a non-empty `mcpBundle.servers` is the cheap signal we have
+  // delivery tools available.
+  //
+  // `incrementTurns` is deferred until AFTER the check so the retry path
+  // (which recurses through `handleMessage` and increments there) doesn't
+  // double-count a single user message.
+  const violation =
+    mcpBundle.servers.length > 0
+      ? detectFlowViolation({
+          trailingText: streamState.lastTrailingText,
+          turnTerminated: streamState.turnTerminated,
+          deliveredTextNorms: streamState.deliveredTextNorms,
+          retried: _retried,
+        })
+      : ({ violated: false } as const);
+
+  if (violation.violated) {
+    incrementCounter("scratchpad.trailing_text_dropped");
+    log(
+      "agent",
+      `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
+        violation.shouldRetry
+          ? "Re-prompting with reminder."
+          : "Already retried — accepting silent drop."
+      }`,
+    );
+
+    if (violation.shouldRetry) {
+      incrementCounter("scratchpad.flow_violation_retried");
+      // Recursive call owns the `incrementTurns` for this user message.
+      return handleMessage({ ...params, text: violation.reminder }, true);
+    }
+  }
+
+  // Reached the non-retry path — this turn counts as one user-visible turn.
+  incrementTurns(chatId);
+
+  // Set a descriptive session name from the user's *first* message.
+  // Guarded by `!_retried` so the FLOW_VIOLATION_REMINDER doesn't get
+  // captured as the session name when the retry recurses through this
+  // path with `params.text = reminder`.
+  if (previousTurns === 0 && !_retried) {
     const name = extractSessionName(text);
     if (name) setSessionName(chatId, name);
   }
 
   // ── Delivery ──────────────────────────────────────────────────────────────
-  const delivery = await routeDelivery({
-    backendLabel: "OpenAI Agents",
-    chatId,
-    state: streamState,
-    responseText,
-    onTextBlock,
-  });
+  // Strict tool-only delivery — replies must reach the user via a
+  // delivery tool (`end_turn` / `send` / `react`). Trailing prose
+  // is private scratchpad and is NEVER shipped as a fallback. The
+  // flow-violation retry above gave the model one chance; persistent
+  // violators get silently dropped, which is the documented
+  // contract.
+  //
+  // routeDelivery is only invoked when there's something to ship via
+  // its established routes (delivered-via-tools text or a synthetic
+  // upstream error). Empty turns and trailing-prose-only turns return
+  // without any output.
+  const hasDeliverable =
+    streamState.deliveredTextNorms.length > 0 || !!streamState.syntheticError;
+  const delivery = hasDeliverable
+    ? await routeDelivery({
+        backendLabel: "OpenAI Agents",
+        chatId,
+        state: streamState,
+        responseText: "",
+        onTextBlock,
+      })
+    : { route: "silent" as const, chars: 0 };
 
   log(
     "agent",
@@ -445,6 +565,19 @@ function handleToolCalled(item: unknown, ctx: HandleRunItemContext): void {
   if (!item || typeof item !== "object") return;
   const raw = (item as { rawItem?: Record<string, unknown> }).rawItem;
   if (!raw || typeof raw !== "object") return;
+  // Log a compact view of every tool call so we can correlate
+  // tools=N / terminator / delivered numbers with the model's actual
+  // intent in production. Truncated to keep the log light.
+  try {
+    const rawName = typeof raw.name === "string" ? raw.name : "?";
+    const rawArgs =
+      typeof raw.arguments === "string"
+        ? raw.arguments.slice(0, 200)
+        : JSON.stringify(raw.arguments ?? {}).slice(0, 200);
+    log("agent", `[${ctx.chatId}] tool_call ${rawName} args=${rawArgs}`);
+  } catch {
+    /* skip */
+  }
 
   // MCP tool calls expose `name` (the bare tool name) and `arguments`
   // (the JSON-decoded input). Function tool calls use the same fields.

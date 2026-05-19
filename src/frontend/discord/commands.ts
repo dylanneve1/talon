@@ -564,7 +564,11 @@ async function handleReset(
   // Warm the per-chat backend so cold-start latency doesn't show up
   // on the next turn — must be the actual chat backend, not the
   // global default, when this chat has an override pinned.
-  await resolveChatBackend(chatId, gateway?.backend)?.warmSession?.(chatId);
+  const chatBackend = resolveChatBackend(chatId, gateway?.backend);
+  // Wipe any in-process backend memory (e.g. openai-agents'
+  // MemorySession). Stateless backends ignore this.
+  chatBackend?.resetChat?.(chatId);
+  await chatBackend?.warmSession?.(chatId);
   await reply(i, "Session cleared.", true);
 }
 

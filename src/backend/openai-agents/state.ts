@@ -10,6 +10,7 @@
 
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
+import { TalonSession } from "./session.js";
 
 /**
  * Capabilities advertised by the remote endpoint for one model id.
@@ -52,6 +53,15 @@ export interface OpenAIAgentsState {
   discoveryPromise: Promise<void> | null;
   /** Wall-clock time (`Date.now()`) when discovery last succeeded, or `null`. */
   discoveryAt: number | null;
+  /**
+   * Per-chat conversation memory. The Agents SDK manages the full
+   * turn history (model outputs, tool calls, tool results, reasoning)
+   * when we pass a `TalonSession` into `run()`, so we just hand it
+   * the same instance every turn for the same chat. `/reset` calls
+   * `clearSession()` on the entry; chat eviction is bounded by the
+   * map cap so long-lived bots don't leak memory.
+   */
+  sessions: Map<string, TalonSession>;
 }
 
 const state: OpenAIAgentsState = {
@@ -63,7 +73,40 @@ const state: OpenAIAgentsState = {
   endpointModels: new Map(),
   discoveryPromise: null,
   discoveryAt: null,
+  sessions: new Map(),
 };
+
+const MAX_SESSIONS = 1000;
+
+/**
+ * Get or lazily create the `TalonSession` for a chat. Sessions
+ * persist for the lifetime of the bot process; the LRU-style cap
+ * keeps memory bounded if a long-running bot accumulates many chats.
+ */
+export function getOrCreateSession(chatId: string): TalonSession {
+  const existing = state.sessions.get(chatId);
+  if (existing) {
+    // Refresh insertion-order so cap eviction is least-recently-used.
+    state.sessions.delete(chatId);
+    state.sessions.set(chatId, existing);
+    return existing;
+  }
+  if (state.sessions.size >= MAX_SESSIONS) {
+    const oldest = state.sessions.keys().next().value;
+    if (oldest !== undefined) state.sessions.delete(oldest);
+  }
+  const session = new TalonSession({ sessionId: chatId });
+  state.sessions.set(chatId, session);
+  return session;
+}
+
+/**
+ * Drop a chat's conversation memory. Called from the dispatcher's
+ * reset path so `/reset` produces a clean turn-zero session.
+ */
+export function clearChatSession(chatId: string): void {
+  state.sessions.delete(chatId);
+}
 
 /** Test-only accessor for the shared state object. */
 export function getState(): OpenAIAgentsState {
@@ -80,4 +123,5 @@ export function resetState(): void {
   state.endpointModels.clear();
   state.discoveryPromise = null;
   state.discoveryAt = null;
+  state.sessions.clear();
 }

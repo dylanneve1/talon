@@ -6,37 +6,43 @@
  * doesn't — it's model-agnostic and assumes the host wires whatever
  * capabilities the agent needs. To keep Talon's system prompt and
  * behavior consistent across backends, this module mirrors that
- * Claude-Code surface as plain `tool()` definitions.
+ * Claude-Code surface as `tool()` definitions.
  *
- * Tool names + parameter shapes match Claude Code exactly so the
- * shared prompt vocabulary ("read X", "write to ~/.talon/...") works
- * uniformly. Outputs mirror Claude Code's text format where useful
- * (e.g. `cat -n`-style line numbers for `Read`).
+ * Schema choice
+ * ─────────────
  *
- * Safety posture: same as the Claude SDK backend — full host access.
- * Talon already trusts the active model; sandboxing is a future
- * concern handled at the runtime layer, not here.
+ * `@openai/agents`'s `tool()` factory accepts either a Zod schema or
+ * a raw JSON Schema. Zod is convenient but `@openai/agents` forces
+ * `strict: true` for Zod schemas, which in turn forces every
+ * declared property into the `required` array. That's OpenAI-correct
+ * but does NOT survive in the real world: many models (especially
+ * non-OpenAI ones routed through chat_completions) drop optional
+ * fields when calling, and the SDK then rejects every call as
+ * "Invalid JSON input". That manifested as "Bash tool is completely
+ * broken — JSON input errors on every call" in production with
+ * OpenRouter models like Trinity / Owl.
+ *
+ * We use plain JSON Schemas with explicit `required` arrays so
+ * truly-optional fields (offset/limit, timeout, provider, …) can be
+ * omitted by the model and the call still validates. `strict: false`
+ * disables the all-required pass.
+ *
+ * Tool names + parameter shapes still match Claude Code so the
+ * shared prompt vocabulary applies uniformly.
  */
 import { tool } from "@openai/agents";
-import { z } from "zod";
 import { spawn } from "node:child_process";
 import { readFile, writeFile, mkdir, glob } from "node:fs/promises";
-import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
-import { homedir } from "node:os";
-
-// ── Path resolution ─────────────────────────────────────────────────────────
-//
-// Tool inputs may be absolute, ~/-prefixed, or relative. Normalize to
-// absolute paths so behavior doesn't depend on Talon's cwd.
-
-function expandPath(input: string): string {
-  if (input.startsWith("~/")) return resolvePath(homedir(), input.slice(2));
-  if (input === "~") return homedir();
-  if (isAbsolute(input)) return input;
-  return resolvePath(process.cwd(), input);
-}
+import { dirname, resolve as resolvePath } from "node:path";
+import { expandFsPath as expandPath } from "../../util/fs-path.js";
 
 // ── Read ────────────────────────────────────────────────────────────────────
+
+interface ReadInput {
+  file_path: string;
+  offset?: number;
+  limit?: number;
+}
 
 const readTool = tool({
   name: "Read",
@@ -44,24 +50,30 @@ const readTool = tool({
     "Read a text file from disk. Returns the file contents with " +
     "`cat -n`-style line numbering. `offset` (1-indexed) skips the " +
     "first N-1 lines; `limit` caps the number of lines returned.",
-  parameters: z.object({
-    file_path: z
-      .string()
-      .describe("Absolute path (or ~/...) to the file to read."),
-    offset: z
-      .number()
-      .int()
-      .min(1)
-      .nullable()
-      .describe("1-indexed line number to start reading from."),
-    limit: z
-      .number()
-      .int()
-      .min(1)
-      .nullable()
-      .describe("Maximum number of lines to read."),
-  }),
-  async execute({ file_path, offset, limit }) {
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["file_path"],
+    properties: {
+      file_path: {
+        type: "string",
+        description: "Absolute path (or ~/...) to the file to read.",
+      },
+      offset: {
+        type: "integer",
+        minimum: 1,
+        description: "1-indexed line number to start reading from.",
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        description: "Maximum number of lines to read.",
+      },
+    },
+  },
+  async execute(input) {
+    const { file_path, offset, limit } = input as ReadInput;
     const abs = expandPath(file_path);
     const text = await readFile(abs, "utf8");
     const allLines = text.split("\n");
@@ -76,19 +88,35 @@ const readTool = tool({
 
 // ── Write ───────────────────────────────────────────────────────────────────
 
+interface WriteInput {
+  file_path: string;
+  content: string;
+}
+
 const writeTool = tool({
   name: "Write",
   description:
     "Write a string to a file, creating it (and any missing parent " +
     "directories) if necessary. Overwrites existing content. Use " +
     "Edit for partial in-place changes.",
-  parameters: z.object({
-    file_path: z
-      .string()
-      .describe("Absolute path (or ~/...) to the file to write."),
-    content: z.string().describe("Full file contents to write."),
-  }),
-  async execute({ file_path, content }) {
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["file_path", "content"],
+    properties: {
+      file_path: {
+        type: "string",
+        description: "Absolute path (or ~/...) to the file to write.",
+      },
+      content: {
+        type: "string",
+        description: "Full file contents to write.",
+      },
+    },
+  },
+  async execute(input) {
+    const { file_path, content } = input as WriteInput;
     const abs = expandPath(file_path);
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, content, "utf8");
@@ -98,6 +126,13 @@ const writeTool = tool({
 
 // ── Edit ────────────────────────────────────────────────────────────────────
 
+interface EditInput {
+  file_path: string;
+  old_string: string;
+  new_string: string;
+  replace_all?: boolean;
+}
+
 const editTool = tool({
   name: "Edit",
   description:
@@ -105,23 +140,32 @@ const editTool = tool({
     "the file. By default `old_string` must be unique; set " +
     "`replace_all` to replace every occurrence. Use this for surgical " +
     "changes instead of rewriting the whole file with Write.",
-  parameters: z.object({
-    file_path: z
-      .string()
-      .describe("Absolute path (or ~/...) to the file to modify."),
-    old_string: z.string().describe("Exact text to replace."),
-    new_string: z
-      .string()
-      .describe("Replacement text. Must differ from old_string."),
-    replace_all: z
-      .boolean()
-      .nullable()
-      .describe(
-        "When true, replace every occurrence of old_string. " +
-          "When false or null, the match must be unique.",
-      ),
-  }),
-  async execute({ file_path, old_string, new_string, replace_all }) {
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["file_path", "old_string", "new_string"],
+    properties: {
+      file_path: {
+        type: "string",
+        description: "Absolute path (or ~/...) to the file to modify.",
+      },
+      old_string: { type: "string", description: "Exact text to replace." },
+      new_string: {
+        type: "string",
+        description: "Replacement text. Must differ from old_string.",
+      },
+      replace_all: {
+        type: "boolean",
+        description:
+          "When true, replace every occurrence of old_string. " +
+          "When false or omitted, the match must be unique.",
+      },
+    },
+  },
+  async execute(input) {
+    const { file_path, old_string, new_string, replace_all } =
+      input as EditInput;
     if (old_string === new_string) {
       throw new Error("old_string and new_string must differ");
     }
@@ -161,6 +205,12 @@ const editTool = tool({
 const BASH_DEFAULT_TIMEOUT_MS = 30_000;
 const BASH_MAX_TIMEOUT_MS = 600_000;
 
+interface BashInput {
+  command: string;
+  description?: string;
+  timeout_ms?: number;
+}
+
 function runShell(
   command: string,
   timeoutMs: number,
@@ -194,7 +244,12 @@ function runShell(
       // of letting Node emit an uncaught error — the tool returns the
       // diagnostic so callers can surface it rather than crashing.
       clearTimeout(killer);
-      resolveResult({ stdout, stderr: err.message, code: -1, timedOut: false });
+      resolveResult({
+        stdout,
+        stderr: err.message,
+        code: -1,
+        timedOut: false,
+      });
     });
     child.on("close", (code) => {
       clearTimeout(killer);
@@ -211,26 +266,28 @@ const bashTool = tool({
     "10min. Use for inspecting files, running scripts, package " +
     "managers, git, etc. Do not start long-running servers — there " +
     "is no background mode here.",
-  parameters: z.object({
-    command: z.string().describe("Shell command to execute."),
-    description: z
-      .string()
-      .nullable()
-      .describe(
-        "Short (5-10 word) explanation of what this command does. " +
-          "Recorded in logs.",
-      ),
-    timeout_ms: z
-      .number()
-      .int()
-      .min(1000)
-      .max(BASH_MAX_TIMEOUT_MS)
-      .nullable()
-      .describe(
-        `Optional timeout in milliseconds (max ${BASH_MAX_TIMEOUT_MS}).`,
-      ),
-  }),
-  async execute({ command, timeout_ms }) {
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["command"],
+    properties: {
+      command: { type: "string", description: "Shell command to execute." },
+      description: {
+        type: "string",
+        description:
+          "Short (5-10 word) explanation of what this command does. Recorded in logs.",
+      },
+      timeout_ms: {
+        type: "integer",
+        minimum: 1000,
+        maximum: BASH_MAX_TIMEOUT_MS,
+        description: `Optional timeout in milliseconds (max ${BASH_MAX_TIMEOUT_MS}).`,
+      },
+    },
+  },
+  async execute(input) {
+    const { command, timeout_ms } = input as BashInput;
     const timeout = timeout_ms ?? BASH_DEFAULT_TIMEOUT_MS;
     const result = await runShell(command, timeout);
     const parts: string[] = [];
@@ -245,6 +302,11 @@ const bashTool = tool({
 
 // ── Glob ────────────────────────────────────────────────────────────────────
 
+interface GlobInput {
+  pattern: string;
+  path?: string;
+}
+
 const globTool = tool({
   name: "Glob",
   description:
@@ -252,17 +314,25 @@ const globTool = tool({
     "`src/**/*.md`). Returns absolute paths, one per line, sorted " +
     "alphabetically. Searches under `path` if provided, otherwise " +
     "under the current working directory.",
-  parameters: z.object({
-    pattern: z.string().describe("Glob pattern to match (e.g. `src/**/*.ts`)."),
-    path: z
-      .string()
-      .nullable()
-      .describe(
-        "Directory to search under. Defaults to the current " +
-          "working directory.",
-      ),
-  }),
-  async execute({ pattern, path }) {
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["pattern"],
+    properties: {
+      pattern: {
+        type: "string",
+        description: "Glob pattern to match (e.g. `src/**/*.ts`).",
+      },
+      path: {
+        type: "string",
+        description:
+          "Directory to search under. Defaults to the current working directory.",
+      },
+    },
+  },
+  async execute(input) {
+    const { pattern, path } = input as GlobInput;
     const cwd = path ? expandPath(path) : process.cwd();
     const matches: string[] = [];
     for await (const entry of glob(pattern, { cwd })) {
@@ -275,27 +345,41 @@ const globTool = tool({
 
 // ── Grep ────────────────────────────────────────────────────────────────────
 
+interface GrepInput {
+  pattern: string;
+  path?: string;
+  include?: string;
+}
+
 const grepTool = tool({
   name: "Grep",
   description:
     "Search for a regular expression in files using the system " +
     "`grep` (or `rg` when available). Returns matching lines with " +
     "file paths, line numbers, and content.",
-  parameters: z.object({
-    pattern: z.string().describe("Regular expression to search for."),
-    path: z
-      .string()
-      .nullable()
-      .describe(
-        "File or directory to search. Defaults to the current " +
-          "working directory.",
-      ),
-    include: z
-      .string()
-      .nullable()
-      .describe("Glob limiting which files to search (e.g. `*.ts`)."),
-  }),
-  async execute({ pattern, path, include }) {
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["pattern"],
+    properties: {
+      pattern: {
+        type: "string",
+        description: "Regular expression to search for.",
+      },
+      path: {
+        type: "string",
+        description:
+          "File or directory to search. Defaults to the current working directory.",
+      },
+      include: {
+        type: "string",
+        description: "Glob limiting which files to search (e.g. `*.ts`).",
+      },
+    },
+  },
+  async execute(input) {
+    const { pattern, path, include } = input as GrepInput;
     const target = path ? expandPath(path) : process.cwd();
     // Prefer ripgrep if installed; fall back to GNU/BSD grep.
     const rgCheck = await runShell("command -v rg", 2000);
