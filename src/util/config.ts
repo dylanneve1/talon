@@ -149,7 +149,14 @@ const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
   backend: z
-    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
+    .enum([
+      "claude",
+      "opencode",
+      "kilo",
+      "codex",
+      "openai-agents",
+      "antigravity",
+    ])
     .default("claude"),
   /**
    * Backend used by the heartbeat agent. Falls back to `backend` when
@@ -159,14 +166,28 @@ const configSchema = z.object({
    * on a cheaper / free backend.
    */
   heartbeatBackend: z
-    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
+    .enum([
+      "claude",
+      "opencode",
+      "kilo",
+      "codex",
+      "openai-agents",
+      "antigravity",
+    ])
     .optional(),
   /**
    * Backend used by the dream / memory-consolidation agent. Falls
    * back to `backend` when unset. Pair with `dreamModel`.
    */
   dreamBackend: z
-    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
+    .enum([
+      "claude",
+      "opencode",
+      "kilo",
+      "codex",
+      "openai-agents",
+      "antigravity",
+    ])
     .optional(),
   /**
    * Whitelist of backends surfaced in the `/model` picker's backend
@@ -179,7 +200,16 @@ const configSchema = z.object({
    * the whitelist just keeps the menu tidy.
    */
   enabledBackends: z
-    .array(z.enum(["claude", "opencode", "kilo", "codex", "openai-agents"]))
+    .array(
+      z.enum([
+        "claude",
+        "opencode",
+        "kilo",
+        "codex",
+        "openai-agents",
+        "antigravity",
+      ]),
+    )
     .optional(),
   claudeBinary: z.string().optional(),
   model: z.string().default("default"),
@@ -227,6 +257,29 @@ const configSchema = z.object({
    * explicitly to "responses" only if your proxy supports it.
    */
   openaiApiMode: z.enum(["responses", "chat_completions"]).optional(),
+  /**
+   * Gemini API key — used by the Antigravity backend. Falls back to
+   * GEMINI_API_KEY env. Get one from https://aistudio.google.com/.
+   * The Antigravity SDK uses the API key to authenticate with Gemini
+   * inside its bundled `localharness` binary.
+   */
+  geminiApiKey: z.string().optional(),
+  /**
+   * Path to the Python binary inside a venv that has `google-antigravity`
+   * installed. When unset, the Antigravity backend searches common
+   * default paths (~/.talon-antigravity/venv/bin/python3, then system
+   * python3). Set this if you've installed the SDK in a custom venv
+   * location.
+   */
+  antigravityPython: z.string().optional(),
+  /**
+   * Optional workspace directory the Antigravity SDK's `localharness`
+   * binary is allowed to read/write. Defaults to
+   * `~/.talon/agent-workspace/antigravity/`. localharness refuses
+   * "hidden" directories (paths whose final segment starts with a
+   * dot), so this must be a regular directory.
+   */
+  antigravityWorkspace: z.string().optional(),
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
