@@ -274,10 +274,20 @@ const configSchema = z.object({
   antigravityPython: z.string().optional(),
   /**
    * Optional workspace directory the Antigravity SDK's `localharness`
-   * binary is allowed to read/write. Defaults to
-   * `~/.talon/agent-workspace/antigravity/`. localharness refuses
-   * "hidden" directories (paths whose final segment starts with a
-   * dot), so this must be a regular directory.
+   * binary is allowed to read/write.
+   *
+   * UNSET (recommended): Talon automatically symlinks
+   * `~/talon-workspace` to the main Talon workspace (`config.workspace`,
+   * typically `~/.talon/workspace/`). The agent reads/writes the SAME
+   * files every other backend uses — no data fragmentation. The
+   * symlink is needed because `localharness` refuses paths containing
+   * "hidden" segments (one starting with `.`), so `~/.talon/...`
+   * can't be passed directly.
+   *
+   * SET: use the explicit path as-is for an isolated workspace. Must
+   * NOT contain hidden path segments — the binary will refuse the
+   * agent's start otherwise. Talon emits a warning at startup if you
+   * configure a hidden path.
    */
   antigravityWorkspace: z.string().optional(),
   timezone: z.string().optional(),

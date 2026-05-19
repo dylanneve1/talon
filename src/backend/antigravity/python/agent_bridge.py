@@ -142,13 +142,15 @@ def build_agent_config(cfg: dict[str, Any]):
             )
         )
 
-    # Workspaces — default to ~/talon-antigravity-workspace if Talon
-    # didn't supply one. localharness refuses hidden directories (any
-    # path segment starting with `.`) so the default explicitly avoids
-    # `~/.talon/...`.
+    # Workspaces — Talon's TS side normally supplies the path (a
+    # symlink under ~/talon-workspace pointing at the real
+    # ~/.talon/workspace/, or an explicit override). If absent (e.g.
+    # someone invoking agent_bridge.py directly for debugging),
+    # fall back to a private dir under the user's home so we don't
+    # touch the real workspace by accident.
     workspaces = cfg.get("workspaces")
     if not workspaces:
-        default_ws = os.path.expanduser("~/talon-antigravity-workspace")
+        default_ws = os.path.expanduser("~/talon-antigravity-fallback-workspace")
         os.makedirs(default_ws, exist_ok=True)
         workspaces = [default_ws]
 

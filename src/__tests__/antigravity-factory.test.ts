@@ -98,7 +98,7 @@ describe("antigravity factory — QueryBackend wiring", () => {
         frontendName: "telegram",
       },
     );
-    const resolved = await result.backend.resolveModel("gemini-3.5-flash");
+    const resolved = await result.backend.resolveModel!("gemini-3.5-flash");
     expect(resolved.kind).toBe("exact");
   });
 

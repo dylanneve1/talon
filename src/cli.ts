@@ -552,11 +552,18 @@ async function runSetup(): Promise<void> {
     }
     antigravityPython = (pythonInput as string).trim() || undefined;
 
+    // Workspace: Talon auto-symlinks ~/talon-workspace → the real
+    // Talon workspace at startup, so the agent operates on the same
+    // memory + uploads + daily notes every other backend uses. The
+    // operator can override this with `antigravityWorkspace` if they
+    // want a private isolated workspace — most should leave it blank.
     const wsInput = await p.text({
       message:
-        "Workspace directory for the agent " +
-        pc.dim("(must NOT contain hidden path segments — empty = ~/talon-antigravity-workspace)"),
-      placeholder: "~/talon-antigravity-workspace",
+        "Workspace override " +
+        pc.dim(
+          "(empty = recommended; Talon symlinks ~/talon-workspace → main workspace automatically. Override only for isolated workspaces — path must not contain hidden segments.)",
+        ),
+      placeholder: "",
       initialValue: config.antigravityWorkspace || "",
     });
     if (p.isCancel(wsInput)) {
@@ -1008,19 +1015,51 @@ async function runDoctor(): Promise<void> {
       );
       issues++;
     }
-    const wsPath =
-      (typeof cfgRecord?.antigravityWorkspace === "string"
+    const explicitWs =
+      typeof cfgRecord?.antigravityWorkspace === "string"
         ? (cfgRecord.antigravityWorkspace as string)
-        : undefined) ?? `${process.env.HOME ?? ""}/talon-antigravity-workspace`;
-    if (/(^|\/)\./.test(wsPath)) {
-      console.log(
-        `  ${pc.red("\u2717")} Antigravity workspace path contains a hidden segment: ${pc.dim(wsPath)} \u2014 localharness will refuse it (pick a path without dot-segments)`,
-      );
-      issues++;
+        : undefined;
+    if (explicitWs) {
+      if (/(^|\/)\./.test(explicitWs)) {
+        console.log(
+          `  ${pc.red("\u2717")} antigravityWorkspace path has a hidden segment: ${pc.dim(explicitWs)} \u2014 localharness will refuse it`,
+        );
+        issues++;
+      } else {
+        console.log(
+          `  ${pc.green("\u2713")} Antigravity workspace (override): ${pc.dim(explicitWs)}`,
+        );
+      }
     } else {
-      console.log(
-        `  ${pc.green("\u2713")} Antigravity workspace: ${pc.dim(wsPath)}`,
-      );
+      // Default: Talon symlinks ~/talon-workspace \u2192 ~/.talon/workspace
+      // (or wherever the real workspace lives). Doctor verifies the
+      // symlink exists + points at a non-hidden target.
+      const home = process.env.HOME ?? "";
+      const linkPath = `${home}/talon-workspace`;
+      try {
+        const { lstatSync, readlinkSync } = await import("node:fs");
+        if (existsSync(linkPath)) {
+          const stat = lstatSync(linkPath);
+          if (stat.isSymbolicLink()) {
+            const target = readlinkSync(linkPath);
+            console.log(
+              `  ${pc.green("\u2713")} Antigravity workspace symlink: ${pc.dim(`${linkPath} \u2192 ${target}`)}`,
+            );
+          } else {
+            console.log(
+              `  ${pc.yellow("!")} ${linkPath} exists but is not a symlink \u2014 Talon will fall back to the literal path. If it has hidden segments, localharness will refuse it.`,
+            );
+          }
+        } else {
+          console.log(
+            `  ${pc.dim("-")} Antigravity workspace symlink not yet created at ${linkPath} (Talon creates it at startup the first time the backend boots)`,
+          );
+        }
+      } catch (e) {
+        console.log(
+          `  ${pc.yellow("!")} Antigravity workspace check failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
     }
   }
   try {

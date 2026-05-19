@@ -115,7 +115,7 @@ describe("antigravity handler — plain text turn", () => {
       bridge as unknown as Awaited<ReturnType<typeof ensureBridge>>,
     );
 
-    const onTextBlock = vi.fn(async () => {});
+    const onTextBlock = vi.fn(async (_text: string) => {});
     const result = await handleMessage({
       chatId: "test-chat-1",
       text: "say hi",
@@ -144,7 +144,7 @@ describe("antigravity handler — plain text turn", () => {
       onStreamDelta: (acc, phase) => {
         deltas.push({ acc, phase });
       },
-      onTextBlock: vi.fn(async () => {}),
+      onTextBlock: vi.fn(async (_text: string) => {}),
     });
 
     expect(deltas.length).toBeGreaterThan(0);
@@ -173,7 +173,7 @@ describe("antigravity handler — tool calls", () => {
     );
 
     const onToolUse = vi.fn();
-    const onTextBlock = vi.fn(async () => {});
+    const onTextBlock = vi.fn(async (_text: string) => {});
     await handleMessage({
       chatId: "test-chat-3",
       text: "use tools",
@@ -202,7 +202,7 @@ describe("antigravity handler — tool calls", () => {
       bridge as unknown as Awaited<ReturnType<typeof ensureBridge>>,
     );
 
-    const onTextBlock = vi.fn(async () => {});
+    const onTextBlock = vi.fn(async (_text: string) => {});
     await handleMessage({
       chatId: "test-chat-4",
       text: "terminate",
@@ -223,7 +223,7 @@ describe("antigravity handler — error path", () => {
       bridge as unknown as Awaited<ReturnType<typeof ensureBridge>>,
     );
 
-    const onTextBlock = vi.fn(async () => {});
+    const onTextBlock = vi.fn(async (_text: string) => {});
     await expect(
       handleMessage({
         chatId: "test-chat-5",
@@ -241,7 +241,7 @@ describe("antigravity handler — error path", () => {
     vi.mocked(ensureBridge).mockRejectedValue(
       new Error("python venv not found"),
     );
-    const onTextBlock = vi.fn(async () => {});
+    const onTextBlock = vi.fn(async (_text: string) => {});
     await expect(
       handleMessage({
         chatId: "test-chat-6",
@@ -271,7 +271,7 @@ describe("antigravity handler — usage propagation", () => {
       bridge as unknown as Awaited<ReturnType<typeof ensureBridge>>,
     );
 
-    const onTextBlock = vi.fn(async () => {});
+    const onTextBlock = vi.fn(async (_text: string) => {});
     const result = await handleMessage({
       chatId: "test-chat-7",
       text: "cache",

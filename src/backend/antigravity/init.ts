@@ -8,7 +8,13 @@
  */
 
 import { resolve } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  lstatSync,
+  readlinkSync,
+  symlinkSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
@@ -18,7 +24,7 @@ import { buildAntigravityMcpServers } from "./mcp-config.js";
 import { AntigravityBridge } from "./python-bridge.js";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
-  ANTIGRAVITY_DEFAULT_WORKSPACE_DIR,
+  ANTIGRAVITY_WORKSPACE_SYMLINK_NAME,
 } from "./constants.js";
 
 function expandHome(p: string | undefined): string | undefined {
@@ -28,8 +34,85 @@ function expandHome(p: string | undefined): string | undefined {
   return p;
 }
 
-function defaultWorkspacePath(): string {
-  return resolve(homedir(), ANTIGRAVITY_DEFAULT_WORKSPACE_DIR);
+/**
+ * Return `true` if any segment of `p` starts with a dot — the rule
+ * that `localharness` enforces. We probe this on every workspace
+ * path we hand to the bridge so doctor checks + init can refuse a
+ * known-bad config explicitly rather than letting the binary reject
+ * the agent's start.
+ */
+function containsHiddenSegment(p: string): boolean {
+  return p
+    .split("/")
+    .some((seg) => seg !== "" && seg.startsWith("."));
+}
+
+/**
+ * Resolve the workspace path the Antigravity bridge will hand to
+ * localharness, doing whatever symlink dance is necessary so the
+ * binary's hidden-segment guard doesn't reject it.
+ *
+ * Rules:
+ *
+ *   1. Explicit `antigravityWorkspace` override — used as-is (after
+ *      `~` expansion). If it contains hidden segments the operator
+ *      gets to deal with the binary's refusal; we just log a warn.
+ *   2. No override — we take Talon's REAL workspace (`config.workspace`,
+ *      typically `~/.talon/workspace/`) and expose it under
+ *      `~/talon-workspace` via a symlink. The agent's read/write hits
+ *      the same files every other backend uses. No data fragmentation.
+ *   3. Symlink creation is idempotent: if `~/talon-workspace` already
+ *      points at `config.workspace`, leave it alone. If it points at
+ *      something else, we leave it alone but warn (the operator
+ *      created their own symlink — respect it). If it exists as a
+ *      regular directory or file, we warn and fall back to the raw
+ *      path; localharness will refuse and the operator gets a clear
+ *      error in the bridge stderr.
+ *
+ * Returns the path to pass to localharness (the symlink, or the
+ * override).
+ */
+function resolveWorkspacePath(cfg: TalonConfig): string {
+  const cfgRecord = cfg as unknown as Record<string, unknown>;
+  const overrideRaw =
+    typeof cfgRecord.antigravityWorkspace === "string"
+      ? (cfgRecord.antigravityWorkspace as string)
+      : undefined;
+
+  if (overrideRaw) {
+    const expanded = expandHome(overrideRaw) ?? overrideRaw;
+    if (containsHiddenSegment(expanded)) {
+      logWarn(
+        "agent",
+        `Antigravity: antigravityWorkspace=${expanded} contains a hidden ` +
+          `path segment. localharness will refuse it. Pick a path with no ` +
+          `dot-segments (or leave the field unset to let Talon symlink the ` +
+          `main workspace automatically).`,
+      );
+    }
+    ensureDirectory(expanded);
+    return expanded;
+  }
+
+  // `cfg.workspace` is the Talon-synthesised real workspace path — in
+  // production it's always set, but tests may construct a minimal
+  // TalonConfig without it. Fall back to the canonical default so the
+  // backend still does something reasonable.
+  const realWorkspace =
+    cfg.workspace ?? resolve(homedir(), ".talon", "workspace");
+  if (!containsHiddenSegment(realWorkspace)) {
+    // User's main workspace already lives outside a hidden directory —
+    // no symlink dance needed.
+    ensureDirectory(realWorkspace);
+    return realWorkspace;
+  }
+
+  // Default flow: symlink ~/talon-workspace → config.workspace so
+  // localharness sees a path without hidden segments but the agent
+  // operates on the SAME files every other backend touches.
+  const symlinkPath = resolve(homedir(), ANTIGRAVITY_WORKSPACE_SYMLINK_NAME);
+  ensureSymlink(symlinkPath, realWorkspace);
+  return symlinkPath;
 }
 
 function ensureDirectory(p: string): void {
@@ -40,7 +123,63 @@ function ensureDirectory(p: string): void {
   } catch (e) {
     logWarn(
       "agent",
-      `Antigravity: failed to ensure workspace dir ${p}: ${
+      `Antigravity: failed to ensure directory ${p}: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+  }
+}
+
+/**
+ * Idempotently create a symlink at `linkPath` pointing to `target`.
+ * If `linkPath` already exists, the behaviour is:
+ *
+ *   - It's a symlink to the right target → no-op.
+ *   - It's a symlink to a DIFFERENT target → warn, leave alone
+ *     (operator's choice).
+ *   - It exists as a regular file or directory → warn, return; the
+ *     caller will pass the literal path and localharness may refuse.
+ */
+function ensureSymlink(linkPath: string, target: string): void {
+  try {
+    if (existsSync(linkPath)) {
+      const stat = lstatSync(linkPath);
+      if (stat.isSymbolicLink()) {
+        const current = readlinkSync(linkPath);
+        const currentResolved = resolve(target.startsWith("/") ? "" : process.cwd(), current);
+        if (currentResolved === target || current === target) {
+          // Already correct.
+          return;
+        }
+        logWarn(
+          "agent",
+          `Antigravity: symlink ${linkPath} points at ${current}, ` +
+            `not ${target}. Leaving alone (delete the symlink to let Talon ` +
+            `recreate it).`,
+        );
+        return;
+      }
+      logWarn(
+        "agent",
+        `Antigravity: ${linkPath} exists as a regular file/directory — ` +
+          `cannot symlink the Talon workspace through it. Set ` +
+          `antigravityWorkspace in talon.json to a path of your choice, ` +
+          `or move/remove ${linkPath}.`,
+      );
+      return;
+    }
+    // Make sure the target exists before symlinking — otherwise we'd
+    // create a dangling link.
+    ensureDirectory(target);
+    symlinkSync(target, linkPath, "dir");
+    log(
+      "agent",
+      `Antigravity: created workspace symlink ${linkPath} → ${target}`,
+    );
+  } catch (e) {
+    logWarn(
+      "agent",
+      `Antigravity: failed to ensure symlink ${linkPath} → ${target}: ${
         e instanceof Error ? e.message : String(e)
       }`,
     );
@@ -73,14 +212,12 @@ export function initAntigravityAgent(
     log("agent", "Antigravity auth: gemini-api-key configured");
   }
 
-  // Ensure the default workspace exists if no override is configured.
-  const wsOverride =
-    typeof cfgRecord.antigravityWorkspace === "string"
-      ? expandHome(cfgRecord.antigravityWorkspace as string)
-      : undefined;
-  const workspacePath = wsOverride ?? defaultWorkspacePath();
-  ensureDirectory(workspacePath);
+  // Provision the workspace path at startup so the doctor + first turn
+  // see the symlink immediately, not at first chat.
+  resolveWorkspacePath(cfg);
 }
+
+export { resolveWorkspacePath, containsHiddenSegment };
 
 /**
  * Lazily start (or reuse) the bridge subprocess for a chat.
@@ -121,11 +258,10 @@ export async function ensureBridge(
       : undefined) ?? process.env.GEMINI_API_KEY;
   const model = state.config.model ?? ANTIGRAVITY_DEFAULT_MODEL;
 
-  const wsOverride =
-    typeof cfgRecord.antigravityWorkspace === "string"
-      ? expandHome(cfgRecord.antigravityWorkspace as string)
-      : undefined;
-  const workspacePath = wsOverride ?? defaultWorkspacePath();
+  // Resolve the workspace fresh each time (the bridge may be respawning
+  // after a config edit). `resolveWorkspacePath` is idempotent — same
+  // symlink, no churn.
+  const workspacePath = resolveWorkspacePath(state.config);
 
   const pythonPath =
     typeof cfgRecord.antigravityPython === "string"

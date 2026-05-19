@@ -75,15 +75,25 @@ export const ANTIGRAVITY_TURN_TIMEOUT_MS = (() => {
 })();
 
 /**
- * Working directory the SDK refuses to use a hidden directory for. The
- * `localharness` binary rejects any path that contains a "hidden"
- * segment (one whose name starts with `.`) — including `~/.talon/...`
- * paths. So we provision a fully-non-hidden directory under the user's
- * home for the agent's filesystem operations.
+ * Symlink path Talon creates at startup so localharness can use the
+ * REAL Talon workspace (`~/.talon/workspace/`) without tripping its
+ * hidden-segment refusal.
  *
- * NOTE: this is intentionally NOT under `~/.talon/` — see above.
+ * Background: `localharness` literally rejects any URI whose path
+ * contains a segment starting with `.` — including `~/.talon/`. We
+ * still want the agent to read/write the same workspace every other
+ * backend uses (memory, uploads, daily notes, palace), so we make a
+ * symlink under the user's home (visible name → hidden target). The
+ * binary checks the literal path it's given, not its realpath() —
+ * verified against the live install.
+ *
+ * Resolved at init time to `<home>/talon-workspace`. Auto-created if
+ * missing; left alone if already a symlink to the right place. If it
+ * exists as a regular directory (e.g. a user's own work) Talon emits
+ * a doctor warning and the operator must pick another path via
+ * `antigravityWorkspace` in talon.json.
  */
-export const ANTIGRAVITY_DEFAULT_WORKSPACE_DIR = "talon-antigravity-workspace";
+export const ANTIGRAVITY_WORKSPACE_SYMLINK_NAME = "talon-workspace";
 
 /**
  * Bridge protocol version we expect on the `ready` event. Bumped in
