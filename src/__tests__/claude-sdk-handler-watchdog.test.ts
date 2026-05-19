@@ -73,43 +73,48 @@ const mockSdkScript = (opts: {
 };
 
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
-  query: vi.fn((args: { prompt: string; options: { abortController?: AbortController } }) => {
-    mockAbortSignal = args.options.abortController?.signal;
-    let i = 0;
-    let resolveHang: (() => void) | undefined;
+  query: vi.fn(
+    (args: {
+      prompt: string;
+      options: { abortController?: AbortController };
+    }) => {
+      mockAbortSignal = args.options.abortController?.signal;
+      let i = 0;
+      let resolveHang: (() => void) | undefined;
 
-    const iter = {
-      [Symbol.asyncIterator]() {
-        return this;
-      },
-      [Symbol.asyncDispose]: async () => {
-        /* no-op for tests */
-      },
-      async next(): Promise<IteratorResult<SdkMsg, void>> {
-        if (i < mockMessages.length) {
-          return { done: false, value: mockMessages[i++] };
-        }
-        if (mockHangAfterLastMessage) {
-          // Park forever — resolved only by .return() (our watchdog) or
-          // .throw() (test cleanup).
-          return new Promise<IteratorResult<SdkMsg, void>>((resolve) => {
-            resolveHang = () => resolve({ done: true, value: undefined });
-          });
-        }
-        return { done: true, value: undefined };
-      },
-      async return(): Promise<IteratorResult<SdkMsg, void>> {
-        mockReturnCalled = true;
-        if (resolveHang) resolveHang();
-        return { done: true, value: undefined };
-      },
-      async throw(err: unknown): Promise<IteratorResult<SdkMsg, void>> {
-        if (resolveHang) resolveHang();
-        throw err;
-      },
-    };
-    return iter as unknown as AsyncGenerator<SdkMsg, void>;
-  }),
+      const iter = {
+        [Symbol.asyncIterator]() {
+          return this;
+        },
+        [Symbol.asyncDispose]: async () => {
+          /* no-op for tests */
+        },
+        async next(): Promise<IteratorResult<SdkMsg, void>> {
+          if (i < mockMessages.length) {
+            return { done: false, value: mockMessages[i++] };
+          }
+          if (mockHangAfterLastMessage) {
+            // Park forever — resolved only by .return() (our watchdog) or
+            // .throw() (test cleanup).
+            return new Promise<IteratorResult<SdkMsg, void>>((resolve) => {
+              resolveHang = () => resolve({ done: true, value: undefined });
+            });
+          }
+          return { done: true, value: undefined };
+        },
+        async return(): Promise<IteratorResult<SdkMsg, void>> {
+          mockReturnCalled = true;
+          if (resolveHang) resolveHang();
+          return { done: true, value: undefined };
+        },
+        async throw(err: unknown): Promise<IteratorResult<SdkMsg, void>> {
+          if (resolveHang) resolveHang();
+          throw err;
+        },
+      };
+      return iter as unknown as AsyncGenerator<SdkMsg, void>;
+    },
+  ),
 }));
 
 // ── Mock the rest of the handler's surface ──────────────────────────────────
@@ -215,9 +220,7 @@ describe("Claude SDK chat handler — post-result watchdog", () => {
     // — `vi.resetModules()` above ensures we get a fresh module per test.
     vi.stubEnv("TALON_SDK_POST_RESULT_GRACE_MS", "50");
 
-    const { clearModels, registerModels } = await import(
-      "../core/models.js"
-    );
+    const { clearModels, registerModels } = await import("../core/models.js");
     clearModels();
     registerModels([
       {
