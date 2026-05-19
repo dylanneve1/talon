@@ -72,7 +72,7 @@ import {
 } from "./constants.js";
 import { getState } from "./state.js";
 import { getActiveFrontends } from "./init.js";
-import { buildOpenAIAgentsMcpServers } from "./mcp.js";
+import { getOrCreateBundle } from "./mcp-pool.js";
 import { OPENAI_AGENTS_BUILTIN_TOOLS } from "./builtins.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
@@ -140,15 +140,17 @@ export async function handleMessage(
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
 
-  // Build + connect MCP servers for this chat. The Agents SDK takes
-  // already-connected `MCPServerStdio` instances; we close them in
-  // the finally block regardless of outcome to avoid subprocess
-  // leaks.
+  // Acquire the per-chat MCP bundle. Persistent across turns — built
+  // on first use, kept alive until `releaseBundle(chatId)` (chat
+  // rebind, /reset, backend cleanup). Avoids the ~15-subprocess
+  // re-spawn that the original per-turn build caused, which slowed
+  // every turn by ~5s and intermittently raced into
+  // `MCP error -32001: Request timed out`. See `mcp-pool.ts`.
   const bridgeUrl = `http://127.0.0.1:${state.gatewayPortFn()}`;
   const frontends = getActiveFrontends();
-  let mcpBundle: Awaited<ReturnType<typeof buildOpenAIAgentsMcpServers>>;
+  let mcpBundle: Awaited<ReturnType<typeof getOrCreateBundle>>;
   try {
-    mcpBundle = await buildOpenAIAgentsMcpServers({
+    mcpBundle = await getOrCreateBundle({
       chatId,
       bridgeUrl,
       frontends,
@@ -279,9 +281,8 @@ export async function handleMessage(
           `[${chatId}] OpenAI Agents ${decision.reason}, resetting session and retrying`,
         );
         resetSession(chatId);
-        // Close MCP servers from this attempt before the recursive
-        // retry spawns its own set.
-        await mcpBundle.close();
+        // MCP bundle is retained across the retry — subprocesses are
+        // stateless wrt the model conversation. See `mcp-pool.ts`.
         return handleMessage(params, true);
       }
 
@@ -293,7 +294,6 @@ export async function handleMessage(
         resetSession(chatId);
         const originalModel = getChatSettings(chatId).model;
         setChatModel(chatId, decision.fallbackModelId);
-        await mcpBundle.close();
         try {
           return await handleMessage(params, true);
         } finally {
@@ -305,18 +305,16 @@ export async function handleMessage(
         "agent",
         `[${chatId}] OpenAI Agents error: ${classified.message}`,
       );
-      await mcpBundle.close();
       throw classified;
     }
   } finally {
     if (activeAborts.get(chatId) === abortController) {
       activeAborts.delete(chatId);
     }
-    // Close MCP servers in the success / aborted-by-terminator path.
-    // (The throw path closed them above before throwing.) Idempotent.
-    await mcpBundle.close().catch(() => {
-      /* best-effort */
-    });
+    // MCP bundle is NOT closed here — it persists across turns via
+    // the pool in `mcp-pool.ts`. Release happens on chat rebind, on
+    // `/reset` (via `releaseBundle(chatId)`), and at backend cleanup
+    // (`releaseAllBundles()`).
   }
 
   // ── Post-loop accounting ──────────────────────────────────────────────────
