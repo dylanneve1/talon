@@ -49,20 +49,26 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
           // Wrap in AbortError to prevent further retries
           throw new AbortError(classified);
         }
-        const delayMs =
-          classified.retryAfterMs ?? 1000 * Math.pow(2, attempt - 1);
+        // Respect the server-requested Retry-After delay (e.g. from a 429
+        // response) rather than relying solely on p-retry's fixed backoff.
+        // We sleep the correct amount here and set minTimeout:0 below so
+        // p-retry doesn't add a second, conflicting delay on top.
+        const delayMs = Math.min(
+          classified.retryAfterMs ?? 1000 * Math.pow(2, attempt - 1),
+          60_000,
+        );
         log(
           "gateway",
           `Retry ${attempt}/3 (${classified.reason}) after ${delayMs}ms`,
         );
-        throw classified; // rethrow to trigger p-retry delay
+        await new Promise<void>((r) => setTimeout(r, delayMs));
+        throw classified; // rethrow to let p-retry count the attempt
       }
     },
     {
       retries: 2, // 3 total attempts
-      minTimeout: 1000,
-      maxTimeout: 60_000,
-      factor: 2,
+      minTimeout: 0, // delay is handled above via the explicit sleep
+      factor: 1,
       onFailedAttempt: (err) => {
         if (err.retriesLeft === 0) {
           logError("gateway", `All retries exhausted: ${err.error.message}`);

@@ -395,6 +395,17 @@ describe("cron-store", () => {
 
       expect(() => loadCronJobs()).not.toThrow();
     });
+
+    it("handles a file containing JSON null without crashing", () => {
+      // JSON.parse("null") returns null — a non-array, non-object value.
+      // Without a null guard, `store = raw` sets store to null and the
+      // immediately-following Object.values(store) call throws TypeError.
+      existsSyncMock.mockReturnValue(true);
+      readFileSyncMock.mockReturnValue("null");
+
+      expect(() => loadCronJobs()).not.toThrow();
+      expect(getAllCronJobs()).toEqual([]);
+    });
   });
 
   describe("flushCronJobs", () => {

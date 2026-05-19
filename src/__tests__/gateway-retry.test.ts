@@ -264,6 +264,33 @@ describe("withRetry", () => {
     });
   });
 
+  describe("retryAfterMs delay is applied by withRetry", () => {
+    it("waits the retryAfterMs duration before retrying a rate_limit error", async () => {
+      vi.useFakeTimers();
+      let calls = 0;
+      const fn = vi.fn(async () => {
+        calls++;
+        if (calls === 1) {
+          throw talonErr("rate_limit", 5_000); // retry after 5 s
+        }
+        return "ok";
+      });
+
+      const promise = withRetry(fn);
+      // After initial call the promise should be waiting for the delay
+      await vi.runAllTicks();
+      expect(fn).toHaveBeenCalledTimes(1);
+
+      // Advance time past the retryAfterMs so the sleep resolves and
+      // the second attempt fires.
+      await vi.advanceTimersByTimeAsync(5_001);
+      const result = await promise;
+      expect(result).toBe("ok");
+      expect(fn).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+  });
+
   describe("TalonError retryAfterMs is respected by classify", () => {
     it("classify preserves retryAfterMs from rate-limit message", () => {
       // Verify that classify() correctly parses the retryAfterMs so
