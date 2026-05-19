@@ -14,7 +14,7 @@ import {
   setSessionId,
   setSessionName,
 } from "../../storage/sessions.js";
-import { log, logError } from "../../util/log.js";
+import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
@@ -42,6 +42,34 @@ import {
   summarizeUsage,
   applyRetryDecision,
 } from "../shared/index.js";
+
+// ── Post-result watchdog ────────────────────────────────────────────────────
+// The SDK's PostToolBatch hook is the canonical loop-terminator — it returns
+// `{ continue: false }` after `end_turn`/`send`, and the SDK is supposed to
+// emit a `result` SDKMessage and close the async iterator immediately after.
+// In practice (observed 2026-05-19 14:52Z, chat 352042062, contextTokens=251464,
+// numApiCalls=50) the SDK can emit `result` and then ghost — the for-await loop
+// stays parked forever, holding the dispatcher context and the typing-indicator
+// pulse for hours until someone manually `/restart`s.
+//
+// Workaround: arm a short timer the moment `result` is processed. If the
+// iterator hasn't closed by the grace deadline, abort the controller and
+// force-close the generator via `qi.return()`. The clean-exit case clears the
+// timer in the same turn and pays nothing.
+
+const DEFAULT_SDK_POST_RESULT_GRACE_MS = 5_000;
+
+function envMs(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+const SDK_POST_RESULT_GRACE_MS = envMs(
+  "TALON_SDK_POST_RESULT_GRACE_MS",
+  DEFAULT_SDK_POST_RESULT_GRACE_MS,
+);
 
 // ── Active query store ──────────────────────────────────────────────────────
 // Holds the Query reference for each in-flight chat so gateway actions
@@ -81,7 +109,8 @@ export async function handleMessage(
   // has to land before that call.
   prepareSystemPrompt({ config, previousTurns: session.turns });
 
-  const { options, activeModel } = buildSdkOptions(chatId);
+  const abortController = new AbortController();
+  const { options, activeModel } = buildSdkOptions(chatId, abortController);
 
   const prompt = formatUserPrompt({
     text,
@@ -95,6 +124,35 @@ export async function handleMessage(
   const qi = query({ prompt, options });
   activeQueries.set(chatId, qi);
   const state = createStreamState();
+
+  // Post-result watchdog (see top-of-file). Armed inside the loop when the
+  // first `result` message lands; disarmed in `finally` either way.
+  let postResultTimer: ReturnType<typeof setTimeout> | null = null;
+  let postResultForceClosed = false;
+  const armPostResultWatchdog = (): void => {
+    if (postResultTimer) return;
+    const t = setTimeout(() => {
+      postResultForceClosed = true;
+      logWarn(
+        "agent",
+        `[${chatId}] SDK iterator stuck ${SDK_POST_RESULT_GRACE_MS}ms after result — aborting`,
+      );
+      incrementCounter("sdk.iterator_force_close_after_result");
+      try {
+        abortController.abort();
+      } catch {
+        /* abort() can throw if already aborted — ignore */
+      }
+      // `qi.return()` resolves the async generator with `{ done: true }`,
+      // exiting the for-await loop without throwing. Combined with abort()
+      // above, the SDK subprocess gets torn down AND our loop releases.
+      qi.return(undefined).catch(() => {
+        /* the generator may already be in a terminal state — ignore */
+      });
+    }, SDK_POST_RESULT_GRACE_MS);
+    t.unref();
+    postResultTimer = t;
+  };
 
   // Capture text args from delivery tools (`end_turn`, `send(type="text")`)
   // so the end-of-turn trailing-text fallback can dedupe against content
@@ -190,24 +248,40 @@ export async function handleMessage(
       // Final result — read token counts and context info
       if (isResult(message)) {
         processResultMessage(message, state, options.model ?? activeModel);
+        // Arm the watchdog the moment we see `result`. On a clean SDK exit
+        // the iterator closes within milliseconds and the timer never fires;
+        // on a hang the timer aborts the controller and force-closes the
+        // generator after the grace window.
+        armPostResultWatchdog();
       }
     }
   } catch (err) {
-    const outcome = await applyRetryDecision({
-      err,
-      chatId,
-      activeModel,
-      retried: _retried,
-      params,
-      recurseWithRetried: (p) => handleMessage(p, true),
-      // No backendLabel — historical claude-sdk log shape was un-prefixed
-      // (just `[chatId] session_expired, resetting…`). Preserving that.
-    });
-    if (outcome.retry) return outcome.retry;
+    // Our own watchdog force-closed the iterator after the SDK stalled
+    // post-result. The work is already done — the result message was
+    // processed, the response was delivered via the delivery tool, and
+    // `state` is fully populated. Treat the abort as a clean exit so the
+    // post-loop code runs and frees the dispatcher lock.
+    if (!postResultForceClosed) {
+      const outcome = await applyRetryDecision({
+        err,
+        chatId,
+        activeModel,
+        retried: _retried,
+        params,
+        recurseWithRetried: (p) => handleMessage(p, true),
+        // No backendLabel — historical claude-sdk log shape was un-prefixed
+        // (just `[chatId] session_expired, resetting…`). Preserving that.
+      });
+      if (outcome.retry) return outcome.retry;
 
-    logError("agent", `[${chatId}] SDK error: ${outcome.classified.message}`);
-    throw outcome.classified;
+      logError("agent", `[${chatId}] SDK error: ${outcome.classified.message}`);
+      throw outcome.classified;
+    }
   } finally {
+    if (postResultTimer) {
+      clearTimeout(postResultTimer);
+      postResultTimer = null;
+    }
     if (activeQueries.get(chatId) === qi) {
       activeQueries.delete(chatId);
     }

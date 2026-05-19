@@ -297,7 +297,10 @@ const stopFailureHook: HookCallback = async (
 
 // ── Options builder ─────────────────────────────────────────────────────────
 
-export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
+export function buildSdkOptions(
+  chatId: string,
+  abortController?: AbortController,
+): BuildSdkOptionsResult {
   const config = getConfig();
   const chatSettings = getChatSettings(chatId);
   const activeModel = chatSettings.model ?? config.model;
@@ -331,6 +334,13 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     // these as a unit — flipping either alone is a configuration bug.
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
+    // Cancellation signal — when aborted, the SDK tears down the spawned
+    // subprocess and stops streaming. The chat handler uses this both as a
+    // shutdown hook for the daemon and as the kill-switch for a watchdog
+    // that fires if the SDK iterator hangs after emitting `result`. The
+    // happy-path SDK exit is owned by the PostToolBatch hook below; this
+    // is defence in depth, not the primary terminator.
+    ...(abortController ? { abortController } : {}),
     ...(config.claudeBinary
       ? { pathToClaudeCodeExecutable: config.claudeBinary }
       : {}),
