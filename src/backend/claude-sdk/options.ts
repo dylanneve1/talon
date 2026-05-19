@@ -23,7 +23,7 @@ import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isTurnTerminator } from "../../core/tools/index.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
-import { DISALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
+import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -265,7 +265,11 @@ export function buildSdkOptions(chatId: string): BuildSdkOptionsResult {
     ...(config.claudeBinary
       ? { pathToClaudeCodeExecutable: config.claudeBinary }
       : {}),
-    disallowedTools: [...DISALLOWED_TOOLS_CHAT],
+    // Whitelist of SDK built-in tools. Anything not listed (e.g. WebSearch,
+    // WebFetch, Monitor, PushNotification, RemoteTrigger, Plan/Worktree/Todo
+    // helpers, AskUserQuestion, ScheduleWakeup) is unavailable to the model.
+    // MCP tools are governed independently via `mcpServers` below.
+    tools: [...ALLOWED_TOOLS_CHAT],
     ...thinkingConfig,
     mcpServers: {
       ...buildMcpServers(chatId),

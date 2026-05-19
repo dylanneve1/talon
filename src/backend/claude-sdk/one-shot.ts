@@ -17,7 +17,7 @@ import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { OneShotAgentParams } from "../../core/types.js";
 import { log } from "../../util/log.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
-import { DISALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
+import { ALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
 import { buildMcpServers } from "./options.js";
 
 const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
@@ -76,7 +76,10 @@ export async function runOneShotAgent(
       ? { pathToClaudeCodeExecutable: oneShotConfig.claudeBinary }
       : {}),
     mcpServers: assembleMcpServers(contextLabel),
-    disallowedTools: [...DISALLOWED_TOOLS_BACKGROUND],
+    // Whitelist of SDK built-in tools for background contexts (heartbeat,
+    // dream). Same as chat minus `Agent` — nested sub-agent dispatch from
+    // inside an unattended pass complicates lifecycle tracking.
+    tools: [...ALLOWED_TOOLS_BACKGROUND],
   };
 
   const qi = query({
