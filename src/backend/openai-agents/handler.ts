@@ -179,12 +179,24 @@ export async function handleMessage(
     // bundled by Claude Code. `mcpServers` carries the Talon frontend
     // + plugin MCP servers (Telegram tools, Discord tools, mempalace,
     // etc.). Single agent, no handoffs, no guardrails.
+    //
+    // `mcpConfig.includeServerInToolNames` tells the Agents SDK to
+    // namespace every MCP tool as `mcp_<serverName>__<toolName>` —
+    // this eliminates the "Duplicate tool names found across MCP
+    // servers" error by construction. Talon legitimately ships
+    // colliding names across plugins (Telegram's `cancel_scheduled`
+    // for scheduled messages vs. the email plugin's `cancel_scheduled`
+    // for scheduled emails, etc.) and namespacing keeps BOTH tools
+    // available to the model rather than silently dropping the loser.
+    // Built-in tools (Read/Write/Edit/Bash/...) stay unprefixed —
+    // the SDK only renames MCP-sourced tools.
     const agent = new Agent({
       name: OPENAI_AGENTS_AGENT_NAME,
       instructions: systemPrompt,
       model: activeModel,
       tools: [...OPENAI_AGENTS_BUILTIN_TOOLS],
       mcpServers: mcpBundle.servers,
+      mcpConfig: { includeServerInToolNames: true },
     });
 
     const stream = await run(agent, prompt, {

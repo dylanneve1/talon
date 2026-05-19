@@ -19,10 +19,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { MCPServerStdio } from "@openai/agents";
-import type { MCPToolFilterCallable } from "@openai/agents";
 import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
-import { logDebug } from "../../util/log.js";
 
 /**
  * Build the MCP servers for a given chat. Returns connected
@@ -55,18 +53,19 @@ export interface OpenAIAgentsMcpBundle {
  * different domains (cancel a scheduled Telegram message vs. a
  * scheduled email).
  *
- * We resolve this with a shared first-claimer filter: each server
- * gets a callable `toolFilter` that consults a closure-owned
- * `ownerByTool` map. Whichever server lists a given tool name
- * **first** keeps it; subsequent servers have that name silently
- * dropped from their visible toolset. Server priority is the order
- * we append to `servers` below — frontend tools first, then
- * Brave Search, then plugin servers in iteration order. So when
- * Telegram and email both claim `cancel_scheduled`, Telegram wins
- * (frontend before plugins).
+ * We resolve this at the Agent level via
+ * `mcpConfig.includeServerInToolNames: true` (set in `handler.ts`).
+ * The SDK then exposes each MCP tool as `mcp_<serverName>__<toolName>`,
+ * so collisions are impossible by construction — Telegram's
+ * `cancel_scheduled` becomes `mcp_telegram-tools__cancel_scheduled`,
+ * email's becomes `mcp_email-tools__cancel_scheduled`, both stay
+ * available to the model.
  *
- * Idempotent on re-list: the map persists for the lifetime of the
- * bundle, so a re-`listTools()` re-applies the same ownership.
+ * The prior approach (callable `toolFilter` that first-claim-wins
+ * dropped one side of any collision) was strictly worse: it lost
+ * tools the model legitimately needed access to. Namespacing keeps
+ * everything reachable; the only cost is longer tool identifiers in
+ * the prompt, which capable models handle without issue.
  */
 export async function buildOpenAIAgentsMcpServers(args: {
   chatId: string;
@@ -90,34 +89,14 @@ export async function buildOpenAIAgentsMcpServers(args: {
     "../../core/tools/mcp-server.ts",
   );
 
-  // Shared "first claimer" map (toolName → serverName). All servers
-  // share the same instance via the filter closure below, so first
-  // server to list a given tool name keeps exclusive ownership for
-  // the rest of the bundle's lifetime.
-  const ownerByTool = new Map<string, string>();
-  const makeDedupFilter = (): MCPToolFilterCallable => {
-    return async (ctx, tool) => {
-      const owner = ownerByTool.get(tool.name);
-      if (!owner) {
-        ownerByTool.set(tool.name, ctx.serverName);
-        return true;
-      }
-      const ours = owner === ctx.serverName;
-      if (!ours) {
-        logDebug(
-          "agent",
-          `MCP tool dedup: dropped ${tool.name} from ${ctx.serverName} (claimed by ${owner})`,
-        );
-      }
-      return ours;
-    };
-  };
-
   const servers: MCPServerStdio[] = [];
 
-  // Frontend MCP tool servers (one per non-terminal frontend).
-  // Frontend wins all name conflicts — these are the Talon-native
-  // tools (send, react, end_turn, …) and must always be available.
+  // Frontend MCP tool servers (one per non-terminal frontend). Each
+  // exposes the Talon-native delivery surface (send, react, end_turn,
+  // …) scoped to that frontend; the SDK's includeServerInToolNames
+  // prefix gives them distinct identifiers so multi-frontend setups
+  // (e.g. telegram + discord active simultaneously) don't collide on
+  // shared tool names.
   for (const frontend of frontends) {
     const wrapped = wrapMcpCommand([
       "node",
@@ -135,7 +114,6 @@ export async function buildOpenAIAgentsMcpServers(args: {
           TALON_CHAT_ID: chatId,
           TALON_FRONTEND: frontend,
         },
-        toolFilter: makeDedupFilter(),
       }),
     );
   }
@@ -152,13 +130,13 @@ export async function buildOpenAIAgentsMcpServers(args: {
         command: braveCommand,
         args: [],
         env: { BRAVE_API_KEY: braveApiKey },
-        toolFilter: makeDedupFilter(),
       }),
     );
   }
 
-  // Plugin MCP servers — last in priority. If a plugin's tool name
-  // collides with the frontend's, the frontend version wins.
+  // Plugin MCP servers — namespacing in the Agent's mcpConfig keeps
+  // their tools distinct from the frontend's even when names overlap
+  // (`cancel_scheduled`, `list_scheduled`, etc.).
   const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
   for (const [name, cfg] of Object.entries(pluginServers)) {
     const wrapped = wrapMcpCommand([cfg.command, ...cfg.args]);
@@ -168,7 +146,6 @@ export async function buildOpenAIAgentsMcpServers(args: {
         command: wrapped[0],
         args: wrapped.slice(1),
         env: cfg.env ?? {},
-        toolFilter: makeDedupFilter(),
       }),
     );
   }

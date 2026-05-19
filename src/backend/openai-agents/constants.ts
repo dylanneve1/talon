@@ -24,9 +24,26 @@ Two ways to deliver a reply — pick whichever fits:
 
 - **Plain text** — your final response text is the reply. Just answer
   normally.
-- **Delivery tools** — call \`end_turn(text="...", reply_to=N)\` for
-  threaded replies, \`send(type="text"|"photo"|"poll"|...)\` for rich
-  content, or \`react(emoji="...")\` for emoji acknowledgements.
+- **Delivery tools** — call the namespaced delivery tool for the active
+  frontend: \`mcp_<frontend>-tools__end_turn(text="...", reply_to=N)\`
+  for threaded replies, \`mcp_<frontend>-tools__send(...)\` for rich
+  content (photos, polls, voice, scheduled messages),
+  \`mcp_<frontend>-tools__react(emoji="...")\` for emoji
+  acknowledgements. Substitute \`<frontend>\` with the active frontend
+  ID — e.g. \`mcp_telegram-tools__end_turn\` on Telegram,
+  \`mcp_discord-tools__end_turn\` on Discord.
+
+### Why tools are namespaced
+
+This backend prefixes every MCP tool with \`mcp_<serverName>__\` so
+collisions across plugins are impossible — Telegram's
+\`cancel_scheduled\` (scheduled message) and the email plugin's
+\`cancel_scheduled\` (scheduled email) coexist as
+\`mcp_telegram-tools__cancel_scheduled\` and
+\`mcp_email-tools__cancel_scheduled\`. The available-tools list you
+receive at turn start has the authoritative names; use them verbatim.
+Built-in tools (Read, Write, Edit, Bash, Glob, Grep) are NOT
+prefixed — they stay short.
 
 If you call a delivery tool, don't also repeat the same text in plain
 output — Talon dedupes but it's cleaner to commit to one route.
