@@ -39,5 +39,10 @@ export {
   OPENAI_AGENTS_MAX_TURNS,
   OPENAI_AGENTS_AGENT_NAME,
 } from "./constants.js";
-export { buildOpenAIAgentsMcpServers } from "./mcp.js";
-export type { OpenAIAgentsMcpBundle } from "./mcp.js";
+export {
+  getOrCreateBundle,
+  releaseBundle,
+  releaseAllBundles,
+  getActiveBundleIds,
+} from "./mcp-pool.js";
+export type { OpenAIAgentsMcpBundle, BundleInputs } from "./mcp-pool.js";
