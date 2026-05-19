@@ -1,6 +1,21 @@
 /**
- * Regression + audit tests — ID-shaped tool params use the strict
- * shared `idSchema` from `core/tools/schemas.ts`.
+ * Regression + audit tests — ID-shaped tool params use one of the two
+ * supported schemas from `core/tools/schemas.ts`:
+ *
+ *   - `idSchema` — strict Telegram-style ID. Accepts a positive integer
+ *     OR a digit-only string that is COERCED to a positive integer.
+ *     Used by telegram-only tools (stop_poll, sticker tools).
+ *
+ *   - `snowflakeOrIdSchema` — Discord-compatible. Accepts a positive
+ *     integer OR a digit-only string that PASSES THROUGH unchanged.
+ *     Used by every tool exposed to the discord frontend. Snowflakes
+ *     (17–19 digits, exceed 2^53) MUST stay as strings — `Number()`
+ *     rounds and silently drops trailing digits, after which Discord's
+ *     REST API rejects the request as "Unknown Message".
+ *
+ * Both schemas reject the empty/null/boolean/non-digit/non-integer/
+ * negative/zero inputs that a bare `z.coerce.number().int()` was too
+ * lax about.
  *
  * Background: some MCP transport / model paths deliver `message_id`,
  * `user_id`, `reply_to`, `offset_id` as JSON strings ("2081") rather
@@ -9,12 +24,6 @@
  * `react`/`pin_message`/`get_member_info`/`download_media` failing
  * out of nowhere even when the model formatted the call correctly
  * for a number-typed JSON Schema field.
- *
- * Initial fix used `z.coerce.number().int()`, but per Copilot review
- * that was too lax — `""`/`null` coerce to 0 and `true` to 1, which
- * then pass `.int()` and reach the bot API. The current `idSchema` is
- * a union: `z.number().int().positive()` OR a digit-only string that
- * gets transformed to a positive integer. Everything else is rejected.
  */
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
@@ -27,12 +36,26 @@ const ID_FIELD_NAMES = new Set([
   "offset_id",
 ]);
 
+const SNOWFLAKE = "1497549923779084388"; // 19-digit Discord snowflake > 2^53
+
 function getIdSchema(toolName: string, field: string): z.ZodTypeAny {
   const tool = ALL_TOOLS.find((t) => t.name === toolName);
   if (!tool) throw new Error(`tool ${toolName} not found`);
   const schema = (tool.schema as Record<string, z.ZodTypeAny>)[field];
   if (!schema) throw new Error(`field ${field} not found on ${toolName}`);
   return schema;
+}
+
+/**
+ * A snowflake-or-numeric schema preserves the input string verbatim
+ * (no Number() coercion). Detect by parsing a snowflake-sized digit
+ * string and checking the result type/value. Strict idSchema would
+ * either reject (precision overflow in safe-int check) or coerce to
+ * a rounded number.
+ */
+function acceptsSnowflakeAsString(schema: z.ZodTypeAny): boolean {
+  const r = schema.safeParse(SNOWFLAKE);
+  return r.success && r.data === SNOWFLAKE;
 }
 
 describe("ID-shaped tool params accept stringified numbers", () => {
@@ -61,10 +84,13 @@ describe("ID-shaped tool params accept stringified numbers", () => {
       expect(out).toBe(2081);
     });
 
-    it(`${tool}.${field} accepts a numeric string and coerces it`, () => {
+    it(`${tool}.${field} accepts a numeric string`, () => {
       const s = getIdSchema(tool, field);
+      // snowflakeOrIdSchema passes the string through; strict idSchema
+      // coerces to number. Both outcomes are valid — the bridge layer
+      // normalizes at the boundary.
       const out = s.parse("2081");
-      expect(out).toBe(2081);
+      expect(out === 2081 || out === "2081").toBe(true);
     });
 
     it(`${tool}.${field} rejects a non-numeric string`, () => {
@@ -79,20 +105,19 @@ describe("ID-shaped tool params accept stringified numbers", () => {
   }
 });
 
-describe("Audit: every ID-shaped field in tool schemas is the strict idSchema", () => {
+describe("Audit: every ID-shaped field uses idSchema or snowflakeOrIdSchema", () => {
   /**
-   * For each ID field on every tool, this test asserts the full
-   * accept/reject contract of `idSchema` — not just "accepts a
-   * string." That guards against a future replacement that passes
-   * the loose check (`safeParse("123")` succeeds) but doesn't
-   * actually return a positive integer (e.g. `z.string()` would
-   * accept "123" and return the string "123").
+   * Asserts the full accept/reject contract for both supported ID
+   * schemas. Guards against a future replacement that passes loose
+   * checks (e.g. bare `z.string()` accepts "123" but doesn't reject
+   * empty/non-numeric inputs).
    */
   for (const tool of ALL_TOOLS) {
     const schema = tool.schema as Record<string, unknown>;
     for (const field of Object.keys(schema)) {
       if (!ID_FIELD_NAMES.has(field)) continue;
       const zSchema = schema[field] as z.ZodTypeAny;
+      const isSnowflake = acceptsSnowflakeAsString(zSchema);
 
       it(`${tool.name}.${field}: accepts a positive integer number`, () => {
         const r = zSchema.safeParse(2081);
@@ -100,19 +125,40 @@ describe("Audit: every ID-shaped field in tool schemas is the strict idSchema", 
         if (r.success) expect(r.data).toBe(2081);
       });
 
-      it(`${tool.name}.${field}: accepts a digit string and returns a number`, () => {
+      it(`${tool.name}.${field}: accepts a digit string`, () => {
         const r = zSchema.safeParse("2081");
         expect(r.success).toBe(true);
         if (r.success) {
-          expect(typeof r.data).toBe("number");
-          expect(Number.isInteger(r.data as number)).toBe(true);
-          expect(r.data).toBe(2081);
+          if (isSnowflake) {
+            // Pass-through schema keeps the string verbatim.
+            expect(r.data).toBe("2081");
+          } else {
+            // Strict idSchema coerces to number.
+            expect(typeof r.data).toBe("number");
+            expect(Number.isInteger(r.data as number)).toBe(true);
+            expect(r.data).toBe(2081);
+          }
         }
       });
 
+      if (isSnowflake) {
+        it(`${tool.name}.${field}: preserves Discord snowflakes without precision loss`, () => {
+          const r = zSchema.safeParse(SNOWFLAKE);
+          expect(r.success).toBe(true);
+          if (r.success) {
+            // The string must survive intact — `Number(SNOWFLAKE)`
+            // rounds the last digit off (2^53 ceiling) and Discord
+            // would reject the result as Unknown Message.
+            expect(r.data).toBe(SNOWFLAKE);
+            expect(typeof r.data).toBe("string");
+          }
+        });
+      }
+
       // Reject the inputs that bare `z.coerce.number().int()` was too
       // permissive about — empty/whitespace/null/booleans coerce to
-      // 0/0/0/1 and would pass `.int()`. The strict union rejects all.
+      // 0/0/0/1 and would pass `.int()`. Both strict union schemas
+      // reject all of these.
       const rejectCases: Array<[unknown, string]> = [
         ["", "empty string"],
         ["   ", "whitespace string"],

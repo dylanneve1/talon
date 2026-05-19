@@ -66,9 +66,19 @@ const backends = {
   },
 };
 
+// `openai-agents` has no external CLI to install — it talks to a
+// remote HTTP endpoint over the wire and the live-backend test stands
+// up its own in-process dummy server. Short-circuit before the
+// backends-table lookup so the CI matrix can include it without
+// special-casing the workflow.
+if (backend === "openai-agents") {
+  console.log("openai-agents needs no external CLI; skipping install.");
+  process.exit(0);
+}
+
 if (!backend || !Object.hasOwn(backends, backend)) {
   console.error(
-    `Usage: node .github/scripts/install-backend-cli.mjs <${Object.keys(backends).join("|")}>`,
+    `Usage: node .github/scripts/install-backend-cli.mjs <${Object.keys(backends).join("|")}|openai-agents>`,
   );
   process.exit(2);
 }

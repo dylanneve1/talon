@@ -344,6 +344,7 @@ export async function handleSharedAction(
       const description = body.description
         ? String(body.description)
         : undefined;
+      const persistent = body.persistent === true;
 
       const nameErr = validateName(name);
       if (nameErr) return { ok: false, error: nameErr };
@@ -406,6 +407,7 @@ export async function handleSharedAction(
         createdAt: Date.now(),
         timeoutSeconds,
         fireCount: 0,
+        persistent,
       };
       addTrigger(trigger);
 
@@ -439,6 +441,7 @@ export async function handleSharedAction(
           `Created trigger "${name}" (id: ${id})\n` +
           `Language: ${lang}\n` +
           `Timeout: ${timeoutSeconds}s\n` +
+          `Persistent: ${persistent ? "yes (respawns on Talon restart)" : "no"}\n` +
           `Status: ${stored.status}`,
       };
     }
@@ -457,7 +460,7 @@ export async function handleSharedAction(
             ? `${t.fireCount} fire(s)${t.lastFireAt ? `, last ${new Date(t.lastFireAt).toISOString().slice(0, 19).replace("T", " ")}` : ""}`
             : "no fires yet";
         const detail = [
-          `- ${t.name} [${t.status}]`,
+          `- ${t.name} [${t.status}]${t.persistent ? " (persistent)" : ""}`,
           `  ID: ${t.id}`,
           `  Language: ${t.language}`,
           `  Created: ${created} (timeout ${t.timeoutSeconds}s)`,

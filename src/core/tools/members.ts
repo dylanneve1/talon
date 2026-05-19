@@ -4,7 +4,7 @@
 
 import { z } from "zod";
 import type { ToolDefinition } from "./types.js";
-import { idSchema } from "./schemas.js";
+import { snowflakeOrIdSchema } from "./schemas.js";
 
 export const memberTools: ToolDefinition[] = [
   {
@@ -13,16 +13,16 @@ export const memberTools: ToolDefinition[] = [
     schema: { limit: z.number().optional() },
     execute: (params, bridge) =>
       bridge("list_known_users", { limit: params.limit }),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "members",
   },
 
   {
     name: "get_member_info",
     description: "Get detailed info about a user by ID.",
-    schema: { user_id: idSchema },
+    schema: { user_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("get_member_info", params),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "members",
   },
 
@@ -32,7 +32,7 @@ export const memberTools: ToolDefinition[] = [
       "Get how many members are currently online or recently active.",
     schema: {},
     execute: (_params, bridge) => bridge("online_count", {}),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "members",
   },
 
@@ -41,7 +41,7 @@ export const memberTools: ToolDefinition[] = [
     description: "Get all pinned messages in the current chat.",
     schema: {},
     execute: (_params, bridge) => bridge("get_pinned_messages", {}),
-    frontends: ["telegram"],
+    frontends: ["telegram", "discord"],
     tag: "members",
   },
 ];

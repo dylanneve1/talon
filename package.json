@@ -1,6 +1,6 @@
 {
   "name": "talon-agent",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system",
   "author": "Dylan Neve",
   "license": "MIT",
@@ -58,6 +58,7 @@
     "test:kilo:backend": "vitest run --reporter=verbose --reporter=json --outputFile=kilo-backend-results.json src/__tests__/integration/kilo-live-discovery.test.ts",
     "test:opencode:backend": "vitest run --reporter=verbose --reporter=json --outputFile=opencode-backend-results.json src/__tests__/integration/opencode-live-discovery.test.ts",
     "test:codex:backend": "vitest run --reporter=verbose --reporter=json --outputFile=codex-backend-results.json src/__tests__/integration/codex-live-discovery.test.ts",
+    "test:openai-agents:backend": "vitest run --reporter=verbose --reporter=json --outputFile=openai-agents-backend-results.json src/__tests__/integration/openai-agents-live-discovery.test.ts",
     "tarball:check": "node .github/scripts/tarball-check.mjs",
     "build:stub-sea": "node src/__tests__/integration/stub-claude/build-sea.mjs",
     "test:watch": "vitest",
@@ -70,7 +71,7 @@
     "ci:protect": "node .github/scripts/enforce-ci-gate.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.108",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.143",
     "@anthropic-ai/sdk": "^0.95.0",
     "@brave/brave-search-mcp-server": "^2.0.75",
     "@clack/prompts": "^1.2.0",
@@ -78,7 +79,8 @@
     "@grammyjs/transformer-throttler": "^1.2.1",
     "@kilocode/sdk": "^7.2.22",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@openai/codex-sdk": "^0.130.0",
+    "@openai/agents": "^0.11.4",
+    "@openai/codex-sdk": "^0.131.0",
     "@opencode-ai/sdk": "^1.4.0",
     "@playwright/mcp": "^0.0.75",
     "big-integer": "^1.6.52",

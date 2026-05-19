@@ -43,7 +43,13 @@ Examples:
         start = px
       time.sleep(120)
 
-The script is killed if Talon shuts down. Per-chat cap of 5 active triggers.`;
+The script is killed if Talon shuts down. Set persistent=true to respawn it
+automatically on the next Talon start — only triggers interrupted by
+shutdown/crash are respawned (not ones that exited on their own), the
+script must be safe to re-run from scratch, and timeout_seconds is ignored
+(persistent triggers run until cancelled or until Talon shuts down).
+
+Per-chat cap of 5 active triggers.`;
 
 export const triggerTools: ToolDefinition[] = [
   {
@@ -79,6 +85,12 @@ export const triggerTools: ToolDefinition[] = [
         .max(500)
         .optional()
         .describe("Human-readable note about what the trigger watches for"),
+      persistent: z
+        .boolean()
+        .optional()
+        .describe(
+          "If true, respawn this trigger automatically when Talon restarts. Default false.",
+        ),
     },
     execute: (params, bridge) => bridge("trigger_create", params),
     tag: "triggers",

@@ -77,9 +77,8 @@ describe("codex / getModelInfo", () => {
 
 describe("codex / getSettingsPresentation", () => {
   it("returns one button per model with active marker on the current one", () => {
-    const { modelButtons, modelDetails } = getSettingsPresentation("gpt-5");
+    const { modelButtons } = getSettingsPresentation("gpt-5");
     expect(modelButtons).toHaveLength(CODEX_MODELS.length);
-    expect(modelDetails).toHaveLength(CODEX_MODELS.length);
 
     const active = modelButtons.find((b) => b.callback_data.endsWith("gpt-5"));
     const others = modelButtons.filter(
@@ -91,8 +90,19 @@ describe("codex / getSettingsPresentation", () => {
     }
   });
 
+  it("reports a single-page result for a small fixed catalog", () => {
+    const { page, totalPages, filter, totalCount } =
+      getSettingsPresentation("gpt-5");
+    expect(page).toBe(1);
+    expect(totalPages).toBe(1);
+    expect(filter).toBe("all");
+    expect(totalCount).toBe(CODEX_MODELS.length);
+  });
+
   it("uses the supplied callbackPrefix", () => {
-    const { modelButtons } = getSettingsPresentation("gpt-5", "custom:prefix:");
+    const { modelButtons } = getSettingsPresentation("gpt-5", {
+      callbackPrefix: "custom:prefix:",
+    });
     for (const b of modelButtons) {
       expect(b.callback_data.startsWith("custom:prefix:")).toBe(true);
     }

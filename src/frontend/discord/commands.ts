@@ -18,9 +18,7 @@
  * /admin <subcommand>.
  */
 
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { resolve, dirname } from "node:path";
+import { respawnSelf } from "../../util/respawn.js";
 import { readFileSync, existsSync } from "node:fs";
 import {
   type Client,
@@ -82,6 +80,7 @@ import {
   registerDiscordChat,
 } from "./handlers.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
+import { resolveChatBackend } from "../../core/backend-controller.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import {
   suppressMentions,
@@ -562,7 +561,14 @@ async function handleReset(
   resetSession(chatId);
   clearHistory(chatId);
   resetPulseCheckpoint(chatId);
-  await gateway?.backend?.warmSession?.(chatId);
+  // Warm the per-chat backend so cold-start latency doesn't show up
+  // on the next turn — must be the actual chat backend, not the
+  // global default, when this chat has an override pinned.
+  const chatBackend = resolveChatBackend(chatId, gateway?.backend);
+  // Wipe any in-process backend memory (e.g. openai-agents'
+  // MemorySession). Stateless backends ignore this.
+  chatBackend?.resetChat?.(chatId);
+  await chatBackend?.warmSession?.(chatId);
   await reply(i, "Session cleared.", true);
 }
 
@@ -592,7 +598,9 @@ async function handleStatus(
   let displayCacheWrite = u.totalCacheWrite;
   let turnsModelLabel = info.lastModel;
 
-  const be = gateway?.backend;
+  // Per-chat backend so /status reports the active provider's
+  // context window, not the global default's.
+  const be = resolveChatBackend(chatId, gateway?.backend);
   if (be?.getModelInfo) {
     const mi = await be.getModelInfo(activeModel).catch(() => undefined);
     if (mi?.contextWindow) ctxMax = ctxMax || mi.contextWindow;
@@ -664,7 +672,11 @@ async function handleModel(
 
   const arg = i.options.getString("name")?.trim();
   const activeModel = getChatSettings(chatId).model ?? config.model;
-  const be = gateway?.backend;
+  // Per-chat backend — /model picks for the backend serving *this*
+  // chat, override-aware. Without this, switching to openai-agents
+  // in one channel and running /model in another would show the
+  // wrong catalog.
+  const be = resolveChatBackend(chatId, gateway?.backend);
 
   if (
     !arg ||
@@ -677,7 +689,9 @@ async function handleModel(
       return;
     }
     if (be?.getSettingsPresentation) {
-      const pres = await be.getSettingsPresentation(activeModel, "model:");
+      const pres = await be.getSettingsPresentation(activeModel, {
+        callbackPrefix: "model:",
+      });
       const modelInfo = await be.getModelInfo?.(activeModel);
       const displayName =
         modelInfo?.displayName ?? formatModelLabel(activeModel);
@@ -872,9 +886,11 @@ async function handleSettings(
 
   let modelDetails: Array<string> | undefined;
   let modelButtons: Array<{ text: string; callback_data: string }> | undefined;
-  if (gateway?.backend?.getSettingsPresentation) {
-    const presentation =
-      await gateway.backend.getSettingsPresentation(activeModel);
+  // Per-chat backend so /settings shows the catalog of whichever
+  // backend is currently serving this chat.
+  const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+  if (settingsBe?.getSettingsPresentation) {
+    const presentation = await settingsBe.getSettingsPresentation(activeModel);
     modelDetails = presentation.modelDetails;
     modelButtons = presentation.modelButtons;
   }
@@ -953,26 +969,7 @@ async function handleRestart(i: ChatInputCommandInteraction): Promise<void> {
     return;
   }
   await reply(i, "♻️ Restarting...", true);
-  setTimeout(() => {
-    const projectRoot = resolve(
-      dirname(fileURLToPath(import.meta.url)),
-      "../../../..",
-    );
-    const localBin = resolve(projectRoot, "bin/talon.js");
-    const trySpawn = (cmd: string, args: string[]): Promise<void> =>
-      new Promise((res, rej) => {
-        const child = spawn(cmd, args, { detached: true, stdio: "ignore" });
-        child.on("error", rej);
-        child.on("spawn", () => {
-          child.unref();
-          res();
-        });
-      });
-    trySpawn("talon", ["restart"])
-      .catch(() => trySpawn(process.execPath, [localBin, "restart"]))
-      .catch(() => {})
-      .finally(() => process.exit(0));
-  }, 500);
+  respawnSelf("discord /restart");
 }
 
 async function handleMetrics(i: ChatInputCommandInteraction): Promise<void> {

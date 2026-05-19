@@ -13,15 +13,19 @@
  *     wake prompt so the bot can decide what to do.
  *   - Hard timeout: SIGTERM → 5s grace → SIGKILL. Fires a "timed_out" wake.
  *
- * Children are killed on Talon shutdown — triggers do NOT survive a restart.
- * On startup, any trigger left in `running`/`pending` is marked `terminated`
- * by the store loader, and the bot can decide whether to recreate it.
+ * Children are killed on Talon shutdown. By default a trigger does NOT
+ * survive a restart — on startup any trigger left in `running`/`pending` is
+ * marked `terminated` by the store loader, and the bot can decide whether
+ * to recreate it. Triggers created with `persistent: true` are an exception:
+ * they're parked in `pending` instead of `terminated` and `resumeAfterRestart`
+ * re-spawns them (with an orphan-kill probe to avoid duplicates outside
+ * cgroup-managed setups). Persistent triggers also skip the hard timeout.
  *
  * Knows nothing about backend or frontend — dependencies are injected.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { createWriteStream, type WriteStream } from "node:fs";
+import { createWriteStream, readFileSync, type WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { execute as dispatcherExecute } from "./dispatcher.js";
 import {
@@ -135,7 +139,13 @@ export function spawnTrigger(trigger: Trigger): void {
     status: "running",
     pid: child.pid,
     startedAt,
+    pidStarttime: readPidStarttimeSync(child.pid),
   });
+  // For persistent triggers, flush pid + pidStarttime to disk synchronously.
+  // Without this, a crash within the ~10s autosave window would leave the
+  // stored pid undefined and resumeAfterRestart() couldn't orphan-check on
+  // the next boot — producing a duplicate child outside cgroup-managed setups.
+  if (trigger.persistent) persistNow();
 
   log(
     "triggers",
@@ -181,12 +191,16 @@ export function spawnTrigger(trigger: Trigger): void {
     );
   });
 
-  // Hard timeout
-  const timeoutMs =
-    Math.min(Math.max(trigger.timeoutSeconds, 1), 7 * 24 * 60 * 60) * 1000;
-  const timer = setTimeout(() => handleTimeout(trigger), timeoutMs);
-  timer.unref();
-  timeouts.set(trigger.id, timer);
+  // Hard timeout — persistent triggers run without one. They're long-running
+  // watchers whose lifetime is tied to Talon's, not to a wall-clock deadline.
+  // If a persistent script hangs, the user can trigger_cancel it explicitly.
+  if (!trigger.persistent) {
+    const timeoutMs =
+      Math.min(Math.max(trigger.timeoutSeconds, 1), 7 * 24 * 60 * 60) * 1000;
+    const timer = setTimeout(() => handleTimeout(trigger), timeoutMs);
+    timer.unref();
+    timeouts.set(trigger.id, timer);
+  }
 }
 
 function handleTimeout(trigger: Trigger): void {
@@ -269,10 +283,21 @@ export async function shutdownTriggers(): Promise<void> {
   for (const id of ids) {
     const c = children.get(id);
     if (!c) continue;
-    updateTrigger(id, {
-      status: "terminated",
-      lastError: "Killed by Talon shutdown",
-    });
+    const t = getTrigger(id);
+    if (t?.persistent) {
+      // Park persistent triggers in "pending" so resumeAfterRestart() respawns
+      // them on next startup. Keep the stored pid — finalizeExit clears it
+      // when the child actually exits (normal case, SIGTERM honoured). If the
+      // child explicitly ignores SIGTERM (rare — `trap '' TERM` or equivalent)
+      // and outlives Talon, the pid survives to disk so the next boot's
+      // resumeAfterRestart() can SIGKILL the orphan before respawning.
+      updateTrigger(id, { status: "pending" });
+    } else {
+      updateTrigger(id, {
+        status: "terminated",
+        lastError: "Killed by Talon shutdown",
+      });
+    }
     killChild(id, c);
   }
   // Give children a brief grace window to actually exit so logs flush
@@ -333,6 +358,19 @@ async function finalizeExit(
   let status: TriggerStatus = t.status;
   let payload: string | undefined;
 
+  // Persistent triggers parked as "pending" by shutdownTriggers must stay
+  // "pending" so resumeAfterRestart respawns them on next boot. Skip the
+  // status-rewrite and the endedAt stamp; just clear the PID and persist.
+  if (t.persistent && t.status === "pending") {
+    updateTrigger(id, { pid: undefined, pidStarttime: undefined });
+    persistNow();
+    log(
+      "triggers",
+      `Exited (persistent) "${t.name}" [${id}] code=${code} signal=${signal} — will respawn on next start`,
+    );
+    return;
+  }
+
   if (t.status === "running" || t.status === "pending") {
     if (code === 0) {
       status = "fired";
@@ -349,6 +387,7 @@ async function finalizeExit(
     status,
     endedAt: Date.now(),
     pid: undefined,
+    pidStarttime: undefined,
     exitCode: code ?? undefined,
   });
   // Terminal status reached — persist immediately so a crash between here and
@@ -480,6 +519,28 @@ async function fireWake(
 export async function resumeAfterRestart(): Promise<void> {
   if (!deps) return;
   for (const t of getAllTriggers()) {
+    // Persistent triggers were parked in "pending" by loadTriggers (crash
+    // path) or shutdownTriggers (clean path) — respawn them silently. The
+    // script body re-runs from the top (we don't checkpoint state), so it
+    // must be safe to re-run. No wake fire so we don't spam the bot on
+    // every Talon restart.
+    if (t.persistent && t.status === "pending") {
+      if (t.pid !== undefined) {
+        killOrphan(t);
+        updateTrigger(t.id, { pid: undefined, pidStarttime: undefined });
+      }
+      try {
+        spawnTrigger(t);
+        log("triggers", `Respawned persistent trigger "${t.name}" [${t.id}]`);
+      } catch (err) {
+        logError(
+          "triggers",
+          `Failed to respawn persistent trigger [${t.id}]`,
+          err,
+        );
+      }
+      continue;
+    }
     if (
       t.status === "terminated" &&
       t.lastFireAt === undefined &&
@@ -488,6 +549,70 @@ export async function resumeAfterRestart(): Promise<void> {
     ) {
       await fireWake(t.id, "terminated", t.lastError, /* terminal */ true);
     }
+  }
+}
+
+/**
+ * Read field 22 (start time in jiffies since boot) from /proc/<pid>/stat.
+ * Returns undefined if /proc isn't available (non-Linux) or the read fails.
+ *
+ * Parsing note: the `comm` field (2nd) is wrapped in parens and may itself
+ * contain ')' — `/proc/<pid>/stat` is the only place in /proc that allows
+ * this. The safe parse is to find the LAST ')' and split the rest on space.
+ * After that split, index 19 corresponds to field 22 (state=3 → starttime=22,
+ * so 22-3 = 19 positions further in the post-comm tail).
+ */
+function readPidStarttimeSync(pid: number): number | undefined {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
+    const lastParen = stat.lastIndexOf(")");
+    if (lastParen < 0) return undefined;
+    const tail = stat.slice(lastParen + 2).split(" ");
+    const starttime = Number(tail[19]);
+    return Number.isFinite(starttime) ? starttime : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Probe a stored PID from a previous Talon run and SIGKILL it if it's still
+ * alive AND really is our former child (not a recycled PID). Used by
+ * resumeAfterRestart to avoid duplicate-spawn when Talon crashed outside a
+ * cgroup-managed environment and its persistent child got reparented to init
+ * instead of being torn down.
+ *
+ * PID-reuse defence (Linux): we compare /proc/<pid>/stat field 22 (start
+ * time in jiffies) against the value we captured at spawn. Start time is
+ * monotonic per boot and unchanged by exec(), so a match means the PID
+ * still belongs to our process — robust against both kernel PID reuse and
+ * bash scripts that `exec` into a different binary mid-flight. On non-Linux
+ * (no /proc, e.g. macOS dev), pidStarttime is undefined and we fall through
+ * to SIGKILL — PID reuse on a sub-second restart cycle is rare enough to
+ * accept in a dev environment.
+ */
+function killOrphan(t: Trigger): void {
+  if (t.pid === undefined) return;
+  try {
+    process.kill(t.pid, 0);
+  } catch {
+    return; // dead — nothing to do
+  }
+  if (t.pidStarttime !== undefined) {
+    const current = readPidStarttimeSync(t.pid);
+    if (current !== undefined && current !== t.pidStarttime) {
+      log(
+        "triggers",
+        `Orphan probe: pid=${t.pid} starttime ${current} ≠ stored ${t.pidStarttime} — PID reused, leaving alone`,
+      );
+      return;
+    }
+  }
+  try {
+    process.kill(t.pid, "SIGKILL");
+    log("triggers", `Killed orphan pid=${t.pid} from previous "${t.name}"`);
+  } catch {
+    /* raced — exited between probe and kill */
   }
 }
 

@@ -18,6 +18,8 @@ import type {
   UnifiedModelResolution,
   UnifiedProviderInfo,
   ModelButton,
+  ModelPickerOptions,
+  ModelPickerResult,
 } from "../../core/types.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -111,11 +113,12 @@ export async function getModelInfo(
 
 export async function getSettingsPresentation(
   activeModel: string,
-  callbackPrefix = "settings:model:",
-): Promise<{ modelButtons: ModelButton[]; modelDetails: string[] }> {
-  const options = getUniqueModels();
+  options: ModelPickerOptions = {},
+): Promise<ModelPickerResult> {
+  const callbackPrefix = options.callbackPrefix ?? "settings:model:";
+  const models = getUniqueModels();
 
-  const modelButtons: ModelButton[] = options.map((m) => {
+  const modelButtons: ModelButton[] = models.map((m) => {
     const selected = isSelectedModel(activeModel, m.id);
     return {
       text: selected ? `\u2713 ${m.displayName}` : m.displayName,
@@ -123,7 +126,20 @@ export async function getSettingsPresentation(
     };
   });
 
-  return { modelButtons, modelDetails: [] };
+  // Claude SDK ships a small, curated set \u2014 pagination and the
+  // free-tier filter aren't meaningful here. We honour the contract
+  // by returning fixed metadata; the frontend won't render Prev/Next
+  // when totalPages === 1.
+  return {
+    modelButtons,
+    modelDetails: [],
+    view: "models",
+    page: 1,
+    totalPages: 1,
+    filter: "all",
+    freeCount: 0,
+    totalCount: models.length,
+  };
 }
 
 export async function getProviders(): Promise<UnifiedProviderInfo[]> {

@@ -16,6 +16,17 @@ export type EffortLevel = "off" | "low" | "medium" | "high" | "max";
 export type ChatSettings = {
   /** Model override for this chat. */
   model?: string;
+  /**
+   * Backend override for this chat. When set, queries from this chat
+   * route to the override backend instead of the global `config.backend`.
+   * The backend controller refcounts pool instances, so two chats on
+   * two different backends keep both alive concurrently.
+   *
+   * Stored as the registry id (e.g. `"claude"`, `"openai-agents"`).
+   * Cleared via `setChatBackend(cid, undefined)` — chat reverts to
+   * the global default.
+   */
+  backend?: string;
   /** Effort level override (maps to SDK thinking + effort options). */
   effort?: EffortLevel;
   /** Whether pulse is enabled for this chat. */
@@ -24,6 +35,12 @@ export type ChatSettings = {
   pulseIntervalMs?: number;
   /** Last message ID checked by pulse (persisted to avoid reprocessing on restart). */
   pulseLastCheckMsgId?: number;
+  /**
+   * When true, the model picker filters to free-tier models by default.
+   * Only meaningful for backends that report free-tier metadata (currently
+   * `openai-agents` against OpenRouter); other backends ignore the flag.
+   */
+  freeOnly?: boolean;
 };
 
 const STORE_FILE = files.chatSettings;
@@ -115,6 +132,16 @@ export function flushChatSettings(): void {
   save();
 }
 
+/**
+ * Snapshot of every persisted chat's settings, keyed by chat id.
+ * Returns a shallow copy of the in-memory store — callers should
+ * NOT mutate the returned object or its values (use the typed
+ * setters instead).
+ */
+export function getAllChatSettings(): Record<string, ChatSettings> {
+  return { ...store };
+}
+
 export function getChatSettings(chatId: string): ChatSettings {
   return store[chatId] ?? {};
 }
@@ -160,6 +187,27 @@ export function setChatModel(chatId: string, model: string | undefined): void {
   save();
 }
 
+/**
+ * Per-chat backend override. Pass `undefined` to clear the override
+ * (chat reverts to `config.backend`). The backend pool's per-chat
+ * acquire/release happens separately via `rebindChat` / `releaseChat`
+ * — this setter only persists the choice.
+ */
+export function setChatBackend(
+  chatId: string,
+  backend: string | undefined,
+): void {
+  if (!store[chatId]) store[chatId] = {};
+  if (backend) {
+    store[chatId].backend = backend;
+  } else {
+    delete store[chatId].backend;
+    cleanupEmpty(chatId);
+  }
+  dirty = true;
+  save();
+}
+
 export function setChatEffort(
   chatId: string,
   effort: EffortLevel | undefined,
@@ -169,6 +217,18 @@ export function setChatEffort(
     store[chatId].effort = effort;
   } else {
     delete store[chatId].effort;
+    cleanupEmpty(chatId);
+  }
+  dirty = true;
+  save();
+}
+
+export function setChatFreeOnly(chatId: string, on: boolean | undefined): void {
+  if (!store[chatId]) store[chatId] = {};
+  if (on) {
+    store[chatId].freeOnly = true;
+  } else {
+    delete store[chatId].freeOnly;
     cleanupEmpty(chatId);
   }
   dirty = true;

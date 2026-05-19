@@ -38,8 +38,8 @@ const codexFactory: BackendFactory = {
       query: (params) => codexHandleMessage(params),
       resolveModel: (q) => Promise.resolve(resolveModel(q)),
       getModelInfo: (id) => Promise.resolve(getModelInfo(id)),
-      getSettingsPresentation: (m, prefix) =>
-        Promise.resolve(getSettingsPresentation(m, prefix)),
+      getSettingsPresentation: (m, options) =>
+        Promise.resolve(getSettingsPresentation(m, options)),
       getProviders: () => Promise.resolve(getProviders()),
       getProviderModels: (p, pg, ps) =>
         Promise.resolve(getProviderModels(p, pg, ps)),

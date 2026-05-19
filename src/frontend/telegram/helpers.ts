@@ -219,11 +219,312 @@ export function isSelectedModel(
 
 export type SettingsButton = { text: string; callback_data: string };
 
+/**
+ * Optional pager metadata supplied by the backend for the model
+ * picker. When present, callers add a filter row (when `freeCount > 0`)
+ * and a Prev / page / Next row (when `totalPages > 1`). Backends with
+ * small fixed catalogs may omit this entirely.
+ */
+export interface SettingsPager {
+  page: number;
+  totalPages: number;
+  filter: "all" | "free";
+  freeCount: number;
+  totalCount: number;
+}
+
+/**
+ * Build the pager + filter button rows for a model picker. Shared by
+ * `/settings` and the standalone `/model` command. `navPrefix` is the
+ * callback-data prefix used for filter and pagination buttons —
+ * `/settings` uses `settings:models` (so its handler sees
+ * `settings:models:page:N:F`), `/model` uses `model:nav` (so its
+ * handler sees `model:nav:page:N:F`). A `noopData` sentinel is the
+ * callback for disabled-edge buttons (Telegram requires every inline
+ * button to carry callback data).
+ */
+export function renderModelPickerControlRows(
+  pager: SettingsPager,
+  navPrefix: string,
+  noopData: string,
+  view: "models" | "groups" = "models",
+  activeProvider?: string,
+): Array<Array<SettingsButton>> {
+  const rows: Array<Array<SettingsButton>> = [];
+  // When showing one provider's models, offer an explicit way back to
+  // the provider list. Encoded as `…:providers` so the callback
+  // handler knows to drop the `provider` option on re-render.
+  if (view === "models" && activeProvider) {
+    rows.push([
+      {
+        text: `← Providers`,
+        callback_data: `${navPrefix}:providers`,
+      },
+    ]);
+  }
+  if (pager.totalPages > 1) {
+    const prev = Math.max(1, pager.page - 1);
+    const next = Math.min(pager.totalPages, pager.page + 1);
+    const providerSuffix = activeProvider ? `:${activeProvider}` : "";
+    rows.push([
+      {
+        text: pager.page > 1 ? "← Prev" : "·",
+        callback_data:
+          pager.page > 1
+            ? `${navPrefix}:page:${prev}:${pager.filter}${providerSuffix}`
+            : noopData,
+      },
+      {
+        text: `${pager.page} / ${pager.totalPages}`,
+        callback_data: noopData,
+      },
+      {
+        text: pager.page < pager.totalPages ? "Next →" : "·",
+        callback_data:
+          pager.page < pager.totalPages
+            ? `${navPrefix}:page:${next}:${pager.filter}${providerSuffix}`
+            : noopData,
+      },
+    ]);
+  }
+  return rows;
+}
+
+// ── /model main-menu + browse view ──────────────────────────────────────────
+//
+// /model has two screens:
+//
+//   1. Main menu (`model:menu` callback path) — shows current model +
+//      toggles. Free-only toggle persists into chat-settings, so the
+//      preference survives bot restarts. "Browse models" drills into
+//      screen 2.
+//   2. Browse (`model:nav:*` callback path) — provider chips → models
+//      with pagination and a "← Back to menu" return button.
+//
+// All Telegram inline buttons here use callback data ≤ 64 bytes as
+// required by https://core.telegram.org/bots/api#inlinekeyboardbutton.
+
+export interface ModelMenuState {
+  activeModel: string;
+  /** Human-readable active model name (display) */
+  activeDisplay: string;
+  /** Active model status line(s) shown above the buttons. */
+  statusLines: string[];
+  /** Whether this chat has a per-chat model override (vs falling back to config default). */
+  hasOverride: boolean;
+  /** Whether the backend reports any free-tier models — controls visibility of the Free toggle. */
+  showFreeToggle: boolean;
+  /** Current persisted free-only setting for this chat. */
+  freeOnly: boolean;
+  /**
+   * Backend currently serving this chat (override → role default).
+   * `id` is the registry slug; `label` is the display name.
+   */
+  activeBackend: { id: string; label: string };
+  /** True when this chat has a per-chat backend override. */
+  hasBackendOverride: boolean;
+  /**
+   * Whether the picker should offer a "Change backend" button. False
+   * when `enabledBackends` limits the menu to a single backend.
+   */
+  showBackendButton: boolean;
+}
+
+/** Inputs needed to build a `ModelMenuState`. Pure-function shape so tests can stub everything. */
+export interface BuildModelMenuStateArgs {
+  chatId: string;
+  activeModel: string;
+  defaultModel: string;
+  freeOnly: boolean;
+  /**
+   * Backend hook to fetch a passive snapshot of the catalog. We only
+   * read `freeCount`, `totalCount`, and `modelDetails` for the body
+   * status line — never render `modelButtons` from this call.
+   */
+  fetchSnapshot: () => Promise<{
+    freeCount: number;
+    totalCount: number;
+    modelDetails: string[];
+  }>;
+  /** Resolve display name for the active model. Falls back to the raw id. */
+  fetchActiveDisplay: () => Promise<string | undefined>;
+  /** Backend currently serving this chat — id and human label. */
+  activeBackend: { id: string; label: string };
+  /** Whether this chat has a per-chat backend override pinned in the pool. */
+  hasBackendOverride: boolean;
+  /**
+   * Whether more than one backend is offered to the user. Drives the
+   * "Change backend" button — hide it when there's nothing to switch to.
+   */
+  showBackendButton: boolean;
+}
+
+export async function buildModelMenuState(
+  args: BuildModelMenuStateArgs,
+): Promise<ModelMenuState> {
+  const [snapshot, display] = await Promise.all([
+    args.fetchSnapshot().catch(() => ({
+      freeCount: 0,
+      totalCount: 0,
+      modelDetails: [],
+    })),
+    args.fetchActiveDisplay().catch(() => undefined),
+  ]);
+
+  return {
+    activeModel: args.activeModel,
+    activeDisplay: display ?? args.activeModel,
+    statusLines: snapshot.modelDetails.slice(),
+    hasOverride: args.activeModel !== args.defaultModel,
+    showFreeToggle: snapshot.freeCount > 0,
+    freeOnly: args.freeOnly,
+    activeBackend: args.activeBackend,
+    hasBackendOverride: args.hasBackendOverride,
+    showBackendButton: args.showBackendButton,
+  };
+}
+
+/** Build the main-menu inline keyboard for `/model`. */
+export function renderModelMenuKeyboard(
+  state: ModelMenuState,
+): Array<Array<SettingsButton>> {
+  const rows: Array<Array<SettingsButton>> = [];
+
+  rows.push([{ text: "Browse models", callback_data: "model:browse" }]);
+
+  if (state.showBackendButton) {
+    rows.push([
+      {
+        text: `Backend: ${state.activeBackend.label}`,
+        callback_data: "model:backends",
+      },
+    ]);
+  }
+
+  if (state.showFreeToggle) {
+    rows.push([
+      {
+        text: state.freeOnly ? "Free only: ON" : "Free only: OFF",
+        callback_data: "model:toggle-free",
+      },
+    ]);
+  }
+
+  if (state.hasOverride) {
+    rows.push([{ text: "Reset to default", callback_data: "model:reset" }]);
+  }
+
+  return rows;
+}
+
+/**
+ * Build the backend-submenu keyboard. Reached via the "Backend" button
+ * on the main `/model` menu; each row is a candidate backend the chat
+ * can switch to (plus a "Use default" row when overridden, and a
+ * "Back" row).
+ */
+export function renderBackendMenuKeyboard(opts: {
+  available: Array<{ id: string; label: string }>;
+  activeBackendId: string;
+  hasBackendOverride: boolean;
+}): Array<Array<SettingsButton>> {
+  const rows: Array<Array<SettingsButton>> = [];
+  for (const b of opts.available) {
+    const active = b.id === opts.activeBackendId;
+    rows.push([
+      {
+        text: active ? `✅ ${b.label} (active)` : b.label,
+        callback_data: active ? "model:noop" : `model:backend:${b.id}`,
+      },
+    ]);
+  }
+  if (opts.hasBackendOverride) {
+    rows.push([
+      {
+        text: "Reset to default backend",
+        callback_data: "model:backend-default",
+      },
+    ]);
+  }
+  rows.push([{ text: "← Back to /model", callback_data: "model:menu" }]);
+  return rows;
+}
+
+/** Body text for the backend submenu. */
+export function renderBackendMenuText(opts: {
+  activeBackend: { id: string; label: string };
+  hasBackendOverride: boolean;
+  defaultBackendLabel: string;
+}): string {
+  const lines = [
+    `<b>Backend</b>`,
+    `Active: <b>${opts.activeBackend.label}</b> (<code>${opts.activeBackend.id}</code>)`,
+  ];
+  if (opts.hasBackendOverride) {
+    lines.push(
+      `<i>Per-chat override — default is <b>${opts.defaultBackendLabel}</b>.</i>`,
+    );
+  } else {
+    lines.push(`<i>Using the global default.</i>`);
+  }
+  lines.push(
+    "",
+    "Switching the backend resets this chat's session — model choice will fall back to the new backend's default.",
+  );
+  return lines.join("\n");
+}
+
+/** Format the body text of the `/model` main menu. */
+export function renderModelMenuText(state: ModelMenuState): string {
+  const lines: string[] = [
+    `<b>Model:</b> <code>${state.activeDisplay}</code>`,
+    ...state.statusLines.map((l) => l),
+  ];
+  if (state.freeOnly && state.showFreeToggle) {
+    lines.push("<i>Filtering to free-tier models when browsing.</i>");
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Build the inline keyboard for the /model "browse" screen (provider
+ * groups OR a paginated model list). `backToMenuData` is the callback
+ * sent when the user wants to return to the main menu.
+ */
+export function renderModelBrowseKeyboard(
+  modelButtons: Array<SettingsButton>,
+  pager: SettingsPager,
+  view: "models" | "groups",
+  activeProvider: string | undefined,
+  backToMenuData: string,
+): Array<Array<SettingsButton>> {
+  const cols = 2;
+  const modelRows: Array<Array<SettingsButton>> = [];
+  for (let i = 0; i < modelButtons.length; i += cols) {
+    modelRows.push(modelButtons.slice(i, i + cols));
+  }
+  const controlRows = renderModelPickerControlRows(
+    pager,
+    "model:nav",
+    "model:noop",
+    view,
+    activeProvider,
+  );
+  return [
+    ...modelRows,
+    ...controlRows,
+    [{ text: "← Back to menu", callback_data: backToMenuData }],
+  ];
+}
+
 export function renderSettingsKeyboard(
   model: string,
   effort: string,
   proactive: boolean,
   modelButtons?: Array<SettingsButton>,
+  pager?: SettingsPager,
+  view: "models" | "groups" = "models",
+  activeProvider?: string,
 ): Array<Array<SettingsButton>> {
   const selectedButtons = modelButtons?.length
     ? modelButtons
@@ -238,8 +539,20 @@ export function renderSettingsKeyboard(
   for (let i = 0; i < selectedButtons.length; i += cols) {
     modelRows.push(selectedButtons.slice(i, i + cols));
   }
+
+  const controlRows = pager
+    ? renderModelPickerControlRows(
+        pager,
+        "settings:models",
+        "settings:noop",
+        view,
+        activeProvider,
+      )
+    : [];
+
   return [
     ...modelRows,
+    ...controlRows,
     [
       {
         text: effort === "low" ? "\u2713 Low" : "Low",
@@ -263,7 +576,6 @@ export function renderSettingsKeyboard(
         text: proactive ? "Pulse: ON" : "Pulse: OFF",
         callback_data: `settings:proactive:${proactive ? "off" : "on"}`,
       },
-      { text: "Done", callback_data: "settings:done" },
     ],
   ];
 }

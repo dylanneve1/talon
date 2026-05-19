@@ -27,6 +27,7 @@ const {
   cancelTrigger,
   shutdownTriggers,
   getRunningCount,
+  resumeAfterRestart,
 } = await import("../core/triggers.js");
 
 import type { Trigger } from "../storage/trigger-store.js";
@@ -260,5 +261,178 @@ describe("trigger supervisor", () => {
     expect(log).toMatch(/\[stderr\] from stderr/);
     expect(log).toMatch(/--- spawn/);
     expect(log).toMatch(/--- exit code=0/);
+  });
+
+  describe("persistent triggers", () => {
+    it("shutdownTriggers parks persistent triggers as 'pending' and does not fire wake", async () => {
+      const t = makeTrigger({ body: "sleep 30\n" });
+      const stored = getTrigger(t.id)!;
+      stored.persistent = true;
+
+      spawnTrigger(t);
+      await waitForStatus(t.id, (s) => s === "running");
+
+      await shutdownTriggers();
+      // shutdownTriggers sets status=pending immediately; finalizeExit clears
+      // pid async when the child actually dies from SIGTERM. Poll for both.
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline) {
+        const cur = getTrigger(t.id)!;
+        if (cur.status === "pending" && cur.pid === undefined) break;
+        await new Promise((r) => setTimeout(r, 25));
+      }
+
+      const after = getTrigger(t.id)!;
+      expect(after.status).toBe("pending");
+      expect(after.pid).toBeUndefined();
+      expect(executeSpy).not.toHaveBeenCalled();
+    });
+
+    it("resumeAfterRestart respawns persistent+pending triggers without firing a wake", async () => {
+      const t = makeTrigger({
+        body: 'echo "back up"\nsleep 30\n',
+      });
+      const stored = getTrigger(t.id)!;
+      stored.persistent = true;
+      stored.status = "pending";
+
+      const baseline = getRunningCount();
+      await resumeAfterRestart();
+      await waitForStatus(t.id, (s) => s === "running");
+      expect(getRunningCount()).toBe(baseline + 1);
+      expect(executeSpy).not.toHaveBeenCalled();
+
+      // Clean up the long-running child so it doesn't bleed into other tests
+      await shutdownTriggers();
+    });
+
+    it("resumeAfterRestart does NOT respawn non-persistent terminated triggers (only fires wake)", async () => {
+      const t = makeTrigger({ body: "echo done\nexit 0\n" });
+      const stored = getTrigger(t.id)!;
+      stored.status = "terminated";
+      stored.endedAt = Date.now();
+      stored.lastError = "Talon restarted while trigger was running";
+
+      const baseline = getRunningCount();
+      await resumeAfterRestart();
+      expect(getRunningCount()).toBe(baseline);
+      expect(executeSpy).toHaveBeenCalledTimes(1);
+    });
+
+    // Helper: read starttime from /proc/<pid>/stat (field 22). Linux only.
+    const readStarttime = (pid: number): number => {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
+      const last = stat.lastIndexOf(")");
+      return Number(stat.slice(last + 2).split(" ")[19]);
+    };
+
+    const itLinux = process.platform === "linux" ? it : it.skip;
+
+    itLinux(
+      "resumeAfterRestart kills orphan with matching starttime before respawning",
+      async () => {
+        const { spawn: rawSpawn } = await import("node:child_process");
+        const orphanScript = resolve(tmpRoot, "orphan.sh");
+        writeFileSync(orphanScript, "while true; do sleep 1; done\n", {
+          mode: 0o700,
+        });
+        const orphan = rawSpawn("bash", [orphanScript], {
+          detached: true,
+          stdio: "ignore",
+        });
+        orphan.unref();
+        const orphanExited = new Promise<void>((res) =>
+          orphan.on("exit", () => res()),
+        );
+        await new Promise((r) => setTimeout(r, 50));
+        const orphanPid = orphan.pid!;
+        expect(orphanPid).toBeDefined();
+
+        const t = makeTrigger({ body: "sleep 30\n" });
+        const stored = getTrigger(t.id)!;
+        stored.persistent = true;
+        stored.status = "pending";
+        stored.pid = orphanPid;
+        stored.pidStarttime = readStarttime(orphanPid);
+
+        await resumeAfterRestart();
+        await waitForStatus(t.id, (s) => s === "running");
+        await Promise.race([
+          orphanExited,
+          new Promise((r) => setTimeout(r, 2000)),
+        ]);
+
+        let alive = true;
+        try {
+          process.kill(orphanPid, 0);
+        } catch {
+          alive = false;
+        }
+        expect(alive).toBe(false);
+
+        await shutdownTriggers();
+      },
+    );
+
+    itLinux(
+      "PID-reuse defence: starttime mismatch leaves the live process alone",
+      async () => {
+        // Simulate the "PID was recycled to an unrelated process" case by
+        // recording a deliberately-wrong starttime. killOrphan must NOT
+        // kill this process — it's not ours anymore.
+        const { spawn: rawSpawn } = await import("node:child_process");
+        const innocent = rawSpawn("bash", ["-c", "sleep 30"], {
+          detached: true,
+          stdio: "ignore",
+        });
+        innocent.unref();
+        await new Promise((r) => setTimeout(r, 50));
+        const innocentPid = innocent.pid!;
+
+        const t = makeTrigger({ body: "sleep 30\n" });
+        const stored = getTrigger(t.id)!;
+        stored.persistent = true;
+        stored.status = "pending";
+        stored.pid = innocentPid;
+        stored.pidStarttime = 1; // bogus — guaranteed not to match real starttime
+
+        await resumeAfterRestart();
+        await waitForStatus(t.id, (s) => s === "running");
+
+        // Innocent process must still be alive
+        let alive = false;
+        try {
+          process.kill(innocentPid, 0);
+          alive = true;
+        } catch {
+          /* dead — bug */
+        }
+        expect(alive).toBe(true);
+
+        // Clean up: kill the "innocent" sleeper ourselves
+        try {
+          process.kill(innocentPid, "SIGKILL");
+        } catch {
+          /* already gone */
+        }
+        await shutdownTriggers();
+      },
+    );
+
+    it("persistent triggers ignore timeout_seconds (no hard kill)", async () => {
+      // 1s timeout — non-persistent would die; persistent must keep running.
+      const t = makeTrigger({ body: "sleep 5\n", timeoutSeconds: 1 });
+      const stored = getTrigger(t.id)!;
+      stored.persistent = true;
+
+      spawnTrigger(t);
+      await waitForStatus(t.id, (s) => s === "running");
+
+      // Wait past the would-be timeout
+      await new Promise((r) => setTimeout(r, 1500));
+      expect(getTrigger(t.id)!.status).toBe("running");
+
+      await shutdownTriggers();
+    });
   });
 });

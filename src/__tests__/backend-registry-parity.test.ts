@@ -1,10 +1,10 @@
 /**
  * Backend registry parity tests.
  *
- * Verifies that ALL four backends (Claude SDK, Kilo, OpenCode, Codex)
- * register themselves into the registry with the same QueryBackend
- * surface — so the dispatcher can swap backends without leaking
- * backend-specific behaviour upstream.
+ * Verifies that ALL five backends (Claude SDK, Kilo, OpenCode, Codex,
+ * OpenAI Agents) register themselves into the registry with the same
+ * QueryBackend surface — so the dispatcher can swap backends without
+ * leaking backend-specific behaviour upstream.
  *
  * Each backend factory's `init(config, ctx)` returns a `QueryBackend`
  * whose required + optional methods Talon's core relies on. This file
@@ -21,7 +21,13 @@ import {
   hasBackend,
 } from "../backend/registry.js";
 
-const ALL_BACKENDS = ["claude", "kilo", "opencode", "codex"] as const;
+const ALL_BACKENDS = [
+  "claude",
+  "kilo",
+  "opencode",
+  "codex",
+  "openai-agents",
+] as const;
 
 beforeAll(async () => {
   // Reset registry for a clean import. Each factory module's
@@ -31,10 +37,11 @@ beforeAll(async () => {
   await import("../backend/kilo/factory.js");
   await import("../backend/opencode/factory.js");
   await import("../backend/codex/factory.js");
+  await import("../backend/openai-agents/factory.js");
 });
 
-describe("backend registry parity — all four backends present", () => {
-  it("registers Claude, Kilo, OpenCode, and Codex", () => {
+describe("backend registry parity — all five backends present", () => {
+  it("registers Claude, Kilo, OpenCode, Codex, and OpenAI Agents", () => {
     for (const id of ALL_BACKENDS) {
       expect(hasBackend(id), `expected backend "${id}" registered`).toBe(true);
     }
@@ -46,6 +53,7 @@ describe("backend registry parity — all four backends present", () => {
     expect(ids).toContain("codex");
     expect(ids).toContain("kilo");
     expect(ids).toContain("opencode");
+    expect(ids).toContain("openai-agents");
     // Sorted property: ids should equal their sorted-copy
     const sorted = [...ids].sort();
     expect(ids).toEqual(sorted);
@@ -71,6 +79,7 @@ describe("backend registry parity — all four backends present", () => {
     expect(getBackend("kilo")?.label).toBe("Kilo");
     expect(getBackend("opencode")?.label).toBe("OpenCode");
     expect(getBackend("codex")?.label).toBe("Codex");
+    expect(getBackend("openai-agents")?.label).toBe("OpenAI Agents");
   });
 });
 

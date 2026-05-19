@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.12.0](https://github.com/dylanneve1/talon/compare/v1.11.0...v1.12.0) (2026-05-18)
+
+
+### Features
+
+* **backend:** add Codex as a fourth backend provider ([#174](https://github.com/dylanneve1/talon/issues/174)) ([7d476b9](https://github.com/dylanneve1/talon/commit/7d476b97c654bec047965a96a95fc82118539153))
+* **backend:** add Kilo CLI as backend provider ([#161](https://github.com/dylanneve1/talon/issues/161)) ([9263611](https://github.com/dylanneve1/talon/commit/926361165a3d8773a8b3165fea875019dcb503a3))
+* **backend:** add OpenAI Agents SDK as fifth backend ([#199](https://github.com/dylanneve1/talon/issues/199)) ([d9a6e90](https://github.com/dylanneve1/talon/commit/d9a6e90f29762e75600dd9557b234431ab47cbe4))
+* **backend:** Kilo 1:1 with Claude SDK + shared framework + backend registry ([#169](https://github.com/dylanneve1/talon/issues/169)) ([9ef3689](https://github.com/dylanneve1/talon/commit/9ef368940589c7f1c45382603ec35e35214d7739))
+* **claude-sdk:** add Notification and StopFailure hooks for SDK telemetry ([#128](https://github.com/dylanneve1/talon/issues/128)) ([63c9cb8](https://github.com/dylanneve1/talon/commit/63c9cb8afdd0e90167df0eec9fb0f70e131beb6a))
+* **cli:** setup wizard prompts for Discord bot token + applicationId ([#185](https://github.com/dylanneve1/talon/issues/185)) ([ed36c04](https://github.com/dylanneve1/talon/commit/ed36c04aafa6b62b00d26f286ce142f9b2978190))
+* **cli:** setup wizard supports backend selection + Discord frontend ([#180](https://github.com/dylanneve1/talon/issues/180)) ([8a9fb78](https://github.com/dylanneve1/talon/commit/8a9fb78623542d94af8f453bce18b457b5dafa6c))
+* **codex:** factory cleanup hook + expanded conformance + parity log line ([#177](https://github.com/dylanneve1/talon/issues/177)) ([077cf3b](https://github.com/dylanneve1/talon/commit/077cf3b3cd265ad52cd9f69d0ec53ea8bcb985a6))
+* **codex:** friendly startup warning when no auth source available ([#182](https://github.com/dylanneve1/talon/issues/182)) ([5842517](https://github.com/dylanneve1/talon/commit/5842517de2d6d8d647a339d0c564b2701ba2cf7b))
+* **codex:** runOneShotAgent + full model registry + 4-way registry parity tests ([#175](https://github.com/dylanneve1/talon/issues/175)) ([44ab734](https://github.com/dylanneve1/talon/commit/44ab73404fe96d817185d0905d411e7b8dc34a59))
+* **codex:** set sensible ThreadOptions defaults — sandbox / approval / network ([#183](https://github.com/dylanneve1/talon/issues/183)) ([85e0d8c](https://github.com/dylanneve1/talon/commit/85e0d8c076729863e39102ef6dbccfd31ddc9975))
+* **discord:** show backend label in /status header ([#191](https://github.com/dylanneve1/talon/issues/191)) ([d10cbea](https://github.com/dylanneve1/talon/commit/d10cbeacbf83cfebc54b25bd91dad2615ebc4f5b))
+* **frontend:** add Discord frontend (discord.js v14) ([#160](https://github.com/dylanneve1/talon/issues/160)) ([625148c](https://github.com/dylanneve1/talon/commit/625148cdcc6bdce683a220f178c530742b9f8984))
+* **handlers:** surface user-quoted portions from reply context (Bot API 7.0) ([#157](https://github.com/dylanneve1/talon/issues/157)) ([92210ec](https://github.com/dylanneve1/talon/commit/92210ec4b401edabeed0657a9e6c3a90bd872180))
+* **heartbeat:** outbound telegram — explicit chat_id routing ([#150](https://github.com/dylanneve1/talon/issues/150)) ([77e7771](https://github.com/dylanneve1/talon/commit/77e7771dca13e157f73f8c2e6dd4b73705b4f9f6))
+* **picker:** backend-agnostic model picker — provider groups, persisted free filter, decoupled /settings ([#207](https://github.com/dylanneve1/talon/issues/207)) ([91df6a9](https://github.com/dylanneve1/talon/commit/91df6a92af4da005d35ffedaab0a584cbe0d7d51))
+* **telegram:** show backend label in /status header ([#184](https://github.com/dylanneve1/talon/issues/184)) ([9d18672](https://github.com/dylanneve1/talon/commit/9d186729827a4feef79e96b2a7f44571b635f588))
+* **tools:** expose Talon MCP tools to the Discord frontend ([#203](https://github.com/dylanneve1/talon/issues/203)) ([a4a1ae3](https://github.com/dylanneve1/talon/commit/a4a1ae3b192fa016d39fa3cb052335bbd2ca7934))
+* **triggers:** add persistent triggers that survive Talon restarts ([#201](https://github.com/dylanneve1/talon/issues/201)) ([40f4dd7](https://github.com/dylanneve1/talon/commit/40f4dd7d7b55993f63f02e81cbee5c0462f3c489))
+* **triggers:** self-authored watcher scripts that wake the bot ([#96](https://github.com/dylanneve1/talon/issues/96)) ([cafc8d4](https://github.com/dylanneve1/talon/commit/cafc8d4234218abb1e45621dccd36a0a367b01cc))
+
+
+### Bug Fixes
+
+* **heartbeat:** evict wedged SDK subprocesses, never deadlock the lock ([#144](https://github.com/dylanneve1/talon/issues/144)) ([d17a4eb](https://github.com/dylanneve1/talon/commit/d17a4ebbcb289fda2617ec84903622cdfbd67815))
+* **heartbeat:** frontend-agnostic outbound + comprehensive test coverage ([#151](https://github.com/dylanneve1/talon/issues/151)) ([85251d3](https://github.com/dylanneve1/talon/commit/85251d329b31bcebc172568d39d700cd3d55bf08))
+* **kilo:** make the chat flow actually work end-to-end ([#170](https://github.com/dylanneve1/talon/issues/170)) ([8286706](https://github.com/dylanneve1/talon/commit/8286706ac83fa346261d24179b722162a53232ff))
+* **openai-agents:** isolate config from generic OPENAI_* env vars ([#206](https://github.com/dylanneve1/talon/issues/206)) ([fc16cb2](https://github.com/dylanneve1/talon/commit/fc16cb2ffba6cdcec51c50625ac309e5d5d6a60b))
+* six correctness and safety bugs (timer leak, HTML injection, log component, flush consistency, status regex) ([#156](https://github.com/dylanneve1/talon/issues/156)) ([7530244](https://github.com/dylanneve1/talon/commit/753024462705035f57b15cbe82f1a330284a5026))
+* **telegram:** escape backend modelDetails so /model and /settings render ([#164](https://github.com/dylanneve1/talon/issues/164)) ([01f59ed](https://github.com/dylanneve1/talon/commit/01f59edc2535dc5de08e57b2dd2b0ce0edc253c6))
+* **tools:** chat_id schema accepts negative IDs for groups/channels ([#153](https://github.com/dylanneve1/talon/issues/153)) ([9298246](https://github.com/dylanneve1/talon/commit/92982468613022e2a040d62d1a69acbb9ff426b6))
+* **tools:** mark react as a turn terminator (endsTurn: true) ([#148](https://github.com/dylanneve1/talon/issues/148)) ([afb03ef](https://github.com/dylanneve1/talon/commit/afb03ef962014c6f54a30c5c5b1ea1cc188678da))
+* **tools:** preserve Discord snowflake IDs in tool input schemas ([#204](https://github.com/dylanneve1/talon/issues/204)) ([f46efce](https://github.com/dylanneve1/talon/commit/f46efce242ceaf008e069f47c6c088fb9b67058b))
+
 ## [1.11.0](https://github.com/dylanneve1/talon/compare/v1.10.1...v1.11.0) (2026-05-11)
 
 

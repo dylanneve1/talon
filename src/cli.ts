@@ -43,12 +43,16 @@ function printBanner(): void {
 
 type Config = {
   frontend: string | string[];
-  /** Active backend (`claude` / `kilo` / `opencode` / `codex`). */
-  backend?: "claude" | "kilo" | "opencode" | "codex";
+  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents`). */
+  backend?: "claude" | "kilo" | "opencode" | "codex" | "openai-agents";
   botToken?: string;
   claudeBinary?: string;
-  /** OpenAI API key — used by the Codex backend. */
+  /** OpenAI API key — used by Codex + OpenAI Agents backends. */
   openaiApiKey?: string;
+  /** OpenAI-compatible base URL — OpenRouter, Azure, Ollama, LiteLLM, etc. */
+  openaiBaseUrl?: string;
+  /** OpenAI API surface — "responses" (default) or "chat_completions" (most third parties). */
+  openaiApiMode?: "responses" | "chat_completions";
   model: string;
   concurrency: number;
   pulse: boolean;
@@ -411,6 +415,10 @@ async function runSetup(): Promise<void> {
         value: "codex",
         label: `Codex     ${pc.dim("— OpenAI Codex CLI (@openai/codex)")}`,
       },
+      {
+        value: "openai-agents",
+        label: `OpenAI Agents ${pc.dim("— @openai/agents (OpenAI or any OpenAI-compatible endpoint)")}`,
+      },
     ],
   });
   if (p.isCancel(backendSelection)) {
@@ -422,6 +430,8 @@ async function runSetup(): Promise<void> {
   // ── Backend-specific config ──
   let claudeBinary: string | undefined;
   let openaiApiKey: string | undefined;
+  let openaiBaseUrl: string | undefined;
+  let openaiApiMode: "responses" | "chat_completions" | undefined;
 
   if (backend === "claude") {
     const claudeBinaryInput = await p.text({
@@ -446,6 +456,55 @@ async function runSetup(): Promise<void> {
       process.exit(0);
     }
     openaiApiKey = (keyInput as string).trim() || undefined;
+  } else if (backend === "openai-agents") {
+    const keyInput = await p.text({
+      message:
+        "API key (OpenAI, OpenRouter, Azure, or whatever your endpoint requires)",
+      placeholder: "leave empty to use OPENAI_API_KEY env",
+      initialValue: config.openaiApiKey || "",
+    });
+    if (p.isCancel(keyInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    openaiApiKey = (keyInput as string).trim() || undefined;
+
+    const baseUrlInput = await p.text({
+      message:
+        "Base URL " +
+        pc.dim(
+          "(leave empty for OpenAI direct; e.g. https://openrouter.ai/api/v1)",
+        ),
+      placeholder: "https://openrouter.ai/api/v1",
+      initialValue: config.openaiBaseUrl || "",
+    });
+    if (p.isCancel(baseUrlInput)) {
+      p.cancel("Cancelled.");
+      process.exit(0);
+    }
+    openaiBaseUrl = (baseUrlInput as string).trim() || undefined;
+
+    if (openaiBaseUrl) {
+      const modeSelection = await p.select({
+        message: "OpenAI API surface",
+        options: [
+          {
+            value: "chat_completions",
+            label: `Chat Completions ${pc.dim("— most third parties (OpenRouter, Ollama, LiteLLM, most Azure)")}`,
+          },
+          {
+            value: "responses",
+            label: `Responses ${pc.dim("— OpenAI native, requires proxy support")}`,
+          },
+        ],
+        initialValue: config.openaiApiMode ?? "chat_completions",
+      });
+      if (p.isCancel(modeSelection)) {
+        p.cancel("Cancelled.");
+        process.exit(0);
+      }
+      openaiApiMode = modeSelection as "responses" | "chat_completions";
+    }
   }
   // kilo / opencode need no extra prompts — bundled SDK + per-provider
   // creds configured separately (kilo via `kilo login`, opencode via
@@ -458,6 +517,8 @@ async function runSetup(): Promise<void> {
     botToken: selectedFrontends.includes("telegram") ? botToken : undefined,
     claudeBinary,
     openaiApiKey,
+    openaiBaseUrl,
+    openaiApiMode,
     model: model as string,
     concurrency: config.concurrency,
     pulse: pulse as boolean,
@@ -615,6 +676,7 @@ async function viewConfig(): Promise<void> {
     kilo: "Kilo (@kilocode/sdk)",
     opencode: "OpenCode (@opencode-ai/sdk)",
     codex: "OpenAI Codex CLI",
+    "openai-agents": "OpenAI Agents (@openai/agents)",
   };
   console.log(
     `  ${pc.dim("Backend")}          ${pc.green(backendLabel[config.backend ?? "claude"])}`,
@@ -627,6 +689,10 @@ async function viewConfig(): Promise<void> {
     console.log(
       `  ${pc.dim("OpenAI API key")}   ${maskToken(config.openaiApiKey)}`,
     );
+  if (config.openaiBaseUrl)
+    console.log(`  ${pc.dim("OpenAI base URL")}  ${config.openaiBaseUrl}`);
+  if (config.openaiApiMode)
+    console.log(`  ${pc.dim("OpenAI API mode")}  ${config.openaiApiMode}`);
   if (config.discord?.botToken)
     console.log(
       `  ${pc.dim("Discord bot")}      ${maskToken(config.discord.botToken)} (app ${config.discord.applicationId.slice(0, 6)}…)`,
@@ -807,6 +873,33 @@ async function runDoctor(): Promise<void> {
     console.log(
       `  ${pc.green("\u2713")} ${activeBackend === "kilo" ? "Kilo" : "OpenCode"} SDK bundled`,
     );
+  } else if (activeBackend === "openai-agents") {
+    console.log(`  ${pc.green("\u2713")} OpenAI Agents SDK bundled`);
+    const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
+    const hasCfgKey = Boolean(doctorConfig?.openaiApiKey);
+    const envBase = process.env.OPENAI_BASE_URL;
+    const cfgBase = doctorConfig?.openaiBaseUrl;
+    if (hasEnvKey || hasCfgKey) {
+      const sources: string[] = [];
+      if (hasEnvKey) sources.push("OPENAI_API_KEY env");
+      if (hasCfgKey) sources.push("openaiApiKey in talon.json");
+      console.log(
+        `  ${pc.green("\u2713")} OpenAI Agents auth: ${pc.dim(sources.join(", "))}`,
+      );
+    } else {
+      console.log(
+        `  ${pc.yellow("!")} OpenAI Agents auth missing (set OPENAI_API_KEY or openaiApiKey in talon.json)`,
+      );
+      issues++;
+    }
+    if (envBase || cfgBase) {
+      const baseSrc = envBase ? `env (${envBase})` : `config (${cfgBase})`;
+      console.log(
+        `  ${pc.green("\u2713")} OpenAI-compatible endpoint: ${pc.dim(baseSrc)}`,
+      );
+    } else {
+      console.log(`  ${pc.dim("-")} Endpoint: api.openai.com (default)`);
+    }
   }
   try {
     const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) });
@@ -854,6 +947,16 @@ async function startChat(): Promise<void> {
   const { backend } = await initBackendAndDispatcher(config, frontend);
   gateway.backend = backend;
 
+  // Mirror the index.ts wiring: keep the gateway's cached backend
+  // reference in sync with chat-role rebinds.
+  const { onBackendChange, roleHolder } =
+    await import("./core/backend-controller.js");
+  const CHAT_ROLE_HOLDER = roleHolder("chat");
+  onBackendChange((holder, newBackend) => {
+    if (holder !== CHAT_ROLE_HOLDER) return;
+    gateway.backend = newBackend;
+  });
+
   process.on("SIGINT", () => {
     flushSessions();
     flushChatSettings();
@@ -896,7 +999,13 @@ async function mainMenu(): Promise<void> {
     : [config.frontend];
   const frontendLabel = fes
     .map((f) =>
-      f === "telegram" ? "Telegram" : f === "teams" ? "Teams" : "Terminal",
+      f === "telegram"
+        ? "Telegram"
+        : f === "teams"
+          ? "Teams"
+          : f === "discord"
+            ? "Discord"
+            : "Terminal",
     )
     .join(" + ");
 

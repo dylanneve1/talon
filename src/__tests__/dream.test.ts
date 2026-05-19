@@ -86,7 +86,7 @@ describe("initDream", () => {
         model: "claude-sonnet-4-6",
         dreamModel: "claude-haiku-4-5",
         workspace: "/tmp/test-workspace",
-        backend: makeMockBackend(),
+        getBackend: () => makeMockBackend(),
       }),
     ).not.toThrow();
   });
@@ -94,7 +94,10 @@ describe("initDream", () => {
 
 describe("maybeStartDream", () => {
   beforeEach(() => {
-    initDream({ model: "claude-sonnet-4-6", backend: makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReturnValue("dream prompt template");
   });
@@ -123,7 +126,10 @@ describe("maybeStartDream", () => {
 
 describe("forceDream", () => {
   beforeEach(() => {
-    initDream({ model: "claude-sonnet-4-6", backend: makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReturnValue("dream prompt template");
     writeAtomicSyncMock.mockClear();
@@ -161,14 +167,17 @@ describe("forceDream", () => {
     initDream({
       model: "claude-sonnet-4-6",
       dreamModel: "claude-haiku-4-5",
-      backend: makeMockBackend(),
+      getBackend: () => makeMockBackend(),
     });
     await forceDream();
     expect(runOneShotAgentMock.mock.calls[0][0].model).toBe("claude-haiku-4-5");
   });
 
   it("rejects when backend has no runOneShotAgent", async () => {
-    initDream({ model: "claude-sonnet-4-6", backend: { query: vi.fn() } });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => ({ query: vi.fn() }),
+    });
     await expect(forceDream()).rejects.toThrow("runOneShotAgent");
   });
 
@@ -180,7 +189,10 @@ describe("forceDream", () => {
 
 describe("readDreamState — edge cases", () => {
   beforeEach(() => {
-    initDream({ model: "claude-sonnet-4-6", backend: makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     readFileSyncMock.mockReturnValue("dream prompt template");
   });
 
@@ -246,10 +258,10 @@ describe("dream timeout", () => {
     mod = await import("../core/dream.js");
     mod.initDream({
       model: "claude-sonnet-4-6",
-      backend: {
+      getBackend: () => ({
         query: vi.fn(),
         runOneShotAgent: timeoutRunOneShotMock,
-      },
+      }),
     });
   });
 
@@ -285,7 +297,10 @@ describe("dream timeout", () => {
 
 describe("mempalace section gating in dream prompt", () => {
   beforeEach(() => {
-    initDream({ model: "claude-sonnet-4-6", backend: makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     readFileSyncMock.mockReturnValue(
       "PROMPT START {{mempalaceSection}} PROMPT END",
     );
@@ -296,7 +311,7 @@ describe("mempalace section gating in dream prompt", () => {
   it("includes mempalace mining and diary instructions when configured", async () => {
     initDream({
       model: "claude-sonnet-4-6",
-      backend: makeMockBackend(),
+      getBackend: () => makeMockBackend(),
       mempalace: { pythonPath: "/usr/bin/python3", palacePath: "/fake/palace" },
     });
     await forceDream();
@@ -311,7 +326,10 @@ describe("mempalace section gating in dream prompt", () => {
   });
 
   it("includes skip message when mempalace is not configured", async () => {
-    initDream({ model: "claude-sonnet-4-6", backend: makeMockBackend() });
+    initDream({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     await forceDream();
 
     expect(runOneShotAgentMock).toHaveBeenCalled();
@@ -328,12 +346,12 @@ describe("maybeStartDream swallows errors", () => {
   it("does not propagate errors from the backend (auto trigger)", async () => {
     initDream({
       model: "claude-sonnet-4-6",
-      backend: {
+      getBackend: () => ({
         query: vi.fn(),
         runOneShotAgent: async () => {
           throw new Error("backend exploded");
         },
-      },
+      }),
     });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReturnValue("dream prompt template");

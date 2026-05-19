@@ -1,0 +1,422 @@
+/**
+ * Built-in filesystem + shell tools for the OpenAI Agents backend.
+ *
+ * The Claude SDK backend ships these as part of Claude Code (`Read`,
+ * `Write`, `Edit`, `Bash`, `Glob`, `Grep`). The `@openai/agents` SDK
+ * doesn't — it's model-agnostic and assumes the host wires whatever
+ * capabilities the agent needs. To keep Talon's system prompt and
+ * behavior consistent across backends, this module mirrors that
+ * Claude-Code surface as `tool()` definitions.
+ *
+ * Schema choice
+ * ─────────────
+ *
+ * `@openai/agents`'s `tool()` factory accepts either a Zod schema or
+ * a raw JSON Schema. Zod is convenient but `@openai/agents` forces
+ * `strict: true` for Zod schemas, which in turn forces every
+ * declared property into the `required` array. That's OpenAI-correct
+ * but does NOT survive in the real world: many models (especially
+ * non-OpenAI ones routed through chat_completions) drop optional
+ * fields when calling, and the SDK then rejects every call as
+ * "Invalid JSON input". That manifested as "Bash tool is completely
+ * broken — JSON input errors on every call" in production with
+ * OpenRouter models like Trinity / Owl.
+ *
+ * We use plain JSON Schemas with explicit `required` arrays so
+ * truly-optional fields (offset/limit, timeout, provider, …) can be
+ * omitted by the model and the call still validates. `strict: false`
+ * disables the all-required pass.
+ *
+ * Tool names + parameter shapes still match Claude Code so the
+ * shared prompt vocabulary applies uniformly.
+ */
+import { tool } from "@openai/agents";
+import { spawn } from "node:child_process";
+import { readFile, writeFile, mkdir, glob } from "node:fs/promises";
+import { dirname, resolve as resolvePath } from "node:path";
+import { expandFsPath as expandPath } from "../../util/fs-path.js";
+
+// ── Read ────────────────────────────────────────────────────────────────────
+
+interface ReadInput {
+  file_path: string;
+  offset?: number;
+  limit?: number;
+}
+
+const readTool = tool({
+  name: "Read",
+  description:
+    "Read a text file from disk. Returns the file contents with " +
+    "`cat -n`-style line numbering. `offset` (1-indexed) skips the " +
+    "first N-1 lines; `limit` caps the number of lines returned.",
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["file_path"],
+    properties: {
+      file_path: {
+        type: "string",
+        description: "Absolute path (or ~/...) to the file to read.",
+      },
+      offset: {
+        type: "integer",
+        minimum: 1,
+        description: "1-indexed line number to start reading from.",
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        description: "Maximum number of lines to read.",
+      },
+    },
+  },
+  async execute(input) {
+    const { file_path, offset, limit } = input as ReadInput;
+    const abs = expandPath(file_path);
+    const text = await readFile(abs, "utf8");
+    const allLines = text.split("\n");
+    const start = (offset ?? 1) - 1;
+    const end = limit != null ? start + limit : allLines.length;
+    const slice = allLines.slice(start, end);
+    return slice
+      .map((line, i) => `${String(start + i + 1).padStart(6, " ")}\t${line}`)
+      .join("\n");
+  },
+});
+
+// ── Write ───────────────────────────────────────────────────────────────────
+
+interface WriteInput {
+  file_path: string;
+  content: string;
+}
+
+const writeTool = tool({
+  name: "Write",
+  description:
+    "Write a string to a file, creating it (and any missing parent " +
+    "directories) if necessary. Overwrites existing content. Use " +
+    "Edit for partial in-place changes.",
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["file_path", "content"],
+    properties: {
+      file_path: {
+        type: "string",
+        description: "Absolute path (or ~/...) to the file to write.",
+      },
+      content: {
+        type: "string",
+        description: "Full file contents to write.",
+      },
+    },
+  },
+  async execute(input) {
+    const { file_path, content } = input as WriteInput;
+    const abs = expandPath(file_path);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, content, "utf8");
+    return `wrote ${content.length} bytes to ${abs}`;
+  },
+});
+
+// ── Edit ────────────────────────────────────────────────────────────────────
+
+interface EditInput {
+  file_path: string;
+  old_string: string;
+  new_string: string;
+  replace_all?: boolean;
+}
+
+const editTool = tool({
+  name: "Edit",
+  description:
+    "Replace text in a file. `old_string` must appear verbatim in " +
+    "the file. By default `old_string` must be unique; set " +
+    "`replace_all` to replace every occurrence. Use this for surgical " +
+    "changes instead of rewriting the whole file with Write.",
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["file_path", "old_string", "new_string"],
+    properties: {
+      file_path: {
+        type: "string",
+        description: "Absolute path (or ~/...) to the file to modify.",
+      },
+      old_string: { type: "string", description: "Exact text to replace." },
+      new_string: {
+        type: "string",
+        description: "Replacement text. Must differ from old_string.",
+      },
+      replace_all: {
+        type: "boolean",
+        description:
+          "When true, replace every occurrence of old_string. " +
+          "When false or omitted, the match must be unique.",
+      },
+    },
+  },
+  async execute(input) {
+    const { file_path, old_string, new_string, replace_all } =
+      input as EditInput;
+    if (old_string === new_string) {
+      throw new Error("old_string and new_string must differ");
+    }
+    const abs = expandPath(file_path);
+    const original = await readFile(abs, "utf8");
+    if (replace_all) {
+      const next = original.split(old_string).join(new_string);
+      if (next === original) {
+        throw new Error(`old_string not found in ${abs}`);
+      }
+      await writeFile(abs, next, "utf8");
+      const count = original.split(old_string).length - 1;
+      return `replaced ${count} occurrence${count === 1 ? "" : "s"} in ${abs}`;
+    }
+    const first = original.indexOf(old_string);
+    if (first === -1) throw new Error(`old_string not found in ${abs}`);
+    const second = original.indexOf(old_string, first + old_string.length);
+    if (second !== -1) {
+      throw new Error(
+        `old_string is not unique in ${abs} — pass replace_all=true ` +
+          `or add more surrounding context to disambiguate`,
+      );
+    }
+    await writeFile(
+      abs,
+      original.slice(0, first) +
+        new_string +
+        original.slice(first + old_string.length),
+      "utf8",
+    );
+    return `replaced 1 occurrence in ${abs}`;
+  },
+});
+
+// ── Bash ────────────────────────────────────────────────────────────────────
+
+const BASH_DEFAULT_TIMEOUT_MS = 30_000;
+const BASH_MAX_TIMEOUT_MS = 600_000;
+
+interface BashInput {
+  command: string;
+  description?: string;
+  timeout_ms?: number;
+}
+
+function runShell(
+  command: string,
+  timeoutMs: number,
+): Promise<{
+  stdout: string;
+  stderr: string;
+  code: number;
+  timedOut: boolean;
+}> {
+  return new Promise((resolveResult) => {
+    const child = spawn("bash", ["-lc", command], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (b: Buffer) => {
+      stdout += b.toString("utf8");
+    });
+    child.stderr.on("data", (b: Buffer) => {
+      stderr += b.toString("utf8");
+    });
+    const killer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutMs);
+    let timedOut = false;
+    child.on("error", (err) => {
+      // spawn failed (e.g. bash not in PATH on Windows). Resolve instead
+      // of letting Node emit an uncaught error — the tool returns the
+      // diagnostic so callers can surface it rather than crashing.
+      clearTimeout(killer);
+      resolveResult({
+        stdout,
+        stderr: err.message,
+        code: -1,
+        timedOut: false,
+      });
+    });
+    child.on("close", (code) => {
+      clearTimeout(killer);
+      resolveResult({ stdout, stderr, code: code ?? -1, timedOut });
+    });
+  });
+}
+
+const bashTool = tool({
+  name: "Bash",
+  description:
+    "Run a shell command via `bash -lc`. Returns combined stdout " +
+    "and stderr along with the exit code. Default timeout 30s, max " +
+    "10min. Use for inspecting files, running scripts, package " +
+    "managers, git, etc. Do not start long-running servers — there " +
+    "is no background mode here.",
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["command"],
+    properties: {
+      command: { type: "string", description: "Shell command to execute." },
+      description: {
+        type: "string",
+        description:
+          "Short (5-10 word) explanation of what this command does. Recorded in logs.",
+      },
+      timeout_ms: {
+        type: "integer",
+        minimum: 1000,
+        maximum: BASH_MAX_TIMEOUT_MS,
+        description: `Optional timeout in milliseconds (max ${BASH_MAX_TIMEOUT_MS}).`,
+      },
+    },
+  },
+  async execute(input) {
+    const { command, timeout_ms } = input as BashInput;
+    const timeout = timeout_ms ?? BASH_DEFAULT_TIMEOUT_MS;
+    const result = await runShell(command, timeout);
+    const parts: string[] = [];
+    if (result.stdout) parts.push(`--- stdout ---\n${result.stdout}`);
+    if (result.stderr) parts.push(`--- stderr ---\n${result.stderr}`);
+    parts.push(
+      `--- exit ${result.code}${result.timedOut ? " (timed out)" : ""} ---`,
+    );
+    return parts.join("\n");
+  },
+});
+
+// ── Glob ────────────────────────────────────────────────────────────────────
+
+interface GlobInput {
+  pattern: string;
+  path?: string;
+}
+
+const globTool = tool({
+  name: "Glob",
+  description:
+    "List files matching a glob pattern (e.g. `**/*.ts`, " +
+    "`src/**/*.md`). Returns absolute paths, one per line, sorted " +
+    "alphabetically. Searches under `path` if provided, otherwise " +
+    "under the current working directory.",
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["pattern"],
+    properties: {
+      pattern: {
+        type: "string",
+        description: "Glob pattern to match (e.g. `src/**/*.ts`).",
+      },
+      path: {
+        type: "string",
+        description:
+          "Directory to search under. Defaults to the current working directory.",
+      },
+    },
+  },
+  async execute(input) {
+    const { pattern, path } = input as GlobInput;
+    const cwd = path ? expandPath(path) : process.cwd();
+    const matches: string[] = [];
+    for await (const entry of glob(pattern, { cwd })) {
+      matches.push(resolvePath(cwd, entry));
+    }
+    matches.sort();
+    return matches.length > 0 ? matches.join("\n") : "(no matches)";
+  },
+});
+
+// ── Grep ────────────────────────────────────────────────────────────────────
+
+interface GrepInput {
+  pattern: string;
+  path?: string;
+  include?: string;
+}
+
+const grepTool = tool({
+  name: "Grep",
+  description:
+    "Search for a regular expression in files using the system " +
+    "`grep` (or `rg` when available). Returns matching lines with " +
+    "file paths, line numbers, and content.",
+  strict: false,
+  parameters: {
+    type: "object" as const,
+    additionalProperties: true as const,
+    required: ["pattern"],
+    properties: {
+      pattern: {
+        type: "string",
+        description: "Regular expression to search for.",
+      },
+      path: {
+        type: "string",
+        description:
+          "File or directory to search. Defaults to the current working directory.",
+      },
+      include: {
+        type: "string",
+        description: "Glob limiting which files to search (e.g. `*.ts`).",
+      },
+    },
+  },
+  async execute(input) {
+    const { pattern, path, include } = input as GrepInput;
+    const target = path ? expandPath(path) : process.cwd();
+    // Prefer ripgrep if installed; fall back to GNU/BSD grep.
+    const rgCheck = await runShell("command -v rg", 2000);
+    const useRg = rgCheck.code === 0 && rgCheck.stdout.trim().length > 0;
+
+    let command: string;
+    if (useRg) {
+      const includeFlag = include ? ` --glob ${JSON.stringify(include)}` : "";
+      command = `rg -n --no-heading${includeFlag} ${JSON.stringify(pattern)} ${JSON.stringify(target)}`;
+    } else {
+      const includeFlag = include
+        ? ` --include=${JSON.stringify(include)}`
+        : "";
+      command = `grep -RIn${includeFlag} -E ${JSON.stringify(pattern)} ${JSON.stringify(target)}`;
+    }
+    const result = await runShell(command, 30_000);
+    // Both rg and grep return non-zero exit when there are no matches; that
+    // isn't an error from the model's perspective, surface it as "no matches".
+    if (result.code !== 0 && !result.stdout && !result.stderr) {
+      return "(no matches)";
+    }
+    if (result.stdout) return result.stdout.trimEnd();
+    return result.stderr.trimEnd() || "(no matches)";
+  },
+});
+
+// ── Public surface ──────────────────────────────────────────────────────────
+
+/**
+ * The full Claude-Code-equivalent filesystem + shell toolset for
+ * OpenAI Agents. Pass this into `new Agent({ tools: [...] })`.
+ */
+export const OPENAI_AGENTS_BUILTIN_TOOLS = [
+  readTool,
+  writeTool,
+  editTool,
+  bashTool,
+  globTool,
+  grepTool,
+] as const;

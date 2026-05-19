@@ -112,6 +112,11 @@ export async function bootstrap(
 /**
  * Create the AI backend and wire the dispatcher.
  * Call this after creating the frontend.
+ *
+ * The backend controller (`core/backend-controller.ts`) is the single
+ * source of truth for the active backend. Dispatcher / dream /
+ * heartbeat all read through `getActiveBackend()` so a runtime swap
+ * via `switchBackend(id, config)` propagates without any re-init.
  */
 export async function initBackendAndDispatcher(
   config: TalonConfig,
@@ -124,26 +129,47 @@ export async function initBackendAndDispatcher(
   await import("./backend/opencode/factory.js");
   await import("./backend/kilo/factory.js");
   await import("./backend/codex/factory.js");
+  await import("./backend/openai-agents/factory.js");
 
-  const { getBackend, listBackends } = await import("./backend/registry.js");
+  const { initBackendPool, getBackendForRole, getBackendForChat, rebindChat } =
+    await import("./core/backend-controller.js");
 
-  const factory = getBackend(config.backend);
-  if (!factory) {
-    const known = listBackends()
-      .map((b) => `"${b.id}"`)
-      .join(", ");
-    throw new Error(
-      `Unknown backend "${config.backend}" — known: ${known}. Check config.backend in talon.json.`,
-    );
-  }
-
-  const { backend } = await factory.init(config, {
+  // Boot the backend pool — binds the chat / heartbeat / dream roles
+  // from `config.backend`, `config.heartbeatBackend`,
+  // `config.dreamBackend`. When two roles point at the same id the
+  // pool reuses one instance (refcounted) — a single-backend setup
+  // still spins up exactly one instance.
+  await initBackendPool(config, {
     getBridgePort: frontend.getBridgePort,
     frontendName: frontend.name,
   });
+  const backend = getBackendForRole("chat");
+
+  // Re-acquire any persisted per-chat backend overrides so chats that
+  // were on a non-default backend before restart resume on that
+  // backend without waiting for the user to re-pick. Best-effort: a
+  // failed re-acquire (e.g. unknown id) is logged but doesn't block
+  // bootstrap.
+  const { getAllChatSettings } = await import("./storage/chat-settings.js");
+  for (const [cid, settings] of Object.entries(getAllChatSettings())) {
+    if (!settings.backend) continue;
+    const result = await rebindChat(cid, settings.backend, config);
+    if (!result.ok) {
+      log(
+        "bot",
+        `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error}`,
+      );
+    }
+  }
 
   initDispatcher({
-    backend,
+    // Dispatcher reads the backend per query so per-chat overrides
+    // and chat-role rebinds both propagate without re-init. The
+    // chat id is always present from the dispatcher, but the type
+    // is `chatId?: string` to keep test stubs simple — fall back to
+    // the chat-role default if a caller ever passes `undefined`.
+    getBackend: (chatId?: string) =>
+      chatId ? getBackendForChat(chatId) : getBackendForRole("chat"),
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),
@@ -189,7 +215,7 @@ export async function initBackendAndDispatcher(
     model: config.model,
     dreamModel: config.dreamModel,
     workspace: config.workspace,
-    backend,
+    getBackend: () => getBackendForRole("dream"),
   });
   // Heartbeat needs to know which non-terminal frontends are wired so it can
   // tell the agent it has outbound `${frontend}-tools` MCP servers available.
@@ -203,7 +229,7 @@ export async function initBackendAndDispatcher(
     model: config.model,
     heartbeatModel: config.heartbeatModel,
     workspace: config.workspace,
-    backend,
+    getBackend: () => getBackendForRole("heartbeat"),
     frontends: frontendNames,
   });
 

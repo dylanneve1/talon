@@ -105,7 +105,7 @@ describe("initHeartbeat", () => {
         model: "claude-sonnet-4-6",
         heartbeatModel: "claude-haiku-4-5",
         workspace: "/tmp/test-workspace",
-        backend: makeMockBackend(),
+        getBackend: () => makeMockBackend(),
         frontends: ["telegram"],
       }),
     ).not.toThrow();
@@ -115,7 +115,10 @@ describe("initHeartbeat", () => {
 describe("startHeartbeatTimer", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    initHeartbeat({ model: "claude-sonnet-4-6", backend: makeMockBackend() });
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
   });
 
   afterEach(() => {
@@ -160,7 +163,10 @@ describe("startHeartbeatTimer", () => {
 
 describe("forceHeartbeat", () => {
   beforeEach(() => {
-    initHeartbeat({ model: "claude-sonnet-4-6", backend: makeMockBackend() });
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReset();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -418,7 +424,10 @@ describe("buildHeartbeatSystemPrompt", () => {
 
 describe("awaitCurrentRun", () => {
   beforeEach(() => {
-    initHeartbeat({ model: "claude-sonnet-4-6", backend: makeMockBackend() });
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReset();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -540,11 +549,11 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
     evictionMod = await import("../core/heartbeat.js");
     evictionMod.initHeartbeat({
       model: "claude-sonnet-4-6",
-      backend: {
+      getBackend: () => ({
         query: vi.fn(),
         runOneShotAgent: evictionRunOneShotMock,
         evictOrphanSubprocesses: evictionEvictMock,
-      },
+      }),
     });
   });
 
@@ -623,13 +632,13 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
     // Re-init with a backend that doesn't implement eviction (e.g. Kilo).
     evictionMod.initHeartbeat({
       model: "claude-sonnet-4-6",
-      backend: {
+      getBackend: () => ({
         query: vi.fn(),
         runOneShotAgent: () =>
           new Promise<void>(() => {
             /* never settles */
           }),
-      },
+      }),
     });
 
     await expect(evictionMod.forceHeartbeat()).rejects.toThrow(
@@ -638,10 +647,10 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
     // Lock should still be released — verify by running another heartbeat.
     evictionMod.initHeartbeat({
       model: "claude-sonnet-4-6",
-      backend: {
+      getBackend: () => ({
         query: vi.fn(),
         runOneShotAgent: async () => {},
-      },
+      }),
     });
     await expect(evictionMod.forceHeartbeat()).resolves.toBeUndefined();
   }, 5000);

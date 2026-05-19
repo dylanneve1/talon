@@ -72,3 +72,25 @@ export const chatIdSchema = z.union([
     .transform((s) => Number(s))
     .pipe(nonZeroInt),
 ]);
+
+/**
+ * Snowflake-or-numeric ID schema. Accepts either:
+ *   - a positive integer (Telegram-style numeric IDs, up to 2^53)
+ *   - a digit-only string (Discord snowflakes — 17–19 digits exceed
+ *     2^53, so they must stay as strings: `Number(snowflake)` rounds
+ *     silently to the nearest float and drops the last digit, after
+ *     which Discord's REST API rejects the result as "Unknown Message")
+ *
+ * No transform to number — the string passes through to the bridge
+ * untouched. Frontend action handlers coerce with `String(...)` anyway,
+ * so the loose union is safe for both Telegram and Discord call sites.
+ *
+ * Use this for `message_id` / `user_id` / `reply_to` / `offset_id` on
+ * tool input schemas whose tool definition includes "discord" in its
+ * `frontends:[]` list. The strict `idSchema` is still appropriate for
+ * Telegram-only tools.
+ */
+export const snowflakeOrIdSchema = z.union([
+  z.number().int().positive(),
+  z.string().regex(/^\d+$/, "must be a positive integer"),
+]);

@@ -40,8 +40,21 @@ const opencodeFactory: BackendFactory = {
       query: (params) => ocHandleMessage(params),
       resolveModel: (q) => resolveModel(q),
       getModelInfo: (id) => getModelInfo(id),
-      getSettingsPresentation: (m, prefix) =>
-        getSettingsPresentation(m, prefix),
+      getSettingsPresentation: async (m, options) => {
+        const legacy = await getSettingsPresentation(
+          m,
+          options?.callbackPrefix,
+        );
+        return {
+          ...legacy,
+          view: "models" as const,
+          page: 1,
+          totalPages: 1,
+          filter: "all" as const,
+          freeCount: 0,
+          totalCount: legacy.modelButtons.length,
+        };
+      },
       getProviders: () => getProviders(),
       getProviderModels: (p, pg, ps) => getProviderModels(p, pg, ps),
       formatModelError: (q, r) => formatModelError(q, r),

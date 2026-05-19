@@ -46,7 +46,8 @@ export type LogComponent =
   | "access"
   | "github"
   | "mempalace"
-  | "playwright";
+  | "playwright"
+  | "backend-controller";
 
 const LOG_FILE = files.log;
 
