@@ -129,7 +129,10 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   }
 
   if (result.stderr.trim().length > 0) {
-    log("agent", `[${chatId}] agy stderr: ${result.stderr.trim().slice(0, 300)}`);
+    log(
+      "agent",
+      `[${chatId}] agy stderr: ${result.stderr.trim().slice(0, 300)}`,
+    );
   }
 
   // `result.text` already comes from the structured `transcript.jsonl`
