@@ -17,6 +17,7 @@ import {
 import { resetSession } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";
 import {
+  getBackendIdForChat,
   listAvailableBackends,
   rebindChat,
   releaseChat,
@@ -311,9 +312,16 @@ export function registerCallbacks(
             return;
           }
           setChatModel(cid, resolution.storedValue);
+          // Pin the backend that owns this model so the choice survives
+          // restart. Without this the chat reloads on the role-default
+          // backend (claude) holding an antigravity model id, which the
+          // claude catalog doesn't recognise — user has to /backend +
+          // /model on every boot.
+          setChatBackend(cid, getBackendIdForChat(cid));
           toast = `Model: ${resolution.model.displayName}`;
         } else {
           setChatModel(cid, resolveModelName(action.modelId));
+          setChatBackend(cid, getBackendIdForChat(cid));
           toast = `Model: ${getChatSettings(cid).model ?? config.model}`;
         }
       } else if (action.kind === "reset") {

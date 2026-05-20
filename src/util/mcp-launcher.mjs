@@ -68,7 +68,23 @@ process.stdin.pipe(child.stdin);
 // Tolerant MCP clients (e.g. the claude binary) see exactly what they
 // did before — this is a no-op for clean servers.
 {
-  const JSON_LINE = /^\s*[{[]/;
+  // Quick discriminator: a JSON-RPC line must start with `{` (objects).
+  // The MCP spec permits array batches (`[`) but our plugins only emit
+  // objects, and several plugins log lines that START with `[` (e.g.
+  // tailscale-mcp's `[ISO-timestamp] [INFO] …`). Restrict to `{` and
+  // verify it's parseable JSON before forwarding, so a stray
+  // `{ tip: "..." }` shell-style line that isn't valid JSON still
+  // goes to stderr.
+  const looksJson = (line) => {
+    const s = line.trimStart();
+    if (s.length === 0 || s[0] !== "{") return false;
+    try {
+      JSON.parse(s);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   let buf = "";
   child.stdout.setEncoding("utf-8");
   child.stdout.on("data", (chunk) => {
@@ -77,7 +93,7 @@ process.stdin.pipe(child.stdin);
     while ((nl = buf.indexOf("\n")) !== -1) {
       const line = buf.slice(0, nl + 1);
       buf = buf.slice(nl + 1);
-      if (JSON_LINE.test(line)) {
+      if (looksJson(line)) {
         process.stdout.write(line);
       } else if (line.trim().length > 0) {
         process.stderr.write(`[mcp-launcher: stdout→stderr] ${line}`);
@@ -86,7 +102,7 @@ process.stdin.pipe(child.stdin);
   });
   child.stdout.on("end", () => {
     if (buf.length === 0) return;
-    if (JSON_LINE.test(buf)) {
+    if (looksJson(buf)) {
       process.stdout.write(buf);
     } else {
       process.stderr.write(`[mcp-launcher: stdout→stderr] ${buf}`);
