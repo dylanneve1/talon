@@ -94,6 +94,111 @@ BRIDGE_PROTOCOL_VERSION = 1
 #     `google-antigravity` release.
 
 
+# Gemini's `Schema` type is a strict subset of JSON Schema (Open API
+# 3.0-flavoured). It rejects several constructs that MCP servers freely
+# emit: `enum` arrays containing non-string values, uppercase `type`
+# values, dialect anchors (`$schema`, `$id`), arbitrary metadata keys,
+# `additionalProperties` schemas, etc. The Go-side validator surfaces
+# this as `failed to unmarshal tool schema` and tears the whole agent
+# down on the next turn.
+#
+# Walk the schema once and normalise it into the supported subset.
+# Anything we can't represent gets dropped (better than rejection by
+# the server) while leaving the documented identity intact so the
+# model still sees the parameter shape correctly.
+_GEMINI_TYPES = {"string", "number", "integer", "boolean", "array", "object"}
+_GEMINI_KEYS = {
+    "type",
+    "description",
+    "title",
+    "format",
+    "enum",
+    "properties",
+    "required",
+    "items",
+    "minimum",
+    "maximum",
+    "minItems",
+    "maxItems",
+    "minLength",
+    "maxLength",
+    "nullable",
+    "default",
+    "anyOf",
+}
+
+
+def _sanitise_schema_for_gemini(schema: Any) -> Any:
+    if not isinstance(schema, dict):
+        return schema
+
+    out: dict[str, Any] = {}
+    for k, v in schema.items():
+        if k not in _GEMINI_KEYS:
+            continue
+
+        if k == "type":
+            if isinstance(v, list):
+                # Tuple types — pick the first non-null. Gemini does
+                # `nullable: true` for unions with null.
+                non_null = [t for t in v if t != "null"]
+                if not non_null:
+                    continue
+                if "null" in v:
+                    out["nullable"] = True
+                v = non_null[0]
+            if isinstance(v, str):
+                lv = v.lower()
+                if lv not in _GEMINI_TYPES:
+                    continue
+                out[k] = lv
+            continue
+
+        if k == "enum" and isinstance(v, list):
+            # Gemini wants all-string enums. Coerce; drop empties.
+            out[k] = [str(item) for item in v if item is not None]
+            continue
+
+        if k == "properties" and isinstance(v, dict):
+            out[k] = {
+                pk: _sanitise_schema_for_gemini(pv) for pk, pv in v.items()
+            }
+            continue
+
+        if k == "items":
+            out[k] = _sanitise_schema_for_gemini(v)
+            continue
+
+        if k == "anyOf" and isinstance(v, list):
+            cleaned = [_sanitise_schema_for_gemini(sub) for sub in v]
+            cleaned = [s for s in cleaned if s]
+            if cleaned:
+                out[k] = cleaned
+            continue
+
+        out[k] = v
+
+    # `required` referencing properties that survived sanitisation only.
+    if "required" in out and "properties" in out:
+        props = set(out["properties"].keys())
+        out["required"] = [r for r in out["required"] if r in props]
+        if not out["required"]:
+            del out["required"]
+
+    # Gemini wants `type` on every schema node. If the MCP server
+    # omitted it but supplied `properties`, infer `object`; if it
+    # supplied `items`, infer `array`. Last-resort default: `object`.
+    if "type" not in out:
+        if "properties" in out:
+            out["type"] = "object"
+        elif "items" in out:
+            out["type"] = "array"
+        else:
+            out["type"] = "object"
+
+    return out
+
+
 class McpToolManager:
     """Connects to MCP stdio servers, exposes their tools as plain
     Python callables suitable for `LocalAgentConfig(tools=[...])`.
@@ -158,10 +263,9 @@ class McpToolManager:
             wrapper = self._make_wrapper(
                 session, tool.name, ns_name, tool.description or ""
             )
-            input_schema = tool.inputSchema or {
-                "type": "object",
-                "properties": {},
-            }
+            input_schema = _sanitise_schema_for_gemini(
+                tool.inputSchema or {"type": "object", "properties": {}}
+            )
             self._tools.append(ToolWithSchema(wrapper, input_schema))
             added += 1
 
