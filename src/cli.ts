@@ -1104,17 +1104,23 @@ async function daemonStart(): Promise<void> {
   const { spawn } = await import("node:child_process");
   const entryScript = resolve(PKG_ROOT, "src", "index.ts");
 
-  // Spawn detached process with stdio piped to /dev/null
-  // Use node with tsx's ESM loader to avoid .cmd wrapper issues on Windows
-  const tsxImport = resolve(
+  // Spawn detached process with stdio piped to /dev/null.
+  //
+  // Invoke tsx's CLI entry directly via `node <tsx-cli.mjs> <entry>` rather
+  // than `node --import tsx/dist/esm/index.mjs <entry>`. The --import loader
+  // path triggered a tsx resolver bug where CJS `require('../../')` from
+  // gramjs resolved to `index.jsx` instead of `index.js`, killing startup
+  // silently in detached mode (stderr is /dev/null). Running tsx as a CLI
+  // avoids the broken loader path while still working on Windows — `node
+  // foo.mjs` bypasses the .cmd wrapper that motivated the loader approach.
+  const tsxCli = resolve(
     PKG_ROOT,
     "node_modules",
     "tsx",
     "dist",
-    "esm",
-    "index.mjs",
+    "cli.mjs",
   );
-  const child = spawn(process.execPath, ["--import", tsxImport, entryScript], {
+  const child = spawn(process.execPath, [tsxCli, entryScript], {
     cwd: PKG_ROOT,
     detached: true,
     stdio: "ignore",
