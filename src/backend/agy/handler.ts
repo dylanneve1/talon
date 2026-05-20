@@ -1,18 +1,22 @@
 /**
- * Agy backend message handler — text-only.
+ * Agy backend message handler.
  *
- * Spawns the agy CLI in --print mode per turn and delivers the
- * response as a text-part. No streaming, no tool calls — agy's
- * MCP integration would require writing a per-process MCP config
- * that doesn't collide with the user's regular agy setup at
- * `~/.gemini/config/mcp_config.json` (deferred).
+ * Each turn shells out to the local `agy` CLI; agy is locally
+ * OAuth-authenticated (no API key needed) and brings its own
+ * persona/system instructions. We don't stack Talon's system prompt
+ * on top — that fights agy's baked-in instructions and tanks output
+ * quality. Per-chat conversational continuity is threaded via agy's
+ * own `--conversation <uuid>` flag (see `state.ts` and `spawn.ts`).
  *
- * What this means in practice: when the agy backend is bound to a
- * chat, the agent can answer questions but can't call `end_turn`,
- * `send`, `react`, or any plugin tools. The handler routes the
- * response via `onTextBlock` (matches the no-tool path in
- * routeDelivery), so users still get replies — they just don't
- * see the rich tool-driven behaviour of the Claude SDK backend.
+ * Limitations (still):
+ *
+ *   - **No streaming.** `agy --print` returns the full response on
+ *     close — we report it once via `onTextBlock`.
+ *   - **No tool calls.** agy's MCP tools (`~/.gemini/config/mcp_config.json`)
+ *     work on the agy side, but the call-events don't surface in
+ *     stdout in a structured way we can route. Talon's frontend
+ *     delivery tools (`end_turn` / `send` / `react`) aren't reachable
+ *     either. Tool integration is deferred.
  */
 
 import type { QueryParams, QueryResult } from "../../core/types.js";
@@ -21,33 +25,55 @@ import {
   incrementTurns,
   recordUsage,
   setSessionName,
+  resetSession,
 } from "../../storage/sessions.js";
 import { log, logError } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
-import { recordHistogram } from "../../util/metrics.js";
+import { recordHistogram, incrementCounter } from "../../util/metrics.js";
 import {
   createStreamState,
   appendText,
   finalizeResponseText,
   formatUserPrompt,
-  prepareSystemPrompt,
   extractSessionName,
   routeDelivery,
 } from "../shared/index.js";
-import { loadConfig } from "../../util/config.js";
 import { runAgyPrint, AgyPrintError } from "./spawn.js";
 import { AGY_LABEL } from "./constants.js";
+import {
+  getConversation,
+  setConversation,
+  forgetConversation,
+} from "./state.js";
+
+/**
+ * Serialises first-turn (no-conversation-id) spawns so two chats
+ * starting agy concurrently don't both observe the same "newest .pb"
+ * after one of them lands. Resume turns (with id) bypass the lock —
+ * they don't need to learn anything from the conversations dir.
+ *
+ * Implementation: a tiny single-slot lock built on Promise chaining.
+ * Cheaper than pulling in async-mutex for one call site.
+ */
+let firstTurnLock: Promise<void> = Promise.resolve();
+async function withFirstTurnLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = firstTurnLock;
+  let release!: () => void;
+  firstTurnLock = new Promise<void>((r) => {
+    release = r;
+  });
+  try {
+    await prev;
+    return await fn();
+  } finally {
+    release();
+  }
+}
 
 export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   const { chatId, text, senderName, isGroup, messageId } = params;
   const session = getSession(chatId);
-  const config = loadConfig();
   const turnStarted = Date.now();
-
-  const systemPrompt = prepareSystemPrompt({
-    config,
-    previousTurns: session.turns,
-  });
 
   const userPrompt = formatUserPrompt({
     text,
@@ -56,45 +82,66 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
     messageId,
   });
 
-  // Concatenate system + user. agy doesn't expose a system-prompt flag
-  // in --print mode, so the system instructions ride inside the prompt
-  // body — same shape Talon's other binary backends use as a fallback.
-  const prompt =
-    systemPrompt.length > 0
-      ? `${systemPrompt}\n\n---\n\n${userPrompt}`
-      : userPrompt;
+  const existingConversation = getConversation(chatId);
+  const turnNumber = session.turns;
 
-  log("agent", `[${chatId}] <- (${text.length} chars, agy)`);
+  log(
+    "agent",
+    `[${chatId}] agy <- (${text.length} chars, turn=${turnNumber}, conv=${
+      existingConversation ? existingConversation.slice(0, 8) + "…" : "(new)"
+    })`,
+  );
+  traceMessage(chatId, "in", text, { senderName, isGroup });
 
-  let responseText = "";
-  let stderr = "";
-  let exitCode = 0;
-  let durationMs = 0;
-
+  let result;
   try {
-    const result = await runAgyPrint({ prompt });
-    responseText = result.text;
-    stderr = result.stderr;
-    exitCode = result.exitCode;
-    durationMs = result.durationMs;
+    const run = () =>
+      runAgyPrint({
+        prompt: userPrompt,
+        conversationId: existingConversation,
+        signal: undefined,
+      });
+    // First turn for this chat needs the snapshot-diff lock so two
+    // chats starting concurrently don't both claim the same new .pb.
+    result = existingConversation ? await run() : await withFirstTurnLock(run);
   } catch (err) {
     if (err instanceof AgyPrintError) {
+      const detail = err.stderr.trim().slice(0, 300);
       logError(
         "agent",
-        `[${chatId}] agy spawn failed (exit=${err.exitCode}): ${err.stderr.slice(0, 200)}`,
+        `[${chatId}] agy spawn failed (exit=${err.exitCode}): ${detail}`,
       );
-      throw new Error(`Agy backend failed: ${err.message}`);
+      // Stale conversation id is recoverable: agy logs `conversation
+      // "<uuid>" not found` to stdout (not stderr) but exits 0 with
+      // the warning + a fresh-context reply. If we see a more permanent
+      // failure (exit != 0), drop the stored id so the next turn
+      // starts fresh.
+      if (existingConversation && err.exitCode !== 0) {
+        forgetConversation(chatId);
+        log(
+          "agent",
+          `[${chatId}] agy: dropped stale conversation id after error`,
+        );
+      }
+      throw new Error(`agy backend failed: ${err.message}`);
     }
     throw err;
   }
 
-  if (stderr.trim().length > 0) {
-    log("agent", `[${chatId}] agy stderr: ${stderr.trim().slice(0, 300)}`);
+  if (result.stderr.trim().length > 0) {
+    log("agent", `[${chatId}] agy stderr: ${result.stderr.trim().slice(0, 300)}`);
+  }
+
+  // Persist the conversation id for the next turn. On first turn the
+  // spawn captured it from the `.pb` diff; on resume turns it's
+  // unchanged.
+  if (result.conversationId) {
+    setConversation(chatId, result.conversationId);
   }
 
   const state = createStreamState();
-  if (responseText.length > 0) {
-    appendText(state, responseText);
+  if (result.text.length > 0) {
+    appendText(state, result.text);
   }
   const finalText = finalizeResponseText(state);
 
@@ -107,24 +154,30 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   });
 
   incrementTurns(chatId);
-  if (session.turns === 0 && finalText.length > 0) {
+  if (turnNumber === 0 && finalText.length > 0) {
     const name = extractSessionName(finalText);
     if (name) setSessionName(chatId, name);
   }
+  // agy --print doesn't expose token counts on stdout; record the
+  // turn for bookkeeping but leave the token fields at 0.
   recordUsage(chatId, {
     inputTokens: 0,
     outputTokens: 0,
     cacheRead: 0,
     cacheWrite: 0,
+    durationMs: result.durationMs,
+    model: "agy",
   });
 
-  recordHistogram("agy.turn_ms", durationMs);
+  incrementCounter("agy.turn");
+  recordHistogram("agy.turn_ms", result.durationMs);
 
   traceMessage(chatId, "out", finalText, {
-    durationMs,
+    durationMs: result.durationMs,
     route: decision.route,
     backend: "agy",
-    exitCode,
+    exitCode: result.exitCode,
+    conversation: result.conversationId,
   });
 
   return {
@@ -135,4 +188,16 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
     cacheRead: 0,
     cacheWrite: 0,
   };
+}
+
+/**
+ * Talon's `/reset` calls this to drop per-chat memory. For agy that
+ * means forgetting the conversation id so the next turn starts a
+ * fresh agy conversation. `resetSession` clears the bot-side session
+ * (turn count, name) for the same chat in lockstep.
+ */
+export function resetChat(chatId: string): void {
+  forgetConversation(chatId);
+  resetSession(chatId);
+  log("agent", `[${chatId}] agy: reset (conversation forgotten)`);
 }
