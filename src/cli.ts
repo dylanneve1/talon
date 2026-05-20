@@ -1113,13 +1113,7 @@ async function daemonStart(): Promise<void> {
   // silently in detached mode (stderr is /dev/null). Running tsx as a CLI
   // avoids the broken loader path while still working on Windows — `node
   // foo.mjs` bypasses the .cmd wrapper that motivated the loader approach.
-  const tsxCli = resolve(
-    PKG_ROOT,
-    "node_modules",
-    "tsx",
-    "dist",
-    "cli.mjs",
-  );
+  const tsxCli = resolve(PKG_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
   const child = spawn(process.execPath, [tsxCli, entryScript], {
     cwd: PKG_ROOT,
     detached: true,
