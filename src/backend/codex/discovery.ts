@@ -38,8 +38,12 @@
  * exposes no side-effects beyond that.
  */
 
+import { promises as fs } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { log, logDebug } from "../../util/log.js";
 import { getState } from "./state.js";
+import type { CodexAuthInfo } from "./auth.js";
 
 /** Shape of one entry returned by OpenAI's `/v1/models`. Sparse — only `id` is reliably present. */
 interface OpenAiModelEntry {
@@ -47,6 +51,45 @@ interface OpenAiModelEntry {
   object?: string;
   created?: number;
   owned_by?: string;
+}
+
+/**
+ * Shape of one entry in `~/.codex/models_cache.json`. This file is
+ * maintained by the Codex CLI itself — populated against
+ * `https://chatgpt.com/backend-api/...` on OAuth sessions, against
+ * OpenAI's API on api-key sessions. It carries far richer metadata
+ * than `/v1/models`: display name, description, reasoning levels,
+ * context window, visibility, and an `supported_in_api` flag that
+ * tells us which models can actually be invoked from the CLI.
+ *
+ * We only consume a narrow subset here; the cache may grow new
+ * fields over time without breaking us.
+ */
+interface CodexCacheModelEntry {
+  slug?: string;
+  display_name?: string;
+  description?: string;
+  visibility?: "list" | "hide" | string;
+  supported_in_api?: boolean;
+  context_window?: number;
+  default_reasoning_level?: string;
+  supported_reasoning_levels?: Array<{
+    effort?: string;
+    description?: string;
+  }>;
+}
+
+/** Top-level `~/.codex/models_cache.json` shape. */
+interface CodexCacheFile {
+  fetched_at?: string;
+  etag?: string;
+  client_version?: string;
+  models?: CodexCacheModelEntry[];
+}
+
+/** Where the Codex CLI writes its model cache. Exported for tests. */
+export function getCodexCachePath(): string {
+  return join(homedir(), ".codex", "models_cache.json");
 }
 
 /** Default soft timeout when callers await an in-flight discovery. */
@@ -90,31 +133,47 @@ export function isCodexCompatibleModel(id: string): boolean {
 /**
  * Kick off model discovery as a fire-and-forget background fetch.
  *
+ * Three paths depending on auth mode:
+ *   - `chatgpt` (OAuth): read `~/.codex/models_cache.json`. The Codex
+ *     CLI itself maintains this file from ChatGPT's backend API and
+ *     refreshes it on each invocation. We get rich metadata for free
+ *     (display name, context window, visibility, supported_in_api)
+ *     and don't need to handle JWT refresh ourselves.
+ *   - `api-key`: hit OpenAI's `GET /v1/models` directly. Sparse
+ *     response (just ids), but always available with a bearer key.
+ *   - `none`: no-op — resolve immediately so the picker can fall
+ *     through to the curated catalog.
+ *
  * Stashes the in-flight Promise on `state.discoveryPromise` so callers
  * that need a populated catalog can `await awaitDiscovery()` instead
- * of racing the network. Idempotent: a second call while one is in
- * flight returns the existing promise.
+ * of racing IO. Idempotent: a second call while one is in flight
+ * returns the existing promise.
  *
  * Failures are logged at debug and never throw — the resolver falls
  * back to the curated catalog, and the next `refreshDiscovery` (or
  * subsequent `initCodexAgent`) gets a fresh chance.
  */
 export function startDiscovery(
-  apiKey: string | undefined,
-  baseUrl?: string,
+  authInfo: CodexAuthInfo | null | undefined,
 ): Promise<void> {
   const state = getState();
   if (state.discoveryPromise) return state.discoveryPromise;
 
-  // No api key → no point fetching (OAuth has no models endpoint).
-  // Mark discovery as "completed with empty result" so awaitDiscovery
+  const mode = authInfo?.mode ?? "none";
+
+  // No auth → mark "attempted with empty result" so awaitDiscovery
   // returns immediately and the picker falls through to curated.
-  if (!apiKey) {
+  if (mode === "none") {
     state.discoveryAt = Date.now();
     return Promise.resolve();
   }
 
-  const promise = fetchOpenAiModels(apiKey, baseUrl)
+  const work =
+    mode === "chatgpt"
+      ? loadCodexCacheModels()
+      : fetchOpenAiModels(authInfo!.apiKey!, authInfo?.baseUrl);
+
+  const promise = work
     .catch((err) => {
       logDebug(
         "agent",
@@ -165,20 +224,19 @@ export async function awaitDiscovery(
 }
 
 /**
- * Force a fresh `/v1/models` fetch even when one was attempted before.
+ * Force a fresh discovery even when one was attempted before.
  *
- * Useful when the operator changes the API key at runtime or wants to
- * retry after a transient failure. Returns the new promise so callers
- * can await; safe to fire-and-forget.
+ * Useful when the operator changes the auth credentials at runtime
+ * or wants to retry after a transient failure. Returns the new
+ * promise so callers can await; safe to fire-and-forget.
  */
 export function refreshDiscovery(
-  apiKey: string | undefined,
-  baseUrl?: string,
+  authInfo: CodexAuthInfo | null | undefined,
 ): Promise<void> {
   const state = getState();
   state.discoveryPromise = null;
   state.discoveryAt = null;
-  return startDiscovery(apiKey, baseUrl);
+  return startDiscovery(authInfo);
 }
 
 /**
@@ -256,5 +314,100 @@ export async function fetchOpenAiModels(
   log(
     "agent",
     `Codex: discovered ${kept} chat-compatible models from ${url} (filtered ${dropped} non-chat entries)`,
+  );
+}
+
+/**
+ * Read the Codex CLI's local model cache (`~/.codex/models_cache.json`).
+ *
+ * Codex CLI populates this file on each invocation by hitting
+ * `https://chatgpt.com/backend-api/...` (OAuth) or OpenAI's API
+ * (api-key) and refreshes it via an ETag-conditioned request. The
+ * file persists across CLI runs and Talon restarts, which means even
+ * if the operator hasn't run `codex` in a while we still get the
+ * last-known catalog instead of falling all the way back to curated.
+ *
+ * We populate `state.discoveredModels` AND `state.discoveredModelMetadata`
+ * — the latter carries display names + context windows the curated
+ * table doesn't have for newer models (e.g. gpt-5.4-mini).
+ *
+ * Filter rules:
+ *   - Drop entries with `visibility: "hide"` (the CLI uses this for
+ *     internal/system models like `codex-auto-review` that shouldn't
+ *     appear in a user-facing picker).
+ *   - Drop entries with `supported_in_api: false` (models that show
+ *     in ChatGPT's UI but aren't callable via the API surface that
+ *     codex-sdk uses).
+ *
+ * Non-existent cache file throws so the caller's catch path logs it
+ * at debug level and the picker falls back to curated.
+ */
+export async function loadCodexCacheModels(): Promise<void> {
+  const path = getCodexCachePath();
+  let raw: string;
+  try {
+    raw = await fs.readFile(path, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(
+        `${path} not found — run \`codex login\` to populate the cache`,
+      );
+    }
+    throw err;
+  }
+
+  let json: CodexCacheFile;
+  try {
+    json = JSON.parse(raw) as CodexCacheFile;
+  } catch (err) {
+    throw new Error(
+      `${path} is not valid JSON: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+
+  const data = Array.isArray(json.models) ? json.models : [];
+
+  const state = getState();
+  state.discoveredModels.clear();
+  state.discoveredModelMetadata.clear();
+  let kept = 0;
+  let dropped = 0;
+  for (const entry of data) {
+    if (!entry || typeof entry.slug !== "string" || !entry.slug) {
+      dropped += 1;
+      continue;
+    }
+    if (entry.visibility === "hide") {
+      dropped += 1;
+      continue;
+    }
+    if (entry.supported_in_api === false) {
+      dropped += 1;
+      continue;
+    }
+    state.discoveredModels.add(entry.slug);
+    state.discoveredModelMetadata.set(entry.slug, {
+      displayName:
+        typeof entry.display_name === "string" && entry.display_name
+          ? entry.display_name
+          : undefined,
+      contextWindow:
+        typeof entry.context_window === "number" && entry.context_window > 0
+          ? entry.context_window
+          : undefined,
+      description:
+        typeof entry.description === "string" && entry.description
+          ? entry.description
+          : undefined,
+    });
+    kept += 1;
+  }
+
+  const fetchedAt = json.fetched_at ?? "unknown";
+  log(
+    "agent",
+    `Codex: loaded ${kept} models from ${path} (fetched_at=${fetchedAt}, filtered ${dropped} hidden/api-disabled entries)`,
   );
 }

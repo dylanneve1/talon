@@ -1,26 +1,104 @@
 /**
- * Codex `/v1/models` discovery tests.
+ * Codex model-discovery tests.
  *
- * Covers the fire-and-forget background fetch, the soft-wait
- * `awaitDiscovery` semantics, the no-api-key short-circuit, and the
- * id filter that drops embeddings/audio/image/legacy completions.
+ * Two discovery paths:
+ *   - **OAuth** — read `~/.codex/models_cache.json` (codex CLI populates
+ *     this from ChatGPT's backend API). Mocked via a tmpfile + HOME
+ *     override per test.
+ *   - **api-key** — fetch OpenAI's `/v1/models`. Mocked via
+ *     `vi.spyOn(globalThis, "fetch")`.
  *
- * `global.fetch` is stubbed in each test that exercises the HTTP
- * path so we don't hit OpenAI for real.
+ * Both paths share the lifecycle plumbing (`startDiscovery` /
+ * `awaitDiscovery` / `refreshDiscovery`), so the lifecycle tests don't
+ * need to be duplicated per path.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import {
   startDiscovery,
   awaitDiscovery,
   refreshDiscovery,
   fetchOpenAiModels,
+  loadCodexCacheModels,
   isCodexCompatibleModel,
   hasDiscoveredCatalog,
   hasAttemptedDiscovery,
+  getCodexCachePath,
 } from "../backend/codex/discovery.js";
 import { getState, resetState } from "../backend/codex/state.js";
+import type { CodexAuthInfo } from "../backend/codex/auth.js";
+
+// ── Auth-info builders for tests ──────────────────────────────────────
+
+function apiKeyAuth(
+  apiKey = "sk-test-key",
+  baseUrl?: string,
+): CodexAuthInfo {
+  return {
+    mode: "api-key",
+    source: "env:CODEX_API_KEY",
+    apiKey,
+    baseUrl,
+    authFileParsed: false,
+    diagnostics: [],
+  };
+}
+
+function chatgptAuth(): CodexAuthInfo {
+  return {
+    mode: "chatgpt",
+    source: "file:~/.codex/auth.json",
+    authFileParsed: true,
+    diagnostics: [],
+  };
+}
+
+function noneAuth(): CodexAuthInfo {
+  return {
+    mode: "none",
+    source: "missing",
+    authFileParsed: false,
+    diagnostics: [],
+  };
+}
+
+// ── Test home directory for the OAuth cache-file path ────────────────
+
+let tmpHome: string | null = null;
+
+function withTempHome(): string {
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-disc-"));
+  const orig = process.env.HOME;
+  process.env.HOME = tmpHome;
+  return orig ?? "";
+}
+
+function restoreHome(orig: string): void {
+  if (orig) process.env.HOME = orig;
+  else delete process.env.HOME;
+  if (tmpHome) {
+    try {
+      fs.rmSync(tmpHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+    tmpHome = null;
+  }
+}
+
+function writeCacheFile(content: unknown): void {
+  if (!tmpHome) throw new Error("call withTempHome first");
+  const dir = path.join(tmpHome, ".codex");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, "models_cache.json"),
+    typeof content === "string" ? content : JSON.stringify(content),
+  );
+}
 
 beforeEach(() => {
   resetState();
@@ -90,28 +168,36 @@ describe("codex / isCodexCompatibleModel", () => {
   });
 });
 
-// ── startDiscovery / awaitDiscovery — lifecycle ───────────────────────
+// ── startDiscovery / lifecycle (auth-mode branching) ─────────────────
 
-describe("codex / startDiscovery without api key", () => {
+describe("codex / startDiscovery with no auth", () => {
   it("resolves immediately and marks discovery attempted", async () => {
-    const promise = startDiscovery(undefined);
-    await promise;
+    await startDiscovery(noneAuth());
     expect(getState().discoveryAt).not.toBeNull();
     expect(getState().discoveryPromise).toBeNull();
     expect(hasAttemptedDiscovery()).toBe(true);
     expect(hasDiscoveredCatalog()).toBe(false);
   });
 
-  it("does not call fetch", async () => {
+  it("does not call fetch or read the cache file", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("{}"));
-    await startDiscovery(undefined);
+    await startDiscovery(noneAuth());
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("tolerates undefined / null authInfo by treating as no-auth", async () => {
+    await startDiscovery(undefined);
+    expect(hasAttemptedDiscovery()).toBe(true);
+    await startDiscovery(null);
+    expect(hasAttemptedDiscovery()).toBe(true);
   });
 });
 
-describe("codex / startDiscovery with api key — happy path", () => {
+// ── api-key path ──────────────────────────────────────────────────────
+
+describe("codex / startDiscovery on api-key auth — happy path", () => {
   it("populates discoveredModels from a /v1/models response", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -129,7 +215,7 @@ describe("codex / startDiscovery with api key — happy path", () => {
       ),
     );
 
-    await startDiscovery("sk-test-key");
+    await startDiscovery(apiKeyAuth());
 
     const ids = Array.from(getState().discoveredModels).sort();
     expect(ids).toEqual(["gpt-5", "gpt-5-codex", "gpt-5.5", "o4-mini"]);
@@ -143,7 +229,7 @@ describe("codex / startDiscovery with api key — happy path", () => {
       .mockResolvedValue(
         new Response(JSON.stringify({ data: [] }), { status: 200 }),
       );
-    await startDiscovery("sk-bearer-test");
+    await startDiscovery(apiKeyAuth("sk-bearer-test"));
     expect(fetchSpy).toHaveBeenCalledOnce();
     const [, init] = fetchSpy.mock.calls[0];
     const headers = (init?.headers ?? {}) as Record<string, string>;
@@ -156,7 +242,7 @@ describe("codex / startDiscovery with api key — happy path", () => {
       .mockResolvedValue(
         new Response(JSON.stringify({ data: [] }), { status: 200 }),
       );
-    await startDiscovery("sk-key", "https://my-proxy.example/v1");
+    await startDiscovery(apiKeyAuth("sk-key", "https://my-proxy.example/v1"));
     const [url] = fetchSpy.mock.calls[0];
     expect(url).toBe("https://my-proxy.example/v1/models");
   });
@@ -167,18 +253,18 @@ describe("codex / startDiscovery with api key — happy path", () => {
       .mockResolvedValue(
         new Response(JSON.stringify({ data: [] }), { status: 200 }),
       );
-    await startDiscovery("sk-key", "https://api.openai.com/v1///");
+    await startDiscovery(apiKeyAuth("sk-key", "https://api.openai.com/v1///"));
     const [url] = fetchSpy.mock.calls[0];
     expect(url).toBe("https://api.openai.com/v1/models");
   });
 });
 
-describe("codex / startDiscovery with api key — failure paths", () => {
+describe("codex / startDiscovery on api-key auth — failure paths", () => {
   it("swallows 401 / 403 silently, leaves catalog empty", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response("Unauthorized", { status: 401 }),
     );
-    await startDiscovery("sk-bad");
+    await startDiscovery(apiKeyAuth("sk-bad"));
     expect(getState().discoveredModels.size).toBe(0);
     expect(hasAttemptedDiscovery()).toBe(true);
   });
@@ -187,28 +273,141 @@ describe("codex / startDiscovery with api key — failure paths", () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(
       new Error("ECONNREFUSED 127.0.0.1:443"),
     );
-    await startDiscovery("sk-key");
+    await startDiscovery(apiKeyAuth());
     expect(getState().discoveredModels.size).toBe(0);
     expect(hasAttemptedDiscovery()).toBe(true);
   });
 
   it("clears the in-flight promise even on failure", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("boom"));
-    await startDiscovery("sk-key");
+    await startDiscovery(apiKeyAuth());
     expect(getState().discoveryPromise).toBeNull();
   });
 });
 
+// ── OAuth path (~/.codex/models_cache.json) ──────────────────────────
+
+describe("codex / startDiscovery on chatgpt OAuth — cache-file path", () => {
+  let originalHome = "";
+
+  beforeEach(() => {
+    originalHome = withTempHome();
+  });
+
+  afterEach(() => {
+    restoreHome(originalHome);
+  });
+
+  it("populates discoveredModels from a real-shaped cache file", async () => {
+    writeCacheFile({
+      fetched_at: "2026-05-20T19:34:23.017243965Z",
+      etag: 'W/"abc"',
+      client_version: "0.131.0",
+      models: [
+        {
+          slug: "gpt-5.5",
+          display_name: "GPT-5.5",
+          visibility: "list",
+          supported_in_api: true,
+          context_window: 272000,
+        },
+        {
+          slug: "gpt-5.4",
+          display_name: "GPT-5.4",
+          visibility: "list",
+          supported_in_api: true,
+          context_window: 272000,
+        },
+        {
+          slug: "codex-auto-review",
+          display_name: "Codex Auto Review",
+          visibility: "hide", // must be dropped
+          supported_in_api: true,
+          context_window: 272000,
+        },
+        {
+          slug: "gpt-internal-x",
+          visibility: "list",
+          supported_in_api: false, // must be dropped
+        },
+      ],
+    });
+
+    await startDiscovery(chatgptAuth());
+
+    const ids = Array.from(getState().discoveredModels).sort();
+    expect(ids).toEqual(["gpt-5.4", "gpt-5.5"]);
+    expect(hasDiscoveredCatalog()).toBe(true);
+  });
+
+  it("populates metadata from the cache file for synthesised entries", async () => {
+    writeCacheFile({
+      models: [
+        {
+          slug: "gpt-5.4-mini",
+          display_name: "GPT-5.4-Mini",
+          visibility: "list",
+          supported_in_api: true,
+          context_window: 272000,
+        },
+      ],
+    });
+
+    await startDiscovery(chatgptAuth());
+
+    const meta = getState().discoveredModelMetadata.get("gpt-5.4-mini");
+    expect(meta?.displayName).toBe("GPT-5.4-Mini");
+    expect(meta?.contextWindow).toBe(272000);
+  });
+
+  it("does not touch HTTP fetch on chatgpt mode", async () => {
+    writeCacheFile({ models: [] });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("{}"));
+    await startDiscovery(chatgptAuth());
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("swallows a missing cache file silently, leaves catalog empty", async () => {
+    // No cache file written → ENOENT
+    await startDiscovery(chatgptAuth());
+    expect(getState().discoveredModels.size).toBe(0);
+    expect(hasAttemptedDiscovery()).toBe(true);
+  });
+
+  it("swallows a malformed cache file silently", async () => {
+    writeCacheFile("{ not json");
+    await startDiscovery(chatgptAuth());
+    expect(getState().discoveredModels.size).toBe(0);
+    expect(hasAttemptedDiscovery()).toBe(true);
+  });
+
+  it("tolerates entries with missing/invalid slug fields", async () => {
+    writeCacheFile({
+      models: [
+        { display_name: "no slug here" },
+        { slug: 42, display_name: "non-string slug" },
+        { slug: "gpt-5.5", visibility: "list", supported_in_api: true },
+      ],
+    });
+    await loadCodexCacheModels();
+    expect(Array.from(getState().discoveredModels)).toEqual(["gpt-5.5"]);
+  });
+});
+
+// ── startDiscovery idempotency ────────────────────────────────────────
+
 describe("codex / startDiscovery idempotency", () => {
-  it("returns the same promise when called twice in flight", async () => {
+  it("returns the same promise when called twice in flight (api-key)", async () => {
     let resolveOuter!: (v: Response) => void;
     const pending = new Promise<Response>((r) => {
       resolveOuter = r;
     });
     vi.spyOn(globalThis, "fetch").mockReturnValue(pending);
 
-    const p1 = startDiscovery("sk-key");
-    const p2 = startDiscovery("sk-key");
+    const p1 = startDiscovery(apiKeyAuth());
+    const p2 = startDiscovery(apiKeyAuth());
     expect(p1).toBe(p2);
 
     resolveOuter(
@@ -217,6 +416,8 @@ describe("codex / startDiscovery idempotency", () => {
     await p1;
   });
 });
+
+// ── awaitDiscovery ────────────────────────────────────────────────────
 
 describe("codex / awaitDiscovery", () => {
   it("returns immediately when no discovery is pending", async () => {
@@ -232,7 +433,7 @@ describe("codex / awaitDiscovery", () => {
     });
     vi.spyOn(globalThis, "fetch").mockReturnValue(pending);
 
-    const discovery = startDiscovery("sk-key");
+    const discovery = startDiscovery(apiKeyAuth());
     const awaiter = awaitDiscovery(5_000);
 
     // Give the awaiter a tick to attach
@@ -252,7 +453,7 @@ describe("codex / awaitDiscovery", () => {
   it("times out after the soft window without blocking forever", async () => {
     // Never-resolving fetch
     vi.spyOn(globalThis, "fetch").mockReturnValue(new Promise(() => {}));
-    void startDiscovery("sk-key");
+    void startDiscovery(apiKeyAuth());
 
     const start = Date.now();
     await awaitDiscovery(20);
@@ -264,6 +465,8 @@ describe("codex / awaitDiscovery", () => {
   });
 });
 
+// ── refreshDiscovery ──────────────────────────────────────────────────
+
 describe("codex / refreshDiscovery", () => {
   it("clears the previous result and re-fetches", async () => {
     // First fetch: returns gpt-5.5
@@ -273,7 +476,7 @@ describe("codex / refreshDiscovery", () => {
         { status: 200 },
       ),
     );
-    await startDiscovery("sk-key");
+    await startDiscovery(apiKeyAuth());
     expect(Array.from(getState().discoveredModels)).toEqual(["gpt-5.5"]);
 
     // Second fetch (after refresh): gpt-5 only — old gpt-5.5 must be cleared
@@ -283,10 +486,12 @@ describe("codex / refreshDiscovery", () => {
         { status: 200 },
       ),
     );
-    await refreshDiscovery("sk-key");
+    await refreshDiscovery(apiKeyAuth());
     expect(Array.from(getState().discoveredModels)).toEqual(["gpt-5"]);
   });
 });
+
+// ── fetchOpenAiModels — malformed responses ──────────────────────────
 
 describe("codex / fetchOpenAiModels malformed responses", () => {
   it("tolerates non-array `data`", async () => {
@@ -319,5 +524,14 @@ describe("codex / fetchOpenAiModels malformed responses", () => {
       new Response("Server Error", { status: 500 }),
     );
     await expect(fetchOpenAiModels("sk-key")).rejects.toThrow(/500/);
+  });
+});
+
+// ── getCodexCachePath ─────────────────────────────────────────────────
+
+describe("codex / getCodexCachePath", () => {
+  it("points to ~/.codex/models_cache.json", () => {
+    const p = getCodexCachePath();
+    expect(p).toMatch(/[\\/]\.codex[\\/]models_cache\.json$/);
   });
 });

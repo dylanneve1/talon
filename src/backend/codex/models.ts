@@ -134,9 +134,11 @@ export function chatGptFallbackFor(id: string): string | undefined {
 
 /**
  * Synthesize a minimal `CodexModelInfo` for a model id discovered via
- * `/v1/models` that isn't in the curated table. We try to derive a
- * sensible display name from the id; everything else is left empty so
- * the picker just lists the id verbatim.
+ * `/v1/models` or the Codex CLI cache file that isn't in the curated
+ * table. Pulls the display name + context window from the discovered
+ * metadata map when present (OAuth cache-file path); otherwise
+ * derives a sensible display name from the id (api-key /v1/models
+ * path is sparse).
  *
  * Pulled out for unit-testability.
  */
@@ -144,13 +146,15 @@ export function synthesizeUnknownModel(id: string): CodexModelInfo {
   // Reasoning flag: `o3*` / `o4*` and any `*-codex` are reasoning models.
   // Default to false for anything else (e.g. legacy gpt-4*).
   const reasoning = /^o[3-9]|-codex(\b|$)/i.test(id);
+  const meta = getState().discoveredModelMetadata.get(id);
   return {
     id,
-    displayName: prettifyId(id),
+    displayName: meta?.displayName || prettifyId(id),
     provider: "openai",
     providerName: "OpenAI",
     selectable: true,
     reasoning,
+    ...(meta?.contextWindow ? { contextWindow: meta.contextWindow } : {}),
   };
 }
 

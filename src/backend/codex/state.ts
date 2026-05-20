@@ -13,6 +13,18 @@ import type { Codex } from "@openai/codex-sdk";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 
+/**
+ * Optional metadata captured during discovery. The OAuth path
+ * (`loadCodexCacheModels`) yields rich entries (display name, context
+ * window, description); the api-key path (`/v1/models`) is sparse and
+ * leaves these fields undefined.
+ */
+export interface DiscoveredModelMetadata {
+  displayName?: string;
+  contextWindow?: number;
+  description?: string;
+}
+
 /** Singleton state container for the Codex backend. */
 export interface CodexState {
   config: TalonConfig | null;
@@ -20,11 +32,19 @@ export interface CodexState {
   gatewayPortFn: () => number;
   frontendName: FrontendName;
   /**
-   * Set of model ids OpenAI's `/v1/models` advertised for the current
-   * api key. Empty when no key is configured or discovery hasn't yet
-   * succeeded. Mutated only by `discovery.ts`.
+   * Set of model ids advertised for the current credential. Sourced
+   * from `~/.codex/models_cache.json` on OAuth sessions or OpenAI's
+   * `/v1/models` on api-key sessions. Empty when no auth is configured
+   * or discovery hasn't yet succeeded. Mutated only by `discovery.ts`.
    */
   discoveredModels: Set<string>;
+  /**
+   * Optional rich metadata for discovered models, keyed by id. Only
+   * populated by the OAuth cache-file path; the api-key /v1/models
+   * path leaves this map empty. Consumed by `getEffectiveModels()`
+   * when synthesising entries for ids absent from the curated table.
+   */
+  discoveredModelMetadata: Map<string, DiscoveredModelMetadata>;
   /**
    * In-flight discovery promise. Non-null while a fetch is pending;
    * cleared once the fetch settles (success or failure). Callers that
@@ -46,6 +66,7 @@ const state: CodexState = {
   gatewayPortFn: () => 19876,
   frontendName: "telegram",
   discoveredModels: new Set<string>(),
+  discoveredModelMetadata: new Map<string, DiscoveredModelMetadata>(),
   discoveryPromise: null,
   discoveryAt: null,
 };
@@ -62,6 +83,7 @@ export function resetState(): void {
   state.gatewayPortFn = () => 19876;
   state.frontendName = "telegram";
   state.discoveredModels.clear();
+  state.discoveredModelMetadata.clear();
   state.discoveryPromise = null;
   state.discoveryAt = null;
 }

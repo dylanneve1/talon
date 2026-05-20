@@ -75,13 +75,15 @@ export function initCodexAgent(
   cachedAuthInfo = authInfo;
   logAuthInfo(authInfo);
 
-  // Kick off model discovery as fire-and-forget. We only fetch when an
-  // api key is present — ChatGPT-OAuth has no `/v1/models` equivalent,
-  // and rather than probe each candidate by burning tokens we fall
-  // back to the curated catalog for that path. `startDiscovery`
-  // handles the no-key case internally and resolves immediately, so
-  // it's safe to call unconditionally.
-  void startDiscovery(authInfo.apiKey, authInfo.baseUrl);
+  // Kick off model discovery as fire-and-forget. Branches on auth
+  // mode internally:
+  //   - chatgpt OAuth → reads `~/.codex/models_cache.json` (Codex CLI
+  //     populates this from ChatGPT's backend API, including rich
+  //     metadata we don't have to maintain ourselves).
+  //   - api-key → hits OpenAI's `/v1/models` with the bearer key.
+  //   - none → no-op (resolves immediately, picker falls back to
+  //     curated).
+  void startDiscovery(authInfo);
 }
 
 function logAuthInfo(info: CodexAuthInfo): void {
