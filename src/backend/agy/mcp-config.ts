@@ -173,12 +173,17 @@ export function buildAgyMcpEntries(args: {
     };
   }
 
+  // `getPluginMcpServers` already returns commands wrapped through
+  // `mcp-launcher.mjs` — wrapping again here would put two launcher
+  // hops in front of the real plugin (e.g. playwright was launching
+  // as `node ↪ launcher ↪ node ↪ launcher ↪ node ↪ playwright`, which
+  // both added startup latency and broke agy's protocol handshake on
+  // the slower plugins). Pass plugin entries through unchanged.
   const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
   for (const [name, cfg] of Object.entries(pluginServers)) {
-    const wrapped = wrapMcpCommand([cfg.command, ...cfg.args]);
     out[`${TALON_MARKER}${name}`] = {
-      command: wrapped[0],
-      args: wrapped.slice(1),
+      command: cfg.command,
+      args: [...cfg.args],
       env: cfg.env ?? {},
     };
   }
