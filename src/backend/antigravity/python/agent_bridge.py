@@ -435,7 +435,14 @@ async def stream_response(agent, command_id: str, prompt: str) -> None:
 async def command_loop(agent) -> None:
     """Read JSON commands from stdin; dispatch each in a fresh task."""
     loop = asyncio.get_running_loop()
-    reader = asyncio.StreamReader(loop=loop)
+    # asyncio.StreamReader's default 64KB buffer rejects any line
+    # longer than that with `LimitOverrunError: Separator is not
+    # found, and chunk exceed the limit`. Talon's chat commands embed
+    # the full system prompt + memory snapshot in the JSON payload,
+    # which routinely exceeds 250KB once memory.md is non-trivial.
+    # 16 MiB gives plenty of headroom and is what production async
+    # JSON-RPC pipes typically use.
+    reader = asyncio.StreamReader(limit=16 * 1024 * 1024, loop=loop)
     protocol = asyncio.StreamReaderProtocol(reader, loop=loop)
     await loop.connect_read_pipe(lambda: protocol, sys.stdin)
 
