@@ -38,9 +38,29 @@ const antigravityFactory: BackendFactory = {
     // backends and come back to get the real list. Await discovery
     // inside the picker entry points so the first call blocks until
     // the live catalog is ready.
+    //
+    // The 5-min cache TTL means a stale picker open after init
+    // re-runs discovery — we have to pass the API key explicitly
+    // here, otherwise discovery falls back to the curated 5-model
+    // list with `using fallback (no API key configured)`. Process
+    // env isn't set at this layer; `state.config.geminiApiKey` is
+    // where the live key lives.
+    const cfgRecord = config as unknown as Record<string, unknown>;
+    const geminiKey =
+      (typeof cfgRecord.geminiApiKey === "string"
+        ? (cfgRecord.geminiApiKey as string)
+        : undefined) ?? process.env.GEMINI_API_KEY;
+    const pythonPath =
+      typeof cfgRecord.antigravityPython === "string"
+        ? (cfgRecord.antigravityPython as string)
+        : undefined;
+
     const ensureCatalog = async () => {
       try {
-        await discoverAntigravityModels();
+        await discoverAntigravityModels({
+          apiKey: geminiKey,
+          pythonPath,
+        });
       } catch {
         // Discovery failures are already surfaced by the discovery
         // module via logs; fall back to the cache (curated fallback)
