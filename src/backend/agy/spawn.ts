@@ -199,9 +199,7 @@ export async function runAgyPrint(
   // Only snapshot the dir when we're going to need the new id — i.e.
   // we don't already have a conversation. Skips a `readdirSync` on the
   // hot resume path.
-  const preSnapshot = inputs.conversationId
-    ? null
-    : snapshotConversations();
+  const preSnapshot = inputs.conversationId ? null : snapshotConversations();
 
   return new Promise<AgyPrintResult>((resolve, reject) => {
     const child = spawn(binary, args, {
