@@ -555,14 +555,20 @@ async def stream_response(agent, command_id: str, prompt: str) -> None:
 
 
 async def _extract_usage(response: Any) -> Any:
-    """Pull token usage off the response, tolerating coroutine and
-    sync forms and any missing-attribute weirdness. Returns the dict
-    Talon expects (`prompt_token_count` etc.) or `None`.
+    """Pull token usage off the response. Returns the dict Talon
+    expects (`prompt_token_count` etc.) or `None`.
+
+    `ChatResponse.usage_metadata` is a `@property` returning
+    `UsageMetadata | None` (read accumulated value, no I/O). The
+    previous version of this code called it as a method —
+    `response.usage_metadata()` — which raised `TypeError:
+    'NoneType' object is not callable` when no usage was accumulated
+    yet, and `TypeError: 'UsageMetadata' object is not callable`
+    once usage existed. Either way the `except` swallowed it and
+    every /status read showed 0/0/0/0/0%.
     """
     try:
-        usage_obj = response.usage_metadata()
-        if asyncio.iscoroutine(usage_obj):
-            usage_obj = await usage_obj
+        usage_obj = response.usage_metadata
         if usage_obj is None:
             return None
         return {
