@@ -8,10 +8,11 @@ import type { BackendFactory } from "../registry.js";
 import type { QueryBackend } from "../../core/types.js";
 import { log } from "../../util/log.js";
 
-import { initAntigravityAgent } from "./init.js";
+import { initAntigravityAgent, ensureBridge } from "./init.js";
 import { handleMessage as agHandleMessage } from "./handler.js";
 import { runOneShotAgent as agRunOneShotAgent } from "./one-shot.js";
 import { resetState as resetAntigravityState } from "./state.js";
+import { getChatSettings } from "../../storage/chat-settings.js";
 import {
   resolveModel,
   getModelInfo,
@@ -70,6 +71,16 @@ const antigravityFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: (params) => agHandleMessage(params),
+      warmSession: async (chatId) => {
+        // Spawning the bridge takes ~2-3s for the Python interpreter
+        // + parallel MCP fan-out. Doing it lazily on the first turn
+        // makes the user wait; doing it eagerly here means the
+        // bridge is already `ready` by the time they send something.
+        // Honour the chat's per-chat model override so we don't
+        // warm a bridge with the wrong model and have to respawn.
+        const perChatModel = getChatSettings(chatId).model;
+        await ensureBridge(chatId, perChatModel);
+      },
       resolveModel: async (q) => {
         await ensureCatalog();
         return resolveModel(q);

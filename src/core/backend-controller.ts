@@ -433,6 +433,27 @@ export async function rebindHolder(
     `Rebound ${holder}: ${currentId ?? "(unbound)"} → ${newId}` +
       (newReused ? " (reused pool instance)" : ""),
   );
+
+  // Pre-warm the backend for this chat if it advertises a warmSession
+  // hook — the chat is about to use it, and the SDK-bound bridge
+  // spin-up (e.g. Antigravity's ~12s MCP-connect dance) otherwise
+  // happens on the first chat-command turn, making it feel slow.
+  // Fire-and-forget; warm failures only mean the next message pays
+  // the cold-start cost rather than skipping it.
+  if (holder.startsWith("chat:") && newEntry.backend.warmSession) {
+    const warmChatId = holder.slice("chat:".length);
+    void newEntry.backend
+      .warmSession(warmChatId)
+      .catch((err: unknown) =>
+        logWarn(
+          "backend-controller",
+          `warmSession(${newId}, ${warmChatId}) failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        ),
+      );
+  }
+
   notifyListeners(holder, newEntry.backend, {
     id: newId,
     label: newEntry.label,
