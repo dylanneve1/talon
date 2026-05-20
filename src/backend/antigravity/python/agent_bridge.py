@@ -646,6 +646,20 @@ async def command_loop(agent) -> None:
             async def run_chat(prompt=prompt, cmd_id=cmd_id):
                 try:
                     await stream_response(agent, cmd_id, prompt)
+                except asyncio.CancelledError:
+                    # `bridge.abort(turnId)` cancels this task — used by
+                    # the TS handler when the model has already fired a
+                    # turn-terminator MCP tool (`end_turn` / `send` /
+                    # `react`) so we stop it from running more tool
+                    # calls. The TS side is waiting on a `done` event
+                    # to resolve `bridge.chat()`; without one it hangs
+                    # until the per-turn timeout. Emit a synthetic
+                    # `done` (no usage available — the SDK never
+                    # returned the metadata coroutine) so the handler
+                    # promptly settles, then re-raise so the cancel
+                    # still propagates correctly.
+                    emit({"type": "done", "id": cmd_id, "usage": None})
+                    raise
                 finally:
                     in_flight.pop(cmd_id, None)
 

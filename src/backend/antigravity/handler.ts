@@ -196,14 +196,18 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
         seenToolCallIds.add(toolKey);
         recordToolUse(streamState, stripped, args);
         if (onToolUse) onToolUse(stripped, args);
-        if (isTurnTerminator(stripped)) {
+        if (isTurnTerminator(stripped) && !terminatorFired) {
           terminatorFired = true;
-          // The bridge has no equivalent of `.cancel()` mid-stream
-          // (the underlying Antigravity SDK manages the model loop
-          // and tool dispatch internally). If end_turn/send/react
-          // fires, MCP-side delivery already happened — the model
-          // will see the tool result and likely close on its own.
-          // We just record the terminator and let the bridge resolve.
+          // MCP-side delivery has already happened. Tell the bridge
+          // to abort the model loop now — Gemini will otherwise
+          // happily keep generating and call `end_turn` (or `send`)
+          // again, producing duplicate replies. `bridge.abort()`
+          // cancels the in-flight asyncio task on the Python side;
+          // `bridge.chat()` resolves shortly after with whatever was
+          // accumulated so far. The `!terminatorFired` guard means
+          // we only ever abort once per turn even if the model
+          // races multiple terminators back-to-back.
+          bridge?.abort(turnId);
         }
       },
     });
