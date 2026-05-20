@@ -326,6 +326,75 @@ export async function fetchTrajectoryFloor(args: {
   }
 }
 
+interface ArtifactSnapshotEntry {
+  artifactName?: string;
+  artifactAbsoluteUri?: string;
+  content?: string;
+  lastEdited?: string;
+}
+
+interface ArtifactSnapshotsResponse {
+  artifactSnapshots?: ArtifactSnapshotEntry[];
+}
+
+export interface AgyArtifact {
+  /** Friendly name (`robot`, `robot_mascot`). */
+  name: string;
+  /** Absolute filesystem path (decoded from `file://` URI), or `null` for text-only artifacts. */
+  path: string | null;
+  /** Inline text content for `.md`-style artifacts. */
+  content: string | null;
+  /** ISO timestamp of the last edit — used to dedupe across polls. */
+  lastEdited: string;
+}
+
+/**
+ * Fetch the current list of artifacts agy has materialized for this
+ * conversation. Each artifact is either a file on disk (under
+ * `~/.gemini/antigravity-cli/brain/<conv>/`) or an inline text blob.
+ *
+ * Used by spawn.ts to snapshot the artifact list before and after the
+ * turn — the diff is what the model produced, which we can deliver
+ * automatically over the user's chosen frontend even when the model
+ * forgot to call the send tool.
+ */
+export async function fetchArtifactSnapshots(args: {
+  port: number;
+  cascadeId: string;
+  signal?: AbortSignal;
+}): Promise<AgyArtifact[]> {
+  try {
+    const resp = (await call(
+      args.port,
+      "GetArtifactSnapshots",
+      { cascadeId: args.cascadeId },
+      args.signal,
+    )) as ArtifactSnapshotsResponse;
+    const out: AgyArtifact[] = [];
+    for (const a of resp.artifactSnapshots ?? []) {
+      if (!a.artifactName) continue;
+      let path: string | null = null;
+      if (a.artifactAbsoluteUri && a.artifactAbsoluteUri.startsWith("file://")) {
+        // `file:///home/dylan/...` → `/home/dylan/...`
+        try {
+          path = decodeURIComponent(new URL(a.artifactAbsoluteUri).pathname);
+        } catch {
+          path = null;
+        }
+      }
+      out.push({
+        name: a.artifactName,
+        path,
+        content: a.content ?? null,
+        lastEdited: a.lastEdited ?? "",
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 interface AvailableModelEntry {
   model?: string;
   displayName?: string;

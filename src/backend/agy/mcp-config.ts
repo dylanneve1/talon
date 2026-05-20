@@ -43,10 +43,33 @@ const MCP_CONFIG_PATH = resolve(
  */
 const TALON_MARKER = "__talon__";
 
+/**
+ * Per-tool config inside an MCP server entry. The only field that
+ * actually changes model-visible behavior is `eager: true` — eager
+ * tools register as **native** tools at agy startup (the binary's
+ * own log: "Eagerly loaded tools are registered as native tools
+ * under the name `%s`. Call eager tools directly."), so they show
+ * up in the model's tool list before the MCP server itself has
+ * finished its slow initialize handshake. Without this, the
+ * frontend-tools server loads in alphabetical order (15th out of
+ * 17 in Talon's default plugin set) and short turns can complete
+ * before `send` / `react` / `end_turn` are reachable.
+ */
+interface McpToolEntry {
+  /** Register this tool as a native tool, callable before the MCP server fully initializes. */
+  eager?: boolean;
+  /** Optional background-execution options; we don't use these. */
+  background?: unknown;
+}
+
 interface McpServerEntry {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  /** Marks specific tools as eager (or for any other per-tool config). */
+  tools?: Record<string, McpToolEntry>;
+  /** Per-server blacklist agy honors. */
+  disabledTools?: string[];
 }
 
 interface McpConfigFile {
@@ -153,10 +176,38 @@ export function buildAgyMcpEntries(args: {
       tsxImport,
       mcpServerPath,
     ]);
-    out[`${TALON_MARKER}${frontend}-tools`] = {
+    // Key prefix `0_` sorts before any other Talon plugin server,
+    // which forces agy to load the frontend-tools server FIRST in
+    // its alphabetical init queue. With 17 plugin servers loading
+    // serially at ~600ms each, a `__talon__telegram-tools` key
+    // sorted at position 15/17 wouldn't be reachable for ~10s —
+    // long enough that short-prompt turns finish without it. The
+    // marker prefix `__talon__` is preserved for cleanup
+    // (`stripTalonEntries` matches on prefix).
+    out[`${TALON_MARKER}0_${frontend}-tools`] = {
       command: wrapped[0],
       args: wrapped.slice(1),
       env: { ...baseEnv, TALON_FRONTEND: frontend },
+      // Mark the delivery tools as `eager` so they're registered as
+      // native tools at agy startup, available before the MCP server
+      // itself finishes initializing. Without this, the frontend-tools
+      // server loads ~10s after agy starts (15th of 17 plugin servers
+      // in alphabetical order) and short turns finish before `send`
+      // / `react` / `end_turn` are reachable — that's why the model
+      // kept falling back to markdown image embeds.
+      //
+      // We don't eagerify everything (44 tools) — only the ones the
+      // model needs to deliver output to the user.
+      tools: {
+        send: { eager: true },
+        react: { eager: true },
+        end_turn: { eager: true },
+        edit_message: { eager: true },
+        delete_message: { eager: true },
+        read_chat_history: { eager: true },
+        search_chat_history: { eager: true },
+        get_message_by_id: { eager: true },
+      },
     };
   }
 
