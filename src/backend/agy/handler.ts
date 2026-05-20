@@ -45,21 +45,30 @@ import {
   setConversation,
   forgetConversation,
 } from "./state.js";
+import { installMcpConfigForChat } from "./mcp-config.js";
+import { getAgyMcpContext } from "./factory-context.js";
 
 /**
- * Serialises first-turn (no-conversation-id) spawns so two chats
- * starting agy concurrently don't both observe the same "newest .pb"
- * after one of them lands. Resume turns (with id) bypass the lock —
- * they don't need to learn anything from the conversations dir.
+ * Process-wide serial lock around the agy spawn. Two reasons:
  *
- * Implementation: a tiny single-slot lock built on Promise chaining.
- * Cheaper than pulling in async-mutex for one call site.
+ *   1. First-turn (no conversation id) spawns need the `.pb` directory
+ *      snapshot-diff to learn the new id — concurrent first-turns
+ *      could both observe the same `newest .pb` and one would steal
+ *      the other's conversation.
+ *   2. agy's MCP config lives at a single global path
+ *      `~/.gemini/config/mcp_config.json`. We re-stamp it with the
+ *      current chat's `TALON_CHAT_ID` env right before each spawn so
+ *      MCP tools route back to the correct chat. Two parallel chats
+ *      would race on the file.
+ *
+ * Implementation: single-slot promise chain; cheaper than pulling in
+ * a mutex library for one call site.
  */
-let firstTurnLock: Promise<void> = Promise.resolve();
-async function withFirstTurnLock<T>(fn: () => Promise<T>): Promise<T> {
-  const prev = firstTurnLock;
+let agySpawnLock: Promise<void> = Promise.resolve();
+async function withAgySpawnLock<T>(fn: () => Promise<T>): Promise<T> {
+  const prev = agySpawnLock;
   let release!: () => void;
-  firstTurnLock = new Promise<void>((r) => {
+  agySpawnLock = new Promise<void>((r) => {
     release = r;
   });
   try {
@@ -95,15 +104,34 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
 
   let result;
   try {
-    const run = () =>
-      runAgyPrint({
+    // Always take the global lock — install per-chat MCP config,
+    // snapshot conversations dir, spawn, release. Two chats can't
+    // race on the global `mcp_config.json` and the .pb snapshot diff
+    // stays accurate.
+    result = await withAgySpawnLock(async () => {
+      const mcpCtx = getAgyMcpContext();
+      if (mcpCtx) {
+        try {
+          installMcpConfigForChat({
+            chatId,
+            bridgeUrl: `http://127.0.0.1:${mcpCtx.getBridgePort()}`,
+            frontends: mcpCtx.frontends,
+            braveApiKey: mcpCtx.braveApiKey,
+          });
+        } catch (err) {
+          logError(
+            "agent",
+            `[${chatId}] agy: MCP config install failed (continuing without tools)`,
+            err,
+          );
+        }
+      }
+      return runAgyPrint({
         prompt: userPrompt,
         conversationId: existingConversation,
         signal: undefined,
       });
-    // First turn for this chat needs the snapshot-diff lock so two
-    // chats starting concurrently don't both claim the same new .pb.
-    result = existingConversation ? await run() : await withFirstTurnLock(run);
+    });
   } catch (err) {
     if (err instanceof AgyPrintError) {
       const detail = err.stderr.trim().slice(0, 300);

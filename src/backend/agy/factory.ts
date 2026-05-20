@@ -34,12 +34,25 @@ import {
 } from "./handler.js";
 import * as agyModels from "./models.js";
 import { AGY_DEFAULT_BINARY, AGY_LABEL } from "./constants.js";
+import { setAgyMcpContext } from "./factory-context.js";
+import { uninstallMcpConfig } from "./mcp-config.js";
+import type { TalonConfig } from "../../util/config.js";
+
+function activeFrontends(
+  frontend: TalonConfig["frontend"],
+): readonly string[] {
+  // MCP servers are spawned per-frontend; the terminal frontend has no
+  // tool surface, so it never gets an entry. Matches the antigravity
+  // backend's `getActiveFrontends` helper.
+  const all = Array.isArray(frontend) ? frontend : [frontend];
+  return all.filter((f) => f !== "terminal");
+}
 
 const agyFactory: BackendFactory = {
   id: "agy",
   label: AGY_LABEL,
 
-  async init(_config, _ctx) {
+  async init(config, ctx) {
     // Sanity check: does `agy` exist on PATH? Don't refuse to register
     // if it's missing — the user might install it later, and other
     // backends in the pool should still come up — but emit a warning
@@ -59,6 +72,22 @@ const agyFactory: BackendFactory = {
       );
     }
 
+    // Stash the context the handler needs at turn time — gateway port
+    // (late-bound), active frontends, and the brave key — so each turn
+    // can re-stamp `~/.gemini/config/mcp_config.json` with the right
+    // `TALON_CHAT_ID` env before spawning agy. See `mcp-config.ts` for
+    // the merge / `__talon__`-marker scheme.
+    const cfgRecord = config as unknown as Record<string, unknown>;
+    const braveApiKey =
+      typeof cfgRecord.braveApiKey === "string"
+        ? (cfgRecord.braveApiKey as string)
+        : undefined;
+    setAgyMcpContext({
+      getBridgePort: ctx.getBridgePort,
+      frontends: activeFrontends(config.frontend),
+      braveApiKey,
+    });
+
     const backend: QueryBackend = {
       query: agyHandleMessage,
       // `/reset` calls this — drops the per-chat agy conversation id
@@ -75,7 +104,16 @@ const agyFactory: BackendFactory = {
       backendLabel: AGY_LABEL,
     };
 
-    return { backend };
+    return {
+      backend,
+      // On shutdown / pool eviction, strip Talon's MCP entries from
+      // agy's config so the user's interactive agy sessions don't see
+      // dead `__talon__` server references. Non-Talon entries the user
+      // added by hand are preserved (see `stripTalonEntries`).
+      cleanup: async () => {
+        uninstallMcpConfig();
+      },
+    };
   },
 };
 
