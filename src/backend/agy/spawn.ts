@@ -1,21 +1,36 @@
 /**
- * Spawn the agy CLI in `--print` mode and collect its stdout.
+ * Spawn the `agy` CLI in `--print` mode and capture its response.
  *
- * `agy` reads the prompt from argv (`--prompt "..."`), runs one
- * non-interactive turn, prints the model response to stdout, and
- * exits. Auth is whatever's in `~/.gemini/antigravity-cli/` — no API
- * key needed here.
+ * `agy` reads the prompt from `--prompt <text>` (argv) — or stdin if
+ * we leave the flag off — runs one non-interactive turn against
+ * Gemini, prints the model response on stdout, and exits. Auth is the
+ * OAuth token at `~/.gemini/antigravity-cli/antigravity-oauth-token`
+ * — no API key needed; whatever account `agy login` was last run
+ * against handles the request.
  *
- * This is deliberately the simplest possible backend transport: no
- * streaming, no tool calls, no MCP wiring. Adding MCP integration is
- * a separate task (it'd require writing a per-process MCP config that
- * agy picks up — agy reads `~/.gemini/config/mcp_config.json` by
- * default which would clobber the user's regular agy setup, so the
- * config-file path needs more design work).
+ * **Conversation continuity**: the first turn for a chat spawns
+ * without `--conversation`, agy creates a new `.pb` under
+ * `~/.gemini/antigravity-cli/conversations/`, and we snapshot the
+ * directory before/after to learn the new id. Subsequent turns pass
+ * `--conversation <id>` so agy resumes the same history. The id ↔
+ * chat mapping is held in `state.ts`.
+ *
+ * **No system prompt**: agy already runs with its own persona /
+ * system instructions baked in. Stacking Talon's full system prompt
+ * on top fights it and tanks output quality, so the agy backend
+ * delegates persona to agy itself.
  */
 
 import { spawn } from "node:child_process";
+import { readdirSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+import { homedir } from "node:os";
 import { AGY_DEFAULT_BINARY, AGY_PRINT_TIMEOUT_MS } from "./constants.js";
+
+const CONVERSATIONS_DIR = resolve(
+  homedir(),
+  ".gemini/antigravity-cli/conversations",
+);
 
 export interface AgyPrintResult {
   /** Text content the model produced. Trailing newline stripped. */
@@ -26,14 +41,27 @@ export interface AgyPrintResult {
   exitCode: number;
   /** stderr collected for diagnostics. Empty if the run was clean. */
   stderr: string;
+  /**
+   * The conversation id this turn ran against. For a resumed turn
+   * (caller passed `conversationId`), echoed back unchanged. For a
+   * first turn (caller passed `undefined`), the newly-minted id agy
+   * assigned — `null` if we couldn't detect it (no new `.pb` showed
+   * up, e.g. agy errored before writing the file).
+   */
+  conversationId: string | null;
 }
 
 export interface AgyPrintInputs {
-  /** Full prompt to send. System + user content already concatenated. */
+  /** Prompt text (user message). */
   prompt: string;
+  /**
+   * Resume this conversation. Omit for a fresh conversation — the
+   * result's `conversationId` will carry the newly-assigned id.
+   */
+  conversationId?: string;
   /** Override binary path. Defaults to whatever `agy` resolves to on $PATH. */
   binary?: string;
-  /** Abort signal — `signal.abort()` SIGKILLs the child. */
+  /** Abort signal — `signal.abort()` SIGTERMs the child. */
   signal?: AbortSignal;
   /** Override timeout (ms). Defaults to {@link AGY_PRINT_TIMEOUT_MS}. */
   timeoutMs?: number;
@@ -51,13 +79,52 @@ export class AgyPrintError extends Error {
 }
 
 /**
- * Run `agy --print --dangerously-skip-permissions --prompt <text>` and
- * return its stdout. Throws {@link AgyPrintError} on non-zero exit.
+ * Snapshot the conversation directory's existing `.pb` filenames so
+ * we can diff after the spawn and learn what agy created. Returns a
+ * Set; missing dir is treated as empty.
+ */
+function snapshotConversations(): Set<string> {
+  try {
+    return new Set(
+      readdirSync(CONVERSATIONS_DIR).filter((f) => f.endsWith(".pb")),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Find the newest `.pb` not present in the pre-spawn snapshot — that's
+ * the new conversation agy just created. Returns the id (UUID, no
+ * extension) or `null` if nothing new was written (typically means the
+ * turn errored before agy could persist).
+ */
+function detectNewConversation(before: Set<string>): string | null {
+  let newest: { id: string; mtime: number } | null = null;
+  try {
+    const entries = readdirSync(CONVERSATIONS_DIR).filter((f) =>
+      f.endsWith(".pb"),
+    );
+    for (const file of entries) {
+      if (before.has(file)) continue;
+      const path = resolve(CONVERSATIONS_DIR, file);
+      const mtime = statSync(path).mtimeMs;
+      if (!newest || mtime > newest.mtime) {
+        newest = { id: file.replace(/\.pb$/, ""), mtime };
+      }
+    }
+  } catch {
+    return null;
+  }
+  return newest?.id ?? null;
+}
+
+/**
+ * Run one `agy --print` turn and capture stdout. Throws
+ * {@link AgyPrintError} on non-zero exit.
  *
- * `--dangerously-skip-permissions` is required because agy's default
- * is to interactively prompt for tool-call approvals; in a daemon
- * context there's no operator to approve them. The flag's name is
- * agy's choice, not ours — we're forwarding it as-is.
+ * `--dangerously-skip-permissions` skips agy's interactive tool-call
+ * confirmation prompts (no operator to approve them in a daemon).
  */
 export async function runAgyPrint(
   inputs: AgyPrintInputs,
@@ -66,22 +133,29 @@ export async function runAgyPrint(
   const timeoutMs = inputs.timeoutMs ?? AGY_PRINT_TIMEOUT_MS;
   const started = Date.now();
 
+  const args: string[] = [
+    "--print",
+    "--dangerously-skip-permissions",
+    "--print-timeout",
+    `${Math.floor(timeoutMs / 1000)}s`,
+  ];
+  if (inputs.conversationId) {
+    args.push("--conversation", inputs.conversationId);
+  }
+  args.push("--prompt", inputs.prompt);
+
+  // Only snapshot the dir when we're going to need the new id — i.e.
+  // we don't already have a conversation. Skips a `readdirSync` on the
+  // hot resume path.
+  const preSnapshot = inputs.conversationId
+    ? null
+    : snapshotConversations();
+
   return new Promise<AgyPrintResult>((resolve, reject) => {
-    const child = spawn(
-      binary,
-      [
-        "--print",
-        "--dangerously-skip-permissions",
-        "--print-timeout",
-        `${Math.floor(timeoutMs / 1000)}s`,
-        "--prompt",
-        inputs.prompt,
-      ],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-        env: process.env,
-      },
-    );
+    const child = spawn(binary, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
+    });
 
     let stdout = "";
     let stderr = "";
@@ -134,6 +208,10 @@ export async function runAgyPrint(
       settled = true;
       clearTimeout(watchdog);
       const exitCode = code ?? -1;
+      const conversationId =
+        inputs.conversationId ??
+        (preSnapshot ? detectNewConversation(preSnapshot) : null);
+
       if (exitCode !== 0) {
         reject(
           new AgyPrintError(
@@ -144,11 +222,20 @@ export async function runAgyPrint(
         );
         return;
       }
+      // agy prints `Warning: conversation "<uuid>" not found.` to
+      // STDOUT (not stderr) when our cached id is gone — typically
+      // because the user nuked `~/.gemini/antigravity-cli/conversations/`
+      // by hand. Strip those banner lines so they don't leak into the
+      // user-visible reply; the next turn will mint a fresh id.
+      const cleanedText = stdout
+        .replace(/^Warning: conversation "[^"]+" not found\.?\n?/gm, "")
+        .replace(/\n+$/, "");
       resolve({
-        text: stdout.replace(/\n+$/, ""),
+        text: cleanedText,
         durationMs: Date.now() - started,
         exitCode,
         stderr,
+        conversationId,
       });
     });
   });

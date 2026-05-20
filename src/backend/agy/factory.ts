@@ -28,7 +28,10 @@ import { registerBackend } from "../registry.js";
 import type { BackendFactory } from "../registry.js";
 import type { QueryBackend } from "../../core/types.js";
 import { log, logWarn } from "../../util/log.js";
-import { handleMessage as agyHandleMessage } from "./handler.js";
+import {
+  handleMessage as agyHandleMessage,
+  resetChat as agyResetChat,
+} from "./handler.js";
 import * as agyModels from "./models.js";
 import { AGY_DEFAULT_BINARY, AGY_LABEL } from "./constants.js";
 
@@ -58,6 +61,9 @@ const agyFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: agyHandleMessage,
+      // `/reset` calls this — drops the per-chat agy conversation id
+      // so the next turn starts a fresh agy conversation.
+      resetChat: agyResetChat,
       // Model surface — minimal, single-entry catalogue.
       listModels: agyModels.listModels,
       resolveModel: agyModels.resolveModel,
@@ -66,6 +72,7 @@ const agyFactory: BackendFactory = {
       getProviderModels: agyModels.getProviderModels,
       formatModelError: agyModels.formatModelError,
       getSettingsPresentation: agyModels.getSettingsPresentation,
+      backendLabel: AGY_LABEL,
     };
 
     return { backend };
