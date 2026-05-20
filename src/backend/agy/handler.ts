@@ -205,6 +205,14 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
       result.usage.outputTokens + result.usage.thinkingTokens;
     cacheRead = result.usage.cacheReadTokens;
     usageModel = result.usage.model;
+    log(
+      "agent",
+      `[${chatId}] agy usage: in=${inputTokens} out=${outputTokens} ` +
+        `cache=${cacheRead} model=${usageModel} ` +
+        `(${result.usage.callCount} API call${
+          result.usage.callCount === 1 ? "" : "s"
+        }, maxStep=${result.usage.maxStepIndex})`,
+    );
   } else {
     inputTokens = Math.ceil(userPrompt.length / 4);
     outputTokens = Math.ceil(finalText.length / 4);
@@ -216,6 +224,11 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
         `(in≈${inputTokens} out≈${outputTokens})`,
     );
   }
+  // Context window comes from agy's model catalog via `GetAvailableModels`
+  // when available — see `fetchModelInfo` in usage.ts. The placeholder is
+  // 1M which matches every current Gemini-3 / Gemini-2.5 model agy lists
+  // (claude-opus would be 250k but agy doesn't ship it through `agy --print`).
+  const contextWindow = result.modelInfo?.contextWindow ?? 1_048_576;
   recordUsage(chatId, {
     inputTokens,
     outputTokens,
@@ -223,11 +236,12 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
     cacheWrite: 0,
     durationMs: result.durationMs,
     model: usageModel,
-    // Gemini-3.x is 1M context, Gemini-2.5-pro is 2M. Use 1M as a
-    // conservative floor; refine once agy exposes the actual model
-    // configured for the conversation.
+    // `inputTokens` already includes the cached portion (agy reports
+    // `inputTokens=32k, cacheReadTokens=16k` meaning of those 32k,
+    // 16k were cache hits — not a separate 16k on top). Don't
+    // double-count by adding cacheRead.
     contextTokens: inputTokens + outputTokens,
-    contextWindow: 1_000_000,
+    contextWindow,
   });
 
   incrementCounter("agy.turn");

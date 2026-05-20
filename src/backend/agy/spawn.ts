@@ -35,8 +35,12 @@ import { homedir, tmpdir } from "node:os";
 import { AGY_DEFAULT_BINARY, AGY_PRINT_TIMEOUT_MS } from "./constants.js";
 import {
   readHttpPortFromLog,
-  fetchLatestModelUsage,
+  readConversationIdFromLog,
+  fetchTrajectoryFloor,
+  fetchTurnUsage,
+  fetchModelInfo,
   type AgyTurnUsage,
+  type AgyModelInfo,
 } from "./usage.js";
 
 const CONVERSATIONS_DIR = resolve(
@@ -65,12 +69,20 @@ export interface AgyPrintResult {
   conversationId: string | null;
   /**
    * Real token-usage data for this turn, pulled from agy's internal
-   * language server's `GetCascadeTrajectorySteps` RPC while agy is
-   * still running. `null` if the LS was unreachable, the trajectory
-   * didn't load fast enough, or the turn errored before any model
-   * step landed. See `usage.ts` for the protocol.
+   * language server's `GetCascadeTrajectoryGeneratorMetadata` RPC
+   * while agy is still running, summed across every API call agy made
+   * inside this single `--print`. `null` if the LS was unreachable,
+   * the trajectory didn't load fast enough, or the turn errored
+   * before any model call landed. See `usage.ts` for the protocol.
    */
   usage: AgyTurnUsage | null;
+  /**
+   * Model catalog entry for the model that produced this turn — gives
+   * us the real `contextWindow` so `/status` doesn't have to hardcode
+   * 1M. `null` if the LS lookup failed or we couldn't see a model
+   * placeholder in the trajectory yet.
+   */
+  modelInfo: AgyModelInfo | null;
 }
 
 export interface AgyPrintInputs {
@@ -240,6 +252,7 @@ export async function runAgyPrint(
     let stderr = "";
     let settled = false;
     let liveUsage: AgyTurnUsage | null = null;
+    let liveModelInfo: AgyModelInfo | null = null;
 
     // Best-effort cleanup of the per-spawn log directory. Called on
     // every settle path (success / error / timeout / abort).
@@ -251,47 +264,72 @@ export async function runAgyPrint(
       }
     };
 
-    // Background poller: as soon as the LS port shows up in the log
-    // file, start asking `GetCascadeTrajectorySteps` for the latest
-    // `modelUsage`. Keep the freshest result we see. Bounded by the
-    // child exiting — once the LS is gone, every call fails and the
-    // loop exits naturally.
+    // Background poller: tails the per-spawn log file for the HTTP
+    // port (and, on first turns, the freshly-assigned conversation
+    // id). Once both are known, polls
+    // `GetCascadeTrajectoryGeneratorMetadata` and sums every entry
+    // whose max stepIndex is strictly greater than the floor we
+    // captured on the first successful poll. Each entry = one Gemini
+    // API call; summing gives true per-turn billing for multi-tool
+    // turns. Resolves the off-by-one we hit before (the previous
+    // implementation grabbed any MODEL step's modelUsage and could
+    // catch a previous turn's leftover step).
     //
-    // We don't await this — it races the child's `close`. Whatever
-    // it has when the child exits is what we report.
+    // Not awaited — it races the child's `close`. Whatever it has
+    // when the child exits is what we report.
     const startUsagePoller = () => {
-      if (!inputs.conversationId) {
-        // Best-effort: first turn doesn't have a conversationId yet,
-        // but the snapshot-diff after `close` will give us one. We
-        // re-poll after that point below.
-        return;
-      }
       let port: number | null = null;
+      let cascadeId: string | null = inputs.conversationId ?? null;
+      let floor: number | null = null;
       const pollAbort = new AbortController();
-      const cascadeId = inputs.conversationId;
 
       const tick = async () => {
         if (settled || pollAbort.signal.aborted) return;
         if (port === null) {
           port = readHttpPortFromLog(logPath);
-          if (port === null) {
-            setTimeout(tick, 150);
-            return;
-          }
         }
-        const u = await fetchLatestModelUsage({
+        if (cascadeId === null) {
+          cascadeId = readConversationIdFromLog(logPath);
+        }
+        if (port === null || cascadeId === null) {
+          setTimeout(tick, 100);
+          return;
+        }
+        // First time we have both: capture the trajectory floor. On
+        // resume turns this is the max stepIndex from previous turns
+        // — every entry we count after this is THIS turn's work. On
+        // first turns it's -1 (nothing yet) so we count everything.
+        if (floor === null) {
+          floor = await fetchTrajectoryFloor({
+            port,
+            cascadeId,
+            signal: pollAbort.signal,
+          });
+        }
+        const u = await fetchTurnUsage({
           port,
           cascadeId,
+          floorStepIndex: floor,
           signal: pollAbort.signal,
         });
-        if (u && (!liveUsage || u.stepIndex >= liveUsage.stepIndex)) {
+        if (u) {
           liveUsage = u;
+          // Probe model catalog once we know the placeholder for this
+          // turn — gives us the real contextWindow / displayName. The
+          // catalog doesn't change mid-spawn, so cache the first hit
+          // and skip re-probing.
+          if (liveModelInfo === null && u.modelPlaceholder) {
+            liveModelInfo = await fetchModelInfo({
+              port,
+              modelPlaceholder: u.modelPlaceholder,
+              signal: pollAbort.signal,
+            });
+          }
         }
-        if (!settled) setTimeout(tick, 300);
+        if (!settled) setTimeout(tick, 150);
       };
       void tick();
 
-      // Stop polling when the spawn settles.
       child.once("close", () => pollAbort.abort());
       child.once("error", () => pollAbort.abort());
     };
@@ -390,6 +428,7 @@ export async function runAgyPrint(
         stderr,
         conversationId,
         usage: liveUsage,
+        modelInfo: liveModelInfo,
       });
     });
   });
