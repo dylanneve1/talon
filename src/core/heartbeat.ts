@@ -64,6 +64,20 @@ const HEARTBEAT_ABORT_GRACE_MS = envMs(
 const HEARTBEAT_LOGS_DIR = resolve(dirs.logs, "heartbeats");
 const STARTUP_DELAY_MS = 5 * 60 * 1000; // 5-minute delay before first run
 
+// ── Errors ───────────────────────────────────────────────────────────────────
+
+/**
+ * Thrown when the heartbeat exceeds {@link HEARTBEAT_TIMEOUT_MS}. Distinguishes
+ * timeouts from agent-internal failures so callers can advance state on the
+ * former (the hour was spent) but preserve it on the latter (retry as-is).
+ */
+class HeartbeatTimeoutError extends Error {
+  constructor() {
+    super("Heartbeat agent timed out");
+    this.name = "HeartbeatTimeoutError";
+  }
+}
+
 // ── State ────────────────────────────────────────────────────────────────────
 
 let running = false; // in-process guard (one heartbeat at a time)
@@ -248,12 +262,16 @@ async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
         `Heartbeat #${previousRunCount + 1} failed (${trigger})`,
         err,
       );
-      // On failure, revert to idle but keep previous last_run and run_count
+      // Timeouts consume the full hour budget — advance state so the next
+      // heartbeat sees a fresh window and a bumped run_count instead of
+      // re-triggering against the same `last_run` forever. Non-timeout
+      // errors retry from the previous successful run (no budget consumed).
+      const isTimeout = err instanceof HeartbeatTimeoutError;
       writeHeartbeatState({
-        last_run: previousLastRun,
+        last_run: isTimeout ? Date.now() : previousLastRun,
         last_started: now,
         status: "idle",
-        run_count: previousRunCount,
+        run_count: isTimeout ? previousRunCount + 1 : previousRunCount,
       });
       if (trigger === "forced") throw err;
     } finally {
@@ -392,7 +410,7 @@ async function runHeartbeatAgent(
       } catch {
         /* ignore */
       }
-      reject(new Error("Heartbeat agent timed out"));
+      reject(new HeartbeatTimeoutError());
     }, HEARTBEAT_TIMEOUT_MS);
     t.unref(); // Don't prevent Node.js from exiting cleanly during shutdown
     timeoutHandle = t;

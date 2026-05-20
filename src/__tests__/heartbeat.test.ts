@@ -496,6 +496,8 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
   let evictionRunOneShotMock: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let evictionEvictMock: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let evictionWriteAtomicMock: any;
 
   beforeEach(async () => {
     process.env.TALON_HEARTBEAT_TIMEOUT_MS = "50";
@@ -521,7 +523,10 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
       appendFile: vi.fn(async () => {}),
       mkdir: vi.fn(async () => undefined),
     }));
-    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    evictionWriteAtomicMock = vi.fn();
+    vi.doMock("write-file-atomic", () => ({
+      default: { sync: evictionWriteAtomicMock },
+    }));
     vi.doMock("../util/paths.js", () => ({
       files: {
         heartbeatState: "/fake/.talon/workspace/memory/heartbeat_state.json",
@@ -653,5 +658,36 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
       }),
     });
     await expect(evictionMod.forceHeartbeat()).resolves.toBeUndefined();
+  }, 5000);
+
+  it("advances last_run and run_count on timeout so next heartbeat sees a fresh window", async () => {
+    // Prior behaviour: a timed-out heartbeat preserved last_run and run_count,
+    // so every retry re-triggered against the same window — the agent kept
+    // making the same decision (e.g. diving into the same investigation) and
+    // timing out again. Bumping state on timeout means the next heartbeat sees
+    // a fresh `lastRunIso` and an incremented run number.
+    evictionRunOneShotMock.mockImplementationOnce(
+      () =>
+        new Promise<void>(() => {
+          /* never settles */
+        }),
+    );
+
+    const before = Date.now();
+    await expect(evictionMod.forceHeartbeat()).rejects.toThrow(
+      "Heartbeat agent timed out",
+    );
+
+    // Find the final state write (status: "idle" — the one written in the
+    // catch path; the initial "running" write happens before the timeout).
+    const idleWrites = evictionWriteAtomicMock.mock.calls
+      .map((c: [string, string]) => JSON.parse(c[1]))
+      .filter((s: { status: string }) => s.status === "idle");
+    expect(idleWrites.length).toBeGreaterThan(0);
+    const finalState = idleWrites[idleWrites.length - 1];
+
+    expect(finalState.run_count).toBe(1); // bumped from 0
+    expect(finalState.last_run).toBeGreaterThanOrEqual(before);
+    expect(finalState.status).toBe("idle");
   }, 5000);
 });
