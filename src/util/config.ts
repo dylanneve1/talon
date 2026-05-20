@@ -156,6 +156,7 @@ const configSchema = z.object({
       "codex",
       "openai-agents",
       "antigravity",
+      "agy",
     ])
     .default("claude"),
   /**
@@ -173,6 +174,7 @@ const configSchema = z.object({
       "codex",
       "openai-agents",
       "antigravity",
+      "agy",
     ])
     .optional(),
   /**
@@ -187,6 +189,7 @@ const configSchema = z.object({
       "codex",
       "openai-agents",
       "antigravity",
+      "agy",
     ])
     .optional(),
   /**
@@ -208,6 +211,7 @@ const configSchema = z.object({
         "codex",
         "openai-agents",
         "antigravity",
+        "agy",
       ]),
     )
     .optional(),

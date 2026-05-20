@@ -43,14 +43,15 @@ function printBanner(): void {
 
 type Config = {
   frontend: string | string[];
-  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents` / `antigravity`). */
+  /** Active backend (`claude` / `kilo` / `opencode` / `codex` / `openai-agents` / `antigravity` / `agy`). */
   backend?:
     | "claude"
     | "kilo"
     | "opencode"
     | "codex"
     | "openai-agents"
-    | "antigravity";
+    | "antigravity"
+    | "agy";
   botToken?: string;
   claudeBinary?: string;
   /** OpenAI API key — used by Codex + OpenAI Agents backends. */
@@ -747,6 +748,7 @@ async function viewConfig(): Promise<void> {
     codex: "OpenAI Codex CLI",
     "openai-agents": "OpenAI Agents (@openai/agents)",
     antigravity: "Antigravity (google-antigravity, Python bridge)",
+    agy: "Agy (local OAuth via `agy` CLI)",
   };
   console.log(
     `  ${pc.dim("Backend")}          ${pc.green(backendLabel[config.backend ?? "claude"])}`,

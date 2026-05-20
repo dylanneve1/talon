@@ -131,6 +131,7 @@ export async function initBackendAndDispatcher(
   await import("./backend/codex/factory.js");
   await import("./backend/openai-agents/factory.js");
   await import("./backend/antigravity/factory.js");
+  await import("./backend/agy/factory.js");
 
   const { initBackendPool, getBackendForRole, getBackendForChat, rebindChat } =
     await import("./core/backend-controller.js");
