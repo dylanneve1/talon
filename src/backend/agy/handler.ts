@@ -190,15 +190,24 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
     const name = extractSessionName(finalText);
     if (name) setSessionName(chatId, name);
   }
-  // agy --print doesn't expose token counts on stdout; record the
-  // turn for bookkeeping but leave the token fields at 0.
+  // agy doesn't expose `usage_metadata` anywhere — not stdout, not
+  // `transcript.jsonl`, not its own logs. The streamed cloudcode-pa
+  // responses carry it but agy doesn't pipe it through. Estimate
+  // tokens from byte length (~4 chars per token is the standard
+  // Gemini-family approximation) so /status shows something better
+  // than 0/0. The 1M context-window value matches every Gemini model
+  // agy actually ships (3.5 / 3.1 / 2.5 — all 1M+).
+  const inputTokensEst = Math.ceil(userPrompt.length / 4);
+  const outputTokensEst = Math.ceil(finalText.length / 4);
   recordUsage(chatId, {
-    inputTokens: 0,
-    outputTokens: 0,
+    inputTokens: inputTokensEst,
+    outputTokens: outputTokensEst,
     cacheRead: 0,
     cacheWrite: 0,
     durationMs: result.durationMs,
     model: "agy",
+    contextTokens: inputTokensEst + outputTokensEst,
+    contextWindow: 1_000_000,
   });
 
   incrementCounter("agy.turn");
