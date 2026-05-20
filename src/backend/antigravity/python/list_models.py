@@ -117,8 +117,14 @@ def main() -> int:
             if "generateContent" not in actions:
                 # Skip embeddings, image gen, etc.
                 continue
-            if m.tuned_model_info is not None:
-                # Skip user-tuned models — they're per-key, not catalog.
+            # Skip user-tuned models — they're per-key, not catalog.
+            # Newer google-genai builds always populate `tuned_model_info`
+            # with an empty dataclass (`base_model=None ...`) for stock
+            # models instead of returning None, so the old `is not None`
+            # check filtered out every model. Detect a real tuned entry
+            # by the presence of a `base_model` reference.
+            tmi = m.tuned_model_info
+            if tmi is not None and getattr(tmi, "base_model", None):
                 continue
             name = m.name or ""
             if not name:

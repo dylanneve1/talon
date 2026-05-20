@@ -68,6 +68,84 @@ from typing import Any
 BRIDGE_PROTOCOL_VERSION = 1
 
 
+# ── MCP tool-name de-collision patches ──────────────────────────────────────
+#
+# The antigravity Python SDK aggregates MCP tools via the `mcp` client's
+# `ClientSessionGroup` but never installs a `component_name_hook`, so two
+# servers exposing tools with the same name (Talon has `cancel_scheduled`
+# on both `telegram-tools` and the `email` plugin) trip a duplicate-key
+# guard in `_aggregate_components` and the Agent context manager dies.
+#
+# Even after installing a name hook, `google.antigravity.mcp.bridge.
+# get_mcp_tools` reads `tool_info.name` (the raw tool name from the
+# server) instead of the dict key the hook produced, which means the
+# returned wrappers all share the original colliding name and the
+# subsequent `session_group.call_tool(<raw name>)` dispatch fails with
+# a KeyError on `_tool_to_session`.
+#
+# We patch both: install a `mcp_<server>__<tool>` hook (matching the
+# convention claude-sdk and openai-agents already use) AND rewrite
+# `get_mcp_tools` to use the dict key as the wrapper name + dispatch
+# argument. Net effect: each plugin's tools coexist under unique
+# names; `session_group.call_tool(hooked)` finds the session; the
+# session then calls the underlying MCP server with the unhooked
+# `tool.name`, which is what the server expects on the wire.
+
+
+def _install_mcp_collision_patches() -> None:
+    import mcp.client.session_group as _session_group_mod
+    from google.antigravity.mcp import bridge as _ag_bridge
+    from google.antigravity.tools.tool_runner import ToolWithSchema
+
+    def _name_hook(name: str, server_info: Any) -> str:
+        server_name = getattr(server_info, "name", None) or "mcp"
+        return f"mcp_{server_name}__{name}"
+
+    orig_init = _session_group_mod.ClientSessionGroup.__init__
+
+    def _patched_init(
+        self: Any,
+        exit_stack: Any = None,
+        component_name_hook: Any = None,
+    ) -> None:
+        # Don't clobber a caller-supplied hook — they're explicitly
+        # opting into their own naming scheme.
+        if component_name_hook is None:
+            component_name_hook = _name_hook
+        orig_init(
+            self,
+            exit_stack=exit_stack,
+            component_name_hook=component_name_hook,
+        )
+
+    _session_group_mod.ClientSessionGroup.__init__ = _patched_init
+
+    async def _patched_get_mcp_tools(session_group: Any) -> Any:
+        tools = []
+        # Iterate items() so we pick up the hooked KEY (e.g.
+        # `mcp_email-tools__cancel_scheduled`) rather than
+        # `tool_info.name` (the raw `cancel_scheduled`).
+        for hooked_name, tool_info in session_group.tools.items():
+
+            def make_wrapper(tool_name: str, doc: str | None) -> Any:
+                async def wrapper(**kwargs: Any) -> Any:
+                    return await session_group.call_tool(tool_name, kwargs)
+
+                wrapper.__name__ = tool_name
+                if doc:
+                    wrapper.__doc__ = doc
+                return wrapper
+
+            wrapper_fn = make_wrapper(hooked_name, tool_info.description)
+            tools.append(ToolWithSchema(wrapper_fn, tool_info.inputSchema))
+        return tools
+
+    _ag_bridge.get_mcp_tools = _patched_get_mcp_tools
+
+
+_install_mcp_collision_patches()
+
+
 def emit(event: dict[str, Any]) -> None:
     """Write a JSON event as a single line on stdout and flush."""
     sys.stdout.write(json.dumps(event, separators=(",", ":"), default=str))
@@ -126,19 +204,32 @@ def build_agent_config(cfg: dict[str, Any]):
     model = cfg.get("model")
 
     # Build MCP servers (frontend tools + plugins).
+    #
+    # The antigravity SDK's `McpStdioServer` model only defines
+    # `command` / `args` — no `env` field — and the underlying
+    # `StdioServerParameters(command=..., args=...)` call drops env
+    # entirely. Talon's `telegram-tools` MCP server needs
+    # `TALON_CHAT_ID` / `TALON_FRONTEND` / `TALON_BRIDGE_URL` to
+    # function, so we bake those into the command itself via
+    # `/usr/bin/env KEY=VAL …` (POSIX). The launcher inherits stdin
+    # / stdout from us through the SDK either way.
     mcp_servers: list[McpStdioServer] = []
     for spec in cfg.get("mcp_servers", []):
-        # McpStdioServer accepts command/args/env. We pass through
-        # whatever Talon emitted (already includes Brave + plugin
-        # servers + the chat-scoped frontend-tools server).
-        env = dict(os.environ)
-        env.update(spec.get("env") or {})
+        spec_env = spec.get("env") or {}
+        spec_cmd = spec["command"]
+        spec_args = list(spec.get("args", []))
+        if spec_env:
+            env_kv = [f"{k}={v}" for k, v in spec_env.items()]
+            wrapped_cmd = "/usr/bin/env"
+            wrapped_args = [*env_kv, spec_cmd, *spec_args]
+        else:
+            wrapped_cmd = spec_cmd
+            wrapped_args = spec_args
         mcp_servers.append(
             McpStdioServer(
                 name=spec["name"],
-                command=spec["command"],
-                args=spec.get("args", []),
-                env=env,
+                command=wrapped_cmd,
+                args=wrapped_args,
             )
         )
 
