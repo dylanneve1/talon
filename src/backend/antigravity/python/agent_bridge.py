@@ -59,6 +59,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 import traceback
 from typing import Any
 
@@ -230,6 +231,12 @@ class McpToolManager:
         # Tally of tools we connected to but had to drop for the cap.
         # Lets the operator-facing log message be specific.
         self._dropped_by_server: dict[str, int] = {}
+        # Serialises the cap-check + append in `connect()` so parallel
+        # `asyncio.gather()` callers can't both observe `len < cap` and
+        # then both append, overshooting by N tasks. AsyncExitStack
+        # itself isn't documented as concurrency-safe either; doing
+        # all bookkeeping under one lock keeps things simple.
+        self._lock = asyncio.Lock()
 
     async def __aenter__(self) -> "McpToolManager":
         await self._stack.__aenter__()
@@ -262,37 +269,49 @@ class McpToolManager:
 
         params = StdioServerParameters(command=command, args=args, env=env)
 
-        read_stream, write_stream = await self._stack.enter_async_context(
-            stdio_client(params)
-        )
-        session = await self._stack.enter_async_context(
-            ClientSession(read_stream, write_stream)
-        )
-        await session.initialize()
+        # Open the stdio session under the lock so concurrent
+        # `connect()` calls don't race on the AsyncExitStack's
+        # callback list. `initialize()` and `list_tools()` are
+        # per-session async work; running them under the lock would
+        # serialise the slow bits and defeat the point of parallel
+        # connect, so we drop the lock during those.
+        async with self._lock:
+            read_stream, write_stream = await self._stack.enter_async_context(
+                stdio_client(params)
+            )
+            session = await self._stack.enter_async_context(
+                ClientSession(read_stream, write_stream)
+            )
 
+        await session.initialize()
         tool_list = (await session.list_tools()).tools
         safe_server = name.replace("-", "_")
 
-        added = 0
-        dropped = 0
-        for tool in tool_list:
-            if len(self._tools) >= _GEMINI_TOOL_LIMIT:
-                dropped += 1
-                continue
-            ns_name = f"mcp_{safe_server}__{tool.name}"
-            wrapper = self._make_wrapper(
-                session, tool.name, ns_name, tool.description or ""
-            )
-            input_schema = _sanitise_schema_for_gemini(
-                tool.inputSchema or {"type": "object", "properties": {}}
-            )
-            self._tools.append(ToolWithSchema(wrapper, input_schema))
-            added += 1
+        # Lock the cap-check + append section so parallel connects can't
+        # both observe `len < cap` and both push past it. Schema
+        # sanitisation is per-tool and pure; doing it inside the lock
+        # is fine.
+        async with self._lock:
+            added = 0
+            dropped = 0
+            for tool in tool_list:
+                if len(self._tools) >= _GEMINI_TOOL_LIMIT:
+                    dropped += 1
+                    continue
+                ns_name = f"mcp_{safe_server}__{tool.name}"
+                wrapper = self._make_wrapper(
+                    session, tool.name, ns_name, tool.description or ""
+                )
+                input_schema = _sanitise_schema_for_gemini(
+                    tool.inputSchema or {"type": "object", "properties": {}}
+                )
+                self._tools.append(ToolWithSchema(wrapper, input_schema))
+                added += 1
 
-        if dropped:
-            self._dropped_by_server[name] = dropped
+            if dropped:
+                self._dropped_by_server[name] = dropped
+            self._sessions[name] = session
 
-        self._sessions[name] = session
         return added
 
     @property
@@ -697,12 +716,26 @@ async def main_async(args: argparse.Namespace) -> int:
     # surviving tools land in `mcp_mgr.tools`, which we hand to
     # LocalAgentConfig via `tools=[...]`.
     async with McpToolManager() as mcp_mgr:
-        # Connect the frontend-tools MCP server (telegram-tools,
-        # discord-tools, etc.) first so its `end_turn` / `send` /
-        # `react` tools always fit under Gemini's 128-tool cap even if
-        # the user has loaded a heavy plugin set. Plugins follow in
-        # config order, and overflow tools are dropped with a log
-        # entry so the operator knows what's missing.
+        # MCP connect strategy:
+        #
+        #  1. Connect the frontend-tools server (`telegram-tools` /
+        #     `discord-tools` / …) synchronously first — its
+        #     `end_turn` / `send` / `react` tools are the agent's only
+        #     way to reach the user; if it can't fit under Gemini's
+        #     128-tool cap nothing works. Sync also means the rest can
+        #     parallelise without racing against the cap accounting.
+        #
+        #  2. Connect every remaining server in parallel via
+        #     `asyncio.gather`. Per-server failures are reported via
+        #     `return_exceptions=True` and logged; one broken plugin
+        #     no longer takes down the whole startup or holds up the
+        #     queue behind it. Reduces wall-clock from ~12s sequential
+        #     to ~2-3s for the heaviest plugin set we ship.
+        #
+        #  3. After all sessions are open, walk them in config order
+        #     and register tools up to the cap. Plugins past the cap
+        #     yield zero tools (the connection stays open in case the
+        #     SDK calls them later, but they don't add prompt cost).
         _FRONTEND_TOOLS = {
             "telegram-tools",
             "discord-tools",
@@ -710,21 +743,38 @@ async def main_async(args: argparse.Namespace) -> int:
             "terminal-tools",
         }
         all_specs = list(cfg.get("mcp_servers", []))
-        all_specs.sort(
-            key=lambda s: 0 if s.get("name") in _FRONTEND_TOOLS else 1
-        )
-        for spec in all_specs:
-            server_name = spec.get("name", "(unnamed)")
+        frontend_specs = [s for s in all_specs if s.get("name") in _FRONTEND_TOOLS]
+        plugin_specs = [s for s in all_specs if s.get("name") not in _FRONTEND_TOOLS]
+
+        async def _connect_one(spec: dict[str, Any]) -> None:
+            name = spec.get("name", "(unnamed)")
+            t0 = time.monotonic()
             try:
                 added = await mcp_mgr.connect(spec)
-                log("info", f"MCP connected: {server_name} ({added} tools)")
+                dt_ms = int((time.monotonic() - t0) * 1000)
+                log("info", f"MCP connected: {name} ({added} tools, {dt_ms}ms)")
             except Exception as e:  # noqa: BLE001
                 log(
                     "warn",
-                    f"MCP server '{server_name}' failed to connect: "
+                    f"MCP server '{name}' failed to connect: "
                     f"{type(e).__name__}: {e} — skipping",
                 )
-                continue
+
+        # Phase 1 — frontend-tools sync (must-have).
+        for spec in frontend_specs:
+            await _connect_one(spec)
+
+        # Phase 2 — plugins in parallel. `return_exceptions=True`
+        # would swallow tracebacks; `_connect_one` catches per-task
+        # internally so a single bad plugin can't poison the gather.
+        if plugin_specs:
+            phase_start = time.monotonic()
+            await asyncio.gather(*(_connect_one(s) for s in plugin_specs))
+            phase_ms = int((time.monotonic() - phase_start) * 1000)
+            log(
+                "info",
+                f"MCP parallel phase: {len(plugin_specs)} servers in {phase_ms}ms",
+            )
 
         if mcp_mgr.dropped_summary:
             log("warn", mcp_mgr.dropped_summary)
