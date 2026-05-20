@@ -247,8 +247,8 @@ def build_agent_config(cfg: dict[str, Any], tools: list[Any]):
         CapabilitiesConfig,
         GeminiConfig,
         LocalAgentConfig,
-        policy,
     )
+    from google.antigravity.hooks import policy
 
     api_key = cfg.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY")
     if not api_key:
