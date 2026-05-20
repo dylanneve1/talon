@@ -20,6 +20,7 @@ import {
   getProviderModels,
   formatModelError,
   listModels,
+  discoverAntigravityModels,
 } from "./models.js";
 
 const antigravityFactory: BackendFactory = {
@@ -30,17 +31,50 @@ const antigravityFactory: BackendFactory = {
     initAntigravityAgent(config, ctx.getBridgePort, ctx.frontendName);
     log("bot", "Backend: Antigravity (google-antigravity via Python bridge)");
 
+    // The catalog read functions are sync (they only read the cached
+    // discovery snapshot). When the picker opens for the first time
+    // and discovery hasn't completed yet, the cache is empty and the
+    // user sees the curated 5-model fallback — they have to switch
+    // backends and come back to get the real list. Await discovery
+    // inside the picker entry points so the first call blocks until
+    // the live catalog is ready.
+    const ensureCatalog = async () => {
+      try {
+        await discoverAntigravityModels();
+      } catch {
+        // Discovery failures are already surfaced by the discovery
+        // module via logs; fall back to the cache (curated fallback)
+        // so the picker still works.
+      }
+    };
+
     const backend: QueryBackend = {
       query: (params) => agHandleMessage(params),
-      resolveModel: (q) => Promise.resolve(resolveModel(q)),
-      getModelInfo: (id) => Promise.resolve(getModelInfo(id)),
-      getSettingsPresentation: (m, options) =>
-        Promise.resolve(getSettingsPresentation(m, options)),
-      getProviders: () => Promise.resolve(getProviders()),
-      getProviderModels: (p, pg, ps) =>
-        Promise.resolve(getProviderModels(p, pg, ps)),
+      resolveModel: async (q) => {
+        await ensureCatalog();
+        return resolveModel(q);
+      },
+      getModelInfo: async (id) => {
+        await ensureCatalog();
+        return getModelInfo(id);
+      },
+      getSettingsPresentation: async (m, options) => {
+        await ensureCatalog();
+        return getSettingsPresentation(m, options);
+      },
+      getProviders: async () => {
+        await ensureCatalog();
+        return getProviders();
+      },
+      getProviderModels: async (p, pg, ps) => {
+        await ensureCatalog();
+        return getProviderModels(p, pg, ps);
+      },
       formatModelError: (q, r) => formatModelError(q, r),
-      listModels: (f) => Promise.resolve(listModels(f)),
+      listModels: async (f) => {
+        await ensureCatalog();
+        return listModels(f);
+      },
       runOneShotAgent: (p) => agRunOneShotAgent(p),
       backendLabel: "Antigravity",
     };

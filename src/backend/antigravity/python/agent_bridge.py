@@ -519,7 +519,28 @@ async def main_async(args: argparse.Namespace) -> int:
                 }
             )
             await command_loop(agent)
-    except Exception as e:  # noqa: BLE001
+    except BaseException as e:  # noqa: BLE001
+        # The antigravity SDK wraps everything in nested anyio
+        # TaskGroups, so a real exception ends up at depth >10 in a
+        # BaseExceptionGroup and Python's default formatter prints
+        # `... (max_group_depth is 10)` instead of the actual cause.
+        # Walk the tree by hand so we can see the leaves.
+        def _flatten(exc: BaseException, depth: int = 0) -> list[str]:
+            out: list[str] = []
+            indent = "  " * depth
+            out.append(f"{indent}{type(exc).__name__}: {exc}")
+            if isinstance(exc, BaseExceptionGroup):
+                for sub in exc.exceptions:
+                    out.extend(_flatten(sub, depth + 1))
+            if exc.__cause__ is not None:
+                out.append(f"{indent}  caused by:")
+                out.extend(_flatten(exc.__cause__, depth + 2))
+            if exc.__context__ is not None and exc.__context__ is not exc.__cause__:
+                out.append(f"{indent}  during handling of:")
+                out.extend(_flatten(exc.__context__, depth + 2))
+            return out
+
+        leaves = "\n".join(_flatten(e))
         emit(
             {
                 "type": "error",
@@ -527,6 +548,8 @@ async def main_async(args: argparse.Namespace) -> int:
                 "error": (
                     f"agent lifecycle error: "
                     f"{type(e).__name__}: {e}\n"
+                    f"--- flattened tree ---\n{leaves}\n"
+                    f"--- traceback ---\n"
                     + traceback.format_exc()
                 ),
             }
