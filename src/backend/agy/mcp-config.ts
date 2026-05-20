@@ -30,10 +30,7 @@ import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
 
 /** Path agy hardcodes for its MCP server config. */
-const MCP_CONFIG_PATH = resolve(
-  homedir(),
-  ".gemini/config/mcp_config.json",
-);
+const MCP_CONFIG_PATH = resolve(homedir(), ".gemini/config/mcp_config.json");
 
 /**
  * Marker we tag Talon-owned entries with so `installMcpConfigForChat`
@@ -104,10 +101,7 @@ function writeConfig(cfg: McpConfigFile): void {
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
     // Stable, human-editable formatting so users who look at the
     // file see something readable.
-    writeFileAtomic.sync(
-      MCP_CONFIG_PATH,
-      JSON.stringify(cfg, null, 2) + "\n",
-    );
+    writeFileAtomic.sync(MCP_CONFIG_PATH, JSON.stringify(cfg, null, 2) + "\n");
   } catch (err) {
     logError(
       "agent",

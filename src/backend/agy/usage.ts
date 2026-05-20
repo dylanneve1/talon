@@ -91,9 +91,9 @@ export interface AgyModelInfo {
   maxOutputTokens: number;
 }
 
-const LS_PORT_RE = /Language server listening on random port at (\d+) for HTTP\b/;
-const CONV_ID_RE =
-  /Starting conversation update stream for ([0-9a-f-]{36})\b/;
+const LS_PORT_RE =
+  /Language server listening on random port at (\d+) for HTTP\b/;
+const CONV_ID_RE = /Starting conversation update stream for ([0-9a-f-]{36})\b/;
 
 /**
  * Parse the agy log file for the HTTP port line. Returns the port
@@ -262,7 +262,8 @@ export async function fetchTurnUsage(args: {
       const usage = entry.chatModel?.usage;
       if (!usage) continue;
       inputSum += asNum(usage.inputTokens);
-      outputSum += asNum(usage.responseOutputTokens) || asNum(usage.outputTokens);
+      outputSum +=
+        asNum(usage.responseOutputTokens) || asNum(usage.outputTokens);
       cacheSum += asNum(usage.cacheReadTokens);
       thinkSum += asNum(usage.thinkingOutputTokens);
       callCount++;
@@ -374,7 +375,10 @@ export async function fetchArtifactSnapshots(args: {
     for (const a of resp.artifactSnapshots ?? []) {
       if (!a.artifactName) continue;
       let path: string | null = null;
-      if (a.artifactAbsoluteUri && a.artifactAbsoluteUri.startsWith("file://")) {
+      if (
+        a.artifactAbsoluteUri &&
+        a.artifactAbsoluteUri.startsWith("file://")
+      ) {
         // `file:///home/dylan/...` → `/home/dylan/...`
         try {
           path = decodeURIComponent(new URL(a.artifactAbsoluteUri).pathname);

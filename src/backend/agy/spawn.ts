@@ -258,7 +258,9 @@ function readLatestModelTurn(conversationId: string): {
         // Decode best-effort so consumers get real values.
         let input: Record<string, unknown> = {};
         if (obj.args && typeof obj.args === "object") {
-          for (const [k, v] of Object.entries(obj.args as Record<string, unknown>)) {
+          for (const [k, v] of Object.entries(
+            obj.args as Record<string, unknown>,
+          )) {
             if (typeof v === "string") {
               try {
                 input[k] = JSON.parse(v);

@@ -108,7 +108,12 @@ export function stripMcpPrefix(toolName: string): string {
       if (ALL_TOOL_NAMES.has(tail)) return tail;
     }
   }
-  return toolName;
+  // No registered tool found via segment walking. If the canonical MCP
+  // prefix was present, return what the regex gave us — the bare name of
+  // an external MCP server tool that isn't in Talon's catalog
+  // (e.g. `mcp__brave-search__brave_web_search` → `brave_web_search`).
+  // Without this, external-server tool names were returned unchanged.
+  return stripped !== toolName ? stripped : toolName;
 }
 
 /**

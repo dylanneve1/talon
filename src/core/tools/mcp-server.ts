@@ -116,7 +116,10 @@ When this server provides a tool, prefer it over your built-in equivalent:
 
 const server = new McpServer(
   { name: serverName, version: "3.0.0" },
-  { instructions: FRONTEND_INSTRUCTIONS[FRONTEND] ?? FRONTEND_INSTRUCTIONS.telegram },
+  {
+    instructions:
+      FRONTEND_INSTRUCTIONS[FRONTEND] ?? FRONTEND_INSTRUCTIONS.telegram,
+  },
 );
 
 // Compose and register all tools for the active frontend

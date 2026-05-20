@@ -211,8 +211,7 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   let usageModel: string;
   if (result.usage) {
     inputTokens = result.usage.inputTokens;
-    outputTokens =
-      result.usage.outputTokens + result.usage.thinkingTokens;
+    outputTokens = result.usage.outputTokens + result.usage.thinkingTokens;
     cacheRead = result.usage.cacheReadTokens;
     usageModel = result.usage.model;
     log(

@@ -38,9 +38,7 @@ import { setAgyMcpContext } from "./factory-context.js";
 import { uninstallMcpConfig } from "./mcp-config.js";
 import type { TalonConfig } from "../../util/config.js";
 
-function activeFrontends(
-  frontend: TalonConfig["frontend"],
-): readonly string[] {
+function activeFrontends(frontend: TalonConfig["frontend"]): readonly string[] {
   // MCP servers are spawned per-frontend; the terminal frontend has no
   // tool surface, so it never gets an entry. Matches the antigravity
   // backend's `getActiveFrontends` helper.
