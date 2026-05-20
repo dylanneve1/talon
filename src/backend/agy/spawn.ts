@@ -154,6 +154,36 @@ function detectNewConversation(before: Set<string>): string | null {
 }
 
 /**
+ * Names that mark a transcript entry as a tool call agy already
+ * delivered to the user end of the chat. If one of these landed in
+ * the current turn, the model's trailing `PLANNER_RESPONSE` is
+ * narration ("I've sent a friendly greeting…") that Talon should
+ * NOT forward as a second message — agy hosts it for the IDE
+ * artifact view, but it's user-visible junk in a Telegram chat.
+ *
+ * Matched as a SUFFIX so we don't have to maintain the full
+ * `mcp___talon__0_telegram-tools_send` path (which changes if the
+ * key prefix or frontend name changes).
+ */
+const DELIVERY_TOOL_NAME_SUFFIXES = [
+  "_telegram-tools_send",
+  "_telegram-tools_react",
+  "_telegram-tools_edit_message",
+  "_telegram-tools_delete_message",
+  "_teams-tools_send",
+  "_discord-tools_send",
+  "_telegram-tools_end_turn",
+] as const;
+
+function isDeliveryToolCall(name: unknown): boolean {
+  if (typeof name !== "string") return false;
+  for (const suffix of DELIVERY_TOOL_NAME_SUFFIXES) {
+    if (name.endsWith(suffix)) return true;
+  }
+  return false;
+}
+
+/**
  * Read the structured transcript agy writes for the conversation,
  * then return the **last** `PLANNER_RESPONSE` from the `MODEL` source
  * — that's the reply produced by the turn that just finished. The
@@ -163,6 +193,13 @@ function detectNewConversation(before: Set<string>): string | null {
  *
  * Returns `null` if the file doesn't exist, is malformed, or has no
  * model response — caller should fall back to stdout.
+ *
+ * Suppression: if the model called one of Talon's delivery tools
+ * (`send` / `react` / etc.) during this turn, the trailing
+ * PLANNER_RESPONSE is narration that the IDE artifact view would
+ * render — in chat it lands as a duplicate / unwanted second
+ * message. Return empty string in that case so the handler
+ * doesn't forward anything beyond what the tool already sent.
  */
 function readLatestModelTurn(conversationId: string): string | null {
   if (!conversationId) return null;
@@ -178,29 +215,54 @@ function readLatestModelTurn(conversationId: string): string | null {
   } catch {
     return null;
   }
-  // Walk lines bottom-up so the last MODEL/PLANNER_RESPONSE wins.
+  // Parse all lines, find the latest USER_INPUT index, then walk the
+  // entries from there forward. The "this turn" slice is everything
+  // after that USER_INPUT — the model's responses + any tool_calls
+  // it made before producing its final PLANNER_RESPONSE.
   const lines = raw.split("\n");
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
+  const entries: Record<string, unknown>[] = [];
+  for (const line of lines) {
     if (!line) continue;
-    let entry: unknown;
     try {
-      entry = JSON.parse(line);
+      const obj = JSON.parse(line) as Record<string, unknown>;
+      if (obj && typeof obj === "object") entries.push(obj);
     } catch {
-      continue;
-    }
-    if (!entry || typeof entry !== "object") continue;
-    const obj = entry as Record<string, unknown>;
-    if (
-      obj.source === "MODEL" &&
-      obj.type === "PLANNER_RESPONSE" &&
-      typeof obj.content === "string" &&
-      obj.content.length > 0
-    ) {
-      return obj.content;
+      /* skip malformed */
     }
   }
-  return null;
+  let lastUserIdx = -1;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.source === "USER" || e.type === "USER_INPUT") {
+      lastUserIdx = i;
+      break;
+    }
+  }
+  // Look at "this turn's" entries (after the latest USER_INPUT) for
+  // any delivery-tool call and the final PLANNER_RESPONSE.
+  let deliveryCalled = false;
+  let plannerResponse: string | null = null;
+  for (let i = lastUserIdx + 1; i < entries.length; i++) {
+    const e = entries[i];
+    const toolCalls = e.tool_calls;
+    if (Array.isArray(toolCalls)) {
+      for (const tc of toolCalls) {
+        if (tc && typeof tc === "object" && isDeliveryToolCall((tc as { name?: unknown }).name)) {
+          deliveryCalled = true;
+        }
+      }
+    }
+    if (
+      e.source === "MODEL" &&
+      e.type === "PLANNER_RESPONSE" &&
+      typeof e.content === "string" &&
+      (e.content as string).length > 0
+    ) {
+      plannerResponse = e.content as string;
+    }
+  }
+  if (deliveryCalled) return "";
+  return plannerResponse;
 }
 
 /**
