@@ -190,23 +190,43 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
     const name = extractSessionName(finalText);
     if (name) setSessionName(chatId, name);
   }
-  // agy doesn't expose `usage_metadata` anywhere — not stdout, not
-  // `transcript.jsonl`, not its own logs. The streamed cloudcode-pa
-  // responses carry it but agy doesn't pipe it through. Estimate
-  // tokens from byte length (~4 chars per token is the standard
-  // Gemini-family approximation) so /status shows something better
-  // than 0/0. The 1M context-window value matches every Gemini model
-  // agy actually ships (3.5 / 3.1 / 2.5 — all 1M+).
-  const inputTokensEst = Math.ceil(userPrompt.length / 4);
-  const outputTokensEst = Math.ceil(finalText.length / 4);
+  // Real token counts pulled from agy's internal language server
+  // mid-spawn — see `usage.ts` for the protocol. Fall back to a
+  // char/4 estimate when the LS poller missed (LS unreachable, turn
+  // errored before any model step landed, conversation id only
+  // resolved post-spawn for first turns).
+  let inputTokens: number;
+  let outputTokens: number;
+  let cacheRead: number;
+  let usageModel: string;
+  if (result.usage) {
+    inputTokens = result.usage.inputTokens;
+    outputTokens =
+      result.usage.outputTokens + result.usage.thinkingTokens;
+    cacheRead = result.usage.cacheReadTokens;
+    usageModel = result.usage.model;
+  } else {
+    inputTokens = Math.ceil(userPrompt.length / 4);
+    outputTokens = Math.ceil(finalText.length / 4);
+    cacheRead = 0;
+    usageModel = "agy";
+    log(
+      "agent",
+      `[${chatId}] agy: real usage unavailable, using char/4 estimate ` +
+        `(in≈${inputTokens} out≈${outputTokens})`,
+    );
+  }
   recordUsage(chatId, {
-    inputTokens: inputTokensEst,
-    outputTokens: outputTokensEst,
-    cacheRead: 0,
+    inputTokens,
+    outputTokens,
+    cacheRead,
     cacheWrite: 0,
     durationMs: result.durationMs,
-    model: "agy",
-    contextTokens: inputTokensEst + outputTokensEst,
+    model: usageModel,
+    // Gemini-3.x is 1M context, Gemini-2.5-pro is 2M. Use 1M as a
+    // conservative floor; refine once agy exposes the actual model
+    // configured for the conversation.
+    contextTokens: inputTokens + outputTokens,
     contextWindow: 1_000_000,
   });
 

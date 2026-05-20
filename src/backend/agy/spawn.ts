@@ -22,10 +22,22 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { resolve } from "node:path";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { AGY_DEFAULT_BINARY, AGY_PRINT_TIMEOUT_MS } from "./constants.js";
+import {
+  readHttpPortFromLog,
+  fetchLatestModelUsage,
+  type AgyTurnUsage,
+} from "./usage.js";
 
 const CONVERSATIONS_DIR = resolve(
   homedir(),
@@ -51,6 +63,14 @@ export interface AgyPrintResult {
    * up, e.g. agy errored before writing the file).
    */
   conversationId: string | null;
+  /**
+   * Real token-usage data for this turn, pulled from agy's internal
+   * language server's `GetCascadeTrajectorySteps` RPC while agy is
+   * still running. `null` if the LS was unreachable, the trajectory
+   * didn't load fast enough, or the turn errored before any model
+   * step landed. See `usage.ts` for the protocol.
+   */
+  usage: AgyTurnUsage | null;
 }
 
 export interface AgyPrintInputs {
@@ -185,11 +205,20 @@ export async function runAgyPrint(
   const timeoutMs = inputs.timeoutMs ?? AGY_PRINT_TIMEOUT_MS;
   const started = Date.now();
 
+  // Per-spawn log file — we'll tail it for the LS port line so
+  // `usage.ts` can call back into agy's internal language server
+  // while it's still running. Lives in a temp dir we clean up at the
+  // end so we don't leak files even on crash.
+  const logDir = mkdtempSync(resolve(tmpdir(), "talon-agy-"));
+  const logPath = resolve(logDir, "agy.log");
+
   const args: string[] = [
     "--print",
     "--dangerously-skip-permissions",
     "--print-timeout",
     `${Math.floor(timeoutMs / 1000)}s`,
+    "--log-file",
+    logPath,
   ];
   if (inputs.conversationId) {
     args.push("--conversation", inputs.conversationId);
@@ -201,7 +230,7 @@ export async function runAgyPrint(
   // hot resume path.
   const preSnapshot = inputs.conversationId ? null : snapshotConversations();
 
-  return new Promise<AgyPrintResult>((resolve, reject) => {
+  return new Promise<AgyPrintResult>((resolveOuter, reject) => {
     const child = spawn(binary, args, {
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
@@ -210,6 +239,63 @@ export async function runAgyPrint(
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let liveUsage: AgyTurnUsage | null = null;
+
+    // Best-effort cleanup of the per-spawn log directory. Called on
+    // every settle path (success / error / timeout / abort).
+    const cleanupLogDir = () => {
+      try {
+        rmSync(logDir, { recursive: true, force: true });
+      } catch {
+        /* ignore */
+      }
+    };
+
+    // Background poller: as soon as the LS port shows up in the log
+    // file, start asking `GetCascadeTrajectorySteps` for the latest
+    // `modelUsage`. Keep the freshest result we see. Bounded by the
+    // child exiting — once the LS is gone, every call fails and the
+    // loop exits naturally.
+    //
+    // We don't await this — it races the child's `close`. Whatever
+    // it has when the child exits is what we report.
+    const startUsagePoller = () => {
+      if (!inputs.conversationId) {
+        // Best-effort: first turn doesn't have a conversationId yet,
+        // but the snapshot-diff after `close` will give us one. We
+        // re-poll after that point below.
+        return;
+      }
+      let port: number | null = null;
+      const pollAbort = new AbortController();
+      const cascadeId = inputs.conversationId;
+
+      const tick = async () => {
+        if (settled || pollAbort.signal.aborted) return;
+        if (port === null) {
+          port = readHttpPortFromLog(logPath);
+          if (port === null) {
+            setTimeout(tick, 150);
+            return;
+          }
+        }
+        const u = await fetchLatestModelUsage({
+          port,
+          cascadeId,
+          signal: pollAbort.signal,
+        });
+        if (u && (!liveUsage || u.stepIndex >= liveUsage.stepIndex)) {
+          liveUsage = u;
+        }
+        if (!settled) setTimeout(tick, 300);
+      };
+      void tick();
+
+      // Stop polling when the spawn settles.
+      child.once("close", () => pollAbort.abort());
+      child.once("error", () => pollAbort.abort());
+    };
+    startUsagePoller();
 
     const watchdog = setTimeout(() => {
       if (settled) return;
@@ -219,6 +305,7 @@ export async function runAgyPrint(
       } catch {
         /* already dead */
       }
+      cleanupLogDir();
       reject(
         new AgyPrintError(`agy --print exceeded ${timeoutMs}ms`, -1, stderr),
       );
@@ -250,6 +337,7 @@ export async function runAgyPrint(
       if (settled) return;
       settled = true;
       clearTimeout(watchdog);
+      cleanupLogDir();
       reject(new AgyPrintError(`agy spawn failed: ${err.message}`, -1, stderr));
     });
 
@@ -263,6 +351,7 @@ export async function runAgyPrint(
         (preSnapshot ? detectNewConversation(preSnapshot) : null);
 
       if (exitCode !== 0) {
+        cleanupLogDir();
         reject(
           new AgyPrintError(
             `agy --print exited ${exitCode}: ${stderr.trim().slice(0, 500)}`,
@@ -293,12 +382,14 @@ export async function runAgyPrint(
         // but agy sometimes appends a trailing newline.
         text = text.replace(/\n+$/, "");
       }
-      resolve({
+      cleanupLogDir();
+      resolveOuter({
         text,
         durationMs: Date.now() - started,
         exitCode,
         stderr,
         conversationId,
+        usage: liveUsage,
       });
     });
   });
