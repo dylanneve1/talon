@@ -25,9 +25,9 @@ describe("antigravity / model catalog", () => {
   });
 
   it("includes the Pro variant", () => {
-    expect(
-      ANTIGRAVITY_MODELS.some((m) => m.id === "models/gemini-3-pro"),
-    ).toBe(true);
+    expect(ANTIGRAVITY_MODELS.some((m) => m.id === "models/gemini-3-pro")).toBe(
+      true,
+    );
   });
 
   it("every model carries the google provider", () => {

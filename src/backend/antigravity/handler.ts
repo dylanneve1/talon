@@ -80,9 +80,7 @@ function nextTurnId(chatId: string): string {
 
 // ── Main handler ────────────────────────────────────────────────────────────
 
-export async function handleMessage(
-  params: QueryParams,
-): Promise<QueryResult> {
+export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   const state = getState();
   if (!state.config) {
     throw new Error("Antigravity backend not initialized");

@@ -22,9 +22,7 @@ describe("antigravity / buildAntigravityMcpServers", () => {
       bridgeUrl: "http://127.0.0.1:8765",
       frontends: ["telegram"],
     });
-    const ftServers = servers.filter((s) =>
-      s.name.endsWith("-tools"),
-    );
+    const ftServers = servers.filter((s) => s.name.endsWith("-tools"));
     expect(ftServers.length).toBe(1);
     expect(ftServers[0].name).toBe("telegram-tools");
     expect(ftServers[0].env).toMatchObject({

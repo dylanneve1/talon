@@ -43,9 +43,7 @@ function expandHome(p: string | undefined): string | undefined {
  * the agent's start.
  */
 function containsHiddenSegment(p: string): boolean {
-  return p
-    .split("/")
-    .some((seg) => seg !== "" && seg.startsWith("."));
+  return p.split("/").some((seg) => seg !== "" && seg.startsWith("."));
 }
 
 /**
@@ -147,7 +145,10 @@ function ensureSymlink(linkPath: string, target: string): void {
       const stat = lstatSync(linkPath);
       if (stat.isSymbolicLink()) {
         const current = readlinkSync(linkPath);
-        const currentResolved = resolve(target.startsWith("/") ? "" : process.cwd(), current);
+        const currentResolved = resolve(
+          target.startsWith("/") ? "" : process.cwd(),
+          current,
+        );
         if (currentResolved === target || current === target) {
           // Already correct.
           return;
@@ -255,9 +256,7 @@ export { resolveWorkspacePath, containsHiddenSegment };
  * frontend-tools MCP server is chat-scoped. Switching chats means
  * spawning a fresh bridge.
  */
-export async function ensureBridge(
-  chatId: string,
-): Promise<AntigravityBridge> {
+export async function ensureBridge(chatId: string): Promise<AntigravityBridge> {
   const state = getState();
   if (!state.config) {
     throw new Error(

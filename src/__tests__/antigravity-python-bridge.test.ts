@@ -123,7 +123,9 @@ beforeAll(() => {
 
 describe("AntigravityBridge — happy path", () => {
   it("reaches ready after start()", async () => {
-    const bridge = new AntigravityBridge("chat-happy", { turnTimeoutMs: 5_000 });
+    const bridge = new AntigravityBridge("chat-happy", {
+      turnTimeoutMs: 5_000,
+    });
     try {
       await bridge.start(
         {
@@ -170,7 +172,9 @@ describe("AntigravityBridge — happy path", () => {
 
 describe("AntigravityBridge — tool calls", () => {
   it("surfaces ToolCall + ToolResult events to onToolCall", async () => {
-    const bridge = new AntigravityBridge("chat-tools", { turnTimeoutMs: 5_000 });
+    const bridge = new AntigravityBridge("chat-tools", {
+      turnTimeoutMs: 5_000,
+    });
     try {
       await bridge.start(
         { gemini_api_key: "fake", workspaces: ["/tmp/ag-test"] },

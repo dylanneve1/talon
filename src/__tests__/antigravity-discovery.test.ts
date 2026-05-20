@@ -98,9 +98,8 @@ beforeAll(() => {
 });
 
 afterEach(async () => {
-  const { resetDiscoveryStateForTests } = await import(
-    "../backend/antigravity/discovery.js"
-  );
+  const { resetDiscoveryStateForTests } =
+    await import("../backend/antigravity/discovery.js");
   resetDiscoveryStateForTests();
   delete process.env.FAKE_DISCOVERY_MODE;
 });
@@ -124,9 +123,7 @@ describe("antigravity discovery — happy path", () => {
       true,
     );
     // supportsThinking → reasoning: true.
-    const flash = result.models.find(
-      (m) => m.id === "models/gemini-3.5-flash",
-    );
+    const flash = result.models.find((m) => m.id === "models/gemini-3.5-flash");
     expect(flash?.reasoning).toBe(true);
     const experimental = result.models.find(
       (m) => m.id === "models/gemini-experimental-X",

@@ -95,10 +95,7 @@ export async function runOneShotAgent(
       await appendLog(`\n### [${ts2}] Turn complete\n`);
     }
   } catch (e) {
-    if (
-      aborted ||
-      /abort/i.test(e instanceof Error ? e.message : String(e))
-    ) {
+    if (aborted || /abort/i.test(e instanceof Error ? e.message : String(e))) {
       const ts2 = new Date().toISOString().slice(11, 19);
       await appendLog(`\n### [${ts2}] Aborted\nRun aborted by timeout.\n`);
       return;

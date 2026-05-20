@@ -768,9 +768,7 @@ async function viewConfig(): Promise<void> {
       `  ${pc.dim("Gemini API key")}   ${maskToken(config.geminiApiKey)}`,
     );
   if (config.antigravityPython)
-    console.log(
-      `  ${pc.dim("Antigrav python")}  ${config.antigravityPython}`,
-    );
+    console.log(`  ${pc.dim("Antigrav python")}  ${config.antigravityPython}`);
   if (config.antigravityWorkspace)
     console.log(
       `  ${pc.dim("Antigrav workspace")} ${config.antigravityWorkspace}`,

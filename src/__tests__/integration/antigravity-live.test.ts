@@ -43,8 +43,7 @@ const HAS_PYTHON_VENV = existsSync(
 );
 const HAS_API_KEY = Boolean(process.env.GEMINI_API_KEY);
 
-const ANTIGRAVITY_REQUIRED =
-  process.env.ANTIGRAVITY_LIVE_REQUIRED === "1";
+const ANTIGRAVITY_REQUIRED = process.env.ANTIGRAVITY_LIVE_REQUIRED === "1";
 const liveDescribe =
   (HAS_PYTHON_VENV && HAS_API_KEY) || ANTIGRAVITY_REQUIRED
     ? describe
@@ -68,62 +67,51 @@ afterAll(async () => {
 });
 
 liveDescribe("antigravity live — bridge handshake + model dispatch", () => {
-  it(
-    "starts the bridge against the real google-antigravity install",
-    async () => {
-      bridge = new AntigravityBridge("antigravity-live-test", {
-        turnTimeoutMs: 90_000,
-      });
+  it("starts the bridge against the real google-antigravity install", async () => {
+    bridge = new AntigravityBridge("antigravity-live-test", {
+      turnTimeoutMs: 90_000,
+    });
 
-      await bridge.start(
-        {
-          gemini_api_key: process.env.GEMINI_API_KEY,
-          model: "gemini-3.5-flash",
-          workspaces: [WORKSPACE_PATH],
-          mcp_servers: [],
-        },
-        {
-          pythonPath: process.env.ANTIGRAVITY_PYTHON ?? DEFAULT_VENV_PYTHON,
-        },
-      );
+    await bridge.start(
+      {
+        gemini_api_key: process.env.GEMINI_API_KEY,
+        model: "gemini-3.5-flash",
+        workspaces: [WORKSPACE_PATH],
+        mcp_servers: [],
+      },
+      {
+        pythonPath: process.env.ANTIGRAVITY_PYTHON ?? DEFAULT_VENV_PYTHON,
+      },
+    );
 
-      expect(bridge.isReady()).toBe(true);
-    },
-    120_000,
-  );
+    expect(bridge.isReady()).toBe(true);
+  }, 120_000);
 
-  it(
-    "round-trips a chat turn and returns text + usage",
-    async () => {
-      if (!bridge || !bridge.isReady()) {
-        throw new Error(
-          "bridge not ready — the handshake test must run first",
-        );
-      }
+  it("round-trips a chat turn and returns text + usage", async () => {
+    if (!bridge || !bridge.isReady()) {
+      throw new Error("bridge not ready — the handshake test must run first");
+    }
 
-      const textParts: string[] = [];
-      const result = await bridge.chat({
-        id: "live-turn-1",
-        prompt:
-          "Reply with exactly the four characters 'pong' and nothing else.",
-        onText: (delta) => textParts.push(delta),
-        timeoutMs: 60_000,
-      });
+    const textParts: string[] = [];
+    const result = await bridge.chat({
+      id: "live-turn-1",
+      prompt: "Reply with exactly the four characters 'pong' and nothing else.",
+      onText: (delta) => textParts.push(delta),
+      timeoutMs: 60_000,
+    });
 
-      // Sanity: we got SOME text back.
-      expect(result.text.length).toBeGreaterThan(0);
-      expect(textParts.join("")).toBe(result.text);
+    // Sanity: we got SOME text back.
+    expect(result.text.length).toBeGreaterThan(0);
+    expect(textParts.join("")).toBe(result.text);
 
-      // Token usage should be populated; values can fluctuate so we just
-      // check positive integers.
-      expect(result.usage).not.toBeNull();
-      expect((result.usage?.prompt_token_count ?? 0) > 0).toBe(true);
-      expect((result.usage?.total_token_count ?? 0) > 0).toBe(true);
+    // Token usage should be populated; values can fluctuate so we just
+    // check positive integers.
+    expect(result.usage).not.toBeNull();
+    expect((result.usage?.prompt_token_count ?? 0) > 0).toBe(true);
+    expect((result.usage?.total_token_count ?? 0) > 0).toBe(true);
 
-      // We asked for "pong" — Gemini may sandwich it with extra words
-      // depending on the day; just check the response contains "pong".
-      expect(result.text.toLowerCase()).toContain("pong");
-    },
-    120_000,
-  );
+    // We asked for "pong" — Gemini may sandwich it with extra words
+    // depending on the day; just check the response contains "pong".
+    expect(result.text.toLowerCase()).toContain("pong");
+  }, 120_000);
 });

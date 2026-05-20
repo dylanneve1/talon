@@ -239,25 +239,19 @@ export class AntigravityBridge {
     // pipe at fd 3 for the one-shot config payload. Node's
     // `child_process.spawn` accepts an array of stdio descriptors —
     // `pipe` allocates a connected pipe at each index.
-    const proc = spawn(
-      pythonPath,
-      [scriptPath, "--config-fd", "3"],
-      {
-        stdio: ["pipe", "pipe", "pipe", "pipe"],
-        env: {
-          ...process.env,
-          PYTHONUNBUFFERED: "1",
-          // The bridge passes its own env to MCP subprocesses; PATH
-          // / HOME need to flow through unchanged. PYTHONUNBUFFERED
-          // ensures we see JSON events without the default 4KB stdout
-          // buffer.
-        },
+    const proc = spawn(pythonPath, [scriptPath, "--config-fd", "3"], {
+      stdio: ["pipe", "pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: "1",
+        // The bridge passes its own env to MCP subprocesses; PATH
+        // / HOME need to flow through unchanged. PYTHONUNBUFFERED
+        // ensures we see JSON events without the default 4KB stdout
+        // buffer.
       },
-    ) as unknown as ChildProcessByStdio<
-      Writable,
-      Readable,
-      Readable
-    > & { stdio: [Writable, Readable, Readable, Writable] };
+    }) as unknown as ChildProcessByStdio<Writable, Readable, Readable> & {
+      stdio: [Writable, Readable, Readable, Writable];
+    };
 
     this.proc = proc as ChildProc;
     const configPayload = JSON.stringify(config);
@@ -398,10 +392,7 @@ export class AntigravityBridge {
         return;
       }
       default:
-        logWarn(
-          "agent",
-          `[${this.chatId}] unknown event type: ${evt.type}`,
-        );
+        logWarn("agent", `[${this.chatId}] unknown event type: ${evt.type}`);
     }
   }
 
@@ -569,10 +560,7 @@ export class AntigravityBridge {
 
   private sendCommand(cmd: Record<string, unknown>): void {
     if (!this.proc || !this.proc.stdin || this.proc.stdin.destroyed) {
-      logWarn(
-        "agent",
-        `[${this.chatId}] sendCommand: stdin not writable`,
-      );
+      logWarn("agent", `[${this.chatId}] sendCommand: stdin not writable`);
       return;
     }
     try {

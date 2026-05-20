@@ -289,10 +289,7 @@ async function runListModels(
           | { ok: false; error: string };
         if (!parsed.ok) {
           if (code !== 0) {
-            logWarn(
-              "agent",
-              `Antigravity discovery failed: ${parsed.error}`,
-            );
+            logWarn("agent", `Antigravity discovery failed: ${parsed.error}`);
           }
           resolveOuter(fallbackResult(parsed.error));
           return;
