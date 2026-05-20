@@ -528,6 +528,15 @@ async def stream_response(agent, command_id: str, prompt: str) -> None:
                         "error": chunk.error,
                     }
                 )
+    except asyncio.CancelledError:
+        # `bridge.abort(turnId)` (TS handler firing on a turn-terminator
+        # tool call) cancels this task. The model has already shipped
+        # whatever was going to ship via MCP — we still want token
+        # accounting for the chunks we did see, then re-raise so the
+        # cancellation actually propagates.
+        usage = await _extract_usage(response)
+        emit({"type": "done", "id": command_id, "usage": usage})
+        raise
     except Exception as e:  # noqa: BLE001
         emit(
             {
@@ -541,34 +550,37 @@ async def stream_response(agent, command_id: str, prompt: str) -> None:
         )
         return
 
-    usage = None
+    usage = await _extract_usage(response)
+    emit({"type": "done", "id": command_id, "usage": usage})
+
+
+async def _extract_usage(response: Any) -> Any:
+    """Pull token usage off the response, tolerating coroutine and
+    sync forms and any missing-attribute weirdness. Returns the dict
+    Talon expects (`prompt_token_count` etc.) or `None`.
+    """
     try:
         usage_obj = response.usage_metadata()
         if asyncio.iscoroutine(usage_obj):
             usage_obj = await usage_obj
-        if usage_obj is not None:
-            usage = {
-                "prompt_token_count": getattr(
-                    usage_obj, "prompt_token_count", None
-                ),
-                "cached_content_token_count": getattr(
-                    usage_obj, "cached_content_token_count", None
-                ),
-                "candidates_token_count": getattr(
-                    usage_obj, "candidates_token_count", None
-                ),
-                "thoughts_token_count": getattr(
-                    usage_obj, "thoughts_token_count", None
-                ),
-                "total_token_count": getattr(
-                    usage_obj, "total_token_count", None
-                ),
-            }
+        if usage_obj is None:
+            return None
+        return {
+            "prompt_token_count": getattr(usage_obj, "prompt_token_count", None),
+            "cached_content_token_count": getattr(
+                usage_obj, "cached_content_token_count", None
+            ),
+            "candidates_token_count": getattr(
+                usage_obj, "candidates_token_count", None
+            ),
+            "thoughts_token_count": getattr(
+                usage_obj, "thoughts_token_count", None
+            ),
+            "total_token_count": getattr(usage_obj, "total_token_count", None),
+        }
     except Exception:  # noqa: BLE001
         # Usage is best-effort; missing usage shouldn't fail the turn.
-        usage = None
-
-    emit({"type": "done", "id": command_id, "usage": usage})
+        return None
 
 
 async def command_loop(agent) -> None:
@@ -644,22 +656,11 @@ async def command_loop(agent) -> None:
                 continue
 
             async def run_chat(prompt=prompt, cmd_id=cmd_id):
+                # `stream_response` handles its own emit-on-cancellation
+                # (with usage extracted), so we don't need a duplicate
+                # `done` here — just pop the in-flight bookkeeping.
                 try:
                     await stream_response(agent, cmd_id, prompt)
-                except asyncio.CancelledError:
-                    # `bridge.abort(turnId)` cancels this task — used by
-                    # the TS handler when the model has already fired a
-                    # turn-terminator MCP tool (`end_turn` / `send` /
-                    # `react`) so we stop it from running more tool
-                    # calls. The TS side is waiting on a `done` event
-                    # to resolve `bridge.chat()`; without one it hangs
-                    # until the per-turn timeout. Emit a synthetic
-                    # `done` (no usage available — the SDK never
-                    # returned the metadata coroutine) so the handler
-                    # promptly settles, then re-raise so the cancel
-                    # still propagates correctly.
-                    emit({"type": "done", "id": cmd_id, "usage": None})
-                    raise
                 finally:
                     in_flight.pop(cmd_id, None)
 
