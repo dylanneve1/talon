@@ -77,11 +77,11 @@ describe("mcp-launcher", () => {
     const { ensureLauncher } = await freshLauncher();
     const launcherPath = ensureLauncher();
 
-    // Dummy child: a Node one-liner that keeps stdin open forever and prints
-    // a ready marker so the parent can detect it has spawned. It will only
-    // exit when its stdin closes (which happens when the launcher dies).
+    // Dummy child: emits a valid JSON-RPC ready marker (so the stdout filter
+    // passes it through to the parent), then keeps stdin open. Exits when its
+    // stdin closes (which happens when the launcher dies).
     const childScript = `
-      process.stdout.write("READY\\n");
+      process.stdout.write(JSON.stringify({"jsonrpc":"2.0","method":"ready"}) + "\\n");
       process.stdin.on("data", (d) => process.stdout.write(d));
       process.stdin.on("end", () => process.exit(0));
       process.stdin.resume();
@@ -91,21 +91,21 @@ describe("mcp-launcher", () => {
       stdio: ["pipe", "pipe", "pipe"],
     });
 
-    // Wait for READY to confirm stdio proxy is up
+    // Wait for the JSON ready marker on stdout (the filter passes JSON through)
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(
-        () => reject(new Error("timeout waiting for READY")),
+        () => reject(new Error("timeout waiting for JSON ready marker")),
         5000,
       );
       launcher.stdout!.on("data", (chunk) => {
-        if (chunk.toString().includes("READY")) {
+        if (chunk.toString().includes('"method":"ready"')) {
           clearTimeout(timeout);
           resolve();
         }
       });
       launcher.on("exit", () => {
         clearTimeout(timeout);
-        reject(new Error("launcher exited before READY"));
+        reject(new Error("launcher exited before ready marker"));
       });
     });
 
@@ -119,11 +119,16 @@ describe("mcp-launcher", () => {
     expect(exitCode).toBe(0);
   }, 10_000);
 
-  it("proxies stdin→stdout verbatim while the child is alive", async () => {
+  it("routes JSON stdout lines to stdout; non-JSON lines to stderr with tag", async () => {
+    // PR #224 added a stdout filter: the launcher now only forwards lines that
+    // parse as JSON (MCP JSON-RPC messages) to its own stdout. Non-JSON lines
+    // (plugin banners, log noise) are rerouted to stderr with an
+    // [mcp-launcher: stdout→stderr] prefix so they remain visible in logs
+    // but don't confuse strict MCP clients (e.g. the Python `mcp` library).
     const { ensureLauncher } = await freshLauncher();
     const launcherPath = ensureLauncher();
 
-    // Echo-style child.
+    // Echo-style child: whatever arrives on stdin is echoed back to stdout.
     const childScript = `
       process.stdin.on("data", (d) => process.stdout.write(d));
       process.stdin.resume();
@@ -132,14 +137,40 @@ describe("mcp-launcher", () => {
       stdio: ["pipe", "pipe", "pipe"],
     });
 
-    const output: Buffer[] = [];
-    launcher.stdout!.on("data", (c) => output.push(c));
-    launcher.stdin!.write("hello\n");
+    const stdoutBufs: Buffer[] = [];
+    const stderrBufs: Buffer[] = [];
+    launcher.stdout!.on("data", (c) => stdoutBufs.push(c));
+    launcher.stderr!.on("data", (c) => stderrBufs.push(c));
+
+    // Send a valid JSON-RPC line — should pass through to stdout unchanged.
+    const jsonLine =
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }) + "\n";
+    launcher.stdin!.write(jsonLine);
 
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("echo timeout")), 5000);
+      const timeout = setTimeout(
+        () => reject(new Error("JSON line did not appear on stdout")),
+        5000,
+      );
       const check = setInterval(() => {
-        if (Buffer.concat(output).toString().includes("hello")) {
+        if (Buffer.concat(stdoutBufs).toString().includes('"method":"ping"')) {
+          clearInterval(check);
+          clearTimeout(timeout);
+          resolve();
+        }
+      }, 50);
+    });
+
+    // Send a plain text line — should be rerouted to stderr with the tag.
+    launcher.stdin!.write("plain log line\n");
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error("plain line did not appear on stderr")),
+        5000,
+      );
+      const check = setInterval(() => {
+        if (Buffer.concat(stderrBufs).toString().includes("plain log line")) {
           clearInterval(check);
           clearTimeout(timeout);
           resolve();
@@ -149,7 +180,16 @@ describe("mcp-launcher", () => {
 
     launcher.stdin!.end();
     await new Promise((r) => launcher.on("exit", r));
-    expect(Buffer.concat(output).toString()).toContain("hello");
+
+    const stdout = Buffer.concat(stdoutBufs).toString();
+    const stderr = Buffer.concat(stderrBufs).toString();
+    // JSON went to stdout
+    expect(stdout).toContain('"method":"ping"');
+    // Plain text was tagged and rerouted to stderr
+    expect(stderr).toContain("[mcp-launcher: stdout→stderr]");
+    expect(stderr).toContain("plain log line");
+    // Plain text did NOT leak to stdout
+    expect(stdout).not.toContain("plain log line");
   }, 10_000);
 
   it("ensureLauncher throws when launcher file does not exist on disk", async () => {
