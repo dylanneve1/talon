@@ -53,7 +53,48 @@ process.stdout.on("error", swallow);
 process.stderr.on("error", swallow);
 
 process.stdin.pipe(child.stdin);
-child.stdout.pipe(process.stdout);
+
+// Stdout filter: MCP stdio convention says child stdout carries one
+// JSON-RPC message per line and nothing else. Some plugins violate
+// this and print log/banner lines (tailscale-mcp, ccusage, polymarket
+// at startup). Strict MCP clients (the Python `mcp` library used by
+// the Antigravity SDK) hit those lines, raise a JSONDecodeError, and
+// crash the task group that owns the session — taking down every
+// other MCP server connection in the process.
+//
+// Filter line-by-line: anything that looks like JSON (`{` or `[`
+// after optional whitespace) goes through to stdout; everything else
+// gets re-routed to stderr with a tag so it's still visible in logs.
+// Tolerant MCP clients (e.g. the claude binary) see exactly what they
+// did before — this is a no-op for clean servers.
+{
+  const JSON_LINE = /^\s*[{[]/;
+  let buf = "";
+  child.stdout.setEncoding("utf-8");
+  child.stdout.on("data", (chunk) => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf("\n")) !== -1) {
+      const line = buf.slice(0, nl + 1);
+      buf = buf.slice(nl + 1);
+      if (JSON_LINE.test(line)) {
+        process.stdout.write(line);
+      } else if (line.trim().length > 0) {
+        process.stderr.write(`[mcp-launcher: stdout→stderr] ${line}`);
+      }
+    }
+  });
+  child.stdout.on("end", () => {
+    if (buf.length === 0) return;
+    if (JSON_LINE.test(buf)) {
+      process.stdout.write(buf);
+    } else {
+      process.stderr.write(`[mcp-launcher: stdout→stderr] ${buf}`);
+    }
+    buf = "";
+  });
+}
+
 child.stderr.pipe(process.stderr);
 
 let terminating = false;
