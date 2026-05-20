@@ -17,13 +17,17 @@ import {
 
 describe("antigravity / model catalog", () => {
   it("exposes Gemini 3.5 Flash as the default candidate", () => {
-    expect(ANTIGRAVITY_MODELS.some((m) => m.id === "gemini-3.5-flash")).toBe(
-      true,
-    );
+    // Catalog ids now use the canonical `models/<x>` form returned by
+    // Gemini's `models.list` API. Fallback list mirrors that.
+    expect(
+      ANTIGRAVITY_MODELS.some((m) => m.id === "models/gemini-3.5-flash"),
+    ).toBe(true);
   });
 
   it("includes the Pro variant", () => {
-    expect(ANTIGRAVITY_MODELS.some((m) => m.id === "gemini-3-pro")).toBe(true);
+    expect(
+      ANTIGRAVITY_MODELS.some((m) => m.id === "models/gemini-3-pro"),
+    ).toBe(true);
   });
 
   it("every model carries the google provider", () => {
@@ -43,12 +47,23 @@ describe("antigravity / model catalog", () => {
 });
 
 describe("antigravity / resolveModel", () => {
-  it("returns exact match for a known model id", () => {
+  it("returns exact match for the canonical model id", () => {
+    const result = resolveModel("models/gemini-3.5-flash");
+    expect(result.kind).toBe("exact");
+    if (result.kind === "exact") {
+      expect(result.model.id).toBe("models/gemini-3.5-flash");
+      expect(result.storedValue).toBe("models/gemini-3.5-flash");
+    }
+  });
+
+  it("returns exact match for the bare model id (back-compat)", () => {
+    // v0 of the catalog stored bare ids like `gemini-3.5-flash`.
+    // The new resolver accepts both forms so stored chat-settings
+    // from before the dynamic-catalog change keep working.
     const result = resolveModel("gemini-3.5-flash");
     expect(result.kind).toBe("exact");
     if (result.kind === "exact") {
-      expect(result.model.id).toBe("gemini-3.5-flash");
-      expect(result.storedValue).toBe("gemini-3.5-flash");
+      expect(result.model.id).toBe("models/gemini-3.5-flash");
     }
   });
 
@@ -77,7 +92,12 @@ describe("antigravity / resolveModel", () => {
 });
 
 describe("antigravity / getModelInfo", () => {
-  it("returns the model entry for a known id", () => {
+  it("returns the model entry for the canonical id", () => {
+    const m = getModelInfo("models/gemini-3.5-flash");
+    expect(m?.displayName).toBe("Gemini 3.5 Flash");
+  });
+
+  it("returns the model entry for the bare id (back-compat)", () => {
     const m = getModelInfo("gemini-3.5-flash");
     expect(m?.displayName).toBe("Gemini 3.5 Flash");
   });
@@ -89,22 +109,24 @@ describe("antigravity / getModelInfo", () => {
 
 describe("antigravity / getSettingsPresentation", () => {
   it("marks the active model with a bullet", () => {
-    const res = getSettingsPresentation("gemini-3.5-flash");
+    const res = getSettingsPresentation("models/gemini-3.5-flash");
     const active = res.modelButtons.find((b) => b.text.startsWith("● "));
     expect(active?.text).toContain("Gemini 3.5 Flash");
   });
 
   it("reports the model count in details", () => {
-    const res = getSettingsPresentation("gemini-3.5-flash");
+    const res = getSettingsPresentation("models/gemini-3.5-flash");
     expect(res.modelDetails.some((d) => d.includes("Antigravity"))).toBe(true);
   });
 
   it("returns view: models", () => {
-    expect(getSettingsPresentation("gemini-3.5-flash").view).toBe("models");
+    expect(getSettingsPresentation("models/gemini-3.5-flash").view).toBe(
+      "models",
+    );
   });
 
   it("uses callbackPrefix when supplied", () => {
-    const res = getSettingsPresentation("gemini-3.5-flash", {
+    const res = getSettingsPresentation("models/gemini-3.5-flash", {
       callbackPrefix: "test:",
     });
     for (const b of res.modelButtons) {
@@ -154,11 +176,11 @@ describe("antigravity / formatModelError", () => {
     }
   });
 
-  it("formats a missing query with the available list", () => {
+  it("formats a missing query with a sample of the catalog", () => {
     const r = resolveModel("nope");
     const msg = formatModelError("nope", r);
     expect(msg).toContain("No Antigravity model matches");
-    expect(msg).toContain("gemini-3.5-flash");
+    expect(msg.toLowerCase()).toContain("gemini-3.5-flash");
   });
 });
 

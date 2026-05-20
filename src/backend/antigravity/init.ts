@@ -26,6 +26,7 @@ import {
   ANTIGRAVITY_DEFAULT_MODEL,
   ANTIGRAVITY_WORKSPACE_SYMLINK_NAME,
 } from "./constants.js";
+import { discoverAntigravityModels } from "./discovery.js";
 
 function expandHome(p: string | undefined): string | undefined {
   if (!p) return p;
@@ -215,6 +216,33 @@ export function initAntigravityAgent(
   // Provision the workspace path at startup so the doctor + first turn
   // see the symlink immediately, not at first chat.
   resolveWorkspacePath(cfg);
+
+  // Kick off background model discovery so the /model picker is
+  // populated with the live catalog before the user opens it. Fire
+  // and forget — the discovery module caches the result; the catalog
+  // falls back to a curated 5-model list while the call's in flight.
+  const pythonPath =
+    typeof cfgRecord.antigravityPython === "string"
+      ? expandHome(cfgRecord.antigravityPython as string)
+      : undefined;
+  if (geminiKey) {
+    void discoverAntigravityModels({
+      apiKey: geminiKey,
+      pythonPath,
+    }).then((result) => {
+      if (result.source === "live") {
+        log(
+          "agent",
+          `Antigravity catalog: ${result.models.length} models discovered live`,
+        );
+      } else if (result.error) {
+        logWarn(
+          "agent",
+          `Antigravity catalog: using fallback (${result.error})`,
+        );
+      }
+    });
+  }
 }
 
 export { resolveWorkspacePath, containsHiddenSegment };
@@ -268,11 +296,18 @@ export async function ensureBridge(
       ? expandHome(cfgRecord.antigravityPython as string)
       : undefined;
 
+  // Strip the `models/` prefix Gemini's models.list() includes.
+  // `LocalAgentConfig(model=...)` accepts both forms but the short
+  // form is what the SDK uses internally — cleaner to send that.
+  const effectiveModel =
+    model === "default" ? ANTIGRAVITY_DEFAULT_MODEL : model;
+  const bridgeModel = effectiveModel.replace(/^models\//, "");
+
   const bridge = new AntigravityBridge(chatId);
   await bridge.start(
     {
       gemini_api_key: geminiKey,
-      model: model === "default" ? ANTIGRAVITY_DEFAULT_MODEL : model,
+      model: bridgeModel,
       workspaces: [workspacePath],
       mcp_servers: mcpServers,
       // system_instructions is supplied per-turn via the chat prompt
