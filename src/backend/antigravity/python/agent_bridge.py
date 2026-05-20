@@ -68,82 +68,135 @@ from typing import Any
 BRIDGE_PROTOCOL_VERSION = 1
 
 
-# ── MCP tool-name de-collision patches ──────────────────────────────────────
+# ── Direct MCP supervision ─────────────────────────────────────────────────
 #
-# The antigravity Python SDK aggregates MCP tools via the `mcp` client's
-# `ClientSessionGroup` but never installs a `component_name_hook`, so two
-# servers exposing tools with the same name (Talon has `cancel_scheduled`
-# on both `telegram-tools` and the `email` plugin) trip a duplicate-key
-# guard in `_aggregate_components` and the Agent context manager dies.
+# Rather than handing MCP server specs to the antigravity SDK (which has
+# several known bugs around env, tool-name namespacing, and stdout
+# tolerance — see git history of this file), we connect to each MCP
+# stdio server ourselves via the official `mcp` Python lib, list its
+# tools, wrap them as plain Python callables, and hand the wrapped
+# functions to LocalAgentConfig via `tools=[...]`. The SDK's
+# `mcp_servers=[...]` path is bypassed entirely.
 #
-# Even after installing a name hook, `google.antigravity.mcp.bridge.
-# get_mcp_tools` reads `tool_info.name` (the raw tool name from the
-# server) instead of the dict key the hook produced, which means the
-# returned wrappers all share the original colliding name and the
-# subsequent `session_group.call_tool(<raw name>)` dispatch fails with
-# a KeyError on `_tool_to_session`.
+# Benefits over the patched approach we used before:
 #
-# We patch both: install a `mcp_<server>__<tool>` hook (matching the
-# convention claude-sdk and openai-agents already use) AND rewrite
-# `get_mcp_tools` to use the dict key as the wrapper name + dispatch
-# argument. Net effect: each plugin's tools coexist under unique
-# names; `session_group.call_tool(hooked)` finds the session; the
-# session then calls the underlying MCP server with the unhooked
-# `tool.name`, which is what the server expects on the wire.
+#   - **Env vars actually reach the child.** `StdioServerParameters`
+#     accepts `env=...`; the SDK's `McpStdioServer` pydantic model
+#     silently dropped it.
+#   - **Tool-name namespacing is in our control.** `mcp_<server>__<tool>`
+#     with `-` → `_` in the server segment so the names satisfy the
+#     Gemini API's identifier rules.
+#   - **Soft per-server failure.** If one plugin's stdio server can't be
+#     initialised (bad token, missing binary, slow startup), we log and
+#     skip it; the agent still comes up with the surviving tools. The
+#     SDK's MCP layer treats one failure as fatal for the whole agent.
+#   - **No SDK monkey-patches.** Nothing to rebreak on the next
+#     `google-antigravity` release.
 
 
-def _install_mcp_collision_patches() -> None:
-    import mcp.client.session_group as _session_group_mod
-    from google.antigravity.mcp import bridge as _ag_bridge
-    from google.antigravity.tools.tool_runner import ToolWithSchema
+class McpToolManager:
+    """Connects to MCP stdio servers, exposes their tools as plain
+    Python callables suitable for `LocalAgentConfig(tools=[...])`.
 
-    def _name_hook(name: str, server_info: Any) -> str:
-        server_name = getattr(server_info, "name", None) or "mcp"
-        return f"mcp_{server_name}__{name}"
+    Lifecycle is async-context-managed — use `async with`. Calling
+    `connect(spec)` is the only setup step; tool-call dispatch and
+    teardown are automatic.
+    """
 
-    orig_init = _session_group_mod.ClientSessionGroup.__init__
+    def __init__(self) -> None:
+        import contextlib
 
-    def _patched_init(
-        self: Any,
-        exit_stack: Any = None,
-        component_name_hook: Any = None,
-    ) -> None:
-        # Don't clobber a caller-supplied hook — they're explicitly
-        # opting into their own naming scheme.
-        if component_name_hook is None:
-            component_name_hook = _name_hook
-        orig_init(
-            self,
-            exit_stack=exit_stack,
-            component_name_hook=component_name_hook,
+        self._stack = contextlib.AsyncExitStack()
+        self._sessions: dict[str, Any] = {}
+        self._tools: list[Any] = []
+
+    async def __aenter__(self) -> "McpToolManager":
+        await self._stack.__aenter__()
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        return await self._stack.__aexit__(exc_type, exc_val, exc_tb)
+
+    @property
+    def tools(self) -> list[Any]:
+        return list(self._tools)
+
+    async def connect(self, spec: dict[str, Any]) -> int:
+        """Connect to one MCP server; register its tools. Returns the
+        number of tools registered. Raises on connect failure — caller
+        decides whether to swallow.
+        """
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        from google.antigravity.tools.tool_runner import ToolWithSchema
+
+        name = spec["name"]
+        command = spec["command"]
+        args = list(spec.get("args", []))
+        env_overlay = spec.get("env") or {}
+        # MCP servers run as detached children — give them the full
+        # parent env plus our overlay, otherwise tools like `node`
+        # can't find their own binaries.
+        env = {**os.environ, **env_overlay}
+
+        params = StdioServerParameters(command=command, args=args, env=env)
+
+        read_stream, write_stream = await self._stack.enter_async_context(
+            stdio_client(params)
         )
+        session = await self._stack.enter_async_context(
+            ClientSession(read_stream, write_stream)
+        )
+        await session.initialize()
 
-    _session_group_mod.ClientSessionGroup.__init__ = _patched_init
+        tool_list = (await session.list_tools()).tools
+        safe_server = name.replace("-", "_")
 
-    async def _patched_get_mcp_tools(session_group: Any) -> Any:
-        tools = []
-        # Iterate items() so we pick up the hooked KEY (e.g.
-        # `mcp_email-tools__cancel_scheduled`) rather than
-        # `tool_info.name` (the raw `cancel_scheduled`).
-        for hooked_name, tool_info in session_group.tools.items():
+        added = 0
+        for tool in tool_list:
+            ns_name = f"mcp_{safe_server}__{tool.name}"
+            wrapper = self._make_wrapper(
+                session, tool.name, ns_name, tool.description or ""
+            )
+            input_schema = tool.inputSchema or {
+                "type": "object",
+                "properties": {},
+            }
+            self._tools.append(ToolWithSchema(wrapper, input_schema))
+            added += 1
 
-            def make_wrapper(tool_name: str, doc: str | None) -> Any:
-                async def wrapper(**kwargs: Any) -> Any:
-                    return await session_group.call_tool(tool_name, kwargs)
+        self._sessions[name] = session
+        return added
 
-                wrapper.__name__ = tool_name
-                if doc:
-                    wrapper.__doc__ = doc
-                return wrapper
+    @staticmethod
+    def _make_wrapper(session, raw_name: str, ns_name: str, doc: str):
+        async def wrapper(**kwargs: Any) -> Any:
+            try:
+                result = await session.call_tool(raw_name, kwargs)
+            except Exception as e:  # noqa: BLE001
+                # Tool failures propagate to the agent as plain text so
+                # the model can recover (apologise, try a different
+                # tool) instead of taking down the turn.
+                return f"[tool error] {type(e).__name__}: {e}"
+            # Translate `CallToolResult` → a serialisable structure.
+            # The agent SDK accepts arbitrary JSON; the simplest faithful
+            # form is the `.content` blocks rendered as text.
+            content = getattr(result, "content", None) or []
+            parts: list[str] = []
+            for block in content:
+                text = getattr(block, "text", None)
+                if text is not None:
+                    parts.append(text)
+                else:
+                    parts.append(str(block))
+            text_blob = "\n".join(parts) if parts else ""
+            if getattr(result, "isError", False):
+                return f"[tool error] {text_blob or '(no detail)'}"
+            return text_blob
 
-            wrapper_fn = make_wrapper(hooked_name, tool_info.description)
-            tools.append(ToolWithSchema(wrapper_fn, tool_info.inputSchema))
-        return tools
-
-    _ag_bridge.get_mcp_tools = _patched_get_mcp_tools
-
-
-_install_mcp_collision_patches()
+        wrapper.__name__ = ns_name
+        wrapper.__doc__ = doc
+        return wrapper
 
 
 def emit(event: dict[str, Any]) -> None:
@@ -180,8 +233,13 @@ def read_config(args: argparse.Namespace) -> dict[str, Any]:
     return json.loads(raw)
 
 
-def build_agent_config(cfg: dict[str, Any]):
-    """Translate Talon's JSON config into a LocalAgentConfig."""
+def build_agent_config(cfg: dict[str, Any], tools: list[Any]):
+    """Translate Talon's JSON config into a LocalAgentConfig.
+
+    `tools` is the list of `ToolWithSchema` wrappers produced by the
+    `McpToolManager` — we connect to MCP servers ourselves rather than
+    delegating to the SDK's broken `mcp_servers=` path.
+    """
     # Imports are inside the function so a missing dependency surfaces
     # as a clean `error` event with a useful message instead of an
     # import-time crash before the bridge has a chance to emit.
@@ -189,8 +247,8 @@ def build_agent_config(cfg: dict[str, Any]):
         CapabilitiesConfig,
         GeminiConfig,
         LocalAgentConfig,
+        policy,
     )
-    from google.antigravity.types import McpStdioServer
 
     api_key = cfg.get("gemini_api_key") or os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -202,36 +260,6 @@ def build_agent_config(cfg: dict[str, Any]):
         )
 
     model = cfg.get("model")
-
-    # Build MCP servers (frontend tools + plugins).
-    #
-    # The antigravity SDK's `McpStdioServer` model only defines
-    # `command` / `args` — no `env` field — and the underlying
-    # `StdioServerParameters(command=..., args=...)` call drops env
-    # entirely. Talon's `telegram-tools` MCP server needs
-    # `TALON_CHAT_ID` / `TALON_FRONTEND` / `TALON_BRIDGE_URL` to
-    # function, so we bake those into the command itself via
-    # `/usr/bin/env KEY=VAL …` (POSIX). The launcher inherits stdin
-    # / stdout from us through the SDK either way.
-    mcp_servers: list[McpStdioServer] = []
-    for spec in cfg.get("mcp_servers", []):
-        spec_env = spec.get("env") or {}
-        spec_cmd = spec["command"]
-        spec_args = list(spec.get("args", []))
-        if spec_env:
-            env_kv = [f"{k}={v}" for k, v in spec_env.items()]
-            wrapped_cmd = "/usr/bin/env"
-            wrapped_args = [*env_kv, spec_cmd, *spec_args]
-        else:
-            wrapped_cmd = spec_cmd
-            wrapped_args = spec_args
-        mcp_servers.append(
-            McpStdioServer(
-                name=spec["name"],
-                command=wrapped_cmd,
-                args=wrapped_args,
-            )
-        )
 
     # Workspaces — Talon's TS side normally supplies the path (a
     # symlink under ~/talon-workspace pointing at the real
@@ -252,11 +280,8 @@ def build_agent_config(cfg: dict[str, Any]):
     if capabilities_raw is True:
         capabilities = CapabilitiesConfig()
     elif capabilities_raw is None:
-        # Default: full caps. Talon expects the agent to operate as
-        # an autonomous chat partner, not a sandboxed read-only viewer.
         capabilities = CapabilitiesConfig()
     elif capabilities_raw is False:
-        # Talon explicitly asked for read-only.
         capabilities = None  # LocalAgentConfig default is read-only
     else:
         capabilities = CapabilitiesConfig()
@@ -267,8 +292,14 @@ def build_agent_config(cfg: dict[str, Any]):
 
     kwargs: dict[str, Any] = {
         "gemini_config": GeminiConfig(api_key=api_key),
-        "mcp_servers": mcp_servers,
         "workspaces": workspaces,
+        "tools": tools,
+        # The SDK refuses to start with write-capable tools (which all
+        # MCP-backed tools are, from its perspective) unless a policy
+        # is registered. We allow everything by default — Talon's tool
+        # surface is the real safety boundary, and any user-defined
+        # policy override on the Talon side hasn't reached here yet.
+        "policies": [policy.allow_all()],
     }
     if capabilities is not None:
         kwargs["capabilities"] = capabilities
@@ -491,70 +522,92 @@ async def main_async(args: argparse.Namespace) -> int:
         emit({"type": "error", "id": None, "error": f"config: {e}"})
         return 2
 
-    try:
-        agent_config = build_agent_config(cfg)
-    except Exception as e:  # noqa: BLE001
-        emit(
-            {
-                "type": "error",
-                "id": None,
-                "error": (
-                    f"failed to build agent config: "
-                    f"{type(e).__name__}: {e}\n"
-                    + traceback.format_exc()
-                ),
-            }
-        )
-        return 2
-
     from google.antigravity import Agent
 
-    try:
-        async with Agent(agent_config) as agent:
+    # Connect MCP servers ourselves before building the agent config.
+    # Soft-fail per server so one broken plugin (missing binary, bad
+    # token, slow startup) doesn't take down the whole agent. The
+    # surviving tools land in `mcp_mgr.tools`, which we hand to
+    # LocalAgentConfig via `tools=[...]`.
+    async with McpToolManager() as mcp_mgr:
+        for spec in cfg.get("mcp_servers", []):
+            server_name = spec.get("name", "(unnamed)")
+            try:
+                added = await mcp_mgr.connect(spec)
+                log("info", f"MCP connected: {server_name} ({added} tools)")
+            except Exception as e:  # noqa: BLE001
+                log(
+                    "warn",
+                    f"MCP server '{server_name}' failed to connect: "
+                    f"{type(e).__name__}: {e} — skipping",
+                )
+                continue
+
+        try:
+            agent_config = build_agent_config(cfg, tools=mcp_mgr.tools)
+        except Exception as e:  # noqa: BLE001
             emit(
                 {
-                    "type": "ready",
-                    "protocol_version": BRIDGE_PROTOCOL_VERSION,
-                    "conversation_id": agent.conversation_id,
+                    "type": "error",
+                    "id": None,
+                    "error": (
+                        f"failed to build agent config: "
+                        f"{type(e).__name__}: {e}\n"
+                        + traceback.format_exc()
+                    ),
                 }
             )
-            await command_loop(agent)
-    except BaseException as e:  # noqa: BLE001
-        # The antigravity SDK wraps everything in nested anyio
-        # TaskGroups, so a real exception ends up at depth >10 in a
-        # BaseExceptionGroup and Python's default formatter prints
-        # `... (max_group_depth is 10)` instead of the actual cause.
-        # Walk the tree by hand so we can see the leaves.
-        def _flatten(exc: BaseException, depth: int = 0) -> list[str]:
-            out: list[str] = []
-            indent = "  " * depth
-            out.append(f"{indent}{type(exc).__name__}: {exc}")
-            if isinstance(exc, BaseExceptionGroup):
-                for sub in exc.exceptions:
-                    out.extend(_flatten(sub, depth + 1))
-            if exc.__cause__ is not None:
-                out.append(f"{indent}  caused by:")
-                out.extend(_flatten(exc.__cause__, depth + 2))
-            if exc.__context__ is not None and exc.__context__ is not exc.__cause__:
-                out.append(f"{indent}  during handling of:")
-                out.extend(_flatten(exc.__context__, depth + 2))
-            return out
+            return 2
 
-        leaves = "\n".join(_flatten(e))
-        emit(
-            {
-                "type": "error",
-                "id": None,
-                "error": (
-                    f"agent lifecycle error: "
-                    f"{type(e).__name__}: {e}\n"
-                    f"--- flattened tree ---\n{leaves}\n"
-                    f"--- traceback ---\n"
-                    + traceback.format_exc()
-                ),
-            }
-        )
-        return 1
+        try:
+            async with Agent(agent_config) as agent:
+                emit(
+                    {
+                        "type": "ready",
+                        "protocol_version": BRIDGE_PROTOCOL_VERSION,
+                        "conversation_id": agent.conversation_id,
+                    }
+                )
+                await command_loop(agent)
+        except BaseException as e:  # noqa: BLE001
+            # The antigravity SDK wraps everything in nested anyio
+            # TaskGroups, so a real exception ends up at depth >10 in
+            # a BaseExceptionGroup and Python's default formatter
+            # prints `... (max_group_depth is 10)` instead of the
+            # actual cause. Walk the tree by hand for the leaves.
+            def _flatten(exc: BaseException, depth: int = 0) -> list[str]:
+                out: list[str] = []
+                indent = "  " * depth
+                out.append(f"{indent}{type(exc).__name__}: {exc}")
+                if isinstance(exc, BaseExceptionGroup):
+                    for sub in exc.exceptions:
+                        out.extend(_flatten(sub, depth + 1))
+                if exc.__cause__ is not None:
+                    out.append(f"{indent}  caused by:")
+                    out.extend(_flatten(exc.__cause__, depth + 2))
+                if (
+                    exc.__context__ is not None
+                    and exc.__context__ is not exc.__cause__
+                ):
+                    out.append(f"{indent}  during handling of:")
+                    out.extend(_flatten(exc.__context__, depth + 2))
+                return out
+
+            leaves = "\n".join(_flatten(e))
+            emit(
+                {
+                    "type": "error",
+                    "id": None,
+                    "error": (
+                        f"agent lifecycle error: "
+                        f"{type(e).__name__}: {e}\n"
+                        f"--- flattened tree ---\n{leaves}\n"
+                        f"--- traceback ---\n"
+                        + traceback.format_exc()
+                    ),
+                }
+            )
+            return 1
 
     return 0
 
