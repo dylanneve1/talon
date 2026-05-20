@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { describe, it, expect } from "vitest";
 import {
   detectCodexAuth,
+  resolveCodexApiKey,
   isChatGptModelMismatchError,
 } from "../backend/codex/auth.js";
 import {
@@ -45,26 +46,122 @@ function makeFakeHome(authJson: string | null): string {
 }
 
 describe("codex / detectCodexAuth — priority order", () => {
-  it("env OPENAI_API_KEY wins over everything else", () => {
+  it("CODEX_API_KEY wins over every other explicit key", () => {
     const fakeHome = makeFakeHome(`{"auth_mode":"chatgpt"}`);
     try {
-      const info = detectCodexAuth(
-        "from-config",
-        envWith({ OPENAI_API_KEY: "env-key", HOME: fakeHome }),
-      );
+      const info = detectCodexAuth({
+        codexApiKey: "config-codex-key",
+        openaiApiKey: "config-openai-key",
+        openaiBaseUrl: "https://proxy.example/v1",
+        env: envWith({
+          CODEX_API_KEY: "env-upstream-codex-key",
+          TALON_CODEX_KEY: "env-codex-key",
+          OPENAI_API_KEY: "env-openai-key",
+          HOME: fakeHome,
+        }),
+      });
       expect(info.mode).toBe("api-key");
-      expect(info.source).toBe("env:OPENAI_API_KEY");
+      expect(info.source).toBe("env:CODEX_API_KEY");
+      expect(info.apiKey).toBe("env-upstream-codex-key");
+      expect(info.baseUrl).toBe("https://proxy.example/v1");
     } finally {
       rmSync(fakeHome, { recursive: true, force: true });
     }
   });
 
-  it("config openaiApiKey wins over the auth file", () => {
+  it("TALON_CODEX_KEY wins over config keys and OPENAI_API_KEY", () => {
     const fakeHome = makeFakeHome(`{"auth_mode":"chatgpt"}`);
     try {
-      const info = detectCodexAuth("from-config", envWith({ HOME: fakeHome }));
+      const info = detectCodexAuth({
+        codexApiKey: "config-codex-key",
+        openaiApiKey: "config-openai-key",
+        env: envWith({
+          TALON_CODEX_KEY: "env-codex-key",
+          OPENAI_API_KEY: "env-openai-key",
+          HOME: fakeHome,
+        }),
+      });
+      expect(info.mode).toBe("api-key");
+      expect(info.source).toBe("env:TALON_CODEX_KEY");
+      expect(info.apiKey).toBe("env-codex-key");
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("config codexApiKey wins over OPENAI_API_KEY and the auth file", () => {
+    const fakeHome = makeFakeHome(`{"auth_mode":"chatgpt"}`);
+    try {
+      const info = detectCodexAuth({
+        codexApiKey: "from-codex-config",
+        openaiApiKey: "from-openai-config",
+        env: envWith({ OPENAI_API_KEY: "env-openai-key", HOME: fakeHome }),
+      });
+      expect(info.mode).toBe("api-key");
+      expect(info.source).toBe("config:codexApiKey");
+      expect(info.apiKey).toBe("from-codex-config");
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("ChatGPT OAuth wins over generic OPENAI_API_KEY and openaiApiKey", () => {
+    const fakeHome = makeFakeHome(`{"auth_mode":"chatgpt"}`);
+    try {
+      const info = detectCodexAuth({
+        openaiApiKey: "from-openai-config",
+        env: envWith({ OPENAI_API_KEY: "env-openai-key", HOME: fakeHome }),
+      });
+      expect(info.mode).toBe("chatgpt");
+      expect(info.source).toBe("file:~/.codex/auth.json");
+      expect(info.apiKey).toBeUndefined();
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("uses OPENAI_API_KEY when no Codex auth file exists", () => {
+    const fakeHome = makeFakeHome(null);
+    try {
+      const info = detectCodexAuth({
+        openaiApiKey: "from-openai-config",
+        env: envWith({ OPENAI_API_KEY: "env-openai-key", HOME: fakeHome }),
+      });
+      expect(info.mode).toBe("api-key");
+      expect(info.source).toBe("env:OPENAI_API_KEY");
+      expect(info.apiKey).toBe("env-openai-key");
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("uses legacy config openaiApiKey only when no Codex auth file exists", () => {
+    const fakeHome = makeFakeHome(`{"auth_mode":"chatgpt"}`);
+    try {
+      const info = detectCodexAuth({
+        openaiApiKey: "from-openai-config",
+        openaiBaseUrl: "https://api.openai.com/v1",
+        env: envWith({ HOME: fakeHome }),
+      });
+      expect(info.mode).toBe("chatgpt");
+      expect(info.source).toBe("file:~/.codex/auth.json");
+    } finally {
+      rmSync(fakeHome, { recursive: true, force: true });
+    }
+  });
+
+  it("pairs legacy config openaiApiKey with base URL when used as fallback", () => {
+    const fakeHome = makeFakeHome(null);
+    try {
+      const info = detectCodexAuth({
+        openaiApiKey: "openrouter-key",
+        openaiBaseUrl: "https://openrouter.ai/api/v1",
+        env: envWith({ HOME: fakeHome }),
+      });
       expect(info.mode).toBe("api-key");
       expect(info.source).toBe("config:openaiApiKey");
+      expect(info.apiKey).toBe("openrouter-key");
+      expect(info.baseUrl).toBe("https://openrouter.ai/api/v1");
     } finally {
       rmSync(fakeHome, { recursive: true, force: true });
     }
@@ -75,7 +172,7 @@ describe("codex / detectCodexAuth — priority order", () => {
       `{"auth_mode":"chatgpt","OPENAI_API_KEY":null}`,
     );
     try {
-      const info = detectCodexAuth(undefined, envWith({ HOME: fakeHome }));
+      const info = detectCodexAuth({ env: envWith({ HOME: fakeHome }) });
       expect(info.mode).toBe("chatgpt");
       expect(info.source).toBe("file:~/.codex/auth.json");
       expect(info.authFilePath).toBe(join(fakeHome, ".codex", "auth.json"));
@@ -93,7 +190,7 @@ describe("codex / detectCodexAuth — priority order", () => {
       `{"auth_mode":"chatgpt","OPENAI_API_KEY":"sk-from-file"}`,
     );
     try {
-      const info = detectCodexAuth(undefined, envWith({ HOME: fakeHome }));
+      const info = detectCodexAuth({ env: envWith({ HOME: fakeHome }) });
       expect(info.mode).toBe("api-key");
       expect(info.source).toBe("file:~/.codex/auth.json");
     } finally {
@@ -104,7 +201,7 @@ describe("codex / detectCodexAuth — priority order", () => {
   it("returns `none` when no auth source is available", () => {
     const fakeHome = makeFakeHome(null);
     try {
-      const info = detectCodexAuth(undefined, envWith({ HOME: fakeHome }));
+      const info = detectCodexAuth({ env: envWith({ HOME: fakeHome }) });
       expect(info.mode).toBe("none");
       expect(info.source).toBe("missing");
     } finally {
@@ -115,7 +212,7 @@ describe("codex / detectCodexAuth — priority order", () => {
   it("returns `none` when auth.json exists but doesn't carry a recognised mode", () => {
     const fakeHome = makeFakeHome(`{"some_other_field":"value"}`);
     try {
-      const info = detectCodexAuth(undefined, envWith({ HOME: fakeHome }));
+      const info = detectCodexAuth({ env: envWith({ HOME: fakeHome }) });
       expect(info.mode).toBe("none");
       expect(info.authFileParsed).toBe(true);
     } finally {
@@ -126,7 +223,7 @@ describe("codex / detectCodexAuth — priority order", () => {
   it("surfaces a parse error when auth.json is malformed JSON", () => {
     const fakeHome = makeFakeHome(`{not valid json`);
     try {
-      const info = detectCodexAuth(undefined, envWith({ HOME: fakeHome }));
+      const info = detectCodexAuth({ env: envWith({ HOME: fakeHome }) });
       expect(info.mode).toBe("none");
       expect(info.authFileParsed).toBe(false);
       expect(info.parseError).toBeTruthy();
@@ -136,9 +233,36 @@ describe("codex / detectCodexAuth — priority order", () => {
   });
 
   it("returns `none` when HOME is unset and no other auth is configured", () => {
-    const info = detectCodexAuth(undefined, envWith({}));
+    const info = detectCodexAuth({ env: envWith({}) });
     expect(info.mode).toBe("none");
     expect(info.authFilePath).toBeUndefined();
+  });
+});
+
+describe("codex / resolveCodexApiKey", () => {
+  it("does not treat shared openaiApiKey config as Codex-specific auth", () => {
+    const resolved = resolveCodexApiKey({
+      openaiApiKey: "openrouter-key",
+      openaiBaseUrl: "https://openrouter.ai/api/v1",
+      env: envWith({}),
+    });
+    expect(resolved.apiKey).toBeUndefined();
+    expect(resolved.baseUrl).toBeUndefined();
+    expect(resolved.source).toBeUndefined();
+    expect(resolved.diagnostics).toEqual([]);
+  });
+
+  it("accepts explicit Codex key regardless of OpenAI Agents base URL", () => {
+    const resolved = resolveCodexApiKey({
+      codexApiKey: "codex-key",
+      openaiApiKey: "openrouter-key",
+      openaiBaseUrl: "https://openrouter.ai/api/v1",
+      env: envWith({}),
+    });
+    expect(resolved.apiKey).toBe("codex-key");
+    expect(resolved.baseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(resolved.source).toBe("config:codexApiKey");
+    expect(resolved.diagnostics).toEqual([]);
   });
 });
 

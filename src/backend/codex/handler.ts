@@ -116,7 +116,7 @@ async function maybeFallbackForChatGptMismatch(
     "agent",
     `[${chatId}] Codex returned ChatGPT model-mismatch for ${activeModel}; ` +
       `resetting thread and retrying on ${fallbackModel}. ` +
-      `Set OPENAI_API_KEY for billing-based access to api-key-only models.`,
+      `Set TALON_CODEX_KEY or codexApiKey for billing-based access to api-key-only models.`,
   );
   resetSession(chatId);
   const originalModel = getChatSettings(chatId).model;
@@ -192,7 +192,7 @@ export async function handleMessage(
       "agent",
       `[${chatId}] Codex model ${requestedModel} is api-key-only and ` +
         `current auth is ChatGPT OAuth — pre-emptively falling back to ${fallback}. ` +
-        `Set OPENAI_API_KEY or change the configured model to silence this.`,
+        `Set TALON_CODEX_KEY / codexApiKey or change the configured model to silence this.`,
     );
     activeModel = fallback;
   }

@@ -34,10 +34,11 @@ output — Talon dedupes but it's cleaner to commit to one route.
 
 /**
  * Default model used by the Codex backend when none is configured AND
- * an API key is present (`OPENAI_API_KEY` env or `openaiApiKey` in
- * config). The `gpt-5-codex` model is the highest-quality coding model
- * available through the Codex CLI but requires API-key billing — it is
- * not granted to ChatGPT subscription accounts.
+ * API-key billing is present (`CODEX_API_KEY`, `TALON_CODEX_KEY`,
+ * `codexApiKey`, or a last-resort generic OpenAI key). The
+ * `gpt-5-codex` model is the highest-quality coding model available
+ * through Codex on OpenAI's native endpoint but requires API-key
+ * billing — it is not granted to ChatGPT subscription accounts.
  */
 export const CODEX_DEFAULT_MODEL = "gpt-5-codex";
 

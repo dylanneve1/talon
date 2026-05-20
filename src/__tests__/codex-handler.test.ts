@@ -114,14 +114,14 @@ const coreModels = await import("../core/models.js");
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function setupHandler(overrides: Record<string, unknown> = {}): void {
-  // Pass an explicit `openaiApiKey` so `detectCodexAuth` lands in
+  // Pass an explicit `codexApiKey` so `detectCodexAuth` lands in
   // api-key mode (and doesn't read the host's `~/.codex/auth.json`,
   // which on developer machines may be in chatgpt OAuth mode and
   // would otherwise change the auth-aware default model under us).
   initCodexAgent(
     {
       model: "gpt-5-codex",
-      openaiApiKey: "test-api-key",
+      codexApiKey: "test-api-key",
       workspace: "/tmp",
       systemPrompt: "Test system prompt.",
       frontend: "telegram",
@@ -831,11 +831,11 @@ describe("codex / handleMessage — model resolution", () => {
   it("falls back to CODEX_DEFAULT_MODEL when config.model is absent", async () => {
     // Init without an explicit model — handler should fall back to
     // CODEX_DEFAULT_MODEL ("gpt-5-codex") on the api-key auth path.
-    // `openaiApiKey` forces api-key mode so the auth-aware default
+    // `codexApiKey` forces api-key mode so the auth-aware default
     // is the api-key default and not the chatgpt fallback.
     initCodexAgent(
       {
-        openaiApiKey: "test-api-key",
+        codexApiKey: "test-api-key",
         workspace: "/tmp",
         systemPrompt: "Test system prompt.",
         frontend: "telegram",
@@ -1388,11 +1388,10 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
     const origApiKey = process.env.OPENAI_API_KEY;
     process.env.HOME = fakeHome;
     delete process.env.USERPROFILE;
-    // Suppress OPENAI_API_KEY so detectCodexAuth doesn't short-circuit
-    // to api-key mode before reaching the auth-file check.
+    // Suppress OPENAI_API_KEY so this test exercises the auth file.
     delete process.env.OPENAI_API_KEY;
     try {
-      // No openaiApiKey + no OPENAI_API_KEY env → init reads the fake
+      // No codexApiKey + no OPENAI_API_KEY env → init reads the fake
       // ~/.codex/auth.json we just created (chatgpt mode). With
       // `gpt-5-codex` set in config, the handler should detect the
       // mismatch before calling `runStreamed` and pass `gpt-5.5` to

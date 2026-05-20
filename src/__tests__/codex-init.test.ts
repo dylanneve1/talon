@@ -6,11 +6,17 @@
  * without spawning a real subprocess.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 // Counter so each new Codex gets a unique identity for cache-equality
 // assertions.
 let CODEX_INSTANCE_COUNTER = 0;
+const ORIGINAL_CODEX_API_KEY = process.env.CODEX_API_KEY;
+const ORIGINAL_HOME = process.env.HOME;
+const ORIGINAL_USERPROFILE = process.env.USERPROFILE;
 
 vi.mock("@openai/codex-sdk", () => ({
   Codex: class {
@@ -32,14 +38,64 @@ vi.mock("../core/plugin.js", () => ({
   getPluginMcpServers: vi.fn(() => ({})),
 }));
 
-const { ensureCodex, initCodexAgent } =
+const { ensureCodex, initCodexAgent, codexSubprocessEnv } =
   await import("../backend/codex/init.js");
 const { getState, resetState } = await import("../backend/codex/state.js");
 
 beforeEach(() => {
   resetState();
   CODEX_INSTANCE_COUNTER = 0;
+  delete process.env.CODEX_API_KEY;
 });
+
+afterAll(() => {
+  if (ORIGINAL_CODEX_API_KEY === undefined) {
+    delete process.env.CODEX_API_KEY;
+  } else {
+    process.env.CODEX_API_KEY = ORIGINAL_CODEX_API_KEY;
+  }
+  if (ORIGINAL_HOME === undefined) {
+    delete process.env.HOME;
+  } else {
+    process.env.HOME = ORIGINAL_HOME;
+  }
+  if (ORIGINAL_USERPROFILE === undefined) {
+    delete process.env.USERPROFILE;
+  } else {
+    process.env.USERPROFILE = ORIGINAL_USERPROFILE;
+  }
+});
+
+function withEmptyCodexHome(): () => void {
+  const dir = mkdtempSync(join(tmpdir(), "talon-codex-init-"));
+  const previousHome = process.env.HOME;
+  const previousUserprofile = process.env.USERPROFILE;
+  process.env.HOME = dir;
+  delete process.env.USERPROFILE;
+  return () => {
+    if (previousHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = previousHome;
+    }
+    if (previousUserprofile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = previousUserprofile;
+    }
+    rmSync(dir, { recursive: true, force: true });
+  };
+}
+
+function withChatGptCodexHome(): () => void {
+  const restore = withEmptyCodexHome();
+  mkdirSync(join(process.env.HOME!, ".codex"), { recursive: true });
+  writeFileSync(
+    join(process.env.HOME!, ".codex", "auth.json"),
+    JSON.stringify({ auth_mode: "chatgpt", OPENAI_API_KEY: null }),
+  );
+  return restore;
+}
 
 describe("codex / ensureCodex caching", () => {
   it("throws if called before initCodexAgent", () => {
@@ -129,8 +185,11 @@ describe("codex / ensureCodex caching", () => {
     expect(state.frontendName).toBe("discord");
   });
 
-  it("uses OPENAI_API_KEY env when config.openaiApiKey is absent", () => {
+  it("uses OPENAI_API_KEY env when config.openaiApiKey and Codex auth file are absent", () => {
     const original = process.env.OPENAI_API_KEY;
+    const originalCodex = process.env.TALON_CODEX_KEY;
+    const restoreHome = withEmptyCodexHome();
+    delete process.env.TALON_CODEX_KEY;
     process.env.OPENAI_API_KEY = "env-key";
     try {
       initCodexAgent(
@@ -153,11 +212,92 @@ describe("codex / ensureCodex caching", () => {
       } else {
         process.env.OPENAI_API_KEY = original;
       }
+      if (originalCodex === undefined) {
+        delete process.env.TALON_CODEX_KEY;
+      } else {
+        process.env.TALON_CODEX_KEY = originalCodex;
+      }
+      restoreHome();
     }
   });
 
-  it("prefers OPENAI_API_KEY env over config.openaiApiKey", () => {
+  it("prefers TALON_CODEX_KEY env over every config key", () => {
     const original = process.env.OPENAI_API_KEY;
+    const originalCodex = process.env.TALON_CODEX_KEY;
+    process.env.TALON_CODEX_KEY = "codex-env-key";
+    process.env.OPENAI_API_KEY = "env-key";
+    try {
+      initCodexAgent(
+        {
+          model: "gpt-5-codex",
+          workspace: "/tmp",
+          systemPrompt: "test",
+          frontend: "telegram",
+          codexApiKey: "codex-config-key",
+          openaiApiKey: "config-key",
+        } as never,
+        () => 19876,
+        "telegram",
+      );
+      const codex = ensureCodex("chatA") as unknown as {
+        options: { apiKey?: string };
+      };
+      expect(codex.options.apiKey).toBe("codex-env-key");
+    } finally {
+      if (original === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = original;
+      }
+      if (originalCodex === undefined) {
+        delete process.env.TALON_CODEX_KEY;
+      } else {
+        process.env.TALON_CODEX_KEY = originalCodex;
+      }
+    }
+  });
+
+  it("prefers config.codexApiKey over OPENAI_API_KEY", () => {
+    const original = process.env.OPENAI_API_KEY;
+    const originalCodex = process.env.TALON_CODEX_KEY;
+    delete process.env.TALON_CODEX_KEY;
+    process.env.OPENAI_API_KEY = "env-key";
+    try {
+      initCodexAgent(
+        {
+          model: "gpt-5-codex",
+          workspace: "/tmp",
+          systemPrompt: "test",
+          frontend: "telegram",
+          codexApiKey: "codex-config-key",
+          openaiApiKey: "config-key",
+        } as never,
+        () => 19876,
+        "telegram",
+      );
+      const codex = ensureCodex("chatA") as unknown as {
+        options: { apiKey?: string };
+      };
+      expect(codex.options.apiKey).toBe("codex-config-key");
+    } finally {
+      if (original === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = original;
+      }
+      if (originalCodex === undefined) {
+        delete process.env.TALON_CODEX_KEY;
+      } else {
+        process.env.TALON_CODEX_KEY = originalCodex;
+      }
+    }
+  });
+
+  it("prefers OPENAI_API_KEY env over legacy config.openaiApiKey", () => {
+    const original = process.env.OPENAI_API_KEY;
+    const originalCodex = process.env.TALON_CODEX_KEY;
+    const restoreHome = withEmptyCodexHome();
+    delete process.env.TALON_CODEX_KEY;
     process.env.OPENAI_API_KEY = "env-key";
     try {
       initCodexAgent(
@@ -182,11 +322,20 @@ describe("codex / ensureCodex caching", () => {
       } else {
         process.env.OPENAI_API_KEY = original;
       }
+      if (originalCodex === undefined) {
+        delete process.env.TALON_CODEX_KEY;
+      } else {
+        process.env.TALON_CODEX_KEY = originalCodex;
+      }
+      restoreHome();
     }
   });
 
-  it("falls back to config.openaiApiKey when env is absent", () => {
+  it("falls back to legacy config.openaiApiKey when env and Codex auth file are absent", () => {
     const original = process.env.OPENAI_API_KEY;
+    const originalCodex = process.env.TALON_CODEX_KEY;
+    const restoreHome = withEmptyCodexHome();
+    delete process.env.TALON_CODEX_KEY;
     delete process.env.OPENAI_API_KEY;
     try {
       initCodexAgent(
@@ -196,6 +345,7 @@ describe("codex / ensureCodex caching", () => {
           systemPrompt: "test",
           frontend: "telegram",
           openaiApiKey: "config-key",
+          openaiBaseUrl: "https://api.openai.com/v1",
         } as never,
         () => 19876,
         "telegram",
@@ -208,7 +358,64 @@ describe("codex / ensureCodex caching", () => {
       if (original !== undefined) {
         process.env.OPENAI_API_KEY = original;
       }
+      if (originalCodex !== undefined) {
+        process.env.TALON_CODEX_KEY = originalCodex;
+      }
+      restoreHome();
     }
+  });
+
+  it("uses ChatGPT OAuth instead of shared OpenRouter config when logged into Codex", () => {
+    const original = process.env.OPENAI_API_KEY;
+    const originalCodex = process.env.TALON_CODEX_KEY;
+    const restoreHome = withChatGptCodexHome();
+    delete process.env.TALON_CODEX_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      initCodexAgent(
+        {
+          model: "gpt-5-codex",
+          workspace: "/tmp",
+          systemPrompt: "test",
+          frontend: "telegram",
+          openaiApiKey: "openrouter-key",
+          openaiBaseUrl: "https://openrouter.ai/api/v1",
+        } as never,
+        () => 19876,
+        "telegram",
+      );
+      const codex = ensureCodex("chatA") as unknown as {
+        options: { apiKey?: string; baseUrl?: string };
+      };
+      expect(codex.options.apiKey).toBeUndefined();
+      expect(codex.options.baseUrl).toBeUndefined();
+    } finally {
+      if (original !== undefined) {
+        process.env.OPENAI_API_KEY = original;
+      }
+      if (originalCodex !== undefined) {
+        process.env.TALON_CODEX_KEY = originalCodex;
+      }
+      restoreHome();
+    }
+  });
+});
+
+describe("codex / subprocess env", () => {
+  it("removes broad auth env vars so they cannot shadow the resolved profile", () => {
+    const env = codexSubprocessEnv({
+      PATH: "/usr/bin",
+      HOME: "/tmp/home",
+      CODEX_API_KEY: "stale-codex",
+      TALON_CODEX_KEY: "stale-talon",
+      OPENAI_API_KEY: "stale-openai",
+      OPENAI_BASE_URL: "https://stale.example/v1",
+    });
+
+    expect(env).toEqual({
+      PATH: "/usr/bin",
+      HOME: "/tmp/home",
+    });
   });
 });
 

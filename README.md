@@ -12,16 +12,16 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 
 ## Features
 
-|                       |                                                                                                                                       |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-frontend**    | Telegram (Grammy + GramJS userbot), Discord (discord.js), Microsoft Teams (Bot Framework), Terminal with live tool visibility         |
+|                       |                                                                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Multi-frontend**    | Telegram (Grammy + GramJS userbot), Discord (discord.js), Microsoft Teams (Bot Framework), Terminal with live tool visibility                |
 | **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
-| **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, triggers, stickers, file system, admin controls                              |
-| **Plugins**           | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search                                                   |
-| **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary) — backend-agnostic                                          |
-| **Triggers**          | Self-authored watcher scripts (bash/python/node) that wake the bot when conditions are met                                            |
-| **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard                                                            |
-| **Model registry**    | Models discovered from the active backend at startup — new models appear in all pickers automatically                                 |
+| **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, triggers, stickers, file system, admin controls                                     |
+| **Plugins**           | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search                                                          |
+| **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary) — backend-agnostic                                                 |
+| **Triggers**          | Self-authored watcher scripts (bash/python/node) that wake the bot when conditions are met                                                   |
+| **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard                                                                   |
+| **Model registry**    | Models discovered from the active backend at startup — new models appear in all pickers automatically                                        |
 
 ---
 
@@ -46,7 +46,7 @@ npx talon chat        # terminal chat mode
   - `claude` backend: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude` CLI on PATH).
   - `kilo` backend: nothing extra — `@kilocode/sdk` spawns a local server. Free models are accessible without auth; routed models use Kilo's own credentials.
   - `opencode` backend: nothing extra — `@opencode-ai/sdk` spawns a local server.
-  - `codex` backend: install the `codex` CLI (`npm i -g @openai/codex`) and authenticate with `codex login` (ChatGPT auth or `OPENAI_API_KEY`).
+  - `codex` backend: install the `codex` CLI (`npm i -g @openai/codex`) and authenticate with `codex login`, `CODEX_API_KEY`, `TALON_CODEX_KEY`, or `codexApiKey`. `OPENAI_API_KEY` is used only as a fallback when no Codex login exists.
 - Talon runs from a normal source or package install; standalone compiled binaries are not supported.
 
 ---
@@ -98,12 +98,12 @@ index.ts                    Composition root
 
 Select via the `backend` field in `~/.talon/config.json`. All backends implement the same `QueryBackend` interface — heartbeat, dream, and chat handlers are backend-agnostic.
 
-| Backend    | `backend` value | Transport                                              | Notes                                                                   |
-| ---------- | --------------- | ------------------------------------------------------ | ----------------------------------------------------------------------- |
-| Claude SDK | `"claude"`      | In-process via `@anthropic-ai/claude-agent-sdk`        | Requires the `claude` CLI on `PATH`. Hook-based turn termination.       |
-| Kilo       | `"kilo"`        | Local HTTP server via `@kilocode/sdk`                  | SSE-streamed turns. Routes to many model providers via Kilo's auth.     |
-| OpenCode   | `"opencode"`    | Local HTTP server via `@opencode-ai/sdk`               | SSE-streamed turns; same MCP and session shape as Kilo (upstream fork). |
-| Codex      | `"codex"`       | Per-turn subprocess via `@openai/codex-sdk`            | Requires the `codex` CLI from `@openai/codex` and an OpenAI API key (or ChatGPT auth). MCP servers configured via TOML overrides at thread start. |
+| Backend    | `backend` value | Transport                                       | Notes                                                                                                                                                                                                            |
+| ---------- | --------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude SDK | `"claude"`      | In-process via `@anthropic-ai/claude-agent-sdk` | Requires the `claude` CLI on `PATH`. Hook-based turn termination.                                                                                                                                                |
+| Kilo       | `"kilo"`        | Local HTTP server via `@kilocode/sdk`           | SSE-streamed turns. Routes to many model providers via Kilo's auth.                                                                                                                                              |
+| OpenCode   | `"opencode"`    | Local HTTP server via `@opencode-ai/sdk`        | SSE-streamed turns; same MCP and session shape as Kilo (upstream fork).                                                                                                                                          |
+| Codex      | `"codex"`       | Per-turn subprocess via `@openai/codex-sdk`     | Requires the `codex` CLI from `@openai/codex` and Codex auth (`codex login`, `CODEX_API_KEY`, `TALON_CODEX_KEY`, or `codexApiKey`). MCP servers configured via TOML overrides at thread start. |
 
 The Kilo and OpenCode backends share infrastructure (`backend/remote-server/`) since the upstream HTTP API is the same; each backend supplies its own SDK client, port, and delivery suffix. Codex is its own integration on top of the Codex CLI's JSONL event stream.
 
@@ -244,25 +244,26 @@ talon doctor    Validate environment and dependencies
 
 Config file: `~/.talon/config.json`
 
-| Field                      | Default      | Description                                                     |
-| -------------------------- | ------------ | --------------------------------------------------------------- |
-| `frontend`                 | `"telegram"` | `"telegram"`, `"discord"`, `"teams"`, `"terminal"`, or an array |
-| `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, `"opencode"`, or `"codex"`                |
-| `botToken`                 | ---          | Telegram bot token                                              |
-| `model`                    | `"default"`  | Default model. Interpretation depends on the active backend.    |
-| `concurrency`              | `1`          | Max concurrent AI queries (1--20)                               |
-| `pulse`                    | `true`       | Periodic group engagement                                       |
-| `heartbeat`                | `false`      | Background maintenance agent                                    |
-| `heartbeatIntervalMinutes` | `60`         | Heartbeat interval                                              |
-| `braveApiKey`              | ---          | Brave Search API key                                            |
-| `timezone`                 | ---          | IANA timezone (e.g. `"Europe/London"`)                          |
-| `plugins`                  | `[]`         | External plugin packages                                        |
-| `adminUserId`              | ---          | Telegram user ID for `/admin` commands                          |
-| `allowedUsers`             | ---          | Whitelist of Telegram user IDs                                  |
-| `apiId` / `apiHash`        | ---          | Telegram API credentials for full message history               |
-| `github`                   | ---          | GitHub plugin config (see above)                                |
-| `mempalace`                | ---          | MemPalace plugin config (see above)                             |
-| `playwright`               | ---          | Playwright plugin config (see above)                            |
+| Field                      | Default      | Description                                                                                                             |
+| -------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `frontend`                 | `"telegram"` | `"telegram"`, `"discord"`, `"teams"`, `"terminal"`, or an array                                                         |
+| `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, `"opencode"`, or `"codex"`                                                                        |
+| `botToken`                 | ---          | Telegram bot token                                                                                                      |
+| `model`                    | `"default"`  | Default model. Interpretation depends on the active backend.                                                            |
+| `codexApiKey`              | ---          | Codex-only OpenAI API key. Prefer this over `openaiApiKey` for Codex API-key auth. `codex login` takes precedence over shared `openaiApiKey`. |
+| `concurrency`              | `1`          | Max concurrent AI queries (1--20)                                                                                       |
+| `pulse`                    | `true`       | Periodic group engagement                                                                                               |
+| `heartbeat`                | `false`      | Background maintenance agent                                                                                            |
+| `heartbeatIntervalMinutes` | `60`         | Heartbeat interval                                                                                                      |
+| `braveApiKey`              | ---          | Brave Search API key                                                                                                    |
+| `timezone`                 | ---          | IANA timezone (e.g. `"Europe/London"`)                                                                                  |
+| `plugins`                  | `[]`         | External plugin packages                                                                                                |
+| `adminUserId`              | ---          | Telegram user ID for `/admin` commands                                                                                  |
+| `allowedUsers`             | ---          | Whitelist of Telegram user IDs                                                                                          |
+| `apiId` / `apiHash`        | ---          | Telegram API credentials for full message history                                                                       |
+| `github`                   | ---          | GitHub plugin config (see above)                                                                                        |
+| `mempalace`                | ---          | MemPalace plugin config (see above)                                                                                     |
+| `playwright`               | ---          | Playwright plugin config (see above)                                                                                    |
 
 ---
 

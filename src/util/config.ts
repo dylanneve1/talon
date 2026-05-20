@@ -231,10 +231,19 @@ const configSchema = z.object({
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)
   braveApiKey: z.string().optional(),
   /**
-   * OpenAI API key — used by the Codex and OpenAI Agents backends. Falls
-   * back to OPENAI_API_KEY env. For OpenAI-compatible endpoints
-   * (OpenRouter, Azure, Ollama, custom proxy), set this to the endpoint's
-   * key and configure `openaiBaseUrl` below.
+   * Codex-specific OpenAI API key. Prefer this, CODEX_API_KEY, or
+   * TALON_CODEX_KEY when the Codex backend should use API-key billing
+   * instead of `codex login` ChatGPT OAuth. This key is passed only to
+   * Codex.
+   */
+  codexApiKey: z.string().optional(),
+  /**
+   * OpenAI API key — used by the OpenAI Agents backend and accepted by
+   * Codex only as a last-resort legacy fallback when no Codex-specific
+   * key and no `codex login` auth file are available. Falls back to
+   * OPENAI_API_KEY env. For OpenAI-compatible endpoints used by the
+   * OpenAI Agents backend (OpenRouter, Azure, Ollama, custom proxy),
+   * set this to the endpoint's key and configure `openaiBaseUrl` below.
    */
   openaiApiKey: z.string().optional(),
   /**

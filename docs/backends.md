@@ -9,12 +9,12 @@ identically against any backend.
 
 ## Available backends
 
-| `backend` value | Label    | SDK                            | Transport                            |
-| --------------- | -------- | ------------------------------ | ------------------------------------ |
-| `"claude"`      | Anthropic | `@anthropic-ai/claude-agent-sdk` | Per-query subprocess (the `claude` CLI) |
-| `"kilo"`        | Kilo     | `@kilocode/sdk`                | Local HTTP server (one process, SSE-streamed) |
-| `"opencode"`    | OpenCode | `@opencode-ai/sdk`             | Local HTTP server (one process, SSE-streamed) |
-| `"codex"`       | Codex    | `@openai/codex-sdk`            | Per-turn subprocess (the `codex` CLI) |
+| `backend` value | Label     | SDK                              | Transport                                     |
+| --------------- | --------- | -------------------------------- | --------------------------------------------- |
+| `"claude"`      | Anthropic | `@anthropic-ai/claude-agent-sdk` | Per-query subprocess (the `claude` CLI)       |
+| `"kilo"`        | Kilo      | `@kilocode/sdk`                  | Local HTTP server (one process, SSE-streamed) |
+| `"opencode"`    | OpenCode  | `@opencode-ai/sdk`               | Local HTTP server (one process, SSE-streamed) |
+| `"codex"`       | Codex     | `@openai/codex-sdk`              | Per-turn subprocess (the `codex` CLI)         |
 
 ## Shared infrastructure
 
@@ -132,8 +132,12 @@ Talon caches the `Codex` instance by chat id so per-chat MCP
 isolation works despite the configure-at-startup constraint;
 switching chats rebuilds the instance.
 
-Requires the `codex` CLI from `@openai/codex` and an OpenAI API key
-(or ChatGPT auth via `codex login`).
+Requires the `codex` CLI from `@openai/codex` and Codex auth:
+ChatGPT OAuth via `codex login`, or API-key billing via
+`CODEX_API_KEY`, `TALON_CODEX_KEY`, or `codexApiKey`. Talon's shared
+`OPENAI_API_KEY` / `openaiApiKey` values are last-resort fallbacks only;
+they do not override a `codex login` auth file, so other backends can
+keep OpenAI-compatible endpoint credentials without hijacking Codex.
 
 ## Adding a new backend
 

@@ -5,7 +5,8 @@
  *
  *   - The MCP server map for the active chat, supplied as TOML config
  *     overrides via Codex's `--config` mechanism.
- *   - The OpenAI API key (from `OPENAI_API_KEY` env or Talon config).
+ *   - The OpenAI API key (from Codex-specific auth first, then the
+ *     Codex CLI's standard OpenAI auth sources).
  *   - The working directory (defaults to the user's home so Codex's
  *     `skipGitRepoCheck` covers operation outside a git repo).
  *
@@ -65,15 +66,27 @@ export function initCodexAgent(
   // Detect auth mode synchronously so the startup line carries it.
   // Knowing whether we're on api-key vs chatgpt vs nothing drives both
   // the default-model pick and the handler's recovery decisions.
-  const authInfo = detectCodexAuth(cfg.openaiApiKey);
+  const authInfo = detectCodexAuth({
+    codexApiKey: cfg.codexApiKey,
+    openaiApiKey: cfg.openaiApiKey,
+    openaiBaseUrl: cfg.openaiBaseUrl,
+  });
   cachedAuthInfo = authInfo;
   logAuthInfo(authInfo);
 }
 
 function logAuthInfo(info: CodexAuthInfo): void {
+  for (const diagnostic of info.diagnostics) {
+    logWarn("agent", `Codex auth: ${diagnostic}`);
+  }
   switch (info.mode) {
     case "api-key":
-      log("agent", `Codex auth: api-key (source: ${info.source})`);
+      log(
+        "agent",
+        `Codex auth: api-key (source: ${info.source}${
+          info.baseUrl ? `, baseUrl=${info.baseUrl}` : ""
+        })`,
+      );
       return;
     case "chatgpt":
       log(
@@ -86,9 +99,10 @@ function logAuthInfo(info: CodexAuthInfo): void {
     case "none":
       logWarn(
         "agent",
-        "Codex: no OPENAI_API_KEY env, no openaiApiKey in talon.json, " +
-          "and no usable ~/.codex/auth.json — first turn will fail. " +
-          "Run `codex login` (for ChatGPT OAuth) or set OPENAI_API_KEY " +
+        "Codex: no CODEX_API_KEY env, no TALON_CODEX_KEY env, no OPENAI_API_KEY env, " +
+          "no usable Codex API key in talon.json, and no usable " +
+          "~/.codex/auth.json — first turn will fail. Run `codex login` " +
+          "(for ChatGPT OAuth) or set CODEX_API_KEY / TALON_CODEX_KEY / codexApiKey " +
           "(for API-key billing).",
       );
       if (info.authFilePath && !info.authFileParsed && info.parseError) {
@@ -142,12 +156,14 @@ export function ensureCodex(chatId: string): Codex {
     return cached;
   }
 
-  const apiKey =
-    process.env.OPENAI_API_KEY ?? state.config.openaiApiKey ?? undefined;
+  const apiKey = getCodexAuthInfo()?.apiKey;
+  const baseUrl = getCodexAuthInfo()?.baseUrl;
 
   const codex = new Codex({
     apiKey,
+    baseUrl,
     config: codexConfig,
+    env: codexSubprocessEnv(),
   });
   // Stash chat id on the instance for cache-key matching above.
   (codex as Codex & { __talonChatId?: string }).__talonChatId = chatId;
@@ -156,6 +172,31 @@ export function ensureCodex(chatId: string): Codex {
   log("agent", `Codex instance built for chat ${chatId}`);
 
   return codex;
+}
+
+/**
+ * Codex's SDK inherits process.env by default. Talon resolves the
+ * credential profile itself, then lets the SDK inject CODEX_API_KEY
+ * from `apiKey`; remove broad auth env vars so a stale shell variable
+ * cannot shadow the selected profile inside the CLI.
+ */
+export function codexSubprocessEnv(
+  source: NodeJS.ProcessEnv = process.env,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    if (
+      key === "CODEX_API_KEY" ||
+      key === "OPENAI_API_KEY" ||
+      key === "OPENAI_BASE_URL" ||
+      key === "TALON_CODEX_KEY"
+    ) {
+      continue;
+    }
+    env[key] = value;
+  }
+  return env;
 }
 
 function getActiveFrontends(

@@ -54,7 +54,9 @@ type Config = {
     | "agy";
   botToken?: string;
   claudeBinary?: string;
-  /** OpenAI API key — used by Codex + OpenAI Agents backends. */
+  /** Codex-specific OpenAI API key. */
+  codexApiKey?: string;
+  /** OpenAI API key — used by OpenAI Agents and legacy Codex config. */
   openaiApiKey?: string;
   /** OpenAI-compatible base URL — OpenRouter, Azure, Ollama, LiteLLM, etc. */
   openaiBaseUrl?: string;
@@ -446,6 +448,7 @@ async function runSetup(): Promise<void> {
 
   // ── Backend-specific config ──
   let claudeBinary: string | undefined;
+  let codexApiKey: string | undefined;
   let openaiApiKey: string | undefined;
   let openaiBaseUrl: string | undefined;
   let openaiApiMode: "responses" | "chat_completions" | undefined;
@@ -463,16 +466,16 @@ async function runSetup(): Promise<void> {
     claudeBinary = (claudeBinaryInput as string).trim() || undefined;
   } else if (backend === "codex") {
     const keyInput = await p.text({
-      message: "OpenAI API key",
+      message: "Codex OpenAI API key",
       placeholder:
-        "leave empty to use OPENAI_API_KEY env or `codex login` auth",
-      initialValue: config.openaiApiKey || "",
+        "leave empty to use CODEX_API_KEY / TALON_CODEX_KEY env or `codex login` auth",
+      initialValue: config.codexApiKey || "",
     });
     if (p.isCancel(keyInput)) {
       p.cancel("Cancelled.");
       process.exit(0);
     }
-    openaiApiKey = (keyInput as string).trim() || undefined;
+    codexApiKey = (keyInput as string).trim() || undefined;
   } else if (backend === "openai-agents") {
     const keyInput = await p.text({
       message:
@@ -583,6 +586,7 @@ async function runSetup(): Promise<void> {
     backend,
     botToken: selectedFrontends.includes("telegram") ? botToken : undefined,
     claudeBinary,
+    codexApiKey,
     openaiApiKey,
     openaiBaseUrl,
     openaiApiMode,
@@ -757,6 +761,10 @@ async function viewConfig(): Promise<void> {
     console.log(
       `  ${pc.dim("Claude binary")}    ${pc.green(config.claudeBinary)}`,
     );
+  if (config.codexApiKey)
+    console.log(
+      `  ${pc.dim("Codex API key")}    ${maskToken(config.codexApiKey)}`,
+    );
   if (config.openaiApiKey)
     console.log(
       `  ${pc.dim("OpenAI API key")}   ${maskToken(config.openaiApiKey)}`,
@@ -924,23 +932,24 @@ async function runDoctor(): Promise<void> {
         stdio: "pipe",
       });
       console.log(`  ${pc.green("\u2713")} Codex CLI installed`);
-      // Auth check \u2014 either OPENAI_API_KEY env, config.openaiApiKey,
-      // or a non-empty ~/.codex/auth.json.
-      const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
-      const hasCfgKey = Boolean(doctorConfig?.openaiApiKey);
-      const codexAuthFile =
-        process.env.HOME && existsSync(`${process.env.HOME}/.codex/auth.json`);
-      if (hasEnvKey || hasCfgKey || codexAuthFile) {
-        const sources: string[] = [];
-        if (hasEnvKey) sources.push("OPENAI_API_KEY env");
-        if (hasCfgKey) sources.push("openaiApiKey in talon.json");
-        if (codexAuthFile) sources.push("~/.codex/auth.json");
+      const { detectCodexAuth } = await import("./backend/codex/auth.js");
+      const auth = detectCodexAuth({
+        codexApiKey: doctorConfig?.codexApiKey,
+        openaiApiKey: doctorConfig?.openaiApiKey,
+        openaiBaseUrl: doctorConfig?.openaiBaseUrl,
+      });
+      for (const diagnostic of auth.diagnostics) {
+        console.log(`  ${pc.yellow("!")} ${diagnostic}`);
+      }
+      if (auth.mode !== "none") {
         console.log(
-          `  ${pc.green("\u2713")} Codex auth: ${pc.dim(sources.join(", "))}`,
+          `  ${pc.green("\u2713")} Codex auth: ${pc.dim(
+            auth.baseUrl ? `${auth.source} (${auth.baseUrl})` : auth.source,
+          )}`,
         );
       } else {
         console.log(
-          `  ${pc.yellow("!")} Codex auth missing (set OPENAI_API_KEY or run \`codex login\`)`,
+          `  ${pc.yellow("!")} Codex auth missing (set CODEX_API_KEY, TALON_CODEX_KEY, codexApiKey, or run \`codex login\`)`,
         );
         issues++;
       }
