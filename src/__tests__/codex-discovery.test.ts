@@ -34,10 +34,7 @@ import type { CodexAuthInfo } from "../backend/codex/auth.js";
 
 // ── Auth-info builders for tests ──────────────────────────────────────
 
-function apiKeyAuth(
-  apiKey = "sk-test-key",
-  baseUrl?: string,
-): CodexAuthInfo {
+function apiKeyAuth(apiKey = "sk-test-key", baseUrl?: string): CodexAuthInfo {
   return {
     mode: "api-key",
     source: "env:CODEX_API_KEY",
@@ -67,19 +64,35 @@ function noneAuth(): CodexAuthInfo {
 }
 
 // ── Test home directory for the OAuth cache-file path ────────────────
+//
+// `os.homedir()` consults `$HOME` on POSIX but `%USERPROFILE%` on Windows.
+// We override BOTH so the test passes on every CI matrix row regardless
+// of which env var the runtime is actually reading.
 
 let tmpHome: string | null = null;
 
-function withTempHome(): string {
-  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-disc-"));
-  const orig = process.env.HOME;
-  process.env.HOME = tmpHome;
-  return orig ?? "";
+interface OriginalHomeEnv {
+  HOME: string | undefined;
+  USERPROFILE: string | undefined;
 }
 
-function restoreHome(orig: string): void {
-  if (orig) process.env.HOME = orig;
+function withTempHome(): OriginalHomeEnv {
+  tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), "codex-disc-"));
+  const orig: OriginalHomeEnv = {
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+  };
+  process.env.HOME = tmpHome;
+  process.env.USERPROFILE = tmpHome;
+  return orig;
+}
+
+function restoreHome(orig: OriginalHomeEnv): void {
+  if (orig.HOME !== undefined) process.env.HOME = orig.HOME;
   else delete process.env.HOME;
+  if (orig.USERPROFILE !== undefined)
+    process.env.USERPROFILE = orig.USERPROFILE;
+  else delete process.env.USERPROFILE;
   if (tmpHome) {
     try {
       fs.rmSync(tmpHome, { recursive: true, force: true });
@@ -288,7 +301,10 @@ describe("codex / startDiscovery on api-key auth — failure paths", () => {
 // ── OAuth path (~/.codex/models_cache.json) ──────────────────────────
 
 describe("codex / startDiscovery on chatgpt OAuth — cache-file path", () => {
-  let originalHome = "";
+  let originalHome: OriginalHomeEnv = {
+    HOME: undefined,
+    USERPROFILE: undefined,
+  };
 
   beforeEach(() => {
     originalHome = withTempHome();
@@ -410,9 +426,7 @@ describe("codex / startDiscovery idempotency", () => {
     const p2 = startDiscovery(apiKeyAuth());
     expect(p1).toBe(p2);
 
-    resolveOuter(
-      new Response(JSON.stringify({ data: [] }), { status: 200 }),
-    );
+    resolveOuter(new Response(JSON.stringify({ data: [] }), { status: 200 }));
     await p1;
   });
 });
