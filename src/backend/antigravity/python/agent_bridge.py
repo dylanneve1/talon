@@ -199,14 +199,15 @@ def _sanitise_schema_for_gemini(schema: Any) -> Any:
     return out
 
 
-# Gemini's `generateContent` request refuses any tool list longer than
-# 128 entries: `agent executor error: failed to build generate content
-# request: number of tools exceeds 128`. Talon's plugin set easily
-# clears that on antigravity (github alone exposes 41 tools, mempalace
-# 30, playwright 23, …), so we cap eagerly and let the operator know
-# which tools we had to drop. The cap leaves headroom under 128 in case
-# the SDK injects any built-ins of its own.
-_GEMINI_TOOL_LIMIT = 120
+# Gemini's `generateContent` refuses any tool list above 128 entries:
+# `agent executor error: failed to build generate content request:
+# number of tools exceeds 128`. The antigravity SDK silently adds its
+# 11 built-in tools (`list_directory`, `view_file`, `run_command`,
+# `finish`, …) on top of whatever we pass via `tools=[...]`, so the
+# real ceiling for MCP-supplied tools is 128 − 11 = 117. We cap at
+# 110 to leave a few slots for any future SDK built-in additions and
+# to keep the operator-facing error away from the hard limit.
+_GEMINI_TOOL_LIMIT = 110
 
 
 class McpToolManager:
