@@ -28,12 +28,51 @@ import type {
 const AGY_PROVIDER_ID = "agy";
 const AGY_PROVIDER_NAME = "Antigravity (agy CLI)";
 
-// Model identifiers the agy binary advertises. Pulled from `strings`
-// of the binary; ordered from highest-capability to lightest. The
-// `windsurf` / `thoughts` variants are internal/staging and not
-// surfaced. Image-preview models exist but aren't useful for chat
-// dispatch.
+// Model identifiers agy advertises. The agy binary embeds a subset
+// (`strings agy | grep gemini-`); the *active* catalogue is fetched
+// server-side per account and can extend beyond what's compiled in
+// (e.g. Gemini 3.5 Flash on the picker even though the binary
+// references 3.1-flash-lite-preview). We surface the union of:
+//
+//   - binary-embedded ids — known-supported across deployments,
+//   - user-visible display labels seen in transcript.jsonl —
+//     `Gemini 3.5 Flash (High)` etc., which appear in the
+//     `User changed setting Model Selection from None to <label>`
+//     entries when agy launches.
+//
+// The picker is read-only — agy enforces the model server-side, our
+// selection just labels `/status`. So adding extra entries can't
+// break agy; at worst the user picks a label that won't survive a
+// round-trip and `/status` shows an unfamiliar id until they re-pick.
 const AGY_MODELS: UnifiedModelInfo[] = [
+  {
+    id: "gemini-3.5-flash",
+    displayName: "Gemini 3.5 Flash",
+    provider: AGY_PROVIDER_ID,
+    providerName: AGY_PROVIDER_NAME,
+    selectable: true,
+    free: false,
+    contextWindow: 1_000_000,
+  },
+  {
+    id: "gemini-3-pro-preview",
+    displayName: "Gemini 3 Pro (preview)",
+    provider: AGY_PROVIDER_ID,
+    providerName: AGY_PROVIDER_NAME,
+    selectable: true,
+    free: false,
+    reasoning: true,
+    contextWindow: 1_000_000,
+  },
+  {
+    id: "gemini-3-flash-preview",
+    displayName: "Gemini 3 Flash (preview)",
+    provider: AGY_PROVIDER_ID,
+    providerName: AGY_PROVIDER_NAME,
+    selectable: true,
+    free: false,
+    contextWindow: 1_000_000,
+  },
   {
     id: "gemini-3.1-pro",
     displayName: "Gemini 3.1 Pro",
@@ -83,7 +122,7 @@ const AGY_MODELS: UnifiedModelInfo[] = [
   },
 ];
 
-const AGY_DEFAULT_ID = "gemini-3.1-pro";
+const AGY_DEFAULT_ID = "gemini-3.5-flash";
 
 function normalize(id: string): string {
   // Accept both bare ids and `models/<id>` (the antigravity backend
