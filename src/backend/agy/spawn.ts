@@ -198,6 +198,15 @@ export interface AgyToolCall {
  * or is unreadable — caller falls back to stdout.
  */
 function readLatestModelTurn(conversationId: string): {
+  /**
+   * `null` ONLY when the transcript file is missing or unreadable —
+   * callers fall back to cleaned stdout in that case. Empty string `""`
+   * when the file exists but this turn had no `PLANNER_RESPONSE`
+   * (model called tools only and ended silently); callers must NOT
+   * fall back to stdout because `agy --print --conversation <id>`
+   * replays the *entire* prior transcript on stdout, which would
+   * surface every previous turn's narration as one big message.
+   */
   text: string | null;
   toolCalls: AgyToolCall[];
 } {
@@ -273,7 +282,12 @@ function readLatestModelTurn(conversationId: string): {
       plannerResponse = e.content as string;
     }
   }
-  return { text: plannerResponse, toolCalls };
+  // Transcript was readable. If no PLANNER_RESPONSE landed for this
+  // turn (model called tools only and ended silently — common for
+  // mempalace queries, scheduled work, etc.), return `""` rather
+  // than `null` so the handler doesn't trigger the stdout fallback
+  // which would dump the full historic transcript replay into chat.
+  return { text: plannerResponse ?? "", toolCalls };
 }
 
 /**
