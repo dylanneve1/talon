@@ -152,6 +152,8 @@ function cleanupEmpty(chatId: string): void {
     s &&
     !s.model &&
     !s.effort &&
+    !s.backend &&
+    !s.freeOnly &&
     s.pulse === undefined &&
     s.pulseIntervalMs === undefined &&
     s.pulseLastCheckMsgId === undefined

@@ -184,6 +184,7 @@ registerCleanup(save);
 
 export function flushTriggers(): void {
   clearInterval(autoSaveTimer);
+  dirty = true;
   save();
 }
 

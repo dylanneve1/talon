@@ -25,6 +25,8 @@ const {
   getChatSettings,
   setChatModel,
   setChatEffort,
+  setChatBackend,
+  setChatFreeOnly,
   setChatPulse,
   setChatPulseInterval,
   getRegisteredPulseChats,
@@ -443,6 +445,35 @@ describe("chat-settings — cleanupEmpty keeps entry when other fields remain (l
     setChatModel(chatId, undefined);
     expect(getChatSettings(chatId).effort).toBe("high");
     expect(getChatSettings(chatId).model).toBeUndefined();
+  });
+});
+
+describe("chat-settings — cleanupEmpty preserves backend and freeOnly", () => {
+  it("does not delete backend when model is cleared", () => {
+    const chatId = `cleanup-backend-${Date.now()}`;
+    setChatBackend(chatId, "openai-agents");
+    setChatModel(chatId, "gpt-4o");
+    // Clear model only — backend still set → entry must be preserved
+    setChatModel(chatId, undefined);
+    expect(getChatSettings(chatId).backend).toBe("openai-agents");
+  });
+
+  it("does not delete freeOnly when effort is cleared", () => {
+    const chatId = `cleanup-free-${Date.now()}`;
+    setChatFreeOnly(chatId, true);
+    setChatEffort(chatId, "low");
+    // Clear effort only — freeOnly still set → entry must be preserved
+    setChatEffort(chatId, undefined);
+    expect(getChatSettings(chatId).freeOnly).toBe(true);
+  });
+
+  it("deletes entry only when all fields including backend and freeOnly are gone", () => {
+    const chatId = `cleanup-all-${Date.now()}`;
+    setChatBackend(chatId, "claude");
+    setChatFreeOnly(chatId, true);
+    setChatBackend(chatId, undefined);
+    setChatFreeOnly(chatId, undefined);
+    expect(getChatSettings(chatId)).toEqual({});
   });
 });
 
