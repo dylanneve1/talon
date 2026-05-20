@@ -36,15 +36,17 @@ const codexFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: (params) => codexHandleMessage(params),
-      resolveModel: (q) => Promise.resolve(resolveModel(q)),
-      getModelInfo: (id) => Promise.resolve(getModelInfo(id)),
+      // Model methods are async in models.ts so they can await
+      // `awaitDiscovery()` — the dynamic catalog from /v1/models needs
+      // to be populated before resolve/getModelInfo/listModels return.
+      resolveModel: (q) => resolveModel(q),
+      getModelInfo: (id) => getModelInfo(id),
       getSettingsPresentation: (m, options) =>
-        Promise.resolve(getSettingsPresentation(m, options)),
-      getProviders: () => Promise.resolve(getProviders()),
-      getProviderModels: (p, pg, ps) =>
-        Promise.resolve(getProviderModels(p, pg, ps)),
+        getSettingsPresentation(m, options),
+      getProviders: () => getProviders(),
+      getProviderModels: (p, pg, ps) => getProviderModels(p, pg, ps),
       formatModelError: (q, r) => formatModelError(q, r),
-      listModels: (f) => Promise.resolve(listModels(f)),
+      listModels: (f) => listModels(f),
       runOneShotAgent: (p) => codexRunOneShotAgent(p),
       backendLabel: "Codex",
     };

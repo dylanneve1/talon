@@ -28,6 +28,7 @@ import { log, logWarn } from "../../util/log.js";
 import { getState } from "./state.js";
 import { asCodexConfig, buildCodexMcpServers } from "./mcp-config.js";
 import { detectCodexAuth, type CodexAuthInfo } from "./auth.js";
+import { startDiscovery } from "./discovery.js";
 
 /** Cached auth-mode detection result — updated on every `initCodexAgent`. */
 let cachedAuthInfo: CodexAuthInfo | null = null;
@@ -73,6 +74,14 @@ export function initCodexAgent(
   });
   cachedAuthInfo = authInfo;
   logAuthInfo(authInfo);
+
+  // Kick off model discovery as fire-and-forget. We only fetch when an
+  // api key is present — ChatGPT-OAuth has no `/v1/models` equivalent,
+  // and rather than probe each candidate by burning tokens we fall
+  // back to the curated catalog for that path. `startDiscovery`
+  // handles the no-key case internally and resolves immediately, so
+  // it's safe to call unconditionally.
+  void startDiscovery(authInfo.apiKey, authInfo.baseUrl);
 }
 
 function logAuthInfo(info: CodexAuthInfo): void {

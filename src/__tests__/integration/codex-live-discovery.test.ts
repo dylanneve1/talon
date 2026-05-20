@@ -211,12 +211,12 @@ codexDescribe("Codex SDK live discovery (integration)", () => {
   // resolves its own default. If the SDK ever introduces dynamic model
   // discovery (it currently doesn't), this is the test that flags the
   // gap.
-  it("CODEX_DEFAULT_MODEL is in the catalog and round-trips through resolveModel", () => {
+  it("CODEX_DEFAULT_MODEL is in the catalog and round-trips through resolveModel", async () => {
     expect(CODEX_MODELS.length).toBeGreaterThan(0);
-    const direct = getModelInfo(CODEX_DEFAULT_MODEL);
+    const direct = await getModelInfo(CODEX_DEFAULT_MODEL);
     expect(direct?.id).toBe(CODEX_DEFAULT_MODEL);
 
-    const resolution = resolveModel(CODEX_DEFAULT_MODEL);
+    const resolution = await resolveModel(CODEX_DEFAULT_MODEL);
     expect(resolution.kind).toBe("exact");
     if (resolution.kind !== "exact") return;
     expect(resolution.model.id).toBe(CODEX_DEFAULT_MODEL);
