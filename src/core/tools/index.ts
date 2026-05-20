@@ -79,18 +79,33 @@ const ALL_TOOL_NAMES: ReadonlySet<string> = new Set(
  * fallback).
  */
 export function stripMcpPrefix(toolName: string): string {
-  const mcpStripped = toolName.replace(/^mcp__.+?__/, "");
-  if (mcpStripped !== toolName) return mcpStripped;
+  // First pass: canonical MCP form `mcp__<server>__<bare>`. The
+  // non-greedy `.+?` only consumes up to the FIRST `__` after `mcp__`,
+  // so a server name that itself contains `__` (e.g. agy serialises
+  // `mcp___talon__0_telegram-tools_end_turn`) won't be cleanly
+  // bare-named on this pass alone. Always fall through to the
+  // underscore-walking pass to find the longest known-tool tail.
+  const stripped = toolName.replace(/^mcp__.+?__/, "");
 
-  // Kilo / OpenCode `<server>_<bare>` form. Walk underscore boundaries
-  // from the right; the longest tail that matches a registered tool name
-  // is the bare name. Prevents `talon-tools-352042062_end_turn` from
-  // resolving to `turn` (which isn't a tool).
-  const segments = toolName.split("_");
-  for (let i = 1; i < segments.length; i++) {
-    const tail = segments.slice(i).join("_");
-    if (ALL_TOOL_NAMES.has(tail)) {
-      return tail;
+  // Walk underscore boundaries from the right on the stripped form;
+  // the longest tail that matches a registered tool name is the bare
+  // name. Handles:
+  //   - agy: `mcp___talon__0_telegram-tools_end_turn` → after regex,
+  //     `0_telegram-tools_end_turn` → walk → `end_turn`
+  //   - Kilo/OpenCode: `<server>_<bare>` → walk directly
+  //   - Canonical MCP: `mcp__server__send` → regex yields bare
+  //     `send` directly; first iteration of the walk also returns it.
+  // The walk on `stripped` is a strict subset of the walk on the
+  // original — running both keeps every previously-handled case
+  // working without a second branch.
+  const candidates = stripped === toolName ? [toolName] : [stripped, toolName];
+  for (const candidate of candidates) {
+    // Check the candidate as-is first (covers canonical MCP form).
+    if (ALL_TOOL_NAMES.has(candidate)) return candidate;
+    const segments = candidate.split("_");
+    for (let i = 1; i < segments.length; i++) {
+      const tail = segments.slice(i).join("_");
+      if (ALL_TOOL_NAMES.has(tail)) return tail;
     }
   }
   return toolName;
