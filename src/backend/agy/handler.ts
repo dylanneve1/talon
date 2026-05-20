@@ -132,9 +132,10 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
     log("agent", `[${chatId}] agy stderr: ${result.stderr.trim().slice(0, 300)}`);
   }
 
-  // Persist the conversation id for the next turn. On first turn the
-  // spawn captured it from the `.pb` diff; on resume turns it's
-  // unchanged.
+  // `result.text` already comes from the structured `transcript.jsonl`
+  // (latest `PLANNER_RESPONSE/MODEL` entry) when the conversation
+  // exists, so no diffing math is needed here. Persist the
+  // conversation id for the next turn.
   if (result.conversationId) {
     setConversation(chatId, result.conversationId);
   }

@@ -22,7 +22,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { AGY_DEFAULT_BINARY, AGY_PRINT_TIMEOUT_MS } from "./constants.js";
@@ -31,6 +31,8 @@ const CONVERSATIONS_DIR = resolve(
   homedir(),
   ".gemini/antigravity-cli/conversations",
 );
+
+const BRAIN_DIR = resolve(homedir(), ".gemini/antigravity-cli/brain");
 
 export interface AgyPrintResult {
   /** Text content the model produced. Trailing newline stripped. */
@@ -117,6 +119,56 @@ function detectNewConversation(before: Set<string>): string | null {
     return null;
   }
   return newest?.id ?? null;
+}
+
+/**
+ * Read the structured transcript agy writes for the conversation,
+ * then return the **last** `PLANNER_RESPONSE` from the `MODEL` source
+ * — that's the reply produced by the turn that just finished. The
+ * stdout `agy --print --conversation <id>` produces is the full
+ * transcript replayed every turn (by design), so reading the
+ * structured log is the clean way to pick out just the latest reply.
+ *
+ * Returns `null` if the file doesn't exist, is malformed, or has no
+ * model response — caller should fall back to stdout.
+ */
+function readLatestModelTurn(conversationId: string): string | null {
+  if (!conversationId) return null;
+  const path = resolve(
+    BRAIN_DIR,
+    conversationId,
+    ".system_generated/logs/transcript.jsonl",
+  );
+  if (!existsSync(path)) return null;
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf-8");
+  } catch {
+    return null;
+  }
+  // Walk lines bottom-up so the last MODEL/PLANNER_RESPONSE wins.
+  const lines = raw.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line) continue;
+    let entry: unknown;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as Record<string, unknown>;
+    if (
+      obj.source === "MODEL" &&
+      obj.type === "PLANNER_RESPONSE" &&
+      typeof obj.content === "string" &&
+      obj.content.length > 0
+    ) {
+      return obj.content;
+    }
+  }
+  return null;
 }
 
 /**
@@ -222,16 +274,29 @@ export async function runAgyPrint(
         );
         return;
       }
-      // agy prints `Warning: conversation "<uuid>" not found.` to
-      // STDOUT (not stderr) when our cached id is gone — typically
-      // because the user nuked `~/.gemini/antigravity-cli/conversations/`
-      // by hand. Strip those banner lines so they don't leak into the
-      // user-visible reply; the next turn will mint a fresh id.
-      const cleanedText = stdout
-        .replace(/^Warning: conversation "[^"]+" not found\.?\n?/gm, "")
-        .replace(/\n+$/, "");
+      // Prefer the structured transcript over stdout — `agy --print
+      // --conversation <id>` replays the full transcript on stdout
+      // every turn (it's a CLI display oddity, not the message we
+      // want to forward). The transcript.jsonl has the latest
+      // `PLANNER_RESPONSE/MODEL` entry verbatim with no duplication.
+      let text: string | null = null;
+      if (conversationId) {
+        text = readLatestModelTurn(conversationId);
+      }
+      if (text === null) {
+        // Fallback: cleaned stdout. Strip agy's `Warning: conversation
+        // …` banner (it goes to STDOUT, not stderr) so it doesn't
+        // leak into user-visible replies.
+        text = stdout
+          .replace(/^Warning: conversation "[^"]+" not found\.?\n?/gm, "")
+          .replace(/\n+$/, "");
+      } else {
+        // Defensive trim — the transcript content is usually clean,
+        // but agy sometimes appends a trailing newline.
+        text = text.replace(/\n+$/, "");
+      }
       resolve({
-        text: cleanedText,
+        text,
         durationMs: Date.now() - started,
         exitCode,
         stderr,

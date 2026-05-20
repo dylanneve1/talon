@@ -42,7 +42,23 @@ function load(): void {
     const raw = readFileSync(STATE_FILE, "utf-8");
     const parsed = JSON.parse(raw) as PersistedState;
     if (parsed && typeof parsed.conversations === "object") {
-      memoryState = { ...parsed.conversations };
+      // Be tolerant of older entries that nested into objects (a brief
+      // intermediate format that stored lastFullOutput). We only need
+      // the conversation id now — the transcript.jsonl is the source
+      // of truth for the latest reply, so no per-chat output cache.
+      memoryState = {};
+      for (const [k, v] of Object.entries(parsed.conversations)) {
+        if (typeof v === "string") {
+          memoryState[k] = v;
+        } else if (
+          v !== null &&
+          typeof v === "object" &&
+          typeof (v as Record<string, unknown>).conversationId === "string"
+        ) {
+          memoryState[k] = (v as Record<string, unknown>)
+            .conversationId as string;
+        }
+      }
     }
   } catch (err) {
     logWarn(
