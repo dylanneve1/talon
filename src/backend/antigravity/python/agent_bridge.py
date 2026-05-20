@@ -199,13 +199,25 @@ def _sanitise_schema_for_gemini(schema: Any) -> Any:
     return out
 
 
+# Gemini's `generateContent` request refuses any tool list longer than
+# 128 entries: `agent executor error: failed to build generate content
+# request: number of tools exceeds 128`. Talon's plugin set easily
+# clears that on antigravity (github alone exposes 41 tools, mempalace
+# 30, playwright 23, …), so we cap eagerly and let the operator know
+# which tools we had to drop. The cap leaves headroom under 128 in case
+# the SDK injects any built-ins of its own.
+_GEMINI_TOOL_LIMIT = 120
+
+
 class McpToolManager:
     """Connects to MCP stdio servers, exposes their tools as plain
     Python callables suitable for `LocalAgentConfig(tools=[...])`.
 
     Lifecycle is async-context-managed — use `async with`. Calling
     `connect(spec)` is the only setup step; tool-call dispatch and
-    teardown are automatic.
+    teardown are automatic. The manager enforces Gemini's per-request
+    tool-count cap; tools beyond the cap are skipped (with a warning)
+    so the agent still comes up.
     """
 
     def __init__(self) -> None:
@@ -214,6 +226,9 @@ class McpToolManager:
         self._stack = contextlib.AsyncExitStack()
         self._sessions: dict[str, Any] = {}
         self._tools: list[Any] = []
+        # Tally of tools we connected to but had to drop for the cap.
+        # Lets the operator-facing log message be specific.
+        self._dropped_by_server: dict[str, int] = {}
 
     async def __aenter__(self) -> "McpToolManager":
         await self._stack.__aenter__()
@@ -258,7 +273,11 @@ class McpToolManager:
         safe_server = name.replace("-", "_")
 
         added = 0
+        dropped = 0
         for tool in tool_list:
+            if len(self._tools) >= _GEMINI_TOOL_LIMIT:
+                dropped += 1
+                continue
             ns_name = f"mcp_{safe_server}__{tool.name}"
             wrapper = self._make_wrapper(
                 session, tool.name, ns_name, tool.description or ""
@@ -269,8 +288,23 @@ class McpToolManager:
             self._tools.append(ToolWithSchema(wrapper, input_schema))
             added += 1
 
+        if dropped:
+            self._dropped_by_server[name] = dropped
+
         self._sessions[name] = session
         return added
+
+    @property
+    def dropped_summary(self) -> str:
+        if not self._dropped_by_server:
+            return ""
+        parts = [
+            f"{srv}({cnt})" for srv, cnt in self._dropped_by_server.items()
+        ]
+        return (
+            f"Gemini tool cap ({_GEMINI_TOOL_LIMIT}) hit — dropped: "
+            + ", ".join(parts)
+        )
 
     @staticmethod
     def _make_wrapper(session, raw_name: str, ns_name: str, doc: str):
@@ -641,7 +675,23 @@ async def main_async(args: argparse.Namespace) -> int:
     # surviving tools land in `mcp_mgr.tools`, which we hand to
     # LocalAgentConfig via `tools=[...]`.
     async with McpToolManager() as mcp_mgr:
-        for spec in cfg.get("mcp_servers", []):
+        # Connect the frontend-tools MCP server (telegram-tools,
+        # discord-tools, etc.) first so its `end_turn` / `send` /
+        # `react` tools always fit under Gemini's 128-tool cap even if
+        # the user has loaded a heavy plugin set. Plugins follow in
+        # config order, and overflow tools are dropped with a log
+        # entry so the operator knows what's missing.
+        _FRONTEND_TOOLS = {
+            "telegram-tools",
+            "discord-tools",
+            "teams-tools",
+            "terminal-tools",
+        }
+        all_specs = list(cfg.get("mcp_servers", []))
+        all_specs.sort(
+            key=lambda s: 0 if s.get("name") in _FRONTEND_TOOLS else 1
+        )
+        for spec in all_specs:
             server_name = spec.get("name", "(unnamed)")
             try:
                 added = await mcp_mgr.connect(spec)
@@ -653,6 +703,9 @@ async def main_async(args: argparse.Namespace) -> int:
                     f"{type(e).__name__}: {e} — skipping",
                 )
                 continue
+
+        if mcp_mgr.dropped_summary:
+            log("warn", mcp_mgr.dropped_summary)
 
         try:
             agent_config = build_agent_config(cfg, tools=mcp_mgr.tools)
