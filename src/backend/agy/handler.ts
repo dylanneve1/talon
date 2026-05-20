@@ -37,6 +37,7 @@ import {
   formatUserPrompt,
   extractSessionName,
   routeDelivery,
+  recordToolUse,
 } from "../shared/index.js";
 import { runAgyPrint, AgyPrintError } from "./spawn.js";
 import { AGY_LABEL } from "./constants.js";
@@ -172,6 +173,15 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   }
 
   const state = createStreamState();
+  // Replay each tool call agy made during the turn through the shared
+  // `recordToolUse` so the bridge-delivery / turn-terminator semantics
+  // are correctly reflected on the stream state. The handler is
+  // post-hoc (transcript-parsed, not stream-of-events) so we don't
+  // see them live, but for `routeDelivery`'s decision tree only the
+  // final tally matters.
+  for (const tc of result.toolCalls) {
+    recordToolUse(state, tc.name, tc.input);
+  }
   if (result.text.length > 0) {
     appendText(state, result.text);
   }

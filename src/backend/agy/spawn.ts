@@ -53,6 +53,16 @@ const BRAIN_DIR = resolve(homedir(), ".gemini/antigravity-cli/brain");
 export interface AgyPrintResult {
   /** Text content the model produced. Trailing newline stripped. */
   text: string;
+  /**
+   * Tool calls the model made during this turn (everything between
+   * the latest `USER_INPUT` and the final `PLANNER_RESPONSE` in
+   * `transcript.jsonl`). The handler replays these through
+   * `recordToolUse` so `routeDelivery`'s `hadBridgeDelivery`
+   * short-circuit fires when the model already shipped its reply
+   * via `send` / `end_turn` — without that, agy's trailing planner
+   * narration would land as a duplicate second chat message.
+   */
+  toolCalls: AgyToolCall[];
   /** Wall-clock time the spawn took. */
   durationMs: number;
   /** Process exit code (0 = success). */
@@ -154,71 +164,56 @@ function detectNewConversation(before: Set<string>): string | null {
 }
 
 /**
- * Names that mark a transcript entry as a tool call agy already
- * delivered to the user end of the chat. If one of these landed in
- * the current turn, the model's trailing `PLANNER_RESPONSE` is
- * narration ("I've sent a friendly greeting…") that Talon should
- * NOT forward as a second message — agy hosts it for the IDE
- * artifact view, but it's user-visible junk in a Telegram chat.
+ * One tool call extracted from agy's `transcript.jsonl`.
  *
- * Matched as a SUFFIX so we don't have to maintain the full
- * `mcp___talon__0_telegram-tools_send` path (which changes if the
- * key prefix or frontend name changes).
+ * `name` is the bare tool name agy logged ("write_to_file") OR the
+ * mcp-namespaced name agy uses for MCP tools
+ * (`mcp___talon__0_telegram-tools_send`). The handler passes both
+ * straight to `recordToolUse` which strips the prefix and maps to
+ * Talon's delivery semantics.
  */
-const DELIVERY_TOOL_NAME_SUFFIXES = [
-  "_telegram-tools_send",
-  "_telegram-tools_react",
-  "_telegram-tools_edit_message",
-  "_telegram-tools_delete_message",
-  "_teams-tools_send",
-  "_discord-tools_send",
-  "_telegram-tools_end_turn",
-] as const;
-
-function isDeliveryToolCall(name: unknown): boolean {
-  if (typeof name !== "string") return false;
-  for (const suffix of DELIVERY_TOOL_NAME_SUFFIXES) {
-    if (name.endsWith(suffix)) return true;
-  }
-  return false;
+export interface AgyToolCall {
+  name: string;
+  input: Record<string, unknown>;
 }
 
 /**
- * Read the structured transcript agy writes for the conversation,
- * then return the **last** `PLANNER_RESPONSE` from the `MODEL` source
- * — that's the reply produced by the turn that just finished. The
- * stdout `agy --print --conversation <id>` produces is the full
- * transcript replayed every turn (by design), so reading the
- * structured log is the clean way to pick out just the latest reply.
+ * Read the structured transcript agy writes for the conversation
+ * and return BOTH:
  *
- * Returns `null` if the file doesn't exist, is malformed, or has no
- * model response — caller should fall back to stdout.
+ *   - the **last** `PLANNER_RESPONSE` (the model's final text for the
+ *     turn — what we'd forward via `onTextBlock`), and
+ *   - every tool call the model made in this turn (everything between
+ *     the latest USER_INPUT and the end of the file).
  *
- * Suppression: if the model called one of Talon's delivery tools
- * (`send` / `react` / etc.) during this turn, the trailing
- * PLANNER_RESPONSE is narration that the IDE artifact view would
- * render — in chat it lands as a duplicate / unwanted second
- * message. Return empty string in that case so the handler
- * doesn't forward anything beyond what the tool already sent.
+ * The handler feeds the tool calls through `recordToolUse` so the
+ * shared `routeDelivery` machinery can do its job: if a delivery
+ * tool (`send`/`end_turn`) shipped content via the bridge, it sets
+ * `hadBridgeDelivery=true` and `routeDelivery` short-circuits before
+ * forwarding any duplicate trailing PLANNER_RESPONSE. We don't have
+ * to know in spawn.ts which tools are "delivery tools" — that taxonomy
+ * lives in `stream-state.ts` and is reused across every backend.
+ *
+ * Returns `{ text: null, toolCalls: [] }` if the file doesn't exist
+ * or is unreadable — caller falls back to stdout.
  */
-function readLatestModelTurn(conversationId: string): string | null {
-  if (!conversationId) return null;
+function readLatestModelTurn(conversationId: string): {
+  text: string | null;
+  toolCalls: AgyToolCall[];
+} {
+  if (!conversationId) return { text: null, toolCalls: [] };
   const path = resolve(
     BRAIN_DIR,
     conversationId,
     ".system_generated/logs/transcript.jsonl",
   );
-  if (!existsSync(path)) return null;
+  if (!existsSync(path)) return { text: null, toolCalls: [] };
   let raw: string;
   try {
     raw = readFileSync(path, "utf-8");
   } catch {
-    return null;
+    return { text: null, toolCalls: [] };
   }
-  // Parse all lines, find the latest USER_INPUT index, then walk the
-  // entries from there forward. The "this turn" slice is everything
-  // after that USER_INPUT — the model's responses + any tool_calls
-  // it made before producing its final PLANNER_RESPONSE.
   const lines = raw.split("\n");
   const entries: Record<string, unknown>[] = [];
   for (const line of lines) {
@@ -230,6 +225,7 @@ function readLatestModelTurn(conversationId: string): string | null {
       /* skip malformed */
     }
   }
+  // Find the latest USER_INPUT entry — everything after is "this turn".
   let lastUserIdx = -1;
   for (let i = entries.length - 1; i >= 0; i--) {
     const e = entries[i];
@@ -238,18 +234,34 @@ function readLatestModelTurn(conversationId: string): string | null {
       break;
     }
   }
-  // Look at "this turn's" entries (after the latest USER_INPUT) for
-  // any delivery-tool call and the final PLANNER_RESPONSE.
-  let deliveryCalled = false;
+  const toolCalls: AgyToolCall[] = [];
   let plannerResponse: string | null = null;
   for (let i = lastUserIdx + 1; i < entries.length; i++) {
     const e = entries[i];
-    const toolCalls = e.tool_calls;
-    if (Array.isArray(toolCalls)) {
-      for (const tc of toolCalls) {
-        if (tc && typeof tc === "object" && isDeliveryToolCall((tc as { name?: unknown }).name)) {
-          deliveryCalled = true;
+    const tcs = e.tool_calls;
+    if (Array.isArray(tcs)) {
+      for (const tc of tcs) {
+        if (!tc || typeof tc !== "object") continue;
+        const obj = tc as { name?: unknown; args?: unknown };
+        if (typeof obj.name !== "string") continue;
+        // agy serialises `args` as a map<string, string> where each
+        // value is itself a JSON-encoded string (`"\"value\""`).
+        // Decode best-effort so consumers get real values.
+        let input: Record<string, unknown> = {};
+        if (obj.args && typeof obj.args === "object") {
+          for (const [k, v] of Object.entries(obj.args as Record<string, unknown>)) {
+            if (typeof v === "string") {
+              try {
+                input[k] = JSON.parse(v);
+              } catch {
+                input[k] = v;
+              }
+            } else {
+              input[k] = v;
+            }
+          }
         }
+        toolCalls.push({ name: obj.name, input });
       }
     }
     if (
@@ -261,8 +273,7 @@ function readLatestModelTurn(conversationId: string): string | null {
       plannerResponse = e.content as string;
     }
   }
-  if (deliveryCalled) return "";
-  return plannerResponse;
+  return { text: plannerResponse, toolCalls };
 }
 
 /**
@@ -465,10 +476,17 @@ export async function runAgyPrint(
       // --conversation <id>` replays the full transcript on stdout
       // every turn (it's a CLI display oddity, not the message we
       // want to forward). The transcript.jsonl has the latest
-      // `PLANNER_RESPONSE/MODEL` entry verbatim with no duplication.
+      // `PLANNER_RESPONSE/MODEL` entry verbatim with no duplication,
+      // plus every tool call agy made during the turn — the handler
+      // replays those through `recordToolUse` so `routeDelivery` can
+      // skip duplicate text when the model already delivered via the
+      // bridge (`send` / `end_turn`).
       let text: string | null = null;
+      let toolCalls: AgyToolCall[] = [];
       if (conversationId) {
-        text = readLatestModelTurn(conversationId);
+        const turn = readLatestModelTurn(conversationId);
+        text = turn.text;
+        toolCalls = turn.toolCalls;
       }
       if (text === null) {
         // Fallback: cleaned stdout. Strip agy's `Warning: conversation
@@ -485,6 +503,7 @@ export async function runAgyPrint(
       cleanupLogDir();
       resolveOuter({
         text,
+        toolCalls,
         durationMs: Date.now() - started,
         exitCode,
         stderr,
