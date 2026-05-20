@@ -101,8 +101,24 @@ export async function buildModelMenuViewForChat(
   if (!backend?.getSettingsPresentation) return null;
 
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
+  const candidateModel = chatSets.model ?? config.model;
   const freeOnly = chatSets.freeOnly === true;
+
+  // If the chat's stored model isn't recognised by the active backend
+  // (typical post-`/backend` swap: the chat keeps the previous
+  // backend's model id until `/model` is touched), ask the backend
+  // for its default so the picker has a sensible "Active" line
+  // instead of e.g. `Model: claude-opus-4-7` on the agy backend.
+  let activeModel = candidateModel;
+  if (backend.resolveModel) {
+    const probe = await backend.resolveModel(candidateModel);
+    if (probe.kind === "missing") {
+      const fallback = await backend.resolveModel("default");
+      if (fallback.kind === "exact") {
+        activeModel = fallback.storedValue;
+      }
+    }
+  }
 
   const availableBackends = listAvailableBackends(config);
   const activeBackendId = hasBackendPool()
@@ -181,7 +197,18 @@ export async function buildModelBrowseViewForChat(
   if (!backend?.getSettingsPresentation) return null;
 
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
+  const candidateModel = chatSets.model ?? config.model;
+  // Same fallback as `loadModelMenuView` — see comment there.
+  let activeModel = candidateModel;
+  if (backend.resolveModel) {
+    const probe = await backend.resolveModel(candidateModel);
+    if (probe.kind === "missing") {
+      const fallback = await backend.resolveModel("default");
+      if (fallback.kind === "exact") {
+        activeModel = fallback.storedValue;
+      }
+    }
+  }
   const freeOnly = chatSets.freeOnly === true;
   const filter: "all" | "free" = options.filter ?? (freeOnly ? "free" : "all");
 
