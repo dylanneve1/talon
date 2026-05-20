@@ -208,6 +208,13 @@ export class AntigravityBridge {
   private readyPromise: Promise<void>;
   private readonly chatId: string;
   private readonly turnTimeoutMs: number;
+  /**
+   * The Gemini model the bridge was spawned with. `ensureBridge`
+   * consults this when a /model swap arrives — `LocalAgentConfig.model`
+   * is baked at agent-context start, so a different model means we
+   * have to respawn rather than reuse.
+   */
+  activeModel: string | null = null;
 
   constructor(chatId: string, _opts: BridgeSpawnOptions = {}) {
     this.chatId = chatId;
@@ -254,6 +261,7 @@ export class AntigravityBridge {
     };
 
     this.proc = proc as ChildProc;
+    this.activeModel = config.model ?? null;
     const configPayload = JSON.stringify(config);
     const configFd = proc.stdio[3] as Writable | undefined;
     if (!configFd) {

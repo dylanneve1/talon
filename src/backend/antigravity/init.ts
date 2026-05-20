@@ -256,7 +256,10 @@ export { resolveWorkspacePath, containsHiddenSegment };
  * frontend-tools MCP server is chat-scoped. Switching chats means
  * spawning a fresh bridge.
  */
-export async function ensureBridge(chatId: string): Promise<AntigravityBridge> {
+export async function ensureBridge(
+  chatId: string,
+  modelOverride?: string,
+): Promise<AntigravityBridge> {
   const state = getState();
   if (!state.config) {
     throw new Error(
@@ -264,9 +267,31 @@ export async function ensureBridge(chatId: string): Promise<AntigravityBridge> {
     );
   }
 
+  // Per-chat model override (from /model selection) wins over the
+  // global default. `state.config.model` is the chat-role's backend
+  // default (e.g. `claude-opus-4-7` when Claude is primary) — sending
+  // *that* to Gemini's API yields HTTP 404 `models/claude-opus-4-7
+  // is not found`, which is exactly what was happening before this
+  // parameter was added.
+  const rawModel =
+    modelOverride ?? state.config.model ?? ANTIGRAVITY_DEFAULT_MODEL;
+  const effectiveModel =
+    rawModel === "default" ? ANTIGRAVITY_DEFAULT_MODEL : rawModel;
+  // Strip the `models/` prefix Gemini's models.list() includes.
+  // `LocalAgentConfig(model=...)` accepts both forms but the short
+  // form is what the SDK uses internally — cleaner to send that.
+  const bridgeModel = effectiveModel.replace(/^models\//, "");
+
+  // If a bridge is already running for this chat but was started with
+  // a different model, kill it and respawn — `LocalAgentConfig.model`
+  // is baked at agent-context start, there's no live-swap.
   const existing = state.bridges.get(chatId);
   if (existing && existing.isReady()) {
-    return existing;
+    if (existing.activeModel === bridgeModel) {
+      return existing;
+    }
+    await existing.shutdown().catch(() => {});
+    state.bridges.delete(chatId);
   }
 
   const bridgeUrl = `http://127.0.0.1:${state.gatewayPortFn()}`;
@@ -283,7 +308,6 @@ export async function ensureBridge(chatId: string): Promise<AntigravityBridge> {
     (typeof cfgRecord.geminiApiKey === "string"
       ? (cfgRecord.geminiApiKey as string)
       : undefined) ?? process.env.GEMINI_API_KEY;
-  const model = state.config.model ?? ANTIGRAVITY_DEFAULT_MODEL;
 
   // Resolve the workspace fresh each time (the bridge may be respawning
   // after a config edit). `resolveWorkspacePath` is idempotent — same
@@ -294,13 +318,6 @@ export async function ensureBridge(chatId: string): Promise<AntigravityBridge> {
     typeof cfgRecord.antigravityPython === "string"
       ? expandHome(cfgRecord.antigravityPython as string)
       : undefined;
-
-  // Strip the `models/` prefix Gemini's models.list() includes.
-  // `LocalAgentConfig(model=...)` accepts both forms but the short
-  // form is what the SDK uses internally — cleaner to send that.
-  const effectiveModel =
-    model === "default" ? ANTIGRAVITY_DEFAULT_MODEL : model;
-  const bridgeModel = effectiveModel.replace(/^models\//, "");
 
   const bridge = new AntigravityBridge(chatId);
   await bridge.start(

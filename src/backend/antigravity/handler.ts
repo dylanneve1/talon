@@ -140,7 +140,12 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
 
   let bridge;
   try {
-    bridge = await ensureBridge(chatId);
+    // Pass the per-chat model so `ensureBridge` builds the agent
+    // config against the user's selection (e.g. gemini-2.5-flash-lite)
+    // rather than the chat-role's global default — that default
+    // routinely points at a non-Gemini model (claude-opus-4-7 today)
+    // and the bridge would 404 on the first Gemini API call.
+    bridge = await ensureBridge(chatId, activeModel);
   } catch (err) {
     activeAborts.delete(chatId);
     const msg = errMsg(err);
