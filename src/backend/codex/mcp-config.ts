@@ -29,11 +29,44 @@ import type { CodexOptions } from "@openai/codex-sdk";
 import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
 
+/**
+ * AppToolApproval values accepted by Codex's `mcp_servers.<name>` table.
+ *
+ * Source: `codex-rs/config/src/mcp_types.rs` — the enum is `Auto | Prompt
+ * | Approve` with `#[serde(rename_all = "snake_case")]`, so the wire
+ * values are the lowercase strings below.
+ *
+ *   - `auto`    — Codex's default. Falls back to per-tool ToolAnnotations:
+ *                 `read_only_hint=true` skips approval; otherwise
+ *                 (no annotations, or `destructive_hint=true`, or
+ *                 `open_world_hint=true`) approval is required.
+ *   - `prompt`  — Approval is requested every time, regardless of
+ *                 annotations.
+ *   - `approve` — Auto-approve every call. `mcp_permission_prompt_is_auto_approved`
+ *                 short-circuits to `true` for this server. Equivalent
+ *                 to saying "Talon trusts this server, don't ask."
+ */
+export type CodexToolApprovalMode = "auto" | "prompt" | "approve";
+
 /** TOML-compatible record shape Codex's CLI accepts. */
 export interface CodexMcpServer {
   command: string;
   args: string[];
   env?: Record<string, string>;
+  /**
+   * Per-server default approval mode applied to every tool the server
+   * exposes (unless a `tools.<tool>.approval_mode` override is set).
+   *
+   * Talon defaults all of its own MCP servers to `"approve"` because
+   * Codex is run in non-interactive API mode here — there is no UI to
+   * surface an approval prompt to. Without this, any tool whose schema
+   * lacks `read_only_hint=true` (which is most of them) silently routes
+   * through the approval flow, gets auto-cancelled, and surfaces as the
+   * Rust-side `"user cancelled MCP tool call"` error.
+   *
+   * Serialised as `default_tools_approval_mode` in the TOML config.
+   */
+  default_tools_approval_mode?: CodexToolApprovalMode;
 }
 
 /**
@@ -58,12 +91,32 @@ export function asCodexConfig(
 }
 
 /**
+ * Default approval mode for Talon-spawned MCP servers running under
+ * Codex. Every entry built by `buildCodexMcpServers` is tagged with
+ * this so Codex's approval flow short-circuits — see the
+ * `default_tools_approval_mode` doc on `CodexMcpServer` for the full
+ * reasoning. Exposed as a module-level constant rather than a
+ * literal-everywhere so behaviour changes happen in exactly one place.
+ */
+export const TALON_MCP_DEFAULT_APPROVAL: CodexToolApprovalMode = "approve";
+
+/**
  * Build the Codex `mcp_servers` config map for a given chat.
  *
  * Includes one frontend-tools server per non-terminal frontend (so the
  * agent can call `send` / `react` / `end_turn` etc.) plus all configured
  * plugin MCP servers. Brave Search is included as a special case when
  * configured, matching the Claude SDK backend's behaviour.
+ *
+ * Every server is tagged with `default_tools_approval_mode: "approve"`
+ * so Codex auto-approves every tool call. Talon owns these servers
+ * (they're spawned with our launcher and either talk to our own
+ * bridge or to a trusted upstream the user has configured), and
+ * Codex's non-interactive API mode has no UI to surface approval
+ * prompts on — the previous default of `auto` was silently routing
+ * any tool lacking a `read_only_hint=true` schema annotation through
+ * the approval flow, where it would be auto-cancelled with the
+ * Rust-side error `"user cancelled MCP tool call"`.
  */
 export function buildCodexMcpServers(args: {
   chatId: string;
@@ -107,6 +160,7 @@ export function buildCodexMcpServers(args: {
         TALON_CHAT_ID: chatId,
         TALON_FRONTEND: frontend,
       },
+      default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
     };
   }
 
@@ -119,6 +173,7 @@ export function buildCodexMcpServers(args: {
       ),
       args: [],
       env: { BRAVE_API_KEY: braveApiKey },
+      default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
     };
   }
 
@@ -130,6 +185,7 @@ export function buildCodexMcpServers(args: {
       command: wrapped[0],
       args: wrapped.slice(1),
       env: cfg.env ?? {},
+      default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
     };
   }
 

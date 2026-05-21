@@ -164,6 +164,44 @@ describe("codex / buildCodexMcpServers", () => {
       );
     }
   });
+
+  // The Codex CLI auto-cancels MCP tool calls whose tools lack
+  // `read_only_hint=true` annotations unless the server is configured
+  // to auto-approve (`default_tools_approval_mode = "approve"`). Every
+  // Talon-spawned server must carry this so the non-interactive API
+  // session never falls into the approval flow it can't satisfy.
+  it("tags every server with default_tools_approval_mode='approve'", () => {
+    const servers = buildCodexMcpServers({
+      chatId: "c1",
+      bridgeUrl: "http://127.0.0.1:19876",
+      frontends: ["telegram", "discord"],
+      braveApiKey: "BSA-test-key",
+    });
+
+    expect(Object.keys(servers).length).toBeGreaterThan(0);
+    for (const [name, server] of Object.entries(servers)) {
+      expect(
+        server.default_tools_approval_mode,
+        `${name}.default_tools_approval_mode`,
+      ).toBe("approve");
+    }
+
+    // The four classes of servers must all be covered: frontend-tools,
+    // brave-search, plugin (mempalace-tools comes from the mocked
+    // getPluginMcpServers above), and any other plugin path.
+    expect(servers["telegram-tools"]?.default_tools_approval_mode).toBe(
+      "approve",
+    );
+    expect(servers["discord-tools"]?.default_tools_approval_mode).toBe(
+      "approve",
+    );
+    expect(servers["brave-search"]?.default_tools_approval_mode).toBe(
+      "approve",
+    );
+    expect(servers["mempalace-tools"]?.default_tools_approval_mode).toBe(
+      "approve",
+    );
+  });
 });
 
 describe("codex / factory registration", () => {
