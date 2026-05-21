@@ -78,7 +78,11 @@ import {
 import { getState } from "./state.js";
 import { ensureCodex, getCodexAuthInfo } from "./init.js";
 import { isChatGptModelMismatchError, isSilentOAuthExitError } from "./auth.js";
-import { chatGptFallbackFor, isCodexOAuthIncompat } from "./models.js";
+import {
+  chatGptFallbackFor,
+  getModelInfo,
+  isCodexOAuthIncompat,
+} from "./models.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
@@ -465,6 +469,7 @@ export async function handleMessage(
   incrementCounter("queries_total");
 
   incrementTurns(chatId);
+  const modelInfo = await getModelInfo(activeModel).catch(() => undefined);
   recordUsage(chatId, {
     inputTokens: streamState.sdkInputTokens,
     outputTokens: streamState.sdkOutputTokens,
@@ -472,6 +477,7 @@ export async function handleMessage(
     cacheWrite: streamState.sdkCacheWrite,
     durationMs,
     model: activeModel,
+    contextWindow: modelInfo?.contextWindow,
   });
 
   // Set a descriptive session name from the user's first message.

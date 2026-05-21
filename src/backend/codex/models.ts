@@ -189,6 +189,17 @@ export function synthesizeUnknownModel(id: string): CodexModelInfo {
   };
 }
 
+function withDiscoveredMetadata(model: CodexModelInfo): CodexModelInfo {
+  const meta = getState().discoveredModelMetadata.get(model.id);
+  if (!meta) return model;
+
+  return {
+    ...model,
+    ...(meta.displayName ? { displayName: meta.displayName } : {}),
+    ...(meta.contextWindow ? { contextWindow: meta.contextWindow } : {}),
+  };
+}
+
 function prettifyId(id: string): string {
   // Capitalise `gpt`, leave reasoning prefixes (`o3-`, `o4-`) lowercase
   // (matches OpenAI's house style), preserve everything else verbatim.
@@ -226,7 +237,7 @@ export function getEffectiveModels(): CodexModelInfo[] {
   const seen = new Set<string>();
   for (const m of CODEX_MODELS) {
     if (!discovered.has(m.id)) continue;
-    result.push(m);
+    result.push(withDiscoveredMetadata(m));
     seen.add(m.id);
   }
   for (const id of discovered) {

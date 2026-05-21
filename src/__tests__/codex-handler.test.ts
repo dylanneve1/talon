@@ -1442,6 +1442,7 @@ describe("codex / handleMessage — usage propagation", () => {
     expect(result.cacheRead).toBe(89);
     // Codex doesn't surface cache writes
     expect(result.cacheWrite).toBe(0);
+    expect(sessions.getSession("test-chat").usage.contextWindow).toBe(400_000);
   });
 });
 

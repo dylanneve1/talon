@@ -224,6 +224,21 @@ describe("codex / getEffectiveModels (merge logic)", () => {
     expect(catalog.find((m) => m.id === "gpt-5")?.contextWindow).toBe(400_000);
   });
 
+  it("overlays discovered metadata onto curated entries", () => {
+    const state = getState();
+    state.discoveredModels.add("gpt-5.5");
+    state.discoveredModelMetadata.set("gpt-5.5", {
+      displayName: "GPT-5.5 Live",
+      contextWindow: 272_000,
+    });
+    state.discoveryAt = Date.now();
+
+    const catalog = getEffectiveModels();
+    expect(catalog).toHaveLength(1);
+    expect(catalog[0].displayName).toBe("GPT-5.5 Live");
+    expect(catalog[0].contextWindow).toBe(272_000);
+  });
+
   it("synthesises entries for discovered ids not in the curated table", () => {
     const state = getState();
     state.discoveredModels.add("gpt-6-preview"); // not in curated
