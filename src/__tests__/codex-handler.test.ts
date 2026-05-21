@@ -474,13 +474,14 @@ describe("codex / handleMessage — thread options", () => {
     expect(opts.model).toBe("gpt-5-codex");
     // Codex normally insists on git; Talon is an assistant, not a coding session.
     expect(opts.skipGitRepoCheck).toBe(true);
-    // Codex's own filesystem / shell tools are not part of the assistant's job.
-    expect(opts.sandboxMode).toBe("read-only");
-    // Auto-deny any tool that would otherwise prompt the user. MCP tools
-    // execute through the bridge and bypass approvalPolicy entirely.
+    // Full-access permission triple (CODEX_THREAD_PERMISSIONS). Talon
+    // runs every other backend with the equivalent (bypassPermissions
+    // / allowDangerouslySkipPermissions in Claude SDK, etc); restricting
+    // Codex tighter just silently fails its shell/file/network tool
+    // calls without changing the security model.
+    expect(opts.sandboxMode).toBe("danger-full-access");
     expect(opts.approvalPolicy).toBe("never");
-    // Net access flows through brave-search MCP, not Codex's CLI shell.
-    expect(opts.networkAccessEnabled).toBe(false);
+    expect(opts.networkAccessEnabled).toBe(true);
   });
 
   it("passes the same options when resuming an existing thread", async () => {
@@ -515,12 +516,14 @@ describe("codex / handleMessage — thread options", () => {
 
     expect(MOCK_RESUME_CALLS).toEqual(["thr_resumed"]);
     // resumeThread receives the same threadOptions shape as startThread.
+    // Full-access permission triple (CODEX_THREAD_PERMISSIONS) — see the
+    // sibling test above for the security-boundary reasoning.
     expect(MOCK_THREAD_OPTIONS_SEEN[0]).toMatchObject({
       model: "gpt-5-codex",
       skipGitRepoCheck: true,
-      sandboxMode: "read-only",
+      sandboxMode: "danger-full-access",
       approvalPolicy: "never",
-      networkAccessEnabled: false,
+      networkAccessEnabled: true,
     });
   });
 });

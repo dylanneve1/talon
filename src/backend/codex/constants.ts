@@ -72,3 +72,41 @@ export const CODEX_API_KEY_ONLY_MODELS: ReadonlySet<string> = new Set([
  */
 export const CODEX_DEFAULT_WORKING_DIRECTORY =
   process.env.HOME ?? process.cwd();
+
+/**
+ * ThreadOptions permission settings shared by both the chat handler and
+ * the heartbeat/dream one-shot path.
+ *
+ * Talon runs Codex with full permissions — `approvalPolicy: "never"`,
+ * `sandboxMode: "danger-full-access"`, and `networkAccessEnabled: true`.
+ * Codex is non-interactive in this harness (no UI to surface approval
+ * prompts on), and Talon already trusts every other backend (Claude SDK,
+ * OpenAI Agents, Kilo, OpenCode, Antigravity) with the same level of
+ * access — `bypassPermissions` + `allowDangerouslySkipPermissions: true`
+ * is the equivalent in the Claude SDK backend. Restricting Codex more
+ * tightly than its sibling backends would just produce silent failures
+ * on shell / file / network tool calls without changing the security
+ * model: the bot-user identity (claudiusthebot, isolated VPS account,
+ * no credentials to user-level data) is the actual security boundary.
+ *
+ *   - `approvalPolicy: "never"`         — Codex never asks for approval
+ *                                         on its native commands
+ *                                         (bash, apply_patch, etc).
+ *   - `sandboxMode: "danger-full-access"` — full disk + network access
+ *                                         inside Codex's sandbox.
+ *   - `networkAccessEnabled: true`      — explicit, in case Codex ever
+ *                                         defaults the boolean.
+ *
+ * MCP tool calls have their own approval surface (`AppToolApproval`
+ * enum, `default_tools_approval_mode` per server) which Talon also
+ * sets to `"approve"` in `mcp-config.ts`.
+ */
+export const CODEX_THREAD_PERMISSIONS = {
+  approvalPolicy: "never" as const,
+  sandboxMode: "danger-full-access" as const,
+  networkAccessEnabled: true,
+} satisfies {
+  approvalPolicy: "never";
+  sandboxMode: "danger-full-access";
+  networkAccessEnabled: boolean;
+};

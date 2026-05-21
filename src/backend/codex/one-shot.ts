@@ -24,6 +24,7 @@ import { ensureCodex, getCodexAuthInfo } from "./init.js";
 import {
   CODEX_SYSTEM_PROMPT_SUFFIX,
   CODEX_CHATGPT_DEFAULT_MODEL,
+  CODEX_THREAD_PERMISSIONS,
 } from "./constants.js";
 import { isChatGptModelMismatchError } from "./auth.js";
 import { chatGptFallbackFor, isCodexOAuthIncompat } from "./models.js";
@@ -105,9 +106,7 @@ export async function runOneShotAgent(
   const thread = codex.startThread({
     model: activeModel,
     skipGitRepoCheck: true,
-    sandboxMode: "read-only",
-    approvalPolicy: "never",
-    networkAccessEnabled: false,
+    ...CODEX_THREAD_PERMISSIONS,
   });
 
   try {

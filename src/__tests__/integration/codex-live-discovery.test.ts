@@ -43,7 +43,10 @@ import {
   getModelInfo,
   resolveModel,
 } from "../../backend/codex/models.js";
-import { CODEX_DEFAULT_MODEL } from "../../backend/codex/constants.js";
+import {
+  CODEX_DEFAULT_MODEL,
+  CODEX_THREAD_PERMISSIONS,
+} from "../../backend/codex/constants.js";
 
 // `@openai/codex-sdk` only exposes `.` via its `exports` field — no
 // `./package.json` subpath and no legacy `main`, so neither
@@ -167,9 +170,7 @@ codexDescribe("Codex SDK live discovery (integration)", () => {
     const thread = codex.startThread({
       model: CODEX_DEFAULT_MODEL,
       skipGitRepoCheck: true,
-      sandboxMode: "read-only",
-      approvalPolicy: "never",
-      networkAccessEnabled: false,
+      ...CODEX_THREAD_PERMISSIONS,
     });
 
     expect(thread).toBeTruthy();
