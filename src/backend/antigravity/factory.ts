@@ -12,6 +12,7 @@ import { initAntigravityAgent } from "./init.js";
 import { handleMessage as agHandleMessage } from "./handler.js";
 import { runOneShotAgent as agRunOneShotAgent } from "./one-shot.js";
 import { resetState as resetAntigravityState } from "./state.js";
+import { ANTIGRAVITY_DEFAULT_MODEL } from "./constants.js";
 import {
   resolveModel,
   getModelInfo,
@@ -74,6 +75,7 @@ const antigravityFactory: BackendFactory = {
         await ensureCatalog();
         return resolveModel(q);
       },
+      getDefaultModel: () => ANTIGRAVITY_DEFAULT_MODEL,
       getModelInfo: async (id) => {
         await ensureCatalog();
         return getModelInfo(id);

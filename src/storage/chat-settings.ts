@@ -14,7 +14,31 @@ import { registerCleanup } from "../util/cleanup-registry.js";
 export type EffortLevel = "off" | "low" | "medium" | "high" | "max";
 
 export type ChatSettings = {
-  /** Model override for this chat. */
+  /**
+   * Per-backend model overrides for this chat. Keyed by backend id
+   * (`"claude"`, `"codex"`, `"openai-agents"`, etc). Each entry is the
+   * model id the user picked on that backend.
+   *
+   * Switching backends preserves each side's last pick — your Codex
+   * chat remembers `gpt-5.5`, your OpenRouter chat remembers
+   * `meta-llama/...`. Replaces the single legacy `model` field which
+   * couldn't differentiate per-backend choices and produced the
+   * orphan-bug class (model from backend X persisting when switching
+   * to backend Y).
+   *
+   * Resolution order (see `core/active-model.ts`):
+   *   1. `modelByBackend[activeBackend]` if it validates on the catalog
+   *   2. `backend.getDefaultModel()` (canonical for backends that have one)
+   *   3. `config.backendDefaults[activeBackend]` (operator override)
+   *   4. `config.model` (only when activeBackend === config.backend)
+   *   5. null → "No model selected" UI + send guard refuses.
+   */
+  modelByBackend?: Record<string, string>;
+  /**
+   * @deprecated Single-slot model field. Retained for back-compat with
+   * old stores; migrated into `modelByBackend` on load. New writes go
+   * through `setChatModelForBackend` instead.
+   */
   model?: string;
   /**
    * Backend override for this chat. When set, queries from this chat
@@ -97,6 +121,59 @@ export function loadChatSettings(): void {
       `Migrated ${migrated} chat(s) from maxThinkingTokens to effort`,
     );
   }
+  // The legacy `model` field is not destructively migrated here — that
+  // requires knowing the chat's effective backend, which isn't available
+  // at load time (backend pool initialises later). Instead `setChatModel`
+  // mirrors writes into `modelByBackend` and the active-model resolver
+  // reads both, preferring the per-backend slot.
+}
+
+/**
+ * Migrate the legacy single-slot `model` field into the per-backend
+ * map. Idempotent. Call this once the global backend id is known
+ * (typically right after config + backend pool initialise) so the
+ * legacy value lands in the right per-backend slot.
+ *
+ * For each chat with a legacy `model` set: copy it into
+ * `modelByBackend[chat's effective backend]` if no entry exists there
+ * yet, then delete the legacy field. Chats whose effective backend
+ * isn't in the runtime registry (e.g. user removed it from
+ * `enabledBackends`) keep the legacy field — the resolver still uses
+ * it as the lowest-precedence fallback so behaviour doesn't regress.
+ */
+export function migrateLegacyModelField(
+  fallbackBackendId: string,
+  isRecognisedBackend: (id: string) => boolean,
+): void {
+  let migrated = 0;
+  for (const [chatId, settings] of Object.entries(store)) {
+    if (typeof settings.model !== "string" || !settings.model) continue;
+    const effectiveBackend =
+      settings.backend && isRecognisedBackend(settings.backend)
+        ? settings.backend
+        : isRecognisedBackend(fallbackBackendId)
+          ? fallbackBackendId
+          : null;
+    if (!effectiveBackend) continue;
+    if (!settings.modelByBackend) settings.modelByBackend = {};
+    if (settings.modelByBackend[effectiveBackend] === undefined) {
+      settings.modelByBackend[effectiveBackend] = settings.model;
+    }
+    delete settings.model;
+    migrated++;
+    log(
+      "settings",
+      `Migrated chat ${chatId}: legacy model → modelByBackend[${effectiveBackend}]`,
+    );
+  }
+  if (migrated > 0) {
+    dirty = true;
+    save();
+    log(
+      "settings",
+      `Migrated ${migrated} chat(s) from legacy model → modelByBackend`,
+    );
+  }
 }
 
 function save(): void {
@@ -148,9 +225,12 @@ export function getChatSettings(chatId: string): ChatSettings {
 
 function cleanupEmpty(chatId: string): void {
   const s = store[chatId];
+  if (!s) return;
+  const modelByBackendEmpty =
+    !s.modelByBackend || Object.keys(s.modelByBackend).length === 0;
   if (
-    s &&
     !s.model &&
+    modelByBackendEmpty &&
     !s.backend &&
     !s.effort &&
     s.pulse === undefined &&
@@ -177,14 +257,110 @@ export function setPulseLastCheckMsgId(
   // Don't force-save on every pulse check — let the auto-save interval handle it
 }
 
+/**
+ * Set the per-chat model override for a specific backend. Pass
+ * `undefined` to clear that backend's slot only. Other backends'
+ * persisted picks are left intact — switching backends and back
+ * restores each side's prior choice.
+ */
+export function setChatModelForBackend(
+  chatId: string,
+  backendId: string,
+  model: string | undefined,
+): void {
+  if (!store[chatId]) store[chatId] = {};
+  const entry = store[chatId];
+  if (model) {
+    if (!entry.modelByBackend) entry.modelByBackend = {};
+    entry.modelByBackend[backendId] = model;
+  } else if (entry.modelByBackend) {
+    delete entry.modelByBackend[backendId];
+    if (Object.keys(entry.modelByBackend).length === 0) {
+      delete entry.modelByBackend;
+    }
+  }
+  cleanupEmpty(chatId);
+  dirty = true;
+  save();
+}
+
+/**
+ * Get the per-chat model override for a specific backend. Returns
+ * `undefined` when no per-chat pick exists for that backend; callers
+ * (typically the active-model resolver) fall through to the backend's
+ * own default + config in that case.
+ */
+export function getChatModelForBackend(
+  chatId: string,
+  backendId: string,
+): string | undefined {
+  const settings = store[chatId];
+  if (!settings) return undefined;
+  const fromMap = settings.modelByBackend?.[backendId];
+  if (fromMap) return fromMap;
+  // Legacy fallback: pre-migration stores hold a single `model` field
+  // with no backend tag. Treat it as the value for the chat's current
+  // backend (or the global default backend if no per-chat binding).
+  // Once `migrateLegacyModelField` runs this branch becomes dead.
+  if (typeof settings.model === "string" && settings.model) {
+    if (settings.backend ? settings.backend === backendId : true) {
+      return settings.model;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Clear every per-backend model override on a chat. Used by `/reset`
+ * and admin tooling. Equivalent to deleting `modelByBackend` whole.
+ */
+export function clearAllChatModels(chatId: string): void {
+  const entry = store[chatId];
+  if (!entry) return;
+  delete entry.modelByBackend;
+  delete entry.model;
+  cleanupEmpty(chatId);
+  dirty = true;
+  save();
+}
+
+/**
+ * @deprecated Prefer `setChatModelForBackend(chatId, backendId, model)`
+ * which is explicit about which backend's slot is being mutated.
+ *
+ * Legacy single-slot setter. Writes to the chat's currently bound
+ * backend's slot when a binding exists, otherwise to the legacy
+ * `model` field (typical only on fresh / pre-migration chats).
+ *
+ * Pass `undefined` to clear the model state. The clear semantic
+ * matches legacy expectations: removes EVERY per-backend slot AND
+ * the legacy field — equivalent to "user hit reset on this chat".
+ * For per-backend granularity use `setChatModelForBackend` with
+ * `undefined` instead.
+ */
 export function setChatModel(chatId: string, model: string | undefined): void {
   if (!store[chatId]) store[chatId] = {};
-  if (model) {
-    store[chatId].model = model;
-  } else {
-    delete store[chatId].model;
+  const entry = store[chatId];
+
+  if (model === undefined) {
+    // Legacy "reset everything" semantic. Matches what existing
+    // callers / tests expect when they call setChatModel(cid, undefined).
+    delete entry.modelByBackend;
+    delete entry.model;
     cleanupEmpty(chatId);
+    dirty = true;
+    save();
+    return;
   }
+
+  const targetBackend = entry.backend;
+  if (targetBackend) {
+    setChatModelForBackend(chatId, targetBackend, model);
+    return;
+  }
+  // No backend binding — write to the legacy slot. The next backend
+  // switch / migration will pick it up into modelByBackend.
+  entry.model = model;
   dirty = true;
   save();
 }
