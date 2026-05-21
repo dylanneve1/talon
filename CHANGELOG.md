@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.14.0](https://github.com/dylanneve1/talon/compare/v1.13.0...v1.14.0) (2026-05-21)
+
+
+### Features
+
+* **status:** hide cache section on backends that don't report it ([#238](https://github.com/dylanneve1/talon/issues/238)) ([7c606bf](https://github.com/dylanneve1/talon/commit/7c606bffc4ee7b683374eda7b1b694e8d4171d88))
+
+
+### Bug Fixes
+
+* **chat:** restore valid per-chat backend state ([#236](https://github.com/dylanneve1/talon/issues/236)) ([b8b5756](https://github.com/dylanneve1/talon/commit/b8b5756a4113d42f89f33c57f80f683852aa17a4))
+* **codex:** detect usage exhaustion, fix misleading log, filter catalog by auth mode ([#239](https://github.com/dylanneve1/talon/issues/239)) ([194cdb3](https://github.com/dylanneve1/talon/commit/194cdb3e978bd11973ec6155c39cbe5945cac102))
+* **codex:** read last_token_usage from rollout JSONL for accurate context fill ([#237](https://github.com/dylanneve1/talon/issues/237)) ([1917f85](https://github.com/dylanneve1/talon/commit/1917f858ea7a07c84fdcaa507c61cad0a9c8da9c))
+
 ## [1.13.0](https://github.com/dylanneve1/talon/compare/v1.12.0...v1.13.0) (2026-05-21)
 
 
