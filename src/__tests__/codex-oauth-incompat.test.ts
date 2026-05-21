@@ -8,14 +8,7 @@
  * (the 2026-05-20 Pandario regression pattern).
  */
 
-import {
-  mkdtempSync,
-  mkdirSync,
-  writeFileSync,
-  rmSync,
-  existsSync,
-  readFileSync,
-} from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, it, expect } from "vitest";
@@ -38,31 +31,33 @@ import {
   isChatGptModelMismatchError,
   type CodexAuthInfo,
 } from "../backend/codex/auth.js";
-import { files } from "../util/paths.js";
-
-// ── HOME override for store-path isolation ────────────────────────────────
+// `oauth-incompat.ts` resolves the store path lazily against
+// `homedir()` at every call, so overriding HOME in `beforeEach`
+// fully isolates each test under a temp directory. No need to touch
+// the production `~/.talon/data/codex-oauth-incompat.json` path —
+// nothing in this file should ever resolve to it.
 
 let originalHome: string | undefined;
 let originalUserProfile: string | undefined;
 let tempHome: string;
 
+/**
+ * Compute the per-test store path the same way `oauth-incompat.ts`
+ * does — `<tempHome>/.talon/data/codex-oauth-incompat.json`. Used by
+ * tests that need to seed the store before calling
+ * `loadOAuthIncompatStore`.
+ */
+function testStorePath(): string {
+  return join(tempHome, ".talon", "data", "codex-oauth-incompat.json");
+}
+
 beforeEach(() => {
-  // Each test gets a clean ~/.talon/data/codex-oauth-incompat.json
-  // location by overriding HOME (POSIX) and USERPROFILE (Windows).
-  // `files` is captured at module init time so we ALSO have to clean
-  // up the real path in case a parent test polluted it — but here we
-  // just point Talon's path resolver at a tmp dir and let writes go
-  // there.
   originalHome = process.env.HOME;
   originalUserProfile = process.env.USERPROFILE;
   tempHome = mkdtempSync(join(tmpdir(), "talon-codex-incompat-"));
   process.env.HOME = tempHome;
   process.env.USERPROFILE = tempHome;
   resetOAuthIncompatForTests();
-  // Also clean the canonical path in case a sibling test left it dirty.
-  if (existsSync(files.codexOauthIncompat)) {
-    rmSync(files.codexOauthIncompat, { force: true });
-  }
 });
 
 afterEach(() => {
@@ -79,9 +74,6 @@ afterEach(() => {
     /* ignore */
   }
   resetOAuthIncompatForTests();
-  if (existsSync(files.codexOauthIncompat)) {
-    rmSync(files.codexOauthIncompat, { force: true });
-  }
 });
 
 // ── Fingerprint computation ────────────────────────────────────────────────
@@ -170,20 +162,17 @@ describe("oauth-incompat / persistence", () => {
   });
 
   it("tolerates a malformed JSON store gracefully", () => {
-    // `files.codexOauthIncompat` is captured at module load — write
-    // to the canonical path, cleaned up in afterEach.
-    mkdirSync(join(files.codexOauthIncompat, ".."), { recursive: true });
-    writeFileSync(files.codexOauthIncompat, "not json at all { } {");
+    mkdirSync(join(testStorePath(), ".."), { recursive: true });
+    writeFileSync(testStorePath(), "not json at all { } {");
     loadOAuthIncompatStore("chatgpt:test");
     expect(listKnownOAuthIncompat()).toEqual([]);
   });
 
   it("tolerates a schema-version mismatch", () => {
-    // `files.codexOauthIncompat` is captured at module load — write
-    // to the canonical path, cleaned up in afterEach.
-    mkdirSync(join(files.codexOauthIncompat, ".."), { recursive: true });
+    // The store path resolves against `tempHome` (see beforeEach).
+    mkdirSync(join(testStorePath(), ".."), { recursive: true });
     writeFileSync(
-      files.codexOauthIncompat,
+      testStorePath(),
       JSON.stringify({
         version: 999,
         fingerprint: "chatgpt:test",
@@ -196,11 +185,10 @@ describe("oauth-incompat / persistence", () => {
   });
 
   it("filters non-string entries on load (defensive)", () => {
-    // `files.codexOauthIncompat` is captured at module load — write
-    // to the canonical path, cleaned up in afterEach.
-    mkdirSync(join(files.codexOauthIncompat, ".."), { recursive: true });
+    // The store path resolves against `tempHome` (see beforeEach).
+    mkdirSync(join(testStorePath(), ".."), { recursive: true });
     writeFileSync(
-      files.codexOauthIncompat,
+      testStorePath(),
       JSON.stringify({
         version: 1,
         fingerprint: "chatgpt:test",

@@ -54,12 +54,27 @@
  */
 
 import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { homedir } from "node:os";
+import { dirname, resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 
-import { files } from "../../util/paths.js";
 import { logDebug, logWarn } from "../../util/log.js";
 import type { CodexAuthInfo } from "./auth.js";
+
+/**
+ * Resolve the store path AT CALL TIME rather than at module-init.
+ *
+ * `util/paths.ts` resolves all file paths against `homedir()` at
+ * import time, which is fine in production but causes test pollution:
+ * a test that overrides `process.env.HOME` to point at a tmp dir still
+ * has the OLD path cached on `files.codexOauthIncompat`. Resolving
+ * lazily here means HOME-override tests stay isolated AND production
+ * behaviour is identical (homedir() is stable for the lifetime of a
+ * real Talon process).
+ */
+function storePath(): string {
+  return resolve(homedir(), ".talon", "data", "codex-oauth-incompat.json");
+}
 
 /**
  * Shape of the persisted store. `fingerprint` lets us discard the
@@ -121,7 +136,7 @@ export function computeAuthFingerprint(info: CodexAuthInfo): string {
 export function loadOAuthIncompatStore(fingerprint: string): void {
   memoryStore = { fingerprint, models: new Set<string>() };
 
-  const path = files.codexOauthIncompat;
+  const path = storePath();
   if (!existsSync(path)) {
     logDebug(
       "agent",
@@ -249,11 +264,9 @@ function persist(): void {
     models: Array.from(memoryStore.models).sort(),
   };
   try {
-    mkdirSync(dirname(files.codexOauthIncompat), { recursive: true });
-    writeFileAtomic.sync(
-      files.codexOauthIncompat,
-      JSON.stringify(data, null, 2),
-    );
+    const path = storePath();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileAtomic.sync(path, JSON.stringify(data, null, 2));
   } catch (err) {
     logWarn(
       "agent",
