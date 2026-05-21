@@ -592,7 +592,25 @@ function handleMcpToolCall(
   item: McpToolCallItem,
   ctx: HandleEventContext,
 ): void {
-  if (item.status !== "completed" && item.status !== "in_progress") return;
+  // Only act on `completed`. Codex SDK emits each mcp_tool_call item
+  // twice: once with `status: "in_progress"` when it dispatches the
+  // tool to the MCP server, and again with `status: "completed"` after
+  // the server returns the result. The earlier code accepted both —
+  // combined with the `seenToolCallIds` dedup, that meant we acted on
+  // whichever shape arrived first (in_progress, every time).
+  //
+  // For terminator tools (`end_turn` / `send` / `react`) this is a
+  // race: marking `turnTerminated` on `in_progress` flips the abort
+  // controller BEFORE the bridge call has had a chance to execute the
+  // delivery. The abort kills the Codex subprocess (and with it the
+  // MCP tool subprocess) mid-flight — if the bridge HTTP call hasn't
+  // gone out yet, delivery never happens. Same shape as the Claude SDK
+  // send/end_turn race that PR #122 fixed via PostToolBatch.
+  //
+  // Status `failed` is already filtered: skip it too. `in_progress` is
+  // analytics-only on Codex — we record tool use at completion via the
+  // same path, so dropping the in_progress emit costs nothing.
+  if (item.status !== "completed") return;
   if (ctx.seenToolCallIds.has(item.id)) return;
   ctx.seenToolCallIds.add(item.id);
 

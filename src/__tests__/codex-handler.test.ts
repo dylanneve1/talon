@@ -645,9 +645,13 @@ describe("codex / handleMessage — tool call accounting", () => {
       { type: "thread.started", thread_id: "thr_dedup" },
       { type: "turn.started" },
       { type: "item.completed", item: dupItem },
-      // Same tool_use_id arriving again — Codex sometimes emits the same
-      // item as both `in_progress` and `completed` updates. The handler
-      // must only count it once.
+      // Same tool_use_id arriving again with the same `completed`
+      // status — Codex occasionally re-emits the completion event for
+      // the same item. The `seenToolCallIds` gate must dedup it.
+      //
+      // (The `in_progress` → `completed` lifecycle is handled by the
+      // status filter in `handleMcpToolCall`, not by this dedup — see
+      // the dedicated regression test below.)
       { type: "item.completed", item: dupItem },
       {
         type: "item.completed",
@@ -677,6 +681,77 @@ describe("codex / handleMessage — tool call accounting", () => {
 
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe("react");
+  });
+
+  it("skips `in_progress` mcp_tool_call items entirely and only acts on `completed`", async () => {
+    // Regression: Codex SDK emits each mcp_tool_call item twice — once
+    // when the tool is dispatched (`status: "in_progress"`) and again
+    // after the MCP server returns the result (`status: "completed"`).
+    //
+    // The old code accepted both states; combined with the dedup-on-id
+    // gate, that meant we acted on whichever arrived first. For a
+    // terminator tool, that flipped `turnTerminated` (and aborted the
+    // Codex subprocess) BEFORE the bridge had executed the delivery.
+    //
+    // The handler must wait for `completed` before recording the tool
+    // use, firing onToolUse, or detecting a terminator.
+    setupHandler();
+    const endTurnItem = {
+      id: "tool_in_progress_then_completed",
+      type: "mcp_tool_call",
+      server: "telegram-tools",
+      tool: "end_turn",
+      arguments: { text: "delivered" },
+    };
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_in_progress" },
+      { type: "turn.started" },
+      // First emit: in_progress — must be ignored entirely.
+      {
+        type: "item.completed",
+        item: { ...endTurnItem, status: "in_progress" },
+      },
+      // Some plain agent_message text in between so we can sanity-check
+      // that the in_progress emit didn't already flip turnTerminated and
+      // race the abort.
+      {
+        type: "item.completed",
+        item: { id: "msg1", type: "agent_message", text: "thinking..." },
+      },
+      // Second emit: completed — this is the one we act on.
+      {
+        type: "item.completed",
+        item: { ...endTurnItem, status: "completed" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 10,
+          output_tokens: 5,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const tools: string[] = [];
+    await handleMessage({
+      chatId: "test-chat",
+      text: "say hi",
+      senderName: "Dylan",
+      isGroup: false,
+      onToolUse: (name) => {
+        tools.push(name);
+      },
+    });
+
+    // Exactly one fire — only the `completed` event drove onToolUse.
+    expect(tools).toEqual(["end_turn"]);
+    // Terminator fired (signal aborted) — but only after `completed`.
+    // The fact that we got the in_progress event first and the next
+    // agent_message text still came through (i.e. the loop wasn't
+    // already aborted) confirms the race is gone.
+    expect(MOCK_RUN_STREAMED_CALLS[0].signal?.aborted).toBe(true);
   });
 
   it("skips mcp_tool_call items with status `failed`", async () => {
