@@ -16,6 +16,7 @@ import { clearHistory } from "../../storage/history.js";
 import {
   getChatSettings,
   setChatModel,
+  setChatModelForBackend,
   setChatBackend,
   setChatEffort,
   setChatPulseInterval,
@@ -53,6 +54,7 @@ import {
   resolveBackendForChat,
 } from "./model-menu.js";
 import { getBackendIdForChat } from "../../core/backend-controller.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
@@ -207,7 +209,18 @@ export function registerCommands(
   bot.command("model", async (ctx) => {
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim();
-    const activeModel = getChatSettings(cid).model ?? config.model;
+    // Resolve through the active-backend-aware helper. Returns null
+    // when the catalog-driven backend has no per-chat pick AND no
+    // operator default — UI surfaces that as "No model selected".
+    const be = resolveBackendForChat(cid, gateway);
+    const beId = getBackendIdForChat(cid);
+    const { model: resolvedActive } = await resolveActiveModelForChat(
+      cid,
+      be,
+      beId,
+      config,
+    );
+    const activeModel = resolvedActive ?? "No model selected";
 
     if (
       !arg ||
@@ -215,11 +228,18 @@ export function registerCommands(
       arg.toLowerCase() === "default"
     ) {
       if (arg) {
-        setChatModel(cid, undefined);
-        await ctx.reply(
-          `Model reset to default: <code>${escapeHtml(config.model)}</code>`,
-          { parse_mode: "HTML" },
+        // Clear THIS backend's slot only — other backends' picks stay.
+        setChatModelForBackend(cid, beId, undefined);
+        const { model: postResetModel } = await resolveActiveModelForChat(
+          cid,
+          be,
+          beId,
+          config,
         );
+        const body = postResetModel
+          ? `Model reset to default: <code>${escapeHtml(postResetModel)}</code>`
+          : `Model reset — no default available for backend <code>${escapeHtml(beId)}</code>. Use /model to pick one.`;
+        await ctx.reply(body, { parse_mode: "HTML" });
         return;
       }
       // Render the main /model menu. Browsing the catalog happens
@@ -246,9 +266,8 @@ export function registerCommands(
       return;
     }
 
-    // Resolve `/model <id>` against the *per-chat* backend — that's
-    // the one currently serving this chat, override-aware.
-    const be = resolveBackendForChat(cid, gateway);
+    // `be` + `beId` already resolved above for the activeModel lookup.
+    // Reuse them — they point at the per-chat backend (override-aware).
     if (be?.resolveModel) {
       const resolution = await be.resolveModel(arg);
       if (resolution.kind !== "exact") {
@@ -265,8 +284,8 @@ export function registerCommands(
         await ctx.reply(escapeHtml(msg), { parse_mode: "HTML" });
         return;
       }
-      setChatModel(cid, resolution.storedValue);
-      setChatBackend(cid, getBackendIdForChat(cid));
+      setChatModelForBackend(cid, beId, resolution.storedValue);
+      setChatBackend(cid, beId);
       await ctx.reply(
         `Model set to <code>${escapeHtml(resolution.storedValue)}</code> (${escapeHtml(resolution.model.providerName)}${resolution.model.free ? " \u00B7 free" : ""}).`,
         { parse_mode: "HTML" },
@@ -274,8 +293,8 @@ export function registerCommands(
     } else {
       // Fallback for backends without model resolution
       const model = resolveModelName(arg);
-      setChatModel(cid, model);
-      setChatBackend(cid, getBackendIdForChat(cid));
+      setChatModelForBackend(cid, beId, model);
+      setChatBackend(cid, beId);
       await ctx.reply(
         `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
         { parse_mode: "HTML" },
@@ -439,7 +458,15 @@ export function registerCommands(
   bot.command("settings", async (ctx) => {
     const cid = String(ctx.chat.id);
     const chatSets = getChatSettings(cid);
-    const activeModel = chatSets.model ?? config.model;
+    const settingsBe = resolveBackendForChat(cid, gateway);
+    const settingsBeId = getBackendIdForChat(cid);
+    const { model: resolvedSettingsModel } = await resolveActiveModelForChat(
+      cid,
+      settingsBe,
+      settingsBeId,
+      config,
+    );
+    const activeModel = resolvedSettingsModel ?? "No model selected";
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
 
@@ -482,7 +509,15 @@ export function registerCommands(
       ? formatDuration(Date.now() - info.createdAt)
       : "\u2014";
     const chatSets = getChatSettings(cid);
-    const activeModel = chatSets.model ?? config.model;
+    const statusBe = resolveBackendForChat(cid, gateway);
+    const statusBeId = getBackendIdForChat(cid);
+    const { model: resolvedStatusModel } = await resolveActiveModelForChat(
+      cid,
+      statusBe,
+      statusBeId,
+      config,
+    );
+    const activeModel = resolvedStatusModel ?? "No model selected";
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
 
@@ -495,8 +530,8 @@ export function registerCommands(
 
     // Enrich context/usage data from the per-chat backend so /status
     // reports the active provider's context window, not the global
-    // default's.
-    const be = resolveBackendForChat(cid, gateway);
+    // default's. Reuse `statusBe` from the resolver call above.
+    const be = statusBe;
     if (be?.getModelInfo) {
       const modelInfo = await be
         .getModelInfo(activeModel)

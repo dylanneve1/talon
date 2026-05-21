@@ -154,6 +154,18 @@ export async function initBackendAndDispatcher(
   });
   const backend = getBackendForRole("chat");
 
+  // One-shot legacy migration: any chat-settings entry still holding
+  // the old single-slot `model` field gets moved into
+  // `modelByBackend[chatSettings.backend ?? config.backend]`. Idempotent;
+  // safe to call on every boot. After this point the resolver no longer
+  // needs the legacy-fallback branch — every active chat's model lives
+  // in the per-backend map.
+  const { migrateLegacyModelField } =
+    await import("./storage/chat-settings.js");
+  migrateLegacyModelField(config.backend, (id) =>
+    isBackendAvailable(id, config),
+  );
+
   // Re-acquire any persisted per-chat backend/model overrides so chats
   // resume exactly where they were before restart. If a backend has
   // since been disabled/removed, or the stored model is no longer valid
@@ -227,6 +239,26 @@ export async function initBackendAndDispatcher(
     // the chat-role default if a caller ever passes `undefined`.
     getBackend: (chatId?: string) =>
       chatId ? getBackendForChat(chatId) : getBackendForRole("chat"),
+    // Send-time guard: the dispatcher walks the active-model chain
+    // before calling backend.query. When `model` is null (catalog-
+    // driven backend with no per-chat pick and no operator default),
+    // dispatcher refuses and replies with a /model prompt instead
+    // of submitting an empty id to the backend.
+    resolveActiveModel: async (chatId: string) => {
+      const { resolveActiveModelForChat } =
+        await import("./core/active-model.js");
+      const { getBackendIdForChat, getBackendForChat: getBE } =
+        await import("./core/backend-controller.js");
+      const beId = getBackendIdForChat(chatId);
+      const be = getBE(chatId);
+      const { model } = await resolveActiveModelForChat(
+        chatId,
+        be,
+        beId,
+        config,
+      );
+      return { model, backendId: beId };
+    },
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),

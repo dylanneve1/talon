@@ -37,6 +37,7 @@ import type { Gateway } from "../../core/gateway.js";
 import {
   getChatSettings,
   setChatModel,
+  setChatModelForBackend,
   setChatBackend,
   setChatEffort,
   setChatPulseInterval,
@@ -63,6 +64,7 @@ import {
   getBackendIdForChat,
   resolveChatBackend,
 } from "../../core/backend-controller.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { logError } from "../../util/log.js";
 import {
@@ -132,8 +134,10 @@ export async function handleComponentInteraction(
     if (category === "model" && interaction.isStringSelectMenu()) {
       const value = interaction.values[0];
       const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+      const settingsBeId = getBackendIdForChat(chatId);
       if (value === "reset") {
-        setChatModel(chatId, undefined);
+        // Clear THIS backend's slot only — other backends' picks stay.
+        setChatModelForBackend(chatId, settingsBeId, undefined);
       } else if (settingsBe?.resolveModel) {
         const resolution = await settingsBe.resolveModel(value);
         if (resolution.kind !== "exact" || !resolution.model.selectable) {
@@ -143,11 +147,11 @@ export async function handleComponentInteraction(
           });
           return;
         }
-        setChatModel(chatId, resolution.storedValue);
-        setChatBackend(chatId, getBackendIdForChat(chatId));
+        setChatModelForBackend(chatId, settingsBeId, resolution.storedValue);
+        setChatBackend(chatId, settingsBeId);
       } else {
-        setChatModel(chatId, resolveModelName(value));
-        setChatBackend(chatId, getBackendIdForChat(chatId));
+        setChatModelForBackend(chatId, settingsBeId, resolveModelName(value));
+        setChatBackend(chatId, settingsBeId);
       }
       await refreshSettingsPanel(interaction, config, gateway, chatId);
       return;
@@ -261,14 +265,16 @@ export async function handleComponentInteraction(
     // override pinned (e.g. switched to openai-agents to use
     // OpenRouter models).
     const be = resolveChatBackend(chatId, gateway?.backend);
+    const beId = getBackendIdForChat(chatId);
 
     if (value === "reset") {
-      setChatModel(chatId, undefined);
+      // Clear THIS backend's slot only — other backends stay intact.
+      setChatModelForBackend(chatId, beId, undefined);
     } else if (be?.resolveModel) {
       const resolution = await be.resolveModel(value);
       if (resolution.kind === "exact" && resolution.model.selectable) {
-        setChatModel(chatId, resolution.storedValue);
-        setChatBackend(chatId, getBackendIdForChat(chatId));
+        setChatModelForBackend(chatId, beId, resolution.storedValue);
+        setChatBackend(chatId, beId);
       } else {
         await interaction.reply({
           content: "Model unavailable.",
@@ -277,17 +283,29 @@ export async function handleComponentInteraction(
         return;
       }
     } else {
-      setChatModel(chatId, resolveModelName(value));
-      setChatBackend(chatId, getBackendIdForChat(chatId));
+      setChatModelForBackend(chatId, beId, resolveModelName(value));
+      setChatBackend(chatId, beId);
     }
 
-    const current = getChatSettings(chatId).model ?? config.model;
+    // Resolve display through the active-model helper so the panel
+    // matches what queries will actually run. Null surfaces as
+    // "No model selected".
+    const { model: resolvedCurrent } = await resolveActiveModelForChat(
+      chatId,
+      be,
+      beId,
+      config,
+    );
     if (be?.getSettingsPresentation) {
+      const current = resolvedCurrent ?? "";
       const pres = await be.getSettingsPresentation(current, {
         callbackPrefix: "model:",
       });
-      const modelInfo = await be.getModelInfo?.(current);
-      const displayName = modelInfo?.displayName ?? current;
+      const modelInfo = resolvedCurrent
+        ? await be.getModelInfo?.(resolvedCurrent)
+        : undefined;
+      const displayName =
+        modelInfo?.displayName ?? resolvedCurrent ?? "_No model selected_";
       const menu = new StringSelectMenuBuilder()
         .setCustomId("model:select")
         .setPlaceholder("Pick a model")
@@ -338,17 +356,29 @@ async function refreshSettingsPanel(
   chatId: string,
 ): Promise<void> {
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
+  const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+  const settingsBeId = getBackendIdForChat(chatId);
+  // Match the Telegram path — resolve via the 5-step chain so the
+  // panel's "Model:" line stays coherent on backend-overridden
+  // chats and surfaces "No model selected" when applicable.
+  const { model: resolvedActive } = await resolveActiveModelForChat(
+    chatId,
+    settingsBe,
+    settingsBeId,
+    config,
+  );
+  const activeModel = resolvedActive ?? "No model selected";
   const effortName = chatSets.effort ?? "adaptive";
   const pulseOn = isPulseEnabled(chatId);
 
   let modelDetails: Array<string> | undefined;
   let modelButtons: Array<{ text: string; callback_data: string }> | undefined;
-  // Per-chat backend so the settings panel reflects the actual
-  // catalog this chat draws from when a backend override is pinned.
-  const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+  // `settingsBe` already resolved above for the activeModel lookup —
+  // reuse it instead of re-resolving (it points at the per-chat
+  // backend, override-aware).
   if (settingsBe?.getSettingsPresentation) {
-    const pres = await settingsBe.getSettingsPresentation(activeModel);
+    const presModelId = resolvedActive ?? "";
+    const pres = await settingsBe.getSettingsPresentation(presModelId);
     modelDetails = pres.modelDetails;
     modelButtons = pres.modelButtons;
   }

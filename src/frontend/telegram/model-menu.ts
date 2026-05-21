@@ -44,6 +44,7 @@ import {
   getChatSettings,
   setChatFreeOnly,
 } from "../../storage/chat-settings.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 
 /**
  * Resolve the backend serving a given chat right now.
@@ -101,7 +102,6 @@ export async function buildModelMenuViewForChat(
   if (!backend?.getSettingsPresentation) return null;
 
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
   const freeOnly = chatSets.freeOnly === true;
 
   const availableBackends = listAvailableBackends(config);
@@ -115,13 +115,44 @@ export async function buildModelMenuViewForChat(
     label: backend.backendLabel ?? activeBackendId,
   };
 
+  // Resolve through the active-model helper. Returns null when the
+  // 5-step chain hits step 5 (catalog-driven backend with no per-chat
+  // pick AND no operator default in `config.backendDefaults`). The
+  // menu surfaces that as "No model selected".
+  const { model: activeModel } = await resolveActiveModelForChat(
+    chatId,
+    backend,
+    activeBackendId,
+    config,
+  );
+
+  // Default-model for "hasOverride" comparison. Prefer the active
+  // backend's canonical default so a chat on Codex without an override
+  // shows no "override" badge against gpt-5.5, not against Opus.
+  // Falls through to config.model only when backend has no canonical.
+  let backendDefault: string | null = null;
+  if (backend.getDefaultModel) {
+    try {
+      const v = await backend.getDefaultModel();
+      if (typeof v === "string" && v.length > 0) backendDefault = v;
+    } catch {
+      /* leave null */
+    }
+  }
+  const defaultForCompare =
+    backendDefault ??
+    config.backendDefaults?.[activeBackendId] ??
+    (activeBackendId === config.backend ? config.model : null);
+
+  const snapshotModel = activeModel ?? "";
+
   const state = await buildModelMenuState({
     chatId,
     activeModel,
-    defaultModel: config.model,
+    defaultModel: defaultForCompare,
     freeOnly,
     fetchSnapshot: async () => {
-      const pres = await backend.getSettingsPresentation!(activeModel, {
+      const pres = await backend.getSettingsPresentation!(snapshotModel, {
         callbackPrefix: "model:",
         navCallbackPrefix: "model:nav",
         filter: freeOnly ? "free" : "all",
@@ -133,7 +164,9 @@ export async function buildModelMenuViewForChat(
       };
     },
     fetchActiveDisplay: async () =>
-      (await backend.getModelInfo?.(activeModel))?.displayName,
+      activeModel
+        ? (await backend.getModelInfo?.(activeModel))?.displayName
+        : undefined,
     activeBackend: activeBackendEntry,
     hasBackendOverride: hasBackendPool() && hasChatBackendOverride(chatId),
     showBackendButton: availableBackends.length > 1,
@@ -181,7 +214,19 @@ export async function buildModelBrowseViewForChat(
   if (!backend?.getSettingsPresentation) return null;
 
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
+  const activeBackendId = hasBackendPool()
+    ? getBackendIdForChat(chatId)
+    : config.backend;
+  // Validate via the active-model resolver so the "current selection"
+  // marker in the picker tracks the same source-of-truth as the main
+  // menu. Null → use empty string sentinel; no model gets the ✓ tick.
+  const { model: resolvedModel } = await resolveActiveModelForChat(
+    chatId,
+    backend,
+    activeBackendId,
+    config,
+  );
+  const activeModel = resolvedModel ?? "";
   const freeOnly = chatSets.freeOnly === true;
   const filter: "all" | "free" = options.filter ?? (freeOnly ? "free" : "all");
 

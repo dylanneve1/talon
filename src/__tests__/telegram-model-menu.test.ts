@@ -192,6 +192,7 @@ function baseState(overrides: Partial<ModelMenuState> = {}): ModelMenuState {
   return {
     activeModel: "openrouter/owl-alpha",
     activeDisplay: "Owl Alpha",
+    noModelSelected: false,
     statusLines: ["356 models discovered via OpenAI Agents endpoint"],
     hasOverride: false,
     showFreeToggle: true,

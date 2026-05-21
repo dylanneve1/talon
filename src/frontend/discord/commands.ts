@@ -45,6 +45,7 @@ import { clearHistory } from "../../storage/history.js";
 import {
   getChatSettings,
   setChatModel,
+  setChatModelForBackend,
   setChatBackend,
   setChatEffort,
   setChatPulseInterval,
@@ -86,6 +87,7 @@ import {
   getBackendIdForChat,
   resolveChatBackend,
 } from "../../core/backend-controller.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import {
   suppressMentions,
@@ -591,7 +593,15 @@ async function handleStatus(
     ? formatDuration(Date.now() - info.createdAt)
     : "—";
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
+  const statusBe = resolveChatBackend(chatId, gateway?.backend);
+  const statusBeId = getBackendIdForChat(chatId);
+  const { model: resolvedStatusModel } = await resolveActiveModelForChat(
+    chatId,
+    statusBe,
+    statusBeId,
+    config,
+  );
+  const activeModel = resolvedStatusModel ?? "No model selected";
   const effortName = chatSets.effort ?? "adaptive";
   const pulseOn = isPulseEnabled(chatId);
 
@@ -602,11 +612,13 @@ async function handleStatus(
   let displayCacheWrite = u.totalCacheWrite;
   let turnsModelLabel = info.lastModel;
 
-  // Per-chat backend so /status reports the active provider's
-  // context window, not the global default's.
-  const be = resolveChatBackend(chatId, gateway?.backend);
-  if (be?.getModelInfo) {
-    const mi = await be.getModelInfo(activeModel).catch(() => undefined);
+  // `statusBe` already resolved above for the activeModel lookup.
+  // Reuse it for the catalog enrichment.
+  const be = statusBe;
+  if (be?.getModelInfo && resolvedStatusModel) {
+    const mi = await be
+      .getModelInfo(resolvedStatusModel)
+      .catch(() => undefined);
     if (mi?.contextWindow) ctxMax = ctxMax || mi.contextWindow;
   }
   if (be?.getSessionSnapshot && info.sessionId) {
@@ -688,12 +700,19 @@ async function handleModel(
   await i.deferReply({ flags: MessageFlags.Ephemeral });
 
   const arg = i.options.getString("name")?.trim();
-  const activeModel = getChatSettings(chatId).model ?? config.model;
   // Per-chat backend — /model picks for the backend serving *this*
   // chat, override-aware. Without this, switching to openai-agents
   // in one channel and running /model in another would show the
   // wrong catalog.
   const be = resolveChatBackend(chatId, gateway?.backend);
+  const beId = getBackendIdForChat(chatId);
+  const { model: resolvedActive } = await resolveActiveModelForChat(
+    chatId,
+    be,
+    beId,
+    config,
+  );
+  const activeModel = resolvedActive ?? "";
 
   if (
     !arg ||
@@ -701,17 +720,29 @@ async function handleModel(
     arg.toLowerCase() === "default"
   ) {
     if (arg) {
-      setChatModel(chatId, undefined);
-      await reply(i, `Model reset to default: \`${config.model}\``, true);
+      setChatModelForBackend(chatId, beId, undefined);
+      const { model: postResetModel } = await resolveActiveModelForChat(
+        chatId,
+        be,
+        beId,
+        config,
+      );
+      const msg = postResetModel
+        ? `Model reset to default: \`${postResetModel}\``
+        : `Model reset — no default available for backend \`${beId}\`. Use /model to pick one.`;
+      await reply(i, msg, true);
       return;
     }
     if (be?.getSettingsPresentation) {
       const pres = await be.getSettingsPresentation(activeModel, {
         callbackPrefix: "model:",
       });
-      const modelInfo = await be.getModelInfo?.(activeModel);
+      const modelInfo = activeModel
+        ? await be.getModelInfo?.(activeModel)
+        : undefined;
       const displayName =
-        modelInfo?.displayName ?? formatModelLabel(activeModel);
+        modelInfo?.displayName ??
+        (activeModel ? formatModelLabel(activeModel) : "_No model selected_");
 
       // Build select menu from the top 25 models. Discord caps select-menu
       // options at 25; if the backend exposes more, use `/model name:<value>`
@@ -755,8 +786,8 @@ async function handleModel(
       await reply(i, msg, true);
       return;
     }
-    setChatModel(chatId, resolution.storedValue);
-    setChatBackend(chatId, getBackendIdForChat(chatId));
+    setChatModelForBackend(chatId, beId, resolution.storedValue);
+    setChatBackend(chatId, beId);
     await reply(
       i,
       `Model set to \`${resolution.storedValue}\` (${resolution.model.providerName}${resolution.model.free ? " · free" : ""}).`,
@@ -764,8 +795,8 @@ async function handleModel(
     );
   } else {
     const model = resolveModelName(arg);
-    setChatModel(chatId, model);
-    setChatBackend(chatId, getBackendIdForChat(chatId));
+    setChatModelForBackend(chatId, beId, model);
+    setChatBackend(chatId, beId);
     await reply(i, `Model set to \`${formatModelLabel(model)}\`.`, true);
   }
 }
@@ -899,17 +930,26 @@ async function handleSettings(
   await i.deferReply({ flags: MessageFlags.Ephemeral });
 
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
+  const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+  const settingsBeId = getBackendIdForChat(chatId);
+  const { model: resolvedActive } = await resolveActiveModelForChat(
+    chatId,
+    settingsBe,
+    settingsBeId,
+    config,
+  );
+  const activeModel = resolvedActive ?? "No model selected";
   const effortName = chatSets.effort ?? "adaptive";
   const pulseOn = isPulseEnabled(chatId);
 
   let modelDetails: Array<string> | undefined;
   let modelButtons: Array<{ text: string; callback_data: string }> | undefined;
-  // Per-chat backend so /settings shows the catalog of whichever
-  // backend is currently serving this chat.
-  const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+  // `settingsBe` already resolved above for the activeModel lookup;
+  // reuse it for the catalog snapshot. Pass the raw resolved id (or
+  // empty string) — never the "No model selected" sentinel.
   if (settingsBe?.getSettingsPresentation) {
-    const presentation = await settingsBe.getSettingsPresentation(activeModel);
+    const presModelId = resolvedActive ?? "";
+    const presentation = await settingsBe.getSettingsPresentation(presModelId);
     modelDetails = presentation.modelDetails;
     modelButtons = presentation.modelButtons;
   }
