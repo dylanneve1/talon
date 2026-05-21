@@ -158,6 +158,9 @@ export type OneShotAgentParams = {
   appendLog: (text: string) => Promise<void>;
 };
 
+/** How much cache telemetry a backend can surface in /status. */
+export type CacheMetricsSupport = "none" | "read" | "readwrite";
+
 /** Backend interface — any AI provider implements this. */
 export interface QueryBackend {
   query(params: QueryParams): Promise<QueryResult>;
@@ -216,6 +219,11 @@ export interface QueryBackend {
       }
     | undefined
   >;
+  /**
+   * Whether the backend can surface cache telemetry in /status.
+   * `none` hides the cache section entirely.
+   */
+  cacheMetrics?: CacheMetricsSupport;
   /** List models matching a filter. Frontends use this for /model free|all|list. */
   listModels?(filter?: "free" | "all"): Promise<{
     models: UnifiedModelInfo[];

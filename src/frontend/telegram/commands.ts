@@ -56,7 +56,7 @@ import { getBackendIdForChat } from "../../core/backend-controller.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
-import { buildContextDisplay } from "../status-context.js";
+import { buildCacheDisplay, buildContextDisplay } from "../status-context.js";
 
 // Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
 let ADMIN_USER_ID = 0;
@@ -527,6 +527,13 @@ export function registerCommands(
       }
     }
 
+    const cache = buildCacheDisplay({
+      cacheMetrics: be?.cacheMetrics,
+      inputTokens: displayInputTokens,
+      cacheRead: displayCacheRead,
+      cacheWrite: displayCacheWrite,
+    });
+
     const context = buildContextDisplay({
       contextTokens: u.contextTokens,
       lastPromptTokens: u.lastPromptTokens,
@@ -538,10 +545,6 @@ export function registerCommands(
       : "unknown";
     const contextMaxText =
       context.max > 0 ? formatTokenCount(context.max) : "unknown";
-
-    const cacheTotal = displayInputTokens + displayCacheRead;
-    const cacheHitPct =
-      cacheTotal > 0 ? Math.round((displayCacheRead / cacheTotal) * 100) : 0;
 
     const avgResponseMs =
       info.turns > 0 && u.totalResponseMs
@@ -565,8 +568,12 @@ export function registerCommands(
       `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "\u2014"} \u00B7 avg ${avgResponseMs ? formatDuration(avgResponseMs) : "\u2014"} \u00B7 best ${fastestMs ? formatDuration(fastestMs) : "\u2014"}`,
       `  Turns     ${info.turns}${turnsModelLabel ? ` (${formatModelLabel(turnsModelLabel)})` : ""}`,
       "",
-      `<b>Cache</b>     ${cacheHitPct}% hit`,
-      `  Read ${formatTokenCount(displayCacheRead)}  Write ${formatTokenCount(displayCacheWrite)}`,
+      ...(cache
+        ? [
+            `<b>Cache</b>     ${cache.hitPct}% hit`,
+            `  Read ${formatTokenCount(cache.read)}${cache.showsWrite ? `  Write ${formatTokenCount(cache.write)}` : ""}`,
+          ]
+        : []),
       `  Input ${formatTokenCount(displayInputTokens)}  Output ${formatTokenCount(displayOutputTokens)}`,
       "",
       `<b>Pulse</b>  ${pulseOn ? "on" : "off"}`,

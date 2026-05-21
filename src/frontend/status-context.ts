@@ -1,3 +1,5 @@
+import type { CacheMetricsSupport } from "../core/types.js";
+
 export interface ContextDisplay {
   known: boolean;
   used: number;
@@ -5,6 +7,13 @@ export interface ContextDisplay {
   pct: number;
   bar: string;
   warn: boolean;
+}
+
+export interface CacheDisplay {
+  hitPct: number;
+  read: number;
+  write: number;
+  showsWrite: boolean;
 }
 
 /**
@@ -61,5 +70,56 @@ export function buildContextDisplay(input: {
     pct,
     bar: "█".repeat(filled) + "░".repeat(barLen - filled),
     warn: known && pct >= 80,
+  };
+}
+
+/**
+ * Resolve whether /status should show cache telemetry.
+ *
+ * Backends advertise cache support explicitly. If they don't, we hide
+ * the whole block instead of printing fake zeroes.
+ */
+export function buildCacheDisplay(input: {
+  cacheMetrics?: CacheMetricsSupport;
+  inputTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}): CacheDisplay | null {
+  const mode = input.cacheMetrics ?? "none";
+  if (mode === "none") return null;
+
+  const inputTokens =
+    typeof input.inputTokens === "number" &&
+    Number.isFinite(input.inputTokens) &&
+    input.inputTokens > 0
+      ? input.inputTokens
+      : 0;
+  const read =
+    typeof input.cacheRead === "number" &&
+    Number.isFinite(input.cacheRead) &&
+    input.cacheRead > 0
+      ? input.cacheRead
+      : 0;
+  const write =
+    mode === "readwrite" &&
+    typeof input.cacheWrite === "number" &&
+    Number.isFinite(input.cacheWrite) &&
+    input.cacheWrite > 0
+      ? input.cacheWrite
+      : 0;
+
+  // Match the canonical formula in `src/backend/shared/usage.ts:cacheHitPercent`:
+  // cache_write is tokens being *written to* cache on this call, not served
+  // from it, so it must not dilute the hit ratio. The denominator is
+  // `input + read` ("effective input"), regardless of whether the backend
+  // also surfaces a write count.
+  const denom = inputTokens + read;
+  const hitPct = denom > 0 ? Math.round((read / denom) * 100) : 0;
+
+  return {
+    hitPct,
+    read,
+    write,
+    showsWrite: mode === "readwrite",
   };
 }

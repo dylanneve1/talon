@@ -315,6 +315,20 @@ describe("createRenderer", () => {
     expect(text).toContain("3 tools");
   });
 
+  it("renderStatusLine omits cache when not provided", () => {
+    const r = createRenderer(80);
+    output = [];
+    r.renderStatusLine(1500, 0, {
+      model: "Sonnet 4.6",
+      turns: 2,
+      inputTokens: 100,
+      outputTokens: 50,
+      costUsd: 0,
+    });
+    const text = output.join("");
+    expect(text).not.toContain("cache");
+  });
+
   it("renderStatusLine pluralizes tool count correctly", () => {
     const r = createRenderer(80);
 

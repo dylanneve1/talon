@@ -48,6 +48,7 @@ const codexFactory: BackendFactory = {
       formatModelError: (q, r) => formatModelError(q, r),
       listModels: (f) => listModels(f),
       runOneShotAgent: (p) => codexRunOneShotAgent(p),
+      cacheMetrics: "read",
       backendLabel: "Codex",
     };
 

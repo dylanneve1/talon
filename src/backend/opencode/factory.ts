@@ -59,6 +59,7 @@ const opencodeFactory: BackendFactory = {
       getProviderModels: (p, pg, ps) => getProviderModels(p, pg, ps),
       formatModelError: (q, r) => formatModelError(q, r),
       listModels: (f) => listModels(f),
+      cacheMetrics: "readwrite",
       backendLabel: "OpenCode",
       getSessionSnapshot: async (sessionId) => {
         const snap = await getOpenCodeSessionSnapshot(sessionId);
