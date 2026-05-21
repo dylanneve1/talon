@@ -25,7 +25,7 @@ import {
   CODEX_SYSTEM_PROMPT_SUFFIX,
   CODEX_CHATGPT_DEFAULT_MODEL,
 } from "./constants.js";
-import { isSilentOAuthExitError, isChatGptModelMismatchError } from "./auth.js";
+import { isChatGptModelMismatchError } from "./auth.js";
 import { chatGptFallbackFor, isCodexOAuthIncompat } from "./models.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
 
@@ -134,24 +134,30 @@ export async function runOneShotAgent(
     }
     const msg = err instanceof Error ? err.message : String(err);
 
-    // Learn from silent-exit failures even in one-shot context. Unlike
-    // the interactive handler, heartbeat/dream can't recurse for a
-    // retry (would mess with the timing contract and lock semantics).
-    // Best we can do is record the failure so the *next* one-shot run
-    // catches it in its pre-emptive swap.
+    // Learn only from EXPLICIT mismatches in one-shot context.
+    // Silent-exit failures are ambiguous (transient outage vs real
+    // model-incompat) and persisting them would over-poison the
+    // learning store with the result that one bad heartbeat
+    // permanently downgrades the model. Explicit mismatches carry the
+    // unambiguous server message so they're safe to mark.
+    //
+    // Unlike the interactive handler, heartbeat/dream can't recurse for
+    // a retry (would mess with the timing contract and lock
+    // semantics), so silent-exit failures here simply surface to the
+    // run log; the next scheduled run takes a fresh swing.
     const authInfo = getCodexAuthInfo();
     if (
       authInfo?.mode === "chatgpt" &&
       activeModel !== CODEX_CHATGPT_DEFAULT_MODEL &&
-      (isSilentOAuthExitError(msg) || isChatGptModelMismatchError(msg))
+      isChatGptModelMismatchError(msg)
     ) {
       const recorded = markOAuthIncompat(activeModel);
       if (recorded) {
         logWarn(
           "agent",
           `[${contextLabel}] Codex one-shot: recorded ${activeModel} as ` +
-            `OAuth-incompat — next ${contextLabel} run will pre-emptively ` +
-            `swap to ${CODEX_CHATGPT_DEFAULT_MODEL}`,
+            `OAuth-incompat (explicit mismatch) — next ${contextLabel} run ` +
+            `will pre-emptively swap to ${CODEX_CHATGPT_DEFAULT_MODEL}`,
         );
       }
     }

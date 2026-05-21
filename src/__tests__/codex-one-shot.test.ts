@@ -600,9 +600,14 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     expect(log).not.toContain("Model swap");
   });
 
-  it("records the model into the OAuth-incompat store on silent-exit failure", async () => {
-    // Heartbeat/dream can't recurse for a retry, but the failing model
-    // should be learned so the NEXT run pre-empts.
+  it("does NOT persist silent-exit failures (ambiguous signal), only explicit", async () => {
+    // Heartbeat/dream can't recurse for an in-place retry. Silent
+    // exit-1 could be a transient outage OR a real incompat — we
+    // can't tell. Persisting on ambiguous failures would over-poison
+    // the store (a one-off blip permanently downgrades heartbeats).
+    // The run is logged as an error but no learning happens. The
+    // EXPLICIT mismatch path (server returns the canonical text) IS
+    // persisted in a separate path because that signal is definitive.
     vi.resetModules();
     vi.doMock("../core/plugin.js", () => ({
       getPluginMcpServers: vi.fn(() => ({})),
@@ -658,6 +663,66 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     const log = lines.join("");
     expect(log).toContain("Error");
     expect(log).toContain("Reading prompt from stdin");
-    expect(oauthIncompat.isKnownOAuthIncompat("gpt-5.4-mini")).toBe(true);
+    // Silent-exit is NOT persisted — ambiguous signal.
+    expect(oauthIncompat.isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
+  });
+
+  it("DOES persist on EXPLICIT mismatch even in one-shot context", async () => {
+    // Heartbeat/dream can't recurse for an in-place retry, but
+    // explicit mismatch is unambiguous server signal — persist it so
+    // the next scheduled run pre-empts to gpt-5.5.
+    vi.resetModules();
+    vi.doMock("../core/plugin.js", () => ({
+      getPluginMcpServers: vi.fn(() => ({})),
+    }));
+    vi.doMock("@openai/codex-sdk", () => {
+      class MockThread {
+        async runStreamed() {
+          throw new Error(
+            `400 Bad Request: The "gpt-future-model" model is not ` +
+              `supported when using Codex with a ChatGPT account.`,
+          );
+        }
+      }
+      return {
+        Codex: class {
+          startThread() {
+            return new MockThread();
+          }
+          resumeThread() {
+            return new MockThread();
+          }
+        },
+      };
+    });
+    const initMod = await import("../backend/codex/init.js");
+    const runMod = await import("../backend/codex/one-shot.js");
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+
+    initMod.initCodexAgent(
+      {
+        model: "gpt-future-model",
+        workspace: "/tmp",
+        systemPrompt: "test",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    const lines: string[] = [];
+    await runMod.runOneShotAgent({
+      prompt: "Hello",
+      systemPrompt: "test",
+      workspace: "/tmp",
+      model: "gpt-future-model",
+      contextLabel: "heartbeat",
+      abortController: new AbortController(),
+      appendLog: async (t: string) => {
+        lines.push(t);
+      },
+    });
+
+    expect(oauthIncompat.isKnownOAuthIncompat("gpt-future-model")).toBe(true);
   });
 });

@@ -1687,10 +1687,70 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
     expect(MOCK_THREAD_OPTIONS_SEEN[1].model).toBe("gpt-5.5");
     expect(result.text).toBe("recovered on 5.5");
 
-    // The failing model was recorded into the learning store.
+    // Silent-exit is ambiguous (transient outage vs real incompat),
+    // so it does NOT persist into the learning store — only explicit
+    // mismatches do. This avoids over-poisoning future runs from a
+    // one-off blip. The in-session retry above is the bounded
+    // recovery; permanent demotion needs a stronger signal.
     const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
-    expect(oauthIncompat.isKnownOAuthIncompat("gpt-5.4-mini")).toBe(true);
-    expect(oauthIncompat.listKnownOAuthIncompat()).toContain("gpt-5.4-mini");
+    expect(oauthIncompat.isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
+  });
+
+  it("DOES persist on explicit mismatch (unambiguous server signal)", async () => {
+    // Use a hypothetical future model id that's NOT curated and NOT
+    // already in the learned set — so the pre-empt skips and the
+    // model gets passed through to runStreamed, which throws the
+    // explicit-mismatch error. The post-hoc retry then both swaps to
+    // gpt-5.5 AND records the model into the persistent store.
+    initCodexAgent(
+      {
+        model: "gpt-future-model",
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    const explicitMismatch = new Error(
+      `400 Bad Request: The "gpt-future-model" model is not supported when ` +
+        `using Codex with a ChatGPT account.`,
+    );
+    MOCK_RUN_STREAMED_THROW_QUEUE = [explicitMismatch, null];
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_explicit_recovery" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok on 5.5" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Both runs fired (original + retry on gpt-5.5).
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+    expect(MOCK_THREAD_OPTIONS_SEEN[1].model).toBe("gpt-5.5");
+
+    // The explicit-mismatch retry path persisted to the store —
+    // unambiguous signal justifies the permanent record.
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+    expect(oauthIncompat.isKnownOAuthIncompat("gpt-future-model")).toBe(true);
   });
 
   it("pre-emptively swaps a previously-learned OAuth-incompat model", async () => {

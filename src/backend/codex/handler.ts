@@ -142,18 +142,21 @@ async function maybeFallbackForChatGptMismatch(
     chatGptFallbackFor(activeModel) ?? CODEX_CHATGPT_DEFAULT_MODEL;
   if (fallbackModel === activeModel) return undefined;
 
-  // Silent-exit shape strongly implies an OAuth-incompat model — record
-  // it so future turns skip the round-trip and so the picker can demote
-  // it next time discovery runs. Explicit mismatches get recorded too
-  // (cheap, and a future cache-discovered id might surface both shapes
-  // depending on Codex CLI version).
-  if (isOAuth) {
+  // Only EXPLICIT mismatch errors are persisted as OAuth-incompat —
+  // they're definitive ("not supported when using Codex with a ChatGPT
+  // account" is an unambiguous server-side signal). Silent-exit
+  // failures are ambiguous (could be model-incompat, but could also
+  // be a transient outage, brief rate-limit, or upstream blip) and
+  // would over-poison the learning store if persisted. The silent
+  // path still triggers an in-session retry below, just without the
+  // permanent record.
+  if (isOAuth && explicit) {
     const recorded = markOAuthIncompat(activeModel);
     if (recorded) {
       logWarn(
         "agent",
-        `[${chatId}] Codex: recorded ${activeModel} as OAuth-incompat — ` +
-          `subsequent turns will skip pre-emptively`,
+        `[${chatId}] Codex: recorded ${activeModel} as OAuth-incompat ` +
+          `(explicit mismatch) — subsequent turns will skip pre-emptively`,
       );
     }
   }
