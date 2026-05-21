@@ -84,6 +84,7 @@ import {
   isCodexOAuthIncompat,
 } from "./models.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
+import { readLastTokenCount } from "./token-usage.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
 
@@ -457,6 +458,22 @@ export async function handleMessage(
     });
   }
 
+  // Codex's `turn.completed.usage` is CUMULATIVE across all API calls in
+  // the turn, so it's useless as a "current context fill" signal — a
+  // 20-call agentic turn easily reports 2M+ input tokens against a 272k
+  // window. The Codex CLI writes a per-call `token_count` event into the
+  // rollout JSONL with the LAST call's prompt size and the model's actual
+  // context window. Read that here for an accurate /status display.
+  // Falls back silently to "unknown" if the rollout file isn't available
+  // (e.g. CODEX_HOME pointed elsewhere, permission issues, first run).
+  if (resolvedThreadId) {
+    const last = await readLastTokenCount(resolvedThreadId).catch(() => null);
+    if (last) {
+      streamState.contextTokens = last.contextTokens;
+      if (last.contextWindow) streamState.contextWindow = last.contextWindow;
+    }
+  }
+
   // Surface a synthetic error if Codex failed the turn upstream.
   if (turnFailedError) {
     streamState.syntheticError = turnFailedError;
@@ -477,7 +494,15 @@ export async function handleMessage(
     cacheWrite: streamState.sdkCacheWrite,
     durationMs,
     model: activeModel,
-    contextWindow: modelInfo?.contextWindow,
+    // contextTokens comes from the rollout JSONL when available (the
+    // SDK's cumulative usage is unsuitable — see comment above
+    // `readLastTokenCount` call). Falls back to 0 → /status shows
+    // "unknown", which is correct under-promise behaviour rather than
+    // a wildly inflated number.
+    contextTokens: streamState.contextTokens || undefined,
+    // Prefer the rollout's reported context window (matches what the
+    // model actually sees this turn) over the static catalog value.
+    contextWindow: streamState.contextWindow ?? modelInfo?.contextWindow,
   });
 
   // Set a descriptive session name from the user's first message.

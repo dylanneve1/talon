@@ -273,6 +273,170 @@ describe("codex / handleMessage — happy path", () => {
   });
 });
 
+describe("codex / handleMessage — context tokens wiring", () => {
+  // Codex's `turn.completed.usage` is cumulative across all API calls
+  // inside the turn, so it can't be used as a "current context fill"
+  // signal. The handler reads the per-call `token_count` event from the
+  // Codex CLI rollout JSONL to recover the last call's prompt size.
+  //
+  // These tests verify the wiring end-to-end: turn completes, rollout
+  // file is read, session.usage.contextTokens reflects the LAST event,
+  // and session.usage.contextWindow gets the rollout's reported value
+  // (preferred over the static model catalog).
+
+  let origCodexHome: string | undefined;
+  let fakeCodexHome: string;
+
+  beforeEach(() => {
+    origCodexHome = process.env.CODEX_HOME;
+    fakeCodexHome = mkdtempSync(join(tmpdir(), "talon-codex-ctx-"));
+    process.env.CODEX_HOME = fakeCodexHome;
+  });
+
+  afterEach(() => {
+    if (origCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = origCodexHome;
+    }
+    rmSync(fakeCodexHome, { recursive: true, force: true });
+  });
+
+  function writeRolloutWithTokens(
+    threadId: string,
+    lastInputTokens: number,
+    contextWindow?: number,
+  ): void {
+    const dir = join(fakeCodexHome, "sessions", "2026", "05", "21");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `rollout-2026-05-21T00-00-00-${threadId}.jsonl`);
+    const event = {
+      timestamp: "2026-05-21T00:00:00.000Z",
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: { input_tokens: lastInputTokens * 5 },
+          last_token_usage: { input_tokens: lastInputTokens },
+          model_context_window: contextWindow,
+        },
+      },
+    };
+    writeFileSync(file, JSON.stringify(event));
+  }
+
+  it("populates session.usage.contextTokens from rollout last_token_usage", async () => {
+    setupHandler();
+    writeRolloutWithTokens("thr_ctx_1", 98088, 258400);
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_ctx_1" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        // Cumulative — wildly larger than the actual context fill, as
+        // Codex aggregates across all API calls in the turn. This is
+        // exactly the "context unknown" bug: relying on this value
+        // either shows nonsense or "unknown" depending on the resolver.
+        type: "turn.completed",
+        usage: {
+          input_tokens: 2811105, // ← cumulative across 20+ calls
+          output_tokens: 50,
+          cached_input_tokens: 2660352,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // contextTokens reflects the rollout's LAST call (98088), NOT the
+    // cumulative turn usage (2.8M).
+    const usage = sessions.getSession("test-chat").usage;
+    expect(usage.contextTokens).toBe(98088);
+    // contextWindow comes from the rollout, not the static catalog.
+    expect(usage.contextWindow).toBe(258400);
+  });
+
+  it("falls back gracefully when rollout file is missing", async () => {
+    setupHandler();
+    // No rollout file written for this thread_id.
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_missing_rollout" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_input_tokens: 10,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Rollout absent → contextTokens stays at 0 → /status shows
+    // "unknown", which is the correct under-promise behaviour.
+    const usage = sessions.getSession("test-chat").usage;
+    expect(usage.contextTokens).toBe(0);
+  });
+
+  it("does not crash when rollout file is malformed", async () => {
+    setupHandler();
+    const dir = join(fakeCodexHome, "sessions", "2026", "05", "21");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      join(dir, "rollout-2026-05-21T00-00-00-thr_garbage.jsonl"),
+      "not json at all\n{partial: also bad",
+    );
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_garbage" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await expect(
+      handleMessage({
+        chatId: "test-chat",
+        text: "hi",
+        senderName: "Dylan",
+        isGroup: false,
+      }),
+    ).resolves.toBeDefined();
+    expect(sessions.getSession("test-chat").usage.contextTokens).toBe(0);
+  });
+});
+
 describe("codex / handleMessage — error paths", () => {
   it("turn.failed event surfaces as syntheticError → delivery emits ⚠️", async () => {
     setupHandler();
