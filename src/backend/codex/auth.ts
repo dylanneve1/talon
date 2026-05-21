@@ -298,3 +298,44 @@ export function isChatGptModelMismatchError(message: string): boolean {
     message,
   );
 }
+
+/**
+ * Detect the *silent* OAuth-incompat exit shape — the one that hit
+ * Pandario on 2026-05-20 at 23:13Z.
+ *
+ * On a free ChatGPT-OAuth credential the Codex CLI silently rejects
+ * most model strings (only `gpt-5.5` is verified working). Crucially,
+ * for some rejected models the CLI exits 1 *without* emitting a
+ * structured `error` or `turn.failed` event over the JSON stream, AND
+ * without writing the canonical
+ * `"not supported when using Codex with a ChatGPT account"` text to
+ * stderr. The only signal the SDK surfaces is:
+ *
+ *   `Codex Exec exited with code 1: Reading prompt from stdin...\n`
+ *
+ * (`"Reading prompt from stdin..."` is the CLI's startup banner — it
+ * always prints that and then exits before the prompt even reaches
+ * the model.)
+ *
+ * The detector heuristic:
+ *   - Error text contains `"Codex Exec exited"` (SDK's wrapper);
+ *   - Error text contains `"Reading prompt from stdin"` (CLI banner);
+ *   - Error text does NOT contain the explicit mismatch phrase (the
+ *     other detector handles that case).
+ *
+ * Callers MUST additionally check `authInfo.mode === "chatgpt"` and
+ * that the model isn't already the OAuth default before falling back —
+ * a silent exit-1 on api-key auth is a different bug class (network,
+ * config error, etc.) and shouldn't be misclassified.
+ *
+ * Case-insensitive; whitespace-tolerant. Matches both `code 1` and
+ * `code 2` (the CLI has been observed using both).
+ */
+export function isSilentOAuthExitError(message: string): boolean {
+  if (!message) return false;
+  if (isChatGptModelMismatchError(message)) return false;
+  return (
+    /Codex\s+Exec\s+exited\s+with\s+code\s+\d+/i.test(message) &&
+    /Reading\s+prompt\s+from\s+stdin/i.test(message)
+  );
+}

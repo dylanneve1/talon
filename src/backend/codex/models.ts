@@ -35,6 +35,7 @@ import type {
 } from "../../core/types.js";
 import { awaitDiscovery, hasAttemptedDiscovery } from "./discovery.js";
 import { getState } from "./state.js";
+import { isKnownOAuthIncompat } from "./oauth-incompat.js";
 
 /**
  * Codex-specific model metadata extension.
@@ -115,20 +116,50 @@ export const CODEX_MODELS: CodexModelInfo[] = [
  * True when the given model id is in the curated catalog AND flagged
  * as api-key-only. Returns `false` for unknown models — the caller
  * should not over-correct on unrecognised inputs.
+ *
+ * This is the *static* incompat check — it knows about model ids
+ * shipped with the Talon release. The *dynamic* check is
+ * `isKnownOAuthIncompat` in `oauth-incompat.ts`, which learns from
+ * observed silent-exit failures and persists per-credential.
+ *
+ * `isCodexOAuthIncompat(id)` below combines both signals.
  */
 export function isCodexApiKeyOnlyModel(id: string): boolean {
   return CODEX_MODELS.some((m) => m.id === id && m.apiKeyOnly === true);
 }
 
 /**
- * Return a chatgpt-OAuth-compatible fallback for an api-key-only model.
- * Returns `undefined` when the model isn't recognised as api-key-only
- * (caller can skip the fallback path) or when no compatible fallback
- * exists. Currently the only api-key-only entry is `gpt-5-codex`; this
- * function points it at `gpt-5.5` as the broadest-access flagship.
+ * True when `id` is known to fail on a ChatGPT-OAuth credential —
+ * either because it's curated as `apiKeyOnly: true` OR because Talon
+ * has observed it failing at runtime on the current OAuth account
+ * (`oauth-incompat.ts` store).
+ *
+ * The combined check is what the handler's pre-emptive swap and the
+ * picker filter consult. Callers should use this rather than the two
+ * underlying predicates to ensure both sources of truth contribute.
+ */
+export function isCodexOAuthIncompat(id: string): boolean {
+  return isCodexApiKeyOnlyModel(id) || isKnownOAuthIncompat(id);
+}
+
+/**
+ * Return a chatgpt-OAuth-compatible fallback for an OAuth-incompat
+ * model id.
+ *
+ * Returns `undefined` when:
+ *   - The id isn't recognised as OAuth-incompat (caller can skip).
+ *   - The id IS the broadest-access flagship (`gpt-5.5`) itself — no
+ *     further fallback exists; if even `gpt-5.5` fails, the credential
+ *     is the problem, not the model.
+ *
+ * For everything else returns `gpt-5.5` as the verified-working OAuth
+ * default. (The curated table has only `gpt-5-codex` flagged as
+ * `apiKeyOnly: true`; runtime-learned entries cover the rest:
+ * `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.2`, etc.)
  */
 export function chatGptFallbackFor(id: string): string | undefined {
-  if (!isCodexApiKeyOnlyModel(id)) return undefined;
+  if (!isCodexOAuthIncompat(id)) return undefined;
+  if (id === "gpt-5.5") return undefined;
   return "gpt-5.5";
 }
 

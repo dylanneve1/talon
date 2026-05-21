@@ -29,6 +29,10 @@ import { getState } from "./state.js";
 import { asCodexConfig, buildCodexMcpServers } from "./mcp-config.js";
 import { detectCodexAuth, type CodexAuthInfo } from "./auth.js";
 import { startDiscovery } from "./discovery.js";
+import {
+  computeAuthFingerprint,
+  loadOAuthIncompatStore,
+} from "./oauth-incompat.js";
 
 /** Cached auth-mode detection result — updated on every `initCodexAgent`. */
 let cachedAuthInfo: CodexAuthInfo | null = null;
@@ -74,6 +78,12 @@ export function initCodexAgent(
   });
   cachedAuthInfo = authInfo;
   logAuthInfo(authInfo);
+
+  // Rehydrate the OAuth-incompat learning store (or reset it if the
+  // credential fingerprint has changed since last load). The store is
+  // a no-op for non-OAuth credentials but the loader is cheap, so we
+  // call it for all modes uniformly.
+  loadOAuthIncompatStore(computeAuthFingerprint(authInfo));
 
   // Kick off model discovery as fire-and-forget. Branches on auth
   // mode internally:

@@ -1,0 +1,347 @@
+/**
+ * Codex OAuth-incompat runtime learning store tests.
+ *
+ * Covers `oauth-incompat.ts` (persistence round-trip, fingerprint
+ * matching, malformed-file tolerance), `models.isCodexOAuthIncompat`
+ * (combined curated + dynamic check), `models.chatGptFallbackFor`
+ * (broadened fallback selection), and `auth.isSilentOAuthExitError`
+ * (the 2026-05-20 Pandario regression pattern).
+ */
+
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  existsSync,
+  readFileSync,
+} from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, it, expect } from "vitest";
+
+import {
+  computeAuthFingerprint,
+  isKnownOAuthIncompat,
+  loadOAuthIncompatStore,
+  markOAuthIncompat,
+  listKnownOAuthIncompat,
+  resetOAuthIncompatForTests,
+} from "../backend/codex/oauth-incompat.js";
+import {
+  isCodexApiKeyOnlyModel,
+  isCodexOAuthIncompat,
+  chatGptFallbackFor,
+} from "../backend/codex/models.js";
+import {
+  isSilentOAuthExitError,
+  isChatGptModelMismatchError,
+  type CodexAuthInfo,
+} from "../backend/codex/auth.js";
+import { files } from "../util/paths.js";
+
+// ── HOME override for store-path isolation ────────────────────────────────
+
+let originalHome: string | undefined;
+let originalUserProfile: string | undefined;
+let tempHome: string;
+
+beforeEach(() => {
+  // Each test gets a clean ~/.talon/data/codex-oauth-incompat.json
+  // location by overriding HOME (POSIX) and USERPROFILE (Windows).
+  // `files` is captured at module init time so we ALSO have to clean
+  // up the real path in case a parent test polluted it — but here we
+  // just point Talon's path resolver at a tmp dir and let writes go
+  // there.
+  originalHome = process.env.HOME;
+  originalUserProfile = process.env.USERPROFILE;
+  tempHome = mkdtempSync(join(tmpdir(), "talon-codex-incompat-"));
+  process.env.HOME = tempHome;
+  process.env.USERPROFILE = tempHome;
+  resetOAuthIncompatForTests();
+  // Also clean the canonical path in case a sibling test left it dirty.
+  if (existsSync(files.codexOauthIncompat)) {
+    rmSync(files.codexOauthIncompat, { force: true });
+  }
+});
+
+afterEach(() => {
+  if (originalHome !== undefined) process.env.HOME = originalHome;
+  else delete process.env.HOME;
+  if (originalUserProfile !== undefined) {
+    process.env.USERPROFILE = originalUserProfile;
+  } else {
+    delete process.env.USERPROFILE;
+  }
+  try {
+    rmSync(tempHome, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+  resetOAuthIncompatForTests();
+  if (existsSync(files.codexOauthIncompat)) {
+    rmSync(files.codexOauthIncompat, { force: true });
+  }
+});
+
+// ── Fingerprint computation ────────────────────────────────────────────────
+
+describe("computeAuthFingerprint", () => {
+  it("chatgpt mode uses mode + source only (no token to hash)", () => {
+    const info: CodexAuthInfo = {
+      mode: "chatgpt",
+      source: "file:~/.codex/auth.json",
+      authFileParsed: true,
+      diagnostics: [],
+    };
+    expect(computeAuthFingerprint(info)).toBe(
+      "chatgpt:file:~/.codex/auth.json",
+    );
+  });
+
+  it("api-key mode includes a short prefix of the key for differentiation", () => {
+    const a: CodexAuthInfo = {
+      mode: "api-key",
+      source: "env:CODEX_API_KEY",
+      apiKey: "sk-key-A-0123456789abcdef-rest-of-secret-here",
+      authFileParsed: false,
+      diagnostics: [],
+    };
+    const b: CodexAuthInfo = {
+      mode: "api-key",
+      source: "env:CODEX_API_KEY",
+      apiKey: "sk-key-B-0123456789abcdef-rest-of-secret-here",
+      authFileParsed: false,
+      diagnostics: [],
+    };
+    expect(computeAuthFingerprint(a)).not.toBe(computeAuthFingerprint(b));
+    expect(computeAuthFingerprint(a)).toContain("api-key:env:CODEX_API_KEY:");
+  });
+
+  it("none mode returns a deterministic missing fingerprint", () => {
+    const info: CodexAuthInfo = {
+      mode: "none",
+      source: "missing",
+      authFileParsed: false,
+      diagnostics: [],
+    };
+    expect(computeAuthFingerprint(info)).toBe("none:missing");
+  });
+});
+
+// ── Load + mark round-trip ────────────────────────────────────────────────
+
+describe("oauth-incompat / persistence", () => {
+  it("returns empty when no store file exists", () => {
+    loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
+    expect(isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
+    expect(listKnownOAuthIncompat()).toEqual([]);
+  });
+
+  it("mark + reload round-trips the set", () => {
+    const fingerprint = "chatgpt:file:~/.codex/auth.json";
+    loadOAuthIncompatStore(fingerprint);
+
+    expect(markOAuthIncompat("gpt-5.4-mini")).toBe(true);
+    expect(markOAuthIncompat("gpt-5.4")).toBe(true);
+    // Second mark of same id is a no-op:
+    expect(markOAuthIncompat("gpt-5.4-mini")).toBe(false);
+
+    expect(isKnownOAuthIncompat("gpt-5.4-mini")).toBe(true);
+    expect(isKnownOAuthIncompat("gpt-5.4")).toBe(true);
+    expect(isKnownOAuthIncompat("gpt-5.5")).toBe(false);
+    expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
+
+    // Simulate restart: blow away in-memory state and reload.
+    resetOAuthIncompatForTests();
+    loadOAuthIncompatStore(fingerprint);
+    expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
+  });
+
+  it("fingerprint mismatch discards the loaded set", () => {
+    loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
+    markOAuthIncompat("gpt-5.4-mini");
+    expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4-mini"]);
+
+    // Simulate `codex login` with a different account / mode.
+    resetOAuthIncompatForTests();
+    loadOAuthIncompatStore("api-key:env:CODEX_API_KEY:sk-different");
+    expect(listKnownOAuthIncompat()).toEqual([]);
+  });
+
+  it("tolerates a malformed JSON store gracefully", () => {
+    // `files.codexOauthIncompat` is captured at module load — write
+    // to the canonical path, cleaned up in afterEach.
+    mkdirSync(join(files.codexOauthIncompat, ".."), { recursive: true });
+    writeFileSync(files.codexOauthIncompat, "not json at all { } {");
+    loadOAuthIncompatStore("chatgpt:test");
+    expect(listKnownOAuthIncompat()).toEqual([]);
+  });
+
+  it("tolerates a schema-version mismatch", () => {
+    // `files.codexOauthIncompat` is captured at module load — write
+    // to the canonical path, cleaned up in afterEach.
+    mkdirSync(join(files.codexOauthIncompat, ".."), { recursive: true });
+    writeFileSync(
+      files.codexOauthIncompat,
+      JSON.stringify({
+        version: 999,
+        fingerprint: "chatgpt:test",
+        updatedAt: new Date().toISOString(),
+        models: ["gpt-5.4-mini"],
+      }),
+    );
+    loadOAuthIncompatStore("chatgpt:test");
+    expect(listKnownOAuthIncompat()).toEqual([]);
+  });
+
+  it("filters non-string entries on load (defensive)", () => {
+    // `files.codexOauthIncompat` is captured at module load — write
+    // to the canonical path, cleaned up in afterEach.
+    mkdirSync(join(files.codexOauthIncompat, ".."), { recursive: true });
+    writeFileSync(
+      files.codexOauthIncompat,
+      JSON.stringify({
+        version: 1,
+        fingerprint: "chatgpt:test",
+        updatedAt: new Date().toISOString(),
+        models: ["gpt-5.4-mini", null, 42, "", "gpt-5.2"],
+      }),
+    );
+    loadOAuthIncompatStore("chatgpt:test");
+    expect(listKnownOAuthIncompat()).toEqual(["gpt-5.2", "gpt-5.4-mini"]);
+  });
+
+  it("markOAuthIncompat is a safe no-op when no store is loaded", () => {
+    resetOAuthIncompatForTests();
+    expect(markOAuthIncompat("gpt-5.4-mini")).toBe(false);
+    expect(isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
+  });
+});
+
+// ── Combined predicate: curated ∪ dynamic ────────────────────────────────
+
+describe("isCodexOAuthIncompat — combined curated + dynamic", () => {
+  beforeEach(() => {
+    loadOAuthIncompatStore("chatgpt:test");
+  });
+
+  it("returns true for curated apiKeyOnly entries even without learning", () => {
+    expect(isCodexApiKeyOnlyModel("gpt-5-codex")).toBe(true);
+    expect(isCodexOAuthIncompat("gpt-5-codex")).toBe(true);
+  });
+
+  it("returns true for runtime-learned ids even when not curated", () => {
+    expect(isCodexApiKeyOnlyModel("gpt-5.4-mini")).toBe(false);
+    expect(isCodexOAuthIncompat("gpt-5.4-mini")).toBe(false);
+
+    markOAuthIncompat("gpt-5.4-mini");
+    expect(isCodexOAuthIncompat("gpt-5.4-mini")).toBe(true);
+    // Curated check stays narrow:
+    expect(isCodexApiKeyOnlyModel("gpt-5.4-mini")).toBe(false);
+  });
+
+  it("returns false for known-good models (gpt-5.5)", () => {
+    expect(isCodexOAuthIncompat("gpt-5.5")).toBe(false);
+    markOAuthIncompat("gpt-5.4-mini"); // unrelated mark
+    expect(isCodexOAuthIncompat("gpt-5.5")).toBe(false);
+  });
+});
+
+// ── chatGptFallbackFor — broadened ────────────────────────────────────────
+
+describe("chatGptFallbackFor — broadened fallback selection", () => {
+  beforeEach(() => {
+    loadOAuthIncompatStore("chatgpt:test");
+  });
+
+  it("returns undefined for non-incompat ids (no fallback needed)", () => {
+    expect(chatGptFallbackFor("gpt-5.5")).toBeUndefined();
+    expect(chatGptFallbackFor("brand-new-future-model")).toBeUndefined();
+  });
+
+  it("returns gpt-5.5 for curated apiKeyOnly ids", () => {
+    expect(chatGptFallbackFor("gpt-5-codex")).toBe("gpt-5.5");
+  });
+
+  it("returns gpt-5.5 for runtime-learned incompat ids", () => {
+    markOAuthIncompat("gpt-5.4-mini");
+    expect(chatGptFallbackFor("gpt-5.4-mini")).toBe("gpt-5.5");
+
+    markOAuthIncompat("gpt-5.4");
+    expect(chatGptFallbackFor("gpt-5.4")).toBe("gpt-5.5");
+  });
+
+  it("returns undefined for gpt-5.5 itself even if marked (no further fallback)", () => {
+    // Pathological case — if even gpt-5.5 fails, the credential is the
+    // problem and there's no model we can swap to. The handler should
+    // surface this as an error rather than loop.
+    markOAuthIncompat("gpt-5.5");
+    expect(chatGptFallbackFor("gpt-5.5")).toBeUndefined();
+  });
+});
+
+// ── isSilentOAuthExitError — the Pandario 23:13Z regression ──────────────
+
+describe("isSilentOAuthExitError", () => {
+  it("detects the canonical silent exit-1 wrapper from codex-sdk", () => {
+    expect(
+      isSilentOAuthExitError(
+        "Codex Exec exited with code 1: Reading prompt from stdin...\n",
+      ),
+    ).toBe(true);
+  });
+
+  it("matches when the SDK uses exit code 2 (observed variation)", () => {
+    expect(
+      isSilentOAuthExitError(
+        "Codex Exec exited with code 2: Reading prompt from stdin...",
+      ),
+    ).toBe(true);
+  });
+
+  it("is whitespace-tolerant and case-insensitive", () => {
+    expect(
+      isSilentOAuthExitError(
+        "codex   exec  exited  with  code  1: reading PROMPT from stdin...",
+      ),
+    ).toBe(true);
+  });
+
+  it("does NOT match when the explicit mismatch text is present (other detector handles it)", () => {
+    expect(
+      isSilentOAuthExitError(
+        "Codex Exec exited with code 1: not supported when using Codex with a ChatGPT account",
+      ),
+    ).toBe(false);
+  });
+
+  it("does NOT match generic exit-1 errors (false positive guard)", () => {
+    expect(
+      isSilentOAuthExitError(
+        "Codex Exec exited with code 1: connection refused",
+      ),
+    ).toBe(false);
+    expect(
+      isSilentOAuthExitError("Codex Exec exited with code 1: ENOENT"),
+    ).toBe(false);
+  });
+
+  it("does NOT match an empty or undefined message", () => {
+    expect(isSilentOAuthExitError("")).toBe(false);
+    expect(isSilentOAuthExitError(undefined as unknown as string)).toBe(false);
+  });
+
+  it("does NOT match unrelated text containing one keyword", () => {
+    expect(isSilentOAuthExitError("Reading prompt from stdin")).toBe(false);
+    expect(isSilentOAuthExitError("Codex Exec exited with code 0")).toBe(false);
+  });
+
+  it("isChatGptModelMismatchError still matches the explicit form", () => {
+    expect(
+      isChatGptModelMismatchError(
+        "400 Bad Request: not supported when using Codex with a ChatGPT account",
+      ),
+    ).toBe(true);
+  });
+});

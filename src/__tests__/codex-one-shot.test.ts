@@ -351,3 +351,313 @@ describe("codex / runOneShotAgent — extended item-type coverage", () => {
     expect(log).toContain("foo");
   });
 });
+
+// ── OAuth-aware model resolution (heartbeat / dream parity with handler) ──
+//
+// These tests assert that one-shot runs on a ChatGPT-OAuth credential
+// receive the same pre-emptive model swap the interactive handler
+// applies. Without this, a heartbeat configured with `heartbeatModel:
+// gpt-5-codex` (or any cache-discovered learned-incompat id) would
+// fail silently with the 2026-05-20 Pandario 23:13Z bug shape, but in
+// a context where there's no chat to deliver an error to.
+
+import { afterEach, beforeEach } from "vitest";
+
+describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
+  let fakeHome: string;
+  let origHome: string | undefined;
+  let origUserProfile: string | undefined;
+  let origApiKey: string | undefined;
+
+  beforeEach(async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const os = await import("node:os");
+    fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "talon-codex-oneshot-"));
+    fs.mkdirSync(path.join(fakeHome, ".codex"), { recursive: true });
+    fs.writeFileSync(
+      path.join(fakeHome, ".codex", "auth.json"),
+      '{"auth_mode":"chatgpt"}',
+    );
+    origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
+    origApiKey = process.env.OPENAI_API_KEY;
+    process.env.HOME = fakeHome;
+    delete process.env.USERPROFILE;
+    delete process.env.OPENAI_API_KEY;
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+    oauthIncompat.resetOAuthIncompatForTests();
+  });
+
+  afterEach(async () => {
+    const fs = await import("node:fs");
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    if (origUserProfile !== undefined) {
+      process.env.USERPROFILE = origUserProfile;
+    }
+    if (origApiKey !== undefined) {
+      process.env.OPENAI_API_KEY = origApiKey;
+    }
+    try {
+      fs.rmSync(fakeHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  /**
+   * Drive `runOneShotAgent` with a fresh SDK mock and capture both the
+   * appendLog output AND the `model` value the mocked thread saw.
+   */
+  async function runWithMockedSdk(
+    requestedModel: string,
+    events: AsyncGenerator<Record<string, unknown>>,
+  ): Promise<{ log: string; observedModel: string | undefined }> {
+    vi.resetModules();
+    const observedThreadOptions: Array<Record<string, unknown>> = [];
+    vi.doMock("../core/plugin.js", () => ({
+      getPluginMcpServers: vi.fn(() => ({})),
+    }));
+    vi.doMock("@openai/codex-sdk", () => {
+      class MockThread {
+        async runStreamed(_input: string, opts?: { signal?: AbortSignal }) {
+          void opts;
+          return { events };
+        }
+      }
+      return {
+        Codex: class {
+          startThread(opts: Record<string, unknown>) {
+            observedThreadOptions.push(opts);
+            return new MockThread();
+          }
+          resumeThread() {
+            return new MockThread();
+          }
+        },
+      };
+    });
+
+    const initMod = await import("../backend/codex/init.js");
+    const runMod = await import("../backend/codex/one-shot.js");
+
+    initMod.initCodexAgent(
+      {
+        model: requestedModel,
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    const lines: string[] = [];
+    const appendLog = async (text: string) => {
+      lines.push(text);
+    };
+    const abortController = new AbortController();
+    await runMod.runOneShotAgent({
+      prompt: "Hello",
+      systemPrompt: "You are a heartbeat agent.",
+      workspace: "/tmp",
+      model: requestedModel,
+      contextLabel: "heartbeat",
+      abortController,
+      appendLog,
+    });
+
+    return {
+      log: lines.join(""),
+      observedModel: observedThreadOptions[0]?.model as string | undefined,
+    };
+  }
+
+  it("swaps gpt-5-codex → gpt-5.5 on OAuth and logs the swap", async () => {
+    const events = (async function* () {
+      yield { type: "turn.started" };
+      yield {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      };
+    })();
+
+    const { log, observedModel } = await runWithMockedSdk(
+      "gpt-5-codex",
+      events,
+    );
+    expect(observedModel).toBe("gpt-5.5");
+    expect(log).toContain("Model swap");
+    expect(log).toContain("gpt-5-codex");
+    expect(log).toContain("gpt-5.5");
+  });
+
+  it("swaps a runtime-learned OAuth-incompat model on OAuth", async () => {
+    // The vi.resetModules() inside runWithMockedSdk would invalidate
+    // any pre-marked oauth-incompat state, so we inline the run and
+    // mark the model AFTER reset against the same module instance
+    // resolveOneShotModel will consult.
+    vi.resetModules();
+    const observedThreadOptions: Array<Record<string, unknown>> = [];
+    vi.doMock("../core/plugin.js", () => ({
+      getPluginMcpServers: vi.fn(() => ({})),
+    }));
+    vi.doMock("@openai/codex-sdk", () => {
+      class MockThread {
+        async runStreamed() {
+          const events = (async function* () {
+            yield { type: "turn.started" };
+            yield {
+              type: "turn.completed",
+              usage: {
+                input_tokens: 1,
+                output_tokens: 1,
+                cached_input_tokens: 0,
+                reasoning_output_tokens: 0,
+              },
+            };
+          })();
+          return { events };
+        }
+      }
+      return {
+        Codex: class {
+          startThread(opts: Record<string, unknown>) {
+            observedThreadOptions.push(opts);
+            return new MockThread();
+          }
+          resumeThread() {
+            return new MockThread();
+          }
+        },
+      };
+    });
+
+    const initMod = await import("../backend/codex/init.js");
+    const runMod = await import("../backend/codex/one-shot.js");
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+
+    initMod.initCodexAgent(
+      {
+        model: "gpt-5.4-mini",
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    // initCodexAgent has now loaded the store under the auth file's
+    // fingerprint. Mark the model and run.
+    oauthIncompat.markOAuthIncompat("gpt-5.4-mini");
+
+    const lines: string[] = [];
+    const abortController = new AbortController();
+    await runMod.runOneShotAgent({
+      prompt: "Hello",
+      systemPrompt: "test",
+      workspace: "/tmp",
+      model: "gpt-5.4-mini",
+      contextLabel: "heartbeat",
+      abortController,
+      appendLog: async (t: string) => {
+        lines.push(t);
+      },
+    });
+
+    const log = lines.join("");
+    expect(observedThreadOptions[0]?.model).toBe("gpt-5.5");
+    expect(log).toContain("Model swap");
+    expect(log).toContain("gpt-5.4-mini");
+  });
+
+  it("does NOT swap when the requested model is already gpt-5.5", async () => {
+    const events = (async function* () {
+      yield { type: "turn.started" };
+      yield {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      };
+    })();
+
+    const { observedModel, log } = await runWithMockedSdk("gpt-5.5", events);
+    expect(observedModel).toBe("gpt-5.5");
+    expect(log).not.toContain("Model swap");
+  });
+
+  it("records the model into the OAuth-incompat store on silent-exit failure", async () => {
+    // Heartbeat/dream can't recurse for a retry, but the failing model
+    // should be learned so the NEXT run pre-empts.
+    vi.resetModules();
+    vi.doMock("../core/plugin.js", () => ({
+      getPluginMcpServers: vi.fn(() => ({})),
+    }));
+    vi.doMock("@openai/codex-sdk", () => {
+      class MockThread {
+        async runStreamed() {
+          throw new Error(
+            "Codex Exec exited with code 1: Reading prompt from stdin...\n",
+          );
+        }
+      }
+      return {
+        Codex: class {
+          startThread() {
+            return new MockThread();
+          }
+          resumeThread() {
+            return new MockThread();
+          }
+        },
+      };
+    });
+    const initMod = await import("../backend/codex/init.js");
+    const runMod = await import("../backend/codex/one-shot.js");
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+
+    initMod.initCodexAgent(
+      {
+        model: "gpt-5.4-mini",
+        workspace: "/tmp",
+        systemPrompt: "test",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    const lines: string[] = [];
+    const abortController = new AbortController();
+    await runMod.runOneShotAgent({
+      prompt: "Hello",
+      systemPrompt: "test",
+      workspace: "/tmp",
+      model: "gpt-5.4-mini",
+      contextLabel: "heartbeat",
+      abortController,
+      appendLog: async (t: string) => {
+        lines.push(t);
+      },
+    });
+
+    const log = lines.join("");
+    expect(log).toContain("Error");
+    expect(log).toContain("Reading prompt from stdin");
+    expect(oauthIncompat.isKnownOAuthIncompat("gpt-5.4-mini")).toBe(true);
+  });
+});

@@ -100,4 +100,18 @@ export const files = {
     "memory",
     "heartbeat_state.json",
   ),
+  /**
+   * Runtime-learned Codex OAuth-incompat model store:
+   *   ~/.talon/data/codex-oauth-incompat.json
+   *
+   * Persists model ids that have been observed failing on the current
+   * Codex ChatGPT-OAuth credential. Codex's `~/.codex/models_cache.json`
+   * advertises `supported_in_api: true` for models the CLI actually
+   * rejects on OAuth (e.g. `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.3-codex`,
+   * `gpt-5.2`), so we maintain our own corrective list keyed by auth
+   * fingerprint. Used by the pre-emptive swap, the recovery ladder, and
+   * the picker filter. Reset automatically when the auth fingerprint
+   * changes (different OAuth account / switched to api-key).
+   */
+  codexOauthIncompat: resolve(TALON_ROOT, "data", "codex-oauth-incompat.json"),
 } as const;

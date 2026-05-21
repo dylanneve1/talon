@@ -76,8 +76,9 @@ import {
 } from "./constants.js";
 import { getState } from "./state.js";
 import { ensureCodex, getCodexAuthInfo } from "./init.js";
-import { isChatGptModelMismatchError } from "./auth.js";
-import { chatGptFallbackFor, isCodexApiKeyOnlyModel } from "./models.js";
+import { isChatGptModelMismatchError, isSilentOAuthExitError } from "./auth.js";
+import { chatGptFallbackFor, isCodexOAuthIncompat } from "./models.js";
+import { markOAuthIncompat } from "./oauth-incompat.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
 
@@ -87,16 +88,36 @@ const errMsg = (e: unknown): string =>
 /**
  * One-shot ChatGPT-OAuth model-mismatch recovery.
  *
- * Returns a retry promise when the error text indicates Codex rejected
- * an api-key-only model on a ChatGPT account AND we haven't already
- * retried. Returns `undefined` otherwise (caller falls through to its
- * normal error handling).
+ * Two failure shapes trigger a retry:
  *
- * Shared between the catch block (when the SDK rethrows the 400) and
- * the post-event-loop check (when the SDK only emits `turn.failed`
- * without rethrowing). The retry side-effects are confined here:
- * session reset, transient `setChatModel` flip, `_retried = true`
- * sentinel on the recursive call.
+ *   1. **Explicit mismatch** — Codex surfaced
+ *      `"not supported when using Codex with a ChatGPT account"` via the
+ *      JSON event stream or thrown error. This is the easy case.
+ *
+ *   2. **Silent exit-1 on OAuth** — the Codex CLI rejected the model
+ *      *without* emitting the explicit text, exited 1, and the SDK
+ *      surfaced only `"Codex Exec exited with code 1: Reading prompt
+ *      from stdin..."`. This is what hit Pandario on 2026-05-20 23:13Z
+ *      when `gpt-5.4-mini` was selected. To stay correct without
+ *      misclassifying genuine non-model failures, the silent-exit path
+ *      ONLY fires when:
+ *        - The current auth mode is `chatgpt` (otherwise unrelated
+ *          failures would be falsely treated as OAuth-incompat);
+ *        - The active model isn't already the OAuth flagship
+ *          (`gpt-5.5`); a silent exit on `gpt-5.5` means the credential
+ *          itself is broken — retrying wouldn't help.
+ *
+ *      When triggered, the model is recorded into the persisted
+ *      `oauth-incompat` store so future turns skip it pre-emptively.
+ *
+ * Returns a retry promise when either shape triggers AND we haven't
+ * already retried (`_retried` sentinel prevents recursion). Returns
+ * `undefined` otherwise; the caller falls through to its normal
+ * classify/throw path.
+ *
+ * The retry side-effects are confined here: session reset, transient
+ * `setChatModel` flip (restored in `finally`), `_retried = true` on the
+ * recursive call.
  */
 async function maybeFallbackForChatGptMismatch(
   probeText: string,
@@ -106,17 +127,45 @@ async function maybeFallbackForChatGptMismatch(
   chatId: string,
 ): Promise<QueryResult | undefined> {
   if (retried) return undefined;
-  if (!isChatGptModelMismatchError(probeText)) return undefined;
+
+  const explicit = isChatGptModelMismatchError(probeText);
+  const authInfo = getCodexAuthInfo();
+  const isOAuth = authInfo?.mode === "chatgpt";
+  const silent =
+    isOAuth &&
+    activeModel !== CODEX_CHATGPT_DEFAULT_MODEL &&
+    isSilentOAuthExitError(probeText);
+
+  if (!explicit && !silent) return undefined;
 
   const fallbackModel =
     chatGptFallbackFor(activeModel) ?? CODEX_CHATGPT_DEFAULT_MODEL;
   if (fallbackModel === activeModel) return undefined;
 
+  // Silent-exit shape strongly implies an OAuth-incompat model — record
+  // it so future turns skip the round-trip and so the picker can demote
+  // it next time discovery runs. Explicit mismatches get recorded too
+  // (cheap, and a future cache-discovered id might surface both shapes
+  // depending on Codex CLI version).
+  if (isOAuth) {
+    const recorded = markOAuthIncompat(activeModel);
+    if (recorded) {
+      logWarn(
+        "agent",
+        `[${chatId}] Codex: recorded ${activeModel} as OAuth-incompat — ` +
+          `subsequent turns will skip pre-emptively`,
+      );
+    }
+  }
+
+  const shape = explicit ? "explicit mismatch" : "silent exit (oauth-incompat)";
   logWarn(
     "agent",
-    `[${chatId}] Codex returned ChatGPT model-mismatch for ${activeModel}; ` +
+    `[${chatId}] Codex ${shape} for ${activeModel}; ` +
       `resetting thread and retrying on ${fallbackModel}. ` +
-      `Set TALON_CODEX_KEY or codexApiKey for billing-based access to api-key-only models.`,
+      (isOAuth
+        ? `Set TALON_CODEX_KEY or codexApiKey for billing-based access to api-key-only models.`
+        : ``),
   );
   resetSession(chatId);
   const originalModel = getChatSettings(chatId).model;
@@ -177,24 +226,40 @@ export async function handleMessage(
       ? CODEX_CHATGPT_DEFAULT_MODEL
       : CODEX_DEFAULT_MODEL;
   const requestedModel = chatSettings.model ?? config.model ?? authAwareDefault;
-  // If the resolved model is api-key-only AND we're on ChatGPT OAuth,
-  // pre-emptively swap to the chatgpt-compatible fallback rather than
-  // letting the first turn fail. This is the "user configured
-  // gpt-5-codex in talon.json and then ran codex login" case — the
-  // handler's retry ladder will catch it post-hoc but doing it here
-  // saves the 400 round-trip + makes the resolved-model log line
-  // match what Codex actually sees.
+  // If the resolved model is known OAuth-incompat AND we're on
+  // ChatGPT OAuth, pre-emptively swap to the chatgpt-compatible
+  // fallback rather than letting the first turn fail. Two sources of
+  // truth feed `isCodexOAuthIncompat`:
+  //
+  //   1. **Static** (`isCodexApiKeyOnlyModel`) — curated `apiKeyOnly`
+  //      flag in `CODEX_MODELS`. Covers ids known at release time
+  //      (`gpt-5-codex`).
+  //
+  //   2. **Dynamic** (`isKnownOAuthIncompat` via `oauth-incompat.ts`) —
+  //      runtime-learned from observed silent-exit failures, persisted
+  //      per-credential. Covers cache-discovered ids that the cache
+  //      *claims* are `supported_in_api: true` but the CLI rejects on
+  //      OAuth (e.g. `gpt-5.4-mini` — see Pandario 23:13Z 2026-05-20).
+  //
+  // The post-hoc recovery ladder in `maybeFallbackForChatGptMismatch`
+  // would catch missed cases too, but pre-emptive saves the ~9s
+  // round-trip every subsequent turn and makes the resolved-model log
+  // line match what Codex actually sees.
   let activeModel = requestedModel;
-  if (authInfo?.mode === "chatgpt" && isCodexApiKeyOnlyModel(requestedModel)) {
+  if (authInfo?.mode === "chatgpt" && isCodexOAuthIncompat(requestedModel)) {
     const fallback =
       chatGptFallbackFor(requestedModel) ?? CODEX_CHATGPT_DEFAULT_MODEL;
-    logWarn(
-      "agent",
-      `[${chatId}] Codex model ${requestedModel} is api-key-only and ` +
-        `current auth is ChatGPT OAuth — pre-emptively falling back to ${fallback}. ` +
-        `Set TALON_CODEX_KEY / codexApiKey or change the configured model to silence this.`,
-    );
-    activeModel = fallback;
+    // Guard against a learned-but-no-fallback case — only swap when the
+    // fallback is actually different from what we'd already run.
+    if (fallback !== requestedModel) {
+      logWarn(
+        "agent",
+        `[${chatId}] Codex model ${requestedModel} is OAuth-incompat and ` +
+          `current auth is ChatGPT OAuth — pre-emptively falling back to ${fallback}. ` +
+          `Set TALON_CODEX_KEY / codexApiKey or change the configured model to silence this.`,
+      );
+      activeModel = fallback;
+    }
   }
   log("agent", `[${chatId}] Codex model resolved: ${activeModel}`);
 

@@ -16,7 +16,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Shared mock state ───────────────────────────────────────────────────────
 
@@ -1583,5 +1583,222 @@ describe("codex / handleMessage — ChatGPT-auth model fallback", () => {
       }),
     ).rejects.toThrow();
     expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+  });
+});
+
+// ── Silent OAuth exit-1 recovery (the 2026-05-20 Pandario regression) ────
+
+describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
+  // Set up a temp HOME with an OAuth auth.json so this whole describe
+  // block exercises chatgpt mode without depending on the host machine.
+  // (Mirrors the pre-emptive-swap test in the previous describe.)
+  let fakeHome: string;
+  let origHome: string | undefined;
+  let origUserProfile: string | undefined;
+  let origApiKey: string | undefined;
+
+  beforeEach(async () => {
+    fakeHome = mkdtempSync(join(tmpdir(), "talon-codex-silent-exit-"));
+    mkdirSync(join(fakeHome, ".codex"), { recursive: true });
+    writeFileSync(
+      join(fakeHome, ".codex", "auth.json"),
+      '{"auth_mode":"chatgpt"}',
+    );
+    origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
+    origApiKey = process.env.OPENAI_API_KEY;
+    process.env.HOME = fakeHome;
+    delete process.env.USERPROFILE;
+    delete process.env.OPENAI_API_KEY;
+    // Reset the OAuth-incompat learning store so tests don't leak.
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+    oauthIncompat.resetOAuthIncompatForTests();
+  });
+
+  afterEach(() => {
+    if (origHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = origHome;
+    }
+    if (origUserProfile !== undefined) {
+      process.env.USERPROFILE = origUserProfile;
+    }
+    if (origApiKey !== undefined) {
+      process.env.OPENAI_API_KEY = origApiKey;
+    }
+    try {
+      rmSync(fakeHome, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  });
+
+  it("retries silent exit-1 on a cache-discovered model under ChatGPT OAuth", async () => {
+    // Pandario 23:13Z replay: `gpt-5.4-mini` was selected (cache says
+    // `supported_in_api: true`), pre-emptive swap didn't fire (not
+    // curated as apiKeyOnly, not in learned set yet), Codex CLI
+    // silently exited 1, SDK surfaced opaque error. The new code path
+    // should detect the silent-exit pattern, retry on gpt-5.5, AND
+    // record the failing model into the learning store.
+    initCodexAgent(
+      {
+        model: "gpt-5.4-mini",
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    const silentExit = new Error(
+      "Codex Exec exited with code 1: Reading prompt from stdin...\n",
+    );
+    MOCK_RUN_STREAMED_THROW_QUEUE = [silentExit, null];
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_silent_recovery" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "recovered on 5.5" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Two runStreamed calls — the silent-exit + the recovery.
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+    expect(MOCK_THREAD_OPTIONS_SEEN[0].model).toBe("gpt-5.4-mini");
+    expect(MOCK_THREAD_OPTIONS_SEEN[1].model).toBe("gpt-5.5");
+    expect(result.text).toBe("recovered on 5.5");
+
+    // The failing model was recorded into the learning store.
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+    expect(oauthIncompat.isKnownOAuthIncompat("gpt-5.4-mini")).toBe(true);
+    expect(oauthIncompat.listKnownOAuthIncompat()).toContain("gpt-5.4-mini");
+  });
+
+  it("pre-emptively swaps a previously-learned OAuth-incompat model", async () => {
+    // After one failure (test above), the next turn should pre-empt:
+    // the configured model is now in the learned set, so the swap
+    // fires before the first runStreamed call.
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+    oauthIncompat.loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
+    oauthIncompat.markOAuthIncompat("gpt-5.4-mini");
+
+    initCodexAgent(
+      {
+        model: "gpt-5.4-mini",
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_preempt_dyn" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: { id: "i1", type: "agent_message", text: "ok" },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cached_input_tokens: 0,
+          reasoning_output_tokens: 0,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Single runStreamed call (pre-empt fired) and it saw gpt-5.5.
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(1);
+    expect(MOCK_THREAD_OPTIONS_SEEN[0].model).toBe("gpt-5.5");
+  });
+
+  it("does NOT retry a silent exit on api-key auth (different bug class)", async () => {
+    // Restore environment to api-key mode for this single test.
+    delete process.env.HOME; // bypass the fakeHome chatgpt auth file
+    process.env.OPENAI_API_KEY = "sk-real-api-key";
+    try {
+      setupHandler({ codexApiKey: "sk-real-api-key", model: "gpt-5-codex" });
+
+      const silentExit = new Error(
+        "Codex Exec exited with code 1: Reading prompt from stdin...\n",
+      );
+      MOCK_RUN_STREAMED_THROW_QUEUE = [silentExit];
+
+      await expect(
+        handleMessage({
+          chatId: "test-chat",
+          text: "hi",
+          senderName: "Dylan",
+          isGroup: false,
+        }),
+      ).rejects.toThrow();
+      // Only ONE runStreamed call — no recovery attempted because
+      // the auth mode isn't chatgpt.
+      expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(1);
+    } finally {
+      // Restore fakeHome for the next test's afterEach cleanup.
+      process.env.HOME = fakeHome;
+      delete process.env.OPENAI_API_KEY;
+    }
+  });
+
+  it("does NOT retry when the active model is already gpt-5.5", async () => {
+    // Pathological case — if even gpt-5.5 silent-exits, the credential
+    // is broken; retrying would loop or swap to itself.
+    initCodexAgent(
+      {
+        model: "gpt-5.5",
+        workspace: "/tmp",
+        systemPrompt: "Test system prompt.",
+        frontend: "telegram",
+      } as never,
+      () => 19876,
+      "telegram",
+    );
+
+    const silentExit = new Error(
+      "Codex Exec exited with code 1: Reading prompt from stdin...\n",
+    );
+    MOCK_RUN_STREAMED_THROW_QUEUE = [silentExit];
+
+    await expect(
+      handleMessage({
+        chatId: "test-chat",
+        text: "hi",
+        senderName: "Dylan",
+        isGroup: false,
+      }),
+    ).rejects.toThrow();
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(1);
   });
 });
