@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.13.0](https://github.com/dylanneve1/talon/compare/v1.12.0...v1.13.0) (2026-05-21)
+
+
+### Features
+
+* Antigravity (Python SDK) + agy (local OAuth) backends + MCP supervisor refactor ([#224](https://github.com/dylanneve1/talon/issues/224)) ([b8ba43f](https://github.com/dylanneve1/talon/commit/b8ba43f80dfd7017f2bb789f4b34dde59cc6a6c0))
+* **backend:** multi-role BackendPool + per-chat overrides + /model integration + openai-agents MCP fixes ([#211](https://github.com/dylanneve1/talon/issues/211)) ([cb2a661](https://github.com/dylanneve1/talon/commit/cb2a661e9c9fb109d3fd57b8441585d2f9eaafa5))
+* **codex:** dynamic model discovery via OpenAI /v1/models ([#228](https://github.com/dylanneve1/talon/issues/228)) ([6f88189](https://github.com/dylanneve1/talon/commit/6f88189f040bf90432cddf81ec2d770058a03b21))
+
+
+### Bug Fixes
+
+* **claude-sdk:** post-result watchdog for stuck SDK iterator ([#218](https://github.com/dylanneve1/talon/issues/218)) ([a6796d1](https://github.com/dylanneve1/talon/commit/a6796d1fa5f8c1c07b1f6950e2a700281e9eb9ff))
+* **claude-sdk:** preserve SDK loop on terminator delivery failure via SDK's native error pipeline ([#159](https://github.com/dylanneve1/talon/issues/159)) ([9fefe59](https://github.com/dylanneve1/talon/commit/9fefe59ec4dcdd50fc05a41dfef162c24122951a))
+* **codex:** auto-approve MCP tools + run with full permissions ([#234](https://github.com/dylanneve1/talon/issues/234)) ([14e55f0](https://github.com/dylanneve1/talon/commit/14e55f08e5ee95977058926d1a90971f67b94eeb))
+* **codex:** harden ChatGPT-OAuth model compat — silent-exit recovery + runtime learning ([#231](https://github.com/dylanneve1/talon/issues/231)) ([892530a](https://github.com/dylanneve1/talon/commit/892530ad30c9ab380d97480f724d8926cfb8a1d7))
+* **codex:** isolate backend auth credentials ([#227](https://github.com/dylanneve1/talon/issues/227)) ([088dd87](https://github.com/dylanneve1/talon/commit/088dd87800b422ffde187db4de6264b22d140b55))
+* **codex:** only mark turn terminated on `completed` mcp_tool_call status ([#233](https://github.com/dylanneve1/talon/issues/233)) ([dea6f61](https://github.com/dylanneve1/talon/commit/dea6f614421bfa04d44f0d8dcc9ccc22bf4faeef))
+* **daemon+heartbeat:** silent crash on /restart and stuck heartbeat [#376](https://github.com/dylanneve1/talon/issues/376) ([#223](https://github.com/dylanneve1/talon/issues/223)) ([669ab82](https://github.com/dylanneve1/talon/commit/669ab82751a102330605133cb2d835220f382288))
+* **openai-agents:** persist turn memory + expand ~/ in send_* actions ([#208](https://github.com/dylanneve1/talon/issues/208)) ([bf2b01b](https://github.com/dylanneve1/talon/commit/bf2b01bbe95bfe1744db7721a62e95612b2bc627))
+
 ## [1.12.0](https://github.com/dylanneve1/talon/compare/v1.11.0...v1.12.0) (2026-05-18)
 
 
