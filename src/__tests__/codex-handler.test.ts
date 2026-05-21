@@ -1607,26 +1607,36 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
     origHome = process.env.HOME;
     origUserProfile = process.env.USERPROFILE;
     origApiKey = process.env.OPENAI_API_KEY;
+    // Set BOTH HOME and USERPROFILE so `os.homedir()` resolves to
+    // fakeHome on POSIX AND Windows (Node uses USERPROFILE on win32;
+    // leaving it unset would fall back to HOMEDRIVE+HOMEPATH = real
+    // user profile = test cross-pollution).
     process.env.HOME = fakeHome;
-    delete process.env.USERPROFILE;
+    process.env.USERPROFILE = fakeHome;
     delete process.env.OPENAI_API_KEY;
     // Reset the OAuth-incompat learning store so tests don't leak.
     const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
     oauthIncompat.resetOAuthIncompatForTests();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     if (origHome === undefined) {
       delete process.env.HOME;
     } else {
       process.env.HOME = origHome;
     }
-    if (origUserProfile !== undefined) {
+    if (origUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
       process.env.USERPROFILE = origUserProfile;
     }
     if (origApiKey !== undefined) {
       process.env.OPENAI_API_KEY = origApiKey;
     }
+    // Reset in-memory oauth-incompat state so a learned model from
+    // one test doesn't bleed into the next via the module singleton.
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+    oauthIncompat.resetOAuthIncompatForTests();
     try {
       rmSync(fakeHome, { recursive: true, force: true });
     } catch {

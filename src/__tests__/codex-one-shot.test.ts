@@ -382,8 +382,12 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     origHome = process.env.HOME;
     origUserProfile = process.env.USERPROFILE;
     origApiKey = process.env.OPENAI_API_KEY;
+    // Set BOTH HOME and USERPROFILE so `os.homedir()` resolves to
+    // fakeHome on POSIX AND Windows (Node uses USERPROFILE on win32
+    // and falls back to HOMEDRIVE+HOMEPATH if USERPROFILE is unset,
+    // which would leak into the real user profile).
     process.env.HOME = fakeHome;
-    delete process.env.USERPROFILE;
+    process.env.USERPROFILE = fakeHome;
     delete process.env.OPENAI_API_KEY;
     const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
     oauthIncompat.resetOAuthIncompatForTests();
@@ -396,12 +400,20 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     } else {
       process.env.HOME = origHome;
     }
-    if (origUserProfile !== undefined) {
+    if (origUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
       process.env.USERPROFILE = origUserProfile;
     }
     if (origApiKey !== undefined) {
       process.env.OPENAI_API_KEY = origApiKey;
     }
+    // Also reset the in-memory oauth-incompat store so a learned
+    // model from one test doesn't bleed into the next via the
+    // module-level singleton (vi.resetModules() is called per test
+    // inside runWithMockedSdk, but explicit reset is cheap insurance).
+    const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
+    oauthIncompat.resetOAuthIncompatForTests();
     try {
       fs.rmSync(fakeHome, { recursive: true, force: true });
     } catch {
