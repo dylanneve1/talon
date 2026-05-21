@@ -96,6 +96,7 @@ const antigravityFactory: BackendFactory = {
         return listModels(f);
       },
       runOneShotAgent: (p) => agRunOneShotAgent(p),
+      cacheMetrics: "read",
       backendLabel: "Antigravity",
     };
 

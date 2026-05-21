@@ -53,6 +53,7 @@ const claudeSdkFactory: BackendFactory = {
         modelProvider.getProviderModels(p, pg, ps),
       formatModelError: (q, r) => modelProvider.formatModelError(q, r),
       listModels: (f) => modelProvider.listModels(f),
+      cacheMetrics: "readwrite",
       backendLabel: "Anthropic",
       refreshMcpServers: async (chatId) => {
         const qi = getActiveQuery(chatId);

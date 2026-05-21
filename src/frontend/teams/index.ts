@@ -16,6 +16,7 @@ import { deriveNumericChatId } from "../../util/chat-id.js";
 import { resolveModel } from "../../core/models.js";
 import { createTeamsActionHandler, postToTeams } from "./actions.js";
 import { splitTeamsMessage, buildAdaptiveCard } from "./formatting.js";
+import { buildCacheDisplay } from "../status-context.js";
 import {
   initGraphClient,
   type GraphClient,
@@ -235,14 +236,12 @@ export function createTeamsFrontend(
                 await import("../../storage/sessions.js");
               const info = getSessionInfo(talonChatId);
               const u = info.usage;
-              const cacheHit =
-                u.totalInputTokens + u.totalCacheRead > 0
-                  ? Math.round(
-                      (u.totalCacheRead /
-                        (u.totalInputTokens + u.totalCacheRead)) *
-                        100,
-                    )
-                  : 0;
+              const cache = buildCacheDisplay({
+                cacheMetrics: gateway.backend?.cacheMetrics,
+                inputTokens: u.totalInputTokens,
+                cacheRead: u.totalCacheRead,
+                cacheWrite: u.totalCacheWrite,
+              });
               const { getChatSettings } =
                 await import("../../storage/chat-settings.js");
               const rawModel =
@@ -284,7 +283,14 @@ export function createTeamsFrontend(
                               title: "Context",
                               value: `${(ctxUsed / 1000).toFixed(0)}K / ${(ctxMax / 1000).toFixed(0)}K (${ctxPct}%)`,
                             },
-                            { title: "Cache", value: `${cacheHit}% hit` },
+                            ...(cache
+                              ? [
+                                  {
+                                    title: "Cache",
+                                    value: `${cache.hitPct}% hit`,
+                                  },
+                                ]
+                              : []),
                             {
                               title: "Input",
                               value: `${u.totalInputTokens.toLocaleString()} tokens`,

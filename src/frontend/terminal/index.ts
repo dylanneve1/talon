@@ -26,6 +26,7 @@ import {
   clearCommands,
   type CommandContext,
 } from "./commands.js";
+import { buildCacheDisplay } from "../status-context.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -247,20 +248,19 @@ export function createTerminalFrontend(
 
           const info = getSessionInfo(terminalChatId);
           const u = info.usage;
-          const cacheHit =
-            u.totalInputTokens + u.totalCacheRead > 0
-              ? Math.round(
-                  (u.totalCacheRead / (u.totalInputTokens + u.totalCacheRead)) *
-                    100,
-                )
-              : 0;
+          const cache = buildCacheDisplay({
+            cacheMetrics: gateway.backend?.cacheMetrics,
+            inputTokens: u.totalInputTokens,
+            cacheRead: u.totalCacheRead,
+            cacheWrite: u.totalCacheWrite,
+          });
           renderer.renderStatusLine(result.durationMs, toolCallCount, {
             model: modelDisplay,
             sessionName: info.sessionName,
             turns: info.turns,
             inputTokens: u.totalInputTokens,
             outputTokens: u.totalOutputTokens,
-            cacheHitPct: cacheHit,
+            cacheHitPct: cache?.hitPct,
             costUsd: u.estimatedCostUsd,
           });
           reprompt(); // readline back on, show prompt

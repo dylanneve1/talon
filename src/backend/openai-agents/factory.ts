@@ -45,6 +45,7 @@ const openAIAgentsFactory: BackendFactory = {
         Promise.resolve(getProviderModels(p, pg, ps)),
       formatModelError: (q, r) => formatModelError(q, r),
       listModels: (f) => Promise.resolve(listModels(f)),
+      cacheMetrics: "read",
       backendLabel: "OpenAI Agents",
     };
 

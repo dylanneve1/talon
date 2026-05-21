@@ -16,7 +16,7 @@ export type StatusBarInfo = {
   turns: number;
   inputTokens: number;
   outputTokens: number;
-  cacheHitPct: number;
+  cacheHitPct?: number;
   costUsd: number;
 };
 
@@ -189,8 +189,10 @@ export function createRenderer(cols?: number, displayName = "Talon"): Renderer {
     p.push(
       `${info.turns} turn${info.turns !== 1 ? "s" : ""}`,
       `${fmtTok(info.inputTokens + info.outputTokens)} tok`,
-      `${info.cacheHitPct}% cache`,
     );
+    if (typeof info.cacheHitPct === "number") {
+      p.push(`${info.cacheHitPct}% cache`);
+    }
     if (tools > 0) p.push(`${tools} tool${tools > 1 ? "s" : ""}`);
     writeln();
     writeln(`  ${pc.dim(p.join("  ·  "))}`);

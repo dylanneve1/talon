@@ -66,6 +66,7 @@ const agyFactory: BackendFactory = {
       getProviderModels: agyModels.getProviderModels,
       formatModelError: agyModels.formatModelError,
       getSettingsPresentation: agyModels.getSettingsPresentation,
+      cacheMetrics: "none",
     };
 
     return { backend };

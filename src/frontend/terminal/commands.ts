@@ -12,6 +12,7 @@ import type { Renderer } from "./renderer.js";
 import { formatTimeAgo } from "./renderer.js";
 import { isTerminalChatId } from "../../util/chat-id.js";
 import { resolveModel as coreResolveModel } from "../../core/models.js";
+import { buildCacheDisplay } from "../status-context.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -291,6 +292,12 @@ export function registerBuiltinCommands(): void {
         }
       }
 
+      const cache = buildCacheDisplay({
+        cacheMetrics: be?.cacheMetrics,
+        inputTokens: displayInputTokens,
+        cacheRead: displayCacheRead,
+        cacheWrite: displayCacheWrite,
+      });
       if (be?.getModelInfo) {
         const modelInfo = await be
           .getModelInfo(activeModel)
@@ -299,20 +306,15 @@ export function registerBuiltinCommands(): void {
         if (modelInfo) {
           backendModelLine = `  ${pc.bold(label)}  ${modelInfo.displayName}  ·  ${modelInfo.providerName}${modelInfo.free ? " · free" : ""}`;
           if (modelInfo.contextWindow) {
-            backendContextLine = `  ${pc.dim(`context window ${modelInfo.contextWindow.toLocaleString()}  ·  cache ${displayCacheRead.toLocaleString()} / ${displayCacheWrite.toLocaleString()}`)}`;
+            backendContextLine = cache
+              ? `  ${pc.dim(`context window ${modelInfo.contextWindow.toLocaleString()}  ·  cache ${cache.read.toLocaleString()} / ${cache.write.toLocaleString()}`)}`
+              : `  ${pc.dim(`context window ${modelInfo.contextWindow.toLocaleString()}`)}`;
           }
         }
       }
 
-      const cacheHit =
-        displayInputTokens + displayCacheRead > 0
-          ? Math.round(
-              (displayCacheRead / (displayInputTokens + displayCacheRead)) *
-                100,
-            )
-          : 0;
       ctx.renderer.writeln(
-        `  ${pc.bold("Session")}  ${nameStr}turns ${info.turns}  ·  ${cacheHit}% cache`,
+        `  ${pc.bold("Session")}  ${nameStr}turns ${info.turns}${cache ? `  ·  ${cache.hitPct}% cache` : ""}`,
       );
       ctx.renderer.writeln(
         `  ${pc.dim(`in ${displayInputTokens.toLocaleString()}  ·  out ${displayOutputTokens.toLocaleString()} tokens`)}`,

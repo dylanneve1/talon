@@ -75,7 +75,7 @@ import {
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
 import { handleAdminSubcommand } from "./admin.js";
-import { buildContextDisplay } from "../status-context.js";
+import { buildCacheDisplay, buildContextDisplay } from "../status-context.js";
 import {
   isAdmin,
   isInteractionAllowed,
@@ -622,6 +622,13 @@ async function handleStatus(
     }
   }
 
+  const cache = buildCacheDisplay({
+    cacheMetrics: be?.cacheMetrics,
+    inputTokens: displayInputTokens,
+    cacheRead: displayCacheRead,
+    cacheWrite: displayCacheWrite,
+  });
+
   const context = buildContextDisplay({
     contextTokens: u.contextTokens,
     lastPromptTokens: u.lastPromptTokens,
@@ -633,9 +640,6 @@ async function handleStatus(
     : "unknown";
   const contextMaxText =
     context.max > 0 ? formatTokenCount(context.max) : "unknown";
-  const totalPrompt = displayInputTokens + displayCacheRead + displayCacheWrite;
-  const cacheHitPct =
-    totalPrompt > 0 ? Math.round((displayCacheRead / totalPrompt) * 100) : 0;
   const avgResponseMs =
     info.turns > 0 && u.totalResponseMs
       ? Math.round(u.totalResponseMs / info.turns)
@@ -657,8 +661,12 @@ async function handleStatus(
     `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "—"} · avg ${avgResponseMs ? formatDuration(avgResponseMs) : "—"} · best ${fastestMs ? formatDuration(fastestMs) : "—"}`,
     `  Turns     ${info.turns}${turnsModelLabel ? ` (${formatModelLabel(turnsModelLabel)})` : ""}`,
     "",
-    `**Cache**     ${cacheHitPct}% hit`,
-    `  Read ${formatTokenCount(displayCacheRead)}  Write ${formatTokenCount(displayCacheWrite)}`,
+    ...(cache
+      ? [
+          `**Cache**     ${cache.hitPct}% hit`,
+          `  Read ${formatTokenCount(cache.read)}${cache.showsWrite ? `  Write ${formatTokenCount(cache.write)}` : ""}`,
+        ]
+      : []),
     `  Input ${formatTokenCount(displayInputTokens)}  Output ${formatTokenCount(displayOutputTokens)}`,
     "",
     `**Pulse**  ${pulseOn ? "on" : "off"}`,
