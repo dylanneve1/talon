@@ -84,7 +84,11 @@ import {
   isCodexOAuthIncompat,
 } from "./models.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
-import { readLastTokenCount } from "./token-usage.js";
+import {
+  classifyRateLimits,
+  readLastRolloutSnapshot,
+  readLastTokenCount,
+} from "./token-usage.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
 
@@ -92,34 +96,104 @@ const errMsg = (e: unknown): string =>
   e instanceof Error ? e.message : String(e);
 
 /**
+ * Error class for usage-exhausted Codex failures. Thrown when the
+ * rollout JSONL positively indicates the account has no remaining
+ * credits — retrying on a fallback model would just hit the same wall,
+ * so we surface the cause clearly instead of looping.
+ */
+export class CodexUsageExhaustedError extends Error {
+  constructor(
+    public readonly modelTried: string,
+    public readonly authMode: "chatgpt" | "api-key" | "none" | undefined,
+  ) {
+    const authNote =
+      authMode === "chatgpt"
+        ? " (free ChatGPT OAuth — credit window resets periodically; or " +
+          "set TALON_CODEX_KEY / codexApiKey for billing-based access)"
+        : authMode === "api-key"
+          ? " (api-key tier — check billing or rate-limit window)"
+          : "";
+    super(`Codex usage exhausted while running ${modelTried}${authNote}`);
+    this.name = "CodexUsageExhaustedError";
+  }
+}
+
+/**
+ * Probe the rollout JSONL for a usage-exhausted signal.
+ *
+ * Returns the snapshot's classification (`"exhausted" | "healthy" |
+ * "unknown"`) plus the raw rate-limits payload for log enrichment.
+ * Never throws — file IO errors degrade to `"unknown"`.
+ *
+ * Pulled out so both the silent-exit path and the explicit-mismatch
+ * path can consult it (an explicit mismatch on an exhausted account is
+ * possible; we'd rather surface "usage exhausted" than swap models in
+ * that case too).
+ */
+async function probeUsageExhausted(
+  threadId: string | undefined,
+): Promise<
+  | { classification: "exhausted"; limitId?: string; balance?: string }
+  | { classification: "healthy" }
+  | { classification: "unknown" }
+> {
+  if (!threadId) return { classification: "unknown" };
+  let snap;
+  try {
+    snap = await readLastRolloutSnapshot(threadId);
+  } catch {
+    return { classification: "unknown" };
+  }
+  const rl = snap?.rateLimits;
+  const cls = classifyRateLimits(rl);
+  if (cls === "exhausted") {
+    return {
+      classification: "exhausted",
+      limitId: rl?.limitId,
+      balance: rl?.creditsBalance,
+    };
+  }
+  return { classification: cls };
+}
+
+/**
  * One-shot ChatGPT-OAuth model-mismatch recovery.
  *
- * Two failure shapes trigger a retry:
+ * Three failure shapes are handled:
  *
- *   1. **Explicit mismatch** — Codex surfaced
+ *   1. **Usage exhausted** (any auth mode) — when the rollout JSONL's
+ *      latest `token_count.rate_limits` payload indicates `has_credits:
+ *      false` or a populated `rate_limit_reached_type`, the failure
+ *      isn't model-incompat at all — the account is out of budget.
+ *      Throw `CodexUsageExhaustedError` so the caller surfaces the real
+ *      cause; do NOT swap to a fallback model (it would hit the same
+ *      wall). This is checked FIRST because both the explicit-mismatch
+ *      and silent-exit paths can be triggered by exhausted accounts
+ *      that happen to have ambiguous error text.
+ *
+ *   2. **Explicit mismatch** — Codex surfaced
  *      `"not supported when using Codex with a ChatGPT account"` via the
- *      JSON event stream or thrown error. This is the easy case.
+ *      JSON event stream or thrown error. This is the definitive
+ *      OAuth-incompat signal and is persisted to the runtime-learned
+ *      store.
  *
- *   2. **Silent exit-1 on OAuth** — the Codex CLI rejected the model
- *      *without* emitting the explicit text, exited 1, and the SDK
- *      surfaced only `"Codex Exec exited with code 1: Reading prompt
- *      from stdin..."`. This is what hit Pandario on 2026-05-20 23:13Z
- *      when `gpt-5.4-mini` was selected. To stay correct without
- *      misclassifying genuine non-model failures, the silent-exit path
- *      ONLY fires when:
- *        - The current auth mode is `chatgpt` (otherwise unrelated
- *          failures would be falsely treated as OAuth-incompat);
- *        - The active model isn't already the OAuth flagship
- *          (`gpt-5.5`); a silent exit on `gpt-5.5` means the credential
- *          itself is broken — retrying wouldn't help.
+ *   3. **Silent exit-1 on OAuth** — the Codex CLI exited 1 without
+ *      emitting the explicit text. This shape is genuinely ambiguous —
+ *      observed causes include real OAuth-incompat models AND
+ *      transient outages AND usage exhaustion. After the usage check
+ *      rules out exhaustion, we treat it as a likely OAuth-incompat
+ *      and retry on the OAuth flagship, but we do NOT persist it
+ *      (would over-poison the learning store with transients).
  *
- *      When triggered, the model is recorded into the persisted
- *      `oauth-incompat` store so future turns skip it pre-emptively.
+ *      Gating: ONLY fires when auth mode is `chatgpt` AND the active
+ *      model isn't already the OAuth flagship — a silent exit on
+ *      `gpt-5.5` means the credential itself is broken (retrying
+ *      wouldn't help) or the account is in some other failure state.
  *
- * Returns a retry promise when either shape triggers AND we haven't
- * already retried (`_retried` sentinel prevents recursion). Returns
- * `undefined` otherwise; the caller falls through to its normal
- * classify/throw path.
+ * Returns a retry promise when explicit-mismatch or silent-exit
+ * triggers AND we haven't already retried (`_retried` sentinel prevents
+ * recursion). Returns `undefined` otherwise; the caller falls through
+ * to its normal classify/throw path.
  *
  * The retry side-effects are confined here: session reset, transient
  * `setChatModel` flip (restored in `finally`), `_retried = true` on the
@@ -131,6 +205,7 @@ async function maybeFallbackForChatGptMismatch(
   params: QueryParams,
   retried: boolean,
   chatId: string,
+  threadId?: string,
 ): Promise<QueryResult | undefined> {
   if (retried) return undefined;
 
@@ -144,6 +219,31 @@ async function maybeFallbackForChatGptMismatch(
 
   if (!explicit && !silent) return undefined;
 
+  // Usage-exhausted check FIRST. If the rollout JSONL says the account
+  // has no credits, both the explicit-mismatch and silent-exit shapes
+  // are red herrings — the underlying cause is "no quota," and swapping
+  // to a fallback model would burn another round-trip into the same
+  // wall. Throw a clean error so the caller can surface the real
+  // cause to the user. (This catches the 2026-05-21 17:39Z log Dylan
+  // flagged: gpt-5.4-mini was reported as silent-exit oauth-incompat
+  // when it was actually "premium tier credits exhausted, balance=0".)
+  const usage = await probeUsageExhausted(threadId);
+  if (usage.classification === "exhausted") {
+    const detail =
+      usage.limitId === "premium"
+        ? "premium tier (free ChatGPT OAuth) exhausted"
+        : usage.limitId
+          ? `${usage.limitId} tier limit reached`
+          : "no remaining credits";
+    logWarn(
+      "agent",
+      `[${chatId}] Codex usage exhausted while running ${activeModel}: ` +
+        `${detail}${usage.balance ? ` (balance=${usage.balance})` : ""}. ` +
+        `NOT swapping to fallback — the same credential hits the same wall.`,
+    );
+    throw new CodexUsageExhaustedError(activeModel, authInfo?.mode);
+  }
+
   const fallbackModel =
     chatGptFallbackFor(activeModel) ?? CODEX_CHATGPT_DEFAULT_MODEL;
   if (fallbackModel === activeModel) return undefined;
@@ -151,11 +251,10 @@ async function maybeFallbackForChatGptMismatch(
   // Only EXPLICIT mismatch errors are persisted as OAuth-incompat —
   // they're definitive ("not supported when using Codex with a ChatGPT
   // account" is an unambiguous server-side signal). Silent-exit
-  // failures are ambiguous (could be model-incompat, but could also
-  // be a transient outage, brief rate-limit, or upstream blip) and
-  // would over-poison the learning store if persisted. The silent
-  // path still triggers an in-session retry below, just without the
-  // permanent record.
+  // failures are ambiguous (could be model-incompat, transient
+  // outage, brief rate-limit, or upstream blip) and would over-poison
+  // the learning store if persisted. The silent path still triggers
+  // an in-session retry below, just without the permanent record.
   if (isOAuth && explicit) {
     const recorded = markOAuthIncompat(activeModel);
     if (recorded) {
@@ -167,7 +266,11 @@ async function maybeFallbackForChatGptMismatch(
     }
   }
 
-  const shape = explicit ? "explicit mismatch" : "silent exit (oauth-incompat)";
+  // Log wording is now honest about the heuristic: explicit mismatch
+  // is a verdict, silent exit is a guess. Both retry on the fallback.
+  const shape = explicit
+    ? "explicit OAuth-incompat mismatch"
+    : "silent exit on OAuth (heuristic: treating as possible OAuth-incompat)";
   logWarn(
     "agent",
     `[${chatId}] Codex ${shape} for ${activeModel}; ` +
@@ -397,6 +500,7 @@ export async function handleMessage(
         params,
         _retried,
         chatId,
+        resolvedThreadId ?? session.sessionId,
       );
       if (fallback) return fallback;
 

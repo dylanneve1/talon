@@ -2,7 +2,7 @@
  * Codex model catalog tests.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import {
   CODEX_MODELS,
@@ -15,8 +15,10 @@ import {
   listModels,
   getEffectiveModels,
   synthesizeUnknownModel,
+  filterCatalogForAuthMode,
 } from "../backend/codex/models.js";
 import { resetState, getState } from "../backend/codex/state.js";
+import * as initModule from "../backend/codex/init.js";
 
 beforeEach(() => {
   // Each test starts with a clean state (no in-flight discovery, empty
@@ -292,5 +294,167 @@ describe("codex / synthesizeUnknownModel", () => {
   it("does not flag plain chat models as reasoning", () => {
     expect(synthesizeUnknownModel("gpt-4.1").reasoning).toBe(false);
     expect(synthesizeUnknownModel("chatgpt-4o-latest").reasoning).toBe(false);
+  });
+});
+
+// ── Auth-mode-aware catalog filter ──────────────────────────────────────────
+//
+// `filterCatalogForAuthMode` is the seam that hides apiKeyOnly models
+// (and runtime-learned-incompat models) from the picker when the active
+// credential is ChatGPT OAuth. The model resolution path stays
+// unfiltered — a chat with an explicit stored OAuth-incompat id still
+// recognises that id, the runtime guard in `handler.ts` does the swap.
+
+describe("codex / filterCatalogForAuthMode", () => {
+  it("keeps every model when auth mode is api-key", () => {
+    const filtered = filterCatalogForAuthMode(CODEX_MODELS, "api-key");
+    expect(filtered.length).toBe(CODEX_MODELS.length);
+    expect(filtered.find((m) => m.id === "gpt-5-codex")).toBeDefined();
+  });
+
+  it("keeps every model when auth mode is none / undefined", () => {
+    expect(filterCatalogForAuthMode(CODEX_MODELS, "none").length).toBe(
+      CODEX_MODELS.length,
+    );
+    expect(filterCatalogForAuthMode(CODEX_MODELS, undefined).length).toBe(
+      CODEX_MODELS.length,
+    );
+  });
+
+  it("drops apiKeyOnly: true models when auth mode is chatgpt", () => {
+    const filtered = filterCatalogForAuthMode(CODEX_MODELS, "chatgpt");
+    // gpt-5-codex is curated apiKeyOnly: true and should disappear.
+    expect(filtered.find((m) => m.id === "gpt-5-codex")).toBeUndefined();
+    // gpt-5.5 is the OAuth flagship and should stay.
+    expect(filtered.find((m) => m.id === "gpt-5.5")).toBeDefined();
+    // No model in the filtered set should be apiKeyOnly.
+    expect(filtered.every((m) => m.apiKeyOnly !== true)).toBe(true);
+  });
+
+  it("preserves the relative order of the curated catalog", () => {
+    const filtered = filterCatalogForAuthMode(CODEX_MODELS, "chatgpt");
+    const filteredIds = filtered.map((m) => m.id);
+    const originalIds = CODEX_MODELS.filter((m) => m.apiKeyOnly !== true).map(
+      (m) => m.id,
+    );
+    expect(filteredIds).toEqual(originalIds);
+  });
+});
+
+describe("codex / presentation paths apply the auth-mode filter", () => {
+  // These tests mock `getCodexAuthInfo` because the real one reads
+  // module-private state set up by `initCodexAgent`. The presentation
+  // path under test consumes ONLY the `mode` field, so a minimal stub
+  // is enough.
+
+  beforeEach(() => {
+    resetState();
+    vi.restoreAllMocks();
+  });
+
+  it("getSettingsPresentation hides apiKeyOnly models on ChatGPT OAuth", async () => {
+    vi.spyOn(initModule, "getCodexAuthInfo").mockReturnValue({
+      mode: "chatgpt",
+      source: "config:codexApiKey",
+      authFileParsed: false,
+      diagnostics: [],
+    });
+    const result = await getSettingsPresentation("gpt-5.5");
+    const buttonIds = result.modelButtons.map((b) =>
+      b.callback_data.replace("settings:model:", ""),
+    );
+    expect(buttonIds.includes("gpt-5-codex")).toBe(false);
+    expect(buttonIds.includes("gpt-5.5")).toBe(true);
+    // Detail line should advertise the hidden count.
+    expect(result.modelDetails.some((d) => d.includes("hidden on OAuth"))).toBe(
+      true,
+    );
+  });
+
+  it("getSettingsPresentation flags an active OAuth-incompat model as not selectable", async () => {
+    vi.spyOn(initModule, "getCodexAuthInfo").mockReturnValue({
+      mode: "chatgpt",
+      source: "config:codexApiKey",
+      authFileParsed: false,
+      diagnostics: [],
+    });
+    // Chat is stored on gpt-5-codex but we're on OAuth — picker should
+    // still show "Active: GPT-5-Codex … — not selectable on current
+    // ChatGPT OAuth credentials" in the header.
+    const result = await getSettingsPresentation("gpt-5-codex");
+    expect(result.modelDetails.some((d) => d.includes("not selectable"))).toBe(
+      true,
+    );
+  });
+
+  it("getSettingsPresentation shows the full catalog on api-key auth", async () => {
+    vi.spyOn(initModule, "getCodexAuthInfo").mockReturnValue({
+      mode: "api-key",
+      source: "config:codexApiKey",
+      authFileParsed: false,
+      diagnostics: [],
+      apiKey: "sk-test",
+    });
+    const result = await getSettingsPresentation("gpt-5.5");
+    const buttonIds = result.modelButtons.map((b) =>
+      b.callback_data.replace("settings:model:", ""),
+    );
+    expect(buttonIds.includes("gpt-5-codex")).toBe(true);
+    expect(result.modelDetails.some((d) => d.includes("hidden on OAuth"))).toBe(
+      false,
+    );
+  });
+
+  it("getProviders modelCount reflects the filtered catalog on OAuth", async () => {
+    vi.spyOn(initModule, "getCodexAuthInfo").mockReturnValue({
+      mode: "chatgpt",
+      source: "config:codexApiKey",
+      authFileParsed: false,
+      diagnostics: [],
+    });
+    const providers = await getProviders();
+    const filteredCount = filterCatalogForAuthMode(
+      CODEX_MODELS,
+      "chatgpt",
+    ).length;
+    expect(providers[0].modelCount).toBe(filteredCount);
+  });
+
+  it("listModels returns the filtered catalog on OAuth", async () => {
+    vi.spyOn(initModule, "getCodexAuthInfo").mockReturnValue({
+      mode: "chatgpt",
+      source: "config:codexApiKey",
+      authFileParsed: false,
+      diagnostics: [],
+    });
+    const result = await listModels("all");
+    expect(result.models.find((m) => m.id === "gpt-5-codex")).toBeUndefined();
+    expect(result.models.find((m) => m.id === "gpt-5.5")).toBeDefined();
+  });
+
+  it("formatModelError lists only OAuth-compatible models on OAuth", () => {
+    vi.spyOn(initModule, "getCodexAuthInfo").mockReturnValue({
+      mode: "chatgpt",
+      source: "config:codexApiKey",
+      authFileParsed: false,
+      diagnostics: [],
+    });
+    const msg = formatModelError("gpt-typo", { kind: "missing" });
+    expect(msg.includes("gpt-5-codex")).toBe(false);
+    expect(msg.includes("gpt-5.5")).toBe(true);
+  });
+
+  it("resolveModel still resolves apiKeyOnly ids on OAuth (handler-side guard does the swap)", async () => {
+    vi.spyOn(initModule, "getCodexAuthInfo").mockReturnValue({
+      mode: "chatgpt",
+      source: "config:codexApiKey",
+      authFileParsed: false,
+      diagnostics: [],
+    });
+    // The picker hides it, but a chat with `gpt-5-codex` already stored
+    // shouldn't see "model not found" — the pre-emptive guard in
+    // handler.ts handles the runtime swap.
+    const result = await resolveModel("gpt-5-codex");
+    expect(result.kind).toBe("exact");
   });
 });

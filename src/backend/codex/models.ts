@@ -35,6 +35,7 @@ import type {
 } from "../../core/types.js";
 import { awaitDiscovery, hasAttemptedDiscovery } from "./discovery.js";
 import { getState } from "./state.js";
+import { getCodexAuthInfo } from "./init.js";
 import { isKnownOAuthIncompat } from "./oauth-incompat.js";
 
 /**
@@ -248,6 +249,44 @@ export function getEffectiveModels(): CodexModelInfo[] {
 }
 
 /**
+ * Auth-mode-aware catalog filter.
+ *
+ * Returns the catalog with OAuth-incompat models removed when the
+ * current auth mode is `chatgpt`. Two filter sources, same as the
+ * handler's pre-emptive guard (`isCodexOAuthIncompat`):
+ *
+ *   - Static curated `apiKeyOnly: true` (e.g. `gpt-5-codex`)
+ *   - Runtime-learned via `isKnownOAuthIncompat` (persisted store of
+ *     models that explicitly mismatched in the past)
+ *
+ * When auth mode is `api-key` or `none` (or undefined / not yet
+ * resolved), the full catalog is returned — `apiKeyOnly` models are
+ * the whole point of an API-key setup.
+ *
+ * Pure: no IO, just iterates the curated array. Safe to call inside
+ * tight render paths (the model picker, /status, etc.).
+ *
+ * Why filter at presentation rather than at handler-time only: the
+ * pre-emptive guard in `handler.ts` already prevents an
+ * apiKeyOnly-on-OAuth turn from running, but it does so by silently
+ * swapping the model. That's correct as a safety net, but the user
+ * shouldn't be able to *select* a model from `/model` that they
+ * literally can't use — the picker should reflect what the active
+ * credentials can actually call.
+ */
+export function filterCatalogForAuthMode(
+  catalog: CodexModelInfo[],
+  authMode: "chatgpt" | "api-key" | "none" | undefined,
+): CodexModelInfo[] {
+  if (authMode !== "chatgpt") return catalog;
+  return catalog.filter((m) => {
+    if (m.apiKeyOnly === true) return false;
+    if (isKnownOAuthIncompat(m.id)) return false;
+    return true;
+  });
+}
+
+/**
  * Resolve a user query string against the Codex model catalog.
  *
  * Matches by exact id first, then case-insensitive prefix on id or
@@ -312,27 +351,46 @@ export async function getSettingsPresentation(
   }
 
   const callbackPrefix = options.callbackPrefix ?? "settings:model:";
-  const catalog = getEffectiveModels();
+  const authMode = getCodexAuthInfo()?.mode;
+  const fullCatalog = getEffectiveModels();
+  const catalog = filterCatalogForAuthMode(fullCatalog, authMode);
+  const hiddenCount = fullCatalog.length - catalog.length;
 
   const modelButtons: ModelButton[] = catalog.map((m) => ({
     text: `${m.id === activeModel ? "● " : ""}${m.displayName}`,
     callback_data: `${callbackPrefix}${m.id}`,
   }));
 
-  const active = catalog.find((m) => m.id === activeModel);
+  // `active` resolves against the FULL catalog so a chat with a stored
+  // OAuth-incompat model id (e.g. someone manually set `gpt-5-codex`
+  // before swapping to OAuth) still shows the active-model line in the
+  // header — the picker just won't offer that model as a selectable
+  // option. The pre-emptive guard in `handler.ts` handles the runtime
+  // swap if a turn fires before the user picks something else.
+  const active = fullCatalog.find((m) => m.id === activeModel);
   const modelDetails: string[] = [];
   if (active) {
     const ctx = active.contextWindow
       ? ` — ${Math.round(active.contextWindow / 1000)}k ctx`
       : "";
-    modelDetails.push(`Active: ${active.displayName} (${active.id})${ctx}`);
+    const oauthNote =
+      authMode === "chatgpt" && !catalog.find((m) => m.id === active.id)
+        ? " — not selectable on current ChatGPT OAuth credentials"
+        : "";
+    modelDetails.push(
+      `Active: ${active.displayName} (${active.id})${ctx}${oauthNote}`,
+    );
   }
   const state = getState();
   const sourceLabel =
     state.discoveredModels.size > 0
       ? `${catalog.length} models (${state.discoveredModels.size} discovered)`
       : `${catalog.length} models (curated)`;
-  modelDetails.push(`Backend: Codex — ${sourceLabel}`);
+  const hiddenLabel =
+    hiddenCount > 0 && authMode === "chatgpt"
+      ? `, ${hiddenCount} hidden on OAuth`
+      : "";
+  modelDetails.push(`Backend: Codex — ${sourceLabel}${hiddenLabel}`);
 
   return {
     modelButtons,
@@ -349,7 +407,10 @@ export async function getSettingsPresentation(
 /** List Codex's providers (one — OpenAI). */
 export async function getProviders(): Promise<UnifiedProviderInfo[]> {
   await awaitDiscovery();
-  const catalog = getEffectiveModels();
+  const catalog = filterCatalogForAuthMode(
+    getEffectiveModels(),
+    getCodexAuthInfo()?.mode,
+  );
   return [
     {
       id: "openai",
@@ -368,7 +429,10 @@ export async function getProviderModels(
 ): Promise<{ models: UnifiedModelInfo[]; total: number }> {
   if (providerId !== "openai") return { models: [], total: 0 };
   await awaitDiscovery();
-  const catalog = getEffectiveModels();
+  const catalog = filterCatalogForAuthMode(
+    getEffectiveModels(),
+    getCodexAuthInfo()?.mode,
+  );
   const start = (page - 1) * pageSize;
   return {
     models: catalog.slice(start, start + pageSize),
@@ -385,9 +449,12 @@ export function formatModelError(
     const list = resolution.matches.map((m) => `\`${m.id}\``).join(", ");
     return `Multiple Codex models match \`${query}\`: ${list}. Pick one.`;
   }
-  // Show the effective catalog (not just curated) so the hint reflects
-  // what the operator's api key can actually call.
-  const catalog = getEffectiveModels();
+  // Show the auth-mode-aware effective catalog so the hint reflects
+  // what the operator's active credentials can actually call.
+  const catalog = filterCatalogForAuthMode(
+    getEffectiveModels(),
+    getCodexAuthInfo()?.mode,
+  );
   return (
     `No Codex model matches \`${query}\`. ` +
     `Available: ${catalog.map((m) => m.id).join(", ")}.`
@@ -405,6 +472,9 @@ export async function listModels(
     return { models: [], total: 0 };
   }
   await awaitDiscovery();
-  const catalog = getEffectiveModels();
+  const catalog = filterCatalogForAuthMode(
+    getEffectiveModels(),
+    getCodexAuthInfo()?.mode,
+  );
   return { models: catalog, total: catalog.length };
 }

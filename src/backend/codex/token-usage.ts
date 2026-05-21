@@ -39,6 +39,60 @@ export interface CodexLastTokenUsage {
 }
 
 /**
+ * Subset of the rollout `token_count.rate_limits` payload Talon cares
+ * about. The CLI writes this on every `token_count` event regardless of
+ * whether anything is exhausted; we read the latest one to decide
+ * whether a silent exit was caused by quota rather than oauth-incompat.
+ *
+ * Two shapes have been observed in the wild:
+ *
+ *   Healthy (codex tier, plan_type "plus"):
+ *     {
+ *       "limit_id": "codex",
+ *       "primary": { "used_percent": 3, ... },
+ *       "secondary": { "used_percent": 18, ... },
+ *       "credits": null,
+ *       "plan_type": "plus",
+ *       "rate_limit_reached_type": null
+ *     }
+ *
+ *   Exhausted (the silent-exit case on Dylan's free ChatGPT OAuth):
+ *     {
+ *       "limit_id": "premium",
+ *       "primary": null,
+ *       "secondary": null,
+ *       "credits": { "has_credits": false, "balance": "0", ... },
+ *       "plan_type": null,
+ *       "rate_limit_reached_type": null
+ *     }
+ *
+ * The differentiator is `credits.has_credits === false`. `rate_limit_reached_type`
+ * appears reserved for an explicit "you hit limit X" signal but has been
+ * null in every sample we've captured — we read it for forward-compat
+ * anyway.
+ */
+export interface CodexRateLimitsSnapshot {
+  limitId?: string;
+  planType?: string;
+  hasCredits?: boolean;
+  creditsBalance?: string;
+  rateLimitReachedType?: string;
+  primaryUsedPercent?: number;
+  secondaryUsedPercent?: number;
+}
+
+/**
+ * Combined snapshot returned from `readLastRolloutSnapshot()` — both the
+ * last per-call usage AND the latest rate-limits payload from the same
+ * rollout file. Either field may be `undefined` if the rollout didn't
+ * carry that info (e.g. a turn that died before the first `token_count`).
+ */
+export interface CodexRolloutSnapshot {
+  usage?: CodexLastTokenUsage;
+  rateLimits?: CodexRateLimitsSnapshot;
+}
+
+/**
  * Resolve `$CODEX_HOME`, falling back to `~/.codex`. Mirrors how the
  * Codex CLI resolves its data directory.
  */
@@ -106,13 +160,72 @@ async function findRolloutFile(threadId: string): Promise<string | null> {
  * Read the last `token_count` event from the rollout JSONL for `threadId`.
  *
  * Returns `null` if the file can't be located, can't be read, or contains
- * no `token_count` events. Never throws — all failure modes degrade
- * silently to "no context info" so the caller can fall back to whatever
- * its old behaviour was.
+ * no `token_count` events with valid `info.last_token_usage`. Never
+ * throws — all failure modes degrade silently to "no context info" so
+ * the caller can fall back to whatever its old behaviour was.
+ *
+ * Walks backwards past malformed `token_count` events (e.g. ones with
+ * `info: null` — the shape Codex writes when a turn dies before usage
+ * is computed) to find the most recent event that DOES have a usable
+ * `last_token_usage`. That's how the original implementation worked
+ * before the rollout-snapshot refactor; keeping the contract identical
+ * means `/status` context-fill display doesn't regress for users on
+ * exhausted accounts.
  */
 export async function readLastTokenCount(
   threadId: string,
 ): Promise<CodexLastTokenUsage | null> {
+  const file = await findRolloutFile(threadId);
+  if (!file) return null;
+
+  let raw: string;
+  try {
+    raw = await readFile(file, "utf8");
+  } catch {
+    return null;
+  }
+
+  const lines = raw.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let obj: unknown;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const payload = (obj as { payload?: { type?: string } })?.payload;
+    if (payload?.type !== "token_count") continue;
+    const snap = extractSnapshotFromTokenCountPayload(payload);
+    if (snap.usage) return snap.usage;
+    // Keep walking: this token_count event had `info: null` (or no
+    // last_token_usage), which is what the exhausted-account shape
+    // looks like. Earlier events in the same turn might still have
+    // valid usage.
+  }
+  return null;
+}
+
+/**
+ * Pull the latest `rate_limits` payload (and matching last usage block,
+ * if present) from the rollout JSONL for `threadId`.
+ *
+ * Reverse-scans the file looking for the most recent `token_count`
+ * event. The payload contains BOTH `info.last_token_usage` and
+ * `rate_limits` together, so a single scan answers both questions —
+ * keeping `readLastTokenCount` as a narrow shim that returns just the
+ * usage half.
+ *
+ * Returns `null` only when the file can't be found or no `token_count`
+ * event exists in it. Returns `{ usage: undefined, rateLimits: {...} }`
+ * when a usage-exhausted turn writes a `token_count` event with
+ * `info: null` but populated rate_limits (the literal shape on Dylan's
+ * exhausted OAuth account, 2026-05-21).
+ */
+export async function readLastRolloutSnapshot(
+  threadId: string,
+): Promise<CodexRolloutSnapshot | null> {
   const file = await findRolloutFile(threadId);
   if (!file) return null;
 
@@ -135,21 +248,46 @@ export async function readLastTokenCount(
     } catch {
       continue;
     }
-    const payload = (obj as { payload?: { type?: string; info?: unknown } })
-      ?.payload;
+    const payload = (obj as { payload?: { type?: string } })?.payload;
     if (payload?.type !== "token_count") continue;
+    return extractSnapshotFromTokenCountPayload(payload);
+  }
+  return null;
+}
 
-    const info = payload.info as
-      | {
-          last_token_usage?: { input_tokens?: number };
-          model_context_window?: number;
-        }
-      | undefined;
-    const lastInput = info?.last_token_usage?.input_tokens;
-    if (typeof lastInput !== "number" || !Number.isFinite(lastInput)) continue;
+/**
+ * Extract the usage + rate-limits snapshot from a single `token_count`
+ * payload. Split out so tests can drive it with a hand-crafted payload
+ * without writing a rollout file.
+ */
+export function extractSnapshotFromTokenCountPayload(
+  payload: unknown,
+): CodexRolloutSnapshot {
+  const p = payload as {
+    info?: {
+      last_token_usage?: { input_tokens?: number };
+      model_context_window?: number;
+    } | null;
+    rate_limits?: {
+      limit_id?: string;
+      plan_type?: string | null;
+      credits?: {
+        has_credits?: boolean;
+        unlimited?: boolean;
+        balance?: string;
+      } | null;
+      rate_limit_reached_type?: string | null;
+      primary?: { used_percent?: number } | null;
+      secondary?: { used_percent?: number } | null;
+    };
+  };
 
-    const window = info?.model_context_window;
-    return {
+  const result: CodexRolloutSnapshot = {};
+
+  const lastInput = p.info?.last_token_usage?.input_tokens;
+  if (typeof lastInput === "number" && Number.isFinite(lastInput)) {
+    const window = p.info?.model_context_window;
+    result.usage = {
       contextTokens: lastInput,
       contextWindow:
         typeof window === "number" && Number.isFinite(window) && window > 0
@@ -157,5 +295,73 @@ export async function readLastTokenCount(
           : undefined,
     };
   }
-  return null;
+
+  const rl = p.rate_limits;
+  if (rl) {
+    result.rateLimits = {
+      limitId: typeof rl.limit_id === "string" ? rl.limit_id : undefined,
+      planType: typeof rl.plan_type === "string" ? rl.plan_type : undefined,
+      hasCredits:
+        typeof rl.credits?.has_credits === "boolean"
+          ? rl.credits.has_credits
+          : undefined,
+      creditsBalance:
+        typeof rl.credits?.balance === "string"
+          ? rl.credits.balance
+          : undefined,
+      rateLimitReachedType:
+        typeof rl.rate_limit_reached_type === "string"
+          ? rl.rate_limit_reached_type
+          : undefined,
+      primaryUsedPercent:
+        typeof rl.primary?.used_percent === "number"
+          ? rl.primary.used_percent
+          : undefined,
+      secondaryUsedPercent:
+        typeof rl.secondary?.used_percent === "number"
+          ? rl.secondary.used_percent
+          : undefined,
+    };
+  }
+
+  return result;
+}
+
+/**
+ * Classify a rate-limits snapshot for the silent-exit recovery path.
+ *
+ * Returns `"exhausted"` when the snapshot positively indicates the
+ * account has no remaining usage budget — explicit `has_credits: false`
+ * is the canonical free-tier OAuth signal, and a populated
+ * `rate_limit_reached_type` (rare in samples we have, but documented in
+ * the CLI surface) is the explicit any-tier signal.
+ *
+ * Returns `"healthy"` when the snapshot proves there ARE remaining
+ * credits — `has_credits: true`, `unlimited: true`, or a populated
+ * `primary` block with non-100% usage.
+ *
+ * Returns `"unknown"` when the snapshot is missing or genuinely
+ * ambiguous (no rollout yet, all fields null, etc). Callers MUST treat
+ * `"unknown"` as "don't fire the usage-exhausted code path" — the
+ * silent-exit oauth-incompat heuristic remains the right fallback.
+ */
+export function classifyRateLimits(
+  rl: CodexRateLimitsSnapshot | undefined,
+): "exhausted" | "healthy" | "unknown" {
+  if (!rl) return "unknown";
+  if (rl.hasCredits === false) return "exhausted";
+  if (
+    typeof rl.rateLimitReachedType === "string" &&
+    rl.rateLimitReachedType.length > 0
+  ) {
+    return "exhausted";
+  }
+  if (rl.hasCredits === true) return "healthy";
+  if (
+    typeof rl.primaryUsedPercent === "number" &&
+    rl.primaryUsedPercent < 100
+  ) {
+    return "healthy";
+  }
+  return "unknown";
 }

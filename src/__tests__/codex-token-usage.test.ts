@@ -30,7 +30,12 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { readLastTokenCount } from "../backend/codex/token-usage.js";
+import {
+  classifyRateLimits,
+  extractSnapshotFromTokenCountPayload,
+  readLastRolloutSnapshot,
+  readLastTokenCount,
+} from "../backend/codex/token-usage.js";
 
 let originalCodexHome: string | undefined;
 let tempHome: string;
@@ -291,5 +296,185 @@ describe("readLastTokenCount", () => {
     // Reader skips the bad one (walking backwards) and falls back to the
     // earlier valid event.
     expect(result?.contextTokens).toBe(5555);
+  });
+});
+
+// ── Rate-limits snapshot + classifier ───────────────────────────────────────
+//
+// These tests cover the new usage-exhausted detection layer added on top
+// of the existing per-call usage reader. The same rollout JSONL carries
+// rate_limits info on every `token_count` event; we read it to distinguish
+// "silent exit because oauth-incompat" from "silent exit because account
+// has no credits" — the 2026-05-21 case Dylan flagged where a free
+// ChatGPT OAuth account ran out of quota and surfaced as a silent exit-1.
+
+/**
+ * Exhausted-shape `token_count` payload — exactly the shape Codex CLI
+ * wrote to Dylan's rollout when his free OAuth ran out of credits.
+ *
+ *   info: null               — turn died before any API call returned usage
+ *   rate_limits.credits.has_credits: false
+ *   rate_limits.credits.balance: "0"
+ *   rate_limits.limit_id: "premium"
+ *   rate_limits.plan_type: null
+ */
+function exhaustedPayload() {
+  return {
+    type: "token_count",
+    info: null,
+    rate_limits: {
+      limit_id: "premium",
+      limit_name: null,
+      primary: null,
+      secondary: null,
+      credits: {
+        has_credits: false,
+        unlimited: false,
+        balance: "0",
+      },
+      plan_type: null,
+      rate_limit_reached_type: null,
+    },
+  };
+}
+
+/**
+ * Healthy-shape `token_count` payload — codex tier on plan_type "plus",
+ * populated primary/secondary windows. This is what every successful
+ * call writes.
+ */
+function healthyPayload(lastInput = 100, used = 3) {
+  return {
+    type: "token_count",
+    info: {
+      total_token_usage: { input_tokens: lastInput },
+      last_token_usage: { input_tokens: lastInput },
+      model_context_window: 272000,
+    },
+    rate_limits: {
+      limit_id: "codex",
+      limit_name: null,
+      primary: { used_percent: used, window_minutes: 300, resets_at: 0 },
+      secondary: { used_percent: 18, window_minutes: 10080, resets_at: 0 },
+      credits: null,
+      plan_type: "plus",
+      rate_limit_reached_type: null,
+    },
+  };
+}
+
+describe("extractSnapshotFromTokenCountPayload", () => {
+  it("extracts both usage and rate_limits from a healthy payload", () => {
+    const snap = extractSnapshotFromTokenCountPayload(healthyPayload(98088));
+    expect(snap.usage).toEqual({ contextTokens: 98088, contextWindow: 272000 });
+    expect(snap.rateLimits).toMatchObject({
+      limitId: "codex",
+      planType: "plus",
+      primaryUsedPercent: 3,
+      secondaryUsedPercent: 18,
+    });
+    expect(snap.rateLimits?.hasCredits).toBeUndefined();
+  });
+
+  it("extracts rate_limits with no usage when info is null (exhausted shape)", () => {
+    const snap = extractSnapshotFromTokenCountPayload(exhaustedPayload());
+    expect(snap.usage).toBeUndefined();
+    expect(snap.rateLimits).toMatchObject({
+      limitId: "premium",
+      hasCredits: false,
+      creditsBalance: "0",
+    });
+    expect(snap.rateLimits?.planType).toBeUndefined();
+  });
+
+  it("returns empty snapshot when the payload has neither info nor rate_limits", () => {
+    const snap = extractSnapshotFromTokenCountPayload({ type: "token_count" });
+    expect(snap.usage).toBeUndefined();
+    expect(snap.rateLimits).toBeUndefined();
+  });
+});
+
+describe("classifyRateLimits", () => {
+  it("classifies has_credits: false as exhausted", () => {
+    const snap = extractSnapshotFromTokenCountPayload(exhaustedPayload());
+    expect(classifyRateLimits(snap.rateLimits)).toBe("exhausted");
+  });
+
+  it("classifies rate_limit_reached_type populated as exhausted", () => {
+    const snap = extractSnapshotFromTokenCountPayload({
+      type: "token_count",
+      rate_limits: { rate_limit_reached_type: "primary" },
+    });
+    expect(classifyRateLimits(snap.rateLimits)).toBe("exhausted");
+  });
+
+  it("classifies has_credits: true as healthy", () => {
+    const snap = extractSnapshotFromTokenCountPayload({
+      type: "token_count",
+      rate_limits: { credits: { has_credits: true, balance: "100" } },
+    });
+    expect(classifyRateLimits(snap.rateLimits)).toBe("healthy");
+  });
+
+  it("classifies non-100% primary usage as healthy", () => {
+    const snap = extractSnapshotFromTokenCountPayload(healthyPayload());
+    expect(classifyRateLimits(snap.rateLimits)).toBe("healthy");
+  });
+
+  it("classifies undefined rate_limits as unknown", () => {
+    expect(classifyRateLimits(undefined)).toBe("unknown");
+  });
+
+  it("classifies all-null rate_limits as unknown (defensive)", () => {
+    const snap = extractSnapshotFromTokenCountPayload({
+      type: "token_count",
+      rate_limits: {},
+    });
+    expect(classifyRateLimits(snap.rateLimits)).toBe("unknown");
+  });
+});
+
+describe("readLastRolloutSnapshot", () => {
+  it("returns the most recent token_count snapshot — exhausted shape", async () => {
+    writeRollout({
+      year: "2026",
+      month: "05",
+      day: "21",
+      threadId: "thread-exhausted",
+      events: [
+        {
+          timestamp: "...",
+          type: "event_msg",
+          payload: exhaustedPayload(),
+        },
+      ],
+    });
+    const snap = await readLastRolloutSnapshot("thread-exhausted");
+    expect(snap?.usage).toBeUndefined();
+    expect(classifyRateLimits(snap?.rateLimits)).toBe("exhausted");
+    expect(snap?.rateLimits?.limitId).toBe("premium");
+  });
+
+  it("returns the LAST event when a turn went healthy → exhausted", async () => {
+    // Real shape: a turn might start healthy and only exhaust on a later
+    // call. Reverse-scan must return the latest verdict, not an earlier
+    // one.
+    writeRollout({
+      year: "2026",
+      month: "05",
+      day: "21",
+      threadId: "thread-mixed",
+      events: [
+        { timestamp: "1", type: "event_msg", payload: healthyPayload(50_000) },
+        { timestamp: "2", type: "event_msg", payload: exhaustedPayload() },
+      ],
+    });
+    const snap = await readLastRolloutSnapshot("thread-mixed");
+    expect(classifyRateLimits(snap?.rateLimits)).toBe("exhausted");
+  });
+
+  it("returns null when no rollout matches the thread_id", async () => {
+    const result = await readLastRolloutSnapshot("nonexistent-thread");
+    expect(result).toBeNull();
   });
 });
