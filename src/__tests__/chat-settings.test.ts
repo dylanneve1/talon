@@ -24,7 +24,9 @@ vi.mock("write-file-atomic", () => ({
 const {
   getChatSettings,
   setChatModel,
+  setChatBackend,
   setChatEffort,
+  setChatFreeOnly,
   setChatPulse,
   setChatPulseInterval,
   getRegisteredPulseChats,
@@ -443,6 +445,41 @@ describe("chat-settings — cleanupEmpty keeps entry when other fields remain (l
     setChatModel(chatId, undefined);
     expect(getChatSettings(chatId).effort).toBe("high");
     expect(getChatSettings(chatId).model).toBeUndefined();
+  });
+});
+
+describe("chat-settings — cleanupEmpty considers backend and model-picker flags", () => {
+  it("keeps an entry when model is cleared but backend remains pinned", () => {
+    const chatId = `cleanup-keep-backend-${Date.now()}`;
+    setChatBackend(chatId, "openai-agents");
+    setChatModel(chatId, "openrouter/owl-alpha");
+
+    setChatModel(chatId, undefined);
+
+    expect(getChatSettings(chatId).backend).toBe("openai-agents");
+    expect(getChatSettings(chatId).model).toBeUndefined();
+  });
+
+  it("keeps an entry when only freeOnly remains", () => {
+    const chatId = `cleanup-keep-free-${Date.now()}`;
+    setChatFreeOnly(chatId, true);
+    setChatModel(chatId, "some-model");
+
+    setChatModel(chatId, undefined);
+
+    expect(getChatSettings(chatId).freeOnly).toBe(true);
+    expect(getChatSettings(chatId).model).toBeUndefined();
+  });
+
+  it("removes the entry after backend and model are both cleared", () => {
+    const chatId = `cleanup-clear-backend-${Date.now()}`;
+    setChatBackend(chatId, "codex");
+    setChatModel(chatId, "gpt-5.5");
+
+    setChatBackend(chatId, undefined);
+    setChatModel(chatId, undefined);
+
+    expect(getChatSettings(chatId)).toEqual({});
   });
 });
 

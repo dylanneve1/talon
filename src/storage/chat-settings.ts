@@ -151,10 +151,12 @@ function cleanupEmpty(chatId: string): void {
   if (
     s &&
     !s.model &&
+    !s.backend &&
     !s.effort &&
     s.pulse === undefined &&
     s.pulseIntervalMs === undefined &&
-    s.pulseLastCheckMsgId === undefined
+    s.pulseLastCheckMsgId === undefined &&
+    s.freeOnly === undefined
   ) {
     delete store[chatId];
   }

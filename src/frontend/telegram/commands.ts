@@ -16,6 +16,7 @@ import { clearHistory } from "../../storage/history.js";
 import {
   getChatSettings,
   setChatModel,
+  setChatBackend,
   setChatEffort,
   setChatPulseInterval,
   resolveModelName,
@@ -51,9 +52,11 @@ import {
   buildModelMenuViewForChat,
   resolveBackendForChat,
 } from "./model-menu.js";
+import { getBackendIdForChat } from "../../core/backend-controller.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
+import { buildContextDisplay } from "../status-context.js";
 
 // Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
 let ADMIN_USER_ID = 0;
@@ -263,6 +266,7 @@ export function registerCommands(
         return;
       }
       setChatModel(cid, resolution.storedValue);
+      setChatBackend(cid, getBackendIdForChat(cid));
       await ctx.reply(
         `Model set to <code>${escapeHtml(resolution.storedValue)}</code> (${escapeHtml(resolution.model.providerName)}${resolution.model.free ? " \u00B7 free" : ""}).`,
         { parse_mode: "HTML" },
@@ -271,6 +275,7 @@ export function registerCommands(
       // Fallback for backends without model resolution
       const model = resolveModelName(arg);
       setChatModel(cid, model);
+      setChatBackend(cid, getBackendIdForChat(cid));
       await ctx.reply(
         `Model set to <code>${escapeHtml(formatModelLabel(model))}</code>.`,
         { parse_mode: "HTML" },
@@ -481,7 +486,6 @@ export function registerCommands(
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
 
-    let ctxUsed = u.contextTokens || u.lastPromptTokens;
     let ctxMax = u.contextWindow; // from SDK modelUsage, preserved across turns
     let displayInputTokens = u.totalInputTokens;
     let displayOutputTokens = u.totalOutputTokens;
@@ -523,13 +527,17 @@ export function registerCommands(
       }
     }
 
-    const ctxPct =
-      ctxMax > 0 ? Math.min(100, Math.round((ctxUsed / ctxMax) * 100)) : 0;
-    const barLen = 20;
-    const filled = Math.round((ctxPct / 100) * barLen);
-    const contextBar =
-      "\u2588".repeat(filled) + "\u2591".repeat(barLen - filled);
-    const contextWarn = ctxPct >= 80 ? " \u26A0\uFE0F consider /reset" : "";
+    const context = buildContextDisplay({
+      contextTokens: u.contextTokens,
+      lastPromptTokens: u.lastPromptTokens,
+      contextWindow: ctxMax,
+    });
+    const contextWarn = context.warn ? " \u26A0\uFE0F consider /reset" : "";
+    const contextUsedText = context.known
+      ? formatTokenCount(context.used)
+      : "unknown";
+    const contextMaxText =
+      context.max > 0 ? formatTokenCount(context.max) : "unknown";
 
     const cacheTotal = displayInputTokens + displayCacheRead;
     const cacheHitPct =
@@ -550,8 +558,8 @@ export function registerCommands(
     const lines = [
       `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code>${backendLabel ? ` \u00B7 <i>${escapeHtml(backendLabel)}</i>` : ""} \u00B7 effort: ${effortName}`,
       "",
-      `<b>Context</b>  ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
-      `<code>${contextBar}</code>`,
+      `<b>Context</b>  ${contextUsedText} / ${contextMaxText} (${context.known ? `${context.pct}%` : "unknown"})${contextWarn}`,
+      `<code>${context.bar}</code>`,
       "",
       `<b>Session Stats</b>`,
       `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "\u2014"} \u00B7 avg ${avgResponseMs ? formatDuration(avgResponseMs) : "\u2014"} \u00B7 best ${fastestMs ? formatDuration(fastestMs) : "\u2014"}`,

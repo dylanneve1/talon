@@ -198,9 +198,10 @@ const configSchema = z.object({
    * only the listed ids appear (useful when you want to hide
    * kilo / opencode in favour of openai-agents + claude).
    *
-   * NOTE: this is a UX filter only. The pool still permits any
-   * registered backend to be bound at runtime via direct API calls;
-   * the whitelist just keeps the menu tidy.
+   * NOTE: persisted per-chat backend overrides are reconciled against this
+   * list on restart. If a chat was pinned to a backend that is no longer
+   * enabled, Talon clears that chat's backend/model override and starts a
+   * fresh default session.
    */
   enabledBackends: z
     .array(

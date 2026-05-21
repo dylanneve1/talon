@@ -11,11 +11,11 @@
 
 import { loadConfig, rebuildSystemPrompt } from "./util/config.js";
 import { initWorkspace } from "./util/workspace.js";
-import { loadSessions } from "./storage/sessions.js";
+import { loadSessions, resetSession } from "./storage/sessions.js";
 import { loadChatSettings } from "./storage/chat-settings.js";
 import { loadCronJobs } from "./storage/cron-store.js";
 import { loadTriggers } from "./storage/trigger-store.js";
-import { loadHistory } from "./storage/history.js";
+import { clearHistory, loadHistory } from "./storage/history.js";
 import { loadMediaIndex } from "./storage/media-index.js";
 import { cleanupOldLogs } from "./storage/daily-log.js";
 import {
@@ -133,8 +133,15 @@ export async function initBackendAndDispatcher(
   await import("./backend/antigravity/factory.js");
   await import("./backend/agy/factory.js");
 
-  const { initBackendPool, getBackendForRole, getBackendForChat, rebindChat } =
-    await import("./core/backend-controller.js");
+  const {
+    initBackendPool,
+    getBackendForRole,
+    getBackendForChat,
+    rebindChat,
+    releaseChat,
+    isBackendAvailable,
+    isModelValidForBackend,
+  } = await import("./core/backend-controller.js");
 
   // Boot the backend pool — binds the chat / heartbeat / dream roles
   // from `config.backend`, `config.heartbeatBackend`,
@@ -147,20 +154,68 @@ export async function initBackendAndDispatcher(
   });
   const backend = getBackendForRole("chat");
 
-  // Re-acquire any persisted per-chat backend overrides so chats that
-  // were on a non-default backend before restart resume on that
-  // backend without waiting for the user to re-pick. Best-effort: a
-  // failed re-acquire (e.g. unknown id) is logged but doesn't block
-  // bootstrap.
-  const { getAllChatSettings } = await import("./storage/chat-settings.js");
+  // Re-acquire any persisted per-chat backend/model overrides so chats
+  // resume exactly where they were before restart. If a backend has
+  // since been disabled/removed, or the stored model is no longer valid
+  // for the backend that would serve it, clear the override and reset
+  // volatile chat state so the next user message starts a fresh default
+  // session instead of crashing on an orphaned model id.
+  const { getAllChatSettings, setChatBackend, setChatModel } =
+    await import("./storage/chat-settings.js");
   for (const [cid, settings] of Object.entries(getAllChatSettings())) {
-    if (!settings.backend) continue;
-    const result = await rebindChat(cid, settings.backend, config);
-    if (!result.ok) {
-      log(
-        "bot",
-        `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error}`,
-      );
+    let resetVolatileState = false;
+
+    if (settings.backend) {
+      if (!isBackendAvailable(settings.backend, config)) {
+        log(
+          "bot",
+          `Per-chat backend ${settings.backend} for ${cid} is no longer available — resetting chat to default backend`,
+        );
+        await releaseChat(cid);
+        setChatBackend(cid, undefined);
+        setChatModel(cid, undefined);
+        resetVolatileState = true;
+      } else {
+        const result = await rebindChat(cid, settings.backend, config);
+        if (!result.ok) {
+          log(
+            "bot",
+            `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error} — resetting chat to default backend`,
+          );
+          await releaseChat(cid);
+          setChatBackend(cid, undefined);
+          setChatModel(cid, undefined);
+          resetVolatileState = true;
+        }
+      }
+    }
+
+    const currentModel = getAllChatSettings()[cid]?.model;
+    if (currentModel) {
+      const be = getBackendForChat(cid);
+      try {
+        const valid = await isModelValidForBackend(be, currentModel);
+        if (!valid) {
+          log(
+            "bot",
+            `Per-chat model ${currentModel} for ${cid} is not valid for its backend — resetting model to default`,
+          );
+          setChatModel(cid, undefined);
+          resetVolatileState = true;
+        }
+      } catch (err) {
+        log(
+          "bot",
+          `Per-chat model validation failed for ${cid} (${currentModel}): ${
+            err instanceof Error ? err.message : String(err)
+          } — keeping stored model`,
+        );
+      }
+    }
+
+    if (resetVolatileState) {
+      resetSession(cid);
+      clearHistory(cid);
     }
   }
 

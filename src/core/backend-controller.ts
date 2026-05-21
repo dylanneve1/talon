@@ -332,6 +332,35 @@ export function listAvailableBackends(
     .filter((b): b is { id: string; label: string } => Boolean(b));
 }
 
+/** Whether a backend id is registered and currently exposed by config. */
+export function isBackendAvailable(id: string, config?: TalonConfig): boolean {
+  return listAvailableBackends(config).some((b) => b.id === id);
+}
+
+/**
+ * Validate a persisted model id against the backend that will serve it.
+ *
+ * Backends with catalogs use `getModelInfo()` as the authority because
+ * stored values are already canonical ids. Older/smaller backends may only
+ * expose `resolveModel()`; in that case accept an exact selectable resolution.
+ * If a backend exposes no validation surface, return true rather than deleting
+ * user state we cannot prove is stale.
+ */
+export async function isModelValidForBackend(
+  backend: QueryBackend,
+  model: string,
+): Promise<boolean> {
+  if (backend.getModelInfo) {
+    const info = await backend.getModelInfo(model);
+    return Boolean(info && info.selectable !== false);
+  }
+  if (backend.resolveModel) {
+    const resolution = await backend.resolveModel(model);
+    return resolution.kind === "exact" && resolution.model.selectable !== false;
+  }
+  return true;
+}
+
 /** Snapshot of the live pool + bindings for `/model` rendering. */
 export function getPoolSnapshot(): PoolSnapshot {
   const instances = [...pool.values()]

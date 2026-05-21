@@ -20,6 +20,8 @@ import {
   hasActiveBackend,
   switchBackend,
   listAvailableBackends,
+  isBackendAvailable,
+  isModelValidForBackend,
   onBackendChange,
   cleanupBackendController,
   resetBackendControllerForTest,
@@ -46,6 +48,7 @@ function makeFactory(
     failInit?: boolean;
     cleanupSpy?: (id: string) => void;
     initSpy?: (id: string) => void;
+    backend?: QueryBackend;
   } = {},
 ): BackendFactory {
   return {
@@ -56,7 +59,7 @@ function makeFactory(
       if (opts.failInit) {
         throw new Error(`init failed for ${id}`);
       }
-      const backend = makeStubBackend(label);
+      const backend = opts.backend ?? makeStubBackend(label);
       return {
         backend,
         cleanup: () => {
@@ -257,6 +260,85 @@ describe("backend-controller", () => {
       { id: "codex", label: "Codex" },
       { id: "kilo", label: "Kilo" },
     ]);
+  });
+
+  it("isBackendAvailable respects enabledBackends", () => {
+    registerBackend(makeFactory("alpha", "Alpha"));
+    registerBackend(makeFactory("beta", "Beta"));
+
+    expect(isBackendAvailable("alpha")).toBe(true);
+    expect(
+      isBackendAvailable("alpha", {
+        enabledBackends: ["beta"],
+      } as unknown as TalonConfig),
+    ).toBe(false);
+    expect(
+      isBackendAvailable("beta", {
+        enabledBackends: ["beta"],
+      } as unknown as TalonConfig),
+    ).toBe(true);
+    expect(isBackendAvailable("ghost")).toBe(false);
+  });
+
+  it("isModelValidForBackend uses getModelInfo when available", async () => {
+    const backend: QueryBackend = {
+      ...makeStubBackend("Alpha"),
+      getModelInfo: vi.fn(async (id: string) =>
+        id === "good"
+          ? {
+              id,
+              displayName: "Good",
+              provider: "test",
+              providerName: "Test",
+              selectable: true,
+            }
+          : id === "hidden"
+            ? {
+                id,
+                displayName: "Hidden",
+                provider: "test",
+                providerName: "Test",
+                selectable: false,
+              }
+            : undefined,
+      ),
+      resolveModel: vi.fn(async () => ({ kind: "missing" }) as const),
+    };
+
+    await expect(isModelValidForBackend(backend, "good")).resolves.toBe(true);
+    await expect(isModelValidForBackend(backend, "hidden")).resolves.toBe(
+      false,
+    );
+    await expect(isModelValidForBackend(backend, "missing")).resolves.toBe(
+      false,
+    );
+    expect(backend.resolveModel).not.toHaveBeenCalled();
+  });
+
+  it("isModelValidForBackend falls back to resolveModel", async () => {
+    const backend: QueryBackend = {
+      ...makeStubBackend("Alpha"),
+      resolveModel: vi.fn(async (query: string) =>
+        query === "good"
+          ? ({
+              kind: "exact",
+              storedValue: "good",
+              model: {
+                id: "good",
+                displayName: "Good",
+                provider: "test",
+                providerName: "Test",
+                selectable: true,
+              },
+            } as const)
+          : ({ kind: "missing" } as const),
+      ),
+    };
+
+    await expect(isModelValidForBackend(backend, "good")).resolves.toBe(true);
+    await expect(isModelValidForBackend(backend, "missing")).resolves.toBe(
+      false,
+    );
   });
 
   it("round-trip swap reuses the registry factory each time", async () => {

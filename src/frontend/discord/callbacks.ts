@@ -37,6 +37,7 @@ import type { Gateway } from "../../core/gateway.js";
 import {
   getChatSettings,
   setChatModel,
+  setChatBackend,
   setChatEffort,
   setChatPulseInterval,
   resolveModelName,
@@ -58,7 +59,10 @@ import {
 } from "./helpers.js";
 import { execute } from "../../core/dispatcher.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
-import { resolveChatBackend } from "../../core/backend-controller.js";
+import {
+  getBackendIdForChat,
+  resolveChatBackend,
+} from "../../core/backend-controller.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { logError } from "../../util/log.js";
 import {
@@ -140,8 +144,10 @@ export async function handleComponentInteraction(
           return;
         }
         setChatModel(chatId, resolution.storedValue);
+        setChatBackend(chatId, getBackendIdForChat(chatId));
       } else {
         setChatModel(chatId, resolveModelName(value));
+        setChatBackend(chatId, getBackendIdForChat(chatId));
       }
       await refreshSettingsPanel(interaction, config, gateway, chatId);
       return;
@@ -262,6 +268,7 @@ export async function handleComponentInteraction(
       const resolution = await be.resolveModel(value);
       if (resolution.kind === "exact" && resolution.model.selectable) {
         setChatModel(chatId, resolution.storedValue);
+        setChatBackend(chatId, getBackendIdForChat(chatId));
       } else {
         await interaction.reply({
           content: "Model unavailable.",
@@ -271,6 +278,7 @@ export async function handleComponentInteraction(
       }
     } else {
       setChatModel(chatId, resolveModelName(value));
+      setChatBackend(chatId, getBackendIdForChat(chatId));
     }
 
     const current = getChatSettings(chatId).model ?? config.model;

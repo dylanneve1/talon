@@ -45,6 +45,7 @@ import { clearHistory } from "../../storage/history.js";
 import {
   getChatSettings,
   setChatModel,
+  setChatBackend,
   setChatEffort,
   setChatPulseInterval,
   resolveModelName,
@@ -74,13 +75,17 @@ import {
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
 import { handleAdminSubcommand } from "./admin.js";
+import { buildContextDisplay } from "../status-context.js";
 import {
   isAdmin,
   isInteractionAllowed,
   registerDiscordChat,
 } from "./handlers.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
-import { resolveChatBackend } from "../../core/backend-controller.js";
+import {
+  getBackendIdForChat,
+  resolveChatBackend,
+} from "../../core/backend-controller.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import {
   suppressMentions,
@@ -590,7 +595,6 @@ async function handleStatus(
   const effortName = chatSets.effort ?? "adaptive";
   const pulseOn = isPulseEnabled(chatId);
 
-  let ctxUsed = u.contextTokens || u.lastPromptTokens;
   let ctxMax = u.contextWindow;
   let displayInputTokens = u.totalInputTokens;
   let displayOutputTokens = u.totalOutputTokens;
@@ -618,12 +622,17 @@ async function handleStatus(
     }
   }
 
-  const ctxPct =
-    ctxMax > 0 ? Math.min(100, Math.round((ctxUsed / ctxMax) * 100)) : 0;
-  const barLen = 20;
-  const filled = Math.round((ctxPct / 100) * barLen);
-  const contextBar = "█".repeat(filled) + "░".repeat(barLen - filled);
-  const contextWarn = ctxPct >= 80 ? " ⚠️ consider /reset" : "";
+  const context = buildContextDisplay({
+    contextTokens: u.contextTokens,
+    lastPromptTokens: u.lastPromptTokens,
+    contextWindow: ctxMax,
+  });
+  const contextWarn = context.warn ? " ⚠️ consider /reset" : "";
+  const contextUsedText = context.known
+    ? formatTokenCount(context.used)
+    : "unknown";
+  const contextMaxText =
+    context.max > 0 ? formatTokenCount(context.max) : "unknown";
   const totalPrompt = displayInputTokens + displayCacheRead + displayCacheWrite;
   const cacheHitPct =
     totalPrompt > 0 ? Math.round((displayCacheRead / totalPrompt) * 100) : 0;
@@ -641,8 +650,8 @@ async function handleStatus(
   const lines = [
     `**🦅 Talon** · \`${formatModelLabel(activeModel)}\`${backendLabel ? ` · *${backendLabel}*` : ""} · effort: ${effortName}`,
     "",
-    `**Context** ${formatTokenCount(ctxUsed)} / ${formatTokenCount(ctxMax)} (${ctxPct}%)${contextWarn}`,
-    `\`${contextBar}\``,
+    `**Context** ${contextUsedText} / ${contextMaxText} (${context.known ? `${context.pct}%` : "unknown"})${contextWarn}`,
+    `\`${context.bar}\``,
     "",
     "**Session Stats**",
     `  Response  last ${lastResponseMs ? formatDuration(lastResponseMs) : "—"} · avg ${avgResponseMs ? formatDuration(avgResponseMs) : "—"} · best ${fastestMs ? formatDuration(fastestMs) : "—"}`,
@@ -739,6 +748,7 @@ async function handleModel(
       return;
     }
     setChatModel(chatId, resolution.storedValue);
+    setChatBackend(chatId, getBackendIdForChat(chatId));
     await reply(
       i,
       `Model set to \`${resolution.storedValue}\` (${resolution.model.providerName}${resolution.model.free ? " · free" : ""}).`,
@@ -747,6 +757,7 @@ async function handleModel(
   } else {
     const model = resolveModelName(arg);
     setChatModel(chatId, model);
+    setChatBackend(chatId, getBackendIdForChat(chatId));
     await reply(i, `Model set to \`${formatModelLabel(model)}\`.`, true);
   }
 }
