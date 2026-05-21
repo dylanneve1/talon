@@ -98,6 +98,7 @@ async function postForm(
     body,
     signal: AbortSignal.timeout(15_000),
   });
+  if (!resp.ok) throw new Error(`OAuth request failed: HTTP ${resp.status}`);
   return (await resp.json()) as Record<string, unknown>;
 }
 
@@ -246,7 +247,7 @@ export class GraphClient {
 
   async getChatMessages(chatId: string, top = 20): Promise<ChatMessage[]> {
     const data = await this.graphGet(
-      `/me/chats/${chatId}/messages?$top=${top}`,
+      `/me/chats/${encodeURIComponent(chatId)}/messages?$top=${top}`,
     );
 
     const raw = data.value as Array<Record<string, unknown>>;

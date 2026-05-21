@@ -357,18 +357,21 @@ describe("gateway HTTP server", () => {
       );
     });
 
-    it("rejects chat_id=0 (the gateway's falsy-guard catches it)", async () => {
-      // Number("0") = 0, which is falsy. The gateway uses `if (!chatId)`
-      // as its final guard so 0 always falls through to the rejection
-      // path — no real chat has ID 0.
+    it("accepts chat_id=0 via explicit-routing branch (null check, not falsy check)", async () => {
+      // chat_id=0 is treated the same as any other numeric chat ID in the
+      // explicit-routing branch (which trusts the caller-supplied chat_id).
+      // The gateway uses `if (chatId === null)` so 0 is not rejected.
       const { body } = await post({
         action: "send_message",
         _chatId: "0",
         chat_id: 0,
         text: "to zero",
       });
-      expect(body.ok).toBe(false);
-      expect(body.error).toContain("No active chat context");
+      expect(body.ok).toBe(true);
+      expect(mockFrontendHandler).toHaveBeenCalledWith(
+        expect.objectContaining({ chat_id: 0 }),
+        0,
+      );
     });
 
     it("rejects the heartbeat sentinel even when chat_id property is present", async () => {

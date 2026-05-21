@@ -91,6 +91,8 @@ export async function handleAdminCommand(
         try {
           await bot.api.sendMessage(id, text);
           sent++;
+          // Respect Telegram flood limits (~30 msg/s across different chats)
+          await new Promise((r) => setTimeout(r, 40));
         } catch {
           failed++;
         }

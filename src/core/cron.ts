@@ -117,8 +117,12 @@ function isDue(job: CronJob, now: Date): boolean {
     return true;
   } catch (err) {
     if (!warnedBadSchedule.has(job.id)) {
-      if (warnedBadSchedule.size >= MAX_WARNED_SCHEDULES)
-        warnedBadSchedule.clear();
+      if (warnedBadSchedule.size >= MAX_WARNED_SCHEDULES) {
+        // Evict one arbitrary entry rather than clearing all to avoid a burst
+        // of re-warnings for the 200 entries we just erased.
+        const first = warnedBadSchedule.values().next();
+        if (!first.done) warnedBadSchedule.delete(first.value);
+      }
       warnedBadSchedule.add(job.id);
       logWarn(
         "cron",

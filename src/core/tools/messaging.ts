@@ -220,6 +220,8 @@ Examples:
             return bridge("schedule_message", {
               text: params.text,
               delay_seconds: params.delay_seconds,
+              reply_to_message_id: params.reply_to,
+              buttons: params.buttons,
               chat_id,
             });
           }

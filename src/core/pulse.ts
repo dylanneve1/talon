@@ -55,6 +55,7 @@ export function enablePulse(chatId: string): void {
 
 export function disablePulse(chatId: string): void {
   setChatPulse(chatId, false);
+  registeredChats.delete(chatId);
 }
 
 /** Clear pulse checkpoint for a chat (call on /reset to avoid stale state). */

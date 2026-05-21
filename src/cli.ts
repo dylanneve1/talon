@@ -898,11 +898,11 @@ async function runDoctor(): Promise<void> {
   const activeBackend = doctorConfig?.backend ?? "claude";
   if (activeBackend === "claude") {
     try {
-      const { execSync } = await import("node:child_process");
+      const { execFileSync } = await import("node:child_process");
       if (doctorConfig?.claudeBinary) {
         const cmd = process.platform === "win32" ? "where" : "which";
         try {
-          execSync(`${cmd} ${doctorConfig.claudeBinary}`, { stdio: "pipe" });
+          execFileSync(cmd, [doctorConfig.claudeBinary], { stdio: "pipe" });
           console.log(
             `  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`,
           );
@@ -913,12 +913,8 @@ async function runDoctor(): Promise<void> {
           issues++;
         }
       } else {
-        execSync(
-          process.platform === "win32" ? "where claude" : "which claude",
-          {
-            stdio: "pipe",
-          },
-        );
+        const lookupCmd = process.platform === "win32" ? "where" : "which";
+        execFileSync(lookupCmd, ["claude"], { stdio: "pipe" });
         console.log(`  ${pc.green("\u2713")} Claude Code installed`);
       }
     } catch {
@@ -1096,6 +1092,7 @@ async function startChat(): Promise<void> {
   const { flushCronJobs } = await import("./storage/cron-store.js");
   const { flushHistory } = await import("./storage/history.js");
   const { flushMediaIndex } = await import("./storage/media-index.js");
+  const { flushTriggers } = await import("./storage/trigger-store.js");
   const { createTerminalFrontend } =
     await import("./frontend/terminal/index.js");
   const { Gateway } = await import("./core/gateway.js");
@@ -1133,6 +1130,7 @@ async function startChat(): Promise<void> {
     flushCronJobs();
     flushHistory();
     flushMediaIndex();
+    flushTriggers();
     frontend.stop();
     process.exit(0);
   });

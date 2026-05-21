@@ -194,7 +194,7 @@ export class Gateway {
       // String-id routing (Teams) — must match an active context.
       chatId = this.findContextByStringId(rawChatId);
     }
-    if (!chatId) {
+    if (chatId === null) {
       return { ok: false, error: "No active chat context" };
     }
 

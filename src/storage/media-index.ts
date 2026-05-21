@@ -42,7 +42,8 @@ let dirty = false;
 export function loadMediaIndex(): void {
   try {
     if (existsSync(STORE_FILE)) {
-      entries = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
+      const parsed: unknown = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
+      entries = Array.isArray(parsed) ? (parsed as MediaEntry[]) : [];
     }
   } catch {
     entries = [];

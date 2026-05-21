@@ -391,7 +391,10 @@ describe("teams actions", () => {
       "forward_message",
     ]) {
       const result = await handler({ action }, 123);
-      expect(result?.ok).toBe(true);
+      // These actions are unsupported on Teams; they should report failure so
+      // the AI knows the operation did not actually happen.
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("not supported on Teams");
     }
   });
 

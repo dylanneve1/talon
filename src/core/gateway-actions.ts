@@ -222,9 +222,11 @@ export async function handleSharedAction(
     // ── Cron CRUD ────────────────────────────────────────────────────────
 
     case "create_cron_job": {
-      const name = String(body.name ?? "Unnamed job");
+      const name = String(body.name ?? "Unnamed job").slice(0, 256);
       const schedule = String(body.schedule ?? "");
-      const jobType = (body.type as CronJobType) ?? "message";
+      const rawType = String(body.type ?? "message");
+      const jobType: CronJobType =
+        rawType === "message" || rawType === "query" ? rawType : "message";
       const content = String(body.content ?? "");
       const timezone = body.timezone ? String(body.timezone) : undefined;
 
@@ -300,7 +302,12 @@ export async function handleSharedAction(
       if (body.name !== undefined) updates.name = String(body.name);
       if (body.content !== undefined) updates.content = String(body.content);
       if (body.enabled !== undefined) updates.enabled = Boolean(body.enabled);
-      if (body.type !== undefined) updates.type = String(body.type);
+      if (body.type !== undefined) {
+        const t = String(body.type);
+        if (t !== "message" && t !== "query")
+          return { ok: false, error: `Invalid type "${t}": must be "message" or "query"` };
+        updates.type = t;
+      }
       if (body.timezone !== undefined)
         updates.timezone = body.timezone ? String(body.timezone) : undefined;
       if (body.schedule !== undefined) {

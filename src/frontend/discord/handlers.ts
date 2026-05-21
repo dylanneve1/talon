@@ -355,7 +355,7 @@ async function downloadAttachment(
   attachment: Attachment,
   workspace: string,
 ): Promise<string> {
-  if (attachment.size && attachment.size > ATTACHMENT_MAX_BYTES) {
+  if ((attachment.size ?? Infinity) > ATTACHMENT_MAX_BYTES) {
     throw new Error(
       `File too large (${Math.round(attachment.size / 1024 / 1024)}MB, max ${ATTACHMENT_MAX_BYTES / 1024 / 1024}MB).`,
     );

@@ -96,15 +96,32 @@ let dirty = false;
 export function loadTriggers(): void {
   try {
     if (existsSync(STORE_FILE)) {
-      const raw = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
-      store = typeof raw === "object" && raw !== null ? raw : {};
+      const raw: unknown = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
+      if (Array.isArray(raw)) {
+        store = Object.fromEntries(
+          (raw as Array<{ id: string }>).map((t) => [t.id, t]),
+        );
+      } else if (typeof raw === "object" && raw !== null) {
+        store = raw as Record<string, never>;
+      } else {
+        store = {};
+      }
     }
   } catch {
     const bakFile = STORE_FILE + ".bak";
     try {
       if (existsSync(bakFile)) {
-        const raw = JSON.parse(readFileSync(bakFile, "utf-8"));
-        store = typeof raw === "object" && raw !== null ? raw : {};
+        const bak: unknown = JSON.parse(readFileSync(bakFile, "utf-8"));
+        if (Array.isArray(bak)) {
+          store = Object.fromEntries(
+            (bak as Array<{ id: string }>).map((t) => [t.id, t]),
+          );
+        } else {
+          store =
+            typeof bak === "object" && bak !== null
+              ? (bak as Record<string, never>)
+              : {};
+        }
         log("triggers", "Loaded from backup (primary was corrupt)");
       }
     } catch {

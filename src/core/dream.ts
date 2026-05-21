@@ -110,7 +110,10 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
   const now = Date.now();
 
   dreaming = true;
-  writeDreamState({ last_run: now, status: "running" });
+  // Preserve the previous last_run while the dream is in flight; advance it
+  // only on success/failure below. This way a crash mid-run doesn't suppress
+  // the next dream for a full interval.
+  writeDreamState({ last_run: state?.last_run ?? 0, status: "running" });
   log(
     "dream",
     `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`,

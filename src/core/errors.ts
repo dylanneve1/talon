@@ -114,8 +114,8 @@ export function classify(err: unknown): TalonError {
     });
   }
 
-  // Session expired
-  if (/session|expired|invalid.*resume/i.test(msg)) {
+  // Session expired — narrow to SDK session-resume language
+  if (/invalid.*resume|resume.*invalid|session.*expired|session.*not.*found/i.test(msg)) {
     return new TalonError(msg, {
       reason: "session_expired",
       retryable: false,
@@ -124,7 +124,7 @@ export function classify(err: unknown): TalonError {
   }
 
   // Context length / overflow
-  if (/context.*length|too.*long|token.*limit|overflow/i.test(msg)) {
+  if (/context.*length|too.*long|token.*limit|context.*overflow/i.test(msg)) {
     return new TalonError(msg, {
       reason: "context_length",
       retryable: false,

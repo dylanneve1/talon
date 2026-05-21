@@ -51,7 +51,7 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
 
   const userPrompt = formatUserPrompt({
     text,
-    senderName,
+    senderName: senderName ?? "user",
     isGroup: isGroup ?? false,
     messageId,
   });
@@ -107,8 +107,8 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   });
 
   incrementTurns(chatId);
-  if (session.turns === 0 && finalText.length > 0) {
-    const name = extractSessionName(finalText);
+  if (session.turns === 0 && text.length > 0) {
+    const name = extractSessionName(text);
     if (name) setSessionName(chatId, name);
   }
   recordUsage(chatId, {

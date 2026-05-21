@@ -458,9 +458,8 @@ async function runHeartbeatAgent(
         // Fire-and-forget — we don't block the next heartbeat on subprocess
         // cleanup. Backends that don't spawn per-run subprocesses (Kilo,
         // OpenCode) leave evictOrphanSubprocesses unimplemented; that's fine.
-        const evict = backend.evictOrphanSubprocesses;
-        if (evict) {
-          evict("heartbeat").catch((sweepErr) => {
+        if (backend.evictOrphanSubprocesses) {
+          backend.evictOrphanSubprocesses("heartbeat").catch((sweepErr) => {
             logError("heartbeat", "Orphan subprocess sweep failed", sweepErr);
           });
         }

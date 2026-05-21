@@ -293,7 +293,7 @@ export function createTelegramActionHandler(
           : undefined;
         const captionParseMode = caption ? ("HTML" as const) : undefined;
         gateway.incrementMessages(chatId);
-        if (action === "send_file") {
+        {
           const stat = statSync(filePath);
           if (stat.size > 49 * 1024 * 1024)
             return { ok: false, error: "File too large (max 49MB)" };
@@ -577,6 +577,8 @@ export function createTelegramActionHandler(
         return { ok: false, error: "User client not connected." };
 
       case "save_sticker_pack": {
+        if (!isUserClientReady())
+          return { ok: false, error: "User client not connected." };
         const text = await userbotSaveStickerPack({
           setName: String(body.set_name ?? ""),
           bot,
