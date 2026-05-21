@@ -44,6 +44,7 @@ import {
   getChatSettings,
   setChatFreeOnly,
 } from "../../storage/chat-settings.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 
 /**
  * Resolve the backend serving a given chat right now.
@@ -101,7 +102,17 @@ export async function buildModelMenuViewForChat(
   if (!backend?.getSettingsPresentation) return null;
 
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
+  // Validate the per-chat override against the active backend; if it
+  // doesn't resolve (cross-backend orphan, or no override set), use the
+  // backend's own default rather than `config.model`. This keeps the
+  // displayed "Model:" line coherent when the chat is on a non-default
+  // backend (e.g. Codex) — without it, the picker would advertise the
+  // role-default backend's model id.
+  const { model: activeModel } = await resolveActiveModelForChat(
+    chatId,
+    backend,
+    config,
+  );
   const freeOnly = chatSets.freeOnly === true;
 
   const availableBackends = listAvailableBackends(config);
@@ -115,10 +126,15 @@ export async function buildModelMenuViewForChat(
     label: backend.backendLabel ?? activeBackendId,
   };
 
+  // Default-model for "hasOverride" comparison: prefer the active
+  // backend's own default (so a chat on Codex without an override
+  // shows no "override" badge against gpt-5.5, not Opus).
+  const backendDefault = (await backend.getDefaultModel?.()) ?? config.model;
+
   const state = await buildModelMenuState({
     chatId,
     activeModel,
-    defaultModel: config.model,
+    defaultModel: backendDefault,
     freeOnly,
     fetchSnapshot: async () => {
       const pres = await backend.getSettingsPresentation!(activeModel, {
@@ -181,7 +197,14 @@ export async function buildModelBrowseViewForChat(
   if (!backend?.getSettingsPresentation) return null;
 
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
+  // Same validation pass as the main menu — the browse view's active
+  // model marker needs to track the same source-of-truth so the chat's
+  // current selection highlights correctly across both views.
+  const { model: activeModel } = await resolveActiveModelForChat(
+    chatId,
+    backend,
+    config,
+  );
   const freeOnly = chatSets.freeOnly === true;
   const filter: "all" | "free" = options.filter ?? (freeOnly ? "free" : "all");
 

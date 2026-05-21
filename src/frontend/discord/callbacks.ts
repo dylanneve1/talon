@@ -63,6 +63,7 @@ import {
   getBackendIdForChat,
   resolveChatBackend,
 } from "../../core/backend-controller.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { logError } from "../../util/log.js";
 import {
@@ -281,7 +282,15 @@ export async function handleComponentInteraction(
       setChatBackend(chatId, getBackendIdForChat(chatId));
     }
 
-    const current = getChatSettings(chatId).model ?? config.model;
+    // Validate the displayed "current" model against the active
+    // backend — same orphan-bug class as the Telegram /model reset
+    // fix: post-reset, this would otherwise show the global default
+    // (e.g. Opus) on a Codex-bound channel.
+    const { model: current } = await resolveActiveModelForChat(
+      chatId,
+      be,
+      config,
+    );
     if (be?.getSettingsPresentation) {
       const pres = await be.getSettingsPresentation(current, {
         callbackPrefix: "model:",
@@ -338,7 +347,6 @@ async function refreshSettingsPanel(
   chatId: string,
 ): Promise<void> {
   const chatSets = getChatSettings(chatId);
-  const activeModel = chatSets.model ?? config.model;
   const effortName = chatSets.effort ?? "adaptive";
   const pulseOn = isPulseEnabled(chatId);
 
@@ -347,6 +355,14 @@ async function refreshSettingsPanel(
   // Per-chat backend so the settings panel reflects the actual
   // catalog this chat draws from when a backend override is pinned.
   const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+  // Same backend-aware resolution the Telegram callbacks use — keeps
+  // the displayed "Model:" line coherent on backend-overridden chats
+  // (Codex chat shows gpt-5.5, not Opus).
+  const { model: activeModel } = await resolveActiveModelForChat(
+    chatId,
+    settingsBe,
+    config,
+  );
   if (settingsBe?.getSettingsPresentation) {
     const pres = await settingsBe.getSettingsPresentation(activeModel);
     modelDetails = pres.modelDetails;

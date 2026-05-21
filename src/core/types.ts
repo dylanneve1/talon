@@ -184,6 +184,18 @@ export interface QueryBackend {
   } | null>;
   /** Resolve a user's model query to a concrete model. */
   resolveModel?(query: string): Promise<UnifiedModelResolution>;
+  /**
+   * The model this backend uses by default when no per-chat override
+   * is set. Used by the `/model` reset path and backend-switch path
+   * to pin the chat to a backend-appropriate default rather than
+   * inheriting `config.model` (which may name a model from a different
+   * backend).
+   *
+   * May be async: Codex needs to peek at the live auth mode to pick
+   * between `gpt-5-codex` (API key) and `gpt-5.5` (ChatGPT OAuth).
+   * Backends with a single static default may return a plain string.
+   */
+  getDefaultModel?(): Promise<string> | string;
   /** Get info for a model by its stored ID. */
   getModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
   /**

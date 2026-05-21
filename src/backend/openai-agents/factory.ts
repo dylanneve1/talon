@@ -15,6 +15,7 @@ import { initOpenAIAgentsAgent } from "./init.js";
 import { handleMessage as openAIAgentsHandleMessage } from "./handler.js";
 import { resetState, clearChatSession } from "./state.js";
 import { releaseAllBundles } from "./mcp-pool.js";
+import { OPENAI_AGENTS_DEFAULT_MODEL } from "./constants.js";
 import {
   resolveModel,
   getModelInfo,
@@ -37,6 +38,7 @@ const openAIAgentsFactory: BackendFactory = {
       query: (params) => openAIAgentsHandleMessage(params),
       resetChat: (chatId) => clearChatSession(chatId),
       resolveModel: (q) => Promise.resolve(resolveModel(q)),
+      getDefaultModel: () => OPENAI_AGENTS_DEFAULT_MODEL,
       getModelInfo: (id) => Promise.resolve(getModelInfo(id)),
       getSettingsPresentation: (m, options) =>
         getSettingsPresentation(m, options),

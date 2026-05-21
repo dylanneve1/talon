@@ -53,6 +53,7 @@ import {
   resolveBackendForChat,
 } from "./model-menu.js";
 import { getBackendIdForChat } from "../../core/backend-controller.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
@@ -207,7 +208,17 @@ export function registerCommands(
   bot.command("model", async (ctx) => {
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim();
-    const activeModel = getChatSettings(cid).model ?? config.model;
+    // Resolve through the active-backend-aware helper so the
+    // displayed model matches what queries actually run on. Without
+    // this, a `/model reset` on a Codex-bound chat would advertise
+    // the global `config.model` (an Anthropic id) — same orphan-bug
+    // class as the inline-button reset (Dylan, 2026-05-21).
+    const be = resolveBackendForChat(cid, gateway);
+    const { model: activeModel } = await resolveActiveModelForChat(
+      cid,
+      be,
+      config,
+    );
 
     if (
       !arg ||
@@ -216,8 +227,13 @@ export function registerCommands(
     ) {
       if (arg) {
         setChatModel(cid, undefined);
+        const { model: postResetModel } = await resolveActiveModelForChat(
+          cid,
+          be,
+          config,
+        );
         await ctx.reply(
-          `Model reset to default: <code>${escapeHtml(config.model)}</code>`,
+          `Model reset to default: <code>${escapeHtml(postResetModel)}</code>`,
           { parse_mode: "HTML" },
         );
         return;
@@ -246,9 +262,9 @@ export function registerCommands(
       return;
     }
 
-    // Resolve `/model <id>` against the *per-chat* backend — that's
-    // the one currently serving this chat, override-aware.
-    const be = resolveBackendForChat(cid, gateway);
+    // `be` was resolved above for the activeModel lookup; reuse it
+    // here. It already points at the per-chat backend (override-aware)
+    // — that's the one currently serving this chat.
     if (be?.resolveModel) {
       const resolution = await be.resolveModel(arg);
       if (resolution.kind !== "exact") {

@@ -45,6 +45,12 @@ const claudeSdkFactory: BackendFactory = {
       warmSession: (chatId) => claudeWarmSession(chatId),
       updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
       resolveModel: (q) => modelProvider.resolveModel(q),
+      // Claude SDK ships a canonical `"default"` alias the runtime
+      // resolves to the recommended model (currently Sonnet 4.6).
+      // Returning it keeps `/model` reset and backend-switch on
+      // "Default (recommended)" rather than freezing a specific id
+      // that may go stale across SDK upgrades.
+      getDefaultModel: () => "default",
       getModelInfo: (id) => modelProvider.getModelInfo(id),
       getSettingsPresentation: (m, options) =>
         modelProvider.getSettingsPresentation(m, options),

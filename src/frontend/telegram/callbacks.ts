@@ -49,6 +49,7 @@ import {
   resolveBackendForChat,
   toggleChatFreeOnly,
 } from "./model-menu.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 
 /**
  * Wrapper around `editMessageText` that swallows Telegram's
@@ -320,13 +321,34 @@ export function registerCallbacks(
           setChatBackend(cid, getBackendIdForChat(cid));
           toast = `Model: ${resolution.model.displayName}`;
         } else {
+          // Backend has no resolver — accept the alias-translated id
+          // verbatim. Still pin the backend so the choice survives a
+          // restart.
           setChatModel(cid, resolveModelName(action.modelId));
           setChatBackend(cid, getBackendIdForChat(cid));
-          toast = `Model: ${getChatSettings(cid).model ?? config.model}`;
+          const { model: resolvedDisplay } = await resolveActiveModelForChat(
+            cid,
+            be,
+            config,
+          );
+          toast = `Model: ${resolvedDisplay}`;
         }
       } else if (action.kind === "reset") {
+        // Clear the per-chat override. Compute the toast through
+        // `resolveActiveModelForChat` so the resolved label reflects
+        // the *active backend's* default — not the global `config.model`.
+        // Without this step, resetting on a non-default-backend chat
+        // (e.g. Codex) advertises a model from the role-default backend
+        // (e.g. Opus), which is the orphan-bug class Dylan flagged
+        // 2026-05-21.
         setChatModel(cid, undefined);
-        toast = `Model reset to default`;
+        const be = resolveBackendForChat(cid, gateway);
+        const { model: resolvedDefault } = await resolveActiveModelForChat(
+          cid,
+          be,
+          config,
+        );
+        toast = `Model reset to default (${resolvedDefault})`;
       } else if (action.kind === "toggle-free") {
         const next = toggleChatFreeOnly(cid);
         toast = `Free only: ${next ? "on" : "off"}`;
@@ -387,7 +409,16 @@ export function registerCallbacks(
         const label =
           available.find((b) => b.id === action.backendId)?.label ??
           action.backendId;
-        toast = `Backend: ${label}`;
+        // Resolve the new backend's default through the validation
+        // helper so the toast surfaces a model that's actually valid
+        // for the chosen backend — never the stale global default.
+        const newBackend = resolveBackendForChat(cid, gateway);
+        const { model: resolvedNewModel } = await resolveActiveModelForChat(
+          cid,
+          newBackend,
+          config,
+        );
+        toast = `Backend: ${label} (model: ${resolvedNewModel})`;
         viewAfter = "menu";
       } else if (action.kind === "backend-default") {
         // Drop the per-chat override; the chat reverts to the global
@@ -398,7 +429,16 @@ export function registerCallbacks(
         clearHistory(cid);
         resetPulseCheckpoint(cid);
         setChatModel(cid, undefined);
-        toast = "Backend reset to default";
+        // Same validation: report the global chat-role backend's
+        // default model in the toast so the user sees a coherent
+        // post-reset state.
+        const defaultBackend = resolveBackendForChat(cid, gateway);
+        const { model: resolvedRoleModel } = await resolveActiveModelForChat(
+          cid,
+          defaultBackend,
+          config,
+        );
+        toast = `Backend reset to default (model: ${resolvedRoleModel})`;
         viewAfter = "menu";
       }
 
