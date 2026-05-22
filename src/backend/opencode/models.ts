@@ -347,9 +347,7 @@ function parseCatalogModel(
     outputWindow: rawModel.limit?.output ?? 0,
     reasoning:
       rawModel.capabilities?.reasoning ?? supportedReasoningLevels.length > 0,
-    ...(supportedReasoningLevels.length
-      ? { supportedReasoningLevels }
-      : {}),
+    ...(supportedReasoningLevels.length ? { supportedReasoningLevels } : {}),
     ...(defaultReasoningLevel ? { defaultReasoningLevel } : {}),
     attachment: rawModel.capabilities?.attachment ?? false,
     toolcall: rawModel.capabilities?.toolcall ?? false,

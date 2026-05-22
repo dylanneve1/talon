@@ -150,11 +150,7 @@ describe("openai-agents / getModelInfo", () => {
     ]);
     const info = getModelInfo("gpt-5.5");
     expect(info?.reasoning).toBe(true);
-    expect(info?.supportedReasoningLevels).toEqual([
-      "minimal",
-      "low",
-      "high",
-    ]);
+    expect(info?.supportedReasoningLevels).toEqual(["minimal", "low", "high"]);
     expect(info?.defaultReasoningLevel).toBe("low");
   });
 

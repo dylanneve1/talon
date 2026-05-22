@@ -292,7 +292,7 @@ function extractReasoningLevels(entry: EndpointModelEntry) {
       .map((level) =>
         typeof level === "string"
           ? level
-          : level.effort ?? level.level ?? level.name,
+          : (level.effort ?? level.level ?? level.name),
       )
       .filter((level): level is string => typeof level === "string");
     const levels = normalizeReasoningLevels(raw);
