@@ -75,7 +75,7 @@ export function createTeamsActionHandler(
         }
       }
 
-      // Graceful no-ops for unsupported actions
+      // These actions are not supported on the Teams frontend.
       case "react":
       case "edit_message":
       case "delete_message":
@@ -84,7 +84,10 @@ export function createTeamsActionHandler(
       case "forward_message":
       case "copy_message":
       case "send_chat_action":
-        return { ok: true };
+        return {
+          ok: false,
+          error: `Action "${action}" is not supported on Teams`,
+        };
 
       case "get_chat_info":
         return {

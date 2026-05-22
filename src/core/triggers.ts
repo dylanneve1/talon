@@ -24,7 +24,7 @@
  * Knows nothing about backend or frontend — dependencies are injected.
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createWriteStream, readFileSync, type WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { execute as dispatcherExecute } from "./dispatcher.js";
@@ -226,7 +226,7 @@ function commandForLanguage(
 ): { cmd: string; args: string[] } | null {
   switch (lang) {
     case "bash":
-      return { cmd: "bash", args: [] };
+      return commandForBash();
     case "python":
       return {
         cmd: process.platform === "win32" ? "python" : "python3",
@@ -235,6 +235,25 @@ function commandForLanguage(
     case "node":
       return { cmd: "node", args: [] };
   }
+}
+
+function commandForBash(): { cmd: string; args: string[] } | null {
+  const candidates =
+    process.platform === "win32"
+      ? [
+          "bash",
+          "C:\\Program Files\\Git\\bin\\bash.exe",
+          "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+        ]
+      : ["bash"];
+  for (const cmd of candidates) {
+    const probe = spawnSync(cmd, ["-lc", "exit 0"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    if (probe.status === 0) return { cmd, args: [] };
+  }
+  return null;
 }
 
 // ── Stdout handling ─────────────────────────────────────────────────────────

@@ -493,7 +493,7 @@ export function registerCommands(
   });
 
   bot.command("admin", async (ctx) => {
-    if (ctx.from?.id !== ADMIN_USER_ID) {
+    if (ADMIN_USER_ID !== 0 && ctx.from?.id !== ADMIN_USER_ID) {
       await ctx.reply("Not authorized.");
       return;
     }

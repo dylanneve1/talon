@@ -96,15 +96,15 @@ let dirty = false;
 export function loadTriggers(): void {
   try {
     if (existsSync(STORE_FILE)) {
-      const raw = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
-      store = typeof raw === "object" && raw !== null ? raw : {};
+      const raw: unknown = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
+      store = normalizeTriggerStore(raw);
     }
   } catch {
     const bakFile = STORE_FILE + ".bak";
     try {
       if (existsSync(bakFile)) {
-        const raw = JSON.parse(readFileSync(bakFile, "utf-8"));
-        store = typeof raw === "object" && raw !== null ? raw : {};
+        const raw: unknown = JSON.parse(readFileSync(bakFile, "utf-8"));
+        store = normalizeTriggerStore(raw);
         log("triggers", "Loaded from backup (primary was corrupt)");
       }
     } catch {
@@ -156,6 +156,24 @@ export function loadTriggers(): void {
   }
 }
 
+function normalizeTriggerStore(raw: unknown): Record<string, Trigger> {
+  if (Array.isArray(raw)) {
+    return Object.fromEntries(
+      raw
+        .filter(
+          (t): t is Trigger =>
+            typeof t === "object" &&
+            t !== null &&
+            typeof (t as { id?: unknown }).id === "string",
+        )
+        .map((t) => [t.id, t]),
+    );
+  }
+  return typeof raw === "object" && raw !== null
+    ? (raw as Record<string, Trigger>)
+    : {};
+}
+
 function save(): void {
   if (!dirty) return;
   try {
@@ -184,6 +202,7 @@ registerCleanup(save);
 
 export function flushTriggers(): void {
   clearInterval(autoSaveTimer);
+  dirty = true;
   save();
 }
 

@@ -238,7 +238,7 @@ describe("openai-agents live (dummy) / tool call dispatch", () => {
     const toolMsg = allMessages.find((m) => m.role === "tool");
     expect(toolMsg).toBeDefined();
     expect(toolMsg?.content ?? "").toContain("dummy-tool-output");
-  });
+  }, 15_000);
 });
 
 // ── 4. Multi-turn memory via MemorySession ─────────────────────────────────

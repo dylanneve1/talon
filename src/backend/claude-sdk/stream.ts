@@ -256,38 +256,8 @@ export function processResultMessage(
 }
 
 // ── Trailing-text fallback dedup ────────────────────────────────────────────
-
-/**
- * Normalize text for fuzzy comparison — trim, lowercase, collapse whitespace,
- * strip emoji. Used to detect whether trailing prose duplicates content
- * already delivered via `end_turn` / `send(type="text")`.
- */
-export function normalizeForDedupe(text: string): string {
-  return text
-    .trim()
-    .toLowerCase()
-    .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-const MIN_DEDUP_LENGTH = 10;
-
-/**
- * Returns true if `candidate` is substantively the same as any text in
- * `deliveredNorms`. "Substantively" = one is a substring of the other after
- * normalization; both must be at least MIN_DEDUP_LENGTH chars to avoid
- * dropping short legitimate replies.
- */
-export function isDuplicateOfDelivered(
-  candidate: string,
-  deliveredNorms: string[],
-): boolean {
-  if (deliveredNorms.length === 0) return false;
-  const norm = normalizeForDedupe(candidate);
-  if (norm.length < MIN_DEDUP_LENGTH) return false;
-  return deliveredNorms.some(
-    (d) =>
-      d.length >= MIN_DEDUP_LENGTH && (norm.includes(d) || d.includes(norm)),
-  );
-}
+// Re-export from shared so legacy imports do not grow a second implementation.
+export {
+  normalizeForDedupe,
+  isDuplicateOfDelivered,
+} from "../shared/delivered-text.js";

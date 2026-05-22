@@ -91,6 +91,7 @@ export async function handleAdminCommand(
         try {
           await bot.api.sendMessage(id, text);
           sent++;
+          await new Promise((r) => setTimeout(r, 40));
         } catch {
           failed++;
         }

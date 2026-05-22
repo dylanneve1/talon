@@ -221,7 +221,21 @@ function runShell(
   timedOut: boolean;
 }> {
   return new Promise((resolveResult) => {
-    const child = spawn("bash", ["-lc", command], {
+    const shell =
+      process.platform === "win32"
+        ? {
+            cmd: "powershell.exe",
+            args: [
+              "-NoProfile",
+              "-NonInteractive",
+              "-ExecutionPolicy",
+              "Bypass",
+              "-Command",
+              command,
+            ],
+          }
+        : { cmd: "bash", args: ["-lc", command] };
+    const child = spawn(shell.cmd, shell.args, {
       cwd: process.cwd(),
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
@@ -261,7 +275,7 @@ function runShell(
 const bashTool = tool({
   name: "Bash",
   description:
-    "Run a shell command via `bash -lc`. Returns combined stdout " +
+    "Run a shell command. Uses PowerShell on Windows and `bash -lc` elsewhere. Returns combined stdout " +
     "and stderr along with the exit code. Default timeout 30s, max " +
     "10min. Use for inspecting files, running scripts, package " +
     "managers, git, etc. Do not start long-running servers — there " +
@@ -382,7 +396,10 @@ const grepTool = tool({
     const { pattern, path, include } = input as GrepInput;
     const target = path ? expandPath(path) : process.cwd();
     // Prefer ripgrep if installed; fall back to GNU/BSD grep.
-    const rgCheck = await runShell("command -v rg", 2000);
+    const rgCheck = await runShell(
+      process.platform === "win32" ? "where.exe rg" : "command -v rg",
+      2000,
+    );
     const useRg = rgCheck.code === 0 && rgCheck.stdout.trim().length > 0;
 
     let command: string;

@@ -72,21 +72,55 @@ describe("detectFlowViolation", () => {
       expect(res.trailing).toBe(
         "The model wrote this without calling end_turn",
       );
+      expect(res.reason).toContain("trailing prose");
       expect(res.shouldRetry).toBe(true);
       expect(res.reminder).toBe(FLOW_VIOLATION_REMINDER);
     }
   });
 
-  it("triggers but skips retry when already retried", () => {
+  it("DOES trigger when tools ran but no turn terminator was called", () => {
+    const res = detectFlowViolation({
+      trailingText: "",
+      turnTerminated: false,
+      deliveredTextNorms: [],
+      toolCalls: 2,
+      retried: false,
+    });
+    expect(res.violated).toBe(true);
+    if (res.violated) {
+      expect(res.trailing).toBe("");
+      expect(res.reason).toBe("2 tool calls with no terminator");
+      expect(res.shouldRetry).toBe(true);
+    }
+  });
+
+  it("triggers but skips retry when retry cap is exhausted", () => {
     const res = detectFlowViolation({
       trailingText: "Still a flow violation on retry",
       turnTerminated: false,
       deliveredTextNorms: [],
       retried: true,
+      retryCount: 3,
+      maxRetries: 3,
     });
     expect(res.violated).toBe(true);
     if (res.violated) {
       expect(res.shouldRetry).toBe(false);
+    }
+  });
+
+  it("still retries before the retry cap is exhausted", () => {
+    const res = detectFlowViolation({
+      trailingText: "Still wrong after one reminder",
+      turnTerminated: false,
+      deliveredTextNorms: [],
+      retried: true,
+      retryCount: 1,
+      maxRetries: 3,
+    });
+    expect(res.violated).toBe(true);
+    if (res.violated) {
+      expect(res.shouldRetry).toBe(true);
     }
   });
 

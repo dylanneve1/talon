@@ -28,6 +28,7 @@ export {
 
 export {
   FLOW_VIOLATION_REMINDER,
+  FLOW_VIOLATION_MAX_RETRIES,
   detectFlowViolation,
   type FlowViolationInputs,
   type FlowViolationResult,

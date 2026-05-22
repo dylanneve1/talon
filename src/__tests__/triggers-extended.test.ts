@@ -24,6 +24,7 @@ import {
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 
 // Silence the logger
 vi.mock("../util/log.js", () => ({
@@ -65,6 +66,12 @@ const {
 
 let tmpRoot: string;
 let executeSpy: ReturnType<typeof vi.fn>;
+const hasUsableBash =
+  spawnSync("bash", ["-lc", "exit 0"], {
+    stdio: "ignore",
+    windowsHide: true,
+  }).status === 0;
+const describeBash = hasUsableBash ? describe : describe.skip;
 
 function makeTrigger(opts: {
   body: string;
@@ -198,7 +205,7 @@ describe("triggers — alternate languages", () => {
 
 // ── Idempotency ───────────────────────────────────────────────────────────
 
-describe("triggers — idempotency", () => {
+describeBash("triggers — idempotency", () => {
   it("calling spawnTrigger twice on the same id is a no-op", async () => {
     const t = makeTrigger({ body: 'echo "once"\nexit 0\n' });
     spawnTrigger(t); // first call — spawns
@@ -327,7 +334,7 @@ describe("trigger-store — branch coverage", () => {
 
 // ── Large payload / buffer truncation ────────────────────────────────────────
 
-describe("triggers — large stdout payload truncation", () => {
+describeBash("triggers — large stdout payload truncation", () => {
   it("truncates a payload that exceeds FIRE_PAYLOAD_MAX_BYTES", async () => {
     // Emit a line that is larger than FIRE_PAYLOAD_MAX_BYTES bytes so the
     // bufferAsPayload / trimmed path in fireWake is exercised.
@@ -346,7 +353,7 @@ describe("triggers — large stdout payload truncation", () => {
 
 // ── finalizeExit with pre-terminal status ────────────────────────────────────
 
-describe("triggers — finalizeExit status branch", () => {
+describeBash("triggers — finalizeExit status branch", () => {
   it("handles a trigger that had status='cancelled' when it exits", async () => {
     // Spawn, wait until running, cancel — then the child exits.
     // finalizeExit sees status='cancelled' (not 'running') → else branch.
@@ -410,7 +417,7 @@ describe("trigger-store — readTriggerLogTail", () => {
 
 // ── fireWakeUp dispatch error ─────────────────────────────────────────────
 
-describe("triggers — dispatch error", () => {
+describeBash("triggers — dispatch error", () => {
   it("logs when execute() rejects but the trigger still reaches terminal state", async () => {
     // Make the dispatch call reject — exercises the catch at line 394 of triggers.ts
     executeSpy.mockRejectedValueOnce(new Error("network failure"));
@@ -428,7 +435,7 @@ describe("triggers — dispatch error", () => {
 
 // ── Empty output: (no output) path ────────────────────────────────────────
 
-describe("triggers — empty stdout", () => {
+describeBash("triggers — empty stdout", () => {
   it("fires with (no output) label when script produces no stdout", async () => {
     // bufferAsPayload returns "" → trimmed is "" → body uses (no output) branch
     const t = makeTrigger({ body: "exit 0\n" }); // no echo
@@ -441,7 +448,7 @@ describe("triggers — empty stdout", () => {
 
 // ── Mid-run TALON_FIRE: signal ────────────────────────────────────────────
 
-describe("triggers — mid-run TALON_FIRE", () => {
+describeBash("triggers — mid-run TALON_FIRE", () => {
   it("fires a non-terminal wake when TALON_FIRE: prefix is emitted", async () => {
     // handleStdoutLine true branch + fireWake terminal=false (header = "signalled")
     const t = makeTrigger({
@@ -658,7 +665,7 @@ describe("triggers — timeout timer fires after child has already exited", () =
 
 // ── Child process emits 'error' event (line 152 handler) ─────────────────
 
-describe("triggers — child process error event", () => {
+describeBash("triggers — child process error event", () => {
   it("logs but does not crash when child emits an error event", async () => {
     // Spawn a long-running script so the child stays alive long enough to emit error.
     const t = makeTrigger({ body: "sleep 10\n" });

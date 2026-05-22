@@ -38,6 +38,7 @@ import {
   prepareSystemPrompt,
   extractSessionName,
   detectFlowViolation,
+  FLOW_VIOLATION_MAX_RETRIES,
   captureDeliveredText,
   summarizeUsage,
   applyRetryDecision,
@@ -86,7 +87,7 @@ export function getActiveQuery(chatId: string): Query | undefined {
 
 export async function handleMessage(
   params: QueryParams,
-  _retried = false,
+  _internal: { flowRetries?: number; errorRetried?: boolean } = {},
 ): Promise<QueryResult> {
   const config = getConfig();
 
@@ -209,8 +210,11 @@ export async function handleMessage(
           if (onToolUse) {
             try {
               onToolUse(tool.name, tool.input);
-            } catch {
-              /* non-fatal */
+            } catch (err) {
+              logWarn(
+                "agent",
+                `onToolUse callback threw for ${tool.name}: ${err instanceof Error ? err.message : err}`,
+              );
             }
           }
         }
@@ -266,9 +270,13 @@ export async function handleMessage(
         err,
         chatId,
         activeModel,
-        retried: _retried,
+        retried: _internal.errorRetried ?? false,
         params,
-        recurseWithRetried: (p) => handleMessage(p, true),
+        recurseWithRetried: (p) =>
+          handleMessage(p, {
+            ..._internal,
+            errorRetried: true,
+          }),
         // No backendLabel — historical claude-sdk log shape was un-prefixed
         // (just `[chatId] session_expired, resetting…`). Preserving that.
       });
@@ -331,17 +339,20 @@ export async function handleMessage(
     trailingText: state.lastTrailingText,
     turnTerminated: state.turnTerminated,
     deliveredTextNorms: state.deliveredTextNorms,
-    retried: _retried,
+    toolCalls: state.toolCalls,
+    retried: (_internal.flowRetries ?? 0) > 0,
+    retryCount: _internal.flowRetries ?? 0,
+    maxRetries: FLOW_VIOLATION_MAX_RETRIES,
   });
 
   if (violation.violated) {
     incrementCounter("scratchpad.trailing_text_dropped");
     log(
       "agent",
-      `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
+      `[${chatId}] flow violation: ${violation.reason}. ${
         violation.shouldRetry
           ? "Re-prompting with reminder."
-          : "Already retried — accepting silent drop."
+          : `Retry cap (${FLOW_VIOLATION_MAX_RETRIES}) exhausted — accepting silent drop.`
       }`,
     );
 
@@ -349,8 +360,15 @@ export async function handleMessage(
       incrementCounter("scratchpad.flow_violation_retried");
       // The recursive call owns the `incrementTurns` for this user message.
       // We deliberately don't increment here.
-      return handleMessage({ ...params, text: violation.reminder }, true);
+      return handleMessage(
+        { ...params, text: violation.reminder },
+        {
+          ..._internal,
+          flowRetries: (_internal.flowRetries ?? 0) + 1,
+        },
+      );
     }
+    incrementCounter("scratchpad.flow_violation_cap_exhausted");
   }
 
   // Reached the non-retry path — this turn counts as one user-visible turn.

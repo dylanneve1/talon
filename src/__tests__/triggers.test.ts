@@ -10,6 +10,7 @@ import {
 import { mkdtempSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
 
 // Silence the logger
 vi.mock("../util/log.js", () => ({
@@ -44,6 +45,12 @@ import { writeFileSync, mkdirSync } from "node:fs";
 
 let tmpRoot: string;
 let executeSpy: ReturnType<typeof vi.fn>;
+const hasUsableBash =
+  spawnSync("bash", ["-lc", "exit 0"], {
+    stdio: "ignore",
+    windowsHide: true,
+  }).status === 0;
+const describeBash = hasUsableBash ? describe : describe.skip;
 
 function makeTrigger(opts: {
   body: string;
@@ -152,7 +159,7 @@ beforeEach(() => {
   initTriggers({ execute: executeSpy as never });
 });
 
-describe("trigger supervisor", () => {
+describeBash("trigger supervisor", () => {
   it("fires a wake-up on clean exit 0 with stdout payload", async () => {
     const t = makeTrigger({
       body: 'echo "task done"\nexit 0\n',

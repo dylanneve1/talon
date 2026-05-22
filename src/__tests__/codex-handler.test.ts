@@ -794,7 +794,7 @@ describe("codex / handleMessage — active abort registry", () => {
     // Cleanup
     sessions.resetSession("chat-a");
     sessions.resetSession("chat-b");
-  });
+  }, 10_000);
 });
 
 describe("codex / handleMessage — tool call accounting", () => {

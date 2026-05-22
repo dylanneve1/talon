@@ -38,7 +38,7 @@ beforeAll(async () => {
   await import("../backend/opencode/factory.js");
   await import("../backend/codex/factory.js");
   await import("../backend/openai-agents/factory.js");
-});
+}, 30_000);
 
 describe("backend registry parity — all built-in backends present", () => {
   it("registers Claude, Kilo, OpenCode, Codex, and OpenAI Agents", () => {

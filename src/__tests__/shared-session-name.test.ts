@@ -29,7 +29,7 @@ describe("extractSessionName", () => {
     const long = "x".repeat(50);
     const name = extractSessionName(long);
     expect(name).toBeDefined();
-    expect(name!.length).toBeLessThanOrEqual(33); // 30 + "..."
+    expect(name!.length).toBeLessThanOrEqual(30); // MAX_NAME_LENGTH total
     expect(name!.endsWith("...")).toBe(true);
   });
 

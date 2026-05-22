@@ -253,6 +253,13 @@ export function createTelegramActionHandler(
 
       case "schedule_message": {
         const text = String(body.text ?? "");
+        const replyTo =
+          typeof body.reply_to_message_id === "number"
+            ? body.reply_to_message_id
+            : undefined;
+        const rows = body.rows as
+          | Array<Array<{ text: string; url?: string; callback_data?: string }>>
+          | undefined;
         const delaySec = Math.max(
           1,
           Math.min(3600, Number(body.delay_seconds ?? 60)),
@@ -260,7 +267,25 @@ export function createTelegramActionHandler(
         const scheduleId = `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
         const timer = setTimeout(async () => {
           try {
-            await sendText(bot, chatId, text);
+            if (rows) {
+              const keyboard = rows.map((row) =>
+                row.map((btn) =>
+                  btn.url
+                    ? { text: btn.text, url: btn.url }
+                    : {
+                        text: btn.text,
+                        callback_data: btn.callback_data ?? btn.text,
+                      },
+                ),
+              );
+              await bot.api.sendMessage(chatId, markdownToTelegramHtml(text), {
+                parse_mode: "HTML",
+                reply_markup: { inline_keyboard: keyboard },
+                reply_parameters: replyTo ? { message_id: replyTo } : undefined,
+              });
+            } else {
+              await sendText(bot, chatId, text, replyTo);
+            }
           } catch (err) {
             logError("bot", `Scheduled message failed (chat=${chatId})`, err);
           }
@@ -293,7 +318,7 @@ export function createTelegramActionHandler(
           : undefined;
         const captionParseMode = caption ? ("HTML" as const) : undefined;
         gateway.incrementMessages(chatId);
-        if (action === "send_file") {
+        {
           const stat = statSync(filePath);
           if (stat.size > 49 * 1024 * 1024)
             return { ok: false, error: "File too large (max 49MB)" };
@@ -577,6 +602,8 @@ export function createTelegramActionHandler(
         return { ok: false, error: "User client not connected." };
 
       case "save_sticker_pack": {
+        if (!isUserClientReady())
+          return { ok: false, error: "User client not connected." };
         const text = await userbotSaveStickerPack({
           setName: String(body.set_name ?? ""),
           bot,

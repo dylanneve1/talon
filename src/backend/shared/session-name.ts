@@ -36,6 +36,6 @@ export function extractSessionName(rawText: string): string | undefined {
     .trim();
   if (!cleaned) return undefined;
   return cleaned.length > MAX_NAME_LENGTH
-    ? cleaned.slice(0, MAX_NAME_LENGTH) + "..."
+    ? cleaned.slice(0, MAX_NAME_LENGTH - 3) + "..."
     : cleaned;
 }

@@ -115,7 +115,7 @@ export function classify(err: unknown): TalonError {
   }
 
   // Session expired
-  if (/session|expired|invalid.*resume/i.test(msg)) {
+  if (/session.*expired|expired.*session|invalid.*resume/i.test(msg)) {
     return new TalonError(msg, {
       reason: "session_expired",
       retryable: false,

@@ -167,6 +167,7 @@ vi.mock("../backend/shared/index.js", () => ({
   prepareSystemPrompt: vi.fn(),
   extractSessionName: () => null,
   detectFlowViolation: () => ({ violated: false }),
+  FLOW_VIOLATION_MAX_RETRIES: 3,
   captureDeliveredText: () => null,
   summarizeUsage: () => "0ms in=0 out=0 cache=0% tools=0",
   // Tests don't exercise the retry path (the watchdog short-circuits the

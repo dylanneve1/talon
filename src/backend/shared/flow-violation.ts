@@ -29,7 +29,9 @@ export const FLOW_VIOLATION_REMINDER =
   "`end_turn()` (no args) to close silently, " +
   "`send(...)` for mid-turn rich content (photos, polls, etc.), or " +
   "`react(emoji=...)` for an emoji acknowledgement. " +
-  "Retry now using the correct tool call.";
+  "Tool calls alone do not close the turn. Retry now using the correct tool call.";
+
+export const FLOW_VIOLATION_MAX_RETRIES = 3;
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -41,8 +43,14 @@ export type FlowViolationInputs = {
   turnTerminated: boolean;
   /** Already-delivered text norms used for dedup. */
   deliveredTextNorms: readonly string[];
+  /** Number of tool calls observed in this turn. */
+  toolCalls?: number;
   /** Whether this is already a retry (prevents looping). */
   retried: boolean;
+  /** Number of synthetic flow-violation retries already attempted. */
+  retryCount?: number;
+  /** Maximum synthetic flow-violation retries before accepting the drop. */
+  maxRetries?: number;
 };
 
 /** Outcome of the flow-violation check. */
@@ -52,6 +60,8 @@ export type FlowViolationResult =
       violated: true;
       /** Trimmed scratchpad prose that would be dropped. */
       trailing: string;
+      /** Human-readable reason logged by handlers. */
+      reason: string;
       /** Whether the handler should re-prompt with `reminder`. False when retried. */
       shouldRetry: boolean;
       /** Reminder string to send as the next user prompt (when retrying). */
@@ -65,9 +75,9 @@ export type FlowViolationResult =
  * Classify a stream-loop outcome against the delivery contract.
  *
  * A turn is in violation when ALL of the following hold:
- *   - The trailing text (after trim) is non-empty.
  *   - No turn-terminator tool fired (e.g. `end_turn`).
- *   - The trailing text isn't a duplicate of content already delivered
+ *   - The model produced either trailing prose or tool calls.
+ *   - Any trailing text isn't a duplicate of content already delivered
  *     through a tool call in the same turn.
  *
  * The third condition handles the legitimate "model wrote text AND called
@@ -79,14 +89,28 @@ export function detectFlowViolation(
   inputs: FlowViolationInputs,
 ): FlowViolationResult {
   const trailing = inputs.trailingText.trim();
-  if (trailing.length === 0) return { violated: false };
   if (inputs.turnTerminated) return { violated: false };
-  if (isDuplicateOfDelivered(trailing, inputs.deliveredTextNorms))
+  const toolCalls = inputs.toolCalls ?? 0;
+  if (trailing.length === 0 && toolCalls === 0) return { violated: false };
+  if (
+    trailing.length > 0 &&
+    isDuplicateOfDelivered(trailing, inputs.deliveredTextNorms)
+  ) {
     return { violated: false };
+  }
+
+  const retryCount = inputs.retryCount ?? (inputs.retried ? 1 : 0);
+  const maxRetries = inputs.maxRetries ?? FLOW_VIOLATION_MAX_RETRIES;
+  const reason =
+    trailing.length > 0
+      ? `trailing prose (${trailing.length} chars)`
+      : `${toolCalls} tool call${toolCalls === 1 ? "" : "s"} with no terminator`;
+
   return {
     violated: true,
     trailing,
-    shouldRetry: !inputs.retried,
+    reason,
+    shouldRetry: retryCount < maxRetries,
     reminder: FLOW_VIOLATION_REMINDER,
   };
 }

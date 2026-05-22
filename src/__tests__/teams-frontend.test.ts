@@ -372,7 +372,7 @@ describe("teams actions", () => {
     expect(result?.id).toBe(456);
   });
 
-  it("unsupported actions return ok (graceful no-ops)", async () => {
+  it("unsupported actions return errors instead of pretending success", async () => {
     const { Gateway } = await import("../core/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
@@ -391,7 +391,8 @@ describe("teams actions", () => {
       "forward_message",
     ]) {
       const result = await handler({ action }, 123);
-      expect(result?.ok).toBe(true);
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toContain("not supported on Teams");
     }
   });
 

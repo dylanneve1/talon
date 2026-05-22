@@ -46,7 +46,7 @@ export function loadCronJobs(): void {
       if (Array.isArray(raw)) {
         for (const job of raw) store[job.id] = job;
       } else {
-        store = raw;
+        store = (raw as Record<string, CronJob> | null) ?? {};
       }
     }
   } catch {
@@ -57,7 +57,7 @@ export function loadCronJobs(): void {
         const raw = JSON.parse(readFileSync(bakFile, "utf-8"));
         store = Array.isArray(raw)
           ? Object.fromEntries(raw.map((j: CronJob) => [j.id, j]))
-          : raw;
+          : ((raw as Record<string, CronJob> | null) ?? {});
         log("cron", "Loaded from backup (primary was corrupt)");
       }
     } catch {
@@ -148,7 +148,7 @@ export function validateCronExpression(
     const nextDate = cron.nextRun();
     return {
       valid: true,
-      next: (nextDate as Date).toISOString(),
+      next: nextDate?.toISOString(),
     };
   } catch (err) {
     return {

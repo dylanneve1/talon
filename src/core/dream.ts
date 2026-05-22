@@ -107,10 +107,8 @@ export async function forceDream(): Promise<void> {
 /** Shared dream execution — claims lock, runs agent, releases lock. */
 async function executeDream(trigger: "auto" | "forced"): Promise<void> {
   const state = readDreamState();
-  const now = Date.now();
-
   dreaming = true;
-  writeDreamState({ last_run: now, status: "running" });
+  writeDreamState({ last_run: state?.last_run ?? 0, status: "running" });
   log(
     "dream",
     `${trigger === "forced" ? "Force-triggering" : "Triggering"} memory consolidation (last run: ${state?.last_run ? new Date(state.last_run).toISOString() : "never"})`,
@@ -125,7 +123,7 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
     );
   } catch (err) {
     logError("dream", `Memory consolidation failed (${trigger})`, err);
-    writeDreamState({ last_run: Date.now(), status: "idle" });
+    writeDreamState({ last_run: state?.last_run ?? 0, status: "idle" });
     if (trigger === "forced") throw err;
   } finally {
     dreaming = false;
