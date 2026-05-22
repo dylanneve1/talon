@@ -10,8 +10,9 @@ import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { registerCleanup } from "../util/cleanup-registry.js";
+import type { ReasoningEffortLevel } from "../core/types.js";
 
-export type EffortLevel = "off" | "low" | "medium" | "high" | "max";
+export type EffortLevel = ReasoningEffortLevel;
 
 export type ChatSettings = {
   /**
@@ -453,10 +454,12 @@ export function getRegisteredPulseChats(): string[] {
 /** Valid effort levels. */
 export const EFFORT_LEVELS: EffortLevel[] = [
   "off",
+  "minimal",
   "low",
   "medium",
   "high",
   "max",
+  "xhigh",
 ];
 
 /**

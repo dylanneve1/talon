@@ -13,7 +13,6 @@ import {
   setChatEffort,
   clearAllChatModels,
   resolveModelName,
-  EFFORT_LEVELS,
   type EffortLevel,
 } from "../../storage/chat-settings.js";
 import { resetSession } from "../../storage/sessions.js";
@@ -36,6 +35,7 @@ import { escapeHtml } from "./formatting.js";
 import {
   renderSettingsText,
   renderSettingsKeyboard,
+  renderEffortRows,
   renderModelMenuText,
   renderModelMenuKeyboard,
   renderModelBrowseKeyboard,
@@ -52,6 +52,11 @@ import {
   toggleChatFreeOnly,
 } from "./model-menu.js";
 import { resolveActiveModelForChat } from "../../core/active-model.js";
+import {
+  displayReasoningEffort,
+  getActiveReasoningLevels,
+  supportsReasoningLevel,
+} from "../reasoning-levels.js";
 
 /**
  * Wrapper around `editMessageText` that swallows Telegram's
@@ -127,10 +132,23 @@ export function registerCallbacks(
       }
 
       if (category === "effort") {
+        const settingsBe = resolveBackendForChat(cid, gateway);
+        const settingsBeId = getBackendIdForChat(cid);
+        const reasoning = await getActiveReasoningLevels({
+          chatId: cid,
+          backend: settingsBe,
+          backendId: settingsBeId,
+          config,
+        });
         if (value === "adaptive") {
           setChatEffort(cid, undefined);
-        } else if (EFFORT_LEVELS.includes(value as EffortLevel)) {
+        } else if (supportsReasoningLevel(value, reasoning.levels)) {
           setChatEffort(cid, value as EffortLevel);
+        } else {
+          await ctx.answerCallbackQuery({
+            text: "No valid reasoning level for this model",
+          });
+          return;
         }
         await ctx.answerCallbackQuery({
           text: `Effort: ${getChatSettings(cid).effort ?? "adaptive"}`,
@@ -155,8 +173,46 @@ export function registerCallbacks(
         config,
       );
       const activeModel = resolvedSettingsModel ?? "No model selected";
-      const effortName = chatSets.effort ?? "adaptive";
       const pulseOn = isPulseEnabled(cid);
+      const reasoning = await getActiveReasoningLevels({
+        chatId: cid,
+        backend: settingsBe,
+        backendId: settingsBeId,
+        config,
+      });
+      const effortName = displayReasoningEffort(
+        chatSets.effort,
+        reasoning.levels,
+      );
+      let modelButtons: Array<SettingsButton> | undefined;
+      let pager:
+        | {
+            page: number;
+            totalPages: number;
+            filter: "all" | "free";
+            freeCount: number;
+            totalCount: number;
+            provider?: string;
+          }
+        | undefined;
+      let view: "models" | "groups" = "models";
+      let activeProvider: string | undefined;
+      if (settingsBe?.getSettingsPresentation && resolvedSettingsModel) {
+        const pres = await settingsBe.getSettingsPresentation(
+          resolvedSettingsModel,
+        );
+        modelButtons = pres.modelButtons;
+        pager = {
+          page: pres.page,
+          totalPages: pres.totalPages,
+          filter: pres.filter,
+          freeCount: pres.freeCount,
+          totalCount: pres.totalCount,
+          provider: pres.provider,
+        };
+        view = pres.view;
+        activeProvider = pres.provider;
+      }
 
       try {
         await ctx.editMessageText(
@@ -173,6 +229,11 @@ export function registerCallbacks(
                 activeModel,
                 effortName,
                 pulseOn,
+                modelButtons,
+                pager,
+                view,
+                activeProvider,
+                reasoning.levels,
               ),
             },
           },
@@ -222,48 +283,45 @@ export function registerCallbacks(
     // Handle effort callbacks
     if (data.startsWith("effort:")) {
       const level = data.slice(7);
+      const be = resolveBackendForChat(cid, gateway);
+      const beId = getBackendIdForChat(cid);
+      const reasoning = await getActiveReasoningLevels({
+        chatId: cid,
+        backend: be,
+        backendId: beId,
+        config,
+      });
+      if (reasoning.levels.length === 0) {
+        await ctx.answerCallbackQuery({
+          text: "No valid reasoning levels found",
+        });
+        return;
+      }
       if (level === "adaptive") {
         setChatEffort(cid, undefined);
         await ctx.answerCallbackQuery({ text: "Effort: adaptive" });
-      } else if (EFFORT_LEVELS.includes(level as EffortLevel)) {
+      } else if (supportsReasoningLevel(level, reasoning.levels)) {
         setChatEffort(cid, level as EffortLevel);
         await ctx.answerCallbackQuery({ text: `Effort: ${level}` });
+      } else {
+        await ctx.answerCallbackQuery({
+          text: "Invalid reasoning level for this model",
+        });
+        return;
       }
-      const current = getChatSettings(cid).effort ?? "adaptive";
+      const current = displayReasoningEffort(
+        getChatSettings(cid).effort,
+        reasoning.levels,
+      );
       try {
         await ctx.editMessageText(`<b>Effort:</b> ${current}`, {
           parse_mode: "HTML",
           reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: current === "off" ? "\u2713 Off" : "Off",
-                  callback_data: "effort:off",
-                },
-                {
-                  text: current === "low" ? "\u2713 Low" : "Low",
-                  callback_data: "effort:low",
-                },
-                {
-                  text: current === "medium" ? "\u2713 Med" : "Med",
-                  callback_data: "effort:medium",
-                },
-              ],
-              [
-                {
-                  text: current === "high" ? "\u2713 High" : "High",
-                  callback_data: "effort:high",
-                },
-                {
-                  text: current === "max" ? "\u2713 Max" : "Max",
-                  callback_data: "effort:max",
-                },
-                {
-                  text: current === "adaptive" ? "\u2713 Auto" : "Auto",
-                  callback_data: "effort:adaptive",
-                },
-              ],
-            ],
+            inline_keyboard: renderEffortRows(
+              current,
+              reasoning.levels,
+              "effort:",
+            ),
           },
         });
       } catch {

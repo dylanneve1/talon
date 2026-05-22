@@ -10,6 +10,7 @@
  */
 
 import type { Codex } from "@openai/codex-sdk";
+import type { ReasoningEffortLevel } from "../../core/types.js";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 
@@ -23,6 +24,8 @@ export interface DiscoveredModelMetadata {
   displayName?: string;
   contextWindow?: number;
   description?: string;
+  defaultReasoningLevel?: ReasoningEffortLevel;
+  supportedReasoningLevels?: ReasoningEffortLevel[];
 }
 
 /** Singleton state container for the Codex backend. */

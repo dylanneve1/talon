@@ -63,7 +63,7 @@ describe("codex factory — QueryBackend wiring", () => {
         workspace: "/tmp",
         systemPrompt: "test",
         frontend: "telegram",
-        openaiApiKey: "test-key",
+        codexApiKey: "test-key",
       } as never,
       {
         getBridgePort: () => 19876,
@@ -92,6 +92,7 @@ describe("codex factory — QueryBackend wiring", () => {
         workspace: "/tmp",
         systemPrompt: "test",
         frontend: "telegram",
+        codexApiKey: "test-key",
       } as never,
       {
         getBridgePort: () => 19876,
@@ -114,6 +115,7 @@ describe("codex factory — QueryBackend wiring", () => {
         workspace: "/tmp",
         systemPrompt: "test",
         frontend: "telegram",
+        codexApiKey: "test-key",
       } as never,
       {
         getBridgePort: () => 19876,

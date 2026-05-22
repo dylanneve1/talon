@@ -44,6 +44,7 @@ import { join } from "node:path";
 import { log, logDebug } from "../../util/log.js";
 import { getState } from "./state.js";
 import type { CodexAuthInfo } from "./auth.js";
+import { normalizeReasoningLevels } from "../../core/reasoning-levels.js";
 
 /** Shape of one entry returned by OpenAI's `/v1/models`. Sparse — only `id` is reliably present. */
 interface OpenAiModelEntry {
@@ -389,6 +390,16 @@ export async function loadCodexCacheModels(): Promise<void> {
       continue;
     }
     state.discoveredModels.add(entry.slug);
+    const supportedReasoningLevels = normalizeReasoningLevels(
+      entry.supported_reasoning_levels
+        ?.map((level) => level.effort)
+        .filter((level): level is string => typeof level === "string"),
+    );
+    const defaultReasoningLevel = normalizeReasoningLevels(
+      typeof entry.default_reasoning_level === "string"
+        ? [entry.default_reasoning_level]
+        : undefined,
+    )[0];
     state.discoveredModelMetadata.set(entry.slug, {
       displayName:
         typeof entry.display_name === "string" && entry.display_name
@@ -402,6 +413,8 @@ export async function loadCodexCacheModels(): Promise<void> {
         typeof entry.description === "string" && entry.description
           ? entry.description
           : undefined,
+      ...(supportedReasoningLevels.length ? { supportedReasoningLevels } : {}),
+      ...(defaultReasoningLevel ? { defaultReasoningLevel } : {}),
     });
     kept += 1;
   }

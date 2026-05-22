@@ -83,6 +83,7 @@ import {
   getModelInfo,
   isCodexOAuthIncompat,
 } from "./models.js";
+import { supportsReasoningLevel } from "../../core/reasoning-levels.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
 import {
   classifyRateLimits,
@@ -407,9 +408,32 @@ export async function handleMessage(
   //     full-access posture as every other Talon backend — restricting
   //     it tighter than its siblings just produces silent tool
   //     failures.
+  const activeModelInfo = await getModelInfo(activeModel).catch(
+    () => undefined,
+  );
+  const supportedReasoningLevels =
+    activeModelInfo?.supportedReasoningLevels ?? [];
+  const requestedEffort = chatSettings.effort;
+  const modelReasoningEffort =
+    requestedEffort &&
+    requestedEffort !== "off" &&
+    requestedEffort !== "max" &&
+    supportsReasoningLevel(requestedEffort, supportedReasoningLevels)
+      ? requestedEffort
+      : undefined;
   const threadOptions = {
     model: activeModel,
     skipGitRepoCheck: true,
+    ...(modelReasoningEffort
+      ? {
+          modelReasoningEffort: modelReasoningEffort as
+            | "minimal"
+            | "low"
+            | "medium"
+            | "high"
+            | "xhigh",
+        }
+      : {}),
     ...CODEX_THREAD_PERMISSIONS,
   };
   const thread: Thread = session.sessionId
@@ -592,7 +616,6 @@ export async function handleMessage(
   incrementCounter("queries_total");
 
   incrementTurns(chatId);
-  const modelInfo = await getModelInfo(activeModel).catch(() => undefined);
   recordUsage(chatId, {
     inputTokens: streamState.sdkInputTokens,
     outputTokens: streamState.sdkOutputTokens,
@@ -608,7 +631,7 @@ export async function handleMessage(
     contextTokens: streamState.contextTokens || undefined,
     // Prefer the rollout's reported context window (matches what the
     // model actually sees this turn) over the static catalog value.
-    contextWindow: streamState.contextWindow ?? modelInfo?.contextWindow,
+    contextWindow: streamState.contextWindow ?? activeModelInfo?.contextWindow,
   });
 
   // Set a descriptive session name from the user's first message.

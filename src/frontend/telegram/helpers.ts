@@ -4,6 +4,8 @@
 
 import { escapeHtml } from "./formatting.js";
 import type { ModelInfo } from "../../core/models.js";
+import type { ReasoningEffortLevel } from "../../core/types.js";
+import { REASONING_LEVEL_LABELS } from "../../core/reasoning-levels.js";
 import { getModels, resolveModel, resolveModelId } from "../../core/models.js";
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_METRICS_MESSAGE_MAX = 3800;
@@ -586,6 +588,7 @@ export function renderSettingsKeyboard(
   pager?: SettingsPager,
   view: "models" | "groups" = "models",
   activeProvider?: string,
+  reasoningLevels: readonly ReasoningEffortLevel[] = [],
 ): Array<Array<SettingsButton>> {
   const selectedButtons = modelButtons?.length
     ? modelButtons
@@ -611,27 +614,16 @@ export function renderSettingsKeyboard(
       )
     : [];
 
+  const effortRows = renderEffortRows(
+    effort,
+    reasoningLevels,
+    "settings:effort:",
+  );
+
   return [
     ...modelRows,
     ...controlRows,
-    [
-      {
-        text: effort === "low" ? "\u2713 Low" : "Low",
-        callback_data: "settings:effort:low",
-      },
-      {
-        text: effort === "medium" ? "\u2713 Med" : "Med",
-        callback_data: "settings:effort:medium",
-      },
-      {
-        text: effort === "high" ? "\u2713 High" : "High",
-        callback_data: "settings:effort:high",
-      },
-      {
-        text: effort === "adaptive" ? "\u2713 Auto" : "Auto",
-        callback_data: "settings:effort:adaptive",
-      },
-    ],
+    ...effortRows,
     [
       {
         text: proactive ? "Pulse: ON" : "Pulse: OFF",
@@ -639,4 +631,30 @@ export function renderSettingsKeyboard(
       },
     ],
   ];
+}
+
+export function renderEffortRows(
+  effort: string,
+  reasoningLevels: readonly ReasoningEffortLevel[],
+  callbackPrefix: string,
+): Array<Array<SettingsButton>> {
+  if (reasoningLevels.length === 0) return [];
+  const buttons: SettingsButton[] = [
+    ...reasoningLevels.map((level) => ({
+      text:
+        effort === level
+          ? `\u2713 ${REASONING_LEVEL_LABELS[level]}`
+          : REASONING_LEVEL_LABELS[level],
+      callback_data: `${callbackPrefix}${level}`,
+    })),
+    {
+      text: effort === "adaptive" ? "\u2713 Auto" : "Auto",
+      callback_data: `${callbackPrefix}adaptive`,
+    },
+  ];
+  const rows: Array<Array<SettingsButton>> = [];
+  for (let i = 0; i < buttons.length; i += 3) {
+    rows.push(buttons.slice(i, i + 3));
+  }
+  return rows;
 }

@@ -34,6 +34,8 @@ function toUnified(model: ModelInfo): UnifiedModelInfo {
     provider: PROVIDER_ID,
     providerName: PROVIDER_NAME,
     selectable: true,
+    supportedReasoningLevels: model.supportedReasoningLevels,
+    defaultReasoningLevel: model.defaultReasoningLevel,
   };
 }
 

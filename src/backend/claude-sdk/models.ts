@@ -340,6 +340,7 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
       description: record.description,
       aliases,
       provider: "anthropic",
+      supportedReasoningLevels: ["off", "low", "medium", "high", "max"],
     });
   }
 

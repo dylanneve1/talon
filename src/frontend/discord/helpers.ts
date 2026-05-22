@@ -8,6 +8,7 @@
  */
 
 import { resolveModel } from "../../core/models.js";
+import { REASONING_LEVEL_DESCRIPTIONS } from "../../core/reasoning-levels.js";
 import { DISCORD_MAX_TEXT, DISCORD_SAFE_RESERVE } from "./formatting.js";
 
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
@@ -16,12 +17,7 @@ const DEFAULT_METRICS_MESSAGE_MAX = DISCORD_MAX_TEXT - DISCORD_SAFE_RESERVE;
 
 /** Effort level descriptions shown next to each option in select menus. */
 export const EFFORT_DESCRIPTIONS: Record<string, string> = {
-  off: "no extra thinking — fastest",
-  low: "short reasoning pass",
-  medium: "balanced reasoning",
-  high: "deeper reasoning, slower",
-  max: "most thorough — slowest",
-  adaptive: "model decides when to think",
+  ...REASONING_LEVEL_DESCRIPTIONS,
 };
 
 type MetricsSnapshot = {

@@ -42,7 +42,6 @@ import {
   setChatEffort,
   setChatPulseInterval,
   resolveModelName,
-  EFFORT_LEVELS,
   type EffortLevel,
 } from "../../storage/chat-settings.js";
 import {
@@ -65,6 +64,11 @@ import {
   resolveChatBackend,
 } from "../../core/backend-controller.js";
 import { resolveActiveModelForChat } from "../../core/active-model.js";
+import {
+  displayReasoningEffort,
+  getActiveReasoningLevels,
+  supportsReasoningLevel,
+} from "../reasoning-levels.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { logError } from "../../util/log.js";
 import {
@@ -161,10 +165,24 @@ export async function handleComponentInteraction(
       // settings:effort:select — current shape (emitted by handleSettings +
       // refreshSettingsPanel).
       const level = interaction.values[0];
+      const settingsBe = resolveChatBackend(chatId, gateway?.backend);
+      const settingsBeId = getBackendIdForChat(chatId);
+      const reasoning = await getActiveReasoningLevels({
+        chatId,
+        backend: settingsBe,
+        backendId: settingsBeId,
+        config,
+      });
       if (level === "adaptive") {
         setChatEffort(chatId, undefined);
-      } else if (EFFORT_LEVELS.includes(level as EffortLevel)) {
+      } else if (supportsReasoningLevel(level, reasoning.levels)) {
         setChatEffort(chatId, level as EffortLevel);
+      } else {
+        await interaction.reply({
+          content: "No valid reasoning level for this model.",
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
       }
       await refreshSettingsPanel(interaction, config, gateway, chatId);
       return;
@@ -208,9 +226,31 @@ export async function handleComponentInteraction(
   // Must come BEFORE the `effort:` startsWith branch.
   if (customId === "effort:select" && interaction.isStringSelectMenu()) {
     const level = interaction.values[0];
+    const be = resolveChatBackend(chatId, gateway?.backend);
+    const beId = getBackendIdForChat(chatId);
+    const reasoning = await getActiveReasoningLevels({
+      chatId,
+      backend: be,
+      backendId: beId,
+      config,
+    });
+    if (reasoning.levels.length === 0) {
+      await interaction.update({
+        content: "No valid reasoning levels found for this model.",
+        components: [],
+      });
+      return;
+    }
     if (level === "adaptive") setChatEffort(chatId, undefined);
-    else if (EFFORT_LEVELS.includes(level as EffortLevel))
+    else if (supportsReasoningLevel(level, reasoning.levels))
       setChatEffort(chatId, level as EffortLevel);
+    else {
+      await interaction.update({
+        content: "Invalid reasoning level for this model.",
+        components: [],
+      });
+      return;
+    }
     try {
       await interaction.update({
         content: `**Effort:** ${level}`,
@@ -368,8 +408,14 @@ async function refreshSettingsPanel(
     config,
   );
   const activeModel = resolvedActive ?? "No model selected";
-  const effortName = chatSets.effort ?? "adaptive";
   const pulseOn = isPulseEnabled(chatId);
+  const reasoning = await getActiveReasoningLevels({
+    chatId,
+    backend: settingsBe,
+    backendId: settingsBeId,
+    config,
+  });
+  const effortName = displayReasoningEffort(chatSets.effort, reasoning.levels);
 
   let modelDetails: Array<string> | undefined;
   let modelButtons: Array<{ text: string; callback_data: string }> | undefined;
@@ -406,23 +452,22 @@ async function refreshSettingsPanel(
     );
   }
 
-  // Effort as a select-menu (matches standalone /effort UI).
-  const effortMenu = new StringSelectMenuBuilder()
-    .setCustomId("settings:effort:select")
-    .setPlaceholder(`Effort: ${effortName}`)
-    .addOptions(
-      (["off", "low", "medium", "high", "max", "adaptive"] as const).map(
-        (v) => ({
+  if (reasoning.levels.length > 0) {
+    const effortMenu = new StringSelectMenuBuilder()
+      .setCustomId("settings:effort:select")
+      .setPlaceholder(`Effort: ${effortName}`)
+      .addOptions(
+        [...reasoning.levels, "adaptive"].map((v) => ({
           label: v,
           value: v,
           description: EFFORT_DESCRIPTIONS[v],
           default: effortName === v,
-        }),
-      ),
+        })),
+      );
+    components.push(
+      new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(effortMenu),
     );
-  components.push(
-    new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(effortMenu),
-  );
+  }
 
   components.push(
     new ActionRowBuilder<ButtonBuilder>().addComponents(

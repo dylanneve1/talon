@@ -90,6 +90,16 @@ describe("codex / getModelInfo", () => {
     expect((await getModelInfo("gpt-5-codex"))?.id).toBe("gpt-5-codex");
   });
 
+  it("registers Codex reasoning levels per model", async () => {
+    expect((await getModelInfo("gpt-5"))?.supportedReasoningLevels).toEqual([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+  });
+
   it("returns undefined for unknown ids", async () => {
     expect(await getModelInfo("not-real")).toBeUndefined();
   });
@@ -99,6 +109,19 @@ describe("codex / getModelInfo", () => {
     const info = await getModelInfo("o5-mini");
     expect(info?.id).toBe("o5-mini");
     expect(info?.reasoning).toBe(true);
+  });
+
+  it("uses discovered reasoning levels over curated defaults", async () => {
+    const state = getState();
+    state.discoveredModels.add("gpt-5");
+    state.discoveredModelMetadata.set("gpt-5", {
+      supportedReasoningLevels: ["low", "high"],
+      defaultReasoningLevel: "low",
+    });
+
+    const info = await getModelInfo("gpt-5");
+    expect(info?.supportedReasoningLevels).toEqual(["low", "high"]);
+    expect(info?.defaultReasoningLevel).toBe("low");
   });
 });
 

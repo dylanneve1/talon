@@ -21,7 +21,6 @@ import {
   setChatEffort,
   setChatPulseInterval,
   resolveModelName,
-  EFFORT_LEVELS,
   type EffortLevel,
 } from "../../storage/chat-settings.js";
 import {
@@ -45,6 +44,7 @@ import {
   renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
+  renderEffortRows,
   renderModelMenuText,
   renderModelMenuKeyboard,
   type SettingsButton,
@@ -55,6 +55,11 @@ import {
 } from "./model-menu.js";
 import { getBackendIdForChat } from "../../core/backend-controller.js";
 import { resolveActiveModelForChat } from "../../core/active-model.js";
+import {
+  displayReasoningEffort,
+  getActiveReasoningLevels,
+  supportsReasoningLevel,
+} from "../reasoning-levels.js";
 import { handleAdminCommand } from "./admin.js";
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
@@ -306,42 +311,36 @@ export function registerCommands(
     const cid = String(ctx.chat.id);
     const arg = ctx.match?.trim().toLowerCase();
     const settings = getChatSettings(cid);
+    const be = resolveBackendForChat(cid, gateway);
+    const beId = getBackendIdForChat(cid);
+    const reasoning = await getActiveReasoningLevels({
+      chatId: cid,
+      backend: be,
+      backendId: beId,
+      config,
+    });
+
+    if (reasoning.levels.length === 0) {
+      const modelText = reasoning.activeModel
+        ? `<code>${escapeHtml(formatModelLabel(reasoning.activeModel))}</code>`
+        : "the active model";
+      await ctx.reply(
+        `No valid reasoning levels found for ${modelText} on backend <code>${escapeHtml(beId)}</code>.`,
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
 
     if (!arg) {
-      const current = settings.effort ?? "adaptive";
+      const current = displayReasoningEffort(settings.effort, reasoning.levels);
       await ctx.reply(`<b>Effort:</b> ${current}\nSelect a level:`, {
         parse_mode: "HTML",
         reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: current === "off" ? "\u2713 Off" : "Off",
-                callback_data: "effort:off",
-              },
-              {
-                text: current === "low" ? "\u2713 Low" : "Low",
-                callback_data: "effort:low",
-              },
-              {
-                text: current === "medium" ? "\u2713 Med" : "Med",
-                callback_data: "effort:medium",
-              },
-            ],
-            [
-              {
-                text: current === "high" ? "\u2713 High" : "High",
-                callback_data: "effort:high",
-              },
-              {
-                text: current === "max" ? "\u2713 Max" : "Max",
-                callback_data: "effort:max",
-              },
-              {
-                text: current === "adaptive" ? "\u2713 Auto" : "Auto",
-                callback_data: "effort:adaptive",
-              },
-            ],
-          ],
+          inline_keyboard: renderEffortRows(
+            current,
+            reasoning.levels,
+            "effort:",
+          ),
         },
       });
       return;
@@ -356,14 +355,14 @@ export function registerCommands(
       return;
     }
 
-    if (EFFORT_LEVELS.includes(arg as EffortLevel)) {
+    if (supportsReasoningLevel(arg, reasoning.levels)) {
       setChatEffort(cid, arg as EffortLevel);
       await ctx.reply(`Effort set to <b>${arg}</b>`, { parse_mode: "HTML" });
       return;
     }
 
     await ctx.reply(
-      "Unknown level. Use: off, low, medium, high, max, or adaptive.",
+      `Unknown level for this model. Valid: ${reasoning.levels.join(", ")}, or adaptive.`,
     );
   });
 
@@ -467,11 +466,47 @@ export function registerCommands(
       config,
     );
     const activeModel = resolvedSettingsModel ?? "No model selected";
-    const effortName = chatSets.effort ?? "adaptive";
+    const reasoning = await getActiveReasoningLevels({
+      chatId: cid,
+      backend: settingsBe,
+      backendId: settingsBeId,
+      config,
+    });
+    const effortName = displayReasoningEffort(
+      chatSets.effort,
+      reasoning.levels,
+    );
     const pulseOn = isPulseEnabled(cid);
+    let modelButtons: Array<SettingsButton> | undefined;
+    let pager:
+      | {
+          page: number;
+          totalPages: number;
+          filter: "all" | "free";
+          freeCount: number;
+          totalCount: number;
+          provider?: string;
+        }
+      | undefined;
+    let view: "models" | "groups" = "models";
+    let activeProvider: string | undefined;
+    if (settingsBe?.getSettingsPresentation && resolvedSettingsModel) {
+      const pres = await settingsBe.getSettingsPresentation(
+        resolvedSettingsModel,
+      );
+      modelButtons = pres.modelButtons;
+      pager = {
+        page: pres.page,
+        totalPages: pres.totalPages,
+        filter: pres.filter,
+        freeCount: pres.freeCount,
+        totalCount: pres.totalCount,
+        provider: pres.provider,
+      };
+      view = pres.view;
+      activeProvider = pres.provider;
+    }
 
-    // /settings is for Talon-level toggles only: effort, pulse, etc.
-    // Model selection lives entirely under /model — no picker here.
     await ctx.reply(
       renderSettingsText(
         activeModel,
@@ -486,6 +521,11 @@ export function registerCommands(
             activeModel,
             effortName,
             pulseOn,
+            modelButtons,
+            pager,
+            view,
+            activeProvider,
+            reasoning.levels,
           ),
         },
       },

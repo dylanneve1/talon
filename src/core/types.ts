@@ -45,9 +45,25 @@ export type UnifiedModelInfo = {
   free?: boolean;
   contextWindow?: number;
   reasoning?: boolean;
+  /**
+   * Reasoning/effort levels this model accepts. Omitted or empty means
+   * the backend has not registered a valid effort surface for this model.
+   */
+  supportedReasoningLevels?: ReasoningEffortLevel[];
+  /** Backend-reported default reasoning level, when available. */
+  defaultReasoningLevel?: ReasoningEffortLevel;
   /** Why the model can't be selected (login required, env setup, etc.) */
   unavailableReason?: string;
 };
+
+export type ReasoningEffortLevel =
+  | "off"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "max"
+  | "xhigh";
 
 /** Result of resolving a user's model query. */
 export type UnifiedModelResolution =

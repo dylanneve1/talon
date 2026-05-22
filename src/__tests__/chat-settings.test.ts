@@ -179,11 +179,19 @@ describe("chat-settings", () => {
 
   describe("EFFORT_LEVELS", () => {
     it("contains all valid levels", () => {
-      expect(EFFORT_LEVELS).toEqual(["off", "low", "medium", "high", "max"]);
+      expect(EFFORT_LEVELS).toEqual([
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max",
+        "xhigh",
+      ]);
     });
 
-    it("has 5 levels", () => {
-      expect(EFFORT_LEVELS).toHaveLength(5);
+    it("has 7 levels", () => {
+      expect(EFFORT_LEVELS).toHaveLength(7);
     });
   });
 

@@ -7,6 +7,8 @@
  * system and the backend-specific model definition files.
  */
 
+import type { ReasoningEffortLevel } from "./types.js";
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type ModelInfo = {
@@ -20,6 +22,10 @@ export type ModelInfo = {
   aliases: string[];
   /** Provider identifier (e.g. "anthropic", "openai"). */
   provider: string;
+  /** Reasoning/effort levels this model accepts. */
+  supportedReasoningLevels?: ReasoningEffortLevel[];
+  /** Backend-reported default reasoning level, when available. */
+  defaultReasoningLevel?: ReasoningEffortLevel;
   /** Model to fall back to on overload/timeout. */
   fallback?: string;
 };

@@ -8,6 +8,7 @@ import {
   getTelegramModelOptions,
   isSelectedModel,
   renderMetricsMessages,
+  renderEffortRows,
   renderSettingsKeyboard,
   renderSettingsText,
 } from "../frontend/telegram/helpers.js";
@@ -86,11 +87,39 @@ describe("telegram helpers", () => {
       "claude-sonnet-4-6",
       "adaptive",
       true,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ["off", "low", "medium", "high", "max"],
     )
       .flat()
       .map((button) => button.text);
 
     expect(buttons).toContain("\u2713 Sonnet 4.6");
+  });
+
+  it("renders only the reasoning levels registered for the active model", () => {
+    const buttons = renderEffortRows(
+      "adaptive",
+      ["minimal", "high", "xhigh"],
+      "effort:",
+    );
+    const labels = buttons.flat().map((button) => button.text);
+
+    expect(labels).toEqual(["Minimal", "High", "XHigh", "✓ Auto"]);
+    expect(labels).not.toContain("Max");
+    expect(labels).not.toContain("Off");
+  });
+
+  it("hides effort buttons when the active model registers no levels", () => {
+    const buttons = renderSettingsKeyboard("default", "adaptive", true)
+      .flat()
+      .map((button) => button.callback_data);
+
+    expect(buttons.some((data) => data.startsWith("settings:effort:"))).toBe(
+      false,
+    );
   });
 });
 
