@@ -305,9 +305,23 @@ export function renderModelPickerControlRows(
 // required by https://core.telegram.org/bots/api#inlinekeyboardbutton.
 
 export interface ModelMenuState {
+  /**
+   * Resolved model id, or empty string when none is selected (see
+   * `noModelSelected`). The empty value is a sentinel — never compare
+   * to it as a real model id without checking `noModelSelected` first.
+   */
   activeModel: string;
-  /** Human-readable active model name (display) */
+  /** Human-readable active model name (display). When no model is
+   *  selected this is the "No model selected" sentinel. */
   activeDisplay: string;
+  /**
+   * True when the 5-step active-model resolver returned null —
+   * catalog-driven backend (e.g. OpenAI Agents on OpenRouter, custom
+   * OpenAI-compatible) with no per-chat pick AND no
+   * `config.backendDefaults[backendId]` configured. UI renders "No
+   * model selected"; send guard refuses to call the backend.
+   */
+  noModelSelected: boolean;
   /** Active model status line(s) shown above the buttons. */
   statusLines: string[];
   /** Whether this chat has a per-chat model override (vs falling back to config default). */
@@ -333,20 +347,29 @@ export interface ModelMenuState {
 /** Inputs needed to build a `ModelMenuState`. Pure-function shape so tests can stub everything. */
 export interface BuildModelMenuStateArgs {
   chatId: string;
-  activeModel: string;
-  defaultModel: string;
+  /**
+   * Resolved active model id, or `null` when the 5-step active-model
+   * resolver returned no usable default. UI renders "No model selected"
+   * and skips the backend snapshot fetch.
+   */
+  activeModel: string | null;
+  /** Default model for "override" comparison — typically the active
+   *  backend's `getDefaultModel()`. */
+  defaultModel: string | null;
   freeOnly: boolean;
   /**
    * Backend hook to fetch a passive snapshot of the catalog. We only
    * read `freeCount`, `totalCount`, and `modelDetails` for the body
    * status line — never render `modelButtons` from this call.
+   * Skipped entirely when `activeModel` is `null`.
    */
   fetchSnapshot: () => Promise<{
     freeCount: number;
     totalCount: number;
     modelDetails: string[];
   }>;
-  /** Resolve display name for the active model. Falls back to the raw id. */
+  /** Resolve display name for the active model. Falls back to the raw id.
+   *  Skipped when `activeModel` is `null`. */
   fetchActiveDisplay: () => Promise<string | undefined>;
   /** Backend currently serving this chat — id and human label. */
   activeBackend: { id: string; label: string };
@@ -362,6 +385,36 @@ export interface BuildModelMenuStateArgs {
 export async function buildModelMenuState(
   args: BuildModelMenuStateArgs,
 ): Promise<ModelMenuState> {
+  // Null active-model = step 5 of the resolver chain. Render the
+  // "no model selected" UI without bothering the backend (which would
+  // typically error or return an empty marker).
+  if (args.activeModel === null) {
+    let freeCount = 0;
+    let modelDetails: string[] = [];
+    // Still fetch a passive snapshot to learn whether the free toggle
+    // should appear — the catalog exists, the user just hasn't picked
+    // a model yet. Safe to call with no active model.
+    try {
+      const snapshot = await args.fetchSnapshot();
+      freeCount = snapshot.freeCount;
+      modelDetails = snapshot.modelDetails.slice();
+    } catch {
+      /* keep defaults */
+    }
+    return {
+      activeModel: "",
+      activeDisplay: "No model selected",
+      noModelSelected: true,
+      statusLines: modelDetails,
+      hasOverride: false,
+      showFreeToggle: freeCount > 0,
+      freeOnly: args.freeOnly,
+      activeBackend: args.activeBackend,
+      hasBackendOverride: args.hasBackendOverride,
+      showBackendButton: args.showBackendButton,
+    };
+  }
+
   const [snapshot, display] = await Promise.all([
     args.fetchSnapshot().catch(() => ({
       freeCount: 0,
@@ -374,8 +427,10 @@ export async function buildModelMenuState(
   return {
     activeModel: args.activeModel,
     activeDisplay: display ?? args.activeModel,
+    noModelSelected: false,
     statusLines: snapshot.modelDetails.slice(),
-    hasOverride: args.activeModel !== args.defaultModel,
+    hasOverride:
+      args.defaultModel !== null && args.activeModel !== args.defaultModel,
     showFreeToggle: snapshot.freeCount > 0,
     freeOnly: args.freeOnly,
     activeBackend: args.activeBackend,
@@ -476,10 +531,16 @@ export function renderBackendMenuText(opts: {
 
 /** Format the body text of the `/model` main menu. */
 export function renderModelMenuText(state: ModelMenuState): string {
-  const lines: string[] = [
-    `<b>Model:</b> <code>${state.activeDisplay}</code>`,
-    ...state.statusLines.map((l) => l),
-  ];
+  const lines: string[] = [];
+  if (state.noModelSelected) {
+    lines.push(
+      `<b>Model:</b> <i>No model selected</i>`,
+      `<i>Use the picker below to choose one — sending a message before picking will be refused.</i>`,
+    );
+  } else {
+    lines.push(`<b>Model:</b> <code>${state.activeDisplay}</code>`);
+  }
+  for (const l of state.statusLines) lines.push(l);
   if (state.freeOnly && state.showFreeToggle) {
     lines.push("<i>Filtering to free-tier models when browsing.</i>");
   }

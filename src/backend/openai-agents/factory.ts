@@ -11,10 +11,11 @@ import type { BackendFactory } from "../registry.js";
 import type { QueryBackend } from "../../core/types.js";
 import { log } from "../../util/log.js";
 
-import { initOpenAIAgentsAgent } from "./init.js";
+import { initOpenAIAgentsAgent, getOpenAIBaseUrl } from "./init.js";
 import { handleMessage as openAIAgentsHandleMessage } from "./handler.js";
 import { resetState, clearChatSession } from "./state.js";
 import { releaseAllBundles } from "./mcp-pool.js";
+import { OPENAI_AGENTS_DEFAULT_MODEL } from "./constants.js";
 import {
   resolveModel,
   getModelInfo,
@@ -37,6 +38,17 @@ const openAIAgentsFactory: BackendFactory = {
       query: (params) => openAIAgentsHandleMessage(params),
       resetChat: (chatId) => clearChatSession(chatId),
       resolveModel: (q) => Promise.resolve(resolveModel(q)),
+      // Only advertise a canonical default when the backend is pointed
+      // at stock OpenAI. Custom baseUrls (OpenRouter, Azure, Ollama,
+      // LiteLLM, etc) have no universal default — the catalog varies
+      // per endpoint. Returning `null` makes the resolver fall through
+      // to `config.backendDefaults["openai-agents"]` (operator override)
+      // and finally to "no model selected" if neither is configured.
+      getDefaultModel: () => {
+        const baseUrl = getOpenAIBaseUrl();
+        if (baseUrl && baseUrl.length > 0) return null;
+        return OPENAI_AGENTS_DEFAULT_MODEL;
+      },
       getModelInfo: (id) => Promise.resolve(getModelInfo(id)),
       getSettingsPresentation: (m, options) =>
         getSettingsPresentation(m, options),

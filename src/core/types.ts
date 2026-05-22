@@ -184,6 +184,34 @@ export interface QueryBackend {
   } | null>;
   /** Resolve a user's model query to a concrete model. */
   resolveModel?(query: string): Promise<UnifiedModelResolution>;
+  /**
+   * The canonical default model this backend uses when no per-chat
+   * override is set. Consumed by `core/active-model.ts` as step 2 of
+   * the resolution chain.
+   *
+   * Backends with a single canonical default (Claude SDK, Codex,
+   * stock OpenAI Agents, Antigravity, Agy) should implement this.
+   * Codex's default is auth-aware (`gpt-5-codex` on API key,
+   * `gpt-5.5` on ChatGPT OAuth — the latter rejects the former).
+   *
+   * **Catalog-driven backends without a canonical default** (Kilo,
+   * OpenCode, OpenAI Agents pointed at OpenRouter / custom OpenAI-
+   * compatible endpoints) should either omit this method entirely OR
+   * return `null` / `undefined` / `""` — the resolver treats all three
+   * as "no canonical default, fall through to `backendDefaults[id]`".
+   *
+   * The conditional-return pattern is useful for backends that have a
+   * default in one configuration but not another (OpenAI Agents:
+   * canonical only on stock OpenAI; null on OpenRouter / custom).
+   *
+   * May be async: Codex peeks at live auth mode; other backends may
+   * read a cache file or stable constant synchronously.
+   */
+  getDefaultModel?():
+    | Promise<string | null | undefined>
+    | string
+    | null
+    | undefined;
   /** Get info for a model by its stored ID. */
   getModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
   /**

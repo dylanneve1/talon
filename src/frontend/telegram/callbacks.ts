@@ -8,8 +8,10 @@ import { logWarn } from "../../util/log.js";
 import {
   getChatSettings,
   setChatModel,
+  setChatModelForBackend,
   setChatBackend,
   setChatEffort,
+  clearAllChatModels,
   resolveModelName,
   EFFORT_LEVELS,
   type EffortLevel,
@@ -49,6 +51,7 @@ import {
   resolveBackendForChat,
   toggleChatFreeOnly,
 } from "./model-menu.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 
 /**
  * Wrapper around `editMessageText` that swallows Telegram's
@@ -143,7 +146,15 @@ export function registerCallbacks(
       }
 
       const chatSets = getChatSettings(cid);
-      const activeModel = chatSets.model ?? config.model;
+      const settingsBe = resolveBackendForChat(cid, gateway);
+      const settingsBeId = getBackendIdForChat(cid);
+      const { model: resolvedSettingsModel } = await resolveActiveModelForChat(
+        cid,
+        settingsBe,
+        settingsBeId,
+        config,
+      );
+      const activeModel = resolvedSettingsModel ?? "No model selected";
       const effortName = chatSets.effort ?? "adaptive";
       const pulseOn = isPulseEnabled(cid);
 
@@ -300,6 +311,7 @@ export function registerCallbacks(
         // chat has switched to openai-agents we must validate the id
         // against that catalog, not the global default's.
         const be = resolveBackendForChat(cid, gateway);
+        const beId = getBackendIdForChat(cid);
         if (be?.resolveModel) {
           const resolution = await be.resolveModel(action.modelId);
           if (resolution.kind !== "exact" || !resolution.model.selectable) {
@@ -311,22 +323,42 @@ export function registerCallbacks(
             });
             return;
           }
-          setChatModel(cid, resolution.storedValue);
-          // Pin the backend that owns this model so the choice survives
-          // restart. Without this the chat reloads on the role-default
-          // backend (claude) holding an antigravity model id, which the
-          // claude catalog doesn't recognise — user has to /backend +
-          // /model on every boot.
-          setChatBackend(cid, getBackendIdForChat(cid));
+          // Persist the pick into the chat's *backend-specific* slot.
+          // Switching backends later restores each side's prior choice
+          // automatically — the slot isn't shared across backends.
+          setChatModelForBackend(cid, beId, resolution.storedValue);
+          // Also pin the chat to this backend so a restart doesn't
+          // unbind to the role-default and orphan the model id.
+          setChatBackend(cid, beId);
           toast = `Model: ${resolution.model.displayName}`;
         } else {
-          setChatModel(cid, resolveModelName(action.modelId));
-          setChatBackend(cid, getBackendIdForChat(cid));
-          toast = `Model: ${getChatSettings(cid).model ?? config.model}`;
+          setChatModelForBackend(cid, beId, resolveModelName(action.modelId));
+          setChatBackend(cid, beId);
+          const { model: resolved } = await resolveActiveModelForChat(
+            cid,
+            be,
+            beId,
+            config,
+          );
+          toast = `Model: ${resolved ?? "(unset)"}`;
         }
       } else if (action.kind === "reset") {
-        setChatModel(cid, undefined);
-        toast = `Model reset to default`;
+        // Clear this backend's slot only — other backends' picks stay.
+        // Compute the toast through the resolver so the label names the
+        // backend's actual default (or "No model selected" when there
+        // isn't one — catalog-driven backend, no operator config).
+        const be = resolveBackendForChat(cid, gateway);
+        const beId = getBackendIdForChat(cid);
+        setChatModelForBackend(cid, beId, undefined);
+        const { model: resolvedDefault } = await resolveActiveModelForChat(
+          cid,
+          be,
+          beId,
+          config,
+        );
+        toast = resolvedDefault
+          ? `Model reset to default (${resolvedDefault})`
+          : `Model reset — no default available, pick one`;
       } else if (action.kind === "toggle-free") {
         const next = toggleChatFreeOnly(cid);
         toast = `Free only: ${next ? "on" : "off"}`;
@@ -377,28 +409,53 @@ export function registerCallbacks(
         }
         setChatBackend(cid, action.backendId);
         // Switching backends drops the previous backend's per-chat
-        // session state (it's not portable across backends) and
-        // clears the per-chat model override so the new backend's
-        // default model takes effect.
+        // session state (it's not portable across backends). We DO
+        // NOT clear `modelByBackend` — keeping each backend's prior
+        // pick means switching back-and-forth restores each side's
+        // last choice automatically (Codex chat keeps gpt-5.5,
+        // OpenRouter chat keeps owl-alpha, etc).
         resetSession(cid);
         clearHistory(cid);
         resetPulseCheckpoint(cid);
-        setChatModel(cid, undefined);
         const label =
           available.find((b) => b.id === action.backendId)?.label ??
           action.backendId;
-        toast = `Backend: ${label}`;
+        // Toast names the model the new backend will actually run
+        // (per-chat slot if remembered, else canonical / operator
+        // default; "no default" if catalog-driven with no config).
+        const newBackend = resolveBackendForChat(cid, gateway);
+        const { model: resolvedNewModel } = await resolveActiveModelForChat(
+          cid,
+          newBackend,
+          action.backendId,
+          config,
+        );
+        toast = resolvedNewModel
+          ? `Backend: ${label} (model: ${resolvedNewModel})`
+          : `Backend: ${label} — no default model, /model to pick one`;
         viewAfter = "menu";
       } else if (action.kind === "backend-default") {
-        // Drop the per-chat override; the chat reverts to the global
-        // chat-role backend on the next query.
+        // Drop the per-chat backend override; chat reverts to the
+        // global chat-role backend. Per-backend model picks are
+        // preserved (modelByBackend stays intact) so reverting and
+        // switching back later still restores prior choices.
         await releaseChat(cid);
         setChatBackend(cid, undefined);
         resetSession(cid);
         clearHistory(cid);
         resetPulseCheckpoint(cid);
-        setChatModel(cid, undefined);
-        toast = "Backend reset to default";
+        // Resolve the now-default backend's model for the toast.
+        const defaultBackend = resolveBackendForChat(cid, gateway);
+        const defaultBackendId = getBackendIdForChat(cid);
+        const { model: resolvedRoleModel } = await resolveActiveModelForChat(
+          cid,
+          defaultBackend,
+          defaultBackendId,
+          config,
+        );
+        toast = resolvedRoleModel
+          ? `Backend reset to default (model: ${resolvedRoleModel})`
+          : `Backend reset to default — no model picked, /model to pick one`;
         viewAfter = "menu";
       }
 

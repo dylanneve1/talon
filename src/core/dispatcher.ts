@@ -26,9 +26,19 @@ import { maybeStartDream } from "./dream.js";
  * a chat with a backend override returns its override backend, others
  * fall through to the global chat-role backend. Tests can pass a
  * stub that ignores the chat id. See `core/backend-controller.ts`.
+ *
+ * `resolveActiveModel` walks the 5-step active-model resolution
+ * chain for the chat. Returns `null` when no model is selected AND
+ * no operator default exists — the dispatcher then refuses to call
+ * `backend.query` and replies with a "use /model to pick one"
+ * message. Optional — if omitted (legacy/test path) the send guard
+ * is skipped and every query passes through.
  */
 type DispatcherDeps = {
   getBackend: (chatId?: string) => QueryBackend;
+  resolveActiveModel?: (
+    chatId: string,
+  ) => Promise<{ model: string | null; backendId: string }>;
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   onActivity: () => void;
@@ -92,12 +102,56 @@ async function run(params: ExecuteParams): Promise<ExecuteResult> {
 }
 
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
-  const { getBackend, context, sendTyping, onActivity } = deps!;
+  const { getBackend, resolveActiveModel, context, sendTyping, onActivity } =
+    deps!;
   // Read the backend fresh per call so backend swaps (chat-role
   // rebinds or per-chat overrides via the controller) take effect on
   // the next query without a dispatcher re-init.
   const backend = getBackend(params.chatId);
   const reqId = randomBytes(4).toString("hex");
+
+  // Send-time null-model guard. When the active-model resolver
+  // returns null (catalog-driven backend with no per-chat pick and
+  // no operator default), refuse to call backend.query — most
+  // backends would either error opaquely or submit an empty model id
+  // to the CLI. Reply with a clear "use /model to pick one" message
+  // routed through the same onTextBlock callback the backend would
+  // use for output. Bypassed entirely when deps don't include the
+  // resolver (legacy / test path).
+  if (resolveActiveModel) {
+    const { model, backendId } = await resolveActiveModel(params.chatId);
+    if (model === null) {
+      const message =
+        `No model selected for backend \`${backendId}\`. ` +
+        `Use /model to pick one — or set ` +
+        `\`backendDefaults.${backendId}\` in talon.json to apply a ` +
+        `default for all chats on this backend.`;
+      logWarn(
+        "dispatcher",
+        `[${reqId}] refusing query: no model resolved (chat=${params.chatId}, backend=${backendId})`,
+      );
+      // Emit the message via the same callback the backend would use
+      // for text output, so the frontend delivers it through the
+      // normal path (no special-casing required at the call site).
+      try {
+        await params.onTextBlock?.(message);
+      } catch (err) {
+        logWarn(
+          "dispatcher",
+          `onTextBlock(no-model) threw: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return {
+        text: message,
+        durationMs: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        bridgeMessageCount: context.getMessageCount(params.numericChatId),
+      };
+    }
+  }
 
   // Dream check — fire-and-forget background memory consolidation if due
   maybeStartDream();

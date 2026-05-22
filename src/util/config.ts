@@ -218,6 +218,25 @@ const configSchema = z.object({
     .optional(),
   claudeBinary: z.string().optional(),
   model: z.string().default("default"),
+  /**
+   * Per-backend default model overrides. Keyed by backend id
+   * (`"claude"`, `"codex"`, `"openai-agents"`, etc). When a chat has no
+   * per-chat model picked for backend X and X has no canonical default
+   * (catalog-driven backends like OpenAI Agents pointed at OpenRouter,
+   * Kilo, OpenCode), Talon falls through to `backendDefaults[X]` before
+   * surfacing "no model selected" to the user.
+   *
+   * Example:
+   *   "backendDefaults": {
+   *     "openai-agents": "meta-llama/llama-3.3-70b-instruct:free",
+   *     "kilo": "kilo/deepseek/deepseek-v4-flash:free"
+   *   }
+   *
+   * Operator-controlled escape hatch for first-message-on-a-fresh-backend
+   * UX — backends with a canonical `getDefaultModel()` (Claude SDK, Codex,
+   * Antigravity, Agy, stock OpenAI Agents) don't need an entry here.
+   */
+  backendDefaults: z.record(z.string(), z.string()).optional(),
   dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)
   maxMessageLength: z.number().int().min(100).default(4000),
   concurrency: z.number().int().min(1).max(20).default(1),

@@ -30,7 +30,11 @@ import type { QueryBackend } from "../../core/types.js";
 import { log, logWarn } from "../../util/log.js";
 import { handleMessage as agyHandleMessage } from "./handler.js";
 import * as agyModels from "./models.js";
-import { AGY_DEFAULT_BINARY, AGY_LABEL } from "./constants.js";
+import {
+  AGY_DEFAULT_BINARY,
+  AGY_DEFAULT_MODEL,
+  AGY_LABEL,
+} from "./constants.js";
 
 const agyFactory: BackendFactory = {
   id: "agy",
@@ -61,6 +65,7 @@ const agyFactory: BackendFactory = {
       // Model surface — minimal, single-entry catalogue.
       listModels: agyModels.listModels,
       resolveModel: agyModels.resolveModel,
+      getDefaultModel: () => AGY_DEFAULT_MODEL,
       getModelInfo: agyModels.getModelInfo,
       getProviders: agyModels.getProviders,
       getProviderModels: agyModels.getProviderModels,

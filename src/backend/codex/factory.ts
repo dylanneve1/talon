@@ -12,10 +12,14 @@ import type { BackendFactory } from "../registry.js";
 import type { QueryBackend } from "../../core/types.js";
 import { log } from "../../util/log.js";
 
-import { initCodexAgent } from "./init.js";
+import { initCodexAgent, getCodexAuthInfo } from "./init.js";
 import { handleMessage as codexHandleMessage } from "./handler.js";
 import { runOneShotAgent as codexRunOneShotAgent } from "./one-shot.js";
 import { resetState as resetCodexState } from "./state.js";
+import {
+  CODEX_DEFAULT_MODEL,
+  CODEX_CHATGPT_DEFAULT_MODEL,
+} from "./constants.js";
 import {
   resolveModel,
   getModelInfo,
@@ -40,6 +44,16 @@ const codexFactory: BackendFactory = {
       // `awaitDiscovery()` — the dynamic catalog from /v1/models needs
       // to be populated before resolve/getModelInfo/listModels return.
       resolveModel: (q) => resolveModel(q),
+      // Auth-aware default: ChatGPT-OAuth accounts can't run
+      // `gpt-5-codex` (CLI returns the "not supported when using
+      // Codex with a ChatGPT account" mismatch), so they should
+      // reset to `gpt-5.5` instead.
+      getDefaultModel: () => {
+        const auth = getCodexAuthInfo();
+        return auth?.mode === "chatgpt"
+          ? CODEX_CHATGPT_DEFAULT_MODEL
+          : CODEX_DEFAULT_MODEL;
+      },
       getModelInfo: (id) => getModelInfo(id),
       getSettingsPresentation: (m, options) =>
         getSettingsPresentation(m, options),
