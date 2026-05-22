@@ -41,6 +41,7 @@ import { AGY_LABEL } from "./constants.js";
 export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   const { chatId, text, senderName, isGroup, messageId } = params;
   const session = getSession(chatId);
+  const previousTurns = session.turns;
   const config = loadConfig();
   const turnStarted = Date.now();
 
@@ -107,8 +108,8 @@ export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   });
 
   incrementTurns(chatId);
-  if (session.turns === 0 && finalText.length > 0) {
-    const name = extractSessionName(finalText);
+  if (previousTurns === 0 && text.length > 0) {
+    const name = extractSessionName(text);
     if (name) setSessionName(chatId, name);
   }
   recordUsage(chatId, {

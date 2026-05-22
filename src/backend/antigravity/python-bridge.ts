@@ -317,6 +317,12 @@ export class AntigravityBridge {
       if (!this.ready && this.readyReject) {
         const msg = `bridge ready handshake timed out (60s) — is google-antigravity installed and GEMINI_API_KEY valid? venv=${pythonPath}`;
         this.readyReject(new Error(msg));
+        // Kill the subprocess so it doesn't run indefinitely as an orphan.
+        // The bridge won't be registered in state.bridges (start() throws),
+        // so nothing else will clean it up. Mirrors the protocol-version-
+        // mismatch path which also calls this.proc?.kill().
+        this.dead = true;
+        this.proc?.kill("SIGTERM");
       }
     }, 60_000);
 
