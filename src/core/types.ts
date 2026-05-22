@@ -190,7 +190,7 @@ export interface QueryBackend {
    * the resolution chain.
    *
    * Backends with a single canonical default (Claude SDK, Codex,
-   * stock OpenAI Agents, Antigravity, Agy) should implement this.
+   * stock OpenAI Agents) should implement this.
    * Codex's default is auth-aware (`gpt-5-codex` on API key,
    * `gpt-5.5` on ChatGPT OAuth — the latter rejects the former).
    *

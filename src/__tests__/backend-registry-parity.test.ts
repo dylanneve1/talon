@@ -1,8 +1,8 @@
 /**
  * Backend registry parity tests.
  *
- * Verifies that ALL six backends (Claude SDK, Kilo, OpenCode, Codex,
- * OpenAI Agents, Antigravity) register themselves into the registry
+ * Verifies that all built-in backends (Claude SDK, Kilo, OpenCode, Codex,
+ * OpenAI Agents) register themselves into the registry
  * with the same QueryBackend surface — so the dispatcher can swap
  * backends without leaking backend-specific behaviour upstream.
  *
@@ -27,7 +27,6 @@ const ALL_BACKENDS = [
   "opencode",
   "codex",
   "openai-agents",
-  "antigravity",
 ] as const;
 
 beforeAll(async () => {
@@ -39,11 +38,10 @@ beforeAll(async () => {
   await import("../backend/opencode/factory.js");
   await import("../backend/codex/factory.js");
   await import("../backend/openai-agents/factory.js");
-  await import("../backend/antigravity/factory.js");
 });
 
-describe("backend registry parity — all six backends present", () => {
-  it("registers Claude, Kilo, OpenCode, Codex, OpenAI Agents, and Antigravity", () => {
+describe("backend registry parity — all built-in backends present", () => {
+  it("registers Claude, Kilo, OpenCode, Codex, and OpenAI Agents", () => {
     for (const id of ALL_BACKENDS) {
       expect(hasBackend(id), `expected backend "${id}" registered`).toBe(true);
     }
@@ -82,7 +80,6 @@ describe("backend registry parity — all six backends present", () => {
     expect(getBackend("opencode")?.label).toBe("OpenCode");
     expect(getBackend("codex")?.label).toBe("Codex");
     expect(getBackend("openai-agents")?.label).toBe("OpenAI Agents");
-    expect(getBackend("antigravity")?.label).toBe("Antigravity");
   });
 });
 

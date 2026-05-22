@@ -117,13 +117,6 @@ async function gracefulShutdown(signal: string): Promise<void> {
     const { stopOpenCodeServer } = await import("./backend/opencode/index.js");
     stopOpenCodeServer();
   }
-  if (config.backend === "antigravity") {
-    // Tear down any live Antigravity bridges before exit. resetState
-    // awaits the per-bridge shutdown(), so this blocks until all
-    // bridges (and their localharness children) have exited.
-    const { resetState } = await import("./backend/antigravity/state.js");
-    await resetState();
-  }
   // Destroy plugins (cleanup resources)
   if (config.plugins.length > 0) {
     const { destroyPlugins } = await import("./core/plugin.js");

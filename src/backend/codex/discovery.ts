@@ -126,7 +126,8 @@ export function isCodexCompatibleModel(id: string): boolean {
     return false;
   }
   // Positive prefixes for chat-capable / reasoning models.
-  if (/^(gpt-[3-9]|o[3-9]|chatgpt-)/.test(lower)) return true;
+  // `o[1-9]` covers o1, o1-mini, o1-preview, o2, o3, o4...
+  if (/^(gpt-[3-9]|o[1-9]|chatgpt-)/.test(lower)) return true;
   return false;
 }
 

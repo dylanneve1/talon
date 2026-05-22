@@ -494,13 +494,15 @@ export async function handleMessage(
       // saying "not supported when using Codex with a ChatGPT account".
       // Check both the captured event-stream message and the thrown
       // error — Codex SDK surfaces it via both channels.
+      // Only use the thread ID from this run. Probing the previous
+      // session can misclassify unrelated failures as usage exhaustion.
       const fallback = await maybeFallbackForChatGptMismatch(
         `${turnFailedError ?? ""} ${errMsg(err)}`,
         activeModel,
         params,
         _retried,
         chatId,
-        resolvedThreadId ?? session.sessionId,
+        resolvedThreadId,
       );
       if (fallback) return fallback;
 

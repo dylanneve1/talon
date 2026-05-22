@@ -81,7 +81,7 @@ export const CODEX_DEFAULT_WORKING_DIRECTORY =
  * `sandboxMode: "danger-full-access"`, and `networkAccessEnabled: true`.
  * Codex is non-interactive in this harness (no UI to surface approval
  * prompts on), and Talon already trusts every other backend (Claude SDK,
- * OpenAI Agents, Kilo, OpenCode, Antigravity) with the same level of
+ * OpenAI Agents, Kilo, OpenCode) with the same level of
  * access — `bypassPermissions` + `allowDangerouslySkipPermissions: true`
  * is the equivalent in the Claude SDK backend. Restricting Codex more
  * tightly than its sibling backends would just produce silent failures

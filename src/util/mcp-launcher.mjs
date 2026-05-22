@@ -57,10 +57,9 @@ process.stdin.pipe(child.stdin);
 // Stdout filter: MCP stdio convention says child stdout carries one
 // JSON-RPC message per line and nothing else. Some plugins violate
 // this and print log/banner lines (tailscale-mcp, ccusage, polymarket
-// at startup). Strict MCP clients (the Python `mcp` library used by
-// the Antigravity SDK) hit those lines, raise a JSONDecodeError, and
-// crash the task group that owns the session — taking down every
-// other MCP server connection in the process.
+// at startup). Strict MCP clients can hit those lines, raise a parse
+// error, and crash the task group that owns the session — taking down
+// every other MCP server connection in the process.
 //
 // Filter line-by-line: anything that looks like JSON (`{` or `[`
 // after optional whitespace) goes through to stdout; everything else

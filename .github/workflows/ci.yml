@@ -212,8 +212,40 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        backend: [kilo, opencode, claude, codex, openai-agents]
+        include:
+          # Live model discovery is primarily a backend/schema contract.
+          # Run the full matrix on POSIX where the provider servers are
+          # stable and fast.
+          - os: ubuntu-latest
+            backend: kilo
+          - os: ubuntu-latest
+            backend: opencode
+          - os: ubuntu-latest
+            backend: claude
+          - os: ubuntu-latest
+            backend: codex
+          - os: ubuntu-latest
+            backend: openai-agents
+          - os: macos-latest
+            backend: kilo
+          - os: macos-latest
+            backend: opencode
+          - os: macos-latest
+            backend: claude
+          - os: macos-latest
+            backend: codex
+          - os: macos-latest
+            backend: openai-agents
+          # Windows runners are consistently slower and flakier for the
+          # long-lived provider-server CLIs. Keep Windows coverage where it
+          # catches real Windows-specific process resolution: subprocess
+          # backends that execute installed CLI binaries directly. The
+          # broader Windows process/MCP coverage remains in the unit,
+          # functional, and integration tiers above.
+          - os: windows-latest
+            backend: claude
+          - os: windows-latest
+            backend: codex
     steps:
       - uses: actions/checkout@v6
 

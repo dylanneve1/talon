@@ -39,7 +39,7 @@
  *   2. `backend.getDefaultModel()` — backend's canonical default.
  *      Codex picks auth-aware (`gpt-5-codex` on API key, `gpt-5.5`
  *      on ChatGPT OAuth). Claude SDK returns the `"default"` alias.
- *      Antigravity / Agy / stock OpenAI Agents return constants.
+ *      Stock OpenAI Agents returns a constant.
  *      Catalog-driven backends without a canonical (Kilo, OpenCode,
  *      OpenAI Agents on OpenRouter / custom OpenAI-compatible) do
  *      NOT implement this — they fall through to step 3.

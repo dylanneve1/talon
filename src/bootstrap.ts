@@ -130,8 +130,6 @@ export async function initBackendAndDispatcher(
   await import("./backend/kilo/factory.js");
   await import("./backend/codex/factory.js");
   await import("./backend/openai-agents/factory.js");
-  await import("./backend/antigravity/factory.js");
-  await import("./backend/agy/factory.js");
 
   const {
     initBackendPool,

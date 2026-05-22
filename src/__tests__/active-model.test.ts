@@ -333,12 +333,12 @@ describe("resolveActiveModelForChat — edge cases", () => {
 
   it("trusts override verbatim when backend has no resolveModel", async () => {
     const cid = nextChatId();
-    setChatModelForBackend(cid, "agy", "weird-model-id");
+    setChatModelForBackend(cid, "custom-backend", "weird-model-id");
     const be = fakeBackend({});
     const result = await resolveActiveModelForChat(
       cid,
       be,
-      "agy",
+      "custom-backend",
       fakeConfig(),
     );
     expect(result.model).toBe("weird-model-id");

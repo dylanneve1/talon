@@ -149,15 +149,7 @@ const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
   backend: z
-    .enum([
-      "claude",
-      "opencode",
-      "kilo",
-      "codex",
-      "openai-agents",
-      "antigravity",
-      "agy",
-    ])
+    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
     .default("claude"),
   /**
    * Backend used by the heartbeat agent. Falls back to `backend` when
@@ -167,30 +159,14 @@ const configSchema = z.object({
    * on a cheaper / free backend.
    */
   heartbeatBackend: z
-    .enum([
-      "claude",
-      "opencode",
-      "kilo",
-      "codex",
-      "openai-agents",
-      "antigravity",
-      "agy",
-    ])
+    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
     .optional(),
   /**
    * Backend used by the dream / memory-consolidation agent. Falls
    * back to `backend` when unset. Pair with `dreamModel`.
    */
   dreamBackend: z
-    .enum([
-      "claude",
-      "opencode",
-      "kilo",
-      "codex",
-      "openai-agents",
-      "antigravity",
-      "agy",
-    ])
+    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
     .optional(),
   /**
    * Whitelist of backends surfaced in the `/model` picker's backend
@@ -204,17 +180,7 @@ const configSchema = z.object({
    * fresh default session.
    */
   enabledBackends: z
-    .array(
-      z.enum([
-        "claude",
-        "opencode",
-        "kilo",
-        "codex",
-        "openai-agents",
-        "antigravity",
-        "agy",
-      ]),
-    )
+    .array(z.enum(["claude", "opencode", "kilo", "codex", "openai-agents"]))
     .optional(),
   claudeBinary: z.string().optional(),
   model: z.string().default("default"),
@@ -234,7 +200,7 @@ const configSchema = z.object({
    *
    * Operator-controlled escape hatch for first-message-on-a-fresh-backend
    * UX — backends with a canonical `getDefaultModel()` (Claude SDK, Codex,
-   * Antigravity, Agy, stock OpenAI Agents) don't need an entry here.
+   * stock OpenAI Agents) don't need an entry here.
    */
   backendDefaults: z.record(z.string(), z.string()).optional(),
   dreamModel: z.string().optional(), // Model used for background memory consolidation (defaults to main model)
@@ -290,39 +256,6 @@ const configSchema = z.object({
    * explicitly to "responses" only if your proxy supports it.
    */
   openaiApiMode: z.enum(["responses", "chat_completions"]).optional(),
-  /**
-   * Gemini API key — used by the Antigravity backend. Falls back to
-   * GEMINI_API_KEY env. Get one from https://aistudio.google.com/.
-   * The Antigravity SDK uses the API key to authenticate with Gemini
-   * inside its bundled `localharness` binary.
-   */
-  geminiApiKey: z.string().optional(),
-  /**
-   * Path to the Python binary inside a venv that has `google-antigravity`
-   * installed. When unset, the Antigravity backend searches common
-   * default paths (~/.talon-antigravity/venv/bin/python3, then system
-   * python3). Set this if you've installed the SDK in a custom venv
-   * location.
-   */
-  antigravityPython: z.string().optional(),
-  /**
-   * Optional workspace directory the Antigravity SDK's `localharness`
-   * binary is allowed to read/write.
-   *
-   * UNSET (recommended): Talon automatically symlinks
-   * `~/talon-workspace` to the main Talon workspace (`config.workspace`,
-   * typically `~/.talon/workspace/`). The agent reads/writes the SAME
-   * files every other backend uses — no data fragmentation. The
-   * symlink is needed because `localharness` refuses paths containing
-   * "hidden" segments (one starting with `.`), so `~/.talon/...`
-   * can't be passed directly.
-   *
-   * SET: use the explicit path as-is for an isolated workspace. Must
-   * NOT contain hidden path segments — the binary will refuse the
-   * agent's start otherwise. Talon emits a warning at startup if you
-   * configure a hidden path.
-   */
-  antigravityWorkspace: z.string().optional(),
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
