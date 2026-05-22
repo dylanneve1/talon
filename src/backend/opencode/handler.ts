@@ -115,7 +115,7 @@ export async function handleMessage(
 
   // Resolve active model + provider lookup against OpenCode's catalog
   const chatSettings = getChatSettings(chatId);
-  const activeModel = chatSettings.model ?? config.model;
+  const activeModel = params.model ?? chatSettings.model ?? config.model;
   const { providerID: selectedProviderID, modelID } =
     parseStoredOpenCodeModelSelection(activeModel);
 

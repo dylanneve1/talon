@@ -121,7 +121,10 @@ export async function handleMessage(
   // Resolve the active model — chat-settings → config → default.
   const chatSettings = getChatSettings(chatId);
   const activeModel =
-    chatSettings.model ?? config.model ?? OPENAI_AGENTS_DEFAULT_MODEL;
+    params.model ??
+    chatSettings.model ??
+    config.model ??
+    OPENAI_AGENTS_DEFAULT_MODEL;
   log("agent", `[${chatId}] OpenAI Agents model resolved: ${activeModel}`);
 
   // First-turn system-prompt rebuild + Agents-specific delivery suffix.

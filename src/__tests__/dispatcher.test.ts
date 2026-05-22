@@ -61,6 +61,33 @@ describe("dispatcher", () => {
     expect(result.bridgeMessageCount).toBe(0);
   });
 
+  it("passes the resolved active model to the backend query", async () => {
+    const deps = createMockDeps();
+    const resolveActiveModel = vi.fn(async () => ({
+      model: "gpt-5.4-mini",
+      backendId: "codex",
+    }));
+    initDispatcher({ ...deps, resolveActiveModel });
+
+    await execute({
+      chatId: "123",
+      numericChatId: 123,
+      prompt: "hello",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+    });
+
+    expect(resolveActiveModel).toHaveBeenCalledWith("123");
+    expect(deps.backend.query).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chatId: "123",
+        model: "gpt-5.4-mini",
+        text: "hello",
+      }),
+    );
+  });
+
   it("acquires and releases context", async () => {
     const deps = createMockDeps();
     initDispatcher(deps);

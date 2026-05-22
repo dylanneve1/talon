@@ -105,7 +105,7 @@ export async function handleMessage(
 
   // Resolve active model + provider lookup against Kilo's catalog
   const chatSettings = getChatSettings(chatId);
-  const activeModel = chatSettings.model ?? config.model;
+  const activeModel = params.model ?? chatSettings.model ?? config.model;
   const { providerID: selectedProviderID, modelID } =
     parseStoredKiloModelSelection(activeModel);
 

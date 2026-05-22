@@ -338,7 +338,8 @@ export async function handleMessage(
     authInfo?.mode === "chatgpt"
       ? CODEX_CHATGPT_DEFAULT_MODEL
       : CODEX_DEFAULT_MODEL;
-  const requestedModel = chatSettings.model ?? config.model ?? authAwareDefault;
+  const requestedModel =
+    params.model ?? chatSettings.model ?? config.model ?? authAwareDefault;
   // If the resolved model is known OAuth-incompat AND we're on
   // ChatGPT OAuth, pre-emptively swap to the chatgpt-compatible
   // fallback rather than letting the first turn fail. Two sources of

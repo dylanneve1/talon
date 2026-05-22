@@ -111,7 +111,11 @@ export async function handleMessage(
   prepareSystemPrompt({ config, previousTurns: session.turns });
 
   const abortController = new AbortController();
-  const { options, activeModel } = buildSdkOptions(chatId, abortController);
+  const { options, activeModel } = buildSdkOptions(
+    chatId,
+    abortController,
+    params.model,
+  );
 
   const prompt = formatUserPrompt({
     text,
