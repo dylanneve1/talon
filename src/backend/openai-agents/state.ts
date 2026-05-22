@@ -11,6 +11,7 @@
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { TalonSession } from "./session.js";
+import type { ReasoningEffortLevel } from "../../core/types.js";
 
 /**
  * Capabilities advertised by the remote endpoint for one model id.
@@ -25,6 +26,10 @@ export interface EndpointModelCapabilities {
   displayName?: string;
   /** Whether the model is free (e.g. OpenRouter `pricing.prompt === "0"`). */
   free?: boolean;
+  /** Reasoning/effort levels explicitly advertised by the endpoint. */
+  supportedReasoningLevels?: ReasoningEffortLevel[];
+  /** Endpoint-advertised default reasoning level, when available. */
+  defaultReasoningLevel?: ReasoningEffortLevel;
 }
 
 /** Singleton state container for the backend. */

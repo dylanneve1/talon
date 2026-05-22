@@ -63,6 +63,15 @@ function makeModelInfo(
     reasoning: false,
     ...(caps?.contextWindow ? { contextWindow: caps.contextWindow } : {}),
     ...(caps?.free ? { free: true } : {}),
+    ...(caps?.supportedReasoningLevels?.length
+      ? {
+          reasoning: true,
+          supportedReasoningLevels: caps.supportedReasoningLevels,
+        }
+      : {}),
+    ...(caps?.defaultReasoningLevel
+      ? { defaultReasoningLevel: caps.defaultReasoningLevel }
+      : {}),
   };
 }
 

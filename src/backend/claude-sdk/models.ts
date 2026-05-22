@@ -14,12 +14,26 @@ import {
   registerProviderPrefix,
 } from "../../core/models.js";
 import type { ModelInfo } from "../../core/models.js";
+import { normalizeReasoningLevels } from "../../core/reasoning-levels.js";
 import { log, logError } from "../../util/log.js";
 
 type SdkModelInfo = {
   value: string;
   displayName: string;
   description: string;
+  supportsEffort?: boolean;
+  supportedEffortLevels?: string[];
+  supportsAdaptiveThinking?: boolean;
+  capabilities?: {
+    effort?: {
+      supported?: boolean;
+      low?: { supported?: boolean } | null;
+      medium?: { supported?: boolean } | null;
+      high?: { supported?: boolean } | null;
+      max?: { supported?: boolean } | null;
+      xhigh?: { supported?: boolean } | null;
+    } | null;
+  } | null;
 };
 
 type ParsedModelIdentity = {
@@ -290,6 +304,22 @@ function buildHiddenModelAliases(
 
 // ── SDK → registry conversion ───────────────────────────────────────────────
 
+function extractSdkReasoningLevels(model: SdkModelInfo) {
+  if (model.supportsEffort === false) return [];
+
+  const sdkLevels = normalizeReasoningLevels(model.supportedEffortLevels);
+  if (sdkLevels.length > 0) return sdkLevels;
+
+  const effort = model.capabilities?.effort;
+  if (!effort?.supported) return [];
+
+  return normalizeReasoningLevels(
+    (["low", "medium", "high", "max", "xhigh"] as const).filter(
+      (level) => effort[level]?.supported === true,
+    ),
+  );
+}
+
 /**
  * Convert SDK ModelInfo to our registry format.
  * Keeps SDK model IDs/display names intact while deriving compatibility aliases
@@ -340,7 +370,7 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
       description: record.description,
       aliases,
       provider: "anthropic",
-      supportedReasoningLevels: ["off", "low", "medium", "high", "max"],
+      supportedReasoningLevels: extractSdkReasoningLevels(record),
     });
   }
 
@@ -478,21 +508,29 @@ export const CLAUDE_MODELS_STATIC: ModelInfo[] = convertSdkModels([
     value: "default",
     displayName: "Default (recommended)",
     description: "Sonnet 4.6 · Best for everyday tasks",
+    supportsEffort: true,
+    supportedEffortLevels: ["low", "medium", "high"],
   },
   {
     value: "sonnet[1m]",
     displayName: "Sonnet (1M context)",
     description: "Sonnet 4.6 with 1M context · Large context window",
+    supportsEffort: true,
+    supportedEffortLevels: ["low", "medium", "high"],
   },
   {
     value: "opus",
     displayName: "Opus",
     description: "Opus 4.6 · Most capable for complex work",
+    supportsEffort: true,
+    supportedEffortLevels: ["low", "medium", "high", "max"],
   },
   {
     value: "opus[1m]",
     displayName: "Opus (1M context)",
     description: "Opus 4.6 with 1M context · Large context window",
+    supportsEffort: true,
+    supportedEffortLevels: ["low", "medium", "high", "max"],
   },
   {
     value: "haiku",

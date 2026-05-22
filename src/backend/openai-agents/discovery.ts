@@ -33,6 +33,7 @@
 
 import { log, logDebug } from "../../util/log.js";
 import { getState, type EndpointModelCapabilities } from "./state.js";
+import { normalizeReasoningLevels } from "../../core/reasoning-levels.js";
 
 /**
  * Shape of one entry returned by an OpenAI-compatible `/models`
@@ -52,6 +53,24 @@ interface EndpointModelEntry {
   context_length?: number;
   top_provider?: { context_length?: number };
   pricing?: { prompt?: string | number; completion?: string | number };
+  default_reasoning_level?: string;
+  supported_reasoning_levels?:
+    | string[]
+    | Array<{
+        effort?: string;
+        name?: string;
+        level?: string;
+      }>;
+  capabilities?: {
+    effort?: {
+      supported?: boolean;
+      low?: { supported?: boolean } | null;
+      medium?: { supported?: boolean } | null;
+      high?: { supported?: boolean } | null;
+      max?: { supported?: boolean } | null;
+      xhigh?: { supported?: boolean } | null;
+    } | null;
+  } | null;
 }
 
 /** Default soft timeout when callers await an in-flight discovery. */
@@ -251,7 +270,42 @@ export function extractCapabilities(
   if (isFreePrompt(entry.pricing?.prompt)) {
     caps.free = true;
   }
+  const supportedReasoningLevels = extractReasoningLevels(entry);
+  if (supportedReasoningLevels.length > 0) {
+    caps.supportedReasoningLevels = supportedReasoningLevels;
+  }
+  const defaultReasoningLevel = normalizeReasoningLevels(
+    typeof entry.default_reasoning_level === "string"
+      ? [entry.default_reasoning_level]
+      : undefined,
+  )[0];
+  if (defaultReasoningLevel) {
+    caps.defaultReasoningLevel = defaultReasoningLevel;
+  }
   return caps;
+}
+
+function extractReasoningLevels(entry: EndpointModelEntry) {
+  const explicit = entry.supported_reasoning_levels;
+  if (Array.isArray(explicit)) {
+    const raw = explicit
+      .map((level) =>
+        typeof level === "string"
+          ? level
+          : level.effort ?? level.level ?? level.name,
+      )
+      .filter((level): level is string => typeof level === "string");
+    const levels = normalizeReasoningLevels(raw);
+    if (levels.length > 0) return levels;
+  }
+
+  const effort = entry.capabilities?.effort;
+  if (!effort?.supported) return [];
+  return normalizeReasoningLevels(
+    (["low", "medium", "high", "max", "xhigh"] as const).filter(
+      (level) => effort[level]?.supported === true,
+    ),
+  );
 }
 
 /**

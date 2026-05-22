@@ -138,6 +138,26 @@ describe("openai-agents / getModelInfo", () => {
     expect(info?.displayName).toBe("GPT-5.5");
   });
 
+  it("passes through discovered reasoning levels", () => {
+    seedCatalog([
+      [
+        "gpt-5.5",
+        {
+          supportedReasoningLevels: ["minimal", "low", "high"],
+          defaultReasoningLevel: "low",
+        },
+      ],
+    ]);
+    const info = getModelInfo("gpt-5.5");
+    expect(info?.reasoning).toBe(true);
+    expect(info?.supportedReasoningLevels).toEqual([
+      "minimal",
+      "low",
+      "high",
+    ]);
+    expect(info?.defaultReasoningLevel).toBe("low");
+  });
+
   it("returns a bare passthrough for an unknown id (never undefined for non-empty)", () => {
     seedCatalog([]);
     const info = getModelInfo("unknown/model");

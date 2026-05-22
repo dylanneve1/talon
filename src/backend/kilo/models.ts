@@ -10,6 +10,8 @@
  */
 
 import { ensureServer } from "./server.js";
+import { normalizeReasoningLevels } from "../../core/reasoning-levels.js";
+import type { ReasoningEffortLevel } from "../../core/types.js";
 
 // ---------------------------------------------------------------------------
 // Types (private)
@@ -43,7 +45,14 @@ type OpenCodeRawModel = {
     reasoning?: boolean;
     attachment?: boolean;
     toolcall?: boolean;
+    supportedReasoningLevels?: string[];
+    supported_reasoning_levels?: string[];
   };
+  options?: Record<string, unknown>;
+  supportedReasoningLevels?: string[];
+  supported_reasoning_levels?: string[];
+  defaultReasoningLevel?: string;
+  default_reasoning_level?: string;
 };
 
 type OpenCodeRawProvider = {
@@ -90,6 +99,8 @@ export type OpenCodeModelCatalogEntry = {
   inputWindow?: number;
   outputWindow: number;
   reasoning: boolean;
+  supportedReasoningLevels?: ReasoningEffortLevel[];
+  defaultReasoningLevel?: ReasoningEffortLevel;
   attachment: boolean;
   toolcall: boolean;
   costInput: number;
@@ -312,6 +323,15 @@ function parseCatalogModel(
   const costOutput = rawModel.cost?.output ?? 0;
   const costCacheRead = rawModel.cost?.cache?.read ?? 0;
   const costCacheWrite = rawModel.cost?.cache?.write ?? 0;
+  const supportedReasoningLevels = extractReasoningLevels(rawModel);
+  const defaultReasoningLevel = normalizeReasoningLevels(
+    [
+      rawModel.defaultReasoningLevel,
+      rawModel.default_reasoning_level,
+      readString(rawModel.options?.defaultReasoningLevel),
+      readString(rawModel.options?.default_reasoning_level),
+    ].filter((level): level is string => typeof level === "string"),
+  )[0];
 
   const model: OpenCodeModelCatalogEntry = {
     id,
@@ -330,7 +350,12 @@ function parseCatalogModel(
     contextWindow: rawModel.limit?.context ?? 0,
     inputWindow: rawModel.limit?.input,
     outputWindow: rawModel.limit?.output ?? 0,
-    reasoning: rawModel.capabilities?.reasoning ?? false,
+    reasoning:
+      rawModel.capabilities?.reasoning ?? supportedReasoningLevels.length > 0,
+    ...(supportedReasoningLevels.length
+      ? { supportedReasoningLevels }
+      : {}),
+    ...(defaultReasoningLevel ? { defaultReasoningLevel } : {}),
     attachment: rawModel.capabilities?.attachment ?? false,
     toolcall: rawModel.capabilities?.toolcall ?? false,
     costInput,
@@ -341,6 +366,26 @@ function parseCatalogModel(
 
   model.free = isFreeModel(model);
   return model;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function readStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
+
+function extractReasoningLevels(rawModel: OpenCodeRawModel) {
+  return normalizeReasoningLevels([
+    ...(rawModel.supportedReasoningLevels ?? []),
+    ...(rawModel.supported_reasoning_levels ?? []),
+    ...(rawModel.capabilities?.supportedReasoningLevels ?? []),
+    ...(rawModel.capabilities?.supported_reasoning_levels ?? []),
+    ...readStringArray(rawModel.options?.supportedReasoningLevels),
+    ...readStringArray(rawModel.options?.supported_reasoning_levels),
+  ]);
 }
 
 function buildModelCatalog(

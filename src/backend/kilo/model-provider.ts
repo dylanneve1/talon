@@ -40,6 +40,8 @@ function toUnifiedModelInfo(
     free: model.free,
     contextWindow: model.contextWindow,
     reasoning: model.reasoning,
+    supportedReasoningLevels: model.supportedReasoningLevels,
+    defaultReasoningLevel: model.defaultReasoningLevel,
   };
 
   if (!model.selectable) {

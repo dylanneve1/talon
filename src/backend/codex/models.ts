@@ -37,15 +37,6 @@ import { awaitDiscovery, hasAttemptedDiscovery } from "./discovery.js";
 import { getState } from "./state.js";
 import { getCodexAuthInfo } from "./init.js";
 import { isKnownOAuthIncompat } from "./oauth-incompat.js";
-import type { ReasoningEffortLevel } from "../../core/types.js";
-
-const CODEX_REASONING_LEVELS: ReasoningEffortLevel[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-];
 
 /**
  * Codex-specific model metadata extension.
@@ -81,7 +72,6 @@ export const CODEX_MODELS: CodexModelInfo[] = [
     providerName: "OpenAI",
     selectable: true,
     reasoning: true,
-    supportedReasoningLevels: CODEX_REASONING_LEVELS,
     contextWindow: 400_000,
   },
   {
@@ -91,7 +81,6 @@ export const CODEX_MODELS: CodexModelInfo[] = [
     providerName: "OpenAI",
     selectable: true,
     reasoning: true,
-    supportedReasoningLevels: CODEX_REASONING_LEVELS,
     contextWindow: 400_000,
   },
   {
@@ -101,7 +90,6 @@ export const CODEX_MODELS: CodexModelInfo[] = [
     providerName: "OpenAI",
     selectable: true,
     reasoning: true,
-    supportedReasoningLevels: CODEX_REASONING_LEVELS,
     contextWindow: 400_000,
   },
   {
@@ -111,7 +99,6 @@ export const CODEX_MODELS: CodexModelInfo[] = [
     providerName: "OpenAI",
     selectable: true,
     reasoning: true,
-    supportedReasoningLevels: CODEX_REASONING_LEVELS,
     contextWindow: 400_000,
     apiKeyOnly: true,
   },
@@ -122,7 +109,6 @@ export const CODEX_MODELS: CodexModelInfo[] = [
     providerName: "OpenAI",
     selectable: true,
     reasoning: true,
-    supportedReasoningLevels: CODEX_REASONING_LEVELS,
     contextWindow: 128_000,
   },
 ];
@@ -200,7 +186,6 @@ export function synthesizeUnknownModel(id: string): CodexModelInfo {
     providerName: "OpenAI",
     selectable: true,
     reasoning,
-    ...(reasoning ? { supportedReasoningLevels: CODEX_REASONING_LEVELS } : {}),
     ...(meta?.contextWindow ? { contextWindow: meta.contextWindow } : {}),
     ...(meta?.supportedReasoningLevels
       ? { supportedReasoningLevels: meta.supportedReasoningLevels }

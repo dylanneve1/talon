@@ -227,4 +227,41 @@ describe("openai-agents / extractCapabilities", () => {
       free: true,
     });
   });
+
+  it("captures endpoint-advertised reasoning levels", () => {
+    expect(
+      extractCapabilities({
+        id: "m",
+        supported_reasoning_levels: [
+          { effort: "low" },
+          { effort: "high" },
+          { effort: "bogus" },
+        ],
+        default_reasoning_level: "low",
+      }),
+    ).toEqual({
+      supportedReasoningLevels: ["low", "high"],
+      defaultReasoningLevel: "low",
+    });
+  });
+
+  it("captures Anthropic-style effort capability objects when an endpoint provides them", () => {
+    expect(
+      extractCapabilities({
+        id: "m",
+        capabilities: {
+          effort: {
+            supported: true,
+            low: { supported: true },
+            medium: { supported: false },
+            high: { supported: true },
+            max: { supported: true },
+            xhigh: null,
+          },
+        },
+      }),
+    ).toEqual({
+      supportedReasoningLevels: ["low", "high", "max"],
+    });
+  });
 });
