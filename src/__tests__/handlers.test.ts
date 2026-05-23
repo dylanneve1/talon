@@ -30,6 +30,7 @@ vi.mock("../core/errors.js", () => ({
 
 vi.mock("../storage/history.js", () => ({
   setMessageFilePath: vi.fn(),
+  getRecentHistory: vi.fn(() => []),
   getRecentBySenderId: vi.fn(() => []),
 }));
 vi.mock("../storage/media-index.js", () => ({
@@ -47,6 +48,7 @@ const {
   getReplyContext,
   getForwardContext,
   extractUnauthorizedPreview,
+  buildGroupGapContextNotice,
 } = await import("../frontend/telegram/handlers.js");
 
 describe("shouldHandleInGroup", () => {
@@ -454,6 +456,78 @@ describe("shouldHandleInGroup — edge cases", () => {
     expect(shouldHandleInGroup(ctx({ text: "hey @testbot_extra" }))).toBe(
       false,
     );
+  });
+});
+
+describe("buildGroupGapContextNotice", () => {
+  const history = [
+    { msgId: 10, senderId: 1, senderName: "A", text: "old", timestamp: 1 },
+    {
+      msgId: 11,
+      senderId: 2,
+      senderName: "B",
+      text: "between",
+      timestamp: 2,
+    },
+    {
+      msgId: 12,
+      senderId: 3,
+      senderName: "C",
+      text: "between",
+      timestamp: 3,
+    },
+    {
+      msgId: 13,
+      senderId: 4,
+      senderName: "D",
+      text: "@bot what do you think",
+      timestamp: 4,
+    },
+  ];
+
+  it("returns a group-context notice for intervening group messages", () => {
+    const notice = buildGroupGapContextNotice({
+      isGroup: true,
+      chatId: "chat",
+      lastHandledMessageId: 10,
+      firstQueuedMessageId: 13,
+      history,
+    });
+
+    expect(notice).toContain("2 messages");
+    expect(notice).toContain("read_chat_history");
+    expect(notice).toContain("what you think");
+  });
+
+  it("stays silent for DMs, first turns, and adjacent group turns", () => {
+    expect(
+      buildGroupGapContextNotice({
+        isGroup: false,
+        chatId: "chat",
+        lastHandledMessageId: 10,
+        firstQueuedMessageId: 13,
+        history,
+      }),
+    ).toBe("");
+
+    expect(
+      buildGroupGapContextNotice({
+        isGroup: true,
+        chatId: "chat",
+        firstQueuedMessageId: 13,
+        history,
+      }),
+    ).toBe("");
+
+    expect(
+      buildGroupGapContextNotice({
+        isGroup: true,
+        chatId: "chat",
+        lastHandledMessageId: 12,
+        firstQueuedMessageId: 13,
+        history,
+      }),
+    ).toBe("");
   });
 });
 

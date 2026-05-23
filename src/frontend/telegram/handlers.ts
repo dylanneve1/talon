@@ -15,7 +15,11 @@ import {
   appendDailyLogResponse,
 } from "../../storage/daily-log.js";
 import { stripMcpPrefix } from "../../core/tools/index.js";
-import { setMessageFilePath } from "../../storage/history.js";
+import {
+  getRecentHistory,
+  setMessageFilePath,
+  type HistoryMessage,
+} from "../../storage/history.js";
 import { addMedia } from "../../storage/media-index.js";
 import { recordMessageProcessed, recordError } from "../../util/watchdog.js";
 import { log, logError, logWarn, logDebug } from "../../util/log.js";
@@ -536,6 +540,7 @@ const messageQueues = new Map<
 
 const DEBOUNCE_MS = 500;
 const MAX_QUEUED_PER_CHAT = 20;
+const lastHandledMessageIdByChat = new Map<string, number>();
 
 // ── Per-user rate limiting ──────────────────────────────────────────────────
 
@@ -637,6 +642,7 @@ async function flushQueue(chatId: string): Promise<void> {
   }
 
   // Use last message's metadata for reply context
+  const first = messages[0];
   const last = messages[messages.length - 1];
 
   // Concatenate prompts (with newlines between them if multiple)
@@ -644,12 +650,21 @@ async function flushQueue(chatId: string): Promise<void> {
     messages.length === 1
       ? messages[0].prompt
       : messages.map((m) => m.prompt).join("\n\n");
+  const groupGapContext = buildGroupGapContextNotice({
+    isGroup: last.isGroup,
+    chatId,
+    firstQueuedMessageId: first.messageId,
+    lastHandledMessageId: lastHandledMessageIdByChat.get(chatId),
+  });
+  const promptWithContext = groupGapContext
+    ? `${groupGapContext}\n\n${combinedPrompt}`
+    : combinedPrompt;
 
   const chatContext = {
     chatTitle: last.chatTitle,
     username: last.senderUsername,
   };
-  appendDailyLog(last.senderName, combinedPrompt, chatContext);
+  appendDailyLog(last.senderName, promptWithContext, chatContext);
 
   try {
     await processAndReply({
@@ -659,18 +674,19 @@ async function flushQueue(chatId: string): Promise<void> {
       numericChatId,
       replyToId: last.replyToId,
       messageId: last.messageId,
-      prompt: combinedPrompt,
+      prompt: promptWithContext,
       senderName: last.senderName,
       isGroup: last.isGroup,
       senderUsername: last.senderUsername,
       senderId: last.senderId,
       chatTitle: last.chatTitle,
     });
+    lastHandledMessageIdByChat.set(chatId, last.messageId);
     recordMessageProcessed();
   } catch (err) {
     const classified = classify(err);
     const chatType = last.isGroup ? "group" : "DM";
-    const promptPreview = combinedPrompt.slice(0, 100).replace(/\n/g, " ");
+    const promptPreview = promptWithContext.slice(0, 100).replace(/\n/g, " ");
     logError(
       "bot",
       `[${chatId}] [${chatType}] [${last.senderName}] ${classified.reason}: ${classified.message} | prompt: "${promptPreview}"`,
@@ -693,13 +709,14 @@ async function flushQueue(chatId: string): Promise<void> {
           numericChatId,
           replyToId: last.replyToId,
           messageId: last.messageId,
-          prompt: combinedPrompt,
+          prompt: promptWithContext,
           senderName: last.senderName,
           isGroup: last.isGroup,
           senderUsername: last.senderUsername,
           senderId: last.senderId,
           chatTitle: last.chatTitle,
         });
+        lastHandledMessageIdByChat.set(chatId, last.messageId);
         return;
       } catch (retryErr) {
         const retryClassified = classify(retryErr);
@@ -724,6 +741,31 @@ async function flushQueue(chatId: string): Promise<void> {
       last.replyToId,
     );
   }
+}
+
+export function buildGroupGapContextNotice(inputs: {
+  isGroup: boolean;
+  chatId: string;
+  firstQueuedMessageId: number;
+  lastHandledMessageId?: number;
+  history?: HistoryMessage[];
+}): string {
+  if (!inputs.isGroup || inputs.lastHandledMessageId === undefined) return "";
+
+  const history = inputs.history ?? getRecentHistory(inputs.chatId, 100);
+  const interveningCount = history.filter(
+    (m) =>
+      m.msgId > inputs.lastHandledMessageId! &&
+      m.msgId < inputs.firstQueuedMessageId,
+  ).length;
+  if (interveningCount === 0) return "";
+
+  const noun = interveningCount === 1 ? "message" : "messages";
+  return (
+    `[Group context notice: ${interveningCount} ${noun} were sent in this ` +
+    "chat since your last handled turn. If this prompt is vague, ambiguous, " +
+    "or asks what you think, use read_chat_history before answering.]"
+  );
 }
 
 // ── Response delivery ────────────────────────────────────────────────────────
