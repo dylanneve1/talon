@@ -119,3 +119,12 @@ export {
   pipeEventsToCallbacks,
   reduceEventsToResult,
 } from "./legacy-bridge.js";
+
+export {
+  freshRenderState,
+  LogRendererError,
+  type LogSink,
+  type RenderState,
+  renderEvent,
+  streamLog,
+} from "./event-log-renderer.js";
