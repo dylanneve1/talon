@@ -257,7 +257,7 @@ async function maybeFallbackForChatGptMismatch(
   // the learning store if persisted. The silent path still triggers
   // an in-session retry below, just without the permanent record.
   if (isOAuth && explicit) {
-    const recorded = markOAuthIncompat(activeModel);
+    const recorded = await markOAuthIncompat(activeModel);
     if (recorded) {
       logWarn(
         "agent",

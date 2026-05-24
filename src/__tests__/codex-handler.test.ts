@@ -2011,8 +2011,10 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
     // the configured model is now in the learned set, so the swap
     // fires before the first runStreamed call.
     const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
-    oauthIncompat.loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
-    oauthIncompat.markOAuthIncompat("gpt-5.4-mini");
+    await oauthIncompat.loadOAuthIncompatStore(
+      "chatgpt:file:~/.codex/auth.json",
+    );
+    await oauthIncompat.markOAuthIncompat("gpt-5.4-mini");
 
     initCodexAgent(
       {

@@ -569,9 +569,14 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
       "telegram",
     );
 
-    // initCodexAgent has now loaded the store under the auth file's
-    // fingerprint. Mark the model and run.
-    oauthIncompat.markOAuthIncompat("gpt-5.4-mini");
+    // initCodexAgent has now (fire-and-forget) loaded the store
+    // under the auth file's fingerprint. Re-await the same loader
+    // so we know the in-memory state is settled before marking,
+    // then mark the model and run.
+    await oauthIncompat.loadOAuthIncompatStore(
+      "chatgpt:file:~/.codex/auth.json",
+    );
+    await oauthIncompat.markOAuthIncompat("gpt-5.4-mini");
 
     const lines: string[] = [];
     const abortController = new AbortController();

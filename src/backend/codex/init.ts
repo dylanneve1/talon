@@ -83,7 +83,18 @@ export function initCodexAgent(
   // credential fingerprint has changed since last load). The store is
   // a no-op for non-OAuth credentials but the loader is cheap, so we
   // call it for all modes uniformly.
-  loadOAuthIncompatStore(computeAuthFingerprint(authInfo));
+  // Fire-and-forget: the loader is async after the Phase 6.x
+  // JsonStore migration, but `initCodexAgent` is sync and changing
+  // it to async would ripple through every caller in bootstrap.ts.
+  // The store is best-effort anyway — if a turn races with the
+  // first load, `isKnownOAuthIncompat` defaults to false and the
+  // turn proceeds without the runtime-learned filter (the curated
+  // list still applies). Errors are already swallowed inside
+  // `loadOAuthIncompatStore`, so the .catch() here is purely
+  // defensive against a synchronous throw in the function body.
+  loadOAuthIncompatStore(computeAuthFingerprint(authInfo)).catch(() => {
+    /* logged inside loadOAuthIncompatStore */
+  });
 
   // Kick off model discovery as fire-and-forget. Branches on auth
   // mode internally:
