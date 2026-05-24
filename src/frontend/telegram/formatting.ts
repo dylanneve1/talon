@@ -86,9 +86,7 @@ export function markdownToTelegramHtml(text: string): string {
   // escapeHtml here would double-encode `&` as `&amp;amp;`, breaking any URL
   // that contains query-string parameters (e.g. `?a=1&b=2`).
   processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
-    /^https?:\/\//i.test(url)
-      ? `<a href="${url}">${text}</a>`
-      : text,
+    /^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : text,
   );
   // Strikethrough: ~~text~~
   processed = processed.replace(/~~(.+?)~~/g, "<s>$1</s>");
