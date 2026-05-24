@@ -73,6 +73,14 @@ import type { UnifiedModelInfo } from "../types.js";
 export interface ActiveModelRefResolution {
   /** Resolved `ModelRef`, or `null` when the chain produced no model. */
   ref: ModelRef | null;
+  /**
+   * Raw model id from the underlying 5-step string chain, or `null`
+   * when the chain exhausted. Useful for callers that need the
+   * string fallback when `ref` is null because the supplied
+   * `backendId` is unrecognised (BACKEND_IDS literal drift, legacy
+   * config) but the chain still produced a usable model id.
+   */
+  modelId: string | null;
   source: ActiveModelSource;
 }
 
@@ -93,15 +101,20 @@ export async function resolveActiveModelRefForChat(
     await resolveActiveModelForChat(chatId, backend, backendId, config);
 
   if (!stringResolution.model) {
-    return { ref: null, source: stringResolution.source };
+    return { ref: null, modelId: null, source: stringResolution.source };
   }
 
   // The chain can produce a model id without a backendId (the
   // pre-bootstrap `config.model` fallback). Without a known
-  // BackendId we can't construct a typed ref — return null and let
-  // callers keep using the string API for those cases.
+  // BackendId we can't construct a typed ref — return null for the
+  // ref but expose the raw `modelId` so callers can still display
+  // the legacy default.
   if (!backendId || !isBackendId(backendId)) {
-    return { ref: null, source: stringResolution.source };
+    return {
+      ref: null,
+      modelId: stringResolution.model,
+      source: stringResolution.source,
+    };
   }
 
   const cacheSupport: CacheSupport = mapCacheSupport(backend);
@@ -115,7 +128,11 @@ export async function resolveActiveModelRefForChat(
     modelSource,
   );
 
-  return { ref: enriched, source: stringResolution.source };
+  return {
+    ref: enriched,
+    modelId: stringResolution.model,
+    source: stringResolution.source,
+  };
 }
 
 /**

@@ -337,50 +337,56 @@ describe("resolveActiveModelRefForChat / source mapping", () => {
 // ── Null / edge cases ───────────────────────────────────────────────────────
 
 describe("resolveActiveModelRefForChat / null + edge cases", () => {
-  it("returns ref: null + source 'none' when the chain exhausts", async () => {
+  it("returns ref: null + modelId: null + source 'none' when the chain exhausts", async () => {
     const cid = nextChatId();
     // catalog-driven backend without canonical, no operator default,
     // not the global backend, no per-chat override
     const be = fakeBackend({
       resolveModel: vi.fn(async () => missing()),
     });
-    const { ref, source } = await resolveActiveModelRefForChat(
+    const { ref, modelId, source } = await resolveActiveModelRefForChat(
       cid,
       be,
       "kilo",
       fakeConfig({ backend: "claude" /* not kilo */ }),
     );
     expect(ref).toBeNull();
+    expect(modelId).toBeNull();
     expect(source).toBe("none");
   });
 
-  it("returns ref: null when backendId is not a known BackendId", async () => {
+  it("returns ref: null but exposes modelId when backendId is not a known BackendId", async () => {
     const cid = nextChatId();
     const be = fakeBackend({
       resolveModel: vi.fn(async () => exact("anything")),
       getDefaultModel: () => "anything",
     });
-    const { ref } = await resolveActiveModelRefForChat(
+    const { ref, modelId } = await resolveActiveModelRefForChat(
       cid,
       be,
       "totally-not-a-backend",
       fakeConfig(),
     );
     // chain returned a model string, but we can't form a ModelRef
-    // without a typed BackendId — caller must use the string API.
+    // without a typed BackendId — expose modelId for the string-side
+    // fallback so callers don't need a parallel call to the string
+    // resolver.
     expect(ref).toBeNull();
+    expect(modelId).toBe("anything");
   });
 
-  it("returns ref: null when backendId is null even if config.model is set", async () => {
+  it("returns ref: null but exposes modelId when backendId is null and config.model is set", async () => {
     const cid = nextChatId();
-    const { ref, source } = await resolveActiveModelRefForChat(
+    const { ref, modelId, source } = await resolveActiveModelRefForChat(
       cid,
       null,
       null,
       fakeConfig({ backend: "claude", model: "claude-opus-4-7" }),
     );
-    // string-side returns config-legacy-global but we can't type it
+    // string-side returns config-legacy-global; ref is null because
+    // the call site can't construct a typed BackendId.
     expect(ref).toBeNull();
+    expect(modelId).toBe("claude-opus-4-7");
     expect(source).toBe("config-legacy-global");
   });
 
