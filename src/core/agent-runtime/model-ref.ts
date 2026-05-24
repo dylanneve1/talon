@@ -12,21 +12,21 @@
  * everything else is metadata so downstream code (UIs, `/status`,
  * logs, telemetry, tests) doesn't have to chase it down again.
  *
- * This module also pins the canonical `BackendId` union. Today the
- * config schema repeats the enum five times (`backend`,
- * `heartbeatBackend`, `dreamBackend`, `enabledBackends`, plus the
- * registry default). Phase 1 keeps both in lockstep manually —
- * `BACKEND_IDS` is the single literal source, the config zod enums
- * stay where they are. A later phase can wire config.ts to import
- * `BACKEND_IDS` directly.
+ * This module also pins the canonical `BackendId` union — and as
+ * of Phase 2.4, `src/util/config.ts` imports `BACKEND_IDS`
+ * directly for its zod enums. Adding a backend means updating
+ * THIS literal once; the config schema picks the change up
+ * automatically. Don't reintroduce the manually-mirrored zod
+ * tuple — it's a footgun.
  */
 
 import type { ReasoningEffortLevel } from "../types.js";
 
 /**
- * Canonical backend identifiers — must match `config.backend` zod
- * enum in `src/util/config.ts`. Update both sides together until
- * the enum is migrated to import this constant.
+ * Canonical backend identifiers — single source of truth for the
+ * typed `BackendId` union AND the runtime zod enums in
+ * `src/util/config.ts`. Update one place, everything stays in
+ * lockstep.
  */
 export const BACKEND_IDS = [
   "claude",
