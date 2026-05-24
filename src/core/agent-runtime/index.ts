@@ -112,3 +112,10 @@ export {
   assertModelCatalogDefaultShape,
   assertUsageTelemetryShape,
 } from "./contract-tests.js";
+
+export {
+  BridgedAgentError,
+  type LegacyCallbacks,
+  pipeEventsToCallbacks,
+  reduceEventsToResult,
+} from "./legacy-bridge.js";
