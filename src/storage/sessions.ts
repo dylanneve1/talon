@@ -68,7 +68,20 @@ function ensureDir(): void {
 export function loadSessions(): void {
   try {
     if (existsSync(STORE_FILE)) {
-      store = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
+      const parsed: unknown = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        logError(
+          "sessions",
+          "Session file has unexpected format — starting fresh",
+        );
+        store = {};
+        return;
+      }
+      store = parsed as SessionStore;
     }
   } catch {
     // Primary file corrupt — try backup

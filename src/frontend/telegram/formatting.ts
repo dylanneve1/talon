@@ -80,11 +80,14 @@ export function markdownToTelegramHtml(text: string): string {
   );
   // Italic: _text_ (surrounded by non-word or start/end)
   processed = processed.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
-  // Links: [text](url) — only allow safe URL schemes; escape the URL to
-  // prevent HTML attribute injection (e.g. href="url" onmouseover="x")
+  // Links: [text](url) — only allow safe URL schemes.
+  // NOTE: `url` is already HTML-escaped from step 3 (the global entity-escape
+  // pass ran over the entire text including link targets). Re-applying
+  // escapeHtml here would double-encode `&` as `&amp;amp;`, breaking any URL
+  // that contains query-string parameters (e.g. `?a=1&b=2`).
   processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
     /^https?:\/\//i.test(url)
-      ? `<a href="${escapeHtml(url)}">${text}</a>`
+      ? `<a href="${url}">${text}</a>`
       : text,
   );
   // Strikethrough: ~~text~~

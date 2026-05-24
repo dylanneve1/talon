@@ -47,11 +47,21 @@ let dirty = false;
 export function loadHistory(): void {
   try {
     if (existsSync(STORE_FILE)) {
-      const raw = JSON.parse(readFileSync(STORE_FILE, "utf-8")) as Record<
-        string,
-        HistoryMessage[]
-      >;
+      const parsed: unknown = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
+      if (
+        typeof parsed !== "object" ||
+        parsed === null ||
+        Array.isArray(parsed)
+      ) {
+        logError(
+          "history",
+          "History file has unexpected format — starting fresh",
+        );
+        return;
+      }
+      const raw = parsed as Record<string, HistoryMessage[]>;
       for (const [chatId, messages] of Object.entries(raw)) {
+        if (!Array.isArray(messages)) continue;
         // Only load recent messages (cap per chat)
         const trimmed = messages.slice(-MAX_HISTORY_PER_CHAT);
         chatHistories.set(chatId, trimmed);

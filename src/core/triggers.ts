@@ -562,10 +562,14 @@ export async function resumeAfterRestart(): Promise<void> {
     }
     if (
       t.status === "terminated" &&
-      t.lastFireAt === undefined &&
       t.endedAt &&
       Date.now() - t.endedAt < 5 * 60_000
     ) {
+      // Fire for all recently-terminated triggers regardless of whether they
+      // had previously sent mid-run TALON_FIRE: wakes. A long-running watcher
+      // that emitted fires before being killed by a restart still needs a
+      // terminal "terminated" notification — omitting it silently hides the
+      // trigger's death from the bot.
       await fireWake(t.id, "terminated", t.lastError, /* terminal */ true);
     }
   }
