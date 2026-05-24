@@ -79,3 +79,9 @@ export {
 } from "./capabilities.js";
 
 export { type AdapterOptions, adaptQueryBackend } from "./adapter.js";
+
+export {
+  type ActiveModelRefResolution,
+  resolveActiveModelRefForChat,
+  getActiveModelRefForChat,
+} from "./resolver.js";
