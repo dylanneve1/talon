@@ -85,3 +85,30 @@ export {
   resolveActiveModelRefForChat,
   getActiveModelRefForChat,
 } from "./resolver.js";
+
+export {
+  adaptInstantiatedBackend,
+  adaptOneBackend,
+  getAdaptedBackends,
+} from "./registry.js";
+
+export {
+  ToolRegistry,
+  ToolRegistryError,
+  groupToolsByServer,
+  parseMcpToolId,
+} from "./tool-registry.js";
+
+export { type JsonStoreFs, type JsonStoreOptions, JsonStore } from "./store.js";
+
+export {
+  assertBackendContract,
+  assertBackendIdentity,
+  assertBackgroundRunnerLifecycle,
+  assertChatBackendEmitsRunStarted,
+  assertChatBackendEmitsSingleUsage,
+  assertChatBackendTerminates,
+  assertCompletedUsageMatchesUsageEvent,
+  assertModelCatalogDefaultShape,
+  assertUsageTelemetryShape,
+} from "./contract-tests.js";
