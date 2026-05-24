@@ -133,7 +133,7 @@ other direction) this makes each backend rewrite local.
    `core/agent-runtime/resolver.js`.
 2. Replace `const { model } = await resolveActiveModelForChat(...)`
    with `const { ref, modelId } = await
-   resolveActiveModelRefForChat(...)`.
+resolveActiveModelRefForChat(...)`.
 3. Use `ref?.displayName ?? modelId ?? "No model selected"` for
    user-facing display.
 4. Use `ref?.contextWindow` instead of a separate
@@ -166,7 +166,7 @@ OpenCode.
 
 1. Define the persisted shape `interface MyStoreData { ... }`.
 2. Construct `new JsonStore<MyStoreData>({ path, defaultValue,
-   schemaVersion, validate, migrate })` at module scope.
+schemaVersion, validate, migrate })` at module scope.
 3. Replace the existing in-memory `Map` + dirty flag + autosave +
    `.bak` fallback + corrupt-read recovery code with calls to
    `store.load()` / `store.update()` / `store.save()`.
