@@ -83,6 +83,38 @@ async function editOrIgnoreSame(
   }
 }
 
+/**
+ * Wrapper around `answerCallbackQuery` that swallows Telegram's
+ * "query is too old / query ID is invalid" error. Telegram invalidates
+ * callback queries after ~15s; any handler whose pre-answer work runs
+ * longer (model resolution against an upstream API, backend rebind,
+ * SDK init, etc.) will throw an unhandled GrammyError when it finally
+ * tries to dismiss the spinner. The query is genuinely dead at that
+ * point — there is nothing useful to do beyond logging it so we can
+ * spot slow paths. Other failures still surface to the operator log.
+ */
+export async function answerCallbackQuerySafe(
+  ctx: Context,
+  other?: Parameters<Context["answerCallbackQuery"]>[0],
+): Promise<void> {
+  try {
+    if (other === undefined) {
+      await ctx.answerCallbackQuery();
+    } else {
+      await ctx.answerCallbackQuery(other);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      /query is too old|query id is invalid|response timeout expired/i.test(msg)
+    ) {
+      logWarn("bot", `answerCallbackQuery skipped — callback expired: ${msg}`);
+      return;
+    }
+    logWarn("bot", `answerCallbackQuery failed: ${msg}`);
+  }
+}
+
 export function registerCallbacks(
   bot: Bot,
   config: TalonConfig,
@@ -102,14 +134,14 @@ export function registerCallbacks(
     if (data.startsWith("settings:")) {
       const parts = data.split(":");
       if (!parts[1]) {
-        await ctx.answerCallbackQuery({ text: "Invalid callback data" });
+        await answerCallbackQuerySafe(ctx, { text: "Invalid callback data" });
         return;
       }
       const category = parts[1];
       const value = parts[2] ?? "";
 
       if (category === "noop") {
-        await ctx.answerCallbackQuery();
+        await answerCallbackQuerySafe(ctx);
         return;
       }
 
@@ -117,7 +149,7 @@ export function registerCallbacks(
       // shipped a Done button. Quietly ack — the user can dismiss the
       // message via Telegram's UI now.
       if (category === "done") {
-        await ctx.answerCallbackQuery();
+        await answerCallbackQuerySafe(ctx);
         return;
       }
 
@@ -125,7 +157,7 @@ export function registerCallbacks(
       // emitted by older Talon builds. Quietly ack — the user can re-open
       // /model to get the current picker.
       if (category === "model" || category === "models") {
-        await ctx.answerCallbackQuery({
+        await answerCallbackQuerySafe(ctx, {
           text: "Picker moved — use /model",
         });
         return;
@@ -145,12 +177,12 @@ export function registerCallbacks(
         } else if (supportsReasoningLevel(value, reasoning.levels)) {
           setChatEffort(cid, value as EffortLevel);
         } else {
-          await ctx.answerCallbackQuery({
+          await answerCallbackQuerySafe(ctx, {
             text: "No valid reasoning level for this model",
           });
           return;
         }
-        await ctx.answerCallbackQuery({
+        await answerCallbackQuerySafe(ctx, {
           text: `Effort: ${getChatSettings(cid).effort ?? "adaptive"}`,
         });
       } else if (category === "proactive") {
@@ -160,7 +192,7 @@ export function registerCallbacks(
         } else {
           disablePulse(cid);
         }
-        await ctx.answerCallbackQuery({ text: `Pulse: ${value}` });
+        await answerCallbackQuerySafe(ctx, { text: `Pulse: ${value}` });
       }
 
       const chatSets = getChatSettings(cid);
@@ -250,10 +282,10 @@ export function registerCallbacks(
       if (val === "on") {
         enablePulse(cid);
         registerChat(cid);
-        await ctx.answerCallbackQuery({ text: "Pulse: on" });
+        await answerCallbackQuerySafe(ctx, { text: "Pulse: on" });
       } else if (val === "off") {
         disablePulse(cid);
-        await ctx.answerCallbackQuery({ text: "Pulse: off" });
+        await answerCallbackQuerySafe(ctx, { text: "Pulse: off" });
       }
       const enabled = isPulseEnabled(cid);
       try {
@@ -292,19 +324,19 @@ export function registerCallbacks(
         config,
       });
       if (reasoning.levels.length === 0) {
-        await ctx.answerCallbackQuery({
+        await answerCallbackQuerySafe(ctx, {
           text: "No valid reasoning levels found",
         });
         return;
       }
       if (level === "adaptive") {
         setChatEffort(cid, undefined);
-        await ctx.answerCallbackQuery({ text: "Effort: adaptive" });
+        await answerCallbackQuerySafe(ctx, { text: "Effort: adaptive" });
       } else if (supportsReasoningLevel(level, reasoning.levels)) {
         setChatEffort(cid, level as EffortLevel);
-        await ctx.answerCallbackQuery({ text: `Effort: ${level}` });
+        await answerCallbackQuerySafe(ctx, { text: `Effort: ${level}` });
       } else {
-        await ctx.answerCallbackQuery({
+        await answerCallbackQuerySafe(ctx, {
           text: "Invalid reasoning level for this model",
         });
         return;
@@ -343,7 +375,7 @@ export function registerCallbacks(
       // Acknowledge fast (within Telegram's 30s window) so the user
       // doesn't see a perpetual loading spinner.
       if (action.kind === "done") {
-        await ctx.answerCallbackQuery({ text: "Done" });
+        await answerCallbackQuerySafe(ctx, { text: "Done" });
         try {
           await ctx.deleteMessage();
         } catch {
@@ -352,7 +384,7 @@ export function registerCallbacks(
         return;
       }
       if (action.kind === "noop" || action.kind === "unknown") {
-        await ctx.answerCallbackQuery();
+        await answerCallbackQuerySafe(ctx);
         return;
       }
 
@@ -373,7 +405,7 @@ export function registerCallbacks(
         if (be?.resolveModel) {
           const resolution = await be.resolveModel(action.modelId);
           if (resolution.kind !== "exact" || !resolution.model.selectable) {
-            await ctx.answerCallbackQuery({
+            await answerCallbackQuerySafe(ctx, {
               text:
                 resolution.kind === "exact"
                   ? (resolution.model.unavailableReason ?? "Unavailable")
@@ -453,14 +485,14 @@ export function registerCallbacks(
         // honour it here too.
         const available = listAvailableBackends(config);
         if (!available.some((b) => b.id === action.backendId)) {
-          await ctx.answerCallbackQuery({
+          await answerCallbackQuerySafe(ctx, {
             text: "Backend not available",
           });
           return;
         }
         const result = await rebindChat(cid, action.backendId, config);
         if (!result.ok) {
-          await ctx.answerCallbackQuery({
+          await answerCallbackQuerySafe(ctx, {
             text: result.error?.slice(0, 200) ?? "Rebind failed",
           });
           return;
@@ -519,9 +551,9 @@ export function registerCallbacks(
 
       // Selection / reset / toggle confirmations toast briefly.
       if (toast !== undefined) {
-        await ctx.answerCallbackQuery({ text: toast });
+        await answerCallbackQuerySafe(ctx, { text: toast });
       } else {
-        await ctx.answerCallbackQuery();
+        await answerCallbackQuerySafe(ctx);
       }
 
       // Re-render the message in the appropriate view.
