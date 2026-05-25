@@ -58,7 +58,12 @@ describe("toEventStream — minimum-fidelity envelope", () => {
     expect(completed.result?.usage.inputTokens).toBe(1);
   });
 
-  it("relays onStreamDelta → text_delta during the query", async () => {
+  it("relays accumulated onStreamDelta calls as monotonic text_delta deltas", async () => {
+    // The legacy `onStreamDelta(accumulated)` contract passes the
+    // FULL accumulated text on each call. `text_delta.text` carries
+    // just the new tail — pipe consumers (`pipeEventsToCallbacks`,
+    // `streamLog`) re-accumulate. The wrapper reconstructs the
+    // delta by diffing each accumulated value against the prior.
     const events = await drain(
       toEventStream(async (legacy: QueryParams) => {
         legacy.onStreamDelta?.("partial");
@@ -79,7 +84,36 @@ describe("toEventStream — minimum-fidelity envelope", () => {
     if (deltas[0]?.type !== "text_delta") throw new Error("expected delta");
     expect(deltas[0].text).toBe("partial");
     if (deltas[1]?.type !== "text_delta") throw new Error("expected delta");
-    expect(deltas[1].text).toBe("partial response");
+    expect(deltas[1].text).toBe(" response");
+    // Concatenated, the deltas reconstruct the full accumulated text.
+    expect(deltas.map((d) => (d.type === "text_delta" ? d.text : "")).join("")).toBe(
+      "partial response",
+    );
+  });
+
+  it("emits the full delta when onStreamDelta resets (non-monotonic accumulator)", async () => {
+    // Defensive: if a backend's accumulator resets mid-turn (text
+    // block boundary, redelivery), the wrapper falls back to
+    // emitting the full new string and re-anchoring.
+    const events = await drain(
+      toEventStream(async (legacy: QueryParams) => {
+        legacy.onStreamDelta?.("alpha");
+        legacy.onStreamDelta?.("BETA");
+        return {
+          text: "BETA",
+          durationMs: 1,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      }, baseParams()),
+    );
+
+    const deltas = events.filter((e) => e.type === "text_delta");
+    expect(deltas.map((d) => (d.type === "text_delta" ? d.text : ""))).toEqual(
+      ["alpha", "BETA"],
+    );
   });
 
   it("relays onTextBlock → assistant_message", async () => {

@@ -85,13 +85,41 @@ export async function* toEventStream(
     r?.();
   };
 
+  // The legacy `onStreamDelta` contract delivers the FULL accumulated
+  // text so far, not the new chunk. `AgentEvent.text_delta.text`
+  // carries the delta — the pipe consumer (`pipeEventsToCallbacks` /
+  // `streamLog` / `event-log-renderer`) re-accumulates. To bridge the
+  // two contracts, the wrapper tracks the prior accumulated value
+  // and emits only the trailing slice. Backends that already deliver
+  // per-token deltas via `onStreamDelta` (Codex's `agent_message`,
+  // Claude SDK's stream-events) call the callback with monotonically-
+  // growing accumulated strings; the diff is one chunk per call.
+  let lastAccumulated = "";
+
   const legacyParams: QueryParams = {
     ...params,
     onStreamDelta: (accumulated) => {
-      emit({ type: "text_delta", text: accumulated });
+      if (typeof accumulated !== "string" || accumulated.length === 0) {
+        return;
+      }
+      // Monotonic-prefix case: the new accumulated extends the prior
+      // one. Emit the new tail as the delta.
+      let chunk = accumulated;
+      if (accumulated.startsWith(lastAccumulated)) {
+        chunk = accumulated.slice(lastAccumulated.length);
+      }
+      // Anything else (reset, replacement) — emit the full string as
+      // a fresh delta and reset the accumulator. Rare but defensive.
+      lastAccumulated = accumulated;
+      if (chunk.length > 0) {
+        emit({ type: "text_delta", text: chunk });
+      }
     },
     onTextBlock: async (text) => {
       emit({ type: "assistant_message", text });
+      // A block delivery anchors the accumulator — subsequent
+      // streaming deltas restart from empty.
+      lastAccumulated = "";
     },
     onToolUse: (toolName, input) => {
       emit({
