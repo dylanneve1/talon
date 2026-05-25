@@ -4,13 +4,15 @@
  * Covers: initDream, maybeStartDream (guard paths), forceDream (concurrency),
  * state persistence, prompt template / mempalace gating, and timeout handling.
  *
- * Dream now routes through `backend.runOneShotAgent`. We supply a fake
+ * Dream now routes through `backend.background?.runOneShotAgent`. We supply a fake
  * backend; SDK-specific message formatting and MCP wiring live in
  * src/backend/<name>/one-shot.ts and are tested separately.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { OneShotAgentParams, QueryBackend } from "../core/types.js";
+import type { OneShotAgentParams } from "../core/types.js";
+import type { Backend } from "../core/agent-runtime/capabilities.js";
+import { stubBackend } from "./helpers/stub-backend.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -58,11 +60,11 @@ const runOneShotAgentMock = vi.fn<(p: OneShotAgentParams) => Promise<void>>(
   async () => {},
 );
 
-function makeMockBackend(): QueryBackend {
-  return {
+function makeMockBackend(): Backend {
+  return stubBackend({
     query: vi.fn(),
     runOneShotAgent: (p) => runOneShotAgentMock(p),
-  };
+  });
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
@@ -154,7 +156,7 @@ describe("forceDream", () => {
     await expect(forceDream()).resolves.toBeUndefined();
   });
 
-  it("calls backend.runOneShotAgent with contextLabel='dream'", async () => {
+  it("calls backend.background?.runOneShotAgent with contextLabel='dream'", async () => {
     await forceDream();
     expect(runOneShotAgentMock).toHaveBeenCalledTimes(1);
     const params = runOneShotAgentMock.mock.calls[0][0];
@@ -176,14 +178,16 @@ describe("forceDream", () => {
   it("rejects when backend has no runOneShotAgent", async () => {
     initDream({
       model: "claude-sonnet-4-6",
-      getBackend: () => ({ query: vi.fn() }),
+      // Backend with chat but no background slot → dream refuses
+      // to run because runOneShotAgent isn't available.
+      getBackend: () => stubBackend({ query: vi.fn() }),
     });
-    await expect(forceDream()).rejects.toThrow("runOneShotAgent");
+    await expect(forceDream()).rejects.toThrow("background");
   });
 
   it("rejects when no backend is configured", async () => {
     initDream({ model: "claude-sonnet-4-6" });
-    await expect(forceDream()).rejects.toThrow("runOneShotAgent");
+    await expect(forceDream()).rejects.toThrow("background");
   });
 });
 
@@ -258,10 +262,11 @@ describe("dream timeout", () => {
     mod = await import("../core/dream.js");
     mod.initDream({
       model: "claude-sonnet-4-6",
-      getBackend: () => ({
-        query: vi.fn(),
-        runOneShotAgent: timeoutRunOneShotMock,
-      }),
+      getBackend: () =>
+        stubBackend({
+          query: vi.fn(),
+          runOneShotAgent: timeoutRunOneShotMock,
+        }),
     });
   });
 
@@ -346,12 +351,13 @@ describe("maybeStartDream swallows errors", () => {
   it("does not propagate errors from the backend (auto trigger)", async () => {
     initDream({
       model: "claude-sonnet-4-6",
-      getBackend: () => ({
-        query: vi.fn(),
-        runOneShotAgent: async () => {
-          throw new Error("backend exploded");
-        },
-      }),
+      getBackend: () =>
+        stubBackend({
+          query: vi.fn(),
+          runOneShotAgent: async () => {
+            throw new Error("backend exploded");
+          },
+        }),
     });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReturnValue("dream prompt template");

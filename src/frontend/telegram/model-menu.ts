@@ -27,7 +27,7 @@
  */
 
 import type { TalonConfig } from "../../util/config.js";
-import type { QueryBackend } from "../../core/types.js";
+import type { Backend } from "../../core/agent-runtime/capabilities.js";
 import {
   buildModelMenuState,
   type ModelMenuState,
@@ -59,8 +59,8 @@ import { resolveActiveModelRefForChat } from "../../core/agent-runtime/resolver.
  */
 export function resolveBackendForChat(
   chatId: string,
-  gateway?: { backend: QueryBackend | null },
-): QueryBackend | null {
+  gateway?: { backend: Backend | null },
+): Backend | null {
   return resolveChatBackend(chatId, gateway?.backend ?? null);
 }
 
@@ -72,7 +72,7 @@ export function resolveBackendForChat(
  */
 export interface ModelMenuView {
   state: ModelMenuState;
-  backend: QueryBackend;
+  backend: Backend;
 }
 
 /**
@@ -96,10 +96,10 @@ export interface ModelMenuView {
 export async function buildModelMenuViewForChat(
   chatId: string,
   config: TalonConfig,
-  gateway?: { backend: QueryBackend | null },
+  gateway?: { backend: Backend | null },
 ): Promise<ModelMenuView | null> {
   const backend = resolveBackendForChat(chatId, gateway);
-  if (!backend?.getSettingsPresentation) return null;
+  if (!backend?.models?.getSettingsPresentation) return null;
 
   const chatSets = getChatSettings(chatId);
   const freeOnly = chatSets.freeOnly === true;
@@ -112,7 +112,7 @@ export async function buildModelMenuViewForChat(
     (b) => b.id === activeBackendId,
   ) ?? {
     id: activeBackendId,
-    label: backend.backendLabel ?? activeBackendId,
+    label: backend.label ?? activeBackendId,
   };
 
   // Phase 2.3: resolve through the ref-shaped helper so display name
@@ -134,9 +134,9 @@ export async function buildModelMenuViewForChat(
   // shows no "override" badge against gpt-5.5, not against Opus.
   // Falls through to config.model only when backend has no canonical.
   let backendDefault: string | null = null;
-  if (backend.getDefaultModel) {
+  if (backend.models?.getDefaultModelId) {
     try {
-      const v = await backend.getDefaultModel();
+      const v = await backend.models?.getDefaultModelId();
       if (typeof v === "string" && v.length > 0) backendDefault = v;
     } catch {
       /* leave null */
@@ -155,11 +155,14 @@ export async function buildModelMenuViewForChat(
     defaultModel: defaultForCompare,
     freeOnly,
     fetchSnapshot: async () => {
-      const pres = await backend.getSettingsPresentation!(snapshotModel, {
-        callbackPrefix: "model:",
-        navCallbackPrefix: "model:nav",
-        filter: freeOnly ? "free" : "all",
-      });
+      const pres = await backend.models!.getSettingsPresentation!(
+        snapshotModel,
+        {
+          callbackPrefix: "model:",
+          navCallbackPrefix: "model:nav",
+          filter: freeOnly ? "free" : "all",
+        },
+      );
       return {
         freeCount: pres.freeCount,
         totalCount: pres.totalCount,
@@ -172,7 +175,7 @@ export async function buildModelMenuViewForChat(
       // is known (legacy BackendId drift case).
       if (activeRef?.displayName) return activeRef.displayName;
       if (activeModel) {
-        return (await backend.getModelInfo?.(activeModel))?.displayName;
+        return (await backend.models?.getRawModelInfo?.(activeModel))?.displayName;
       }
       return undefined;
     },
@@ -189,7 +192,7 @@ export async function buildModelMenuViewForChat(
  * catalog plus the metadata callers need to render header lines.
  */
 export interface ModelBrowseView {
-  backend: QueryBackend;
+  backend: Backend;
   filter: "all" | "free";
   modelButtons: SettingsButton[];
   page: number;
@@ -217,10 +220,10 @@ export async function buildModelBrowseViewForChat(
     page?: number;
     provider?: string;
   },
-  gateway?: { backend: QueryBackend | null },
+  gateway?: { backend: Backend | null },
 ): Promise<ModelBrowseView | null> {
   const backend = resolveBackendForChat(chatId, gateway);
-  if (!backend?.getSettingsPresentation) return null;
+  if (!backend?.models?.getSettingsPresentation) return null;
 
   const chatSets = getChatSettings(chatId);
   const activeBackendId = hasBackendPool()
@@ -241,7 +244,7 @@ export async function buildModelBrowseViewForChat(
   const freeOnly = chatSets.freeOnly === true;
   const filter: "all" | "free" = options.filter ?? (freeOnly ? "free" : "all");
 
-  const pres = await backend.getSettingsPresentation(activeModel, {
+  const pres = await backend.models?.getSettingsPresentation(activeModel, {
     callbackPrefix: "model:",
     navCallbackPrefix: "model:nav",
     filter,
@@ -254,7 +257,7 @@ export async function buildModelBrowseViewForChat(
     activeDisplay = activeRef.displayName;
   } else {
     const modelInfo = activeModel
-      ? await backend.getModelInfo?.(activeModel)
+      ? await backend.models?.getRawModelInfo?.(activeModel)
       : undefined;
     activeDisplay = modelInfo?.displayName ?? activeModel;
   }

@@ -6,14 +6,16 @@
  * (success vs failure paths), and awaitCurrentRun.
  *
  * The heartbeat module no longer talks to an SDK directly — it routes
- * through `backend.runOneShotAgent`. We supply a fake backend with mockable
+ * through `backend.background?.runOneShotAgent`. We supply a fake backend with mockable
  * runOneShotAgent + evictOrphanSubprocesses methods. The SDK-specific
  * subprocess-eviction logic (formerly in heartbeat.ts) lives in
  * src/backend/claude-sdk/one-shot.ts and is covered by its own test file.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { OneShotAgentParams, QueryBackend } from "../core/types.js";
+import type { OneShotAgentParams } from "../core/types.js";
+import type { Backend } from "../core/agent-runtime/capabilities.js";
+import { stubBackend } from "./helpers/stub-backend.js";
 
 // ── Mocks ─────────────────────────────────────────────────────────────────
 
@@ -56,12 +58,12 @@ const evictOrphanSubprocessesMock = vi.fn(async (_label: string) => ({
   killed: 0,
 }));
 
-function makeMockBackend(): QueryBackend {
-  return {
+function makeMockBackend(): Backend {
+  return stubBackend({
     query: vi.fn(),
     runOneShotAgent: (p) => runOneShotAgentMock(p),
-    evictOrphanSubprocesses: (label) => evictOrphanSubprocessesMock(label),
-  };
+    evictOrphanSubprocesses: (label: string) => evictOrphanSubprocessesMock(label),
+  });
 }
 
 vi.mock("../util/paths.js", () => ({
@@ -210,7 +212,7 @@ describe("forceHeartbeat", () => {
     expect(finalState.status).toBe("idle");
   });
 
-  it("calls backend.runOneShotAgent with contextLabel='heartbeat'", async () => {
+  it("calls backend.background?.runOneShotAgent with contextLabel='heartbeat'", async () => {
     await forceHeartbeat();
 
     expect(runOneShotAgentMock).toHaveBeenCalledTimes(1);
@@ -278,7 +280,7 @@ describe("forceHeartbeat", () => {
     await expect(forceHeartbeat()).resolves.toBeUndefined();
   });
 
-  it("passes an AbortController to backend.runOneShotAgent", async () => {
+  it("passes an AbortController to backend.background?.runOneShotAgent", async () => {
     await forceHeartbeat();
 
     const params = runOneShotAgentMock.mock.calls[0][0];
@@ -554,11 +556,12 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
     evictionMod = await import("../core/heartbeat.js");
     evictionMod.initHeartbeat({
       model: "claude-sonnet-4-6",
-      getBackend: () => ({
-        query: vi.fn(),
-        runOneShotAgent: evictionRunOneShotMock,
-        evictOrphanSubprocesses: evictionEvictMock,
-      }),
+      getBackend: () =>
+        stubBackend({
+          query: vi.fn(),
+          runOneShotAgent: evictionRunOneShotMock,
+          evictOrphanSubprocesses: evictionEvictMock,
+        }),
     });
   });
 
@@ -637,13 +640,14 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
     // Re-init with a backend that doesn't implement eviction (e.g. Kilo).
     evictionMod.initHeartbeat({
       model: "claude-sonnet-4-6",
-      getBackend: () => ({
-        query: vi.fn(),
-        runOneShotAgent: () =>
-          new Promise<void>(() => {
-            /* never settles */
-          }),
-      }),
+      getBackend: () =>
+        stubBackend({
+          query: vi.fn(),
+          runOneShotAgent: () =>
+            new Promise<void>(() => {
+              /* never settles */
+            }),
+        }),
     });
 
     await expect(evictionMod.forceHeartbeat()).rejects.toThrow(
@@ -652,10 +656,11 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
     // Lock should still be released — verify by running another heartbeat.
     evictionMod.initHeartbeat({
       model: "claude-sonnet-4-6",
-      getBackend: () => ({
-        query: vi.fn(),
-        runOneShotAgent: async () => {},
-      }),
+      getBackend: () =>
+        stubBackend({
+          query: vi.fn(),
+          runOneShotAgent: async () => {},
+        }),
     });
     await expect(evictionMod.forceHeartbeat()).resolves.toBeUndefined();
   }, 5000);

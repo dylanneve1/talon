@@ -21,9 +21,9 @@
  *
  * After the 5-step chain hands back `{ model: id, source }`:
  *
- *   - If `backend.getModelInfo(id)` is available and returns a match,
+ *   - If `backend.models?.getRawModelInfo(id)` is available and returns a match,
  *     map `UnifiedModelInfo` → `ModelRef` (full metadata).
- *   - Else if `backend.resolveModel(id)` returns `kind: "exact"`,
+ *   - Else if `backend.models?.resolveModelInfo(id)` returns `kind: "exact"`,
  *     map its `model` the same way.
  *   - Else fall back to `makeBareModelRef(backend, id)` so the caller
  *     still gets the identity pair.
@@ -38,7 +38,7 @@
  *
  *   override-valid             → "chat"             (per-chat override)
  *   override-invalid-fallback  → "fallback"         (chain fell through)
- *   backend-canonical          → "backend-default"  (backend.getDefaultModel)
+ *   backend-canonical          → "backend-default"  (backend.models?.getDefaultModelId)
  *   config-backend-defaults    → "config"           (operator override)
  *   config-legacy-global       → "config"           (legacy config.model)
  *   none                       → (ref is null)
@@ -57,7 +57,7 @@ import {
   type ActiveModelResolution,
   type ActiveModelSource,
 } from "../active-model.js";
-import type { QueryBackend } from "../types.js";
+import type { Backend } from "./capabilities.js";
 import type { TalonConfig } from "../../util/config.js";
 import { logWarn } from "../../util/log.js";
 import {
@@ -93,7 +93,7 @@ export interface ActiveModelRefResolution {
  */
 export async function resolveActiveModelRefForChat(
   chatId: string,
-  backend: QueryBackend | null,
+  backend: Backend | null,
   backendId: string | null,
   config: TalonConfig,
 ): Promise<ActiveModelRefResolution> {
@@ -141,7 +141,7 @@ export async function resolveActiveModelRefForChat(
  */
 export async function getActiveModelRefForChat(
   chatId: string,
-  backend: QueryBackend | null,
+  backend: Backend | null,
   backendId: string | null,
   config: TalonConfig,
 ): Promise<ModelRef | null> {
@@ -157,31 +157,32 @@ export async function getActiveModelRefForChat(
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 async function enrichRef(
-  backend: QueryBackend | null,
+  backend: Backend | null,
   backendId: BackendId,
   modelId: string,
   cacheSupport: CacheSupport,
   source: ModelSource,
 ): Promise<ModelRef> {
-  if (backend?.getModelInfo) {
+  const catalog = backend?.models;
+  if (catalog?.getRawModelInfo) {
     try {
-      const info = await backend.getModelInfo(modelId);
+      const info = await catalog.getRawModelInfo(modelId);
       if (info) {
         return unifiedToModelRef(info, backendId, cacheSupport, source);
       }
     } catch (err) {
       logWarn(
         "settings",
-        `resolveActiveModelRefForChat: getModelInfo("${modelId}") threw: ` +
+        `resolveActiveModelRefForChat: getRawModelInfo("${modelId}") threw: ` +
           `${err instanceof Error ? err.message : String(err)}. Falling ` +
-          `through to resolveModel.`,
+          `through to resolveModelInfo.`,
       );
     }
   }
 
-  if (backend?.resolveModel) {
+  if (catalog?.resolveModelInfo) {
     try {
-      const resolution = await backend.resolveModel(modelId);
+      const resolution = await catalog.resolveModelInfo(modelId);
       if (resolution.kind === "exact") {
         return unifiedToModelRef(
           resolution.model,
@@ -193,7 +194,7 @@ async function enrichRef(
     } catch (err) {
       logWarn(
         "settings",
-        `resolveActiveModelRefForChat: resolveModel("${modelId}") threw: ` +
+        `resolveActiveModelRefForChat: resolveModelInfo("${modelId}") threw: ` +
           `${err instanceof Error ? err.message : String(err)}. Falling ` +
           `through to bare ref.`,
       );
@@ -228,7 +229,7 @@ function unifiedToModelRef(
   };
 }
 
-function mapCacheSupport(backend: QueryBackend | null): CacheSupport {
+function mapCacheSupport(backend: Backend | null): CacheSupport {
   switch (backend?.cacheMetrics) {
     case "read":
       return "read";

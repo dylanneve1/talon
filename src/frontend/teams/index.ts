@@ -221,7 +221,7 @@ export function createTeamsFrontend(
               resetSession(talonChatId);
               clearHistory(talonChatId);
               log("teams", `Session reset by ${msg.senderName}`);
-              await gateway.backend?.warmSession?.(talonChatId);
+              await gateway.backend?.sessions?.warmSession?.(talonChatId);
               const card = buildAdaptiveCard("Session cleared.");
               await proxyFetch(webhookUrl, {
                 method: "POST",

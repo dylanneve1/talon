@@ -1,5 +1,5 @@
 /**
- * Backend controller — refcounted pool of `QueryBackend` instances
+ * Backend controller — refcounted pool of `Backend` instances
  * keyed by **holder**. A holder is any string the rest of Talon uses
  * to claim a backend reference: `role:chat`, `role:heartbeat`,
  * `role:dream`, or `chat:<chatId>` for per-chat overrides.
@@ -41,7 +41,7 @@
  * haven't been ported.
  */
 
-import type { QueryBackend } from "./types.js";
+import type { Backend } from "./agent-runtime/capabilities.js";
 import type { TalonConfig } from "../util/config.js";
 import {
   getBackend,
@@ -73,7 +73,7 @@ export function chatHolder(chatId: string): BackendHolder {
 interface PoolEntry {
   id: string;
   label: string;
-  backend: QueryBackend;
+  backend: Backend;
   cleanup?: () => Promise<void> | void;
   holders: Set<BackendHolder>;
 }
@@ -112,7 +112,7 @@ export interface PoolSnapshot {
 /** Notified after a successful rebind. */
 type BackendChangeListener = (
   holder: BackendHolder,
-  backend: QueryBackend,
+  backend: Backend,
   ctx: { id: string; label: string },
 ) => void;
 
@@ -195,7 +195,7 @@ async function releaseHolderFromEntry(
 
 function notifyListeners(
   holder: BackendHolder,
-  backend: QueryBackend,
+  backend: Backend,
   ctx: { id: string; label: string },
 ): void {
   for (const listener of listeners) {
@@ -277,7 +277,7 @@ export function hasBackendPool(): boolean {
 }
 
 /** Backend instance for a role. Throws if the role isn't bound. */
-export function getBackendForRole(role: BackendRole): QueryBackend {
+export function getBackendForRole(role: BackendRole): Backend {
   const holder = roleHolder(role);
   const id = bindings.get(holder);
   if (!id) {
@@ -347,15 +347,17 @@ export function isBackendAvailable(id: string, config?: TalonConfig): boolean {
  * user state we cannot prove is stale.
  */
 export async function isModelValidForBackend(
-  backend: QueryBackend,
+  backend: Backend,
   model: string,
 ): Promise<boolean> {
-  if (backend.getModelInfo) {
-    const info = await backend.getModelInfo(model);
+  const catalog = backend.models;
+  if (!catalog) return true;
+  if (catalog.getRawModelInfo) {
+    const info = await catalog.getRawModelInfo(model);
     return Boolean(info && info.selectable !== false);
   }
-  if (backend.resolveModel) {
-    const resolution = await backend.resolveModel(model);
+  if (catalog.resolveModelInfo) {
+    const resolution = await catalog.resolveModelInfo(model);
     return resolution.kind === "exact" && resolution.model.selectable !== false;
   }
   return true;
@@ -526,7 +528,7 @@ export function releaseChat(chatId: string): Promise<void> {
  * If the chat has an override pooled, return that backend; otherwise
  * fall back to the global chat-role backend.
  */
-export function getBackendForChat(chatId: string): QueryBackend {
+export function getBackendForChat(chatId: string): Backend {
   const overrideId = bindings.get(chatHolder(chatId));
   if (overrideId) {
     const entry = pool.get(overrideId);
@@ -560,8 +562,8 @@ export function hasChatBackendOverride(chatId: string): boolean {
  */
 export function resolveChatBackend(
   chatId: string,
-  fallback?: QueryBackend | null,
-): QueryBackend | null {
+  fallback?: Backend | null,
+): Backend | null {
   if (hasBackendPool()) {
     try {
       return getBackendForChat(chatId);
@@ -634,7 +636,7 @@ export async function initBackendController(
   id: string,
   config: TalonConfig,
   ctx: BackendInitContext,
-): Promise<QueryBackend> {
+): Promise<Backend> {
   initCtx = ctx;
   const entry = await ensurePoolEntry(id, config);
   const holder = roleHolder("chat");
@@ -645,7 +647,7 @@ export async function initBackendController(
 }
 
 /** Equivalent to `getBackendForRole("chat")`. Legacy alias. */
-export function getActiveBackend(): QueryBackend {
+export function getActiveBackend(): Backend {
   if (!bindings.has(roleHolder("chat"))) {
     throw new Error(
       "Backend controller not initialised — call initBackendController first",
@@ -660,7 +662,7 @@ export function hasActiveBackend(): boolean {
 }
 
 /** Like `getActiveBackend` but returns `null` instead of throwing. */
-export function getActiveBackendOrNull(): QueryBackend | null {
+export function getActiveBackendOrNull(): Backend | null {
   if (!bindings.has(roleHolder("chat"))) return null;
   try {
     return getBackendForRole("chat");

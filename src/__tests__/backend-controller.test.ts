@@ -4,7 +4,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { QueryBackend } from "../core/types.js";
+import type { Backend } from "../core/agent-runtime/capabilities.js";
+import { stubBackend } from "./helpers/stub-backend.js";
 import type { TalonConfig } from "../util/config.js";
 import {
   registerBackend,
@@ -28,8 +29,9 @@ import {
   clearBackendChangeListenersForTest,
 } from "../core/backend-controller.js";
 
-function makeStubBackend(label: string): QueryBackend {
-  return {
+function makeStubBackend(label: string): Backend {
+  return stubBackend({
+    label,
     query: vi.fn(async () => ({
       text: `[${label}] reply`,
       durationMs: 1,
@@ -38,7 +40,7 @@ function makeStubBackend(label: string): QueryBackend {
       cacheRead: 0,
       cacheWrite: 0,
     })),
-  };
+  });
 }
 
 function makeFactory(
@@ -48,7 +50,7 @@ function makeFactory(
     failInit?: boolean;
     cleanupSpy?: (id: string) => void;
     initSpy?: (id: string) => void;
-    backend?: QueryBackend;
+    backend?: Backend;
   } = {},
 ): BackendFactory {
   return {
@@ -280,9 +282,10 @@ describe("backend-controller", () => {
     expect(isBackendAvailable("ghost")).toBe(false);
   });
 
-  it("isModelValidForBackend uses getModelInfo when available", async () => {
-    const backend: QueryBackend = {
-      ...makeStubBackend("Alpha"),
+  it("isModelValidForBackend uses getRawModelInfo when available", async () => {
+    const resolveModelMock = vi.fn(async () => ({ kind: "missing" }) as const);
+    const backend = stubBackend({
+      label: "Alpha",
       getModelInfo: vi.fn(async (id: string) =>
         id === "good"
           ? {
@@ -302,8 +305,8 @@ describe("backend-controller", () => {
               }
             : undefined,
       ),
-      resolveModel: vi.fn(async () => ({ kind: "missing" }) as const),
-    };
+      resolveModel: resolveModelMock,
+    });
 
     await expect(isModelValidForBackend(backend, "good")).resolves.toBe(true);
     await expect(isModelValidForBackend(backend, "hidden")).resolves.toBe(
@@ -312,12 +315,13 @@ describe("backend-controller", () => {
     await expect(isModelValidForBackend(backend, "missing")).resolves.toBe(
       false,
     );
-    expect(backend.resolveModel).not.toHaveBeenCalled();
+    expect(resolveModelMock).not.toHaveBeenCalled();
   });
 
-  it("isModelValidForBackend falls back to resolveModel", async () => {
-    const backend: QueryBackend = {
-      ...makeStubBackend("Alpha"),
+  it("isModelValidForBackend falls back to resolveModelInfo", async () => {
+    const backend = stubBackend({
+      label: "Alpha",
+      // No getModelInfo — forces the fallback to resolveModelInfo.
       resolveModel: vi.fn(async (query: string) =>
         query === "good"
           ? ({
@@ -333,7 +337,7 @@ describe("backend-controller", () => {
             } as const)
           : ({ kind: "missing" } as const),
       ),
-    };
+    });
 
     await expect(isModelValidForBackend(backend, "good")).resolves.toBe(true);
     await expect(isModelValidForBackend(backend, "missing")).resolves.toBe(

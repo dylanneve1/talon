@@ -65,7 +65,6 @@ export {
   type Backend,
   type BackendCapabilities,
   type BackgroundRunner,
-  type BackgroundRunParams,
   type ChatBackend,
   type ChatRunParams,
   type ModelCatalog,
@@ -74,25 +73,19 @@ export {
   type ModelResolution,
   type ModelResolveContext,
   type SessionBackend,
+  type SystemControl,
   type ToolRefreshResult,
   type ToolRuntime,
   type UsageTelemetry,
+  composeBackend,
   deriveCapabilities,
 } from "./capabilities.js";
-
-export { type AdapterOptions, adaptQueryBackend } from "./adapter.js";
 
 export {
   type ActiveModelRefResolution,
   resolveActiveModelRefForChat,
   getActiveModelRefForChat,
 } from "./resolver.js";
-
-export {
-  adaptInstantiatedBackend,
-  adaptOneBackend,
-  getAdaptedBackends,
-} from "./registry.js";
 
 export {
   ToolRegistry,

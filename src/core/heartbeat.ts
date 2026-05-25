@@ -16,7 +16,8 @@ import { files as pathFiles, dirs } from "../util/paths.js";
 import { log, logError, logWarn } from "../util/log.js";
 import { toYMD } from "../util/time.js";
 import { getDefaultModel } from "./models.js";
-import type { OneShotAgentParams, QueryBackend } from "./types.js";
+import type { OneShotAgentParams } from "./types.js";
+import type { Backend } from "./agent-runtime/capabilities.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +95,7 @@ let configRef: {
    * fires so backend hot-swaps performed by the controller take
    * effect on the next heartbeat without an `initHeartbeat` recall.
    */
-  getBackend?: () => QueryBackend | null;
+  getBackend?: () => Backend | null;
   /**
    * Non-terminal frontends present at startup. Used to render the outbound
    * messaging section of the heartbeat system prompt. Empty for terminal-only
@@ -109,11 +110,11 @@ export function initHeartbeat(cfg: {
   heartbeatModel?: string;
   workspace?: string;
   /**
-   * Provider for the active backend — heartbeat runs `backend.runOneShotAgent`.
+   * Provider for the active backend — heartbeat runs `backend.background?.runOneShotAgent`.
    * Passed as a function (rather than a backend reference) so a backend
    * swap mid-cycle is picked up on the next heartbeat.
    */
-  getBackend?: () => QueryBackend | null;
+  getBackend?: () => Backend | null;
   /** Non-terminal frontends present at startup (telegram, discord, …). */
   frontends?: readonly string[];
 }): void {
@@ -362,9 +363,10 @@ async function runHeartbeatAgent(
     configRef.heartbeatModel ?? configRef.model ?? getDefaultModel();
 
   const backend = configRef.getBackend?.() ?? null;
-  if (!backend?.runOneShotAgent) {
+  const background = backend?.background;
+  if (!background) {
     throw new Error(
-      "Heartbeat requires a backend that implements runOneShotAgent",
+      "Heartbeat requires a backend that implements the background capability",
     );
   }
 
@@ -417,7 +419,7 @@ async function runHeartbeatAgent(
   });
 
   const agentPromise = (async () => {
-    await backend.runOneShotAgent!(oneShotParams);
+    await background.runOneShotAgent(oneShotParams);
     await appendHeartbeatLog(
       heartbeatLogFile,
       `\n---\n**Heartbeat #${runCount} completed at ${new Date().toISOString()}**\n`,
@@ -458,9 +460,9 @@ async function runHeartbeatAgent(
         // Fire-and-forget — we don't block the next heartbeat on subprocess
         // cleanup. Backends that don't spawn per-run subprocesses (Kilo,
         // OpenCode) leave evictOrphanSubprocesses unimplemented; that's fine.
-        const evict = backend.evictOrphanSubprocesses;
+        const evict = background.evictOrphanSubprocesses;
         if (evict) {
-          evict("heartbeat").catch((sweepErr) => {
+          evict("heartbeat").catch((sweepErr: unknown) => {
             logError("heartbeat", "Orphan subprocess sweep failed", sweepErr);
           });
         }

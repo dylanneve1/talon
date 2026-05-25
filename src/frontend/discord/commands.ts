@@ -579,8 +579,8 @@ async function handleReset(
   const chatBackend = resolveChatBackend(chatId, gateway?.backend);
   // Wipe any in-process backend memory (e.g. openai-agents'
   // MemorySession). Stateless backends ignore this.
-  chatBackend?.resetChat?.(chatId);
-  await chatBackend?.warmSession?.(chatId);
+  chatBackend?.sessions?.resetChat?.(chatId);
+  await chatBackend?.sessions?.warmSession?.(chatId);
   await reply(i, "Session cleared.", true);
 }
 
@@ -630,9 +630,9 @@ async function handleStatus(
   if (statusModelRef?.contextWindow) {
     ctxMax = ctxMax || statusModelRef.contextWindow;
   }
-  if (be?.getSessionSnapshot && info.sessionId) {
+  if (be?.usage?.getSessionSnapshot && info.sessionId) {
     const snap = await be
-      .getSessionSnapshot(info.sessionId)
+      .usage?.getSessionSnapshot(info.sessionId)
       .catch(() => undefined);
     if (snap) {
       displayInputTokens = snap.inputTokens ?? displayInputTokens;
@@ -671,7 +671,7 @@ async function handleStatus(
   const diskBytes = getWorkspaceDiskUsage(config.workspace);
   const diskStr = formatBytes(diskBytes);
 
-  const backendLabel = be?.backendLabel ?? "";
+  const backendLabel = be?.label ?? "";
   const lines = [
     `**🦅 Talon** · \`${formatModelLabel(activeModel)}\`${backendLabel ? ` · *${backendLabel}*` : ""} · effort: ${effortName}`,
     "",
@@ -742,12 +742,12 @@ async function handleModel(
       await reply(i, msg, true);
       return;
     }
-    if (be?.getSettingsPresentation) {
-      const pres = await be.getSettingsPresentation(activeModel, {
+    if (be?.models?.getSettingsPresentation) {
+      const pres = await be.models?.getSettingsPresentation(activeModel, {
         callbackPrefix: "model:",
       });
       const modelInfo = activeModel
-        ? await be.getModelInfo?.(activeModel)
+        ? await be.models?.getRawModelInfo?.(activeModel)
         : undefined;
       const displayName =
         modelInfo?.displayName ??
@@ -780,11 +780,11 @@ async function handleModel(
     return;
   }
 
-  if (be?.resolveModel) {
-    const resolution = await be.resolveModel(arg);
+  if (be?.models?.resolveModelInfo) {
+    const resolution = await be.models?.resolveModelInfo(arg);
     if (resolution.kind !== "exact") {
       const msg =
-        be.formatModelError?.(arg, resolution) ?? `No model matched "${arg}".`;
+        be.models?.formatModelError?.(arg, resolution) ?? `No model matched "${arg}".`;
       await reply(i, msg, true);
       return;
     }
@@ -979,9 +979,9 @@ async function handleSettings(
   // `settingsBe` already resolved above for the activeModel lookup;
   // reuse it for the catalog snapshot. Pass the raw resolved id (or
   // empty string) — never the "No model selected" sentinel.
-  if (settingsBe?.getSettingsPresentation) {
+  if (settingsBe?.models?.getSettingsPresentation) {
     const presModelId = resolvedActive ?? "";
-    const presentation = await settingsBe.getSettingsPresentation(presModelId);
+    const presentation = await settingsBe.models?.getSettingsPresentation(presModelId);
     modelDetails = presentation.modelDetails;
     modelButtons = presentation.modelButtons;
   }

@@ -13,10 +13,15 @@ import { toEventStream } from "../backend/shared/to-event-stream.js";
 import type { QueryParams, QueryResult } from "../core/types.js";
 import type { AgentEvent } from "../core/agent-runtime/events.js";
 
-function baseParams() {
+import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";
+import { defaultRunPolicyFor } from "../core/agent-runtime/run-policy.js";
+import type { ChatRunParams } from "../core/agent-runtime/capabilities.js";
+
+function baseParams(): ChatRunParams {
   return {
     chatId: "chat-1",
-    model: "stub-model",
+    model: makeBareModelRef("claude", "stub-model"),
+    policy: defaultRunPolicyFor("chat"),
     text: "ping",
     senderName: "Dylan",
   };
@@ -207,34 +212,8 @@ describe("toEventStream — minimum-fidelity envelope", () => {
     ]);
   });
 
-  it("does not relay caller-supplied callbacks — toEventStream owns the streaming surface", async () => {
-    // RunChatTurnEventsParams is `Omit<QueryParams, "onStreamDelta" |
-    // "onTextBlock" | "onToolUse">`. Even if a caller smuggled extra
-    // callback fields via a cast, the helper's queued callbacks
-    // override them. This pins that contract.
-    let extraCallbackFired = false;
-    // Deliberately stuff a callback that should never be exercised —
-    // the wrapper builds its own and overwrites any caller-supplied
-    // streaming hooks on the legacy params it constructs.
-    const params = {
-      ...baseParams(),
-      onStreamDelta: () => {
-        extraCallbackFired = true;
-      },
-    } as Parameters<typeof toEventStream>[1];
-    await drain(
-      toEventStream(async (legacy: QueryParams) => {
-        legacy.onStreamDelta?.("ignored");
-        return {
-          text: "ok",
-          durationMs: 1,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-        };
-      }, params),
-    );
-    expect(extraCallbackFired).toBe(false);
-  });
+  // The caller-supplied-callback test is gone with the legacy
+  // surface — `ChatRunParams` no longer carries `onStreamDelta` /
+  // `onTextBlock` / `onToolUse`, so there's nothing to smuggle.
+  // `toEventStream` owns the streaming surface end-to-end now.
 });

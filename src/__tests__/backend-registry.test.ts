@@ -14,14 +14,18 @@ import {
   hasBackend,
   type BackendFactory,
 } from "../backend/registry.js";
-import type { QueryBackend, QueryResult } from "../core/types.js";
+import type { QueryResult } from "../core/types.js";
+import { stubBackend } from "./helpers/stub-backend.js";
+import type { BackendId } from "../core/agent-runtime/model-ref.js";
 
 function makeStubFactory(id: string, label = id.toUpperCase()): BackendFactory {
   return {
     id,
     label,
     async init() {
-      const backend: QueryBackend = {
+      const backend = stubBackend({
+        id: id as BackendId,
+        label,
         query: async (): Promise<QueryResult> => ({
           text: `stub:${id}`,
           durationMs: 0,
@@ -30,8 +34,7 @@ function makeStubFactory(id: string, label = id.toUpperCase()): BackendFactory {
           cacheRead: 0,
           cacheWrite: 0,
         }),
-        backendLabel: label,
-      };
+      });
       return { backend };
     },
   };
@@ -91,7 +94,7 @@ describe("backend registry", () => {
     expect(listBackends()).toHaveLength(0);
   });
 
-  it("init() returns the wired QueryBackend", async () => {
+  it("init() returns the wired Backend", async () => {
     const factory = makeStubFactory("stub");
     registerBackend(factory);
     const got = getBackend("stub")!;
@@ -99,11 +102,20 @@ describe("backend registry", () => {
       getBridgePort: () => 0,
       frontendName: "telegram",
     });
-    const result = await backend.query({
+    // The backend's chat slot wraps the underlying query through
+    // toEventStream — drain the stream to recover the result text.
+    expect(backend.chat).toBeDefined();
+    const events: import("../core/agent-runtime/events.js").AgentEvent[] = [];
+    for await (const event of backend.chat!.runChatTurn({
       chatId: "1",
+      model: { backend: "stub" as never, id: "x", displayName: "x", source: "discovered" as const, cacheSupport: "none" as const, selectable: true },
+      policy: (await import("../core/agent-runtime/run-policy.js")).defaultRunPolicyFor("chat"),
       text: "x",
       senderName: "u",
-    });
-    expect(result.text).toBe("stub:stub");
+    })) {
+      events.push(event);
+    }
+    const completed = events.find((e) => e.type === "completed");
+    expect(completed && completed.type === "completed" && completed.result?.text).toBe("stub:stub");
   });
 });

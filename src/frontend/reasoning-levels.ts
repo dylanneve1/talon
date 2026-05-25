@@ -45,7 +45,7 @@ export async function getActiveReasoningLevels(params: {
   );
   if (!activeModel) return { activeModel: null, levels: [] };
 
-  const modelInfo = await params.backend?.getModelInfo?.(activeModel);
+  const modelInfo = await params.backend?.models?.getRawModelInfo?.(activeModel);
   const levels = normalizeReasoningLevels(modelInfo?.supportedReasoningLevels);
   return { activeModel, modelInfo, levels };
 }

@@ -7,7 +7,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { QueryBackend } from "../core/types.js";
+import type { Backend } from "../core/agent-runtime/capabilities.js";
+import { stubBackend } from "./helpers/stub-backend.js";
 import type { TalonConfig } from "../util/config.js";
 import {
   registerBackend,
@@ -28,8 +29,9 @@ import {
   clearBackendChangeListenersForTest,
 } from "../core/backend-controller.js";
 
-function makeStubBackend(label: string): QueryBackend {
-  return {
+function makeStubBackend(label: string): Backend {
+  return stubBackend({
+    label,
     query: vi.fn(async () => ({
       text: `[${label}] reply`,
       durationMs: 1,
@@ -38,7 +40,7 @@ function makeStubBackend(label: string): QueryBackend {
       cacheRead: 0,
       cacheWrite: 0,
     })),
-  };
+  });
 }
 
 function makeFactory(

@@ -180,9 +180,9 @@ export function registerCommands(
     const chatBackend = resolveBackendForChat(cid, gateway);
     // Wipe any in-process backend memory (e.g. openai-agents'
     // MemorySession). Stateless backends ignore this.
-    chatBackend?.resetChat?.(cid);
+    chatBackend?.sessions?.resetChat?.(cid);
     // Warm up the new session so /status has context data immediately.
-    await chatBackend?.warmSession?.(cid);
+    await chatBackend?.sessions?.warmSession?.(cid);
     await ctx.reply("Session cleared.");
   });
 
@@ -274,11 +274,11 @@ export function registerCommands(
 
     // `be` + `beId` already resolved above for the activeModel lookup.
     // Reuse them — they point at the per-chat backend (override-aware).
-    if (be?.resolveModel) {
-      const resolution = await be.resolveModel(arg);
+    if (be?.models?.resolveModelInfo) {
+      const resolution = await be.models?.resolveModelInfo(arg);
       if (resolution.kind !== "exact") {
         const msg =
-          be.formatModelError?.(arg, resolution) ??
+          be.models?.formatModelError?.(arg, resolution) ??
           `No model matched "${escapeHtml(arg)}".`;
         await ctx.reply(msg, { parse_mode: "HTML" });
         return;
@@ -491,8 +491,8 @@ export function registerCommands(
       | undefined;
     let view: "models" | "groups" = "models";
     let activeProvider: string | undefined;
-    if (settingsBe?.getSettingsPresentation && resolvedSettingsModel) {
-      const pres = await settingsBe.getSettingsPresentation(
+    if (settingsBe?.models?.getSettingsPresentation && resolvedSettingsModel) {
+      const pres = await settingsBe.models?.getSettingsPresentation(
         resolvedSettingsModel,
       );
       modelButtons = pres.modelButtons;
@@ -583,9 +583,9 @@ export function registerCommands(
     if (statusModelRef?.contextWindow) {
       ctxMax = ctxMax || statusModelRef.contextWindow;
     }
-    if (be?.getSessionSnapshot && info.sessionId) {
+    if (be?.usage?.getSessionSnapshot && info.sessionId) {
       const snap = await be
-        .getSessionSnapshot(info.sessionId)
+        .usage?.getSessionSnapshot(info.sessionId)
         .catch(() => undefined);
       if (snap) {
         displayInputTokens = snap.inputTokens ?? displayInputTokens;
@@ -597,10 +597,10 @@ export function registerCommands(
         if (
           snap.contextModelId &&
           snap.contextModelId !== activeModel &&
-          be.getModelInfo
+          be.models?.getRawModelInfo
         ) {
           const ctxModelInfo = await be
-            .getModelInfo(snap.contextModelId)
+            .models?.getRawModelInfo(snap.contextModelId)
             .catch(() => undefined);
           if (ctxModelInfo?.contextWindow) ctxMax = ctxModelInfo.contextWindow;
         }
@@ -637,7 +637,7 @@ export function registerCommands(
     const diskBytes = getWorkspaceDiskUsage(config.workspace);
     const diskStr = formatBytes(diskBytes);
 
-    const backendLabel = be?.backendLabel ?? "";
+    const backendLabel = be?.label ?? "";
     const lines = [
       `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code>${backendLabel ? ` \u00B7 <i>${escapeHtml(backendLabel)}</i>` : ""} \u00B7 effort: ${effortName}`,
       "",

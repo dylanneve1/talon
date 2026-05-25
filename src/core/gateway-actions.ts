@@ -47,7 +47,8 @@ import {
 } from "../storage/trigger-store.js";
 import { cancelTrigger, spawnTrigger } from "./triggers.js";
 import { log, logWarn } from "../util/log.js";
-import type { ActionResult, QueryBackend } from "./types.js";
+import type { ActionResult } from "./types.js";
+import type { Backend } from "./agent-runtime/capabilities.js";
 
 /** Extract readable text from HTML using cheerio (proper DOM parser). */
 function extractText(html: string, maxLength = 8000): string {
@@ -62,7 +63,7 @@ function extractText(html: string, maxLength = 8000): string {
 export async function handleSharedAction(
   body: Record<string, unknown>,
   chatId: number,
-  backend?: QueryBackend | null,
+  backend?: Backend | null,
 ): Promise<ActionResult | null> {
   const action = body.action as string;
 
@@ -544,12 +545,12 @@ export async function handleSharedAction(
         // Rebuild system prompt on the freshConfig, then update the backend's
         // live config reference so subsequent messages use the new prompt
         rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
-        backend?.updateSystemPrompt?.(freshConfig.systemPrompt);
+        backend?.control?.updateSystemPrompt?.(freshConfig.systemPrompt);
 
         // Hot-swap MCP servers on the active query so new plugin tools
         // are available immediately (not just on the next message)
         let mcpInfo = "";
-        if (backend?.refreshMcpServers) {
+        if (backend?.tools?.refreshTools) {
           try {
             // Prefer body._chatId (string chat ID passed by frontends that use
             // non-numeric IDs, e.g. Teams/terminal) over the numeric context ID.
@@ -557,7 +558,7 @@ export async function handleSharedAction(
               typeof body._chatId === "string" && body._chatId.length > 0
                 ? body._chatId
                 : String(chatId);
-            const result = await backend.refreshMcpServers(refreshChatId);
+            const result = await backend.tools.refreshTools(refreshChatId);
             if (result) {
               const parts: string[] = [];
               if (result.added.length > 0)

@@ -11,11 +11,14 @@
 
 import { randomBytes } from "node:crypto";
 import type {
-  QueryBackend,
   ContextManager,
   ExecuteParams,
   ExecuteResult,
 } from "./types.js";
+import type { Backend } from "./agent-runtime/capabilities.js";
+import { pipeEventsToCallbacks } from "./agent-runtime/legacy-bridge.js";
+import { makeBareModelRef } from "./agent-runtime/model-ref.js";
+import { defaultRunPolicyFor } from "./agent-runtime/run-policy.js";
 import { log, logDebug, logWarn } from "../util/log.js";
 import { maybeStartDream } from "./dream.js";
 
@@ -35,7 +38,7 @@ import { maybeStartDream } from "./dream.js";
  * is skipped and every query passes through.
  */
 type DispatcherDeps = {
-  getBackend: (chatId?: string) => QueryBackend;
+  getBackend: (chatId?: string) => Backend;
   resolveActiveModel?: (
     chatId: string,
   ) => Promise<{ model: string | null; backendId: string }>;
@@ -181,17 +184,44 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
       });
     }, 4000);
 
-    const result = await backend.query({
+    // Consume the backend's native `AgentEvent` stream and pipe it
+    // back into the legacy callback shape the dispatcher's caller
+    // contract still uses. `pipeEventsToCallbacks` mirrors
+    // text_delta / assistant_message / tool_call into the supplied
+    // hooks and returns the final `AgentResult` from the
+    // `completed` event.
+    if (!backend.chat) {
+      throw new Error(
+        `Backend "${backend.id}" has no chat capability — cannot run a turn.`,
+      );
+    }
+    const modelRef = makeBareModelRef(
+      backend.id,
+      resolvedModel ?? "",
+      "discovered",
+    );
+    const stream = backend.chat.runChatTurn({
       chatId: params.chatId,
-      ...(resolvedModel ? { model: resolvedModel } : {}),
+      model: modelRef,
+      policy: defaultRunPolicyFor("chat"),
       text: params.prompt,
       senderName: params.senderName,
       isGroup: params.isGroup,
       messageId: params.messageId,
+    });
+    const agentResult = await pipeEventsToCallbacks(stream, {
       onStreamDelta: params.onStreamDelta,
       onTextBlock: params.onTextBlock,
       onToolUse: params.onToolUse,
     });
+    const result = {
+      text: agentResult?.text ?? "",
+      durationMs: agentResult?.durationMs ?? 0,
+      inputTokens: agentResult?.usage.inputTokens ?? 0,
+      outputTokens: agentResult?.usage.outputTokens ?? 0,
+      cacheRead: agentResult?.usage.cacheRead ?? 0,
+      cacheWrite: agentResult?.usage.cacheWrite ?? 0,
+    };
 
     onActivity();
 

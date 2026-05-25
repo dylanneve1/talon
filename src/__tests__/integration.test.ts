@@ -5,7 +5,8 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { initDispatcher, execute } from "../core/dispatcher.js";
-import type { QueryBackend, ContextManager } from "../core/types.js";
+import type { ContextManager } from "../core/types.js";
+import { stubBackend } from "./helpers/stub-backend.js";
 import { TalonError } from "../core/errors.js";
 
 function setup(
@@ -16,20 +17,19 @@ function setup(
   const typingCalls: number[] = [];
   let activityCount = 0;
 
-  const backend: QueryBackend = {
-    query: vi.fn(async () => {
-      if (overrides.queryError) throw overrides.queryError;
-      return {
-        text: "test response",
-        durationMs: 50,
-        inputTokens: 10,
-        outputTokens: 20,
-        cacheRead: 5,
-        cacheWrite: 3,
-        ...overrides.queryResult,
-      };
-    }),
-  };
+  const query = vi.fn(async () => {
+    if (overrides.queryError) throw overrides.queryError;
+    return {
+      text: "test response",
+      durationMs: 50,
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheRead: 5,
+      cacheWrite: 3,
+      ...overrides.queryResult,
+    };
+  });
+  const backend = stubBackend({ query });
 
   const context: ContextManager = {
     acquire: vi.fn((id: number) => acquired.push(id)),
@@ -50,6 +50,7 @@ function setup(
 
   return {
     backend,
+    query,
     context,
     acquired,
     released,
@@ -60,7 +61,7 @@ function setup(
 
 describe("integration: dispatcher lifecycle", () => {
   it("full happy path: acquire → type → query → activity → release", async () => {
-    const { backend, acquired, released, typingCalls, getActivityCount } =
+    const { query, acquired, released, typingCalls, getActivityCount } =
       setup();
 
     const result = await execute({
@@ -87,7 +88,7 @@ describe("integration: dispatcher lifecycle", () => {
     expect(getActivityCount()).toBe(1);
 
     // Backend was called with correct params
-    expect(backend.query).toHaveBeenCalledWith(
+    expect(query).toHaveBeenCalledWith(
       expect.objectContaining({
         chatId: "123",
         text: "hello world",
@@ -134,10 +135,18 @@ describe("integration: dispatcher lifecycle", () => {
       });
       expect.unreachable();
     } catch (err) {
-      expect(err).toBeInstanceOf(TalonError);
-      const te = err as TalonError;
-      expect(te.reason).toBe("rate_limit");
-      expect(te.retryable).toBe(true);
+      // The dispatcher now consumes the backend's `AgentEvent` stream
+      // and pipes events through the legacy bridge — errors arrive
+      // wrapped as `BridgedAgentError` carrying the canonical
+      // `AgentError`. The classification is preserved through the
+      // wrapper.
+      const { BridgedAgentError } = await import(
+        "../core/agent-runtime/legacy-bridge.js"
+      );
+      expect(err).toBeInstanceOf(BridgedAgentError);
+      const bridged = err as InstanceType<typeof BridgedAgentError>;
+      expect(bridged.kind).toBe("rate_limit");
+      expect(bridged.retryable).toBe(true);
     }
 
     expect(released).toEqual([789]);
@@ -145,7 +154,7 @@ describe("integration: dispatcher lifecycle", () => {
 
   it("cross-chat parallel execution", async () => {
     const order: string[] = [];
-    const backend: QueryBackend = {
+    const backend = stubBackend({
       query: vi.fn(async (params) => {
         order.push(`start:${params.chatId}`);
         await new Promise((r) => setTimeout(r, 20));
@@ -159,7 +168,7 @@ describe("integration: dispatcher lifecycle", () => {
           cacheWrite: 0,
         };
       }),
-    };
+    });
 
     initDispatcher({
       getBackend: () => backend,
@@ -197,10 +206,51 @@ describe("integration: dispatcher lifecycle", () => {
     expect(order[1]).toBe("start:B");
   });
 
-  it("stream callbacks are passed through to backend", async () => {
+  it("stream callbacks are invoked from the backend's event stream", async () => {
+    // The dispatcher consumes `backend.chat.runChatTurn` and pipes
+    // events back through the legacy callback shape via
+    // `pipeEventsToCallbacks`. The caller-supplied
+    // `onStreamDelta` / `onTextBlock` callbacks fire whenever the
+    // stream produces `text_delta` / `assistant_message` — not
+    // because they're forwarded to the SDK directly. This test
+    // verifies the round-trip: a backend that emits text via its
+    // streaming callbacks → events → caller callbacks.
     const { backend } = setup();
     const onStreamDelta = vi.fn();
     const onTextBlock = vi.fn();
+    // Override the backend's chat slot with one that emits text via
+    // the wrapped legacy callbacks (toEventStream relays them as
+    // text_delta events).
+    backend.chat!.runChatTurn = (params) =>
+      (async function* () {
+        yield { type: "run_started" };
+        yield { type: "text_delta", text: "hello" };
+        yield { type: "assistant_message", text: "hello world" };
+        yield {
+          type: "usage",
+          usage: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+            modelId: params.model.id,
+          },
+        };
+        yield {
+          type: "completed",
+          result: {
+            text: "hello world",
+            durationMs: 1,
+            usage: {
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+            },
+            modelId: params.model.id,
+          },
+        };
+      })();
 
     await execute({
       chatId: "999",
@@ -213,12 +263,7 @@ describe("integration: dispatcher lifecycle", () => {
       onTextBlock,
     });
 
-    expect(backend.query).toHaveBeenCalledWith(
-      expect.objectContaining({
-        onStreamDelta,
-        onTextBlock,
-        isGroup: true,
-      }),
-    );
+    expect(onStreamDelta).toHaveBeenCalled();
+    expect(onTextBlock).toHaveBeenCalledWith("hello world");
   });
 });

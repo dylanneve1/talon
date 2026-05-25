@@ -4,13 +4,24 @@
  * Mirrors the Kilo factory in structure. OpenCode and Kilo share the
  * same protocol shape (Kilo is a fork) so the adapter logic is nearly
  * identical — only the SDK import and a few constant names differ.
+ *
+ * Returns the composed `Backend` shape directly — capability slots
+ * for chat / background / models / usage. No fat-optional
+ * `QueryBackend` surface.
  */
 
 import { registerBackend } from "../registry.js";
 import type { BackendFactory } from "../registry.js";
-import type { QueryBackend } from "../../core/types.js";
 import { log } from "../../util/log.js";
 import { toEventStream } from "../shared/to-event-stream.js";
+import {
+  composeBackend,
+  type ChatBackend,
+  type BackgroundRunner,
+  type ModelCatalog,
+  type UsageTelemetry,
+} from "../../core/agent-runtime/capabilities.js";
+import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 
 import {
   initOpenCodeAgent,
@@ -18,16 +29,14 @@ import {
   handleMessage as ocHandleMessage,
   runOneShotAgent as ocRunOneShotAgent,
   getOpenCodeSessionSnapshot,
-  resolveModel,
-  getModelInfo,
-  getSettingsPresentation,
-  getProviders,
-  getProviderModels,
-  formatModelError,
-  listModels,
+  resolveModel as ocResolveModel,
+  getModelInfo as ocGetModelInfo,
+  getSettingsPresentation as ocGetSettingsPresentation,
+  getProviders as ocGetProviders,
+  getProviderModels as ocGetProviderModels,
+  formatModelError as ocFormatModelError,
+  listModels as ocListModels,
 } from "./index.js";
-
-// ── Factory ────────────────────────────────────────────────────────────────
 
 const opencodeFactory: BackendFactory = {
   id: "opencode",
@@ -37,14 +46,53 @@ const opencodeFactory: BackendFactory = {
     initOpenCodeAgent(config, ctx.getBridgePort, ctx.frontendName);
     log("bot", "Backend: OpenCode (@opencode-ai/sdk)");
 
-    const backend: QueryBackend = {
-      query: (params) => ocHandleMessage(params),
-      runChatTurnEvents: (params) =>
-        toEventStream((p) => ocHandleMessage(p), params),
-      resolveModel: (q) => resolveModel(q),
-      getModelInfo: (id) => getModelInfo(id),
+    const chat: ChatBackend = {
+      runChatTurn: (params) => toEventStream((p) => ocHandleMessage(p), params),
+    };
+
+    const background: BackgroundRunner = {
+      runOneShotAgent: (p) => ocRunOneShotAgent(p),
+    };
+
+    const models: ModelCatalog = {
+      async resolveModel(query) {
+        const resolution = await ocResolveModel(query);
+        if (resolution.kind === "exact") {
+          return {
+            kind: "exact",
+            model: makeBareModelRef("opencode", resolution.model.id),
+            storedValue: resolution.storedValue,
+          };
+        }
+        if (resolution.kind === "ambiguous") {
+          return {
+            kind: "ambiguous",
+            matches: resolution.matches.map((m) =>
+              makeBareModelRef("opencode", m.id),
+            ),
+          };
+        }
+        return { kind: "missing" };
+      },
+      async listModels(filter) {
+        const result = await ocListModels(filter.freeOnly ? "free" : "all");
+        return {
+          models: result.models.map((m) => makeBareModelRef("opencode", m.id)),
+          total: result.total,
+        };
+      },
+      getDefaultModel: () => Promise.resolve(null),
+      async getModelInfo(id) {
+        const info = await ocGetModelInfo(id);
+        if (!info) return undefined;
+        return makeBareModelRef("opencode", info.id);
+      },
+
+      resolveModelInfo: (q) => ocResolveModel(q),
+      getDefaultModelId: () => undefined,
+      getRawModelInfo: (id) => ocGetModelInfo(id),
       getSettingsPresentation: async (m, options) => {
-        const legacy = await getSettingsPresentation(
+        const legacy = await ocGetSettingsPresentation(
           m,
           options?.callbackPrefix,
         );
@@ -58,12 +106,13 @@ const opencodeFactory: BackendFactory = {
           totalCount: legacy.modelButtons.length,
         };
       },
-      getProviders: () => getProviders(),
-      getProviderModels: (p, pg, ps) => getProviderModels(p, pg, ps),
-      formatModelError: (q, r) => formatModelError(q, r),
-      listModels: (f) => listModels(f),
-      cacheMetrics: "readwrite",
-      backendLabel: "OpenCode",
+      getProviders: () => ocGetProviders(),
+      getProviderModels: (p, pg, ps) => ocGetProviderModels(p, pg, ps),
+      formatModelError: (q, r) => ocFormatModelError(q, r),
+      listModelsRaw: (f) => ocListModels(f),
+    };
+
+    const usage: UsageTelemetry = {
       getSessionSnapshot: async (sessionId) => {
         const snap = await getOpenCodeSessionSnapshot(sessionId);
         if (!snap) return undefined;
@@ -75,8 +124,17 @@ const opencodeFactory: BackendFactory = {
           contextModelId: snap.assistant?.modelID,
         };
       },
-      runOneShotAgent: (p) => ocRunOneShotAgent(p),
     };
+
+    const backend = composeBackend({
+      id: "opencode",
+      label: "OpenCode",
+      cacheMetrics: "readwrite",
+      chat,
+      background,
+      models,
+      usage,
+    });
 
     return {
       backend,

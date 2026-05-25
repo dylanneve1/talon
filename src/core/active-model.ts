@@ -36,7 +36,7 @@
  *   1. `modelByBackend[B]` — per-chat-per-backend pick, if it still
  *      validates against B's catalog. Cross-backend orphans surface
  *      as `kind: "missing"` and fall through.
- *   2. `backend.getDefaultModel()` — backend's canonical default.
+ *   2. `backend.models?.getDefaultModelId()` — backend's canonical default.
  *      Codex picks auth-aware (`gpt-5-codex` on API key, `gpt-5.5`
  *      on ChatGPT OAuth). Claude SDK returns the `"default"` alias.
  *      Stock OpenAI Agents returns a constant.
@@ -52,7 +52,7 @@
  *   5. `null` → UI renders "No model selected", send guard refuses
  *      with a "use /model to pick one" reply.
  *
- * Validation step: when step 1 has a candidate, `backend.resolveModel`
+ * Validation step: when step 1 has a candidate, `backend.models?.resolveModelInfo`
  * is called. Only `kind: "exact"` with `selectable: true` honours the
  * stored override. Anything else falls through to step 2.
  *
@@ -64,7 +64,7 @@ import {
   getChatModelForBackend,
   getChatSettings,
 } from "../storage/chat-settings.js";
-import type { QueryBackend } from "./types.js";
+import type { Backend } from "./agent-runtime/capabilities.js";
 import type { TalonConfig } from "../util/config.js";
 import { logWarn } from "../util/log.js";
 
@@ -104,7 +104,7 @@ export interface ActiveModelResolution {
  */
 export async function resolveActiveModelForChat(
   chatId: string,
-  backend: QueryBackend | null,
+  backend: Backend | null,
   backendId: string | null,
   config: TalonConfig,
 ): Promise<ActiveModelResolution> {
@@ -140,13 +140,13 @@ export async function resolveActiveModelForChat(
 }
 
 async function stepsTwoThroughFive(
-  backend: QueryBackend | null,
+  backend: Backend | null,
   backendId: string | null,
   config: TalonConfig,
   fallbackSourceOverride: "override-invalid-fallback" | null,
 ): Promise<ActiveModelResolution> {
-  // Step 2: backend.getDefaultModel()
-  if (backend?.getDefaultModel) {
+  // Step 2: backend.models.getDefaultModelId()
+  if (backend?.models?.getDefaultModelId) {
     const canonical = await safeBackendDefault(backend);
     if (canonical) {
       return {
@@ -199,20 +199,20 @@ async function stepsTwoThroughFive(
 }
 
 async function validateModelOnBackend(
-  backend: QueryBackend | null,
+  backend: Backend | null,
   modelId: string,
 ): Promise<boolean> {
-  if (!backend?.resolveModel) {
+  if (!backend?.models?.resolveModelInfo) {
     // No catalog to validate against — trust the stored value.
     return true;
   }
   try {
-    const resolution = await backend.resolveModel(modelId);
+    const resolution = await backend.models.resolveModelInfo(modelId);
     return resolution.kind === "exact" && resolution.model.selectable;
   } catch (err) {
     logWarn(
       "settings",
-      `resolveModel threw while validating "${modelId}": ` +
+      `models.resolveModelInfo threw while validating "${modelId}": ` +
         `${err instanceof Error ? err.message : String(err)}. Treating as ` +
         `invalid and falling through.`,
     );
@@ -220,18 +220,16 @@ async function validateModelOnBackend(
   }
 }
 
-async function safeBackendDefault(
-  backend: QueryBackend,
-): Promise<string | null> {
-  if (!backend.getDefaultModel) return null;
+async function safeBackendDefault(backend: Backend): Promise<string | null> {
+  if (!backend.models?.getDefaultModelId) return null;
   try {
-    const v = await backend.getDefaultModel();
+    const v = await backend.models.getDefaultModelId();
     if (typeof v === "string" && v.length > 0) return v;
     return null;
   } catch (err) {
     logWarn(
       "settings",
-      `backend.getDefaultModel threw: ${
+      `backend.models.getDefaultModelId threw: ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
@@ -245,7 +243,7 @@ async function safeBackendDefault(
  */
 export async function getActiveModelForChat(
   chatId: string,
-  backend: QueryBackend | null,
+  backend: Backend | null,
   backendId: string | null,
   config: TalonConfig,
 ): Promise<string | null> {

@@ -27,7 +27,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { QueryBackend, UnifiedModelResolution } from "../core/types.js";
+import type { UnifiedModelResolution } from "../core/types.js";
+import type {
+  Backend,
+  ModelCatalog,
+} from "../core/agent-runtime/capabilities.js";
+import { composeBackend } from "../core/agent-runtime/capabilities.js";
 import type { TalonConfig } from "../util/config.js";
 
 vi.mock("../util/log.js", () => ({
@@ -98,21 +103,16 @@ function fakeBackend(opts: {
     | null
     | undefined;
   backendLabel?: string;
-}): QueryBackend {
-  const be: Partial<QueryBackend> = {
-    query: vi.fn().mockResolvedValue({
-      text: "",
-      durationMs: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    }),
-  };
-  if (opts.resolveModel) be.resolveModel = opts.resolveModel;
-  if (opts.getDefaultModel) be.getDefaultModel = opts.getDefaultModel;
-  if (opts.backendLabel) be.backendLabel = opts.backendLabel;
-  return be as QueryBackend;
+}): Backend {
+  const models: Partial<ModelCatalog> = {};
+  if (opts.resolveModel) models.resolveModelInfo = opts.resolveModel;
+  if (opts.getDefaultModel) models.getDefaultModelId = opts.getDefaultModel;
+  return composeBackend({
+    id: "claude",
+    label: opts.backendLabel ?? "Stub",
+    cacheMetrics: "none",
+    models: Object.keys(models).length > 0 ? (models as ModelCatalog) : undefined,
+  });
 }
 
 describe("resolveActiveModelForChat — 5-step chain", () => {

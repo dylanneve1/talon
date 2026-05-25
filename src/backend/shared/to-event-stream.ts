@@ -27,9 +27,9 @@ import type {
   AgentErrorKind,
   AgentEvent,
 } from "../../core/agent-runtime/events.js";
+import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
 import type {
   OneShotAgentParams,
-  QueryBackend,
   QueryParams,
   QueryResult,
 } from "../../core/types.js";
@@ -40,35 +40,25 @@ const SENTINEL = Symbol("toEventStream:sentinel");
 type QueueEvent = AgentEvent | typeof SENTINEL;
 
 /**
- * The shape `runChatTurnEvents` accepts on a `QueryBackend` — same
- * as `QueryParams` but without the legacy streaming callbacks (the
- * generator owns the streaming surface).
- */
-export type RunChatTurnEventsParams = Omit<
-  QueryParams,
-  "onStreamDelta" | "onTextBlock" | "onToolUse"
->;
-
-/**
- * Wrap a `QueryBackend['query']`-shaped function into an async
- * iterable of `AgentEvent`s. The generator interleaves callback-
- * driven streaming events with the awaited query result.
+ * Wrap an SDK-specific callback-driven `query()` handler into the
+ * canonical `AsyncIterable<AgentEvent>` shape every `ChatBackend`
+ * exposes. The generator interleaves callback-driven streaming
+ * events with the awaited query result:
  *
  *   run_started → text_delta* → assistant_message* → tool_call* →
  *     usage → completed
  *
  * On error: `run_started → error`.
  *
- * The wrapper synthesises callback wiring on top of the supplied
- * params. Backends that already populate `onStreamDelta` /
- * `onTextBlock` / `onToolUse` should NOT pass them via
- * `runChatTurnEvents` — the queue would race with the caller's
- * own callbacks. The legacy `query()` path remains the place where
- * external callbacks are honoured.
+ * The wrapper builds the `QueryParams` shape the legacy handler
+ * expects from the new `ChatRunParams` (`ModelRef` flattens to
+ * `model.id`, no callbacks come from the caller — the queue owns
+ * the streaming surface). Backends call this from their factory's
+ * `chat.runChatTurn` slot.
  */
 export async function* toEventStream(
   query: (params: QueryParams) => Promise<QueryResult>,
-  params: RunChatTurnEventsParams,
+  params: ChatRunParams,
 ): AsyncIterable<AgentEvent> {
   yield { type: "run_started" };
 
@@ -97,7 +87,12 @@ export async function* toEventStream(
   let lastAccumulated = "";
 
   const legacyParams: QueryParams = {
-    ...params,
+    chatId: params.chatId,
+    model: params.model.id,
+    text: params.text,
+    senderName: params.senderName,
+    isGroup: params.isGroup,
+    messageId: params.messageId,
     onStreamDelta: (accumulated) => {
       if (typeof accumulated !== "string" || accumulated.length === 0) {
         return;
@@ -189,7 +184,7 @@ export async function* toEventStream(
     outputTokens: result.outputTokens,
     cacheRead: result.cacheRead,
     cacheWrite: result.cacheWrite,
-    modelId: params.model,
+    modelId: params.model.id,
   };
   yield { type: "usage", usage };
   yield {
@@ -198,19 +193,9 @@ export async function* toEventStream(
       text: result.text,
       durationMs: result.durationMs,
       usage,
-      modelId: params.model,
+      modelId: params.model.id,
     },
   };
-}
-
-/**
- * Convenience: bind `toEventStream` to a `QueryBackend` instance's
- * `query` method. Lets a factory expose `runChatTurnEvents` in one
- * line without re-binding `this`.
- */
-export function backendChatEvents(backend: QueryBackend) {
-  return (params: RunChatTurnEventsParams): AsyncIterable<AgentEvent> =>
-    toEventStream(backend.query.bind(backend), params);
 }
 
 /**

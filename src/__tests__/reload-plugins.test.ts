@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { stubBackend } from "./helpers/stub-backend.js";
 
 // ── Module mocks ──────────────────────────────────────────────────────────
 
@@ -123,7 +124,7 @@ vi.mock("../util/config.js", () => ({
 
 // Backend mock — passed as 3rd arg to handleSharedAction
 const mockRefreshMcpServers = vi.fn();
-const mockBackend = {
+const mockBackend = stubBackend({
   query: vi.fn(),
   updateSystemPrompt: (...args: unknown[]) =>
     mockUpdateSystemPrompt(
@@ -133,16 +134,16 @@ const mockBackend = {
     mockRefreshMcpServers(
       ...(args as Parameters<typeof mockRefreshMcpServers>),
     ),
-};
+});
 
 // Backend without refreshMcpServers (e.g. non-Claude backend)
-const mockBackendNoMcp = {
+const mockBackendNoMcp = stubBackend({
   query: vi.fn(),
   updateSystemPrompt: (...args: unknown[]) =>
     mockUpdateSystemPrompt(
       ...(args as Parameters<typeof mockUpdateSystemPrompt>),
     ),
-};
+});
 
 // ── Import after mocks ────────────────────────────────────────────────────
 

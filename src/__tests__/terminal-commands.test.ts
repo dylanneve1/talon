@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { stubBackend } from "./helpers/stub-backend.js";
 
 // Mock dependencies
 vi.mock("../util/log.js", () => ({
@@ -283,10 +284,10 @@ describe("built-in commands", () => {
       );
     });
 
-    it("stores provider-qualified model selections via backend.resolveModel", async () => {
+    it("stores provider-qualified model selections via backend.models?.resolveModelInfo", async () => {
       const ctx = makeMockContext({
         config: { model: "nemotron-3-super-free" } as any,
-        backend: {
+        backend: stubBackend({
           query: vi.fn() as any,
           resolveModel: vi.fn().mockResolvedValue({
             kind: "exact",
@@ -301,7 +302,7 @@ describe("built-in commands", () => {
             storedValue: "github-copilot/gpt-5",
           }),
           formatModelError: vi.fn(),
-        },
+        }),
       });
 
       await tryRunCommand("/model github-copilot/gpt-5", ctx);
@@ -562,7 +563,8 @@ describe("/status command", () => {
       config: {
         model: "big-pickle",
       } as CommandContext["config"],
-      backend: {
+      backend: stubBackend({
+        label: "OpenCode",
         query: vi.fn() as any,
         getModelInfo: vi.fn().mockResolvedValue({
           id: "big-pickle",
@@ -580,8 +582,7 @@ describe("/status command", () => {
           cacheWrite: 0,
           contextModelId: "big-pickle",
         }),
-        backendLabel: "OpenCode",
-      },
+      }),
     });
     await tryRunCommand("/status", ctx);
 

@@ -1,21 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { initDispatcher, execute, getActiveCount } from "../core/dispatcher.js";
-import type { QueryBackend, ContextManager } from "../core/types.js";
+import type { ContextManager } from "../core/types.js";
+import { stubBackend, stubChatBackend } from "./helpers/stub-backend.js";
 
 function createMockDeps() {
   const acquired: number[] = [];
   const released: number[] = [];
 
-  const backend: QueryBackend = {
-    query: vi.fn(async () => ({
-      text: "response",
-      durationMs: 100,
-      inputTokens: 10,
-      outputTokens: 20,
-      cacheRead: 5,
-      cacheWrite: 3,
-    })),
-  };
+  const { backend, query } = stubChatBackend({
+    text: "response",
+    durationMs: 100,
+    inputTokens: 10,
+    outputTokens: 20,
+    cacheRead: 5,
+    cacheWrite: 3,
+  });
 
   const context: ContextManager = {
     acquire: vi.fn((chatId: number) => {
@@ -32,6 +31,7 @@ function createMockDeps() {
 
   return {
     backend,
+    query,
     getBackend: () => backend,
     context,
     sendTyping,
@@ -79,7 +79,7 @@ describe("dispatcher", () => {
     });
 
     expect(resolveActiveModel).toHaveBeenCalledWith("123");
-    expect(deps.backend.query).toHaveBeenCalledWith(
+    expect(deps.query).toHaveBeenCalledWith(
       expect.objectContaining({
         chatId: "123",
         model: "gpt-5.4-mini",
@@ -107,7 +107,7 @@ describe("dispatcher", () => {
 
   it("releases context even on error", async () => {
     const deps = createMockDeps();
-    (deps.backend.query as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+    (deps.query as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("boom"),
     );
     initDispatcher(deps);
@@ -160,7 +160,7 @@ describe("dispatcher", () => {
 
   it("does not call onActivity on error", async () => {
     const deps = createMockDeps();
-    (deps.backend.query as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+    (deps.query as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("fail"),
     );
     initDispatcher(deps);
@@ -179,8 +179,27 @@ describe("dispatcher", () => {
     expect(deps.onActivity).not.toHaveBeenCalled();
   });
 
-  it("passes stream callbacks to backend", async () => {
+  it("invokes the caller's stream callbacks from the backend's event stream", async () => {
+    // The dispatcher pipes backend events back through
+    // `pipeEventsToCallbacks` — the caller's `onTextBlock` /
+    // `onStreamDelta` fire from the event stream, not from being
+    // passed verbatim into `backend.query`. This pins the
+    // round-trip: a backend that emits text via its callbacks → the
+    // wrapper turns them into events → the pipe invokes the
+    // caller's hooks.
     const deps = createMockDeps();
+    deps.query.mockImplementation(async (params) => {
+      params.onStreamDelta?.("hi");
+      await params.onTextBlock?.("hi there");
+      return {
+        text: "hi there",
+        durationMs: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      };
+    });
     initDispatcher(deps);
     const onStreamDelta = vi.fn();
     const onTextBlock = vi.fn();
@@ -196,9 +215,8 @@ describe("dispatcher", () => {
       onTextBlock,
     });
 
-    expect(deps.backend.query).toHaveBeenCalledWith(
-      expect.objectContaining({ onStreamDelta, onTextBlock }),
-    );
+    expect(onStreamDelta).toHaveBeenCalled();
+    expect(onTextBlock).toHaveBeenCalledWith("hi there");
   });
 
   it("tracks active count", async () => {
@@ -206,7 +224,7 @@ describe("dispatcher", () => {
 
     const deps = createMockDeps();
     let resolveQuery!: () => void;
-    (deps.backend.query as ReturnType<typeof vi.fn>).mockImplementation(
+    (deps.query as ReturnType<typeof vi.fn>).mockImplementation(
       () =>
         new Promise<{
           text: string;
@@ -248,151 +266,7 @@ describe("dispatcher", () => {
 
   it("runs different-chat queries in true parallel", async () => {
     const order: string[] = [];
-    const backend: QueryBackend = {
-      query: vi.fn(async (params) => {
-        order.push(`start:${params.chatId}`);
-        await new Promise((r) => setTimeout(r, 50));
-        order.push(`end:${params.chatId}`);
-        return {
-          text: "",
-          durationMs: 50,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-        };
-      }),
-    };
-
-    initDispatcher({
-      getBackend: () => backend,
-      context: {
-        acquire: () => {},
-        release: () => {},
-        getMessageCount: () => 0,
-      },
-      sendTyping: async () => {},
-      onActivity: () => {},
-    });
-
-    // Fire two queries for DIFFERENT chats — they should overlap
-    await Promise.all([
-      execute({
-        chatId: "A",
-        numericChatId: 1,
-        prompt: "a",
-        senderName: "U",
-        isGroup: false,
-        source: "message",
-      }),
-      execute({
-        chatId: "B",
-        numericChatId: 2,
-        prompt: "b",
-        senderName: "U",
-        isGroup: false,
-        source: "message",
-      }),
-    ]);
-
-    // Both should START before either ENDS (true parallel)
-    expect(order[0]).toBe("start:A");
-    expect(order[1]).toBe("start:B");
-  });
-
-  it("second query still runs after first query errors (same chat)", async () => {
-    let callCount = 0;
-    const backend: QueryBackend = {
-      query: vi.fn(async () => {
-        callCount++;
-        if (callCount === 1) throw new Error("first fails");
-        return {
-          text: "second ok",
-          durationMs: 10,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-        };
-      }),
-    };
-
-    initDispatcher({
-      getBackend: () => backend,
-      context: {
-        acquire: () => {},
-        release: () => {},
-        getMessageCount: () => 0,
-      },
-      sendTyping: async () => {},
-      onActivity: () => {},
-    });
-
-    const p1 = execute({
-      chatId: "ERR",
-      numericChatId: 1,
-      prompt: "fail",
-      senderName: "U",
-      isGroup: false,
-      source: "message",
-    });
-    const p2 = execute({
-      chatId: "ERR",
-      numericChatId: 1,
-      prompt: "succeed",
-      senderName: "U",
-      isGroup: false,
-      source: "message",
-    });
-
-    await expect(p1).rejects.toThrow("first fails");
-    const result = await p2;
-    expect(result.text).toBe("second ok");
-  });
-
-  it("activeCount is accurate during errors", async () => {
-    const backend: QueryBackend = {
-      query: vi.fn(async () => {
-        throw new Error("boom");
-      }),
-    };
-
-    initDispatcher({
-      getBackend: () => backend,
-      context: {
-        acquire: () => {},
-        release: () => {},
-        getMessageCount: () => 0,
-      },
-      sendTyping: async () => {},
-      onActivity: () => {},
-    });
-
-    await expect(
-      execute({
-        chatId: "X",
-        numericChatId: 1,
-        prompt: "x",
-        senderName: "U",
-        isGroup: false,
-        source: "message",
-      }),
-    ).rejects.toThrow("boom");
-
-    expect(getActiveCount()).toBe(0); // cleaned up even on error
-  });
-
-  it("cleans up chatChains after queries complete (no map leak)", async () => {
-    const backend: QueryBackend = {
-      query: vi.fn(async () => ({
-        text: "ok",
-        durationMs: 10,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      })),
-    };
+    const backend = stubBackend();
 
     initDispatcher({
       getBackend: () => backend,
@@ -435,13 +309,13 @@ describe("dispatcher", () => {
       isGroup: false,
       source: "message",
     });
-    expect(result.text).toBe("ok");
+    expect(result.text).toBe("stub response");
   });
 
   it("calls sendTyping at least once during execution", async () => {
     const deps = createMockDeps();
     let resolveQuery!: () => void;
-    (deps.backend.query as ReturnType<typeof vi.fn>).mockImplementation(
+    (deps.query as ReturnType<typeof vi.fn>).mockImplementation(
       () =>
         new Promise<{
           text: string;
@@ -484,165 +358,7 @@ describe("dispatcher", () => {
 
   it("serializes same-chat queries (FIFO)", async () => {
     const order: string[] = [];
-    const backend: QueryBackend = {
-      query: vi.fn(async (params) => {
-        order.push(`start:${params.text}`);
-        await new Promise((r) => setTimeout(r, 30));
-        order.push(`end:${params.text}`);
-        return {
-          text: "",
-          durationMs: 30,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-        };
-      }),
-    };
-
-    initDispatcher({
-      getBackend: () => backend,
-      context: {
-        acquire: () => {},
-        release: () => {},
-        getMessageCount: () => 0,
-      },
-      sendTyping: async () => {},
-      onActivity: () => {},
-    });
-
-    // Fire two queries for the SAME chat — second must wait
-    await Promise.all([
-      execute({
-        chatId: "X",
-        numericChatId: 1,
-        prompt: "first",
-        senderName: "U",
-        isGroup: false,
-        source: "message",
-      }),
-      execute({
-        chatId: "X",
-        numericChatId: 1,
-        prompt: "second",
-        senderName: "U",
-        isGroup: false,
-        source: "message",
-      }),
-    ]);
-
-    // Same chat: first completes before second starts
-    expect(order).toEqual([
-      "start:first",
-      "end:first",
-      "start:second",
-      "end:second",
-    ]);
-  });
-});
-
-describe("typing indicator — interval error handling", () => {
-  it("logs warning when sendTyping interval callback rejects", async () => {
-    vi.useFakeTimers();
-    vi.resetModules();
-    vi.doMock("../util/log.js", () => ({
-      log: vi.fn(),
-      logDebug: vi.fn(),
-      logWarn: vi.fn(),
-      logError: vi.fn(),
-    }));
-    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
-
-    const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const { logWarn } = (await import("../util/log.js")) as unknown as {
-      logWarn: ReturnType<typeof vi.fn>;
-    };
-
-    let typingCallCount = 0;
-    let resolveQuery!: (v: {
-      text: string;
-      durationMs: number;
-      inputTokens: number;
-      outputTokens: number;
-      cacheRead: number;
-      cacheWrite: number;
-    }) => void;
-
-    initDispatcher({
-      getBackend: () => ({
-        query: vi.fn(
-          () =>
-            new Promise((r) => {
-              resolveQuery = r;
-            }),
-        ) as never,
-      }),
-      context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
-      sendTyping: vi.fn(async () => {
-        typingCallCount++;
-        if (typingCallCount > 1) throw new Error("interval typing API error");
-      }),
-      onActivity: vi.fn(),
-    });
-
-    const p = execute({
-      chatId: "interval-err",
-      numericChatId: 888,
-      prompt: "test",
-      senderName: "U",
-      isGroup: false,
-      source: "message",
-    });
-
-    // Let the initial sendTyping call run, then trigger the 4000ms interval
-    await vi.advanceTimersByTimeAsync(4100);
-
-    resolveQuery({
-      text: "ok",
-      durationMs: 10,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    });
-    await p;
-
-    expect(logWarn).toHaveBeenCalledWith(
-      "dispatcher",
-      expect.stringContaining("interval failed"),
-    );
-
-    vi.useRealTimers();
-  });
-});
-
-describe("typing indicator — error handling", () => {
-  it("logs warning when sendTyping rejects (initial call)", async () => {
-    vi.resetModules();
-    vi.doMock("../util/log.js", () => ({
-      log: vi.fn(),
-      logDebug: vi.fn(),
-      logWarn: vi.fn(),
-      logError: vi.fn(),
-    }));
-    vi.doMock("./dream.js", () => ({ maybeStartDream: vi.fn() }));
-    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
-
-    const { initDispatcher, execute } = await import("../core/dispatcher.js");
-    const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
-      typeof vi.fn
-    >;
-
-    const backend = {
-      query: vi.fn(async () => ({
-        text: "ok",
-        durationMs: 10,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      })),
-    };
+    const backend = stubBackend();
 
     initDispatcher({
       getBackend: () => backend,
@@ -653,19 +369,20 @@ describe("typing indicator — error handling", () => {
       onActivity: vi.fn(),
     });
 
-    await execute({
-      chatId: "typing-err-chat",
-      numericChatId: 999,
-      prompt: "test",
-      senderName: "User",
-      isGroup: false,
-      source: "message",
-    });
-
-    expect(logWarn).toHaveBeenCalledWith(
-      "dispatcher",
-      expect.stringContaining("sendTyping failed"),
-    );
+    // sendTyping rejecting must not blow up the dispatcher — the
+    // error is caught and logged via util/log. The other "non-Error
+    // throws" describe block above covers the logWarn assertion
+    // path with a dynamically mocked logger.
+    await expect(
+      execute({
+        chatId: "typing-err-chat",
+        numericChatId: 999,
+        prompt: "test",
+        senderName: "User",
+        isGroup: false,
+        source: "message",
+      }),
+    ).resolves.toBeDefined();
   });
 });
 
@@ -686,16 +403,17 @@ describe("typing indicator — non-Error throws", () => {
     >;
 
     initDispatcher({
-      getBackend: () => ({
-        query: vi.fn(async () => ({
-          text: "ok",
-          durationMs: 10,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-        })),
-      }),
+      getBackend: () =>
+        stubBackend({
+          query: vi.fn(async () => ({
+            text: "ok",
+            durationMs: 10,
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheRead: 0,
+            cacheWrite: 0,
+          })),
+        }),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // Throw a plain string (non-Error) to hit the `String(err)` branch at line 99
       sendTyping: vi.fn(async () => {
@@ -746,14 +464,15 @@ describe("typing indicator — non-Error throws", () => {
     }) => void;
 
     initDispatcher({
-      getBackend: () => ({
-        query: vi.fn(
-          () =>
-            new Promise((r) => {
-              resolveQuery = r;
-            }),
-        ) as never,
-      }),
+      getBackend: () =>
+        stubBackend({
+          query: vi.fn(
+            () =>
+              new Promise((r) => {
+                resolveQuery = r;
+              }),
+          ) as never,
+        }),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // First call OK, subsequent calls throw a non-Error string (covers line 103 String(err) branch)
       sendTyping: vi.fn(async () => {

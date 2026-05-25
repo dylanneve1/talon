@@ -319,7 +319,8 @@ describe("agent-runtime/capabilities", () => {
       sessions: undefined,
       tools: undefined,
       usage: undefined,
-      background: { runBackgroundTask: async function* () {} },
+      background: { runOneShotAgent: async () => undefined },
+      control: undefined,
     });
     expect(caps).toEqual({
       chat: true,
@@ -328,6 +329,7 @@ describe("agent-runtime/capabilities", () => {
       sessions: false,
       tools: false,
       usage: false,
+      control: false,
     });
   });
 
@@ -340,6 +342,7 @@ describe("agent-runtime/capabilities", () => {
       sessions: false,
       tools: false,
       usage: false,
+      control: false,
     });
   });
 });

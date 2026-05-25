@@ -1,0 +1,262 @@
+/**
+ * Test helpers — build a `Backend` from a flat description.
+ *
+ * Tests typically want to assert on something simple ("the
+ * dispatcher called query with these params", "the picker used the
+ * backend's resolveModel"). Hand-rolling the full split-slot
+ * `Backend` shape per test pollutes intent. `stubBackend` accepts
+ * any subset of legacy `QueryBackend` fields and composes them onto
+ * the corresponding capability slots:
+ *
+ *   - `query` → `chat.runChatTurn` (via `toEventStream`)
+ *   - `runOneShotAgent` / `evictOrphanSubprocesses` → `background`
+ *   - `resolveModel` / `getDefaultModel` / `getModelInfo` /
+ *     `getSettingsPresentation` / `getProviders` /
+ *     `getProviderModels` / `formatModelError` / `listModels` →
+ *     `models` (mapped onto the legacy-shape methods —
+ *     `resolveModelInfo`, `getDefaultModelId`, `getRawModelInfo`,
+ *     `listModelsRaw`)
+ *   - `resetChat` / `warmSession` → `sessions`
+ *   - `refreshMcpServers` → `tools.refreshTools`
+ *   - `updateSystemPrompt` → `control.updateSystemPrompt`
+ *   - `getSessionSnapshot` → `usage`
+ *
+ * Production code never uses this — `core/agent-runtime/capabilities`'s
+ * `composeBackend` is the canonical builder there. The test helper
+ * exists so legacy test fixtures don't have to be rewritten in
+ * lockstep with the capability split; new tests should call
+ * `composeBackend` directly.
+ */
+
+import { vi } from "vitest";
+import type {
+  Backend,
+  BackgroundRunner,
+  ChatBackend,
+  ModelCatalog,
+  SessionBackend,
+  SystemControl,
+  ToolRuntime,
+  UsageTelemetry,
+} from "../../core/agent-runtime/capabilities.js";
+import { composeBackend } from "../../core/agent-runtime/capabilities.js";
+import { toEventStream } from "../../backend/shared/to-event-stream.js";
+import type { BackendId } from "../../core/agent-runtime/model-ref.js";
+import type {
+  CacheMetricsSupport,
+  OneShotAgentParams,
+  QueryParams,
+  QueryResult,
+  UnifiedModelInfo,
+  UnifiedModelResolution,
+  UnifiedProviderInfo,
+  ModelPickerOptions,
+  ModelPickerResult,
+} from "../../core/types.js";
+
+export interface StubBackendInput {
+  id?: BackendId;
+  label?: string;
+  cacheMetrics?: CacheMetricsSupport;
+
+  // Chat
+  query?: (params: QueryParams) => Promise<QueryResult>;
+  chat?: ChatBackend;
+
+  // Background
+  runOneShotAgent?: (params: OneShotAgentParams) => Promise<void>;
+  evictOrphanSubprocesses?: (label: string) => Promise<{
+    found: number;
+    termed: number;
+    killed: number;
+  }>;
+  background?: BackgroundRunner;
+
+  // Models — flat (legacy-named) signatures get adapted onto the
+  // ModelCatalog slot. Tests can also pass a fully-built `models`
+  // slot directly to opt out of the adapter wiring.
+  resolveModel?: (q: string) => Promise<UnifiedModelResolution>;
+  getDefaultModel?: () =>
+    | Promise<string | null | undefined>
+    | string
+    | null
+    | undefined;
+  getModelInfo?: (id: string) => Promise<UnifiedModelInfo | undefined>;
+  getSettingsPresentation?: (
+    activeModel: string,
+    options?: ModelPickerOptions,
+  ) => Promise<ModelPickerResult>;
+  getProviders?: () => Promise<UnifiedProviderInfo[]>;
+  getProviderModels?: (
+    providerId: string,
+    page?: number,
+    pageSize?: number,
+  ) => Promise<{ models: UnifiedModelInfo[]; total: number }>;
+  formatModelError?: (query: string, resolution: UnifiedModelResolution) => string;
+  listModels?: (filter?: "free" | "all") => Promise<{
+    models: UnifiedModelInfo[];
+    total: number;
+  }>;
+  models?: ModelCatalog;
+
+  // Sessions
+  resetChat?: (chatId: string) => void | Promise<void>;
+  warmSession?: (chatId: string) => Promise<void>;
+  sessions?: SessionBackend;
+
+  // Tools
+  refreshMcpServers?: (chatId: string) => Promise<{
+    added: string[];
+    removed: string[];
+    errors: Record<string, string>;
+  } | null>;
+  tools?: ToolRuntime;
+
+  // Usage
+  getSessionSnapshot?: (sessionId: string) => Promise<
+    | {
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheRead?: number;
+        cacheWrite?: number;
+        contextModelId?: string;
+      }
+    | undefined
+  >;
+  usage?: UsageTelemetry;
+
+  // Control
+  updateSystemPrompt?: (prompt: string) => void;
+  control?: SystemControl;
+}
+
+const defaultQuery = vi.fn(
+  async (): Promise<QueryResult> => ({
+    text: "stub response",
+    durationMs: 1,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+  }),
+);
+
+function buildModels(input: StubBackendInput): ModelCatalog | undefined {
+  if (input.models) return input.models;
+  const hasAny =
+    input.resolveModel ||
+    input.getDefaultModel ||
+    input.getModelInfo ||
+    input.getSettingsPresentation ||
+    input.getProviders ||
+    input.getProviderModels ||
+    input.formatModelError ||
+    input.listModels;
+  if (!hasAny) return undefined;
+  // The ModelRef-shaped methods are required by the ModelCatalog
+  // interface; fill them with no-op defaults. The legacy UnifiedModelInfo-
+  // shaped methods are optional — only populate the ones the test
+  // explicitly provided so absence semantics propagate to the consumer.
+  const catalog: ModelCatalog = {
+    resolveModel: async () => ({ kind: "missing" }),
+    listModels: async () => ({ models: [], total: 0 }),
+    getDefaultModel: async () => null,
+    getModelInfo: async () => undefined,
+  };
+  if (input.resolveModel) catalog.resolveModelInfo = input.resolveModel;
+  if (input.getDefaultModel) catalog.getDefaultModelId = input.getDefaultModel;
+  if (input.getModelInfo) catalog.getRawModelInfo = input.getModelInfo;
+  if (input.getSettingsPresentation) {
+    catalog.getSettingsPresentation = input.getSettingsPresentation;
+  }
+  if (input.getProviders) catalog.getProviders = input.getProviders;
+  if (input.getProviderModels) catalog.getProviderModels = input.getProviderModels;
+  if (input.formatModelError) catalog.formatModelError = input.formatModelError;
+  if (input.listModels) catalog.listModelsRaw = input.listModels;
+  return catalog;
+}
+
+function buildBackground(input: StubBackendInput): BackgroundRunner | undefined {
+  if (input.background) return input.background;
+  if (!input.runOneShotAgent && !input.evictOrphanSubprocesses) return undefined;
+  return {
+    runOneShotAgent: input.runOneShotAgent ?? (async () => undefined),
+    evictOrphanSubprocesses: input.evictOrphanSubprocesses,
+  };
+}
+
+function buildSessions(input: StubBackendInput): SessionBackend | undefined {
+  if (input.sessions) return input.sessions;
+  if (!input.resetChat && !input.warmSession) return undefined;
+  return {
+    resetChat: input.resetChat ?? (() => undefined),
+    warmSession: input.warmSession,
+  };
+}
+
+function buildTools(input: StubBackendInput): ToolRuntime | undefined {
+  if (input.tools) return input.tools;
+  if (!input.refreshMcpServers) return undefined;
+  return { refreshTools: input.refreshMcpServers };
+}
+
+function buildUsage(input: StubBackendInput): UsageTelemetry | undefined {
+  if (input.usage) return input.usage;
+  if (!input.getSessionSnapshot) return undefined;
+  return { getSessionSnapshot: input.getSessionSnapshot };
+}
+
+function buildControl(input: StubBackendInput): SystemControl | undefined {
+  if (input.control) return input.control;
+  if (!input.updateSystemPrompt) return undefined;
+  return { updateSystemPrompt: input.updateSystemPrompt };
+}
+
+/**
+ * Build a stub `Backend`. Any combination of legacy-shaped methods
+ * is composed onto the corresponding capability slots. The `query`
+ * field is wrapped through `toEventStream` to satisfy the new
+ * `ChatBackend.runChatTurn` contract.
+ */
+export function stubBackend(input: StubBackendInput = {}): Backend {
+  const id = input.id ?? "claude";
+  const label = input.label ?? id;
+  const query = input.query ?? defaultQuery;
+  const chat: ChatBackend = input.chat ?? {
+    runChatTurn: (params) => toEventStream(query, params),
+  };
+  return composeBackend({
+    id,
+    label,
+    cacheMetrics: input.cacheMetrics ?? "none",
+    chat,
+    background: buildBackground(input),
+    models: buildModels(input),
+    sessions: buildSessions(input),
+    tools: buildTools(input),
+    usage: buildUsage(input),
+    control: buildControl(input),
+  });
+}
+
+/**
+ * Convenience: stub a `Backend` whose `chat.runChatTurn` yields the
+ * events a single canned `QueryResult` would produce. Returns both
+ * the backend AND the underlying mock query function so the test
+ * can assert on call history.
+ */
+export function stubChatBackend(
+  result: Partial<QueryResult> = {},
+): { backend: Backend; query: ReturnType<typeof vi.fn> } {
+  const fullResult: QueryResult = {
+    text: result.text ?? "stub",
+    durationMs: result.durationMs ?? 0,
+    inputTokens: result.inputTokens ?? 0,
+    outputTokens: result.outputTokens ?? 0,
+    cacheRead: result.cacheRead ?? 0,
+    cacheWrite: result.cacheWrite ?? 0,
+  };
+  const query = vi.fn(async () => fullResult);
+  const backend = stubBackend({ query });
+  return { backend, query };
+}

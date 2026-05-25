@@ -142,8 +142,8 @@ export async function handleComponentInteraction(
       if (value === "reset") {
         // Clear THIS backend's slot only — other backends' picks stay.
         setChatModelForBackend(chatId, settingsBeId, undefined);
-      } else if (settingsBe?.resolveModel) {
-        const resolution = await settingsBe.resolveModel(value);
+      } else if (settingsBe?.models?.resolveModelInfo) {
+        const resolution = await settingsBe.models?.resolveModelInfo(value);
         if (resolution.kind !== "exact" || !resolution.model.selectable) {
           await interaction.reply({
             content: `Model unavailable.`,
@@ -310,8 +310,8 @@ export async function handleComponentInteraction(
     if (value === "reset") {
       // Clear THIS backend's slot only — other backends stay intact.
       setChatModelForBackend(chatId, beId, undefined);
-    } else if (be?.resolveModel) {
-      const resolution = await be.resolveModel(value);
+    } else if (be?.models?.resolveModelInfo) {
+      const resolution = await be.models?.resolveModelInfo(value);
       if (resolution.kind === "exact" && resolution.model.selectable) {
         setChatModelForBackend(chatId, beId, resolution.storedValue);
         setChatBackend(chatId, beId);
@@ -336,13 +336,13 @@ export async function handleComponentInteraction(
       beId,
       config,
     );
-    if (be?.getSettingsPresentation) {
+    if (be?.models?.getSettingsPresentation) {
       const current = resolvedCurrent ?? "";
-      const pres = await be.getSettingsPresentation(current, {
+      const pres = await be.models?.getSettingsPresentation(current, {
         callbackPrefix: "model:",
       });
       const modelInfo = resolvedCurrent
-        ? await be.getModelInfo?.(resolvedCurrent)
+        ? await be.models?.getRawModelInfo?.(resolvedCurrent)
         : undefined;
       const displayName =
         modelInfo?.displayName ?? resolvedCurrent ?? "_No model selected_";
@@ -422,9 +422,9 @@ async function refreshSettingsPanel(
   // `settingsBe` already resolved above for the activeModel lookup —
   // reuse it instead of re-resolving (it points at the per-chat
   // backend, override-aware).
-  if (settingsBe?.getSettingsPresentation) {
+  if (settingsBe?.models?.getSettingsPresentation) {
     const presModelId = resolvedActive ?? "";
-    const pres = await settingsBe.getSettingsPresentation(presModelId);
+    const pres = await settingsBe.models?.getSettingsPresentation(presModelId);
     modelDetails = pres.modelDetails;
     modelButtons = pres.modelButtons;
   }
@@ -645,8 +645,8 @@ async function loadModelList(gateway: Gateway): Promise<string[]> {
     return modelListCache.values;
   }
   const be = gateway?.backend;
-  if (!be?.getSettingsPresentation) return [];
-  const pres = await be.getSettingsPresentation("", {
+  if (!be?.models?.getSettingsPresentation) return [];
+  const pres = await be.models?.getSettingsPresentation("", {
     callbackPrefix: "model:",
   });
   const values = pres.modelButtons.map((b) =>

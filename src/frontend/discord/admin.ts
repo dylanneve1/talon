@@ -85,7 +85,7 @@ export async function handleAdminSubcommand(
       if (!target) return send("Usage: /admin kill <chatId>");
       resetSession(target);
       clearHistory(target);
-      gateway?.backend?.resetChat?.(target);
+      gateway?.backend?.sessions?.resetChat?.(target);
       return send(`Session ${target} reset.`);
     }
 

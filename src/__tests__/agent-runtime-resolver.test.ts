@@ -20,10 +20,14 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type {
-  QueryBackend,
   UnifiedModelInfo,
   UnifiedModelResolution,
 } from "../core/types.js";
+import type {
+  Backend,
+  ModelCatalog,
+} from "../core/agent-runtime/capabilities.js";
+import { composeBackend } from "../core/agent-runtime/capabilities.js";
 import type { TalonConfig } from "../util/config.js";
 
 vi.mock("../util/log.js", () => ({
@@ -90,24 +94,22 @@ function fakeBackend(
     resolveModel?: (q: string) => Promise<UnifiedModelResolution>;
     getDefaultModel?: () => Promise<string | null> | string | null;
     getModelInfo?: (id: string) => Promise<UnifiedModelInfo | undefined>;
-    cacheMetrics?: QueryBackend["cacheMetrics"];
+    cacheMetrics?: Backend["cacheMetrics"];
   } = {},
-): QueryBackend {
-  const be: Partial<QueryBackend> = {
-    query: vi.fn().mockResolvedValue({
-      text: "",
-      durationMs: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheRead: 0,
-      cacheWrite: 0,
-    }),
-  };
-  if (opts.resolveModel) be.resolveModel = opts.resolveModel;
-  if (opts.getDefaultModel) be.getDefaultModel = opts.getDefaultModel;
-  if (opts.getModelInfo) be.getModelInfo = opts.getModelInfo;
-  if (opts.cacheMetrics !== undefined) be.cacheMetrics = opts.cacheMetrics;
-  return be as QueryBackend;
+): Backend & { models: ModelCatalog } {
+  const models: Partial<ModelCatalog> = {};
+  if (opts.resolveModel) models.resolveModelInfo = opts.resolveModel;
+  if (opts.getDefaultModel) models.getDefaultModelId = opts.getDefaultModel;
+  if (opts.getModelInfo) models.getRawModelInfo = opts.getModelInfo;
+  return composeBackend({
+    id: "codex",
+    label: "Codex",
+    cacheMetrics: opts.cacheMetrics ?? "none",
+    models:
+      Object.keys(models).length > 0
+        ? (models as ModelCatalog)
+        : ({} as ModelCatalog),
+  }) as Backend & { models: ModelCatalog };
 }
 
 let chatCounter = 0;
@@ -151,7 +153,7 @@ describe("resolveActiveModelRefForChat / enrichment", () => {
       effortLevels: ["low", "medium", "high"],
       defaultEffort: "medium",
     });
-    expect(be.getModelInfo).toHaveBeenCalledWith("gpt-5.5");
+    expect(be.models.getRawModelInfo).toHaveBeenCalledWith("gpt-5.5");
   });
 
   it("falls back to resolveModel when getModelInfo is absent", async () => {
@@ -160,7 +162,7 @@ describe("resolveActiveModelRefForChat / enrichment", () => {
     const be = fakeBackend({
       resolveModel: vi.fn(async () =>
         exact("gpt-5-codex"),
-      ) as unknown as QueryBackend["resolveModel"],
+      ) as unknown as ModelCatalog["resolveModelInfo"],
       cacheMetrics: "readwrite",
     });
     const { ref } = await resolveActiveModelRefForChat(

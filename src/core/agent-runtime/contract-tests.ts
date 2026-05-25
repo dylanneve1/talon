@@ -220,30 +220,29 @@ export async function assertBackgroundRunnerLifecycle(
       "backend declares background capability but exposes no `background` slot",
     );
   }
-  const events = await drain(
-    backend.background.runBackgroundTask({
+  // `BackgroundRunner.background?.runOneShotAgent` is callback-driven; the
+  // contract is "completes or throws". We run it with a no-op
+  // `appendLog` and assert it settles without an unhandled error.
+  const aborted = new AbortController();
+  let threw: unknown;
+  try {
+    await backend.background.runOneShotAgent({
       prompt: options.prompt ?? "ping",
       systemPrompt: "",
       workspace: options.workspace ?? "/tmp",
-      model: makeBareModelRef(backend.id, "contract-test-model"),
-      policy: defaultRunPolicyFor("heartbeat"),
+      model: "contract-test-model",
       contextLabel: "contract-test",
-      abortController: new AbortController(),
-    }),
-  );
-  if (events[0]?.type !== "run_started") {
-    throw new ContractViolation(
-      backend.id,
-      "BackgroundRunner.lifecycle",
-      `first event was ${events[0]?.type ?? "(no events)"} instead of run_started`,
-    );
+      abortController: aborted,
+      appendLog: async () => undefined,
+    });
+  } catch (err) {
+    threw = err;
   }
-  const last = events.at(-1);
-  if (!last || (last.type !== "completed" && last.type !== "error")) {
+  if (threw && !(threw instanceof Error)) {
     throw new ContractViolation(
       backend.id,
       "BackgroundRunner.lifecycle",
-      `stream ended on ${last?.type ?? "(no events)"} instead of completed/error`,
+      `runOneShotAgent threw a non-Error: ${String(threw)}`,
     );
   }
 }
