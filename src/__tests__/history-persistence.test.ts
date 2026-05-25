@@ -15,12 +15,16 @@ vi.mock("node:fs", () => ({
   existsSync: existsSyncMock,
   readFileSync: readFileSyncMock,
   mkdirSync: mkdirSyncMock,
+  renameSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
 const writeFileSyncMock = vi.fn();
 
 vi.mock("write-file-atomic", () => ({
-  default: { sync: (...args: unknown[]) => writeFileSyncMock(...args) },
+  default: Object.assign((...args: unknown[]) => writeFileSyncMock(...args), {
+    sync: (...args: unknown[]) => writeFileSyncMock(...args),
+  }),
 }));
 
 const { loadHistory, flushHistory, pushMessage, getRecentHistory } =
@@ -149,8 +153,9 @@ describe("history persistence", () => {
         writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
       const writtenData = lastCall[1] as string;
       const parsed = JSON.parse(writtenData.trim());
-      expect(parsed[id]).toBeDefined();
-      expect(parsed[id][0].text).toBe("flush test");
+      // JsonStore envelope: { schemaVersion, savedAt, data }
+      expect(parsed.data[id]).toBeDefined();
+      expect(parsed.data[id][0].text).toBe("flush test");
     });
 
     it("creates workspace directory if it does not exist", () => {

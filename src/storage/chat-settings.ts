@@ -1,15 +1,22 @@
 /**
  * Per-chat runtime settings. Overrides global config on a per-chat basis.
- * Persisted alongside sessions.
+ *
+ * Persisted via the unified `JsonStore<T>` envelope at
+ * `~/.talon/data/chat-settings.json`. A migrate hook accepts the
+ * pre-envelope bare-object shape so existing on-disk state loads
+ * unchanged. The two intra-data migrations — legacy
+ * `maxThinkingTokens` → `effort` and single-slot `model` →
+ * `modelByBackend` — still run in `loadChatSettings` /
+ * `migrateLegacyModelField` and remain idempotent.
  */
 
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import writeFileAtomic from "write-file-atomic";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { registerCleanup } from "../util/cleanup-registry.js";
+import { JsonStore } from "../core/agent-runtime/store.js";
 import type { ReasoningEffortLevel } from "../core/types.js";
 
 export type EffortLevel = ReasoningEffortLevel;
@@ -68,30 +75,39 @@ export type ChatSettings = {
   freeOnly?: boolean;
 };
 
+type ChatSettingsStore = Record<string, ChatSettings>;
+
 const STORE_FILE = files.chatSettings;
-let store: Record<string, ChatSettings> = {};
-let dirty = false;
+const SCHEMA_VERSION = 1 as const;
+
+const store = new JsonStore<ChatSettingsStore>({
+  path: STORE_FILE,
+  defaultValue: {},
+  schemaVersion: SCHEMA_VERSION,
+  migrate: (raw, fromVersion) => {
+    if (fromVersion !== 0) return null;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return { value: {}, schemaVersion: SCHEMA_VERSION };
+    }
+    return {
+      value: raw as ChatSettingsStore,
+      schemaVersion: SCHEMA_VERSION,
+    };
+  },
+});
 
 export function loadChatSettings(): void {
+  store.reset();
   try {
-    if (existsSync(STORE_FILE)) {
-      store = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
-    }
-  } catch {
-    // Primary corrupt — try backup
-    const bakFile = STORE_FILE + ".bak";
-    try {
-      if (existsSync(bakFile)) {
-        store = JSON.parse(readFileSync(bakFile, "utf-8"));
-        log("settings", "Loaded from backup (primary was corrupt)");
-      }
-    } catch {
-      /* backup also corrupt */
-    }
+    store.loadSync();
+  } catch (err) {
+    logError("settings", "Failed to load chat settings", err);
   }
-  // Migrate legacy maxThinkingTokens → effort
+
+  // Migrate legacy maxThinkingTokens → effort.
   let migrated = 0;
-  for (const [chatId, settings] of Object.entries(store)) {
+  const data = store.get();
+  for (const [chatId, settings] of Object.entries(data)) {
     const raw = settings as Record<string, unknown>;
     if ("maxThinkingTokens" in raw && !settings.effort) {
       const tokens = Number(raw.maxThinkingTokens);
@@ -115,7 +131,7 @@ export function loadChatSettings(): void {
     }
   }
   if (migrated > 0) {
-    dirty = true;
+    store.update(() => undefined);
     save();
     log(
       "settings",
@@ -147,7 +163,8 @@ export function migrateLegacyModelField(
   isRecognisedBackend: (id: string) => boolean,
 ): void {
   let migrated = 0;
-  for (const [chatId, settings] of Object.entries(store)) {
+  const data = store.get();
+  for (const [chatId, settings] of Object.entries(data)) {
     if (typeof settings.model !== "string" || !settings.model) continue;
     const effectiveBackend =
       settings.backend && isRecognisedBackend(settings.backend)
@@ -168,7 +185,7 @@ export function migrateLegacyModelField(
     );
   }
   if (migrated > 0) {
-    dirty = true;
+    store.update(() => undefined);
     save();
     log(
       "settings",
@@ -178,20 +195,11 @@ export function migrateLegacyModelField(
 }
 
 function save(): void {
-  if (!dirty) return;
+  if (!store.isDirty()) return;
   try {
     const dir = dirname(STORE_FILE);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const data = JSON.stringify(store, null, 2) + "\n";
-    if (existsSync(STORE_FILE)) {
-      try {
-        writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE));
-      } catch {
-        /* best effort */
-      }
-    }
-    writeFileAtomic.sync(STORE_FILE, data);
-    dirty = false;
+    store.saveSync();
   } catch (err) {
     logError("settings", "Failed to persist chat settings", err);
     recordError(
@@ -206,7 +214,7 @@ registerCleanup(save);
 /** Flush settings to disk and stop the auto-save timer. */
 export function flushChatSettings(): void {
   clearInterval(autoSaveTimer);
-  dirty = true;
+  store.update(() => undefined);
   save();
 }
 
@@ -217,15 +225,15 @@ export function flushChatSettings(): void {
  * setters instead).
  */
 export function getAllChatSettings(): Record<string, ChatSettings> {
-  return { ...store };
+  return { ...store.get() };
 }
 
 export function getChatSettings(chatId: string): ChatSettings {
-  return store[chatId] ?? {};
+  return store.get()[chatId] ?? {};
 }
 
-function cleanupEmpty(chatId: string): void {
-  const s = store[chatId];
+function cleanupEmpty(data: ChatSettingsStore, chatId: string): void {
+  const s = data[chatId];
   if (!s) return;
   const modelByBackendEmpty =
     !s.modelByBackend || Object.keys(s.modelByBackend).length === 0;
@@ -239,22 +247,29 @@ function cleanupEmpty(chatId: string): void {
     s.pulseLastCheckMsgId === undefined &&
     s.freeOnly === undefined
   ) {
-    delete store[chatId];
+    delete data[chatId];
   }
+}
+
+/** Get-or-create a settings entry inside a JsonStore update closure. */
+function ensureEntry(data: ChatSettingsStore, chatId: string): ChatSettings {
+  if (!data[chatId]) data[chatId] = {};
+  return data[chatId];
 }
 
 export function setPulseLastCheckMsgId(
   chatId: string,
   msgId: number | undefined,
 ): void {
-  if (!store[chatId]) store[chatId] = {};
-  if (msgId !== undefined) {
-    store[chatId].pulseLastCheckMsgId = msgId;
-  } else {
-    delete store[chatId].pulseLastCheckMsgId;
-    cleanupEmpty(chatId);
-  }
-  dirty = true;
+  store.update((data) => {
+    const entry = ensureEntry(data, chatId);
+    if (msgId !== undefined) {
+      entry.pulseLastCheckMsgId = msgId;
+    } else {
+      delete entry.pulseLastCheckMsgId;
+      cleanupEmpty(data, chatId);
+    }
+  });
   // Don't force-save on every pulse check — let the auto-save interval handle it
 }
 
@@ -269,19 +284,19 @@ export function setChatModelForBackend(
   backendId: string,
   model: string | undefined,
 ): void {
-  if (!store[chatId]) store[chatId] = {};
-  const entry = store[chatId];
-  if (model) {
-    if (!entry.modelByBackend) entry.modelByBackend = {};
-    entry.modelByBackend[backendId] = model;
-  } else if (entry.modelByBackend) {
-    delete entry.modelByBackend[backendId];
-    if (Object.keys(entry.modelByBackend).length === 0) {
-      delete entry.modelByBackend;
+  store.update((data) => {
+    const entry = ensureEntry(data, chatId);
+    if (model) {
+      if (!entry.modelByBackend) entry.modelByBackend = {};
+      entry.modelByBackend[backendId] = model;
+    } else if (entry.modelByBackend) {
+      delete entry.modelByBackend[backendId];
+      if (Object.keys(entry.modelByBackend).length === 0) {
+        delete entry.modelByBackend;
+      }
     }
-  }
-  cleanupEmpty(chatId);
-  dirty = true;
+    cleanupEmpty(data, chatId);
+  });
   save();
 }
 
@@ -295,7 +310,7 @@ export function getChatModelForBackend(
   chatId: string,
   backendId: string,
 ): string | undefined {
-  const settings = store[chatId];
+  const settings = store.get()[chatId];
   if (!settings) return undefined;
   const fromMap = settings.modelByBackend?.[backendId];
   if (fromMap) return fromMap;
@@ -316,12 +331,14 @@ export function getChatModelForBackend(
  * and admin tooling. Equivalent to deleting `modelByBackend` whole.
  */
 export function clearAllChatModels(chatId: string): void {
-  const entry = store[chatId];
-  if (!entry) return;
-  delete entry.modelByBackend;
-  delete entry.model;
-  cleanupEmpty(chatId);
-  dirty = true;
+  if (!store.get()[chatId]) return;
+  store.update((data) => {
+    const entry = data[chatId];
+    if (!entry) return;
+    delete entry.modelByBackend;
+    delete entry.model;
+    cleanupEmpty(data, chatId);
+  });
   save();
 }
 
@@ -340,29 +357,31 @@ export function clearAllChatModels(chatId: string): void {
  * `undefined` instead.
  */
 export function setChatModel(chatId: string, model: string | undefined): void {
-  if (!store[chatId]) store[chatId] = {};
-  const entry = store[chatId];
-
   if (model === undefined) {
     // Legacy "reset everything" semantic. Matches what existing
     // callers / tests expect when they call setChatModel(cid, undefined).
-    delete entry.modelByBackend;
-    delete entry.model;
-    cleanupEmpty(chatId);
-    dirty = true;
+    store.update((data) => {
+      const entry = ensureEntry(data, chatId);
+      delete entry.modelByBackend;
+      delete entry.model;
+      cleanupEmpty(data, chatId);
+    });
     save();
     return;
   }
 
-  const targetBackend = entry.backend;
+  const existing = store.get()[chatId];
+  const targetBackend = existing?.backend;
   if (targetBackend) {
     setChatModelForBackend(chatId, targetBackend, model);
     return;
   }
   // No backend binding — write to the legacy slot. The next backend
   // switch / migration will pick it up into modelByBackend.
-  entry.model = model;
-  dirty = true;
+  store.update((data) => {
+    const entry = ensureEntry(data, chatId);
+    entry.model = model;
+  });
   save();
 }
 
@@ -376,14 +395,15 @@ export function setChatBackend(
   chatId: string,
   backend: string | undefined,
 ): void {
-  if (!store[chatId]) store[chatId] = {};
-  if (backend) {
-    store[chatId].backend = backend;
-  } else {
-    delete store[chatId].backend;
-    cleanupEmpty(chatId);
-  }
-  dirty = true;
+  store.update((data) => {
+    const entry = ensureEntry(data, chatId);
+    if (backend) {
+      entry.backend = backend;
+    } else {
+      delete entry.backend;
+      cleanupEmpty(data, chatId);
+    }
+  });
   save();
 }
 
@@ -391,26 +411,28 @@ export function setChatEffort(
   chatId: string,
   effort: EffortLevel | undefined,
 ): void {
-  if (!store[chatId]) store[chatId] = {};
-  if (effort) {
-    store[chatId].effort = effort;
-  } else {
-    delete store[chatId].effort;
-    cleanupEmpty(chatId);
-  }
-  dirty = true;
+  store.update((data) => {
+    const entry = ensureEntry(data, chatId);
+    if (effort) {
+      entry.effort = effort;
+    } else {
+      delete entry.effort;
+      cleanupEmpty(data, chatId);
+    }
+  });
   save();
 }
 
 export function setChatFreeOnly(chatId: string, on: boolean | undefined): void {
-  if (!store[chatId]) store[chatId] = {};
-  if (on) {
-    store[chatId].freeOnly = true;
-  } else {
-    delete store[chatId].freeOnly;
-    cleanupEmpty(chatId);
-  }
-  dirty = true;
+  store.update((data) => {
+    const entry = ensureEntry(data, chatId);
+    if (on) {
+      entry.freeOnly = true;
+    } else {
+      delete entry.freeOnly;
+      cleanupEmpty(data, chatId);
+    }
+  });
   save();
 }
 
@@ -418,14 +440,15 @@ export function setChatPulse(
   chatId: string,
   enabled: boolean | undefined,
 ): void {
-  if (!store[chatId]) store[chatId] = {};
-  if (enabled !== undefined) {
-    store[chatId].pulse = enabled;
-  } else {
-    delete store[chatId].pulse;
-    cleanupEmpty(chatId);
-  }
-  dirty = true;
+  store.update((data) => {
+    const entry = ensureEntry(data, chatId);
+    if (enabled !== undefined) {
+      entry.pulse = enabled;
+    } else {
+      delete entry.pulse;
+      cleanupEmpty(data, chatId);
+    }
+  });
   save();
 }
 
@@ -433,20 +456,21 @@ export function setChatPulseInterval(
   chatId: string,
   intervalMs: number | undefined,
 ): void {
-  if (!store[chatId]) store[chatId] = {};
-  if (intervalMs !== undefined) {
-    store[chatId].pulseIntervalMs = intervalMs;
-  } else {
-    delete store[chatId].pulseIntervalMs;
-    cleanupEmpty(chatId);
-  }
-  dirty = true;
+  store.update((data) => {
+    const entry = ensureEntry(data, chatId);
+    if (intervalMs !== undefined) {
+      entry.pulseIntervalMs = intervalMs;
+    } else {
+      delete entry.pulseIntervalMs;
+      cleanupEmpty(data, chatId);
+    }
+  });
   save();
 }
 
 /** Get all chat IDs that have pulse enabled in settings. */
 export function getRegisteredPulseChats(): string[] {
-  return Object.entries(store)
+  return Object.entries(store.get())
     .filter(([, s]) => s.pulse === true)
     .map(([id]) => id);
 }

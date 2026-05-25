@@ -55,31 +55,48 @@
  *                                       migrate first)
  */
 
-import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import * as nodeFs from "node:fs";
 import writeFileAtomic from "write-file-atomic";
 
 /**
  * Subset of the `node:fs` surface this module uses. Tests can
  * inject an in-memory implementation; production uses the default
  * (passes through to `node:fs`).
+ *
+ * `writeFileAtomicSync` is optional — async-only fakes (tests that
+ * never call `saveSync`) can omit it. Stores that want a synchronous
+ * persistence path (storage modules wired into cleanup-registry
+ * before the event loop drains) require it.
  */
 export interface JsonStoreFs {
   existsSync(path: string): boolean;
   readFileSync(path: string, encoding: "utf8"): string;
   writeFileAtomic(path: string, data: string): Promise<void>;
+  writeFileAtomicSync?(path: string, data: string): void;
   renameSync(from: string, to: string): void;
   unlinkSync(path: string): void;
 }
 
+/**
+ * Default `JsonStoreFs` over `node:fs`. The `node:fs` accesses are
+ * lazy (looked up on the namespace object at call time rather than
+ * destructured at module load) so test files can mock a subset of
+ * the fs surface without crashing JsonStore's import. The full
+ * surface (`existsSync`, `readFileSync`, `renameSync`, `unlinkSync`,
+ * plus `writeFileAtomic` for primary writes) is only exercised by
+ * stores that go to disk; tests that never hit those code paths can
+ * safely omit the corresponding mock entries.
+ */
 const defaultFs: JsonStoreFs = {
-  existsSync,
-  readFileSync: (path) => readFileSync(path, "utf8"),
+  existsSync: (path) => nodeFs.existsSync(path),
+  readFileSync: (path) => nodeFs.readFileSync(path, "utf8"),
   writeFileAtomic: (path, data) =>
     new Promise((resolve, reject) => {
       writeFileAtomic(path, data, (err) => (err ? reject(err) : resolve()));
     }),
-  renameSync,
-  unlinkSync,
+  writeFileAtomicSync: (path, data) => writeFileAtomic.sync(path, data),
+  renameSync: (from, to) => nodeFs.renameSync(from, to),
+  unlinkSync: (path) => nodeFs.unlinkSync(path),
 };
 
 /**
@@ -181,6 +198,21 @@ export class JsonStore<T> {
    * re-reading.
    */
   async load(): Promise<T> {
+    return this.loadSync();
+  }
+
+  /**
+   * Synchronous variant of `load`. Used by storage modules wired
+   * into bootstrap / cleanup-registry where the event loop hasn't
+   * drained yet and the in-memory state must be primed before the
+   * first synchronous read.
+   *
+   * Both `load` and `loadSync` walk the same `<path>` → `<path>.bak`
+   * → `defaultValue` ladder. The async form is preserved for callers
+   * that want to opt into a fake fs whose `readFileSync` is async-
+   * backed.
+   */
+  loadSync(): T {
     if (this.#loaded) return this.#value;
     const fromPrimary = this.#tryReadFile(this.#path);
     if (fromPrimary.ok) {
@@ -253,13 +285,26 @@ export class JsonStore<T> {
    */
   async save(): Promise<void> {
     if (!this.#dirty) return;
-    const envelope: Envelope<T> = {
-      schemaVersion: this.#schemaVersion,
-      savedAt: this.#now(),
-      data: this.#value,
-    };
-    const serialised = JSON.stringify(envelope, null, 2);
+    const serialised = this.#serialise();
     await this.#fs.writeFileAtomic(this.#path, serialised);
+    this.#dirty = false;
+  }
+
+  /**
+   * Synchronous save variant. Required by stores wired into
+   * cleanup-registry shutdown hooks where the event loop is about
+   * to terminate. The injected fs must implement
+   * `writeFileAtomicSync` — async-only fakes throw.
+   */
+  saveSync(): void {
+    if (!this.#dirty) return;
+    if (!this.#fs.writeFileAtomicSync) {
+      throw new Error(
+        "JsonStore.saveSync: injected fs does not implement writeFileAtomicSync",
+      );
+    }
+    const serialised = this.#serialise();
+    this.#fs.writeFileAtomicSync(this.#path, serialised);
     this.#dirty = false;
   }
 
@@ -271,6 +316,15 @@ export class JsonStore<T> {
   async forceSave(): Promise<void> {
     this.#dirty = true;
     await this.save();
+  }
+
+  #serialise(): string {
+    const envelope: Envelope<T> = {
+      schemaVersion: this.#schemaVersion,
+      savedAt: this.#now(),
+      data: this.#value,
+    };
+    return JSON.stringify(envelope, null, 2);
   }
 
   /**

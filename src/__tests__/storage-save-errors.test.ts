@@ -33,14 +33,19 @@ describe("cron-store — save failure logs error", () => {
       readFileSync: vi.fn(() => "{}"),
       mkdirSync: vi.fn(),
       readdirSync: vi.fn(() => []),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({
-      default: {
-        sync: vi.fn(() => {
-          throw new Error("disk full");
+    {
+      const failingWrite = vi.fn(() => {
+        throw new Error("disk full");
+      });
+      vi.doMock("write-file-atomic", () => ({
+        default: Object.assign((...args: unknown[]) => failingWrite(...args), {
+          sync: failingWrite,
         }),
-      },
-    }));
+      }));
+    }
     vi.doMock("../util/paths.js", () => ({
       files: { cron: "/fake/cron.json" },
       dirs: { root: "/fake/.talon" },
@@ -103,14 +108,19 @@ describe("chat-settings — save failure logs error", () => {
       existsSync: vi.fn(() => true),
       readFileSync: vi.fn(() => "{}"),
       mkdirSync: vi.fn(),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({
-      default: {
-        sync: vi.fn(() => {
-          throw new Error("readonly fs");
+    {
+      const failingWrite = vi.fn(() => {
+        throw new Error("readonly fs");
+      });
+      vi.doMock("write-file-atomic", () => ({
+        default: Object.assign((...args: unknown[]) => failingWrite(...args), {
+          sync: failingWrite,
         }),
-      },
-    }));
+      }));
+    }
     vi.doMock("../util/paths.js", () => ({
       files: { chatSettings: "/fake/chat-settings.json" },
       dirs: { root: "/fake/.talon" },
@@ -155,14 +165,19 @@ describe("chat-settings — non-Error thrown in save (line 96 FALSE branch)", ()
       existsSync: vi.fn(() => true),
       readFileSync: vi.fn(() => "{}"),
       mkdirSync: vi.fn(),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({
-      default: {
-        sync: vi.fn(() => {
-          throw "plain string chat-settings error";
+    {
+      const failingWrite = vi.fn(() => {
+        throw "plain string chat-settings error";
+      });
+      vi.doMock("write-file-atomic", () => ({
+        default: Object.assign((...args: unknown[]) => failingWrite(...args), {
+          sync: failingWrite,
         }),
-      },
-    }));
+      }));
+    }
     vi.doMock("../util/paths.js", () => ({
       files: { chatSettings: "/fake/chat-settings.json" },
       dirs: { root: "/fake/.talon" },
@@ -203,14 +218,19 @@ describe("sessions — save failure logs error", () => {
       existsSync: vi.fn(() => true),
       readFileSync: vi.fn(() => "{}"),
       mkdirSync: vi.fn(),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({
-      default: {
-        sync: vi.fn(() => {
-          throw new Error("ENOSPC: no space left");
+    {
+      const failingWrite = vi.fn(() => {
+        throw new Error("ENOSPC: no space left");
+      });
+      vi.doMock("write-file-atomic", () => ({
+        default: Object.assign((...args: unknown[]) => failingWrite(...args), {
+          sync: failingWrite,
         }),
-      },
-    }));
+      }));
+    }
     vi.doMock("../util/paths.js", () => ({
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
@@ -276,8 +296,17 @@ describe("sessions — migration paths for usage fields", () => {
       existsSync: vi.fn(() => true),
       readFileSync: vi.fn(() => JSON.stringify(stored)),
       mkdirSync: vi.fn(),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    {
+      const noopWrite = vi.fn();
+      vi.doMock("write-file-atomic", () => ({
+        default: Object.assign((...args: unknown[]) => noopWrite(...args), {
+          sync: noopWrite,
+        }),
+      }));
+    }
     vi.doMock("../util/paths.js", () => ({
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
@@ -324,8 +353,17 @@ describe("sessions — migration paths for usage fields", () => {
       existsSync: vi.fn(() => true),
       readFileSync: vi.fn(() => JSON.stringify(stored)),
       mkdirSync: vi.fn(),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
+    {
+      const noopWrite = vi.fn();
+      vi.doMock("write-file-atomic", () => ({
+        default: Object.assign((...args: unknown[]) => noopWrite(...args), {
+          sync: noopWrite,
+        }),
+      }));
+    }
     vi.doMock("../util/paths.js", () => ({
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },

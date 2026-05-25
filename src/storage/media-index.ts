@@ -3,15 +3,20 @@
  *
  * Provides fast lookup of recent photos/files by chat, sender, or type.
  * Auto-expires entries older than RETENTION_DAYS.
- * Persisted to .talon/data/media-index.json.
+ *
+ * Persisted to `~/.talon/data/media-index.json` via the unified
+ * `JsonStore<T>` primitive: the on-disk format is the standard
+ * envelope `{ schemaVersion, savedAt, data: MediaEntry[] }`. A
+ * `migrate` hook accepts the pre-envelope bare-array shape so
+ * existing stores load without losing entries.
  */
 
-import { existsSync, readFileSync, mkdirSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 import { registerCleanup } from "../util/cleanup-registry.js";
-import writeFileAtomic from "write-file-atomic";
 import { log, logError } from "../util/log.js";
 import { files } from "../util/paths.js";
+import { JsonStore } from "../core/agent-runtime/store.js";
 
 export type MediaEntry = {
   id: string; // unique key: chatId:msgId
@@ -33,31 +38,65 @@ export type MediaEntry = {
 
 const STORE_FILE = files.mediaIndex;
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const SCHEMA_VERSION = 1 as const;
 
-let entries: MediaEntry[] = [];
-let dirty = false;
+const store = new JsonStore<MediaEntry[]>({
+  path: STORE_FILE,
+  defaultValue: [],
+  schemaVersion: SCHEMA_VERSION,
+  validate: (raw) => {
+    if (!Array.isArray(raw)) throw new Error("media-index: not an array");
+    return raw.filter(isMediaEntry);
+  },
+  migrate: (raw, fromVersion) => {
+    // Pre-envelope shape (`fromVersion === 0`): the file was a bare
+    // `MediaEntry[]`. JsonStore detects "no envelope detected" as
+    // version 0; lift to v1 unchanged.
+    if (fromVersion !== 0) return null;
+    if (!Array.isArray(raw)) return { value: [], schemaVersion: SCHEMA_VERSION };
+    return {
+      value: raw.filter(isMediaEntry),
+      schemaVersion: SCHEMA_VERSION,
+    };
+  },
+});
+
+function isMediaEntry(value: unknown): value is MediaEntry {
+  if (!value || typeof value !== "object") return false;
+  const e = value as Record<string, unknown>;
+  return (
+    typeof e.id === "string" &&
+    typeof e.chatId === "string" &&
+    typeof e.msgId === "number" &&
+    typeof e.senderName === "string" &&
+    typeof e.type === "string" &&
+    typeof e.filePath === "string" &&
+    typeof e.timestamp === "number"
+  );
+}
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 
 export function loadMediaIndex(): void {
+  // JsonStore.loadSync walks `<path>` → `<path>.bak` → defaultValue
+  // using only sync fs primitives, so behaviour matches the legacy
+  // synchronous load. Reset the loaded flag first so tests that
+  // re-mock the filesystem between cases see a fresh read.
+  store.reset();
   try {
-    if (existsSync(STORE_FILE)) {
-      entries = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
-    }
-  } catch {
-    entries = [];
+    store.loadSync();
+  } catch (err) {
+    logError("workspace", "Media index load failed", err);
   }
-  // Purge expired on load
   purgeExpired();
 }
 
 function save(): void {
-  if (!dirty) return;
+  if (!store.isDirty()) return;
   try {
     const dir = dirname(STORE_FILE);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileAtomic.sync(STORE_FILE, JSON.stringify(entries) + "\n");
-    dirty = false;
+    store.saveSync();
   } catch (err) {
     logError("workspace", "Media index save failed", err);
   }
@@ -68,7 +107,9 @@ registerCleanup(save);
 
 export function flushMediaIndex(): void {
   clearInterval(autoSaveTimer);
-  dirty = true;
+  // Force a synchronous flush. Mark dirty so JsonStore commits the
+  // envelope even if no addMedia was called this turn.
+  store.update(() => undefined);
   save();
 }
 
@@ -76,16 +117,17 @@ export function flushMediaIndex(): void {
 
 export function addMedia(entry: Omit<MediaEntry, "id">): void {
   const id = `${entry.chatId}:${entry.msgId}`;
-  // Dedupe
-  const existing = entries.findIndex((e) => e.id === id);
-  if (existing >= 0) entries[existing] = { ...entry, id };
-  else entries.push({ ...entry, id });
-  dirty = true;
+  store.update((entries) => {
+    const existing = entries.findIndex((e) => e.id === id);
+    if (existing >= 0) entries[existing] = { ...entry, id };
+    else entries.push({ ...entry, id });
+  });
 }
 
 /** Get recent media for a chat, newest first. */
 export function getRecentMedia(chatId: string, limit = 10): MediaEntry[] {
-  return entries
+  return store
+    .get()
     .filter((e) => e.chatId === chatId)
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, limit);
@@ -97,7 +139,8 @@ export function getMediaByType(
   type: MediaEntry["type"],
   limit = 10,
 ): MediaEntry[] {
-  return entries
+  return store
+    .get()
     .filter((e) => e.chatId === chatId && e.type === type)
     .sort((a, b) => b.timestamp - a.timestamp)
     .slice(0, limit);
@@ -123,19 +166,27 @@ export function formatMediaIndex(chatId: string, limit = 10): string {
 
 function purgeExpired(): void {
   const cutoff = Date.now() - RETENTION_MS;
-  const before = entries.length;
-  entries = entries.filter((e) => {
-    if (e.timestamp >= cutoff) return true;
-    // Delete the file too
-    try {
-      if (existsSync(e.filePath)) unlinkSync(e.filePath);
-    } catch {
-      /* skip */
+  let removed = 0;
+  store.update((entries) => {
+    const survivors: MediaEntry[] = [];
+    for (const e of entries) {
+      if (e.timestamp >= cutoff) {
+        survivors.push(e);
+        continue;
+      }
+      try {
+        if (existsSync(e.filePath)) unlinkSync(e.filePath);
+      } catch {
+        /* skip */
+      }
+      removed++;
     }
-    return false;
+    if (removed > 0) {
+      entries.length = 0;
+      entries.push(...survivors);
+    }
   });
-  if (entries.length < before) {
-    dirty = true;
-    log("workspace", `Purged ${before - entries.length} expired media entries`);
+  if (removed > 0) {
+    log("workspace", `Purged ${removed} expired media entries`);
   }
 }

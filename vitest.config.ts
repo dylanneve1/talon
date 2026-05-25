@@ -3,6 +3,14 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
+    // The codex-handler integration tests drive a full
+    // initCodexAgent + handleMessage flow per case; some retry-path
+    // tests do 2-3 round trips through the SDK mock and hit the real
+    // sessions/chat-settings stores on disk. The default 5s timeout
+    // is tight on Windows where each writeFileAtomic.sync stalls on
+    // fsync. Bumped to 15s to absorb the disk-IO variance without
+    // changing the per-test logic.
+    testTimeout: 15_000,
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "json-summary", "html", "lcov"],

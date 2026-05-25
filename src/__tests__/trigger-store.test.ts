@@ -19,6 +19,13 @@ const writeFileSyncFsMock = vi.fn((p: string, body: string, _opts?: unknown) =>
 );
 const mkdirSyncMock = vi.fn();
 const rmSyncMock = vi.fn((p: string) => inMemoryFiles.delete(p));
+const renameSyncMock = vi.fn((from: string, to: string) => {
+  const v = inMemoryFiles.get(from);
+  if (v === undefined) return;
+  inMemoryFiles.set(to, v);
+  inMemoryFiles.delete(from);
+});
+const unlinkSyncMock = vi.fn((p: string) => inMemoryFiles.delete(p));
 
 vi.mock("node:fs", () => ({
   existsSync: existsSyncMock,
@@ -26,13 +33,18 @@ vi.mock("node:fs", () => ({
   writeFileSync: writeFileSyncFsMock,
   mkdirSync: mkdirSyncMock,
   rmSync: rmSyncMock,
+  renameSync: renameSyncMock,
+  unlinkSync: unlinkSyncMock,
 }));
 
 const writeAtomicSyncMock = vi.fn((p: string, body: string) =>
   inMemoryFiles.set(p, body),
 );
 vi.mock("write-file-atomic", () => ({
-  default: { sync: writeAtomicSyncMock },
+  default: Object.assign(
+    (...args: unknown[]) => writeAtomicSyncMock(...(args as [string, string])),
+    { sync: writeAtomicSyncMock },
+  ),
 }));
 
 import type { Trigger } from "../storage/trigger-store.js";

@@ -13,11 +13,16 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(() => "{}"),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  renameSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
 const writeFileAtomicSync = vi.fn();
 vi.mock("write-file-atomic", () => ({
-  default: { sync: writeFileAtomicSync },
+  default: Object.assign(
+    (...args: unknown[]) => writeFileAtomicSync(...args),
+    { sync: writeFileAtomicSync },
+  ),
 }));
 
 import { existsSync, readFileSync } from "node:fs";
@@ -855,8 +860,14 @@ describe("sessions — saveSessions dirty=false early return (line 98 TRUE branc
       existsSync: vi.fn(() => false),
       mkdirSync: vi.fn(),
       readFileSync: vi.fn(() => "{}"),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({ default: { sync: wfaMock } }));
+    vi.doMock("write-file-atomic", () => ({
+      default: Object.assign((...args: unknown[]) => wfaMock(...args), {
+        sync: wfaMock,
+      }),
+    }));
     vi.doMock("../util/paths.js", () => ({
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },

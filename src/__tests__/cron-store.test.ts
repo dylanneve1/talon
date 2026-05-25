@@ -10,19 +10,27 @@ vi.mock("../util/log.js", () => ({
 const existsSyncMock = vi.fn(() => false);
 const readFileSyncMock = vi.fn(() => "{}");
 const mkdirSyncMock = vi.fn();
+const renameSyncMock = vi.fn();
+const unlinkSyncMock = vi.fn();
 
-// Mock fs to avoid real filesystem side effects
+// Mock fs to avoid real filesystem side effects. Includes the
+// `renameSync`/`unlinkSync` surface JsonStore reaches through after
+// the Phase 6.x storage migration.
 vi.mock("node:fs", () => ({
   existsSync: existsSyncMock,
   readFileSync: readFileSyncMock,
   writeFileSync: vi.fn(),
   mkdirSync: mkdirSyncMock,
+  renameSync: renameSyncMock,
+  unlinkSync: unlinkSyncMock,
 }));
 
 const writeFileSyncMock = vi.fn();
 
 vi.mock("write-file-atomic", () => ({
-  default: { sync: writeFileSyncMock },
+  default: Object.assign((...args: unknown[]) => writeFileSyncMock(...args), {
+    sync: writeFileSyncMock,
+  }),
 }));
 
 import type { CronJob } from "../storage/cron-store.js";
@@ -410,7 +418,9 @@ describe("cron-store", () => {
         writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
       const writtenData = lastCall[1] as string;
       const parsed = JSON.parse(writtenData.trim());
-      expect(parsed["flush-1"]).toBeDefined();
+      // JsonStore envelope: { schemaVersion, savedAt, data }
+      expect(parsed.schemaVersion).toBe(1);
+      expect(parsed.data["flush-1"]).toBeDefined();
     });
 
     it("creates workspace directory if it does not exist during addCronJob save", () => {

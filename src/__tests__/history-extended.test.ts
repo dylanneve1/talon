@@ -28,11 +28,16 @@ vi.mock("node:fs", () => ({
   readFileSync: readFileSyncMock,
   writeFileSync: vi.fn(),
   mkdirSync: mkdirSyncMock,
+  renameSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
 const writeFileAtomicSyncMock = vi.fn();
 vi.mock("write-file-atomic", () => ({
-  default: { sync: writeFileAtomicSyncMock },
+  default: Object.assign(
+    (...args: unknown[]) => writeFileAtomicSyncMock(...args),
+    { sync: writeFileAtomicSyncMock },
+  ),
 }));
 
 // Mock cleanup-registry so we don't register real process.on listeners
@@ -650,7 +655,7 @@ describe("flushHistory", () => {
     expect(mkdirSyncMock).toHaveBeenCalled();
   });
 
-  it("writes a JSON blob containing the chat data", () => {
+  it("writes a JSON envelope containing the chat data", () => {
     const id = `flush-check-${Date.now()}`;
     pushMessage(
       id,
@@ -662,29 +667,16 @@ describe("flushHistory", () => {
     flushHistory();
 
     const calls = writeFileAtomicSyncMock.mock.calls;
-    // At least one call should be the actual data write (not .bak)
+    // JsonStore writes a single envelope to the primary path — no
+    // ".bak" pre-write any more (the .bak file is read-only fallback
+    // logic, populated by the OS-level atomic-rename rather than an
+    // explicit pre-write).
     const dataCall = calls.find((c) => !String(c[0]).endsWith(".bak"));
     expect(dataCall).toBeDefined();
     const written = JSON.parse(dataCall![1] as string);
-    expect(written[id]).toBeDefined();
-    expect(written[id][0].msgId).toBe(42);
-  });
-
-  it("writes a backup of the current file before overwriting when file exists", () => {
-    const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 1 }));
-
-    writeFileAtomicSyncMock.mockClear();
-    // Simulate existing file
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue('{"old": "data"}');
-    flushHistory();
-
-    // One of the writeFileAtomic calls should be for the .bak file
-    const bakCall = writeFileAtomicSyncMock.mock.calls.find((c) =>
-      String(c[0]).endsWith(".bak"),
-    );
-    expect(bakCall).toBeDefined();
+    expect(written.schemaVersion).toBe(1);
+    expect(written.data[id]).toBeDefined();
+    expect(written.data[id][0].msgId).toBe(42);
   });
 });
 
@@ -705,8 +697,14 @@ describe("history — saveHistory dirty=false early return (line 79 TRUE branch)
       existsSync: vi.fn(() => false),
       mkdirSync: vi.fn(),
       readFileSync: vi.fn(() => "{}"),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({ default: { sync: wfaMock } }));
+    vi.doMock("write-file-atomic", () => ({
+      default: Object.assign((...args: unknown[]) => wfaMock(...args), {
+        sync: wfaMock,
+      }),
+    }));
     vi.doMock("../util/paths.js", () => ({
       files: { history: "/fake/history.json" },
       dirs: {},
@@ -742,13 +740,16 @@ describe("history — non-Error thrown in saveHistory (line 96 FALSE branch)", (
       existsSync: vi.fn(() => false),
       mkdirSync: vi.fn(),
       readFileSync: vi.fn(() => "{}"),
+      renameSync: vi.fn(),
+      unlinkSync: vi.fn(),
     }));
+    const failingWrite = vi.fn(() => {
+      throw "plain string history error";
+    });
     vi.doMock("write-file-atomic", () => ({
-      default: {
-        sync: vi.fn(() => {
-          throw "plain string history error";
-        }),
-      },
+      default: Object.assign((...args: unknown[]) => failingWrite(...args), {
+        sync: failingWrite,
+      }),
     }));
     vi.doMock("../util/paths.js", () => ({
       files: { history: "/fake/history.json" },

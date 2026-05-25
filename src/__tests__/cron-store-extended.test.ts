@@ -28,17 +28,23 @@ vi.mock("../util/log.js", () => ({
 const existsSyncMock = vi.fn(() => false);
 const readFileSyncMock = vi.fn(() => "{}");
 const mkdirSyncMock = vi.fn();
+const renameSyncMock = vi.fn();
+const unlinkSyncMock = vi.fn();
 
 vi.mock("node:fs", () => ({
   existsSync: existsSyncMock,
   readFileSync: readFileSyncMock,
   writeFileSync: vi.fn(),
   mkdirSync: mkdirSyncMock,
+  renameSync: renameSyncMock,
+  unlinkSync: unlinkSyncMock,
 }));
 
 const writeFileSyncMock = vi.fn();
 vi.mock("write-file-atomic", () => ({
-  default: { sync: writeFileSyncMock },
+  default: Object.assign((...args: unknown[]) => writeFileSyncMock(...args), {
+    sync: writeFileSyncMock,
+  }),
 }));
 
 vi.mock("../util/cleanup-registry.js", () => ({

@@ -1,4 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+/**
+ * Media index tests — JsonStore-backed persistence.
+ *
+ * Uses a real temp directory rather than mocking `node:fs`. The
+ * store path resolves against `process.env.HOME`, which we override
+ * per-test for isolation. Matches the pattern used by
+ * `codex-oauth-incompat.test.ts` after Phase 6.x #1.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
@@ -7,42 +26,56 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-const existsSyncMock = vi.fn(() => false);
-const readFileSyncMock = vi.fn(() => "[]");
-const mkdirSyncMock = vi.fn();
-const unlinkSyncMock = vi.fn();
+let originalHome: string | undefined;
+let originalUserProfile: string | undefined;
+let tempHome: string;
 
-vi.mock("node:fs", () => ({
-  existsSync: existsSyncMock,
-  readFileSync: readFileSyncMock,
-  mkdirSync: mkdirSyncMock,
-  unlinkSync: unlinkSyncMock,
-}));
+function storePath(): string {
+  return resolve(tempHome, ".talon", "data", "media-index.json");
+}
 
-const writeFileSyncMock = vi.fn();
+function seedStore(entries: unknown): void {
+  const p = storePath();
+  mkdirSync(dirname(p), { recursive: true });
+  // Mirror the legacy bare-array on-disk shape so the migrate hook
+  // exercises pre-envelope behaviour.
+  writeFileSync(p, JSON.stringify(entries));
+}
 
-vi.mock("write-file-atomic", () => ({
-  default: { sync: (...args: unknown[]) => writeFileSyncMock(...args) },
-}));
+async function freshImport() {
+  // Re-import storage modules per test so the module-scoped
+  // JsonStore picks up the temp HOME.
+  vi.resetModules();
+  return await import("../storage/media-index.js");
+}
 
-const {
-  addMedia,
-  getRecentMedia,
-  getMediaByType,
-  formatMediaIndex,
-  loadMediaIndex,
-  flushMediaIndex,
-} = await import("../storage/media-index.js");
+beforeEach(() => {
+  originalHome = process.env.HOME;
+  originalUserProfile = process.env.USERPROFILE;
+  tempHome = mkdtempSync(join(tmpdir(), "talon-media-"));
+  process.env.HOME = tempHome;
+  process.env.USERPROFILE = tempHome;
+});
+
+afterEach(() => {
+  if (originalHome !== undefined) process.env.HOME = originalHome;
+  else delete process.env.HOME;
+  if (originalUserProfile !== undefined) {
+    process.env.USERPROFILE = originalUserProfile;
+  } else {
+    delete process.env.USERPROFILE;
+  }
+  try {
+    rmSync(tempHome, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+});
 
 describe("media-index", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    existsSyncMock.mockReturnValue(false);
-    readFileSyncMock.mockReturnValue("[]");
-    loadMediaIndex(); // reset state
-  });
-
-  it("adds and retrieves media", () => {
+  it("adds and retrieves media", async () => {
+    const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+    loadMediaIndex();
     const cid = `add-${Date.now()}`;
     addMedia({
       chatId: cid,
@@ -58,11 +91,15 @@ describe("media-index", () => {
     expect(media[0].filePath).toBe("/tmp/photo.jpg");
   });
 
-  it("returns empty for unknown chat", () => {
+  it("returns empty for unknown chat", async () => {
+    const { getRecentMedia, loadMediaIndex } = await freshImport();
+    loadMediaIndex();
     expect(getRecentMedia(`unknown-${Date.now()}`)).toHaveLength(0);
   });
 
-  it("filters by type", () => {
+  it("filters by type", async () => {
+    const { addMedia, getMediaByType, loadMediaIndex } = await freshImport();
+    loadMediaIndex();
     const cid = `type-${Date.now()}`;
     addMedia({
       chatId: cid,
@@ -93,7 +130,9 @@ describe("media-index", () => {
     expect(getMediaByType(cid, "document")).toHaveLength(1);
   });
 
-  it("deduplicates by chatId:msgId", () => {
+  it("deduplicates by chatId:msgId", async () => {
+    const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+    loadMediaIndex();
     const chatId = `dedup-${Date.now()}`;
     addMedia({
       chatId,
@@ -117,7 +156,9 @@ describe("media-index", () => {
     expect(media[0].filePath).toBe("/b.jpg");
   });
 
-  it("formats index as text", () => {
+  it("formats index as text", async () => {
+    const { addMedia, formatMediaIndex, loadMediaIndex } = await freshImport();
+    loadMediaIndex();
     addMedia({
       chatId: "456",
       msgId: 10,
@@ -134,11 +175,15 @@ describe("media-index", () => {
     expect(text).toContain("sunset");
   });
 
-  it("returns 'no recent media' for empty chat", () => {
+  it("returns 'no recent media' for empty chat", async () => {
+    const { formatMediaIndex, loadMediaIndex } = await freshImport();
+    loadMediaIndex();
     expect(formatMediaIndex("empty")).toContain("No recent media");
   });
 
-  it("limits results", () => {
+  it("limits results", async () => {
+    const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+    loadMediaIndex();
     for (let i = 0; i < 15; i++) {
       addMedia({
         chatId: "789",
@@ -152,7 +197,9 @@ describe("media-index", () => {
     expect(getRecentMedia("789", 5)).toHaveLength(5);
   });
 
-  it("returns newest first", () => {
+  it("returns newest first", async () => {
+    const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+    loadMediaIndex();
     addMedia({
       chatId: "100",
       msgId: 1,
@@ -175,7 +222,9 @@ describe("media-index", () => {
   });
 
   describe("addMedia with all media types", () => {
-    it("supports all media type variants", () => {
+    it("supports all media type variants", async () => {
+      const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
       const cid = `types-${Date.now()}`;
       const types = [
         "photo",
@@ -202,7 +251,9 @@ describe("media-index", () => {
       expect(returnedTypes).toEqual([...types].sort());
     });
 
-    it("supports caption field", () => {
+    it("supports caption field", async () => {
+      const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
       const cid = `cap-${Date.now()}`;
       addMedia({
         chatId: cid,
@@ -217,7 +268,9 @@ describe("media-index", () => {
       expect(media[0].caption).toBe("My caption");
     });
 
-    it("generates correct id from chatId:msgId", () => {
+    it("generates correct id from chatId:msgId", async () => {
+      const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
       const cid = `id-${Date.now()}`;
       addMedia({
         chatId: cid,
@@ -233,7 +286,10 @@ describe("media-index", () => {
   });
 
   describe("formatMediaIndex output format", () => {
-    it("includes timestamp in readable format", () => {
+    it("includes timestamp in readable format", async () => {
+      const { addMedia, formatMediaIndex, loadMediaIndex } =
+        await freshImport();
+      loadMediaIndex();
       const ts = new Date("2025-03-15T14:30:00Z").getTime();
       addMedia({
         chatId: "fmt-1",
@@ -251,7 +307,10 @@ describe("media-index", () => {
       expect(text).toContain("file: /doc.pdf");
     });
 
-    it("truncates long captions at 50 characters", () => {
+    it("truncates long captions at 50 characters", async () => {
+      const { addMedia, formatMediaIndex, loadMediaIndex } =
+        await freshImport();
+      loadMediaIndex();
       const longCaption = "A".repeat(100);
       addMedia({
         chatId: "fmt-2",
@@ -263,12 +322,14 @@ describe("media-index", () => {
         timestamp: Date.now(),
       });
       const text = formatMediaIndex("fmt-2");
-      // Caption should be truncated to 50 chars
       expect(text).toContain(`"${"A".repeat(50)}"`);
       expect(text).not.toContain(`"${"A".repeat(51)}"`);
     });
 
-    it("omits caption when not provided", () => {
+    it("omits caption when not provided", async () => {
+      const { addMedia, formatMediaIndex, loadMediaIndex } =
+        await freshImport();
+      loadMediaIndex();
       addMedia({
         chatId: "fmt-3",
         msgId: 1,
@@ -278,11 +339,13 @@ describe("media-index", () => {
         timestamp: Date.now(),
       });
       const text = formatMediaIndex("fmt-3");
-      // Should not contain empty quotes
       expect(text).not.toContain('""');
     });
 
-    it("respects limit parameter", () => {
+    it("respects limit parameter", async () => {
+      const { addMedia, formatMediaIndex, loadMediaIndex } =
+        await freshImport();
+      loadMediaIndex();
       for (let i = 0; i < 20; i++) {
         addMedia({
           chatId: "fmt-4",
@@ -294,14 +357,15 @@ describe("media-index", () => {
         });
       }
       const text = formatMediaIndex("fmt-4", 3);
-      // Each entry has 2 lines (info + file path), so 3 entries
       const entryCount = (text.match(/\[photo\]/g) || []).length;
       expect(entryCount).toBe(3);
     });
   });
 
   describe("getMediaByType", () => {
-    it("returns empty array when no entries match type", () => {
+    it("returns empty array when no entries match type", async () => {
+      const { addMedia, getMediaByType, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
       const cid = `type-none-${Date.now()}`;
       addMedia({
         chatId: cid,
@@ -314,7 +378,9 @@ describe("media-index", () => {
       expect(getMediaByType(cid, "voice")).toHaveLength(0);
     });
 
-    it("respects limit parameter", () => {
+    it("respects limit parameter", async () => {
+      const { addMedia, getMediaByType, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
       const cid = `type-limit-${Date.now()}`;
       for (let i = 0; i < 15; i++) {
         addMedia({
@@ -329,7 +395,9 @@ describe("media-index", () => {
       expect(getMediaByType(cid, "photo", 5)).toHaveLength(5);
     });
 
-    it("returns newest first", () => {
+    it("returns newest first", async () => {
+      const { addMedia, getMediaByType, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
       const cid = `type-order-${Date.now()}`;
       addMedia({
         chatId: cid,
@@ -353,8 +421,9 @@ describe("media-index", () => {
   });
 
   describe("loadMediaIndex", () => {
-    it("loads entries from existing file", () => {
-      const stored = [
+    it("loads entries from existing legacy bare-array file", async () => {
+      const now = Date.now();
+      seedStore([
         {
           id: "load-1:1",
           chatId: "load-1",
@@ -362,7 +431,7 @@ describe("media-index", () => {
           senderName: "Alice",
           type: "photo",
           filePath: "/a.jpg",
-          timestamp: Date.now(),
+          timestamp: now,
         },
         {
           id: "load-1:2",
@@ -371,30 +440,54 @@ describe("media-index", () => {
           senderName: "Bob",
           type: "document",
           filePath: "/b.pdf",
-          timestamp: Date.now(),
+          timestamp: now,
         },
-      ];
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue(JSON.stringify(stored));
-
+      ]);
+      const { getRecentMedia, loadMediaIndex } = await freshImport();
       loadMediaIndex();
-
       const media = getRecentMedia("load-1");
       expect(media).toHaveLength(2);
     });
 
-    it("handles JSON parse errors gracefully", () => {
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue("not valid json{{{");
+    it("loads entries from JsonStore envelope file", async () => {
+      const now = Date.now();
+      const p = storePath();
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(
+        p,
+        JSON.stringify({
+          schemaVersion: 1,
+          savedAt: now,
+          data: [
+            {
+              id: "env:1",
+              chatId: "env",
+              msgId: 1,
+              senderName: "Alice",
+              type: "photo",
+              filePath: "/x.jpg",
+              timestamp: now,
+            },
+          ],
+        }),
+      );
+      const { getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
+      expect(getRecentMedia("env")).toHaveLength(1);
+    });
 
-      // Should not throw, entries should be reset to []
+    it("handles JSON parse errors gracefully", async () => {
+      const p = storePath();
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, "not valid json{{{");
+      const { loadMediaIndex } = await freshImport();
       expect(() => loadMediaIndex()).not.toThrow();
     });
 
-    it("purges expired entries on load", () => {
-      const oldTimestamp = Date.now() - 8 * 24 * 60 * 60 * 1000; // 8 days ago (expired)
-      const recentTimestamp = Date.now() - 1000; // 1 second ago (fresh)
-      const stored = [
+    it("purges expired entries on load", async () => {
+      const oldTimestamp = Date.now() - 8 * 24 * 60 * 60 * 1000;
+      const recentTimestamp = Date.now() - 1000;
+      seedStore([
         {
           id: "purge:1",
           chatId: "purge",
@@ -413,42 +506,39 @@ describe("media-index", () => {
           filePath: "/new.jpg",
           timestamp: recentTimestamp,
         },
-      ];
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue(JSON.stringify(stored));
-
+      ]);
+      const { getRecentMedia, loadMediaIndex } = await freshImport();
       loadMediaIndex();
-
       const media = getRecentMedia("purge");
       expect(media).toHaveLength(1);
       expect(media[0].filePath).toBe("/new.jpg");
     });
 
-    it("deletes expired media files from disk during purge", () => {
+    it("deletes expired media files from disk during purge", async () => {
       const oldTimestamp = Date.now() - 8 * 24 * 60 * 60 * 1000;
-      const stored = [
+      const targetFile = join(tempHome, "expired.jpg");
+      writeFileSync(targetFile, "stale");
+      seedStore([
         {
           id: "del:1",
           chatId: "del",
           msgId: 1,
           senderName: "A",
           type: "photo",
-          filePath: "/expired.jpg",
+          filePath: targetFile,
           timestamp: oldTimestamp,
         },
-      ];
-      // existsSync: first call for STORE_FILE=true, then for filePath during purge=true
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue(JSON.stringify(stored));
-
+      ]);
+      const { loadMediaIndex } = await freshImport();
       loadMediaIndex();
-
-      expect(unlinkSyncMock).toHaveBeenCalledWith("/expired.jpg");
+      expect(existsSync(targetFile)).toBe(false);
     });
   });
 
   describe("flushMediaIndex", () => {
-    it("writes entries to disk", () => {
+    it("writes entries to disk in the envelope format", async () => {
+      const { addMedia, flushMediaIndex, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
       addMedia({
         chatId: "flush-1",
         msgId: 1,
@@ -457,18 +547,17 @@ describe("media-index", () => {
         filePath: "/a.jpg",
         timestamp: Date.now(),
       });
-
-      existsSyncMock.mockReturnValue(true);
       flushMediaIndex();
-
-      expect(writeFileSyncMock).toHaveBeenCalled();
-      const writtenData = writeFileSyncMock.mock.calls[0][1] as string;
-      const parsed = JSON.parse(writtenData.trim());
-      expect(Array.isArray(parsed)).toBe(true);
-      expect(parsed.length).toBeGreaterThan(0);
+      const persisted = JSON.parse(readFileSync(storePath(), "utf-8"));
+      expect(persisted.schemaVersion).toBe(1);
+      expect(Array.isArray(persisted.data)).toBe(true);
+      expect(persisted.data.length).toBeGreaterThan(0);
+      expect(persisted.data[0].chatId).toBe("flush-1");
     });
 
-    it("creates workspace directory if it does not exist", () => {
+    it("creates data directory if it does not exist", async () => {
+      const { addMedia, flushMediaIndex, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
       addMedia({
         chatId: "flush-2",
         msgId: 1,
@@ -477,83 +566,10 @@ describe("media-index", () => {
         filePath: "/a.jpg",
         timestamp: Date.now(),
       });
-
-      existsSyncMock.mockReturnValue(false);
+      // Remove the dir so flush has to recreate it.
+      rmSync(dirname(storePath()), { recursive: true, force: true });
       flushMediaIndex();
-
-      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), {
-        recursive: true,
-      });
+      expect(existsSync(storePath())).toBe(true);
     });
-
-    it("handles write errors gracefully", () => {
-      addMedia({
-        chatId: "flush-3",
-        msgId: 1,
-        senderName: "A",
-        type: "photo",
-        filePath: "/a.jpg",
-        timestamp: Date.now(),
-      });
-
-      existsSyncMock.mockReturnValue(true);
-      writeFileSyncMock.mockImplementationOnce(() => {
-        throw new Error("disk full");
-      });
-
-      expect(() => flushMediaIndex()).not.toThrow();
-    });
-
-    it("autoSave timer skips write when nothing has changed (dirty=false)", async () => {
-      vi.useFakeTimers();
-      existsSyncMock.mockReturnValue(true);
-      // Don't add any media — dirty starts false after module load
-      // Advance past the 30s autoSave interval to fire save() without dirty being set
-      await vi.advanceTimersByTimeAsync(31_000);
-      // save() should have been called by the interval but returned early (dirty=false)
-      // The key assertion: no write was performed
-      expect(writeFileSyncMock).not.toHaveBeenCalled();
-      vi.useRealTimers();
-    });
-  });
-});
-
-// ── save dirty=false early return ─────────────────────────────────────────
-
-describe("media-index — save dirty=false early return (line 46 TRUE branch)", () => {
-  it("does not write when auto-save fires with dirty=false", async () => {
-    vi.resetModules();
-    vi.useFakeTimers();
-    const wfaMock = vi.fn();
-    vi.doMock("../util/log.js", () => ({
-      log: vi.fn(),
-      logError: vi.fn(),
-      logWarn: vi.fn(),
-      logDebug: vi.fn(),
-    }));
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false),
-      mkdirSync: vi.fn(),
-      readFileSync: vi.fn(() => "[]"),
-      unlinkSync: vi.fn(),
-    }));
-    vi.doMock("write-file-atomic", () => ({ default: { sync: wfaMock } }));
-    vi.doMock("../util/paths.js", () => ({
-      files: { media: "/fake/media.json" },
-      dirs: {},
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
-    }));
-    vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
-
-    // Fresh import: dirty=false (nothing modified yet)
-    await import("../storage/media-index.js");
-
-    // Advance 31 seconds → auto-save timer fires → save() with dirty=false → early return
-    await vi.advanceTimersByTimeAsync(31_000);
-    expect(wfaMock).not.toHaveBeenCalled();
-
-    vi.useRealTimers();
   });
 });

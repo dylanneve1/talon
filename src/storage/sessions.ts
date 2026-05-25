@@ -1,16 +1,19 @@
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import writeFileAtomic from "write-file-atomic";
+import { existsSync, mkdirSync } from "node:fs";
 import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { dirs, files } from "../util/paths.js";
 import { registerCleanup } from "../util/cleanup-registry.js";
+import { JsonStore } from "../core/agent-runtime/store.js";
 
 /**
  * Session manager — maps Telegram chat IDs to Claude SDK session IDs.
  * The SDK handles actual conversation storage (JSONL); we just track
  * the mapping so conversations persist across messages.
  *
- * Sessions are persisted to disk so they survive restarts.
+ * Persisted via the unified `JsonStore<T>` envelope at
+ * `~/.talon/data/sessions.json`. A migrate hook accepts the
+ * pre-envelope bare-object shape so existing on-disk state loads
+ * unchanged.
  */
 
 type SessionUsage = {
@@ -58,54 +61,42 @@ type SessionState = {
 type SessionStore = Record<string, SessionState>;
 
 const STORE_FILE = files.sessions;
-let store: SessionStore = {};
-let dirty = false;
+const SCHEMA_VERSION = 1 as const;
+
+const store = new JsonStore<SessionStore>({
+  path: STORE_FILE,
+  defaultValue: {},
+  schemaVersion: SCHEMA_VERSION,
+  migrate: (raw, fromVersion) => {
+    if (fromVersion !== 0) return null;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return { value: {}, schemaVersion: SCHEMA_VERSION };
+    }
+    return {
+      value: raw as SessionStore,
+      schemaVersion: SCHEMA_VERSION,
+    };
+  },
+});
 
 function ensureDir(): void {
   if (!existsSync(dirs.data)) mkdirSync(dirs.data, { recursive: true });
 }
 
 export function loadSessions(): void {
+  store.reset();
   try {
-    if (existsSync(STORE_FILE)) {
-      store = JSON.parse(readFileSync(STORE_FILE, "utf-8"));
-    }
-  } catch {
-    // Primary file corrupt — try backup
-    const bakFile = STORE_FILE + ".bak";
-    try {
-      if (existsSync(bakFile)) {
-        store = JSON.parse(readFileSync(bakFile, "utf-8"));
-        logError("sessions", "Loaded from backup (primary was corrupt)");
-        return;
-      }
-    } catch {
-      /* backup also corrupt */
-    }
-    logError(
-      "sessions",
-      "Session data corrupt and no valid backup — starting fresh",
-    );
-    store = {};
+    store.loadSync();
+  } catch (err) {
+    logError("sessions", "Session load failed", err);
   }
 }
 
 function saveSessions(): void {
-  if (!dirty) return;
+  if (!store.isDirty()) return;
   try {
     ensureDir();
-    const data = JSON.stringify(store, null, 2) + "\n";
-    // Write backup of current file before overwriting
-    if (existsSync(STORE_FILE)) {
-      try {
-        writeFileAtomic.sync(STORE_FILE + ".bak", readFileSync(STORE_FILE));
-      } catch {
-        /* best effort */
-      }
-    }
-    // Atomic write: writes to temp file then renames — prevents corruption on crash
-    writeFileAtomic.sync(STORE_FILE, data);
-    dirty = false;
+    store.saveSync();
   } catch (err) {
     logError("sessions", "Failed to persist sessions", err);
     recordError(
@@ -114,7 +105,6 @@ function saveSessions(): void {
   }
 }
 
-// Auto-save every 10 seconds if dirty
 const autoSaveTimer = setInterval(saveSessions, 10_000);
 
 const emptyUsage = (): SessionUsage => ({
@@ -132,20 +122,12 @@ const emptyUsage = (): SessionUsage => ({
   fastestResponseMs: Infinity,
 });
 
-export function getSession(chatId: string): SessionState {
-  let session = store[chatId];
-  if (!session) {
-    const now = Date.now();
-    session = {
-      sessionId: undefined,
-      turns: 0,
-      lastActive: now,
-      createdAt: now,
-      usage: emptyUsage(),
-    };
-    store[chatId] = session;
-  }
-  // Migrate old sessions without usage or missing fields
+/**
+ * Normalise a session state object in-place. Migrates fields that
+ * pre-date later schema additions (response timing, context fill,
+ * etc.) without rewriting the on-disk record.
+ */
+function normaliseSession(session: SessionState): SessionState {
   if (!session.usage) session.usage = emptyUsage();
   if (!session.createdAt) session.createdAt = session.lastActive;
   if (session.usage.totalResponseMs === undefined)
@@ -158,7 +140,6 @@ export function getSession(chatId: string): SessionState {
     session.usage.fastestResponseMs === 0
   )
     session.usage.fastestResponseMs = Infinity;
-  // Migrate sessions from before context tracking was added
   if (session.usage.contextTokens === undefined)
     session.usage.contextTokens = 0;
   if (session.usage.contextWindow === undefined)
@@ -167,17 +148,36 @@ export function getSession(chatId: string): SessionState {
   return session;
 }
 
+export function getSession(chatId: string): SessionState {
+  const data = store.get();
+  let session = data[chatId];
+  if (!session) {
+    const now = Date.now();
+    session = {
+      sessionId: undefined,
+      turns: 0,
+      lastActive: now,
+      createdAt: now,
+      usage: emptyUsage(),
+    };
+    store.update((s) => {
+      s[chatId] = session;
+    });
+  }
+  return normaliseSession(session);
+}
+
 export function setSessionId(chatId: string, sessionId: string): void {
   const session = getSession(chatId);
   session.sessionId = sessionId;
-  dirty = true;
+  store.update(() => undefined);
 }
 
 export function incrementTurns(chatId: string): void {
   const session = getSession(chatId);
   session.turns += 1;
   session.lastActive = Date.now();
-  dirty = true;
+  store.update(() => undefined);
 }
 
 export function recordUsage(
@@ -199,14 +199,12 @@ export function recordUsage(
   },
 ): void {
   const session = getSession(chatId);
-  // Token counts from SDK modelUsage (accumulated per-turn)
   session.usage.totalInputTokens += turn.inputTokens;
   session.usage.totalOutputTokens += turn.outputTokens;
   session.usage.totalCacheRead += turn.cacheRead;
   session.usage.totalCacheWrite += turn.cacheWrite;
   session.usage.lastPromptTokens =
     turn.inputTokens + turn.cacheRead + turn.cacheWrite;
-  // Context info from SDK
   session.usage.contextTokens = turn.contextTokens ?? 0;
   if (
     turn.contextWindow !== undefined &&
@@ -216,12 +214,10 @@ export function recordUsage(
     session.usage.contextWindow = turn.contextWindow;
   }
   session.usage.numApiCalls = turn.numApiCalls ?? 0;
-  // Add backend-reported cost when available
   if (typeof turn.costUsd === "number" && Number.isFinite(turn.costUsd)) {
     session.usage.estimatedCostUsd += turn.costUsd;
   }
   if (turn.model) session.lastModel = turn.model;
-  // Response time tracking
   if (turn.durationMs && turn.durationMs > 0) {
     session.usage.totalResponseMs =
       (session.usage.totalResponseMs || 0) + turn.durationMs;
@@ -231,31 +227,32 @@ export function recordUsage(
       session.usage.fastestResponseMs = turn.durationMs;
     }
   }
-  dirty = true;
+  store.update(() => undefined);
 }
 
 export function setSessionName(chatId: string, name: string): void {
   const session = getSession(chatId);
   session.sessionName = name;
-  dirty = true;
+  store.update(() => undefined);
 }
 
 export function setLastBotMessageId(chatId: string, messageId: number): void {
   const session = getSession(chatId);
   session.lastBotMessageId = messageId;
-  dirty = true;
+  store.update(() => undefined);
 }
 
 export function getLastBotMessageId(chatId: string): number | undefined {
-  return store[chatId]?.lastBotMessageId;
+  return store.get()[chatId]?.lastBotMessageId;
 }
 
 export function resetSession(chatId: string): void {
-  const session = store[chatId];
+  const session = store.get()[chatId];
   const turns = session?.turns ?? 0;
   const name = session?.sessionName;
-  delete store[chatId];
-  dirty = true;
+  store.update((s) => {
+    delete s[chatId];
+  });
   saveSessions();
   log(
     "sessions",
@@ -274,7 +271,7 @@ export type SessionInfo = {
 };
 
 export function getSessionInfo(chatId: string): SessionInfo {
-  const session = store[chatId];
+  const session = store.get()[chatId];
   return {
     sessionId: session?.sessionId,
     turns: session?.turns ?? 0,
@@ -287,12 +284,12 @@ export function getSessionInfo(chatId: string): SessionInfo {
 }
 
 export function getActiveSessionCount(): number {
-  return Object.keys(store).length;
+  return Object.keys(store.get()).length;
 }
 
 /** Get all chat IDs with active sessions and their info. */
 export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
-  return Object.entries(store).map(([chatId, session]) => ({
+  return Object.entries(store.get()).map(([chatId, session]) => ({
     chatId,
     info: {
       sessionId: session.sessionId,
@@ -306,12 +303,11 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
   }));
 }
 
-// Flush on exit (signal handlers are in index.ts for graceful shutdown)
 registerCleanup(saveSessions);
 
 /** Force-save sessions to disk and stop the auto-save timer. */
 export function flushSessions(): void {
   clearInterval(autoSaveTimer);
-  dirty = true;
+  store.update(() => undefined);
   saveSessions();
 }

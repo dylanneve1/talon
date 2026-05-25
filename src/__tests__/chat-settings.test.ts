@@ -14,11 +14,18 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(() => "{}"),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  renameSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
-// Mock write-file-atomic to prevent writes to the real production file
+// Mock write-file-atomic to prevent writes to the real production file.
+// The JsonStore primitive calls the default as a function (callback
+// form) AND as `.sync()` — accept either.
+const writeMock = vi.fn();
 vi.mock("write-file-atomic", () => ({
-  default: { sync: vi.fn() },
+  default: Object.assign((...args: unknown[]) => writeMock(...args), {
+    sync: writeMock,
+  }),
 }));
 
 const {
