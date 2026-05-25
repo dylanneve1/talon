@@ -12,12 +12,7 @@
  *     interfaces). The shim adapts on demand without forcing every
  *     backend to grow a parallel native factory in this PR.
  *
- * Phase 1 / 2 contract: **no production caller invokes the shim
- * yet.** It exists so Phase 3+ work (dispatcher consuming
- * `AgentEvent`s, heartbeat / dream rendering from events) can swap
- * over without touching the legacy registry.
- *
- * Typical usage in a future migration:
+ * Typical usage:
  *
  *   const backends = await getAdaptedBackends(config, ctx);
  *   const claude   = backends.find((b) => b.id === "claude");

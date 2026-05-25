@@ -1,13 +1,10 @@
 /**
  * Adapter — wrap the legacy `QueryBackend` as the new `Backend`
- * composed object.
- *
- * Phase 1 contract: **no production caller invokes the adapter
- * yet.** The adapter exists so callers can begin migrating against
- * the new shape without churning every backend implementation in
- * the same PR. When the dispatcher migrates (Phase 3+), it will
- * call `adaptQueryBackend(legacy, id, label)` until each backend
- * grows a native `Backend`-shaped factory.
+ * composed object. The bridge that lets consumers migrate to the
+ * new shape before each backend is rewritten natively (Phase 3.x).
+ * The per-backend conformance test (`backend-contract.test.ts`)
+ * routes every shipped `BackendId` through this adapter and asserts
+ * the full contract suite.
  *
  * Translation rules (deliberate fidelity over richness):
  *

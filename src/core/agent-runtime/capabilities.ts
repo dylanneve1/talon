@@ -14,10 +14,10 @@
  *   - `ToolRuntime`                      — hot MCP refresh
  *   - `UsageTelemetry`                   — `/status` enrichment
  *
- * Phase 1 only defines the types and a thin adapter
- * (`adapter.ts`) that wraps the existing `QueryBackend` into a
- * `Backend` so callers can begin migrating. The actual streaming
- * implementation lands in Phase 3.
+ * The adapter (`adapter.ts`) wraps each backend's existing
+ * `QueryBackend` into a `Backend` so consumers can build against
+ * this surface today. Phase 3.x replaces the adapter with a native
+ * factory per backend.
  */
 
 import type { AgentEvent } from "./events.js";

@@ -1,17 +1,30 @@
 # `src/core/agent-runtime/`
 
-Single home for the architecture-unification primitives defined in
-`docs/talon-architecture-unification-plan.md`. Phases land here
-incrementally; each consumer migration converts one production
-call site to use the new shape, leaving the rest on the legacy
-contract until its own dedicated PR.
+Single home for the architecture-unification primitives. Phases land
+here incrementally. The current state of the plan:
+
+| Phase | Scope                                                | Status      |
+| ----- | ---------------------------------------------------- | ----------- |
+| 1     | Type-only surface (events, ModelRef, RunPolicy, …)   | **done**    |
+| 2.1   | `resolveActiveModelRefForChat`                       | **done**    |
+| 2.2   | `/status` consumes ModelRef                          | **done**    |
+| 2.3   | `/model` consumes ModelRef                           | **done**    |
+| 3     | Native `AgentEvent` emission per backend             | prep landed |
+| 4     | `AgentEventLogRenderer` consumers                    | prep landed |
+| 5     | Centralised MCP config via `ToolRegistry`            | prep landed |
+| 6     | `JsonStore<T>` over every JSON-backed store          | **done**    |
+| 7     | Per-backend contract tests                           | **done**    |
+
+"prep landed" means the primitives live here and are exercised by
+their self-tests; the per-backend rewrites that consume them are
+scheduled per the cookbook below.
 
 ## Modules
 
-### `events.ts` (Phase 1)
+### `events.ts`
 
-The canonical `AgentEvent` stream every backend emits or pretends
-to emit:
+The canonical `AgentEvent` stream every backend emits or pretends to
+emit:
 
 ```
 run_started | text_delta | assistant_message | reasoning |
@@ -20,81 +33,83 @@ error | completed
 ```
 
 Plus `UsageSnapshot`, `AgentError` (with `AgentErrorKind`),
-`AgentResult`. Helpers: `emptyUsage`, `addUsage`,
-`isAgentEventOf`, `isAgentRunTerminator`.
+`AgentResult`. Helpers: `emptyUsage`, `addUsage`, `isAgentEventOf`,
+`isAgentRunTerminator`.
 
-### `model-ref.ts` (Phase 1)
+### `model-ref.ts`
 
 Typed model identity. `ModelRef = { backend: BackendId, id,
-displayName, ... }`. Owns the `BACKEND_IDS` literal — single
-source of truth for which backends the typed union can route to.
-Helpers: `isBackendId`, `sameModelRef`, `makeBareModelRef`.
+displayName, ... }`. Owns the `BACKEND_IDS` literal — single source of
+truth for which backends the typed union can route to. Helpers:
+`isBackendId`, `sameModelRef`, `makeBareModelRef`.
 
-### `run-policy.ts` (Phase 1)
+### `run-policy.ts`
 
-`RunPolicy` lifts the loose `contextLabel` string into a real
-policy object covering tool surface, delivery mode, timeout,
-logging destination, session persistence, permission mode.
+`RunPolicy` lifts the loose `contextLabel` string into a real policy
+object covering tool surface, delivery mode, timeout, logging
+destination, session persistence, permission mode.
 `defaultRunPolicyFor("chat" | "heartbeat" | "dream" | "trigger" |
 "test")` returns the canonical shape for each run kind.
 
-### `tool-descriptor.ts` (Phase 1)
+### `tool-descriptor.ts`
 
 `ToolDescriptor` + `ToolFilter` + `applyToolFilter`. The canonical
-shape `ToolRegistry` stores and Phase 5.x backend renderers
-consume.
+shape `ToolRegistry` stores and Phase 5.x backend renderers consume.
 
-### `capabilities.ts` (Phase 1)
+### `capabilities.ts`
 
 Split capability interfaces — `ChatBackend`, `BackgroundRunner`,
-`ModelCatalog`, `SessionBackend`, `ToolRuntime`, `UsageTelemetry`
-— composed onto a single `Backend` object with explicit capability
-flags. Replaces the fat optional-methods `QueryBackend` shape for
-new code.
+`ModelCatalog`, `SessionBackend`, `ToolRuntime`, `UsageTelemetry` —
+composed onto a single `Backend` object with explicit capability
+flags. Replaces the fat optional-methods `QueryBackend` shape for new
+code.
 
-### `adapter.ts` (Phase 1)
+### `adapter.ts`
 
 `adaptQueryBackend(legacy, id, label, opts?)` wraps a legacy
 `QueryBackend` as a `Backend`. Synthesises minimal AgentEvent
-sequences around `query()` and `runOneShotAgent()`. The bridge
-that lets consumers migrate to the new shape before backends are
+sequences around `query()` and `runOneShotAgent()`. The bridge that
+lets consumers migrate to the new shape before each backend is
 rewritten.
 
-### `resolver.ts` (Phase 2.1 / 2.3)
+### `resolver.ts`
 
 `resolveActiveModelRefForChat(chatId, backend, backendId, config)`
 returns `{ ref: ModelRef | null, modelId: string | null, source }`.
 Wraps the existing string-side `resolveActiveModelForChat`
 (`core/active-model.ts`) and enriches the chain's output into a
-`ModelRef` via `getModelInfo` → `resolveModel` → bare-ref
-fallback. `modelId` is the raw string from the chain so callers
-can fall back to the legacy id when `ref` is null but the chain
-produced one.
+`ModelRef` via `getModelInfo` → `resolveModel` → bare-ref fallback.
+`modelId` is the raw string from the chain so callers can fall back
+to the legacy id when `ref` is null but the chain produced one.
 
-### `registry.ts` (Phase 3 prep)
+### `registry.ts`
 
 `getAdaptedBackends` / `adaptOneBackend` / `adaptInstantiatedBackend`
-— turn the existing legacy `BackendFactory` registry into
-`Backend` composed objects on demand. The dispatcher / heartbeat /
-dream Phase 3.x migrations will consume this.
+— turn the existing legacy `BackendFactory` registry into `Backend`
+composed objects on demand. Phase 3.x backend rewrites will replace
+this shim with a native factory surface.
 
-### `tool-registry.ts` (Phase 5 prep)
+### `tool-registry.ts`
 
-`ToolRegistry` class storing `ToolDescriptor[]` with atomic
-`register` / `registerAll`, `forPolicy(policy)` returning the
-filtered subset, and `parseMcpToolId` / `groupToolsByServer`
-helpers. Phase 5.x backend renderers will read from this.
+`ToolRegistry` class storing `ToolDescriptor[]` with atomic `register`
+/ `registerAll`, `forPolicy(policy)` returning the filtered subset,
+and `parseMcpToolId` / `groupToolsByServer` helpers. Phase 5.x backend
+renderers will read from this.
 
-### `store.ts` (Phase 6 prep)
+### `store.ts`
 
 `JsonStore<T>` — unified persistence with envelope shape
 (`{ schemaVersion, savedAt, data }`), `.bak` fallback on corrupt
 primary, `migrate` hook on version mismatch, `validate` hook on
 malformed data, and `JsonStoreFs` injection for test isolation.
-Phase 6.x will migrate the six existing `src/storage/*` stores
-onto this primitive one at a time.
 
-### `contract-tests.ts` (Phase 7)
+Synchronous twin pair (`loadSync` / `saveSync`) covers stores wired
+into bootstrap and cleanup-registry where the event loop hasn't
+drained yet. All six JSON-backed stores under `src/storage/` use this
+primitive as of Phase 6 (see commit history for the per-store
+migrations).
+
+### `contract-tests.ts`
 
 Backend contract assertions any conforming `Backend` must pass:
 
@@ -106,28 +121,36 @@ Backend contract assertions any conforming `Backend` must pass:
 - `assertBackgroundRunnerLifecycle` — started + terminator
 - `assertModelCatalogDefaultShape` — ref.backend matches identity
 - `assertUsageTelemetryShape` — finite, non-negative counters
-- `assertBackendContract` — runs the whole suite, returns the
-  list of checks performed
+- `assertBackendContract` — runs the whole suite, returns the list of
+  checks performed
 
-Each throws `ContractViolation` with a descriptive message. Phase
-7.x wires these into per-backend test files alongside
-SDK-specific quirks.
+Each throws `ContractViolation` with a descriptive message.
+`backend-contract.test.ts` wires the suite across every `BackendId`
+via the adapter; Phase 3.x per-backend rewrites will plug the real
+native `Backend` in place of the adapter wrapper.
 
-### `legacy-bridge.ts` (Phase 3 plumbing)
+### `legacy-bridge.ts`
 
 The "render events back into the old shape" half of the Phase 3
 bridge. `pipeEventsToCallbacks(stream, callbacks)` consumes an
-`AgentEvent` stream and invokes the legacy `QueryParams`
-callbacks (`onStreamDelta` / `onTextBlock` / `onToolUse`).
+`AgentEvent` stream and invokes the legacy `QueryParams` callbacks
+(`onStreamDelta` / `onTextBlock` / `onToolUse`).
 `reduceEventsToResult(stream)` produces a `QueryResult`-shaped
 fallback when a backend emits events natively but still needs to
-satisfy the legacy `backend.query()` contract during the
-migration window. Together with `adapter.ts` (which goes the
-other direction) this makes each backend rewrite local.
+satisfy the legacy `backend.query()` contract during the migration
+window. Together with `adapter.ts` (which goes the other direction)
+this makes each backend rewrite local.
+
+### `event-log-renderer.ts`
+
+`renderEvent(event, state, sink)` translates an `AgentEvent` into
+markdown for the heartbeat / dream / trigger log consumers. Phase 4
+will route heartbeat & dream's existing `appendLog` plumbing through
+this renderer so each backend's surface text matches.
 
 ## Migration cookbook
 
-### To migrate a `resolveActiveModelForChat` caller to ref
+### Migrate a `resolveActiveModelForChat` caller to ref
 
 1. Import `resolveActiveModelRefForChat` from
    `core/agent-runtime/resolver.js`.
@@ -140,21 +163,21 @@ resolveActiveModelRefForChat(...)`.
    `backend.getModelInfo(model)` call.
 5. Use `ref?.id` for backend-facing routing.
 
-Done callers: `/status` (telegram + discord), `/model` main +
-browse views.
+Done callers: `/status` (telegram + discord), `/model` main + browse
+views.
 
-### To rewrite a backend handler to emit `AgentEvent`s natively (Phase 3.x)
+### Rewrite a backend handler to emit `AgentEvent`s natively (Phase 3.x)
 
 1. In the handler module, define an async generator
-   `runChatTurnEvents(params): AsyncIterable<AgentEvent>` that
-   yields events as the underlying SDK call streams.
-2. Keep the existing `query(params): Promise<QueryResult>` working
-   — implement it on top of `runChatTurnEvents` via
+   `runChatTurnEvents(params): AsyncIterable<AgentEvent>` that yields
+   events as the underlying SDK call streams.
+2. Keep the existing `query(params): Promise<QueryResult>` working —
+   implement it on top of `runChatTurnEvents` via
    `reduceEventsToResult` plus piping deltas through the legacy
    `onStreamDelta` / `onTextBlock` / `onToolUse` callbacks via
    `pipeEventsToCallbacks`.
-3. Add the new method to the backend's `QueryBackend` instance
-   on a new optional field (e.g. `runChatTurnEvents?`).
+3. Add the new method to the backend's `QueryBackend` instance on a
+   new optional field (e.g. `runChatTurnEvents?`).
 4. Wire the per-backend test file to assert `assertBackendContract`
    against an adapted view of the backend (via
    `adaptInstantiatedBackend`).
@@ -162,42 +185,40 @@ browse views.
 Order per the plan: Codex → Claude SDK → OpenAI Agents → Kilo /
 OpenCode.
 
-### To migrate a JSON-backed store to `JsonStore<T>` (Phase 6.x)
+### Migrate a JSON-backed store to `JsonStore<T>` (Phase 6.x — complete)
+
+All six stores are migrated. See git history for the per-store
+commits; the pattern is preserved in each storage module for future
+new stores:
 
 1. Define the persisted shape `interface MyStoreData { ... }`.
 2. Construct `new JsonStore<MyStoreData>({ path, defaultValue,
 schemaVersion, validate, migrate })` at module scope.
-3. Replace the existing in-memory `Map` + dirty flag + autosave +
-   `.bak` fallback + corrupt-read recovery code with calls to
-   `store.load()` / `store.update()` / `store.save()`.
-4. Update tests to use `JsonStoreFs` injection instead of
-   monkey-patching `node:fs` via `HOME` overrides where possible.
+3. Use `store.loadSync()` from the bootstrap loader (sync init), and
+   `store.saveSync()` from the autosave + flush paths.
+4. Reach for `store.update(fn)` for mutations and `store.get()` for
+   reads.
 
-Order per the plan: Codex OAuth incompat → media index → cron →
-triggers → sessions → chat settings (last, operationally
-sensitive).
-
-### To centralise a backend's MCP config (Phase 5.x)
+### Centralise a backend's MCP config (Phase 5.x)
 
 1. Build a `ToolRegistry` instance from the live plugin set at
    bootstrap.
-2. In the backend's init/handler, replace the hand-rolled MCP
-   config builder with `registry.forPolicy(policy)` then render
-   the resulting `ToolDescriptor[]` into the SDK-native config
-   shape (Codex TOML, Claude SDK MCP options, etc).
+2. In the backend's init/handler, replace the hand-rolled MCP config
+   builder with `registry.forPolicy(policy)` then render the resulting
+   `ToolDescriptor[]` into the SDK-native config shape (Codex TOML,
+   Claude SDK MCP options, etc).
 3. Tool collisions surface at registration time via
    `ToolRegistryError`, not at model-call time.
 
-Order per the plan: Codex TOML + Claude SDK MCP config first;
-then OpenAI Agents persistent MCP bundle; then any remaining.
+Order per the plan: Codex TOML + Claude SDK MCP config first; then
+OpenAI Agents persistent MCP bundle; then any remaining.
 
 ## Invariants
 
-- `BACKEND_IDS` in `model-ref.ts` is the source of truth for the
-  typed union. The `config.ts` zod enums repeat the same literal
-  manually until a later phase imports `BACKEND_IDS` directly.
-- `AgentEvent.type` is the ONLY discrimination mechanism. No
-  class hierarchy, no `instanceof` checks.
+- `BACKEND_IDS` in `model-ref.ts` is the source of truth for the typed
+  union. `src/util/config.ts` zod enums are wired to the same literal.
+- `AgentEvent.type` is the ONLY discrimination mechanism. No class
+  hierarchy, no `instanceof` checks.
 - The adapter's `runChatTurn` yields a minimal event sequence
   (`run_started → assistant_message? → usage → completed`) — Phase
   3.x backends emit richer sequences (per-token streaming, tool
@@ -205,5 +226,3 @@ then OpenAI Agents persistent MCP bundle; then any remaining.
 - Contract assertions throw `ContractViolation` with a descriptive
   message including backend id + contract name + detail. Don't
   rewrite to use plain `Error` — tests assert the message shape.
-
-Refs `docs/talon-architecture-unification-plan.md`.

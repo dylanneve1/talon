@@ -1,19 +1,21 @@
 /**
- * Agent runtime — Phase 1 type-only surface.
+ * Agent runtime — unified surface for the architecture-unification
+ * plan. See `agent-runtime/README.md` for the current phase status
+ * and migration cookbook. This barrel re-exports the canonical
+ * shapes:
  *
- * See `docs/talon-architecture-unification-plan.md` for the full
- * design. This barrel re-exports the canonical shapes:
- *
- *   - `AgentEvent` + helpers (events.ts)
- *   - `ModelRef`   + helpers (model-ref.ts)
- *   - `RunPolicy`  + defaults (run-policy.ts)
- *   - `ToolDescriptor`       (tool-descriptor.ts)
- *   - Capability interfaces  (capabilities.ts)
- *   - `adaptQueryBackend`    (adapter.ts)
- *
- * Phase 1 does NOT change runtime behaviour — no production caller
- * imports from here yet. Adding `import { ... } from "../core/agent-
- * runtime/index.js"` in a downstream module is the explicit opt-in.
+ *   - `AgentEvent` + helpers       (events.ts)
+ *   - `ModelRef`   + helpers       (model-ref.ts)
+ *   - `RunPolicy`  + defaults      (run-policy.ts)
+ *   - `ToolDescriptor`             (tool-descriptor.ts)
+ *   - Capability interfaces        (capabilities.ts)
+ *   - `adaptQueryBackend`          (adapter.ts)
+ *   - `resolveActiveModelRefForChat` (resolver.ts)
+ *   - `ToolRegistry`               (tool-registry.ts)
+ *   - `JsonStore<T>`               (store.ts) — used by every storage module
+ *   - Backend contract assertions  (contract-tests.ts)
+ *   - Event ↔ legacy callback bridge (legacy-bridge.ts)
+ *   - `AgentEventLogRenderer`      (event-log-renderer.ts)
  */
 
 export {

@@ -9,12 +9,12 @@
  * longer render markdown logs themselves and core no longer parses
  * backend-specific output.
  *
- * Phase 1 (this PR) only adds the type. No backend emits these
- * events yet and no renderer consumes them yet — the
- * `QueryBackend → ChatBackend` adapter in `adapter.ts` produces a
- * minimal event sequence so callers can begin building against the
- * new shape. Real per-token streaming, tool-call events, and
- * reasoning blocks get wired in Phase 3.
+ * The `QueryBackend → ChatBackend` adapter in `adapter.ts` produces
+ * a minimal event sequence (`run_started → assistant_message? →
+ * usage → completed`) so consumers can build against this stream
+ * before each backend grows native event emission. Phase 3.x will
+ * replace the synthesised sequence with real per-token streaming,
+ * tool-call events, and reasoning blocks on each backend.
  *
  * Design notes
  * ────────────

@@ -52,32 +52,27 @@
  * logs a warning but never throws, the in-memory set still works for
  * the rest of the session.
  *
- * Phase 6.x migration note
- * ────────────────────────
+ * Persistence
+ * ───────────
  *
- * As of Phase 6.x this module's persistence layer is backed by
- * `core/agent-runtime/store.ts`'s `JsonStore<T>` rather than a
- * hand-rolled writeFileAtomic.sync + readFileSync + version-check
- * loop. The on-disk format changed from a bare document
- * `{ version, fingerprint, updatedAt, models }` to the JsonStore
- * envelope `{ schemaVersion, savedAt, data: { fingerprint,
- * updatedAt, models } }`. A `migrate` hook accepts the legacy
- * shape on first load so existing data isn't lost.
+ * Backed by `core/agent-runtime/store.ts`'s `JsonStore<T>`. On-disk
+ * format is the envelope `{ schemaVersion, savedAt, data:
+ * { fingerprint, updatedAt, models } }`. A `migrate` hook accepts
+ * the legacy bare-document shape (`{ version, fingerprint,
+ * updatedAt, models }`) on first load so existing data isn't lost.
  *
- * Two API consequences:
+ * API shape:
  *
- *   - `markOAuthIncompat(id)` is now async (returns
- *     `Promise<boolean>`). The in-memory mutation is still
- *     synchronous, but the disk write is awaited so callers can
- *     reason about ordering. Existing call sites are inside async
- *     functions and need a one-keyword `await`.
- *   - `loadOAuthIncompatStore(fingerprint)` is also async — Phase
- *     6.x JsonStore loads are Promise-returning to allow for fake
- *     filesystem injection in tests.
- *
- * `isKnownOAuthIncompat`, `listKnownOAuthIncompat`,
- * `computeAuthFingerprint`, and `resetOAuthIncompatForTests` stay
- * synchronous (they only touch the in-memory set, not disk).
+ *   - `markOAuthIncompat(id)` is async (returns `Promise<boolean>`).
+ *     The in-memory mutation is synchronous, but the disk write is
+ *     awaited so callers can reason about ordering.
+ *   - `loadOAuthIncompatStore(fingerprint)` is async — JsonStore
+ *     loads are Promise-returning to allow for fake filesystem
+ *     injection in tests.
+ *   - `isKnownOAuthIncompat`, `listKnownOAuthIncompat`,
+ *     `computeAuthFingerprint`, and `resetOAuthIncompatForTests`
+ *     stay synchronous (they only touch the in-memory set, not
+ *     disk).
  */
 
 import { homedir } from "node:os";

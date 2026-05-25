@@ -1,25 +1,20 @@
 /**
- * Backend contract assertions — Phase 7 of the architecture
- * unification plan.
+ * Backend contract assertions.
  *
- * The plan calls for shared test suites that every concrete
- * backend (Claude SDK, Codex, Kilo, OpenCode, OpenAI Agents) must
- * pass. These are the assertions; the per-backend test files
- * import them and apply them via vitest `describe` / `it` blocks.
+ * Shared test suite every concrete backend (Claude SDK, Codex,
+ * Kilo, OpenCode, OpenAI Agents) must pass. These are the
+ * assertions; `backend-contract.test.ts` wires the full suite
+ * across every shipped `BackendId` via the adapter, and per-backend
+ * handler tests can re-use individual assertions for SDK-specific
+ * scenarios:
  *
- *   import { assertBackendRespectsAbort } from "...";
- *   it("respects abort", () =>
- *     assertBackendRespectsAbort(claudeBackend));
+ *   import { assertChatBackendTerminates } from "...";
+ *   it("terminates", () => assertChatBackendTerminates(claudeBackend));
  *
  * Each function:
  *   - takes a `Backend`,
  *   - exercises one specific contract clause,
- *   - throws a descriptive `Error` when the clause is violated.
- *
- * Phase 1-2 contract: this file is a library. Tests
- * (`agent-runtime-contracts.test.ts`) verify the helpers
- * themselves catch contract violations using a deliberately-bad
- * stub backend.
+ *   - throws a `ContractViolation` when the clause is violated.
  *
  * Per the plan's "Backend-specific tests should focus on SDK
  * translation quirks, not retesting the same Talon behaviour seven

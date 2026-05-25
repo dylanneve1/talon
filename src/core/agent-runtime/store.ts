@@ -1,25 +1,11 @@
 /**
- * `JsonStore<T>` — unified persistence for the six JSON-backed
- * stores under `src/storage/`.
+ * `JsonStore<T>` — unified persistence for every JSON-backed store
+ * under `src/storage/`.
  *
- * Phase 6 of the architecture unification plan. The six current
- * stores (`chat-settings`, `cron-store`, `history`, `media-index`,
- * `sessions`, `trigger-store`) each reimplement the same shape:
- *
- *   - in-memory `Map` mirror
- *   - dirty flag + 10s autosave
- *   - `write-file-atomic` on save
- *   - `.bak` fallback on corrupt read
- *   - debounced writes during high-frequency mutations
- *
- * That's ~1.5k LOC of duplicated code with ~80% structural overlap.
- * This module provides the storage primitive; the per-store
- * migrations land in Phase 6.x PRs.
- *
- * Phase 1-2 contract: **no production store uses `JsonStore` yet.**
- * The plan recommends starting with Codex OAuth incompat learning
- * (low-risk, small state) and ending with chat-settings (high-risk,
- * operationally sensitive).
+ * Phase 6 of the architecture unification plan, now complete. All
+ * seven stores (`chat-settings`, `cron-store`, `history`,
+ * `media-index`, `sessions`, `trigger-store`, plus codex
+ * `oauth-incompat`) are backed by this primitive.
  *
  * Design notes
  * ────────────
@@ -32,27 +18,22 @@
  *     shape without forking storage code per-store.
  *
  *   - Corrupt JSON falls back to `<path>.bak` once before
- *     surrendering. Matches the existing stores' behaviour.
+ *     surrendering. Matches the legacy stores' behaviour.
  *
  *   - Writes are atomic via `write-file-atomic` (rename-on-fsync).
  *     The store doesn't lock — concurrent processes mutating the
  *     same file is a separate problem (Talon assumes single-process
  *     ownership of `~/.talon/data/*`).
  *
- *   - Test-friendly: `JsonStoreOptions.now` and
- *     `JsonStoreOptions.fs` let tests inject a fake filesystem +
- *     clock without monkey-patching `node:fs`.
+ *   - Sync + async twin pairs: `load`/`loadSync`, `save`/`saveSync`.
+ *     The sync variants are required by stores wired into bootstrap
+ *     and `cleanup-registry` where the event loop hasn't drained
+ *     yet and the in-memory state must be primed before the first
+ *     synchronous read.
  *
- * Phase 6.x will migrate stores one at a time:
- *
- *   1. Codex OAuth incompat learning  (~150 LOC store, low risk)
- *   2. media index                    (~200 LOC store)
- *   3. cron jobs                      (~400 LOC store)
- *   4. triggers                       (~500 LOC store)
- *   5. sessions                       (~300 LOC store)
- *   6. chat settings                  (~400 LOC store, last — touch
- *                                       prod state too directly to
- *                                       migrate first)
+ *   - Test-friendly: `JsonStoreOptions.now` and `JsonStoreOptions.fs`
+ *     let tests inject a fake filesystem + clock without
+ *     monkey-patching `node:fs`.
  */
 
 import * as nodeFs from "node:fs";
