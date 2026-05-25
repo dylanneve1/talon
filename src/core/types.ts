@@ -186,6 +186,27 @@ export type CacheMetricsSupport = "none" | "read" | "readwrite";
 /** Backend interface — any AI provider implements this. */
 export interface QueryBackend {
   query(params: QueryParams): Promise<QueryResult>;
+  /**
+   * Native `AgentEvent` stream for a chat turn. Backends that
+   * implement this expose per-token text deltas, tool-call events,
+   * and the canonical `run_started → … → usage → completed` envelope
+   * directly — no adapter synthesis.
+   *
+   * The dispatcher / contract tests prefer this when present;
+   * backends that omit it fall through to the adapter's minimal
+   * sequence wrapped around `query()`. Phase 3.x of the architecture
+   * unification plan made this the native shape for every backend
+   * that ships (Codex, Claude SDK, Kilo, OpenCode, OpenAI Agents);
+   * the field stays optional so test stubs and third-party backends
+   * can keep the legacy callback-only contract.
+   *
+   * The import lives in `core/agent-runtime/events.js` — keeping
+   * the field signature here as `unknown`-typed `AsyncIterable`
+   * would create a cyclic import.
+   */
+  runChatTurnEvents?(
+    params: Omit<QueryParams, "onStreamDelta" | "onTextBlock" | "onToolUse">,
+  ): AsyncIterable<import("./agent-runtime/events.js").AgentEvent>;
   /** Pre-warm a session (cold-start optimization). Optional — not all backends support this. */
   warmSession?(chatId: string): Promise<void>;
   /**

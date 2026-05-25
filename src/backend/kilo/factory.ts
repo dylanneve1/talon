@@ -15,6 +15,7 @@ import { registerBackend } from "../registry.js";
 import type { BackendFactory } from "../registry.js";
 import type { QueryBackend } from "../../core/types.js";
 import { log } from "../../util/log.js";
+import { toEventStream } from "../shared/to-event-stream.js";
 
 import {
   initKiloAgent,
@@ -43,6 +44,8 @@ const kiloFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: (params) => kiloHandleMessage(params),
+      runChatTurnEvents: (params) =>
+        toEventStream((p) => kiloHandleMessage(p), params),
       resolveModel: (q) => resolveModel(q),
       getModelInfo: (id) => getModelInfo(id),
       getSettingsPresentation: async (m, options) => {

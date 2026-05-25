@@ -10,6 +10,7 @@ import { registerBackend } from "../registry.js";
 import type { BackendFactory } from "../registry.js";
 import type { QueryBackend } from "../../core/types.js";
 import { log } from "../../util/log.js";
+import { toEventStream } from "../shared/to-event-stream.js";
 
 import { initOpenAIAgentsAgent, getOpenAIBaseUrl } from "./init.js";
 import { handleMessage as openAIAgentsHandleMessage } from "./handler.js";
@@ -36,6 +37,8 @@ const openAIAgentsFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: (params) => openAIAgentsHandleMessage(params),
+      runChatTurnEvents: (params) =>
+        toEventStream((p) => openAIAgentsHandleMessage(p), params),
       resetChat: (chatId) => clearChatSession(chatId),
       resolveModel: (q) => Promise.resolve(resolveModel(q)),
       // Only advertise a canonical default when the backend is pointed

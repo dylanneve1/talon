@@ -101,6 +101,13 @@ export {
   parseMcpToolId,
 } from "./tool-registry.js";
 
+export {
+  buildToolRegistryFromCatalog,
+  getGlobalToolRegistry,
+  resetGlobalToolRegistry,
+  toolDefinitionToDescriptor,
+} from "./tool-registry-builder.js";
+
 export { type JsonStoreFs, type JsonStoreOptions, JsonStore } from "./store.js";
 
 export {

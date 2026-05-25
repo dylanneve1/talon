@@ -9,15 +9,21 @@ here incrementally. The current state of the plan:
 | 2.1   | `resolveActiveModelRefForChat`                       | **done**    |
 | 2.2   | `/status` consumes ModelRef                          | **done**    |
 | 2.3   | `/model` consumes ModelRef                           | **done**    |
-| 3     | Native `AgentEvent` emission per backend             | prep landed |
-| 4     | `AgentEventLogRenderer` consumers                    | prep landed |
-| 5     | Centralised MCP config via `ToolRegistry`            | prep landed |
+| 3     | Native `AgentEvent` emission per backend             | **done**    |
+| 4     | `AgentEventLogRenderer` consumers                    | **done**    |
+| 5     | Centralised tool surface via `ToolRegistry`          | **done**    |
 | 6     | `JsonStore<T>` over every JSON-backed store          | **done**    |
 | 7     | Per-backend contract tests                           | **done**    |
 
-"prep landed" means the primitives live here and are exercised by
-their self-tests; the per-backend rewrites that consume them are
-scheduled per the cookbook below.
+Phase 3 lands via `backend/shared/to-event-stream.ts` — each
+backend factory exposes `runChatTurnEvents` (and one-shot callers
+can opt into `toOneShotEventStream`) so the adapter's synthesised
+sequence is the fallback rather than the default. Phase 4 wires
+the one-shot bridge through `streamLog` for heartbeat / dream /
+trigger consumers that want unified markdown. Phase 5 materialises
+the global `ToolRegistry` at bootstrap from `ALL_TOOLS`; downstream
+backends pull descriptors from there rather than re-walking the
+catalog.
 
 ## Modules
 

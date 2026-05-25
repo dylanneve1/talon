@@ -13,6 +13,7 @@ import type { BackendFactory } from "../registry.js";
 import type { QueryBackend } from "../../core/types.js";
 import { log } from "../../util/log.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
+import { toEventStream } from "../shared/to-event-stream.js";
 
 import {
   initAgent as initClaudeAgent,
@@ -42,6 +43,8 @@ const claudeSdkFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: (params) => claudeHandleMessage(params),
+      runChatTurnEvents: (params) =>
+        toEventStream((p) => claudeHandleMessage(p), params),
       warmSession: (chatId) => claudeWarmSession(chatId),
       updateSystemPrompt: (prompt) => claudeUpdateSystemPrompt(prompt),
       resolveModel: (q) => modelProvider.resolveModel(q),

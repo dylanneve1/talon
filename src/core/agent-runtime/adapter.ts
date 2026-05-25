@@ -114,6 +114,20 @@ export function adaptQueryBackend(
 
   const chat: ChatBackend = {
     runChatTurn(params) {
+      // Prefer the backend's native AgentEvent stream when present —
+      // it carries real per-token deltas and tool events. Fall back
+      // to the synthesised minimal sequence for stub backends and
+      // third-party `QueryBackend` shapes that haven't opted in.
+      if (legacy.runChatTurnEvents) {
+        return legacy.runChatTurnEvents({
+          chatId: params.chatId,
+          model: params.model.id,
+          text: params.text,
+          senderName: params.senderName,
+          isGroup: params.isGroup,
+          messageId: params.messageId,
+        });
+      }
       return adaptChatRun(legacy, params);
     },
   };

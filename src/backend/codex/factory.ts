@@ -11,6 +11,7 @@ import { registerBackend } from "../registry.js";
 import type { BackendFactory } from "../registry.js";
 import type { QueryBackend } from "../../core/types.js";
 import { log } from "../../util/log.js";
+import { toEventStream } from "../shared/to-event-stream.js";
 
 import { initCodexAgent, getCodexAuthInfo } from "./init.js";
 import { handleMessage as codexHandleMessage } from "./handler.js";
@@ -40,6 +41,8 @@ const codexFactory: BackendFactory = {
 
     const backend: QueryBackend = {
       query: (params) => codexHandleMessage(params),
+      runChatTurnEvents: (params) =>
+        toEventStream((p) => codexHandleMessage(p), params),
       // Model methods are async in models.ts so they can await
       // `awaitDiscovery()` — the dynamic catalog from /v1/models needs
       // to be populated before resolve/getModelInfo/listModels return.
