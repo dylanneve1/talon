@@ -37,7 +37,7 @@ describe("cron-store — save failure logs error", () => {
       unlinkSync: vi.fn(),
     }));
     {
-      const failingWrite = vi.fn(() => {
+      const failingWrite = vi.fn((..._args: unknown[]) => {
         throw new Error("disk full");
       });
       vi.doMock("write-file-atomic", () => ({
@@ -112,7 +112,7 @@ describe("chat-settings — save failure logs error", () => {
       unlinkSync: vi.fn(),
     }));
     {
-      const failingWrite = vi.fn(() => {
+      const failingWrite = vi.fn((..._args: unknown[]) => {
         throw new Error("readonly fs");
       });
       vi.doMock("write-file-atomic", () => ({
@@ -169,7 +169,7 @@ describe("chat-settings — non-Error thrown in save (line 96 FALSE branch)", ()
       unlinkSync: vi.fn(),
     }));
     {
-      const failingWrite = vi.fn(() => {
+      const failingWrite = vi.fn((..._args: unknown[]) => {
         throw "plain string chat-settings error";
       });
       vi.doMock("write-file-atomic", () => ({
@@ -222,7 +222,7 @@ describe("sessions — save failure logs error", () => {
       unlinkSync: vi.fn(),
     }));
     {
-      const failingWrite = vi.fn(() => {
+      const failingWrite = vi.fn((..._args: unknown[]) => {
         throw new Error("ENOSPC: no space left");
       });
       vi.doMock("write-file-atomic", () => ({

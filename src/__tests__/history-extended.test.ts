@@ -743,7 +743,7 @@ describe("history — non-Error thrown in saveHistory (line 96 FALSE branch)", (
       renameSync: vi.fn(),
       unlinkSync: vi.fn(),
     }));
-    const failingWrite = vi.fn(() => {
+    const failingWrite = vi.fn((..._args: unknown[]) => {
       throw "plain string history error";
     });
     vi.doMock("write-file-atomic", () => ({
