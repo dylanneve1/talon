@@ -175,7 +175,8 @@ export async function buildModelMenuViewForChat(
       // is known (legacy BackendId drift case).
       if (activeRef?.displayName) return activeRef.displayName;
       if (activeModel) {
-        return (await backend.models?.getRawModelInfo?.(activeModel))?.displayName;
+        return (await backend.models?.getRawModelInfo?.(activeModel))
+          ?.displayName;
       }
       return undefined;
     },

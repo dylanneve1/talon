@@ -108,14 +108,25 @@ describe("backend registry", () => {
     const events: import("../core/agent-runtime/events.js").AgentEvent[] = [];
     for await (const event of backend.chat!.runChatTurn({
       chatId: "1",
-      model: { backend: "stub" as never, id: "x", displayName: "x", source: "discovered" as const, cacheSupport: "none" as const, selectable: true },
-      policy: (await import("../core/agent-runtime/run-policy.js")).defaultRunPolicyFor("chat"),
+      model: {
+        backend: "stub" as never,
+        id: "x",
+        displayName: "x",
+        source: "discovered" as const,
+        cacheSupport: "none" as const,
+        selectable: true,
+      },
+      policy: (
+        await import("../core/agent-runtime/run-policy.js")
+      ).defaultRunPolicyFor("chat"),
       text: "x",
       senderName: "u",
     })) {
       events.push(event);
     }
     const completed = events.find((e) => e.type === "completed");
-    expect(completed && completed.type === "completed" && completed.result?.text).toBe("stub:stub");
+    expect(
+      completed && completed.type === "completed" && completed.result?.text,
+    ).toBe("stub:stub");
   });
 });

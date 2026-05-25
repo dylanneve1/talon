@@ -584,8 +584,8 @@ export function registerCommands(
       ctxMax = ctxMax || statusModelRef.contextWindow;
     }
     if (be?.usage?.getSessionSnapshot && info.sessionId) {
-      const snap = await be
-        .usage?.getSessionSnapshot(info.sessionId)
+      const snap = await be.usage
+        ?.getSessionSnapshot(info.sessionId)
         .catch(() => undefined);
       if (snap) {
         displayInputTokens = snap.inputTokens ?? displayInputTokens;
@@ -599,8 +599,8 @@ export function registerCommands(
           snap.contextModelId !== activeModel &&
           be.models?.getRawModelInfo
         ) {
-          const ctxModelInfo = await be
-            .models?.getRawModelInfo(snap.contextModelId)
+          const ctxModelInfo = await be.models
+            ?.getRawModelInfo(snap.contextModelId)
             .catch(() => undefined);
           if (ctxModelInfo?.contextWindow) ctxMax = ctxModelInfo.contextWindow;
         }

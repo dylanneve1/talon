@@ -193,8 +193,7 @@ export type CacheMetricsSupport = "none" | "read" | "readwrite";
  * migration; new code should `import type { Backend } from
  * "../core/agent-runtime/capabilities.js"` directly.
  */
-export type QueryBackend =
-  import("./agent-runtime/capabilities.js").Backend;
+export type QueryBackend = import("./agent-runtime/capabilities.js").Backend;
 
 // ── Execution context ───────────────────────────────────────────────────────
 

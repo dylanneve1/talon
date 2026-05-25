@@ -78,7 +78,9 @@ describe("codex factory — QueryBackend wiring", () => {
     expect(typeof result.backend.models?.resolveModel).toBe("function");
     expect(typeof result.backend.models?.getModelInfo).toBe("function");
     expect(typeof result.backend.models?.getRawModelInfo).toBe("function");
-    expect(typeof result.backend.models?.getSettingsPresentation).toBe("function");
+    expect(typeof result.backend.models?.getSettingsPresentation).toBe(
+      "function",
+    );
     expect(typeof result.backend.models?.getProviders).toBe("function");
     expect(typeof result.backend.models?.getProviderModels).toBe("function");
     expect(typeof result.backend.models?.formatModelError).toBe("function");

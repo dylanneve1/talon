@@ -62,7 +62,8 @@ function makeMockBackend(): Backend {
   return stubBackend({
     query: vi.fn(),
     runOneShotAgent: (p) => runOneShotAgentMock(p),
-    evictOrphanSubprocesses: (label: string) => evictOrphanSubprocessesMock(label),
+    evictOrphanSubprocesses: (label: string) =>
+      evictOrphanSubprocessesMock(label),
   });
 }
 

@@ -281,8 +281,8 @@ export function registerBuiltinCommands(): void {
 
       // Enrich from backend when available
       if (be?.usage?.getSessionSnapshot && info.sessionId) {
-        const snap = await be
-          .usage?.getSessionSnapshot(info.sessionId)
+        const snap = await be.usage
+          ?.getSessionSnapshot(info.sessionId)
           .catch(() => undefined);
         if (snap) {
           displayInputTokens = snap.inputTokens ?? displayInputTokens;
@@ -299,8 +299,8 @@ export function registerBuiltinCommands(): void {
         cacheWrite: displayCacheWrite,
       });
       if (be?.models?.getRawModelInfo) {
-        const modelInfo = await be
-          .models?.getRawModelInfo(activeModel)
+        const modelInfo = await be.models
+          ?.getRawModelInfo(activeModel)
           .catch(() => undefined);
         const label = be.label ?? "Backend";
         if (modelInfo) {

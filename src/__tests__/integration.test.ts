@@ -140,9 +140,8 @@ describe("integration: dispatcher lifecycle", () => {
       // wrapped as `BridgedAgentError` carrying the canonical
       // `AgentError`. The classification is preserved through the
       // wrapper.
-      const { BridgedAgentError } = await import(
-        "../core/agent-runtime/legacy-bridge.js"
-      );
+      const { BridgedAgentError } =
+        await import("../core/agent-runtime/legacy-bridge.js");
       expect(err).toBeInstanceOf(BridgedAgentError);
       const bridged = err as InstanceType<typeof BridgedAgentError>;
       expect(bridged.kind).toBe("rate_limit");

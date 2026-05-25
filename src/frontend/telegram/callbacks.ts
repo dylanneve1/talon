@@ -229,7 +229,10 @@ export function registerCallbacks(
         | undefined;
       let view: "models" | "groups" = "models";
       let activeProvider: string | undefined;
-      if (settingsBe?.models?.getSettingsPresentation && resolvedSettingsModel) {
+      if (
+        settingsBe?.models?.getSettingsPresentation &&
+        resolvedSettingsModel
+      ) {
         const pres = await settingsBe.models?.getSettingsPresentation(
           resolvedSettingsModel,
         );

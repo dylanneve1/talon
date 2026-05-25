@@ -111,7 +111,8 @@ function fakeBackend(opts: {
     id: "claude",
     label: opts.backendLabel ?? "Stub",
     cacheMetrics: "none",
-    models: Object.keys(models).length > 0 ? (models as ModelCatalog) : undefined,
+    models:
+      Object.keys(models).length > 0 ? (models as ModelCatalog) : undefined,
   });
 }
 

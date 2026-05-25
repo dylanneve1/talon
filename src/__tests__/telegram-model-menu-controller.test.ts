@@ -234,14 +234,20 @@ describe("model-menu / buildModelMenuViewForChat", () => {
     await rebindChat(c1, "fake-openai-agents", baseConfig);
     // Reset call counts collected during prior tests / pool init.
     (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mockClear();
     (
       claudeBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
     ).mockClear();
     await buildModelMenuViewForChat(c1, baseConfig);
-    expect(openrouterBackend.models!.getSettingsPresentation).toHaveBeenCalledTimes(1);
-    expect(claudeBackend.models!.getSettingsPresentation).not.toHaveBeenCalled();
+    expect(
+      openrouterBackend.models!.getSettingsPresentation,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      claudeBackend.models!.getSettingsPresentation,
+    ).not.toHaveBeenCalled();
   });
 
   it("reflects hasBackendOverride on the menu state", async () => {
@@ -258,11 +264,15 @@ describe("model-menu / buildModelMenuViewForChat", () => {
     await rebindChat(c1, "fake-openai-agents", baseConfig);
     setChatFreeOnly(c1, true);
     (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mockClear();
     await buildModelMenuViewForChat(c1, baseConfig);
     const args = (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mock.calls[0];
     expect(args[1]).toMatchObject({ filter: "free" });
   });
@@ -305,7 +315,9 @@ describe("model-menu / buildModelBrowseViewForChat", () => {
     const c1 = freshChat();
     await rebindChat(c1, "fake-openai-agents", baseConfig);
     (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mockClear();
     await buildModelBrowseViewForChat(c1, baseConfig, {
       filter: "free",
@@ -313,7 +325,9 @@ describe("model-menu / buildModelBrowseViewForChat", () => {
       provider: "openai",
     });
     const args = (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mock.calls[0];
     expect(args[1]).toMatchObject({
       filter: "free",
@@ -327,11 +341,15 @@ describe("model-menu / buildModelBrowseViewForChat", () => {
     await rebindChat(c1, "fake-openai-agents", baseConfig);
     setChatFreeOnly(c1, true);
     (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mockClear();
     await buildModelBrowseViewForChat(c1, baseConfig, {});
     const args = (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mock.calls[0];
     expect(args[1]).toMatchObject({ filter: "free" });
   });
@@ -341,11 +359,15 @@ describe("model-menu / buildModelBrowseViewForChat", () => {
     await rebindChat(c1, "fake-openai-agents", baseConfig);
     setChatFreeOnly(c1, true);
     (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mockClear();
     await buildModelBrowseViewForChat(c1, baseConfig, { filter: "all" });
     const args = (
-      openrouterBackend.models!.getSettingsPresentation as ReturnType<typeof vi.fn>
+      openrouterBackend.models!.getSettingsPresentation as ReturnType<
+        typeof vi.fn
+      >
     ).mock.calls[0];
     expect(args[1]).toMatchObject({ filter: "all" });
   });

@@ -92,7 +92,10 @@ export interface StubBackendInput {
     page?: number,
     pageSize?: number,
   ) => Promise<{ models: UnifiedModelInfo[]; total: number }>;
-  formatModelError?: (query: string, resolution: UnifiedModelResolution) => string;
+  formatModelError?: (
+    query: string,
+    resolution: UnifiedModelResolution,
+  ) => string;
   listModels?: (filter?: "free" | "all") => Promise<{
     models: UnifiedModelInfo[];
     total: number;
@@ -170,15 +173,19 @@ function buildModels(input: StubBackendInput): ModelCatalog | undefined {
     catalog.getSettingsPresentation = input.getSettingsPresentation;
   }
   if (input.getProviders) catalog.getProviders = input.getProviders;
-  if (input.getProviderModels) catalog.getProviderModels = input.getProviderModels;
+  if (input.getProviderModels)
+    catalog.getProviderModels = input.getProviderModels;
   if (input.formatModelError) catalog.formatModelError = input.formatModelError;
   if (input.listModels) catalog.listModelsRaw = input.listModels;
   return catalog;
 }
 
-function buildBackground(input: StubBackendInput): BackgroundRunner | undefined {
+function buildBackground(
+  input: StubBackendInput,
+): BackgroundRunner | undefined {
   if (input.background) return input.background;
-  if (!input.runOneShotAgent && !input.evictOrphanSubprocesses) return undefined;
+  if (!input.runOneShotAgent && !input.evictOrphanSubprocesses)
+    return undefined;
   return {
     runOneShotAgent: input.runOneShotAgent ?? (async () => undefined),
     evictOrphanSubprocesses: input.evictOrphanSubprocesses,
@@ -245,9 +252,10 @@ export function stubBackend(input: StubBackendInput = {}): Backend {
  * the backend AND the underlying mock query function so the test
  * can assert on call history.
  */
-export function stubChatBackend(
-  result: Partial<QueryResult> = {},
-): { backend: Backend; query: ReturnType<typeof vi.fn> } {
+export function stubChatBackend(result: Partial<QueryResult> = {}): {
+  backend: Backend;
+  query: ReturnType<typeof vi.fn>;
+} {
   const fullResult: QueryResult = {
     text: result.text ?? "stub",
     durationMs: result.durationMs ?? 0,

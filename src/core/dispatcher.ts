@@ -10,11 +10,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import type {
-  ContextManager,
-  ExecuteParams,
-  ExecuteResult,
-} from "./types.js";
+import type { ContextManager, ExecuteParams, ExecuteResult } from "./types.js";
 import type { Backend } from "./agent-runtime/capabilities.js";
 import { pipeEventsToCallbacks } from "./agent-runtime/legacy-bridge.js";
 import { makeBareModelRef } from "./agent-runtime/model-ref.js";

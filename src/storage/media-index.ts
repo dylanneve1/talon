@@ -53,7 +53,8 @@ const store = new JsonStore<MediaEntry[]>({
     // `MediaEntry[]`. JsonStore detects "no envelope detected" as
     // version 0; lift to v1 unchanged.
     if (fromVersion !== 0) return null;
-    if (!Array.isArray(raw)) return { value: [], schemaVersion: SCHEMA_VERSION };
+    if (!Array.isArray(raw))
+      return { value: [], schemaVersion: SCHEMA_VERSION };
     return {
       value: raw.filter(isMediaEntry),
       schemaVersion: SCHEMA_VERSION,

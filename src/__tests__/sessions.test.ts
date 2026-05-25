@@ -19,10 +19,9 @@ vi.mock("node:fs", () => ({
 
 const writeFileAtomicSync = vi.fn();
 vi.mock("write-file-atomic", () => ({
-  default: Object.assign(
-    (...args: unknown[]) => writeFileAtomicSync(...args),
-    { sync: writeFileAtomicSync },
-  ),
+  default: Object.assign((...args: unknown[]) => writeFileAtomicSync(...args), {
+    sync: writeFileAtomicSync,
+  }),
 }));
 
 import { existsSync, readFileSync } from "node:fs";

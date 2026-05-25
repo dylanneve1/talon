@@ -27,9 +27,7 @@ function baseParams(): ChatRunParams {
   };
 }
 
-async function drain(
-  stream: AsyncIterable<AgentEvent>,
-): Promise<AgentEvent[]> {
+async function drain(stream: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
   const out: AgentEvent[] = [];
   for await (const e of stream) out.push(e);
   return out;
@@ -91,9 +89,9 @@ describe("toEventStream — minimum-fidelity envelope", () => {
     if (deltas[1]?.type !== "text_delta") throw new Error("expected delta");
     expect(deltas[1].text).toBe(" response");
     // Concatenated, the deltas reconstruct the full accumulated text.
-    expect(deltas.map((d) => (d.type === "text_delta" ? d.text : "")).join("")).toBe(
-      "partial response",
-    );
+    expect(
+      deltas.map((d) => (d.type === "text_delta" ? d.text : "")).join(""),
+    ).toBe("partial response");
   });
 
   it("emits the full delta when onStreamDelta resets (non-monotonic accumulator)", async () => {
@@ -116,9 +114,10 @@ describe("toEventStream — minimum-fidelity envelope", () => {
     );
 
     const deltas = events.filter((e) => e.type === "text_delta");
-    expect(deltas.map((d) => (d.type === "text_delta" ? d.text : ""))).toEqual(
-      ["alpha", "BETA"],
-    );
+    expect(deltas.map((d) => (d.type === "text_delta" ? d.text : ""))).toEqual([
+      "alpha",
+      "BETA",
+    ]);
   });
 
   it("relays onTextBlock → assistant_message", async () => {
@@ -138,10 +137,9 @@ describe("toEventStream — minimum-fidelity envelope", () => {
     );
 
     const blocks = events.filter((e) => e.type === "assistant_message");
-    expect(blocks.map((e) => (e.type === "assistant_message" ? e.text : ""))).toEqual([
-      "first block",
-      "second block",
-    ]);
+    expect(
+      blocks.map((e) => (e.type === "assistant_message" ? e.text : "")),
+    ).toEqual(["first block", "second block"]);
   });
 
   it("relays onToolUse → tool_call with stable id + name + input", async () => {

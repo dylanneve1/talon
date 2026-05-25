@@ -631,8 +631,8 @@ async function handleStatus(
     ctxMax = ctxMax || statusModelRef.contextWindow;
   }
   if (be?.usage?.getSessionSnapshot && info.sessionId) {
-    const snap = await be
-      .usage?.getSessionSnapshot(info.sessionId)
+    const snap = await be.usage
+      ?.getSessionSnapshot(info.sessionId)
       .catch(() => undefined);
     if (snap) {
       displayInputTokens = snap.inputTokens ?? displayInputTokens;
@@ -784,7 +784,8 @@ async function handleModel(
     const resolution = await be.models?.resolveModelInfo(arg);
     if (resolution.kind !== "exact") {
       const msg =
-        be.models?.formatModelError?.(arg, resolution) ?? `No model matched "${arg}".`;
+        be.models?.formatModelError?.(arg, resolution) ??
+        `No model matched "${arg}".`;
       await reply(i, msg, true);
       return;
     }
@@ -981,7 +982,8 @@ async function handleSettings(
   // empty string) — never the "No model selected" sentinel.
   if (settingsBe?.models?.getSettingsPresentation) {
     const presModelId = resolvedActive ?? "";
-    const presentation = await settingsBe.models?.getSettingsPresentation(presModelId);
+    const presentation =
+      await settingsBe.models?.getSettingsPresentation(presModelId);
     modelDetails = presentation.modelDetails;
     modelButtons = presentation.modelButtons;
   }

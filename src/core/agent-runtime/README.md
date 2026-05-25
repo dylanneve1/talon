@@ -3,17 +3,17 @@
 Single home for the architecture-unification primitives. Phases land
 here incrementally. The current state of the plan:
 
-| Phase | Scope                                                | Status      |
-| ----- | ---------------------------------------------------- | ----------- |
-| 1     | Type-only surface (events, ModelRef, RunPolicy, …)   | **done**    |
-| 2.1   | `resolveActiveModelRefForChat`                       | **done**    |
-| 2.2   | `/status` consumes ModelRef                          | **done**    |
-| 2.3   | `/model` consumes ModelRef                           | **done**    |
-| 3     | Native `AgentEvent` emission per backend             | **done**    |
-| 4     | `AgentEventLogRenderer` consumers                    | **done**    |
-| 5     | Centralised tool surface via `ToolRegistry`          | **done**    |
-| 6     | `JsonStore<T>` over every JSON-backed store          | **done**    |
-| 7     | Per-backend contract tests                           | **done**    |
+| Phase | Scope                                              | Status   |
+| ----- | -------------------------------------------------- | -------- |
+| 1     | Type-only surface (events, ModelRef, RunPolicy, …) | **done** |
+| 2.1   | `resolveActiveModelRefForChat`                     | **done** |
+| 2.2   | `/status` consumes ModelRef                        | **done** |
+| 2.3   | `/model` consumes ModelRef                         | **done** |
+| 3     | Native `AgentEvent` emission per backend           | **done** |
+| 4     | `AgentEventLogRenderer` consumers                  | **done** |
+| 5     | Centralised tool surface via `ToolRegistry`        | **done** |
+| 6     | `JsonStore<T>` over every JSON-backed store        | **done** |
+| 7     | Per-backend contract tests                         | **done** |
 
 Phase 3 lands via `backend/shared/to-event-stream.ts` — each
 backend factory exposes `runChatTurnEvents` (and one-shot callers

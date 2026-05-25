@@ -48,7 +48,8 @@ const codexFactory: BackendFactory = {
     log("bot", "Backend: Codex (@openai/codex-sdk)");
 
     const chat: ChatBackend = {
-      runChatTurn: (params) => toEventStream((p) => codexHandleMessage(p), params),
+      runChatTurn: (params) =>
+        toEventStream((p) => codexHandleMessage(p), params),
     };
 
     const background: BackgroundRunner = {
