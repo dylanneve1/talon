@@ -26,7 +26,7 @@ import type { QueryParams, QueryResult } from "../../core/types.js";
 import { classify, type TalonError } from "../../core/errors.js";
 import { logWarn } from "../../util/log.js";
 import { incrementCounter } from "../../util/metrics.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
+import { setChatModel } from "../../storage/chat-settings.js";
 import { resetSession } from "../../storage/sessions.js";
 import { classifyRetry } from "./model-retry.js";
 
@@ -128,12 +128,15 @@ export async function applyRetryDecision(
       `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
     );
     resetSession(chatId);
-    const originalModel = getChatSettings(chatId).model;
     setChatModel(chatId, decision.fallbackModelId);
     try {
       return { retry: await recurseWithRetried(params), classified };
     } finally {
-      setChatModel(chatId, originalModel);
+      // Restore the model that was active before the fallback. `activeModel`
+      // is always a non-undefined string, so this avoids the
+      // `setChatModel(chatId, undefined)` "reset everything" path that would
+      // wipe the entire modelByBackend map for migrated chats.
+      setChatModel(chatId, activeModel);
     }
   }
 

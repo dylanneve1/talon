@@ -281,12 +281,15 @@ async function maybeFallbackForChatGptMismatch(
         : ``),
   );
   resetSession(chatId);
-  const originalModel = getChatSettings(chatId).model;
   setChatModel(chatId, fallbackModel);
   try {
     return await handleMessage(params, true);
   } finally {
-    setChatModel(chatId, originalModel);
+    // Restore the model that was active before the fallback. `activeModel`
+    // is always a non-undefined string, so this avoids the
+    // `setChatModel(chatId, undefined)` "reset everything" path that would
+    // wipe the entire modelByBackend map for migrated chats.
+    setChatModel(chatId, activeModel);
   }
 }
 
