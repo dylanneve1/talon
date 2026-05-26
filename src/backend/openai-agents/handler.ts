@@ -44,7 +44,7 @@ import {
   setSessionName,
   resetSession,
 } from "../../storage/sessions.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
+import { getChatSettings } from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -360,13 +360,10 @@ export async function handleMessage(
           `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
         );
         resetSession(chatId);
-        const originalModel = getChatSettings(chatId).model;
-        setChatModel(chatId, decision.fallbackModelId);
-        try {
-          return await handleMessage(params, true);
-        } finally {
-          setChatModel(chatId, originalModel);
-        }
+        return handleMessage(
+          { ...params, model: decision.fallbackModelId },
+          true,
+        );
       }
 
       logError(
@@ -426,7 +423,14 @@ export async function handleMessage(
           trailingText: streamState.lastTrailingText,
           turnTerminated: streamState.turnTerminated,
           deliveredTextNorms: streamState.deliveredTextNorms,
+          toolCalls: streamState.toolCalls,
           retried: _retried,
+          // retryCount must be passed explicitly — otherwise the computed
+          // default of `retried ? 1 : 0` stays at 1 on every recursive
+          // call, making shouldRetry always `1 < maxRetries = true` and
+          // producing an infinite retry loop. Cap at 1 (single-pass).
+          retryCount: _retried ? 1 : 0,
+          maxRetries: 1,
         })
       : ({ violated: false } as const);
 
@@ -434,7 +438,7 @@ export async function handleMessage(
     incrementCounter("scratchpad.trailing_text_dropped");
     log(
       "agent",
-      `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
+      `[${chatId}] flow violation: ${violation.reason} without end_turn/send. ${
         violation.shouldRetry
           ? "Re-prompting with reminder."
           : "Already retried — accepting silent drop."

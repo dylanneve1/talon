@@ -16,6 +16,7 @@ import { TalonError } from "../core/errors.js";
 import { registerModels, clearModels } from "../core/models.js";
 import { setChatModel, getChatSettings } from "../storage/chat-settings.js";
 import { resetSession, getSession } from "../storage/sessions.js";
+import type { QueryParams } from "../core/types.js";
 
 beforeEach(() => {
   clearModels();
@@ -153,7 +154,7 @@ describe("shared / applyRetryDecision — reset_and_retry path", () => {
 });
 
 describe("shared / applyRetryDecision — fallback_model path", () => {
-  it("transient-swaps the chat model during recursion and restores after", async () => {
+  it("passes the fallback model via params.model during recursion", async () => {
     registerModels([
       {
         id: "primary",
@@ -170,10 +171,10 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
       },
     ]);
 
-    // Capture the model that was active inside the recursion.
-    let modelDuringRecursion: string | undefined;
-    const recurse = vi.fn(async () => {
-      modelDuringRecursion = getChatSettings("test-chat").model;
+    // Capture the params handed to the recursive call.
+    let paramsDuringRecursion: QueryParams | undefined;
+    const recurse = vi.fn(async (p: QueryParams) => {
+      paramsDuringRecursion = p;
       return {
         text: "ok",
         durationMs: 1,
@@ -195,15 +196,13 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
     });
 
     expect(outcome.retry?.text).toBe("ok");
-    // During recursion, the model was the fallback.
-    expect(modelDuringRecursion).toBe("fallback");
-    // After recursion returned, the chat model is restored to whatever
-    // it was originally (undefined here — the test set it to undefined
-    // in beforeEach).
+    // The fallback model is injected via params.model, not chat settings.
+    expect(paramsDuringRecursion?.model).toBe("fallback");
+    // Chat settings are never mutated — user's model preference is intact.
     expect(getChatSettings("test-chat").model).toBeUndefined();
   });
 
-  it("restores the original chat model even when the recursive retry throws", async () => {
+  it("does not mutate chat settings even when the recursive retry throws", async () => {
     registerModels([
       {
         id: "primary",
@@ -219,7 +218,7 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
         displayName: "Fallback",
       },
     ]);
-    // Pre-set the chat model so we can verify it's restored.
+    // Pre-set the chat model to verify settings survive the fallback attempt.
     setChatModel("test-chat", "user-pinned");
 
     const recurse = vi.fn(async () => {
@@ -238,7 +237,7 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
       }),
     ).rejects.toThrow("retry blew up");
 
-    // Despite the throw, the user's pinned model is back in place.
+    // Chat settings are not touched — user-pinned model is preserved.
     expect(getChatSettings("test-chat").model).toBe("user-pinned");
   });
 

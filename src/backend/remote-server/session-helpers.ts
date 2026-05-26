@@ -49,6 +49,8 @@ export const REMOTE_SESSION_MESSAGE_LIMIT = 5000;
  * structural type.
  */
 export interface RemoteAssistantInfo {
+  /** Upstream-assigned message identifier, used for deduplication. */
+  id?: string;
   role?: string;
   finish?: string;
   time?: {
@@ -342,10 +344,8 @@ export async function listSessionMessages(
   const seenMessageIds = new Set<string>();
 
   for (const message of page) {
-    const messageId = (message as Record<string, unknown>)?.info as
-      | { id?: string }
-      | undefined;
-    const id = messageId?.id;
+    const info = (message as { info?: RemoteAssistantInfo })?.info;
+    const id = info?.id;
     if (id && seenMessageIds.has(id)) continue;
     if (id) seenMessageIds.add(id);
     messages.push(message);

@@ -105,7 +105,11 @@ export async function processStreamEvent(
   // Scope to our session only
   const evtSessionID =
     typeof props.sessionID === "string" ? props.sessionID : undefined;
-  if (evtSessionID && evtSessionID !== ctx.sessionId) {
+  // Use !== undefined rather than truthiness so an event that carries an
+  // explicit sessionID for a different session is always filtered out.
+  // A falsy check would treat sessionID="" as "no scope" and let
+  // session.turn.close events with a blank sessionID stop any loop.
+  if (evtSessionID !== undefined && evtSessionID !== ctx.sessionId) {
     return { kind: "stop", reason: "out_of_scope" };
   }
 

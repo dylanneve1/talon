@@ -26,7 +26,6 @@ import type { QueryParams, QueryResult } from "../../core/types.js";
 import { classify, type TalonError } from "../../core/errors.js";
 import { logWarn } from "../../util/log.js";
 import { incrementCounter } from "../../util/metrics.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { resetSession } from "../../storage/sessions.js";
 import { classifyRetry } from "./model-retry.js";
 
@@ -128,13 +127,20 @@ export async function applyRetryDecision(
       `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
     );
     resetSession(chatId);
-    const originalModel = getChatSettings(chatId).model;
-    setChatModel(chatId, decision.fallbackModelId);
-    try {
-      return { retry: await recurseWithRetried(params), classified };
-    } finally {
-      setChatModel(chatId, originalModel);
-    }
+    // Pass the fallback model via params.model rather than mutating chat
+    // settings. Mutating settings with setChatModel then restoring via
+    // getChatSettings(chatId).model was broken: after migrateLegacyModelField
+    // runs, settings.model is undefined, so the restore call became
+    // setChatModel(chatId, undefined), which permanently wipes the entire
+    // modelByBackend map. Injecting via params.model is purely in-memory
+    // and leaves chat settings untouched.
+    return {
+      retry: await recurseWithRetried({
+        ...params,
+        model: decision.fallbackModelId,
+      }),
+      classified,
+    };
   }
 
   // `propagate` — caller throws `classified`.
