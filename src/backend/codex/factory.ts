@@ -15,7 +15,6 @@ import {
   type ChatBackend,
   type BackgroundRunner,
   type ModelCatalog,
-  type SessionBackend,
 } from "../../core/agent-runtime/capabilities.js";
 
 import { initCodexAgent, getCodexAuthInfo } from "./init.js";
@@ -72,16 +71,10 @@ const codexFactory: BackendFactory = {
       listModels: (f) => codexListModels(f),
     };
 
-    // Codex backend has no separate sessions slot — its `handleMessage`
-    // owns the per-chat thread lifecycle itself (via `setSessionId` on
-    // `storage/sessions.ts`). The factory exposes a no-op `resetChat`
-    // so the dispatcher can call it without conditional checks; the
-    // shared `storage/sessions.ts:resetSession` path is what actually
-    // clears the thread id when `/reset` fires.
-    const sessions: SessionBackend = {
-      resetChat: () => undefined,
-    };
-
+    // Codex has no in-memory session state — `handleMessage` owns
+    // the per-chat thread lifecycle directly via `setSessionId` on
+    // `storage/sessions.ts`. No `sessions` slot needed; `/reset`
+    // clears the stored thread id through the storage path.
     const backend = composeBackend({
       id: "codex",
       label: "Codex",
@@ -89,7 +82,6 @@ const codexFactory: BackendFactory = {
       chat,
       background,
       models,
-      sessions,
     });
 
     return {

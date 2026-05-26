@@ -145,12 +145,21 @@ export interface ModelCatalog {
 }
 
 /**
- * Session lifecycle. Backends with in-process conversation memory
- * implement at least `resetChat`. `warmSession` is a cold-start
- * optimisation hint — backends can no-op.
+ * Session lifecycle. Both methods optional:
+ *
+ *   - `resetChat` — drop any in-process conversation memory the
+ *     backend holds for a chat. Required only for backends that
+ *     keep their own session abstraction in memory (OpenAI Agents
+ *     `MemorySession`); stateless backends omit it.
+ *   - `warmSession` — cold-start optimisation hint.
+ *
+ * The dispatcher / `/reset` flow always also calls
+ * `storage/sessions.ts:resetSession(chatId)` so the chat's stored
+ * session id is cleared regardless of which slot variant the backend
+ * provides.
  */
 export interface SessionBackend {
-  resetChat(chatId: string): void | Promise<void>;
+  resetChat?(chatId: string): void | Promise<void>;
   warmSession?(chatId: string): Promise<void>;
 }
 

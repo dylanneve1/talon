@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { initDispatcher, execute, getActiveCount } from "../core/dispatcher.js";
 import type { ContextManager } from "../core/types.js";
-import { stubBackend, stubChatBackend } from "./helpers/stub-backend.js";
+import {
+  stubBackend,
+  stubChatBackend,
+  stubResolveActiveModel,
+} from "./helpers/stub-backend.js";
 
 function createMockDeps() {
   const acquired: number[] = [];
@@ -33,6 +37,7 @@ function createMockDeps() {
     backend,
     query,
     getBackend: () => backend,
+    resolveActiveModel: stubResolveActiveModel(),
     context,
     sendTyping,
     onActivity,
@@ -63,10 +68,9 @@ describe("dispatcher", () => {
 
   it("passes the resolved active model to the backend query", async () => {
     const deps = createMockDeps();
-    const resolveActiveModel = vi.fn(async () => ({
-      model: "gpt-5.4-mini",
-      backendId: "codex",
-    }));
+    const resolveActiveModel = vi.fn(
+      stubResolveActiveModel("codex", "gpt-5.4-mini"),
+    );
     initDispatcher({ ...deps, resolveActiveModel });
 
     await execute({
@@ -270,6 +274,7 @@ describe("dispatcher", () => {
 
     initDispatcher({
       getBackend: () => backend,
+      resolveActiveModel: stubResolveActiveModel(),
       context: {
         acquire: () => {},
         release: () => {},
@@ -362,6 +367,7 @@ describe("dispatcher", () => {
 
     initDispatcher({
       getBackend: () => backend,
+      resolveActiveModel: stubResolveActiveModel(),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       sendTyping: vi.fn(async () => {
         throw new Error("typing API error");
@@ -414,6 +420,7 @@ describe("typing indicator — non-Error throws", () => {
             cacheWrite: 0,
           })),
         }),
+      resolveActiveModel: stubResolveActiveModel(),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // Throw a plain string (non-Error) to hit the `String(err)` branch at line 99
       sendTyping: vi.fn(async () => {
@@ -473,6 +480,7 @@ describe("typing indicator — non-Error throws", () => {
               }),
           ) as never,
         }),
+      resolveActiveModel: stubResolveActiveModel(),
       context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
       // First call OK, subsequent calls throw a non-Error string (covers line 103 String(err) branch)
       sendTyping: vi.fn(async () => {

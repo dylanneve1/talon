@@ -77,12 +77,11 @@ const claudeSdkFactory: BackendFactory = {
       listModels: (f) => modelProvider.listModels(f),
     };
 
+    // Claude SDK's per-turn subprocess model has no shared session
+    // state to reset; `warmSession` is the only useful hook. The
+    // dispatcher's `/reset` clears Talon's stored session id via
+    // `storage/sessions.ts:resetSession` regardless.
     const sessions: SessionBackend = {
-      // Claude SDK's per-turn subprocess model has no shared session
-      // state to reset — the SDK starts fresh on each handleMessage.
-      // Talon's per-chat session id (stored in `storage/sessions.ts`)
-      // is what the dispatcher's `/reset` actually clears.
-      resetChat: () => undefined,
       warmSession: (chatId) => claudeWarmSession(chatId),
     };
 

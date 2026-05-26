@@ -250,13 +250,13 @@ export async function initBackendAndDispatcher(
         await import("./core/backend-controller.js");
       const beId = getBackendIdForChat(chatId);
       const be = getBE(chatId);
-      const { model } = await resolveActiveModelForChat(
+      const { model, ref } = await resolveActiveModelForChat(
         chatId,
         be,
         beId,
         config,
       );
-      return { model, backendId: beId };
+      return { model, ref, backendId: beId };
     },
     context: frontend.context,
     sendTyping: frontend.sendTyping,

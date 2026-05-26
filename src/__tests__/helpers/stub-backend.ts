@@ -41,6 +41,7 @@ import type {
 import { composeBackend } from "../../core/agent-runtime/capabilities.js";
 import { toEventStream } from "../../backend/shared/to-event-stream.js";
 import type { BackendId } from "../../core/agent-runtime/model-ref.js";
+import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 import type {
   CacheMetricsSupport,
   OneShotAgentParams,
@@ -271,4 +272,21 @@ export function stubChatBackend(result: Partial<QueryResult> = {}): {
   const query = vi.fn(async () => fullResult);
   const backend = stubBackend({ query });
   return { backend, query };
+}
+
+/**
+ * Default `resolveActiveModel` stub for the dispatcher. Returns a
+ * bare `ModelRef` against the supplied backend id so the
+ * dispatcher's send-time null-model guard passes. Tests that want
+ * to exercise the no-model path supply their own stub.
+ */
+export function stubResolveActiveModel(
+  backendId: BackendId = "claude",
+  modelId = "stub-model",
+) {
+  return async () => ({
+    model: modelId,
+    ref: makeBareModelRef(backendId, modelId, "discovered"),
+    backendId: backendId as string,
+  });
 }
