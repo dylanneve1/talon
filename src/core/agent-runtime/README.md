@@ -6,10 +6,8 @@ plan landed in seven phases; every phase ships:
 
 | Phase | Scope                                              | Status      |
 | ----- | -------------------------------------------------- | ----------- |
-| 1     | Type-only surface (events, ModelRef, RunPolicy, …) | **done**    |
-| 2.1   | `resolveActiveModelRefForChat`                     | **done**    |
-| 2.2   | `/status` consumes ModelRef                        | **done**    |
-| 2.3   | `/model` consumes ModelRef                         | **done**    |
+| 1     | Type-only surface (events, ModelRef, …)            | **done**    |
+| 2     | Active-model resolver yields `{ model, ref }`      | **done**    |
 | 3     | Native `AgentEvent` emission per backend           | **done**    |
 | 4     | `AgentEventLogRenderer` consumers                  | descoped    |
 | 5     | Centralised tool surface via `ToolRegistry`        | descoped    |
@@ -61,17 +59,6 @@ Split capability interfaces — `ChatBackend`, `BackgroundRunner`,
 explicit capability flags. `composeBackend({...})` is the canonical
 builder; `deriveCapabilities` fills the flag set from which slots a
 caller provided.
-
-### `resolver.ts`
-
-`resolveActiveModelRefForChat(chatId, backend, backendId, config)`
-returns `{ ref: ModelRef | null, modelId: string | null, source }`.
-Wraps the existing string-side `resolveActiveModelForChat`
-(`core/active-model.ts`) and enriches the chain's output into a
-`ModelRef` via `models.getRawModelInfo` → `models.resolveModelInfo`
-→ bare-ref fallback. `modelId` is the raw string from the chain so
-callers can fall back to the legacy id when `ref` is null but the
-chain produced one.
 
 ### `store.ts`
 
@@ -149,21 +136,23 @@ stream terminates with an error event.
 4. Register: `registerBackend({ id, label, init: async (cfg, ctx) =>
    ({ backend, cleanup }) })`.
 
-### Migrate a `resolveActiveModelForChat` caller to ref
+### Reading the resolved model for a chat
 
-1. Import `resolveActiveModelRefForChat` from
-   `core/agent-runtime/resolver.js`.
-2. Replace `const { model } = await resolveActiveModelForChat(...)`
-   with `const { ref, modelId } = await
-resolveActiveModelRefForChat(...)`.
-3. Use `ref?.displayName ?? modelId ?? "No model selected"` for
-   user-facing display.
-4. Use `ref?.contextWindow` instead of a separate
-   `backend.models?.getRawModelInfo(model)` call.
-5. Use `ref?.id` for backend-facing routing.
+`resolveActiveModelForChat(chatId, backend, backendId, config)`
+returns `{ model: string | null, ref: ModelRef | null, source }`:
 
-Done callers: `/status` (telegram + discord), `/model` main + browse
-views.
+- `model` is the raw id from the 5-step chain (per-chat override →
+  backend canonical → operator default → legacy global → null).
+- `ref` enriches that id with `displayName`, `contextWindow`,
+  `effortLevels`, `cacheSupport`, etc. — `null` when `model` is
+  null or `backendId` isn't a known `BackendId`.
+- `source` carries the chain step that produced the model, useful
+  for toast wording and stale-slot cleanup.
+
+Convenience wrappers:
+
+  - `getActiveModelForChat(...)` → `model`
+  - `getActiveModelRefForChat(...)` → `ref`
 
 ### Adding a new JSON-backed store
 

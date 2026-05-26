@@ -92,7 +92,7 @@ import {
   resolveChatBackend,
 } from "../../core/backend-controller.js";
 import { resolveActiveModelForChat } from "../../core/active-model.js";
-import { resolveActiveModelRefForChat } from "../../core/agent-runtime/resolver.js";
+
 import { log, logError, logWarn } from "../../util/log.js";
 import {
   suppressMentions,
@@ -605,7 +605,7 @@ async function handleStatus(
   // 5-step chain as `resolveActiveModelForChat`, so the active model
   // id is identical; the difference is one fewer round-trip to
   // `getRawModelInfo` for the common case.
-  const { ref: statusModelRef } = await resolveActiveModelRefForChat(
+  const { ref: statusModelRef } = await resolveActiveModelForChat(
     chatId,
     statusBe,
     statusBeId,

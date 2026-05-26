@@ -65,6 +65,14 @@ import {
   getChatSettings,
 } from "../storage/chat-settings.js";
 import type { Backend } from "./agent-runtime/capabilities.js";
+import {
+  isBackendId,
+  makeBareModelRef,
+  type CacheSupport,
+  type ModelRef,
+  type ModelSource,
+} from "./agent-runtime/model-ref.js";
+import type { UnifiedModelInfo } from "./types.js";
 import type { TalonConfig } from "../util/config.js";
 import { logWarn } from "../util/log.js";
 
@@ -83,8 +91,21 @@ export type ActiveModelSource =
   | "none";
 
 export interface ActiveModelResolution {
-  /** Resolved model id, or `null` when the chain produced no usable default. */
+  /**
+   * Resolved model id from the 5-step chain, or `null` when the
+   * chain produced no usable default. The dispatcher / send guard
+   * compare against `null` to decide whether the chat has a model
+   * to run on.
+   */
   model: string | null;
+  /**
+   * Enriched `ModelRef` for the same model — `null` either when
+   * `model === null` OR when the supplied `backendId` is not a
+   * known `BackendId` (so a typed ref can't be constructed).
+   * `/status`, `/model` chrome, and telemetry read the ref's
+   * metadata fields (displayName, contextWindow, cacheSupport).
+   */
+  ref: ModelRef | null;
   source: ActiveModelSource;
 }
 
@@ -108,6 +129,19 @@ export async function resolveActiveModelForChat(
   backendId: string | null,
   config: TalonConfig,
 ): Promise<ActiveModelResolution> {
+  const stringPart = await runChain(chatId, backend, backendId, config);
+  return {
+    ...stringPart,
+    ref: await materialiseRef(stringPart.model, backend, backendId),
+  };
+}
+
+async function runChain(
+  chatId: string,
+  backend: Backend | null,
+  backendId: string | null,
+  config: TalonConfig,
+): Promise<{ model: string | null; source: ActiveModelSource }> {
   // ── Step 1: per-chat-per-backend override ────────────────────────
   if (backendId) {
     const override = getChatModelForBackend(chatId, backendId);
@@ -122,15 +156,12 @@ export async function resolveActiveModelForChat(
           `"${override}" is not a selectable model on this backend. ` +
           `Falling through to backend default.`,
       );
-      // Fall through to step 2, but tag source so the caller can decide
-      // whether to clear the stale slot.
-      const fallback = await stepsTwoThroughFive(
+      return stepsTwoThroughFive(
         backend,
         backendId,
         config,
         "override-invalid-fallback",
       );
-      return fallback;
     }
   }
 
@@ -144,9 +175,9 @@ async function stepsTwoThroughFive(
   backendId: string | null,
   config: TalonConfig,
   fallbackSourceOverride: "override-invalid-fallback" | null,
-): Promise<ActiveModelResolution> {
+): Promise<{ model: string | null; source: ActiveModelSource }> {
   // Step 2: backend.models.getDefaultModelId()
-  if (backend?.models?.getDefaultModelId) {
+  if (backend?.models) {
     const canonical = await safeBackendDefault(backend);
     if (canonical) {
       return {
@@ -254,6 +285,108 @@ export async function getActiveModelForChat(
     config,
   );
   return model;
+}
+
+/**
+ * Convenience: same as `resolveActiveModelForChat` but returns just
+ * the `ModelRef` (or `null`). Use when the source tag isn't needed.
+ */
+export async function getActiveModelRefForChat(
+  chatId: string,
+  backend: Backend | null,
+  backendId: string | null,
+  config: TalonConfig,
+): Promise<ModelRef | null> {
+  const { ref } = await resolveActiveModelForChat(
+    chatId,
+    backend,
+    backendId,
+    config,
+  );
+  return ref;
+}
+
+// ── ref enrichment ──────────────────────────────────────────────────────────
+
+/**
+ * Enrich the resolved model id into a `ModelRef`. Returns `null`
+ * either when there's no model OR when the backendId isn't a known
+ * `BackendId` (e.g. legacy config pointed at an unrecognised
+ * backend). Tries the catalog's `getRawModelInfo` first, falls
+ * through to `resolveModelInfo`, finally falls back to a bare ref.
+ */
+async function materialiseRef(
+  modelId: string | null,
+  backend: Backend | null,
+  backendId: string | null,
+): Promise<ModelRef | null> {
+  if (!modelId) return null;
+  if (!backendId || !isBackendId(backendId)) return null;
+  const cacheSupport: CacheSupport = mapCacheSupport(backend);
+
+  const catalog = backend?.models;
+  if (catalog) {
+    try {
+      const info = await catalog.getRawModelInfo(modelId);
+      if (info) return unifiedToModelRef(info, backendId, cacheSupport);
+    } catch (err) {
+      logWarn(
+        "settings",
+        `materialiseRef: getRawModelInfo("${modelId}") threw: ` +
+          `${err instanceof Error ? err.message : String(err)}. Falling ` +
+          `through to resolveModelInfo.`,
+      );
+    }
+    try {
+      const resolution = await catalog.resolveModelInfo(modelId);
+      if (resolution.kind === "exact") {
+        return unifiedToModelRef(resolution.model, backendId, cacheSupport);
+      }
+    } catch (err) {
+      logWarn(
+        "settings",
+        `materialiseRef: resolveModelInfo("${modelId}") threw: ` +
+          `${err instanceof Error ? err.message : String(err)}. Falling ` +
+          `through to bare ref.`,
+      );
+    }
+  }
+
+  const bare = makeBareModelRef(backendId, modelId, "unknown");
+  return { ...bare, cacheSupport };
+}
+
+function unifiedToModelRef(
+  info: UnifiedModelInfo,
+  backend: import("./agent-runtime/model-ref.js").BackendId,
+  cache: CacheSupport,
+): ModelRef {
+  return {
+    backend,
+    id: info.id,
+    displayName: info.displayName ?? info.id,
+    provider: info.provider,
+    source: "discovered" satisfies ModelSource,
+    contextWindow: info.contextWindow,
+    effortLevels: info.supportedReasoningLevels,
+    defaultEffort: info.defaultReasoningLevel,
+    cacheSupport: cache,
+    selectable: info.selectable,
+    free: info.free,
+    unavailableReason: info.unavailableReason,
+  };
+}
+
+function mapCacheSupport(backend: Backend | null): CacheSupport {
+  switch (backend?.cacheMetrics) {
+    case "read":
+      return "read";
+    case "readwrite":
+      return "readwrite";
+    case "none":
+    case undefined:
+      return "none";
+  }
 }
 
 /**

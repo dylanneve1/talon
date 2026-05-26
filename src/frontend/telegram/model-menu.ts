@@ -44,7 +44,7 @@ import {
   getChatSettings,
   setChatFreeOnly,
 } from "../../storage/chat-settings.js";
-import { resolveActiveModelRefForChat } from "../../core/agent-runtime/resolver.js";
+import { resolveActiveModelForChat } from "../../core/active-model.js";
 
 /**
  * Resolve the backend serving a given chat right now.
@@ -121,8 +121,8 @@ export async function buildModelMenuViewForChat(
   // 5-step chain hits step 5 (catalog-driven backend with no
   // per-chat pick AND no operator default). The menu surfaces that
   // as "No model selected".
-  const { ref: activeRef, modelId: activeModel } =
-    await resolveActiveModelRefForChat(
+  const { ref: activeRef, model: activeModel } =
+    await resolveActiveModelForChat(
       chatId,
       backend,
       activeBackendId,
@@ -234,8 +234,8 @@ export async function buildModelBrowseViewForChat(
   // tracks the same source-of-truth as the main menu AND displayName
   // comes from the ref's enrichment instead of a separate
   // `getRawModelInfo` call.
-  const { ref: activeRef, modelId: resolvedModel } =
-    await resolveActiveModelRefForChat(
+  const { ref: activeRef, model: resolvedModel } =
+    await resolveActiveModelForChat(
       chatId,
       backend,
       activeBackendId,

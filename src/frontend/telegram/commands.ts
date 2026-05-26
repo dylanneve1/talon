@@ -55,7 +55,7 @@ import {
 } from "./model-menu.js";
 import { getBackendIdForChat } from "../../core/backend-controller.js";
 import { resolveActiveModelForChat } from "../../core/active-model.js";
-import { resolveActiveModelRefForChat } from "../../core/agent-runtime/resolver.js";
+
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
@@ -558,7 +558,7 @@ export function registerCommands(
     // same 5-step chain as `resolveActiveModelForChat`, so the active
     // model id is identical; the difference is one fewer round-trip
     // to `getRawModelInfo` for the common case.
-    const { ref: statusModelRef } = await resolveActiveModelRefForChat(
+    const { ref: statusModelRef } = await resolveActiveModelForChat(
       cid,
       statusBe,
       statusBeId,

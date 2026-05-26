@@ -6,7 +6,6 @@
  *   - `AgentEvent`     + helpers   (events.ts)
  *   - `ModelRef`       + helpers   (model-ref.ts)
  *   - `Backend` + capability interfaces + `composeBackend` (capabilities.ts)
- *   - `resolveActiveModelRefForChat`                      (resolver.ts)
  *   - `JsonStore<T>`                                       (store.ts)
  *   - Backend contract assertions                          (contract-tests.ts)
  *   - Event → legacy callback bridge                       (legacy-bridge.ts)
@@ -50,12 +49,6 @@ export {
   composeBackend,
   deriveCapabilities,
 } from "./capabilities.js";
-
-export {
-  type ActiveModelRefResolution,
-  resolveActiveModelRefForChat,
-  getActiveModelRefForChat,
-} from "./resolver.js";
 
 export { type JsonStoreFs, type JsonStoreOptions, JsonStore } from "./store.js";
 
