@@ -21,7 +21,7 @@ import {
   BridgedAgentError,
   pipeEventsToCallbacks,
   type LegacyCallbacks,
-} from "../core/agent-runtime/legacy-bridge.js";
+} from "../core/agent-runtime/event-bridge.js";
 import type { AgentEvent } from "../core/agent-runtime/events.js";
 
 function streamOf(events: AgentEvent[]): AsyncIterable<AgentEvent> {

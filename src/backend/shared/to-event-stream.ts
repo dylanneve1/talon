@@ -68,8 +68,8 @@ export async function* toEventStream(
     r?.();
   };
 
-  // The legacy `onStreamDelta` contract delivers the FULL accumulated
-  // text so far, not the new chunk. `AgentEvent.text_delta.text`
+  // The handler-internal `onStreamDelta` contract delivers the FULL
+  // accumulated text so far, not the new chunk. `AgentEvent.text_delta.text`
   // carries the delta — the pipe consumer (`pipeEventsToCallbacks` /
   // `streamLog` / `event-log-renderer`) re-accumulates. To bridge the
   // two contracts, the wrapper tracks the prior accumulated value
@@ -79,7 +79,7 @@ export async function* toEventStream(
   // growing accumulated strings; the diff is one chunk per call.
   let lastAccumulated = "";
 
-  const legacyParams: QueryParams = {
+  const handlerParams: QueryParams = {
     chatId: params.chatId,
     model: params.model.id,
     text: params.text,
@@ -124,7 +124,7 @@ export async function* toEventStream(
   let result: QueryResult | undefined;
   let error: unknown;
 
-  const queryPromise = query(legacyParams)
+  const queryPromise = query(handlerParams)
     .then((r) => {
       result = r;
     })

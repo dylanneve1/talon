@@ -60,7 +60,7 @@ export interface ChatRunParams {
  * `AsyncIterable<AgentEvent>` carrying per-token deltas, tool
  * events, usage, and the terminator. Consumers that need a
  * accumulation into a flat `AgentResult` use `reduceEventsToResult`
- * from `legacy-bridge.ts`; consumers that need callback-driven
+ * from `event-bridge.ts`; consumers that need callback-driven
  * delivery use `pipeEventsToCallbacks`.
  */
 export interface ChatBackend {

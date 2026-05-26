@@ -8,7 +8,7 @@
  *   - `Backend` + capability interfaces + `composeBackend` (capabilities.ts)
  *   - `JsonStore<T>`                                       (store.ts)
  *   - Backend contract assertions                          (contract-tests.ts)
- *   - Event → legacy callback bridge                       (legacy-bridge.ts)
+ *   - Event → legacy callback bridge                       (event-bridge.ts)
  */
 
 export {
@@ -68,4 +68,4 @@ export {
   BridgedAgentError,
   type LegacyCallbacks,
   pipeEventsToCallbacks,
-} from "./legacy-bridge.js";
+} from "./event-bridge.js";

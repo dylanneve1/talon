@@ -38,7 +38,7 @@
 import type { AgentError, AgentEvent, AgentResult } from "./events.js";
 
 /**
- * Legacy callback bundle (mirrors the dispatcher's `ExecuteParams`
+ * Callback bundle (mirrors the dispatcher's `ExecuteParams`
  * callback fields). The bridge invokes
  * whichever callbacks are present; missing ones are silently
  * skipped. Errors thrown by callbacks are surfaced as failed

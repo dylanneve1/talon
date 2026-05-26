@@ -12,7 +12,7 @@
 import { randomBytes } from "node:crypto";
 import type { ContextManager, ExecuteParams, ExecuteResult } from "./types.js";
 import type { Backend } from "./agent-runtime/capabilities.js";
-import { pipeEventsToCallbacks } from "./agent-runtime/legacy-bridge.js";
+import { pipeEventsToCallbacks } from "./agent-runtime/event-bridge.js";
 import { log, logDebug, logWarn } from "../util/log.js";
 import { maybeStartDream } from "./dream.js";
 
