@@ -1,22 +1,19 @@
 /**
- * `toEventStream` — convert a callback-driven `query()` handler into
- * a native `AgentEvent` async iterable.
+ * Adapter helper for backends whose SDKs deliver chat-turn events via
+ * callbacks (Codex, OpenCode, Kilo, OpenAI Agents). The backend's
+ * `handler.ts` keeps its internal callback-driven loop, and its
+ * `runChatTurn.ts` calls this helper to expose the native
+ * `AsyncIterable<AgentEvent>` surface that `ChatBackend.runChatTurn`
+ * requires.
  *
- * Each backend's `handler.ts` accepts `onStreamDelta`, `onTextBlock`,
- * and `onToolUse` callbacks that fire as the SDK stream produces
- * partial output. This wrapper reframes those callbacks as a queued
- * event source: an async generator drains the queue concurrently with
- * the underlying `query()` promise and yields the canonical
- * `AgentEvent` sequence.
+ * Backends with native event emission (Claude SDK, post-conversion)
+ * skip this entirely and yield events directly — `runChatTurn` lives
+ * in the backend module and owns its own stream surface.
  *
- * The result is per-token streaming events (text_delta), per-tool
- * events (tool_call), assistant message blocks (assistant_message),
- * and the standard `run_started → … → usage → completed` envelope.
- * Backend factories call this from their `chat.runChatTurn` slot:
- *
- *   const chat: ChatBackend = {
- *     runChatTurn: (params) => toEventStream(handleMessage, params),
- *   };
+ * Replaces the historical `to-event-stream.ts` shim that lived under
+ * "shared". The reframing matters: this is not a "legacy adapter,"
+ * it's the canonical bridge between an SDK that emits via callbacks
+ * and the `AgentEvent` contract every consumer reads.
  */
 
 import type {
@@ -27,30 +24,28 @@ import type {
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
 import type { QueryParams, QueryResult } from "./handler-types.js";
 
-/** Sentinel pushed onto the queue when the query promise settles. */
-const SENTINEL = Symbol("toEventStream:sentinel");
+const SENTINEL = Symbol("handler-to-events:sentinel");
 
 type QueueEvent = AgentEvent | typeof SENTINEL;
 
 /**
- * Wrap an SDK-specific callback-driven `query()` handler into the
- * canonical `AsyncIterable<AgentEvent>` shape every `ChatBackend`
- * exposes. The generator interleaves callback-driven streaming
- * events with the awaited query result:
+ * Drive a callback-shaped `handleMessage(QueryParams) => Promise<QueryResult>`
+ * and yield its events as `AgentEvent`s. The generator interleaves
+ * callback-driven streaming events with the awaited query result:
  *
  *   run_started → text_delta* → assistant_message* → tool_call* →
  *     usage → completed
  *
  * On error: `run_started → error`.
  *
- * The wrapper builds the backend-internal `QueryParams` shape
- * (from `handler-types.ts`) out of the canonical `ChatRunParams`
- * (`ModelRef` flattens to `model.id`; no callbacks come from the
- * caller — the queue owns the streaming surface). Backends call
- * this from their factory's `chat.runChatTurn` slot.
+ * The wrapper builds the backend-internal `QueryParams` shape from
+ * the canonical `ChatRunParams` (`ModelRef` flattens to `model.id`;
+ * the queue owns the streaming surface — no callbacks come from
+ * the caller). Each backend's `runChatTurn.ts` invokes this once
+ * per chat turn.
  */
-export async function* toEventStream(
-  query: (params: QueryParams) => Promise<QueryResult>,
+export async function* handlerToEvents(
+  handler: (params: QueryParams) => Promise<QueryResult>,
   params: ChatRunParams,
 ): AsyncIterable<AgentEvent> {
   yield { type: "run_started" };
@@ -68,15 +63,11 @@ export async function* toEventStream(
     r?.();
   };
 
-  // The handler-internal `onStreamDelta` contract delivers the FULL
-  // accumulated text so far, not the new chunk. `AgentEvent.text_delta.text`
-  // carries the delta — the pipe consumer (`pipeEventsToCallbacks` /
-  // `streamLog` / `event-log-renderer`) re-accumulates. To bridge the
-  // two contracts, the wrapper tracks the prior accumulated value
-  // and emits only the trailing slice. Backends that already deliver
-  // per-token deltas via `onStreamDelta` (Codex's `agent_message`,
-  // Claude SDK's stream-events) call the callback with monotonically-
-  // growing accumulated strings; the diff is one chunk per call.
+  // Handler `onStreamDelta` delivers the FULL accumulated text so far,
+  // not the new chunk. `AgentEvent.text_delta.text` carries the delta —
+  // the bridge consumer (`pipeEventsToCallbacks` / `streamLog` /
+  // `event-log-renderer`) re-accumulates. The wrapper tracks the prior
+  // accumulated value and emits only the trailing slice.
   let lastAccumulated = "";
 
   const handlerParams: QueryParams = {
@@ -90,14 +81,10 @@ export async function* toEventStream(
       if (typeof accumulated !== "string" || accumulated.length === 0) {
         return;
       }
-      // Monotonic-prefix case: the new accumulated extends the prior
-      // one. Emit the new tail as the delta.
       let chunk = accumulated;
       if (accumulated.startsWith(lastAccumulated)) {
         chunk = accumulated.slice(lastAccumulated.length);
       }
-      // Anything else (reset, replacement) — emit the full string as
-      // a fresh delta and reset the accumulator. Rare but defensive.
       lastAccumulated = accumulated;
       if (chunk.length > 0) {
         emit({ type: "text_delta", text: chunk });
@@ -105,8 +92,8 @@ export async function* toEventStream(
     },
     onTextBlock: async (text) => {
       emit({ type: "assistant_message", text });
-      // A block delivery anchors the accumulator — subsequent
-      // streaming deltas restart from empty.
+      // A block delivery anchors the accumulator — subsequent streaming
+      // deltas restart from empty.
       lastAccumulated = "";
     },
     onToolUse: (toolName, input) => {
@@ -124,7 +111,7 @@ export async function* toEventStream(
   let result: QueryResult | undefined;
   let error: unknown;
 
-  const queryPromise = query(handlerParams)
+  const handlerPromise = handler(handlerParams)
     .then((r) => {
       result = r;
     })
@@ -135,10 +122,9 @@ export async function* toEventStream(
       emit(SENTINEL);
     });
 
-  // Drain the queue until the query settles AND no more events are
-  // buffered. The sentinel only signals "query settled" — we still
-  // flush any final text/tool events the handler emitted just
-  // before resolving.
+  // Drain the queue until the handler settles AND no more events are
+  // buffered. The sentinel only signals "handler settled" — we still
+  // flush any final text/tool events emitted just before resolution.
   let settled = false;
   while (!settled || queue.length > 0) {
     while (queue.length > 0) {
@@ -153,7 +139,7 @@ export async function* toEventStream(
       await wait();
     }
   }
-  await queryPromise;
+  await handlerPromise;
 
   if (error) {
     yield { type: "error", error: classifyChatError(error) };
@@ -165,7 +151,7 @@ export async function* toEventStream(
       type: "error",
       error: {
         kind: "unknown",
-        message: "query() resolved without a result.",
+        message: "handler resolved without a result.",
         retryable: false,
       },
     };
@@ -192,11 +178,10 @@ export async function* toEventStream(
 }
 
 /**
- * Lightweight classifier for `query()` rejections. Keeps the
- * event-stream shape predictable without duplicating the full
- * `core/errors.ts` taxonomy. Backends that want richer
- * classification can pre-throw a `TalonError` subclass; the
- * message-shape match here is conservative.
+ * Lightweight classifier for handler rejections. Keeps the event-stream
+ * shape predictable without duplicating the full `core/errors.ts`
+ * taxonomy. Backends that want richer classification can pre-throw a
+ * `TalonError` subclass; the message-shape match here is conservative.
  */
 function classifyChatError(err: unknown): AgentError {
   const message = err instanceof Error ? err.message : String(err);

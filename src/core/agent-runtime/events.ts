@@ -9,7 +9,7 @@
  * longer render markdown logs themselves and core no longer parses
  * backend-specific output.
  *
- * The shared wrapper `backend/shared/to-event-stream.ts` converts
+ * The shared wrapper `backend/shared/handler-to-events.ts` converts
  * each backend's existing callback-driven `handleMessage` into the
  * canonical sequence: `run_started → text_delta* →
  * assistant_message* → tool_call* → usage → completed`. Backends

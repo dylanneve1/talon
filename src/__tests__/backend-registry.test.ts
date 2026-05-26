@@ -103,7 +103,7 @@ describe("backend registry", () => {
       frontendName: "telegram",
     });
     // The backend's chat slot wraps the underlying query through
-    // toEventStream — drain the stream to recover the result text.
+    // handlerToEvents — drain the stream to recover the result text.
     expect(backend.chat).toBeDefined();
     const events: import("../core/agent-runtime/events.js").AgentEvent[] = [];
     for await (const event of backend.chat!.runChatTurn({

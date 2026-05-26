@@ -1,15 +1,15 @@
 /**
- * `toEventStream` — Phase 3.x shared helper.
+ * `handlerToEvents` — callback-shaped handler adapter.
  *
  * Pins the queued-event ↔ awaited-query interleaving the shared
  * helper does for every backend that opts into native AgentEvent
- * emission. Backends call `toEventStream(handleMessage, params)`
+ * emission. Backends call `handlerToEvents(handleMessage, params)`
  * from their factory; the assertions here cover the wire format
  * those callers depend on.
  */
 
 import { describe, expect, it } from "vitest";
-import { toEventStream } from "../backend/shared/to-event-stream.js";
+import { handlerToEvents } from "../backend/shared/handler-to-events.js";
 import type { QueryParams, QueryResult } from "../backend/shared/handler-types.js";
 import type { AgentEvent } from "../core/agent-runtime/events.js";
 
@@ -31,10 +31,10 @@ async function drain(stream: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
   return out;
 }
 
-describe("toEventStream — minimum-fidelity envelope", () => {
+describe("handlerToEvents — minimum-fidelity envelope", () => {
   it("emits run_started → usage → completed for a query that produces no streaming output", async () => {
     const events = await drain(
-      toEventStream(
+      handlerToEvents(
         async () =>
           ({
             text: "hi",
@@ -66,7 +66,7 @@ describe("toEventStream — minimum-fidelity envelope", () => {
     // `streamLog`) re-accumulate. The wrapper reconstructs the
     // delta by diffing each accumulated value against the prior.
     const events = await drain(
-      toEventStream(async (legacy: QueryParams) => {
+      handlerToEvents(async (legacy: QueryParams) => {
         legacy.onStreamDelta?.("partial");
         legacy.onStreamDelta?.("partial response");
         return {
@@ -97,7 +97,7 @@ describe("toEventStream — minimum-fidelity envelope", () => {
     // block boundary, redelivery), the wrapper falls back to
     // emitting the full new string and re-anchoring.
     const events = await drain(
-      toEventStream(async (legacy: QueryParams) => {
+      handlerToEvents(async (legacy: QueryParams) => {
         legacy.onStreamDelta?.("alpha");
         legacy.onStreamDelta?.("BETA");
         return {
@@ -120,7 +120,7 @@ describe("toEventStream — minimum-fidelity envelope", () => {
 
   it("relays onTextBlock → assistant_message", async () => {
     const events = await drain(
-      toEventStream(async (legacy: QueryParams) => {
+      handlerToEvents(async (legacy: QueryParams) => {
         await legacy.onTextBlock?.("first block");
         await legacy.onTextBlock?.("second block");
         return {
@@ -142,7 +142,7 @@ describe("toEventStream — minimum-fidelity envelope", () => {
 
   it("relays onToolUse → tool_call with stable id + name + input", async () => {
     const events = await drain(
-      toEventStream(async (legacy: QueryParams) => {
+      handlerToEvents(async (legacy: QueryParams) => {
         legacy.onToolUse?.("send_message", { text: "hi" });
         legacy.onToolUse?.("end_turn", {});
         return {
@@ -168,7 +168,7 @@ describe("toEventStream — minimum-fidelity envelope", () => {
 
   it("classifies a rejected query as an error event and terminates", async () => {
     const events = await drain(
-      toEventStream(async () => {
+      handlerToEvents(async () => {
         throw new Error("context length exceeded");
       }, baseParams()),
     );
@@ -182,7 +182,7 @@ describe("toEventStream — minimum-fidelity envelope", () => {
 
   it("preserves event ordering: delta → tool → completed", async () => {
     const events = await drain(
-      toEventStream(async (legacy: QueryParams) => {
+      handlerToEvents(async (legacy: QueryParams) => {
         legacy.onStreamDelta?.("thinking…");
         legacy.onToolUse?.("read_file", { path: "x" });
         legacy.onStreamDelta?.("done");
@@ -211,5 +211,5 @@ describe("toEventStream — minimum-fidelity envelope", () => {
   // The caller-supplied-callback test is gone with the legacy
   // surface — `ChatRunParams` no longer carries `onStreamDelta` /
   // `onTextBlock` / `onToolUse`, so there's nothing to smuggle.
-  // `toEventStream` owns the streaming surface end-to-end now.
+  // `handlerToEvents` owns the streaming surface end-to-end now.
 });

@@ -220,7 +220,7 @@ describe("integration: dispatcher lifecycle", () => {
     const onStreamDelta = vi.fn();
     const onTextBlock = vi.fn();
     // Override the backend's chat slot with one that emits text via
-    // the wrapped legacy callbacks (toEventStream relays them as
+    // the wrapped legacy callbacks (handlerToEvents relays them as
     // text_delta events).
     backend.chat!.runChatTurn = (params) =>
       (async function* () {

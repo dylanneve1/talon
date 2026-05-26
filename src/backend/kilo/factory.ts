@@ -12,7 +12,7 @@
 import { registerBackend } from "../registry.js";
 import type { BackendFactory } from "../registry.js";
 import { log } from "../../util/log.js";
-import { toEventStream } from "../shared/to-event-stream.js";
+import { handlerToEvents } from "../shared/handler-to-events.js";
 import {
   composeBackend,
   type ChatBackend,
@@ -46,7 +46,7 @@ const kiloFactory: BackendFactory = {
 
     const chat: ChatBackend = {
       runChatTurn: (params) =>
-        toEventStream((p) => kiloHandleMessage(p), params),
+        handlerToEvents((p) => kiloHandleMessage(p), params),
     };
 
     const background: BackgroundRunner = {

@@ -76,7 +76,7 @@ export interface ChatBackend {
  *     existing heartbeat / dream log-file producers keep their
  *     direct write path. Consumers that want to consume the stream
  *     directly (via `streamLog`) compose with
- *     `backend/shared/to-event-stream.ts:toOneShotEventStream`
+ *     `backend/shared/handler-to-events.ts`
  *     externally.
  *   - `evictOrphanSubprocesses(label)` — backends that spawn
  *     per-run subprocesses (Claude SDK) implement this so a hung

@@ -7,7 +7,7 @@
  * `core/agent-runtime/capabilities.ts`) is the canonical surface every
  * consumer outside `src/backend/` talks to. These types exist only
  * because the per-backend handlers keep an internal callback-driven
- * stream loop that `to-event-stream.ts` adapts onto the native
+ * stream loop that `handler-to-events.ts` adapts onto the native
  * `AsyncIterable<AgentEvent>` shape at the factory boundary.
  *
  * Living in `backend/shared/` keeps `core/types.ts` clean of any

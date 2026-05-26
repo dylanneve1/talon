@@ -8,7 +8,7 @@
  * flat method references and composes them onto the corresponding
  * capability slots:
  *
- *   - `query` → `chat.runChatTurn` (via `toEventStream`)
+ *   - `query` → `chat.runChatTurn` (via `handlerToEvents`)
  *   - `runOneShotAgent` / `evictOrphanSubprocesses` → `background`
  *   - `resolveModel` / `getDefaultModel` / `getModelInfo` /
  *     `getSettingsPresentation` / `getProviders` /
@@ -39,7 +39,7 @@ import type {
   UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
 import { composeBackend } from "../../core/agent-runtime/capabilities.js";
-import { toEventStream } from "../../backend/shared/to-event-stream.js";
+import { handlerToEvents } from "../../backend/shared/handler-to-events.js";
 import type { BackendId } from "../../core/agent-runtime/model-ref.js";
 import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 import type {
@@ -229,7 +229,7 @@ function buildControl(input: StubBackendInput): SystemControl | undefined {
 /**
  * Build a stub `Backend`. Any combination of legacy-shaped methods
  * is composed onto the corresponding capability slots. The `query`
- * field is wrapped through `toEventStream` to satisfy the new
+ * field is wrapped through `handlerToEvents` to satisfy the new
  * `ChatBackend.runChatTurn` contract.
  */
 export function stubBackend(input: StubBackendInput = {}): Backend {
@@ -237,7 +237,7 @@ export function stubBackend(input: StubBackendInput = {}): Backend {
   const label = input.label ?? id;
   const query = input.query ?? defaultQuery;
   const chat: ChatBackend = input.chat ?? {
-    runChatTurn: (params) => toEventStream(query, params),
+    runChatTurn: (params) => handlerToEvents(query, params),
   };
   return composeBackend({
     id,

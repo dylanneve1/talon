@@ -9,7 +9,7 @@
 import { registerBackend } from "../registry.js";
 import type { BackendFactory } from "../registry.js";
 import { log } from "../../util/log.js";
-import { toEventStream } from "../shared/to-event-stream.js";
+import { handlerToEvents } from "../shared/handler-to-events.js";
 import {
   composeBackend,
   type ChatBackend,
@@ -45,7 +45,7 @@ const codexFactory: BackendFactory = {
 
     const chat: ChatBackend = {
       runChatTurn: (params) =>
-        toEventStream((p) => codexHandleMessage(p), params),
+        handlerToEvents((p) => codexHandleMessage(p), params),
     };
 
     const background: BackgroundRunner = {
