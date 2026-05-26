@@ -63,10 +63,9 @@ export interface UsageSnapshot {
 }
 
 /**
- * Final result of a backend run. Mirrors the shape of the legacy
- * `QueryResult`, with the addition of the runtime model id so
- * downstream consumers can render "Reply via gpt-5-codex (1.2s)"
- * without re-asking the resolver.
+ * Final result of a backend run — text + duration + usage + the
+ * runtime model id so downstream consumers can render "Reply via
+ * gpt-5-codex (1.2s)" without re-asking the resolver.
  */
 export interface AgentResult {
   /** Full assistant text (concatenated from any deltas / blocks). */

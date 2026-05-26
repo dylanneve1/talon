@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { toEventStream } from "../backend/shared/to-event-stream.js";
-import type { QueryParams, QueryResult } from "../core/types.js";
+import type { QueryParams, QueryResult } from "../backend/shared/handler-types.js";
 import type { AgentEvent } from "../core/agent-runtime/events.js";
 
 import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";

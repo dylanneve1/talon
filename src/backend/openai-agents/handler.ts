@@ -36,7 +36,7 @@
  */
 
 import { Agent, run } from "@openai/agents";
-import type { QueryParams, QueryResult } from "../../core/types.js";
+import type { QueryParams, QueryResult } from "../shared/handler-types.js";
 import {
   getSession,
   incrementTurns,

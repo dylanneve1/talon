@@ -25,7 +25,7 @@ import type {
   AgentEvent,
 } from "../../core/agent-runtime/events.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
-import type { QueryParams, QueryResult } from "../../core/types.js";
+import type { QueryParams, QueryResult } from "./handler-types.js";
 
 /** Sentinel pushed onto the queue when the query promise settles. */
 const SENTINEL = Symbol("toEventStream:sentinel");
@@ -43,11 +43,11 @@ type QueueEvent = AgentEvent | typeof SENTINEL;
  *
  * On error: `run_started → error`.
  *
- * The wrapper builds the `QueryParams` shape the legacy handler
- * expects from the new `ChatRunParams` (`ModelRef` flattens to
- * `model.id`, no callbacks come from the caller — the queue owns
- * the streaming surface). Backends call this from their factory's
- * `chat.runChatTurn` slot.
+ * The wrapper builds the backend-internal `QueryParams` shape
+ * (from `handler-types.ts`) out of the canonical `ChatRunParams`
+ * (`ModelRef` flattens to `model.id`; no callbacks come from the
+ * caller — the queue owns the streaming surface). Backends call
+ * this from their factory's `chat.runChatTurn` slot.
  */
 export async function* toEventStream(
   query: (params: QueryParams) => Promise<QueryResult>,

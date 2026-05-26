@@ -6,39 +6,6 @@
  * frontend/ and backend/ depend on core/types, never on each other.
  */
 
-// ── Query lifecycle ─────────────────────────────────────────────────────────
-
-/** Parameters for a backend AI query. */
-export type QueryParams = {
-  chatId: string;
-  /**
-   * Model id resolved by the dispatcher for this chat/backend. Backends should
-   * use this instead of re-reading chat settings so UI state, send-time guards,
-   * and actual runtime model stay in lockstep.
-   */
-  model?: string;
-  text: string;
-  senderName: string;
-  isGroup?: boolean;
-  /**
-   * Provider message ID. Telegram is numeric; Discord snowflakes are strings.
-   */
-  messageId?: number | string;
-  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
-  onTextBlock?: (text: string) => Promise<void>;
-  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
-};
-
-/** Result of a backend AI query. */
-export type QueryResult = {
-  text: string;
-  durationMs: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheRead: number;
-  cacheWrite: number;
-};
-
 // ── Model abstraction ──────────────────────────────────────────────────────
 
 /** Unified model info returned by any backend. */
@@ -212,7 +179,13 @@ export type ExecuteParams = {
 };
 
 /** What the dispatcher returns after execution. */
-export type ExecuteResult = QueryResult & {
+export type ExecuteResult = {
+  text: string;
+  durationMs: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheRead: number;
+  cacheWrite: number;
   bridgeMessageCount: number;
 };
 

@@ -236,7 +236,7 @@ export function recordTokens(
  * but its text still needs to land in the cumulative buffer).
  *
  * Returns the cumulative text (trimmed) so the caller can build the
- * `QueryResult.text` field.
+ * handler's `QueryResult.text` field (see `handler-types.ts`).
  */
 export function finalizeResponseText(state: StreamState): string {
   if (state.currentBlockText) {

@@ -45,14 +45,16 @@ import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 import type {
   CacheMetricsSupport,
   OneShotAgentParams,
-  QueryParams,
-  QueryResult,
   UnifiedModelInfo,
   UnifiedModelResolution,
   UnifiedProviderInfo,
   ModelPickerOptions,
   ModelPickerResult,
 } from "../../core/types.js";
+import type {
+  QueryParams,
+  QueryResult,
+} from "../../backend/shared/handler-types.js";
 
 export interface StubBackendInput {
   id?: BackendId;

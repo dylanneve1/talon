@@ -22,7 +22,7 @@
  * BEFORE this one.
  */
 
-import type { QueryParams, QueryResult } from "../../core/types.js";
+import type { QueryParams, QueryResult } from "./handler-types.js";
 import { classify, type TalonError } from "../../core/errors.js";
 import { logWarn } from "../../util/log.js";
 import { incrementCounter } from "../../util/metrics.js";

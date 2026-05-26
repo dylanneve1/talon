@@ -20,7 +20,7 @@ import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
-import type { QueryParams, QueryResult } from "../../core/types.js";
+import type { QueryParams, QueryResult } from "../shared/handler-types.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions } from "./options.js";
 import {

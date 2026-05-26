@@ -59,7 +59,7 @@ export interface ChatRunParams {
  * The chat-turn surface. `runChatTurn` returns an
  * `AsyncIterable<AgentEvent>` carrying per-token deltas, tool
  * events, usage, and the terminator. Consumers that need a
- * `QueryResult`-shaped accumulation use `reduceEventsToResult`
+ * accumulation into a flat `AgentResult` use `reduceEventsToResult`
  * from `legacy-bridge.ts`; consumers that need callback-driven
  * delivery use `pipeEventsToCallbacks`.
  */
