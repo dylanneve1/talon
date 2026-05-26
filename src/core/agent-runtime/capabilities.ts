@@ -21,7 +21,6 @@
 
 import type { AgentEvent, UsageSnapshot } from "./events.js";
 import type { ModelRef, BackendId } from "./model-ref.js";
-import type { RunPolicy } from "./run-policy.js";
 import type {
   CacheMetricsSupport,
   ModelPickerOptions,
@@ -35,24 +34,14 @@ import type {
 // ── Run parameters ──────────────────────────────────────────────────────────
 
 /**
- * Parameters for a chat turn. Mirrors the legacy `QueryParams`
- * shape with one addition: `model` is a resolved `ModelRef`.
- *
- * Streaming callbacks (`onStreamDelta`, `onTextBlock`,
- * `onToolUse`) are not part of this shape — backends emit
- * `AgentEvent`s instead. The legacy callback contract still exists
- * inside the backend's handler module; the factory wraps it into
- * the event stream via `backend/shared/to-event-stream.ts`.
- *
- * `policy` is currently advisory. The default `RunPolicy` for the
- * run kind (`"chat"` here) carries the canonical contract every
- * shipped backend already obeys; per-chat policy overrides ride on
- * this field when consumers start to use them.
+ * Parameters for a chat turn. `model` is a resolved `ModelRef`,
+ * carrying everything the backend needs to identify the model and
+ * render the resulting reply. Streaming callbacks aren't part of
+ * this shape — backends emit `AgentEvent`s.
  */
 export interface ChatRunParams {
   chatId: string;
   model: ModelRef;
-  policy: RunPolicy;
   text: string;
   senderName: string;
   isGroup?: boolean;

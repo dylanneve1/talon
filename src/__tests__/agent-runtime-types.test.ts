@@ -22,12 +22,6 @@ import {
   sameModelRef,
   type ModelRef,
 } from "../core/agent-runtime/model-ref.js";
-import {
-  allowsDelivery,
-  defaultRunPolicyFor,
-  requiresAmbientChat,
-  type RunKind,
-} from "../core/agent-runtime/run-policy.js";
 import { deriveCapabilities } from "../core/agent-runtime/capabilities.js";
 
 // ── events ──────────────────────────────────────────────────────────────────
@@ -163,61 +157,6 @@ describe("agent-runtime/model-ref", () => {
 });
 
 // ── run-policy ──────────────────────────────────────────────────────────────
-
-describe("agent-runtime/run-policy", () => {
-  const kinds: RunKind[] = ["chat", "heartbeat", "dream", "trigger", "test"];
-
-  it("defaultRunPolicyFor returns the requested kind and a matching label", () => {
-    for (const kind of kinds) {
-      const policy = defaultRunPolicyFor(kind);
-      expect(policy.kind).toBe(kind);
-      expect(policy.label).toBe(kind);
-    }
-  });
-
-  it("chat policy allows ambient delivery and a persistent session", () => {
-    const policy = defaultRunPolicyFor("chat");
-    expect(allowsDelivery(policy)).toBe(true);
-    expect(requiresAmbientChat(policy)).toBe(true);
-    expect(policy.session.persistent).toBe(true);
-    expect(policy.tools.requireExplicitChatId).toBe(false);
-    expect(policy.logging.destination).toBe("inline");
-  });
-
-  it("heartbeat policy needs explicit chat_id on delivery tools", () => {
-    const policy = defaultRunPolicyFor("heartbeat");
-    expect(allowsDelivery(policy)).toBe(true);
-    expect(requiresAmbientChat(policy)).toBe(false);
-    expect(policy.session.persistent).toBe(false);
-    expect(policy.tools.requireExplicitChatId).toBe(true);
-    expect(policy.logging.destination).toBe("journal");
-    expect(policy.timeout.hardMs).toBeGreaterThan(0);
-  });
-
-  it("dream policy refuses delivery and excludes ambient-chat tools", () => {
-    const policy = defaultRunPolicyFor("dream");
-    expect(allowsDelivery(policy)).toBe(false);
-    expect(requiresAmbientChat(policy)).toBe(false);
-    expect(policy.tools.excludeDelivery).toBe(true);
-    expect(policy.tools.excludeAmbientChatTools).toBe(true);
-    expect(policy.logging.destination).toBe("dreamLog");
-  });
-
-  it("trigger policy mirrors heartbeat shape but logs inline", () => {
-    const policy = defaultRunPolicyFor("trigger");
-    expect(policy.delivery.mode).toBe("explicit");
-    expect(policy.tools.requireExplicitChatId).toBe(true);
-    expect(policy.logging.destination).toBe("inline");
-    expect(policy.session.persistent).toBe(false);
-  });
-
-  it("test policy is delivery-locked and tight on timeout", () => {
-    const policy = defaultRunPolicyFor("test");
-    expect(policy.delivery.mode).toBe("none");
-    expect(policy.timeout.hardMs).toBeLessThanOrEqual(60_000);
-    expect(policy.session.persistent).toBe(false);
-  });
-});
 
 // ── capabilities ────────────────────────────────────────────────────────────
 

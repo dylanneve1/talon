@@ -5,7 +5,6 @@
  *
  *   - `AgentEvent`     + helpers   (events.ts)
  *   - `ModelRef`       + helpers   (model-ref.ts)
- *   - `RunPolicy`      + defaults  (run-policy.ts)
  *   - `Backend` + capability interfaces + `composeBackend` (capabilities.ts)
  *   - `resolveActiveModelRefForChat`                      (resolver.ts)
  *   - `JsonStore<T>`                                       (store.ts)
@@ -35,20 +34,6 @@ export {
   makeBareModelRef,
   sameModelRef,
 } from "./model-ref.js";
-
-export {
-  type DeliveryPolicy,
-  type LoggingPolicy,
-  type PermissionPolicy,
-  type RunKind,
-  type RunPolicy,
-  type SessionPolicy,
-  type TimeoutPolicy,
-  type ToolPolicy,
-  allowsDelivery,
-  defaultRunPolicyFor,
-  requiresAmbientChat,
-} from "./run-policy.js";
 
 export {
   type Backend,

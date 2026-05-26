@@ -24,7 +24,6 @@
 
 import type { Backend } from "./capabilities.js";
 import type { AgentEvent } from "./events.js";
-import { defaultRunPolicyFor } from "./run-policy.js";
 import { makeBareModelRef, type BackendId } from "./model-ref.js";
 
 class ContractViolation extends Error {
@@ -70,7 +69,6 @@ export async function assertChatBackendTerminates(
     backend.chat.runChatTurn({
       chatId: options.chatId ?? "contract-test-chat",
       model: makeBareModelRef(backend.id, "contract-test-model"),
-      policy: defaultRunPolicyFor("chat"),
       text: options.text ?? "ping",
       senderName: "ContractTest",
     }),
@@ -106,7 +104,6 @@ export async function assertChatBackendEmitsRunStarted(
     backend.chat.runChatTurn({
       chatId: options.chatId ?? "contract-test-chat",
       model: makeBareModelRef(backend.id, "contract-test-model"),
-      policy: defaultRunPolicyFor("chat"),
       text: options.text ?? "ping",
       senderName: "ContractTest",
     }),
@@ -135,7 +132,6 @@ export async function assertChatBackendEmitsSingleUsage(
     backend.chat.runChatTurn({
       chatId: options.chatId ?? "contract-test-chat",
       model: makeBareModelRef(backend.id, "contract-test-model"),
-      policy: defaultRunPolicyFor("chat"),
       text: options.text ?? "ping",
       senderName: "ContractTest",
     }),
@@ -173,7 +169,6 @@ export async function assertCompletedUsageMatchesUsageEvent(
     backend.chat.runChatTurn({
       chatId: options.chatId ?? "contract-test-chat",
       model: makeBareModelRef(backend.id, "contract-test-model"),
-      policy: defaultRunPolicyFor("chat"),
       text: options.text ?? "ping",
       senderName: "ContractTest",
     }),

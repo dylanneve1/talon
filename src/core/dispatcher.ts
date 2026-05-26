@@ -14,7 +14,6 @@ import type { ContextManager, ExecuteParams, ExecuteResult } from "./types.js";
 import type { Backend } from "./agent-runtime/capabilities.js";
 import { pipeEventsToCallbacks } from "./agent-runtime/legacy-bridge.js";
 import { makeBareModelRef } from "./agent-runtime/model-ref.js";
-import { defaultRunPolicyFor } from "./agent-runtime/run-policy.js";
 import { log, logDebug, logWarn } from "../util/log.js";
 import { maybeStartDream } from "./dream.js";
 
@@ -199,7 +198,6 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
     const stream = backend.chat.runChatTurn({
       chatId: params.chatId,
       model: modelRef,
-      policy: defaultRunPolicyFor("chat"),
       text: params.prompt,
       senderName: params.senderName,
       isGroup: params.isGroup,

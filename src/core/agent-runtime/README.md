@@ -53,14 +53,6 @@ displayName, ... }`. Owns the `BACKEND_IDS` literal — single source of
 truth for which backends the typed union can route to. Helpers:
 `isBackendId`, `sameModelRef`, `makeBareModelRef`.
 
-### `run-policy.ts`
-
-`RunPolicy` lifts the loose `contextLabel` string into a real policy
-object covering tool surface, delivery mode, timeout, logging
-destination, session persistence, permission mode.
-`defaultRunPolicyFor("chat" | "heartbeat" | "dream" | "trigger" |
-"test")` returns the canonical shape for each run kind.
-
 ### `capabilities.ts`
 
 Split capability interfaces — `ChatBackend`, `BackgroundRunner`,

@@ -116,9 +116,6 @@ describe("backend registry", () => {
         cacheSupport: "none" as const,
         selectable: true,
       },
-      policy: (
-        await import("../core/agent-runtime/run-policy.js")
-      ).defaultRunPolicyFor("chat"),
       text: "x",
       senderName: "u",
     })) {

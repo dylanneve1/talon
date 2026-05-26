@@ -14,14 +14,12 @@ import type { QueryParams, QueryResult } from "../core/types.js";
 import type { AgentEvent } from "../core/agent-runtime/events.js";
 
 import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";
-import { defaultRunPolicyFor } from "../core/agent-runtime/run-policy.js";
 import type { ChatRunParams } from "../core/agent-runtime/capabilities.js";
 
 function baseParams(): ChatRunParams {
   return {
     chatId: "chat-1",
     model: makeBareModelRef("claude", "stub-model"),
-    policy: defaultRunPolicyFor("chat"),
     text: "ping",
     senderName: "Dylan",
   };
