@@ -76,18 +76,27 @@ function makeFakeBackend(
   picker: ModelPickerResult,
   activeDisplay = "active",
 ): Backend {
+  const fakeModel: UnifiedModelInfo = {
+    id: "active-id",
+    displayName: activeDisplay,
+    provider: label,
+    providerName: label,
+    selectable: true,
+    reasoning: false,
+  };
   return stubBackend({
     label,
     query: vi.fn(),
     getSettingsPresentation: vi.fn().mockResolvedValue(picker),
-    getModelInfo: vi.fn().mockResolvedValue({
-      id: "active-id",
-      displayName: activeDisplay,
-      provider: label,
-      providerName: label,
-      selectable: true,
-      reasoning: false,
-    } satisfies UnifiedModelInfo),
+    getModelInfo: vi.fn().mockResolvedValue(fakeModel),
+    // Mirror the model into resolveModel so per-chat override
+    // validation in `core/active-model.ts` accepts any stored id —
+    // these tests focus on the picker output, not the resolver.
+    resolveModel: vi.fn().mockResolvedValue({
+      kind: "exact" as const,
+      storedValue: fakeModel.id,
+      model: fakeModel,
+    }),
   });
 }
 

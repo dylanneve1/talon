@@ -20,7 +20,6 @@ import {
   type ModelCatalog,
   type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
-import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 
 import {
   initOpenCodeAgent,
@@ -54,61 +53,29 @@ const opencodeFactory: BackendFactory = {
     };
 
     const models: ModelCatalog = {
-      async resolveModel(query) {
-        const resolution = await ocResolveModel(query);
-        if (resolution.kind === "exact") {
-          return {
-            kind: "exact",
-            model: makeBareModelRef("opencode", resolution.model.id),
-            storedValue: resolution.storedValue,
-          };
-        }
-        if (resolution.kind === "ambiguous") {
-          return {
-            kind: "ambiguous",
-            matches: resolution.matches.map((m) =>
-              makeBareModelRef("opencode", m.id),
-            ),
-          };
-        }
-        return { kind: "missing" };
-      },
-      async listModels(filter) {
-        const result = await ocListModels(filter.freeOnly ? "free" : "all");
-        return {
-          models: result.models.map((m) => makeBareModelRef("opencode", m.id)),
-          total: result.total,
-        };
-      },
-      getDefaultModel: () => Promise.resolve(null),
-      async getModelInfo(id) {
-        const info = await ocGetModelInfo(id);
-        if (!info) return undefined;
-        return makeBareModelRef("opencode", info.id);
-      },
-
       resolveModelInfo: (q) => ocResolveModel(q),
+      // Catalog-driven backend with no canonical default.
       getDefaultModelId: () => undefined,
       getRawModelInfo: (id) => ocGetModelInfo(id),
       getSettingsPresentation: async (m, options) => {
-        const legacy = await ocGetSettingsPresentation(
+        const inner = await ocGetSettingsPresentation(
           m,
           options?.callbackPrefix,
         );
         return {
-          ...legacy,
+          ...inner,
           view: "models" as const,
           page: 1,
           totalPages: 1,
           filter: "all" as const,
           freeCount: 0,
-          totalCount: legacy.modelButtons.length,
+          totalCount: inner.modelButtons.length,
         };
       },
       getProviders: () => ocGetProviders(),
       getProviderModels: (p, pg, ps) => ocGetProviderModels(p, pg, ps),
       formatModelError: (q, r) => ocFormatModelError(q, r),
-      listModelsRaw: (f) => ocListModels(f),
+      listModels: (f) => ocListModels(f),
     };
 
     const usage: UsageTelemetry = {

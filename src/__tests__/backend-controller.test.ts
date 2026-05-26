@@ -282,64 +282,44 @@ describe("backend-controller", () => {
     expect(isBackendAvailable("ghost")).toBe(false);
   });
 
-  it("isModelValidForBackend uses getRawModelInfo when available", async () => {
-    const resolveModelMock = vi.fn(async () => ({ kind: "missing" }) as const);
+  it("isModelValidForBackend trusts an exact selectable resolveModelInfo result", async () => {
     const backend = stubBackend({
       label: "Alpha",
-      getModelInfo: vi.fn(async (id: string) =>
-        id === "good"
-          ? {
-              id,
+      resolveModel: vi.fn(async (query: string) => {
+        if (query === "good") {
+          return {
+            kind: "exact" as const,
+            storedValue: "good",
+            model: {
+              id: "good",
               displayName: "Good",
               provider: "test",
               providerName: "Test",
               selectable: true,
-            }
-          : id === "hidden"
-            ? {
-                id,
-                displayName: "Hidden",
-                provider: "test",
-                providerName: "Test",
-                selectable: false,
-              }
-            : undefined,
-      ),
-      resolveModel: resolveModelMock,
+            },
+          };
+        }
+        if (query === "hidden") {
+          return {
+            kind: "exact" as const,
+            storedValue: "hidden",
+            model: {
+              id: "hidden",
+              displayName: "Hidden",
+              provider: "test",
+              providerName: "Test",
+              selectable: false,
+            },
+          };
+        }
+        return { kind: "missing" as const };
+      }),
     });
 
     await expect(isModelValidForBackend(backend, "good")).resolves.toBe(true);
     await expect(isModelValidForBackend(backend, "hidden")).resolves.toBe(
       false,
     );
-    await expect(isModelValidForBackend(backend, "missing")).resolves.toBe(
-      false,
-    );
-    expect(resolveModelMock).not.toHaveBeenCalled();
-  });
-
-  it("isModelValidForBackend falls back to resolveModelInfo", async () => {
-    const backend = stubBackend({
-      label: "Alpha",
-      // No getModelInfo — forces the fallback to resolveModelInfo.
-      resolveModel: vi.fn(async (query: string) =>
-        query === "good"
-          ? ({
-              kind: "exact",
-              storedValue: "good",
-              model: {
-                id: "good",
-                displayName: "Good",
-                provider: "test",
-                providerName: "Test",
-                selectable: true,
-              },
-            } as const)
-          : ({ kind: "missing" } as const),
-      ),
-    });
-
-    await expect(isModelValidForBackend(backend, "good")).resolves.toBe(true);
     await expect(isModelValidForBackend(backend, "missing")).resolves.toBe(
       false,
     );

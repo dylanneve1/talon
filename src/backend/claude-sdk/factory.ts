@@ -25,7 +25,6 @@ import {
   type SystemControl,
   type ToolRuntime,
 } from "../../core/agent-runtime/capabilities.js";
-import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 
 import {
   initAgent as initClaudeAgent,
@@ -62,48 +61,11 @@ const claudeSdkFactory: BackendFactory = {
     };
 
     const models: ModelCatalog = {
-      async resolveModel(query) {
-        const resolution = await modelProvider.resolveModel(query);
-        if (resolution.kind === "exact") {
-          return {
-            kind: "exact",
-            model: makeBareModelRef("claude", resolution.model.id),
-            storedValue: resolution.storedValue,
-          };
-        }
-        if (resolution.kind === "ambiguous") {
-          return {
-            kind: "ambiguous",
-            matches: resolution.matches.map((m) =>
-              makeBareModelRef("claude", m.id),
-            ),
-          };
-        }
-        return { kind: "missing" };
-      },
-      async listModels(filter) {
-        const result = await modelProvider.listModels(
-          filter.freeOnly ? "free" : "all",
-        );
-        return {
-          models: result.models.map((m) => makeBareModelRef("claude", m.id)),
-          total: result.total,
-        };
-      },
+      resolveModelInfo: (q) => modelProvider.resolveModel(q),
       // Claude SDK ships a canonical `"default"` alias the runtime
       // resolves to the recommended model. Returning it keeps reset
       // + backend-switch on "Default (recommended)" rather than
       // freezing a specific id that may go stale across SDK upgrades.
-      async getDefaultModel() {
-        return makeBareModelRef("claude", "default", "backend-default");
-      },
-      async getModelInfo(id) {
-        const info = await modelProvider.getModelInfo(id);
-        if (!info) return undefined;
-        return makeBareModelRef("claude", info.id);
-      },
-
-      resolveModelInfo: (q) => modelProvider.resolveModel(q),
       getDefaultModelId: () => "default",
       getRawModelInfo: (id) => modelProvider.getModelInfo(id),
       getSettingsPresentation: (m, options) =>
@@ -112,7 +74,7 @@ const claudeSdkFactory: BackendFactory = {
       getProviderModels: (p, pg, ps) =>
         modelProvider.getProviderModels(p, pg, ps),
       formatModelError: (q, r) => modelProvider.formatModelError(q, r),
-      listModelsRaw: (f) => modelProvider.listModels(f),
+      listModels: (f) => modelProvider.listModels(f),
     };
 
     const sessions: SessionBackend = {

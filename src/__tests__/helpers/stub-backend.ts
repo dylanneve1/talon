@@ -155,28 +155,33 @@ function buildModels(input: StubBackendInput): ModelCatalog | undefined {
     input.formatModelError ||
     input.listModels;
   if (!hasAny) return undefined;
-  // The ModelRef-shaped methods are required by the ModelCatalog
-  // interface; fill them with no-op defaults. The legacy UnifiedModelInfo-
-  // shaped methods are optional — only populate the ones the test
-  // explicitly provided so absence semantics propagate to the consumer.
-  const catalog: ModelCatalog = {
-    resolveModel: async () => ({ kind: "missing" }),
-    listModels: async () => ({ models: [], total: 0 }),
-    getDefaultModel: async () => null,
-    getModelInfo: async () => undefined,
+  // The ModelCatalog interface is required-by-default. Fill any
+  // slot the test didn't provide with a no-op default so the
+  // capability flag still flips on when at least one method is
+  // populated.
+  return {
+    resolveModelInfo:
+      input.resolveModel ?? (async () => ({ kind: "missing" }) as const),
+    getDefaultModelId: input.getDefaultModel ?? (() => undefined),
+    getRawModelInfo: input.getModelInfo ?? (async () => undefined),
+    getSettingsPresentation:
+      input.getSettingsPresentation ??
+      (async () => ({
+        modelButtons: [],
+        modelDetails: [],
+        view: "models" as const,
+        page: 1,
+        totalPages: 1,
+        filter: "all" as const,
+        freeCount: 0,
+        totalCount: 0,
+      })),
+    getProviders: input.getProviders ?? (async () => []),
+    getProviderModels:
+      input.getProviderModels ?? (async () => ({ models: [], total: 0 })),
+    formatModelError: input.formatModelError ?? (() => ""),
+    listModels: input.listModels ?? (async () => ({ models: [], total: 0 })),
   };
-  if (input.resolveModel) catalog.resolveModelInfo = input.resolveModel;
-  if (input.getDefaultModel) catalog.getDefaultModelId = input.getDefaultModel;
-  if (input.getModelInfo) catalog.getRawModelInfo = input.getModelInfo;
-  if (input.getSettingsPresentation) {
-    catalog.getSettingsPresentation = input.getSettingsPresentation;
-  }
-  if (input.getProviders) catalog.getProviders = input.getProviders;
-  if (input.getProviderModels)
-    catalog.getProviderModels = input.getProviderModels;
-  if (input.formatModelError) catalog.formatModelError = input.formatModelError;
-  if (input.listModels) catalog.listModelsRaw = input.listModels;
-  return catalog;
 }
 
 function buildBackground(

@@ -19,7 +19,6 @@ import {
   type ModelCatalog,
   type SessionBackend,
 } from "../../core/agent-runtime/capabilities.js";
-import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 
 import { initOpenAIAgentsAgent, getOpenAIBaseUrl } from "./init.js";
 import { handleMessage as openAIAgentsHandleMessage } from "./handler.js";
@@ -56,50 +55,11 @@ const openAIAgentsFactory: BackendFactory = {
     };
 
     const models: ModelCatalog = {
-      async resolveModel(query) {
-        const resolution = openAIResolveModel(query);
-        if (resolution.kind === "exact") {
-          return {
-            kind: "exact",
-            model: makeBareModelRef("openai-agents", resolution.model.id),
-            storedValue: resolution.storedValue,
-          };
-        }
-        if (resolution.kind === "ambiguous") {
-          return {
-            kind: "ambiguous",
-            matches: resolution.matches.map((m) =>
-              makeBareModelRef("openai-agents", m.id),
-            ),
-          };
-        }
-        return { kind: "missing" };
-      },
-      async listModels(filter) {
-        const result = openAIListModels(filter.freeOnly ? "free" : "all");
-        return {
-          models: result.models.map((m) =>
-            makeBareModelRef("openai-agents", m.id),
-          ),
-          total: result.total,
-        };
-      },
-      // Only advertise a canonical default when the backend is pointed
-      // at stock OpenAI. Custom baseUrls (OpenRouter, Azure, Ollama,
-      // LiteLLM, etc) have no universal default — the catalog varies
-      // per endpoint.
-      async getDefaultModel() {
-        const id = defaultIdSync();
-        if (id === null) return null;
-        return makeBareModelRef("openai-agents", id, "backend-default");
-      },
-      async getModelInfo(id) {
-        const info = openAIGetModelInfo(id);
-        if (!info) return undefined;
-        return makeBareModelRef("openai-agents", info.id);
-      },
-
       resolveModelInfo: (q) => Promise.resolve(openAIResolveModel(q)),
+      // Only advertise a canonical default when the backend is
+      // pointed at stock OpenAI. Custom baseUrls (OpenRouter, Azure,
+      // Ollama, LiteLLM, etc) have no universal default — the
+      // catalog varies per endpoint.
       getDefaultModelId: () => defaultIdSync(),
       getRawModelInfo: (id) => Promise.resolve(openAIGetModelInfo(id)),
       getSettingsPresentation: (m, options) =>
@@ -108,7 +68,7 @@ const openAIAgentsFactory: BackendFactory = {
       getProviderModels: (p, pg, ps) =>
         Promise.resolve(openAIGetProviderModels(p, pg, ps)),
       formatModelError: (q, r) => openAIFormatModelError(q, r),
-      listModelsRaw: (f) => Promise.resolve(openAIListModels(f)),
+      listModels: (f) => Promise.resolve(openAIListModels(f)),
     };
 
     const sessions: SessionBackend = {

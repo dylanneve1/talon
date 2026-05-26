@@ -75,8 +75,7 @@ describe("codex factory — Backend wiring", () => {
     expect(result.backend.chat).toBeDefined();
     expect(typeof result.backend.chat?.runChatTurn).toBe("function");
     expect(result.backend.models).toBeDefined();
-    expect(typeof result.backend.models?.resolveModel).toBe("function");
-    expect(typeof result.backend.models?.getModelInfo).toBe("function");
+    expect(typeof result.backend.models?.resolveModelInfo).toBe("function");
     expect(typeof result.backend.models?.getRawModelInfo).toBe("function");
     expect(typeof result.backend.models?.getSettingsPresentation).toBe(
       "function",
@@ -84,7 +83,7 @@ describe("codex factory — Backend wiring", () => {
     expect(typeof result.backend.models?.getProviders).toBe("function");
     expect(typeof result.backend.models?.getProviderModels).toBe("function");
     expect(typeof result.backend.models?.formatModelError).toBe("function");
-    expect(typeof result.backend.models?.listModelsRaw).toBe("function");
+    expect(typeof result.backend.models?.listModels).toBe("function");
     expect(result.backend.background).toBeDefined();
     expect(typeof result.backend.background?.runOneShotAgent).toBe("function");
     expect(result.backend.label).toBe("Codex");
@@ -106,7 +105,7 @@ describe("codex factory — Backend wiring", () => {
       },
     );
 
-    const resolution = await backend.models!.resolveModelInfo!("gpt-5-codex");
+    const resolution = await backend.models!.resolveModelInfo("gpt-5-codex");
     expect(resolution.kind).toBe("exact");
     if (resolution.kind === "exact") {
       expect(resolution.model.id).toBe("gpt-5-codex");
@@ -129,9 +128,11 @@ describe("codex factory — Backend wiring", () => {
       },
     );
 
-    const { models, total } = await backend.models!.listModelsRaw!();
+    const { models, total } = await backend.models!.listModels();
     expect(total).toBeGreaterThan(0);
-    expect(models.some((m) => m.id === "gpt-5-codex")).toBe(true);
+    expect(models.some((m: { id: string }) => m.id === "gpt-5-codex")).toBe(
+      true,
+    );
   });
 
   it("getProviders returns OpenAI as the sole provider", async () => {

@@ -150,9 +150,9 @@ export function registerBuiltinCommands(): void {
       }
 
       if (lowerArgs === "free" || lowerArgs === "list" || lowerArgs === "all") {
-        if (be?.models?.listModelsRaw) {
+        if (be?.models) {
           const filter = lowerArgs === "free" ? "free" : "all";
-          const { models, total } = await be.models?.listModelsRaw(filter);
+          const { models, total } = await be.models.listModels(filter);
           const list = models.slice(0, 20);
           ctx.renderer.writeSystem(
             `${filter === "free" ? "Free" : "Available"} models (${total})`,

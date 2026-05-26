@@ -20,7 +20,6 @@ import {
   type ModelCatalog,
   type UsageTelemetry,
 } from "../../core/agent-runtime/capabilities.js";
-import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 
 import {
   initKiloAgent,
@@ -57,67 +56,34 @@ const kiloFactory: BackendFactory = {
     };
 
     const models: ModelCatalog = {
-      async resolveModel(query) {
-        const resolution = await kiloResolveModel(query);
-        if (resolution.kind === "exact") {
-          return {
-            kind: "exact",
-            model: makeBareModelRef("kilo", resolution.model.id),
-            storedValue: resolution.storedValue,
-          };
-        }
-        if (resolution.kind === "ambiguous") {
-          return {
-            kind: "ambiguous",
-            matches: resolution.matches.map((m) =>
-              makeBareModelRef("kilo", m.id),
-            ),
-          };
-        }
-        return { kind: "missing" };
-      },
-      async listModels(filter) {
-        const result = await kiloListModels(filter.freeOnly ? "free" : "all");
-        return {
-          models: result.models.map((m) => makeBareModelRef("kilo", m.id)),
-          total: result.total,
-        };
-      },
-      // Catalog-driven backend with no canonical default — fall through
-      // to `config.backendDefaults.kilo`.
-      getDefaultModel: () => Promise.resolve(null),
-      async getModelInfo(id) {
-        const info = await kiloGetModelInfo(id);
-        if (!info) return undefined;
-        return makeBareModelRef("kilo", info.id);
-      },
-
       resolveModelInfo: (q) => kiloResolveModel(q),
+      // Catalog-driven backend with no canonical default — fall
+      // through to `config.backendDefaults.kilo`.
       getDefaultModelId: () => undefined,
       getRawModelInfo: (id) => kiloGetModelInfo(id),
       getSettingsPresentation: async (m, options) => {
-        // Kilo's existing helper returns legacy `{modelButtons,
-        // modelDetails}`. Wrap into the new `ModelPickerResult` shape;
-        // Kilo doesn't expose pagination or a free-tier filter so the
-        // result is always page 1 of 1 with filter "all".
-        const legacy = await kiloGetSettingsPresentation(
+        // Kilo's internal helper returns the bare picker shape;
+        // wrap into the canonical `ModelPickerResult`. Kilo doesn't
+        // expose pagination or a free-tier filter so the result is
+        // always page 1 of 1 with filter "all".
+        const inner = await kiloGetSettingsPresentation(
           m,
           options?.callbackPrefix,
         );
         return {
-          ...legacy,
+          ...inner,
           view: "models" as const,
           page: 1,
           totalPages: 1,
           filter: "all" as const,
           freeCount: 0,
-          totalCount: legacy.modelButtons.length,
+          totalCount: inner.modelButtons.length,
         };
       },
       getProviders: () => kiloGetProviders(),
       getProviderModels: (p, pg, ps) => kiloGetProviderModels(p, pg, ps),
       formatModelError: (q, r) => kiloFormatModelError(q, r),
-      listModelsRaw: (f) => kiloListModels(f),
+      listModels: (f) => kiloListModels(f),
     };
 
     const usage: UsageTelemetry = {

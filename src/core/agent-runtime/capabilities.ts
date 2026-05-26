@@ -53,47 +53,6 @@ export interface ChatRunParams {
 
 // ── Catalog types ───────────────────────────────────────────────────────────
 
-/**
- * Context for catalog resolution. The resolver may need to know
- * which chat is asking (chat-pinned overrides), which auth mode is
- * active (Codex API key vs ChatGPT OAuth), and whether free-tier
- * filtering is on.
- */
-export interface ModelResolveContext {
-  chatId?: string;
-  filter?: "all" | "free";
-}
-
-/**
- * Result of one resolve query — same shape as the existing
- * `UnifiedModelResolution`, expressed in terms of `ModelRef`.
- */
-export type ModelResolution =
-  | { kind: "exact"; model: ModelRef; storedValue: string }
-  | { kind: "ambiguous"; matches: ModelRef[] }
-  | { kind: "missing" };
-
-/**
- * Filter for catalog listing.
- */
-export interface ModelFilter {
-  /** Show only free-tier models. */
-  freeOnly?: boolean;
-  /** Show only models marked selectable. */
-  selectableOnly?: boolean;
-  /** Substring match against `id` or `displayName`. Case-insensitive. */
-  query?: string;
-}
-
-/**
- * Page of models from a backend's catalog. Total is the unpaginated
- * count after filter.
- */
-export interface ModelList {
-  models: ModelRef[];
-  total: number;
-}
-
 // ── Capability interfaces ───────────────────────────────────────────────────
 
 /**
@@ -133,78 +92,53 @@ export interface BackgroundRunner {
 }
 
 /**
- * Catalog operations. A backend with no catalog (Claude SDK on
- * model alias) returns a single-entry list from `listModels` and a
- * fixed canonical from `getDefaultModel`. Catalog-driven backends
- * (Kilo, OpenCode, OpenAI Agents on OpenRouter) implement the full
+ * Catalog operations. A backend with no catalog (Claude SDK on a
+ * model alias) returns a single-entry list and a fixed canonical
+ * from `getDefaultModelId`. Catalog-driven backends (Kilo,
+ * OpenCode, OpenAI Agents on OpenRouter) implement the full
  * surface.
  *
- * The interface carries two model-shape views over the same data:
- *
- *   - `ModelRef` view (`resolveModel`, `listModels`, `getDefaultModel`,
- *     `getModelInfo`) — canonical for runtime routing, used by the
- *     active-model resolver and `/status`.
- *   - `UnifiedModelInfo` view (`resolveModelInfo`, `getDefaultModelId`,
- *     `getRawModelInfo`, `getSettingsPresentation`, `getProviders`,
- *     `getProviderModels`, `formatModelError`, `listModelsRaw`) —
- *     feeds the frontend pickers and the `/model` browser.
- *
- * Both views read the same underlying catalog; the divergence is
- * purely about output shape. Backends fill both — the conversion is
- * a one-line wrap, not duplicated state.
+ * The catalog speaks `UnifiedModelInfo` — the rich shape every
+ * backend's `models.ts` produces internally. `ModelRef` is only
+ * the resolver's output, an enriched routing identity. The
+ * resolver (`agent-runtime/resolver.ts`) wraps catalog calls into
+ * refs for `/status` and `/model` display.
  */
 export interface ModelCatalog {
-  // ── ModelRef-shaped surface ───────────────────────────────────────────────
-  resolveModel(
-    query: string,
-    context: ModelResolveContext,
-  ): Promise<ModelResolution>;
-  listModels(filter: ModelFilter): Promise<ModelList>;
   /**
-   * Canonical default — may be `null` for catalog-driven backends
-   * with no canonical (matches the contract on the legacy
-   * `getDefaultModel`).
+   * Backend-native resolve. Used by `core/active-model.ts` for the
+   * per-chat override validation and by the frontend's
+   * resolution-error formatter.
    */
-  getDefaultModel(context: ModelResolveContext): Promise<ModelRef | null>;
-  /** Backend-native model lookup by id, returned as `ModelRef`. */
-  getModelInfo(id: string): Promise<ModelRef | undefined>;
-
-  // ── UnifiedModelInfo-shaped surface (frontend pickers + resolver) ────────
-  // These methods are optional: a backend that doesn't expose a UI
-  // picker (heartbeat-only or programmatic use) can implement just
-  // the ModelRef-shaped surface above.
+  resolveModelInfo(query: string): Promise<UnifiedModelResolution>;
   /**
-   * Backend-native resolve yielding the underlying
-   * `UnifiedModelInfo`. Used by `core/active-model.ts` for the
-   * exact-match step 1 and by the frontend's resolution-error
-   * formatter.
+   * Canonical default returning the raw model id (or `null` /
+   * `undefined` for catalog-driven backends with no canonical).
    */
-  resolveModelInfo?(query: string): Promise<UnifiedModelResolution>;
-  /** Backend-native default returning the raw model id (or null/empty). */
-  getDefaultModelId?():
+  getDefaultModelId():
     | Promise<string | null | undefined>
     | string
     | null
     | undefined;
-  /** Backend-native model lookup by id, returning the raw `UnifiedModelInfo`. */
-  getRawModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
+  /** Backend-native model lookup by id. */
+  getRawModelInfo(id: string): Promise<UnifiedModelInfo | undefined>;
   /** Quick-pick presentation for `/model` and `/settings`. */
-  getSettingsPresentation?(
+  getSettingsPresentation(
     activeModel: string,
     options?: ModelPickerOptions,
   ): Promise<ModelPickerResult>;
   /** List of providers exposed by the backend's catalog. */
-  getProviders?(): Promise<UnifiedProviderInfo[]>;
+  getProviders(): Promise<UnifiedProviderInfo[]>;
   /** Paginated model list scoped to one provider. */
-  getProviderModels?(
+  getProviderModels(
     providerId: string,
     page?: number,
     pageSize?: number,
   ): Promise<{ models: UnifiedModelInfo[]; total: number }>;
   /** Format an error for an unresolvable / unavailable model. */
-  formatModelError?(query: string, resolution: UnifiedModelResolution): string;
-  /** Free-tier-or-all model list (raw `UnifiedModelInfo` shape). */
-  listModelsRaw?(filter?: "free" | "all"): Promise<{
+  formatModelError(query: string, resolution: UnifiedModelResolution): string;
+  /** Free-tier-or-all model list. */
+  listModels(filter?: "free" | "all"): Promise<{
     models: UnifiedModelInfo[];
     total: number;
   }>;

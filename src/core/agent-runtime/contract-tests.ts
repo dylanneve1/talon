@@ -243,41 +243,30 @@ export async function assertBackgroundRunnerLifecycle(
 }
 
 /**
- * Backends with a `ModelCatalog` must answer `getDefaultModel({})`
- * with either:
- *   - a `ModelRef` whose `backend === backendId`,
- *   - `null` (catalog-driven backend with no canonical default).
- *
- * Returning a ref for a foreign backend, or throwing, are both
- * contract violations.
+ * Backends with a `ModelCatalog` must answer `getDefaultModelId()`
+ * with either a string id, `null`, or `undefined`. Throwing is a
+ * contract violation.
  */
 export async function assertModelCatalogDefaultShape(
   backend: Backend,
 ): Promise<void> {
   if (!backend.models) return;
-  let result: Awaited<ReturnType<typeof backend.models.getDefaultModel>>;
+  let result: string | null | undefined;
   try {
-    result = await backend.models.getDefaultModel({});
+    result = await backend.models.getDefaultModelId();
   } catch (err) {
     throw new ContractViolation(
       backend.id,
       "ModelCatalog.defaultShape",
-      `getDefaultModel({}) threw: ${err instanceof Error ? err.message : String(err)}`,
+      `getDefaultModelId() threw: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-  if (result === null) return;
-  if (typeof result !== "object" || !("backend" in result)) {
+  if (result == null) return;
+  if (typeof result !== "string") {
     throw new ContractViolation(
       backend.id,
       "ModelCatalog.defaultShape",
-      `getDefaultModel({}) returned a non-ModelRef value: ${JSON.stringify(result)}`,
-    );
-  }
-  if (result.backend !== backend.id) {
-    throw new ContractViolation(
-      backend.id,
-      "ModelCatalog.defaultShape",
-      `getDefaultModel({}) returned a ref for backend "${result.backend}" — expected "${backend.id}"`,
+      `getDefaultModelId() returned ${typeof result}; expected string | null | undefined`,
     );
   }
 }

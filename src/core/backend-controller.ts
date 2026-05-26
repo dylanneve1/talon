@@ -338,13 +338,11 @@ export function isBackendAvailable(id: string, config?: TalonConfig): boolean {
 }
 
 /**
- * Validate a persisted model id against the backend that will serve it.
- *
- * Backends with catalogs use `getModelInfo()` as the authority because
- * stored values are already canonical ids. Older/smaller backends may only
- * expose `resolveModel()`; in that case accept an exact selectable resolution.
- * If a backend exposes no validation surface, return true rather than deleting
- * user state we cannot prove is stale.
+ * Validate a persisted model id against the backend that will serve
+ * it. Resolves through the catalog's `resolveModelInfo` — exact
+ * matches with `selectable !== false` are kept; everything else
+ * falls back. Backends without a catalog return `true` (we can't
+ * prove the value is stale, so we trust the chat-settings store).
  */
 export async function isModelValidForBackend(
   backend: Backend,
@@ -352,15 +350,8 @@ export async function isModelValidForBackend(
 ): Promise<boolean> {
   const catalog = backend.models;
   if (!catalog) return true;
-  if (catalog.getRawModelInfo) {
-    const info = await catalog.getRawModelInfo(model);
-    return Boolean(info && info.selectable !== false);
-  }
-  if (catalog.resolveModelInfo) {
-    const resolution = await catalog.resolveModelInfo(model);
-    return resolution.kind === "exact" && resolution.model.selectable !== false;
-  }
-  return true;
+  const resolution = await catalog.resolveModelInfo(model);
+  return resolution.kind === "exact" && resolution.model.selectable !== false;
 }
 
 /** Snapshot of the live pool + bindings for `/model` rendering. */
