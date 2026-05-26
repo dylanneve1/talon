@@ -2,9 +2,8 @@
  * `JsonStore<T>` — unified persistence for every JSON-backed store
  * under `src/storage/`.
  *
- * Phase 6 of the architecture unification plan, now complete. All
- * seven stores (`chat-settings`, `cron-store`, `history`,
- * `media-index`, `sessions`, `trigger-store`, plus codex
+ * All seven JSON-backed stores (`chat-settings`, `cron-store`,
+ * `history`, `media-index`, `sessions`, `trigger-store`, plus codex
  * `oauth-incompat`) are backed by this primitive.
  *
  * Design notes

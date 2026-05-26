@@ -33,7 +33,8 @@ import { initDream } from "./core/dream.js";
 import { initHeartbeat } from "./core/heartbeat.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
-import type { QueryBackend, ContextManager } from "./core/types.js";
+import type { ContextManager } from "./core/types.js";
+import type { Backend } from "./core/agent-runtime/capabilities.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -58,7 +59,7 @@ export type BootstrapResult = {
 };
 
 export type BackendAndDispatcherResult = {
-  backend: QueryBackend;
+  backend: Backend;
 };
 
 // ── Bootstrap: config, env, plugins, workspace, storage ──────────────────────
@@ -106,9 +107,8 @@ export async function bootstrap(
   cleanupOldLogs();
 
   // Eagerly materialise the global ToolRegistry so the first chat
-  // turn doesn't pay the catalog → descriptor cost. Phase 5 of the
-  // architecture unification plan asks backends to derive their
-  // tool surface from this registry rather than re-walking
+  // turn doesn't pay the catalog → descriptor cost. Backends derive
+  // their tool surface from this registry instead of re-walking
   // `ALL_TOOLS` per call site; building it once at bootstrap means
   // every consumer reads through the same in-memory instance.
   getGlobalToolRegistry();

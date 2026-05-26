@@ -7,9 +7,8 @@
  * `tools.refreshTools` hot-swap path used by plugin reload + the
  * `background.evictOrphanSubprocesses` cleanup helper.
  *
- * Returns the composed `Backend` shape directly — capability slots
- * for chat / background / models / sessions / tools / control. No
- * fat-optional `QueryBackend` surface.
+ * Returns a composed `Backend` with capability slots for chat,
+ * background, models, sessions, tools, and control.
  */
 
 import { registerBackend } from "../registry.js";

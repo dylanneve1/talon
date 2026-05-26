@@ -333,9 +333,9 @@ export async function assertUsageTelemetryShape(
 }
 
 /**
- * Run the full Phase 7 contract suite against a backend. Throws on
- * the first violation. Returns the list of contracts checked so
- * callers can assert coverage in tests.
+ * Run the full contract suite against a backend. Throws on the first
+ * violation. Returns the list of contracts checked so callers can
+ * assert coverage in tests.
  */
 export async function assertBackendContract(
   backend: Backend,

@@ -9,12 +9,11 @@
  * longer render markdown logs themselves and core no longer parses
  * backend-specific output.
  *
- * The `QueryBackend → ChatBackend` adapter in `adapter.ts` produces
- * a minimal event sequence (`run_started → assistant_message? →
- * usage → completed`) so consumers can build against this stream
- * before each backend grows native event emission. Phase 3.x will
- * replace the synthesised sequence with real per-token streaming,
- * tool-call events, and reasoning blocks on each backend.
+ * The shared wrapper `backend/shared/to-event-stream.ts` converts
+ * each backend's existing callback-driven `handleMessage` into the
+ * canonical sequence: `run_started → text_delta* →
+ * assistant_message* → tool_call* → usage → completed`. Backends
+ * with richer SDKs can emit events directly without the wrapper.
  *
  * Design notes
  * ────────────
@@ -45,9 +44,9 @@ import type { ReasoningEffortLevel } from "../types.js";
  * Token + cache counters for one backend run.
  *
  * `cacheRead` and `cacheWrite` are zero when the backend doesn't
- * support prompt caching (mapped from `cacheMetrics: "none"` on the
- * legacy interface). Tests should assert exact zero, not absence —
- * `JSON.stringify` round-trips drop `undefined` keys.
+ * support prompt caching (mapped from `Backend.cacheMetrics: "none"`).
+ * Tests should assert exact zero, not absence — `JSON.stringify`
+ * round-trips drop `undefined` keys.
  */
 export interface UsageSnapshot {
   inputTokens: number;

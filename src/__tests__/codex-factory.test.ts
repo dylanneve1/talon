@@ -1,6 +1,6 @@
 /**
- * Codex backend factory tests — verify `init()` produces a
- * QueryBackend with the full surface area Talon's core expects.
+ * Codex backend factory tests — verify `init()` produces a composed
+ * `Backend` whose capability slots match what Talon's core expects.
  *
  * Stubs out the Codex SDK so the test doesn't spawn a real CLI
  * subprocess.
@@ -52,8 +52,8 @@ beforeEach(() => {
   void clearBackends; // keep imported for future use
 });
 
-describe("codex factory — QueryBackend wiring", () => {
-  it("init returns a QueryBackend with all expected methods", async () => {
+describe("codex factory — Backend wiring", () => {
+  it("init returns a Backend with the expected capability slots", async () => {
     const factory = getBackend("codex");
     expect(factory).toBeDefined();
 

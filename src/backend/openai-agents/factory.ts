@@ -5,9 +5,8 @@
  * official SDK. MCP servers are constructed as `MCPServerStdio`
  * instances at turn time + closed in `finally`.
  *
- * Returns the composed `Backend` shape directly — capability slots
- * for chat / models / sessions. No fat-optional `QueryBackend`
- * surface.
+ * Returns a composed `Backend` with capability slots for chat,
+ * models, and sessions.
  */
 
 import { registerBackend } from "../registry.js";

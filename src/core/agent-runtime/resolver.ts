@@ -2,19 +2,10 @@
  * `resolveActiveModelRef` — the `ModelRef`-shaped counterpart to
  * `core/active-model.ts`'s `resolveActiveModelForChat`.
  *
- * Phase 2 of the architecture unification plan introduces this
- * function but does **not** migrate any callers. The existing 5-step
- * string-shaped resolver stays the single chain-of-truth — this
- * module wraps it and enriches the returned id into a `ModelRef`
- * carrying the metadata downstream consumers (`/status` rendering,
- * `/model` menu chrome, telemetry) currently re-derive on the spot.
- *
- * Migration order (per the plan):
- *
- *   1. Phase 2.1 (this PR) — add the function + tests, no caller
- *      migration. Production behaviour unchanged.
- *   2. Phase 2.2+ — convert `/status`, `/model`, chat query,
- *      heartbeat, dream one or two at a time, each in its own PR.
+ * The existing 5-step string-shaped resolver stays the single
+ * chain-of-truth; this module wraps it and enriches the returned id
+ * into a `ModelRef` carrying the metadata downstream consumers
+ * (`/status` rendering, `/model` menu chrome, telemetry) need.
  *
  * Enrichment strategy
  * ───────────────────

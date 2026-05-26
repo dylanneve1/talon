@@ -7,7 +7,7 @@
 
 import pc from "picocolors";
 import type { TalonConfig } from "../../util/config.js";
-import type { QueryBackend } from "../../core/types.js";
+import type { Backend } from "../../core/agent-runtime/capabilities.js";
 import type { Renderer } from "./renderer.js";
 import { formatTimeAgo } from "./renderer.js";
 import { isTerminalChatId } from "../../util/chat-id.js";
@@ -27,7 +27,7 @@ export type CommandContext = {
   /** Close the terminal (for /quit). */
   close: () => void;
   /** AI backend (available after bootstrap). */
-  backend?: QueryBackend | null;
+  backend?: Backend | null;
 };
 
 export type CommandHandler = (

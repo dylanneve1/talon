@@ -41,11 +41,11 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
  * flow-violation re-prompt path. Declaration is on the tool definition
  * (`endsTurn: true`); detection is shared; abort is backend-specific.
  *
- * The set is computed once at module load from `ALL_TOOLS`. The Phase 5
- * `ToolRegistry` builder (`tool-registry-builder.ts`) maps the same
- * `endsTurn` flag to `ToolDescriptor.delivery`, so registry consumers
- * see the same truth: a tool is a turn terminator iff its descriptor
- * has `delivery: true`.
+ * The set is computed once at module load from `ALL_TOOLS`. The
+ * `ToolRegistry` builder (`agent-runtime/tool-registry-builder.ts`)
+ * maps the same `endsTurn` flag to `ToolDescriptor.delivery`, so
+ * registry consumers see the same truth: a tool is a turn terminator
+ * iff its descriptor has `delivery: true`.
  */
 const TURN_TERMINATOR_NAMES: ReadonlySet<string> = new Set(
   ALL_TOOLS.filter((t) => t.endsTurn).map((t) => t.name),

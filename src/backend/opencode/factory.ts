@@ -5,9 +5,8 @@
  * same protocol shape (Kilo is a fork) so the adapter logic is nearly
  * identical — only the SDK import and a few constant names differ.
  *
- * Returns the composed `Backend` shape directly — capability slots
- * for chat / background / models / usage. No fat-optional
- * `QueryBackend` surface.
+ * Returns a composed `Backend` with capability slots for chat,
+ * background, models, and usage.
  */
 
 import { registerBackend } from "../registry.js";

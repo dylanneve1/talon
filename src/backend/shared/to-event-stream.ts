@@ -2,24 +2,21 @@
  * `toEventStream` — convert a callback-driven `query()` handler into
  * a native `AgentEvent` async iterable.
  *
- * Each backend's `handler.ts` already accepts `onStreamDelta`,
- * `onTextBlock`, and `onToolUse` callbacks that fire as the SDK
- * stream produces partial output. Phase 3.x reframes those callbacks
- * as a queued event source: an async generator drains the queue
- * concurrently with the underlying `query()` promise and yields the
- * canonical `AgentEvent` sequence.
+ * Each backend's `handler.ts` accepts `onStreamDelta`, `onTextBlock`,
+ * and `onToolUse` callbacks that fire as the SDK stream produces
+ * partial output. This wrapper reframes those callbacks as a queued
+ * event source: an async generator drains the queue concurrently with
+ * the underlying `query()` promise and yields the canonical
+ * `AgentEvent` sequence.
  *
  * The result is per-token streaming events (text_delta), per-tool
  * events (tool_call), assistant message blocks (assistant_message),
  * and the standard `run_started → … → usage → completed` envelope.
- * Backends opt in by adding `runChatTurnEvents` to the `QueryBackend`
- * exposed by their factory:
+ * Backend factories call this from their `chat.runChatTurn` slot:
  *
- *   runChatTurnEvents: (params) => toEventStream(handleMessage, params)
- *
- * The agent-runtime adapter (`core/agent-runtime/adapter.ts`) prefers
- * this native stream when present; only backends that haven't opted
- * in fall through to the adapter's synthesised minimal sequence.
+ *   const chat: ChatBackend = {
+ *     runChatTurn: (params) => toEventStream(handleMessage, params),
+ *   };
  */
 
 import type {
@@ -204,23 +201,19 @@ export async function* toEventStream(
  * an `AgentEvent` stream by intercepting `appendLog` writes and
  * relaying them as `assistant_message` events.
  *
- * Phase 4 of the architecture unification plan asks heartbeat /
- * dream / trigger consumers to route their log writes through the
- * shared `event-log-renderer.ts` rather than each handler writing
- * its own markdown. This adapter is the bridge: callers continue
- * to build `OneShotAgentParams` the legacy way, but if they want
- * a uniform event stream they hand the result to
- * `streamLog(stream, sink)` instead of supplying `appendLog`
- * directly.
+ * Heartbeat / dream / trigger consumers wanting unified markdown
+ * compose this with `streamLog(stream, sink)` from
+ * `core/agent-runtime/event-log-renderer.ts` instead of supplying
+ * `appendLog` to the backend directly. Consumers happy with the
+ * legacy markdown path can keep calling `runOneShotAgent` with
+ * their own `appendLog`.
  *
  * The event sequence is deliberately minimal:
  *
  *   run_started → assistant_message* → completed / error
  *
  * No usage event is emitted because `runOneShotAgent` doesn't
- * surface token counters in its current contract. Backends that
- * grow native one-shot event emission (Phase 3.x continued) will
- * supersede this shim.
+ * surface token counters in its current contract.
  */
 export type RunOneShotEventsParams = Omit<OneShotAgentParams, "appendLog">;
 

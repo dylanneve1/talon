@@ -183,18 +183,6 @@ export type OneShotAgentParams = {
 /** How much cache telemetry a backend can surface in /status. */
 export type CacheMetricsSupport = "none" | "read" | "readwrite";
 
-/**
- * @deprecated Use `Backend` from `core/agent-runtime/capabilities.js`.
- *
- * The fat-optional shape this name used to refer to is gone. Every
- * backend factory now returns a composed `Backend` object with
- * explicit capability slots. The alias here exists so in-flight
- * `import type { QueryBackend }` sites compile during the
- * migration; new code should `import type { Backend } from
- * "../core/agent-runtime/capabilities.js"` directly.
- */
-export type QueryBackend = import("./agent-runtime/capabilities.js").Backend;
-
 // ── Execution context ───────────────────────────────────────────────────────
 
 /**

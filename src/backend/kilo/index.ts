@@ -2,7 +2,7 @@
  * Kilo backend — barrel re-export.
  *
  * Uses the `@kilocode/sdk` (a fork of `@opencode-ai/sdk`) and exposes a
- * QueryBackend-compatible API. The implementation is split across
+ * Backend-compatible API. The implementation is split across
  * focused modules for readability:
  *
  *   - `models.ts`         — model catalog, search, resolution, presentation
@@ -12,7 +12,7 @@
  *   - `handler.ts`        — main message handler (streaming, end_turn,
  *                           delivery routing)
  *   - `one-shot.ts`       — heartbeat / dream one-shot runner
- *   - `model-provider.ts` — adapts the catalog to the QueryBackend interface
+ *   - `model-provider.ts` — adapts the catalog to the Backend interface
  *
  * Note: internal `OpenCode*` type names in `models.ts` (e.g.
  * `OpenCodeModelCatalogEntry`) are retained on purpose — Kilo's
@@ -72,7 +72,7 @@ export {
 // ── Handler ────────────────────────────────────────────────────────────────
 export { handleMessage, getActiveSession } from "./handler.js";
 
-// ── Model provider (QueryBackend adapter) ──────────────────────────────────
+// ── Model provider (Backend adapter) ──────────────────────────────────
 export {
   resolveModel,
   getModelInfo,

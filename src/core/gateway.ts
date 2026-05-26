@@ -21,7 +21,8 @@ import { getActiveSessionCount } from "../storage/sessions.js";
 import { log, logError, logDebug } from "../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "./plugin.js";
-import type { FrontendActionHandler, QueryBackend } from "./types.js";
+import type { FrontendActionHandler } from "./types.js";
+import type { Backend } from "./agent-runtime/capabilities.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
 
@@ -91,7 +92,7 @@ export class Gateway {
    * through this field so command handlers, callbacks, and shared-
    * action dispatch all see the same instance the dispatcher does.
    */
-  backend: QueryBackend | null = null;
+  backend: Backend | null = null;
 
   // ── Frontend handler registration ────────────────────────────────────────
 

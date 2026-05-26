@@ -1,15 +1,14 @@
 /**
  * `buildToolRegistryFromCatalog` — populate a `ToolRegistry` from
- * the existing `ALL_TOOLS` catalog in `core/tools/index.ts`.
+ * the `ALL_TOOLS` catalog in `core/tools/index.ts`.
  *
- * Phase 5 of the architecture unification plan asks every backend
- * to derive its tool surface from a single registry rather than
- * reimplementing the catalog walk per backend. This builder is the
+ * Every backend derives its tool surface from a single registry
+ * rather than reimplementing the catalog walk. This builder is the
  * conversion layer: each `ToolDefinition` becomes a `ToolDescriptor`
  * with the tag carried over, `delivery: endsTurn`, and
- * `requiresAmbientChat` inferred from the legacy frontend allowlist
- * (frontend-scoped tools that aren't `terminal` need ambient chat
- * context — terminal is the only one that runs without one).
+ * `requiresAmbientChat` inferred from the frontend allowlist
+ * (frontend-scoped tools that aren't `terminal` need an ambient
+ * chat context — terminal is the only kind that runs without one).
  *
  * The builder is stateless; callers construct one registry per
  * Talon process (or per test). The result is a live `ToolRegistry`

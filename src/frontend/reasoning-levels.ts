@@ -1,8 +1,8 @@
 import type {
-  QueryBackend,
   ReasoningEffortLevel,
   UnifiedModelInfo,
 } from "../core/types.js";
+import type { Backend } from "../core/agent-runtime/capabilities.js";
 import { resolveActiveModelForChat } from "../core/active-model.js";
 import type { TalonConfig } from "../util/config.js";
 import {
@@ -33,7 +33,7 @@ export function displayReasoningEffort(
 
 export async function getActiveReasoningLevels(params: {
   chatId: string;
-  backend: QueryBackend | null;
+  backend: Backend | null;
   backendId: string | null;
   config: TalonConfig;
 }): Promise<ActiveReasoningLevels> {

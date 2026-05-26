@@ -10,10 +10,6 @@
  * The policy collapses the decisions into one object. The dispatcher
  * builds the right policy for a run kind (chat / heartbeat / dream /
  * trigger / test); the backend just receives it and respects it.
- *
- * Phase 1 (this PR) defines the type and provides default factories.
- * Phase 4 wires the dispatcher to build policies and threads them
- * through the new `BackgroundRunner` / `ChatBackend` interfaces.
  */
 
 import type { ToolFilter } from "./tool-descriptor.js";

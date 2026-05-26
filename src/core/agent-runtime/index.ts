@@ -9,7 +9,7 @@
  *   - `RunPolicy`  + defaults      (run-policy.ts)
  *   - `ToolDescriptor`             (tool-descriptor.ts)
  *   - Capability interfaces        (capabilities.ts)
- *   - `adaptQueryBackend`          (adapter.ts)
+ *   - `composeBackend` / capability interfaces (capabilities.ts)
  *   - `resolveActiveModelRefForChat` (resolver.ts)
  *   - `ToolRegistry`               (tool-registry.ts)
  *   - `JsonStore<T>`               (store.ts) — used by every storage module

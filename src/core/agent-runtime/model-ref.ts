@@ -12,12 +12,11 @@
  * everything else is metadata so downstream code (UIs, `/status`,
  * logs, telemetry, tests) doesn't have to chase it down again.
  *
- * This module also pins the canonical `BackendId` union — and as
- * of Phase 2.4, `src/util/config.ts` imports `BACKEND_IDS`
- * directly for its zod enums. Adding a backend means updating
- * THIS literal once; the config schema picks the change up
- * automatically. Don't reintroduce the manually-mirrored zod
- * tuple — it's a footgun.
+ * This module also pins the canonical `BackendId` union;
+ * `src/util/config.ts` imports `BACKEND_IDS` directly for its zod
+ * enums. Adding a backend means updating THIS literal once; the
+ * config schema picks the change up automatically. Don't
+ * reintroduce a manually-mirrored zod tuple — it's a footgun.
  */
 
 import type { ReasoningEffortLevel } from "../types.js";
@@ -61,8 +60,8 @@ export type CacheSupport = "none" | "read" | "readwrite";
 /**
  * Where the resolver picked this model from. Mirrors
  * `ActiveModelSource` in `core/active-model.ts` so the two systems
- * can talk in the same vocabulary once Phase 2 lands. Values are
- * stable for logging and toast wording.
+ * speak the same vocabulary. Values are stable for logging and
+ * toast wording.
  */
 export type ModelSource =
   | "config"

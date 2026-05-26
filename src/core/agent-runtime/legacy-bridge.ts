@@ -1,24 +1,11 @@
 /**
- * `AgentEvent` → legacy `QueryParams` callbacks bridge.
+ * `AgentEvent` → callback bridge.
  *
- * The Phase 3 plan says:
- *
- *   > Backend handlers should emit events. Existing UI/log code can
- *   > temporarily render events back into the old shape.
- *
- * This module is the "render back into the old shape" piece. Once
- * a backend handler natively emits `AgentEvent`s, the dispatcher
- * (which still feeds callbacks into the legacy `QueryParams`) can
- * keep working unchanged — Phase 3.x backends pipe their event
- * stream through `pipeEventsToCallbacks` and the legacy
- * `onStreamDelta` / `onTextBlock` / `onToolUse` callbacks get
- * invoked from the events.
- *
- * Phase 1-2 contract: **no production caller invokes this yet.**
- * It's the missing piece that makes Phase 3.x backend rewrites
- * localised to one handler at a time — each backend can switch to
- * native event emission without forcing every consumer downstream
- * to migrate in lockstep.
+ * Backends emit `AgentEvent`s as their native chat-turn output;
+ * upstream consumers (the dispatcher, frontend logging) still take
+ * delivery via the callback shape (`onStreamDelta` / `onTextBlock`
+ * / `onToolUse`). This module is the translator: feed it an event
+ * stream and a callback set, get the canonical `AgentResult` back.
  *
  * Event → callback mapping
  * ────────────────────────
@@ -29,12 +16,13 @@
  *   tool_call             → onToolUse(name, input as Record)
  *   completed → returns the final AgentResult (no callback fires;
  *               dispatcher reads the awaited promise instead)
- *   error → throws an Error tagged with the AgentError's classification
+ *   error → throws `BridgedAgentError` tagged with the
+ *           `AgentError`'s classification (`kind`, `retryable`)
  *
  *   run_started / tool_result / usage / model_swapped / warning
- *   are observed but don't currently fan out to legacy callbacks —
- *   the dispatcher doesn't have hooks for them yet, and bridging
- *   shouldn't invent new ones.
+ *   are observed but don't fan out to callbacks — they exist for
+ *   consumers reading the raw stream (event log renderer, contract
+ *   tests).
  *
  * Accumulators
  * ────────────
@@ -175,18 +163,14 @@ export async function pipeEventsToCallbacks(
  * Best-effort accumulation of an `AgentEvent` stream into a
  * single `AgentResult` without invoking any callbacks.
  *
- * Useful for backends in Phase 3.x that emit events natively but
- * also need to return a `QueryResult` to the legacy
- * `backend.query()` contract until the dispatcher migrates. The
- * dispatcher consumes the returned `AgentResult`; the events are
- * lost (consumer is responsible for piping them separately if
- * needed).
+ * Useful for consumers that need the final result but don't care
+ * about streaming intermediate state (test harnesses, fire-and-
+ * forget background jobs).
  *
  * When the stream terminates with `error`, throws
  * `BridgedAgentError`. When it terminates with `completed`, returns
  * the event's `result`. When it ends without a terminator, returns
- * a synthesised result with empty text and zero usage — the
- * dispatcher treats this as a silent run.
+ * a synthesised result with empty text and zero usage.
  */
 export async function reduceEventsToResult(
   stream: AsyncIterable<AgentEvent>,
@@ -220,11 +204,10 @@ export async function reduceEventsToResult(
     }
   }
 
-  // Stream ended without a `completed` terminator, OR the `completed`
-  // event carried no result. Phase 3.x backends should always emit
-  // `completed` with a result; falling through here means the stream
-  // ended on a non-terminator, which is a backend contract violation
-  // but not catastrophic — synthesise from observed deltas.
+  // No completed event seen — synthesise from observed deltas.
+  // Well-behaved backends always emit `completed`; falling through
+  // here means the stream ended on a non-terminator, which is a
+  // backend contract violation but not catastrophic.
   return {
     text,
     durationMs,

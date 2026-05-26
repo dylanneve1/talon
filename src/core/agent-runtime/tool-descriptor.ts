@@ -6,11 +6,9 @@
  * SDK-native format (Claude SDK MCP config, Codex TOML MCP config,
  * OpenAI Agents `MCPServerStdio`) but they all start from the same
  * `ToolDescriptor[]` derived from the active `RunPolicy`.
- *
- * Phase 1 only adds the type. The current backends still build their
- * MCP configs from `src/plugins/*` and the per-frontend tool lists in
- * `src/util/mcp-launcher.mjs`. Phase 5 introduces a `ToolRegistry`
- * that turns those into `ToolDescriptor[]`s.
+ * `tool-registry-builder.ts` builds the global registry from
+ * `ALL_TOOLS` at bootstrap; backends pull the filtered descriptor
+ * list from it via `registry.forPolicy(policy)`.
  */
 
 /**
@@ -84,7 +82,7 @@ export interface ToolFilter {
 
 /**
  * Apply a `ToolFilter` to a list of descriptors. Pure — used by
- * `RunPolicy` consumers and Phase 5 backend tool renderers.
+ * `RunPolicy` consumers and backend tool renderers.
  */
 export function applyToolFilter(
   tools: readonly ToolDescriptor[],

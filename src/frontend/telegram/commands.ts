@@ -88,7 +88,7 @@ function chunkButtons(
 export function registerCommands(
   bot: Bot,
   config: TalonConfig,
-  gateway?: { backend: import("../../core/types.js").QueryBackend | null },
+  gateway?: { backend: import("../../core/agent-runtime/capabilities.js").Backend | null },
 ): void {
   bot.command("start", (ctx) =>
     ctx.reply(
@@ -552,12 +552,12 @@ export function registerCommands(
     const chatSets = getChatSettings(cid);
     const statusBe = resolveBackendForChat(cid, gateway);
     const statusBeId = getBackendIdForChat(cid);
-    // Phase 2.2: consume the resolved ModelRef so context window, cache
-    // support, and display name come from one enriched object instead
-    // of three separate fetches. The ref resolver internally calls the
+    // Consume the resolved `ModelRef` so context window, cache
+    // support, and display name come from one enriched object
+    // instead of three separate fetches. The ref resolver wraps the
     // same 5-step chain as `resolveActiveModelForChat`, so the active
-    // model id is identical; the difference is one fewer round-trip to
-    // `getModelInfo` for the common case.
+    // model id is identical; the difference is one fewer round-trip
+    // to `getRawModelInfo` for the common case.
     const { ref: statusModelRef } = await resolveActiveModelRefForChat(
       cid,
       statusBe,

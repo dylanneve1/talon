@@ -1,31 +1,30 @@
 /**
- * Test helpers — build a `Backend` from a flat description.
+ * Test helper — build a `Backend` from a flat fixture description.
  *
- * Tests typically want to assert on something simple ("the
- * dispatcher called query with these params", "the picker used the
- * backend's resolveModel"). Hand-rolling the full split-slot
- * `Backend` shape per test pollutes intent. `stubBackend` accepts
- * any subset of legacy `QueryBackend` fields and composes them onto
- * the corresponding capability slots:
+ * Tests typically want to assert on something simple ("the dispatcher
+ * called query with these params", "the picker used the backend's
+ * resolveModel"). Hand-rolling the full split-slot `Backend` shape
+ * per test pollutes intent. `stubBackend` accepts any subset of
+ * flat method references and composes them onto the corresponding
+ * capability slots:
  *
  *   - `query` → `chat.runChatTurn` (via `toEventStream`)
  *   - `runOneShotAgent` / `evictOrphanSubprocesses` → `background`
  *   - `resolveModel` / `getDefaultModel` / `getModelInfo` /
  *     `getSettingsPresentation` / `getProviders` /
  *     `getProviderModels` / `formatModelError` / `listModels` →
- *     `models` (mapped onto the legacy-shape methods —
- *     `resolveModelInfo`, `getDefaultModelId`, `getRawModelInfo`,
- *     `listModelsRaw`)
+ *     `models` (mapped onto the slot's UnifiedModelInfo-shaped
+ *     methods: `resolveModelInfo`, `getDefaultModelId`,
+ *     `getRawModelInfo`, `listModelsRaw`, etc.)
  *   - `resetChat` / `warmSession` → `sessions`
  *   - `refreshMcpServers` → `tools.refreshTools`
  *   - `updateSystemPrompt` → `control.updateSystemPrompt`
  *   - `getSessionSnapshot` → `usage`
  *
- * Production code never uses this — `core/agent-runtime/capabilities`'s
- * `composeBackend` is the canonical builder there. The test helper
- * exists so legacy test fixtures don't have to be rewritten in
- * lockstep with the capability split; new tests should call
- * `composeBackend` directly.
+ * Production code never uses this — `composeBackend` from
+ * `core/agent-runtime/capabilities.ts` is the canonical builder
+ * there. The helper exists so common test fixtures don't have to
+ * rewrite every capability slot from scratch per case.
  */
 
 import { vi } from "vitest";

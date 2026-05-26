@@ -2,7 +2,7 @@
  * Codex backend — barrel re-export.
  *
  * Wraps `@openai/codex-sdk` (which in turn spawns the `codex` CLI from
- * `@openai/codex`) and exposes a QueryBackend-compatible API. The
+ * `@openai/codex`) and exposes a Backend-compatible API. The
  * implementation is split across focused modules:
  *
  *   - `constants.ts`   — system-prompt suffix, default model.

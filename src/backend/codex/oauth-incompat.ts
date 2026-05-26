@@ -250,10 +250,9 @@ export function isKnownOAuthIncompat(modelId: string): boolean {
  * Returns `true` if the set changed (callers can log the new entry),
  * `false` if the id was already known.
  *
- * Phase 6.x: this is now async. The in-memory mutation is
- * synchronous so subsequent `isKnownOAuthIncompat` calls see the
- * update immediately; the awaited promise covers the disk write.
- * Existing call sites need a one-keyword `await`.
+ * The in-memory mutation is synchronous so subsequent
+ * `isKnownOAuthIncompat` calls see the update immediately; the
+ * awaited promise covers the disk write through `JsonStore`.
  */
 export async function markOAuthIncompat(modelId: string): Promise<boolean> {
   if (!memoryStore || !jsonStore) {

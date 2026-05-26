@@ -1,11 +1,9 @@
 /**
  * Codex backend factory — wires the OpenAI Codex SDK into the registry.
  *
- * Returns the composed `Backend` shape directly: each capability slot
- * (chat, background, models, sessions, usage) is populated from the
- * handler / one-shot / catalog modules. No fat-optional
- * `QueryBackend` surface — the dispatcher and frontend consumers
- * read through slots.
+ * Returns a composed `Backend` with capability slots for chat,
+ * background, models, and sessions. The dispatcher and frontend
+ * consumers read through those slots.
  */
 
 import { registerBackend } from "../registry.js";

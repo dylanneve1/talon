@@ -2,22 +2,13 @@
  * `ToolRegistry` — canonical store of `ToolDescriptor`s for one
  * Talon process.
  *
- * Phase 5 of the architecture unification plan introduces a single
- * source of truth for "what tools exist, who can call them, what's
- * the schema". Backends render the registry into their SDK-native
- * format (Claude SDK MCP config, Codex TOML MCP config, OpenAI
- * Agents `MCPServerStdio`) but they all start from the same
- * `ToolDescriptor[]` derived from the active `RunPolicy`.
- *
- * This module ships the **storage + filter** layer. Per the plan's
- * "First target: Codex TOML MCP config + Claude SDK MCP config" —
- * the backend-side renderers belong in their respective backend
- * modules and land in Phase 5.x PRs.
- *
- * Phase 1-2 contract: **no production caller invokes the registry
- * yet.** The current backends still build their MCP configs from
- * `src/plugins/*` and `src/util/mcp-launcher.mjs`. Phase 5.x
- * migrates them.
+ * Single source of truth for "what tools exist, who can call them,
+ * what's the schema". Backends render the registry into their
+ * SDK-native format (Claude SDK MCP config, Codex TOML MCP config,
+ * OpenAI Agents `MCPServerStdio`) but they all start from the same
+ * `ToolDescriptor[]` derived from the active `RunPolicy`. The
+ * registry is the storage + filter layer; backend-side renderers
+ * live in each backend's module.
  *
  * Design notes
  * ────────────

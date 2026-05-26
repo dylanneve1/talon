@@ -115,12 +115,12 @@ export async function buildModelMenuViewForChat(
     label: backend.label ?? activeBackendId,
   };
 
-  // Phase 2.3: resolve through the ref-shaped helper so display name
-  // comes from the ref's metadata instead of a separate
-  // `getModelInfo` round-trip in `fetchActiveDisplay`. Returns ref:
-  // null when the 5-step chain hits step 5 (catalog-driven backend
-  // with no per-chat pick AND no operator default). The menu
-  // surfaces that as "No model selected".
+  // Resolve through the ref-shaped helper so display name comes from
+  // the ref's metadata instead of a separate `getRawModelInfo`
+  // round-trip in `fetchActiveDisplay`. Returns `ref: null` when the
+  // 5-step chain hits step 5 (catalog-driven backend with no
+  // per-chat pick AND no operator default). The menu surfaces that
+  // as "No model selected".
   const { ref: activeRef, modelId: activeModel } =
     await resolveActiveModelRefForChat(
       chatId,
@@ -230,10 +230,10 @@ export async function buildModelBrowseViewForChat(
   const activeBackendId = hasBackendPool()
     ? getBackendIdForChat(chatId)
     : config.backend;
-  // Phase 2.3: validate via the ref resolver so the "current
-  // selection" marker tracks the same source-of-truth as the main
-  // menu AND displayName comes from the ref's enrichment instead of
-  // a separate getModelInfo call.
+  // Validate via the ref resolver so the "current selection" marker
+  // tracks the same source-of-truth as the main menu AND displayName
+  // comes from the ref's enrichment instead of a separate
+  // `getRawModelInfo` call.
   const { ref: activeRef, modelId: resolvedModel } =
     await resolveActiveModelRefForChat(
       chatId,

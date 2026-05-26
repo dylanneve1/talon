@@ -1,13 +1,9 @@
 /**
  * Backend capability interfaces.
  *
- * The legacy `QueryBackend` was a fat optional interface — every
- * method was `?:`, so callers couldn't tell at the type level which
- * backends actually implemented which capabilities. This module is
- * the replacement: small orthogonal capability interfaces composed
- * onto a single `Backend` object with explicit capability flags.
- *
- * The composed shape:
+ * Every backend factory builds and returns a `Backend` — a composed
+ * object whose capability slots cover the orthogonal pieces a
+ * production frontend / dispatcher needs:
  *
  *   - `chat`        — chat-turn surface (`runChatTurn`)
  *   - `background`  — heartbeat / dream / trigger background tasks
@@ -17,11 +13,10 @@
  *   - `usage`       — `/status` enrichment
  *   - `control`     — system-prompt update
  *
- * Every backend factory builds and returns a `Backend`. Consumers
- * read through slots — `backend.chat?.runChatTurn(...)`,
- * `backend.models?.resolveModel(...)`. The fat-optional
- * `QueryBackend` type is gone; its name is preserved as a
- * deprecated alias in `core/types.ts` for in-flight import sites.
+ * Consumers read through slots — `backend.chat?.runChatTurn(...)`,
+ * `backend.models?.resolveModel(...)`. Capability presence is
+ * declared at the type level via the optional slot fields and
+ * mirrored on `backend.capabilities` for runtime introspection.
  */
 
 import type { AgentEvent, UsageSnapshot } from "./events.js";
@@ -158,8 +153,8 @@ export interface BackgroundRunner {
  * The interface carries two model-shape views over the same data:
  *
  *   - `ModelRef` view (`resolveModel`, `listModels`, `getDefaultModel`,
- *     `getModelInfo`) — Phase 2 canonical, used by the active-model
- *     resolver and `/status`.
+ *     `getModelInfo`) — canonical for runtime routing, used by the
+ *     active-model resolver and `/status`.
  *   - `UnifiedModelInfo` view (`resolveModelInfo`, `getDefaultModelId`,
  *     `getRawModelInfo`, `getSettingsPresentation`, `getProviders`,
  *     `getProviderModels`, `formatModelError`, `listModelsRaw`) —

@@ -118,7 +118,7 @@ export async function answerCallbackQuerySafe(
 export function registerCallbacks(
   bot: Bot,
   config: TalonConfig,
-  gateway?: { backend: import("../../core/types.js").QueryBackend | null },
+  gateway?: { backend: import("../../core/agent-runtime/capabilities.js").Backend | null },
 ): void {
   // ── Callback query handler ──────────────────────────────────────────────────
 

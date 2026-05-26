@@ -600,11 +600,11 @@ async function handleStatus(
   const chatSets = getChatSettings(chatId);
   const statusBe = resolveChatBackend(chatId, gateway?.backend);
   const statusBeId = getBackendIdForChat(chatId);
-  // Phase 2.2: consume the resolved ModelRef so context window + display
-  // name come from one enriched object. The ref resolver wraps the same
-  // 5-step chain as `resolveActiveModelForChat`, so the active model id
-  // is identical; the difference is one fewer round-trip to
-  // `getModelInfo` for the common case.
+  // Consume the resolved `ModelRef` so context window + display name
+  // come from one enriched object. The ref resolver wraps the same
+  // 5-step chain as `resolveActiveModelForChat`, so the active model
+  // id is identical; the difference is one fewer round-trip to
+  // `getRawModelInfo` for the common case.
   const { ref: statusModelRef } = await resolveActiveModelRefForChat(
     chatId,
     statusBe,

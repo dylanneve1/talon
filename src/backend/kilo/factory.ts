@@ -5,9 +5,8 @@
  * `registerBackend(...)` at module load, making Kilo available under
  * `config.backend === "kilo"`.
  *
- * Returns the composed `Backend` shape directly — capability slots
- * for chat / background / models / usage. No fat-optional
- * `QueryBackend` surface.
+ * Returns a composed `Backend` with capability slots for chat,
+ * background, models, and usage.
  */
 
 import { registerBackend } from "../registry.js";

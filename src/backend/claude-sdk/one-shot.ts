@@ -6,7 +6,7 @@
  * options dict, calling `query()`, formatting each SDK message into the run
  * log, and post-abort orphan-subprocess eviction (Linux /proc walk).
  *
- * Exposed via the QueryBackend abstraction (see core/types.ts) so that
+ * Exposed via the Backend abstraction (see core/types.ts) so that
  * non-SDK backends (Kilo, OpenCode) can supply their own implementations
  * without heartbeat/dream knowing the difference.
  */

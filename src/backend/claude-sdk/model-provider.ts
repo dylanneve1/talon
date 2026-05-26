@@ -1,7 +1,7 @@
 /**
  * Model provider methods for the Claude SDK backend.
  *
- * Implements the optional model methods from QueryBackend by delegating
+ * Implements the optional model methods from Backend by delegating
  * to the core model registry. The Claude SDK exposes a single provider
  * ("anthropic") with models discovered from the SDK at startup.
  */

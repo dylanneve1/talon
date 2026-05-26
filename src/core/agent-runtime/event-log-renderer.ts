@@ -3,18 +3,6 @@
  * produce structured markdown for heartbeat / dream / trigger
  * log files.
  *
- * Phase 4 of the architecture unification plan: heartbeat and
- * dream currently build their markdown logs inline by mixing
- * SDK-specific event handlers with appendLog calls (~150 LOC
- * each, slightly different per backend). This module is the
- * shared renderer — backends emit `AgentEvent`s, core writes
- * the log.
- *
- * Phase 1-2 contract: **no production caller invokes this yet.**
- * heartbeat.ts and dream.ts still own their markdown rendering.
- * Phase 4 wires them through this renderer once at least Codex
- * and Claude SDK emit native AgentEvents (Phase 3.x).
- *
  * Output shape (one block per event type)
  * ───────────────────────────────────────
  *
@@ -230,9 +218,9 @@ export async function streamLog(
     }
   }
 
-  // Flush any trailing pending text on stream end without
-  // terminator (Phase 3.x backends should always emit completed
-  // — this is the defensive path).
+  // Flush any trailing pending text on stream end without a
+  // terminator. Well-behaved backends always emit `completed` —
+  // this is the defensive path for stub / partial implementations.
   if (!state.finished && state.pendingTextDelta) {
     await sink(renderAssistantMessage(state.pendingTextDelta));
   }

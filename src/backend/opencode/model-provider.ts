@@ -1,7 +1,7 @@
 /**
- * OpenCode model provider — adapts the internal catalog to the QueryBackend model interface.
+ * OpenCode model provider — adapts the internal catalog to the Backend model interface.
  *
- * Each export matches a method on QueryBackend (resolveModel, getModelInfo, etc.).
+ * Each export matches a method on Backend (resolveModel, getModelInfo, etc.).
  * Delegates to the existing catalog functions in models.ts.
  */
 
@@ -73,7 +73,7 @@ function toUnifiedResolution(
 }
 
 // ---------------------------------------------------------------------------
-// QueryBackend model methods
+// Backend model methods
 // ---------------------------------------------------------------------------
 
 export async function resolveModel(

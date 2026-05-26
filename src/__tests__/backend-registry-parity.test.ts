@@ -1,13 +1,13 @@
 /**
  * Backend registry parity tests.
  *
- * Verifies that all built-in backends (Claude SDK, Kilo, OpenCode, Codex,
- * OpenAI Agents) register themselves into the registry
- * with the same QueryBackend surface — so the dispatcher can swap
+ * Verifies that all built-in backends (Claude SDK, Kilo, OpenCode,
+ * Codex, OpenAI Agents) register themselves into the registry with
+ * the same composed `Backend` surface — so the dispatcher can swap
  * backends without leaking backend-specific behaviour upstream.
  *
- * Each backend factory's `init(config, ctx)` returns a `QueryBackend`
- * whose required + optional methods Talon's core relies on. This file
+ * Each backend factory's `init(config, ctx)` returns a `Backend`
+ * with the capability slots Talon's core relies on. This file
  * doesn't actually CALL `init` (it would spawn real subprocesses);
  * instead it verifies registry presence + factory shape.
  */

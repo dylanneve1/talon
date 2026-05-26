@@ -1,12 +1,14 @@
 /**
- * Tests for src/backend/kilo/model-provider.ts — the adapter that maps the
- * internal Kilo catalog to the QueryBackend (UnifiedModelInfo / Resolution /
- * ProviderInfo) interface used by the dispatcher.
+ * Tests for src/backend/kilo/model-provider.ts — the adapter that
+ * maps the internal Kilo catalog to the `UnifiedModelInfo` /
+ * resolution / provider shapes the `Backend.models` slot exposes
+ * to the dispatcher and frontend pickers.
  *
- * Kilo is the only backend with this thin adapter layer; opencode talks to
- * the dispatcher through the same internal types directly. So these tests
- * have no opencode equivalent — they exist because this glue is the easiest
- * place for a model-shape regression to slip past tsc.
+ * Kilo is the only backend with this thin adapter layer; opencode
+ * talks to the dispatcher through the same internal types directly.
+ * So these tests have no opencode equivalent — they exist because
+ * this glue is the easiest place for a model-shape regression to
+ * slip past tsc.
  */
 import { describe, expect, it, vi } from "vitest";
 

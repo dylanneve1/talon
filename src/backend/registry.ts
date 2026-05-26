@@ -4,7 +4,7 @@
  * Each concrete backend (`claude-sdk`, `kilo`, `opencode`) exposes a
  * `factory.ts` module that registers itself by calling `registerBackend`.
  * Bootstrap looks up the requested backend by id, calls `init`, and
- * receives a fully-wired `QueryBackend` plus an optional cleanup hook.
+ * receives a fully-wired `Backend` plus an optional cleanup hook.
  *
  * Why a registry instead of `if/else` in bootstrap:
  *
