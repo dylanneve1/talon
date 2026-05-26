@@ -35,12 +35,7 @@
  * downstream `text_delta` continues where it left off.
  */
 
-import {
-  emptyUsage,
-  type AgentError,
-  type AgentEvent,
-  type AgentResult,
-} from "./events.js";
+import type { AgentError, AgentEvent, AgentResult } from "./events.js";
 
 /**
  * Legacy callback bundle from `QueryParams`. The bridge invokes
@@ -157,63 +152,6 @@ export async function pipeEventsToCallbacks(
   }
 
   return finalResult;
-}
-
-/**
- * Best-effort accumulation of an `AgentEvent` stream into a
- * single `AgentResult` without invoking any callbacks.
- *
- * Useful for consumers that need the final result but don't care
- * about streaming intermediate state (test harnesses, fire-and-
- * forget background jobs).
- *
- * When the stream terminates with `error`, throws
- * `BridgedAgentError`. When it terminates with `completed`, returns
- * the event's `result`. When it ends without a terminator, returns
- * a synthesised result with empty text and zero usage.
- */
-export async function reduceEventsToResult(
-  stream: AsyncIterable<AgentEvent>,
-): Promise<AgentResult> {
-  let text = "";
-  let usage = emptyUsage();
-  let modelId: string | undefined;
-  let durationMs = 0;
-
-  for await (const event of stream) {
-    switch (event.type) {
-      case "text_delta":
-        text += event.text;
-        break;
-      case "assistant_message":
-        text += event.text;
-        break;
-      case "usage":
-        usage = event.usage;
-        if (event.usage.modelId) modelId = event.usage.modelId;
-        break;
-      case "completed":
-        if (event.result) {
-          return event.result;
-        }
-        break;
-      case "error":
-        throw new BridgedAgentError(event.error);
-      default:
-        break;
-    }
-  }
-
-  // No completed event seen — synthesise from observed deltas.
-  // Well-behaved backends always emit `completed`; falling through
-  // here means the stream ended on a non-terminator, which is a
-  // backend contract violation but not catastrophic.
-  return {
-    text,
-    durationMs,
-    usage,
-    ...(modelId ? { modelId } : {}),
-  };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

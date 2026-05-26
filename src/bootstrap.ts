@@ -18,7 +18,6 @@ import { loadTriggers } from "./storage/trigger-store.js";
 import { clearHistory, loadHistory } from "./storage/history.js";
 import { loadMediaIndex } from "./storage/media-index.js";
 import { cleanupOldLogs } from "./storage/daily-log.js";
-import { getGlobalToolRegistry } from "./core/agent-runtime/tool-registry-builder.js";
 import {
   initDispatcher,
   execute as dispatcherExecute,
@@ -105,13 +104,6 @@ export async function bootstrap(
   loadHistory();
   loadMediaIndex();
   cleanupOldLogs();
-
-  // Eagerly materialise the global ToolRegistry so the first chat
-  // turn doesn't pay the catalog → descriptor cost. Backends derive
-  // their tool surface from this registry instead of re-walking
-  // `ALL_TOOLS` per call site; building it once at bootstrap means
-  // every consumer reads through the same in-memory instance.
-  getGlobalToolRegistry();
 
   return { config };
 }

@@ -4,17 +4,25 @@ Single home for the agent-runtime primitives every backend, frontend,
 and dispatcher consumer reads through. The architecture-unification
 plan landed in seven phases; every phase ships:
 
-| Phase | Scope                                              | Status   |
-| ----- | -------------------------------------------------- | -------- |
-| 1     | Type-only surface (events, ModelRef, RunPolicy, …) | **done** |
-| 2.1   | `resolveActiveModelRefForChat`                     | **done** |
-| 2.2   | `/status` consumes ModelRef                        | **done** |
-| 2.3   | `/model` consumes ModelRef                         | **done** |
-| 3     | Native `AgentEvent` emission per backend           | **done** |
-| 4     | `AgentEventLogRenderer` consumers                  | **done** |
-| 5     | Centralised tool surface via `ToolRegistry`        | **done** |
-| 6     | `JsonStore<T>` over every JSON-backed store        | **done** |
-| 7     | Per-backend contract tests                         | **done** |
+| Phase | Scope                                              | Status      |
+| ----- | -------------------------------------------------- | ----------- |
+| 1     | Type-only surface (events, ModelRef, RunPolicy, …) | **done**    |
+| 2.1   | `resolveActiveModelRefForChat`                     | **done**    |
+| 2.2   | `/status` consumes ModelRef                        | **done**    |
+| 2.3   | `/model` consumes ModelRef                         | **done**    |
+| 3     | Native `AgentEvent` emission per backend           | **done**    |
+| 4     | `AgentEventLogRenderer` consumers                  | descoped    |
+| 5     | Centralised tool surface via `ToolRegistry`        | descoped    |
+| 6     | `JsonStore<T>` over every JSON-backed store        | **done**    |
+| 7     | Per-backend contract tests                         | **done**    |
+
+Phases 4 and 5 are descoped: the `AgentEventLogRenderer` and
+`ToolRegistry` infrastructure was implemented but no production
+consumer wired through. Heartbeat / dream still prefer their direct
+`appendLog` markdown for log files; backend MCP configs continue to
+build from `getPluginMcpServers(...)` directly. Both were removed
+to keep the runtime surface honest — they can come back when a
+real consumer exists.
 
 The fat-optional `QueryBackend` shape is gone; every backend factory
 builds and returns a composed `Backend` via `composeBackend({...})`.
@@ -53,11 +61,6 @@ destination, session persistence, permission mode.
 `defaultRunPolicyFor("chat" | "heartbeat" | "dream" | "trigger" |
 "test")` returns the canonical shape for each run kind.
 
-### `tool-descriptor.ts`
-
-`ToolDescriptor` + `ToolFilter` + `applyToolFilter`. The canonical
-shape `ToolRegistry` stores and backend MCP-config renderers consume.
-
 ### `capabilities.ts`
 
 Split capability interfaces — `ChatBackend`, `BackgroundRunner`,
@@ -77,20 +80,6 @@ Wraps the existing string-side `resolveActiveModelForChat`
 → bare-ref fallback. `modelId` is the raw string from the chain so
 callers can fall back to the legacy id when `ref` is null but the
 chain produced one.
-
-### `tool-registry.ts`
-
-`ToolRegistry` class storing `ToolDescriptor[]` with atomic
-`register` / `registerAll`, `forPolicy(policy)` returning the
-filtered subset, and `parseMcpToolId` / `groupToolsByServer`
-helpers. Backend MCP-config renderers read from this.
-
-### `tool-registry-builder.ts`
-
-`buildToolRegistryFromCatalog()` converts the legacy `ALL_TOOLS`
-catalog into `ToolDescriptor[]`s and seeds a fresh registry.
-`getGlobalToolRegistry()` is the process-scoped lazy singleton
-bootstrap materialises at startup.
 
 ### `store.ts`
 
@@ -124,22 +113,12 @@ Each throws `ContractViolation` with a descriptive message.
 ### `legacy-bridge.ts`
 
 The bridge between the canonical `AgentEvent` stream and the
-callback-shaped consumer contract the dispatcher still uses upstream
-of the backend. `pipeEventsToCallbacks(stream, callbacks)` consumes
-an `AgentEvent` stream and invokes the supplied callbacks
-(`onStreamDelta` / `onTextBlock` / `onToolUse`), returning the final
-`AgentResult`. `reduceEventsToResult(stream)` accumulates the same
-stream into an `AgentResult` without callbacks — useful for
-fire-and-forget consumers.
-
-### `event-log-renderer.ts`
-
-`renderEvent(event, state, sink)` translates an `AgentEvent` into
-markdown for heartbeat / dream / trigger log consumers.
-`streamLog(stream, sink)` drains an event stream into a sink. The
-one-shot bridge `backend/shared/to-event-stream.ts:toOneShotEventStream`
-composes a legacy `runOneShotAgent`-shaped function into a stream
-`streamLog` can consume.
+callback-shaped consumer contract the dispatcher uses upstream of the
+backend. `pipeEventsToCallbacks(stream, callbacks)` consumes an
+`AgentEvent` stream and invokes the supplied callbacks (`onStreamDelta`
+/ `onTextBlock` / `onToolUse`), returns the final `AgentResult`, and
+throws `BridgedAgentError` carrying the original `AgentError` if the
+stream terminates with an error event.
 
 ## Migration cookbook
 
@@ -203,16 +182,6 @@ schemaVersion, validate, migrate })` at module scope.
    `store.saveSync()` from the autosave + flush paths.
 4. Reach for `store.update(fn)` for mutations and `store.get()` for
    reads.
-
-### Surfacing tool metadata to a backend
-
-1. Bootstrap materialises the global `ToolRegistry` via
-   `getGlobalToolRegistry()`.
-2. Call `registry.forPolicy(policy)` to get the filtered
-   `ToolDescriptor[]` matching the run kind's policy.
-3. Render to the backend's SDK-native config (Codex TOML, Claude SDK
-   MCP options, etc.). Tool id collisions throw `ToolRegistryError`
-   at registration, not at model-call time.
 
 ## Invariants
 

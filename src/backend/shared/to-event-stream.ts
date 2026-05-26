@@ -25,11 +25,7 @@ import type {
   AgentEvent,
 } from "../../core/agent-runtime/events.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
-import type {
-  OneShotAgentParams,
-  QueryParams,
-  QueryResult,
-} from "../../core/types.js";
+import type { QueryParams, QueryResult } from "../../core/types.js";
 
 /** Sentinel pushed onto the queue when the query promise settles. */
 const SENTINEL = Symbol("toEventStream:sentinel");
@@ -196,109 +192,11 @@ export async function* toEventStream(
 }
 
 /**
- * `toOneShotEventStream` — the one-shot counterpart of
- * `toEventStream`. Wraps a `runOneShotAgent`-shaped function into
- * an `AgentEvent` stream by intercepting `appendLog` writes and
- * relaying them as `assistant_message` events.
- *
- * Heartbeat / dream / trigger consumers wanting unified markdown
- * compose this with `streamLog(stream, sink)` from
- * `core/agent-runtime/event-log-renderer.ts` instead of supplying
- * `appendLog` to the backend directly. Consumers happy with the
- * legacy markdown path can keep calling `runOneShotAgent` with
- * their own `appendLog`.
- *
- * The event sequence is deliberately minimal:
- *
- *   run_started → assistant_message* → completed / error
- *
- * No usage event is emitted because `runOneShotAgent` doesn't
- * surface token counters in its current contract.
- */
-export type RunOneShotEventsParams = Omit<OneShotAgentParams, "appendLog">;
-
-export async function* toOneShotEventStream(
-  runOneShotAgent: (params: OneShotAgentParams) => Promise<void>,
-  params: RunOneShotEventsParams,
-): AsyncIterable<AgentEvent> {
-  yield { type: "run_started" };
-
-  const queue: QueueEvent[] = [];
-  let resolveAvailable: (() => void) | null = null;
-  const wait = () =>
-    new Promise<void>((resolve) => {
-      resolveAvailable = resolve;
-    });
-  const emit = (event: QueueEvent): void => {
-    queue.push(event);
-    const r = resolveAvailable;
-    resolveAvailable = null;
-    r?.();
-  };
-
-  const legacy: OneShotAgentParams = {
-    ...params,
-    appendLog: async (text) => {
-      // Each appendLog call is rendered as one assistant_message
-      // event. The renderer's markdown wrapper handles formatting.
-      emit({ type: "assistant_message", text });
-    },
-  };
-
-  const startedAt = Date.now();
-  let error: unknown;
-
-  const runPromise = runOneShotAgent(legacy)
-    .catch((err) => {
-      error = err;
-    })
-    .finally(() => {
-      emit(SENTINEL);
-    });
-
-  let settled = false;
-  while (!settled || queue.length > 0) {
-    while (queue.length > 0) {
-      const ev = queue.shift()!;
-      if (ev === SENTINEL) {
-        settled = true;
-        continue;
-      }
-      yield ev;
-    }
-    if (!settled) {
-      await wait();
-    }
-  }
-  await runPromise;
-
-  if (error) {
-    yield { type: "error", error: classifyChatError(error) };
-    return;
-  }
-
-  yield {
-    type: "completed",
-    result: {
-      text: "",
-      durationMs: Date.now() - startedAt,
-      usage: {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      },
-      modelId: params.model,
-    },
-  };
-}
-
-/**
- * Lightweight classifier for `query()` rejections. Mirrors the
- * adapter's heuristic — keeps the event-stream shape predictable
- * without duplicating the full `core/errors.ts` taxonomy. Backends
- * that want richer classification can pre-throw a `TalonError`
- * subclass; the message-shape match here is conservative.
+ * Lightweight classifier for `query()` rejections. Keeps the
+ * event-stream shape predictable without duplicating the full
+ * `core/errors.ts` taxonomy. Backends that want richer
+ * classification can pre-throw a `TalonError` subclass; the
+ * message-shape match here is conservative.
  */
 function classifyChatError(err: unknown): AgentError {
   const message = err instanceof Error ? err.message : String(err);

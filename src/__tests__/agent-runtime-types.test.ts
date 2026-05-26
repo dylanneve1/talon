@@ -28,10 +28,6 @@ import {
   requiresAmbientChat,
   type RunKind,
 } from "../core/agent-runtime/run-policy.js";
-import {
-  applyToolFilter,
-  type ToolDescriptor,
-} from "../core/agent-runtime/tool-descriptor.js";
 import { deriveCapabilities } from "../core/agent-runtime/capabilities.js";
 
 // ── events ──────────────────────────────────────────────────────────────────
@@ -198,12 +194,12 @@ describe("agent-runtime/run-policy", () => {
     expect(policy.timeout.hardMs).toBeGreaterThan(0);
   });
 
-  it("dream policy refuses delivery and filters out ambient-chat tools", () => {
+  it("dream policy refuses delivery and excludes ambient-chat tools", () => {
     const policy = defaultRunPolicyFor("dream");
     expect(allowsDelivery(policy)).toBe(false);
     expect(requiresAmbientChat(policy)).toBe(false);
-    expect(policy.tools.filter?.excludeDelivery).toBe(true);
-    expect(policy.tools.filter?.excludeAmbientChatTools).toBe(true);
+    expect(policy.tools.excludeDelivery).toBe(true);
+    expect(policy.tools.excludeAmbientChatTools).toBe(true);
     expect(policy.logging.destination).toBe("dreamLog");
   });
 
@@ -220,92 +216,6 @@ describe("agent-runtime/run-policy", () => {
     expect(policy.delivery.mode).toBe("none");
     expect(policy.timeout.hardMs).toBeLessThanOrEqual(60_000);
     expect(policy.session.persistent).toBe(false);
-  });
-});
-
-// ── tool-descriptor ─────────────────────────────────────────────────────────
-
-describe("agent-runtime/tool-descriptor", () => {
-  const tools: ToolDescriptor[] = [
-    {
-      id: "mcp__telegram-tools__end_turn",
-      server: "telegram-tools",
-      name: "end_turn",
-      tags: ["messaging", "delivery"],
-      delivery: true,
-      requiresAmbientChat: true,
-    },
-    {
-      id: "mcp__telegram-tools__react",
-      server: "telegram-tools",
-      name: "react",
-      tags: ["messaging", "delivery"],
-      delivery: true,
-      requiresAmbientChat: true,
-    },
-    {
-      id: "mcp__mempalace-tools__mempalace_search",
-      server: "mempalace-tools",
-      name: "mempalace_search",
-      tags: ["memory", "readonly"],
-      readOnly: true,
-    },
-    {
-      id: "Bash",
-      name: "Bash",
-      tags: ["shell"],
-    },
-  ];
-
-  it("returns a copy of the list when no filter is given", () => {
-    const out = applyToolFilter(tools, undefined);
-    expect(out).toEqual(tools);
-    expect(out).not.toBe(tools);
-  });
-
-  it("filters by id allowlist", () => {
-    const out = applyToolFilter(tools, { ids: ["Bash"] });
-    expect(out.map((t) => t.id)).toEqual(["Bash"]);
-  });
-
-  it("filters by server allowlist", () => {
-    const out = applyToolFilter(tools, { servers: ["mempalace-tools"] });
-    expect(out.map((t) => t.id)).toEqual([
-      "mcp__mempalace-tools__mempalace_search",
-    ]);
-  });
-
-  it("requires every required tag", () => {
-    const out = applyToolFilter(tools, {
-      requiredTags: ["messaging", "delivery"],
-    });
-    expect(out.map((t) => t.name).sort()).toEqual(["end_turn", "react"]);
-  });
-
-  it("excludes forbidden tags", () => {
-    const out = applyToolFilter(tools, { forbiddenTags: ["messaging"] });
-    expect(out.map((t) => t.name).sort()).toEqual(["Bash", "mempalace_search"]);
-  });
-
-  it("readOnlyOnly drops non-readonly tools", () => {
-    const out = applyToolFilter(tools, { readOnlyOnly: true });
-    expect(out.map((t) => t.name)).toEqual(["mempalace_search"]);
-  });
-
-  it("excludeDelivery drops delivery tools", () => {
-    const out = applyToolFilter(tools, { excludeDelivery: true });
-    expect(out.map((t) => t.name).sort()).toEqual(["Bash", "mempalace_search"]);
-  });
-
-  it("excludeAmbientChatTools drops ambient-chat tools", () => {
-    const out = applyToolFilter(tools, { excludeAmbientChatTools: true });
-    expect(out.map((t) => t.name).sort()).toEqual(["Bash", "mempalace_search"]);
-  });
-
-  it("dream default policy filter excludes delivery + ambient-chat tools", () => {
-    const dreamPolicy = defaultRunPolicyFor("dream");
-    const out = applyToolFilter(tools, dreamPolicy.tools.filter);
-    expect(out.map((t) => t.name).sort()).toEqual(["Bash", "mempalace_search"]);
   });
 });
 

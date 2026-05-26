@@ -12,7 +12,6 @@
  * trigger / test); the backend just receives it and respects it.
  */
 
-import type { ToolFilter } from "./tool-descriptor.js";
 
 /**
  * Categories of run. Different kinds need different tool surfaces,
@@ -35,13 +34,20 @@ import type { ToolFilter } from "./tool-descriptor.js";
 export type RunKind = "chat" | "heartbeat" | "dream" | "trigger" | "test";
 
 /**
- * Tool surface for this run. `filter` narrows the master registry.
- * `requireExplicitChatId` means delivery tools must accept a
- * `chat_id` argument rather than rely on ambient context.
+ * Tool surface for this run.
+ *
+ *   - `requireExplicitChatId` — delivery tools must accept a
+ *     `chat_id` argument rather than rely on ambient context (used
+ *     by heartbeat / trigger).
+ *   - `excludeDelivery` — drop delivery-shaped tools from the
+ *     exposed set entirely (used by dream).
+ *   - `excludeAmbientChatTools` — drop tools that implicitly act on
+ *     the ambient chat (used by dream).
  */
 export interface ToolPolicy {
-  filter?: ToolFilter;
   requireExplicitChatId: boolean;
+  excludeDelivery?: boolean;
+  excludeAmbientChatTools?: boolean;
 }
 
 /**
@@ -154,7 +160,8 @@ export function defaultRunPolicyFor(kind: RunKind): RunPolicy {
         label: "dream",
         tools: {
           requireExplicitChatId: false,
-          filter: { excludeDelivery: true, excludeAmbientChatTools: true },
+          excludeDelivery: true,
+          excludeAmbientChatTools: true,
         },
         delivery: { mode: "none" },
         timeout: { hardMs: 30 * ONE_MINUTE_MS },
