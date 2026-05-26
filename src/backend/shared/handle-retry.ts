@@ -28,6 +28,7 @@ import { logWarn } from "../../util/log.js";
 import { incrementCounter } from "../../util/metrics.js";
 import { resetSession } from "../../storage/sessions.js";
 import { classifyRetry } from "./model-retry.js";
+import type { AgentEvent } from "../../core/agent-runtime/events.js";
 
 /** Inputs for `applyRetryDecision`. */
 export interface ApplyRetryDecisionInputs {
@@ -138,4 +139,109 @@ export async function applyRetryDecision(
 
   // `propagate` — caller throws `classified`.
   return { classified };
+}
+
+// ── Generator-shaped variant ────────────────────────────────────────────────
+
+/** Inputs for `applyRetryDecisionStream`. */
+export interface StreamRetryInputs {
+  /** Error caught inside the caller's generator. */
+  err: unknown;
+  /** Active chat id (for log lines + session reset). */
+  chatId: string;
+  /** Model that was active when the error fired. */
+  activeModel: string;
+  /** True when the current call is already a retry (short-circuits). */
+  retried: boolean;
+  /**
+   * Builds the recursive event stream. Called once when the helper
+   * decides to retry — yielded via `yield*` so the caller's generator
+   * transparently delegates to it.
+   */
+  buildRetryStream: () => AsyncIterable<AgentEvent>;
+  /** Backend label for log-line prefixes (`"Kilo"`, `"Codex"` …). */
+  backendLabel?: string;
+  /**
+   * Word used in the reset_and_retry log line. Codex resets a "thread"
+   * while remote-server / claude backends reset a "session".
+   */
+  resetNoun?: "session" | "thread";
+}
+
+/** Outcome `applyRetryDecisionStream` returns from its generator. */
+export interface StreamRetryResult {
+  /**
+   * True when the helper recursed (the recursive stream was already
+   * yielded into the caller). Caller may finish its generator.
+   */
+  retried: boolean;
+  /**
+   * The classified error. When `retried` is false the caller should
+   * yield an `error` event derived from this and return.
+   */
+  classified: TalonError;
+}
+
+/**
+ * Generator-shaped equivalent of `applyRetryDecision`. The caller
+ * uses `yield* applyRetryDecisionStream({...})` so the recursive
+ * retry's events flow into the outer stream transparently. Side
+ * effects (counter increment, session reset, transient model flip
+ * with restore-in-finally) match the callback-shaped helper exactly.
+ *
+ * The terminating value (`AsyncGenerator` 2nd type param) tells the
+ * caller whether to emit a final `error` event or just return.
+ */
+export async function* applyRetryDecisionStream(
+  inputs: StreamRetryInputs,
+): AsyncGenerator<AgentEvent, StreamRetryResult, void> {
+  const {
+    err,
+    chatId,
+    activeModel,
+    retried,
+    buildRetryStream,
+    backendLabel,
+    resetNoun = "session",
+  } = inputs;
+
+  const classified = classify(err);
+  incrementCounter(`errors.${classified.reason ?? "unknown"}`);
+
+  const decision = classifyRetry({
+    error: classified,
+    activeModel,
+    retried,
+  });
+
+  const prefix = backendLabel ? `${backendLabel} ` : "";
+
+  if (decision.kind === "reset_and_retry") {
+    logWarn(
+      "agent",
+      `[${chatId}] ${prefix}${decision.reason}, resetting ${resetNoun} and retrying`,
+    );
+    resetSession(chatId);
+    yield* buildRetryStream();
+    return { retried: true, classified };
+  }
+
+  if (decision.kind === "fallback_model") {
+    logWarn(
+      "agent",
+      `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
+    );
+    resetSession(chatId);
+    const originalModel = getChatSettings(chatId).model;
+    setChatModel(chatId, decision.fallbackModelId);
+    try {
+      yield* buildRetryStream();
+      return { retried: true, classified };
+    } finally {
+      setChatModel(chatId, originalModel);
+    }
+  }
+
+  // `propagate` — caller should yield an `error` event and return.
+  return { retried: false, classified };
 }

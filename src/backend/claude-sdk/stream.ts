@@ -23,7 +23,6 @@ import { log } from "../../util/log.js";
 /** Mutable state accumulated while iterating the SDK message stream. */
 export type StreamState = {
   currentBlockText: string;
-  currentThinkingText: string;
   allResponseText: string;
   newSessionId: string | undefined;
   toolCalls: number;
@@ -62,12 +61,23 @@ export type StreamState = {
    * may have appeared in the same assistant message before the terminator.
    */
   turnTerminated: boolean;
+  /**
+   * Per-token text chunks accumulated since the last throttled flush.
+   * Drained into a `text_delta` event when `processStreamDelta` decides
+   * the throttle interval has elapsed.
+   */
+  unflushedTextDelta: string;
+  /**
+   * Same as `unflushedTextDelta` but for thinking-phase tokens — drained
+   * into a `reasoning` event. Tracked separately so a thinking burst
+   * doesn't poison the visible-text delta buffer.
+   */
+  unflushedThinkingDelta: string;
 };
 
 export function createStreamState(): StreamState {
   return {
     currentBlockText: "",
-    currentThinkingText: "",
     allResponseText: "",
     newSessionId: undefined,
     toolCalls: 0,
@@ -82,6 +92,8 @@ export function createStreamState(): StreamState {
     lastTrailingText: "",
     deliveredTextNorms: [],
     turnTerminated: false,
+    unflushedTextDelta: "",
+    unflushedThinkingDelta: "",
   };
 }
 
@@ -107,39 +119,60 @@ export function isResult(msg: SDKMessage): msg is SDKResultMessage {
 
 // ── Message processors ──────────────────────────────────────────────────────
 
+/** Output of `processStreamDelta` when the throttle interval has elapsed. */
+export type StreamDeltaEmit =
+  | { phase: "text"; text: string }
+  | { phase: "thinking"; text: string };
+
 /**
- * Process a streaming delta event — accumulates text and fires throttled
- * callbacks for thinking and text phases.
+ * Process a streaming delta event — accumulates per-token chunks
+ * into `state.currentBlockText` (text) / unflushed buffers, and
+ * returns the chunk to emit when the throttle interval has elapsed.
+ *
+ * Returns `null` when nothing should be emitted yet (either the delta
+ * wasn't a content-block-delta, or the throttle window is still open).
+ * Callers yield a `text_delta` / `reasoning` event with the returned
+ * `text`. The throttle keeps the event volume bounded — Telegram /
+ * terminal renderers re-accumulate, but at human-readable cadence.
  */
 export function processStreamDelta(
   msg: SDKPartialAssistantMessage,
   state: StreamState,
-  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void,
-): void {
-  if (!onStreamDelta) return;
-
+): StreamDeltaEmit | null {
   const event = msg.event;
-  if (event.type !== "content_block_delta") return;
+  if (event.type !== "content_block_delta") return null;
 
   const deltaEvent = event as BetaRawContentBlockDeltaEvent;
   const delta = deltaEvent.delta;
 
   if (delta.type === "thinking_delta") {
-    state.currentThinkingText +=
-      (delta as { thinking?: string }).thinking ?? "";
+    // The SDK's typed thinking_delta carries `.thinking`; treat
+    // missing/non-string defensively so a schema drift can't crash
+    // the loop.
+    const chunk =
+      typeof (delta as { thinking?: unknown }).thinking === "string"
+        ? (delta as { thinking: string }).thinking
+        : "";
+    if (chunk) state.unflushedThinkingDelta += chunk;
     const now = Date.now();
     if (now - state.lastStreamUpdate >= STREAM_INTERVAL) {
       state.lastStreamUpdate = now;
-      onStreamDelta(state.currentThinkingText, "thinking");
+      const out = state.unflushedThinkingDelta;
+      state.unflushedThinkingDelta = "";
+      if (out.length > 0) return { phase: "thinking", text: out };
     }
   } else if (delta.type === "text_delta") {
     state.currentBlockText += delta.text;
+    state.unflushedTextDelta += delta.text;
     const now = Date.now();
     if (now - state.lastStreamUpdate >= STREAM_INTERVAL) {
       state.lastStreamUpdate = now;
-      onStreamDelta(state.currentBlockText, "text");
+      const out = state.unflushedTextDelta;
+      state.unflushedTextDelta = "";
+      if (out.length > 0) return { phase: "text", text: out };
     }
   }
+  return null;
 }
 
 /** A tool call extracted from an assistant message. */

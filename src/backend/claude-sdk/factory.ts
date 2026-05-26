@@ -15,7 +15,6 @@ import { registerBackend } from "../registry.js";
 import type { BackendFactory } from "../registry.js";
 import { log } from "../../util/log.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
-import { toEventStream } from "../shared/to-event-stream.js";
 import {
   composeBackend,
   type ChatBackend,
@@ -29,13 +28,13 @@ import {
 import {
   initAgent as initClaudeAgent,
   updateSystemPrompt as claudeUpdateSystemPrompt,
-  handleMessage as claudeHandleMessage,
   warmSession as claudeWarmSession,
   getActiveQuery,
   buildMcpServers,
   runOneShotAgent as claudeRunOneShotAgent,
   evictOrphanSubprocesses as claudeEvictOrphanSubprocesses,
 } from "./index.js";
+import { runChatTurn as claudeRunChatTurn } from "./handler.js";
 
 import * as modelProvider from "./model-provider.js";
 
@@ -51,8 +50,7 @@ const claudeSdkFactory: BackendFactory = {
     log("bot", "Backend: Claude SDK (@anthropic-ai/claude-agent-sdk)");
 
     const chat: ChatBackend = {
-      runChatTurn: (params) =>
-        toEventStream((p) => claudeHandleMessage(p), params),
+      runChatTurn: (params) => claudeRunChatTurn(params),
     };
 
     const background: BackgroundRunner = {
