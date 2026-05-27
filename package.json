@@ -80,7 +80,7 @@
     "@kilocode/sdk": "^7.2.22",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@openai/agents": "^0.11.4",
-    "@openai/codex-sdk": "^0.133.0",
+    "@openai/codex-sdk": "^0.134.0",
     "@opencode-ai/sdk": "^1.4.0",
     "@playwright/mcp": "^0.0.75",
     "big-integer": "^1.6.52",
