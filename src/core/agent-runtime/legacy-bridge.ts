@@ -128,6 +128,23 @@ export async function pipeEventsToCallbacks(
         break;
       }
       case "tool_call": {
+        if (
+          !isPlainObject(event.input) &&
+          event.input !== undefined &&
+          event.input !== null
+        ) {
+          // The legacy onToolUse contract requires Record<string, unknown>, so
+          // non-plain-object inputs (e.g. arrays emitted by Phase 3 backends)
+          // cannot be forwarded verbatim. Log the data loss so operators can
+          // diagnose if a tool receives empty args when it shouldn't.
+          const typeLabel = Array.isArray(event.input)
+            ? "array"
+            : typeof event.input;
+          console.warn(
+            `[legacy-bridge] tool_call "${event.name}": input is ${typeLabel}, ` +
+              `not a plain object — bridging to {} (legacy onToolUse accepts only Record<string, unknown>).`,
+          );
+        }
         const input = isPlainObject(event.input)
           ? (event.input as Record<string, unknown>)
           : {};
@@ -178,7 +195,6 @@ export async function reduceEventsToResult(
   let usage = emptyUsage();
   let modelId: string | undefined;
   let durationMs = 0;
-  let saw = false;
 
   for await (const event of stream) {
     switch (event.type) {
@@ -193,7 +209,6 @@ export async function reduceEventsToResult(
         if (event.usage.modelId) modelId = event.usage.modelId;
         break;
       case "completed":
-        saw = true;
         if (event.result) {
           return event.result;
         }
@@ -205,10 +220,11 @@ export async function reduceEventsToResult(
     }
   }
 
-  // No completed event seen — synthesise from observed deltas.
-  // Phase 3.x backends should always emit `completed`; falling
-  // through here means the stream ended on a non-terminator,
-  // which is a backend contract violation but not catastrophic.
+  // Stream ended without a `completed` terminator, OR the `completed`
+  // event carried no result. Phase 3.x backends should always emit
+  // `completed` with a result; falling through here means the stream
+  // ended on a non-terminator, which is a backend contract violation
+  // but not catastrophic — synthesise from observed deltas.
   return {
     text,
     durationMs,

@@ -147,17 +147,21 @@ export function adaptQueryBackend(
       }
     : undefined;
 
-  const sessions: SessionBackend | undefined =
-    legacy.resetChat || legacy.warmSession
-      ? {
-          resetChat(chatId) {
-            return legacy.resetChat?.(chatId);
-          },
-          warmSession: legacy.warmSession
-            ? (chatId) => legacy.warmSession!(chatId)
-            : undefined,
-        }
-      : undefined;
+  // Only advertise session support when resetChat is actually implemented.
+  // warmSession is a cold-start optimisation hint that can only be meaningful
+  // alongside reset support — advertising sessions: true with a no-op resetChat
+  // (because only warmSession was defined) misleads callers into believing they
+  // can reset the session when they actually cannot.
+  const sessions: SessionBackend | undefined = legacy.resetChat
+    ? {
+        resetChat(chatId) {
+          return legacy.resetChat!(chatId);
+        },
+        warmSession: legacy.warmSession
+          ? (chatId) => legacy.warmSession!(chatId)
+          : undefined,
+      }
+    : undefined;
 
   const tools: ToolRuntime | undefined = legacy.refreshMcpServers
     ? {
