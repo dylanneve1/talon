@@ -11,6 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import type { QueryParams } from "../core/types.js";
 import { applyRetryDecision } from "../backend/shared/handle-retry.js";
 import { TalonError } from "../core/errors.js";
 import { registerModels, clearModels } from "../core/models.js";
@@ -171,9 +172,9 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
     ]);
 
     // Capture the params received inside the recursion.
-    let paramsSeenInRecursion: typeof stubParams & { model?: string } =
-      stubParams;
-    const recurse = vi.fn(async (p: typeof stubParams & { model?: string }) => {
+    // QueryParams has model?: string so we can assert on it directly.
+    let paramsSeenInRecursion: QueryParams = stubParams;
+    const recurse = vi.fn(async (p: QueryParams) => {
       paramsSeenInRecursion = p;
       return {
         text: "ok",
