@@ -114,6 +114,28 @@ claudeDescribe("Claude SDK live discovery (integration)", () => {
     DISCOVERY_TIMEOUT_MS + 5_000,
   );
 
+  // Regression guard: SDK 0.3.153 shipped a binary whose hardcoded model list
+  // topped out at opus-4-6 / sonnet-4-6 even though the API was already
+  // serving 4.7 and 4.8 — `supportedModels()` returned only
+  // `default, sonnet[1m], haiku` and no opus tier at all, so the `/model`
+  // picker silently dropped every opus generation. Bumping to 0.3.154+
+  // restored opus discovery. This test fails if a future SDK ever regresses
+  // again by dropping the opus tier entirely.
+  it(
+    "real SDK supportedModels() includes at least one opus model",
+    async () => {
+      const models = await discoverSupportedModels();
+      const hasOpus = models.some((m) =>
+        (m.value ?? "").toLowerCase().includes("opus"),
+      );
+      expect(
+        hasOpus,
+        `Expected an opus model in discovery, got: ${models.map((m) => m.value).join(", ")}`,
+      ).toBe(true);
+    },
+    DISCOVERY_TIMEOUT_MS + 5_000,
+  );
+
   it(
     "registerClaudeModels consumes live SDK metadata",
     async () => {
