@@ -214,9 +214,6 @@ export async function reduceEventsToResult(
     durationMs,
     usage,
     ...(modelId ? { modelId } : {}),
-    // saw === false means we hit the silent-stream path; the
-    // dispatcher will see empty text + zero usage.
-    ...(saw ? {} : {}),
   };
 }
 

@@ -49,7 +49,7 @@ import {
   setSessionId,
   resetSession,
 } from "../../storage/sessions.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
+import { getChatSettings } from "../../storage/chat-settings.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
@@ -196,8 +196,8 @@ async function probeUsageExhausted(
  * recursion). Returns `undefined` otherwise; the caller falls through
  * to its normal classify/throw path.
  *
- * The retry side-effects are confined here: session reset, transient
- * `setChatModel` flip (restored in `finally`), `_retried = true` on the
+ * The retry side-effects are confined here: session reset, fallback
+ * model threaded through `params.model`, `_retried = true` on the
  * recursive call.
  */
 async function maybeFallbackForChatGptMismatch(
@@ -281,13 +281,7 @@ async function maybeFallbackForChatGptMismatch(
         : ``),
   );
   resetSession(chatId);
-  const originalModel = getChatSettings(chatId).model;
-  setChatModel(chatId, fallbackModel);
-  try {
-    return await handleMessage(params, true);
-  } finally {
-    setChatModel(chatId, originalModel);
-  }
+  return await handleMessage({ ...params, model: fallbackModel }, true);
 }
 
 // ── Active session registry ─────────────────────────────────────────────────

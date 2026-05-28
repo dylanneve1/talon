@@ -374,7 +374,7 @@ async function mapListModels(
         m.displayName.toLowerCase().includes(needle),
     );
   }
-  return { models: mapped, total };
+  return { models: mapped, total: mapped.length };
 }
 
 async function mapDefaultModel(

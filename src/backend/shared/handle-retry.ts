@@ -26,7 +26,6 @@ import type { QueryParams, QueryResult } from "../../core/types.js";
 import { classify, type TalonError } from "../../core/errors.js";
 import { logWarn } from "../../util/log.js";
 import { incrementCounter } from "../../util/metrics.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
 import { resetSession } from "../../storage/sessions.js";
 import { classifyRetry } from "./model-retry.js";
 
@@ -128,13 +127,13 @@ export async function applyRetryDecision(
       `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
     );
     resetSession(chatId);
-    const originalModel = getChatSettings(chatId).model;
-    setChatModel(chatId, decision.fallbackModelId);
-    try {
-      return { retry: await recurseWithRetried(params), classified };
-    } finally {
-      setChatModel(chatId, originalModel);
-    }
+    return {
+      retry: await recurseWithRetried({
+        ...params,
+        model: decision.fallbackModelId,
+      }),
+      classified,
+    };
   }
 
   // `propagate` — caller throws `classified`.

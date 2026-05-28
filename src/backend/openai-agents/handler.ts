@@ -44,7 +44,7 @@ import {
   setSessionName,
   resetSession,
 } from "../../storage/sessions.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
+import { getChatSettings } from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -360,13 +360,10 @@ export async function handleMessage(
           `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
         );
         resetSession(chatId);
-        const originalModel = getChatSettings(chatId).model;
-        setChatModel(chatId, decision.fallbackModelId);
-        try {
-          return await handleMessage(params, true);
-        } finally {
-          setChatModel(chatId, originalModel);
-        }
+        return await handleMessage(
+          { ...params, model: decision.fallbackModelId },
+          true,
+        );
       }
 
       logError(
