@@ -399,9 +399,12 @@ describe("adaptQueryBackend / models", () => {
       "a",
       "alpha-beta",
     ]);
-    expect(onlySelectable.total).toBe(3);
+    // total now reflects the post-filter count (PR #265 Bug 2 fix).
+    expect(onlySelectable.total).toBe(2);
     const queried = await adapted.models!.listModels({ query: "alpha" });
     expect(queried.models.map((m) => m.id).sort()).toEqual(["a", "alpha-beta"]);
+    // query filter also returns post-filter total.
+    expect(queried.total).toBe(2);
   });
 
   it("getDefaultModel returns null when the legacy default is empty", async () => {
