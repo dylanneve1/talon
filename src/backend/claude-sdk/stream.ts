@@ -125,7 +125,8 @@ export function processStreamDelta(
   const delta = deltaEvent.delta;
 
   if (delta.type === "thinking_delta") {
-    state.currentThinkingText += (delta as { thinking?: string }).thinking ?? "";
+    state.currentThinkingText +=
+      (delta as { thinking?: string }).thinking ?? "";
     const now = Date.now();
     if (now - state.lastStreamUpdate >= STREAM_INTERVAL) {
       state.lastStreamUpdate = now;
