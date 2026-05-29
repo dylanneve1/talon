@@ -322,8 +322,10 @@ export async function handleMessage(
     numApiCalls: state.numApiCalls,
   });
 
-  // Set a descriptive session name from the first message
-  if (session.turns === 0 && text) {
+  // Set a descriptive session name from the first message.
+  // Guard against flow-violation retries, which pass the reminder text as
+  // `text` — we only want the original user message, not the synthetic prompt.
+  if (session.turns === 0 && text && !_internal.flowRetries) {
     const name = extractSessionName(text);
     if (name) setSessionName(chatId, name);
   }

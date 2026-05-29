@@ -100,9 +100,6 @@ export function startDiscovery(
   if (state.discoveryPromise) return state.discoveryPromise;
 
   const promise = fetchEndpointModels(baseURL, apiKey)
-    .then(() => {
-      state.discoveryAt = Date.now();
-    })
     .catch((err) => {
       logDebug(
         "agent",
@@ -110,6 +107,9 @@ export function startDiscovery(
       );
     })
     .finally(() => {
+      // Mark discovery attempted regardless of success or failure so callers
+      // don't spin-wait on repeated awaitDiscovery() calls when unreachable.
+      state.discoveryAt = Date.now();
       // Clear the promise reference so a subsequent `refreshDiscovery`
       // can kick off a new fetch instead of being short-circuited.
       if (state.discoveryPromise === promise) {

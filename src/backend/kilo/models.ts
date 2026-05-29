@@ -258,8 +258,7 @@ function isFreeModel(model: {
   const id = model.id.toLowerCase();
   const name = model.name.toLowerCase();
   return (
-    model.costInput === 0 ||
-    model.costOutput === 0 ||
+    (model.costInput === 0 && model.costOutput === 0) ||
     id.includes("free") ||
     name.includes("free")
   );

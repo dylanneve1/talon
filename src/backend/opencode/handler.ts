@@ -30,6 +30,7 @@ import {
   getSession,
   incrementTurns,
   recordUsage,
+  setSessionId,
   setSessionName,
 } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
@@ -255,7 +256,6 @@ export async function handleMessage(
   if (state.newSessionId) {
     const stored = getSession(chatId).sessionId;
     if (stored !== state.newSessionId) {
-      const { setSessionId } = await import("../../storage/sessions.js");
       setSessionId(chatId, state.newSessionId);
     }
   }

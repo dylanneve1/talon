@@ -196,10 +196,10 @@ export function createDiscordActionHandler(client: Client, gateway: Gateway) {
 
       case "edit_message": {
         const text = String(body.text ?? "");
-        if (text.length > DISCORD_MAX_TEXT * 2) {
+        if (text.length > DISCORD_MAX_TEXT) {
           return {
             ok: false,
-            error: `Edit text too long (max ${DISCORD_MAX_TEXT * 2})`,
+            error: `Edit text too long (max ${DISCORD_MAX_TEXT})`,
           };
         }
         const messageId = String(body.message_id ?? "");

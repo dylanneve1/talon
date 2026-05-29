@@ -152,7 +152,9 @@ async function reuseExistingServer<TClient extends RemoteAgentClient>(
 ): Promise<TClient | null> {
   const { state, createClient, healthPath } = inputs;
   try {
-    const response = await fetch(`${state.baseUrl}${healthPath}`);
+    const response = await fetch(`${state.baseUrl}${healthPath}`, {
+      signal: AbortSignal.timeout(5_000),
+    });
     if (!response.ok) return null;
     const client = createClient(state.baseUrl);
     log("agent", `Reusing ${state.label} server at ${state.baseUrl}`);

@@ -124,7 +124,7 @@ export function registerCallbacks(
 
   bot.on("callback_query:data", async (ctx) => {
     const data = ctx.callbackQuery.data;
-    const cid = String(ctx.chat?.id ?? ctx.from.id);
+    const cid = String(ctx.chat?.id ?? ctx.from?.id);
 
     // Handle /settings callbacks (effort, pulse, done). Model selection
     // is intentionally NOT here — that lives entirely under /model now.

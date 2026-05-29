@@ -237,7 +237,11 @@ function commandForLanguage(
   }
 }
 
+let _bashCommand: { cmd: string; args: string[] } | null | undefined =
+  undefined;
+
 function commandForBash(): { cmd: string; args: string[] } | null {
+  if (_bashCommand !== undefined) return _bashCommand;
   const candidates =
     process.platform === "win32"
       ? [
@@ -251,8 +255,12 @@ function commandForBash(): { cmd: string; args: string[] } | null {
       stdio: "ignore",
       windowsHide: true,
     });
-    if (probe.status === 0) return { cmd, args: [] };
+    if (probe.status === 0) {
+      _bashCommand = { cmd, args: [] };
+      return _bashCommand;
+    }
   }
+  _bashCommand = null;
   return null;
 }
 
