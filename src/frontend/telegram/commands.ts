@@ -15,7 +15,6 @@ import {
 import { clearHistory } from "../../storage/history.js";
 import {
   getChatSettings,
-  setChatModel,
   setChatModelForBackend,
   setChatBackend,
   setChatEffort,
@@ -74,21 +73,12 @@ export function setAdminUserId(id: number | undefined): void {
   ADMIN_USER_ID = id ?? 0;
 }
 
-function chunkButtons(
-  buttons: Array<SettingsButton>,
-  columns = 2,
-): Array<Array<SettingsButton>> {
-  const rows: Array<Array<SettingsButton>> = [];
-  for (let index = 0; index < buttons.length; index += columns) {
-    rows.push(buttons.slice(index, index + columns));
-  }
-  return rows;
-}
-
 export function registerCommands(
   bot: Bot,
   config: TalonConfig,
-  gateway?: { backend: import("../../core/agent-runtime/capabilities.js").Backend | null },
+  gateway?: {
+    backend: import("../../core/agent-runtime/capabilities.js").Backend | null;
+  },
 ): void {
   bot.command("start", (ctx) =>
     ctx.reply(

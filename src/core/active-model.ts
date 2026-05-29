@@ -417,5 +417,5 @@ export function getModelByBackendSnapshot(
   chatId: string,
 ): Record<string, string> {
   const settings = getChatSettings(chatId);
-  return { ...(settings.modelByBackend ?? {}) };
+  return { ...settings.modelByBackend };
 }

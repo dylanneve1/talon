@@ -269,7 +269,6 @@ describe("dispatcher", () => {
   });
 
   it("runs different-chat queries in true parallel", async () => {
-    const order: string[] = [];
     const backend = stubBackend();
 
     initDispatcher({
@@ -362,7 +361,6 @@ describe("dispatcher", () => {
   });
 
   it("serializes same-chat queries (FIFO)", async () => {
-    const order: string[] = [];
     const backend = stubBackend();
 
     initDispatcher({

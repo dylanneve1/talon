@@ -138,7 +138,10 @@ describe("resolveActiveModelForChat — 5-step chain", () => {
       "codex",
       fakeConfig(),
     );
-    expect(result).toMatchObject({ model: "gpt-5.5", source: "override-valid" });
+    expect(result).toMatchObject({
+      model: "gpt-5.5",
+      source: "override-valid",
+    });
   });
 
   // ── Step 2 reached: override invalid → backend canonical ───────────
@@ -210,7 +213,10 @@ describe("resolveActiveModelForChat — 5-step chain", () => {
       "codex",
       fakeConfig(),
     );
-    expect(result).toMatchObject({ model: "gpt-5.5", source: "backend-canonical" });
+    expect(result).toMatchObject({
+      model: "gpt-5.5",
+      source: "backend-canonical",
+    });
   });
 
   // ── Step 3: operator override in config.backendDefaults ────────────

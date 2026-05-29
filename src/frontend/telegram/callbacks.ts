@@ -7,11 +7,9 @@ import type { TalonConfig } from "../../util/config.js";
 import { logWarn } from "../../util/log.js";
 import {
   getChatSettings,
-  setChatModel,
   setChatModelForBackend,
   setChatBackend,
   setChatEffort,
-  clearAllChatModels,
   resolveModelName,
   type EffortLevel,
 } from "../../storage/chat-settings.js";
@@ -118,7 +116,9 @@ export async function answerCallbackQuerySafe(
 export function registerCallbacks(
   bot: Bot,
   config: TalonConfig,
-  gateway?: { backend: import("../../core/agent-runtime/capabilities.js").Backend | null },
+  gateway?: {
+    backend: import("../../core/agent-runtime/capabilities.js").Backend | null;
+  },
 ): void {
   // ── Callback query handler ──────────────────────────────────────────────────
 

@@ -45,7 +45,8 @@ const opencodeFactory: BackendFactory = {
     log("bot", "Backend: OpenCode (@opencode-ai/sdk)");
 
     const chat: ChatBackend = {
-      runChatTurn: (params) => handlerToEvents((p) => ocHandleMessage(p), params),
+      runChatTurn: (params) =>
+        handlerToEvents((p) => ocHandleMessage(p), params),
     };
 
     const background: BackgroundRunner = {

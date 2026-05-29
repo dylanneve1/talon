@@ -122,12 +122,7 @@ export async function buildModelMenuViewForChat(
   // per-chat pick AND no operator default). The menu surfaces that
   // as "No model selected".
   const { ref: activeRef, model: activeModel } =
-    await resolveActiveModelForChat(
-      chatId,
-      backend,
-      activeBackendId,
-      config,
-    );
+    await resolveActiveModelForChat(chatId, backend, activeBackendId, config);
 
   // Default-model for "hasOverride" comparison. Prefer the active
   // backend's canonical default so a chat on Codex without an override
@@ -235,12 +230,7 @@ export async function buildModelBrowseViewForChat(
   // comes from the ref's enrichment instead of a separate
   // `getRawModelInfo` call.
   const { ref: activeRef, model: resolvedModel } =
-    await resolveActiveModelForChat(
-      chatId,
-      backend,
-      activeBackendId,
-      config,
-    );
+    await resolveActiveModelForChat(chatId, backend, activeBackendId, config);
   const activeModel = resolvedModel ?? "";
   const freeOnly = chatSets.freeOnly === true;
   const filter: "all" | "free" = options.filter ?? (freeOnly ? "free" : "all");

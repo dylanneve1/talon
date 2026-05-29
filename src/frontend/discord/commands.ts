@@ -44,7 +44,6 @@ import {
 import { clearHistory } from "../../storage/history.js";
 import {
   getChatSettings,
-  setChatModel,
   setChatModelForBackend,
   setChatBackend,
   setChatEffort,

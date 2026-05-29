@@ -115,8 +115,11 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   // would either error opaquely or run on the wrong default. Reply
   // with a clear "use /model to pick one" message routed through the
   // same onTextBlock callback the backend would use for output.
-  const { model: resolvedModel, ref: resolvedRef, backendId } =
-    await resolveActiveModel(params.chatId);
+  const {
+    model: resolvedModel,
+    ref: resolvedRef,
+    backendId,
+  } = await resolveActiveModel(params.chatId);
   if (resolvedModel === null || resolvedRef === null) {
     const message =
       `No model selected for backend \`${backendId}\`. ` +

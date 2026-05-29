@@ -348,4 +348,3 @@ describe("pipeEventsToCallbacks / silent events", () => {
     });
   });
 });
-

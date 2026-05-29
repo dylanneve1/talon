@@ -36,7 +36,6 @@ import type { TalonConfig } from "../../util/config.js";
 import type { Gateway } from "../../core/gateway.js";
 import {
   getChatSettings,
-  setChatModel,
   setChatModelForBackend,
   setChatBackend,
   setChatEffort,
