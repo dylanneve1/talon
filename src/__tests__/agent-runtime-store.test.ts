@@ -5,6 +5,7 @@
  *
  *   - load → defaultValue when file is absent
  *   - load promotes `.bak` to primary on corrupt primary
+ *   - save backs up the existing primary to `.bak` before overwriting
  *   - save writes the envelope shape `{ schemaVersion, savedAt, data }`
  *   - save is idempotent when not dirty
  *   - migrate hook runs on version mismatch
@@ -214,6 +215,44 @@ describe("JsonStore / update + save", () => {
     await store.load();
     await store.forceSave();
     expect(fakeFs.files.size).toBe(1);
+  });
+
+  it("backs up the existing primary to .bak before overwriting", async () => {
+    const fakeFs = makeFakeFs({
+      "/fake/settings.json": JSON.stringify({
+        schemaVersion: 1,
+        savedAt: 1,
+        data: { enabled: false, rate: 1 },
+      }),
+    });
+    const store = makeStore(fakeFs);
+    await store.load();
+    store.update((s) => {
+      s.rate = 2;
+    });
+    await store.save();
+    // Primary holds the new value …
+    expect(JSON.parse(fakeFs.files.get("/fake/settings.json")!).data).toEqual({
+      enabled: false,
+      rate: 2,
+    });
+    // … and .bak holds the prior good copy, so a later corrupt primary
+    // recovers via the load fallback ladder.
+    expect(
+      JSON.parse(fakeFs.files.get("/fake/settings.json.bak")!).data,
+    ).toEqual({ enabled: false, rate: 1 });
+  });
+
+  it("writes no .bak on the first save (no primary to back up yet)", async () => {
+    const fakeFs = makeFakeFs();
+    const store = makeStore(fakeFs);
+    await store.load();
+    store.update((s) => {
+      s.enabled = true;
+    });
+    await store.save();
+    expect(fakeFs.files.has("/fake/settings.json")).toBe(true);
+    expect(fakeFs.files.has("/fake/settings.json.bak")).toBe(false);
   });
 });
 

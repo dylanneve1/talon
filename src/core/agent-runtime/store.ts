@@ -16,8 +16,9 @@
  *   - `schemaVersion` + `migrate` hook lets consumers evolve the
  *     shape without forking storage code per-store.
  *
- *   - Corrupt JSON falls back to `<path>.bak` once before
- *     surrendering. Matches the legacy stores' behaviour.
+ *   - Each write first copies the existing primary to `<path>.bak`,
+ *     so a primary that later goes corrupt falls back to the previous
+ *     good copy on the next load. Matches the legacy stores' behaviour.
  *
  *   - Writes are atomic via `write-file-atomic` (rename-on-fsync).
  *     The store doesn't lock — concurrent processes mutating the
@@ -266,6 +267,7 @@ export class JsonStore<T> {
   async save(): Promise<void> {
     if (!this.#dirty) return;
     const serialised = this.#serialise();
+    await this.#backupExistingPrimary();
     await this.#fs.writeFileAtomic(this.#path, serialised);
     this.#dirty = false;
   }
@@ -284,6 +286,7 @@ export class JsonStore<T> {
       );
     }
     const serialised = this.#serialise();
+    this.#backupExistingPrimarySync();
     this.#fs.writeFileAtomicSync(this.#path, serialised);
     this.#dirty = false;
   }
@@ -318,6 +321,36 @@ export class JsonStore<T> {
   }
 
   // ── Internals ───────────────────────────────────────────────────────────
+
+  /**
+   * Copy the current on-disk primary to `<path>.bak` before it is
+   * overwritten, so a primary that later goes corrupt (a torn write
+   * from an external cause, a bad disk sector, a manual edit) can
+   * still recover the previous good copy via the `loadSync` fallback
+   * ladder. Best-effort: a backup failure must never block — or
+   * mask the error of — the primary write that follows.
+   */
+  async #backupExistingPrimary(): Promise<void> {
+    if (!this.#fs.existsSync(this.#path)) return;
+    try {
+      const current = this.#fs.readFileSync(this.#path, "utf8");
+      await this.#fs.writeFileAtomic(this.#path + ".bak", current);
+    } catch {
+      // Best effort — see doc comment.
+    }
+  }
+
+  /** Synchronous twin of `#backupExistingPrimary`. */
+  #backupExistingPrimarySync(): void {
+    if (!this.#fs.writeFileAtomicSync) return;
+    if (!this.#fs.existsSync(this.#path)) return;
+    try {
+      const current = this.#fs.readFileSync(this.#path, "utf8");
+      this.#fs.writeFileAtomicSync(this.#path + ".bak", current);
+    } catch {
+      // Best effort — see doc comment.
+    }
+  }
 
   #tryReadFile(path: string): { ok: true; value: T } | { ok: false } {
     if (!this.#fs.existsSync(path)) return { ok: false };
