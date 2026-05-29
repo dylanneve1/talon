@@ -14,12 +14,13 @@
  *   - `control`     — system-prompt update
  *
  * Consumers read through slots — `backend.chat?.runChatTurn(...)`,
- * `backend.models?.resolveModel(...)`. Capability presence is
- * declared at the type level via the optional slot fields and
- * mirrored on `backend.capabilities` for runtime introspection.
+ * `backend.models?.resolveModelInfo(...)`. Capability presence IS the
+ * slot: an absent (`undefined`) slot means the backend doesn't
+ * support that capability. There is no separate flag record to keep
+ * in sync — the slots are the single source of truth.
  */
 
-import type { AgentEvent, UsageSnapshot } from "./events.js";
+import type { AgentEvent } from "./events.js";
 import type { ModelRef, BackendId } from "./model-ref.js";
 import type {
   CacheMetricsSupport,
@@ -47,8 +48,6 @@ export interface ChatRunParams {
   isGroup?: boolean;
   /** Provider message ID. Telegram is numeric; Discord snowflakes are strings. */
   messageId?: number | string;
-  /** Aborts the run mid-flight (signal propagates to subprocesses). */
-  abortController?: AbortController;
 }
 
 // ── Catalog types ───────────────────────────────────────────────────────────
@@ -58,10 +57,10 @@ export interface ChatRunParams {
 /**
  * The chat-turn surface. `runChatTurn` returns an
  * `AsyncIterable<AgentEvent>` carrying per-token deltas, tool
- * events, usage, and the terminator. Consumers that need a
- * accumulation into a flat `AgentResult` use `reduceEventsToResult`
- * from `event-bridge.ts`; consumers that need callback-driven
- * delivery use `pipeEventsToCallbacks`.
+ * events, usage, and the terminator. Consumers that need
+ * callback-driven delivery (the dispatcher, frontend logging) use
+ * `pipeEventsToCallbacks` from `event-bridge.ts`; consumers that
+ * want the raw stream iterate it directly.
  */
 export interface ChatBackend {
   runChatTurn(params: ChatRunParams): AsyncIterable<AgentEvent>;
@@ -71,13 +70,9 @@ export interface ChatBackend {
  * The background-task surface. Heartbeat / dream / trigger wake-ups
  * invoke this. Same event protocol as `ChatBackend`.
  *
- *   - `runOneShotAgent(params)` — accepts the legacy
- *     `OneShotAgentParams` (with its `appendLog` callback) so the
- *     existing heartbeat / dream log-file producers keep their
- *     direct write path. Consumers that want to consume the stream
- *     directly (via `streamLog`) compose with
- *     `backend/shared/handler-to-events.ts`
- *     externally.
+ *   - `runOneShotAgent(params)` — accepts `OneShotAgentParams`
+ *     (with its `appendLog` callback) so the heartbeat / dream /
+ *     trigger log-file producers keep their direct write path.
  *   - `evictOrphanSubprocesses(label)` — backends that spawn
  *     per-run subprocesses (Claude SDK) implement this so a hung
  *     run can be force-cleaned after the abort grace window.
@@ -92,19 +87,22 @@ export interface BackgroundRunner {
 }
 
 /**
- * Catalog operations. A backend with no catalog (Claude SDK on a
- * model alias) returns a single-entry list and a fixed canonical
- * from `getDefaultModelId`. Catalog-driven backends (Kilo,
- * OpenCode, OpenAI Agents on OpenRouter) implement the full
- * surface.
+ * Catalog operations, split into a small REQUIRED core (resolution:
+ * `resolveModelInfo` / `getDefaultModelId` / `getRawModelInfo`, which
+ * the dispatcher and `core/active-model.ts` depend on) and an OPTIONAL
+ * picker / catalog-browse surface. A fixed-model backend (Claude SDK
+ * on a model alias) can implement only the core and let the `/model`
+ * picker degrade gracefully; catalog-driven backends (Kilo, OpenCode,
+ * OpenAI Agents on OpenRouter) implement the full surface.
  *
  * The catalog speaks `UnifiedModelInfo` — the rich shape every
  * backend's `models.ts` produces internally. `ModelRef` is only
- * the resolver's output, an enriched routing identity. The
- * resolver (`agent-runtime/resolver.ts`) wraps catalog calls into
- * refs for `/status` and `/model` display.
+ * the resolver's output, an enriched routing identity.
+ * `core/active-model.ts` wraps catalog calls into refs for
+ * `/status` and `/model` display.
  */
 export interface ModelCatalog {
+  // ── Required core: resolution ───────────────────────────────────
   /**
    * Backend-native resolve. Used by `core/active-model.ts` for the
    * per-chat override validation and by the frontend's
@@ -122,23 +120,28 @@ export interface ModelCatalog {
     | undefined;
   /** Backend-native model lookup by id. */
   getRawModelInfo(id: string): Promise<UnifiedModelInfo | undefined>;
+
+  // ── Optional picker / catalog-browse surface ────────────────────
+  // A fixed-model backend (no real catalog) omits these; the `/model`
+  // and `/settings` frontends degrade gracefully — no quick-pick, no
+  // provider browse — when a method is absent.
   /** Quick-pick presentation for `/model` and `/settings`. */
-  getSettingsPresentation(
+  getSettingsPresentation?(
     activeModel: string,
     options?: ModelPickerOptions,
   ): Promise<ModelPickerResult>;
   /** List of providers exposed by the backend's catalog. */
-  getProviders(): Promise<UnifiedProviderInfo[]>;
+  getProviders?(): Promise<UnifiedProviderInfo[]>;
   /** Paginated model list scoped to one provider. */
-  getProviderModels(
+  getProviderModels?(
     providerId: string,
     page?: number,
     pageSize?: number,
   ): Promise<{ models: UnifiedModelInfo[]; total: number }>;
   /** Format an error for an unresolvable / unavailable model. */
-  formatModelError(query: string, resolution: UnifiedModelResolution): string;
+  formatModelError?(query: string, resolution: UnifiedModelResolution): string;
   /** Free-tier-or-all model list. */
-  listModels(filter?: "free" | "all"): Promise<{
+  listModels?(filter?: "free" | "all"): Promise<{
     models: UnifiedModelInfo[];
     total: number;
   }>;
@@ -217,20 +220,6 @@ export interface SystemControl {
 // ── Composed backend ────────────────────────────────────────────────────────
 
 /**
- * Capability flags — runtime introspection for callers that want
- * to know what a backend supports before calling.
- */
-export interface BackendCapabilities {
-  chat: boolean;
-  background: boolean;
-  models: boolean;
-  sessions: boolean;
-  tools: boolean;
-  usage: boolean;
-  control: boolean;
-}
-
-/**
  * Composed backend object. Missing capabilities are explicit
  * `undefined` slots, not optional methods on a fat interface.
  *
@@ -243,7 +232,6 @@ export interface Backend {
   id: BackendId;
   label: string;
   cacheMetrics: CacheMetricsSupport;
-  capabilities: BackendCapabilities;
   chat?: ChatBackend;
   background?: BackgroundRunner;
   models?: ModelCatalog;
@@ -254,28 +242,11 @@ export interface Backend {
 }
 
 /**
- * Derive `BackendCapabilities` from a partially-populated backend
- * object. Helper for factory code that fills in slots conditionally.
- */
-export function deriveCapabilities(
-  partial: Omit<Backend, "id" | "label" | "cacheMetrics" | "capabilities">,
-): BackendCapabilities {
-  return {
-    chat: Boolean(partial.chat),
-    background: Boolean(partial.background),
-    models: Boolean(partial.models),
-    sessions: Boolean(partial.sessions),
-    tools: Boolean(partial.tools),
-    usage: Boolean(partial.usage),
-    control: Boolean(partial.control),
-  };
-}
-
-/**
- * Build a fully-populated `Backend` from its slot components.
- * Wires `capabilities` automatically from which slots were
- * provided. Factories use this to avoid hand-rolling the capability
- * flag set on every call site.
+ * Build a `Backend` from its slot components. A slot left out is a
+ * capability the backend doesn't support — consumers read presence
+ * directly (`backend.chat?.…`). The slot set is the single source of
+ * truth for what a backend can do; there's no derived flag record to
+ * keep in lockstep.
  */
 export function composeBackend(input: {
   id: BackendId;
@@ -289,7 +260,10 @@ export function composeBackend(input: {
   usage?: UsageTelemetry;
   control?: SystemControl;
 }): Backend {
-  const partial = {
+  return {
+    id: input.id,
+    label: input.label,
+    cacheMetrics: input.cacheMetrics ?? "none",
     chat: input.chat,
     background: input.background,
     models: input.models,
@@ -297,12 +271,5 @@ export function composeBackend(input: {
     tools: input.tools,
     usage: input.usage,
     control: input.control,
-  };
-  return {
-    id: input.id,
-    label: input.label,
-    cacheMetrics: input.cacheMetrics ?? "none",
-    capabilities: deriveCapabilities(partial),
-    ...partial,
   };
 }

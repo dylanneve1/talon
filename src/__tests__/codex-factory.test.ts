@@ -128,7 +128,7 @@ describe("codex factory — Backend wiring", () => {
       },
     );
 
-    const { models, total } = await backend.models!.listModels();
+    const { models, total } = await backend.models!.listModels!();
     expect(total).toBeGreaterThan(0);
     expect(models.some((m: { id: string }) => m.id === "gpt-5-codex")).toBe(
       true,

@@ -4,15 +4,15 @@ Single home for the agent-runtime primitives every backend, frontend,
 and dispatcher consumer reads through. The architecture-unification
 plan landed in seven phases; every phase ships:
 
-| Phase | Scope                                              | Status      |
-| ----- | -------------------------------------------------- | ----------- |
-| 1     | Type-only surface (events, ModelRef, …)            | **done**    |
-| 2     | Active-model resolver yields `{ model, ref }`      | **done**    |
-| 3     | Native `AgentEvent` emission per backend           | **done**    |
-| 4     | `AgentEventLogRenderer` consumers                  | descoped    |
-| 5     | Centralised tool surface via `ToolRegistry`        | descoped    |
-| 6     | `JsonStore<T>` over every JSON-backed store        | **done**    |
-| 7     | Per-backend contract tests                         | **done**    |
+| Phase | Scope                                         | Status   |
+| ----- | --------------------------------------------- | -------- |
+| 1     | Type-only surface (events, ModelRef, …)       | **done** |
+| 2     | Active-model resolver yields `{ model, ref }` | **done** |
+| 3     | Native `AgentEvent` emission per backend      | **done** |
+| 4     | `AgentEventLogRenderer` consumers             | descoped |
+| 5     | Centralised tool surface via `ToolRegistry`   | descoped |
+| 6     | `JsonStore<T>` over every JSON-backed store   | **done** |
+| 7     | Per-backend contract tests                    | **done** |
 
 Phases 4 and 5 are descoped: the `AgentEventLogRenderer` and
 `ToolRegistry` infrastructure was implemented but no production
@@ -55,10 +55,11 @@ truth for which backends the typed union can route to. Helpers:
 
 Split capability interfaces — `ChatBackend`, `BackgroundRunner`,
 `ModelCatalog`, `SessionBackend`, `ToolRuntime`, `UsageTelemetry`,
-`SystemControl` — composed onto a single `Backend` object with
-explicit capability flags. `composeBackend({...})` is the canonical
-builder; `deriveCapabilities` fills the flag set from which slots a
-caller provided.
+`SystemControl` — composed onto a single `Backend` object via
+`composeBackend({...})`. A capability is present iff its slot is: an
+absent / `undefined` slot is the single source of truth for "this
+backend doesn't support that" — there's no mirrored flag record to
+drift out of sync.
 
 ### `store.ts`
 
@@ -89,7 +90,7 @@ Backend contract assertions any conforming `Backend` must pass:
 
 Each throws `ContractViolation` with a descriptive message.
 
-### `legacy-bridge.ts`
+### `event-bridge.ts`
 
 The bridge between the canonical `AgentEvent` stream and the
 callback-shaped consumer contract the dispatcher uses upstream of the
@@ -104,37 +105,40 @@ stream terminates with an error event.
 ### Adding a new backend
 
 1. Implement an SDK-specific `handleMessage(params: QueryParams):
-   Promise<QueryResult>` in `backend/<id>/handler.ts`. The handler
-   may continue to drive its SDK through the legacy `onStreamDelta`
-   / `onTextBlock` / `onToolUse` callbacks — `toEventStream` wraps
-   them into events.
+Promise<QueryResult>` in `backend/<id>/handler.ts`. The handler
+   may drive its SDK through the `onStreamDelta` / `onTextBlock` /
+   `onToolUse` callbacks — `handlerToEvents` wraps them into events.
 2. In `backend/<id>/factory.ts`, build each capability slot:
 
    ```ts
    const chat: ChatBackend = {
-     runChatTurn: (params) => toEventStream(handleMessage, params),
+     runChatTurn: (params) => handlerToEvents(handleMessage, params),
    };
    const background: BackgroundRunner = {
      runOneShotAgent: (p) => runOneShotAgent(p),
      evictOrphanSubprocesses: (label) => evictOrphans(label),
    };
    const models: ModelCatalog = {
-     resolveModel: (q, ctx) => ...,        // ModelRef shape
+     // Required core (resolution) — the dispatcher + active-model
+     // resolver depend on these:
+     resolveModelInfo: (q) => ...,   // UnifiedModelResolution
+     getDefaultModelId: () => ...,   // canonical id | null | undefined
+     getRawModelInfo: (id) => ...,   // UnifiedModelInfo | undefined
+     // Optional picker / browse surface — omit for a fixed-model
+     // backend; the /model picker degrades gracefully when absent:
+     getSettingsPresentation: (active, opts) => ...,
+     getProviders: () => ...,
+     getProviderModels: (provider, page, size) => ...,
      listModels: (f) => ...,
-     getDefaultModel: () => ...,
-     getModelInfo: (id) => ...,
-     // Optional UnifiedModelInfo-shaped methods for the picker:
-     resolveModelInfo: (q) => ...,
-     getDefaultModelId: () => ...,
-     // etc.
+     formatModelError: (q, resolution) => ...,
    };
    ```
 
 3. Compose: `const backend = composeBackend({ id, label,
-   cacheMetrics, chat, background, models, sessions, tools, usage,
-   control });`
+cacheMetrics, chat, background, models, sessions, tools, usage,
+control });`
 4. Register: `registerBackend({ id, label, init: async (cfg, ctx) =>
-   ({ backend, cleanup }) })`.
+({ backend, cleanup }) })`.
 
 ### Reading the resolved model for a chat
 
@@ -151,8 +155,8 @@ returns `{ model: string | null, ref: ModelRef | null, source }`:
 
 Convenience wrappers:
 
-  - `getActiveModelForChat(...)` → `model`
-  - `getActiveModelRefForChat(...)` → `ref`
+- `getActiveModelForChat(...)` → `model`
+- `getActiveModelRefForChat(...)` → `ref`
 
 ### Adding a new JSON-backed store
 

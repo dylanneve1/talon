@@ -39,6 +39,7 @@
  */
 
 import type { ReasoningEffortLevel } from "../types.js";
+import type { TalonError } from "../errors.js";
 
 /**
  * Token + cache counters for one backend run.
@@ -176,5 +177,42 @@ export function addUsage(a: UsageSnapshot, b: UsageSnapshot): UsageSnapshot {
     cacheRead: a.cacheRead + b.cacheRead,
     cacheWrite: a.cacheWrite + b.cacheWrite,
     modelId: b.modelId ?? a.modelId,
+  };
+}
+
+/**
+ * The `core/errors.ts` reasons that map to a specific `AgentErrorKind`.
+ * Anything not listed collapses to `unknown`. `ErrorReason` is
+ * HTTP/transport-oriented (`network`, `bad_request`, `forbidden`) and
+ * `AgentErrorKind` is agent-run-oriented (`aborted`, `timeout`,
+ * `tool_failure`), so the two only partially overlap — adding a row
+ * here is the whole cost of teaching the boundary a new mapping.
+ */
+const REASON_TO_KIND: Partial<Record<TalonError["reason"], AgentErrorKind>> = {
+  rate_limit: "rate_limit",
+  overloaded: "overload",
+  context_length: "context_overflow",
+  session_expired: "session_expired",
+  auth: "auth",
+};
+
+/**
+ * Map a classified `TalonError` (from `core/errors.ts:classify`) onto
+ * the canonical `AgentError` every backend emits on its error path.
+ * `retryable` is ALWAYS carried through, because that — not `kind` — is
+ * what the dispatcher's retry path and the frontends' error handlers
+ * switch on.
+ *
+ * This is the single error→`AgentError` boundary: both the native
+ * Claude SDK handler and the callback wrapper (`handler-to-events.ts`)
+ * route through it, so every backend classifies identically instead of
+ * each re-implementing a message-substring guess.
+ */
+export function classifiedToAgentError(classified: TalonError): AgentError {
+  return {
+    kind: REASON_TO_KIND[classified.reason] ?? "unknown",
+    message: classified.message,
+    retryable: classified.retryable,
+    raw: classified.stack,
   };
 }

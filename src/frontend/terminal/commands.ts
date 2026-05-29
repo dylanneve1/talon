@@ -150,7 +150,7 @@ export function registerBuiltinCommands(): void {
       }
 
       if (lowerArgs === "free" || lowerArgs === "list" || lowerArgs === "all") {
-        if (be?.models) {
+        if (be?.models?.listModels) {
           const filter = lowerArgs === "free" ? "free" : "all";
           const { models, total } = await be.models.listModels(filter);
           const list = models.slice(0, 20);

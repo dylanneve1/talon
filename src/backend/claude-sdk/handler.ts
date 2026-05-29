@@ -28,10 +28,9 @@ import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryParams, QueryResult } from "../shared/handler-types.js";
-import type {
-  AgentError,
-  AgentErrorKind,
-  AgentEvent,
+import {
+  type AgentEvent,
+  classifiedToAgentError,
 } from "../../core/agent-runtime/events.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
 import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
@@ -205,9 +204,8 @@ export async function* runChatTurn(
         state.lastTrailingText = result.trailingText;
 
         // Emit progress text segments BEFORE the tool calls they
-        // precede — preserves the historical ordering where a model
-        // that says "let me check…" then calls a tool delivers the
-        // text first.
+        // precede, so a model that says "let me check…" then calls a
+        // tool delivers the explanatory text first.
         for (const progress of result.progressTexts) {
           yield { type: "assistant_message", text: progress };
         }
@@ -390,9 +388,7 @@ export async function* runChatTurn(
 // factory wires `runChatTurn` directly onto `ChatBackend.runChatTurn`,
 // so this wrapper is not on the production chat path.
 
-export async function handleMessage(
-  params: QueryParams,
-): Promise<QueryResult> {
+export async function handleMessage(params: QueryParams): Promise<QueryResult> {
   const ref = makeBareModelRef(
     "claude",
     params.model ?? "default",
@@ -421,38 +417,5 @@ export async function handleMessage(
     outputTokens: agentResult.usage.outputTokens,
     cacheRead: agentResult.usage.cacheRead,
     cacheWrite: agentResult.usage.cacheWrite,
-  };
-}
-
-// ── Error classification ────────────────────────────────────────────────────
-
-/**
- * Map a `core/errors.ts` `TalonError` onto the canonical `AgentError`
- * shape consumed by `BridgedAgentError`. The dispatcher's bridge
- * preserves `kind` + `retryable` so frontends can pattern-match.
- */
-function classifiedToAgentError(classified: {
-  reason?: string;
-  message: string;
-  retryable?: boolean;
-  stack?: string;
-}): AgentError {
-  const reason = classified.reason ?? "unknown";
-  let kind: AgentErrorKind = "unknown";
-  if (reason === "rate_limit") kind = "rate_limit";
-  else if (reason === "overload") kind = "overload";
-  else if (reason === "context_overflow") kind = "context_overflow";
-  else if (reason === "session_expired") kind = "session_expired";
-  else if (reason === "auth") kind = "auth";
-  else if (reason === "model_unsupported") kind = "model_unsupported";
-  else if (reason === "timeout") kind = "timeout";
-  else if (reason === "aborted") kind = "aborted";
-  else if (reason === "subprocess_exit") kind = "subprocess_exit";
-  else if (reason === "tool_failure") kind = "tool_failure";
-  return {
-    kind,
-    message: classified.message,
-    retryable: classified.retryable ?? false,
-    raw: classified.stack,
   };
 }

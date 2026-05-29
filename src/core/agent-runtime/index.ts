@@ -18,6 +18,7 @@ export {
   type AgentResult,
   type UsageSnapshot,
   addUsage,
+  classifiedToAgentError,
   emptyUsage,
   isAgentEventOf,
   isAgentRunTerminator,
@@ -36,7 +37,6 @@ export {
 
 export {
   type Backend,
-  type BackendCapabilities,
   type BackgroundRunner,
   type ChatBackend,
   type ChatRunParams,
@@ -47,7 +47,6 @@ export {
   type ToolRuntime,
   type UsageTelemetry,
   composeBackend,
-  deriveCapabilities,
 } from "./capabilities.js";
 
 export { type JsonStoreFs, type JsonStoreOptions, JsonStore } from "./store.js";

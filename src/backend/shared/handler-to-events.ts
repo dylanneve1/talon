@@ -16,11 +16,11 @@
  * and the `AgentEvent` contract every consumer reads.
  */
 
-import type {
-  AgentError,
-  AgentErrorKind,
-  AgentEvent,
+import {
+  type AgentEvent,
+  classifiedToAgentError,
 } from "../../core/agent-runtime/events.js";
+import { classify } from "../../core/errors.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
 import type { QueryParams, QueryResult } from "./handler-types.js";
 
@@ -65,9 +65,9 @@ export async function* handlerToEvents(
 
   // Handler `onStreamDelta` delivers the FULL accumulated text so far,
   // not the new chunk. `AgentEvent.text_delta.text` carries the delta —
-  // the bridge consumer (`pipeEventsToCallbacks` / `streamLog` /
-  // `event-log-renderer`) re-accumulates. The wrapper tracks the prior
-  // accumulated value and emits only the trailing slice.
+  // the bridge consumer (`pipeEventsToCallbacks`) re-accumulates. The
+  // wrapper tracks the prior accumulated value and emits only the
+  // trailing slice.
   let lastAccumulated = "";
 
   const handlerParams: QueryParams = {
@@ -142,7 +142,7 @@ export async function* handlerToEvents(
   await handlerPromise;
 
   if (error) {
-    yield { type: "error", error: classifyChatError(error) };
+    yield { type: "error", error: classifiedToAgentError(classify(error)) };
     return;
   }
 
@@ -174,49 +174,5 @@ export async function* handlerToEvents(
       usage,
       modelId: params.model.id,
     },
-  };
-}
-
-/**
- * Lightweight classifier for handler rejections. Keeps the event-stream
- * shape predictable without duplicating the full `core/errors.ts`
- * taxonomy. Backends that want richer classification can pre-throw a
- * `TalonError` subclass; the message-shape match here is conservative.
- */
-function classifyChatError(err: unknown): AgentError {
-  const message = err instanceof Error ? err.message : String(err);
-  const lower = message.toLowerCase();
-  let kind: AgentErrorKind = "unknown";
-  let retryable = false;
-  if (lower.includes("aborted") || lower.includes("abortcontroller")) {
-    kind = "aborted";
-  } else if (lower.includes("context") && lower.includes("length")) {
-    kind = "context_overflow";
-  } else if (lower.includes("rate limit") || lower.includes("rate-limit")) {
-    kind = "rate_limit";
-    retryable = true;
-  } else if (lower.includes("overload") || lower.includes("529")) {
-    kind = "overload";
-    retryable = true;
-  } else if (
-    lower.includes("session_expired") ||
-    lower.includes("session expired")
-  ) {
-    kind = "session_expired";
-  } else if (lower.includes("timed out") || lower.includes("timeout")) {
-    kind = "timeout";
-    retryable = true;
-  } else if (
-    lower.includes("401") ||
-    lower.includes("unauthorized") ||
-    lower.includes("auth")
-  ) {
-    kind = "auth";
-  }
-  return {
-    kind,
-    message,
-    retryable,
-    raw: err instanceof Error ? err.stack : undefined,
   };
 }

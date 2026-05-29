@@ -22,7 +22,7 @@ import {
   sameModelRef,
   type ModelRef,
 } from "../core/agent-runtime/model-ref.js";
-import { deriveCapabilities } from "../core/agent-runtime/capabilities.js";
+import { composeBackend } from "../core/agent-runtime/capabilities.js";
 
 // ── events ──────────────────────────────────────────────────────────────────
 
@@ -156,42 +156,31 @@ describe("agent-runtime/model-ref", () => {
   });
 });
 
-// ── run-policy ──────────────────────────────────────────────────────────────
-
 // ── capabilities ────────────────────────────────────────────────────────────
 
 describe("agent-runtime/capabilities", () => {
-  it("deriveCapabilities reflects populated slots", () => {
-    const caps = deriveCapabilities({
+  it("composeBackend leaves omitted slots undefined", () => {
+    const backend = composeBackend({
+      id: "claude",
+      label: "Test",
       chat: { runChatTurn: async function* () {} },
-      models: undefined,
-      sessions: undefined,
-      tools: undefined,
-      usage: undefined,
       background: { runOneShotAgent: async () => undefined },
-      control: undefined,
     });
-    expect(caps).toEqual({
-      chat: true,
-      background: true,
-      models: false,
-      sessions: false,
-      tools: false,
-      usage: false,
-      control: false,
-    });
+    expect(backend.chat).toBeDefined();
+    expect(backend.background).toBeDefined();
+    expect(backend.models).toBeUndefined();
+    expect(backend.sessions).toBeUndefined();
+    expect(backend.tools).toBeUndefined();
+    expect(backend.usage).toBeUndefined();
+    expect(backend.control).toBeUndefined();
   });
 
-  it("deriveCapabilities returns all-false on empty input", () => {
-    const caps = deriveCapabilities({});
-    expect(caps).toEqual({
-      chat: false,
-      background: false,
-      models: false,
-      sessions: false,
-      tools: false,
-      usage: false,
-      control: false,
+  it("composeBackend defaults cacheMetrics to none", () => {
+    const backend = composeBackend({
+      id: "claude",
+      label: "Test",
+      chat: { runChatTurn: async function* () {} },
     });
+    expect(backend.cacheMetrics).toBe("none");
   });
 });
