@@ -342,6 +342,14 @@ export class Gateway {
               ? (addr as { port: number }).port
               : p;
           log("gateway", `Action gateway on :${this.port}`);
+          // Replace the one-shot startup error listener with a persistent
+          // handler. Without this, once the `once("error")` from port-binding
+          // fires (and auto-removes itself), any subsequent server-level error
+          // has no listener and crashes the process via uncaught 'error' event.
+          httpServer.removeAllListeners("error");
+          httpServer.on("error", (err) =>
+            logError("gateway", "HTTP server error", err),
+          );
           resolve(this.port);
         });
       };

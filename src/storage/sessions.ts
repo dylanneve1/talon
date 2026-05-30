@@ -117,8 +117,6 @@ function saveSessions(): void {
 // Auto-save every 10 seconds if dirty
 const autoSaveTimer = setInterval(saveSessions, 10_000);
 
-// Periodic stale session pruning (every hour)
-
 const emptyUsage = (): SessionUsage => ({
   totalInputTokens: 0,
   totalOutputTokens: 0,

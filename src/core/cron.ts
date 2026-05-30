@@ -52,6 +52,11 @@ export function stopCronTimer(): void {
 
 // ── Core ─────────────────────────────────────────────────────────────────────
 
+// Job IDs currently executing. Prevents a long-running "query" job from being
+// dispatched a second time by the next 60-second tick before recordCronRun()
+// has had a chance to update lastRunAt.
+const runningJobs = new Set<string>();
+
 async function runCronTick(): Promise<void> {
   if (!deps) return;
   if (getActiveCount() > 10) return; // safety valve — don't pile on if heavily loaded
@@ -61,9 +66,11 @@ async function runCronTick(): Promise<void> {
 
   for (const job of jobs) {
     if (!job.enabled) continue;
+    if (runningJobs.has(job.id)) continue; // already in-flight this tick or a previous one
     if (!isDue(job, now)) continue;
     if (getActiveCount() > 10) break;
 
+    runningJobs.add(job.id);
     try {
       log(
         "cron",
@@ -78,6 +85,8 @@ async function runCronTick(): Promise<void> {
       log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
     } catch (err) {
       logError("cron", `Job "${job.name}" [${job.id}] failed`, err);
+    } finally {
+      runningJobs.delete(job.id);
     }
   }
 }
@@ -155,8 +164,7 @@ async function executeJob(job: CronJob): Promise<void> {
 
   const numericChatId = Number(job.chatId);
   if (!Number.isFinite(numericChatId)) {
-    logError("cron", `Invalid chatId for job "${job.name}": ${job.chatId}`);
-    return;
+    throw new Error(`Invalid chatId for job "${job.name}": ${job.chatId}`);
   }
 
   if (job.type === "message") {
