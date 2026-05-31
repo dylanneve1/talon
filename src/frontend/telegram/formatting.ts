@@ -91,13 +91,19 @@ export function markdownToTelegramHtml(text: string): string {
   processed = processed.replace(/~~(.+?)~~/g, "<s>$1</s>");
 
   // Step 5: Restore inline code spans.
+  // Use a function replacement to prevent JS from interpreting `$&`, `$1`,
+  // etc. in the replacement string as special patterns — user code can
+  // legitimately contain dollar-sign sequences that would otherwise expand
+  // incorrectly (e.g. `$&` would be replaced by the matched placeholder text).
   for (let i = 0; i < inlineCode.length; i++) {
-    processed = processed.replace(`\x00INLINECODE${i}\x00`, inlineCode[i]);
+    const html = inlineCode[i];
+    processed = processed.replace(`\x00INLINECODE${i}\x00`, () => html);
   }
 
   // Step 6: Restore fenced code blocks.
   for (let i = 0; i < codeBlocks.length; i++) {
-    processed = processed.replace(`\x00CODEBLOCK${i}\x00`, codeBlocks[i]);
+    const html = codeBlocks[i];
+    processed = processed.replace(`\x00CODEBLOCK${i}\x00`, () => html);
   }
 
   return processed;
