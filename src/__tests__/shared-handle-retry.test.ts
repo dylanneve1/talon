@@ -14,7 +14,11 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { applyRetryDecision } from "../backend/shared/handle-retry.js";
 import { TalonError } from "../core/errors.js";
 import { registerModels, clearModels } from "../core/models.js";
-import { setChatModel, getChatSettings } from "../storage/chat-settings.js";
+import {
+  setChatModel,
+  setChatModelForBackend,
+  getChatSettings,
+} from "../storage/chat-settings.js";
 import { resetSession, getSession } from "../storage/sessions.js";
 
 beforeEach(() => {
@@ -258,6 +262,101 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
     expect(outcome.retry).toBeUndefined();
     expect(outcome.classified.reason).toBe("network");
     expect(recurse).not.toHaveBeenCalled();
+  });
+
+  it("backendId path: preserves other backends' modelByBackend slots on restore", async () => {
+    // Regression test: the legacy setChatModel(chatId, undefined) path wiped
+    // the entire modelByBackend map when no deprecated `model` field was set.
+    // The backendId path must only touch the named backend's slot.
+    registerModels([
+      {
+        id: "primary",
+        aliases: [],
+        provider: "test",
+        displayName: "Primary",
+        fallback: "fallback",
+      },
+      {
+        id: "fallback",
+        aliases: [],
+        provider: "test",
+        displayName: "Fallback",
+      },
+    ]);
+
+    // User has model picks on two different backends (no legacy `model` field).
+    setChatModelForBackend("test-chat", "claude", "primary");
+    setChatModelForBackend("test-chat", "kilo", "kilo-model-X");
+
+    const recurse = vi.fn(async () => ({
+      text: "ok",
+      durationMs: 1,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    }));
+
+    await applyRetryDecision({
+      err: new Error("fetch failed — overloaded"),
+      chatId: "test-chat",
+      activeModel: "primary",
+      retried: false,
+      params: stubParams,
+      recurseWithRetried: recurse,
+      backendLabel: "Claude",
+      backendId: "claude",
+    });
+
+    const settings = getChatSettings("test-chat");
+    // The claude slot is restored to its original value.
+    expect(settings.modelByBackend?.["claude"]).toBe("primary");
+    // The kilo slot is untouched — this is the regression assertion.
+    expect(settings.modelByBackend?.["kilo"]).toBe("kilo-model-X");
+    // The deprecated model field was never set in this scenario.
+    expect(settings.model).toBeUndefined();
+  });
+
+  it("backendId path: clears the backend slot when it was empty before the fallback", async () => {
+    registerModels([
+      {
+        id: "primary",
+        aliases: [],
+        provider: "test",
+        displayName: "Primary",
+        fallback: "fallback",
+      },
+      {
+        id: "fallback",
+        aliases: [],
+        provider: "test",
+        displayName: "Fallback",
+      },
+    ]);
+
+    // No model picked for "claude" yet.
+    const recurse = vi.fn(async () => ({
+      text: "ok",
+      durationMs: 1,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    }));
+
+    await applyRetryDecision({
+      err: new Error("fetch failed — overloaded"),
+      chatId: "test-chat",
+      activeModel: "primary",
+      retried: false,
+      params: stubParams,
+      recurseWithRetried: recurse,
+      backendId: "claude",
+    });
+
+    const settings = getChatSettings("test-chat");
+    // Slot is back to "not set" after restore.
+    expect(settings.modelByBackend?.["claude"]).toBeUndefined();
   });
 });
 

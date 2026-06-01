@@ -540,6 +540,7 @@ export async function handleMessage(
         recurseWithRetried: (p) => handleMessage(p, true),
         backendLabel: "Codex",
         resetNoun: "thread",
+        backendId: "codex",
       });
       if (outcome.retry) return outcome.retry;
 

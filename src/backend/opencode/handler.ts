@@ -198,6 +198,7 @@ export async function handleMessage(
       params,
       recurseWithRetried: (p) => handleMessage(p, true),
       backendLabel: "OpenCode",
+      backendId: "opencode",
     });
     if (outcome.retry) return outcome.retry;
 

@@ -26,7 +26,12 @@ import type { QueryParams, QueryResult } from "../../core/types.js";
 import { classify, type TalonError } from "../../core/errors.js";
 import { logWarn } from "../../util/log.js";
 import { incrementCounter } from "../../util/metrics.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
+import {
+  getChatModelForBackend,
+  getChatSettings,
+  setChatModel,
+  setChatModelForBackend,
+} from "../../storage/chat-settings.js";
 import { resetSession } from "../../storage/sessions.js";
 import { classifyRetry } from "./model-retry.js";
 
@@ -60,6 +65,18 @@ export interface ApplyRetryDecisionInputs {
    * helper takes whatever the backend prefers.
    */
   resetNoun?: "session" | "thread";
+  /**
+   * Registry id of the calling backend (`"claude"`, `"codex"`, etc).
+   * When provided, the `fallback_model` path uses
+   * `setChatModelForBackend` / `getChatModelForBackend` to scope the
+   * transient write to exactly that backend's slot — avoiding the
+   * `setChatModel(chatId, undefined)` footgun that would otherwise
+   * wipe the entire `modelByBackend` map when no legacy `model` field
+   * was set. Required for any backend that participates in the new
+   * per-backend model storage; omitting it falls back to the legacy
+   * single-slot behaviour (for backward compatibility only).
+   */
+  backendId?: string;
 }
 
 /** Outcome — undefined means the caller should propagate the classified error. */
@@ -100,6 +117,7 @@ export async function applyRetryDecision(
     recurseWithRetried,
     backendLabel,
     resetNoun = "session",
+    backendId,
   } = inputs;
 
   const classified = classify(err);
@@ -128,12 +146,27 @@ export async function applyRetryDecision(
       `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
     );
     resetSession(chatId);
-    const originalModel = getChatSettings(chatId).model;
-    setChatModel(chatId, decision.fallbackModelId);
-    try {
-      return { retry: await recurseWithRetried(params), classified };
-    } finally {
-      setChatModel(chatId, originalModel);
+    if (backendId) {
+      // Preferred path: scope the transient write to exactly this backend's
+      // slot so the per-backend map is not corrupted on restore.
+      const originalModel = getChatModelForBackend(chatId, backendId);
+      setChatModelForBackend(chatId, backendId, decision.fallbackModelId);
+      try {
+        return { retry: await recurseWithRetried(params), classified };
+      } finally {
+        setChatModelForBackend(chatId, backendId, originalModel);
+      }
+    } else {
+      // Legacy fallback: no backendId provided. The deprecated single-slot
+      // setter is used, which may wipe modelByBackend when undefined is
+      // restored — acceptable only for backends that haven't migrated yet.
+      const originalModel = getChatSettings(chatId).model;
+      setChatModel(chatId, decision.fallbackModelId);
+      try {
+        return { retry: await recurseWithRetried(params), classified };
+      } finally {
+        setChatModel(chatId, originalModel);
+      }
     }
   }
 

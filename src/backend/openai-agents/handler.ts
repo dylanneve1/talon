@@ -44,7 +44,12 @@ import {
   setSessionName,
   resetSession,
 } from "../../storage/sessions.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
+import {
+  getChatModelForBackend,
+  getChatSettings,
+  setChatModel,
+  setChatModelForBackend,
+} from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -360,12 +365,12 @@ export async function handleMessage(
           `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
         );
         resetSession(chatId);
-        const originalModel = getChatSettings(chatId).model;
-        setChatModel(chatId, decision.fallbackModelId);
+        const originalModel = getChatModelForBackend(chatId, "openai-agents");
+        setChatModelForBackend(chatId, "openai-agents", decision.fallbackModelId);
         try {
           return await handleMessage(params, true);
         } finally {
-          setChatModel(chatId, originalModel);
+          setChatModelForBackend(chatId, "openai-agents", originalModel);
         }
       }
 

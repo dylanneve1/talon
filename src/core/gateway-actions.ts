@@ -49,6 +49,54 @@ import { cancelTrigger, spawnTrigger } from "./triggers.js";
 import { log, logWarn } from "../util/log.js";
 import type { ActionResult, QueryBackend } from "./types.js";
 
+/**
+ * Returns true when `hostname` is a loopback, link-local, or private
+ * address that should never be reachable from an external bot command.
+ * Blocks the most common SSRF vectors (cloud-metadata endpoints, internal
+ * services on RFC-1918 ranges) when the hostname is supplied as a literal
+ * IP or well-known name. DNS-rebinding attacks are out of scope here.
+ */
+function isPrivateAddress(hostname: string): boolean {
+  const h = hostname.toLowerCase().trim();
+
+  // Strip IPv6 brackets (e.g. "[::1]" → "::1")
+  const bare = h.startsWith("[") && h.endsWith("]") ? h.slice(1, -1) : h;
+
+  // Named loopback / metadata hostnames
+  if (
+    bare === "localhost" ||
+    bare === "metadata.google.internal" ||
+    bare.endsWith(".local") ||
+    bare.endsWith(".internal")
+  ) {
+    return true;
+  }
+
+  // Pure IPv6 loopback / link-local / unique-local
+  if (bare === "::1" || bare.startsWith("fe80:") || bare.startsWith("fc") || bare.startsWith("fd")) {
+    return true;
+  }
+
+  // IPv4 checks — parse only if it looks like an IPv4 literal
+  const parts = bare.split(".");
+  if (parts.length === 4 && parts.every((p) => /^\d+$/.test(p))) {
+    const [a, b] = parts.map(Number);
+    if (
+      a === 127 ||                              // 127.0.0.0/8  loopback
+      a === 10 ||                               // 10.0.0.0/8   private
+      (a === 172 && b >= 16 && b <= 31) ||      // 172.16.0.0/12 private
+      (a === 192 && b === 168) ||               // 192.168.0.0/16 private
+      (a === 169 && b === 254) ||               // 169.254.0.0/16 link-local (AWS/GCP metadata)
+      a === 0 ||                                // 0.x.x.x     "this" network
+      a === 100 && b >= 64 && b <= 127          // 100.64.0.0/10 shared address (RFC 6598)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 /** Extract readable text from HTML using cheerio (proper DOM parser). */
 function extractText(html: string, maxLength = 8000): string {
   const $ = cheerio.load(html);
@@ -117,6 +165,9 @@ export async function handleSharedAction(
         const parsed = new URL(url);
         if (!["http:", "https:"].includes(parsed.protocol)) {
           return { ok: false, error: "URL must use http or https protocol" };
+        }
+        if (isPrivateAddress(parsed.hostname)) {
+          return { ok: false, error: "Requests to private/internal addresses are not allowed" };
         }
       } catch {
         return { ok: false, error: "Invalid URL" };
@@ -207,6 +258,9 @@ export async function handleSharedAction(
           };
         }
         const raw = await resp.text();
+        if (Buffer.byteLength(raw, "utf-8") > MAX_BYTES) {
+          return { ok: false, error: "Response too large (max 20MB)" };
+        }
         const text = extractText(raw);
         if (text.length < 20)
           return { ok: true, text: "(Page has no readable content)" };

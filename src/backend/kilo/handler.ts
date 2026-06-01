@@ -194,6 +194,7 @@ export async function handleMessage(
       params,
       recurseWithRetried: (p) => handleMessage(p, true),
       backendLabel: "Kilo",
+      backendId: "kilo",
     });
     if (outcome.retry) return outcome.retry;
 

@@ -283,6 +283,7 @@ export async function handleMessage(
           }),
         // No backendLabel — historical claude-sdk log shape was un-prefixed
         // (just `[chatId] session_expired, resetting…`). Preserving that.
+        backendId: "claude",
       });
       if (outcome.retry) return outcome.retry;
 
