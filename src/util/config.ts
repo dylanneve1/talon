@@ -166,6 +166,14 @@ const playwrightConfigSchema = z.object({
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
+  /**
+   * Global default backend/model for chat plus any role that does not set
+   * an explicit override. `backend`/`model` are kept as legacy aliases below;
+   * when both are present, the `default*` names win because they describe the
+   * behaviour operators expect.
+   */
+  defaultBackend: z.enum(BACKEND_ID_ENUM).optional(),
+  defaultModel: z.string().optional(),
   backend: z.enum(BACKEND_ID_ENUM).default("claude"),
   /**
    * Backend used by the heartbeat agent. Falls back to `backend` when
@@ -547,21 +555,28 @@ export function loadConfig(): TalonConfig {
   const fileConfig = loadConfigFile();
 
   const parsed = configSchema.parse(fileConfig);
+  const normalized = {
+    ...parsed,
+    backend: parsed.defaultBackend ?? parsed.backend,
+    model: parsed.defaultModel ?? parsed.model,
+    defaultBackend: parsed.defaultBackend ?? parsed.backend,
+    defaultModel: parsed.defaultModel ?? parsed.model,
+  };
 
   // Apply timezone globally before building the system prompt
-  setTimezone(parsed.timezone);
+  setTimezone(normalized.timezone);
 
   // Validate per-frontend requirements
-  const frontends = Array.isArray(parsed.frontend)
-    ? parsed.frontend
-    : [parsed.frontend];
+  const frontends = Array.isArray(normalized.frontend)
+    ? normalized.frontend
+    : [normalized.frontend];
   for (const fe of frontends) {
-    if (fe === "telegram" && !parsed.botToken) {
+    if (fe === "telegram" && !normalized.botToken) {
       throw new Error(
         `Telegram frontend requires "botToken" in ${CONFIG_FILE}. Run "talon setup" to configure.`,
       );
     }
-    if (fe === "teams" && !parsed.teamsWebhookUrl) {
+    if (fe === "teams" && !normalized.teamsWebhookUrl) {
       throw new Error(
         `Teams frontend requires "teamsWebhookUrl" in ${CONFIG_FILE}. Run "talon setup" to configure.`,
       );
@@ -571,7 +586,7 @@ export function loadConfig(): TalonConfig {
   const activeFrontend = frontends[0];
 
   return {
-    ...parsed,
+    ...normalized,
     workspace: dirs.workspace,
     systemPrompt: loadSystemPrompt(activeFrontend),
   };
