@@ -124,20 +124,20 @@ describe("computeAuthFingerprint", () => {
 // ── Load + mark round-trip ────────────────────────────────────────────────
 
 describe("oauth-incompat / persistence", () => {
-  it("returns empty when no store file exists", () => {
-    loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
+  it("returns empty when no store file exists", async () => {
+    await loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
     expect(isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
     expect(listKnownOAuthIncompat()).toEqual([]);
   });
 
-  it("mark + reload round-trips the set", () => {
+  it("mark + reload round-trips the set", async () => {
     const fingerprint = "chatgpt:file:~/.codex/auth.json";
-    loadOAuthIncompatStore(fingerprint);
+    await loadOAuthIncompatStore(fingerprint);
 
-    expect(markOAuthIncompat("gpt-5.4-mini")).toBe(true);
-    expect(markOAuthIncompat("gpt-5.4")).toBe(true);
+    expect(await markOAuthIncompat("gpt-5.4-mini")).toBe(true);
+    expect(await markOAuthIncompat("gpt-5.4")).toBe(true);
     // Second mark of same id is a no-op:
-    expect(markOAuthIncompat("gpt-5.4-mini")).toBe(false);
+    expect(await markOAuthIncompat("gpt-5.4-mini")).toBe(false);
 
     expect(isKnownOAuthIncompat("gpt-5.4-mini")).toBe(true);
     expect(isKnownOAuthIncompat("gpt-5.4")).toBe(true);
@@ -146,29 +146,29 @@ describe("oauth-incompat / persistence", () => {
 
     // Simulate restart: blow away in-memory state and reload.
     resetOAuthIncompatForTests();
-    loadOAuthIncompatStore(fingerprint);
+    await loadOAuthIncompatStore(fingerprint);
     expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
   });
 
-  it("fingerprint mismatch discards the loaded set", () => {
-    loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
-    markOAuthIncompat("gpt-5.4-mini");
+  it("fingerprint mismatch discards the loaded set", async () => {
+    await loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
+    await markOAuthIncompat("gpt-5.4-mini");
     expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4-mini"]);
 
     // Simulate `codex login` with a different account / mode.
     resetOAuthIncompatForTests();
-    loadOAuthIncompatStore("api-key:env:CODEX_API_KEY:sk-different");
+    await loadOAuthIncompatStore("api-key:env:CODEX_API_KEY:sk-different");
     expect(listKnownOAuthIncompat()).toEqual([]);
   });
 
-  it("tolerates a malformed JSON store gracefully", () => {
+  it("tolerates a malformed JSON store gracefully", async () => {
     mkdirSync(join(testStorePath(), ".."), { recursive: true });
     writeFileSync(testStorePath(), "not json at all { } {");
-    loadOAuthIncompatStore("chatgpt:test");
+    await loadOAuthIncompatStore("chatgpt:test");
     expect(listKnownOAuthIncompat()).toEqual([]);
   });
 
-  it("tolerates a schema-version mismatch", () => {
+  it("tolerates a schema-version mismatch", async () => {
     // The store path resolves against `tempHome` (see beforeEach).
     mkdirSync(join(testStorePath(), ".."), { recursive: true });
     writeFileSync(
@@ -180,11 +180,11 @@ describe("oauth-incompat / persistence", () => {
         models: ["gpt-5.4-mini"],
       }),
     );
-    loadOAuthIncompatStore("chatgpt:test");
+    await loadOAuthIncompatStore("chatgpt:test");
     expect(listKnownOAuthIncompat()).toEqual([]);
   });
 
-  it("filters non-string entries on load (defensive)", () => {
+  it("filters non-string entries on load (defensive)", async () => {
     // The store path resolves against `tempHome` (see beforeEach).
     mkdirSync(join(testStorePath(), ".."), { recursive: true });
     writeFileSync(
@@ -196,22 +196,39 @@ describe("oauth-incompat / persistence", () => {
         models: ["gpt-5.4-mini", null, 42, "", "gpt-5.2"],
       }),
     );
-    loadOAuthIncompatStore("chatgpt:test");
+    await loadOAuthIncompatStore("chatgpt:test");
     expect(listKnownOAuthIncompat()).toEqual(["gpt-5.2", "gpt-5.4-mini"]);
   });
 
-  it("markOAuthIncompat is a safe no-op when no store is loaded", () => {
+  it("markOAuthIncompat is a safe no-op when no store is loaded", async () => {
     resetOAuthIncompatForTests();
-    expect(markOAuthIncompat("gpt-5.4-mini")).toBe(false);
+    expect(await markOAuthIncompat("gpt-5.4-mini")).toBe(false);
     expect(isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
+  });
+
+  it("migrates legacy bare-document format to the new envelope shape", async () => {
+    // Write data in the pre-Phase-6.x shape and verify the migrate
+    // hook lifts it into the envelope on load.
+    mkdirSync(join(testStorePath(), ".."), { recursive: true });
+    writeFileSync(
+      testStorePath(),
+      JSON.stringify({
+        version: 1,
+        fingerprint: "chatgpt:test",
+        updatedAt: new Date().toISOString(),
+        models: ["gpt-5.4-mini", "gpt-5.4"],
+      }),
+    );
+    await loadOAuthIncompatStore("chatgpt:test");
+    expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
   });
 });
 
 // ── Combined predicate: curated ∪ dynamic ────────────────────────────────
 
 describe("isCodexOAuthIncompat — combined curated + dynamic", () => {
-  beforeEach(() => {
-    loadOAuthIncompatStore("chatgpt:test");
+  beforeEach(async () => {
+    await loadOAuthIncompatStore("chatgpt:test");
   });
 
   it("returns true for curated apiKeyOnly entries even without learning", () => {
@@ -219,19 +236,19 @@ describe("isCodexOAuthIncompat — combined curated + dynamic", () => {
     expect(isCodexOAuthIncompat("gpt-5-codex")).toBe(true);
   });
 
-  it("returns true for runtime-learned ids even when not curated", () => {
+  it("returns true for runtime-learned ids even when not curated", async () => {
     expect(isCodexApiKeyOnlyModel("gpt-5.4-mini")).toBe(false);
     expect(isCodexOAuthIncompat("gpt-5.4-mini")).toBe(false);
 
-    markOAuthIncompat("gpt-5.4-mini");
+    await markOAuthIncompat("gpt-5.4-mini");
     expect(isCodexOAuthIncompat("gpt-5.4-mini")).toBe(true);
     // Curated check stays narrow:
     expect(isCodexApiKeyOnlyModel("gpt-5.4-mini")).toBe(false);
   });
 
-  it("returns false for known-good models (gpt-5.5)", () => {
+  it("returns false for known-good models (gpt-5.5)", async () => {
     expect(isCodexOAuthIncompat("gpt-5.5")).toBe(false);
-    markOAuthIncompat("gpt-5.4-mini"); // unrelated mark
+    await markOAuthIncompat("gpt-5.4-mini"); // unrelated mark
     expect(isCodexOAuthIncompat("gpt-5.5")).toBe(false);
   });
 });
@@ -239,8 +256,8 @@ describe("isCodexOAuthIncompat — combined curated + dynamic", () => {
 // ── chatGptFallbackFor — broadened ────────────────────────────────────────
 
 describe("chatGptFallbackFor — broadened fallback selection", () => {
-  beforeEach(() => {
-    loadOAuthIncompatStore("chatgpt:test");
+  beforeEach(async () => {
+    await loadOAuthIncompatStore("chatgpt:test");
   });
 
   it("returns undefined for non-incompat ids (no fallback needed)", () => {
@@ -252,19 +269,19 @@ describe("chatGptFallbackFor — broadened fallback selection", () => {
     expect(chatGptFallbackFor("gpt-5-codex")).toBe("gpt-5.5");
   });
 
-  it("returns gpt-5.5 for runtime-learned incompat ids", () => {
-    markOAuthIncompat("gpt-5.4-mini");
+  it("returns gpt-5.5 for runtime-learned incompat ids", async () => {
+    await markOAuthIncompat("gpt-5.4-mini");
     expect(chatGptFallbackFor("gpt-5.4-mini")).toBe("gpt-5.5");
 
-    markOAuthIncompat("gpt-5.4");
+    await markOAuthIncompat("gpt-5.4");
     expect(chatGptFallbackFor("gpt-5.4")).toBe("gpt-5.5");
   });
 
-  it("returns undefined for gpt-5.5 itself even if marked (no further fallback)", () => {
+  it("returns undefined for gpt-5.5 itself even if marked (no further fallback)", async () => {
     // Pathological case — if even gpt-5.5 fails, the credential is the
     // problem and there's no model we can swap to. The handler should
     // surface this as an error rather than loop.
-    markOAuthIncompat("gpt-5.5");
+    await markOAuthIncompat("gpt-5.5");
     expect(chatGptFallbackFor("gpt-5.5")).toBeUndefined();
   });
 });

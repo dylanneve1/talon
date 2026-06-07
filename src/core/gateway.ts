@@ -192,7 +192,11 @@ export class Gateway {
     ) {
       // Explicit-routing branch: caller provided chat_id, trust it.
       chatId = numericId;
-    } else if (!isNaN(numericId) && this.chatContexts.has(numericId)) {
+    } else if (
+      rawChatId !== "" &&
+      !isNaN(numericId) &&
+      this.chatContexts.has(numericId)
+    ) {
       // Chat-mode branch: ambient _chatId must match an active context.
       chatId = numericId;
     } else {

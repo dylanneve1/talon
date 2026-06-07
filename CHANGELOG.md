@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.15.0](https://github.com/dylanneve1/talon/compare/v1.14.0...v1.15.0) (2026-06-06)
+
+
+### Features
+
+* **agent-runtime:** consume ModelRef + Phase 3/5/6/7 prep infra ([#255](https://github.com/dylanneve1/talon/issues/255)) ([4f614b8](https://github.com/dylanneve1/talon/commit/4f614b86c1cab18ef33f24a77abd8697cd9ce863))
+* **core:** agent-runtime types — Phase 1 of architecture unification ([#253](https://github.com/dylanneve1/talon/issues/253)) ([b7b7649](https://github.com/dylanneve1/talon/commit/b7b764978e5b124b564ab8ce54455e5ec1d9e854))
+* **core:** resolveActiveModelRefForChat — Phase 2.1 (stacked on [#253](https://github.com/dylanneve1/talon/issues/253)) ([#254](https://github.com/dylanneve1/talon/issues/254)) ([373cecd](https://github.com/dylanneve1/talon/commit/373cecde6fcc1c287a4f3a6964c970e0878a7dcf))
+
+
+### Bug Fixes
+
+* **callbacks:** swallow expired-callback errors from answerCallbackQuery ([#256](https://github.com/dylanneve1/talon/issues/256)) ([f4a1e2d](https://github.com/dylanneve1/talon/commit/f4a1e2dd03a6ab485f0f512632c5b7175a2dc876))
+* consolidate open correctness fixes ([#246](https://github.com/dylanneve1/talon/issues/246)) ([e1b95ad](https://github.com/dylanneve1/talon/commit/e1b95ad1303b238f2451a2bb009133bb422cc84d))
+* pass resolved chat model into backends ([#248](https://github.com/dylanneve1/talon/issues/248)) ([1b5cb97](https://github.com/dylanneve1/talon/commit/1b5cb97997e8f969b1687eb2a150af133af74adc))
+* register per-model reasoning levels ([#247](https://github.com/dylanneve1/talon/issues/247)) ([88fc5e4](https://github.com/dylanneve1/talon/commit/88fc5e4ad317acda5d927f4746879827c1c36614))
+
 ## [1.14.0](https://github.com/dylanneve1/talon/compare/v1.13.0...v1.14.0) (2026-05-21)
 
 

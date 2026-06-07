@@ -84,7 +84,7 @@ export function markdownToTelegramHtml(text: string): string {
   // prevent HTML attribute injection (e.g. href="url" onmouseover="x")
   processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
     /^https?:\/\//i.test(url)
-      ? `<a href="${escapeHtml(url)}">${text}</a>`
+      ? `<a href="${escapeHtml(url)}">${escapeHtml(text)}</a>`
       : text,
   );
   // Strikethrough: ~~text~~

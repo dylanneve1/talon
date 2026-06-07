@@ -44,7 +44,7 @@ import {
   getChatSettings,
   setChatFreeOnly,
 } from "../../storage/chat-settings.js";
-import { resolveActiveModelForChat } from "../../core/active-model.js";
+import { resolveActiveModelRefForChat } from "../../core/agent-runtime/resolver.js";
 
 /**
  * Resolve the backend serving a given chat right now.
@@ -115,16 +115,19 @@ export async function buildModelMenuViewForChat(
     label: backend.backendLabel ?? activeBackendId,
   };
 
-  // Resolve through the active-model helper. Returns null when the
-  // 5-step chain hits step 5 (catalog-driven backend with no per-chat
-  // pick AND no operator default in `config.backendDefaults`). The
-  // menu surfaces that as "No model selected".
-  const { model: activeModel } = await resolveActiveModelForChat(
-    chatId,
-    backend,
-    activeBackendId,
-    config,
-  );
+  // Phase 2.3: resolve through the ref-shaped helper so display name
+  // comes from the ref's metadata instead of a separate
+  // `getModelInfo` round-trip in `fetchActiveDisplay`. Returns ref:
+  // null when the 5-step chain hits step 5 (catalog-driven backend
+  // with no per-chat pick AND no operator default). The menu
+  // surfaces that as "No model selected".
+  const { ref: activeRef, modelId: activeModel } =
+    await resolveActiveModelRefForChat(
+      chatId,
+      backend,
+      activeBackendId,
+      config,
+    );
 
   // Default-model for "hasOverride" comparison. Prefer the active
   // backend's canonical default so a chat on Codex without an override
@@ -163,10 +166,16 @@ export async function buildModelMenuViewForChat(
         modelDetails: pres.modelDetails,
       };
     },
-    fetchActiveDisplay: async () =>
-      activeModel
-        ? (await backend.getModelInfo?.(activeModel))?.displayName
-        : undefined,
+    fetchActiveDisplay: async () => {
+      // Prefer the ref's already-enriched displayName; fall back to
+      // a deferred getModelInfo only when ref is null but a model id
+      // is known (legacy BackendId drift case).
+      if (activeRef?.displayName) return activeRef.displayName;
+      if (activeModel) {
+        return (await backend.getModelInfo?.(activeModel))?.displayName;
+      }
+      return undefined;
+    },
     activeBackend: activeBackendEntry,
     hasBackendOverride: hasBackendPool() && hasChatBackendOverride(chatId),
     showBackendButton: availableBackends.length > 1,
@@ -217,15 +226,17 @@ export async function buildModelBrowseViewForChat(
   const activeBackendId = hasBackendPool()
     ? getBackendIdForChat(chatId)
     : config.backend;
-  // Validate via the active-model resolver so the "current selection"
-  // marker in the picker tracks the same source-of-truth as the main
-  // menu. Null → use empty string sentinel; no model gets the ✓ tick.
-  const { model: resolvedModel } = await resolveActiveModelForChat(
-    chatId,
-    backend,
-    activeBackendId,
-    config,
-  );
+  // Phase 2.3: validate via the ref resolver so the "current
+  // selection" marker tracks the same source-of-truth as the main
+  // menu AND displayName comes from the ref's enrichment instead of
+  // a separate getModelInfo call.
+  const { ref: activeRef, modelId: resolvedModel } =
+    await resolveActiveModelRefForChat(
+      chatId,
+      backend,
+      activeBackendId,
+      config,
+    );
   const activeModel = resolvedModel ?? "";
   const freeOnly = chatSets.freeOnly === true;
   const filter: "all" | "free" = options.filter ?? (freeOnly ? "free" : "all");
@@ -238,8 +249,15 @@ export async function buildModelBrowseViewForChat(
     ...(options.provider !== undefined ? { provider: options.provider } : {}),
   });
 
-  const modelInfo = await backend.getModelInfo?.(activeModel);
-  const activeDisplay = modelInfo?.displayName ?? activeModel;
+  let activeDisplay: string;
+  if (activeRef?.displayName) {
+    activeDisplay = activeRef.displayName;
+  } else {
+    const modelInfo = activeModel
+      ? await backend.getModelInfo?.(activeModel)
+      : undefined;
+    activeDisplay = modelInfo?.displayName ?? activeModel;
+  }
 
   return {
     backend,

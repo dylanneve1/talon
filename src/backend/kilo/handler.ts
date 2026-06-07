@@ -28,6 +28,7 @@ import {
   getSession,
   incrementTurns,
   recordUsage,
+  setSessionId,
   setSessionName,
 } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
@@ -105,7 +106,7 @@ export async function handleMessage(
 
   // Resolve active model + provider lookup against Kilo's catalog
   const chatSettings = getChatSettings(chatId);
-  const activeModel = chatSettings.model ?? config.model;
+  const activeModel = params.model ?? chatSettings.model ?? config.model;
   const { providerID: selectedProviderID, modelID } =
     parseStoredKiloModelSelection(activeModel);
 
@@ -246,7 +247,6 @@ export async function handleMessage(
     const stored = getSession(chatId).sessionId;
     if (stored !== state.newSessionId) {
       // Defer to the storage helper to keep its invariants.
-      const { setSessionId } = await import("../../storage/sessions.js");
       setSessionId(chatId, state.newSessionId);
     }
   }

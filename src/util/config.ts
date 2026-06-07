@@ -11,6 +11,24 @@ import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
 import { setTimezone, formatFullDatetime, todayAndYesterday } from "./time.js";
 import { log } from "./log.js";
+import { BACKEND_IDS } from "../core/agent-runtime/model-ref.js";
+
+/**
+ * Backend-id literal source.
+ *
+ * `BACKEND_IDS` lives in `core/agent-runtime/model-ref.ts` as the
+ * source of truth for the typed `BackendId` union. Reusing it
+ * here keeps the config zod enums in lockstep automatically —
+ * adding a backend means updating one literal, not five.
+ *
+ * `z.enum` wants a non-empty readonly tuple; spread `BACKEND_IDS`
+ * (declared `as const`) into a fresh array and assert the tuple
+ * shape `[string, ...string[]]` so zod is happy at compile time.
+ */
+const BACKEND_ID_ENUM = [...BACKEND_IDS] as [
+  (typeof BACKEND_IDS)[number],
+  ...(typeof BACKEND_IDS)[number][],
+];
 
 // ── Config schema ───────────────────────────────────────────────────────────
 
@@ -148,9 +166,7 @@ const playwrightConfigSchema = z.object({
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
-  backend: z
-    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
-    .default("claude"),
+  backend: z.enum(BACKEND_ID_ENUM).default("claude"),
   /**
    * Backend used by the heartbeat agent. Falls back to `backend` when
    * unset. Pair with `heartbeatModel` — the heartbeat agent reads the
@@ -158,16 +174,12 @@ const configSchema = z.object({
    * keeping heartbeats on Claude Sonnet for quality while chat runs
    * on a cheaper / free backend.
    */
-  heartbeatBackend: z
-    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
-    .optional(),
+  heartbeatBackend: z.enum(BACKEND_ID_ENUM).optional(),
   /**
    * Backend used by the dream / memory-consolidation agent. Falls
    * back to `backend` when unset. Pair with `dreamModel`.
    */
-  dreamBackend: z
-    .enum(["claude", "opencode", "kilo", "codex", "openai-agents"])
-    .optional(),
+  dreamBackend: z.enum(BACKEND_ID_ENUM).optional(),
   /**
    * Whitelist of backends surfaced in the `/model` picker's backend
    * submenu. Unset → every registered backend is offered. Set →
@@ -179,9 +191,7 @@ const configSchema = z.object({
    * enabled, Talon clears that chat's backend/model override and starts a
    * fresh default session.
    */
-  enabledBackends: z
-    .array(z.enum(["claude", "opencode", "kilo", "codex", "openai-agents"]))
-    .optional(),
+  enabledBackends: z.array(z.enum(BACKEND_ID_ENUM)).optional(),
   claudeBinary: z.string().optional(),
   model: z.string().default("default"),
   /**

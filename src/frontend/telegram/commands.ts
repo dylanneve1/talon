@@ -55,6 +55,7 @@ import {
 } from "./model-menu.js";
 import { getBackendIdForChat } from "../../core/backend-controller.js";
 import { resolveActiveModelForChat } from "../../core/active-model.js";
+import { resolveActiveModelRefForChat } from "../../core/agent-runtime/resolver.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
@@ -551,13 +552,19 @@ export function registerCommands(
     const chatSets = getChatSettings(cid);
     const statusBe = resolveBackendForChat(cid, gateway);
     const statusBeId = getBackendIdForChat(cid);
-    const { model: resolvedStatusModel } = await resolveActiveModelForChat(
+    // Phase 2.2: consume the resolved ModelRef so context window, cache
+    // support, and display name come from one enriched object instead
+    // of three separate fetches. The ref resolver internally calls the
+    // same 5-step chain as `resolveActiveModelForChat`, so the active
+    // model id is identical; the difference is one fewer round-trip to
+    // `getModelInfo` for the common case.
+    const { ref: statusModelRef } = await resolveActiveModelRefForChat(
       cid,
       statusBe,
       statusBeId,
       config,
     );
-    const activeModel = resolvedStatusModel ?? "No model selected";
+    const activeModel = statusModelRef?.id ?? "No model selected";
     const effortName = chatSets.effort ?? "adaptive";
     const pulseOn = isPulseEnabled(cid);
 
@@ -568,15 +575,13 @@ export function registerCommands(
     let displayCacheWrite = u.totalCacheWrite;
     let turnsModelLabel = info.lastModel;
 
-    // Enrich context/usage data from the per-chat backend so /status
-    // reports the active provider's context window, not the global
-    // default's. Reuse `statusBe` from the resolver call above.
+    // Backend reference for snapshot enrichment + cache support. The
+    // ModelRef already carries the active model's `contextWindow`, so
+    // we no longer need the separate `getModelInfo(activeModel)` call
+    // here.
     const be = statusBe;
-    if (be?.getModelInfo) {
-      const modelInfo = await be
-        .getModelInfo(activeModel)
-        .catch(() => undefined);
-      if (modelInfo?.contextWindow) ctxMax = ctxMax || modelInfo.contextWindow;
+    if (statusModelRef?.contextWindow) {
+      ctxMax = ctxMax || statusModelRef.contextWindow;
     }
     if (be?.getSessionSnapshot && info.sessionId) {
       const snap = await be

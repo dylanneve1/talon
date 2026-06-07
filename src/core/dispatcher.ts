@@ -118,6 +118,7 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   // routed through the same onTextBlock callback the backend would
   // use for output. Bypassed entirely when deps don't include the
   // resolver (legacy / test path).
+  let resolvedModel: string | undefined;
   if (resolveActiveModel) {
     const { model, backendId } = await resolveActiveModel(params.chatId);
     if (model === null) {
@@ -151,6 +152,7 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
         bridgeMessageCount: context.getMessageCount(params.numericChatId),
       };
     }
+    resolvedModel = model;
   }
 
   // Dream check — fire-and-forget background memory consolidation if due
@@ -181,6 +183,7 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
 
     const result = await backend.query({
       chatId: params.chatId,
+      ...(resolvedModel ? { model: resolvedModel } : {}),
       text: params.prompt,
       senderName: params.senderName,
       isGroup: params.isGroup,

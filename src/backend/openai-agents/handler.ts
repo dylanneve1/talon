@@ -44,7 +44,7 @@ import {
   setSessionName,
   resetSession,
 } from "../../storage/sessions.js";
-import { getChatSettings, setChatModel } from "../../storage/chat-settings.js";
+import { getChatSettings } from "../../storage/chat-settings.js";
 import { classify } from "../../core/errors.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -121,7 +121,10 @@ export async function handleMessage(
   // Resolve the active model — chat-settings → config → default.
   const chatSettings = getChatSettings(chatId);
   const activeModel =
-    chatSettings.model ?? config.model ?? OPENAI_AGENTS_DEFAULT_MODEL;
+    params.model ??
+    chatSettings.model ??
+    config.model ??
+    OPENAI_AGENTS_DEFAULT_MODEL;
   log("agent", `[${chatId}] OpenAI Agents model resolved: ${activeModel}`);
 
   // First-turn system-prompt rebuild + Agents-specific delivery suffix.
@@ -357,13 +360,10 @@ export async function handleMessage(
           `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
         );
         resetSession(chatId);
-        const originalModel = getChatSettings(chatId).model;
-        setChatModel(chatId, decision.fallbackModelId);
-        try {
-          return await handleMessage(params, true);
-        } finally {
-          setChatModel(chatId, originalModel);
-        }
+        return await handleMessage(
+          { ...params, model: decision.fallbackModelId },
+          true,
+        );
       }
 
       logError(

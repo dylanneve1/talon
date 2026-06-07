@@ -11,6 +11,12 @@
 /** Parameters for a backend AI query. */
 export type QueryParams = {
   chatId: string;
+  /**
+   * Model id resolved by the dispatcher for this chat/backend. Backends should
+   * use this instead of re-reading chat settings so UI state, send-time guards,
+   * and actual runtime model stay in lockstep.
+   */
+  model?: string;
   text: string;
   senderName: string;
   isGroup?: boolean;

@@ -150,7 +150,7 @@ export async function runOneShotAgent(
       activeModel !== CODEX_CHATGPT_DEFAULT_MODEL &&
       isChatGptModelMismatchError(msg)
     ) {
-      const recorded = markOAuthIncompat(activeModel);
+      const recorded = await markOAuthIncompat(activeModel);
       if (recorded) {
         logWarn(
           "agent",

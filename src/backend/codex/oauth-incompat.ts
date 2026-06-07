@@ -51,14 +51,41 @@
  * "empty set" silently. Persistence is best-effort: a write failure
  * logs a warning but never throws, the in-memory set still works for
  * the rest of the session.
+ *
+ * Phase 6.x migration note
+ * ────────────────────────
+ *
+ * As of Phase 6.x this module's persistence layer is backed by
+ * `core/agent-runtime/store.ts`'s `JsonStore<T>` rather than a
+ * hand-rolled writeFileAtomic.sync + readFileSync + version-check
+ * loop. The on-disk format changed from a bare document
+ * `{ version, fingerprint, updatedAt, models }` to the JsonStore
+ * envelope `{ schemaVersion, savedAt, data: { fingerprint,
+ * updatedAt, models } }`. A `migrate` hook accepts the legacy
+ * shape on first load so existing data isn't lost.
+ *
+ * Two API consequences:
+ *
+ *   - `markOAuthIncompat(id)` is now async (returns
+ *     `Promise<boolean>`). The in-memory mutation is still
+ *     synchronous, but the disk write is awaited so callers can
+ *     reason about ordering. Existing call sites are inside async
+ *     functions and need a one-keyword `await`.
+ *   - `loadOAuthIncompatStore(fingerprint)` is also async — Phase
+ *     6.x JsonStore loads are Promise-returning to allow for fake
+ *     filesystem injection in tests.
+ *
+ * `isKnownOAuthIncompat`, `listKnownOAuthIncompat`,
+ * `computeAuthFingerprint`, and `resetOAuthIncompatForTests` stay
+ * synchronous (they only touch the in-memory set, not disk).
  */
 
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
-import writeFileAtomic from "write-file-atomic";
+import { mkdirSync } from "node:fs";
 
 import { logDebug, logWarn } from "../../util/log.js";
+import { JsonStore, type JsonStoreFs } from "../../core/agent-runtime/store.js";
 import type { CodexAuthInfo } from "./auth.js";
 
 /**
@@ -77,29 +104,35 @@ function storePath(): string {
 }
 
 /**
- * Shape of the persisted store. `fingerprint` lets us discard the
- * learned set when the underlying credential changes.
+ * Shape persisted INSIDE the JsonStore envelope. The on-disk
+ * representation is `{ schemaVersion, savedAt, data: OAuthIncompatData }`
+ * — `OAuthIncompatData` is what callers (and the migrate hook)
+ * see as `data`.
  */
-interface OAuthIncompatStore {
-  /** Schema version — bumped on incompatible layout changes. */
-  version: 1;
+interface OAuthIncompatData {
   /** Fingerprint of the credential the store was learned against. */
   fingerprint: string;
   /** When the store was last mutated (ISO 8601). */
   updatedAt: string;
-  /** Model ids known to fail on this credential. */
+  /** Model ids known to fail on this credential, sorted. */
   models: string[];
 }
 
-const STORE_VERSION = 1 as const;
+const STORE_SCHEMA_VERSION = 1 as const;
 
-/** In-memory state for the active credential. */
+/**
+ * In-memory state for the active credential. Held in a module-
+ * scoped variable rather than the `JsonStore` itself so reads
+ * (`isKnownOAuthIncompat`, `listKnownOAuthIncompat`) stay synchronous —
+ * the hot path doesn't need to touch disk.
+ */
 interface InMemoryStore {
   fingerprint: string;
   models: Set<string>;
 }
 
 let memoryStore: InMemoryStore | null = null;
+let jsonStore: JsonStore<OAuthIncompatData> | null = null;
 
 /**
  * Compute a stable fingerprint for the active auth credential. Used as
@@ -125,6 +158,14 @@ export function computeAuthFingerprint(info: CodexAuthInfo): string {
 }
 
 /**
+ * Optional filesystem injection — production uses node:fs, tests
+ * can pass an in-memory implementation. Mirrors `JsonStoreFs`.
+ */
+export interface OAuthIncompatStoreOptions {
+  fs?: JsonStoreFs;
+}
+
+/**
  * Load the persisted store for the given credential fingerprint, OR
  * reset the in-memory state to empty if the fingerprint doesn't match
  * (different account → don't trust the old data).
@@ -133,71 +174,65 @@ export function computeAuthFingerprint(info: CodexAuthInfo): string {
  * Tolerates missing file, malformed JSON, and schema-version drift by
  * starting with an empty set + logging at debug.
  */
-export function loadOAuthIncompatStore(fingerprint: string): void {
-  memoryStore = { fingerprint, models: new Set<string>() };
-
-  const path = storePath();
-  if (!existsSync(path)) {
-    logDebug(
-      "agent",
-      `Codex OAuth-incompat store: no file at ${path}, starting empty`,
-    );
+export async function loadOAuthIncompatStore(
+  fingerprint: string,
+  options: OAuthIncompatStoreOptions = {},
+): Promise<void> {
+  // Idempotent fast path: if we already have a memoryStore for the
+  // same fingerprint, the existing in-memory set is authoritative
+  // for this credential. Recomputing it from disk would discard any
+  // runtime-learned entries that haven't completed their async
+  // persist yet (the JsonStore migration made `markOAuthIncompat`
+  // async, and `initCodexAgent` fires this loader and-forgets, so
+  // there's a real race between mark+persist and a subsequent
+  // loadOAuthIncompatStore on the same fingerprint).
+  if (memoryStore && memoryStore.fingerprint === fingerprint && jsonStore) {
     return;
   }
 
-  let raw: string;
+  const freshMemory: InMemoryStore = {
+    fingerprint,
+    models: new Set<string>(),
+  };
+  const freshJsonStore = makeJsonStore(options.fs);
+
+  let data: OAuthIncompatData;
   try {
-    raw = readFileSync(path, "utf8");
+    data = await freshJsonStore.load();
   } catch (err) {
     logWarn(
       "agent",
-      `Codex OAuth-incompat store: read failed (${
+      `Codex OAuth-incompat store: load failed (${
         err instanceof Error ? err.message : String(err)
       }), starting empty`,
     );
+    memoryStore = freshMemory;
+    jsonStore = freshJsonStore;
     return;
   }
 
-  let parsed: OAuthIncompatStore;
-  try {
-    parsed = JSON.parse(raw) as OAuthIncompatStore;
-  } catch (err) {
-    logWarn(
-      "agent",
-      `Codex OAuth-incompat store: JSON parse failed (${
-        err instanceof Error ? err.message : String(err)
-      }), starting empty`,
-    );
-    return;
-  }
-
-  if (
-    !parsed ||
-    parsed.version !== STORE_VERSION ||
-    typeof parsed.fingerprint !== "string" ||
-    !Array.isArray(parsed.models)
-  ) {
+  // Commit the fresh state AFTER the await. Until this point the
+  // module-level `memoryStore` holds the previous credential's data
+  // (if any) — concurrent reads via `isKnownOAuthIncompat` keep
+  // seeing it, and the swap is atomic from the reader's point of view.
+  if (data.fingerprint !== fingerprint) {
     logDebug(
       "agent",
-      `Codex OAuth-incompat store: malformed or version mismatch, starting empty`,
+      `Codex OAuth-incompat store: fingerprint mismatch (was ${data.fingerprint}, now ${fingerprint}), starting empty`,
     );
+    memoryStore = freshMemory;
+    jsonStore = freshJsonStore;
     return;
   }
 
-  if (parsed.fingerprint !== fingerprint) {
-    logDebug(
-      "agent",
-      `Codex OAuth-incompat store: fingerprint mismatch (was ${parsed.fingerprint}, now ${fingerprint}), starting empty`,
-    );
-    return;
+  for (const id of data.models) {
+    if (typeof id === "string" && id) freshMemory.models.add(id);
   }
-
-  for (const id of parsed.models) {
-    if (typeof id === "string" && id) memoryStore.models.add(id);
-  }
+  memoryStore = freshMemory;
+  jsonStore = freshJsonStore;
   logDebug(
     "agent",
-    `Codex OAuth-incompat store: loaded ${memoryStore.models.size} entries from ${path}`,
+    `Codex OAuth-incompat store: loaded ${freshMemory.models.size} entries from ${storePath()}`,
   );
 }
 
@@ -219,9 +254,14 @@ export function isKnownOAuthIncompat(modelId: string): boolean {
  *
  * Returns `true` if the set changed (callers can log the new entry),
  * `false` if the id was already known.
+ *
+ * Phase 6.x: this is now async. The in-memory mutation is
+ * synchronous so subsequent `isKnownOAuthIncompat` calls see the
+ * update immediately; the awaited promise covers the disk write.
+ * Existing call sites need a one-keyword `await`.
  */
-export function markOAuthIncompat(modelId: string): boolean {
-  if (!memoryStore) {
+export async function markOAuthIncompat(modelId: string): Promise<boolean> {
+  if (!memoryStore || !jsonStore) {
     logDebug(
       "agent",
       `Codex OAuth-incompat: markOAuthIncompat(${modelId}) called with no store loaded — ignored`,
@@ -231,7 +271,14 @@ export function markOAuthIncompat(modelId: string): boolean {
   if (memoryStore.models.has(modelId)) return false;
 
   memoryStore.models.add(modelId);
-  persist();
+  // Mirror the in-memory mutation into the JsonStore's value, then
+  // persist. JsonStore.update + save is the standard write pattern.
+  jsonStore.update((data) => {
+    data.fingerprint = memoryStore!.fingerprint;
+    data.updatedAt = new Date().toISOString();
+    data.models = Array.from(memoryStore!.models).sort();
+  });
+  await persist();
   return true;
 }
 
@@ -252,21 +299,102 @@ export function listKnownOAuthIncompat(): string[] {
  */
 export function resetOAuthIncompatForTests(): void {
   memoryStore = null;
+  jsonStore = null;
 }
 
-/** Persist the current in-memory state to disk. Best-effort. */
-function persist(): void {
-  if (!memoryStore) return;
-  const data: OAuthIncompatStore = {
-    version: STORE_VERSION,
-    fingerprint: memoryStore.fingerprint,
-    updatedAt: new Date().toISOString(),
-    models: Array.from(memoryStore.models).sort(),
+// ── Internals ───────────────────────────────────────────────────────────────
+
+function makeJsonStore(fs?: JsonStoreFs): JsonStore<OAuthIncompatData> {
+  return new JsonStore<OAuthIncompatData>({
+    path: storePath(),
+    defaultValue: {
+      fingerprint: "",
+      updatedAt: new Date(0).toISOString(),
+      models: [],
+    },
+    schemaVersion: STORE_SCHEMA_VERSION,
+    validate: validateData,
+    migrate: migrateLegacy,
+    ...(fs ? { fs } : {}),
+  });
+}
+
+/**
+ * Validate the persisted `data` field shape. JsonStore calls this
+ * with whatever the on-disk envelope's `data` was. Returns the
+ * normalised value; throws to reject a malformed document.
+ */
+function validateData(raw: unknown): OAuthIncompatData {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("malformed: not an object");
+  }
+  const obj = raw as Record<string, unknown>;
+  if (typeof obj.fingerprint !== "string") {
+    throw new Error("malformed: missing fingerprint");
+  }
+  if (typeof obj.updatedAt !== "string") {
+    throw new Error("malformed: missing updatedAt");
+  }
+  if (!Array.isArray(obj.models)) {
+    throw new Error("malformed: models is not an array");
+  }
+  return {
+    fingerprint: obj.fingerprint,
+    updatedAt: obj.updatedAt,
+    models: obj.models.filter(
+      (m): m is string => typeof m === "string" && m.length > 0,
+    ),
   };
+}
+
+/**
+ * Translate the pre-JsonStore on-disk shape into the new envelope.
+ *
+ *   Legacy:  { version: 1, fingerprint, updatedAt, models }
+ *   New:     { schemaVersion: 1, savedAt, data: { fingerprint, updatedAt, models } }
+ *
+ * JsonStore reads the legacy shape as a bare document (no envelope
+ * detected → `fromVersion: 0`). When `raw` has the legacy `version`
+ * field set to 1, we lift the inner fields into the new envelope.
+ * Anything else returns `null` → JsonStore falls back to default
+ * (empty set), matching the prior behaviour where "schema mismatch
+ * → start empty".
+ */
+function migrateLegacy(
+  raw: unknown,
+  fromVersion: number,
+): { value: OAuthIncompatData; schemaVersion: number } | null {
+  if (fromVersion !== 0) {
+    // We only know how to migrate FROM the legacy bare shape (no
+    // envelope detected) — anything else (e.g. a future newer
+    // schema) is unrecoverable.
+    return null;
+  }
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.version !== 1) return null;
   try {
-    const path = storePath();
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileAtomic.sync(path, JSON.stringify(data, null, 2));
+    const data = validateData({
+      fingerprint: obj.fingerprint,
+      updatedAt: obj.updatedAt,
+      models: obj.models,
+    });
+    return { value: data, schemaVersion: STORE_SCHEMA_VERSION };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Persist the current in-memory state to disk. Best-effort — wraps
+ * `JsonStore.save()` with directory creation and a swallowed-warning
+ * fallback identical to the pre-migration `persist()`.
+ */
+async function persist(): Promise<void> {
+  if (!jsonStore) return;
+  try {
+    mkdirSync(dirname(storePath()), { recursive: true });
+    await jsonStore.save();
   } catch (err) {
     logWarn(
       "agent",

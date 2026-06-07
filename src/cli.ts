@@ -122,6 +122,7 @@ function isConfigured(config: Config): boolean {
     if (fe === "telegram") return !!config.botToken;
     if (fe === "terminal") return true;
     if (fe === "teams") return !!config.teamsWebhookUrl;
+    if (fe === "discord") return !!config.discord?.botToken;
     return false;
   });
 }

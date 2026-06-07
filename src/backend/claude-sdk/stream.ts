@@ -23,6 +23,7 @@ import { log } from "../../util/log.js";
 /** Mutable state accumulated while iterating the SDK message stream. */
 export type StreamState = {
   currentBlockText: string;
+  currentThinkingText: string;
   allResponseText: string;
   newSessionId: string | undefined;
   toolCalls: number;
@@ -66,6 +67,7 @@ export type StreamState = {
 export function createStreamState(): StreamState {
   return {
     currentBlockText: "",
+    currentThinkingText: "",
     allResponseText: "",
     newSessionId: undefined,
     toolCalls: 0,
@@ -123,10 +125,12 @@ export function processStreamDelta(
   const delta = deltaEvent.delta;
 
   if (delta.type === "thinking_delta") {
+    state.currentThinkingText +=
+      (delta as { thinking?: string }).thinking ?? "";
     const now = Date.now();
     if (now - state.lastStreamUpdate >= STREAM_INTERVAL) {
       state.lastStreamUpdate = now;
-      onStreamDelta(state.currentBlockText, "thinking");
+      onStreamDelta(state.currentThinkingText, "thinking");
     }
   } else if (delta.type === "text_delta") {
     state.currentBlockText += delta.text;

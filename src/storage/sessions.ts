@@ -156,6 +156,7 @@ export function getSession(chatId: string): SessionState {
     session.usage.lastResponseMs = 0;
   if (
     session.usage.fastestResponseMs === undefined ||
+    session.usage.fastestResponseMs === null ||
     session.usage.fastestResponseMs === 0
   )
     session.usage.fastestResponseMs = Infinity;

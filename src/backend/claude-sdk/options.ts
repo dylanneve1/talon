@@ -300,10 +300,11 @@ const stopFailureHook: HookCallback = async (
 export function buildSdkOptions(
   chatId: string,
   abortController?: AbortController,
+  modelOverride?: string,
 ): BuildSdkOptionsResult {
   const config = getConfig();
   const chatSettings = getChatSettings(chatId);
-  const activeModel = chatSettings.model ?? config.model;
+  const activeModel = modelOverride ?? chatSettings.model ?? config.model;
   const activeEffort = chatSettings.effort ?? "adaptive";
   const resolvedActiveModel = resolveModelId(activeModel);
 

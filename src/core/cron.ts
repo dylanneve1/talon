@@ -118,7 +118,7 @@ function isDue(job: CronJob, now: Date): boolean {
   } catch (err) {
     if (!warnedBadSchedule.has(job.id)) {
       if (warnedBadSchedule.size >= MAX_WARNED_SCHEDULES)
-        warnedBadSchedule.clear();
+        warnedBadSchedule.delete(warnedBadSchedule.values().next().value!);
       warnedBadSchedule.add(job.id);
       logWarn(
         "cron",

@@ -36,6 +36,7 @@ export type DreamState = {
 const DREAM_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const DREAM_STATE_FILE = pathFiles.dreamState;
 const DREAM_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute max
+const DREAM_ABORT_GRACE_MS = 30 * 1000; // max wait for backend to honour abort
 const DREAM_LOGS_DIR = resolve(dirs.logs, "dreams");
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -259,9 +260,22 @@ If commands fail, log the error and continue — this stage is optional.`
       dreamLogFile,
       `\n---\n**Dream FAILED at ${new Date().toISOString()}:** ${err}\n`,
     );
-    // On timeout, wait for the agent to actually finish before releasing the
-    // dreaming lock to prevent overlapping dream runs
-    await agentPromise.catch(() => {});
+    // Give the backend a bounded grace window to honour the abort signal.
+    // Never wait indefinitely — a backend that ignores abort would otherwise
+    // hold the `dreaming` lock forever, silently killing the dream loop.
+    const settled = await Promise.race([
+      agentPromise.catch(() => "settled" as const),
+      new Promise<"timed_out">((resolve) => {
+        const t = setTimeout(() => resolve("timed_out"), DREAM_ABORT_GRACE_MS);
+        t.unref();
+      }),
+    ]);
+    if (settled === "timed_out") {
+      logWarn(
+        "dream",
+        `Backend ignored abort after ${DREAM_ABORT_GRACE_MS}ms — releasing dreaming lock`,
+      );
+    }
     throw err;
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);

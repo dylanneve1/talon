@@ -124,7 +124,11 @@ export function classify(err: unknown): TalonError {
   }
 
   // Context length / overflow
-  if (/context.*length|too.*long|token.*limit|overflow/i.test(msg)) {
+  if (
+    /context.{0,10}length|too.{0,10}long|token.{0,10}limit|context.{0,10}overflow/i.test(
+      msg,
+    )
+  ) {
     return new TalonError(msg, {
       reason: "context_length",
       retryable: false,
