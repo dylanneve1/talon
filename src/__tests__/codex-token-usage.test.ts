@@ -453,6 +453,37 @@ describe("readLastRolloutSnapshot", () => {
     expect(snap?.usage).toBeUndefined();
     expect(classifyRateLimits(snap?.rateLimits)).toBe("exhausted");
     expect(snap?.rateLimits?.limitId).toBe("premium");
+    expect(snap?.numApiCalls).toBe(1);
+  });
+
+  it("does not count healthy info:null preflight token_count events as API calls", async () => {
+    writeRollout({
+      year: "2026",
+      month: "05",
+      day: "21",
+      threadId: "thread-preflight",
+      events: [
+        {
+          timestamp: "1",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: null,
+            rate_limits: {
+              limit_id: "codex",
+              primary: { used_percent: 3 },
+              credits: null,
+              plan_type: "plus",
+              rate_limit_reached_type: null,
+            },
+          },
+        },
+        { timestamp: "2", type: "event_msg", payload: healthyPayload(50_000) },
+      ],
+    });
+    const snap = await readLastRolloutSnapshot("thread-preflight");
+    expect(classifyRateLimits(snap?.rateLimits)).toBe("healthy");
+    expect(snap?.numApiCalls).toBe(1);
   });
 
   it("returns the LAST event when a turn went healthy → exhausted", async () => {
@@ -471,6 +502,7 @@ describe("readLastRolloutSnapshot", () => {
     });
     const snap = await readLastRolloutSnapshot("thread-mixed");
     expect(classifyRateLimits(snap?.rateLimits)).toBe("exhausted");
+    expect(snap?.numApiCalls).toBe(2);
   });
 
   it("returns null when no rollout matches the thread_id", async () => {

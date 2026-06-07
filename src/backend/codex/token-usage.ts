@@ -17,7 +17,8 @@
  * For Talon's `/status` context display we want the per-call view, not the
  * cumulative one. This module tails the rollout file after a turn completes
  * and returns the last `token_count.last_token_usage.input_tokens` (which
- * IS the current context fill) plus the model's `context_window`.
+ * IS the current context fill), the model's `context_window`, and an
+ * inferred API-call count from usable `token_count` usage blocks.
  *
  * Why parse a file instead of fixing the SDK: the SDK ships a single
  * `Usage` shape and the Codex team isn't going to break it for a
@@ -90,6 +91,8 @@ export interface CodexRateLimitsSnapshot {
 export interface CodexRolloutSnapshot {
   usage?: CodexLastTokenUsage;
   rateLimits?: CodexRateLimitsSnapshot;
+  /** Inferred number of Codex model API calls represented in the rollout. */
+  numApiCalls?: number;
 }
 
 /**
@@ -213,9 +216,8 @@ export async function readLastTokenCount(
  *
  * Reverse-scans the file looking for the most recent `token_count`
  * event. The payload contains BOTH `info.last_token_usage` and
- * `rate_limits` together, so a single scan answers both questions —
- * keeping `readLastTokenCount` as a narrow shim that returns just the
- * usage half.
+ * `rate_limits` together, so a single scan answers both questions and
+ * also lets us infer how many model API calls happened in the turn.
  *
  * Returns `null` only when the file can't be found or no `token_count`
  * event exists in it. Returns `{ usage: undefined, rateLimits: {...} }`
@@ -239,6 +241,8 @@ export async function readLastRolloutSnapshot(
   // Reverse-scan: the latest token_count event is almost always the last
   // non-empty line, so this typically loops once or twice.
   const lines = raw.split("\n");
+  let snapshot: CodexRolloutSnapshot | null = null;
+  let numApiCalls = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -250,9 +254,28 @@ export async function readLastRolloutSnapshot(
     }
     const payload = (obj as { payload?: { type?: string } })?.payload;
     if (payload?.type !== "token_count") continue;
-    return extractSnapshotFromTokenCountPayload(payload);
+    const extracted = extractSnapshotFromTokenCountPayload(payload);
+    if (isApiCallTokenCount(extracted)) numApiCalls++;
+    if (!snapshot) {
+      snapshot = extracted;
+    }
   }
-  return null;
+  if (!snapshot) return null;
+  snapshot.numApiCalls = numApiCalls;
+  return snapshot;
+}
+
+/**
+ * Not every `token_count` line is a model call. Codex commonly writes a
+ * healthy preflight/rate-limit token_count with `info: null`; counting it
+ * would double the apparent calls for simple turns. A valid usage block is a
+ * completed model call. An exhausted rate-limit block is a denied attempted
+ * call, so count that too.
+ */
+function isApiCallTokenCount(snapshot: CodexRolloutSnapshot): boolean {
+  return Boolean(
+    snapshot.usage || classifyRateLimits(snapshot.rateLimits) === "exhausted",
+  );
 }
 
 /**

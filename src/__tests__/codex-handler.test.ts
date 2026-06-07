@@ -17,6 +17,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { getMetrics, resetMetrics } from "../util/metrics.js";
 
 // ── Shared mock state ───────────────────────────────────────────────────────
 
@@ -47,6 +48,8 @@ let MOCK_RUN_STREAMED_THROW_QUEUE: Array<Error | null> = [];
 // about and queries `getActiveAbort(chatId)` itself.
 let MOCK_ACTIVE_ABORT_DURING_TURN: (() => void) | null = null;
 let MOCK_ACTIVE_ABORT_SNAPSHOT: AbortController | undefined;
+let originalCodexHome: string | undefined;
+let tempCodexHome: string;
 
 vi.mock("@openai/codex-sdk", () => {
   class MockThread {
@@ -144,11 +147,41 @@ function resetMocks(): void {
   MOCK_ACTIVE_ABORT_SNAPSHOT = undefined;
 }
 
+function writeRollout(opts: {
+  year: string;
+  month: string;
+  day: string;
+  threadId: string;
+  events: unknown[];
+}): void {
+  const dir = join(tempCodexHome, "sessions", opts.year, opts.month, opts.day);
+  mkdirSync(dir, { recursive: true });
+  const file = join(
+    dir,
+    `rollout-${opts.year}-${opts.month}-${opts.day}T00-00-00-${opts.threadId}.jsonl`,
+  );
+  const body = opts.events.map((e) => JSON.stringify(e)).join("\n");
+  writeFileSync(file, body);
+}
+
 beforeEach(() => {
+  originalCodexHome = process.env.CODEX_HOME;
+  tempCodexHome = mkdtempSync(join(tmpdir(), "talon-codex-home-"));
+  process.env.CODEX_HOME = tempCodexHome;
+  resetMetrics();
   resetState();
   resetMocks();
   // Clear any stored session state from previous tests.
   sessions.resetSession("test-chat");
+});
+
+afterEach(() => {
+  if (originalCodexHome === undefined) {
+    delete process.env.CODEX_HOME;
+  } else {
+    process.env.CODEX_HOME = originalCodexHome;
+  }
+  rmSync(tempCodexHome, { recursive: true, force: true });
 });
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -199,6 +232,100 @@ describe("codex / handleMessage — happy path", () => {
     expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(1);
     // Thread id persisted in session storage
     expect(sessions.getSession("test-chat").sessionId).toBe("thr_test_1");
+  });
+
+  it("pipes rollout token_count events into session numApiCalls", async () => {
+    setupHandler();
+    writeRollout({
+      year: "2026",
+      month: "05",
+      day: "21",
+      threadId: "thr_test_1",
+      events: [
+        {
+          timestamp: "2026-05-21T00:00:00.000Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: { input_tokens: 100 },
+              last_token_usage: { input_tokens: 100 },
+              model_context_window: 272000,
+            },
+            rate_limits: {
+              limit_id: "codex",
+              primary: { used_percent: 3 },
+              secondary: { used_percent: 18 },
+              credits: null,
+              plan_type: "plus",
+              rate_limit_reached_type: null,
+            },
+          },
+        },
+        {
+          timestamp: "2026-05-21T00:00:01.000Z",
+          type: "event_msg",
+          payload: {
+            type: "token_count",
+            info: {
+              total_token_usage: { input_tokens: 200 },
+              last_token_usage: { input_tokens: 200 },
+              model_context_window: 272000,
+            },
+            rate_limits: {
+              limit_id: "codex",
+              primary: { used_percent: 4 },
+              secondary: { used_percent: 18 },
+              credits: null,
+              plan_type: "plus",
+              rate_limit_reached_type: null,
+            },
+          },
+        },
+      ],
+    });
+
+    MOCK_EVENTS = [
+      { type: "thread.started", thread_id: "thr_test_1" },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: {
+          id: "i1",
+          type: "agent_message",
+          text: "Hello from Codex.",
+        },
+      },
+      {
+        type: "turn.completed",
+        usage: {
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_input_tokens: 10,
+          reasoning_output_tokens: 5,
+        },
+      },
+    ];
+
+    await handleMessage({
+      chatId: "test-chat",
+      text: "Say hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    expect(sessions.getSession("test-chat").usage.numApiCalls).toBe(2);
+    const metrics = getMetrics();
+    expect(metrics.counters["codex.api_calls_total"]).toBe(2);
+    expect(metrics.counters["codex.turns_total"]).toBe(1);
+    expect(metrics.histograms["codex.api_calls_per_turn"]).toMatchObject({
+      count: 1,
+      p50: 2,
+    });
+    expect(metrics.histograms["codex.tool_calls_per_turn"]).toMatchObject({
+      count: 1,
+      p50: 0,
+    });
   });
 
   it("resumes existing thread on second turn", async () => {
@@ -634,6 +761,16 @@ describe("codex / handleMessage — tool use", () => {
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe("react");
     expect(tools[0].input).toEqual({ emoji: "🔥" });
+
+    const metrics = getMetrics();
+    expect(metrics.counters["codex.tool_calls_total"]).toBe(1);
+    expect(metrics.counters["codex.tool_calls.react"]).toBe(1);
+    expect(metrics.counters["tool_calls.react"]).toBe(1);
+    expect(metrics.counters["codex.turns_with_tools_total"]).toBe(1);
+    expect(metrics.histograms["codex.tool_calls_per_turn"]).toMatchObject({
+      count: 1,
+      p50: 1,
+    });
   });
 
   it("end_turn-as-MCP-tool triggers abort", async () => {
@@ -1260,7 +1397,7 @@ describe("codex / handleMessage — agent_message edge cases", () => {
 });
 
 describe("codex / handleMessage — non-MCP items", () => {
-  it("silently ignores reasoning / command / file / web / todo items", async () => {
+  it("keeps native Codex items off the reply surface but counts tool-like items", async () => {
     setupHandler();
     MOCK_EVENTS = [
       { type: "thread.started", thread_id: "thr_other_items" },
@@ -1287,6 +1424,7 @@ describe("codex / handleMessage — non-MCP items", () => {
         item: {
           id: "f1",
           type: "file_change",
+          status: "completed",
           changes: [{ kind: "modify", path: "/tmp/x" }],
         },
       },
@@ -1304,6 +1442,13 @@ describe("codex / handleMessage — non-MCP items", () => {
       },
       {
         type: "item.completed",
+        item: {
+          id: "img1",
+          type: "image_generation",
+        },
+      },
+      {
+        type: "item.completed",
         item: { id: "a1", type: "agent_message", text: "done" },
       },
       {
@@ -1317,15 +1462,46 @@ describe("codex / handleMessage — non-MCP items", () => {
       },
     ];
 
+    const tools: Array<{ name: string; input: Record<string, unknown> }> = [];
     const result = await handleMessage({
       chatId: "test-chat",
       text: "do a thing",
       senderName: "Dylan",
       isGroup: false,
+      onToolUse: (name, input) => {
+        tools.push({ name, input });
+      },
     });
 
     // Only the agent_message contributes to the reply text.
     expect(result.text).toBe("done");
+    expect(tools).toEqual([
+      {
+        name: "command_execution",
+        input: { command: "ls", status: "completed", exit_code: 0 },
+      },
+      {
+        name: "file_change",
+        input: {
+          status: "completed",
+          changes: [{ kind: "modify", path: "/tmp/x" }],
+        },
+      },
+      { name: "web_search", input: { query: "anthropic" } },
+      { name: "image_generation", input: {} },
+    ]);
+
+    const metrics = getMetrics();
+    expect(metrics.counters["codex.tool_calls_total"]).toBe(4);
+    expect(metrics.counters["codex.tool_calls.command_execution"]).toBe(1);
+    expect(metrics.counters["codex.tool_calls.file_change"]).toBe(1);
+    expect(metrics.counters["codex.tool_calls.web_search"]).toBe(1);
+    expect(metrics.counters["codex.tool_calls.image_generation"]).toBe(1);
+    expect(metrics.counters["codex.turns_with_tools_total"]).toBe(1);
+    expect(metrics.histograms["codex.tool_calls_per_turn"]).toMatchObject({
+      count: 1,
+      p50: 4,
+    });
   });
 
   it("logs `error` items as warnings but does not break the turn", async () => {

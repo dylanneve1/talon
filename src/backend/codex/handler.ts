@@ -87,11 +87,7 @@ import {
 } from "./models.js";
 import { supportsReasoningLevel } from "../../core/reasoning-levels.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
-import {
-  classifyRateLimits,
-  readLastRolloutSnapshot,
-  readLastTokenCount,
-} from "./token-usage.js";
+import { classifyRateLimits, readLastRolloutSnapshot } from "./token-usage.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
 
@@ -439,6 +435,7 @@ export async function handleMessage(
 
   const streamState = createStreamState();
   const seenToolCallIds = new Set<string>();
+  const codexToolMetrics = { count: 0 };
   const abortController = new AbortController();
   activeAborts.set(chatId, abortController);
 
@@ -474,6 +471,7 @@ export async function handleMessage(
       handleEvent(event, {
         state: streamState,
         seenToolCallIds,
+        codexToolMetrics,
         onTextBlock,
         onToolUse,
         chatId,
@@ -594,10 +592,19 @@ export async function handleMessage(
   // Falls back silently to "unknown" if the rollout file isn't available
   // (e.g. CODEX_HOME pointed elsewhere, permission issues, first run).
   if (resolvedThreadId) {
-    const last = await readLastTokenCount(resolvedThreadId).catch(() => null);
+    const last = await readLastRolloutSnapshot(resolvedThreadId).catch(
+      () => null,
+    );
     if (last) {
-      streamState.contextTokens = last.contextTokens;
-      if (last.contextWindow) streamState.contextWindow = last.contextWindow;
+      if (last.usage) {
+        streamState.contextTokens = last.usage.contextTokens;
+        if (last.usage.contextWindow) {
+          streamState.contextWindow = last.usage.contextWindow;
+        }
+      }
+      if (typeof last.numApiCalls === "number") {
+        streamState.numApiCalls = last.numApiCalls;
+      }
     }
   }
 
@@ -611,6 +618,15 @@ export async function handleMessage(
   const durationMs = Date.now() - t0;
   recordHistogram("response_latency_ms", durationMs);
   incrementCounter("queries_total");
+  incrementCounter("codex.turns_total");
+  recordHistogram("codex.tool_calls_per_turn", codexToolMetrics.count);
+  if (codexToolMetrics.count > 0) {
+    incrementCounter("codex.turns_with_tools_total");
+  }
+  if (streamState.numApiCalls > 0) {
+    incrementCounter("codex.api_calls_total", streamState.numApiCalls);
+    recordHistogram("codex.api_calls_per_turn", streamState.numApiCalls);
+  }
 
   recordUsage(chatId, {
     inputTokens: streamState.sdkInputTokens,
@@ -628,6 +644,7 @@ export async function handleMessage(
     // Prefer the rollout's reported context window (matches what the
     // model actually sees this turn) over the static catalog value.
     contextWindow: streamState.contextWindow ?? activeModelInfo?.contextWindow,
+    numApiCalls: streamState.numApiCalls || undefined,
   });
 
   // Set a descriptive session name from the user's first message.
@@ -707,6 +724,7 @@ export async function handleMessage(
 interface HandleEventContext {
   state: StreamState;
   seenToolCallIds: Set<string>;
+  codexToolMetrics: { count: number };
   onTextBlock?: (text: string) => Promise<void>;
   onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
   chatId: string;
@@ -731,19 +749,42 @@ function handleItem(item: ThreadItem, ctx: HandleEventContext): void {
     case "mcp_tool_call":
       handleMcpToolCall(item, ctx);
       return;
-    case "reasoning":
     case "command_execution":
+      handleNativeCodexTool(ctx, "command_execution", {
+        command: item.command,
+        status: item.status,
+        ...(typeof item.exit_code === "number"
+          ? { exit_code: item.exit_code }
+          : {}),
+      });
+      return;
     case "file_change":
+      handleNativeCodexTool(ctx, "file_change", {
+        status: item.status,
+        changes: item.changes,
+      });
+      return;
     case "web_search":
+      handleNativeCodexTool(ctx, "web_search", { query: item.query });
+      return;
+    case "reasoning":
     case "todo_list":
     case "error":
-      // Reasoning is private scratchpad; command/file/web/todo are
-      // ambient activity surfaced by Codex's CLI shell. None map to
-      // Talon's reply channel. Error items get logged below.
+      // Reasoning is private scratchpad; todo_list is planning state.
+      // Neither maps to Talon's reply or tool metrics. Error items get
+      // logged below.
       if (item.type === "error") {
         logWarn("agent", `[${ctx.chatId}] Codex error item: ${item.message}`);
       }
       return;
+    default: {
+      const type =
+        typeof (item as { type?: unknown }).type === "string"
+          ? (item as { type: string }).type
+          : "unknown";
+      handleNativeCodexTool(ctx, type, nativeItemPayload(item));
+      return;
+    }
   }
 }
 
@@ -796,7 +837,8 @@ function handleMcpToolCall(
       ? (item.arguments as Record<string, unknown>)
       : {};
 
-  incrementCounter(`tool_calls.${stripMcpPrefix(toolName)}`);
+  const bareToolName = stripMcpPrefix(toolName);
+  recordCodexToolMetric(ctx, bareToolName);
   recordToolUse(ctx.state, toolName, input);
 
   if (ctx.onToolUse) {
@@ -814,6 +856,39 @@ function handleMcpToolCall(
       `[Codex] terminator fired: ${describeToolCall(toolName, input)}`,
     );
   }
+}
+
+function recordCodexToolMetric(
+  ctx: HandleEventContext,
+  toolName: string,
+): void {
+  incrementCounter(`tool_calls.${toolName}`);
+  incrementCounter("codex.tool_calls_total");
+  incrementCounter(`codex.tool_calls.${toolName}`);
+  ctx.codexToolMetrics.count += 1;
+}
+
+function handleNativeCodexTool(
+  ctx: HandleEventContext,
+  toolName: string,
+  input: Record<string, unknown>,
+): void {
+  recordCodexToolMetric(ctx, toolName);
+  if (ctx.onToolUse) {
+    try {
+      ctx.onToolUse(toolName, input);
+    } catch {
+      /* non-fatal */
+    }
+  }
+}
+
+function nativeItemPayload(item: unknown): Record<string, unknown> {
+  if (!item || typeof item !== "object") {
+    return {};
+  }
+  const { id: _id, type: _type, ...payload } = item as Record<string, unknown>;
+  return payload;
 }
 
 /** One-line summary of a tool call for the operator log. */
