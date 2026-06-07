@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.15.1](https://github.com/dylanneve1/talon/compare/v1.15.0...v1.15.1) (2026-06-07)
+
+
+### Bug Fixes
+
+* 19 correctness bugs from deep codebase review ([#268](https://github.com/dylanneve1/talon/issues/268)) ([5686c26](https://github.com/dylanneve1/talon/commit/5686c261c82d881a9df16a4af53e83e5bf9b508e))
+* **agent-runtime:** correct three bugs in adapter and legacy-bridge ([#263](https://github.com/dylanneve1/talon/issues/263)) ([c812129](https://github.com/dylanneve1/talon/commit/c8121294494671aa6fb2a4146979fdeb308c8402))
+* flag intervening group context before vague replies ([#251](https://github.com/dylanneve1/talon/issues/251)) ([b2a4bcd](https://github.com/dylanneve1/talon/commit/b2a4bcd24a50e85e787079609135a8c734e15f9a))
+* four correctness bugs found during deep code review ([#270](https://github.com/dylanneve1/talon/issues/270)) ([5bd97c4](https://github.com/dylanneve1/talon/commit/5bd97c4239f28c7e09b2e9fff757d40fc73af1f6))
+* thread fallback model through params instead of setChatModel ([#265](https://github.com/dylanneve1/talon/issues/265)) ([9deda78](https://github.com/dylanneve1/talon/commit/9deda7836242df88a0643f98c38a39bba3bfce50))
+
 ## [1.15.0](https://github.com/dylanneve1/talon/compare/v1.14.0...v1.15.0) (2026-06-06)
 
 
