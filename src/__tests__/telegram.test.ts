@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
+import type { Bot } from "grammy";
 import {
   markdownToTelegramHtml,
   splitMessage,
 } from "../frontend/telegram/formatting.js";
+import { sendMarkdownChunks } from "../frontend/telegram/handlers.js";
 import { friendlyMessage as friendlyError } from "../core/errors.js";
 
 describe("markdownToTelegramHtml", () => {
@@ -121,6 +123,41 @@ describe("splitMessage", () => {
   it("returns original text in array when exactly at max", () => {
     const text = "a".repeat(100);
     expect(splitMessage(text, 100)).toEqual([text]);
+  });
+});
+
+describe("sendMarkdownChunks", () => {
+  it("splits long direct text-block responses before sending to Telegram", async () => {
+    const sent: Array<{
+      chatId: number;
+      text: string;
+      params: Record<string, unknown>;
+    }> = [];
+    const bot = {
+      api: {
+        sendMessage: async (
+          chatId: number,
+          text: string,
+          params: Record<string, unknown>,
+        ) => {
+          sent.push({ chatId, text, params });
+          return { message_id: sent.length };
+        },
+      },
+    } as unknown as Bot;
+
+    const ids = await sendMarkdownChunks(bot, 123, "x".repeat(8101), 77);
+
+    expect(ids).toEqual([1, 2, 3]);
+    expect(sent).toHaveLength(3);
+    for (const call of sent) {
+      expect(call.chatId).toBe(123);
+      expect(call.text.length).toBeLessThanOrEqual(3500);
+      expect(call.params).toMatchObject({
+        parse_mode: "HTML",
+        reply_parameters: { message_id: 77 },
+      });
+    }
   });
 });
 

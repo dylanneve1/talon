@@ -65,6 +65,8 @@ import {
   extractSessionName,
   summarizeUsage,
   routeDelivery,
+  buildDeliveryFailureReminder,
+  TextBlockDeliveryError,
   applyRetryDecision,
   type StreamState,
 } from "../shared/index.js";
@@ -610,7 +612,6 @@ export async function handleMessage(
   recordHistogram("response_latency_ms", durationMs);
   incrementCounter("queries_total");
 
-  incrementTurns(chatId);
   recordUsage(chatId, {
     inputTokens: streamState.sdkInputTokens,
     outputTokens: streamState.sdkOutputTokens,
@@ -639,13 +640,32 @@ export async function handleMessage(
   //
   // Decision tree shared with the other backends — see
   // `backend/shared/delivery.ts` for the full rationale.
-  const delivery = await routeDelivery({
-    backendLabel: "Codex",
-    chatId,
-    state: streamState,
-    responseText,
-    onTextBlock,
-  });
+  let delivery;
+  try {
+    delivery = await routeDelivery({
+      backendLabel: "Codex",
+      chatId,
+      state: streamState,
+      responseText,
+      onTextBlock,
+      propagateDeliveryFailure: true,
+    });
+  } catch (err) {
+    if (err instanceof TextBlockDeliveryError && !_retried) {
+      incrementCounter("delivery.text_block_retry");
+      logWarn(
+        "agent",
+        `[${chatId}] ${err.message}; re-prompting Codex with delivery failure`,
+      );
+      return handleMessage(
+        { ...params, text: buildDeliveryFailureReminder(err) },
+        true,
+      );
+    }
+    throw err;
+  }
+
+  incrementTurns(chatId);
 
   log(
     "agent",

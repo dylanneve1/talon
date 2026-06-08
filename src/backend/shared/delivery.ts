@@ -35,6 +35,32 @@ import { incrementCounter } from "../../util/metrics.js";
 /** Route the delivery decision selected. */
 export type DeliveryRoute = "tool" | "text-part" | "synthetic-error" | "empty";
 
+export class TextBlockDeliveryError extends Error {
+  readonly route: DeliveryRoute;
+  readonly chars: number;
+
+  constructor(route: DeliveryRoute, chars: number, cause: unknown) {
+    super(
+      `text-block delivery failed (${route}, ${chars} chars): ${errMsg(cause)}`,
+    );
+    this.name = "TextBlockDeliveryError";
+    this.route = route;
+    this.chars = chars;
+    this.cause = cause;
+  }
+}
+
+export function buildDeliveryFailureReminder(error: TextBlockDeliveryError) {
+  return (
+    "[DELIVERY FAILURE] Your previous reply was not shown to the user because " +
+    `Talon failed while delivering a ${error.route} response (${error.chars} chars): ${errMsg(error.cause)}. ` +
+    "Retry now using delivery tools. If the answer is long, split it across " +
+    'multiple `send(type="text", text=...)` calls and then call `end_turn()`; ' +
+    "or shorten the answer and call `end_turn(text=...)`. Do not write the final " +
+    "answer as plain assistant text."
+  );
+}
+
 /** Outcome of `routeDelivery` — `route` + char count for the log line. */
 export interface DeliveryDecision {
   route: DeliveryRoute;
@@ -58,6 +84,11 @@ export interface RouteDeliveryInputs {
    * `kilo.synthetic_error`). Defaults to a lower-cased backendLabel.
    */
   metricNamespace?: string;
+  /**
+   * When true, failed `onTextBlock` delivery is thrown back to the backend so
+   * it can re-prompt the model. Default preserves older non-fatal behaviour.
+   */
+  propagateDeliveryFailure?: boolean;
 }
 
 /**
@@ -78,6 +109,7 @@ export async function routeDelivery(
     responseText,
     onTextBlock,
     metricNamespace = backendLabel.toLowerCase(),
+    propagateDeliveryFailure = false,
   } = inputs;
 
   // Route 1 — bridge delivery already happened.
@@ -116,6 +148,13 @@ export async function routeDelivery(
           "agent",
           `[${chatId}] onTextBlock (synthetic-error) failed: ${errMsg(err)}`,
         );
+        if (propagateDeliveryFailure) {
+          throw new TextBlockDeliveryError(
+            "synthetic-error",
+            state.syntheticError.length,
+            err,
+          );
+        }
       }
     }
     return {
@@ -131,6 +170,13 @@ export async function routeDelivery(
         await onTextBlock(responseText);
       } catch (err) {
         logWarn("agent", `[${chatId}] onTextBlock failed: ${errMsg(err)}`);
+        if (propagateDeliveryFailure) {
+          throw new TextBlockDeliveryError(
+            "text-part",
+            responseText.length,
+            err,
+          );
+        }
       }
     }
     return { route: "text-part", chars: responseText.length };
@@ -155,6 +201,9 @@ export async function routeDelivery(
           "agent",
           `[${chatId}] onTextBlock (empty-turn error) failed: ${errMsg(err)}`,
         );
+        if (propagateDeliveryFailure) {
+          throw new TextBlockDeliveryError("empty", 0, err);
+        }
       }
     }
     return { route: "empty", chars: 0 };

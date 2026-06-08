@@ -68,6 +68,8 @@ export {
 
 export {
   routeDelivery,
+  buildDeliveryFailureReminder,
+  TextBlockDeliveryError,
   type DeliveryRoute,
   type DeliveryDecision,
   type RouteDeliveryInputs,

@@ -13,6 +13,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   routeDelivery,
   createStreamState,
+  TextBlockDeliveryError,
   type StreamState,
 } from "../backend/shared/index.js";
 
@@ -206,6 +207,37 @@ describe("shared / routeDelivery", () => {
 
     expect(decision.route).toBe("text-part");
     expect(decision.chars).toBe("would-be reply".length);
+  });
+
+  it("throws on onTextBlock failure when propagation is enabled", async () => {
+    const state = makeState();
+    const onTextBlock = vi
+      .fn()
+      .mockRejectedValue(new Error("message is too long"));
+
+    await expect(
+      routeDelivery({
+        backendLabel: "Codex",
+        chatId: "chat-1",
+        state,
+        responseText: "would-be reply",
+        onTextBlock,
+        propagateDeliveryFailure: true,
+      }),
+    ).rejects.toMatchObject({
+      route: "text-part",
+      chars: "would-be reply".length,
+    });
+    await expect(
+      routeDelivery({
+        backendLabel: "Codex",
+        chatId: "chat-1",
+        state,
+        responseText: "would-be reply",
+        onTextBlock,
+        propagateDeliveryFailure: true,
+      }),
+    ).rejects.toBeInstanceOf(TextBlockDeliveryError);
   });
 
   it("works without onTextBlock callback (decision-only path)", async () => {

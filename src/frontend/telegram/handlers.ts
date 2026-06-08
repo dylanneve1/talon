@@ -5,7 +5,11 @@
 
 import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
-import { markdownToTelegramHtml, escapeHtml } from "./formatting.js";
+import {
+  markdownToTelegramHtml,
+  escapeHtml,
+  splitMessage,
+} from "./formatting.js";
 import { execute } from "../../core/dispatcher.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -770,6 +774,8 @@ export function buildGroupGapContextNotice(inputs: {
 
 // ── Response delivery ────────────────────────────────────────────────────────
 
+const TELEGRAM_TEXT_BLOCK_CHARS = 3500;
+
 async function sendHtml(
   bot: Bot,
   chatId: number,
@@ -794,11 +800,30 @@ async function sendHtml(
       prev = plain;
       plain = plain.replace(/<[^>]*>/g, "");
     } while (plain !== prev);
-    const sent = await bot.api.sendMessage(chatId, plain, {
-      reply_parameters: replyToId ? { message_id: replyToId } : undefined,
-    });
-    return sent.message_id;
+    let lastMessageId = 0;
+    for (const chunk of splitMessage(plain, 4096)) {
+      const sent = await bot.api.sendMessage(chatId, chunk, {
+        reply_parameters: replyToId ? { message_id: replyToId } : undefined,
+      });
+      lastMessageId = sent.message_id;
+    }
+    return lastMessageId;
   }
+}
+
+export async function sendMarkdownChunks(
+  bot: Bot,
+  chatId: number,
+  text: string,
+  replyToId?: number,
+): Promise<number[]> {
+  const messageIds: number[] = [];
+  for (const chunk of splitMessage(text, TELEGRAM_TEXT_BLOCK_CHARS)) {
+    messageIds.push(
+      await sendHtml(bot, chatId, markdownToTelegramHtml(chunk), replyToId),
+    );
+  }
+  return messageIds;
 }
 
 /**
@@ -837,6 +862,7 @@ function createStreamCallbacks(
   chatId: number,
   _replyToId: number,
   state: StreamState,
+  chatTitle?: string,
 ) {
   const onStreamDelta = async (
     accumulated: string,
@@ -868,7 +894,8 @@ function createStreamCallbacks(
   };
 
   const onTextBlock = async (text: string) => {
-    await sendHtml(bot, chatId, markdownToTelegramHtml(text), _replyToId);
+    await sendMarkdownChunks(bot, chatId, text, _replyToId);
+    appendDailyLogResponse("Talon", text, { chatTitle });
     state.lastSentLength = 0;
     state.sentTextBlock = true;
   };
@@ -910,6 +937,7 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       numericChatId,
       replyToId,
       stream,
+      chatTitle,
     );
 
     // Track first-time DM users for logging (no prompt mutation).

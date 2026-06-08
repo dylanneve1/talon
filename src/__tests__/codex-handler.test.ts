@@ -438,6 +438,77 @@ describe("codex / handleMessage — context tokens wiring", () => {
 });
 
 describe("codex / handleMessage — error paths", () => {
+  it("re-prompts once when text-part delivery fails instead of completing silently", async () => {
+    setupHandler();
+    MOCK_EVENTS_QUEUE = [
+      [
+        { type: "thread.started", thread_id: "thr_delivery_retry" },
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: {
+            id: "i1",
+            type: "agent_message",
+            text: "x".repeat(8101),
+          },
+        },
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 10,
+            output_tokens: 10,
+            cached_input_tokens: 0,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ],
+      [
+        { type: "thread.started", thread_id: "thr_delivery_retry" },
+        { type: "turn.started" },
+        {
+          type: "item.completed",
+          item: {
+            id: "i2",
+            type: "agent_message",
+            text: "short retry",
+          },
+        },
+        {
+          type: "turn.completed",
+          usage: {
+            input_tokens: 11,
+            output_tokens: 2,
+            cached_input_tokens: 0,
+            reasoning_output_tokens: 0,
+          },
+        },
+      ],
+    ];
+
+    const delivered: string[] = [];
+    let attempts = 0;
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "write a long answer",
+      senderName: "Dylan",
+      isGroup: false,
+      onTextBlock: async (t) => {
+        attempts++;
+        if (attempts === 1) {
+          throw new Error("Bad Request: message is too long");
+        }
+        delivered.push(t);
+      },
+    });
+
+    expect(MOCK_RUN_STREAMED_CALLS).toHaveLength(2);
+    expect(MOCK_RUN_STREAMED_CALLS[1].input).toContain("DELIVERY FAILURE");
+    expect(MOCK_RUN_STREAMED_CALLS[1].input).toContain("message is too long");
+    expect(delivered).toEqual(["short retry"]);
+    expect(result.text).toBe("short retry");
+    expect(sessions.getSession("test-chat").turns).toBe(1);
+  });
+
   it("turn.failed event surfaces as syntheticError → delivery emits ⚠️", async () => {
     setupHandler();
     MOCK_EVENTS = [
