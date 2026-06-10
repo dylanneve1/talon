@@ -13,6 +13,10 @@
  * runs as usual, the dispatcher releases the context, and life
  * continues.
  *
+ * Tests drive `runChatTurn` directly — the native `AgentEvent`
+ * generator the factory wires onto `ChatBackend.runChatTurn` — and
+ * assert on the drained event stream.
+ *
  * Happy-path assertion lives here too: when the iterator closes
  * normally before the grace window, no abort is requested and no
  * `iterator_force_close_after_result` counter is incremented.
@@ -180,6 +184,30 @@ vi.mock("../backend/shared/index.js", () => ({
   }),
 }));
 
+/**
+ * Drain `runChatTurn`'s event stream for one chat turn — the same
+ * production surface the factory wires onto `ChatBackend.runChatTurn`.
+ * Imported per-call because `vi.resetModules()` in `beforeEach` gives
+ * each test a fresh handler module (the grace constant is module-scoped).
+ */
+async function drainChatTurn(chatId: string, text: string) {
+  const { runChatTurn } = await import("../backend/claude-sdk/handler.js");
+  const { makeBareModelRef } = await import(
+    "../core/agent-runtime/model-ref.js"
+  );
+  const events = [];
+  for await (const event of runChatTurn({
+    chatId,
+    model: makeBareModelRef("claude", "default"),
+    text,
+    senderName: "Dylan",
+    isGroup: false,
+  })) {
+    events.push(event);
+  }
+  return events;
+}
+
 const stdResult: ResultMsg = {
   type: "result",
   subtype: "success",
@@ -243,18 +271,13 @@ describe("Claude SDK chat handler — post-result watchdog", () => {
       hangAfterLastMessage: true,
     });
 
-    const { handleMessage } = await import("../backend/claude-sdk/handler.js");
     const t0 = Date.now();
-    const result = await handleMessage({
-      chatId: "test-wedge",
-      text: "hello",
-      senderName: "Dylan",
-      isGroup: false,
-    });
+    const events = await drainChatTurn("test-wedge", "hello");
     const elapsed = Date.now() - t0;
 
-    // Returned normally — no thrown error
-    expect(result).toBeDefined();
+    // Stream terminated normally with a `completed` event — no `error`
+    expect(events.some((e) => e.type === "completed")).toBe(true);
+    expect(events.some((e) => e.type === "error")).toBe(false);
 
     // Returned within the grace window (50ms) plus generous slack for
     // test-runner scheduling. Without the watchdog this would never resolve.
@@ -279,15 +302,9 @@ describe("Claude SDK chat handler — post-result watchdog", () => {
       hangAfterLastMessage: false,
     });
 
-    const { handleMessage } = await import("../backend/claude-sdk/handler.js");
-    const result = await handleMessage({
-      chatId: "test-happy",
-      text: "hi",
-      senderName: "Dylan",
-      isGroup: false,
-    });
+    const events = await drainChatTurn("test-happy", "hi");
 
-    expect(result).toBeDefined();
+    expect(events.some((e) => e.type === "completed")).toBe(true);
     expect(mockAbortSignal?.aborted).toBe(false);
     expect(mockReturnCalled).toBe(false);
     expect(incrementCounterSpy).not.toHaveBeenCalledWith(
@@ -303,15 +320,9 @@ describe("Claude SDK chat handler — post-result watchdog", () => {
       hangAfterLastMessage: false,
     });
 
-    const { handleMessage } = await import("../backend/claude-sdk/handler.js");
-    const result = await handleMessage({
-      chatId: "test-no-result",
-      text: "ping",
-      senderName: "Dylan",
-      isGroup: false,
-    });
+    const events = await drainChatTurn("test-no-result", "ping");
 
-    expect(result).toBeDefined();
+    expect(events.some((e) => e.type === "completed")).toBe(true);
     expect(mockAbortSignal?.aborted).toBe(false);
     expect(mockReturnCalled).toBe(false);
   });

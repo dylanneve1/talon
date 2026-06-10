@@ -32,7 +32,9 @@ import { tmpdir } from "node:os";
 
 import type { TalonConfig } from "../../util/config.js";
 import { initAgent } from "../../backend/claude-sdk/state.js";
-import { handleMessage } from "../../backend/claude-sdk/handler.js";
+import { runChatTurn } from "../../backend/claude-sdk/handler.js";
+import { pipeEventsToCallbacks } from "../../core/agent-runtime/event-bridge.js";
+import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 import { resetSession } from "../../storage/sessions.js";
 import { Gateway } from "../../core/gateway.js";
 import type { FrontendActionHandler } from "../../core/types.js";
@@ -239,11 +241,16 @@ export async function runTalonTurn(
   if (gateway) gateway.setContext(numericChatId, chatId);
 
   try {
-    const result = await handleMessage({
+    // Mirror the dispatcher's production path exactly: consume the
+    // native `runChatTurn` event stream through `pipeEventsToCallbacks`.
+    const stream = runChatTurn({
       chatId,
+      model: makeBareModelRef("claude", "default"),
       text: prompt,
       senderName,
       isGroup,
+    });
+    const agentResult = await pipeEventsToCallbacks(stream, {
       onTextBlock: async (text) => {
         textChunks.push(text);
       },
@@ -254,6 +261,11 @@ export async function runTalonTurn(
         streamDeltas.push({ phase, text: accumulated });
       },
     });
+    const result = {
+      inputTokens: agentResult?.usage.inputTokens ?? 0,
+      outputTokens: agentResult?.usage.outputTokens ?? 0,
+      durationMs: agentResult?.durationMs ?? 0,
+    };
 
     let protocolLog: string[] = [];
     try {

@@ -45,10 +45,14 @@ function step(label) {
 
 function run(label, cmd, args, opts = {}) {
   step(label);
-  const result = spawnSync(cmd, args, {
+  const useShell = opts.shell ?? process.platform === "win32";
+  // With shell:true, cmd.exe word-splits an unquoted command path —
+  // `C:\Program Files\nodejs\node.exe` breaks at the space.
+  const shellSafeCmd = useShell && cmd.includes(" ") ? `"${cmd}"` : cmd;
+  const result = spawnSync(shellSafeCmd, args, {
     stdio: "inherit",
     cwd: __dirname,
-    shell: process.platform === "win32",
+    shell: useShell,
     ...opts,
   });
   if (result.status !== 0) {

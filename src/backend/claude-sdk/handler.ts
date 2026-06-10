@@ -8,9 +8,7 @@
  * re-prompt loop.
  *
  * The exported async generator `runChatTurn` is what the factory wires
- * onto `ChatBackend.runChatTurn` — no wrapper, no callback shim. A
- * thin `handleMessage` wrapper survives only so the watchdog test and
- * any consumer still on the callback contract keeps compiling.
+ * onto `ChatBackend.runChatTurn` — no wrapper, no callback shim.
  */
 
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -27,14 +25,12 @@ import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
-import type { QueryParams, QueryResult } from "../shared/handler-types.js";
 import {
   type AgentEvent,
   classifiedToAgentError,
 } from "../../core/agent-runtime/events.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
 import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
-import { pipeEventsToCallbacks } from "../../core/agent-runtime/event-bridge.js";
 import { applyRetryDecisionStream } from "../shared/handle-retry.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions } from "./options.js";
@@ -397,39 +393,3 @@ export async function* runChatTurn(
   };
 }
 
-// ── Back-compat callback wrapper ────────────────────────────────────────────
-// Kept so the watchdog test and any direct callers stay green. The
-// factory wires `runChatTurn` directly onto `ChatBackend.runChatTurn`,
-// so this wrapper is not on the production chat path.
-
-export async function handleMessage(params: QueryParams): Promise<QueryResult> {
-  const ref = makeBareModelRef(
-    "claude",
-    params.model ?? "default",
-    "discovered",
-  );
-  const stream = runChatTurn({
-    chatId: params.chatId,
-    model: ref,
-    text: params.text,
-    senderName: params.senderName,
-    isGroup: params.isGroup,
-    messageId: params.messageId,
-  });
-  const agentResult = await pipeEventsToCallbacks(stream, {
-    onStreamDelta: params.onStreamDelta,
-    onTextBlock: params.onTextBlock,
-    onToolUse: params.onToolUse,
-  });
-  if (!agentResult) {
-    throw new Error("runChatTurn resolved without a completed event.");
-  }
-  return {
-    text: agentResult.text,
-    durationMs: agentResult.durationMs,
-    inputTokens: agentResult.usage.inputTokens,
-    outputTokens: agentResult.usage.outputTokens,
-    cacheRead: agentResult.usage.cacheRead,
-    cacheWrite: agentResult.usage.cacheWrite,
-  };
-}
