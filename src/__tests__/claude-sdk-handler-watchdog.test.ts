@@ -192,9 +192,8 @@ vi.mock("../backend/shared/index.js", () => ({
  */
 async function drainChatTurn(chatId: string, text: string) {
   const { runChatTurn } = await import("../backend/claude-sdk/handler.js");
-  const { makeBareModelRef } = await import(
-    "../core/agent-runtime/model-ref.js"
-  );
+  const { makeBareModelRef } =
+    await import("../core/agent-runtime/model-ref.js");
   const events = [];
   for await (const event of runChatTurn({
     chatId,

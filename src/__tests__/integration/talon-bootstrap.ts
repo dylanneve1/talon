@@ -33,10 +33,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 import type { TalonConfig } from "../../util/config.js";
-import {
-  initBackendAndDispatcher,
-  type Frontend,
-} from "../../bootstrap.js";
+import { initBackendAndDispatcher, type Frontend } from "../../bootstrap.js";
 import { execute as dispatcherExecute } from "../../core/dispatcher.js";
 import { resetSession } from "../../storage/sessions.js";
 import { Gateway } from "../../core/gateway.js";
