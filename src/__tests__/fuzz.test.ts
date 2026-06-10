@@ -333,13 +333,13 @@ describe("fuzz: resolveModelName()", () => {
   it("known aliases resolve to the expected SDK model IDs", () => {
     const aliasMappings = [
       ["sonnet", "default"],
-      ["opus", "opus[1m]"],
+      ["opus", "opus"],
       ["haiku", "haiku"],
       ["sonnet-4.6", "default"],
-      ["opus-4.6", "opus[1m]"],
+      ["opus-4.6", "opus"],
       ["haiku-4.5", "haiku"],
       ["sonnet-4-6", "default"],
-      ["opus-4-6", "opus[1m]"],
+      ["opus-4-6", "opus"],
       ["haiku-4-5", "haiku"],
     ] as const;
     fc.assert(

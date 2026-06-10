@@ -39,7 +39,11 @@ function toUnified(model: ModelInfo): UnifiedModelInfo {
   };
 }
 
-/** De-duplicate models by displayName (1M variants share a label with their base). */
+/**
+ * De-duplicate models by displayName. Base and 1M variants carry distinct
+ * labels ("Sonnet 4.6" vs "Sonnet 4.6 (1M context)"), so both survive here;
+ * this only guards against accidental collisions.
+ */
 function getUniqueModels(): ModelInfo[] {
   const options: ModelInfo[] = [];
   const seenKeys = new Set<string>();

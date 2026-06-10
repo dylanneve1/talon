@@ -40,13 +40,12 @@ const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =
   await import("../backend/claude-sdk/models.js");
 registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
 
-// convertSdkModels collapses base + 1M variants into a single canonical ID
-// per family+version, preferring the 1M variant (and "default" when the SDK
-// marks one canonical). So sonnet/sonnet[1m] → "default", opus/opus[1m] →
-// "opus[1m]", and plain "haiku" stays.
+// convertSdkModels surfaces base and 1M variants separately, collapsing only
+// true duplicates. The bare family aliases resolve to the *base* entry: the
+// SDK marks base Sonnet as "default", base Opus stays "opus", "haiku" stays.
 const SDK_MODEL_IDS = {
   sonnet: "default",
-  opus: "opus[1m]",
+  opus: "opus",
   haiku: "haiku",
 } as const;
 

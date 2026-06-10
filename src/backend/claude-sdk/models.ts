@@ -67,9 +67,10 @@ function toDisplayFamilyName(family: string): string {
 }
 
 /**
- * Synthesize a clean label like "Sonnet 4.6" from parsed identity. Base and
- * 1M variants share a label because the variant-merge step hides the base
- * behind the 1M one — what we surface is effectively the 1M model.
+ * Synthesize a clean label like "Sonnet 4.6" (or "Sonnet 4.6 (1M context)")
+ * from parsed identity. Base and 1M variants get distinct labels so the picker
+ * can list both — the de-dup by display name in the model provider relies on
+ * this distinction to keep both entries.
  */
 function deriveDisplayName(
   identity: ParsedModelIdentity,
@@ -78,7 +79,8 @@ function deriveDisplayName(
   if (!identity.family) return fallback;
   const family = toDisplayFamilyName(identity.family);
   const version = identity.version ? ` ${identity.version}` : "";
-  return `${family}${version}`;
+  const suffix = identity.isOneMillion ? " (1M context)" : "";
+  return `${family}${version}${suffix}`;
 }
 
 function stripOneMillionSuffix(value: string): string {
@@ -139,6 +141,20 @@ function parseClaudeId(
   };
 }
 
+/**
+ * Detect whether a model is a 1M-context variant. The SDK signals this in two
+ * ways: the canonical `[1m]` value suffix (e.g. `claude-sonnet-4-6[1m]`), or —
+ * for the recommended `default` alias — only in prose ("…with 1M context…").
+ * Catching both keeps a description-only 1M model from masquerading as a
+ * separate base entry alongside its longhand `[1m]` duplicate.
+ */
+function detectOneMillion(model: SdkModelInfo): boolean {
+  if (model.value.endsWith("[1m]")) return true;
+  const text =
+    `${model.description ?? ""} ${model.displayName ?? ""}`.toLowerCase();
+  return /\b1m\b/.test(text) && text.includes("context");
+}
+
 function describeSdkModel(model: SdkModelInfo): ParsedModelIdentity {
   const textIdentity = parseFamilyAndVersionFromTexts([
     model.description,
@@ -155,7 +171,7 @@ function describeSdkModel(model: SdkModelInfo): ParsedModelIdentity {
     claudeId:
       claudeIdentity.claudeId ??
       (family && version ? `claude-${family}-${toDashVersion(version)}` : null),
-    isOneMillion: model.value.endsWith("[1m]"),
+    isOneMillion: detectOneMillion(model),
   };
 }
 
@@ -166,61 +182,76 @@ function buildFamilyKey(identity: ParsedModelIdentity): string | null {
 }
 
 /**
- * Variant key collapses base and 1M variants of the same family+version into
- * a single bucket. The priority function picks the 1M entry as canonical, so
- * users see one "Sonnet 4.6" option (backed by sonnet[1m]) rather than two.
+ * Variant key groups only *true* duplicates — same family, version, AND
+ * context size. Base and 1M variants of one family+version land in separate
+ * buckets so both surface in the picker, while redundant longhand ids (e.g.
+ * `claude-opus-4-7[1m]` next to the `default` it mirrors) still collapse.
  */
 function buildVariantKey(identity: ParsedModelIdentity): string | null {
-  return buildFamilyKey(identity);
+  const familyKey = buildFamilyKey(identity);
+  if (!familyKey) return null;
+  return `${familyKey}:${identity.isOneMillion ? "1m" : "base"}`;
 }
 
-function appendOneMillionSuffix(alias: string, isOneMillion: boolean): string {
-  return isOneMillion ? `${alias}[1m]` : alias;
-}
+type AliasFormOptions = {
+  /** Emit bare, unsuffixed forms ("fable", "fable-5", "claude-fable-5"). */
+  includeBare: boolean;
+  /** Emit `[1m]`-suffixed forms ("fable[1m]", "claude-fable-5[1m]"). */
+  include1m: boolean;
+};
 
-function buildGeneratedAliases(identity: ParsedModelIdentity): string[] {
+/**
+ * Generate resolution aliases for a model's identity.
+ *
+ * The caller decides which forms this entry owns:
+ *  - A base entry owns the bare forms ("sonnet", "sonnet-4-6", …).
+ *  - A 1M entry owns the `[1m]` forms; it additionally claims the bare forms
+ *    only when no base sibling exists (e.g. Fable, shipped solely as
+ *    `claude-fable-5[1m]`, must still resolve from "fable").
+ *
+ * Stems come from the family, the family+version (dot and dash spellings),
+ * and the canonical claude-id, so both "fable-5" and "claude-fable-5" resolve.
+ */
+function buildGeneratedAliases(
+  identity: ParsedModelIdentity,
+  { includeBare, include1m }: AliasFormOptions,
+): string[] {
   if (!identity.family) return [];
 
-  const aliases = [
-    appendOneMillionSuffix(identity.family, identity.isOneMillion),
-  ];
+  const stems = [identity.family];
 
   if (identity.version) {
-    aliases.push(
-      appendOneMillionSuffix(
-        `${identity.family}-${identity.version}`,
-        identity.isOneMillion,
-      ),
-      appendOneMillionSuffix(
-        `${identity.family}-${toDashVersion(identity.version)}`,
-        identity.isOneMillion,
-      ),
+    stems.push(
+      `${identity.family}-${identity.version}`,
+      `${identity.family}-${toDashVersion(identity.version)}`,
     );
   }
 
   if (identity.claudeId) {
-    aliases.push(
-      appendOneMillionSuffix(identity.claudeId, identity.isOneMillion),
-    );
+    stems.push(identity.claudeId);
+  }
+
+  const aliases: string[] = [];
+  for (const stem of stems) {
+    if (includeBare) aliases.push(stem);
+    if (include1m) aliases.push(`${stem}[1m]`);
   }
 
   return aliases;
 }
 
 /**
- * Lower number = higher priority when picking a canonical ID among variants
- * sharing a family+version:
+ * Lower number = higher priority when choosing a canonical id among *true
+ * duplicates* (records sharing family + version + context size):
  *   0 — "default"                      (SDK-recommended canonical)
- *   1 — 1M variant, non-claude-prefix  (e.g. sonnet[1m])
- *   2 — base variant, non-claude       (e.g. sonnet)
- *   3 — claude-prefixed (legacy)       (e.g. claude-sonnet-4-6[1m])
+ *   1 — short non-claude-prefixed      (e.g. sonnet, sonnet[1m])
+ *   2 — claude-prefixed (legacy)       (e.g. claude-sonnet-4-6[1m])
+ * The short alias wins over the longhand `claude-*` id so picker callbacks and
+ * stored values stay compact.
  */
 function getPreferredModelPriority(record: SdkModelRecord): number {
   if (record.value === "default") return 0;
-  const isClaudePrefixed = record.value.startsWith("claude-");
-  if (record.identity.isOneMillion && !isClaudePrefixed) return 1;
-  if (!isClaudePrefixed) return 2;
-  return 3;
+  return record.value.startsWith("claude-") ? 2 : 1;
 }
 
 function buildSdkModelRecords(sdkModels: SdkModelInfo[]): SdkModelRecord[] {
@@ -234,32 +265,6 @@ function buildSdkModelRecords(sdkModels: SdkModelInfo[]): SdkModelRecord[] {
       variantKey: buildVariantKey(identity),
     };
   });
-}
-
-function buildPreferredCanonicalIds(
-  records: readonly SdkModelRecord[],
-): Map<string, string> {
-  const grouped = new Map<string, SdkModelRecord[]>();
-
-  for (const record of records) {
-    if (!record.variantKey) continue;
-    const variants = grouped.get(record.variantKey) ?? [];
-    variants.push(record);
-    grouped.set(record.variantKey, variants);
-  }
-
-  const preferred = new Map<string, string>();
-  for (const [variantKey, variants] of grouped) {
-    const canonical = [...variants].sort((left, right) => {
-      const priorityDelta =
-        getPreferredModelPriority(left) - getPreferredModelPriority(right);
-      if (priorityDelta !== 0) return priorityDelta;
-      return left.index - right.index;
-    })[0];
-    if (canonical) preferred.set(variantKey, canonical.value);
-  }
-
-  return preferred;
 }
 
 function mergeAliases(...lists: readonly string[][]): string[] {
@@ -276,30 +281,6 @@ function mergeAliases(...lists: readonly string[][]): string[] {
   }
 
   return aliases;
-}
-
-function buildHiddenModelAliases(
-  records: readonly SdkModelRecord[],
-  preferredCanonicalIds: ReadonlyMap<string, string>,
-): Map<string, string[]> {
-  const hiddenAliases = new Map<string, string[]>();
-
-  for (const record of records) {
-    if (!record.variantKey) continue;
-    const preferredId = preferredCanonicalIds.get(record.variantKey);
-    if (!preferredId || preferredId === record.value) continue;
-
-    hiddenAliases.set(
-      preferredId,
-      mergeAliases(
-        hiddenAliases.get(preferredId) ?? [],
-        [record.value],
-        buildGeneratedAliases(record.identity),
-      ),
-    );
-  }
-
-  return hiddenAliases;
 }
 
 // ── SDK → registry conversion ───────────────────────────────────────────────
@@ -321,106 +302,170 @@ function extractSdkReasoningLevels(model: SdkModelInfo) {
 }
 
 /**
+ * Group records into variant buckets and pick the canonical record for each.
+ * Records without a parseable identity become their own singleton bucket so
+ * they still surface (keyed by value to stay unique).
+ */
+function groupVariants(
+  records: readonly SdkModelRecord[],
+): Map<string, SdkModelRecord[]> {
+  const groups = new Map<string, SdkModelRecord[]>();
+  for (const record of records) {
+    const key = record.variantKey ?? `raw:${record.value}`;
+    const bucket = groups.get(key) ?? [];
+    bucket.push(record);
+    groups.set(key, bucket);
+  }
+  return groups;
+}
+
+function pickCanonical(bucket: readonly SdkModelRecord[]): SdkModelRecord {
+  return [...bucket].sort((left, right) => {
+    const priorityDelta =
+      getPreferredModelPriority(left) - getPreferredModelPriority(right);
+    if (priorityDelta !== 0) return priorityDelta;
+    return left.index - right.index;
+  })[0]!;
+}
+
+/**
+ * Assign a best-effort fallback (used on overload/timeout) to every model
+ * except the last:
+ *  - A 1M variant prefers its base sibling of the same family+version.
+ *  - Otherwise a model falls back to the next model in SDK order.
+ */
+function assignFallbacks(
+  models: ModelInfo[],
+  recordByValue: ReadonlyMap<string, SdkModelRecord>,
+): void {
+  const baseByFamily = new Map<string, string>();
+  for (const model of models) {
+    const rec = recordByValue.get(model.id);
+    if (rec && !rec.identity.isOneMillion && rec.familyKey) {
+      baseByFamily.set(rec.familyKey, model.id);
+    }
+  }
+
+  models.forEach((model, index) => {
+    const rec = recordByValue.get(model.id);
+    if (rec?.identity.isOneMillion && rec.familyKey) {
+      const baseSibling = baseByFamily.get(rec.familyKey);
+      if (baseSibling && baseSibling !== model.id) {
+        model.fallback = baseSibling;
+        return;
+      }
+    }
+    if (index < models.length - 1) {
+      model.fallback = models[index + 1]!.id;
+    }
+  });
+}
+
+/**
  * Convert SDK ModelInfo to our registry format.
- * Keeps SDK model IDs/display names intact while deriving compatibility aliases
- * and duplicate collapsing from the SDK metadata instead of hardcoded versions.
+ *
+ * Base and 1M variants of the same family+version each surface as their own
+ * selectable entry (so the picker shows both), while true duplicates — the
+ * same model exposed under multiple ids, e.g. the recommended `default` and
+ * the longhand `claude-opus-4-7[1m]` it mirrors — collapse into one canonical
+ * entry that absorbs the others' aliases. Display names, aliases, and the
+ * fallback chain are all derived from SDK metadata, never hardcoded versions.
  */
 function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
   const records = buildSdkModelRecords(sdkModels);
-  const preferredCanonicalIds = buildPreferredCanonicalIds(records);
-  const hiddenModelAliases = buildHiddenModelAliases(
-    records,
-    preferredCanonicalIds,
-  );
-  const hiddenModels = new Set(
-    records
-      .filter(
-        (record) =>
-          !!record.variantKey &&
-          preferredCanonicalIds.get(record.variantKey) !== undefined &&
-          preferredCanonicalIds.get(record.variantKey) !== record.value,
-      )
-      .map((record) => record.value),
-  );
+  const groups = groupVariants(records);
+
+  // One canonical per variant bucket, ordered by SDK position so the registry
+  // preserves the SDK's ordering.
+  const canonicals = [...groups.values()]
+    .map(pickCanonical)
+    .sort((a, b) => a.index - b.index);
+
+  // Which family+version pairs have a base (non-1M) canonical? A 1M entry only
+  // claims the bare family aliases when there is no base sibling to own them.
+  const baseFamilyVersions = new Set<string>();
+  for (const canonical of canonicals) {
+    if (!canonical.identity.isOneMillion && canonical.familyKey) {
+      baseFamilyVersions.add(canonical.familyKey);
+    }
+  }
 
   const usedKeys = new Set<string>();
+  const recordByValue = new Map<string, SdkModelRecord>();
   const models: ModelInfo[] = [];
 
-  for (const record of records) {
-    if (hiddenModels.has(record.value)) continue;
+  for (const canonical of canonicals) {
+    const groupKey = canonical.variantKey ?? `raw:${canonical.value}`;
+    const bucket = groups.get(groupKey)!;
+    const { identity } = canonical;
 
-    const canonicalKey = record.value.toLowerCase();
-    if (usedKeys.has(canonicalKey)) continue;
+    const hasBaseSibling = identity.isOneMillion
+      ? !!canonical.familyKey && baseFamilyVersions.has(canonical.familyKey)
+      : true;
+    const aliasForms: AliasFormOptions = {
+      includeBare: !identity.isOneMillion || !hasBaseSibling,
+      include1m: identity.isOneMillion,
+    };
 
+    // Aliases come from every record the canonical absorbs (its own value plus
+    // each duplicate's value and generated forms), so legacy ids keep resolving.
+    const canonicalKey = canonical.value.toLowerCase();
     const aliases = mergeAliases(
-      buildGeneratedAliases(record.identity),
-      hiddenModelAliases.get(record.value) ?? [],
+      ...bucket.map((record) => [
+        record.value,
+        ...buildGeneratedAliases(record.identity, aliasForms),
+      ]),
     )
       .filter((alias) => alias.toLowerCase() !== canonicalKey)
       .filter((alias) => !usedKeys.has(alias.toLowerCase()));
 
     usedKeys.add(canonicalKey);
-    for (const alias of aliases) {
-      usedKeys.add(alias.toLowerCase());
-    }
+    for (const alias of aliases) usedKeys.add(alias.toLowerCase());
 
+    recordByValue.set(canonical.value, canonical);
     models.push({
-      id: record.value,
-      displayName: deriveDisplayName(record.identity, record.displayName),
-      description: record.description,
+      id: canonical.value,
+      displayName: deriveDisplayName(identity, canonical.displayName),
+      description: canonical.description,
       aliases,
       provider: "anthropic",
-      supportedReasoningLevels: extractSdkReasoningLevels(record),
+      supportedReasoningLevels: extractSdkReasoningLevels(canonical),
     });
   }
 
-  // Assign fallback chain from SDK order (single pass, O(1) lookups):
-  // - 1M variants fall back to their base family model
-  // - Base models fall back to the next base model in SDK order
-  const recordById = new Map(records.map((r) => [r.value, r]));
-  const baseByFamily = new Map<string, string>();
-  const baseModels: ModelInfo[] = [];
-
-  for (const model of models) {
-    if (model.id.endsWith("[1m]")) continue;
-    const rec = recordById.get(model.id);
-    if (rec?.familyKey) baseByFamily.set(rec.familyKey, model.id);
-    baseModels.push(model);
-  }
-
-  const baseIndex = new Map(baseModels.map((m, i) => [m.id, i]));
-
-  for (const model of models) {
-    const rec = recordById.get(model.id);
-    if (model.id.endsWith("[1m]") && rec?.familyKey) {
-      model.fallback = baseByFamily.get(rec.familyKey);
-    } else {
-      const idx = baseIndex.get(model.id);
-      if (idx !== undefined && idx < baseModels.length - 1) {
-        model.fallback = baseModels[idx + 1]!.id;
-      }
-    }
-  }
-
+  assignFallbacks(models, recordByValue);
   return models;
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-/**
- * Discover available models from the Claude Agent SDK and register them.
- *
- * Spawns a throwaway SDK subprocess, calls supportedModels(), converts the
- * results to our registry format, and registers them. Throws on failure —
- * if the SDK can't provide models, Talon cannot function.
- */
-export async function registerClaudeModels(sdkOptions: {
-  model: string;
+type ProbeOptions = {
   cwd?: string;
   permissionMode?: string;
   allowDangerouslySkipPermissions?: boolean;
   pathToClaudeCodeExecutable?: string;
-}): Promise<void> {
+};
+
+const DISCOVERY_TIMEOUT_MS = 15_000;
+const MAX_DISCOVERY_SEEDS = 8;
+
+/**
+ * The `claude` binary returns "Custom model" for a `model` it doesn't
+ * recognise — it echoes the requested id straight back as a passthrough entry
+ * with no real metadata. We drop those (except the user's own configured
+ * model) so seed probing doesn't pollute the registry with junk families.
+ */
+const CUSTOM_MODEL_DESCRIPTION = "custom model";
+
+/**
+ * Spawn a throwaway SDK subprocess seeded with `seedModel` and return its
+ * `supportedModels()` list. The binary always echoes the requested model into
+ * the list, so the seed controls which models surface beyond the base set.
+ */
+async function probeSupportedModels(
+  seedModel: string,
+  probeOptions: ProbeOptions,
+): Promise<SdkModelInfo[]> {
   const abort = new AbortController();
   let drainPromise: Promise<void> | undefined;
 
@@ -436,7 +481,8 @@ export async function registerClaudeModels(sdkOptions: {
     const q = query({
       prompt: neverYield(),
       options: {
-        ...sdkOptions,
+        ...probeOptions,
+        model: seedModel,
         abortController: abort,
       } as Parameters<typeof query>[0]["options"],
     });
@@ -454,36 +500,115 @@ export async function registerClaudeModels(sdkOptions: {
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_, reject) => {
       timeoutId = setTimeout(
-        () => reject(new Error("model discovery timed out after 15s")),
-        15_000,
+        () =>
+          reject(
+            new Error(
+              `model discovery timed out after 15s (seed "${seedModel}")`,
+            ),
+          ),
+        DISCOVERY_TIMEOUT_MS,
       );
     });
 
-    let sdkModels: SdkModelInfo[];
     try {
-      sdkModels = await Promise.race([q.supportedModels(), timeout]);
+      return await Promise.race([q.supportedModels(), timeout]);
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
+      abort.abort();
+      await drainPromise.catch(() => {});
     }
+  } catch (err) {
+    abort.abort();
+    if (drainPromise) await drainPromise.catch(() => {});
+    throw err;
+  }
+}
 
-    if (sdkModels.length === 0) {
+/**
+ * Merge probe results into one list, first-occurrence-wins by value, dropping
+ * unrecognised "Custom model" passthrough echoes (but always keeping the user's
+ * configured model even if the binary treats it as custom).
+ */
+function unionSdkModels(
+  lists: readonly SdkModelInfo[][],
+  configuredModel: string,
+): SdkModelInfo[] {
+  const byValue = new Map<string, SdkModelInfo>();
+  for (const list of lists) {
+    for (const model of list) {
+      if (byValue.has(model.value)) continue;
+      const isPassthroughJunk =
+        (model.description ?? "").trim().toLowerCase() ===
+          CUSTOM_MODEL_DESCRIPTION && model.value !== configuredModel;
+      if (isPassthroughJunk) continue;
+      byValue.set(model.value, model);
+    }
+  }
+  return [...byValue.values()];
+}
+
+/**
+ * Discover available models from the Claude Agent SDK and register them.
+ *
+ * Discovery is a union of probes. The binary only echoes the *requested* model
+ * (and a small base set) from `supportedModels()`, so a single probe misses
+ * the base-vs-1M counterpart of most families. We therefore probe the
+ * configured model first (mandatory — guarantees the user's choice is always
+ * discoverable), then best-effort re-probe each real family alias it revealed,
+ * and union the results so the picker reliably lists both context sizes of
+ * every family. Throws only if the mandatory first probe fails — if the SDK
+ * can't provide models, Talon cannot function.
+ */
+export async function registerClaudeModels(sdkOptions: {
+  model: string;
+  cwd?: string;
+  permissionMode?: string;
+  allowDangerouslySkipPermissions?: boolean;
+  pathToClaudeCodeExecutable?: string;
+}): Promise<void> {
+  const { model: configuredModel, ...probeOptions } = sdkOptions;
+
+  try {
+    // Pass 1 (mandatory): the configured model is always echoed back.
+    const primary = await probeSupportedModels(configuredModel, probeOptions);
+    if (primary.length === 0) {
       throw new Error("SDK returned empty model list");
     }
 
-    const models = convertSdkModels(sdkModels);
+    // Pass 2 (best-effort): re-probe each real family alias from pass 1 to coax
+    // out the context variants the first probe didn't echo. Bare family aliases
+    // (e.g. "opus") return real metadata; unrecognised ones come back as
+    // "Custom model" and are filtered by unionSdkModels.
+    const seeds = new Set<string>();
+    for (const model of primary) {
+      const { family } = describeSdkModel(model);
+      if (family && family !== "default") seeds.add(family);
+    }
+    seeds.delete(configuredModel);
+
+    const seedList = [...seeds].slice(0, MAX_DISCOVERY_SEEDS);
+    const secondary = await Promise.allSettled(
+      seedList.map((seed) => probeSupportedModels(seed, probeOptions)),
+    );
+    const extraLists = secondary
+      .filter(
+        (result): result is PromiseFulfilledResult<SdkModelInfo[]> =>
+          result.status === "fulfilled",
+      )
+      .map((result) => result.value);
+
+    const union = unionSdkModels([primary, ...extraLists], configuredModel);
+    const models = convertSdkModels(union);
     clearModelsByProvider("anthropic");
     registerProviderPrefix("claude-");
     registerModels(models);
     log(
       "agent",
-      `Discovered ${models.length} models from SDK: ${models.map((m) => m.id).join(", ")}`,
+      `Discovered ${models.length} models from SDK ` +
+        `(${1 + extraLists.length}/${1 + seedList.length} probes): ` +
+        models.map((m) => m.id).join(", "),
     );
-
-    abort.abort();
-    await drainPromise;
   } catch (err) {
-    abort.abort();
-    if (drainPromise) await drainPromise.catch(() => {});
     const msg = err instanceof Error ? err.message : String(err);
     logError("agent", `Fatal: model discovery failed — ${msg}`);
     throw new Error(
