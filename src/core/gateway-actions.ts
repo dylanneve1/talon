@@ -537,6 +537,8 @@ export async function handleSharedAction(
         const { reloadPlugins, getPluginPromptAdditions } =
           await import("./plugin.js");
         const { rebuildSystemPrompt } = await import("../util/config.js");
+        const { clearSystemPromptSnapshots } =
+          await import("../backend/shared/system-prompt.js");
 
         // reloadPlugins reads + validates config internally — no double read.
         // Frontends are derived from config if not explicitly provided.
@@ -546,6 +548,11 @@ export async function handleSharedAction(
         // live config reference so subsequent messages use the new prompt
         rebuildSystemPrompt(freshConfig, getPluginPromptAdditions());
         backend?.control?.updateSystemPrompt?.(freshConfig.systemPrompt);
+
+        // Plugin prompt additions changed — drop per-session prompt
+        // snapshots so every chat's next turn picks up the new prompt
+        // (deliberate one-time cache re-write per live session).
+        clearSystemPromptSnapshots();
 
         // Hot-swap MCP servers on the active query so new plugin tools
         // are available immediately (not just on the next message)

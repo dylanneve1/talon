@@ -119,13 +119,22 @@ export async function* runChatTurn(
   const session = getSession(chatId);
   const t0 = Date.now();
 
-  prepareSystemPrompt({ config, previousTurns: session.turns });
+  // Frozen per-session prompt (keyed by session epoch) — stable across
+  // turns so the provider's prompt-cache prefix survives other chats'
+  // session resets. See backend/shared/system-prompt.ts.
+  const preparedPrompt = prepareSystemPrompt({
+    config,
+    previousTurns: session.turns,
+    chatId,
+    sessionEpoch: session.createdAt,
+  });
 
   const abortController = new AbortController();
   const { options, activeModel } = buildSdkOptions(
     chatId,
     abortController,
     params.model.id,
+    preparedPrompt,
   );
 
   const prompt = formatUserPrompt({

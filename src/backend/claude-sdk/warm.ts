@@ -23,10 +23,18 @@ export async function warmSession(chatId: string): Promise<void> {
 
   const abort = new AbortController();
   try {
-    // Warm-up always rebuilds the system prompt (it's effectively a
-    // fresh session). `previousTurns: 0` triggers the rebuild branch.
-    prepareSystemPrompt({ config: getConfig(), previousTurns: 0 });
-    const { options } = buildSdkOptions(chatId);
+    // Snapshot the prompt under this chat's fresh session epoch. The
+    // first real turn finds the same snapshot (same epoch) and sends a
+    // byte-identical prompt — so the warm-up's cache write is actually
+    // reused instead of being invalidated by a re-timestamped rebuild.
+    const session = getSession(chatId);
+    const prepared = prepareSystemPrompt({
+      config: getConfig(),
+      previousTurns: session.turns,
+      chatId,
+      sessionEpoch: session.createdAt,
+    });
+    const { options } = buildSdkOptions(chatId, undefined, undefined, prepared);
 
     // Streaming input mode: pass an async iterable that never yields a user message
     const neverYield = async function* (): AsyncGenerator<never> {
@@ -69,7 +77,6 @@ export async function warmSession(chatId: string): Promise<void> {
     } finally {
       if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
-    const session = getSession(chatId);
     if (ctx.maxTokens > 0) session.usage.contextWindow = ctx.maxTokens;
     if (ctx.totalTokens > 0) session.usage.contextTokens = ctx.totalTokens;
     log(

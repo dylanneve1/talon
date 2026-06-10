@@ -136,11 +136,13 @@ export async function handleMessage(
     messageId,
   });
 
-  // First-turn system-prompt rebuild + Kilo-specific delivery suffix
-  const systemPrompt = prepareSystemPrompt({
+  // Per-session frozen prompt + Kilo-specific delivery suffix
+  const { text: systemPrompt } = prepareSystemPrompt({
     config,
     previousTurns,
     backendSuffix: KILO_SYSTEM_PROMPT_SUFFIX,
+    chatId,
+    sessionEpoch: session.createdAt,
   });
 
   log("agent", `[${chatId}] <- (${text.length} chars)`);

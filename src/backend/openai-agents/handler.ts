@@ -127,11 +127,13 @@ export async function handleMessage(
     OPENAI_AGENTS_DEFAULT_MODEL;
   log("agent", `[${chatId}] OpenAI Agents model resolved: ${activeModel}`);
 
-  // First-turn system-prompt rebuild + Agents-specific delivery suffix.
-  const systemPrompt = prepareSystemPrompt({
+  // Per-session frozen prompt + Agents-specific delivery suffix.
+  const { text: systemPrompt } = prepareSystemPrompt({
     config,
     previousTurns,
     backendSuffix: OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX,
+    chatId,
+    sessionEpoch: session.createdAt,
   });
 
   const prompt = formatUserPrompt({

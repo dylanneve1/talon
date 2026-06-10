@@ -7,6 +7,7 @@
 
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Options,
   PostToolBatchHookInput,
@@ -16,6 +17,7 @@ import type {
   HookCallback,
   HookJSONOutput,
 } from "@anthropic-ai/claude-agent-sdk";
+import type { PreparedSystemPrompt } from "../shared/system-prompt.js";
 import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
@@ -297,10 +299,29 @@ const stopFailureHook: HookCallback = async (
 
 // ── Options builder ─────────────────────────────────────────────────────────
 
+/**
+ * Build the SDK `systemPrompt` option from a prepared prompt.
+ *
+ * When a dynamic part exists, the prompt is sent as blocks split by
+ * `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`: everything before the marker is the
+ * static prefix the API can cache across sessions; everything after is
+ * the volatile tail (workspace listing, daily-memory pointer) that
+ * changes between rebuilds without invalidating the prefix.
+ */
+function toSdkSystemPrompt(prepared: PreparedSystemPrompt): string | string[] {
+  if (!prepared.dynamicText) return prepared.staticText;
+  return [
+    prepared.staticText,
+    SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+    prepared.dynamicText,
+  ];
+}
+
 export function buildSdkOptions(
   chatId: string,
   abortController?: AbortController,
   modelOverride?: string,
+  preparedPrompt?: PreparedSystemPrompt,
 ): BuildSdkOptionsResult {
   const config = getConfig();
   const chatSettings = getChatSettings(chatId);
@@ -322,7 +343,18 @@ export function buildSdkOptions(
 
   const options: Options = {
     model: resolvedActiveModel,
-    systemPrompt: config.systemPrompt,
+    // Prefer the caller's frozen per-session prompt; fall back to the
+    // global config split (warm-up and legacy callers), then to the
+    // plain string for configs built without parts (tests).
+    systemPrompt: preparedPrompt
+      ? toSdkSystemPrompt(preparedPrompt)
+      : config.systemPromptParts
+        ? toSdkSystemPrompt({
+            text: config.systemPrompt,
+            staticText: config.systemPromptParts.staticText,
+            dynamicText: config.systemPromptParts.dynamicText,
+          })
+        : config.systemPrompt,
     cwd: config.workspace,
     // The SDK's permission system is designed for an interactive Claude
     // Code IDE session where a human approves each tool call. Talon runs

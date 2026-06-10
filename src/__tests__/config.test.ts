@@ -363,6 +363,53 @@ describe("config", () => {
       expect(config.systemPrompt).toContain(today);
     });
 
+    it("splits the prompt into cache-stable static and volatile dynamic parts", async () => {
+      mockFs(
+        { botToken: "test-token" },
+        {
+          "identity.md": "I am Talon.",
+          "base.md": "Be helpful.",
+          "memory.md": "User prefers dark mode.",
+        },
+      );
+
+      const { loadConfig, joinSystemPromptParts } =
+        await import("../util/config.js");
+      const config = loadConfig();
+
+      expect(config.systemPromptParts).toBeDefined();
+      const parts = config.systemPromptParts!;
+
+      // Static part: identity, base, memory — the cacheable prefix.
+      expect(parts.staticText).toContain("I am Talon.");
+      expect(parts.staticText).toContain("Be helpful.");
+      expect(parts.staticText).toContain("User prefers dark mode.");
+      expect(parts.staticText).toContain("Cron Jobs");
+
+      // Volatile content must NOT pollute the static prefix.
+      expect(parts.staticText).not.toContain("Daily Memory");
+      expect(parts.staticText).not.toContain("Current Workspace Contents");
+
+      // Dynamic part: daily-memory pointer (carries today's date).
+      const today = new Date().toISOString().slice(0, 10);
+      expect(parts.dynamicText).toContain("Daily Memory");
+      expect(parts.dynamicText).toContain(today);
+
+      // Joined form must equal the single-string prompt other backends use.
+      expect(config.systemPrompt).toBe(joinSystemPromptParts(parts));
+    });
+
+    it("omits the minute-precision datetime section (cache-buster)", async () => {
+      mockFs({ botToken: "test-token" });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.systemPrompt).not.toContain("Current Date & Time");
+      // Time-of-day belongs in per-message tags, not the system prompt.
+      const hhmm = new Date().toISOString().slice(11, 16);
+      expect(config.systemPromptParts!.staticText).not.toContain(hhmm);
+    });
+
     it("includes workspace instructions in system prompt", async () => {
       mockFs({ botToken: "test-token" });
 

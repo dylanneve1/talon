@@ -108,6 +108,81 @@ describe("buildSdkOptions", () => {
     expect(options.model).toBe("sonnet[1m]");
   });
 
+  describe("systemPrompt cache boundary", () => {
+    it("falls back to the plain string when config has no parts", async () => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { options } = buildSdkOptions("chat-sp-1");
+      expect(options.systemPrompt).toBe("test prompt");
+    });
+
+    it("splits config parts on the dynamic boundary when present", async () => {
+      mockGetConfig.mockReturnValue({
+        model: "claude-sonnet-4-6",
+        frontend: "terminal",
+        systemPrompt: "static stuff\n\n---\n\nvolatile stuff",
+        systemPromptParts: {
+          staticText: "static stuff",
+          dynamicText: "volatile stuff",
+        },
+        workspace: "/tmp/workspace",
+      });
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } =
+        await import("@anthropic-ai/claude-agent-sdk");
+
+      const { options } = buildSdkOptions("chat-sp-2");
+      expect(options.systemPrompt).toEqual([
+        "static stuff",
+        SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+        "volatile stuff",
+      ]);
+    });
+
+    it("prefers the caller's prepared per-session prompt", async () => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+      const { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } =
+        await import("@anthropic-ai/claude-agent-sdk");
+
+      const prepared = {
+        text: "frozen static\n\n---\n\nfrozen dynamic",
+        staticText: "frozen static",
+        dynamicText: "frozen dynamic",
+      };
+      const { options } = buildSdkOptions(
+        "chat-sp-3",
+        undefined,
+        undefined,
+        prepared,
+      );
+      expect(options.systemPrompt).toEqual([
+        "frozen static",
+        SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+        "frozen dynamic",
+      ]);
+    });
+
+    it("omits the boundary when the dynamic part is empty", async () => {
+      const { buildSdkOptions } =
+        await import("../backend/claude-sdk/options.js");
+
+      const prepared = {
+        text: "all static",
+        staticText: "all static",
+        dynamicText: "",
+      };
+      const { options } = buildSdkOptions(
+        "chat-sp-4",
+        undefined,
+        undefined,
+        prepared,
+      );
+      expect(options.systemPrompt).toBe("all static");
+    });
+  });
+
   describe("PostToolBatch turn-terminator hook", () => {
     type HookCallback = (
       input: unknown,

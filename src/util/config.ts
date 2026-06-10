@@ -9,7 +9,7 @@ import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { z } from "zod";
 import { dirs, files as pathFiles } from "./paths.js";
-import { setTimezone, formatFullDatetime, todayAndYesterday } from "./time.js";
+import { setTimezone, todayAndYesterday } from "./time.js";
 import { log } from "./log.js";
 import { BACKEND_IDS } from "../core/agent-runtime/model-ref.js";
 
@@ -319,8 +319,42 @@ const configSchema = z.object({
   teamsGraphPollMs: z.number().int().min(5000).default(10000),
 });
 
+/**
+ * System prompt split for prompt-cache friendliness.
+ *
+ * `staticText` holds everything that is stable for the lifetime of a
+ * session (identity, base/frontend prompts, memory file, tool docs,
+ * plugin additions). `dynamicText` holds volatile context (workspace
+ * file listing, daily-memory pointer) that changes between rebuilds.
+ *
+ * The Claude SDK backend sends these as separate blocks divided by
+ * `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`, so the static prefix is eligible
+ * for cross-session prompt caching while volatile content lives after
+ * the cache boundary. Other backends join them into a single string —
+ * keeping volatile content last still maximises their providers'
+ * automatic prefix caching.
+ */
+export type SystemPromptParts = {
+  staticText: string;
+  dynamicText: string;
+};
+
+/** Join the two prompt parts into the single-string form. */
+export function joinSystemPromptParts(parts: SystemPromptParts): string {
+  if (!parts.dynamicText) return parts.staticText;
+  if (!parts.staticText) return parts.dynamicText;
+  return `${parts.staticText}\n\n---\n\n${parts.dynamicText}`;
+}
+
 export type TalonConfig = z.infer<typeof configSchema> & {
   systemPrompt: string;
+  /**
+   * Static/dynamic split of `systemPrompt`. Optional so hand-built test
+   * configs stay valid; consumers fall back to treating `systemPrompt`
+   * as all-static when absent. Always set by `loadConfig` and
+   * `rebuildSystemPrompt`.
+   */
+  systemPromptParts?: SystemPromptParts;
   workspace: string;
 };
 
@@ -383,12 +417,32 @@ function readOptionalFile(path: string): string {
 
 let lastLoggedPromptKey = "";
 
+/**
+ * Assemble the system prompt from prompt files, memory, and plugin
+ * additions.
+ *
+ * Returns a static/dynamic split (see `SystemPromptParts`). Everything
+ * volatile — the workspace file listing (file sizes change as logs
+ * grow) and the daily-memory pointer (contains today's date) — goes in
+ * `dynamicText` so the static prefix stays byte-identical between
+ * rebuilds as long as the prompt files, memory, and plugins are
+ * unchanged. A byte-identical static prefix is what makes provider
+ * prompt caching hit across sessions.
+ *
+ * Deliberately omitted: a "Current Date & Time" section. Every user
+ * message already carries a `[YYYY-MM-DD HH:MM:SS]` tag (see
+ * `formatUserPrompt`), the daily-memory pointer names today's file,
+ * and the `check_time` tool covers timezone queries. A minute-precision
+ * timestamp in the system prompt was the single biggest cache-buster:
+ * it guaranteed every rebuild produced a unique prompt.
+ */
 function loadSystemPrompt(
   frontend?: string,
   pluginPromptAdditions?: string[],
-): string {
+): SystemPromptParts {
   const promptDir = dirs.prompts;
   const parts: string[] = [];
+  const dynamicParts: string[] = [];
 
   const loaded: string[] = [];
 
@@ -428,9 +482,10 @@ function loadSystemPrompt(
     loaded.push("memory");
   }
 
-  // Point the bot at daily memory files (read on demand, not injected)
+  // Point the bot at daily memory files (read on demand, not injected).
+  // Dynamic: names today's file, so it changes at midnight.
   const { today } = todayAndYesterday();
-  parts.push(
+  dynamicParts.push(
     `## Daily Memory\n\nYour daily notes are stored in \`${dirs.dailyMemory}/\`. Today's file is \`${today}.md\`. Use the Read tool to check recent daily notes when you need context from previous days.`,
   );
 
@@ -440,7 +495,8 @@ function loadSystemPrompt(
     lastLoggedPromptKey = loadedKey;
   }
 
-  // Workspace file listing for context
+  // Workspace file listing for context. Dynamic: file sizes change as
+  // logs grow, so even back-to-back rebuilds differ.
   const workspaceDir = dirs.workspace;
   let workspaceFiles = "";
   try {
@@ -475,11 +531,12 @@ function loadSystemPrompt(
     const files = listDir(workspaceDir);
     if (files.length > 0)
       workspaceFiles =
-        "\n\nCurrent workspace contents:\n" +
+        "## Current Workspace Contents\n\n" +
         files.map((f) => `  ${f}`).join("\n");
   } catch {
     /* no workspace yet */
   }
+  if (workspaceFiles) dynamicParts.push(workspaceFiles);
 
   parts.push(`## Workspace
 
@@ -489,7 +546,7 @@ You have a workspace directory at \`~/.talon/workspace/\`. This is your home —
 - Daily interaction logs are saved to \`~/.talon/workspace/logs/\` automatically.
 - Files users send you (photos, docs, voice) are saved to \`~/.talon/workspace/uploads/\`.
 - Persistent cron jobs are managed via the cron tools.
-- Everything else is yours to create and organize as you see fit.${workspaceFiles}
+- Everything else is yours to create and organize as you see fit.
 
 ## Cron Jobs
 
@@ -530,16 +587,18 @@ When a trigger fires, you receive a system-prefixed wake-up message containing t
 - "Wake me when this PR merges" → trigger (one-shot, condition-driven)
 - "Tell me if BTC moves >5%" → trigger with mid-run \`TALON_FIRE:\` (long-running, multi-event)`);
 
-  parts.push(`## Current Date & Time\n${formatFullDatetime()}`);
-
-  // Plugin system prompt contributions (injected by caller)
+  // Plugin system prompt contributions (injected by caller). Static:
+  // they only change on plugin reload, which triggers a full rebuild.
   if (pluginPromptAdditions) {
     for (const addition of pluginPromptAdditions) {
       parts.push(addition);
     }
   }
 
-  return parts.join("\n\n---\n\n");
+  return {
+    staticText: parts.join("\n\n---\n\n"),
+    dynamicText: dynamicParts.join("\n\n---\n\n"),
+  };
 }
 
 // ── Main loader ─────────────────────────────────────────────────────────────
@@ -572,10 +631,12 @@ export function loadConfig(): TalonConfig {
 
   const activeFrontend = frontends[0];
 
+  const promptParts = loadSystemPrompt(activeFrontend);
   return {
     ...parsed,
     workspace: dirs.workspace,
-    systemPrompt: loadSystemPrompt(activeFrontend),
+    systemPrompt: joinSystemPromptParts(promptParts),
+    systemPromptParts: promptParts,
   };
 }
 
@@ -590,8 +651,10 @@ export function rebuildSystemPrompt(
   const frontends = Array.isArray(config.frontend)
     ? config.frontend
     : [config.frontend];
-  config.systemPrompt = loadSystemPrompt(
+  const promptParts = loadSystemPrompt(
     frontends[0],
     pluginAdditions.length > 0 ? pluginAdditions : undefined,
   );
+  config.systemPromptParts = promptParts;
+  config.systemPrompt = joinSystemPromptParts(promptParts);
 }

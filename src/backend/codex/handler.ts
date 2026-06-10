@@ -369,11 +369,13 @@ export async function handleMessage(
   }
   log("agent", `[${chatId}] Codex model resolved: ${activeModel}`);
 
-  // First-turn system-prompt rebuild + Codex-specific delivery suffix.
-  const systemPrompt = prepareSystemPrompt({
+  // Per-session frozen prompt + Codex-specific delivery suffix.
+  const { text: systemPrompt } = prepareSystemPrompt({
     config,
     previousTurns,
     backendSuffix: CODEX_SYSTEM_PROMPT_SUFFIX,
+    chatId,
+    sessionEpoch: session.createdAt,
   });
 
   const prompt = formatUserPrompt({

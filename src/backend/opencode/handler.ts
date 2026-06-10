@@ -140,11 +140,13 @@ export async function handleMessage(
     messageId,
   });
 
-  // First-turn system-prompt rebuild + OpenCode-specific delivery suffix
-  const systemPrompt = prepareSystemPrompt({
+  // Per-session frozen prompt + OpenCode-specific delivery suffix
+  const { text: systemPrompt } = prepareSystemPrompt({
     config,
     previousTurns,
     backendSuffix: OPENCODE_SYSTEM_PROMPT_SUFFIX,
+    chatId,
+    sessionEpoch: session.createdAt,
   });
 
   log("agent", `[${chatId}] <- (${text.length} chars)`);

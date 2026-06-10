@@ -47,7 +47,9 @@ export {
 export {
   prepareSystemPrompt,
   appendBackendSuffix,
+  clearSystemPromptSnapshots,
   type PrepareSystemPromptInputs,
+  type PreparedSystemPrompt,
 } from "./system-prompt.js";
 
 export {
