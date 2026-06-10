@@ -2,14 +2,16 @@
  * Functional-test bootstrap for Talon's claude-sdk backend against the stub
  * binary.
  *
- * Calls the **production** `initAgent()` entry point with `claudeBinary`
- * pointed at the stub. No workarounds — the stub advertises its mock models
- * via the standard `SDKControlInitializeResponse.models` field, so
- * `registerClaudeModels()` discovers them by spawning the stub and walking
- * the real init handshake. The result is the entire production code path
- * exercised end-to-end: model discovery, prompt enrichment, system-prompt
- * rebuild, options builder, SDK query, stream processing, dedup, session
- * bookkeeping — only the binary the SDK spawns is fake.
+ * Boots through the **production composition root**
+ * (`initBackendAndDispatcher`) with `claudeBinary` pointed at the stub, and
+ * drives each turn through the production `dispatcher.execute()`. The only
+ * fake is the `Frontend` object — the same seam `index.ts` swaps per
+ * platform. Everything else is the real path: backend factory registration,
+ * backend pool boot, model discovery (the stub advertises mock models via
+ * the standard `SDKControlInitializeResponse.models` field), dispatcher
+ * wiring, active-model resolution, SDK query, stream processing, the
+ * event→callback bridge, dedup, and session bookkeeping — only the binary
+ * the SDK spawns is fake.
  *
  * Usage in tests:
  *
@@ -31,10 +33,11 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 import type { TalonConfig } from "../../util/config.js";
-import { initAgent } from "../../backend/claude-sdk/state.js";
-import { runChatTurn } from "../../backend/claude-sdk/handler.js";
-import { pipeEventsToCallbacks } from "../../core/agent-runtime/event-bridge.js";
-import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
+import {
+  initBackendAndDispatcher,
+  type Frontend,
+} from "../../bootstrap.js";
+import { execute as dispatcherExecute } from "../../core/dispatcher.js";
 import { resetSession } from "../../storage/sessions.js";
 import { Gateway } from "../../core/gateway.js";
 import type { FrontendActionHandler } from "../../core/types.js";
@@ -51,8 +54,40 @@ const STUB_BINARY = resolve(
 );
 
 let booted = false;
+/**
+ * Whether the heavy composition root (`initBackendAndDispatcher`) has run.
+ * Backend pool + dispatcher are process-level singletons wired against the
+ * config captured at first boot — they boot once and persist for the test
+ * process. `teardownBootstrap()` only swaps the gateway wiring; the SDK
+ * keeps spawning into the same workspace.
+ */
+let coreBooted = false;
 const bootedTmpDirs: string[] = [];
 let gateway: Gateway | null = null;
+
+/**
+ * Stable bridge-port accessor handed to the composition root once. Reads
+ * the CURRENT module-level gateway, so a teardown/re-boot cycle that swaps
+ * in a new gateway (fresh port, fresh recording handler) is picked up by
+ * the already-booted backend on its next `buildMcpServers` call.
+ */
+function currentBridgePort(): number {
+  return gateway?.getPort() ?? 0;
+}
+
+// Workspaces are tiny tmp dirs; clean them when the test process exits.
+// They must NOT be removed in `teardownBootstrap()` — the booted backend
+// keeps using the first boot's workspace as the SDK spawn cwd, and
+// deleting it makes every subsequent stub launch fail.
+process.on("exit", () => {
+  for (const dir of bootedTmpDirs.splice(0)) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* best effort */
+    }
+  }
+});
 
 /**
  * Boot configuration. Default boots a `frontend: "terminal"` agent with no
@@ -90,6 +125,33 @@ export async function ensureBooted(args: EnsureBootedArgs = {}): Promise<void> {
 
   const { frontend = "terminal", gatewayHandler } = args;
 
+  // Spin up a Gateway when the frontend isn't terminal. The SDK's
+  // `mcpServers` config (built via `buildMcpServers`) includes a
+  // `${frontend}-tools` server for non-terminal frontends — when that MCP
+  // server invokes a tool, it POSTs to `http://127.0.0.1:${gateway.port}/…`
+  // to reach the frontend handler. Without a live gateway those POSTs
+  // would hang or 404. Re-created on every boot so each describe block
+  // can wire its own recording handler.
+  if (frontend !== "terminal") {
+    if (!gatewayHandler) {
+      throw new Error(
+        `ensureBooted: frontend=${JSON.stringify(frontend)} requires a gatewayHandler. ` +
+          `Pass a recording handler or a live-API shim.`,
+      );
+    }
+    gateway = new Gateway();
+    gateway.setFrontendHandler(gatewayHandler);
+    // Port 0 → OS picks a free port; tests don't care which.
+    await gateway.start(0);
+  }
+
+  if (coreBooted) {
+    // Composition root already wired — the new gateway (if any) is picked
+    // up through `currentBridgePort` on the next turn.
+    booted = true;
+    return;
+  }
+
   const workspace = mkdtempSync(resolve(tmpdir(), "talon-stub-workspace-"));
   bootedTmpDirs.push(workspace);
 
@@ -102,6 +164,9 @@ export async function ensureBooted(args: EnsureBootedArgs = {}): Promise<void> {
     concurrency: 1,
     pulse: false,
     pulseIntervalMs: 300_000,
+    // Dreams read ~/.talon dream state and fire-and-forget a one-shot
+    // agent mid-turn — nondeterministic in tests. Explicitly disabled.
+    dream: false,
     heartbeat: false,
     heartbeatIntervalMinutes: 60,
     plugins: [],
@@ -112,43 +177,46 @@ export async function ensureBooted(args: EnsureBootedArgs = {}): Promise<void> {
     workspace,
   };
 
-  // Spin up a Gateway when the frontend isn't terminal. The SDK's `mcpServers`
-  // config (built via `buildMcpServers`) includes a `${frontend}-tools` server
-  // for non-terminal frontends — when that MCP server invokes a tool, it
-  // POSTs to `http://127.0.0.1:${gateway.port}/...` to reach the frontend
-  // handler. Without a live gateway those POSTs would hang or 404.
-  let getBridgePort: (() => number) | undefined;
-  if (frontend !== "terminal") {
-    if (!gatewayHandler) {
-      throw new Error(
-        `ensureBooted: frontend=${JSON.stringify(frontend)} requires a gatewayHandler. ` +
-          `Pass a recording handler or a live-API shim.`,
-      );
-    }
-    gateway = new Gateway();
-    gateway.setFrontendHandler(gatewayHandler);
-    // Port 0 → OS picks a free port; tests don't care which.
-    await gateway.start(0);
-    getBridgePort = () => gateway!.getPort();
-  }
-
-  // Run the production bootstrap — `initAgent` calls `registerClaudeModels`
-  // which spawns the stub binary, performs the init handshake, and pulls the
-  // model list out of the SDKControlInitializeResponse. The stub advertises
-  // its mock models in `defaultInitResponse.models` (`fake-claude.mjs`), so
-  // discovery resolves naturally without any test-side override.
-  await initAgent(config, getBridgePort);
+  // Run the REAL composition root — `initBackendAndDispatcher` registers
+  // every backend factory, boots the backend pool (whose claude factory
+  // calls `initAgent` → `registerClaudeModels`, spawning the stub binary
+  // for the init handshake and model discovery), and wires the dispatcher
+  // with the production `getBackend` / `resolveActiveModel` deps. The only
+  // fake is the `Frontend` seam — the same seam `index.ts` swaps per
+  // platform — so a wiring regression anywhere in the production boot
+  // path fails these tests instead of being papered over by a parallel
+  // test-only bootstrap.
+  const feName = Array.isArray(frontend) ? frontend[0] : frontend;
+  const fakeFrontend: Frontend = {
+    name: feName,
+    context: {
+      acquire: () => {},
+      release: () => {},
+      getMessageCount: () => 0,
+    },
+    sendTyping: async () => {},
+    sendMessage: async () => {},
+    getBridgePort: currentBridgePort,
+    init: async () => {},
+    start: async () => {},
+    stop: async () => {},
+  };
+  await initBackendAndDispatcher(config, fakeFrontend);
+  coreBooted = true;
   booted = true;
 }
 
-/** Tear-down hook for tests that want a clean slate. */
+/**
+ * Tear-down hook for tests that want fresh gateway wiring (e.g. a new
+ * recording handler per describe block). Stops the gateway only — the
+ * backend pool, dispatcher, and workspace persist for the process (see
+ * `coreBooted`), and the next `ensureBooted` call's gateway is picked up
+ * through `currentBridgePort`.
+ */
 export function teardownBootstrap(): void {
   if (gateway) {
     void gateway.stop();
     gateway = null;
-  }
-  for (const dir of bootedTmpDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
   }
   booted = false;
 }
@@ -189,7 +257,7 @@ export interface RunTalonTurnResult {
   toolUses: { name: string; input: Record<string, unknown> }[];
   /** Streaming deltas, in order. */
   streamDeltas: { phase?: string; text: string }[];
-  /** Token + duration stats from `handleMessage`. */
+  /** Token + duration stats from the dispatcher's `ExecuteResult`. */
   inputTokens: number;
   outputTokens: number;
   durationMs: number;
@@ -200,9 +268,9 @@ export interface RunTalonTurnResult {
 }
 
 /**
- * Drives a full Talon turn against the stub binary. Real `handleMessage`
- * runs end-to-end — prompt building, SDK query, stream processing, session
- * persistence — but the SDK talks to the stub instead of the API.
+ * Drives a full Talon turn against the stub binary through the production
+ * `dispatcher.execute()` — prompt building, SDK query, stream processing,
+ * session persistence — but the SDK talks to the stub instead of the API.
  */
 export async function runTalonTurn(
   args: RunTalonTurnArgs,
@@ -241,16 +309,16 @@ export async function runTalonTurn(
   if (gateway) gateway.setContext(numericChatId, chatId);
 
   try {
-    // Mirror the dispatcher's production path exactly: consume the
-    // native `runChatTurn` event stream through `pipeEventsToCallbacks`.
-    const stream = runChatTurn({
+    // Drive the turn through the PRODUCTION dispatcher — per-chat
+    // serialization, send-time model guard, active-model resolution,
+    // and the event-stream → callback bridge all run for real.
+    const result = await dispatcherExecute({
       chatId,
-      model: makeBareModelRef("claude", "default"),
-      text: prompt,
+      numericChatId,
+      prompt,
       senderName,
       isGroup,
-    });
-    const agentResult = await pipeEventsToCallbacks(stream, {
+      source: "message",
       onTextBlock: async (text) => {
         textChunks.push(text);
       },
@@ -261,11 +329,6 @@ export async function runTalonTurn(
         streamDeltas.push({ phase, text: accumulated });
       },
     });
-    const result = {
-      inputTokens: agentResult?.usage.inputTokens ?? 0,
-      outputTokens: agentResult?.usage.outputTokens ?? 0,
-      durationMs: agentResult?.durationMs ?? 0,
-    };
 
     let protocolLog: string[] = [];
     try {

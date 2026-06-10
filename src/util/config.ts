@@ -222,6 +222,8 @@ const configSchema = z.object({
   allowedUsers: z.array(z.number().int()).optional(), // Whitelist of user IDs allowed to DM the bot
   pulse: z.boolean().default(true),
   pulseIntervalMs: z.number().int().min(60000).default(300000),
+  /** Background memory-consolidation (dream) runs. Mirrors `pulse`/`heartbeat`. */
+  dream: z.boolean().default(true),
   heartbeat: z.boolean().default(false),
   heartbeatIntervalMinutes: z.number().int().min(5).default(60),
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)

@@ -45,6 +45,7 @@ describe("plugin system", () => {
       concurrency: 1,
       pulse: true,
       pulseIntervalMs: 300000,
+      dream: true,
       heartbeat: false,
       heartbeatIntervalMinutes: 60,
       plugins: [],

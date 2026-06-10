@@ -303,6 +303,7 @@ export async function initBackendAndDispatcher(
     model: config.model,
     dreamModel: config.dreamModel,
     workspace: config.workspace,
+    enabled: config.dream,
     getBackend: () => getBackendForRole("dream"),
   });
   // Heartbeat needs to know which non-terminal frontends are wired so it can

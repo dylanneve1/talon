@@ -47,6 +47,8 @@ let configRef: {
   model?: string;
   dreamModel?: string;
   workspace?: string;
+  /** When false, `maybeStartDream` never fires (config `dream: false`). */
+  enabled?: boolean;
   /**
    * Accessor for the active backend — invoked each time a dream fires
    * so backend hot-swaps performed by the controller take effect on
@@ -66,6 +68,8 @@ export function initDream(cfg: {
   /** Override model for dream consolidation (e.g. a cheaper model). Falls back to main model. */
   dreamModel?: string;
   workspace?: string;
+  /** Gate for automatic dream runs — config `dream` flag. Defaults to enabled. */
+  enabled?: boolean;
   /**
    * Provider for the active backend — dream runs `backend.background?.runOneShotAgent`.
    * Passed as a function (rather than a backend reference) so a backend
@@ -86,6 +90,7 @@ export function initDream(cfg: {
  */
 export function maybeStartDream(): void {
   if (dreaming) return;
+  if (configRef?.enabled === false) return;
 
   const state = readDreamState();
   const now = Date.now();
