@@ -91,7 +91,13 @@ export async function* handlerToEvents(
       }
     },
     onTextBlock: async (text) => {
-      emit({ type: "assistant_message", text });
+      await new Promise<void>((resolve, reject) => {
+        emit({
+          type: "assistant_message",
+          text,
+          deliveryAck: { resolve, reject },
+        });
+      });
       // A block delivery anchors the accumulator — subsequent streaming
       // deltas restart from empty.
       lastAccumulated = "";

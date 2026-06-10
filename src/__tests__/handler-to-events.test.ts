@@ -30,7 +30,12 @@ function baseParams(): ChatRunParams {
 
 async function drain(stream: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
   const out: AgentEvent[] = [];
-  for await (const e of stream) out.push(e);
+  for await (const e of stream) {
+    out.push(e);
+    if (e.type === "assistant_message") {
+      e.deliveryAck?.resolve();
+    }
+  }
   return out;
 }
 

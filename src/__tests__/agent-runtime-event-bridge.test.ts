@@ -121,6 +121,51 @@ describe("pipeEventsToCallbacks / streaming", () => {
     expect(deltas).toEqual([["first second", "text"]]);
   });
 
+  it("resolves assistant_message delivery acknowledgements after onTextBlock succeeds", async () => {
+    const resolved = vi.fn();
+    await pipeEventsToCallbacks(
+      streamOf([
+        {
+          type: "assistant_message",
+          text: "sent",
+          deliveryAck: { resolve: resolved, reject: vi.fn() },
+        },
+        {
+          type: "completed",
+          result: { text: "sent", durationMs: 1, usage: emptyUsage() },
+        },
+      ]),
+      { onTextBlock: vi.fn().mockResolvedValue(undefined) },
+    );
+
+    expect(resolved).toHaveBeenCalledOnce();
+  });
+
+  it("rejects assistant_message delivery acknowledgements when onTextBlock fails", async () => {
+    const rejected = vi.fn();
+    await pipeEventsToCallbacks(
+      streamOf([
+        {
+          type: "assistant_message",
+          text: "too long",
+          deliveryAck: { resolve: vi.fn(), reject: rejected },
+        },
+        {
+          type: "completed",
+          result: { text: "retry later", durationMs: 1, usage: emptyUsage() },
+        },
+      ]),
+      {
+        onTextBlock: vi
+          .fn()
+          .mockRejectedValue(new Error("Telegram message too long")),
+      },
+    );
+
+    expect(rejected).toHaveBeenCalledOnce();
+    expect(rejected.mock.calls[0]?.[0]).toBeInstanceOf(Error);
+  });
+
   it("awaits each onTextBlock before processing the next event", async () => {
     const order: string[] = [];
     const cb: LegacyCallbacks = {

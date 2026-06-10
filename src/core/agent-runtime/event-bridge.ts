@@ -102,8 +102,16 @@ export async function pipeEventsToCallbacks(
         break;
       }
       case "assistant_message": {
-        if (callbacks.onTextBlock) {
-          await callbacks.onTextBlock(event.text);
+        try {
+          if (callbacks.onTextBlock) {
+            await callbacks.onTextBlock(event.text);
+          }
+          event.deliveryAck?.resolve();
+        } catch (err) {
+          event.deliveryAck?.reject(err);
+          if (!event.deliveryAck) {
+            throw err;
+          }
         }
         // Folding the block into the accumulator keeps subsequent
         // `text_delta` events monotonically growing — the legacy

@@ -110,7 +110,22 @@ export interface AgentError {
 export type AgentEvent =
   | { type: "run_started"; runId?: string; sessionId?: string }
   | { type: "text_delta"; text: string }
-  | { type: "assistant_message"; text: string }
+  | {
+      type: "assistant_message";
+      text: string;
+      /**
+       * Optional delivery acknowledgement for callback-shaped backend
+       * adapters. When present, the event bridge resolves it after the
+       * frontend's async `onTextBlock` callback succeeds, or rejects it
+       * when delivery fails. That preserves the old `await onTextBlock`
+       * semantics for backends whose retry logic depends on delivery
+       * failures (notably Codex oversized-message retries).
+       */
+      deliveryAck?: {
+        resolve(): void;
+        reject(error: unknown): void;
+      };
+    }
   | {
       type: "reasoning";
       text: string;

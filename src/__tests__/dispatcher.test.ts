@@ -223,6 +223,54 @@ describe("dispatcher", () => {
     expect(onTextBlock).toHaveBeenCalledWith("hi there");
   });
 
+  it("propagates async text-block delivery failures back to callback-shaped backends", async () => {
+    const deps = createMockDeps();
+    deps.query.mockImplementation(async (params) => {
+      try {
+        await params.onTextBlock?.("too long");
+      } catch {
+        await params.onTextBlock?.("short retry");
+        return {
+          text: "short retry",
+          durationMs: 2,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+        };
+      }
+      return {
+        text: "too long",
+        durationMs: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      };
+    });
+    initDispatcher(deps);
+
+    const onTextBlock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Telegram message too long"))
+      .mockResolvedValueOnce(undefined);
+
+    const result = await execute({
+      chatId: "delivery-retry",
+      numericChatId: 445,
+      prompt: "stream",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+      onTextBlock,
+    });
+
+    expect(onTextBlock).toHaveBeenCalledTimes(2);
+    expect(onTextBlock).toHaveBeenNthCalledWith(1, "too long");
+    expect(onTextBlock).toHaveBeenNthCalledWith(2, "short retry");
+    expect(result.text).toBe("short retry");
+  });
+
   it("tracks active count", async () => {
     expect(getActiveCount()).toBe(0);
 
