@@ -125,7 +125,7 @@ export async function pipeEventsToCallbacks(
             ? "array"
             : typeof event.input;
           console.warn(
-            `[legacy-bridge] tool_call "${event.name}": input is ${typeLabel}, ` +
+            `[event-bridge] tool_call "${event.name}": input is ${typeLabel}, ` +
               `not a plain object — bridging to {} (legacy onToolUse accepts only Record<string, unknown>).`,
           );
         }

@@ -4,7 +4,8 @@
  * Shared test suite every concrete backend (Claude SDK, Codex,
  * Kilo, OpenCode, OpenAI Agents) must pass. These are the
  * assertions; `backend-contract.test.ts` wires the full suite
- * across every shipped `BackendId` via the adapter, and per-backend
+ * across every shipped `BackendId` through the real
+ * `handlerToEvents` → `composeBackend` path, and per-backend
  * handler tests can re-use individual assertions for SDK-specific
  * scenarios:
  *

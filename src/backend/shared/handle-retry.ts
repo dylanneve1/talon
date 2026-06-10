@@ -6,8 +6,8 @@
  *
  *   1. `reset_and_retry` (session_expired / context_length) — reset
  *      the session and recurse.
- *   2. `fallback_model` (retryable + fallback configured) — flip
- *      `chat-settings.model` transiently and recurse.
+ *   2. `fallback_model` (retryable + fallback configured) — recurse
+ *      with the fallback model threaded through the retry's params.
  *   3. `propagate` — let the caller throw.
  *
  * The four backends each duplicated ~30 lines of this — same logic,
@@ -82,8 +82,8 @@ export interface ApplyRetryDecisionResult {
  * Side effects (when a retry fires):
  *   - `incrementCounter('errors.<reason>')` exactly once per call.
  *   - `resetSession(chatId)` before recursion.
- *   - For `fallback_model`: transient `setChatModel(chatId, fallback)`
- *     during recursion, then restored to the original in `finally`.
+ *   - For `fallback_model`: the fallback model id is spread into the
+ *     recursion's params (`params.model` outranks chat settings).
  *
  * When the decision is `propagate`, returns `{classified}` only — the
  * caller throws.
@@ -156,9 +156,12 @@ export interface StreamRetryInputs {
   /**
    * Builds the recursive event stream. Called once when the helper
    * decides to retry — yielded via `yield*` so the caller's generator
-   * transparently delegates to it.
+   * transparently delegates to it. For `fallback_model` decisions the
+   * fallback model id is passed through; the builder must thread it
+   * into the retry's params (`params.model` outranks chat settings,
+   * so a transient `setChatModel` flip would be a silent no-op).
    */
-  buildRetryStream: () => AsyncIterable<AgentEvent>;
+  buildRetryStream: (fallbackModelId?: string) => AsyncIterable<AgentEvent>;
   /** Backend label for log-line prefixes (`"Kilo"`, `"Codex"` …). */
   backendLabel?: string;
   /**
@@ -186,8 +189,8 @@ export interface StreamRetryResult {
  * Generator-shaped equivalent of `applyRetryDecision`. The caller
  * uses `yield* applyRetryDecisionStream({...})` so the recursive
  * retry's events flow into the outer stream transparently. Side
- * effects (counter increment, session reset, transient model flip
- * with restore-in-finally) match the callback-shaped helper exactly.
+ * effects (counter increment, session reset, fallback model threaded
+ * through the retry) match the callback-shaped helper exactly.
  *
  * The terminating value (`AsyncGenerator` 2nd type param) tells the
  * caller whether to emit a final `error` event or just return.
@@ -232,14 +235,8 @@ export async function* applyRetryDecisionStream(
       `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
     );
     resetSession(chatId);
-    const originalModel = getChatSettings(chatId).model;
-    setChatModel(chatId, decision.fallbackModelId);
-    try {
-      yield* buildRetryStream();
-      return { retried: true, classified };
-    } finally {
-      setChatModel(chatId, originalModel);
-    }
+    yield* buildRetryStream(decision.fallbackModelId);
+    return { retried: true, classified };
   }
 
   // `propagate` — caller should yield an `error` event and return.

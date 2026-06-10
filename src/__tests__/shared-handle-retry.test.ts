@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { QueryParams } from "../core/types.js";
+import type { QueryParams } from "../backend/shared/handler-types.js";
 import { applyRetryDecision } from "../backend/shared/handle-retry.js";
 import { TalonError } from "../core/errors.js";
 import { registerModels, clearModels } from "../core/models.js";

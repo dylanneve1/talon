@@ -235,8 +235,22 @@ export async function* runChatTurn(
     }
   } catch (err) {
     if (!postResultForceClosed) {
-      const buildRetryStream = (): AsyncIterable<AgentEvent> =>
-        runChatTurn(params, { ..._internal, errorRetried: true });
+      const buildRetryStream = (
+        fallbackModelId?: string,
+      ): AsyncIterable<AgentEvent> =>
+        runChatTurn(
+          fallbackModelId
+            ? {
+                ...params,
+                model: makeBareModelRef(
+                  params.model.backend,
+                  fallbackModelId,
+                  "fallback",
+                ),
+              }
+            : params,
+          { ..._internal, errorRetried: true },
+        );
       const { retried, classified } = yield* applyRetryDecisionStream({
         err,
         chatId,
