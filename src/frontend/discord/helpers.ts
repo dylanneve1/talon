@@ -119,7 +119,16 @@ export function renderMetricsMessages(
       groups.get(prefix)!.push(key);
     }
     for (const prefix of [...groups.keys()].sort()) {
-      const keys = groups.get(prefix)!;
+      // tool_calls reads best as a leaderboard — busiest tools first.
+      // Other groups keep alphabetical order (stable lookup by name).
+      const keys =
+        prefix === "tool_calls"
+          ? [...groups.get(prefix)!].sort(
+              (a, b) =>
+                metrics.counters[b]! - metrics.counters[a]! ||
+                a.localeCompare(b),
+            )
+          : groups.get(prefix)!;
       sections.push([
         `**${prefix}**`,
         ...keys.map((key) => {
