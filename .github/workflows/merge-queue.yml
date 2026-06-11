@@ -1,0 +1,104 @@
+# Merge-queue substitute.
+#
+# GitHub's native merge queue requires an organization-owned repository;
+# this repo is user-owned, so we emulate the queue with the pieces we
+# do have:
+#
+#   1. Branch protection requires "CI Status" on an UP-TO-DATE branch
+#      (strict checks) — so merges serialize against main by definition.
+#   2. PRs opt into the queue with `gh pr merge --auto` (auto-merge).
+#   3. This workflow advances the queue: every time main moves, it
+#      updates each open auto-merge PR and re-dispatches CI on the new
+#      head. The explicit dispatch is required because branch updates
+#      made with GITHUB_TOKEN deliberately don't fire pull_request
+#      events (Actions' recursion guard) — workflow_dispatch is exempt.
+#
+# Green CI lets GitHub auto-merge complete the squash; that push to
+# main re-runs this workflow, which lines up the next PR. Conflicting
+# PRs are skipped with a warning and need a manual rebase.
+
+name: Merge Queue
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: merge-queue
+  cancel-in-progress: false
+
+jobs:
+  advance:
+    name: Advance queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Update auto-merge PRs and re-dispatch CI
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: "open",
+              base: "main",
+              sort: "created",
+              direction: "asc",
+            });
+            const queued = prs.filter((pr) => pr.auto_merge);
+            if (queued.length === 0) {
+              core.info("No auto-merge PRs queued.");
+              return;
+            }
+            for (const pr of queued) {
+              const before = pr.head.sha;
+              try {
+                await github.rest.pulls.updateBranch({
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                });
+              } catch (err) {
+                // 422: merge conflict, or already up to date. Conflicts
+                // need a human rebase; up-to-date PRs are already being
+                // tested by their own pull_request CI run.
+                core.warning(
+                  `PR #${pr.number}: update-branch skipped — ${err.message}`,
+                );
+                continue;
+              }
+              // updateBranch is asynchronous (202 Accepted): wait for the
+              // head to actually advance before dispatching CI, otherwise
+              // we'd test the stale SHA.
+              let head = before;
+              for (let i = 0; i < 20 && head === before; i++) {
+                await new Promise((r) => setTimeout(r, 3000));
+                const { data } = await github.rest.pulls.get({
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                });
+                head = data.head.sha;
+              }
+              if (head === before) {
+                core.warning(
+                  `PR #${pr.number}: head did not advance after update; not dispatching CI`,
+                );
+                continue;
+              }
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: "ci.yml",
+                ref: pr.head.ref,
+              });
+              core.info(
+                `PR #${pr.number}: updated to ${head.slice(0, 7)}, CI dispatched on ${pr.head.ref}`,
+              );
+            }

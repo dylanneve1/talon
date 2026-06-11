@@ -506,29 +506,20 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: Check required jobs
+        env:
+          # Single source of truth: every job in the `needs` list above
+          # is checked automatically — no second hand-written list to
+          # forget when adding a job. (Jobs skipped by their `if` are
+          # fine; dep-review is PR-only, for example.)
+          NEEDS: ${{ toJSON(needs) }}
         run: |
           fail=0
-          check() {
-            local name=$1
-            local result=$2
+          while IFS=$'\t' read -r name result; do
             if [[ "$result" != "success" && "$result" != "skipped" ]]; then
               echo "::error::Job '$name' failed (result=$result)"
               fail=1
             fi
-          }
-          check "Quality" "${{ needs.quality.result }}"
-          check "Tests" "${{ needs.test.result }}"
-          check "Functional" "${{ needs.functional-cross-platform.result }}"
-          check "Integration" "${{ needs.integration.result }}"
-          check "Bun Compile" "${{ needs.bun-compile.result }}"
-          check "Backend Live" "${{ needs.backend-live.result }}"
-          check "Fuzz" "${{ needs.fuzz.result }}"
-          check "Security" "${{ needs.security.result }}"
-          check "Secrets" "${{ needs.secrets.result }}"
-          check "Lockfile" "${{ needs.lockfile.result }}"
-          check "Docker" "${{ needs.docker.result }}"
-          check "Tarball" "${{ needs.tarball.result }}"
-          # dep-review is PR-only — skipped on push to main, that's fine
+          done < <(jq -r 'to_entries[] | [.key, .value.result] | @tsv' <<< "$NEEDS")
           if [[ $fail -eq 1 ]]; then
             echo "::error::One or more required jobs failed"
             exit 1
