@@ -2,21 +2,23 @@
  * Media index — tracks downloaded media files with metadata and expiry.
  *
  * Provides fast lookup of recent photos/files by chat, sender, or type.
- * Auto-expires entries older than RETENTION_DAYS.
+ * Auto-expires entries older than RETENTION_MS.
  *
- * Persisted to `~/.talon/data/media-index.json` via the unified
- * `JsonStore<T>` primitive: the on-disk format is the standard
- * envelope `{ schemaVersion, savedAt, data: MediaEntry[] }`. A
- * `migrate` hook accepts the pre-envelope bare-array shape so
- * existing stores load without losing entries.
+ * Backed by SQLite (see repositories/media-index-repo.ts for the
+ * statements; this module holds the domain API, formatting and the
+ * expiry sweep's file deletion — no SQL here). Reads are indexed
+ * queries instead of in-memory scans, writes are per-row commits
+ * instead of a 30s autosave timer rewriting the whole file.
+ *
+ * The legacy ~/.talon/data/media-index.json (JsonStore envelope or
+ * bare pre-envelope array) is imported once on first load, then
+ * renamed to media-index.json.imported.
  */
 
-import { existsSync, mkdirSync, unlinkSync } from "node:fs";
-import { dirname } from "node:path";
-import { registerCleanup } from "../util/cleanup-registry.js";
+import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
 import { log, logError } from "../util/log.js";
 import { files } from "../util/paths.js";
-import { JsonStore } from "../core/agent-runtime/store.js";
+import * as repo from "./repositories/media-index-repo.js";
 
 export type MediaEntry = {
   id: string; // unique key: chatId:msgId
@@ -36,31 +38,7 @@ export type MediaEntry = {
   timestamp: number;
 };
 
-const STORE_FILE = files.mediaIndex;
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const SCHEMA_VERSION = 1 as const;
-
-const store = new JsonStore<MediaEntry[]>({
-  path: STORE_FILE,
-  defaultValue: [],
-  schemaVersion: SCHEMA_VERSION,
-  validate: (raw) => {
-    if (!Array.isArray(raw)) throw new Error("media-index: not an array");
-    return raw.filter(isMediaEntry);
-  },
-  migrate: (raw, fromVersion) => {
-    // Pre-envelope shape (`fromVersion === 0`): the file was a bare
-    // `MediaEntry[]`. JsonStore detects "no envelope detected" as
-    // version 0; lift to v1 unchanged.
-    if (fromVersion !== 0) return null;
-    if (!Array.isArray(raw))
-      return { value: [], schemaVersion: SCHEMA_VERSION };
-    return {
-      value: raw.filter(isMediaEntry),
-      schemaVersion: SCHEMA_VERSION,
-    };
-  },
-});
 
 function isMediaEntry(value: unknown): value is MediaEntry {
   if (!value || typeof value !== "object") return false;
@@ -78,60 +56,69 @@ function isMediaEntry(value: unknown): value is MediaEntry {
 
 // ── Persistence ─────────────────────────────────────────────────────────────
 
+/**
+ * Run the one-time import of the legacy JSON store, then sweep
+ * expired entries. Idempotent; called once at boot.
+ */
 export function loadMediaIndex(): void {
-  // JsonStore.loadSync walks `<path>` → `<path>.bak` → defaultValue
-  // using only sync fs primitives, so behaviour matches the legacy
-  // synchronous load. Reset the loaded flag first so tests that
-  // re-mock the filesystem between cases see a fresh read.
-  store.reset();
   try {
-    store.loadSync();
+    importLegacyJson();
   } catch (err) {
     logError("workspace", "Media index load failed", err);
   }
   purgeExpired();
 }
 
-function save(): void {
-  if (!store.isDirty()) return;
+/**
+ * Legacy JsonStore envelope ({schemaVersion, savedAt, data}) or the
+ * even older bare MediaEntry[] shape.
+ */
+function importLegacyJson(): void {
+  const legacyPath = files.mediaIndex;
+  if (!existsSync(legacyPath)) return;
   try {
-    const dir = dirname(STORE_FILE);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    store.saveSync();
+    const raw = JSON.parse(readFileSync(legacyPath, "utf-8")) as unknown;
+    const data =
+      raw && typeof raw === "object" && !Array.isArray(raw) && "data" in raw
+        ? (raw as { data: unknown }).data
+        : raw;
+    const entries = Array.isArray(data) ? data.filter(isMediaEntry) : [];
+    const imported = repo.upsertMany(entries);
+    renameSync(legacyPath, `${legacyPath}.imported`);
+    log(
+      "workspace",
+      `Imported ${imported} media entr(ies) from legacy media-index.json into SQLite`,
+    );
   } catch (err) {
-    logError("workspace", "Media index save failed", err);
+    logError("workspace", "Legacy media-index import failed", err);
   }
 }
 
-const autoSaveTimer = setInterval(save, 30_000);
-registerCleanup(save);
-
+/**
+ * SQLite commits on every write — there is no dirty buffer to flush.
+ * Kept for the shutdown path: compacts the WAL into the main file.
+ */
 export function flushMediaIndex(): void {
-  clearInterval(autoSaveTimer);
-  // Force a synchronous flush. Mark dirty so JsonStore commits the
-  // envelope even if no addMedia was called this turn.
-  store.update(() => undefined);
-  save();
+  try {
+    repo.checkpoint();
+  } catch {
+    /* shutting down — best effort */
+  }
 }
 
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
 export function addMedia(entry: Omit<MediaEntry, "id">): void {
-  const id = `${entry.chatId}:${entry.msgId}`;
-  store.update((entries) => {
-    const existing = entries.findIndex((e) => e.id === id);
-    if (existing >= 0) entries[existing] = { ...entry, id };
-    else entries.push({ ...entry, id });
-  });
+  try {
+    repo.upsert(entry);
+  } catch (err) {
+    logError("workspace", "Media index save failed", err);
+  }
 }
 
 /** Get recent media for a chat, newest first. */
 export function getRecentMedia(chatId: string, limit = 10): MediaEntry[] {
-  return store
-    .get()
-    .filter((e) => e.chatId === chatId)
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, limit);
+  return repo.recentByChat(chatId, limit);
 }
 
 /** Get all media matching a type in a chat. */
@@ -140,11 +127,7 @@ export function getMediaByType(
   type: MediaEntry["type"],
   limit = 10,
 ): MediaEntry[] {
-  return store
-    .get()
-    .filter((e) => e.chatId === chatId && e.type === type)
-    .sort((a, b) => b.timestamp - a.timestamp)
-    .slice(0, limit);
+  return repo.byType(chatId, type, limit);
 }
 
 /** Format media index as text for Claude. */
@@ -167,27 +150,20 @@ export function formatMediaIndex(chatId: string, limit = 10): string {
 
 function purgeExpired(): void {
   const cutoff = Date.now() - RETENTION_MS;
-  let removed = 0;
-  store.update((entries) => {
-    const survivors: MediaEntry[] = [];
-    for (const e of entries) {
-      if (e.timestamp >= cutoff) {
-        survivors.push(e);
-        continue;
-      }
+  try {
+    const expired = repo.olderThan(cutoff);
+    for (const e of expired) {
       try {
         if (existsSync(e.filePath)) unlinkSync(e.filePath);
       } catch {
         /* skip */
       }
-      removed++;
     }
+    const removed = repo.deleteOlderThan(cutoff);
     if (removed > 0) {
-      entries.length = 0;
-      entries.push(...survivors);
+      log("workspace", `Purged ${removed} expired media entries`);
     }
-  });
-  if (removed > 0) {
-    log("workspace", `Purged ${removed} expired media entries`);
+  } catch (err) {
+    logError("workspace", "Media index purge failed", err);
   }
 }

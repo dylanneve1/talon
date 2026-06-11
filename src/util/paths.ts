@@ -64,19 +64,19 @@ export const files = {
   config: resolve(TALON_ROOT, "config.json"),
   /** Structured log: ~/.talon/talon.log */
   log: resolve(TALON_ROOT, "talon.log"),
-  /** Session store: ~/.talon/data/sessions.json */
+  /** Legacy JSON session store (imported into talon.db on first boot) */
   sessions: resolve(TALON_ROOT, "data", "sessions.json"),
-  /** SQLite database (history; other stores migrate in): ~/.talon/data/talon.db */
+  /** SQLite database (history, sessions, chat settings, media index): ~/.talon/data/talon.db */
   database: resolve(TALON_ROOT, "data", "talon.db"),
   /** Legacy JSON chat history (imported into talon.db on first boot) */
   history: resolve(TALON_ROOT, "data", "history.json"),
-  /** Per-chat settings: ~/.talon/data/chat-settings.json */
+  /** Legacy JSON per-chat settings (imported into talon.db on first boot) */
   chatSettings: resolve(TALON_ROOT, "data", "chat-settings.json"),
   /** Cron jobs: ~/.talon/data/cron.json */
   cron: resolve(TALON_ROOT, "data", "cron.json"),
   /** Triggers metadata: ~/.talon/data/triggers.json */
   triggers: resolve(TALON_ROOT, "data", "triggers.json"),
-  /** Media index: ~/.talon/data/media-index.json */
+  /** Legacy JSON media index (imported into talon.db on first boot) */
   mediaIndex: resolve(TALON_ROOT, "data", "media-index.json"),
   /** Persistent memory: ~/.talon/workspace/memory/memory.md */
   memory: resolve(TALON_ROOT, "workspace", "memory", "memory.md"),

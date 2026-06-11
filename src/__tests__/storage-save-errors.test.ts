@@ -1,7 +1,8 @@
 /**
- * Tests that cover the logError + recordError paths triggered when
- * write-file-atomic throws during save() in cron-store, chat-settings,
- * and sessions.
+ * Tests that cover the logError + recordError paths triggered when a
+ * persistence write throws: write-file-atomic for the JSON-backed
+ * cron-store, the SQLite repository for chat-settings and sessions
+ * (injected as a failing mock).
  *
  * Each module must be re-imported in isolation (vi.resetModules) so the
  * mocks apply to the fresh module instance.
@@ -92,7 +93,7 @@ describe("chat-settings — save failure logs error", () => {
     vi.resetModules();
   });
 
-  it("calls logError and recordError when writeFileAtomic throws", async () => {
+  it("calls logError and recordError when the SQLite write throws", async () => {
     const logErrorMock = vi.fn();
     const recordErrorMock = vi.fn();
 
@@ -104,34 +105,19 @@ describe("chat-settings — save failure logs error", () => {
     vi.doMock("../util/watchdog.js", () => ({
       recordError: recordErrorMock,
     }));
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => true),
-      readFileSync: vi.fn(() => "{}"),
-      mkdirSync: vi.fn(),
-      renameSync: vi.fn(),
-      unlinkSync: vi.fn(),
-    }));
-    {
-      const failingWrite = vi.fn((..._args: unknown[]) => {
-        throw new Error("readonly fs");
-      });
-      vi.doMock("write-file-atomic", () => ({
-        default: Object.assign((...args: unknown[]) => failingWrite(...args), {
-          sync: failingWrite,
-        }),
-      }));
-    }
-    vi.doMock("../util/paths.js", () => ({
-      files: { chatSettings: "/fake/chat-settings.json" },
-      dirs: { root: "/fake/.talon" },
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
+    vi.doMock("../storage/repositories/chat-settings-repo.js", () => ({
+      upsert: vi.fn(() => {
+        throw new Error("database is locked");
+      }),
+      upsertMany: vi.fn(() => 0),
+      all: vi.fn(() => []),
+      remove: vi.fn(),
+      checkpoint: vi.fn(),
     }));
 
     const { setChatModel } = await import("../storage/chat-settings.js");
 
-    // setChatModel marks dirty and calls save()
+    // setChatModel mutates the cache then commits the row, which throws
     setChatModel("chat99", "claude-opus-4-6");
 
     expect(logErrorMock).toHaveBeenCalledWith(
@@ -145,7 +131,7 @@ describe("chat-settings — save failure logs error", () => {
   });
 });
 
-describe("chat-settings — non-Error thrown in save (line 96 FALSE branch)", () => {
+describe("chat-settings — non-Error thrown in save (persist FALSE branch)", () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -161,29 +147,14 @@ describe("chat-settings — non-Error thrown in save (line 96 FALSE branch)", ()
     vi.doMock("../util/watchdog.js", () => ({
       recordError: recordErrorMock,
     }));
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => true),
-      readFileSync: vi.fn(() => "{}"),
-      mkdirSync: vi.fn(),
-      renameSync: vi.fn(),
-      unlinkSync: vi.fn(),
-    }));
-    {
-      const failingWrite = vi.fn((..._args: unknown[]) => {
+    vi.doMock("../storage/repositories/chat-settings-repo.js", () => ({
+      upsert: vi.fn(() => {
         throw "plain string chat-settings error";
-      });
-      vi.doMock("write-file-atomic", () => ({
-        default: Object.assign((...args: unknown[]) => failingWrite(...args), {
-          sync: failingWrite,
-        }),
-      }));
-    }
-    vi.doMock("../util/paths.js", () => ({
-      files: { chatSettings: "/fake/chat-settings.json" },
-      dirs: { root: "/fake/.talon" },
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
+      }),
+      upsertMany: vi.fn(() => 0),
+      all: vi.fn(() => []),
+      remove: vi.fn(),
+      checkpoint: vi.fn(),
     }));
 
     const { setChatModel } = await import("../storage/chat-settings.js");
@@ -202,7 +173,7 @@ describe("sessions — save failure logs error", () => {
     vi.resetModules();
   });
 
-  it("calls logError and recordError when writeFileAtomic throws", async () => {
+  it("calls logError and recordError when the SQLite write throws", async () => {
     const logErrorMock = vi.fn();
     const recordErrorMock = vi.fn();
 
@@ -214,37 +185,23 @@ describe("sessions — save failure logs error", () => {
     vi.doMock("../util/watchdog.js", () => ({
       recordError: recordErrorMock,
     }));
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => true),
-      readFileSync: vi.fn(() => "{}"),
-      mkdirSync: vi.fn(),
-      renameSync: vi.fn(),
-      unlinkSync: vi.fn(),
-    }));
-    {
-      const failingWrite = vi.fn((..._args: unknown[]) => {
+    vi.doMock("../storage/repositories/sessions-repo.js", () => ({
+      upsert: vi.fn(() => {
         throw new Error("ENOSPC: no space left");
-      });
-      vi.doMock("write-file-atomic", () => ({
-        default: Object.assign((...args: unknown[]) => failingWrite(...args), {
-          sync: failingWrite,
-        }),
-      }));
-    }
-    vi.doMock("../util/paths.js", () => ({
-      files: { sessions: "/fake/sessions.json" },
-      dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
+      }),
+      upsertMany: vi.fn(() => 0),
+      all: vi.fn(() => []),
+      remove: vi.fn(),
+      checkpoint: vi.fn(),
     }));
 
     const { getSession, flushSessions } =
       await import("../storage/sessions.js");
 
-    // getSession creates a new session (marks dirty) then flushSessions forces save
+    // getSession creates a new session and commits the row, which throws;
+    // flushSessions (checkpoint) must stay best-effort and not throw.
     getSession("chat-save-fail");
-    flushSessions();
+    expect(() => flushSessions()).not.toThrow();
 
     expect(logErrorMock).toHaveBeenCalledWith(
       "sessions",
@@ -299,14 +256,6 @@ describe("sessions — migration paths for usage fields", () => {
       renameSync: vi.fn(),
       unlinkSync: vi.fn(),
     }));
-    {
-      const noopWrite = vi.fn();
-      vi.doMock("write-file-atomic", () => ({
-        default: Object.assign((...args: unknown[]) => noopWrite(...args), {
-          sync: noopWrite,
-        }),
-      }));
-    }
     vi.doMock("../util/paths.js", () => ({
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
@@ -356,14 +305,6 @@ describe("sessions — migration paths for usage fields", () => {
       renameSync: vi.fn(),
       unlinkSync: vi.fn(),
     }));
-    {
-      const noopWrite = vi.fn();
-      vi.doMock("write-file-atomic", () => ({
-        default: Object.assign((...args: unknown[]) => noopWrite(...args), {
-          sync: noopWrite,
-        }),
-      }));
-    }
     vi.doMock("../util/paths.js", () => ({
       files: { sessions: "/fake/sessions.json" },
       dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },

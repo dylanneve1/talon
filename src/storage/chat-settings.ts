@@ -1,22 +1,27 @@
 /**
  * Per-chat runtime settings. Overrides global config on a per-chat basis.
  *
- * Persisted via the unified `JsonStore<T>` envelope at
- * `~/.talon/data/chat-settings.json`. A migrate hook accepts the
- * pre-envelope bare-object shape so existing on-disk state loads
- * unchanged. The two intra-data migrations — legacy
- * `maxThinkingTokens` → `effort` and single-slot `model` →
- * `modelByBackend` — still run in `loadChatSettings` /
+ * Backed by SQLite as one JSON document per chat (see
+ * repositories/chat-settings-repo.ts for the statements; this module
+ * holds the domain API — no SQL here) with an in-memory write-through
+ * cache: reads serve the cached objects, every setter commits the
+ * chat's row immediately. Compared to the JsonStore this replaces,
+ * there is no dirty flag and no 10s autosave timer — SQLite commits
+ * per write.
+ *
+ * The legacy ~/.talon/data/chat-settings.json (JsonStore envelope or
+ * bare pre-envelope shape) is imported once on first load, then
+ * renamed to chat-settings.json.imported. The two intra-data
+ * migrations — legacy `maxThinkingTokens` → `effort` and single-slot
+ * `model` → `modelByBackend` — still run in `loadChatSettings` /
  * `migrateLegacyModelField` and remain idempotent.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync, renameSync } from "node:fs";
 import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
-import { registerCleanup } from "../util/cleanup-registry.js";
-import { JsonStore } from "../core/agent-runtime/store.js";
+import * as repo from "./repositories/chat-settings-repo.js";
 import type { ReasoningEffortLevel } from "../core/types.js";
 
 export type EffortLevel = ReasoningEffortLevel;
@@ -75,39 +80,32 @@ export type ChatSettings = {
   freeOnly?: boolean;
 };
 
-type ChatSettingsStore = Record<string, ChatSettings>;
+// In-memory cache over the chat_settings table. Reads serve live
+// references from here; writes go through persist() so each mutation
+// commits its chat's row.
+const cache = new Map<string, ChatSettings>();
 
-const STORE_FILE = files.chatSettings;
-const SCHEMA_VERSION = 1 as const;
+// ── Persistence lifecycle ───────────────────────────────────────────────────
 
-const store = new JsonStore<ChatSettingsStore>({
-  path: STORE_FILE,
-  defaultValue: {},
-  schemaVersion: SCHEMA_VERSION,
-  migrate: (raw, fromVersion) => {
-    if (fromVersion !== 0) return null;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      return { value: {}, schemaVersion: SCHEMA_VERSION };
-    }
-    return {
-      value: raw as ChatSettingsStore,
-      schemaVersion: SCHEMA_VERSION,
-    };
-  },
-});
-
+/**
+ * Run the one-time import of the legacy JSON store, prime the cache
+ * from SQLite, then apply the idempotent `maxThinkingTokens` → `effort`
+ * migration. Called once at boot.
+ */
 export function loadChatSettings(): void {
-  store.reset();
+  cache.clear();
   try {
-    store.loadSync();
+    importLegacyJson();
+    for (const { chatId, settings } of repo.all()) {
+      cache.set(chatId, settings);
+    }
   } catch (err) {
     logError("settings", "Failed to load chat settings", err);
   }
 
   // Migrate legacy maxThinkingTokens → effort.
   let migrated = 0;
-  const data = store.get();
-  for (const [chatId, settings] of Object.entries(data)) {
+  for (const [chatId, settings] of cache) {
     const raw = settings as Record<string, unknown>;
     if ("maxThinkingTokens" in raw && !settings.effort) {
       const tokens = Number(raw.maxThinkingTokens);
@@ -120,6 +118,7 @@ export function loadChatSettings(): void {
       settings.effort = effort;
       delete raw.maxThinkingTokens;
       migrated++;
+      persist(chatId);
       log(
         "settings",
         `Migrated chat ${chatId}: maxThinkingTokens=${tokens} to effort=${effort}`,
@@ -128,11 +127,10 @@ export function loadChatSettings(): void {
       // Has effort already, just clean up the old field
       delete raw.maxThinkingTokens;
       migrated++;
+      persist(chatId);
     }
   }
   if (migrated > 0) {
-    store.update(() => undefined);
-    save();
     log(
       "settings",
       `Migrated ${migrated} chat(s) from maxThinkingTokens to effort`,
@@ -143,6 +141,41 @@ export function loadChatSettings(): void {
   // at load time (backend pool initialises later). Instead `setChatModel`
   // mirrors writes into `modelByBackend` and the active-model resolver
   // reads both, preferring the per-backend slot.
+}
+
+/**
+ * Legacy JsonStore envelope ({schemaVersion, savedAt, data}) or the
+ * even older bare Record<chatId, ChatSettings> shape. Settings objects
+ * are imported verbatim — the intra-data migrations above run against
+ * the cache afterwards.
+ */
+function importLegacyJson(): void {
+  const legacyPath = files.chatSettings;
+  if (!existsSync(legacyPath)) return;
+  try {
+    const raw = JSON.parse(readFileSync(legacyPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    const data = (
+      raw && typeof raw === "object" && "data" in raw ? raw.data : raw
+    ) as Record<string, ChatSettings>;
+
+    const entries: Array<{ chatId: string; settings: ChatSettings }> = [];
+    for (const [chatId, settings] of Object.entries(data ?? {})) {
+      if (!settings || typeof settings !== "object" || Array.isArray(settings))
+        continue;
+      entries.push({ chatId, settings });
+    }
+    const imported = repo.upsertMany(entries);
+    renameSync(legacyPath, `${legacyPath}.imported`);
+    log(
+      "settings",
+      `Imported ${imported} chat setting(s) from legacy chat-settings.json into SQLite`,
+    );
+  } catch (err) {
+    logError("settings", "Legacy chat-settings import failed", err);
+  }
 }
 
 /**
@@ -163,8 +196,7 @@ export function migrateLegacyModelField(
   isRecognisedBackend: (id: string) => boolean,
 ): void {
   let migrated = 0;
-  const data = store.get();
-  for (const [chatId, settings] of Object.entries(data)) {
+  for (const [chatId, settings] of cache) {
     if (typeof settings.model !== "string" || !settings.model) continue;
     const effectiveBackend =
       settings.backend && isRecognisedBackend(settings.backend)
@@ -179,14 +211,13 @@ export function migrateLegacyModelField(
     }
     delete settings.model;
     migrated++;
+    persist(chatId);
     log(
       "settings",
       `Migrated chat ${chatId}: legacy model → modelByBackend[${effectiveBackend}]`,
     );
   }
   if (migrated > 0) {
-    store.update(() => undefined);
-    save();
     log(
       "settings",
       `Migrated ${migrated} chat(s) from legacy model → modelByBackend`,
@@ -194,12 +225,12 @@ export function migrateLegacyModelField(
   }
 }
 
-function save(): void {
-  if (!store.isDirty()) return;
+/** Commit one chat's row (or its deletion, after cleanupEmpty). */
+function persist(chatId: string): void {
   try {
-    const dir = dirname(STORE_FILE);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    store.saveSync();
+    const entry = cache.get(chatId);
+    if (entry) repo.upsert(chatId, entry);
+    else repo.remove(chatId);
   } catch (err) {
     logError("settings", "Failed to persist chat settings", err);
     recordError(
@@ -208,15 +239,19 @@ function save(): void {
   }
 }
 
-const autoSaveTimer = setInterval(save, 10_000);
-registerCleanup(save);
-
-/** Flush settings to disk and stop the auto-save timer. */
+/**
+ * SQLite commits on every write — there is no dirty buffer to flush.
+ * Kept for the shutdown path: compacts the WAL into the main file.
+ */
 export function flushChatSettings(): void {
-  clearInterval(autoSaveTimer);
-  store.update(() => undefined);
-  save();
+  try {
+    repo.checkpoint();
+  } catch {
+    /* shutting down — best effort */
+  }
 }
+
+// ── Reads ───────────────────────────────────────────────────────────────────
 
 /**
  * Snapshot of every persisted chat's settings, keyed by chat id.
@@ -225,15 +260,17 @@ export function flushChatSettings(): void {
  * setters instead).
  */
 export function getAllChatSettings(): Record<string, ChatSettings> {
-  return { ...store.get() };
+  return Object.fromEntries(cache);
 }
 
 export function getChatSettings(chatId: string): ChatSettings {
-  return store.get()[chatId] ?? {};
+  return cache.get(chatId) ?? {};
 }
 
-function cleanupEmpty(data: ChatSettingsStore, chatId: string): void {
-  const s = data[chatId];
+// ── Setters ─────────────────────────────────────────────────────────────────
+
+function cleanupEmpty(chatId: string): void {
+  const s = cache.get(chatId);
   if (!s) return;
   const modelByBackendEmpty =
     !s.modelByBackend || Object.keys(s.modelByBackend).length === 0;
@@ -247,30 +284,34 @@ function cleanupEmpty(data: ChatSettingsStore, chatId: string): void {
     s.pulseLastCheckMsgId === undefined &&
     s.freeOnly === undefined
   ) {
-    delete data[chatId];
+    cache.delete(chatId);
   }
 }
 
-/** Get-or-create a settings entry inside a JsonStore update closure. */
-function ensureEntry(data: ChatSettingsStore, chatId: string): ChatSettings {
-  if (!data[chatId]) data[chatId] = {};
-  return data[chatId];
+/** Get-or-create a settings entry in the cache. */
+function ensureEntry(chatId: string): ChatSettings {
+  let entry = cache.get(chatId);
+  if (!entry) {
+    entry = {};
+    cache.set(chatId, entry);
+  }
+  return entry;
 }
 
 export function setPulseLastCheckMsgId(
   chatId: string,
   msgId: number | undefined,
 ): void {
-  store.update((data) => {
-    const entry = ensureEntry(data, chatId);
-    if (msgId !== undefined) {
-      entry.pulseLastCheckMsgId = msgId;
-    } else {
-      delete entry.pulseLastCheckMsgId;
-      cleanupEmpty(data, chatId);
-    }
-  });
-  // Don't force-save on every pulse check — let the auto-save interval handle it
+  const entry = ensureEntry(chatId);
+  if (msgId !== undefined) {
+    entry.pulseLastCheckMsgId = msgId;
+  } else {
+    delete entry.pulseLastCheckMsgId;
+    cleanupEmpty(chatId);
+  }
+  // Per-pulse-check row commit — the JSON-era "defer to the autosave
+  // timer" dance is gone; a single-row SQLite write is cheap.
+  persist(chatId);
 }
 
 /**
@@ -284,20 +325,18 @@ export function setChatModelForBackend(
   backendId: string,
   model: string | undefined,
 ): void {
-  store.update((data) => {
-    const entry = ensureEntry(data, chatId);
-    if (model) {
-      if (!entry.modelByBackend) entry.modelByBackend = {};
-      entry.modelByBackend[backendId] = model;
-    } else if (entry.modelByBackend) {
-      delete entry.modelByBackend[backendId];
-      if (Object.keys(entry.modelByBackend).length === 0) {
-        delete entry.modelByBackend;
-      }
+  const entry = ensureEntry(chatId);
+  if (model) {
+    if (!entry.modelByBackend) entry.modelByBackend = {};
+    entry.modelByBackend[backendId] = model;
+  } else if (entry.modelByBackend) {
+    delete entry.modelByBackend[backendId];
+    if (Object.keys(entry.modelByBackend).length === 0) {
+      delete entry.modelByBackend;
     }
-    cleanupEmpty(data, chatId);
-  });
-  save();
+  }
+  cleanupEmpty(chatId);
+  persist(chatId);
 }
 
 /**
@@ -310,7 +349,7 @@ export function getChatModelForBackend(
   chatId: string,
   backendId: string,
 ): string | undefined {
-  const settings = store.get()[chatId];
+  const settings = cache.get(chatId);
   if (!settings) return undefined;
   const fromMap = settings.modelByBackend?.[backendId];
   if (fromMap) return fromMap;
@@ -331,15 +370,12 @@ export function getChatModelForBackend(
  * and admin tooling. Equivalent to deleting `modelByBackend` whole.
  */
 export function clearAllChatModels(chatId: string): void {
-  if (!store.get()[chatId]) return;
-  store.update((data) => {
-    const entry = data[chatId];
-    if (!entry) return;
-    delete entry.modelByBackend;
-    delete entry.model;
-    cleanupEmpty(data, chatId);
-  });
-  save();
+  const entry = cache.get(chatId);
+  if (!entry) return;
+  delete entry.modelByBackend;
+  delete entry.model;
+  cleanupEmpty(chatId);
+  persist(chatId);
 }
 
 /**
@@ -360,17 +396,15 @@ export function setChatModel(chatId: string, model: string | undefined): void {
   if (model === undefined) {
     // Legacy "reset everything" semantic. Matches what existing
     // callers / tests expect when they call setChatModel(cid, undefined).
-    store.update((data) => {
-      const entry = ensureEntry(data, chatId);
-      delete entry.modelByBackend;
-      delete entry.model;
-      cleanupEmpty(data, chatId);
-    });
-    save();
+    const entry = ensureEntry(chatId);
+    delete entry.modelByBackend;
+    delete entry.model;
+    cleanupEmpty(chatId);
+    persist(chatId);
     return;
   }
 
-  const existing = store.get()[chatId];
+  const existing = cache.get(chatId);
   const targetBackend = existing?.backend;
   if (targetBackend) {
     setChatModelForBackend(chatId, targetBackend, model);
@@ -378,11 +412,9 @@ export function setChatModel(chatId: string, model: string | undefined): void {
   }
   // No backend binding — write to the legacy slot. The next backend
   // switch / migration will pick it up into modelByBackend.
-  store.update((data) => {
-    const entry = ensureEntry(data, chatId);
-    entry.model = model;
-  });
-  save();
+  const entry = ensureEntry(chatId);
+  entry.model = model;
+  persist(chatId);
 }
 
 /**
@@ -395,82 +427,72 @@ export function setChatBackend(
   chatId: string,
   backend: string | undefined,
 ): void {
-  store.update((data) => {
-    const entry = ensureEntry(data, chatId);
-    if (backend) {
-      entry.backend = backend;
-    } else {
-      delete entry.backend;
-      cleanupEmpty(data, chatId);
-    }
-  });
-  save();
+  const entry = ensureEntry(chatId);
+  if (backend) {
+    entry.backend = backend;
+  } else {
+    delete entry.backend;
+    cleanupEmpty(chatId);
+  }
+  persist(chatId);
 }
 
 export function setChatEffort(
   chatId: string,
   effort: EffortLevel | undefined,
 ): void {
-  store.update((data) => {
-    const entry = ensureEntry(data, chatId);
-    if (effort) {
-      entry.effort = effort;
-    } else {
-      delete entry.effort;
-      cleanupEmpty(data, chatId);
-    }
-  });
-  save();
+  const entry = ensureEntry(chatId);
+  if (effort) {
+    entry.effort = effort;
+  } else {
+    delete entry.effort;
+    cleanupEmpty(chatId);
+  }
+  persist(chatId);
 }
 
 export function setChatFreeOnly(chatId: string, on: boolean | undefined): void {
-  store.update((data) => {
-    const entry = ensureEntry(data, chatId);
-    if (on) {
-      entry.freeOnly = true;
-    } else {
-      delete entry.freeOnly;
-      cleanupEmpty(data, chatId);
-    }
-  });
-  save();
+  const entry = ensureEntry(chatId);
+  if (on) {
+    entry.freeOnly = true;
+  } else {
+    delete entry.freeOnly;
+    cleanupEmpty(chatId);
+  }
+  persist(chatId);
 }
 
 export function setChatPulse(
   chatId: string,
   enabled: boolean | undefined,
 ): void {
-  store.update((data) => {
-    const entry = ensureEntry(data, chatId);
-    if (enabled !== undefined) {
-      entry.pulse = enabled;
-    } else {
-      delete entry.pulse;
-      cleanupEmpty(data, chatId);
-    }
-  });
-  save();
+  const entry = ensureEntry(chatId);
+  if (enabled !== undefined) {
+    entry.pulse = enabled;
+  } else {
+    delete entry.pulse;
+    cleanupEmpty(chatId);
+  }
+  persist(chatId);
 }
 
 export function setChatPulseInterval(
   chatId: string,
   intervalMs: number | undefined,
 ): void {
-  store.update((data) => {
-    const entry = ensureEntry(data, chatId);
-    if (intervalMs !== undefined) {
-      entry.pulseIntervalMs = intervalMs;
-    } else {
-      delete entry.pulseIntervalMs;
-      cleanupEmpty(data, chatId);
-    }
-  });
-  save();
+  const entry = ensureEntry(chatId);
+  if (intervalMs !== undefined) {
+    entry.pulseIntervalMs = intervalMs;
+  } else {
+    delete entry.pulseIntervalMs;
+    cleanupEmpty(chatId);
+  }
+  persist(chatId);
 }
 
 /** Get all chat IDs that have pulse enabled in settings. */
 export function getRegisteredPulseChats(): string[] {
-  return Object.entries(store.get())
+  return [...cache.entries()]
     .filter(([, s]) => s.pulse === true)
     .map(([id]) => id);
 }

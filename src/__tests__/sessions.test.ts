@@ -7,7 +7,10 @@ vi.mock("../util/log.js", () => ({
   logWarn: vi.fn(),
 }));
 
-// Mock fs to avoid real filesystem side effects
+// Mock fs so the legacy-import path can be driven without touching the
+// real filesystem. The SQLite side is real — it writes to the per-worker
+// TALON_DB_PATH set by setup/test-db.ts (node:sqlite does not go through
+// node:fs, so this mock doesn't affect it).
 vi.mock("node:fs", () => ({
   existsSync: vi.fn(() => false),
   readFileSync: vi.fn(() => "{}"),
@@ -17,14 +20,7 @@ vi.mock("node:fs", () => ({
   unlinkSync: vi.fn(),
 }));
 
-const writeFileAtomicSync = vi.fn();
-vi.mock("write-file-atomic", () => ({
-  default: Object.assign((...args: unknown[]) => writeFileAtomicSync(...args), {
-    sync: writeFileAtomicSync,
-  }),
-}));
-
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 // We need to import these functions after mocks are set up
 const {
@@ -528,10 +524,12 @@ describe("sessions", () => {
   });
 
   describe("flushSessions", () => {
-    it("triggers an atomic write", () => {
-      writeFileAtomicSync.mockClear();
-      flushSessions();
-      expect(writeFileAtomicSync).toHaveBeenCalled();
+    it("checkpoints without any JSON writes", () => {
+      // SQLite commits per write — flush is a best-effort WAL
+      // checkpoint, never a JSON file rewrite.
+      vi.mocked(writeFileSync).mockClear();
+      expect(() => flushSessions()).not.toThrow();
+      expect(vi.mocked(writeFileSync)).not.toHaveBeenCalled();
     });
   });
 
@@ -709,48 +707,24 @@ describe("sessions — migration of legacy field formats", () => {
   });
 });
 
-describe("sessions — loadSessions backup recovery", () => {
-  it("loads from backup when primary is corrupt", () => {
-    vi.mocked(existsSync)
-      .mockReturnValueOnce(true) // primary exists
-      .mockReturnValueOnce(true); // backup exists
-    vi.mocked(readFileSync)
-      .mockReturnValueOnce("{not valid json}") // primary corrupt
-      .mockReturnValueOnce(
-        JSON.stringify({
-          "backup-chat": {
-            sessionId: "bak-sid",
-            turns: 7,
-            lastActive: 1,
-            createdAt: 1,
-            usage: {
-              totalInputTokens: 0,
-              totalOutputTokens: 0,
-              totalCacheRead: 0,
-              totalCacheWrite: 0,
-              lastPromptTokens: 0,
-              estimatedCostUsd: 0,
-              totalResponseMs: 0,
-              lastResponseMs: 0,
-              fastestResponseMs: Infinity,
-            },
-          },
-        }),
-      );
-    loadSessions();
-    const s = getSession("backup-chat");
-    expect(s.turns).toBe(7);
+describe("sessions — loadSessions with a corrupt legacy file", () => {
+  it("does not throw and the store stays usable", () => {
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+    vi.mocked(readFileSync).mockReturnValueOnce("BAD LEGACY FILE");
+    expect(() => loadSessions()).not.toThrow();
+    // The SQLite store still works after the failed import.
+    const s = getSession("after-corrupt-legacy");
+    expect(s.turns).toBe(0);
   });
 
-  it("starts fresh when both primary and backup are corrupt", () => {
-    vi.mocked(existsSync)
-      .mockReturnValueOnce(true) // primary exists
-      .mockReturnValueOnce(true); // backup exists
-    vi.mocked(readFileSync)
-      .mockReturnValueOnce("BAD PRIMARY")
-      .mockReturnValueOnce("BAD BACKUP");
-    // Should not throw
-    expect(() => loadSessions()).not.toThrow();
+  it("survives state already persisted to SQLite across reloads", () => {
+    setSessionId("reload-chat", "sid-reload");
+    incrementTurns("reload-chat");
+    // Reload from SQLite — no legacy file involved (existsSync false).
+    loadSessions();
+    const s = getSession("reload-chat");
+    expect(s.sessionId).toBe("sid-reload");
+    expect(s.turns).toBe(1);
   });
 });
 
@@ -794,17 +768,6 @@ describe("sessions — edge cases for branch coverage", () => {
     expect(() => resetSession("never-created-session-xyz")).not.toThrow();
   });
 
-  it("saveSessions logs error when atomic write throws", async () => {
-    const { logError } = await import("../util/log.js");
-    writeFileAtomicSync.mockImplementationOnce(() => {
-      throw new Error("disk full");
-    });
-    // resetSession sets dirty=true then calls saveSessions
-    getSession("throw-on-save-xyz");
-    expect(() => resetSession("throw-on-save-xyz")).not.toThrow();
-    expect(logError).toHaveBeenCalled();
-  });
-
   it("fastestResponseMs ?? 0 defaults to Infinity on first duration record", () => {
     const chatId = "fastest-first-call-xyz";
     // Fresh session has fastestResponseMs=Infinity (from emptyUsage)
@@ -829,59 +792,9 @@ describe("sessions — edge cases for branch coverage", () => {
     });
     expect(session.usage.fastestResponseMs).toBe(500);
   });
-
-  it("saveSessions logs error with non-Error object thrown by writeFileAtomic", async () => {
-    const { logError } = await import("../util/log.js");
-    // Throw a plain string instead of an Error to cover the `err instanceof Error ? ... : err` false branch
-    writeFileAtomicSync.mockImplementationOnce(() => {
-      throw "plain string error";
-    }); // eslint-disable-line @typescript-eslint/no-throw-literal
-    getSession("throw-string-on-save-xyz");
-    expect(() => resetSession("throw-string-on-save-xyz")).not.toThrow();
-    expect(logError).toHaveBeenCalled();
-  });
 });
 
-// ── saveSessions dirty=false early return ─────────────────────────────────
-
-describe("sessions — saveSessions dirty=false early return (line 98 TRUE branch)", () => {
-  it("does not write when auto-save fires with dirty=false", async () => {
-    vi.resetModules();
-    vi.useFakeTimers();
-    const wfaMock = vi.fn();
-    vi.doMock("../util/log.js", () => ({
-      log: vi.fn(),
-      logError: vi.fn(),
-      logWarn: vi.fn(),
-    }));
-    vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false),
-      mkdirSync: vi.fn(),
-      readFileSync: vi.fn(() => "{}"),
-      renameSync: vi.fn(),
-      unlinkSync: vi.fn(),
-    }));
-    vi.doMock("write-file-atomic", () => ({
-      default: Object.assign((...args: unknown[]) => wfaMock(...args), {
-        sync: wfaMock,
-      }),
-    }));
-    vi.doMock("../util/paths.js", () => ({
-      files: { sessions: "/fake/sessions.json" },
-      dirs: { root: "/fake/.talon", data: "/fake/.talon/data" },
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
-    }));
-
-    // Fresh import: dirty=false (nothing modified yet)
-    await import("../storage/sessions.js");
-
-    // Advance 11 seconds → auto-save timer fires → saveSessions() with dirty=false → early return
-    await vi.advanceTimersByTimeAsync(11_000);
-    expect(wfaMock).not.toHaveBeenCalled();
-
-    vi.useRealTimers();
-  });
-});
+// Persist-failure error logging (logError + watchdog recordError when the
+// SQLite write throws) is covered in storage-save-errors.test.ts, which
+// injects a failing repository. Durability across close/reopen cycles and
+// the legacy-file rename live in sessions-persistence.test.ts.

@@ -1,10 +1,11 @@
 /**
- * Media index tests — JsonStore-backed persistence.
+ * Media index tests — SQLite-backed persistence.
  *
- * Uses a real temp directory rather than mocking `node:fs`. The
- * store path resolves against `process.env.HOME`, which we override
- * per-test for isolation. Matches the pattern used by
- * `codex-oauth-incompat.test.ts` after Phase 6.x #1.
+ * Uses real temp directories rather than mocking `node:fs`: the legacy
+ * media-index.json path resolves against `process.env.HOME` (overridden
+ * per test) and the SQLite database lives in the same temp dir via a
+ * per-test TALON_DB_PATH, so every test gets a fresh database and
+ * close/reopen durability is observable.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +13,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -28,7 +28,9 @@ vi.mock("../util/log.js", () => ({
 
 let originalHome: string | undefined;
 let originalUserProfile: string | undefined;
+const envBackup = process.env.TALON_DB_PATH;
 let tempHome: string;
+let closeDb: (() => void) | null = null;
 
 function storePath(): string {
   return resolve(tempHome, ".talon", "data", "media-index.json");
@@ -37,15 +39,17 @@ function storePath(): string {
 function seedStore(entries: unknown): void {
   const p = storePath();
   mkdirSync(dirname(p), { recursive: true });
-  // Mirror the legacy bare-array on-disk shape so the migrate hook
+  // Mirror the legacy bare-array on-disk shape so the one-time import
   // exercises pre-envelope behaviour.
   writeFileSync(p, JSON.stringify(entries));
 }
 
 async function freshImport() {
-  // Re-import storage modules per test so the module-scoped
-  // JsonStore picks up the temp HOME.
+  // Re-import storage modules per test so the module-scoped database
+  // handle picks up the per-test TALON_DB_PATH.
   vi.resetModules();
+  const db = await import("../storage/db.js");
+  closeDb = db.closeDatabase;
   return await import("../storage/media-index.js");
 }
 
@@ -55,9 +59,14 @@ beforeEach(() => {
   tempHome = mkdtempSync(join(tmpdir(), "talon-media-"));
   process.env.HOME = tempHome;
   process.env.USERPROFILE = tempHome;
+  process.env.TALON_DB_PATH = join(tempHome, "talon.db");
 });
 
 afterEach(() => {
+  closeDb?.();
+  closeDb = null;
+  if (envBackup === undefined) delete process.env.TALON_DB_PATH;
+  else process.env.TALON_DB_PATH = envBackup;
   if (originalHome !== undefined) process.env.HOME = originalHome;
   else delete process.env.HOME;
   if (originalUserProfile !== undefined) {
@@ -536,7 +545,7 @@ describe("media-index", () => {
   });
 
   describe("flushMediaIndex", () => {
-    it("writes entries to disk in the envelope format", async () => {
+    it("entries survive flush + close/reopen, with no JSON file written", async () => {
       const { addMedia, flushMediaIndex, loadMediaIndex } = await freshImport();
       loadMediaIndex();
       addMedia({
@@ -547,29 +556,49 @@ describe("media-index", () => {
         filePath: "/a.jpg",
         timestamp: Date.now(),
       });
+      // SQLite commits per write — flush is a best-effort WAL
+      // checkpoint, never a JSON rewrite.
       flushMediaIndex();
-      const persisted = JSON.parse(readFileSync(storePath(), "utf-8"));
-      expect(persisted.schemaVersion).toBe(1);
-      expect(Array.isArray(persisted.data)).toBe(true);
-      expect(persisted.data.length).toBeGreaterThan(0);
-      expect(persisted.data[0].chatId).toBe("flush-1");
+      expect(existsSync(storePath())).toBe(false);
+
+      // Close the database and re-import against the same path: the
+      // entry must come back from disk, not from module state.
+      closeDb?.();
+      const reopened = await freshImport();
+      reopened.loadMediaIndex();
+      const media = reopened.getRecentMedia("flush-1");
+      expect(media).toHaveLength(1);
+      expect(media[0].filePath).toBe("/a.jpg");
     });
 
-    it("creates data directory if it does not exist", async () => {
-      const { addMedia, flushMediaIndex, loadMediaIndex } = await freshImport();
+    it("does not throw when nothing was ever written", async () => {
+      const { flushMediaIndex, loadMediaIndex } = await freshImport();
       loadMediaIndex();
-      addMedia({
-        chatId: "flush-2",
-        msgId: 1,
-        senderName: "A",
-        type: "photo",
-        filePath: "/a.jpg",
-        timestamp: Date.now(),
-      });
-      // Remove the dir so flush has to recreate it.
-      rmSync(dirname(storePath()), { recursive: true, force: true });
-      flushMediaIndex();
-      expect(existsSync(storePath())).toBe(true);
+      expect(() => flushMediaIndex()).not.toThrow();
+    });
+  });
+
+  describe("legacy import lifecycle", () => {
+    it("renames the legacy file to .imported and does not re-import", async () => {
+      const now = Date.now();
+      seedStore([
+        {
+          id: "legacy-once:1",
+          chatId: "legacy-once",
+          msgId: 1,
+          senderName: "Alice",
+          type: "photo",
+          filePath: "/a.jpg",
+          timestamp: now,
+        },
+      ]);
+      const { getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
+      expect(existsSync(storePath())).toBe(false);
+      expect(existsSync(`${storePath()}.imported`)).toBe(true);
+
+      loadMediaIndex();
+      expect(getRecentMedia("legacy-once")).toHaveLength(1);
     });
   });
 });

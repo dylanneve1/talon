@@ -1,22 +1,30 @@
-import { existsSync, mkdirSync } from "node:fs";
-import { log, logError } from "../util/log.js";
-import { recordError } from "../util/watchdog.js";
-import { dirs, files } from "../util/paths.js";
-import { registerCleanup } from "../util/cleanup-registry.js";
-import { JsonStore } from "../core/agent-runtime/store.js";
-
 /**
- * Session manager — maps Telegram chat IDs to Claude SDK session IDs.
- * The SDK handles actual conversation storage (JSONL); we just track
- * the mapping so conversations persist across messages.
+ * Session manager — maps chat IDs to backend session IDs plus per-chat
+ * usage accounting. The backend handles actual conversation storage
+ * (JSONL); we track the mapping and the counters so conversations and
+ * stats persist across messages.
  *
- * Persisted via the unified `JsonStore<T>` envelope at
- * `~/.talon/data/sessions.json`. A migrate hook accepts the
- * pre-envelope bare-object shape so existing on-disk state loads
- * unchanged.
+ * Backed by SQLite (see repositories/sessions-repo.ts for the
+ * statements; this module holds the domain API — no SQL here) with an
+ * in-memory write-through cache: getSession() returns a live
+ * SessionState reference (the historical contract — in-module mutators
+ * and tests mutate it in place), and every mutator commits the chat's
+ * whole row immediately. Compared to the JsonStore this replaces,
+ * there is no dirty flag and no 10s autosave timer — SQLite commits
+ * per write.
+ *
+ * The legacy ~/.talon/data/sessions.json (JsonStore envelope or bare
+ * pre-envelope shape) is imported once on first load, then renamed to
+ * sessions.json.imported.
  */
 
-type SessionUsage = {
+import { existsSync, readFileSync, renameSync } from "node:fs";
+import { log, logError } from "../util/log.js";
+import { recordError } from "../util/watchdog.js";
+import { files } from "../util/paths.js";
+import * as repo from "./repositories/sessions-repo.js";
+
+export type SessionUsage = {
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheRead: number;
@@ -39,8 +47,8 @@ type SessionUsage = {
   fastestResponseMs: number;
 };
 
-type SessionState = {
-  /** Claude SDK server-side session ID. */
+export type SessionState = {
+  /** Backend server-side session ID. */
   sessionId: string | undefined;
   /** Turn count. */
   turns: number;
@@ -58,45 +66,67 @@ type SessionState = {
   lastModel?: string;
 };
 
-type SessionStore = Record<string, SessionState>;
+// In-memory cache over the sessions table. Reads serve live references
+// from here; writes go through persist() so each mutation commits.
+const cache = new Map<string, SessionState>();
 
-const STORE_FILE = files.sessions;
-const SCHEMA_VERSION = 1 as const;
+// ── Persistence lifecycle ───────────────────────────────────────────────────
 
-const store = new JsonStore<SessionStore>({
-  path: STORE_FILE,
-  defaultValue: {},
-  schemaVersion: SCHEMA_VERSION,
-  migrate: (raw, fromVersion) => {
-    if (fromVersion !== 0) return null;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      return { value: {}, schemaVersion: SCHEMA_VERSION };
-    }
-    return {
-      value: raw as SessionStore,
-      schemaVersion: SCHEMA_VERSION,
-    };
-  },
-});
-
-function ensureDir(): void {
-  if (!existsSync(dirs.data)) mkdirSync(dirs.data, { recursive: true });
-}
-
+/**
+ * Run the one-time import of the legacy JSON store, then prime the
+ * cache from SQLite. Idempotent; called once at boot.
+ */
 export function loadSessions(): void {
-  store.reset();
+  cache.clear();
   try {
-    store.loadSync();
+    importLegacyJson();
+    for (const { chatId, session } of repo.all()) {
+      cache.set(chatId, session);
+    }
   } catch (err) {
     logError("sessions", "Session load failed", err);
   }
 }
 
-function saveSessions(): void {
-  if (!store.isDirty()) return;
+/**
+ * Legacy JsonStore envelope ({schemaVersion, savedAt, data}) or the
+ * even older bare Record<chatId, SessionState> shape. Partially-shaped
+ * legacy records are tolerated — normaliseSession() backfills missing
+ * fields on read, exactly as it did against the JSON store.
+ */
+function importLegacyJson(): void {
+  const legacyPath = files.sessions;
+  if (!existsSync(legacyPath)) return;
   try {
-    ensureDir();
-    store.saveSync();
+    const raw = JSON.parse(readFileSync(legacyPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    const data = (
+      raw && typeof raw === "object" && "data" in raw ? raw.data : raw
+    ) as Record<string, SessionState>;
+
+    const entries: Array<{ chatId: string; session: SessionState }> = [];
+    for (const [chatId, session] of Object.entries(data ?? {})) {
+      if (!session || typeof session !== "object" || Array.isArray(session))
+        continue;
+      entries.push({ chatId, session });
+    }
+    const imported = repo.upsertMany(entries);
+    renameSync(legacyPath, `${legacyPath}.imported`);
+    log(
+      "sessions",
+      `Imported ${imported} session(s) from legacy sessions.json into SQLite`,
+    );
+  } catch (err) {
+    logError("sessions", "Legacy sessions import failed", err);
+  }
+}
+
+/** Commit one chat's row; storage failure must never break a turn. */
+function persist(chatId: string, session: SessionState): void {
+  try {
+    repo.upsert(chatId, session);
   } catch (err) {
     logError("sessions", "Failed to persist sessions", err);
     recordError(
@@ -105,7 +135,19 @@ function saveSessions(): void {
   }
 }
 
-const autoSaveTimer = setInterval(saveSessions, 10_000);
+/**
+ * SQLite commits on every write — there is no dirty buffer to flush.
+ * Kept for the shutdown path: compacts the WAL into the main file.
+ */
+export function flushSessions(): void {
+  try {
+    repo.checkpoint();
+  } catch {
+    /* shutting down — best effort */
+  }
+}
+
+// ── Core operations ─────────────────────────────────────────────────────────
 
 const emptyUsage = (): SessionUsage => ({
   totalInputTokens: 0,
@@ -125,7 +167,7 @@ const emptyUsage = (): SessionUsage => ({
 /**
  * Normalise a session state object in-place. Migrates fields that
  * pre-date later schema additions (response timing, context fill,
- * etc.) without rewriting the on-disk record.
+ * etc.) without rewriting the persisted record.
  */
 function normaliseSession(session: SessionState): SessionState {
   if (!session.usage) session.usage = emptyUsage();
@@ -149,8 +191,7 @@ function normaliseSession(session: SessionState): SessionState {
 }
 
 export function getSession(chatId: string): SessionState {
-  const data = store.get();
-  let session = data[chatId];
+  let session = cache.get(chatId);
   if (!session) {
     const now = Date.now();
     session = {
@@ -160,9 +201,8 @@ export function getSession(chatId: string): SessionState {
       createdAt: now,
       usage: emptyUsage(),
     };
-    store.update((s) => {
-      s[chatId] = session;
-    });
+    cache.set(chatId, session);
+    persist(chatId, session);
   }
   return normaliseSession(session);
 }
@@ -170,14 +210,14 @@ export function getSession(chatId: string): SessionState {
 export function setSessionId(chatId: string, sessionId: string): void {
   const session = getSession(chatId);
   session.sessionId = sessionId;
-  store.update(() => undefined);
+  persist(chatId, session);
 }
 
 export function incrementTurns(chatId: string): void {
   const session = getSession(chatId);
   session.turns += 1;
   session.lastActive = Date.now();
-  store.update(() => undefined);
+  persist(chatId, session);
 }
 
 export function recordUsage(
@@ -227,33 +267,38 @@ export function recordUsage(
       session.usage.fastestResponseMs = turn.durationMs;
     }
   }
-  store.update(() => undefined);
+  persist(chatId, session);
 }
 
 export function setSessionName(chatId: string, name: string): void {
   const session = getSession(chatId);
   session.sessionName = name;
-  store.update(() => undefined);
+  persist(chatId, session);
 }
 
 export function setLastBotMessageId(chatId: string, messageId: number): void {
   const session = getSession(chatId);
   session.lastBotMessageId = messageId;
-  store.update(() => undefined);
+  persist(chatId, session);
 }
 
 export function getLastBotMessageId(chatId: string): number | undefined {
-  return store.get()[chatId]?.lastBotMessageId;
+  return cache.get(chatId)?.lastBotMessageId;
 }
 
 export function resetSession(chatId: string): void {
-  const session = store.get()[chatId];
+  const session = cache.get(chatId);
   const turns = session?.turns ?? 0;
   const name = session?.sessionName;
-  store.update((s) => {
-    delete s[chatId];
-  });
-  saveSessions();
+  cache.delete(chatId);
+  try {
+    repo.remove(chatId);
+  } catch (err) {
+    logError("sessions", "Failed to persist sessions", err);
+    recordError(
+      `Session save failed: ${err instanceof Error ? err.message : err}`,
+    );
+  }
   log(
     "sessions",
     `[${chatId}] Reset${name ? ` "${name}"` : ""} (${turns} turns)`,
@@ -271,7 +316,7 @@ export type SessionInfo = {
 };
 
 export function getSessionInfo(chatId: string): SessionInfo {
-  const session = store.get()[chatId];
+  const session = cache.get(chatId);
   return {
     sessionId: session?.sessionId,
     turns: session?.turns ?? 0,
@@ -284,12 +329,12 @@ export function getSessionInfo(chatId: string): SessionInfo {
 }
 
 export function getActiveSessionCount(): number {
-  return Object.keys(store.get()).length;
+  return cache.size;
 }
 
 /** Get all chat IDs with active sessions and their info. */
 export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
-  return Object.entries(store.get()).map(([chatId, session]) => ({
+  return [...cache.entries()].map(([chatId, session]) => ({
     chatId,
     info: {
       sessionId: session.sessionId,
@@ -301,13 +346,4 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
       lastModel: session.lastModel,
     },
   }));
-}
-
-registerCleanup(saveSessions);
-
-/** Force-save sessions to disk and stop the auto-save timer. */
-export function flushSessions(): void {
-  clearInterval(autoSaveTimer);
-  store.update(() => undefined);
-  saveSessions();
 }
