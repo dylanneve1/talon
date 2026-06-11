@@ -15,6 +15,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import type { ChildProcess } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -37,7 +38,7 @@ import { stopDaemon } from "../core/daemon/control.js";
 let workDir: string;
 let pidfile: string;
 const servers: Server[] = [];
-const children: Array<{ pid?: number; kill: (s: string) => boolean }> = [];
+const children: ChildProcess[] = [];
 const envBackup = process.env.TALON_HEALTH_PORT;
 
 /** A pid that is certainly not running (max pid on Linux is < 2^22). */
@@ -58,9 +59,7 @@ afterEach(async () => {
   }
   rmSync(workDir, { recursive: true, force: true });
   await Promise.all(
-    servers
-      .splice(0)
-      .map((s) => new Promise<void>((r) => s.close(() => r()))),
+    servers.splice(0).map((s) => new Promise<void>((r) => s.close(() => r()))),
   );
   if (envBackup === undefined) delete process.env.TALON_HEALTH_PORT;
   else process.env.TALON_HEALTH_PORT = envBackup;
@@ -224,9 +223,7 @@ describe("discovery", () => {
   });
 
   it("does not mistake a `talon chat` gateway for the daemon", async () => {
-    const port = await serveHealth(
-      daemonHealth(process.pid, { mode: "chat" }),
-    );
+    const port = await serveHealth(daemonHealth(process.pid, { mode: "chat" }));
     process.env.TALON_HEALTH_PORT = String(port);
 
     expect(await findRunningInstance(pidfile)).toBeNull();
