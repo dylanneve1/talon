@@ -1129,7 +1129,7 @@ describe("codex / handleMessage — tool call accounting", () => {
     expect(MOCK_RUN_STREAMED_CALLS[0].signal?.aborted).toBe(true);
   });
 
-  it("skips mcp_tool_call items with status `failed`", async () => {
+  it("counts mcp_tool_call items with status `failed` without mutating turn state", async () => {
     setupHandler();
     MOCK_EVENTS = [
       { type: "thread.started", thread_id: "thr_failed_status" },
@@ -1161,7 +1161,7 @@ describe("codex / handleMessage — tool call accounting", () => {
     ];
 
     const tools: string[] = [];
-    await handleMessage({
+    const result = await handleMessage({
       chatId: "test-chat",
       text: "react please",
       senderName: "Dylan",
@@ -1171,9 +1171,17 @@ describe("codex / handleMessage — tool call accounting", () => {
       },
     });
 
-    // Failed tool calls don't fire onToolUse — the model didn't actually
-    // execute them so we shouldn't count them against the turn.
-    expect(tools).toEqual([]);
+    // A failed call is still a call: it counts in the tool metrics and
+    // fires onToolUse (matching the Claude SDK backend, which counts
+    // every tool_use block regardless of outcome)…
+    expect(tools).toEqual(["react"]);
+    const metrics = getMetrics();
+    expect(metrics.counters["tool_calls.react"]).toBe(1);
+    expect(metrics.counters["backend.codex.tool_calls"]).toBe(1);
+
+    // …but it must NOT terminate the turn: a failed `react` delivered
+    // nothing, so the agent_message text still has to reach the user.
+    expect(result.text).toBe("tried but failed");
   });
 
   it("processes multiple tool calls in order in a single turn", async () => {
@@ -1473,29 +1481,32 @@ describe("codex / handleMessage — non-MCP items", () => {
       },
     });
 
-    // Only the agent_message contributes to the reply text.
+    // Only the agent_message contributes to the reply text. Native
+    // Codex tools surface under the fleet-wide vocabulary (Bash /
+    // Edit / WebSearch) so metrics line up with the Claude SDK
+    // backend; unknown item types keep their raw type name.
     expect(result.text).toBe("done");
     expect(tools).toEqual([
       {
-        name: "command_execution",
+        name: "Bash",
         input: { command: "ls", status: "completed", exit_code: 0 },
       },
       {
-        name: "file_change",
+        name: "Edit",
         input: {
           status: "completed",
           changes: [{ kind: "modify", path: "/tmp/x" }],
         },
       },
-      { name: "web_search", input: { query: "anthropic" } },
+      { name: "WebSearch", input: { query: "anthropic" } },
       { name: "image_generation", input: {} },
     ]);
 
     const metrics = getMetrics();
     expect(metrics.counters["backend.codex.tool_calls"]).toBe(4);
-    expect(metrics.counters["tool_calls.command_execution"]).toBe(1);
-    expect(metrics.counters["tool_calls.file_change"]).toBe(1);
-    expect(metrics.counters["tool_calls.web_search"]).toBe(1);
+    expect(metrics.counters["tool_calls.Bash"]).toBe(1);
+    expect(metrics.counters["tool_calls.Edit"]).toBe(1);
+    expect(metrics.counters["tool_calls.WebSearch"]).toBe(1);
     expect(metrics.counters["tool_calls.image_generation"]).toBe(1);
     expect(metrics.counters["turns_with_tools_total"]).toBe(1);
     expect(metrics.histograms["tool_calls_per_turn"]).toMatchObject({

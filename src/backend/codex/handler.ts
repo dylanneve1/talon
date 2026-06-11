@@ -37,6 +37,7 @@ import type {
   ThreadEvent,
   ThreadItem,
   AgentMessageItem,
+  FileChangeItem,
   McpToolCallItem,
   Usage,
 } from "@openai/codex-sdk";
@@ -748,8 +749,13 @@ function handleItem(item: ThreadItem, ctx: HandleEventContext): void {
     case "mcp_tool_call":
       handleMcpToolCall(item, ctx);
       return;
+    // Native Codex tools are reported under the fleet-wide tool
+    // vocabulary (Bash / Edit / Write / WebSearch) so the shared
+    // `tool_calls.<name>` metric keys line up with the Claude SDK
+    // backend instead of splitting the same activity across
+    // `tool_calls.command_execution` vs `tool_calls.Bash`.
     case "command_execution":
-      handleNativeCodexTool(ctx, "command_execution", {
+      handleNativeCodexTool(ctx, "Bash", {
         command: item.command,
         status: item.status,
         ...(typeof item.exit_code === "number"
@@ -758,13 +764,13 @@ function handleItem(item: ThreadItem, ctx: HandleEventContext): void {
       });
       return;
     case "file_change":
-      handleNativeCodexTool(ctx, "file_change", {
+      handleNativeCodexTool(ctx, fileChangeToolName(item.changes), {
         status: item.status,
         changes: item.changes,
       });
       return;
     case "web_search":
-      handleNativeCodexTool(ctx, "web_search", { query: item.query });
+      handleNativeCodexTool(ctx, "WebSearch", { query: item.query });
       return;
     case "reasoning":
     case "todo_list":
@@ -804,12 +810,13 @@ function handleMcpToolCall(
   item: McpToolCallItem,
   ctx: HandleEventContext,
 ): void {
-  // Only act on `completed`. Codex SDK emits each mcp_tool_call item
-  // twice: once with `status: "in_progress"` when it dispatches the
-  // tool to the MCP server, and again with `status: "completed"` after
-  // the server returns the result. The earlier code accepted both —
-  // combined with the `seenToolCallIds` dedup, that meant we acted on
-  // whichever shape arrived first (in_progress, every time).
+  // Only act on terminal statuses. Codex SDK emits each mcp_tool_call
+  // item twice: once with `status: "in_progress"` when it dispatches
+  // the tool to the MCP server, and again with `status: "completed"`
+  // (or `"failed"`) after the server returns. The earlier code
+  // accepted both — combined with the `seenToolCallIds` dedup, that
+  // meant we acted on whichever shape arrived first (in_progress,
+  // every time).
   //
   // For terminator tools (`end_turn` / `send` / `react`) this is a
   // race: marking `turnTerminated` on `in_progress` flips the abort
@@ -818,11 +825,7 @@ function handleMcpToolCall(
   // MCP tool subprocess) mid-flight — if the bridge HTTP call hasn't
   // gone out yet, delivery never happens. Same shape as the Claude SDK
   // send/end_turn race that PR #122 fixed via PostToolBatch.
-  //
-  // Status `failed` is already filtered: skip it too. `in_progress` is
-  // analytics-only on Codex — we record tool use at completion via the
-  // same path, so dropping the in_progress emit costs nothing.
-  if (item.status !== "completed") return;
+  if (item.status === "in_progress") return;
   if (ctx.seenToolCallIds.has(item.id)) return;
   ctx.seenToolCallIds.add(item.id);
 
@@ -838,6 +841,24 @@ function handleMcpToolCall(
 
   const bareToolName = stripMcpPrefix(toolName);
   recordCodexToolMetric(ctx, bareToolName);
+
+  if (item.status === "failed") {
+    // A failed call is still a call — the Claude SDK backend counts
+    // every tool_use block regardless of outcome, so codex must too or
+    // the fleet-wide `tool_calls.*` keys silently undercount. But
+    // nothing was delivered and the turn is not terminated, so skip
+    // the stream-state mutations (delivered-text capture / terminator
+    // flip) that assume a successful call.
+    if (ctx.onToolUse) {
+      try {
+        ctx.onToolUse(toolName, input);
+      } catch {
+        /* non-fatal */
+      }
+    }
+    return;
+  }
+
   recordToolUse(ctx.state, toolName, input);
 
   if (ctx.onToolUse) {
@@ -881,6 +902,18 @@ function handleNativeCodexTool(
       /* non-fatal */
     }
   }
+}
+
+/**
+ * Map a Codex `file_change` patch to the fleet-wide tool vocabulary.
+ * A patch that only creates files is a `Write`; anything touching an
+ * existing file (update / delete, or a mixed patch) is an `Edit` —
+ * mirroring the Claude SDK tool split so metrics line up.
+ */
+function fileChangeToolName(changes: FileChangeItem["changes"]): string {
+  return changes.length > 0 && changes.every((c) => c.kind === "add")
+    ? "Write"
+    : "Edit";
 }
 
 function nativeItemPayload(item: unknown): Record<string, unknown> {
