@@ -345,6 +345,12 @@ export function buildSdkOptions(
     // these as a unit — flipping either alone is a configuration bug.
     permissionMode: "bypassPermissions",
     allowDangerouslySkipPermissions: true,
+    // Emit SDKPartialAssistantMessage stream events. The handler uses them
+    // to live-stream the `end_turn` / `send` text argument into Telegram
+    // message drafts (sendRichMessageDraft / sendMessageDraft) and to feed
+    // thinking-phase liveness. Without this flag the SDK only emits whole
+    // assistant messages and onStreamDelta never fires.
+    includePartialMessages: true,
     // Cancellation signal — when aborted, the SDK tears down the spawned
     // subprocess and stops streaming. The chat handler uses this both as a
     // shutdown hook for the daemon and as the kill-switch for a watchdog

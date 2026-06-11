@@ -27,12 +27,13 @@
  * Accumulators
  * ────────────
  *
- * `onStreamDelta` legacy contract is "accumulated text so far,
- * plus phase". The bridge maintains two accumulators (text +
- * thinking) and reports them per event. `assistant_message`
- * events do NOT reset the text accumulator; they emit the block
- * verbatim via `onTextBlock` and add to the running total so a
- * downstream `text_delta` continues where it left off.
+ * `onStreamDelta` reports "accumulated text of the message currently
+ * being generated, plus phase". The bridge maintains two accumulators
+ * (text + thinking). The text accumulator RESETS on `assistant_message`
+ * and `tool_call` boundaries: once a block is delivered as a real
+ * message (or a delivery tool ships it), later deltas belong to the
+ * next message and should preview from a clean slate — frontends use
+ * `accumulated` verbatim as the live draft body.
  */
 
 import type { AgentError, AgentEvent, AgentResult } from "./events.js";
@@ -113,10 +114,12 @@ export async function pipeEventsToCallbacks(
             throw err;
           }
         }
-        // Folding the block into the accumulator keeps subsequent
-        // `text_delta` events monotonically growing — the legacy
-        // contract assumes `accumulated` never shrinks.
-        textAccum += event.text;
+        // The block was just delivered as a real message — reset the
+        // accumulator so a later `text_delta` previews only the message
+        // currently being generated, not content the user already has.
+        // (Frontends reset their draft state on text-block delivery for
+        // the same reason.)
+        textAccum = "";
         break;
       }
       case "tool_call": {
@@ -141,6 +144,11 @@ export async function pipeEventsToCallbacks(
           ? (event.input as Record<string, unknown>)
           : {};
         callbacks.onToolUse?.(event.name, input);
+        // A tool call boundary means any streamed delivery-text preview
+        // either just shipped (end_turn / send executed → real message in
+        // chat) or belongs to a finished segment. Reset so the next
+        // streamed message starts a clean preview.
+        textAccum = "";
         break;
       }
       case "completed": {

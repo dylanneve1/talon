@@ -16,6 +16,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { BetaRawContentBlockDeltaEvent } from "@anthropic-ai/sdk/resources/beta/messages/messages.mjs";
 import { STREAM_INTERVAL } from "./constants.js";
+import { stripMcpPrefix } from "../../core/tools/index.js";
 import { log } from "../../util/log.js";
 
 // ── Stream state accumulator ────────────────────────────────────────────────
@@ -62,17 +63,29 @@ export type StreamState = {
    */
   turnTerminated: boolean;
   /**
-   * Per-token text chunks accumulated since the last throttled flush.
-   * Drained into a `text_delta` event when `processStreamDelta` decides
-   * the throttle interval has elapsed.
-   */
-  unflushedTextDelta: string;
-  /**
-   * Same as `unflushedTextDelta` but for thinking-phase tokens — drained
-   * into a `reasoning` event. Tracked separately so a thinking burst
-   * doesn't poison the visible-text delta buffer.
+   * Per-token thinking chunks accumulated since the last throttled
+   * flush — drained into a `reasoning` event when `processStreamDelta`
+   * decides the throttle interval has elapsed.
    */
   unflushedThinkingDelta: string;
+
+  // ── Delivery-tool argument streaming ───────────────────────────────────────
+  // Talon's delivery contract makes assistant prose private scratchpad:
+  // the user-visible reply is the `text` argument of `end_turn(...)` /
+  // `send(type="text", ...)`. Streaming therefore tracks tool_use blocks:
+  // as `input_json_delta` chunks arrive for a delivery tool we extract the
+  // partial `text` field and emit it as `text_delta` events. Plain prose
+  // deltas are NOT emitted (they'd leak scratchpad into the live preview).
+  /** Type of the content block currently streaming (from content_block_start). */
+  streamBlockType: "text" | "thinking" | "tool_use" | "other" | null;
+  /** Tool name when the current streaming block is a tool_use block. */
+  streamToolName: string | null;
+  /** Accumulated partial JSON for the current tool_use block's input. */
+  streamToolJson: string;
+  /** Chars of the extracted `text` argument already emitted as deltas. */
+  streamToolTextEmitted: number;
+  /** Delivery blocks that streamed at least one chunk this turn (separator bookkeeping). */
+  streamedDeliveryBlocks: number;
 };
 
 export function createStreamState(): StreamState {
@@ -92,8 +105,12 @@ export function createStreamState(): StreamState {
     lastTrailingText: "",
     deliveredTextNorms: [],
     turnTerminated: false,
-    unflushedTextDelta: "",
     unflushedThinkingDelta: "",
+    streamBlockType: null,
+    streamToolName: null,
+    streamToolJson: "",
+    streamToolTextEmitted: 0,
+    streamedDeliveryBlocks: 0,
   };
 }
 
@@ -124,22 +141,141 @@ export type StreamDeltaEmit =
   | { phase: "text"; text: string }
   | { phase: "thinking"; text: string };
 
+/** Bare names of bridge tools whose `text` argument is the user-visible reply. */
+const DELIVERY_TOOL_NAMES = new Set(["end_turn", "send"]);
+
 /**
- * Process a streaming delta event — accumulates per-token chunks
- * into `state.currentBlockText` (text) / unflushed buffers, and
- * returns the chunk to emit when the throttle interval has elapsed.
+ * Incrementally extract the `text` argument from a *partial* JSON tool
+ * input string (the concatenation of `input_json_delta.partial_json`
+ * chunks seen so far).
  *
- * Returns `null` when nothing should be emitted yet (either the delta
- * wasn't a content-block-delta, or the throttle window is still open).
- * Callers yield a `text_delta` / `reasoning` event with the returned
- * `text`. The throttle keeps the event volume bounded — Telegram /
- * terminal renderers re-accumulate, but at human-readable cadence.
+ * Finds the first bare `"text"` key (inside JSON string values all
+ * quotes are escaped, so a bare `"text":` token can only be a key) and
+ * decodes the string value up to where the buffer currently ends —
+ * handling standard escapes and `\uXXXX`. Incomplete trailing escapes
+ * are left for the next call (we re-scan the full buffer each time;
+ * tool args are small).
+ */
+export function extractStreamedTextArg(partialJson: string): string {
+  const keyMatch = /"text"\s*:\s*"/.exec(partialJson);
+  if (!keyMatch) return "";
+  let i = keyMatch.index + keyMatch[0].length;
+  let out = "";
+  while (i < partialJson.length) {
+    const c = partialJson[i];
+    if (c === '"') break; // closing quote — value complete
+    if (c === "\\") {
+      if (i + 1 >= partialJson.length) break; // dangling escape — wait for more
+      const n = partialJson[i + 1];
+      if (n === "n") out += "\n";
+      else if (n === "t") out += "\t";
+      else if (n === "r") out += "\r";
+      else if (n === '"') out += '"';
+      else if (n === "\\") out += "\\";
+      else if (n === "/") out += "/";
+      else if (n === "b") out += "\b";
+      else if (n === "f") out += "\f";
+      else if (n === "u") {
+        const hex = partialJson.slice(i + 2, i + 6);
+        if (hex.length < 4 || !/^[0-9a-fA-F]{4}$/.test(hex)) break; // incomplete
+        out += String.fromCharCode(parseInt(hex, 16));
+        i += 4;
+      }
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/**
+ * Drain any not-yet-emitted delivery-tool text for the current block.
+ * Returns the suffix beyond what was already emitted (with a paragraph
+ * separator when a previous delivery block already streamed this turn),
+ * or `""` when there is nothing new.
+ */
+function drainDeliveryText(state: StreamState): string {
+  if (
+    state.streamBlockType !== "tool_use" ||
+    !state.streamToolName ||
+    !DELIVERY_TOOL_NAMES.has(stripMcpPrefix(state.streamToolName))
+  ) {
+    return "";
+  }
+  const extracted = extractStreamedTextArg(state.streamToolJson);
+  if (extracted.length <= state.streamToolTextEmitted) return "";
+  let out = extracted.slice(state.streamToolTextEmitted);
+  if (state.streamToolTextEmitted === 0 && state.streamedDeliveryBlocks > 0) {
+    // Second+ delivery message inside one turn (e.g. send → end_turn):
+    // separate the previews so the draft doesn't mush them together.
+    out = "\n\n" + out;
+  }
+  if (state.streamToolTextEmitted === 0) state.streamedDeliveryBlocks++;
+  state.streamToolTextEmitted = extracted.length;
+  return out;
+}
+
+function resetStreamBlock(state: StreamState): void {
+  state.streamBlockType = null;
+  state.streamToolName = null;
+  state.streamToolJson = "";
+  state.streamToolTextEmitted = 0;
+}
+
+/**
+ * Process a streaming (partial-message) event.
+ *
+ * What streams, and why:
+ *   - `thinking_delta` → throttled `reasoning` emits (drives spinners,
+ *     never user-visible text).
+ *   - `input_json_delta` on `end_turn` / `send` tool_use blocks → the
+ *     partial `text` argument, throttle-emitted as `text` phase. This IS
+ *     the user-visible reply under Talon's delivery contract, so it's
+ *     the only thing that belongs in a live message preview.
+ *   - plain `text_delta` (assistant prose) → accumulated for fallback
+ *     bookkeeping but NEVER emitted: prose is private scratchpad
+ *     (pre-tool segments are delivered later as complete progress
+ *     messages; trailing prose is dropped). Streaming it live would
+ *     leak scratchpad into the chat preview.
+ *
+ * Returns `null` when nothing should be emitted (not a relevant event,
+ * or the throttle window is still open). The throttle keeps event volume
+ * bounded — renderers re-accumulate at human-readable cadence.
  */
 export function processStreamDelta(
   msg: SDKPartialAssistantMessage,
   state: StreamState,
 ): StreamDeltaEmit | null {
+  // Subagent (Agent tool) streams replay through the parent session with
+  // `parent_tool_use_id` set — their deltas are internal, never previewed.
+  if (msg.parent_tool_use_id) return null;
+
   const event = msg.event;
+
+  if (event.type === "content_block_start") {
+    resetStreamBlock(state);
+    const block = event.content_block;
+    if (block.type === "tool_use") {
+      state.streamBlockType = "tool_use";
+      state.streamToolName = block.name;
+    } else if (block.type === "text" || block.type === "thinking") {
+      state.streamBlockType = block.type;
+    } else {
+      state.streamBlockType = "other";
+    }
+    return null;
+  }
+
+  if (event.type === "content_block_stop") {
+    // Flush the remainder of a delivery-tool text arg regardless of the
+    // throttle so the preview ends complete, then clear block state.
+    const out = drainDeliveryText(state);
+    resetStreamBlock(state);
+    return out ? { phase: "text", text: out } : null;
+  }
+
   if (event.type !== "content_block_delta") return null;
 
   const deltaEvent = event as BetaRawContentBlockDeltaEvent;
@@ -162,14 +298,22 @@ export function processStreamDelta(
       if (out.length > 0) return { phase: "thinking", text: out };
     }
   } else if (delta.type === "text_delta") {
+    // Scratchpad prose — accumulate for the result-message fallback but
+    // do not emit (see docstring).
     state.currentBlockText += delta.text;
-    state.unflushedTextDelta += delta.text;
+  } else if (delta.type === "input_json_delta") {
+    if (state.streamBlockType !== "tool_use") return null;
+    state.streamToolJson +=
+      typeof (delta as { partial_json?: unknown }).partial_json === "string"
+        ? (delta as { partial_json: string }).partial_json
+        : "";
     const now = Date.now();
     if (now - state.lastStreamUpdate >= STREAM_INTERVAL) {
-      state.lastStreamUpdate = now;
-      const out = state.unflushedTextDelta;
-      state.unflushedTextDelta = "";
-      if (out.length > 0) return { phase: "text", text: out };
+      const out = drainDeliveryText(state);
+      if (out) {
+        state.lastStreamUpdate = now;
+        return { phase: "text", text: out };
+      }
     }
   }
   return null;

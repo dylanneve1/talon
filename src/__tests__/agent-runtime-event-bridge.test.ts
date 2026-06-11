@@ -93,7 +93,7 @@ describe("pipeEventsToCallbacks / streaming", () => {
     ]);
   });
 
-  it("assistant_message fires onTextBlock then folds into the text accumulator", async () => {
+  it("assistant_message fires onTextBlock then resets the text accumulator", async () => {
     const blocks: string[] = [];
     const deltas: Array<[string, string | undefined]> = [];
     const cb: LegacyCallbacks = {
@@ -118,7 +118,38 @@ describe("pipeEventsToCallbacks / streaming", () => {
       cb,
     );
     expect(blocks).toEqual(["first "]);
-    expect(deltas).toEqual([["first second", "text"]]);
+    // Delivered blocks reset the accumulator — the next delta previews
+    // only the message currently being generated.
+    expect(deltas).toEqual([["second", "text"]]);
+  });
+
+  it("tool_call resets the text accumulator (multi-send turn previews stay clean)", async () => {
+    const deltas: Array<[string, string | undefined]> = [];
+    const cb: LegacyCallbacks = {
+      onStreamDelta: (acc, phase) => deltas.push([acc, phase]),
+      onToolUse: vi.fn(),
+    };
+    await pipeEventsToCallbacks(
+      streamOf([
+        { type: "text_delta", text: "message one" },
+        {
+          type: "tool_call",
+          id: "t1",
+          name: "send",
+          input: { type: "text", text: "message one" },
+        },
+        { type: "text_delta", text: "message two" },
+        {
+          type: "completed",
+          result: { text: "", durationMs: 1, usage: emptyUsage() },
+        },
+      ]),
+      cb,
+    );
+    expect(deltas).toEqual([
+      ["message one", "text"],
+      ["message two", "text"],
+    ]);
   });
 
   it("resolves assistant_message delivery acknowledgements after onTextBlock succeeds", async () => {

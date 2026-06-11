@@ -862,10 +862,16 @@ function createStreamCallbacks(
 ) {
   const onStreamDelta = async (
     accumulated: string,
-    _phase?: "thinking" | "text",
+    phase?: "thinking" | "text",
   ) => {
+    // Only preview reply text. Thinking-phase deltas are the model's
+    // private reasoning — never show them in the chat draft.
+    if (phase !== "text") return;
     // Skip if drafts not supported or not ready
     if (draftsSupported === false || !state.started || state.editing) return;
+    // The accumulator resets when a message ships mid-turn (multi-send
+    // turns) — a shorter `accumulated` means a NEW message preview.
+    if (accumulated.length < state.lastSentLength) state.lastSentLength = 0;
     if (accumulated.length - state.lastSentLength < 40) return;
 
     state.editing = true;
@@ -930,10 +936,16 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
     editing: false,
     sentTextBlock: false,
   };
-  // Wait 1s before starting streaming — avoids flickering on fast responses
-  const streamTimer = setTimeout(() => {
-    stream.started = true;
-  }, 1000);
+  // Wait 1s before starting streaming — avoids flickering on fast responses.
+  // Drafts are private-chat only (Bot API: sendMessageDraft targets "the
+  // target private chat"), so never arm streaming in groups — a group
+  // failure would otherwise latch `draftsSupported = false` globally and
+  // kill streaming for DMs too.
+  const streamTimer = isGroup
+    ? null
+    : setTimeout(() => {
+        stream.started = true;
+      }, 1000);
 
   try {
     const { onStreamDelta, onTextBlock } = createStreamCallbacks(
@@ -984,7 +996,7 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
     // scratchpad and dropped (the SDK handler logs a `scratchpad.trailing_
     // text_dropped` metric so missed end_turn calls show up in counters).
   } finally {
-    clearTimeout(streamTimer);
+    if (streamTimer) clearTimeout(streamTimer);
   }
 }
 
