@@ -21,6 +21,7 @@ import { dirs, files } from "./paths.js";
 export type LogComponent =
   | "bot"
   | "bridge"
+  | "db"
   | "agent"
   | "pulse"
   | "userbot"
