@@ -253,8 +253,11 @@ jobs:
 
       - name: Install gleam
         run: |
-          curl -sL https://github.com/gleam-lang/gleam/releases/download/v1.17.0/gleam-v1.17.0-x86_64-unknown-linux-musl.tar.gz | tar xz -C /usr/local/bin gleam
-          gleam --version
+          mkdir -p "$HOME/.gleam-bin"
+          curl -fsSL https://github.com/gleam-lang/gleam/releases/download/v1.17.0/gleam-v1.17.0-x86_64-unknown-linux-musl.tar.gz -o /tmp/gleam.tgz
+          tar -xzf /tmp/gleam.tgz -C "$HOME/.gleam-bin"
+          echo "$HOME/.gleam-bin" >> "$GITHUB_PATH"
+          "$HOME/.gleam-bin/gleam" --version
 
       - name: Rebuild and check drift
         run: |
