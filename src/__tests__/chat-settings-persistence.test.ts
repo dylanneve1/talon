@@ -57,6 +57,7 @@ import {
 const envBackup = process.env.TALON_DB_PATH;
 
 beforeEach(() => {
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
   workDir = mkdtempSync(join(tmpdir(), "talon-settings-persist-"));
   closeDatabase();
   process.env.TALON_DB_PATH = join(workDir, "talon.db");

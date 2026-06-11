@@ -12,3 +12,6 @@ process.env.TALON_DB_PATH = join(
   tmpdir(),
   `talon-vitest-${process.pid}-${Math.random().toString(36).slice(2)}.db`,
 );
+
+// Block legacy-JSON import/rename outside suites that explicitly test it.
+process.env.TALON_DISABLE_LEGACY_IMPORT = "1";

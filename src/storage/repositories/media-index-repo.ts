@@ -107,7 +107,7 @@ export function olderThan(cutoff: number): MediaEntry[] {
 export function deleteOlderThan(cutoff: number): number {
   const result = getDatabase()
     .prepare("DELETE FROM media_index WHERE timestamp < ?")
-    .run(cutoff);
+    .run(cutoff) as { changes: number | bigint };
   return Number(result.changes);
 }
 

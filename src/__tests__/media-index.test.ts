@@ -54,6 +54,7 @@ async function freshImport() {
 }
 
 beforeEach(() => {
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
   originalHome = process.env.HOME;
   originalUserProfile = process.env.USERPROFILE;
   tempHome = mkdtempSync(join(tmpdir(), "talon-media-"));

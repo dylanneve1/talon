@@ -95,6 +95,10 @@ export function loadSessions(): void {
  * fields on read, exactly as it did against the JSON store.
  */
 function importLegacyJson(): void {
+  // Test isolation: suites that don't mock HOME would otherwise rename
+  // the user's REAL legacy JSON during import (observed live). The
+  // vitest setup sets this; import-testing suites unset it locally.
+  if (process.env.TALON_DISABLE_LEGACY_IMPORT === "1") return;
   const legacyPath = files.sessions;
   if (!existsSync(legacyPath)) return;
   try {

@@ -62,6 +62,7 @@ function makeMsg(msgId: number, text = `msg ${msgId}`): HistoryMessage {
 }
 
 beforeEach(() => {
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
   workDir = mkdtempSync(join(tmpdir(), "talon-history-persist-"));
   closeDatabase();
   process.env.TALON_DB_PATH = join(workDir, "talon.db");

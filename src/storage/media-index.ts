@@ -74,6 +74,10 @@ export function loadMediaIndex(): void {
  * even older bare MediaEntry[] shape.
  */
 function importLegacyJson(): void {
+  // Test isolation: suites that don't mock HOME would otherwise rename
+  // the user's REAL legacy JSON during import (observed live). The
+  // vitest setup sets this; import-testing suites unset it locally.
+  if (process.env.TALON_DISABLE_LEGACY_IMPORT === "1") return;
   const legacyPath = files.mediaIndex;
   if (!existsSync(legacyPath)) return;
   try {
