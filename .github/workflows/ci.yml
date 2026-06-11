@@ -263,6 +263,37 @@ jobs:
         run: |
           (cd native/scheduler-core && gleam build --target javascript && node embed.mjs)
           git diff --exit-code src/native/
+  # ── WASM artifact reproducibility ──────────────────────────────
+  # The Rust blake3-wasm crate (native/blake3-wasm) is committed alongside
+  # its built artifact, embedded as base64 in src/native/blake3-wasm-bytes.ts.
+  # Rebuild from source and diff: if the committed bytes drift from the
+  # committed Rust source (or someone hand-edits the generated module),
+  # this fails. Toolchain is pinned by native/blake3-wasm/rust-toolchain.toml
+  # so rustc codegen drift can't break the diff. Runs on the runner's own
+  # node (embed.mjs uses only builtins) — independent of the repo's Node
+  # version matrix.
+  wasm-artifact:
+    name: WASM Artifact Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/blake3-wasm
+
+      - name: Rebuild wasm + regenerate embedded bytes
+        run: npm run build:wasm
+
+      - name: Committed bytes must match committed Rust source
+        run: git diff --exit-code src/native/blake3-wasm-bytes.ts
 
   # ── Real backend live integration tier ───────────────────────
   # Installs the real backend CLI, then exercises the deployed backend surface
@@ -522,6 +553,7 @@ jobs:
       - integration
       - bun-compile
       - gleam-artifact
+      - wasm-artifact
       - backend-live
       - fuzz
       - security
@@ -563,6 +595,7 @@ jobs:
           echo "| Tests | ${{ needs.test.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Functional | ${{ needs.functional-cross-platform.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration | ${{ needs.integration.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| WASM Artifact | ${{ needs.wasm-artifact.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Backend Live | ${{ needs.backend-live.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Fuzz | ${{ needs.fuzz.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security | ${{ needs.security.result == 'success' && 'pass' || 'FAIL' }} |" >> $GITHUB_STEP_SUMMARY
