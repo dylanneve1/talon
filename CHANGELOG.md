@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.16.0](https://github.com/dylanneve1/talon/compare/v1.15.1...v1.16.0) (2026-06-11)
+
+
+### Features
+
+* **agent-runtime:** finish architecture unification plan (Phases 3-7) ([#258](https://github.com/dylanneve1/talon/issues/258)) ([d30d596](https://github.com/dylanneve1/talon/commit/d30d5965eeaf7942957e84ecce3e856afc958526))
+* pipe codex api call metrics ([#283](https://github.com/dylanneve1/talon/issues/283)) ([31084c5](https://github.com/dylanneve1/talon/commit/31084c5b1c50215a8d18da57e6cbcdb37d80ef76))
+
+
+### Bug Fixes
+
+* **claude-sdk:** detect Fable and show both 1M/non-1M variants ([#290](https://github.com/dylanneve1/talon/issues/290)) ([bc8ae9e](https://github.com/dylanneve1/talon/commit/bc8ae9e42c31bca711d8d7658d32b24666e0dadb))
+* let Codex retry oversized text-block delivery ([#285](https://github.com/dylanneve1/talon/issues/285)) ([eb95900](https://github.com/dylanneve1/talon/commit/eb959001d7564093a94d835bd9ce2ea203a1d56d))
+* recover from codex text-block delivery failures ([#284](https://github.com/dylanneve1/talon/issues/284)) ([ee3b95c](https://github.com/dylanneve1/talon/commit/ee3b95ccb688731f5fcf141dea29f6c510dfc8f4))
+
+
+### Performance Improvements
+
+* prompt-cache-friendly system prompt (boundary split + per-session freeze) ([#292](https://github.com/dylanneve1/talon/issues/292)) ([60b8bc7](https://github.com/dylanneve1/talon/commit/60b8bc738c7d79090c8bf781ef028de01b8626bb))
+* stop statting every workspace file to render the prompt listing ([#293](https://github.com/dylanneve1/talon/issues/293)) ([829ce5f](https://github.com/dylanneve1/talon/commit/829ce5fe8bcba8e90bb7517c6d760b68b0509728))
+
 ## [1.15.1](https://github.com/dylanneve1/talon/compare/v1.15.0...v1.15.1) (2026-06-07)
 
 
