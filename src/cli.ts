@@ -1129,9 +1129,7 @@ function renderStopOutcome(result: StopOutcome): void {
         : result.method === "sigterm"
           ? "SIGTERM"
           : "SIGKILL";
-    console.log(
-      `  ${pc.red("●")} Talon stopped (PID ${result.pid}, ${how})\n`,
-    );
+    console.log(`  ${pc.red("●")} Talon stopped (PID ${result.pid}, ${how})\n`);
     return;
   }
   if (result.reason === "not-running") {
