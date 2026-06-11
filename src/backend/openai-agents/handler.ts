@@ -411,6 +411,12 @@ export async function handleMessage(
     durationMs,
     toolCalls: streamState.toolCalls,
     apiCalls: streamState.numApiCalls,
+    usage: {
+      inputTokens: streamState.sdkInputTokens,
+      outputTokens: streamState.sdkOutputTokens,
+      cacheRead: streamState.sdkCacheRead,
+      cacheWrite: streamState.sdkCacheWrite,
+    },
   });
 
   recordUsage(chatId, {

@@ -246,6 +246,12 @@ export async function handleMessage(
     durationMs,
     toolCalls: state.toolCalls,
     apiCalls: state.numApiCalls,
+    usage: {
+      inputTokens: state.sdkInputTokens,
+      outputTokens: state.sdkOutputTokens,
+      cacheRead: state.sdkCacheRead,
+      cacheWrite: state.sdkCacheWrite,
+    },
   });
 
   if (state.newSessionId) {

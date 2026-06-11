@@ -626,6 +626,12 @@ export async function handleMessage(
     toolCalls: codexToolMetrics.count,
     apiCalls: streamState.numApiCalls,
     failed: Boolean(turnFailedError),
+    usage: {
+      inputTokens: streamState.sdkInputTokens,
+      outputTokens: streamState.sdkOutputTokens,
+      cacheRead: streamState.sdkCacheRead,
+      cacheWrite: streamState.sdkCacheWrite,
+    },
   });
 
   recordUsage(chatId, {

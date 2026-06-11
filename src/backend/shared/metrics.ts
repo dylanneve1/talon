@@ -19,6 +19,9 @@
  *   - `tool_calls_per_turn`                histogram
  *   - `turns_with_tools_total`             counter
  *   - `api_calls_total` / `api_calls_per_turn`
+ *   - `tokens.input_total` / `tokens.output_total`
+ *     / `tokens.cache_read_total` / `tokens.cache_write_total`
+ *   - `cache_hit_percent`                  histogram, per turn
  *   - `scratchpad.trailing_text_dropped` / `.flow_violation_retried`
  *     / `.flow_violation_cap_exhausted`
  *
@@ -27,6 +30,8 @@
  *   - `backend.<id>.response_latency_ms`   histogram
  *   - `backend.<id>.tool_calls`
  *   - `backend.<id>.turn_failed`
+ *   - `backend.<id>.tokens.input` / `.output` / `.cache_read` / `.cache_write`
+ *   - `backend.<id>.cache_hit_percent`     histogram
  *
  * Keep names LOW-CARDINALITY: the metrics store caps total keys at
  * 500. Tool names are bounded by the tool catalog; backend ids by the
@@ -35,6 +40,7 @@
 
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { stripMcpPrefix } from "../../core/tools/index.js";
+import { cacheHitPercent, type TokenUsageSnapshot } from "./usage.js";
 
 /**
  * Count one tool call. `toolName` may be raw from any backend —
@@ -58,6 +64,11 @@ export type TurnMetricInputs = {
   apiCalls?: number;
   /** True when the turn ended in a delivered failure. */
   failed?: boolean;
+  /**
+   * Token usage for the turn — the same snapshot handlers persist via
+   * `recordUsage()`. Omit when the backend can't report usage.
+   */
+  usage?: TokenUsageSnapshot;
 };
 
 /**
@@ -83,6 +94,27 @@ export function recordTurnMetrics(inputs: TurnMetricInputs): void {
   if (inputs.apiCalls !== undefined && inputs.apiCalls > 0) {
     incrementCounter("api_calls_total", inputs.apiCalls);
     recordHistogram("api_calls_per_turn", inputs.apiCalls);
+  }
+
+  if (inputs.usage) {
+    const u = inputs.usage;
+    const b = `backend.${inputs.backend}`;
+    incrementCounter("tokens.input_total", u.inputTokens);
+    incrementCounter("tokens.output_total", u.outputTokens);
+    incrementCounter("tokens.cache_read_total", u.cacheRead);
+    incrementCounter("tokens.cache_write_total", u.cacheWrite);
+    incrementCounter(`${b}.tokens.input`, u.inputTokens);
+    incrementCounter(`${b}.tokens.output`, u.outputTokens);
+    incrementCounter(`${b}.tokens.cache_read`, u.cacheRead);
+    incrementCounter(`${b}.tokens.cache_write`, u.cacheWrite);
+    // Only meaningful when the turn actually consumed input — an
+    // all-zero snapshot (failed turn, usage-less backend) would skew
+    // the distribution with hard zeros.
+    if (u.inputTokens + u.cacheRead > 0) {
+      const pct = cacheHitPercent(u);
+      recordHistogram("cache_hit_percent", pct);
+      recordHistogram(`${b}.cache_hit_percent`, pct);
+    }
   }
 }
 
