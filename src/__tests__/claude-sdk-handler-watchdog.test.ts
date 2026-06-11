@@ -254,7 +254,7 @@ describe("Claude SDK chat handler — post-result watchdog", () => {
     // — `vi.resetModules()` above ensures we get a fresh module per test.
     vi.stubEnv("TALON_SDK_POST_RESULT_GRACE_MS", "50");
 
-    const { clearModels, registerModels } = await import("../core/models.js");
+    const { clearModels, registerModels } = await import("../core/models/catalog.js");
     clearModels();
     registerModels([
       {

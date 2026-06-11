@@ -44,7 +44,7 @@ import { join } from "node:path";
 import { log, logDebug } from "../../util/log.js";
 import { getState } from "./state.js";
 import type { CodexAuthInfo } from "./auth.js";
-import { normalizeReasoningLevels } from "../../core/reasoning-levels.js";
+import { normalizeReasoningLevels } from "../../core/models/reasoning-levels.js";
 
 /** Shape of one entry returned by OpenAI's `/v1/models`. Sparse — only `id` is reliably present. */
 interface OpenAiModelEntry {

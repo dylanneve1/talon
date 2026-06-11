@@ -12,12 +12,12 @@ import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
-import { files as pathFiles, dirs } from "../util/paths.js";
-import { log, logError, logWarn } from "../util/log.js";
-import { toYMD } from "../util/time.js";
-import { getDefaultModel } from "./models.js";
-import type { OneShotAgentParams } from "./types.js";
-import type { Backend } from "./agent-runtime/capabilities.js";
+import { files as pathFiles, dirs } from "../../util/paths.js";
+import { log, logError, logWarn } from "../../util/log.js";
+import { toYMD } from "../../util/time.js";
+import { getDefaultModel } from "../models/catalog.js";
+import type { OneShotAgentParams } from "../types.js";
+import type { Backend } from "../agent-runtime/capabilities.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

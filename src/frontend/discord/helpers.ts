@@ -7,8 +7,8 @@
  *  - chat IDs are Discord snowflakes (strings), not numbers.
  */
 
-import { resolveModel } from "../../core/models.js";
-import { REASONING_LEVEL_DESCRIPTIONS } from "../../core/reasoning-levels.js";
+import { resolveModel } from "../../core/models/catalog.js";
+import { REASONING_LEVEL_DESCRIPTIONS } from "../../core/models/reasoning-levels.js";
 import { DISCORD_MAX_TEXT, DISCORD_SAFE_RESERVE } from "./formatting.js";
 
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;

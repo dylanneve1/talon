@@ -7,7 +7,7 @@ import type { Bot } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
 import { pushMessage } from "../../storage/history.js";
 import { allowChat, revokeChat } from "./userbot.js";
-import { registerChat } from "../../core/pulse.js";
+import { registerChat } from "../../core/background/pulse.js";
 import { log } from "../../util/log.js";
 import { getSenderName } from "./handlers.js";
 import {

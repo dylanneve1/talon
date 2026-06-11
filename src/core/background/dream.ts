@@ -12,14 +12,14 @@
  */
 
 import { existsSync, readFileSync, mkdirSync, appendFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
-import { files as pathFiles, dirs } from "../util/paths.js";
-import { log, logError, logWarn } from "../util/log.js";
-import { getDefaultModel } from "./models.js";
-import type { OneShotAgentParams } from "./types.js";
-import type { Backend } from "./agent-runtime/capabilities.js";
+import { files as pathFiles, dirs } from "../../util/paths.js";
+import { PACKAGE_PROMPTS_DIR } from "../prompt/templates.js";
+import { log, logError, logWarn } from "../../util/log.js";
+import { getDefaultModel } from "../models/catalog.js";
+import type { OneShotAgentParams } from "../types.js";
+import type { Backend } from "../agent-runtime/capabilities.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -154,9 +154,10 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
   const memoryFile = pathFiles.memory;
   const dreamStateFile = DREAM_STATE_FILE;
 
-  // Load prompt template from prompts/dream.md and interpolate variables
-  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-  const promptPath = resolve(projectRoot, "prompts/dream.md");
+  // Load prompt template from the package prompts/ dir and interpolate
+  // variables (PACKAGE_PROMPTS_DIR is the canonical resolver — no
+  // module-relative "../.." that breaks when this file moves).
+  const promptPath = resolve(PACKAGE_PROMPTS_DIR, "dream.md");
 
   let prompt: string;
   try {

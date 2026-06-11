@@ -90,7 +90,7 @@ function makeFakeBackend(
     getSettingsPresentation: vi.fn().mockResolvedValue(picker),
     getModelInfo: vi.fn().mockResolvedValue(fakeModel),
     // Mirror the model into resolveModel so per-chat override
-    // validation in `core/active-model.ts` accepts any stored id —
+    // validation in `core/models/active-model.ts` accepts any stored id —
     // these tests focus on the picker output, not the resolver.
     resolveModel: vi.fn().mockResolvedValue({
       kind: "exact" as const,

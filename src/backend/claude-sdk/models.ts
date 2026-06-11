@@ -12,9 +12,9 @@ import {
   registerModels,
   clearModelsByProvider,
   registerProviderPrefix,
-} from "../../core/models.js";
-import type { ModelInfo } from "../../core/models.js";
-import { normalizeReasoningLevels } from "../../core/reasoning-levels.js";
+} from "../../core/models/catalog.js";
+import type { ModelInfo } from "../../core/models/catalog.js";
+import { normalizeReasoningLevels } from "../../core/models/reasoning-levels.js";
 import { log, logError } from "../../util/log.js";
 
 type SdkModelInfo = {

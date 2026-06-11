@@ -55,7 +55,7 @@ describe.skipIf(!stubReady)("Talon functional — bootstrap", () => {
     // pulls them out of `q.supportedModels()`, tests run through unmodified
     // bootstrap.
     await import("./talon-bootstrap.js").then((m) => m.ensureBooted());
-    const { getModels } = await import("../../core/models.js");
+    const { getModels } = await import("../../core/models/catalog.js");
     const ids = getModels().map((m) => m.id);
     expect(ids).toContain("claude-sonnet-4-6");
     expect(ids).toContain("default");

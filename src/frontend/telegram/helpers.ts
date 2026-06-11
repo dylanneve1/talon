@@ -3,10 +3,10 @@
  */
 
 import { escapeHtml } from "./formatting.js";
-import type { ModelInfo } from "../../core/models.js";
+import type { ModelInfo } from "../../core/models/catalog.js";
 import type { ReasoningEffortLevel } from "../../core/types.js";
-import { REASONING_LEVEL_LABELS } from "../../core/reasoning-levels.js";
-import { getModels, resolveModel, resolveModelId } from "../../core/models.js";
+import { REASONING_LEVEL_LABELS } from "../../core/models/reasoning-levels.js";
+import { getModels, resolveModel, resolveModelId } from "../../core/models/catalog.js";
 const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_METRICS_MESSAGE_MAX = 3800;
 

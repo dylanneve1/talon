@@ -44,7 +44,7 @@ import {
   getChatSettings,
   setChatFreeOnly,
 } from "../../storage/chat-settings.js";
-import { resolveActiveModelForChat } from "../../core/active-model.js";
+import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 
 /**
  * Resolve the backend serving a given chat right now.

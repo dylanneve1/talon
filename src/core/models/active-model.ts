@@ -63,18 +63,18 @@
 import {
   getChatModelForBackend,
   getChatSettings,
-} from "../storage/chat-settings.js";
-import type { Backend } from "./agent-runtime/capabilities.js";
+} from "../../storage/chat-settings.js";
+import type { Backend } from "../agent-runtime/capabilities.js";
 import {
   isBackendId,
   makeBareModelRef,
   type CacheSupport,
   type ModelRef,
   type ModelSource,
-} from "./agent-runtime/model-ref.js";
-import type { UnifiedModelInfo } from "./types.js";
-import type { TalonConfig } from "../util/config.js";
-import { logWarn } from "../util/log.js";
+} from "../agent-runtime/model-ref.js";
+import type { UnifiedModelInfo } from "../types.js";
+import type { TalonConfig } from "../../util/config.js";
+import { logWarn } from "../../util/log.js";
 
 /**
  * Reasons `resolveActiveModelForChat` chose its returned value.
@@ -358,7 +358,7 @@ async function materialiseRef(
 
 function unifiedToModelRef(
   info: UnifiedModelInfo,
-  backend: import("./agent-runtime/model-ref.js").BackendId,
+  backend: import("../agent-runtime/model-ref.js").BackendId,
   cache: CacheSupport,
 ): ModelRef {
   return {

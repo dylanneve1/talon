@@ -72,7 +72,8 @@ contradictions between backends.
 
 `heartbeat.md` and `dream.md` are not part of the chat system prompt — they
 are standalone prompts for the background heartbeat and memory-consolidation
-(dream) agents, loaded by `src/core/heartbeat.ts` / `src/core/dream.ts`.
+(dream) agents, loaded by `src/core/background/heartbeat.ts` /
+`src/core/background/dream.ts`.
 
 ## Token budget
 

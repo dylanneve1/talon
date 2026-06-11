@@ -14,7 +14,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { QueryParams } from "../backend/shared/handler-types.js";
 import { applyRetryDecision } from "../backend/shared/handle-retry.js";
 import { TalonError } from "../core/errors.js";
-import { registerModels, clearModels } from "../core/models.js";
+import { registerModels, clearModels } from "../core/models/catalog.js";
 import { setChatModel } from "../storage/chat-settings.js";
 import { resetSession, getSession } from "../storage/sessions.js";
 

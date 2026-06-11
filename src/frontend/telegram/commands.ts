@@ -28,8 +28,8 @@ import {
   enablePulse,
   isPulseEnabled,
   resetPulseCheckpoint,
-} from "../../core/pulse.js";
-import { forceDream } from "../../core/dream.js";
+} from "../../core/background/pulse.js";
+import { forceDream } from "../../core/background/dream.js";
 import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
@@ -53,7 +53,7 @@ import {
   resolveBackendForChat,
 } from "./model-menu.js";
 import { getBackendIdForChat } from "../../core/backend-controller.js";
-import { resolveActiveModelForChat } from "../../core/active-model.js";
+import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 
 import {
   displayReasoningEffort,

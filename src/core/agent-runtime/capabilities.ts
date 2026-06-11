@@ -89,7 +89,7 @@ export interface BackgroundRunner {
 /**
  * Catalog operations, split into a small REQUIRED core (resolution:
  * `resolveModelInfo` / `getDefaultModelId` / `getRawModelInfo`, which
- * the dispatcher and `core/active-model.ts` depend on) and an OPTIONAL
+ * the dispatcher and `core/models/active-model.ts` depend on) and an OPTIONAL
  * picker / catalog-browse surface. A fixed-model backend (Claude SDK
  * on a model alias) can implement only the core and let the `/model`
  * picker degrade gracefully; catalog-driven backends (Kilo, OpenCode,
@@ -98,13 +98,13 @@ export interface BackgroundRunner {
  * The catalog speaks `UnifiedModelInfo` — the rich shape every
  * backend's `models.ts` produces internally. `ModelRef` is only
  * the resolver's output, an enriched routing identity.
- * `core/active-model.ts` wraps catalog calls into refs for
+ * `core/models/active-model.ts` wraps catalog calls into refs for
  * `/status` and `/model` display.
  */
 export interface ModelCatalog {
   // ── Required core: resolution ───────────────────────────────────
   /**
-   * Backend-native resolve. Used by `core/active-model.ts` for the
+   * Backend-native resolve. Used by `core/models/active-model.ts` for the
    * per-chat override validation and by the frontend's
    * resolution-error formatter.
    */

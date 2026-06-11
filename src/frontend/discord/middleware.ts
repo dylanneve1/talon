@@ -18,7 +18,7 @@ import type { Client, Message } from "discord.js";
 import { ChannelType } from "discord.js";
 import type { TalonConfig } from "../../util/config.js";
 import { pushMessage } from "../../storage/history.js";
-import { registerChat } from "../../core/pulse.js";
+import { registerChat } from "../../core/background/pulse.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
 import { handleMessage, getSenderName } from "./handlers.js";
 

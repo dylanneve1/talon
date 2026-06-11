@@ -17,7 +17,7 @@ import {
   deriveNumericChatId,
   generateTerminalChatId,
 } from "../../util/chat-id.js";
-import { resolveModel } from "../../core/models.js";
+import { resolveModel } from "../../core/models/catalog.js";
 import { createRenderer } from "./renderer.js";
 import { createInput } from "./input.js";
 import {

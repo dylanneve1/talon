@@ -11,7 +11,7 @@ import type { Backend } from "../../core/agent-runtime/capabilities.js";
 import type { Renderer } from "./renderer.js";
 import { formatTimeAgo } from "./renderer.js";
 import { isTerminalChatId } from "../../util/chat-id.js";
-import { resolveModel as coreResolveModel } from "../../core/models.js";
+import { resolveModel as coreResolveModel } from "../../core/models/catalog.js";
 import { buildCacheDisplay } from "../status-context.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -166,7 +166,7 @@ export function registerBuiltinCommands(): void {
             ctx.renderer.writeln(`  …and ${total - list.length} more`);
           }
         } else {
-          const { getModels } = await import("../../core/models.js");
+          const { getModels } = await import("../../core/models/catalog.js");
           const names = getModels()
             .map((m) => m.aliases[0] ?? m.id)
             .join(", ");

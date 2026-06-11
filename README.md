@@ -2,11 +2,11 @@
 
 [![Node.js](https://img.shields.io/badge/node-%3E%3D22-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex-D97706)](#backends)
+[![Backends](https://img.shields.io/badge/backends-Claude_%7C_Kilo_%7C_OpenCode_%7C_Codex_%7C_OpenAI_Agents-D97706)](#backends)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![CI](https://github.com/dylanneve1/talon/actions/workflows/ci.yml/badge.svg)](https://github.com/dylanneve1/talon/actions/workflows/ci.yml)
 
-Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsoft Teams**, and the **Terminal**, with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, or **Codex**) and full tool access through MCP.
+Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsoft Teams**, and the **Terminal**, with a pluggable backend (**Claude Agent SDK**, **Kilo**, **OpenCode**, **Codex**, or **OpenAI Agents**) and full tool access through MCP.
 
 ---
 
@@ -15,7 +15,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 |                       |                                                                                                                                              |
 | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Multi-frontend**    | Telegram (Grammy + GramJS userbot), Discord (discord.js), Microsoft Teams (Bot Framework), Terminal with live tool visibility                |
-| **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
+| **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex, OpenAI Agents — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
 | **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, triggers, stickers, file system, admin controls                                     |
 | **Plugins**           | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search                                                          |
 | **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary) — backend-agnostic                                                 |
@@ -57,27 +57,29 @@ npx talon chat        # terminal chat mode
 index.ts                    Composition root
   |
   +-- core/                 Platform-agnostic engine
-  |   +-- models.ts         Model registry (dynamic backend discovery)
+  |   +-- agent-runtime/    Backend capability interfaces, events, stores
+  |   +-- models/           Model layer: catalog, per-chat active model,
+  |   |                     reasoning-effort vocabulary
+  |   +-- prompt/           System-prompt assembly + prompts/system templates
+  |   +-- background/       Agents that run without a user message:
+  |   |                     heartbeat, dream, pulse, cron, triggers
+  |   +-- tools/            MCP tool definitions + spawn/env contract
   |   +-- gateway.ts        HTTP bridge for MCP tool calls
   |   +-- dispatcher.ts     Per-chat serial, cross-chat parallel execution
   |   +-- plugin.ts         Plugin loader, registry, hot-reload
-  |   +-- heartbeat.ts      Periodic background agent
-  |   +-- dream.ts          Memory consolidation agent
-  |   +-- pulse.ts          Conversation-aware group engagement
-  |   +-- cron.ts           Persistent scheduled jobs
-  |   +-- triggers.ts       Self-authored watcher scripts
-  |   +-- tools/            MCP tool definitions
   |
   +-- backend/
   |   +-- registry.ts       Bootstrap-decoupled backend lookup
   |   +-- shared/           Cross-backend helpers (stream state, flow violation,
-  |   |                     prompt format, model retry, system prompt, usage)
+  |   |                     delivery contract, metrics, prompt format,
+  |   |                     model retry, system prompt, usage)
   |   +-- remote-server/    Shared infrastructure for agent-server backends
   |   |                     (MCP registration, sessions, providers, lifecycle)
   |   +-- claude-sdk/       Claude Agent SDK (in-process MCP, hooks)
   |   +-- kilo/             Kilo HTTP server backend (streaming via SSE)
   |   +-- opencode/         OpenCode HTTP server backend
   |   +-- codex/            Codex CLI backend (`@openai/codex-sdk`)
+  |   +-- openai-agents/    OpenAI Agents SDK backend (Responses API)
   |
   +-- frontend/
   |   +-- telegram/         Grammy bot + GramJS userbot
@@ -90,13 +92,15 @@ index.ts                    Composition root
   +-- util/                 Config, logging, workspace, paths, time
 ```
 
-**Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. All four backends (Claude SDK, Kilo, OpenCode, Codex) implement the same `QueryBackend` interface in `core/types.ts`. Kilo and OpenCode additionally share the `remote-server/` infrastructure because they wrap forks of the same upstream HTTP agent server.
+**Dependency rule:** `core/` imports nothing from `frontend/` or `backend/`. Frontends and backends depend on core types, never on each other. All five backends (Claude SDK, Kilo, OpenCode, Codex, OpenAI Agents) implement the same `Backend` capability interface from `core/agent-runtime/capabilities.ts`. Kilo and OpenCode additionally share the `remote-server/` infrastructure because they wrap forks of the same upstream HTTP agent server.
+
+**Prompts:** everything the model reads at session start is assembled by `core/prompt/` from the files in `prompts/` — see [prompts/README.md](prompts/README.md) for the assembly order, file ownership (user-editable vs package-owned templates), and the per-backend delivery contracts.
 
 ---
 
 ## Backends
 
-Select via the `backend` field in `~/.talon/config.json`. All backends implement the same `QueryBackend` interface — heartbeat, dream, and chat handlers are backend-agnostic.
+Select via the `backend` field in `~/.talon/config.json`. All backends implement the same `Backend` capability interface — heartbeat, dream, and chat handlers are backend-agnostic.
 
 | Backend    | `backend` value | Transport                                       | Notes                                                                                                                                                                                                            |
 | ---------- | --------------- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -104,6 +108,7 @@ Select via the `backend` field in `~/.talon/config.json`. All backends implement
 | Kilo       | `"kilo"`        | Local HTTP server via `@kilocode/sdk`           | SSE-streamed turns. Routes to many model providers via Kilo's auth.                                                                                                                                              |
 | OpenCode   | `"opencode"`    | Local HTTP server via `@opencode-ai/sdk`        | SSE-streamed turns; same MCP and session shape as Kilo (upstream fork).                                                                                                                                          |
 | Codex      | `"codex"`       | Per-turn subprocess via `@openai/codex-sdk`     | Requires the `codex` CLI from `@openai/codex` and Codex auth (`codex login`, `CODEX_API_KEY`, `TALON_CODEX_KEY`, or `codexApiKey`). MCP servers configured via TOML overrides at thread start. |
+| OpenAI Agents | `"openai-agents"` | In-process via `@openai/agents` | Responses API (or any OpenAI-compatible endpoint via `TALON_AGENTS_URL` / `openaiBaseUrl`). Persistent per-chat MCP bundles. |
 
 The Kilo and OpenCode backends share infrastructure (`backend/remote-server/`) since the upstream HTTP API is the same; each backend supplies its own SDK client, port, and delivery suffix. Codex is its own integration on top of the Codex CLI's JSONL event stream.
 
@@ -247,7 +252,7 @@ Config file: `~/.talon/config.json`
 | Field                      | Default      | Description                                                                                                             |
 | -------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------- |
 | `frontend`                 | `"telegram"` | `"telegram"`, `"discord"`, `"teams"`, `"terminal"`, or an array                                                         |
-| `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, `"opencode"`, or `"codex"`                                                                        |
+| `backend`                  | `"claude"`   | `"claude"`, `"kilo"`, `"opencode"`, `"codex"`, or `"openai-agents"`                                                     |
 | `botToken`                 | ---          | Telegram bot token                                                                                                      |
 | `model`                    | `"default"`  | Default model. Interpretation depends on the active backend.                                                            |
 | `codexApiKey`              | ---          | Codex-only OpenAI API key. Prefer this over `openaiApiKey` for Codex API-key auth. `codex login` takes precedence over shared `openaiApiKey`. |
@@ -258,6 +263,8 @@ Config file: `~/.talon/config.json`
 | `braveApiKey`              | ---          | Brave Search API key                                                                                                    |
 | `timezone`                 | ---          | IANA timezone (e.g. `"Europe/London"`)                                                                                  |
 | `plugins`                  | `[]`         | External plugin packages                                                                                                |
+| `disabledToolTags`         | ---          | Hide whole tool groups from the model (e.g. `["stickers", "web"]`) — each registered tool costs context tokens per session |
+| `disabledTools`            | ---          | Hide individual tools by name (`end_turn` cannot be disabled)                                                           |
 | `adminUserId`              | ---          | Telegram user ID for `/admin` commands                                                                                  |
 | `allowedUsers`             | ---          | Whitelist of Telegram user IDs                                                                                          |
 | `apiId` / `apiHash`        | ---          | Telegram API credentials for full message history                                                                       |

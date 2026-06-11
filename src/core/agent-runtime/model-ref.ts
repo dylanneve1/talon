@@ -59,7 +59,7 @@ export type CacheSupport = "none" | "read" | "readwrite";
 
 /**
  * Where the resolver picked this model from. Mirrors
- * `ActiveModelSource` in `core/active-model.ts` so the two systems
+ * `ActiveModelSource` in `core/models/active-model.ts` so the two systems
  * speak the same vocabulary. Values are stable for logging and
  * toast wording.
  */

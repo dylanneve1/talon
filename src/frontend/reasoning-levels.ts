@@ -1,11 +1,11 @@
 import type { ReasoningEffortLevel, UnifiedModelInfo } from "../core/types.js";
 import type { Backend } from "../core/agent-runtime/capabilities.js";
-import { resolveActiveModelForChat } from "../core/active-model.js";
+import { resolveActiveModelForChat } from "../core/models/active-model.js";
 import type { TalonConfig } from "../util/config.js";
 import {
   normalizeReasoningLevels,
   supportsReasoningLevel,
-} from "../core/reasoning-levels.js";
+} from "../core/models/reasoning-levels.js";
 export { supportsReasoningLevel };
 
 export type ActiveReasoningLevels = {

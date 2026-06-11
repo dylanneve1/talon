@@ -1,4 +1,4 @@
-import type { ReasoningEffortLevel } from "./types.js";
+import type { ReasoningEffortLevel } from "../types.js";
 
 export const REASONING_LEVEL_ORDER: ReasoningEffortLevel[] = [
   "off",

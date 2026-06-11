@@ -15,14 +15,14 @@ import { flushTriggers } from "./storage/trigger-store.js";
 import { flushHistory } from "./storage/history.js";
 import { flushMediaIndex } from "./storage/media-index.js";
 import { getActiveCount } from "./core/dispatcher.js";
-import { startPulseTimer, stopPulseTimer } from "./core/pulse.js";
+import { startPulseTimer, stopPulseTimer } from "./core/background/pulse.js";
 import {
   startHeartbeatTimer,
   stopHeartbeatTimer,
   awaitCurrentRun as awaitHeartbeat,
-} from "./core/heartbeat.js";
-import { startCronTimer, stopCronTimer } from "./core/cron.js";
-import { shutdownTriggers } from "./core/triggers.js";
+} from "./core/background/heartbeat.js";
+import { startCronTimer, stopCronTimer } from "./core/background/cron.js";
+import { shutdownTriggers } from "./core/background/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";

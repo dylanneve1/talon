@@ -370,7 +370,7 @@ async function runSetup(): Promise<void> {
     // Setup wizard may run before Claude Code is installed — use static list
     registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
   }
-  const { getModels } = await import("./core/models.js");
+  const { getModels } = await import("./core/models/catalog.js");
   const registeredModels = getModels();
 
   const model = await p.select({

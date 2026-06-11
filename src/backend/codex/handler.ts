@@ -87,7 +87,7 @@ import {
   getModelInfo,
   isCodexOAuthIncompat,
 } from "./models.js";
-import { supportsReasoningLevel } from "../../core/reasoning-levels.js";
+import { supportsReasoningLevel } from "../../core/models/reasoning-levels.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
 import { classifyRateLimits, readLastRolloutSnapshot } from "./token-usage.js";
 

@@ -1,5 +1,5 @@
 /**
- * Tests for src/core/heartbeat.ts
+ * Tests for src/core/background/heartbeat.ts
  *
  * Covers: initHeartbeat, startHeartbeatTimer (double-start guard),
  * forceHeartbeat (concurrency guard), state persistence semantics
@@ -95,7 +95,7 @@ const {
   getHeartbeatStatus,
   awaitCurrentRun,
   buildHeartbeatSystemPrompt,
-} = await import("../core/heartbeat.js");
+} = await import("../core/background/heartbeat.js");
 
 describe("initHeartbeat", () => {
   it("accepts a config object without throwing", () => {
@@ -554,7 +554,7 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
       termed: 0,
       killed: 0,
     }));
-    evictionMod = await import("../core/heartbeat.js");
+    evictionMod = await import("../core/background/heartbeat.js");
     evictionMod.initHeartbeat({
       model: "claude-sonnet-4-6",
       getBackend: () =>

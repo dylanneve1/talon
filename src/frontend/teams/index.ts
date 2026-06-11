@@ -13,7 +13,7 @@ import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/gateway.js";
 import { log, logError } from "../../util/log.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
-import { resolveModel } from "../../core/models.js";
+import { resolveModel } from "../../core/models/catalog.js";
 import { createTeamsActionHandler, postToTeams } from "./actions.js";
 import { splitTeamsMessage, buildAdaptiveCard } from "./formatting.js";
 import { buildCacheDisplay } from "../status-context.js";

@@ -33,7 +33,7 @@
 
 import { log, logDebug } from "../../util/log.js";
 import { getState, type EndpointModelCapabilities } from "./state.js";
-import { normalizeReasoningLevels } from "../../core/reasoning-levels.js";
+import { normalizeReasoningLevels } from "../../core/models/reasoning-levels.js";
 
 /**
  * Shape of one entry returned by an OpenAI-compatible `/models`

@@ -5,7 +5,7 @@
  */
 
 import { ensureServer } from "./server.js";
-import { normalizeReasoningLevels } from "../../core/reasoning-levels.js";
+import { normalizeReasoningLevels } from "../../core/models/reasoning-levels.js";
 import type { ReasoningEffortLevel } from "../../core/types.js";
 
 // ---------------------------------------------------------------------------

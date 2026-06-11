@@ -27,7 +27,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createWriteStream, readFileSync, type WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { execute as dispatcherExecute } from "./dispatcher.js";
+import { execute as dispatcherExecute } from "../dispatcher.js";
 import {
   getAllTriggers,
   getTrigger,
@@ -36,9 +36,9 @@ import {
   type Trigger,
   type TriggerStatus,
   FIRE_PAYLOAD_MAX_BYTES,
-} from "../storage/trigger-store.js";
-import { log, logError, logWarn } from "../util/log.js";
-import { appendDailyLog } from "../storage/daily-log.js";
+} from "../../storage/trigger-store.js";
+import { log, logError, logWarn } from "../../util/log.js";
+import { appendDailyLog } from "../../storage/daily-log.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 

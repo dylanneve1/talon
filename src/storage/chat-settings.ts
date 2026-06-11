@@ -34,7 +34,7 @@ export type ChatSettings = {
    * orphan-bug class (model from backend X persisting when switching
    * to backend Y).
    *
-   * Resolution order (see `core/active-model.ts`):
+   * Resolution order (see `core/models/active-model.ts`):
    *   1. `modelByBackend[activeBackend]` if it validates on the catalog
    *   2. `backend.getDefaultModel()` (canonical for backends that have one)
    *   3. `config.backendDefaults[activeBackend]` (operator override)
@@ -490,4 +490,4 @@ export const EFFORT_LEVELS: EffortLevel[] = [
  * Resolve a user-provided model name (alias or full ID) to the canonical model ID.
  * Delegates to the model registry; falls through unknown names unchanged.
  */
-export { resolveModelId as resolveModelName } from "../core/models.js";
+export { resolveModelId as resolveModelName } from "../core/models/catalog.js";

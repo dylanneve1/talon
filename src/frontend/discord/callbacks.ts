@@ -48,7 +48,7 @@ import {
   disablePulse,
   enablePulse,
   isPulseEnabled,
-} from "../../core/pulse.js";
+} from "../../core/background/pulse.js";
 import { isInteractionAllowed, registerDiscordChat } from "./handlers.js";
 import {
   renderSettingsText,
@@ -62,7 +62,7 @@ import {
   getBackendIdForChat,
   resolveChatBackend,
 } from "../../core/backend-controller.js";
-import { resolveActiveModelForChat } from "../../core/active-model.js";
+import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,

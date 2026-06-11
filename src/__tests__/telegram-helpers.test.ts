@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearModels, registerModels } from "../core/models.js";
+import { clearModels, registerModels } from "../core/models/catalog.js";
 import {
   formatCompactModelLabel,
   formatDuration,

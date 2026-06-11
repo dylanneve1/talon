@@ -7,7 +7,7 @@
  * system and the backend-specific model definition files.
  */
 
-import type { ReasoningEffortLevel } from "./types.js";
+import type { ReasoningEffortLevel } from "../types.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 /**
- * Extended branch coverage for src/core/triggers.ts.
+ * Extended branch coverage for src/core/background/triggers.ts.
  *
  * Complements src/__tests__/triggers.test.ts.  Those tests cover the happy
  * paths (bash, cancel, timeout, shutdown, TALON_FIRE).  This file covers the
@@ -44,7 +44,7 @@ const {
   resumeAfterRestart,
   shutdownTriggers,
   _internals,
-} = await import("../core/triggers.js");
+} = await import("../core/background/triggers.js");
 
 import type { Trigger } from "../storage/trigger-store.js";
 const {

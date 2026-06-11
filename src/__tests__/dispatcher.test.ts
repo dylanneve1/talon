@@ -447,7 +447,7 @@ describe("typing indicator — non-Error throws", () => {
       logWarn: vi.fn(),
       logError: vi.fn(),
     }));
-    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
+    vi.doMock("../core/background/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
     const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
@@ -499,7 +499,7 @@ describe("typing indicator — non-Error throws", () => {
       logWarn: vi.fn(),
       logError: vi.fn(),
     }));
-    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
+    vi.doMock("../core/background/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { initDispatcher, execute } = await import("../core/dispatcher.js");
     const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
@@ -574,7 +574,7 @@ describe("dispatcher — uninitialized guard", () => {
       logWarn: vi.fn(),
       logError: vi.fn(),
     }));
-    vi.doMock("../core/dream.js", () => ({ maybeStartDream: vi.fn() }));
+    vi.doMock("../core/background/dream.js", () => ({ maybeStartDream: vi.fn() }));
 
     const { execute } = await import("../core/dispatcher.js");
     // deps is null because initDispatcher was never called in this fresh module

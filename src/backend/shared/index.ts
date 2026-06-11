@@ -1,23 +1,32 @@
 /**
  * Shared backend framework — barrel re-export.
  *
- * Helpers used by every concrete backend (`claude-sdk`, `kilo`, `opencode`)
- * to keep behaviour aligned and avoid copy-paste drift.
+ * Helpers used by every concrete backend (`claude-sdk`, `codex`,
+ * `kilo`, `opencode`, `openai-agents`) to keep behaviour aligned and
+ * avoid copy-paste drift.
  *
  * What's here:
  *   - `delivered-text` — scratchpad/dedup primitives.
+ *   - `delivery-contract` — per-backend response-flow contract
+ *     (rendered from prompts/system templates), frontend-aware
+ *     flow-violation reminder, first-turn nudge.
  *   - `flow-violation` — flow-violation detection + reminder text.
+ *   - `metrics` — the shared metric vocabulary (tool calls, per-turn
+ *     rollups, flow violations) with backend dimensions.
  *   - `prompt-format` — user-prompt formatter ([time] [Name] [msg_id:N]).
+ *   - `frontends` — config `frontend` → messaging-frontend list.
  *   - `session-name` — first-message → short session title.
  *   - `usage` — cache-hit % + log summarisers.
- *   - `system-prompt` — first-turn rebuild + backend suffix.
+ *   - `system-prompt` — per-session prompt snapshots + backend suffix
+ *     (assembly itself lives in `core/prompt/`).
  *   - `model-retry` — session-expiry / context-overflow / fallback decisions.
  *   - `stream-state` — backend-agnostic accumulator for stream loops.
  *
  * What's NOT here (intentionally):
  *   - SDK-specific event types — those live in each backend.
  *   - Session storage — that's `src/storage/sessions.ts`.
- *   - MCP server registration — backend-specific transport details.
+ *   - MCP server registration — backend-specific transport details
+ *     (the spawn/env contract they share is `core/tools/mcp-env.ts`).
  */
 
 export {

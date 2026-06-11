@@ -112,7 +112,7 @@ const { initCodexAgent } = await import("../backend/codex/init.js");
 const { resetState } = await import("../backend/codex/state.js");
 const sessions = await import("../storage/sessions.js");
 const chatSettings = await import("../storage/chat-settings.js");
-const coreModels = await import("../core/models.js");
+const coreModels = await import("../core/models/catalog.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

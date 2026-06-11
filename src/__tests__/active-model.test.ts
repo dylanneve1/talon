@@ -1,5 +1,5 @@
 /**
- * Tests for the active-model resolver (`src/core/active-model.ts`).
+ * Tests for the active-model resolver (`src/core/models/active-model.ts`).
  *
  * The resolver is the central read path for "what model is this chat
  * running on?". Each test pins one branch of the 5-step chain so
@@ -57,7 +57,7 @@ const {
   getActiveModelForChat,
   describeActiveModelSource,
   getModelByBackendSnapshot,
-} = await import("../core/active-model.js");
+} = await import("../core/models/active-model.js");
 const {
   setChatModelForBackend,
   setChatBackend,

@@ -9,11 +9,11 @@ import { TalonError } from "../core/errors.js";
 
 // Mock getFallbackModel — we don't want to depend on the actual model
 // registry here; this lets us test all branches.
-vi.mock("../core/models.js", () => ({
+vi.mock("../core/models/catalog.js", () => ({
   getFallbackModel: vi.fn(),
 }));
 
-const { getFallbackModel } = await import("../core/models.js");
+const { getFallbackModel } = await import("../core/models/catalog.js");
 const getFallbackModelMock = vi.mocked(getFallbackModel);
 
 describe("classifyRetry", () => {

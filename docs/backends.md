@@ -2,19 +2,20 @@
 
 Talon's `core/` is backend-agnostic. The active model provider is
 selected via `backend` in `~/.talon/config.json`, and every backend
-implements the same `QueryBackend` interface from
-[`src/core/types.ts`](../src/core/types.ts). Heartbeat, dream,
-`/model`, `/settings`, `/status`, plugin hot-reload, etc. work
-identically against any backend.
+composes the same `Backend` capability interface from
+[`src/core/agent-runtime/capabilities.ts`](../src/core/agent-runtime/capabilities.ts).
+Heartbeat, dream, `/model`, `/settings`, `/status`, plugin hot-reload,
+etc. work identically against any backend.
 
 ## Available backends
 
-| `backend` value | Label     | SDK                              | Transport                                     |
-| --------------- | --------- | -------------------------------- | --------------------------------------------- |
-| `"claude"`      | Anthropic | `@anthropic-ai/claude-agent-sdk` | Per-query subprocess (the `claude` CLI)       |
-| `"kilo"`        | Kilo      | `@kilocode/sdk`                  | Local HTTP server (one process, SSE-streamed) |
-| `"opencode"`    | OpenCode  | `@opencode-ai/sdk`               | Local HTTP server (one process, SSE-streamed) |
-| `"codex"`       | Codex     | `@openai/codex-sdk`              | Per-turn subprocess (the `codex` CLI)         |
+| `backend` value    | Label         | SDK                              | Transport                                     |
+| ------------------ | ------------- | -------------------------------- | --------------------------------------------- |
+| `"claude"`         | Anthropic     | `@anthropic-ai/claude-agent-sdk` | Per-query subprocess (the `claude` CLI)       |
+| `"kilo"`           | Kilo          | `@kilocode/sdk`                  | Local HTTP server (one process, SSE-streamed) |
+| `"opencode"`       | OpenCode      | `@opencode-ai/sdk`               | Local HTTP server (one process, SSE-streamed) |
+| `"codex"`          | Codex         | `@openai/codex-sdk`              | Per-turn subprocess (the `codex` CLI)         |
+| `"openai-agents"`  | OpenAI Agents | `@openai/agents`                 | In-process (Responses API or any OpenAI-compatible endpoint) |
 
 ## Shared infrastructure
 
@@ -26,11 +27,19 @@ Every backend uses these:
   delivered-text norms, synthetic-error markers.
 - `delivery.ts` — `routeDelivery` decides between
   `tool` / `synthetic-error` / `text-part` / `empty` at end of turn.
+- `delivery-contract.ts` — per-backend response-flow contract built
+  from `prompts/system/contract-*.md` templates, plus the
+  frontend-aware flow-violation reminder and first-turn nudge.
 - `flow-violation.ts` — detect trailing prose without delivery tool
   call, build the synthetic re-prompt.
+- `metrics.ts` — the shared metric vocabulary (`tool_calls.*`,
+  `queries_total`, per-turn histograms, `backend.<id>.*` dimensions).
+  Backends never call `incrementCounter` for these directly.
 - `prompt-format.ts` — `[YYYY-MM-DD HH:MM:SS] [Name] [msg_id:N]`
   prefix on user prompts.
-- `system-prompt.ts` — first-turn rebuild + per-backend suffix join.
+- `system-prompt.ts` — per-session frozen prompt snapshots +
+  per-backend suffix join (assembly itself lives in `core/prompt/`).
+- `frontends.ts` — `nonTerminalFrontends` config normaliser.
 - `model-retry.ts` — classify retryable errors into reset / fallback /
   bubble decisions.
 - `session-name.ts` — first-message → short session title.
@@ -60,36 +69,33 @@ server, so their MCP / session / provider plumbing is shared:
 Codex and Claude SDK don't use this — they wrap different transport
 shapes.
 
-## QueryBackend interface
+## The Backend capability interface
 
-Every backend's `factory.init()` returns one of these from
-`core/types.ts`:
+Every backend's factory composes a `Backend` object via
+`composeBackend(...)` from
+`core/agent-runtime/capabilities.ts`. Capabilities are explicit
+slots, not optional methods on a fat interface — consumers read
+presence directly (`backend.chat?.…`) and degrade gracefully when a
+slot is absent:
 
 ```typescript
-interface QueryBackend {
-  query(params: QueryParams): Promise<QueryResult>;        // required
-  warmSession?(chatId: string): Promise<void>;             // Claude-only
-  updateSystemPrompt?(prompt: string): void;               // Claude-only
-  refreshMcpServers?(chatId: string): Promise<...>;        // Claude-only
-  resolveModel?(query: string): Promise<UnifiedModelResolution>;
-  getModelInfo?(id: string): Promise<UnifiedModelInfo | undefined>;
-  getSettingsPresentation?(activeModel: string, callbackPrefix?: string):
-    Promise<{ modelButtons: ModelButton[]; modelDetails: string[] }>;
-  getProviders?(): Promise<UnifiedProviderInfo[]>;
-  getProviderModels?(providerId: string, page?: number, pageSize?: number):
-    Promise<{ models: UnifiedModelInfo[]; total: number }>;
-  formatModelError?(query: string, resolution: UnifiedModelResolution): string;
-  getSessionSnapshot?(sessionId: string): Promise<...>;     // /status
-  listModels?(filter?: "free" | "all"): Promise<...>;
-  runOneShotAgent?(params: OneShotAgentParams): Promise<void>;
-  evictOrphanSubprocesses?(contextLabel: string): Promise<...>;  // Claude-only
-  backendLabel?: string;
+interface Backend {
+  id: BackendId;
+  label: string;
+  cacheMetrics: CacheMetricsSupport;
+  chat?: ChatBackend;          // runChatTurn → AsyncIterable<AgentEvent>
+  background?: BackgroundRunner; // runOneShotAgent (heartbeat / dream / triggers)
+  models?: ModelCatalog;       // resolution core + optional picker surface
+  sessions?: SessionBackend;   // resetChat / warmSession
+  tools?: ToolRuntime;         // refreshTools (plugin hot-reload)
+  usage?: UsageTelemetry;      // getSessionSnapshot (/status enrichment)
+  control?: SystemControl;     // updateSystemPrompt
 }
 ```
 
-`runOneShotAgent` is what makes heartbeat + dream work across all
-backends — each backend's `one-shot.ts` translates the runtime
-events into Markdown-flavoured run-log entries.
+`background.runOneShotAgent` is what makes heartbeat + dream work
+across all backends — each backend's `one-shot.ts` translates the
+runtime events into Markdown-flavoured run-log entries.
 
 ## Backend-specific notes
 
@@ -147,9 +153,9 @@ keep OpenAI-compatible endpoint credentials without hijacking Codex.
    - `index.ts` — barrel.
 
 2. The factory's `init` is called once at startup and returns a
-   `QueryBackend` instance. Wire in as many of the optional methods
-   as your SDK supports; `core/` falls back gracefully when methods
-   are missing.
+   `Backend` composed via `composeBackend(...)`. Wire in as many of
+   the capability slots as your SDK supports; `core/` falls back
+   gracefully when a slot is missing.
 
 3. Add `await import("./backend/<name>/factory.js");` to
    `bootstrap.ts`'s factory-loading block.
@@ -166,8 +172,8 @@ keep OpenAI-compatible endpoint credentials without hijacking Codex.
 7. Add tests:
    - Unit tests for backend-specific helpers (`models.ts`,
      `mcp-config.ts`, etc.).
-   - A factory wiring test (mock the SDK, assert the returned
-     QueryBackend has the expected methods).
+   - A factory wiring test (mock the SDK, assert the composed
+     `Backend` has the expected capability slots).
    - If you wrap a CLI: a Docker harness under `docker/<name>-test/`
      for live verification.
 

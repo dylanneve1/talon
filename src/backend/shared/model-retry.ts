@@ -22,7 +22,7 @@
  */
 
 import type { TalonError } from "../../core/errors.js";
-import { getFallbackModel } from "../../core/models.js";
+import { getFallbackModel } from "../../core/models/catalog.js";
 
 // ── Public API ──────────────────────────────────────────────────────────────
 

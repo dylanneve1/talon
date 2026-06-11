@@ -11,8 +11,8 @@ import {
   getModels,
   resolveModel as coreResolveModel,
   resolveModelId,
-} from "../../core/models.js";
-import type { ModelInfo } from "../../core/models.js";
+} from "../../core/models/catalog.js";
+import type { ModelInfo } from "../../core/models/catalog.js";
 import type {
   UnifiedModelInfo,
   UnifiedModelResolution,

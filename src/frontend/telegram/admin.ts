@@ -15,7 +15,7 @@ import {
   validateCronExpression,
 } from "../../storage/cron-store.js";
 import { getActiveCount } from "../../core/dispatcher.js";
-import { getPulseStatus } from "../../core/pulse.js";
+import { getPulseStatus } from "../../core/background/pulse.js";
 import { getHealthStatus, getRecentErrors } from "../../util/watchdog.js";
 import { formatDuration, formatModelLabel } from "./helpers.js";
 

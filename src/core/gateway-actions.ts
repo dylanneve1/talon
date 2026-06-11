@@ -45,7 +45,7 @@ import {
   MAX_ACTIVE_PER_CHAT,
   type TriggerLanguage,
 } from "../storage/trigger-store.js";
-import { cancelTrigger, spawnTrigger } from "./triggers.js";
+import { cancelTrigger, spawnTrigger } from "./background/triggers.js";
 import { log, logWarn } from "../util/log.js";
 import type { ActionResult } from "./types.js";
 import type { Backend } from "./agent-runtime/capabilities.js";

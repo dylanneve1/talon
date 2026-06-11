@@ -46,7 +46,7 @@ describe("buildSdkOptions", () => {
     });
     mockGetBridgePort.mockReturnValue(19876);
 
-    const { clearModels, registerModels } = await import("../core/models.js");
+    const { clearModels, registerModels } = await import("../core/models/catalog.js");
     clearModels();
     registerModels([
       {

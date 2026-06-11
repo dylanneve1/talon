@@ -27,7 +27,7 @@ import {
   enablePulse,
   isPulseEnabled,
   resetPulseCheckpoint,
-} from "../../core/pulse.js";
+} from "../../core/background/pulse.js";
 import { handleCallbackQuery } from "./handlers.js";
 import { escapeHtml } from "./formatting.js";
 import {
@@ -49,7 +49,7 @@ import {
   resolveBackendForChat,
   toggleChatFreeOnly,
 } from "./model-menu.js";
-import { resolveActiveModelForChat } from "../../core/active-model.js";
+import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
