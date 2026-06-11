@@ -401,7 +401,6 @@ function ensureConfigFile(): boolean {
 // Delegated to core/prompt/assemble.ts — see that module for the
 // section pipeline, file ownership rules, and the static/dynamic split.
 
-
 // ── Main loader ─────────────────────────────────────────────────────────────
 
 export function loadConfig(): TalonConfig {

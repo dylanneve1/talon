@@ -513,9 +513,8 @@ describe("config", () => {
       mockFs({ frontend: "terminal" }, { "memory.md": bigMemory });
 
       const { loadConfig } = await import("../util/config.js");
-      const { MEMORY_INJECT_MAX_CHARS } = await import(
-        "../core/prompt/assemble.js"
-      );
+      const { MEMORY_INJECT_MAX_CHARS } =
+        await import("../core/prompt/assemble.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("Persistent Memory");
       expect(config.systemPrompt).toContain("truncated");
@@ -523,9 +522,7 @@ describe("config", () => {
       const memorySection = config.systemPrompt
         .split("Persistent Memory")[1]
         .split("---")[0];
-      expect(memorySection.length).toBeLessThan(
-        MEMORY_INJECT_MAX_CHARS + 500,
-      );
+      expect(memorySection.length).toBeLessThan(MEMORY_INJECT_MAX_CHARS + 500);
     });
 
     it("includes workspace file listing when files exist", async () => {

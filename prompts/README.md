@@ -10,17 +10,17 @@ dividers, split into a **static** prefix (stable for a session's lifetime,
 eligible for provider prompt caching) and a **dynamic** tail (volatile,
 placed after the cache boundary):
 
-| # | Section | Source | Part |
-|---|---------|--------|------|
-| 1 | Identity | `identity.md` + `~/.talon/workspace/identity.md` | static |
-| 2 | Core behaviour | `custom.md` (replaces `base.md` when present) | static |
-| 3 | Frontend capabilities | `<frontend>.md` (telegram / discord / teams / terminal) | static |
-| 4 | Persistent memory | `system/persistent-memory.md` wrapping `memory/memory.md`, size-capped | static |
-| 5 | Capability docs | `system/workspace.md`, `system/cron.md`, `system/triggers.md` | static |
-| 6 | Plugin additions | each plugin's `systemPrompt()` contribution | static |
-| 7 | **Delivery contract** | `system/contract-*.md`, appended by the **backend** as its suffix | static (tail) |
-| 8 | Daily-memory pointer | `system/daily-memory.md` (names today's file) | dynamic |
-| 9 | Workspace listing | generated tree of `~/.talon/workspace/` | dynamic |
+| #   | Section               | Source                                                                 | Part          |
+| --- | --------------------- | ---------------------------------------------------------------------- | ------------- |
+| 1   | Identity              | `identity.md` + `~/.talon/workspace/identity.md`                       | static        |
+| 2   | Core behaviour        | `custom.md` (replaces `base.md` when present)                          | static        |
+| 3   | Frontend capabilities | `<frontend>.md` (telegram / discord / teams / terminal)                | static        |
+| 4   | Persistent memory     | `system/persistent-memory.md` wrapping `memory/memory.md`, size-capped | static        |
+| 5   | Capability docs       | `system/workspace.md`, `system/cron.md`, `system/triggers.md`          | static        |
+| 6   | Plugin additions      | each plugin's `systemPrompt()` contribution                            | static        |
+| 7   | **Delivery contract** | `system/contract-*.md`, appended by the **backend** as its suffix      | static (tail) |
+| 8   | Daily-memory pointer  | `system/daily-memory.md` (names today's file)                          | dynamic       |
+| 9   | Workspace listing     | generated tree of `~/.talon/workspace/`                                | dynamic       |
 
 The delivery contract is deliberately LAST in the static prefix: it is the
 one section the model must not miss, and the end of the prompt is the

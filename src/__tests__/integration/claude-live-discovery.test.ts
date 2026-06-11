@@ -13,7 +13,11 @@
 
 import { describe, expect, it } from "vitest";
 import { query } from "@anthropic-ai/claude-agent-sdk";
-import { clearModels, getModels, resolveModelId } from "../../core/models/catalog.js";
+import {
+  clearModels,
+  getModels,
+  resolveModelId,
+} from "../../core/models/catalog.js";
 import { registerClaudeModels } from "../../backend/claude-sdk/models.js";
 import { cliAvailable, cliVersion } from "./live-backend-helpers.js";
 

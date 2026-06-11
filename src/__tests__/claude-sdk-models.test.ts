@@ -64,7 +64,8 @@ describe("registerClaudeModels", () => {
   it("surfaces base and 1M variants separately while collapsing true duplicates", async () => {
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
-    const { getModels, resolveModelId } = await import("../core/models/catalog.js");
+    const { getModels, resolveModelId } =
+      await import("../core/models/catalog.js");
 
     await registerClaudeModels({ model: "default" });
 
@@ -134,7 +135,8 @@ describe("registerClaudeModels", () => {
 
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
-    const { getModels, resolveModelId } = await import("../core/models/catalog.js");
+    const { getModels, resolveModelId } =
+      await import("../core/models/catalog.js");
 
     await registerClaudeModels({ model: "default" });
 
@@ -261,7 +263,8 @@ describe("registerClaudeModels", () => {
 
     const { registerClaudeModels } =
       await import("../backend/claude-sdk/models.js");
-    const { getModels, resolveModelId } = await import("../core/models/catalog.js");
+    const { getModels, resolveModelId } =
+      await import("../core/models/catalog.js");
 
     await registerClaudeModels({ model: "default" });
 
