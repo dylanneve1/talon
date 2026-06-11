@@ -297,8 +297,20 @@ If commands fail, log the error and continue — this stage is optional.`
 // ── Dream logging helpers ─────────────────────────────────────────────────
 
 function createDreamLogFile(): string {
-  if (!existsSync(DREAM_LOGS_DIR)) {
-    mkdirSync(DREAM_LOGS_DIR, { recursive: true });
+  // Best-effort, like appendDreamLog: a failure to create the log
+  // directory must not abort the dream run itself — the per-append
+  // writes are already caught, so a missing dir just means dropped
+  // log entries.
+  try {
+    if (!existsSync(DREAM_LOGS_DIR)) {
+      mkdirSync(DREAM_LOGS_DIR, { recursive: true });
+    }
+  } catch (err) {
+    logError(
+      "dream",
+      "Failed to create dream log dir — run continues, log entries will be dropped",
+      err,
+    );
   }
   const now = new Date();
   const ts = now.toISOString().replace(/[:.]/g, "-").slice(0, 19); // 2026-04-01T21-30-00

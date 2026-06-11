@@ -9,7 +9,7 @@
  */
 
 import { Cron } from "croner";
-import { execute, getActiveCount } from "../dispatcher.js";
+import { execute, getActiveCount } from "../engine/dispatcher.js";
 import {
   getAllCronJobs,
   recordCronRun,

@@ -298,7 +298,7 @@ describe("teams actions", () => {
       proxyFetch: vi.fn(async () => ({ ok: true, text: async () => "" })),
     }));
 
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
 
@@ -320,7 +320,7 @@ describe("teams actions", () => {
   });
 
   it("send_message returns ok for empty text (no-op)", async () => {
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -342,7 +342,7 @@ describe("teams actions", () => {
       })),
     }));
 
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -357,7 +357,7 @@ describe("teams actions", () => {
   });
 
   it("get_chat_info returns channel info", async () => {
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -373,7 +373,7 @@ describe("teams actions", () => {
   });
 
   it("unsupported actions return errors instead of pretending success", async () => {
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -397,7 +397,7 @@ describe("teams actions", () => {
   });
 
   it("unknown actions return null", async () => {
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -425,7 +425,7 @@ describe("teams actions", () => {
       handlePluginAction: vi.fn(async () => null),
     }));
 
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -465,7 +465,7 @@ describe("teams actions", () => {
       handlePluginAction: vi.fn(async () => null),
     }));
 
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -559,7 +559,7 @@ describe("teams actions — branch coverage", () => {
   });
 
   it("send_message with undefined text uses empty string fallback", async () => {
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -587,7 +587,7 @@ describe("teams actions — branch coverage", () => {
       handlePluginAction: vi.fn(async () => null),
     }));
 
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -691,7 +691,7 @@ describe("teams actions — non-Error throw coverage", () => {
       }), // eslint-disable-line @typescript-eslint/no-throw-literal
     }));
 
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -713,7 +713,7 @@ describe("teams actions — non-Error throw coverage", () => {
       }), // eslint-disable-line @typescript-eslint/no-throw-literal
     }));
 
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();
@@ -746,7 +746,7 @@ describe("teams actions — non-Error throw coverage", () => {
       })),
     }));
 
-    const { Gateway } = await import("../core/gateway.js");
+    const { Gateway } = await import("../core/engine/gateway.js");
     const { createTeamsActionHandler } =
       await import("../frontend/teams/actions.js");
     const gateway = new Gateway();

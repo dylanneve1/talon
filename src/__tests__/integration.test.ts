@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { initDispatcher, execute } from "../core/dispatcher.js";
+import { initDispatcher, execute } from "../core/engine/dispatcher.js";
 import type { ContextManager } from "../core/types.js";
 import { stubBackend, stubResolveActiveModel } from "./helpers/stub-backend.js";
 import { TalonError } from "../core/errors.js";

@@ -9,7 +9,7 @@
 import { readFileSync } from "node:fs";
 import { files, dirs } from "../../util/paths.js";
 import type { TalonConfig } from "../../util/config.js";
-import type { Gateway } from "../../core/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import { resetSession, getAllSessions } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
@@ -17,7 +17,7 @@ import {
   getAllCronJobs,
   validateCronExpression,
 } from "../../storage/cron-store.js";
-import { getActiveCount } from "../../core/dispatcher.js";
+import { getActiveCount } from "../../core/engine/dispatcher.js";
 import { getPulseStatus } from "../../core/background/pulse.js";
 import { getHealthStatus, getRecentErrors } from "../../util/watchdog.js";
 import { formatDuration, formatModelLabel } from "./helpers.js";

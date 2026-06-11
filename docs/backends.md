@@ -65,6 +65,8 @@ server, so their MCP / session / provider plumbing is shared:
 - `providers.ts` — `resolveProviderID` walking the provider catalog.
 - `events.ts` — SSE event processor (`processStreamEvent`,
   `finalizePartsIntoState`).
+- `one-shot.ts` — shared heartbeat/dream runner; each backend binds
+  its server bootstrap, model-selection parser, and delivery suffix.
 
 Codex and Claude SDK don't use this — they wrap different transport
 shapes.

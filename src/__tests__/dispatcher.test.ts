@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { initDispatcher, execute, getActiveCount } from "../core/dispatcher.js";
+import {
+  initDispatcher,
+  execute,
+  getActiveCount,
+} from "../core/engine/dispatcher.js";
 import type { ContextManager } from "../core/types.js";
 import {
   stubBackend,
@@ -451,7 +455,8 @@ describe("typing indicator — non-Error throws", () => {
       maybeStartDream: vi.fn(),
     }));
 
-    const { initDispatcher, execute } = await import("../core/dispatcher.js");
+    const { initDispatcher, execute } =
+      await import("../core/engine/dispatcher.js");
     const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
       typeof vi.fn
     >;
@@ -505,7 +510,8 @@ describe("typing indicator — non-Error throws", () => {
       maybeStartDream: vi.fn(),
     }));
 
-    const { initDispatcher, execute } = await import("../core/dispatcher.js");
+    const { initDispatcher, execute } =
+      await import("../core/engine/dispatcher.js");
     const logWarn = (await import("../util/log.js")).logWarn as ReturnType<
       typeof vi.fn
     >;
@@ -582,7 +588,7 @@ describe("dispatcher — uninitialized guard", () => {
       maybeStartDream: vi.fn(),
     }));
 
-    const { execute } = await import("../core/dispatcher.js");
+    const { execute } = await import("../core/engine/dispatcher.js");
     // deps is null because initDispatcher was never called in this fresh module
     await expect(
       execute({

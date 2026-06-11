@@ -8,14 +8,14 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as cheerio from "cheerio";
-import { dirs } from "../util/paths.js";
+import { dirs } from "../../util/paths.js";
 import {
   getRecentFormatted,
   searchHistory,
   getMessagesByUser,
   getKnownUsers,
-} from "../storage/history.js";
-import { formatMediaIndex } from "../storage/media-index.js";
+} from "../../storage/history.js";
+import { formatMediaIndex } from "../../storage/media-index.js";
 import {
   addCronJob,
   getCronJob,
@@ -25,7 +25,7 @@ import {
   validateCronExpression,
   generateCronId,
   type CronJobType,
-} from "../storage/cron-store.js";
+} from "../../storage/cron-store.js";
 import {
   addTrigger,
   deleteTrigger,
@@ -44,11 +44,11 @@ import {
   DEFAULT_TIMEOUT_SECONDS,
   MAX_ACTIVE_PER_CHAT,
   type TriggerLanguage,
-} from "../storage/trigger-store.js";
-import { cancelTrigger, spawnTrigger } from "./background/triggers.js";
-import { log, logWarn } from "../util/log.js";
-import type { ActionResult } from "./types.js";
-import type { Backend } from "./agent-runtime/capabilities.js";
+} from "../../storage/trigger-store.js";
+import { cancelTrigger, spawnTrigger } from "../background/triggers.js";
+import { log, logWarn } from "../../util/log.js";
+import type { ActionResult } from "../types.js";
+import type { Backend } from "../agent-runtime/capabilities.js";
 
 /** Extract readable text from HTML using cheerio (proper DOM parser). */
 function extractText(html: string, maxLength = 8000): string {
@@ -535,10 +535,10 @@ export async function handleSharedAction(
     case "reload_plugins": {
       try {
         const { reloadPlugins, getPluginPromptAdditions } =
-          await import("./plugin.js");
-        const { rebuildSystemPrompt } = await import("../util/config.js");
+          await import("../plugin.js");
+        const { rebuildSystemPrompt } = await import("../../util/config.js");
         const { clearSystemPromptSnapshots } =
-          await import("../backend/shared/system-prompt.js");
+          await import("../../backend/shared/system-prompt.js");
 
         // reloadPlugins reads + validates config internally — no double read.
         // Frontends are derived from config if not explicitly provided.

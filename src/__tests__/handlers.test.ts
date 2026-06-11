@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const executeMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../core/dispatcher.js", () => ({
+vi.mock("../core/engine/dispatcher.js", () => ({
   execute: executeMock,
 }));
 vi.mock("../storage/daily-log.js", () => ({

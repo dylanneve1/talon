@@ -28,7 +28,7 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-vi.mock("../core/gateway-actions.js", () => ({
+vi.mock("../core/engine/gateway-actions.js", () => ({
   handleSharedAction: vi.fn(async () => null),
 }));
 
@@ -36,7 +36,7 @@ vi.mock("../core/plugin.js", () => ({
   handlePluginAction: vi.fn(async () => null),
 }));
 
-vi.mock("../core/dispatcher.js", () => ({
+vi.mock("../core/engine/dispatcher.js", () => ({
   getActiveCount: vi.fn(() => 0),
 }));
 
@@ -55,7 +55,7 @@ vi.mock("../storage/sessions.js", () => ({
 
 // ── Subject under test ────────────────────────────────────────────────────────
 
-import { Gateway } from "../core/gateway.js";
+import { Gateway } from "../core/engine/gateway.js";
 
 // ── Test suite ────────────────────────────────────────────────────────────────
 

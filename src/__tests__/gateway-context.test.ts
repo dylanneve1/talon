@@ -7,11 +7,11 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-vi.mock("../core/gateway-actions.js", () => ({
+vi.mock("../core/engine/gateway-actions.js", () => ({
   handleSharedAction: vi.fn(async () => null),
 }));
 
-import { Gateway } from "../core/gateway.js";
+import { Gateway } from "../core/engine/gateway.js";
 
 describe("gateway per-chat context", () => {
   let gateway: Gateway;

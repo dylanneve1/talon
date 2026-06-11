@@ -21,7 +21,7 @@ import { cleanupOldLogs } from "./storage/daily-log.js";
 import {
   initDispatcher,
   execute as dispatcherExecute,
-} from "./core/dispatcher.js";
+} from "./core/engine/dispatcher.js";
 import { initPulse, resetPulseTimer } from "./core/background/pulse.js";
 import { initCron } from "./core/background/cron.js";
 import {
@@ -114,7 +114,7 @@ export async function bootstrap(
  * Create the AI backend and wire the dispatcher.
  * Call this after creating the frontend.
  *
- * The backend controller (`core/backend-controller.ts`) is the single
+ * The backend controller (`core/engine/backend-controller.ts`) is the single
  * source of truth for the active backend. Dispatcher / dream /
  * heartbeat all read through `getActiveBackend()` so a runtime swap
  * via `switchBackend(id, config)` propagates without any re-init.
@@ -140,7 +140,7 @@ export async function initBackendAndDispatcher(
     releaseChat,
     isBackendAvailable,
     isModelValidForBackend,
-  } = await import("./core/backend-controller.js");
+  } = await import("./core/engine/backend-controller.js");
 
   // Boot the backend pool — binds the chat / heartbeat / dream roles
   // from `config.backend`, `config.heartbeatBackend`,
@@ -247,7 +247,7 @@ export async function initBackendAndDispatcher(
       const { resolveActiveModelForChat } =
         await import("./core/models/active-model.js");
       const { getBackendIdForChat, getBackendForChat: getBE } =
-        await import("./core/backend-controller.js");
+        await import("./core/engine/backend-controller.js");
       const beId = getBackendIdForChat(chatId);
       const be = getBE(chatId);
       const { model, ref } = await resolveActiveModelForChat(

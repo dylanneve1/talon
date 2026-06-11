@@ -64,7 +64,8 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
 }));
 
-const { handleSharedAction } = await import("../core/gateway-actions.js");
+const { handleSharedAction } =
+  await import("../core/engine/gateway-actions.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

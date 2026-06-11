@@ -350,7 +350,7 @@ import {
   // re-export for test side-only — handler depends on the InputFile constructor
 } from "../frontend/telegram/actions.js";
 import type { Bot } from "grammy";
-import type { Gateway } from "../core/gateway.js";
+import type { Gateway } from "../core/engine/gateway.js";
 
 interface BotApiSpy {
   setMessageReaction: ReturnType<typeof vi.fn>;

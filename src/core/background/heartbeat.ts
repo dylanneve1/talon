@@ -47,28 +47,33 @@ function envMs(name: string, fallback: number): number {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
-/** Overridable via env (eg integration tests). Falls back to 10 min. */
-const HEARTBEAT_TIMEOUT_MS = envMs(
-  "TALON_HEARTBEAT_TIMEOUT_MS",
-  DEFAULT_HEARTBEAT_TIMEOUT_MS,
-);
+/**
+ * Overridable via env (eg integration tests). Falls back to 10 min.
+ * Read per RUN, not at module load, so tests (and operators) can
+ * adjust without re-importing the module.
+ */
+function heartbeatTimeoutMs(): number {
+  return envMs("TALON_HEARTBEAT_TIMEOUT_MS", DEFAULT_HEARTBEAT_TIMEOUT_MS);
+}
 /**
  * After we abort the agent on timeout, wait this long for the agent promise
  * to settle gracefully. If it still hasn't settled we release the lock anyway
  * (so the next heartbeat can fire) and ask the backend to evict any orphan
- * subprocesses it spawned.
+ * subprocesses it spawned. Read per run — see heartbeatTimeoutMs.
  */
-const HEARTBEAT_ABORT_GRACE_MS = envMs(
-  "TALON_HEARTBEAT_ABORT_GRACE_MS",
-  DEFAULT_HEARTBEAT_ABORT_GRACE_MS,
-);
+function heartbeatAbortGraceMs(): number {
+  return envMs(
+    "TALON_HEARTBEAT_ABORT_GRACE_MS",
+    DEFAULT_HEARTBEAT_ABORT_GRACE_MS,
+  );
+}
 const HEARTBEAT_LOGS_DIR = resolve(dirs.logs, "heartbeats");
 const STARTUP_DELAY_MS = 5 * 60 * 1000; // 5-minute delay before first run
 
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /**
- * Thrown when the heartbeat exceeds {@link HEARTBEAT_TIMEOUT_MS}. Distinguishes
+ * Thrown when the heartbeat exceeds the configured timeout. Distinguishes
  * timeouts from agent-internal failures so callers can advance state on the
  * former (the hour was spent) but preserve it on the latter (retry as-is).
  */
@@ -388,7 +393,7 @@ async function runHeartbeatAgent(
   // AbortController is the canonical way to signal a cancellation to a backend.
   // .abort() should tear down any spawned subprocess (Claude SDK) or stop
   // streaming further parts (Kilo/OpenCode). We defend against backends that
-  // ignore it — see HEARTBEAT_ABORT_GRACE_MS below.
+  // ignore it — see heartbeatAbortGraceMs below.
   const abortController = new AbortController();
 
   const oneShotParams: OneShotAgentParams = {
@@ -413,7 +418,7 @@ async function runHeartbeatAgent(
         /* ignore */
       }
       reject(new HeartbeatTimeoutError());
-    }, HEARTBEAT_TIMEOUT_MS);
+    }, heartbeatTimeoutMs());
     t.unref(); // Don't prevent Node.js from exiting cleanly during shutdown
     timeoutHandle = t;
   });
@@ -450,12 +455,12 @@ async function runHeartbeatAgent(
       // lock anyway and ask the backend to evict any orphan subprocesses.
       const settled = await raceWithTimeout(
         agentPromise.catch(() => "settled"),
-        HEARTBEAT_ABORT_GRACE_MS,
+        heartbeatAbortGraceMs(),
       );
       if (settled === "timed_out") {
         logWarn(
           "heartbeat",
-          `Heartbeat #${runCount} backend ignored abort after ${HEARTBEAT_ABORT_GRACE_MS}ms — releasing lock and evicting orphan subprocesses`,
+          `Heartbeat #${runCount} backend ignored abort after ${heartbeatAbortGraceMs()}ms — releasing lock and evicting orphan subprocesses`,
         );
         // Fire-and-forget — we don't block the next heartbeat on subprocess
         // cleanup. Backends that don't spawn per-run subprocesses (Kilo,
@@ -521,8 +526,20 @@ async function raceWithTimeout<T>(
 let heartbeatLogFileSequence = 0;
 
 async function createHeartbeatLogFile(): Promise<string> {
-  if (!existsSync(HEARTBEAT_LOGS_DIR)) {
-    await mkdir(HEARTBEAT_LOGS_DIR, { recursive: true });
+  // Best-effort, like every appendHeartbeatLog call: a failure to
+  // create the log directory must not abort the heartbeat run itself.
+  // The per-append writes are already caught, so a missing dir just
+  // means dropped log entries.
+  try {
+    if (!existsSync(HEARTBEAT_LOGS_DIR)) {
+      await mkdir(HEARTBEAT_LOGS_DIR, { recursive: true });
+    }
+  } catch (err) {
+    logError(
+      "heartbeat",
+      "Failed to create heartbeat log dir — run continues, log entries will be dropped",
+      err,
+    );
   }
   const now = new Date();
   const ts = now.toISOString().replace(/[:.]/g, "-");

@@ -14,15 +14,15 @@ import {
   type ServerResponse,
 } from "node:http";
 import pRetry, { AbortError } from "p-retry";
-import { classify } from "./errors.js";
+import { classify } from "../errors.js";
 import { getActiveCount } from "./dispatcher.js";
-import { getHealthStatus } from "../util/watchdog.js";
-import { getActiveSessionCount } from "../storage/sessions.js";
-import { log, logError, logDebug } from "../util/log.js";
+import { getHealthStatus } from "../../util/watchdog.js";
+import { getActiveSessionCount } from "../../storage/sessions.js";
+import { log, logError, logDebug } from "../../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
-import { handlePluginAction } from "./plugin.js";
-import type { FrontendActionHandler } from "./types.js";
-import type { Backend } from "./agent-runtime/capabilities.js";
+import { handlePluginAction } from "../plugin.js";
+import type { FrontendActionHandler } from "../types.js";
+import type { Backend } from "../agent-runtime/capabilities.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
 

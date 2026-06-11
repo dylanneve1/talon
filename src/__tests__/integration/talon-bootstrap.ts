@@ -34,9 +34,9 @@ import { tmpdir } from "node:os";
 
 import type { TalonConfig } from "../../util/config.js";
 import { initBackendAndDispatcher, type Frontend } from "../../bootstrap.js";
-import { execute as dispatcherExecute } from "../../core/dispatcher.js";
+import { execute as dispatcherExecute } from "../../core/engine/dispatcher.js";
 import { resetSession } from "../../storage/sessions.js";
-import { Gateway } from "../../core/gateway.js";
+import { Gateway } from "../../core/engine/gateway.js";
 import type { FrontendActionHandler } from "../../core/types.js";
 
 import type { StubScript } from "./stub-claude/protocol.js";

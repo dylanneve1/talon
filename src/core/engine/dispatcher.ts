@@ -10,11 +10,11 @@
  */
 
 import { randomBytes } from "node:crypto";
-import type { ContextManager, ExecuteParams, ExecuteResult } from "./types.js";
-import type { Backend } from "./agent-runtime/capabilities.js";
-import { pipeEventsToCallbacks } from "./agent-runtime/event-bridge.js";
-import { log, logDebug, logWarn } from "../util/log.js";
-import { maybeStartDream } from "./background/dream.js";
+import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
+import type { Backend } from "../agent-runtime/capabilities.js";
+import { pipeEventsToCallbacks } from "../agent-runtime/event-bridge.js";
+import { log, logDebug, logWarn } from "../../util/log.js";
+import { maybeStartDream } from "../background/dream.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -35,7 +35,7 @@ type DispatcherDeps = {
   getBackend: (chatId?: string) => Backend;
   resolveActiveModel: (chatId: string) => Promise<{
     model: string | null;
-    ref: import("./agent-runtime/model-ref.js").ModelRef | null;
+    ref: import("../agent-runtime/model-ref.js").ModelRef | null;
     backendId: string;
   }>;
   context: ContextManager;

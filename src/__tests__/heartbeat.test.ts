@@ -493,68 +493,40 @@ describe("awaitCurrentRun", () => {
 // to the backend.
 
 describe("heartbeat eviction (timeout + abort + delegation)", () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let evictionMod: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let evictionRunOneShotMock: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let evictionEvictMock: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let evictionWriteAtomicMock: any;
+  // Uses the file-level hoisted mocks and the top-level module import,
+  // exactly like every other suite in this file. The suite previously
+  // re-mocked node:fs / paths / write-file-atomic via vi.resetModules()
+  // + vi.doMock() and a fresh dynamic import — needed only because the
+  // heartbeat timeout env vars were read at module load. That pattern
+  // raced vitest's module registry (the fresh import intermittently saw
+  // the REAL fs or a stale mock instance) and made this suite flaky.
+  // heartbeat.ts now reads TALON_HEARTBEAT_TIMEOUT_MS / _ABORT_GRACE_MS
+  // per run, so no re-import is needed.
+  const evictionRunOneShotMock = runOneShotAgentMock;
+  const evictionEvictMock = evictOrphanSubprocessesMock;
+  const evictionWriteAtomicMock = writeAtomicSyncMock;
+  const evictionMod = { forceHeartbeat, initHeartbeat };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     process.env.TALON_HEARTBEAT_TIMEOUT_MS = "50";
     process.env.TALON_HEARTBEAT_ABORT_GRACE_MS = "50";
-    vi.resetModules();
 
-    vi.doMock("../util/log.js", () => ({
-      log: vi.fn(),
-      logError: vi.fn(),
-      logWarn: vi.fn(),
-    }));
-    vi.doMock("node:fs", () => ({
-      existsSync: () => false,
-      readFileSync: (filePath: string) => {
-        const p = String(filePath).replace(/\\/g, "/");
-        if (p.endsWith("/heartbeat.md"))
-          return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
-        return "null";
-      },
-      mkdirSync: vi.fn(),
-    }));
-    vi.doMock("node:fs/promises", () => ({
-      appendFile: vi.fn(async () => {}),
-      mkdir: vi.fn(async () => undefined),
-    }));
-    evictionWriteAtomicMock = vi.fn();
-    vi.doMock("write-file-atomic", () => ({
-      default: { sync: evictionWriteAtomicMock },
-    }));
-    vi.doMock("../util/paths.js", () => ({
-      files: {
-        heartbeatState: "/fake/.talon/workspace/memory/heartbeat_state.json",
-        dreamState: "/fake/.talon/workspace/memory/dream_state.json",
-        memory: "/fake/.talon/workspace/memory/memory.md",
-        log: "/fake/.talon/talon.log",
-      },
-      dirs: {
-        root: "/fake/.talon",
-        logs: "/fake/.talon/workspace/logs",
-        workspace: "/fake/.talon/workspace",
-        data: "/fake/.talon/data",
-        memory: "/fake/.talon/workspace/memory",
-        dailyMemory: "/fake/.talon/workspace/memory/daily",
-        prompts: "/fake/.talon/prompts",
-      },
-    }));
-
-    evictionRunOneShotMock = vi.fn();
-    evictionEvictMock = vi.fn(async () => ({
+    existsSyncMock.mockImplementation(() => false);
+    readFileSyncMock.mockImplementation(((filePath: string) => {
+      const p = String(filePath).replace(/\\/g, "/");
+      if (p.endsWith("/heartbeat.md"))
+        return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
+      return "null";
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    }) as any);
+    evictionWriteAtomicMock.mockClear();
+    evictionRunOneShotMock.mockReset();
+    evictionEvictMock.mockReset();
+    evictionEvictMock.mockImplementation(async () => ({
       found: 0,
       termed: 0,
       killed: 0,
     }));
-    evictionMod = await import("../core/background/heartbeat.js");
     evictionMod.initHeartbeat({
       model: "claude-sonnet-4-6",
       getBackend: () =>
@@ -569,11 +541,6 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
   afterEach(() => {
     delete process.env.TALON_HEARTBEAT_TIMEOUT_MS;
     delete process.env.TALON_HEARTBEAT_ABORT_GRACE_MS;
-    vi.doUnmock("../util/log.js");
-    vi.doUnmock("node:fs");
-    vi.doUnmock("node:fs/promises");
-    vi.doUnmock("write-file-atomic");
-    vi.doUnmock("../util/paths.js");
   });
 
   it("calls AbortController.abort() when the agent hangs past the timeout", async () => {
@@ -687,7 +654,7 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
     // Find the final state write (status: "idle" — the one written in the
     // catch path; the initial "running" write happens before the timeout).
     const idleWrites = evictionWriteAtomicMock.mock.calls
-      .map((c: [string, string]) => JSON.parse(c[1]))
+      .map((c) => JSON.parse(String(c[1])))
       .filter((s: { status: string }) => s.status === "idle");
     expect(idleWrites.length).toBeGreaterThan(0);
     const finalState = idleWrites[idleWrites.length - 1];

@@ -20,7 +20,7 @@ import {
   listAvailableBackends,
   rebindChat,
   releaseChat,
-} from "../../core/backend-controller.js";
+} from "../../core/engine/backend-controller.js";
 import {
   registerChat,
   disablePulse,
@@ -54,7 +54,7 @@ import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../reasoning-levels.js";
+} from "../shared/reasoning-levels.js";
 
 /**
  * Wrapper around `editMessageText` that swallows Telegram's

@@ -29,7 +29,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 
-import { Gateway } from "../../core/gateway.js";
+import { Gateway } from "../../core/engine/gateway.js";
 import { resetSession } from "../../storage/sessions.js";
 import type { TalonConfig } from "../../util/config.js";
 

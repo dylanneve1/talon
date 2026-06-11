@@ -11,7 +11,7 @@
 import pc from "picocolors";
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager, ActionResult } from "../../core/types.js";
-import type { Gateway } from "../../core/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import { log } from "../../util/log.js";
 import {
   deriveNumericChatId,
@@ -26,7 +26,7 @@ import {
   clearCommands,
   type CommandContext,
 } from "./commands.js";
-import { buildCacheDisplay } from "../status-context.js";
+import { buildCacheDisplay } from "../shared/status-context.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
@@ -156,7 +156,7 @@ export function createTerminalFrontend(
       );
       renderer.writeln(`  ${pc.dim("─".repeat(renderer.cols - 2))}`);
 
-      const { execute } = await import("../../core/dispatcher.js");
+      const { execute } = await import("../../core/engine/dispatcher.js");
       const { getSessionInfo } = await import("../../storage/sessions.js");
       const input = createInput(`  ${pc.green("❯")} `);
 

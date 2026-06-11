@@ -10,13 +10,13 @@
 
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
-import type { Gateway } from "../../core/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import { log, logError } from "../../util/log.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
 import { resolveModel } from "../../core/models/catalog.js";
 import { createTeamsActionHandler, postToTeams } from "./actions.js";
 import { splitTeamsMessage, buildAdaptiveCard } from "./formatting.js";
-import { buildCacheDisplay } from "../status-context.js";
+import { buildCacheDisplay } from "../shared/status-context.js";
 import {
   initGraphClient,
   type GraphClient,
@@ -164,7 +164,7 @@ export function createTeamsFrontend(
       if (!graphClient) throw new Error("Graph client not initialized");
 
       const chatId = graphClient.getStoredChatId()!;
-      const { execute } = await import("../../core/dispatcher.js");
+      const { execute } = await import("../../core/engine/dispatcher.js");
 
       log("teams", "Teams frontend running");
       log("teams", `Send: Power Automate webhook`);

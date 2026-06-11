@@ -14,7 +14,7 @@ import { flushCronJobs } from "./storage/cron-store.js";
 import { flushTriggers } from "./storage/trigger-store.js";
 import { flushHistory } from "./storage/history.js";
 import { flushMediaIndex } from "./storage/media-index.js";
-import { getActiveCount } from "./core/dispatcher.js";
+import { getActiveCount } from "./core/engine/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/background/pulse.js";
 import {
   startHeartbeatTimer,
@@ -26,7 +26,7 @@ import { shutdownTriggers } from "./core/background/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";
-import { Gateway } from "./core/gateway.js";
+import { Gateway } from "./core/engine/gateway.js";
 import type { Frontend } from "./bootstrap.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
@@ -81,7 +81,7 @@ gateway.backend = backend;
 // touch the gateway field — those roles run from their own getBackend
 // providers (dispatcher routes per chat).
 const { onBackendChange, roleHolder } =
-  await import("./core/backend-controller.js");
+  await import("./core/engine/backend-controller.js");
 const CHAT_ROLE_HOLDER = roleHolder("chat");
 onBackendChange((holder, newBackend, info) => {
   if (holder !== CHAT_ROLE_HOLDER) return;

@@ -64,8 +64,9 @@ index.ts                    Composition root
   |   +-- background/       Agents that run without a user message:
   |   |                     heartbeat, dream, pulse, cron, triggers
   |   +-- tools/            MCP tool definitions + spawn/env contract
-  |   +-- gateway.ts        HTTP bridge for MCP tool calls
-  |   +-- dispatcher.ts     Per-chat serial, cross-chat parallel execution
+  |   +-- engine/           Message flow: dispatcher (per-chat serial,
+  |   |                     cross-chat parallel), HTTP gateway for MCP
+  |   |                     tool calls, backend lifecycle controller
   |   +-- plugin.ts         Plugin loader, registry, hot-reload
   |
   +-- backend/
@@ -82,6 +83,7 @@ index.ts                    Composition root
   |   +-- openai-agents/    OpenAI Agents SDK backend (Responses API)
   |
   +-- frontend/
+  |   +-- shared/           Cross-frontend presentation helpers
   |   +-- telegram/         Grammy bot + GramJS userbot
   |   +-- discord/          discord.js v14
   |   +-- teams/            Bot Framework + Graph API

@@ -1,4 +1,4 @@
-import type { CacheMetricsSupport } from "../core/types.js";
+import type { CacheMetricsSupport } from "../../core/types.js";
 
 export interface ContextDisplay {
   known: boolean;

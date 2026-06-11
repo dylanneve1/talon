@@ -17,7 +17,7 @@ import { resolve } from "node:path";
 import type { Client, Message, Attachment, TextBasedChannel } from "discord.js";
 import { ChannelType } from "discord.js";
 import type { TalonConfig } from "../../util/config.js";
-import { execute } from "../../core/dispatcher.js";
+import { execute } from "../../core/engine/dispatcher.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import {
   appendDailyLog,

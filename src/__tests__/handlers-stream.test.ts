@@ -15,7 +15,7 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-vi.mock("../core/dispatcher.js", () => ({
+vi.mock("../core/engine/dispatcher.js", () => ({
   execute: vi.fn(),
 }));
 
@@ -135,7 +135,7 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
       config: unknown,
     ) => Promise<void>;
 
-    const dispatcher = await import("../core/dispatcher.js");
+    const dispatcher = await import("../core/engine/dispatcher.js");
     executeMock = dispatcher.execute as ReturnType<typeof vi.fn>;
 
     const log = await import("../util/log.js");

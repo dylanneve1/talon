@@ -39,7 +39,7 @@ import {
   hasChatBackendOverride,
   listAvailableBackends,
   resolveChatBackend,
-} from "../../core/backend-controller.js";
+} from "../../core/engine/backend-controller.js";
 import {
   getChatSettings,
   setChatFreeOnly,

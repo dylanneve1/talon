@@ -3,7 +3,7 @@
  */
 
 import type { ActionResult, FrontendActionHandler } from "../../core/types.js";
-import type { Gateway } from "../../core/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import { buildAdaptiveCard, splitTeamsMessage } from "./formatting.js";
 import { log, logError } from "../../util/log.js";
 import { proxyFetch } from "./proxy-fetch.js";

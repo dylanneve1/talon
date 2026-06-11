@@ -3,7 +3,7 @@
  *
  * Handles MCP tool actions that require the Telegram Bot API.
  * Platform-agnostic actions (cron, fetch_url, history) are handled
- * by core/gateway-actions.ts before this is called.
+ * by core/engine/gateway-actions.ts before this is called.
  */
 
 import {
@@ -29,8 +29,8 @@ import {
   getOnlineCount as userbotOnlineCount,
   saveStickerPack as userbotSaveStickerPack,
 } from "./userbot.js";
-import { withRetry } from "../../core/gateway.js";
-import type { Gateway } from "../../core/gateway.js";
+import { withRetry } from "../../core/engine/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import type { ActionResult } from "../../core/types.js";
 import { logWarn, logError } from "../../util/log.js";
 

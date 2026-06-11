@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildCacheDisplay,
   buildContextDisplay,
-} from "../frontend/status-context.js";
+} from "../frontend/shared/status-context.js";
 
 describe("status context display", () => {
   it("uses authoritative contextTokens when present", () => {

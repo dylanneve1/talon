@@ -12,7 +12,7 @@ import type { Renderer } from "./renderer.js";
 import { formatTimeAgo } from "./renderer.js";
 import { isTerminalChatId } from "../../util/chat-id.js";
 import { resolveModel as coreResolveModel } from "../../core/models/catalog.js";
-import { buildCacheDisplay } from "../status-context.js";
+import { buildCacheDisplay } from "../shared/status-context.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

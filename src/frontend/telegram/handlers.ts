@@ -6,7 +6,7 @@
 import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
 import { markdownToTelegramHtml, escapeHtml } from "./formatting.js";
-import { execute } from "../../core/dispatcher.js";
+import { execute } from "../../core/engine/dispatcher.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";

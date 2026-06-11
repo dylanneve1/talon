@@ -33,7 +33,7 @@ import {
   MessageFlags,
 } from "discord.js";
 import type { TalonConfig } from "../../util/config.js";
-import type { Gateway } from "../../core/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import {
   getChatSettings,
   setChatModelForBackend,
@@ -56,18 +56,18 @@ import {
   formatDuration,
   EFFORT_DESCRIPTIONS,
 } from "./helpers.js";
-import { execute } from "../../core/dispatcher.js";
+import { execute } from "../../core/engine/dispatcher.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
 import {
   getBackendIdForChat,
   resolveChatBackend,
-} from "../../core/backend-controller.js";
+} from "../../core/engine/backend-controller.js";
 import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../reasoning-levels.js";
+} from "../shared/reasoning-levels.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { logError } from "../../util/log.js";
 import {

@@ -11,7 +11,7 @@ import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
 import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
-import type { Gateway } from "../../core/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions.js";
 import { initUserClient, disconnectUserClient } from "./userbot.js";
 import { registerCommands, setAdminUserId } from "./commands.js";

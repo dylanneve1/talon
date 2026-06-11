@@ -34,7 +34,7 @@ import {
   MessageFlags,
 } from "discord.js";
 import type { TalonConfig } from "../../util/config.js";
-import type { Gateway } from "../../core/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import { files } from "../../util/paths.js";
 import {
   resetSession,
@@ -74,12 +74,15 @@ import {
 import { getLoadedPlugins } from "../../core/plugin.js";
 import { getMetrics } from "../../util/metrics.js";
 import { handleAdminSubcommand } from "./admin.js";
-import { buildCacheDisplay, buildContextDisplay } from "../status-context.js";
+import {
+  buildCacheDisplay,
+  buildContextDisplay,
+} from "../shared/status-context.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../reasoning-levels.js";
+} from "../shared/reasoning-levels.js";
 import {
   isAdmin,
   isInteractionAllowed,
@@ -89,7 +92,7 @@ import { deriveNumericChatId } from "../../util/chat-id.js";
 import {
   getBackendIdForChat,
   resolveChatBackend,
-} from "../../core/backend-controller.js";
+} from "../../core/engine/backend-controller.js";
 import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 
 import { log, logError, logWarn } from "../../util/log.js";

@@ -49,7 +49,7 @@ import {
   stopProcess,
   waitForHealthy,
 } from "./live-backend-helpers.js";
-import { Gateway } from "../../core/gateway.js";
+import { Gateway } from "../../core/engine/gateway.js";
 import { makeRecordingHandler } from "./recording-handler.js";
 import type { Frontend } from "../../bootstrap.js";
 import type { ContextManager } from "../../core/types.js";
@@ -362,7 +362,7 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     recording.reset();
     const textBlocks: string[] = [];
     const toolUses: { name: string; input: Record<string, unknown> }[] = [];
-    const { execute } = await import("../../core/dispatcher.js");
+    const { execute } = await import("../../core/engine/dispatcher.js");
 
     const result = await execute({
       chatId: "real-bootstrap-test-1",
@@ -433,7 +433,7 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
 
   it("chat-switch disconnects the previous chat's MCP server", async () => {
     recording.reset();
-    const { execute } = await import("../../core/dispatcher.js");
+    const { execute } = await import("../../core/engine/dispatcher.js");
     const { getRegisteredMcpServerNames } =
       await import("../../backend/kilo/server.js");
 

@@ -2,7 +2,7 @@
  * Discord-specific action handlers.
  *
  * Handles MCP tool actions that require the Discord API. Platform-agnostic
- * actions (cron, fetch_url, history) are handled by core/gateway-actions.ts
+ * actions (cron, fetch_url, history) are handled by core/engine/gateway-actions.ts
  * before this is called. The gateway maps a request to this handler by
  * numeric chatId; we resolve it back to a Discord channel via the registry
  * maintained in handlers.ts.
@@ -35,8 +35,8 @@ import {
   ButtonStyle,
   ChannelType,
 } from "discord.js";
-import { withRetry } from "../../core/gateway.js";
-import type { Gateway } from "../../core/gateway.js";
+import { withRetry } from "../../core/engine/gateway.js";
+import type { Gateway } from "../../core/engine/gateway.js";
 import type { ActionResult } from "../../core/types.js";
 import { lookupDiscordChat, sendChunked } from "./handlers.js";
 import { suppressMentions, safeSlice, DISCORD_MAX_TEXT } from "./formatting.js";

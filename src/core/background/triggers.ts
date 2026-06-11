@@ -27,7 +27,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createWriteStream, readFileSync, type WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
-import { execute as dispatcherExecute } from "../dispatcher.js";
+import { execute as dispatcherExecute } from "../engine/dispatcher.js";
 import {
   getAllTriggers,
   getTrigger,

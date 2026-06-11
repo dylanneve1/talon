@@ -32,7 +32,7 @@ vi.mock("../storage/sessions.js", () => ({
   getActiveSessionCount: vi.fn(() => 0),
 }));
 
-vi.mock("../core/dispatcher.js", () => ({
+vi.mock("../core/engine/dispatcher.js", () => ({
   getActiveCount: vi.fn(() => 0),
 }));
 
@@ -55,7 +55,7 @@ vi.mock("write-file-atomic", () => ({
   default: { sync: vi.fn() },
 }));
 
-import { Gateway } from "../core/gateway.js";
+import { Gateway } from "../core/engine/gateway.js";
 
 let gateway: Gateway;
 let port: number;

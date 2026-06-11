@@ -41,14 +41,14 @@
  * haven't been ported.
  */
 
-import type { Backend } from "./agent-runtime/capabilities.js";
-import type { TalonConfig } from "../util/config.js";
+import type { Backend } from "../agent-runtime/capabilities.js";
+import type { TalonConfig } from "../../util/config.js";
 import {
   getBackend,
   listBackends,
   type BackendInitContext,
-} from "../backend/registry.js";
-import { log, logWarn } from "../util/log.js";
+} from "../../backend/registry.js";
+import { log, logWarn } from "../../util/log.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

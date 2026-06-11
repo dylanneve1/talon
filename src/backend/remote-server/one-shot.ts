@@ -1,0 +1,225 @@
+/**
+ * Shared one-shot agent runner for the remote-server backend family
+ * (Kilo, OpenCode) — used by heartbeat & dream.
+ *
+ * The heartbeat/dream modules own timing, locking, and the run log
+ * file. This module owns everything agent-server-specific: ensuring
+ * the HTTP server is up, registering an MCP server tagged with the
+ * contextLabel (so the agent's outbound tool calls reach the right
+ * frontend), creating an ephemeral session, running the prompt,
+ * rendering the response parts into the run log, and cleaning up.
+ *
+ * Both backends previously carried byte-for-byte copies of this file
+ * that drifted (the abort handler landed in one and not the other);
+ * the per-backend differences are exactly the `RemoteOneShotBindings`
+ * fields — server bootstrap, model-selection parsing, and the
+ * delivery-contract suffix.
+ *
+ * These servers run in a long-lived process, so there are no orphan
+ * subprocesses to evict — `evictOrphanSubprocesses` is intentionally
+ * not implemented for this family.
+ *
+ * Note on abort semantics: both SDKs expose `session.abort` but the
+ * REST `prompt` endpoint blocks until the underlying provider
+ * returns. The heartbeat module's outer abort grace is what actually
+ * unblocks the lock — `session.abort` is best-effort cleanup so the
+ * model stops spending tokens once the timeout fires.
+ */
+
+import type { OneShotAgentParams } from "../../core/types.js";
+import { logWarn } from "../../util/log.js";
+import { appendBackendSuffix } from "../shared/index.js";
+
+// ── Client surface ──────────────────────────────────────────────────────────
+
+/**
+ * The slice of the SDK client the one-shot path touches. Wider than
+ * `RemoteAgentClient` (which covers only the always-shared helpers):
+ * one-shot drives the session lifecycle directly. Method syntax keeps
+ * parameter checking bivariant so both concrete SDK clients satisfy
+ * it structurally.
+ */
+export interface RemoteOneShotClient {
+  session: {
+    create(args: { title: string }): Promise<{ data?: unknown }>;
+    prompt(args: {
+      sessionID: string;
+      parts: Array<{ type: "text"; text: string }>;
+      model: { providerID: string; modelID: string };
+      system: string;
+      tools?: Record<string, boolean>;
+    }): Promise<{ data?: unknown }>;
+    abort(args: { sessionID: string }): Promise<unknown>;
+    delete(args: { sessionID: string }): Promise<unknown>;
+  };
+}
+
+// ── Bindings ────────────────────────────────────────────────────────────────
+
+/** The per-backend seams: server bootstrap, model parsing, suffix. */
+export type RemoteOneShotBindings<TClient extends RemoteOneShotClient> = {
+  /** Display label for log lines ("Kilo", "OpenCode"). */
+  label: string;
+  /** Delivery-contract suffix appended to the system prompt. */
+  systemPromptSuffix: string;
+  ensureServer(): Promise<TClient>;
+  /** Split a stored model value into provider/model ids. */
+  parseModelSelection(value: string): {
+    providerID?: string;
+    modelID: string;
+  };
+  resolveProviderID(client: TClient, modelID: string): Promise<string>;
+  ensureChatMcpServer(client: TClient, chatId: string): Promise<string>;
+  ensurePluginMcpServers(client: TClient, chatId: string): Promise<string[]>;
+  buildToolOverrides(
+    client: TClient,
+    chatServerName: string,
+  ): Promise<Record<string, boolean> | undefined>;
+  disconnectChatMcpServer(client: TClient, serverName: string): Promise<void>;
+  errMsg(e: unknown): string;
+};
+
+// ── Runner ──────────────────────────────────────────────────────────────────
+
+export async function runRemoteOneShotAgent<
+  TClient extends RemoteOneShotClient,
+>(
+  bindings: RemoteOneShotBindings<TClient>,
+  params: OneShotAgentParams,
+): Promise<void> {
+  const {
+    prompt,
+    systemPrompt,
+    model,
+    contextLabel,
+    abortController,
+    appendLog,
+  } = params;
+  const { label, errMsg } = bindings;
+
+  const oc = await bindings.ensureServer();
+  const { providerID: selectedProviderID, modelID } =
+    bindings.parseModelSelection(model);
+  const providerID =
+    selectedProviderID ?? (await bindings.resolveProviderID(oc, modelID));
+
+  const chatMcpServerName = await bindings.ensureChatMcpServer(
+    oc,
+    contextLabel,
+  );
+  await bindings.ensurePluginMcpServers(oc, contextLabel);
+  const toolOverrides = await bindings.buildToolOverrides(
+    oc,
+    chatMcpServerName,
+  );
+
+  const sessionResp = await oc.session.create({
+    title: `One-shot ${contextLabel} ${new Date().toISOString()}`,
+  });
+  const sessionData = sessionResp.data as Record<string, unknown> | undefined;
+  const sessionID =
+    typeof sessionData?.id === "string" ? sessionData.id : String(Date.now());
+
+  // Abort handler: when the heartbeat timeout fires, ask the server to
+  // stop generating. The await on `session.prompt` will reject; we
+  // propagate. Without this, runaway generation on a hung heartbeat
+  // keeps spending tokens until the provider returns naturally.
+  const onAbort = (): void => {
+    oc.session
+      .abort({ sessionID })
+      .catch((err) =>
+        logWarn(
+          "agent",
+          `One-shot session.abort failed for ${sessionID}: ${errMsg(err)}`,
+        ),
+      );
+  };
+  abortController.signal.addEventListener("abort", onAbort, { once: true });
+
+  try {
+    if (abortController.signal.aborted) {
+      throw new Error("Aborted before prompt was sent");
+    }
+
+    const finalSystemPrompt = appendBackendSuffix(
+      systemPrompt,
+      bindings.systemPromptSuffix,
+    );
+
+    const resp = await oc.session.prompt({
+      sessionID,
+      parts: [{ type: "text", text: prompt }],
+      model: { providerID, modelID },
+      system: finalSystemPrompt,
+      ...(toolOverrides ? { tools: toolOverrides } : {}),
+    });
+
+    const data = resp.data as Record<string, unknown> | undefined;
+    const parts = Array.isArray(data?.parts)
+      ? (data.parts as Array<Record<string, unknown>>)
+      : [];
+
+    for (const part of parts) {
+      await appendResponsePart(appendLog, part);
+    }
+  } finally {
+    abortController.signal.removeEventListener("abort", onAbort);
+    await bindings.disconnectChatMcpServer(oc, chatMcpServerName);
+    try {
+      await oc.session.delete({ sessionID });
+    } catch (err) {
+      logWarn(
+        "agent",
+        `Failed to delete one-shot ${label} session ${sessionID}: ${errMsg(err)}`,
+      );
+    }
+  }
+}
+
+// ── Run-log rendering ───────────────────────────────────────────────────────
+
+/** Render one response part into the Markdown run log. */
+async function appendResponsePart(
+  appendLog: (text: string) => Promise<void>,
+  part: Record<string, unknown>,
+): Promise<void> {
+  const ts = new Date().toISOString().slice(11, 19);
+  const type = typeof part.type === "string" ? part.type : "unknown";
+
+  if (type === "text") {
+    const text = typeof part.text === "string" ? part.text : "";
+    if (text) await appendLog(`\n## [${ts}] Assistant\n${text}\n`);
+    return;
+  }
+
+  if (type === "tool" || type === "tool_use") {
+    const name =
+      typeof part.tool === "string"
+        ? part.tool
+        : typeof part.name === "string"
+          ? part.name
+          : "tool";
+    const input =
+      "input" in part ? part.input : "state" in part ? part.state : null;
+    await appendLog(
+      `\n**Tool call:** \`${name}\`\n\`\`\`json\n${JSON.stringify(input, null, 2)}\n\`\`\`\n`,
+    );
+    return;
+  }
+
+  if (type === "step-start" || type === "step-finish") {
+    return;
+  }
+
+  if (type === "reasoning") {
+    const text = typeof part.text === "string" ? part.text : "";
+    if (text) await appendLog(`\n### [${ts}] Reasoning\n${text}\n`);
+    return;
+  }
+
+  // Fallback: dump unknown part types so we don't lose information.
+  const truncated = JSON.stringify(part, null, 2).slice(0, 2000);
+  await appendLog(
+    `\n### [${ts}] Part (${type})\n\`\`\`json\n${truncated}\n\`\`\`\n`,
+  );
+}

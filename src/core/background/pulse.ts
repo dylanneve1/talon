@@ -8,7 +8,7 @@
  * Knows nothing about the backend or frontend — uses the dispatcher.
  */
 
-import { execute, getActiveCount } from "../dispatcher.js";
+import { execute, getActiveCount } from "../engine/dispatcher.js";
 import {
   setChatPulse,
   getRegisteredPulseChats,

@@ -1,5 +1,5 @@
 /**
- * Tests for withRetry() exported from src/core/gateway.ts
+ * Tests for withRetry() exported from src/core/engine/gateway.ts
  *
  * withRetry wraps p-retry.  We mock p-retry so that:
  *   - The mock immediately drives the retry loop deterministically (no real
@@ -27,7 +27,7 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-vi.mock("../core/dispatcher.js", () => ({
+vi.mock("../core/engine/dispatcher.js", () => ({
   getActiveCount: vi.fn(() => 0),
 }));
 
@@ -44,7 +44,7 @@ vi.mock("../storage/sessions.js", () => ({
   getActiveSessionCount: vi.fn(() => 0),
 }));
 
-vi.mock("../core/gateway-actions.js", () => ({
+vi.mock("../core/engine/gateway-actions.js", () => ({
   handleSharedAction: vi.fn(async () => null),
 }));
 
@@ -71,7 +71,7 @@ vi.mock("write-file-atomic", () => ({
 
 // ── Dynamic import ─────────────────────────────────────────────────────────
 
-const { withRetry } = await import("../core/gateway.js");
+const { withRetry } = await import("../core/engine/gateway.js");
 import { TalonError, classify } from "../core/errors.js";
 
 // ── helpers ────────────────────────────────────────────────────────────────

@@ -935,7 +935,7 @@ async function startChat(): Promise<void> {
   const { flushTriggers } = await import("./storage/trigger-store.js");
   const { createTerminalFrontend } =
     await import("./frontend/terminal/index.js");
-  const { Gateway } = await import("./core/gateway.js");
+  const { Gateway } = await import("./core/engine/gateway.js");
 
   const { config } = await bootstrap({ frontendNames: ["terminal"] });
 
@@ -957,7 +957,7 @@ async function startChat(): Promise<void> {
   // Mirror the index.ts wiring: keep the gateway's cached backend
   // reference in sync with chat-role rebinds.
   const { onBackendChange, roleHolder } =
-    await import("./core/backend-controller.js");
+    await import("./core/engine/backend-controller.js");
   const CHAT_ROLE_HOLDER = roleHolder("chat");
   onBackendChange((holder, newBackend) => {
     if (holder !== CHAT_ROLE_HOLDER) return;
