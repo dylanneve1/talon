@@ -36,7 +36,6 @@ import {
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
-import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 
 import {
   ensureServer,
@@ -66,6 +65,7 @@ import {
   routeDelivery,
   sleep,
   applyRetryDecision,
+  recordTurnMetrics,
 } from "../shared/index.js";
 import {
   processStreamEvent,
@@ -252,8 +252,12 @@ export async function handleMessage(
 
   const responseText = finalizeResponseText(state);
   const durationMs = Date.now() - t0;
-  recordHistogram("response_latency_ms", durationMs);
-  incrementCounter("queries_total");
+  recordTurnMetrics({
+    backend: "opencode",
+    durationMs,
+    toolCalls: state.toolCalls,
+    apiCalls: state.numApiCalls,
+  });
 
   if (state.newSessionId) {
     const stored = getSession(chatId).sessionId;

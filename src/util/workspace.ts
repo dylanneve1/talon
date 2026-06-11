@@ -20,6 +20,7 @@ import {
 import { join, resolve } from "node:path";
 import { log } from "./log.js";
 import { dirs, files as pathFiles } from "./paths.js";
+import { PACKAGE_PROMPTS_DIR } from "../core/prompt/templates.js";
 
 const IDENTITY_SEED = `# Identity
 
@@ -149,12 +150,18 @@ export function initWorkspace(root: string): void {
     writeFileSync(pathFiles.identity, IDENTITY_SEED);
   }
 
-  // Seed prompt files from the package into ~/.talon/prompts/
-  // Only copies files that don't already exist — user edits are preserved.
-  const packagePrompts = resolve(process.cwd(), "prompts");
+  // Seed user-editable prompt files from the package into
+  // ~/.talon/prompts/. Only copies files that don't already exist —
+  // user edits are preserved. Resolved relative to the package (NOT
+  // process.cwd(): a daemon launched from any other directory used to
+  // silently seed nothing). Skipped: the architecture README (docs,
+  // not a prompt) and the system/ subdirectory (package-owned
+  // templates read in place — a seeded copy would go stale; see
+  // prompts/README.md).
+  const packagePrompts = PACKAGE_PROMPTS_DIR;
   if (existsSync(packagePrompts)) {
     for (const file of readdirSync(packagePrompts)) {
-      if (!file.endsWith(".md")) continue;
+      if (!file.endsWith(".md") || file === "README.md") continue;
       const dst = join(dirs.prompts, file);
       if (!existsSync(dst)) {
         copyFileSync(join(packagePrompts, file), dst);

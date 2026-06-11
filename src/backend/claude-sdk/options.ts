@@ -6,7 +6,6 @@
  */
 
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Options,
@@ -24,6 +23,11 @@ import { getPluginMcpServers } from "../../core/plugin.js";
 import { resolveModelId } from "../../core/models.js";
 import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isTurnTerminator } from "../../core/tools/index.js";
+import {
+  buildTalonMcpEnv,
+  talonMcpServerCommand,
+} from "../../core/tools/mcp-env.js";
+import { nonTerminalFrontends } from "../shared/frontends.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
@@ -51,11 +55,7 @@ export type BuildSdkOptionsResult = {
  * should wrap in try/catch and treat as "no frontends available").
  */
 export function getActiveFrontends(): readonly string[] {
-  const config = getConfig();
-  const allFrontends = Array.isArray(config.frontend)
-    ? config.frontend
-    : [config.frontend];
-  return allFrontends.filter((f) => f !== "terminal");
+  return nonTerminalFrontends(getConfig().frontend);
 }
 
 /**
@@ -71,21 +71,9 @@ export function buildMcpServers(
   const config = getConfig();
   const bridgeUrl = `http://127.0.0.1:${getBridgePort()}`;
 
-  // tsx as a Node loader is passed via `--import <url>`. Node accepts URLs
-  // or absolute paths, but on Windows a raw backslash path (`D:\…\tsx`) is
-  // ambiguous between path and URL — the loader hook fails to register and
-  // every subsequent `import` of a .ts file throws. `pathToFileURL` produces
-  // a cross-platform `file://` URL that Node always treats as a loader URL.
-  const tsxImport = pathToFileURL(
-    resolve(
-      import.meta.dirname ?? ".",
-      "../../../node_modules/tsx/dist/esm/index.mjs",
-    ),
-  ).href;
-  const mcpServerPath = resolve(
-    import.meta.dirname ?? ".",
-    "../../core/tools/mcp-server.ts",
-  );
+  // Shared spawn spec — see talonMcpServerCommand for the tsx-loader
+  // and Windows rationale.
+  const [mcpCommand, ...mcpArgs] = talonMcpServerCommand();
 
   // Frontend-specific MCP tool servers (one per non-terminal frontend)
   const frontends = getActiveFrontends();
@@ -97,20 +85,10 @@ export function buildMcpServers(
 
   for (const frontend of frontends) {
     const serverName = `${frontend}-tools`;
-    const mcpEnv = {
-      TALON_BRIDGE_URL: bridgeUrl,
-      TALON_CHAT_ID: chatId,
-      TALON_FRONTEND: frontend,
-    };
-    // `node --import <tsx-loader>` everywhere — tsx as a Node loader works
-    // identically on Windows and POSIX, and avoids spawning `npx.cmd` (which
-    // Node 20.19+ refuses to execute via child_process.spawn without
-    // shell:true; CVE-2024-27980 mitigation). The wrapping launcher would
-    // hit the same .cmd ban when calling its child.
     servers[serverName] = wrapMcpServer({
-      command: "node",
-      args: ["--import", tsxImport, mcpServerPath],
-      env: mcpEnv,
+      command: mcpCommand,
+      args: mcpArgs,
+      env: buildTalonMcpEnv({ bridgeUrl, chatId, frontend, config }),
     });
   }
 

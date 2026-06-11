@@ -46,6 +46,7 @@ import { setDefaultOpenAIClient, setOpenAIAPI } from "@openai/agents";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { log, logWarn } from "../../util/log.js";
+import { nonTerminalFrontends } from "../shared/frontends.js";
 import { getState } from "./state.js";
 import { startDiscovery, refreshDiscovery } from "./discovery.js";
 
@@ -231,9 +232,5 @@ export function getOpenAIBaseUrl(): string | undefined {
  * the terminal frontend.
  */
 export function getActiveFrontends(): readonly string[] {
-  const state = getState();
-  const fe = state.config?.frontend;
-  if (!fe) return [];
-  const all = Array.isArray(fe) ? fe : [fe];
-  return all.filter((f) => f !== "terminal");
+  return nonTerminalFrontends(getState().config?.frontend);
 }

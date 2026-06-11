@@ -64,6 +64,9 @@ import {
   routeDelivery,
   buildFirstTurnReminder,
   buildFlowViolationReminder,
+  recordToolCall,
+  recordTurnMetrics,
+  recordFlowViolation,
 } from "../shared/index.js";
 import { detectFlowViolation } from "../shared/flow-violation.js";
 
@@ -175,6 +178,7 @@ export async function handleMessage(
       bridgeUrl,
       frontends,
       braveApiKey: config.braveApiKey,
+      toolExclusions: config,
     });
   } catch (err) {
     logError(
@@ -402,8 +406,12 @@ export async function handleMessage(
 
   const responseText = finalizeResponseText(streamState);
   const durationMs = Date.now() - t0;
-  recordHistogram("response_latency_ms", durationMs);
-  incrementCounter("queries_total");
+  recordTurnMetrics({
+    backend: "openai-agents",
+    durationMs,
+    toolCalls: streamState.toolCalls,
+    apiCalls: streamState.numApiCalls,
+  });
 
   recordUsage(chatId, {
     inputTokens: streamState.sdkInputTokens,
@@ -447,7 +455,7 @@ export async function handleMessage(
       : ({ violated: false } as const);
 
   if (violation.violated) {
-    incrementCounter("scratchpad.trailing_text_dropped");
+    recordFlowViolation(violation.shouldRetry ? "retried" : "cap_exhausted");
     log(
       "agent",
       `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
@@ -458,7 +466,6 @@ export async function handleMessage(
     );
 
     if (violation.shouldRetry) {
-      incrementCounter("scratchpad.flow_violation_retried");
       // Recursive call owns the `incrementTurns` for this user message.
       return handleMessage({ ...params, text: violation.reminder }, true);
     }
@@ -634,7 +641,7 @@ function handleToolCalled(item: unknown, ctx: HandleRunItemContext): void {
     }
   }
 
-  incrementCounter(`tool_calls.${stripMcpPrefix(toolName)}`);
+  recordToolCall(toolName, "openai-agents");
   recordToolUse(ctx.state, toolName, input);
 
   if (ctx.onToolUse) {

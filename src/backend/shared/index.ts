@@ -89,6 +89,15 @@ export {
 
 export { sleep } from "./sleep.js";
 
+export { nonTerminalFrontends } from "./frontends.js";
+
+export {
+  recordToolCall,
+  recordTurnMetrics,
+  recordFlowViolation,
+  type TurnMetricInputs,
+} from "./metrics.js";
+
 export {
   applyRetryDecision,
   type ApplyRetryDecisionInputs,

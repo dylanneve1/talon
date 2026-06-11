@@ -37,6 +37,10 @@
 import { log, logWarn } from "../../util/log.js";
 import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
+import {
+  buildTalonMcpEnv,
+  talonMcpServerCommand,
+} from "../../core/tools/mcp-env.js";
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerState } from "./state.js";
 import { errMsg } from "./state.js";
@@ -135,8 +139,6 @@ export async function ensureChatMcpServer<TClient extends RemoteAgentClient>(
 
   const startedAt = Date.now();
   try {
-    const toolsPath = new URL("../../core/tools/mcp-server.ts", import.meta.url)
-      .pathname;
     await client.mcp.add({
       name: serverName,
       config: {
@@ -144,12 +146,16 @@ export async function ensureChatMcpServer<TClient extends RemoteAgentClient>(
         // Wrap under Talon's launcher supervisor so the child dies cleanly
         // when the SDK pipe closes OR Talon's bridge URL stops responding
         // (catches the "agent-server-outlives-Talon" failure mode).
-        command: wrapMcpCommand(["node", "--import", "tsx", toolsPath]),
-        environment: {
-          TALON_BRIDGE_URL: `http://127.0.0.1:${state.gatewayPortFn()}`,
-          TALON_CHAT_ID: chatId,
-          TALON_FRONTEND: state.frontendName,
-        },
+        // Spawn spec shared with every other backend — see
+        // talonMcpServerCommand (and unlike the previous bare "tsx"
+        // specifier, it doesn't depend on the spawn cwd resolving tsx).
+        command: wrapMcpCommand(talonMcpServerCommand()),
+        environment: buildTalonMcpEnv({
+          bridgeUrl: `http://127.0.0.1:${state.gatewayPortFn()}`,
+          chatId,
+          frontend: state.frontendName,
+          config: state.config,
+        }),
       },
     });
     state.registeredMcpServers.add(serverName);

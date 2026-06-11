@@ -15,7 +15,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { composeTools } from "./index.js";
 import { createBridge, textResult } from "./bridge.js";
-import type { ToolFrontend } from "./types.js";
+import {
+  ENV_DISABLED_TOOLS,
+  ENV_DISABLED_TOOL_TAGS,
+  parseEnvList,
+} from "./mcp-env.js";
+import type { ToolFrontend, ToolTag } from "./types.js";
 
 process.on("unhandledRejection", (err) => {
   const detail =
@@ -60,8 +65,25 @@ const bridge = createBridge(BRIDGE_URL, CHAT_ID);
 const serverName = `${FRONTEND}-tools`;
 const server = new McpServer({ name: serverName, version: "3.0.0" });
 
-// Compose and register all tools for the active frontend
-const tools = composeTools({ frontend: FRONTEND });
+// Compose and register the tool set for the active frontend, minus
+// any config-disabled tools/tags (see `disabledTools` /
+// `disabledToolTags` in talon.json — every registered tool costs
+// context tokens in every session, so unused groups are trimmable).
+// `end_turn` is exempt: tool-only backends need it to close every turn.
+const excludeNames = parseEnvList(process.env[ENV_DISABLED_TOOLS]).filter(
+  (name) => name !== "end_turn",
+);
+const excludeTags = parseEnvList(
+  process.env[ENV_DISABLED_TOOL_TAGS],
+) as ToolTag[];
+
+const tools = composeTools({ frontend: FRONTEND, excludeTags, excludeNames });
+if (excludeTags.length > 0 && !tools.some((t) => t.name === "end_turn")) {
+  const endTurn = composeTools({ frontend: FRONTEND }).find(
+    (t) => t.name === "end_turn",
+  );
+  if (endTurn) tools.push(endTurn);
+}
 
 for (const tool of tools) {
   server.tool(tool.name, tool.description, tool.schema, async (params) =>

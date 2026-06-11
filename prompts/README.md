@@ -54,7 +54,8 @@ frontend, so it never belongs in the frontend `.md` files:
   `[FLOW VIOLATION]` re-prompt, then a silent drop.
 - `system/contract-text-or-tools.md` — codex, kilo. Plain assistant text
   is the reply; delivery tools add targeting / rich content.
-- opencode keeps a custom text-preferred override in its server module.
+- `system/contract-text-preferred.md` — opencode. Plain text is the
+  normal route; tools only for genuine side effects.
 
 The delivery TOOL NAMES are per-frontend (`end_turn`/`send`/`react` on
 telegram & discord, `end_turn`/`send_message` on teams) and are injected

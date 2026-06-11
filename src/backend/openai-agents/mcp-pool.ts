@@ -44,9 +44,13 @@
 import { connectMcpServers, MCPServerStdio } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
+import {
+  buildTalonMcpEnv,
+  talonMcpServerCommand,
+  type ToolExclusionConfig,
+} from "../../core/tools/mcp-env.js";
 import { log, logWarn } from "../../util/log.js";
 
 /**
@@ -77,6 +81,8 @@ export interface BundleInputs {
   bridgeUrl: string;
   frontends: readonly string[];
   braveApiKey?: string;
+  /** Tool-surface trimming slice of the Talon config. */
+  toolExclusions?: ToolExclusionConfig | null;
 }
 
 /** Live bundles keyed by chatId. */
@@ -181,42 +187,25 @@ export function getActiveBundleIds(): readonly string[] {
 async function buildBundle(args: BundleInputs): Promise<OpenAIAgentsMcpBundle> {
   const { chatId, bridgeUrl, frontends, braveApiKey } = args;
 
-  // tsx as a Node loader is passed via `--import <url>`. Same
-  // cross-platform `file://` URL handling as the other backends —
-  // `pathToFileURL` produces a URL Node always treats as a loader URL.
-  const tsxImport = pathToFileURL(
-    resolve(
-      import.meta.dirname ?? ".",
-      "../../../node_modules/tsx/dist/esm/index.mjs",
-    ),
-  ).href;
-  const mcpServerPath = resolve(
-    import.meta.dirname ?? ".",
-    "../../core/tools/mcp-server.ts",
-  );
-
   const built: MCPServerStdio[] = [];
 
   // Frontend MCP tool servers (one per non-terminal frontend). Each
   // exposes the Talon-native delivery surface (send, react, end_turn,
-  // …) for that frontend, scoped to `chatId`.
+  // …) for that frontend, scoped to `chatId`. Spawn spec is shared —
+  // see talonMcpServerCommand for the tsx-loader / Windows rationale.
   for (const frontend of frontends) {
-    const wrapped = wrapMcpCommand([
-      "node",
-      "--import",
-      tsxImport,
-      mcpServerPath,
-    ]);
+    const wrapped = wrapMcpCommand(talonMcpServerCommand());
     built.push(
       new MCPServerStdio({
         name: `${frontend}-tools`,
         command: wrapped[0],
         args: wrapped.slice(1),
-        env: {
-          TALON_BRIDGE_URL: bridgeUrl,
-          TALON_CHAT_ID: chatId,
-          TALON_FRONTEND: frontend,
-        },
+        env: buildTalonMcpEnv({
+          bridgeUrl,
+          chatId,
+          frontend,
+          config: args.toolExclusions,
+        }),
         cacheToolsList: true,
       }),
     );

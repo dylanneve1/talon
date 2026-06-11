@@ -29,6 +29,7 @@ import {
   appendText,
   closeCurrentSegment,
   recordToolUse,
+  recordToolCall,
   type StreamState,
 } from "../shared/index.js";
 import { log, logDebug } from "../../util/log.js";
@@ -37,8 +38,6 @@ import { log, logDebug } from "../../util/log.js";
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
-import { incrementCounter } from "../../util/metrics.js";
-import { stripMcpPrefix } from "../../core/tools/index.js";
 
 // ── Streaming timing ───────────────────────────────────────────────────────
 
@@ -224,9 +223,9 @@ async function processPartUpdate(
       );
     }
   }
-  // Count every tool the model calls — parity with claude-sdk which
-  // increments per tool.
-  incrementCounter(`tool_calls.${stripMcpPrefix(toolName)}`);
+  // Count every tool the model calls — shared vocabulary across
+  // backends (prefix-stripped name + backend dimension).
+  recordToolCall(toolName, ctx.backendLabel.toLowerCase());
   recordToolUse(ctx.state, toolName, input);
   if (ctx.onToolUse) {
     try {

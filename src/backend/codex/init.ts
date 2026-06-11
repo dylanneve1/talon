@@ -25,6 +25,7 @@ import { Codex } from "@openai/codex-sdk";
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { log, logWarn } from "../../util/log.js";
+import { nonTerminalFrontends } from "../shared/frontends.js";
 import { getState } from "./state.js";
 import { asCodexConfig, buildCodexMcpServers } from "./mcp-config.js";
 import { detectCodexAuth, type CodexAuthInfo } from "./auth.js";
@@ -170,6 +171,7 @@ export function ensureCodex(chatId: string): Codex {
     bridgeUrl,
     frontends,
     braveApiKey: state.config.braveApiKey,
+    toolExclusions: state.config,
   });
 
   // The Codex CLI's `--config` flag flattens dotted JSON paths into
@@ -234,6 +236,5 @@ export function codexSubprocessEnv(
 function getActiveFrontends(
   frontend: TalonConfig["frontend"],
 ): readonly string[] {
-  const all = Array.isArray(frontend) ? frontend : [frontend];
-  return all.filter((f) => f !== "terminal");
+  return nonTerminalFrontends(frontend);
 }

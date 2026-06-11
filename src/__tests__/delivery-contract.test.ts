@@ -54,6 +54,13 @@ describe("buildDeliveryContract", () => {
     expect(c).not.toContain("FLOW VIOLATION");
   });
 
+  it("text-preferred contract steers away from tools for plain replies", () => {
+    const c = buildDeliveryContract("text-preferred", "telegram");
+    expect(c).toContain("plain assistant text");
+    expect(c).toContain("send");
+    expect(c).not.toContain("FLOW VIOLATION");
+  });
+
   it("unknown frontends fall back to default tool names", () => {
     expect(deliveryToolsForFrontend("nope").endTurn).toBe("end_turn");
     const c = buildDeliveryContract("tool-only", "nope");

@@ -24,10 +24,14 @@
  */
 
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import type { CodexOptions } from "@openai/codex-sdk";
 import { wrapMcpCommand } from "../../util/mcp-launcher.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
+import {
+  buildTalonMcpEnv,
+  talonMcpServerCommand,
+  type ToolExclusionConfig,
+} from "../../core/tools/mcp-env.js";
 
 /**
  * AppToolApproval values accepted by Codex's `mcp_servers.<name>` table.
@@ -123,43 +127,28 @@ export function buildCodexMcpServers(args: {
   bridgeUrl: string;
   frontends: readonly string[];
   braveApiKey?: string;
+  /** Tool-surface trimming slice of the Talon config. */
+  toolExclusions?: ToolExclusionConfig | null;
 }): Record<string, CodexMcpServer> {
   const { chatId, bridgeUrl, frontends, braveApiKey } = args;
 
-  // tsx as a Node loader is passed via `--import <url>`. Node accepts URLs
-  // or absolute paths, but on Windows a raw backslash path is ambiguous
-  // between path and URL; `pathToFileURL` produces a cross-platform
-  // `file://` URL that Node always treats as a loader URL.
-  const tsxImport = pathToFileURL(
-    resolve(
-      import.meta.dirname ?? ".",
-      "../../../node_modules/tsx/dist/esm/index.mjs",
-    ),
-  ).href;
-  const mcpServerPath = resolve(
-    import.meta.dirname ?? ".",
-    "../../core/tools/mcp-server.ts",
-  );
-
   const servers: Record<string, CodexMcpServer> = {};
 
-  // Frontend MCP tool servers (one per non-terminal frontend).
+  // Frontend MCP tool servers (one per non-terminal frontend). Spawn
+  // spec is shared — see talonMcpServerCommand for the tsx-loader and
+  // Windows rationale.
   for (const frontend of frontends) {
     const serverName = `${frontend}-tools`;
-    const wrapped = wrapMcpCommand([
-      "node",
-      "--import",
-      tsxImport,
-      mcpServerPath,
-    ]);
+    const wrapped = wrapMcpCommand(talonMcpServerCommand());
     servers[serverName] = {
       command: wrapped[0],
       args: wrapped.slice(1),
-      env: {
-        TALON_BRIDGE_URL: bridgeUrl,
-        TALON_CHAT_ID: chatId,
-        TALON_FRONTEND: frontend,
-      },
+      env: buildTalonMcpEnv({
+        bridgeUrl,
+        chatId,
+        frontend,
+        config: args.toolExclusions,
+      }),
       default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
     };
   }

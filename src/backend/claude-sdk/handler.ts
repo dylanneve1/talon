@@ -21,8 +21,8 @@ import {
 } from "../../storage/sessions.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
-import { incrementCounter, recordHistogram } from "../../util/metrics.js";
-import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
+import { incrementCounter } from "../../util/metrics.js";
+import { isTurnTerminator } from "../../core/tools/index.js";
 
 import type { Query } from "@anthropic-ai/claude-agent-sdk";
 import {
@@ -55,6 +55,9 @@ import {
   buildDeliveryContract,
   buildFlowViolationReminder,
   buildFirstTurnReminder,
+  recordToolCall,
+  recordTurnMetrics,
+  recordFlowViolation,
 } from "../shared/index.js";
 
 // ── Post-result watchdog ────────────────────────────────────────────────────
@@ -240,7 +243,7 @@ export async function* runChatTurn(
         }
 
         for (const tool of result.tools) {
-          incrementCounter(`tool_calls.${stripMcpPrefix(tool.name)}`);
+          recordToolCall(tool.name, "claude");
           captureIntoState(tool.name, tool.input);
           if (isTurnTerminator(tool.name, tool.input)) {
             state.turnTerminated = true;
@@ -318,8 +321,12 @@ export async function* runChatTurn(
   // ── Persist session and usage ─────────────────────────────────────────────
 
   const durationMs = Date.now() - t0;
-  recordHistogram("response_latency_ms", durationMs);
-  incrementCounter("queries_total");
+  recordTurnMetrics({
+    backend: "claude",
+    durationMs,
+    toolCalls: state.toolCalls,
+    apiCalls: state.numApiCalls,
+  });
   if (state.newSessionId) setSessionId(chatId, state.newSessionId);
   recordUsage(chatId, {
     inputTokens: state.sdkInputTokens,
@@ -355,7 +362,7 @@ export async function* runChatTurn(
   });
 
   if (violation.violated) {
-    incrementCounter("scratchpad.trailing_text_dropped");
+    recordFlowViolation(violation.shouldRetry ? "retried" : "cap_exhausted");
     log(
       "agent",
       `[${chatId}] flow violation: ${violation.reason}. ${
@@ -366,7 +373,6 @@ export async function* runChatTurn(
     );
 
     if (violation.shouldRetry) {
-      incrementCounter("scratchpad.flow_violation_retried");
       yield* runChatTurn(
         { ...params, text: violation.reminder },
         {
@@ -376,7 +382,6 @@ export async function* runChatTurn(
       );
       return;
     }
-    incrementCounter("scratchpad.flow_violation_cap_exhausted");
   }
 
   // Reached the non-retry path — this turn counts as one user-visible turn.

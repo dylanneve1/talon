@@ -316,13 +316,13 @@ describe("codex / handleMessage — happy path", () => {
 
     expect(sessions.getSession("test-chat").usage.numApiCalls).toBe(2);
     const metrics = getMetrics();
-    expect(metrics.counters["codex.api_calls_total"]).toBe(2);
-    expect(metrics.counters["codex.turns_total"]).toBe(1);
-    expect(metrics.histograms["codex.api_calls_per_turn"]).toMatchObject({
+    expect(metrics.counters["api_calls_total"]).toBe(2);
+    expect(metrics.counters["backend.codex.queries"]).toBe(1);
+    expect(metrics.histograms["api_calls_per_turn"]).toMatchObject({
       count: 1,
       p50: 2,
     });
-    expect(metrics.histograms["codex.tool_calls_per_turn"]).toMatchObject({
+    expect(metrics.histograms["tool_calls_per_turn"]).toMatchObject({
       count: 1,
       p50: 0,
     });
@@ -763,11 +763,11 @@ describe("codex / handleMessage — tool use", () => {
     expect(tools[0].input).toEqual({ emoji: "🔥" });
 
     const metrics = getMetrics();
-    expect(metrics.counters["codex.tool_calls_total"]).toBe(1);
-    expect(metrics.counters["codex.tool_calls.react"]).toBe(1);
+    expect(metrics.counters["backend.codex.tool_calls"]).toBe(1);
     expect(metrics.counters["tool_calls.react"]).toBe(1);
-    expect(metrics.counters["codex.turns_with_tools_total"]).toBe(1);
-    expect(metrics.histograms["codex.tool_calls_per_turn"]).toMatchObject({
+    expect(metrics.counters["tool_calls.react"]).toBe(1);
+    expect(metrics.counters["turns_with_tools_total"]).toBe(1);
+    expect(metrics.histograms["tool_calls_per_turn"]).toMatchObject({
       count: 1,
       p50: 1,
     });
@@ -1492,13 +1492,13 @@ describe("codex / handleMessage — non-MCP items", () => {
     ]);
 
     const metrics = getMetrics();
-    expect(metrics.counters["codex.tool_calls_total"]).toBe(4);
-    expect(metrics.counters["codex.tool_calls.command_execution"]).toBe(1);
-    expect(metrics.counters["codex.tool_calls.file_change"]).toBe(1);
-    expect(metrics.counters["codex.tool_calls.web_search"]).toBe(1);
-    expect(metrics.counters["codex.tool_calls.image_generation"]).toBe(1);
-    expect(metrics.counters["codex.turns_with_tools_total"]).toBe(1);
-    expect(metrics.histograms["codex.tool_calls_per_turn"]).toMatchObject({
+    expect(metrics.counters["backend.codex.tool_calls"]).toBe(4);
+    expect(metrics.counters["tool_calls.command_execution"]).toBe(1);
+    expect(metrics.counters["tool_calls.file_change"]).toBe(1);
+    expect(metrics.counters["tool_calls.web_search"]).toBe(1);
+    expect(metrics.counters["tool_calls.image_generation"]).toBe(1);
+    expect(metrics.counters["turns_with_tools_total"]).toBe(1);
+    expect(metrics.histograms["tool_calls_per_turn"]).toMatchObject({
       count: 1,
       p50: 4,
     });

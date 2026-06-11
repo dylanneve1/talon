@@ -268,6 +268,21 @@ const configSchema = z.object({
   timezone: z.string().optional(),
   plugins: z.array(pluginEntrySchema).default([]),
 
+  /**
+   * Tool-surface trimming. Every registered MCP tool costs context
+   * tokens in every session (name + description + schema), so
+   * deployments that never use a tool group can reclaim that budget:
+   *
+   *   - `disabledToolTags` — hide whole groups by tag, e.g.
+   *     ["stickers", "web", "triggers"]. See ToolTag in core/tools.
+   *   - `disabledTools` — hide individual tools by name.
+   *
+   * `end_turn` can never be disabled: tool-only backends need it to
+   * close every turn.
+   */
+  disabledTools: z.array(z.string()).optional(),
+  disabledToolTags: z.array(z.string()).optional(),
+
   // GitHub — GitHub API access via official MCP server
   github: z
     .object({

@@ -43,10 +43,11 @@ import { loadSystemTemplate } from "../../core/prompt/templates.js";
  *   - `tool-only` — output stream is private scratchpad; replies MUST
  *     go through a delivery tool (claude-sdk, openai-agents).
  *   - `text-or-tools` — plain assistant text is delivered as the
- *     reply; delivery tools add rich content / targeting (codex, kilo,
- *     opencode).
+ *     reply; delivery tools add rich content / targeting (codex, kilo).
+ *   - `text-preferred` — plain text is the normal route; tools only
+ *     for genuine side effects (opencode).
  */
-export type DeliveryMode = "tool-only" | "text-or-tools";
+export type DeliveryMode = "tool-only" | "text-or-tools" | "text-preferred";
 
 /** Frontend-specific delivery tool names. */
 export type DeliveryToolNames = {

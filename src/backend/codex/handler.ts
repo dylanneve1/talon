@@ -52,7 +52,7 @@ import {
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
-import { incrementCounter, recordHistogram } from "../../util/metrics.js";
+import { incrementCounter } from "../../util/metrics.js";
 import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
 
 import {
@@ -68,6 +68,8 @@ import {
   buildDeliveryFailureReminder,
   TextBlockDeliveryError,
   applyRetryDecision,
+  recordToolCall,
+  recordTurnMetrics,
   type StreamState,
 } from "../shared/index.js";
 
@@ -613,22 +615,17 @@ export async function handleMessage(
   // Surface a synthetic error if Codex failed the turn upstream.
   if (turnFailedError) {
     streamState.syntheticError = turnFailedError;
-    incrementCounter("codex.turn_failed");
   }
 
   const responseText = finalizeResponseText(streamState);
   const durationMs = Date.now() - t0;
-  recordHistogram("response_latency_ms", durationMs);
-  incrementCounter("queries_total");
-  incrementCounter("codex.turns_total");
-  recordHistogram("codex.tool_calls_per_turn", codexToolMetrics.count);
-  if (codexToolMetrics.count > 0) {
-    incrementCounter("codex.turns_with_tools_total");
-  }
-  if (streamState.numApiCalls > 0) {
-    incrementCounter("codex.api_calls_total", streamState.numApiCalls);
-    recordHistogram("codex.api_calls_per_turn", streamState.numApiCalls);
-  }
+  recordTurnMetrics({
+    backend: "codex",
+    durationMs,
+    toolCalls: codexToolMetrics.count,
+    apiCalls: streamState.numApiCalls,
+    failed: Boolean(turnFailedError),
+  });
 
   recordUsage(chatId, {
     inputTokens: streamState.sdkInputTokens,
@@ -864,9 +861,10 @@ function recordCodexToolMetric(
   ctx: HandleEventContext,
   toolName: string,
 ): void {
-  incrementCounter(`tool_calls.${toolName}`);
-  incrementCounter("codex.tool_calls_total");
-  incrementCounter(`codex.tool_calls.${toolName}`);
+  // Shared vocabulary: `tool_calls.<bare>` (prefix-stripped, so codex
+  // MCP calls land on the same keys as every other backend) plus the
+  // `backend.codex.tool_calls` dimension.
+  recordToolCall(toolName, "codex");
   ctx.codexToolMetrics.count += 1;
 }
 

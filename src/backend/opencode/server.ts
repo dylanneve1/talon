@@ -24,6 +24,7 @@ import {
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { logWarn } from "../../util/log.js";
+import { buildDeliveryContract } from "../shared/delivery-contract.js";
 import { clearModelCatalogCache } from "./models.js";
 import {
   guessProviderID,
@@ -55,15 +56,13 @@ const OPENCODE_HOSTNAME = "127.0.0.1";
 const OPENCODE_PORT = Number(process.env.OPENCODE_PORT ?? 4096);
 const OPENCODE_BASE_URL = `http://${OPENCODE_HOSTNAME}:${OPENCODE_PORT}`;
 const TALON_MCP_SERVER_NAME = SHARED_TALON_MCP_SERVER_NAME;
-const OPENCODE_SYSTEM_PROMPT_SUFFIX = `
-
-## OpenCode Delivery Override
-
-- You are running through Talon's OpenCode backend.
-- Return your normal user-facing reply as plain assistant text.
-- Do not rely on the Telegram send tool for ordinary replies.
-- Use tools only when they are genuinely needed for side effects or extra capabilities.
-`;
+// Text-preferred delivery: plain assistant text is the reply; tools
+// only for genuine side effects. Single-sourced from the shared
+// contract templates (prompts/system/contract-text-preferred.md).
+const OPENCODE_SYSTEM_PROMPT_SUFFIX = `\n\n${buildDeliveryContract(
+  "text-preferred",
+  "telegram",
+)}\n`;
 
 // ── State ───────────────────────────────────────────────────────────────────
 

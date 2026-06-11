@@ -201,56 +201,40 @@ describe("initWorkspace — identity and prompt seeding", () => {
     }
   });
 
-  it("seeds .md prompt files from prompts/ directory", async () => {
-    // prompts/ is resolved relative to process.cwd()
-    const promptsDir = join(TEST_ROOT, "prompts");
-    mkdirSync(promptsDir, { recursive: true });
-    writeFileSync(join(promptsDir, "system.md"), "# System Prompt");
-    writeFileSync(join(promptsDir, "dream.md"), "# Dream Prompt");
-    writeFileSync(join(promptsDir, "not-a-prompt.txt"), "ignored");
+  it("seeds .md prompt files from the package prompts/ directory", async () => {
+    // Seeding reads the PACKAGE prompts dir (resolved relative to the
+    // module, not process.cwd()) — a daemon launched from any other
+    // directory used to silently seed nothing.
+    const { initWorkspace } = await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
 
-    const originalCwd = process.cwd;
-    process.cwd = () => TEST_ROOT;
-
-    try {
-      const { initWorkspace } = await import("../util/workspace.js");
-      initWorkspace(join(TEST_ROOT, "ws"));
-
-      // prompts are seeded to ~/.talon/prompts/
-      const talonPromptsDir = join(NEW_ROOT, "prompts");
-      expect(existsSync(join(talonPromptsDir, "system.md"))).toBe(true);
-      expect(existsSync(join(talonPromptsDir, "dream.md"))).toBe(true);
-      // .txt file should NOT be copied
-      expect(existsSync(join(talonPromptsDir, "not-a-prompt.txt"))).toBe(false);
-    } finally {
-      process.cwd = originalCwd;
-    }
+    // prompts are seeded to ~/.talon/prompts/
+    const talonPromptsDir = join(NEW_ROOT, "prompts");
+    expect(existsSync(join(talonPromptsDir, "base.md"))).toBe(true);
+    expect(existsSync(join(talonPromptsDir, "dream.md"))).toBe(true);
+    // The architecture README is docs, not a prompt — never seeded.
+    expect(existsSync(join(talonPromptsDir, "README.md"))).toBe(false);
+    // system/ templates are package-owned and read in place — a seeded
+    // copy would go stale, so the directory is never copied.
+    expect(existsSync(join(talonPromptsDir, "system"))).toBe(false);
+    // Non-.md files (e.g. custom.md.example) are not copied.
+    expect(existsSync(join(talonPromptsDir, "custom.md.example"))).toBe(false);
   });
 
   it("does not overwrite existing prompt files", async () => {
-    const promptsDir = join(TEST_ROOT, "prompts");
-    mkdirSync(promptsDir, { recursive: true });
-    writeFileSync(join(promptsDir, "custom.md"), "# Package version");
-
     const talonPromptsDir = join(NEW_ROOT, "prompts");
     mkdirSync(talonPromptsDir, { recursive: true });
+    // Pre-existing user copy of a real package prompt must survive.
     writeFileSync(
-      join(talonPromptsDir, "custom.md"),
+      join(talonPromptsDir, "base.md"),
       "# User customized version",
     );
 
-    const originalCwd = process.cwd;
-    process.cwd = () => TEST_ROOT;
+    const { initWorkspace } = await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
 
-    try {
-      const { initWorkspace } = await import("../util/workspace.js");
-      initWorkspace(join(TEST_ROOT, "ws"));
-
-      // User version should be preserved
-      const content = readFileSync(join(talonPromptsDir, "custom.md"), "utf-8");
-      expect(content).toBe("# User customized version");
-    } finally {
-      process.cwd = originalCwd;
-    }
+    // User version should be preserved
+    const content = readFileSync(join(talonPromptsDir, "base.md"), "utf-8");
+    expect(content).toBe("# User customized version");
   });
 });
