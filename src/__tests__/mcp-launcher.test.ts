@@ -60,6 +60,35 @@ describe("mcp-launcher", () => {
     }
   });
 
+  it("supervisorInvocation honours the embedder override env", () => {
+    const backup = process.env.TALON_MCP_SUPERVISOR_CMD;
+    try {
+      process.env.TALON_MCP_SUPERVISOR_CMD = JSON.stringify([
+        "/usr/bin/node",
+        "--import",
+        "file:///tsx.mjs",
+        "/app/src/cli.ts",
+      ]);
+      expect(supervisorInvocation()).toEqual({
+        command: "/usr/bin/node",
+        args: [
+          "--import",
+          "file:///tsx.mjs",
+          "/app/src/cli.ts",
+          MCP_LAUNCH_SUBCOMMAND,
+        ],
+      });
+
+      process.env.TALON_MCP_SUPERVISOR_CMD = "not json";
+      expect(() => supervisorInvocation()).toThrow(/JSON string array/);
+      process.env.TALON_MCP_SUPERVISOR_CMD = "[]";
+      expect(() => supervisorInvocation()).toThrow(/JSON string array/);
+    } finally {
+      if (backup === undefined) delete process.env.TALON_MCP_SUPERVISOR_CMD;
+      else process.env.TALON_MCP_SUPERVISOR_CMD = backup;
+    }
+  });
+
   it("wrapMcpServer prefixes the supervisor invocation, preserving env", () => {
     const wrapped = wrapMcpServer({
       command: "/usr/bin/python",

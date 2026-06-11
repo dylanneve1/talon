@@ -27,7 +27,7 @@
  *   expect(result.toolUses).toHaveLength(0);
  */
 
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -49,6 +49,19 @@ const STUB_BINARY = resolve(
     ? "stub-claude/fake-claude.exe"
     : "stub-claude/fake-claude.mjs",
 );
+
+// MCP supervisor embedder hook: this harness runs inside vitest, so
+// process.argv[1] is vitest's entry — which doesn't dispatch the
+// `_mcp-launch` subcommand. Point wrapMcpServer() at a Talon entry
+// that does (see SUPERVISOR_CMD_ENV in util/mcp-launcher.ts).
+process.env.TALON_MCP_SUPERVISOR_CMD = JSON.stringify([
+  process.execPath,
+  "--import",
+  pathToFileURL(
+    resolve(__dirname, "../../../node_modules/tsx/dist/esm/index.mjs"),
+  ).href,
+  resolve(__dirname, "../../cli.ts"),
+]);
 
 let booted = false;
 /**

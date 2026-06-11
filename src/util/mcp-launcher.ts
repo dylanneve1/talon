@@ -49,6 +49,17 @@ import { resolve } from "node:path";
 /** Hidden CLI subcommand that turns a Talon process into the supervisor. */
 export const MCP_LAUNCH_SUBCOMMAND = "_mcp-launch";
 
+/**
+ * Embedder hook. Self-reinvocation assumes the running entry dispatches
+ * `_mcp-launch` — true for Talon's own entrypoints, false for processes
+ * that embed Talon (vitest harnesses, apps importing it as a library),
+ * whose argv[1] is their own entry. Such embedders set this env var to
+ * a JSON string array `[command, ...argsPrefix]` that launches an entry
+ * which DOES dispatch (e.g. `["node", "--import", "<tsx esm url>",
+ * "<abs path to src/cli.ts>"]`).
+ */
+export const SUPERVISOR_CMD_ENV = "TALON_MCP_SUPERVISOR_CMD";
+
 export type LauncherInvocation = { command: string; args: string[] };
 
 /**
@@ -66,6 +77,29 @@ function isEmbeddedEntry(entry: string): boolean {
  * Callers append the real MCP command after it.
  */
 export function supervisorInvocation(): LauncherInvocation {
+  const override = process.env[SUPERVISOR_CMD_ENV];
+  if (override) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(override);
+    } catch {
+      parsed = undefined;
+    }
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length === 0 ||
+      !parsed.every((s) => typeof s === "string")
+    ) {
+      throw new Error(
+        `${SUPERVISOR_CMD_ENV} must be a non-empty JSON string array, got: ${override}`,
+      );
+    }
+    return {
+      command: parsed[0],
+      args: [...parsed.slice(1), MCP_LAUNCH_SUBCOMMAND],
+    };
+  }
+
   const entry = process.argv[1] ?? "";
   const entryArgs = entry && !isEmbeddedEntry(entry) ? [resolve(entry)] : [];
   return {

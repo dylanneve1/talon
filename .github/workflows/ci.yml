@@ -201,6 +201,43 @@ jobs:
           path: integration-results.json
           retention-days: 14
 
+  # ── Bun compiled-binary sanity ─────────────────────────────────
+  # Compiles Talon to a standalone bun binary and verifies the MCP
+  # supervisor self-reinvocation path (`_mcp-launch`) works compiled —
+  # the install type with no source tree on disk and no system node.
+  bun-compile:
+    name: Bun Compile Sanity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: npm ci
+
+      - name: Compile standalone binary
+        run: bun build --compile src/index.ts --outfile talon-bin
+
+      - name: Supervisor sanity (_mcp-launch supervises a child)
+        run: |
+          out=$(echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | timeout 30 ./talon-bin _mcp-launch cat)
+          echo "supervisor stdout: $out"
+          [[ "$out" == *'"method":"ping"'* ]] || { echo "::error::JSON line did not pass through supervisor"; exit 1; }
+
+      - name: Supervisor filters non-JSON stdout to stderr
+        run: |
+          err=$(echo 'plain banner line' | timeout 30 ./talon-bin _mcp-launch cat 2>&1 >/dev/null)
+          echo "supervisor stderr: $err"
+          [[ "$err" == *'mcp-launcher: stdout'* ]] || { echo "::error::non-JSON line was not rerouted to stderr"; exit 1; }
+
   # ── Real backend live integration tier ───────────────────────
   # Installs the real backend CLI, then exercises the deployed backend surface
   # that fixture tests cannot fully represent: Kilo/OpenCode live HTTP model
@@ -457,6 +494,7 @@ jobs:
       - test
       - functional-cross-platform
       - integration
+      - bun-compile
       - backend-live
       - fuzz
       - security
@@ -482,6 +520,7 @@ jobs:
           check "Tests" "${{ needs.test.result }}"
           check "Functional" "${{ needs.functional-cross-platform.result }}"
           check "Integration" "${{ needs.integration.result }}"
+          check "Bun Compile" "${{ needs.bun-compile.result }}"
           check "Backend Live" "${{ needs.backend-live.result }}"
           check "Fuzz" "${{ needs.fuzz.result }}"
           check "Security" "${{ needs.security.result }}"
