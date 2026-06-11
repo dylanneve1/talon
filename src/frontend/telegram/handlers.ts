@@ -5,7 +5,12 @@
 
 import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
-import { markdownToTelegramHtml, escapeHtml } from "./formatting.js";
+import {
+  markdownToTelegramHtml,
+  escapeHtml,
+  trySendRichMarkdown,
+  trySendRichMarkdownDraft,
+} from "./formatting.js";
 import { execute } from "../../core/engine/dispatcher.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -801,6 +806,22 @@ async function sendHtml(
   }
 }
 
+async function sendMarkdown(
+  bot: Bot,
+  chatId: number,
+  markdown: string,
+  replyToId?: number,
+): Promise<number> {
+  const richMessageId = await trySendRichMarkdown(
+    bot,
+    chatId,
+    markdown,
+    replyToId,
+  );
+  if (richMessageId !== null) return richMessageId;
+  return sendHtml(bot, chatId, markdownToTelegramHtml(markdown), replyToId);
+}
+
 /**
  * Run the agent and deliver responses with streaming + multi-message support.
  */
@@ -854,7 +875,15 @@ function createStreamCallbacks(
           ? accumulated.slice(0, 3900) + "\u2026"
           : accumulated;
 
-      await bot.api.sendMessageDraft(chatId, state.draftId, display);
+      const richDraftSent = await trySendRichMarkdownDraft(
+        bot,
+        chatId,
+        state.draftId,
+        display,
+      );
+      if (!richDraftSent) {
+        await bot.api.sendMessageDraft(chatId, state.draftId, display);
+      }
       if (draftsSupported === null) draftsSupported = true;
       state.lastSentLength = accumulated.length;
     } catch {
@@ -869,7 +898,7 @@ function createStreamCallbacks(
   };
 
   const onTextBlock = async (text: string) => {
-    await sendHtml(bot, chatId, markdownToTelegramHtml(text), _replyToId);
+    await sendMarkdown(bot, chatId, text, _replyToId);
     appendDailyLogResponse("Talon", text, { chatTitle });
     state.lastSentLength = 0;
     state.sentTextBlock = true;

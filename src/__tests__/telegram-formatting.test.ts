@@ -1,9 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import {
   markdownToTelegramHtml,
   splitMessage,
   escapeHtml,
+  resetRichMessageSupportForTests,
+  trySendRichMarkdown,
 } from "../frontend/telegram/formatting.js";
+
+beforeEach(() => {
+  resetRichMessageSupportForTests();
+});
 
 describe("markdownToTelegramHtml", () => {
   it("converts bold markdown to HTML", () => {
@@ -82,5 +88,33 @@ describe("escapeHtml", () => {
 
   it("passes through plain text unchanged", () => {
     expect(escapeHtml("hello world")).toBe("hello world");
+  });
+});
+
+describe("trySendRichMarkdown", () => {
+  it("sends raw Markdown via Telegram rich messages when supported", async () => {
+    const sendRichMessage = vi.fn(async () => ({ message_id: 42 }));
+    const bot = { api: { raw: { sendRichMessage } } } as any;
+
+    const result = await trySendRichMarkdown(bot, 123, "**bold**", 99);
+
+    expect(result).toBe(42);
+    expect(sendRichMessage).toHaveBeenCalledWith({
+      chat_id: 123,
+      rich_message: { markdown: "**bold**" },
+      reply_parameters: { message_id: 99 },
+    });
+  });
+
+  it("returns null and disables rich messages when the Bot API lacks the method", async () => {
+    const sendRichMessage = vi.fn(async () => {
+      throw new Error("Bad Request: method not found");
+    });
+    const bot = { api: { raw: { sendRichMessage } } } as any;
+
+    await expect(trySendRichMarkdown(bot, 123, "one")).resolves.toBeNull();
+    await expect(trySendRichMarkdown(bot, 123, "two")).resolves.toBeNull();
+
+    expect(sendRichMessage).toHaveBeenCalledTimes(1);
   });
 });

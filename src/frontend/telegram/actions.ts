@@ -17,7 +17,7 @@ import { basename, resolve } from "node:path";
 import { dirs } from "../../util/paths.js";
 import { expandFsPath } from "../../util/fs-path.js";
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
-import { markdownToTelegramHtml } from "./formatting.js";
+import { markdownToTelegramHtml, trySendRichMarkdown } from "./formatting.js";
 import {
   isUserClientReady,
   searchMessages as userbotSearch,
@@ -59,6 +59,8 @@ export async function sendText(
     );
   }
   const html = markdownToTelegramHtml(text);
+  const richMessageId = await trySendRichMarkdown(bot, chatId, text, replyTo);
+  if (richMessageId !== null) return richMessageId;
   try {
     const sent = await bot.api.sendMessage(chatId, html, {
       parse_mode: "HTML",

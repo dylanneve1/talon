@@ -2,6 +2,9 @@
  * Telegram message formatting and splitting utilities.
  */
 
+import type { Bot } from "grammy";
+import { logWarn } from "../../util/log.js";
+
 /** Split a message into chunks that fit Telegram's 4096 char limit. */
 export function splitMessage(text: string, max: number): string[] {
   if (text.length <= max) return [text];
@@ -34,6 +37,102 @@ export function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+type TelegramMessageResult = { message_id: number };
+type RawTelegramApi = {
+  sendRichMessage?: (
+    payload: Record<string, unknown>,
+  ) => Promise<TelegramMessageResult>;
+  sendRichMessageDraft?: (payload: Record<string, unknown>) => Promise<true>;
+};
+
+let richMessagesSupported: boolean | null = null;
+let richDraftsSupported: boolean | null = null;
+
+function rawTelegramApi(bot: Bot): RawTelegramApi | null {
+  const raw = (bot.api as unknown as { raw?: unknown }).raw;
+  return raw && typeof raw === "object" ? (raw as RawTelegramApi) : null;
+}
+
+function richUnsupported(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /method not found|not found|unsupported|unknown method/i.test(message);
+}
+
+export function resetRichMessageSupportForTests(): void {
+  richMessagesSupported = null;
+  richDraftsSupported = null;
+}
+
+export async function trySendRichMarkdown(
+  bot: Bot,
+  chatId: number,
+  markdown: string,
+  replyToId?: number,
+): Promise<number | null> {
+  if (richMessagesSupported === false) return null;
+  const raw = rawTelegramApi(bot);
+  if (typeof raw?.sendRichMessage !== "function") {
+    richMessagesSupported = false;
+    return null;
+  }
+
+  try {
+    const sent = await raw.sendRichMessage({
+      chat_id: chatId,
+      rich_message: { markdown },
+      reply_parameters: replyToId ? { message_id: replyToId } : undefined,
+    });
+    richMessagesSupported = true;
+    return sent.message_id;
+  } catch (err) {
+    if (richUnsupported(err)) {
+      richMessagesSupported = false;
+      logWarn("bot", "sendRichMessage not supported — using HTML formatting");
+    } else {
+      logWarn(
+        "bot",
+        `sendRichMessage failed; using HTML formatting: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+    return null;
+  }
+}
+
+export async function trySendRichMarkdownDraft(
+  bot: Bot,
+  chatId: number,
+  draftId: number,
+  markdown: string,
+): Promise<boolean> {
+  if (richDraftsSupported === false) return false;
+  const raw = rawTelegramApi(bot);
+  if (typeof raw?.sendRichMessageDraft !== "function") {
+    richDraftsSupported = false;
+    return false;
+  }
+
+  try {
+    await raw.sendRichMessageDraft({
+      chat_id: chatId,
+      draft_id: draftId,
+      rich_message: { markdown },
+    });
+    richDraftsSupported = true;
+    return true;
+  } catch (err) {
+    if (richUnsupported(err)) {
+      richDraftsSupported = false;
+      logWarn("bot", "sendRichMessageDraft not supported — using text drafts");
+    } else {
+      logWarn(
+        "bot",
+        `sendRichMessageDraft failed; using text drafts: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+    return false;
+  }
 }
 
 /**

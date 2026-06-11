@@ -349,6 +349,7 @@ import {
   createTelegramActionHandler,
   // re-export for test side-only — handler depends on the InputFile constructor
 } from "../frontend/telegram/actions.js";
+import { resetRichMessageSupportForTests } from "../frontend/telegram/formatting.js";
 import type { Bot } from "grammy";
 import type { Gateway } from "../core/engine/gateway.js";
 
@@ -362,6 +363,9 @@ interface BotApiSpy {
   copyMessage: ReturnType<typeof vi.fn>;
   sendMessage: ReturnType<typeof vi.fn>;
   sendChatAction: ReturnType<typeof vi.fn>;
+  raw?: {
+    sendRichMessage?: ReturnType<typeof vi.fn>;
+  };
 }
 
 function makeBotSpy(): { bot: Bot; api: BotApiSpy } {
@@ -407,6 +411,7 @@ describe("createTelegramActionHandler", () => {
   const chatId = 12345;
 
   beforeEach(() => {
+    resetRichMessageSupportForTests();
     const spy = makeBotSpy();
     bot = spy.bot;
     api = spy.api;
@@ -581,6 +586,29 @@ describe("createTelegramActionHandler", () => {
       parse_mode: "HTML",
     });
     expect(result).toEqual({ ok: true, message_id: 1001 });
+  });
+
+  it("send_message prefers Telegram rich Markdown when available", async () => {
+    api.raw = {
+      sendRichMessage: vi.fn(async () => ({ message_id: 2002 })),
+    };
+
+    const result = await handler(
+      {
+        action: "send_message",
+        text: "**hello**",
+        reply_to_message_id: 2081,
+      },
+      chatId,
+    );
+
+    expect(api.raw.sendRichMessage).toHaveBeenCalledWith({
+      chat_id: chatId,
+      rich_message: { markdown: "**hello**" },
+      reply_parameters: { message_id: 2081 },
+    });
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true, message_id: 2002 });
   });
 
   it("schedule_message returns a schedule id and keeps a timer", async () => {
