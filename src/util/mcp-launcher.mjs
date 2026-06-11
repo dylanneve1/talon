@@ -67,16 +67,15 @@ process.stdin.pipe(child.stdin);
 // Tolerant MCP clients (e.g. the claude binary) see exactly what they
 // did before — this is a no-op for clean servers.
 {
-  // Quick discriminator: a JSON-RPC line must start with `{` (objects).
-  // The MCP spec permits array batches (`[`) but our plugins only emit
-  // objects, and several plugins log lines that START with `[` (e.g.
-  // tailscale-mcp's `[ISO-timestamp] [INFO] …`). Restrict to `{` and
-  // verify it's parseable JSON before forwarding, so a stray
-  // `{ tip: "..." }` shell-style line that isn't valid JSON still
-  // goes to stderr.
+  // Quick discriminator: a JSON-RPC line must start with `{` (object) or
+  // `[` (batch array). Several plugins log lines starting with `[` (e.g.
+  // tailscale-mcp's `[ISO-timestamp] [INFO] …`), but those are not valid
+  // JSON — requiring a successful JSON.parse before forwarding ensures they
+  // still go to stderr. Accepting `[` is necessary for servers that send
+  // JSON-RPC batch responses per the MCP spec.
   const looksJson = (line) => {
     const s = line.trimStart();
-    if (s.length === 0 || s[0] !== "{") return false;
+    if (s.length === 0 || (s[0] !== "{" && s[0] !== "[")) return false;
     try {
       JSON.parse(s);
       return true;

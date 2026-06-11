@@ -272,7 +272,11 @@ describe("triggers — resumeAfterRestart", () => {
     expect(call.prompt).toMatch(/terminated/);
   });
 
-  it("does NOT fire for a trigger that already fired", async () => {
+  it("fires for a trigger that had mid-run TALON_FIRE: events but was then terminated", async () => {
+    // A long-running watcher may have emitted TALON_FIRE: signals (setting
+    // lastFireAt) but was still running when Talon restarted. The bot received
+    // earlier fire events but never received the terminal "terminated" wake —
+    // it must get one on restart so it knows the trigger was killed.
     const id = generateTriggerId();
     const t: Trigger = {
       id,
@@ -287,12 +291,15 @@ describe("triggers — resumeAfterRestart", () => {
       endedAt: Date.now() - 5_000,
       timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
       fireCount: 1,
-      lastFireAt: Date.now() - 6_000, // has already fired → condition excludes it
+      lastFireAt: Date.now() - 6_000,
     };
     addTrigger(t);
 
     await resumeAfterRestart();
-    expect(executeSpy).not.toHaveBeenCalled();
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const call = executeSpy.mock.calls[0][0];
+    expect(call.chatId).toBe("chat-resume2");
+    expect(call.prompt).toMatch(/terminated/);
   });
 
   it("does NOT fire for an old terminated trigger (>5 min ago)", async () => {

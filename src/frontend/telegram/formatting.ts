@@ -80,24 +80,31 @@ export function markdownToTelegramHtml(text: string): string {
   );
   // Italic: _text_ (surrounded by non-word or start/end)
   processed = processed.replace(/(?<!\w)_(.+?)_(?!\w)/g, "<i>$1</i>");
-  // Links: [text](url) — only allow safe URL schemes; escape the URL to
-  // prevent HTML attribute injection (e.g. href="url" onmouseover="x")
+  // Links: [text](url) — only allow safe URL schemes.
+  // NOTE: `url` is already HTML-escaped from step 3 (the global entity-escape
+  // pass ran over the entire text including link targets). Re-applying
+  // escapeHtml here would double-encode `&` as `&amp;amp;`, breaking any URL
+  // that contains query-string parameters (e.g. `?a=1&b=2`).
   processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) =>
-    /^https?:\/\//i.test(url)
-      ? `<a href="${escapeHtml(url)}">${escapeHtml(text)}</a>`
-      : text,
+    /^https?:\/\//i.test(url) ? `<a href="${url}">${text}</a>` : text,
   );
   // Strikethrough: ~~text~~
   processed = processed.replace(/~~(.+?)~~/g, "<s>$1</s>");
 
   // Step 5: Restore inline code spans.
+  // Use a function replacement to prevent JS from interpreting `$&`, `$1`,
+  // etc. in the replacement string as special patterns — user code can
+  // legitimately contain dollar-sign sequences that would otherwise expand
+  // incorrectly (e.g. `$&` would be replaced by the matched placeholder text).
   for (let i = 0; i < inlineCode.length; i++) {
-    processed = processed.replace(`\x00INLINECODE${i}\x00`, inlineCode[i]);
+    const html = inlineCode[i];
+    processed = processed.replace(`\x00INLINECODE${i}\x00`, () => html);
   }
 
   // Step 6: Restore fenced code blocks.
   for (let i = 0; i < codeBlocks.length; i++) {
-    processed = processed.replace(`\x00CODEBLOCK${i}\x00`, codeBlocks[i]);
+    const html = codeBlocks[i];
+    processed = processed.replace(`\x00CODEBLOCK${i}\x00`, () => html);
   }
 
   return processed;

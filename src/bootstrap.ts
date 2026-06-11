@@ -201,7 +201,14 @@ export async function initBackendAndDispatcher(
       }
     }
 
-    const currentModel = getAllChatSettings()[cid]?.model;
+    // After migrateLegacyModelField, the canonical model lives in
+    // modelByBackend[boundBackend], not in the legacy .model field. Check
+    // both so pre-migration chats (if any) and post-migration chats are
+    // both validated.
+    const latestSettings = getAllChatSettings()[cid];
+    const boundBackendId = latestSettings?.backend ?? config.backend;
+    const currentModel =
+      latestSettings?.modelByBackend?.[boundBackendId] ?? latestSettings?.model;
     if (currentModel) {
       const be = getBackendForChat(cid);
       try {

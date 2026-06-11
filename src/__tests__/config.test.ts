@@ -125,6 +125,38 @@ describe("config", () => {
       expect(config.model).toBe("claude-opus-4-6");
     });
 
+    it("uses defaultBackend/defaultModel as the canonical global defaults", async () => {
+      mockFs({
+        botToken: "test-token-123",
+        backend: "claude",
+        model: "claude-opus-4-7",
+        defaultBackend: "codex",
+        defaultModel: "gpt-5.4-mini",
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.backend).toBe("codex");
+      expect(config.model).toBe("gpt-5.4-mini");
+      expect(config.defaultBackend).toBe("codex");
+      expect(config.defaultModel).toBe("gpt-5.4-mini");
+    });
+
+    it("backfills defaultBackend/defaultModel from legacy backend/model", async () => {
+      mockFs({
+        botToken: "test-token-123",
+        backend: "openai-agents",
+        model: "openrouter/owl-alpha",
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.backend).toBe("openai-agents");
+      expect(config.model).toBe("openrouter/owl-alpha");
+      expect(config.defaultBackend).toBe("openai-agents");
+      expect(config.defaultModel).toBe("openrouter/owl-alpha");
+    });
+
     it("applies defaults for missing fields", async () => {
       mockFs({ botToken: "test-token" });
 

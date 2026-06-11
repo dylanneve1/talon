@@ -20,9 +20,10 @@
  *
  *   1. `initBackendPool(config, ctx)` is called once at bootstrap.
  *      It binds the three default holders (`role:chat`,
- *      `role:heartbeat`, `role:dream`) using `config.backend`,
- *      `config.heartbeatBackend ?? backend`, `config.dreamBackend ??
- *       backend`. Identical ids share a pool entry.
+ *      `role:heartbeat`, `role:dream`) using the normalised global
+ *      default (`config.defaultBackend` → `config.backend`) and role
+ *      overrides (`config.heartbeatBackend`, `config.dreamBackend`).
+ *      Identical ids share a pool entry.
  *   2. Hot-path consumers (dispatcher / dream / heartbeat) read their
  *      holder's backend through the role / chat accessors each call —
  *      so rebinds propagate without restart.
@@ -226,11 +227,11 @@ function resolveRoleBackendId(role: BackendRole, config: TalonConfig): string {
 /**
  * Initialise the backend pool with bindings for every role.
  *
- * Reads `config.backend` (chat), `config.heartbeatBackend` (heartbeat,
- * falls back to chat), `config.dreamBackend` (dream, falls back to
- * chat). Identical ids share a pool instance — Talon does NOT spin up
- * two Claude SDK runtimes just because chat and heartbeat both want
- * Claude.
+ * Reads the normalised default backend from `config.backend` (chat),
+ * `config.heartbeatBackend` (heartbeat, falls back to chat), and
+ * `config.dreamBackend` (dream, falls back to chat). Identical ids share
+ * a pool instance — Talon does NOT spin up two Claude SDK runtimes just
+ * because chat and heartbeat both want Claude.
  *
  * If any role's init fails, previously-initialised roles are torn
  * down before the throw bubbles up — so a partial-init state never

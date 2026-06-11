@@ -63,17 +63,20 @@ type SessionStore = Record<string, SessionState>;
 const STORE_FILE = files.sessions;
 const SCHEMA_VERSION = 1 as const;
 
+function validateSessionStore(raw: unknown): SessionStore {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return raw as SessionStore;
+}
+
 const store = new JsonStore<SessionStore>({
   path: STORE_FILE,
   defaultValue: {},
   schemaVersion: SCHEMA_VERSION,
+  validate: validateSessionStore,
   migrate: (raw, fromVersion) => {
     if (fromVersion !== 0) return null;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      return { value: {}, schemaVersion: SCHEMA_VERSION };
-    }
     return {
-      value: raw as SessionStore,
+      value: validateSessionStore(raw),
       schemaVersion: SCHEMA_VERSION,
     };
   },

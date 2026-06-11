@@ -45,24 +45,27 @@ const MAX_CHAT_COUNT = 1000;
 const STORE_FILE = files.history;
 const SCHEMA_VERSION = 1 as const;
 
+function normaliseHistoryShape(raw: unknown): HistoryShape {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: HistoryShape = {};
+  for (const [chatId, messages] of Object.entries(
+    raw as Record<string, unknown>,
+  )) {
+    if (Array.isArray(messages)) {
+      out[chatId] = messages.slice(-MAX_HISTORY_PER_CHAT) as HistoryMessage[];
+    }
+  }
+  return out;
+}
+
 const store = new JsonStore<HistoryShape>({
   path: STORE_FILE,
   defaultValue: {},
   schemaVersion: SCHEMA_VERSION,
+  validate: normaliseHistoryShape,
   migrate: (raw, fromVersion) => {
     if (fromVersion !== 0) return null;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      return { value: {}, schemaVersion: SCHEMA_VERSION };
-    }
-    const out: HistoryShape = {};
-    for (const [chatId, messages] of Object.entries(
-      raw as Record<string, unknown>,
-    )) {
-      if (Array.isArray(messages)) {
-        out[chatId] = messages.slice(-MAX_HISTORY_PER_CHAT) as HistoryMessage[];
-      }
-    }
-    return { value: out, schemaVersion: SCHEMA_VERSION };
+    return { value: normaliseHistoryShape(raw), schemaVersion: SCHEMA_VERSION };
   },
 });
 

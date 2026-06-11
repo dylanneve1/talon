@@ -447,10 +447,17 @@ export async function handleMessage(
           trailingText: streamState.lastTrailingText,
           turnTerminated: streamState.turnTerminated,
           deliveredTextNorms: streamState.deliveredTextNorms,
+          toolCalls: streamState.toolCalls,
           retried: _retried,
           ...(frontend
             ? { reminder: buildFlowViolationReminder(frontend) }
             : {}),
+          // retryCount must be passed explicitly — otherwise the computed
+          // default of `retried ? 1 : 0` stays at 1 on every recursive
+          // call, making shouldRetry always `1 < maxRetries = true` and
+          // producing an infinite retry loop. Cap at 1 (single-pass).
+          retryCount: _retried ? 1 : 0,
+          maxRetries: 1,
         })
       : ({ violated: false } as const);
 
@@ -458,7 +465,7 @@ export async function handleMessage(
     recordFlowViolation(violation.shouldRetry ? "retried" : "cap_exhausted");
     log(
       "agent",
-      `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${
+      `[${chatId}] flow violation: ${violation.reason} without end_turn/send. ${
         violation.shouldRetry
           ? "Re-prompting with reminder."
           : "Already retried — accepting silent drop."

@@ -223,9 +223,12 @@ export function processAssistantMessage(
       if (blockText.trim()) {
         progressTexts.push(blockText.trim());
         state.allResponseText += blockText;
-        blockText = "";
-        state.currentBlockText = "";
       }
+      // Always reset — skipping the reset when blockText is whitespace-only
+      // causes that whitespace to leak into the next text block's accumulation,
+      // corrupting subsequent progress text and the final trailing-text value.
+      blockText = "";
+      state.currentBlockText = "";
     }
   }
 

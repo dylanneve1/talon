@@ -15,7 +15,7 @@ import type { QueryParams } from "../backend/shared/handler-types.js";
 import { applyRetryDecision } from "../backend/shared/handle-retry.js";
 import { TalonError } from "../core/errors.js";
 import { registerModels, clearModels } from "../core/models/catalog.js";
-import { setChatModel } from "../storage/chat-settings.js";
+import { getChatSettings, setChatModel } from "../storage/chat-settings.js";
 import { resetSession, getSession } from "../storage/sessions.js";
 
 beforeEach(() => {
@@ -200,6 +200,8 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
     // The fallback model is threaded through params so the backend's
     // own resolution chain honours it even when params.model is set.
     expect(paramsSeenInRecursion.model).toBe("fallback");
+    // Chat settings are never mutated — user's model preference is intact.
+    expect(getChatSettings("test-chat").model).toBeUndefined();
   });
 
   it("propagates the error when the recursive retry throws", async () => {
@@ -236,6 +238,9 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
         backendLabel: "Codex",
       }),
     ).rejects.toThrow("retry blew up");
+
+    // Chat settings are not touched — user-pinned model is preserved.
+    expect(getChatSettings("test-chat").model).toBe("user-pinned");
   });
 
   it("propagates when retryable but no fallback configured", async () => {

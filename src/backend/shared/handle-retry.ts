@@ -128,6 +128,13 @@ export async function applyRetryDecision(
       `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
     );
     resetSession(chatId);
+    // Pass the fallback model via params.model rather than mutating chat
+    // settings. Mutating settings with setChatModel then restoring via
+    // getChatSettings(chatId).model was broken: after migrateLegacyModelField
+    // runs, settings.model is undefined, so the restore call became
+    // setChatModel(chatId, undefined), which permanently wipes the entire
+    // modelByBackend map. Injecting via params.model is purely in-memory
+    // and leaves chat settings untouched.
     return {
       retry: await recurseWithRetried({
         ...params,
