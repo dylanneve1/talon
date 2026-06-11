@@ -94,49 +94,36 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-// ── pushMessage — eviction when MAX_CHAT_COUNT (1000) is reached ──────────
+// ── pushMessage — retention across many chats ──────────────────────────────
+//
+// The JSON buffer evicted ~10% of chats past MAX_CHAT_COUNT (1000) to
+// bound process memory. SQLite removed that constraint: nothing lives
+// in memory, so every chat is retained.
 
-describe("pushMessage — MAX_CHAT_COUNT eviction", () => {
-  it("evicts ~10% of oldest chats when the 1001st unique chat is added", () => {
-    // Use a fresh set of unique chat IDs to avoid contamination from other tests.
-    // We only push 20 chats to verify the eviction logic fires; the real threshold
-    // is 1000 but we can't afford to create that many in a test.
-    // Instead, test the observable side-effect: after a run that crosses the limit,
-    // some early chats are gone and the new chat is present.
-    //
-    // Because the module-level Map is shared we need to rely on the same
-    // unique IDs the module does — just verify the existing test contract.
-
+describe("pushMessage — retention across many chats", () => {
+  it("retains all chats past the legacy MAX_CHAT_COUNT eviction threshold", () => {
     const prefix = `evict-ext-${Date.now()}-`;
     for (let i = 0; i < 1001; i++) {
       pushMessage(`${prefix}${i}`, makeMsg({ msgId: 1 }));
     }
 
-    // The 1001st chat should definitely be present
     expect(getRecentHistory(`${prefix}1000`)).toHaveLength(1);
-
-    // At least one of the earliest chats should have been evicted
-    let evicted = 0;
-    for (let i = 0; i < 200; i++) {
-      if (getRecentHistory(`${prefix}${i}`).length === 0) evicted++;
+    // No eviction: the earliest chats are all still present.
+    for (const i of [0, 1, 50, 199]) {
+      expect(getRecentHistory(`${prefix}${i}`)).toHaveLength(1);
     }
-    expect(evicted).toBeGreaterThan(0);
-    // Approximately 100 chats should have been evicted (10% of 1000)
-    expect(evicted).toBeGreaterThanOrEqual(50);
   });
 
-  it("marks dirty when eviction occurs", () => {
-    // We check that after adding 1001 chats and then flushing, writeFileAtomicSync
-    // is called (which only happens when dirty === true).
-    const prefix = `dirty-evict-${Date.now()}-`;
-    for (let i = 0; i < 1001; i++) {
-      pushMessage(`${prefix}${i}`, makeMsg({ msgId: 1 }));
-    }
+  it("flushHistory checkpoints without touching the legacy JSON writer", () => {
+    const id = uniqueChat();
+    pushMessage(id, makeMsg({ msgId: 1 }));
 
     writeFileAtomicSyncMock.mockClear();
     existsSyncMock.mockReturnValue(false);
-    flushHistory();
-    expect(writeFileAtomicSyncMock).toHaveBeenCalled();
+    expect(() => flushHistory()).not.toThrow();
+    expect(writeFileAtomicSyncMock).not.toHaveBeenCalled();
+    // Data survives the checkpoint.
+    expect(getRecentHistory(id)).toHaveLength(1);
   });
 });
 
@@ -460,15 +447,13 @@ describe("clearHistory", () => {
     expect(getRecentHistory(id)).toEqual([]);
   });
 
-  it("marks dirty so next flush writes to disk", () => {
+  it("removal is durable across a flush", () => {
     const id = uniqueChat();
     pushMessage(id, makeMsg({ msgId: 1 }));
     clearHistory(id);
 
-    writeFileAtomicSyncMock.mockClear();
-    existsSyncMock.mockReturnValue(false);
     flushHistory();
-    expect(writeFileAtomicSyncMock).toHaveBeenCalled();
+    expect(getRecentHistory(id)).toEqual([]);
   });
 
   it("does not affect other chats", () => {
@@ -581,26 +566,9 @@ describe("loadHistory — persistence", () => {
     expect(history[0].text).toBe("hello");
   });
 
-  it("falls back to backup file when primary is corrupt", () => {
-    const backup = {
-      "backup-chat": [
-        {
-          msgId: 99,
-          senderId: 1,
-          senderName: "Backup",
-          text: "from backup",
-          timestamp: 2000,
-        },
-      ],
-    };
-    // First existsSync call: primary exists; readFileSync returns corrupt data.
-    // Second existsSync call: backup exists; readFileSync returns valid data.
-    existsSyncMock
-      .mockReturnValueOnce(true) // primary file exists
-      .mockReturnValueOnce(true); // backup file exists
-    readFileSyncMock
-      .mockReturnValueOnce("{{corrupt json}}") // primary read fails
-      .mockReturnValueOnce(JSON.stringify(backup)); // backup read succeeds
+  it("ignores a corrupt legacy file (no backup-fallback layer any more)", () => {
+    existsSyncMock.mockReturnValueOnce(true);
+    readFileSyncMock.mockReturnValueOnce("{{corrupt json}}");
 
     expect(() => loadHistory()).not.toThrow();
   });
@@ -612,7 +580,7 @@ describe("loadHistory — persistence", () => {
     expect(() => loadHistory()).not.toThrow();
   });
 
-  it("caps loaded messages to MAX_HISTORY_PER_CHAT (500)", () => {
+  it("imports every legacy message — the 500-message cap is gone", () => {
     const msgs = Array.from({ length: 600 }, (_, i) => ({
       msgId: i,
       senderId: 1,
@@ -628,149 +596,27 @@ describe("loadHistory — persistence", () => {
     loadHistory();
 
     const history = getRecentHistory("cap-test-chat", 1000);
-    expect(history.length).toBeLessThanOrEqual(500);
+    expect(history.length).toBe(600);
   });
 });
 
 // ── flushHistory ──────────────────────────────────────────────────────────
 
 describe("flushHistory", () => {
-  it("calls writeFileAtomic.sync at least once", () => {
+  it("checkpoints without throwing and keeps data readable", () => {
     const id = uniqueChat();
     pushMessage(id, makeMsg({ msgId: 1 }));
 
-    writeFileAtomicSyncMock.mockClear();
-    existsSyncMock.mockReturnValue(false);
-    flushHistory();
-    expect(writeFileAtomicSyncMock).toHaveBeenCalled();
-  });
-
-  it("creates the directory when it does not exist", () => {
-    const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 1 }));
-
-    mkdirSyncMock.mockClear();
-    existsSyncMock.mockReturnValue(false);
-    flushHistory();
-    expect(mkdirSyncMock).toHaveBeenCalled();
-  });
-
-  it("writes a JSON envelope containing the chat data", () => {
-    const id = `flush-check-${Date.now()}`;
-    pushMessage(
-      id,
-      makeMsg({ msgId: 42, senderName: "FlushUser", text: "flush me" }),
-    );
-
-    writeFileAtomicSyncMock.mockClear();
-    existsSyncMock.mockReturnValue(false);
-    flushHistory();
-
-    const calls = writeFileAtomicSyncMock.mock.calls;
-    // JsonStore writes a single envelope to the primary path — no
-    // ".bak" pre-write any more (the .bak file is read-only fallback
-    // logic, populated by the OS-level atomic-rename rather than an
-    // explicit pre-write).
-    const dataCall = calls.find((c) => !String(c[0]).endsWith(".bak"));
-    expect(dataCall).toBeDefined();
-    const written = JSON.parse(dataCall![1] as string);
-    expect(written.schemaVersion).toBe(1);
-    expect(written.data[id]).toBeDefined();
-    expect(written.data[id][0].msgId).toBe(42);
-  });
-});
-
-// ── saveHistory dirty=false early return ─────────────────────────────────
-
-describe("history — saveHistory dirty=false early return (line 79 TRUE branch)", () => {
-  it("does not write when auto-save fires with dirty=false", async () => {
-    vi.resetModules();
-    vi.useFakeTimers();
-    const wfaMock = vi.fn();
-    vi.doMock("../util/log.js", () => ({
-      log: vi.fn(),
-      logError: vi.fn(),
-      logWarn: vi.fn(),
-    }));
-    vi.doMock("../util/watchdog.js", () => ({ recordError: vi.fn() }));
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false),
-      mkdirSync: vi.fn(),
-      readFileSync: vi.fn(() => "{}"),
-      renameSync: vi.fn(),
-      unlinkSync: vi.fn(),
-    }));
-    vi.doMock("write-file-atomic", () => ({
-      default: Object.assign((...args: unknown[]) => wfaMock(...args), {
-        sync: wfaMock,
-      }),
-    }));
-    vi.doMock("../util/paths.js", () => ({
-      files: { history: "/fake/history.json" },
-      dirs: {},
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
-    }));
-
-    // Fresh import: dirty=false (nothing modified yet)
-    await import("../storage/history.js");
-
-    // Advance 31 seconds → auto-save timer fires → saveHistory() with dirty=false → early return
-    await vi.advanceTimersByTimeAsync(31_000);
-    expect(wfaMock).not.toHaveBeenCalled();
-
-    vi.useRealTimers();
-  });
-});
-
-// ── saveHistory non-Error thrown ──────────────────────────────────────────
-
-describe("history — non-Error thrown in saveHistory (line 96 FALSE branch)", () => {
-  it("records error with String(err) when non-Error is thrown", async () => {
-    vi.resetModules();
-    const recordErrorMock = vi.fn();
-    vi.doMock("../util/log.js", () => ({
-      log: vi.fn(),
-      logError: vi.fn(),
-      logWarn: vi.fn(),
-    }));
-    vi.doMock("../util/watchdog.js", () => ({ recordError: recordErrorMock }));
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => false),
-      mkdirSync: vi.fn(),
-      readFileSync: vi.fn(() => "{}"),
-      renameSync: vi.fn(),
-      unlinkSync: vi.fn(),
-    }));
-    const failingWrite = vi.fn((..._args: unknown[]) => {
-      throw "plain string history error";
-    });
-    vi.doMock("write-file-atomic", () => ({
-      default: Object.assign((...args: unknown[]) => failingWrite(...args), {
-        sync: failingWrite,
-      }),
-    }));
-    vi.doMock("../util/paths.js", () => ({
-      files: { history: "/fake/history.json" },
-      dirs: {},
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
-    }));
-
-    const { pushMessage, flushHistory } = await import("../storage/history.js");
-    pushMessage("chat-err", {
-      msgId: 1,
-      senderId: 1,
-      senderName: "Bob",
-      text: "test",
-      timestamp: Date.now(),
-    });
     expect(() => flushHistory()).not.toThrow();
+    expect(getRecentHistory(id)).toHaveLength(1);
+  });
 
-    expect(recordErrorMock).toHaveBeenCalledWith(
-      expect.stringContaining("plain string history error"),
-    );
+  it("never goes through the legacy JSON writer", () => {
+    const id = uniqueChat();
+    pushMessage(id, makeMsg({ msgId: 1 }));
+
+    writeFileAtomicSyncMock.mockClear();
+    flushHistory();
+    expect(writeFileAtomicSyncMock).not.toHaveBeenCalled();
   });
 });

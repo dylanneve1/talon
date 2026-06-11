@@ -1,4 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+/**
+ * History persistence — SQLite durability + the one-time legacy JSON
+ * import. Real tmpdir files, no fs mocks: durability claims are only
+ * worth testing against the real engine.
+ *
+ * The per-worker TALON_DB_PATH from setup/test-db.ts is overridden
+ * here with per-test paths so close/reopen cycles are observable.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
@@ -7,226 +19,164 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-const existsSyncMock = vi.fn(() => false);
-const readFileSyncMock = vi.fn(() => "{}");
-const mkdirSyncMock = vi.fn();
-
-vi.mock("node:fs", () => ({
-  existsSync: existsSyncMock,
-  readFileSync: readFileSyncMock,
-  mkdirSync: mkdirSyncMock,
-  renameSync: vi.fn(),
-  unlinkSync: vi.fn(),
-}));
-
-const writeFileSyncMock = vi.fn();
-
-vi.mock("write-file-atomic", () => ({
-  default: Object.assign((...args: unknown[]) => writeFileSyncMock(...args), {
-    sync: (...args: unknown[]) => writeFileSyncMock(...args),
-  }),
-}));
-
-const { loadHistory, flushHistory, pushMessage, getRecentHistory } =
-  await import("../storage/history.js");
-
-describe("history persistence", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  describe("loadHistory", () => {
-    it("loads history from a JSON file when it exists", () => {
-      const data: Record<
-        string,
-        Array<{
-          msgId: number;
-          senderId: number;
-          senderName: string;
-          text: string;
-          timestamp: number;
-        }>
-      > = {
-        "chat-1": [
-          {
-            msgId: 1,
-            senderId: 100,
-            senderName: "Alice",
-            text: "hello",
-            timestamp: 1000,
-          },
-          {
-            msgId: 2,
-            senderId: 200,
-            senderName: "Bob",
-            text: "hi",
-            timestamp: 2000,
-          },
-        ],
-      };
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue(JSON.stringify(data));
-
-      loadHistory();
-
-      const history = getRecentHistory("chat-1");
-      expect(history).toHaveLength(2);
-      expect(history[0].senderName).toBe("Alice");
-      expect(history[1].senderName).toBe("Bob");
-    });
-
-    it("trims loaded history to MAX_HISTORY_PER_CHAT (500)", () => {
-      const msgs = Array.from({ length: 600 }, (_, i) => ({
-        msgId: i,
-        senderId: 1,
-        senderName: "User",
-        text: `msg ${i}`,
-        timestamp: i * 1000,
-      }));
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue(JSON.stringify({ "trim-chat": msgs }));
-
-      loadHistory();
-
-      const history = getRecentHistory("trim-chat", 1000);
-      expect(history).toHaveLength(500);
-      // Should keep the last 500 messages (100-599)
-      expect(history[0].msgId).toBe(100);
-    });
-
-    it("does nothing when store file does not exist", () => {
-      existsSyncMock.mockReturnValue(false);
-      // Should not throw
-      expect(() => loadHistory()).not.toThrow();
-    });
-
-    it("handles JSON parse errors gracefully (starts fresh)", () => {
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue("not valid json{{{");
-
-      // Should not throw
-      expect(() => loadHistory()).not.toThrow();
-    });
-
-    it("loads multiple chats", () => {
-      const data = {
-        "chat-a": [
-          { msgId: 1, senderId: 1, senderName: "A", text: "a", timestamp: 1 },
-        ],
-        "chat-b": [
-          { msgId: 2, senderId: 2, senderName: "B", text: "b", timestamp: 2 },
-        ],
-        "chat-c": [
-          { msgId: 3, senderId: 3, senderName: "C", text: "c", timestamp: 3 },
-        ],
-      };
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue(JSON.stringify(data));
-
-      loadHistory();
-
-      expect(getRecentHistory("chat-a")).toHaveLength(1);
-      expect(getRecentHistory("chat-b")).toHaveLength(1);
-      expect(getRecentHistory("chat-c")).toHaveLength(1);
-    });
-  });
-
-  describe("flushHistory", () => {
-    it("writes history to disk", () => {
-      const id = `flush-test-${Date.now()}`;
-      pushMessage(id, {
-        msgId: 1,
-        senderId: 1,
-        senderName: "TestUser",
-        text: "flush test",
-        timestamp: Date.now(),
-      });
-
-      // Make existsSync return true for the workspace dir check
-      existsSyncMock.mockReturnValue(true);
-
-      flushHistory();
-
-      expect(writeFileSyncMock).toHaveBeenCalled();
-      // Last write call is the actual data (earlier calls may be .bak backups)
-      const lastCall =
-        writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
-      const writtenData = lastCall[1] as string;
-      const parsed = JSON.parse(writtenData.trim());
-      // JsonStore envelope: { schemaVersion, savedAt, data }
-      expect(parsed.data[id]).toBeDefined();
-      expect(parsed.data[id][0].text).toBe("flush test");
-    });
-
-    it("creates workspace directory if it does not exist", () => {
-      const id = `flush-mkdir-${Date.now()}`;
-      pushMessage(id, {
-        msgId: 1,
-        senderId: 1,
-        senderName: "TestUser",
-        text: "test",
-        timestamp: Date.now(),
-      });
-
-      // First call (dir check) returns false, triggering mkdirSync
-      existsSyncMock.mockReturnValue(false);
-
-      flushHistory();
-
-      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), {
-        recursive: true,
-      });
-    });
-
-    it("handles write errors gracefully (line 96 TRUE branch: Error thrown on data write)", () => {
-      const id = `flush-err-${Date.now()}`;
-      pushMessage(id, {
-        msgId: 1,
-        senderId: 1,
-        senderName: "TestUser",
-        text: "test",
-        timestamp: Date.now(),
-      });
-
-      // existsSync=false skips the .bak write so the Error is thrown on the actual data write
-      existsSyncMock.mockReturnValue(false);
-      writeFileSyncMock.mockImplementationOnce(() => {
-        throw new Error("disk full");
-      });
-
-      // Should not throw
-      expect(() => flushHistory()).not.toThrow();
-    });
-  });
+// The legacy-import path reads files.history — point the whole Talon
+// root into a per-test tmpdir via paths mock.
+let workDir: string;
+vi.mock("../util/paths.js", async () => {
+  const real =
+    await vi.importActual<typeof import("../util/paths.js")>(
+      "../util/paths.js",
+    );
+  return {
+    ...real,
+    files: new Proxy(real.files, {
+      get(target, prop: string) {
+        if (prop === "history") return join(workDir, "history.json");
+        if (prop === "database") return join(workDir, "talon.db");
+        return target[prop as keyof typeof target];
+      },
+    }),
+  };
 });
 
-describe("history — non-Error throw coverage", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+import { getDatabase, closeDatabase } from "../storage/db.js";
+import {
+  loadHistory,
+  flushHistory,
+  pushMessage,
+  getRecentHistory,
+  searchHistory,
+  type HistoryMessage,
+} from "../storage/history.js";
+
+const envBackup = process.env.TALON_DB_PATH;
+
+function makeMsg(msgId: number, text = `msg ${msgId}`): HistoryMessage {
+  return {
+    msgId,
+    senderId: 1,
+    senderName: "User",
+    text,
+    timestamp: Date.now() + msgId,
+  };
+}
+
+beforeEach(() => {
+  workDir = mkdtempSync(join(tmpdir(), "talon-history-persist-"));
+  closeDatabase();
+  process.env.TALON_DB_PATH = join(workDir, "talon.db");
+});
+
+afterEach(() => {
+  closeDatabase();
+  if (envBackup === undefined) delete process.env.TALON_DB_PATH;
+  else process.env.TALON_DB_PATH = envBackup;
+  rmSync(workDir, { recursive: true, force: true });
+});
+
+describe("history persistence", () => {
+  it("messages survive a close/reopen cycle", () => {
+    pushMessage("persist-chat", makeMsg(1));
+    pushMessage("persist-chat", makeMsg(2));
+    flushHistory();
+
+    closeDatabase();
+    getDatabase(join(workDir, "talon.db"));
+
+    const history = getRecentHistory("persist-chat");
+    expect(history).toHaveLength(2);
+    expect(history.map((m) => m.msgId)).toEqual([1, 2]);
   });
 
-  it("saveHistory covers String(err) when writeFileAtomic throws a non-Error", async () => {
-    const { logError } = await import("../util/log.js");
-    vi.mocked(logError).mockClear();
+  it("imports a legacy JsonStore envelope and renames the file", () => {
+    writeFileSync(
+      join(workDir, "history.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        savedAt: 1716540000000,
+        data: {
+          "legacy-chat": [makeMsg(10, "hello from the envelope")],
+        },
+      }),
+    );
 
-    const id = `flush-non-error-${Date.now()}`;
-    pushMessage(id, {
-      msgId: 1,
-      senderId: 1,
-      senderName: "TestUser",
-      text: "test non-error throw",
-      timestamp: Date.now(),
-    });
+    loadHistory();
 
-    existsSyncMock.mockReturnValue(false); // no backup attempt
-    // Throw a plain string (non-Error) to cover `err instanceof Error ? ... : err`
-    writeFileSyncMock.mockImplementation(() => {
-      throw "disk quota string";
-    }); // eslint-disable-line @typescript-eslint/no-throw-literal
+    const history = getRecentHistory("legacy-chat");
+    expect(history).toHaveLength(1);
+    expect(history[0].text).toBe("hello from the envelope");
+    expect(existsSync(join(workDir, "history.json"))).toBe(false);
+    expect(existsSync(join(workDir, "history.json.imported"))).toBe(true);
+  });
 
-    expect(() => flushHistory()).not.toThrow();
-    expect(vi.mocked(logError)).toHaveBeenCalled();
+  it("imports the bare pre-envelope shape", () => {
+    writeFileSync(
+      join(workDir, "history.json"),
+      JSON.stringify({ "bare-chat": [makeMsg(1, "bare shape message")] }),
+    );
 
-    writeFileSyncMock.mockReset();
+    loadHistory();
+
+    expect(getRecentHistory("bare-chat")).toHaveLength(1);
+  });
+
+  it("does not re-import on subsequent loads", () => {
+    writeFileSync(
+      join(workDir, "history.json"),
+      JSON.stringify({ "once-chat": [makeMsg(1)] }),
+    );
+
+    loadHistory();
+    loadHistory();
+
+    expect(getRecentHistory("once-chat")).toHaveLength(1);
+  });
+
+  it("survives a corrupt legacy file without throwing", () => {
+    writeFileSync(join(workDir, "history.json"), "not json at all!!!");
+
+    expect(() => loadHistory()).not.toThrow();
+    // The DB still works after the failed import.
+    pushMessage("after-corrupt", makeMsg(1));
+    expect(getRecentHistory("after-corrupt")).toHaveLength(1);
+  });
+
+  it("skips malformed legacy entries but keeps valid ones", () => {
+    writeFileSync(
+      join(workDir, "history.json"),
+      JSON.stringify({
+        "mixed-chat": [
+          makeMsg(1),
+          { notAMessage: true },
+          null,
+          makeMsg(2),
+          { msgId: "wrong-type", text: 42 },
+        ],
+        "not-an-array": { msgId: 3 },
+      }),
+    );
+
+    loadHistory();
+
+    const history = getRecentHistory("mixed-chat");
+    expect(history.map((m) => m.msgId)).toEqual([1, 2]);
+  });
+
+  it("imported messages are immediately FTS-searchable", () => {
+    writeFileSync(
+      join(workDir, "history.json"),
+      JSON.stringify({
+        "fts-chat": [
+          makeMsg(1, "the quick brown fox"),
+          makeMsg(2, "completely unrelated"),
+        ],
+      }),
+    );
+
+    loadHistory();
+
+    const result = searchHistory("fts-chat", "quick fox");
+    expect(result).toContain("quick brown fox");
+    expect(result).not.toContain("unrelated");
   });
 });

@@ -50,16 +50,15 @@ describe("history", () => {
       expect(history[2].msgId).toBe(3);
     });
 
-    it("caps buffer at MAX_HISTORY_PER_CHAT (500)", () => {
+    it("retains messages past the legacy 500-message cap", () => {
       const id = chatId();
       for (let i = 0; i < 550; i++) {
         pushMessage(id, makeMsg({ msgId: i }));
       }
       const history = getRecentHistory(id, 1000);
-      expect(history).toHaveLength(500);
-      // First message should be 50 (the oldest surviving after trim)
-      expect(history[0].msgId).toBe(50);
-      expect(history[499].msgId).toBe(549);
+      expect(history).toHaveLength(550);
+      expect(history[0].msgId).toBe(0);
+      expect(history[549].msgId).toBe(549);
     });
 
     it("preserves all optional fields on the message", () => {
@@ -671,23 +670,17 @@ describe("history", () => {
     });
   });
 
-  describe("chat eviction", () => {
-    it("evicts oldest chats when exceeding MAX_CHAT_COUNT (1000)", () => {
-      // Push messages for 1001 unique chats
+  describe("chat retention", () => {
+    it("retains every chat past the legacy MAX_CHAT_COUNT eviction threshold", () => {
+      // The JSON buffer evicted ~10% of chats past 1000 to bound process
+      // memory; SQLite holds nothing in memory, so all chats survive.
       for (let i = 0; i < 1001; i++) {
         pushMessage(`evict-chat-${i}`, makeMsg({ msgId: 1 }));
       }
-      // The first ~100 chats (10%) should have been evicted
-      // The last chat should still exist
       expect(getRecentHistory("evict-chat-1000")).toHaveLength(1);
-      // Some early chats should have been evicted
-      let evictedCount = 0;
-      for (let i = 0; i < 100; i++) {
-        if (getRecentHistory(`evict-chat-${i}`).length === 0) {
-          evictedCount++;
-        }
+      for (const i of [0, 1, 50, 99]) {
+        expect(getRecentHistory(`evict-chat-${i}`)).toHaveLength(1);
       }
-      expect(evictedCount).toBeGreaterThan(0);
     });
   });
 });

@@ -802,11 +802,11 @@ async function runDoctor(): Promise<void> {
   let issues = 0;
   const major = parseInt(process.versions.node.split(".")[0], 10);
   console.log(
-    major >= 22
+    major >= 24
       ? `  ${pc.green("\u2713")} Node.js ${process.versions.node}`
-      : `  ${pc.red("\u2717")} Node.js ${process.versions.node} ${pc.dim("(need >=22)")}`,
+      : `  ${pc.red("\u2717")} Node.js ${process.versions.node} ${pc.dim("(need >=24)")}`,
   );
-  if (major < 22) issues++;
+  if (major < 24) issues++;
   if (existsSync(CONFIG_FILE)) {
     const config = loadConfig();
     const fes = Array.isArray(config.frontend)

@@ -18,7 +18,7 @@
     "chatbot"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "type": "module",
   "main": "./src/index.ts",

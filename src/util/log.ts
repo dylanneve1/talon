@@ -21,6 +21,7 @@ import { dirs, files } from "./paths.js";
 export type LogComponent =
   | "bot"
   | "bridge"
+  | "db"
   | "agent"
   | "pulse"
   | "userbot"
@@ -90,36 +91,48 @@ if (!quiet) {
   }
 }
 
-const logger = pino({
-  level: "trace",
-  transport: {
-    targets: [
-      // Console output (disabled in quiet mode)
-      ...(!quiet
-        ? [
-            {
-              target: "pino-pretty",
-              level: "trace" as const,
-              options: {
-                colorize: true,
-                ignore: "pid,hostname",
-                translateTime: "HH:MM:ss",
-              },
-            },
-          ]
-        : []),
-      // JSON file output (always active)
-      {
-        target: "pino/file",
-        level: "trace",
-        options: {
-          destination: LOG_FILE,
-          mkdir: true,
+// Under vitest, skip the file transport entirely. Its worker thread
+// flushes asynchronously, so a log call near the end of a test races
+// the suite's tmp-HOME cleanup (unhandled ENOENT — observed via
+// codex-one-shot on macOS) — and suites that don't mock HOME would
+// pollute the real ~/.talon/talon.log. Console output still flows for
+// suites that don't mock this module.
+const IS_VITEST = process.env.VITEST === "true";
+
+const targets = [
+  // Console output (disabled in quiet mode)
+  ...(!quiet
+    ? [
+        {
+          target: "pino-pretty",
+          level: "trace" as const,
+          options: {
+            colorize: true,
+            ignore: "pid,hostname",
+            translateTime: "HH:MM:ss",
+          },
         },
-      },
-    ],
-  },
-});
+      ]
+    : []),
+  // JSON file output (always active outside test runs)
+  ...(!IS_VITEST
+    ? [
+        {
+          target: "pino/file",
+          level: "trace" as const,
+          options: {
+            destination: LOG_FILE,
+            mkdir: true,
+          },
+        },
+      ]
+    : []),
+];
+
+const logger =
+  targets.length > 0
+    ? pino({ level: "trace", transport: { targets } })
+    : pino({ level: "silent" });
 
 export function log(component: LogComponent, message: string): void {
   logger.info({ component }, message);
