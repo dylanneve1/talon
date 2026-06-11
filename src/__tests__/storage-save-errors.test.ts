@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 describe("cron-store — save failure logs error", () => {
   beforeEach(() => {
+    delete process.env.TALON_DISABLE_LEGACY_IMPORT;
     vi.resetModules();
   });
 

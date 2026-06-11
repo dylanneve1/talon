@@ -41,6 +41,7 @@ const {
 
 describe("sessions", () => {
   beforeEach(() => {
+    delete process.env.TALON_DISABLE_LEGACY_IMPORT;
     // Reset sessions between tests by resetting all known chat IDs
     // We use unique chat IDs per test to avoid cross-contamination
   });

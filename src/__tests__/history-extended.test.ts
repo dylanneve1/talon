@@ -91,6 +91,7 @@ function makeMsg(
 }
 
 beforeEach(() => {
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
   vi.clearAllMocks();
 });
 

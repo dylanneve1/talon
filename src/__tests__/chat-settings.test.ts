@@ -1,4 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
+
+// This suite tests the legacy-JSON migration paths — re-enable the
+// import that the global vitest setup disables.
+beforeEach(() => {
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+});
 import { existsSync, readFileSync } from "node:fs";
 
 // Mock log module

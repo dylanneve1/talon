@@ -126,6 +126,7 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
   let logWarnMock: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    delete process.env.TALON_DISABLE_LEGACY_IMPORT;
     vi.resetModules();
     // Fresh import gives us draftsSupported === null
     const handlers = await import("../frontend/telegram/handlers.js");
