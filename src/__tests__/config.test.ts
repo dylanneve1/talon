@@ -19,6 +19,46 @@ describe("config", () => {
       children?: { name: string; size: number }[];
     }[],
   ) {
+    const readdirSync = vi.fn((dir: string) => {
+      if (!workspaceEntries) return [];
+      // If this is a subdirectory, find its children
+      for (const entry of workspaceEntries) {
+        if (entry.isDir && dir.endsWith(entry.name) && entry.children) {
+          return entry.children.map((c) => ({
+            name: c.name,
+            isDirectory: () => false,
+            isFile: () => true,
+          }));
+        }
+      }
+      // Top-level workspace dir
+      if (dir.endsWith("workspace")) {
+        return workspaceEntries.map((e) => ({
+          name: e.name,
+          isDirectory: () => e.isDir,
+          isFile: () => !e.isDir,
+        }));
+      }
+      return [];
+    });
+    const statSync = vi.fn((filePath: string) => {
+      // Find matching file in workspace entries
+      if (workspaceEntries) {
+        for (const entry of workspaceEntries) {
+          if (!entry.isDir && filePath.endsWith(entry.name)) {
+            return { size: entry.size ?? 100 };
+          }
+          if (entry.isDir && entry.children) {
+            for (const child of entry.children) {
+              if (filePath.endsWith(child.name)) {
+                return { size: child.size };
+              }
+            }
+          }
+        }
+      }
+      return { size: 0 };
+    });
     vi.doMock("node:fs", () => ({
       existsSync: vi.fn((path: string) => {
         if (path.includes("config.json") || path.includes("talon.json"))
@@ -44,47 +84,10 @@ describe("config", () => {
         return "";
       }),
       mkdirSync: vi.fn(),
-      readdirSync: vi.fn((dir: string) => {
-        if (!workspaceEntries) return [];
-        // If this is a subdirectory, find its children
-        for (const entry of workspaceEntries) {
-          if (entry.isDir && dir.endsWith(entry.name) && entry.children) {
-            return entry.children.map((c) => ({
-              name: c.name,
-              isDirectory: () => false,
-              isFile: () => true,
-            }));
-          }
-        }
-        // Top-level workspace dir
-        if (dir.endsWith("workspace")) {
-          return workspaceEntries.map((e) => ({
-            name: e.name,
-            isDirectory: () => e.isDir,
-            isFile: () => !e.isDir,
-          }));
-        }
-        return [];
-      }),
-      statSync: vi.fn((filePath: string) => {
-        // Find matching file in workspace entries
-        if (workspaceEntries) {
-          for (const entry of workspaceEntries) {
-            if (!entry.isDir && filePath.endsWith(entry.name)) {
-              return { size: entry.size ?? 100 };
-            }
-            if (entry.isDir && entry.children) {
-              for (const child of entry.children) {
-                if (filePath.endsWith(child.name)) {
-                  return { size: child.size };
-                }
-              }
-            }
-          }
-        }
-        return { size: 0 };
-      }),
+      readdirSync,
+      statSync,
     }));
+    return { readdirSync, statSync };
   }
 
   describe("loadConfig", () => {
@@ -538,6 +541,35 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("bigdir/ (10 files)");
+    });
+
+    it("does not stat files inside collapsed (>8) directories", async () => {
+      // A collapsed directory renders only a `name/ (N files)` summary, so
+      // its files' sizes are never displayed — and must never be stat'd.
+      // Statting them eagerly is the blocking-syscall-per-file cost this
+      // listing was rewritten to avoid on large workspaces.
+      const manyChildren = [];
+      for (let i = 0; i < 10; i++) {
+        manyChildren.push({ name: `buried${i}.txt`, size: 100 });
+      }
+      const { statSync } = mockFs({ frontend: "terminal" }, {}, [
+        { name: "bigdir", isDir: true, children: manyChildren },
+        { name: "top.txt", isDir: false, size: 256 },
+      ]);
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+
+      // Collapsed summary is shown; the top-level file is stat'd for its size.
+      expect(config.systemPrompt).toContain("bigdir/ (10 files)");
+      expect(config.systemPrompt).toContain("top.txt (256B)");
+
+      // None of the 10 buried files were stat'd — only the rendered top file.
+      const statted = statSync.mock.calls.map((c) => String(c[0]));
+      for (let i = 0; i < 10; i++) {
+        expect(statted.some((p) => p.endsWith(`buried${i}.txt`))).toBe(false);
+      }
+      expect(statted.some((p) => p.endsWith("top.txt"))).toBe(true);
     });
 
     it("lists subdirectory files when 8 or fewer", async () => {

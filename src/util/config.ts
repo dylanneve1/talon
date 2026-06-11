@@ -497,11 +497,25 @@ function loadSystemPrompt(
 
   // Workspace file listing for context. Dynamic: file sizes change as
   // logs grow, so even back-to-back rebuilds differ.
+  //
+  // Any directory with more than 8 rendered entries collapses to a single
+  // `name/ (N files)` summary line, so the per-file sizes inside such a
+  // directory are computed and then thrown away. The tree is therefore built
+  // lazily: `statSync` is deferred to render time and is only ever called for
+  // files that actually appear in the output. The earlier implementation
+  // stat'd every file eagerly during the walk — on a workspace with tens of
+  // thousands of files (logs, build artifacts, media) that meant one blocking
+  // `statSync` syscall per file on every session start, walking the whole
+  // tree just to print a handful of summary lines.
   const workspaceDir = dirs.workspace;
   let workspaceFiles = "";
   try {
-    const listDir = (dir: string, prefix = ""): string[] => {
-      const entries: string[] = [];
+    // A node contributes `count` rendered lines to its parent (used to decide
+    // the >8 collapse) and renders those lines lazily via `render()`.
+    type Node = { count: number; render: () => string[] };
+
+    const buildNode = (dir: string, prefix: string): Node => {
+      const children: Node[] = [];
       try {
         for (const e of readdirSync(dir, { withFileTypes: true })) {
           if (
@@ -512,23 +526,41 @@ function loadSystemPrompt(
             continue;
           const full = resolve(dir, e.name);
           if (e.isDirectory()) {
-            const sub = listDir(full, `${prefix}${e.name}/`);
-            if (sub.length > 0 && sub.length <= 8) entries.push(...sub);
-            else if (sub.length > 8)
-              entries.push(`${prefix}${e.name}/ (${sub.length} files)`);
+            const sub = buildNode(full, `${prefix}${e.name}/`);
+            if (sub.count === 0) continue; // empty dir → omitted
+            if (sub.count <= 8) {
+              children.push(sub); // expand inline
+            } else {
+              // Collapse to one summary line — never render (or stat) the
+              // files inside.
+              const line = `${prefix}${e.name}/ (${sub.count} files)`;
+              children.push({ count: 1, render: () => [line] });
+            }
           } else {
-            const sz = statSync(full).size;
-            entries.push(
-              `${prefix}${e.name} (${sz < 1024 ? sz + "B" : (sz / 1024).toFixed(0) + "KB"})`,
-            );
+            children.push({
+              count: 1,
+              render: () => {
+                let sz = 0;
+                try {
+                  sz = statSync(full).size;
+                } catch {
+                  /* file vanished between readdir and stat — show 0B */
+                }
+                return [
+                  `${prefix}${e.name} (${sz < 1024 ? sz + "B" : (sz / 1024).toFixed(0) + "KB"})`,
+                ];
+              },
+            });
           }
         }
       } catch {
-        /* skip */
+        /* unreadable dir → treat as empty */
       }
-      return entries;
+      const count = children.reduce((n, c) => n + c.count, 0);
+      return { count, render: () => children.flatMap((c) => c.render()) };
     };
-    const files = listDir(workspaceDir);
+
+    const files = buildNode(workspaceDir, "").render();
     if (files.length > 0)
       workspaceFiles =
         "## Current Workspace Contents\n\n" +
