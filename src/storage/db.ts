@@ -2,11 +2,12 @@
  * SQLite connection + migration runner — the high-performance data
  * layer's entry point.
  *
- * One database at ~/.talon/data/talon.db, opened through `node:sqlite`
- * (stable since Node 23.4; bun implements the same module on top of
- * its built-in SQLite, so compiled binaries need no native addon).
- * The heavy lifting — storage engine, indexes, FTS5 full-text search —
- * is battle-tested C, orchestrated from TypeScript.
+ * One database at ~/.talon/data/talon.db, opened through the runtime's
+ * built-in SQLite: `node:sqlite` (stable since Node 23.4) under node,
+ * `bun:sqlite` under bun — so compiled single binaries need no native
+ * addon and there is nothing on disk to resolve. The heavy lifting —
+ * storage engine, indexes, FTS5 full-text search — is battle-tested C,
+ * orchestrated from TypeScript.
  *
  * Layering (keep it this way):
  *   - schema.ts                 all DDL, versioned migrations
@@ -20,16 +21,44 @@
  * stores need real search.
  */
 
-import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { files } from "../util/paths.js";
 import { log } from "../util/log.js";
 import { MIGRATIONS } from "./schema.js";
 
-let db: DatabaseSync | null = null;
+/**
+ * The driver surface the repositories use — the intersection of
+ * node:sqlite's DatabaseSync and bun:sqlite's Database, which are
+ * API-compatible for exactly this set (verified empirically: prepared
+ * statements with positional params, identical row object shapes,
+ * multi-statement exec, FTS5 virtual tables, PRAGMA user_version).
+ */
+export type SqlStatement = {
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+  run(...params: unknown[]): unknown;
+};
+export type SqlDatabase = {
+  prepare(sql: string): SqlStatement;
+  exec(sql: string): void;
+  close(): void;
+};
 
-function migrate(database: DatabaseSync): void {
+// bun (≤1.3.x) does not implement node:sqlite — a compiled binary dies
+// at startup with "No such built-in module: node:sqlite". Both
+// runtimes ship a native SQLite builtin, so pick at load time. The
+// non-literal import specifier keeps tsc and bundlers from trying to
+// resolve the module that doesn't exist on the other runtime.
+const IS_BUN = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
+const sqliteModule = (await import(
+  IS_BUN ? "bun:sqlite" : "node:sqlite"
+)) as Record<string, new (path: string) => SqlDatabase>;
+const Database = IS_BUN ? sqliteModule.Database : sqliteModule.DatabaseSync;
+
+let db: SqlDatabase | null = null;
+
+function migrate(database: SqlDatabase): void {
   const row = database.prepare("PRAGMA user_version").get() as {
     user_version: number;
   };
@@ -61,10 +90,10 @@ function defaultPath(): string {
  * path; tests pass an explicit tmp path and call closeDatabase() in
  * teardown.
  */
-export function getDatabase(path: string = defaultPath()): DatabaseSync {
+export function getDatabase(path: string = defaultPath()): SqlDatabase {
   if (db) return db;
   mkdirSync(dirname(path), { recursive: true });
-  const database = new DatabaseSync(path);
+  const database = new Database(path);
   // WAL: readers don't block the writer, and crash recovery is
   // journal-based instead of "hope the rename was atomic".
   database.exec("PRAGMA journal_mode = WAL");
