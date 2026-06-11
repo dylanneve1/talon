@@ -329,47 +329,14 @@ function pickCanonical(bucket: readonly SdkModelRecord[]): SdkModelRecord {
 }
 
 /**
- * Assign a best-effort fallback (used on overload/timeout) to every model
- * except the last:
- *  - A 1M variant prefers its base sibling of the same family+version.
- *  - Otherwise a model falls back to the next model in SDK order.
- */
-function assignFallbacks(
-  models: ModelInfo[],
-  recordByValue: ReadonlyMap<string, SdkModelRecord>,
-): void {
-  const baseByFamily = new Map<string, string>();
-  for (const model of models) {
-    const rec = recordByValue.get(model.id);
-    if (rec && !rec.identity.isOneMillion && rec.familyKey) {
-      baseByFamily.set(rec.familyKey, model.id);
-    }
-  }
-
-  models.forEach((model, index) => {
-    const rec = recordByValue.get(model.id);
-    if (rec?.identity.isOneMillion && rec.familyKey) {
-      const baseSibling = baseByFamily.get(rec.familyKey);
-      if (baseSibling && baseSibling !== model.id) {
-        model.fallback = baseSibling;
-        return;
-      }
-    }
-    if (index < models.length - 1) {
-      model.fallback = models[index + 1]!.id;
-    }
-  });
-}
-
-/**
  * Convert SDK ModelInfo to our registry format.
  *
  * Base and 1M variants of the same family+version each surface as their own
  * selectable entry (so the picker shows both), while true duplicates — the
  * same model exposed under multiple ids, e.g. the recommended `default` and
  * the longhand `claude-opus-4-7[1m]` it mirrors — collapse into one canonical
- * entry that absorbs the others' aliases. Display names, aliases, and the
- * fallback chain are all derived from SDK metadata, never hardcoded versions.
+ * entry that absorbs the others' aliases. Display names and aliases are
+ * derived from SDK metadata, never hardcoded versions.
  */
 function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
   const records = buildSdkModelRecords(sdkModels);
@@ -391,7 +358,6 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
   }
 
   const usedKeys = new Set<string>();
-  const recordByValue = new Map<string, SdkModelRecord>();
   const models: ModelInfo[] = [];
 
   for (const canonical of canonicals) {
@@ -422,7 +388,6 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
     usedKeys.add(canonicalKey);
     for (const alias of aliases) usedKeys.add(alias.toLowerCase());
 
-    recordByValue.set(canonical.value, canonical);
     models.push({
       id: canonical.value,
       displayName: deriveDisplayName(identity, canonical.displayName),
@@ -433,7 +398,6 @@ function convertSdkModels(sdkModels: SdkModelInfo[]): ModelInfo[] {
     });
   }
 
-  assignFallbacks(models, recordByValue);
   return models;
 }
 

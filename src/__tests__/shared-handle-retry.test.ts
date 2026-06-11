@@ -66,7 +66,6 @@ describe("shared / applyRetryDecision — propagate path", () => {
         aliases: [],
         provider: "test",
         displayName: "Model A",
-        fallback: "model-b",
       },
       {
         id: "model-b",
@@ -152,23 +151,7 @@ describe("shared / applyRetryDecision — reset_and_retry path", () => {
 });
 
 describe("shared / applyRetryDecision — retryable propagation", () => {
-  it("does not recurse onto a configured fallback model", async () => {
-    registerModels([
-      {
-        id: "primary",
-        aliases: [],
-        provider: "test",
-        displayName: "Primary",
-        fallback: "fallback",
-      },
-      {
-        id: "fallback",
-        aliases: [],
-        provider: "test",
-        displayName: "Fallback",
-      },
-    ]);
-
+  it("does not recurse onto another model for retryable failures", async () => {
     const recurse = vi.fn();
 
     const outcome = await applyRetryDecision({
@@ -186,20 +169,13 @@ describe("shared / applyRetryDecision — retryable propagation", () => {
     expect(recurse).not.toHaveBeenCalled();
   });
 
-  it("leaves chat settings untouched when a configured fallback exists", async () => {
+  it("leaves chat settings untouched on retryable failures", async () => {
     registerModels([
       {
         id: "primary",
         aliases: [],
         provider: "test",
         displayName: "Primary",
-        fallback: "fallback",
-      },
-      {
-        id: "fallback",
-        aliases: [],
-        provider: "test",
-        displayName: "Fallback",
       },
     ]);
     setChatModel("test-chat", "user-pinned");

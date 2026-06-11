@@ -56,7 +56,6 @@ describe("buildSdkOptions", () => {
         description: "Sonnet 4.6 · Best for everyday tasks",
         aliases: ["claude-sonnet-4-6"],
         provider: "anthropic",
-        fallback: "haiku",
       },
       {
         id: "sonnet[1m]",
@@ -65,7 +64,6 @@ describe("buildSdkOptions", () => {
           "Sonnet 4.6 with 1M context · Billed as extra usage · $3/$15 per Mtok",
         aliases: ["claude-sonnet-4-6[1m]"],
         provider: "anthropic",
-        fallback: "haiku",
       },
       {
         id: "haiku",

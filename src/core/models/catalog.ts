@@ -26,8 +26,6 @@ export type ModelInfo = {
   supportedReasoningLevels?: ReasoningEffortLevel[];
   /** Backend-reported default reasoning level, when available. */
   defaultReasoningLevel?: ReasoningEffortLevel;
-  /** Model to fall back to on overload/timeout. */
-  fallback?: string;
 };
 
 // ── Registry state ──────────────────────────────────────────────────────────
@@ -140,11 +138,6 @@ export function resolveModelId(input: string): string {
 export function resolveModel(input: string): ModelInfo | undefined {
   const id = resolveModelId(input);
   return models.get(id);
-}
-
-/** Get the fallback model ID for a given model, or null if none configured. */
-export function getFallbackModel(modelId: string): string | null {
-  return resolveModel(modelId)?.fallback ?? null;
 }
 
 /**

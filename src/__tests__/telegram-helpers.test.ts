@@ -31,7 +31,6 @@ describe("telegram helpers", () => {
           "claude-sonnet-4-6[1m]",
         ],
         provider: "anthropic",
-        fallback: "haiku",
       },
       {
         id: "opus[1m]",
@@ -39,7 +38,6 @@ describe("telegram helpers", () => {
         description: "Opus 4.6 with 1M context · Large context window",
         aliases: ["opus", "claude-opus-4-6", "claude-opus-4-6[1m]"],
         provider: "anthropic",
-        fallback: "default",
       },
       {
         id: "haiku",

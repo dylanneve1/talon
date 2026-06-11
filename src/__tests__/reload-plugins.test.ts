@@ -46,7 +46,7 @@ vi.mock("../core/errors.js", () => ({
   classify: vi.fn(),
 }));
 vi.mock("../core/models/catalog.js", () => ({
-  getFallbackModel: vi.fn(),
+  resolveModel: vi.fn(),
 }));
 vi.mock("../util/trace.js", () => ({
   traceMessage: vi.fn(),

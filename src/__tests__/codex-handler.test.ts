@@ -1707,21 +1707,12 @@ describe("codex / handleMessage — error recovery", () => {
 
   it("propagates retryable model failures without switching models", async () => {
     setupHandler();
-    // Register a Codex-shaped model with a fallback in the global model
-    // registry. The handler should still not silently switch to it.
     coreModels.registerModels([
       {
         id: "gpt-5-codex",
         aliases: [],
         provider: "openai",
         displayName: "GPT-5 Codex",
-        fallback: "gpt-5",
-      },
-      {
-        id: "gpt-5",
-        aliases: [],
-        provider: "openai",
-        displayName: "GPT-5",
       },
     ]);
 
