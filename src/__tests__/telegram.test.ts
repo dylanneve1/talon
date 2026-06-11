@@ -127,7 +127,7 @@ describe("splitMessage", () => {
 describe("friendlyError", () => {
   it("maps rate limit errors", () => {
     expect(friendlyError(new Error("429 Too Many Requests"))).toContain(
-      "Rate limited",
+      "Current model is rate limited",
     );
   });
 
@@ -151,12 +151,16 @@ describe("friendlyError", () => {
 
   it("maps overloaded errors", () => {
     const result = friendlyError(new Error("503 Service Unavailable"));
-    expect(result).toContain("busy");
+    expect(result).toContain("Current model is overloaded");
   });
 
   it("maps network errors", () => {
-    expect(friendlyError(new Error("ECONNREFUSED"))).toContain("Connection");
-    expect(friendlyError(new Error("fetch failed"))).toContain("Connection");
+    expect(friendlyError(new Error("ECONNREFUSED"))).toContain(
+      "Backend connection issue",
+    );
+    expect(friendlyError(new Error("fetch failed"))).toContain(
+      "Backend connection issue",
+    );
   });
 
   it("returns generic message for unknown errors", () => {
@@ -166,7 +170,7 @@ describe("friendlyError", () => {
 
   it("accepts string errors", () => {
     const result = friendlyError("rate limit hit");
-    expect(result).toContain("Rate limited");
+    expect(result).toContain("Current model is rate limited");
   });
 
   it("passes through session/expired errors as-is", () => {
