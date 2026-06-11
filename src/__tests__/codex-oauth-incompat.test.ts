@@ -3,8 +3,7 @@
  *
  * Covers `oauth-incompat.ts` (persistence round-trip, fingerprint
  * matching, malformed-file tolerance), `models.isCodexOAuthIncompat`
- * (combined curated + dynamic check), `models.chatGptFallbackFor`
- * (broadened fallback selection), and `auth.isSilentOAuthExitError`
+ * (combined curated + dynamic check), and `auth.isSilentOAuthExitError`
  * (the 2026-05-20 Pandario regression pattern).
  */
 
@@ -24,7 +23,6 @@ import {
 import {
   isCodexApiKeyOnlyModel,
   isCodexOAuthIncompat,
-  chatGptFallbackFor,
 } from "../backend/codex/models.js";
 import {
   isSilentOAuthExitError,
@@ -250,39 +248,6 @@ describe("isCodexOAuthIncompat — combined curated + dynamic", () => {
     expect(isCodexOAuthIncompat("gpt-5.5")).toBe(false);
     await markOAuthIncompat("gpt-5.4-mini"); // unrelated mark
     expect(isCodexOAuthIncompat("gpt-5.5")).toBe(false);
-  });
-});
-
-// ── chatGptFallbackFor — broadened ────────────────────────────────────────
-
-describe("chatGptFallbackFor — broadened fallback selection", () => {
-  beforeEach(async () => {
-    await loadOAuthIncompatStore("chatgpt:test");
-  });
-
-  it("returns undefined for non-incompat ids (no fallback needed)", () => {
-    expect(chatGptFallbackFor("gpt-5.5")).toBeUndefined();
-    expect(chatGptFallbackFor("brand-new-future-model")).toBeUndefined();
-  });
-
-  it("returns gpt-5.5 for curated apiKeyOnly ids", () => {
-    expect(chatGptFallbackFor("gpt-5-codex")).toBe("gpt-5.5");
-  });
-
-  it("returns gpt-5.5 for runtime-learned incompat ids", async () => {
-    await markOAuthIncompat("gpt-5.4-mini");
-    expect(chatGptFallbackFor("gpt-5.4-mini")).toBe("gpt-5.5");
-
-    await markOAuthIncompat("gpt-5.4");
-    expect(chatGptFallbackFor("gpt-5.4")).toBe("gpt-5.5");
-  });
-
-  it("returns undefined for gpt-5.5 itself even if marked (no further fallback)", async () => {
-    // Pathological case — if even gpt-5.5 fails, the credential is the
-    // problem and there's no model we can swap to. The handler should
-    // surface this as an error rather than loop.
-    await markOAuthIncompat("gpt-5.5");
-    expect(chatGptFallbackFor("gpt-5.5")).toBeUndefined();
   });
 });
 

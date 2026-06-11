@@ -3,7 +3,7 @@
  *
  * Covers `detectCodexAuth` (priority order, file-parse edge cases),
  * `isChatGptModelMismatchError` (substring matching tolerance), and
- * the catalog helpers `isCodexApiKeyOnlyModel` / `chatGptFallbackFor`.
+ * the catalog helper `isCodexApiKeyOnlyModel`.
  */
 
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
@@ -15,10 +15,7 @@ import {
   resolveCodexApiKey,
   isChatGptModelMismatchError,
 } from "../backend/codex/auth.js";
-import {
-  isCodexApiKeyOnlyModel,
-  chatGptFallbackFor,
-} from "../backend/codex/models.js";
+import { isCodexApiKeyOnlyModel } from "../backend/codex/models.js";
 
 /**
  * Build a frozen env map that overrides HOME so the file-check path
@@ -333,15 +330,5 @@ describe("codex / api-key-only catalog helpers", () => {
   it("returns false for unknown models (no over-correction)", () => {
     expect(isCodexApiKeyOnlyModel("totally-made-up-model")).toBe(false);
     expect(isCodexApiKeyOnlyModel("")).toBe(false);
-  });
-
-  it("chatGptFallbackFor returns gpt-5.5 for gpt-5-codex", () => {
-    expect(chatGptFallbackFor("gpt-5-codex")).toBe("gpt-5.5");
-  });
-
-  it("chatGptFallbackFor returns undefined for non-api-key-only models", () => {
-    expect(chatGptFallbackFor("gpt-5.5")).toBeUndefined();
-    expect(chatGptFallbackFor("gpt-5")).toBeUndefined();
-    expect(chatGptFallbackFor("unknown-model")).toBeUndefined();
   });
 });

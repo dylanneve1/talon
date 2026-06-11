@@ -27,44 +27,26 @@ import {
   CODEX_THREAD_PERMISSIONS,
 } from "./constants.js";
 import { isChatGptModelMismatchError } from "./auth.js";
-import { chatGptFallbackFor, isCodexOAuthIncompat } from "./models.js";
+import { isCodexOAuthIncompat } from "./models.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
 
 /**
- * Resolve the effective model for a one-shot run, applying the same
- * OAuth-aware pre-emptive swap the interactive handler uses.
- *
- * Heartbeats and dream calls pass `params.model` straight through from
- * `config.heartbeatModel ?? config.model`. If that's an OAuth-incompat
- * id (curated `apiKeyOnly: true` or runtime-learned) AND the active
- * Codex credential is ChatGPT OAuth, swap to `gpt-5.5` to avoid the
- * silent exit-1 failure mode that hit Pandario on 2026-05-20 23:13Z.
- *
- * Returns the resolved model id, whether a swap occurred, and an
- * optional reason string for the run log.
+ * Return a readable error for one-shot runs that request a model known
+ * to be unavailable with ChatGPT OAuth. Heartbeats/dreams should not
+ * silently change the selected model either; the config should be fixed.
  */
-function resolveOneShotModel(requested: string): {
-  model: string;
-  swapped: boolean;
-  reason?: string;
-} {
+function chatGptOAuthModelError(requested: string): string | undefined {
   const authInfo = getCodexAuthInfo();
-  if (authInfo?.mode !== "chatgpt") return { model: requested, swapped: false };
+  if (authInfo?.mode !== "chatgpt") return undefined;
   if (!isCodexOAuthIncompat(requested)) {
-    return { model: requested, swapped: false };
+    return undefined;
   }
 
-  const fallback = chatGptFallbackFor(requested) ?? CODEX_CHATGPT_DEFAULT_MODEL;
-  if (fallback === requested) return { model: requested, swapped: false };
-
-  return {
-    model: fallback,
-    swapped: true,
-    reason:
-      `OAuth-incompat ${requested} → ${fallback} ` +
-      `(curated apiKeyOnly or runtime-learned; set TALON_CODEX_KEY for ` +
-      `api-key billing to use api-key-only models)`,
-  };
+  return (
+    `Codex model ${requested} is not available with ChatGPT OAuth. ` +
+    `Choose a compatible model in config or set TALON_CODEX_KEY / ` +
+    `codexApiKey for API-key-only models.`
+  );
 }
 
 export async function runOneShotAgent(
@@ -91,16 +73,14 @@ export async function runOneShotAgent(
   // there's no thread continuity to worry about.
   const inputText = `${finalSystemPrompt}\n\n---\n\n${prompt}`;
 
-  const resolved = resolveOneShotModel(requestedModel);
-  const activeModel = resolved.model;
-  if (resolved.swapped) {
-    logWarn(
-      "agent",
-      `[${contextLabel}] Codex one-shot model swap: ${resolved.reason}`,
-    );
+  const modelError = chatGptOAuthModelError(requestedModel);
+  if (modelError) {
+    logWarn("agent", `[${contextLabel}] ${modelError}`);
     const ts = new Date().toISOString().slice(11, 19);
-    await appendLog(`\n### [${ts}] Model swap\n${resolved.reason}\n`);
+    await appendLog(`\n### [${ts}] Model unavailable\n${modelError}\n`);
+    return;
   }
+  const activeModel = requestedModel;
   log("agent", `[${contextLabel}] Codex one-shot model: ${activeModel}`);
 
   const thread = codex.startThread({
@@ -156,7 +136,7 @@ export async function runOneShotAgent(
           "agent",
           `[${contextLabel}] Codex one-shot: recorded ${activeModel} as ` +
             `OAuth-incompat (explicit mismatch) — next ${contextLabel} run ` +
-            `will pre-emptively swap to ${CODEX_CHATGPT_DEFAULT_MODEL}`,
+            `will surface a model-unavailable error on future runs`,
         );
       }
     }

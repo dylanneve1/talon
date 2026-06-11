@@ -14,6 +14,7 @@ type ErrorReason =
   | "auth"
   | "context_length"
   | "session_expired"
+  | "model_unavailable"
   | "bad_request"
   | "forbidden"
   | "telegram_api"
@@ -189,14 +190,18 @@ export function classify(err: unknown): TalonError {
 // ── User-friendly messages ──────────────────────────────────────────────────
 
 const FRIENDLY_MESSAGES: Record<ErrorReason, string> = {
-  rate_limit: "Rate limited. Try again in a moment.",
+  rate_limit:
+    "Current model is rate limited. Try again in a moment or choose another model with /model.",
   overloaded:
-    "Upstream model is busy right now. Retrying with a faster fallback...",
-  network: "Connection issue. Retrying shortly.",
+    "Current model is overloaded. Try again later or choose another model with /model.",
+  network:
+    "Backend connection issue. Try again later or choose another backend/model with /model if it keeps happening.",
   auth: "API key error. Bot operator: check the backend's credentials.",
   context_length:
     "Conversation too long for the context window. Use /reset to start fresh.",
   session_expired: "Session expired. Retrying automatically...",
+  model_unavailable:
+    "Current model is unavailable. Choose another model with /model.",
   bad_request: "Something went wrong. Try /reset if this keeps happening.",
   forbidden: "Permission denied for this action.",
   telegram_api: "Telegram API error. Try again.",
@@ -211,7 +216,14 @@ export function friendlyMessage(err: unknown): string {
 
   if (classified.reason === "rate_limit" && classified.retryAfterMs) {
     const seconds = Math.ceil(classified.retryAfterMs / 1000);
-    return `Rate limited. Try again in ${seconds} seconds.`;
+    return (
+      `Current model is rate limited. Try again in ${seconds} seconds ` +
+      `or choose another model with /model.`
+    );
+  }
+
+  if (classified.reason === "model_unavailable") {
+    return classified.message;
   }
 
   // Session expired messages are already user-friendly from the backend

@@ -190,9 +190,7 @@ export interface ToolRuntime {
  *
  * The snapshot's `contextModelId` carries the resolved-this-turn
  * model id when the SDK can surface it. Frontend `/status` reads
- * it to disambiguate the displayed model from the configured one
- * (e.g. when Codex falls back from `gpt-5-codex` to `gpt-5.5` on
- * ChatGPT-OAuth).
+ * it to disambiguate the displayed model from the configured one.
  */
 export interface UsageTelemetry {
   getSessionSnapshot(sessionId: string): Promise<

@@ -2,8 +2,8 @@
  * `applyRetryDecision` unit tests.
  *
  * The four backends used to inline the same 30-line retry block
- * (`classify` → `classifyRetry` → `reset_and_retry` / `fallback_model`
- * / `propagate`); they now delegate to this helper. The handler-level
+ * (`classify` -> `classifyRetry` -> `reset_and_retry` / `propagate`);
+ * they now delegate to this helper. The handler-level
  * integration tests (e.g. codex-handler.test.ts) cover the full
  * recovery path end-to-end; this file pins the helper's per-branch
  * behaviour directly so future evolution doesn't need an integration
@@ -11,11 +11,10 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { QueryParams } from "../backend/shared/handler-types.js";
 import { applyRetryDecision } from "../backend/shared/handle-retry.js";
 import { TalonError } from "../core/errors.js";
 import { registerModels, clearModels } from "../core/models/catalog.js";
-import { getChatSettings, setChatModel } from "../storage/chat-settings.js";
+import { setChatModel } from "../storage/chat-settings.js";
 import { resetSession, getSession } from "../storage/sessions.js";
 
 beforeEach(() => {
@@ -60,8 +59,7 @@ describe("shared / applyRetryDecision — propagate path", () => {
   });
 
   it("returns classified-only when already retried", async () => {
-    // A retryable error that would normally trigger fallback_model —
-    // but since `retried` is true, the helper short-circuits.
+    // A retryable error still propagates when `retried` is true.
     registerModels([
       {
         id: "model-a",
@@ -153,8 +151,8 @@ describe("shared / applyRetryDecision — reset_and_retry path", () => {
   });
 });
 
-describe("shared / applyRetryDecision — fallback_model path", () => {
-  it("passes the fallback model via params.model to the recursive call", async () => {
+describe("shared / applyRetryDecision — retryable propagation", () => {
+  it("does not recurse onto a configured fallback model", async () => {
     registerModels([
       {
         id: "primary",
@@ -171,20 +169,7 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
       },
     ]);
 
-    // Capture the params received inside the recursion.
-    // QueryParams has model?: string so we can assert on it directly.
-    let paramsSeenInRecursion: QueryParams = stubParams;
-    const recurse = vi.fn(async (p: QueryParams) => {
-      paramsSeenInRecursion = p;
-      return {
-        text: "ok",
-        durationMs: 1,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      };
-    });
+    const recurse = vi.fn();
 
     const outcome = await applyRetryDecision({
       err: new Error("fetch failed — rate limited"),
@@ -196,15 +181,12 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
       backendLabel: "Kilo",
     });
 
-    expect(outcome.retry?.text).toBe("ok");
-    // The fallback model is threaded through params so the backend's
-    // own resolution chain honours it even when params.model is set.
-    expect(paramsSeenInRecursion.model).toBe("fallback");
-    // Chat settings are never mutated — user's model preference is intact.
-    expect(getChatSettings("test-chat").model).toBeUndefined();
+    expect(outcome.retry).toBeUndefined();
+    expect(outcome.classified.reason).toBe("rate_limit");
+    expect(recurse).not.toHaveBeenCalled();
   });
 
-  it("propagates the error when the recursive retry throws", async () => {
+  it("leaves chat settings untouched when a configured fallback exists", async () => {
     registerModels([
       {
         id: "primary",
@@ -220,31 +202,25 @@ describe("shared / applyRetryDecision — fallback_model path", () => {
         displayName: "Fallback",
       },
     ]);
-    // Pre-set the chat model to confirm it is not mutated by the helper.
     setChatModel("test-chat", "user-pinned");
 
-    const recurse = vi.fn(async () => {
-      throw new Error("retry blew up");
+    const recurse = vi.fn();
+
+    const outcome = await applyRetryDecision({
+      err: new Error("fetch failed — overloaded"),
+      chatId: "test-chat",
+      activeModel: "primary",
+      retried: false,
+      params: stubParams,
+      recurseWithRetried: recurse,
+      backendLabel: "Codex",
     });
 
-    await expect(
-      applyRetryDecision({
-        err: new Error("fetch failed — overloaded"),
-        chatId: "test-chat",
-        activeModel: "primary",
-        retried: false,
-        params: stubParams,
-        recurseWithRetried: recurse,
-        backendLabel: "Codex",
-      }),
-    ).rejects.toThrow("retry blew up");
-
-    // Chat settings are not touched — user-pinned model is preserved.
-    expect(getChatSettings("test-chat").model).toBe("user-pinned");
+    expect(outcome.retry).toBeUndefined();
+    expect(recurse).not.toHaveBeenCalled();
   });
 
-  it("propagates when retryable but no fallback configured", async () => {
-    // No models registered → `getFallbackModel` returns null → propagate.
+  it("propagates when retryable and no fallback is configured", async () => {
     const recurse = vi.fn();
     const outcome = await applyRetryDecision({
       err: new Error("fetch failed — econnreset"),

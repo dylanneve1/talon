@@ -9,7 +9,6 @@
  *   - Tool-use detection + turn-terminator handling
  *     (`end_turn` / `send` / `react`).
  *   - Progress-text emission before each tool call.
- *   - Model fallback on rate-limit / overload / network.
  *   - Context-overflow + session-expiry recovery.
  *   - First-turn system-prompt rebuild + plugin prompt additions.
  *   - `[YYYY-MM-DD HH:MM:SS] [Name] [msg_id:N]` prompt formatting.
@@ -47,7 +46,6 @@ import {
   recordUsage,
   setSessionName,
   setSessionId,
-  resetSession,
 } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { log, logError, logWarn } from "../../util/log.js";
@@ -82,14 +80,11 @@ import {
 import { getState } from "./state.js";
 import { ensureCodex, getCodexAuthInfo } from "./init.js";
 import { isChatGptModelMismatchError, isSilentOAuthExitError } from "./auth.js";
-import {
-  chatGptFallbackFor,
-  getModelInfo,
-  isCodexOAuthIncompat,
-} from "./models.js";
+import { getModelInfo, isCodexOAuthIncompat } from "./models.js";
 import { supportsReasoningLevel } from "../../core/models/reasoning-levels.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
 import { classifyRateLimits, readLastRolloutSnapshot } from "./token-usage.js";
+import { TalonError } from "../../core/errors.js";
 
 // ── Local utility ───────────────────────────────────────────────────────────
 
@@ -158,7 +153,7 @@ async function probeUsageExhausted(
 }
 
 /**
- * One-shot ChatGPT-OAuth model-mismatch recovery.
+ * ChatGPT-OAuth model-mismatch reporting.
  *
  * Three failure shapes are handled:
  *
@@ -183,33 +178,24 @@ async function probeUsageExhausted(
  *      observed causes include real OAuth-incompat models AND
  *      transient outages AND usage exhaustion. After the usage check
  *      rules out exhaustion, we treat it as a likely OAuth-incompat
- *      and retry on the OAuth flagship, but we do NOT persist it
- *      (would over-poison the learning store with transients).
+ *      and surface a model/auth hint, but we do NOT persist it (would
+ *      over-poison the learning store with transients).
  *
  *      Gating: ONLY fires when auth mode is `chatgpt` AND the active
  *      model isn't already the OAuth flagship — a silent exit on
- *      `gpt-5.5` means the credential itself is broken (retrying
- *      wouldn't help) or the account is in some other failure state.
+ *      `gpt-5.5` means the credential itself is broken or the account
+ *      is in some other failure state.
  *
- * Returns a retry promise when explicit-mismatch or silent-exit
- * triggers AND we haven't already retried (`_retried` sentinel prevents
- * recursion). Returns `undefined` otherwise; the caller falls through
- * to its normal classify/throw path.
- *
- * The retry side-effects are confined here: session reset, fallback
- * model threaded through `params.model`, `_retried = true` on the
- * recursive call.
+ * Throws a user-facing `model_unavailable` error when explicit-mismatch
+ * or silent-exit triggers. Returns `undefined` otherwise; the caller
+ * falls through to its normal classify/throw path.
  */
-async function maybeFallbackForChatGptMismatch(
+async function maybeReportChatGptMismatch(
   probeText: string,
   activeModel: string,
-  params: QueryParams,
-  retried: boolean,
   chatId: string,
   threadId?: string,
-): Promise<QueryResult | undefined> {
-  if (retried) return undefined;
-
+): Promise<void> {
   const explicit = isChatGptModelMismatchError(probeText);
   const authInfo = getCodexAuthInfo();
   const isOAuth = authInfo?.mode === "chatgpt";
@@ -218,7 +204,7 @@ async function maybeFallbackForChatGptMismatch(
     activeModel !== CODEX_CHATGPT_DEFAULT_MODEL &&
     isSilentOAuthExitError(probeText);
 
-  if (!explicit && !silent) return undefined;
+  if (!explicit && !silent) return;
 
   // Usage-exhausted check FIRST. If the rollout JSONL says the account
   // has no credits, both the explicit-mismatch and silent-exit shapes
@@ -245,43 +231,43 @@ async function maybeFallbackForChatGptMismatch(
     throw new CodexUsageExhaustedError(activeModel, authInfo?.mode);
   }
 
-  const fallbackModel =
-    chatGptFallbackFor(activeModel) ?? CODEX_CHATGPT_DEFAULT_MODEL;
-  if (fallbackModel === activeModel) return undefined;
-
   // Only EXPLICIT mismatch errors are persisted as OAuth-incompat —
   // they're definitive ("not supported when using Codex with a ChatGPT
   // account" is an unambiguous server-side signal). Silent-exit
   // failures are ambiguous (could be model-incompat, transient
   // outage, brief rate-limit, or upstream blip) and would over-poison
-  // the learning store if persisted. The silent path still triggers
-  // an in-session retry below, just without the permanent record.
+  // the learning store if persisted.
   if (isOAuth && explicit) {
     const recorded = await markOAuthIncompat(activeModel);
     if (recorded) {
       logWarn(
         "agent",
         `[${chatId}] Codex: recorded ${activeModel} as OAuth-incompat ` +
-          `(explicit mismatch) — subsequent turns will skip pre-emptively`,
+          `(explicit mismatch) — subsequent turns fail before request build`,
       );
     }
   }
 
-  // Log wording is now honest about the heuristic: explicit mismatch
-  // is a verdict, silent exit is a guess. Both retry on the fallback.
+  // Log wording is honest about the heuristic: explicit mismatch is a
+  // verdict, silent exit is a guess. Neither path silently changes the
+  // selected model; the user/config owner must choose a compatible one.
   const shape = explicit
     ? "explicit OAuth-incompat mismatch"
     : "silent exit on OAuth (heuristic: treating as possible OAuth-incompat)";
   logWarn(
     "agent",
     `[${chatId}] Codex ${shape} for ${activeModel}; ` +
-      `resetting thread and retrying on ${fallbackModel}. ` +
+      `not falling back automatically. ` +
       (isOAuth
         ? `Set TALON_CODEX_KEY or codexApiKey for billing-based access to api-key-only models.`
         : ``),
   );
-  resetSession(chatId);
-  return await handleMessage({ ...params, model: fallbackModel }, true);
+  throw new TalonError(
+    `Codex model ${activeModel} is not available with ChatGPT OAuth. ` +
+      `Choose a compatible model with /model, or set TALON_CODEX_KEY / ` +
+      `codexApiKey for API-key-only models.`,
+    { reason: "model_unavailable", retryable: false },
+  );
 }
 
 // ── Active session registry ─────────────────────────────────────────────────
@@ -335,8 +321,8 @@ export async function handleMessage(
   const requestedModel =
     params.model ?? chatSettings.model ?? config.model ?? authAwareDefault;
   // If the resolved model is known OAuth-incompat AND we're on
-  // ChatGPT OAuth, pre-emptively swap to the chatgpt-compatible
-  // fallback rather than letting the first turn fail. Two sources of
+  // ChatGPT OAuth, fail with a clear instruction instead of silently
+  // changing the model. Two sources of
   // truth feed `isCodexOAuthIncompat`:
   //
   //   1. **Static** (`isCodexApiKeyOnlyModel`) — curated `apiKeyOnly`
@@ -349,25 +335,17 @@ export async function handleMessage(
   //      *claims* are `supported_in_api: true` but the CLI rejects on
   //      OAuth (e.g. `gpt-5.4-mini` — see Pandario 23:13Z 2026-05-20).
   //
-  // The post-hoc recovery ladder in `maybeFallbackForChatGptMismatch`
-  // would catch missed cases too, but pre-emptive saves the ~9s
-  // round-trip every subsequent turn and makes the resolved-model log
-  // line match what Codex actually sees.
-  let activeModel = requestedModel;
+  // The post-hoc reporting in `maybeReportChatGptMismatch` catches
+  // missed cases too, but known-incompatible models should fail before
+  // spawning a Codex run.
+  const activeModel = requestedModel;
   if (authInfo?.mode === "chatgpt" && isCodexOAuthIncompat(requestedModel)) {
-    const fallback =
-      chatGptFallbackFor(requestedModel) ?? CODEX_CHATGPT_DEFAULT_MODEL;
-    // Guard against a learned-but-no-fallback case — only swap when the
-    // fallback is actually different from what we'd already run.
-    if (fallback !== requestedModel) {
-      logWarn(
-        "agent",
-        `[${chatId}] Codex model ${requestedModel} is OAuth-incompat and ` +
-          `current auth is ChatGPT OAuth — pre-emptively falling back to ${fallback}. ` +
-          `Set TALON_CODEX_KEY / codexApiKey or change the configured model to silence this.`,
-      );
-      activeModel = fallback;
-    }
+    throw new TalonError(
+      `Codex model ${requestedModel} is not available with ChatGPT OAuth. ` +
+        `Choose a compatible model with /model, or set TALON_CODEX_KEY / ` +
+        `codexApiKey for API-key-only models.`,
+      { reason: "model_unavailable", retryable: false },
+    );
   }
   log("agent", `[${chatId}] Codex model resolved: ${activeModel}`);
 
@@ -519,15 +497,12 @@ export async function handleMessage(
       // error — Codex SDK surfaces it via both channels.
       // Only use the thread ID from this run. Probing the previous
       // session can misclassify unrelated failures as usage exhaustion.
-      const fallback = await maybeFallbackForChatGptMismatch(
+      await maybeReportChatGptMismatch(
         `${turnFailedError ?? ""} ${errMsg(err)}`,
         activeModel,
-        params,
-        _retried,
         chatId,
         resolvedThreadId,
       );
-      if (fallback) return fallback;
 
       const outcome = await applyRetryDecision({
         err,
@@ -561,14 +536,7 @@ export async function handleMessage(
   // rethrows in this case, but this path defends against a future
   // change where it only surfaces via the event stream.)
   if (turnFailedError && !_retried) {
-    const fallback = await maybeFallbackForChatGptMismatch(
-      turnFailedError,
-      activeModel,
-      params,
-      _retried,
-      chatId,
-    );
-    if (fallback) return fallback;
+    await maybeReportChatGptMismatch(turnFailedError, activeModel, chatId);
   }
 
   if (resolvedThreadId) {

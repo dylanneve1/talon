@@ -7,8 +7,7 @@
  *
  *   - Stream state accumulator (text, tool calls, trailing prose).
  *   - Tool-use detection + turn-terminator handling.
- *   - Model-fallback / context-overflow / session-expiry recovery
- *     via `applyRetryDecision`.
+ *   - Context-overflow / session-expiry recovery.
  *   - First-turn system-prompt rebuild + plugin prompt additions.
  *   - `[YYYY-MM-DD HH:MM:SS] [Name] [msg_id:N]` prompt formatting.
  *   - Unified delivery routing.
@@ -372,18 +371,6 @@ export async function handleMessage(
         // MCP bundle is retained across the retry — subprocesses are
         // stateless wrt the model conversation. See `mcp-pool.ts`.
         return handleMessage(params, true);
-      }
-
-      if (decision.kind === "fallback_model") {
-        logWarn(
-          "agent",
-          `[${chatId}] ${classified.reason}, falling back to ${decision.fallbackModelId}`,
-        );
-        resetSession(chatId);
-        return await handleMessage(
-          { ...params, model: decision.fallbackModelId },
-          true,
-        );
       }
 
       logError(

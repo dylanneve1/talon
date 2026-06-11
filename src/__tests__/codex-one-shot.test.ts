@@ -82,7 +82,7 @@ describe("codex / runOneShotAgent — event → log translation", () => {
   it("appends thread-started, turn lifecycle, agent message, and tool call", async () => {
     initCodexAgent(
       {
-        model: "gpt-5-codex",
+        model: "gpt-5.5",
         workspace: "/tmp",
         systemPrompt: "test",
         frontend: "terminal",
@@ -102,7 +102,7 @@ describe("codex / runOneShotAgent — event → log translation", () => {
       prompt: "Hello",
       systemPrompt: "You are an assistant.",
       workspace: "/tmp",
-      model: "gpt-5-codex",
+      model: "gpt-5.5",
       contextLabel: "heartbeat",
       abortController,
       appendLog,
@@ -124,7 +124,7 @@ describe("codex / runOneShotAgent — event → log translation", () => {
   it("stops appending once the abort signal fires", async () => {
     initCodexAgent(
       {
-        model: "gpt-5-codex",
+        model: "gpt-5.5",
         workspace: "/tmp",
         systemPrompt: "test",
         frontend: "terminal",
@@ -146,7 +146,7 @@ describe("codex / runOneShotAgent — event → log translation", () => {
       prompt: "Hello",
       systemPrompt: "You are an assistant.",
       workspace: "/tmp",
-      model: "gpt-5-codex",
+      model: "gpt-5.5",
       contextLabel: "heartbeat",
       abortController,
       appendLog,
@@ -196,7 +196,7 @@ describe("codex / runOneShotAgent — extended item-type coverage", () => {
 
     initMod.initCodexAgent(
       {
-        model: "gpt-5-codex",
+        model: "gpt-5.5",
         workspace: "/tmp",
         systemPrompt: "test",
         frontend: "terminal",
@@ -211,7 +211,7 @@ describe("codex / runOneShotAgent — extended item-type coverage", () => {
       prompt: "Hello",
       systemPrompt: "You are an assistant.",
       workspace: "/tmp",
-      model: "gpt-5-codex",
+      model: "gpt-5.5",
       contextLabel: "heartbeat",
       abortController: new AbortController(),
       appendLog: async (text: string) => {
@@ -352,18 +352,18 @@ describe("codex / runOneShotAgent — extended item-type coverage", () => {
   });
 });
 
-// ── OAuth-aware model resolution (heartbeat / dream parity with handler) ──
+// ── OAuth-aware model availability (heartbeat / dream parity with handler) ──
 //
 // These tests assert that one-shot runs on a ChatGPT-OAuth credential
-// receive the same pre-emptive model swap the interactive handler
-// applies. Without this, a heartbeat configured with `heartbeatModel:
-// gpt-5-codex` (or any cache-discovered learned-incompat id) would
-// fail silently with the 2026-05-20 Pandario 23:13Z bug shape, but in
-// a context where there's no chat to deliver an error to.
+// receive the same explicit "change the model/auth" behavior the
+// interactive handler applies. A heartbeat configured with
+// `heartbeatModel: gpt-5-codex` (or any cache-discovered
+// learned-incompat id) should log the configuration problem instead of
+// silently changing models.
 
 import { afterEach, beforeEach } from "vitest";
 
-describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
+describe("codex / runOneShotAgent — OAuth-aware model availability", () => {
   let fakeHome: string;
   let origHome: string | undefined;
   let origUserProfile: string | undefined;
@@ -489,7 +489,7 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     };
   }
 
-  it("swaps gpt-5-codex → gpt-5.5 on OAuth and logs the swap", async () => {
+  it("does not run gpt-5-codex on OAuth and logs model unavailable", async () => {
     const events = (async function* () {
       yield { type: "turn.started" };
       yield {
@@ -507,17 +507,17 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
       "gpt-5-codex",
       events,
     );
-    expect(observedModel).toBe("gpt-5.5");
-    expect(log).toContain("Model swap");
+    expect(observedModel).toBeUndefined();
+    expect(log).toContain("Model unavailable");
     expect(log).toContain("gpt-5-codex");
-    expect(log).toContain("gpt-5.5");
+    expect(log).toContain("Choose a compatible model");
   });
 
-  it("swaps a runtime-learned OAuth-incompat model on OAuth", async () => {
+  it("does not run a runtime-learned OAuth-incompat model on OAuth", async () => {
     // The vi.resetModules() inside runWithMockedSdk would invalidate
     // any pre-marked oauth-incompat state, so we inline the run and
     // mark the model AFTER reset against the same module instance
-    // resolveOneShotModel will consult.
+    // the one-shot availability guard will consult.
     vi.resetModules();
     const observedThreadOptions: Array<Record<string, unknown>> = [];
     vi.doMock("../core/plugin.js", () => ({
@@ -593,12 +593,12 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     });
 
     const log = lines.join("");
-    expect(observedThreadOptions[0]?.model).toBe("gpt-5.5");
-    expect(log).toContain("Model swap");
+    expect(observedThreadOptions[0]?.model).toBeUndefined();
+    expect(log).toContain("Model unavailable");
     expect(log).toContain("gpt-5.4-mini");
   });
 
-  it("does NOT swap when the requested model is already gpt-5.5", async () => {
+  it("runs normally when the requested model is already gpt-5.5", async () => {
     const events = (async function* () {
       yield { type: "turn.started" };
       yield {
@@ -614,7 +614,7 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
 
     const { observedModel, log } = await runWithMockedSdk("gpt-5.5", events);
     expect(observedModel).toBe("gpt-5.5");
-    expect(log).not.toContain("Model swap");
+    expect(log).not.toContain("Model unavailable");
   });
 
   it("does NOT persist silent-exit failures (ambiguous signal), only explicit", async () => {
@@ -687,7 +687,8 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
   it("DOES persist on EXPLICIT mismatch even in one-shot context", async () => {
     // Heartbeat/dream can't recurse for an in-place retry, but
     // explicit mismatch is unambiguous server signal — persist it so
-    // the next scheduled run pre-empts to gpt-5.5.
+    // the next scheduled run fails before request build with a clear
+    // model-unavailable log entry.
     vi.resetModules();
     vi.doMock("../core/plugin.js", () => ({
       getPluginMcpServers: vi.fn(() => ({})),

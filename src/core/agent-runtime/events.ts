@@ -56,9 +56,8 @@ export interface UsageSnapshot {
   cacheWrite: number;
   /**
    * Resolved model id this turn ran against. Useful when a backend
-   * swapped models mid-run (Codex API-key fallback, Anthropic
-   * overload retry) — the final usage block should report what
-   * actually ran, not what was originally requested.
+   * resolves aliases/defaults before execution — the final usage block
+   * should report what actually ran, not what was originally requested.
    */
   modelId?: string;
 }

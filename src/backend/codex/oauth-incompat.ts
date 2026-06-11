@@ -26,8 +26,8 @@
  *   1. `markOAuthIncompat(id)` records a failure (writes through to
  *      `~/.talon/data/codex-oauth-incompat.json` keyed by current
  *      auth fingerprint).
- *   2. `isKnownOAuthIncompat(id)` answers the pre-emptive swap and the
- *      picker filter.
+ *   2. `isKnownOAuthIncompat(id)` answers the handler's pre-flight
+ *      guard and the picker filter.
  *   3. `loadOAuthIncompatStore(fingerprint)` rehydrates the in-memory
  *      set at startup and ignores stale data from a different credential.
  *

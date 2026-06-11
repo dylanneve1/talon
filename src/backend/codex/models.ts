@@ -135,33 +135,12 @@ export function isCodexApiKeyOnlyModel(id: string): boolean {
  * has observed it failing at runtime on the current OAuth account
  * (`oauth-incompat.ts` store).
  *
- * The combined check is what the handler's pre-emptive swap and the
+ * The combined check is what the handler's pre-flight guard and the
  * picker filter consult. Callers should use this rather than the two
  * underlying predicates to ensure both sources of truth contribute.
  */
 export function isCodexOAuthIncompat(id: string): boolean {
   return isCodexApiKeyOnlyModel(id) || isKnownOAuthIncompat(id);
-}
-
-/**
- * Return a chatgpt-OAuth-compatible fallback for an OAuth-incompat
- * model id.
- *
- * Returns `undefined` when:
- *   - The id isn't recognised as OAuth-incompat (caller can skip).
- *   - The id IS the broadest-access flagship (`gpt-5.5`) itself — no
- *     further fallback exists; if even `gpt-5.5` fails, the credential
- *     is the problem, not the model.
- *
- * For everything else returns `gpt-5.5` as the verified-working OAuth
- * default. (The curated table has only `gpt-5-codex` flagged as
- * `apiKeyOnly: true`; runtime-learned entries cover the rest:
- * `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.3-codex`, `gpt-5.2`, etc.)
- */
-export function chatGptFallbackFor(id: string): string | undefined {
-  if (!isCodexOAuthIncompat(id)) return undefined;
-  if (id === "gpt-5.5") return undefined;
-  return "gpt-5.5";
 }
 
 /**
@@ -235,7 +214,7 @@ function prettifyId(id: string): string {
  *     curated list.
  *   - The `apiKeyOnly` marker is preserved from curated metadata even
  *     when the model is also discovered — the recovery ladder still
- *     needs to know to swap it out on OAuth retries.
+ *     needs to know to reject it clearly under ChatGPT OAuth.
  */
 export function getEffectiveModels(): CodexModelInfo[] {
   const state = getState();
@@ -265,7 +244,7 @@ export function getEffectiveModels(): CodexModelInfo[] {
  *
  * Returns the catalog with OAuth-incompat models removed when the
  * current auth mode is `chatgpt`. Two filter sources, same as the
- * handler's pre-emptive guard (`isCodexOAuthIncompat`):
+ * handler's pre-flight guard (`isCodexOAuthIncompat`):
  *
  *   - Static curated `apiKeyOnly: true` (e.g. `gpt-5-codex`)
  *   - Runtime-learned via `isKnownOAuthIncompat` (persisted store of
@@ -279,10 +258,9 @@ export function getEffectiveModels(): CodexModelInfo[] {
  * tight render paths (the model picker, /status, etc.).
  *
  * Why filter at presentation rather than at handler-time only: the
- * pre-emptive guard in `handler.ts` already prevents an
- * apiKeyOnly-on-OAuth turn from running, but it does so by silently
- * swapping the model. That's correct as a safety net, but the user
- * shouldn't be able to *select* a model from `/model` that they
+ * guard in `handler.ts` already prevents an apiKeyOnly-on-OAuth turn
+ * from running, but the user shouldn't be able to *select* a model
+ * from `/model` that they
  * literally can't use — the picker should reflect what the active
  * credentials can actually call.
  */
@@ -375,10 +353,10 @@ export async function getSettingsPresentation(
 
   // `active` resolves against the FULL catalog so a chat with a stored
   // OAuth-incompat model id (e.g. someone manually set `gpt-5-codex`
-  // before swapping to OAuth) still shows the active-model line in the
+  // before changing auth to OAuth) still shows the active-model line in the
   // header — the picker just won't offer that model as a selectable
-  // option. The pre-emptive guard in `handler.ts` handles the runtime
-  // swap if a turn fires before the user picks something else.
+  // option. The handler guard surfaces a clear error if a turn fires
+  // before the user picks something else.
   const active = fullCatalog.find((m) => m.id === activeModel);
   const modelDetails: string[] = [];
   if (active) {

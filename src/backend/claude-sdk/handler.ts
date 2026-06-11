@@ -3,7 +3,7 @@
  *
  * Drives the full lifecycle: prompt formatting, SDK query, native
  * event emission per stream message, error recovery (session expired
- * / context overflow / model fallback via `applyRetryDecisionStream`),
+ * / context overflow via `applyRetryDecisionStream`),
  * token accounting, session persistence, and the flow-violation
  * re-prompt loop.
  *
@@ -30,7 +30,6 @@ import {
   classifiedToAgentError,
 } from "../../core/agent-runtime/events.js";
 import type { ChatRunParams } from "../../core/agent-runtime/capabilities.js";
-import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 import { applyRetryDecisionStream } from "../shared/handle-retry.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions, getActiveFrontends } from "./options.js";
@@ -267,22 +266,8 @@ export async function* runChatTurn(
     }
   } catch (err) {
     if (!postResultForceClosed) {
-      const buildRetryStream = (
-        fallbackModelId?: string,
-      ): AsyncIterable<AgentEvent> =>
-        runChatTurn(
-          fallbackModelId
-            ? {
-                ...params,
-                model: makeBareModelRef(
-                  params.model.backend,
-                  fallbackModelId,
-                  "fallback",
-                ),
-              }
-            : params,
-          { ..._internal, errorRetried: true },
-        );
+      const buildRetryStream = (): AsyncIterable<AgentEvent> =>
+        runChatTurn(params, { ..._internal, errorRetried: true });
       const { retried, classified } = yield* applyRetryDecisionStream({
         err,
         chatId,

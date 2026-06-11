@@ -216,20 +216,20 @@ describe("friendlyMessage — all error reasons", () => {
     expect(friendlyMessage(err)).toContain("30 seconds");
   });
 
-  it("overloaded reason contains 'busy'", () => {
+  it("overloaded reason tells the user the current model is overloaded", () => {
     const err = new TalonError("overloaded", {
       reason: "overloaded",
       retryable: true,
     });
-    expect(friendlyMessage(err)).toContain("busy");
+    expect(friendlyMessage(err)).toContain("Current model is overloaded");
   });
 
-  it("network reason contains 'Connection'", () => {
+  it("network reason tells the user there is a backend connection issue", () => {
     const err = new TalonError("network error", {
       reason: "network",
       retryable: true,
     });
-    expect(friendlyMessage(err)).toContain("Connection");
+    expect(friendlyMessage(err)).toContain("Backend connection issue");
   });
 
   it("auth reason contains 'API key'", () => {
@@ -293,12 +293,12 @@ describe("friendlyMessage — all error reasons", () => {
     // Passing a raw Error (not TalonError) should trigger auto-classification
     const rawErr = new Error("ECONNREFUSED connection refused");
     const msg = friendlyMessage(rawErr);
-    expect(msg).toContain("Connection");
+    expect(msg).toContain("Backend connection issue");
   });
 
   it("handles string input by classifying it first", () => {
     const msg = friendlyMessage("503 overloaded service");
-    expect(msg).toContain("busy");
+    expect(msg).toContain("Current model is overloaded");
   });
 
   it("handles null input without throwing", () => {

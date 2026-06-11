@@ -45,9 +45,8 @@ export const CODEX_CHATGPT_DEFAULT_MODEL = "gpt-5.5";
 
 /**
  * Set of Codex models that require an API key (i.e. won't work under
- * ChatGPT OAuth). Used by the handler's recovery ladder to detect a
- * model-not-supported error and automatically fall back to a
- * chatgpt-compatible model on retry.
+ * ChatGPT OAuth). Used by the handler to detect a model-not-supported
+ * configuration and surface a direct "change model/auth" error.
  *
  * Keep this list in sync with `CODEX_MODELS` in `models.ts` — every
  * entry there with `apiKeyOnly: true` should appear here.

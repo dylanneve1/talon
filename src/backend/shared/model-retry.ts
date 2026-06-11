@@ -1,14 +1,14 @@
 /**
- * Model-fallback / context-overflow / session-expiry retry decisions.
+ * Context-overflow / session-expiry retry decisions.
  *
  * Every backend's handler implements (or *should* implement) the same
  * recovery ladder when a query fails:
  *
  *   1. `session_expired` → reset session, retry once with the same input.
  *   2. `context_length` → reset session, retry once with the same input.
- *   3. Retryable error (`rate_limit` / `overloaded` / `network`) → if a
- *      fallback model is configured for the active model, swap to it
- *      and retry once with the original input.
+ *   3. Retryable error (`rate_limit` / `overloaded` / `network`) →
+ *      propagate; the frontend may do a same-model transient retry, but
+ *      the backend never silently changes the user's selected model.
  *
  * Each step happens at most once per top-level message — the handler
  * passes `_retried = true` on the recursive call so subsequent failures
@@ -18,18 +18,16 @@
  * Note: this module does NOT perform the retry itself — it returns a
  * `RetryDecision` and lets the backend handler invoke its own recursive
  * `handleMessage`. The handler owns session state mutations (reset,
- * model swap) because those touch backend-specific storage.
+ * session reset) because those touch backend-specific storage.
  */
 
 import type { TalonError } from "../../core/errors.js";
-import { getFallbackModel } from "../../core/models/catalog.js";
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /** Categorisation of what the handler should do next after an error. */
 export type RetryDecision =
   | { kind: "reset_and_retry"; reason: "session_expired" | "context_length" }
-  | { kind: "fallback_model"; fallbackModelId: string }
   | { kind: "propagate" };
 
 /** Inputs for `classifyRetry`. */
@@ -59,13 +57,6 @@ export function classifyRetry(inputs: ClassifyRetryInputs): RetryDecision {
   }
   if (reason === "context_length") {
     return { kind: "reset_and_retry", reason: "context_length" };
-  }
-
-  if (inputs.error.retryable) {
-    const fallback = getFallbackModel(inputs.activeModel);
-    if (fallback) {
-      return { kind: "fallback_model", fallbackModelId: fallback };
-    }
   }
 
   return { kind: "propagate" };

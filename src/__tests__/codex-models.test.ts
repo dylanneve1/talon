@@ -329,7 +329,8 @@ describe("codex / synthesizeUnknownModel", () => {
 // (and runtime-learned-incompat models) from the picker when the active
 // credential is ChatGPT OAuth. The model resolution path stays
 // unfiltered — a chat with an explicit stored OAuth-incompat id still
-// recognises that id, the runtime guard in `handler.ts` does the swap.
+// recognises that id, and the runtime guard in `handler.ts` reports
+// the availability problem.
 
 describe("codex / filterCatalogForAuthMode", () => {
   it("keeps every model when auth mode is api-key", () => {
@@ -470,7 +471,7 @@ describe("codex / presentation paths apply the auth-mode filter", () => {
     expect(msg.includes("gpt-5.5")).toBe(true);
   });
 
-  it("resolveModel still resolves apiKeyOnly ids on OAuth (handler-side guard does the swap)", async () => {
+  it("resolveModel still resolves apiKeyOnly ids on OAuth (handler-side guard reports availability)", async () => {
     vi.spyOn(initModule, "getCodexAuthInfo").mockReturnValue({
       mode: "chatgpt",
       source: "config:codexApiKey",
@@ -478,8 +479,8 @@ describe("codex / presentation paths apply the auth-mode filter", () => {
       diagnostics: [],
     });
     // The picker hides it, but a chat with `gpt-5-codex` already stored
-    // shouldn't see "model not found" — the pre-emptive guard in
-    // handler.ts handles the runtime swap.
+    // shouldn't see "model not found" — handler.ts surfaces the
+    // auth/model availability error at turn time.
     const result = await resolveModel("gpt-5-codex");
     expect(result.kind).toBe("exact");
   });

@@ -269,11 +269,11 @@ describe("friendlyMessage", () => {
   });
 
   it("returns overloaded message", () => {
-    expect(friendlyMessage(new Error("503"))).toContain("busy");
+    expect(friendlyMessage(new Error("503"))).toContain("overloaded");
   });
 
   it("returns network error message", () => {
-    expect(friendlyMessage(new Error("ECONNREFUSED"))).toContain("Connection");
+    expect(friendlyMessage(new Error("ECONNREFUSED"))).toContain("connection");
   });
 
   it("returns context length message with /reset", () => {
@@ -296,7 +296,7 @@ describe("friendlyMessage", () => {
   it("returns generic rate limit message when retryAfterMs is absent", () => {
     const err = new TalonError("x", { reason: "rate_limit", retryable: true });
     // No retryAfterMs → falls through to FRIENDLY_MESSAGES["rate_limit"]
-    expect(friendlyMessage(err)).toContain("Rate limited");
+    expect(friendlyMessage(err)).toContain("rate limited");
     expect(friendlyMessage(err)).not.toContain("seconds");
   });
 
