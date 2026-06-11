@@ -228,13 +228,15 @@ jobs:
 
       - name: Supervisor sanity (_mcp-launch supervises a child)
         run: |
-          out=$(echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | timeout 30 ./talon-bin _mcp-launch cat)
+          # Hold stdin open briefly: closing it instantly can SIGTERM the
+          # child before the line round-trips through the supervisor.
+          out=$({ echo '{"jsonrpc":"2.0","id":1,"method":"ping"}'; sleep 2; } | timeout 30 ./talon-bin _mcp-launch cat)
           echo "supervisor stdout: $out"
           [[ "$out" == *'"method":"ping"'* ]] || { echo "::error::JSON line did not pass through supervisor"; exit 1; }
 
       - name: Supervisor filters non-JSON stdout to stderr
         run: |
-          err=$(echo 'plain banner line' | timeout 30 ./talon-bin _mcp-launch cat 2>&1 >/dev/null)
+          err=$({ echo 'plain banner line'; sleep 2; } | timeout 30 ./talon-bin _mcp-launch cat 2>&1 >/dev/null)
           echo "supervisor stderr: $err"
           [[ "$err" == *'mcp-launcher: stdout'* ]] || { echo "::error::non-JSON line was not rerouted to stderr"; exit 1; }
 
