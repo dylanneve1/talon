@@ -14,25 +14,22 @@
 
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import {
-  existsSync,
-  readFileSync,
-  mkdirSync,
-  watchFile,
-  writeFileSync,
-  unlinkSync,
-} from "node:fs";
+import { existsSync, readFileSync, mkdirSync, watchFile } from "node:fs";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { dirs, files as pathFiles } from "./util/paths.js";
+import { findRunningInstance } from "./core/daemon/discovery.js";
+import {
+  startDaemon,
+  stopDaemon,
+  restartDaemon,
+  type StartOutcome,
+  type StopOutcome,
+} from "./core/daemon/control.js";
 
 const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 const CONFIG_FILE = pathFiles.config;
 const LOG_FILE = pathFiles.log;
-// Health endpoint is the dispatcher's gateway, default 19876. Overridable
-// via TALON_HEALTH_PORT so tests can probe a port nothing's listening on
-// (otherwise `talon status` reports a co-tenant's running daemon as ours).
-const HEALTH_URL = `http://127.0.0.1:${process.env.TALON_HEALTH_PORT ?? "19876"}/health`;
 
 function printBanner(): void {
   console.log();
@@ -580,28 +577,36 @@ async function runSetup(): Promise<void> {
 
 async function showStatus(): Promise<void> {
   printBanner();
-  try {
-    const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) });
-    if (resp.ok) {
-      const h = (await resp.json()) as Record<string, unknown>;
-      const ok = h.ok as boolean;
-      console.log(
-        `  ${ok ? pc.green("\u25CF") : pc.yellow("\u25CF")} ${pc.bold("Running")}  ${ok ? pc.green("healthy") : pc.yellow("degraded")}`,
-      );
-      console.log();
-      console.log(
-        `  ${pc.dim("Uptime")}       ${formatUptime(h.uptime as number)}`,
-      );
-      console.log(`  ${pc.dim("Memory")}       ${h.memory} MB`);
-      console.log(`  ${pc.dim("Sessions")}     ${h.sessions}`);
-      console.log(`  ${pc.dim("Messages")}     ${h.messages}`);
-      console.log(`  ${pc.dim("Queue")}        ${h.queue} pending`);
-      console.log(`  ${pc.dim("Errors")}       ${h.errors}`);
-      console.log(`  ${pc.dim("Last active")}  ${h.lastActivity}\n`);
-      return;
-    }
-  } catch {
-    /* not running */
+  const instance = await findRunningInstance();
+
+  if (instance?.health) {
+    const h = instance.health;
+    const ok = h.ok as boolean;
+    console.log(
+      `  ${ok ? pc.green("\u25CF") : pc.yellow("\u25CF")} ${pc.bold("Running")}  ${ok ? pc.green("healthy") : pc.yellow("degraded")}`,
+    );
+    console.log();
+    console.log(`  ${pc.dim("PID")}          ${instance.pid}`);
+    if (instance.port)
+      console.log(`  ${pc.dim("Gateway")}      127.0.0.1:${instance.port}`);
+    console.log(
+      `  ${pc.dim("Uptime")}       ${formatUptime(h.uptime as number)}`,
+    );
+    console.log(`  ${pc.dim("Memory")}       ${h.memory} MB`);
+    console.log(`  ${pc.dim("Sessions")}     ${h.sessions}`);
+    console.log(`  ${pc.dim("Messages")}     ${h.messages}`);
+    console.log(`  ${pc.dim("Queue")}        ${h.queue} pending`);
+    console.log(`  ${pc.dim("Errors")}       ${h.errors}`);
+    console.log(`  ${pc.dim("Last active")}  ${h.lastActivity}\n`);
+    return;
+  }
+
+  if (instance) {
+    console.log(
+      `  ${pc.yellow("\u25CF")} ${pc.bold("Running")}  (PID ${instance.pid}) ${pc.dim("\u2014 health endpoint not reachable, possibly still starting")}`,
+    );
+    console.log(`  Check ${pc.cyan("talon logs")} for details.\n`);
+    return;
   }
 
   console.log(`  ${pc.red("\u25CF")} ${pc.bold("Stopped")}\n`);
@@ -907,10 +912,10 @@ async function runDoctor(): Promise<void> {
       console.log(`  ${pc.dim("-")} Endpoint: api.openai.com (default)`);
     }
   }
-  try {
-    const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(2000) });
-    if (resp.ok) console.log(`  ${pc.green("\u2713")} Bot is running`);
-  } catch {
+  const instance = await findRunningInstance();
+  if (instance) {
+    console.log(`  ${pc.green("\u2713")} Bot is running (PID ${instance.pid})`);
+  } else {
     console.log(`  ${pc.dim("-")} Bot is not running`);
   }
   console.log(
@@ -948,7 +953,7 @@ async function startChat(): Promise<void> {
   const { getPluginPromptAdditions } = await import("./core/plugin.js");
   rebuildSystemPrompt(config, getPluginPromptAdditions());
 
-  const gateway = new Gateway();
+  const gateway = new Gateway("chat");
   const frontend = createTerminalFrontend(config, gateway);
   await frontend.init();
   const { backend } = await initBackendAndDispatcher(config, frontend);
@@ -991,13 +996,7 @@ async function mainMenu(): Promise<void> {
     return;
   }
 
-  let running = false;
-  try {
-    const resp = await fetch(HEALTH_URL, { signal: AbortSignal.timeout(1000) });
-    running = resp.ok;
-  } catch {
-    /* not running */
-  }
+  const running = (await findRunningInstance()) !== null;
   const config = loadConfig();
   const statusDot = running
     ? `${pc.green("\u25CF")} running`
@@ -1073,104 +1072,89 @@ async function mainMenu(): Promise<void> {
 }
 
 // ── Daemon management ───────────────────────────────────────────────────────
+//
+// Lifecycle logic lives in core/daemon/ (pidfile, discovery, control);
+// this section only renders the outcomes.
 
-const PID_FILE = pathFiles.pid;
-
-function readPid(): number | null {
-  try {
-    if (existsSync(PID_FILE)) {
-      const pid = parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
-      if (!isNaN(pid) && pid > 0) return pid;
+function renderStartOutcome(result: StartOutcome): void {
+  if (result.ok) {
+    const port = result.port ? `, gateway :${result.port}` : "";
+    console.log(`  ${pc.green("●")} Talon started (PID ${result.pid}${port})`);
+    console.log(`  ${pc.dim("Logs:")} talon logs`);
+    console.log(`  ${pc.dim("Stop:")} talon stop\n`);
+    return;
+  }
+  switch (result.reason) {
+    case "already-running": {
+      const inst = result.instance;
+      const port = inst.port ? `, gateway :${inst.port}` : "";
+      console.log(
+        `  ${pc.yellow("!")} Talon is already running (PID ${inst.pid}${port})`,
+      );
+      if (inst.pidfileStale) {
+        console.log(
+          `  ${pc.dim("The PID file was stale — repaired from the live instance.")}`,
+        );
+      }
+      console.log(
+        `  Use ${pc.cyan("talon restart")} to restart, or ${pc.cyan("talon stop")} to stop.\n`,
+      );
+      return;
     }
-  } catch {
-    /* corrupt */
+    case "spawn-failed":
+      console.log(
+        `  ${pc.red("✖")} Failed to start Talon${result.detail ? pc.dim(` — ${result.detail}`) : ""}\n`,
+      );
+      return;
+    case "exited-early":
+      console.log(`  ${pc.red("✖")} Talon ${result.detail} during startup`);
+      console.log(`  Check ${pc.cyan("talon logs")} for details.\n`);
+      return;
+    case "boot-timeout":
+      console.log(
+        `  ${pc.yellow("!")} Talon was spawned but has not reported healthy yet.`,
+      );
+      console.log(
+        `  It may still be starting — check ${pc.cyan("talon status")} and ${pc.cyan("talon logs")}.\n`,
+      );
+      return;
   }
-  return null;
 }
 
-function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function daemonStart(): Promise<void> {
-  const existingPid = readPid();
-  if (existingPid && isProcessRunning(existingPid)) {
+function renderStopOutcome(result: StopOutcome): void {
+  if (result.stopped) {
+    const how =
+      result.method === "http"
+        ? "graceful"
+        : result.method === "sigterm"
+          ? "SIGTERM"
+          : "SIGKILL";
     console.log(
-      `  ${pc.yellow("!")} Talon is already running (PID ${existingPid})`,
-    );
-    console.log(
-      `  Use ${pc.cyan("talon restart")} to restart, or ${pc.cyan("talon stop")} to stop.\n`,
+      `  ${pc.red("●")} Talon stopped (PID ${result.pid}, ${how})\n`,
     );
     return;
   }
-
-  const { spawn } = await import("node:child_process");
-  const entryScript = resolve(PKG_ROOT, "src", "index.ts");
-
-  // Spawn detached process with stdio piped to /dev/null.
-  //
-  // Invoke tsx's CLI entry directly via `node <tsx-cli.mjs> <entry>` rather
-  // than `node --import tsx/dist/esm/index.mjs <entry>`. The --import loader
-  // path triggered a tsx resolver bug where CJS `require('../../')` from
-  // gramjs resolved to `index.jsx` instead of `index.js`, killing startup
-  // silently in detached mode (stderr is /dev/null). Running tsx as a CLI
-  // avoids the broken loader path while still working on Windows — `node
-  // foo.mjs` bypasses the .cmd wrapper that motivated the loader approach.
-  const tsxCli = resolve(PKG_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
-  const child = spawn(process.execPath, [tsxCli, entryScript], {
-    cwd: PKG_ROOT,
-    detached: true,
-    stdio: "ignore",
-    env: { ...process.env },
-  });
-
-  child.unref();
-
-  if (child.pid) {
-    if (!existsSync(dirs.root)) mkdirSync(dirs.root, { recursive: true });
-    writeFileSync(PID_FILE, String(child.pid));
-    console.log(`  ${pc.green("●")} Talon started (PID ${child.pid})`);
-    console.log(`  ${pc.dim("Logs:")} talon logs`);
-    console.log(`  ${pc.dim("Stop:")} talon stop\n`);
-  } else {
-    console.log(`  ${pc.red("✖")} Failed to start Talon\n`);
+  if (result.reason === "not-running") {
+    console.log(`  ${pc.dim("●")} Talon is not running\n`);
+    return;
   }
+  console.log(
+    `  ${pc.red("✖")} Could not stop Talon (PID ${result.pid}) — the process did not exit\n`,
+  );
 }
 
-function daemonStop(): boolean {
-  const pid = readPid();
-  if (!pid || !isProcessRunning(pid)) {
-    console.log(`  ${pc.dim("●")} Talon is not running\n`);
-    try {
-      unlinkSync(PID_FILE);
-    } catch {
-      /* ok */
-    }
-    return false;
-  }
+async function daemonStart(): Promise<void> {
+  renderStartOutcome(await startDaemon({ pkgRoot: PKG_ROOT }));
+}
 
-  process.kill(pid, "SIGTERM");
-  console.log(`  ${pc.red("●")} Talon stopped (PID ${pid})`);
-  try {
-    unlinkSync(PID_FILE);
-  } catch {
-    /* ok */
-  }
-  return true;
+async function daemonStop(): Promise<void> {
+  renderStopOutcome(await stopDaemon());
 }
 
 async function daemonRestart(): Promise<void> {
-  const was = daemonStop();
-  if (was) {
-    // Wait for graceful shutdown
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  await daemonStart();
+  const { stop, start } = await restartDaemon({ pkgRoot: PKG_ROOT });
+  renderStopOutcome(stop);
+  renderStartOutcome(start);
 }
 
 // ── Entry point ─────────────────────────────────────────────────────────────
@@ -1195,7 +1179,7 @@ switch (command) {
     break;
   case "stop":
     printBanner();
-    daemonStop();
+    await daemonStop();
     break;
   case "restart":
     printBanner();

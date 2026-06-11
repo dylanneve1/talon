@@ -85,6 +85,36 @@ export class Gateway {
   private frontendHandler: FrontendActionHandler | null = null;
   private server: ReturnType<typeof createServer> | null = null;
   private port = 0;
+  private readonly startedAt = new Date().toISOString();
+  private startedListeners: Array<(port: number) => void> = [];
+  private shutdownHandler: ((reason: string) => void) | null = null;
+
+  /**
+   * Process role advertised on /health — lets the daemon CLI
+   * (core/daemon/discovery.ts) tell the background daemon apart from a
+   * `talon chat` session, which runs its own gateway on a nearby port.
+   */
+  constructor(readonly mode: "daemon" | "chat" = "chat") {}
+
+  /**
+   * Register a callback invoked once the HTTP server has bound. The
+   * gateway may fall back from the requested port on EADDRINUSE, so
+   * the actual port is only known here — the daemon uses this to
+   * record the port in its pidfile.
+   */
+  onStarted(cb: (port: number) => void): void {
+    if (this.server) cb(this.port);
+    else this.startedListeners.push(cb);
+  }
+
+  /**
+   * Register the graceful-shutdown trigger for POST /shutdown. Only
+   * the daemon composition root registers one; without it the endpoint
+   * answers 501.
+   */
+  onShutdownRequest(cb: (reason: string) => void): void {
+    this.shutdownHandler = cb;
+  }
 
   /**
    * The active backend — set initially by bootstrap and updated by
@@ -263,6 +293,14 @@ export class Gateway {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(
             JSON.stringify({
+              // Identity fields — daemon discovery matches on these to
+              // distinguish a Talon daemon from chat sessions and
+              // unrelated localhost services.
+              app: "talon",
+              mode: this.mode,
+              pid: process.pid,
+              port: this.port,
+              startedAt: this.startedAt,
               ok: w.healthy,
               uptime: Math.round(process.uptime()),
               memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
@@ -277,6 +315,28 @@ export class Gateway {
                   : `${Math.round(w.msSinceLastMessage / 60000)}m ago`,
             }),
           );
+          return;
+        }
+
+        if (req.method === "POST" && req.url === "/shutdown") {
+          // Graceful stop for `talon stop`/`talon restart`. Bound to
+          // 127.0.0.1 like everything else here. Respond before
+          // triggering so the client isn't cut off mid-request; the
+          // shutdown path takes seconds, so the reply flushes safely.
+          if (!this.shutdownHandler) {
+            res.writeHead(501, { "Content-Type": "application/json" });
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: "Shutdown not supported by this process",
+              }),
+            );
+            return;
+          }
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: true }));
+          const handler = this.shutdownHandler;
+          setImmediate(() => handler("gateway /shutdown"));
           return;
         }
 
@@ -351,6 +411,13 @@ export class Gateway {
           httpServer.on("error", (err) =>
             logError("gateway", "HTTP server error", err),
           );
+          for (const cb of this.startedListeners.splice(0)) {
+            try {
+              cb(this.port);
+            } catch (err) {
+              logError("gateway", "onStarted listener failed", err);
+            }
+          }
           resolve(this.port);
         });
       };

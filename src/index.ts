@@ -31,21 +31,25 @@ import type { Frontend } from "./bootstrap.js";
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 
-import { writeFileSync, unlinkSync } from "node:fs";
-import { files as pathFiles } from "./util/paths.js";
+import {
+  writePidRecord,
+  removePidRecordIfOwnedBy,
+} from "./core/daemon/pidfile.js";
 
 const { config } = await bootstrap();
 
-// Write PID file for daemon management
-try {
-  writeFileSync(pathFiles.pid, String(process.pid));
-} catch {
-  /* ok */
-}
+// Record this process as the daemon. The gateway port is appended once
+// the gateway binds (it may fall back from the default on EADDRINUSE).
+const bootedAt = new Date().toISOString();
+writePidRecord({ pid: process.pid, startedAt: bootedAt });
 
 // ── Create gateway + frontend ─────────────────────────────────────────────────
 
-const gateway = new Gateway();
+const gateway = new Gateway("daemon");
+gateway.onStarted((port) =>
+  writePidRecord({ pid: process.pid, port, startedAt: bootedAt }),
+);
+gateway.onShutdownRequest((reason) => void gracefulShutdown(reason));
 
 const selectedFrontend = getFrontends(config)[0]; // use first configured frontend
 let frontend: Frontend;
@@ -135,11 +139,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
   flushTriggers();
   flushHistory();
   flushMediaIndex();
-  try {
-    unlinkSync(pathFiles.pid);
-  } catch {
-    /* ok */
-  }
+  // Guarded removal: after a /restart handoff the successor has already
+  // written its own pid here — deleting unconditionally would orphan it
+  // (the bug that made `talon restart` spawn duplicate daemons).
+  removePidRecordIfOwnedBy(process.pid);
   log("shutdown", "State saved");
   process.exit(0);
 }
