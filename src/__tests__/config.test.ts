@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+// Real fs, bound before any vi.doMock("node:fs") below: package-owned
+// system templates (prompts/system/*.md) are part of the code under
+// test, so the mock delegates those reads to the real filesystem.
+import { readFileSync as realReadFileSync } from "node:fs";
 
 vi.mock("write-file-atomic", () => ({
   default: { sync: vi.fn() },
 }));
+
+const isSystemTemplatePath = (path: string): boolean =>
+  /prompts[\\/]system[\\/].*\.md$/.test(path);
 
 describe("config", () => {
   beforeEach(() => {
@@ -76,6 +83,8 @@ describe("config", () => {
         return false;
       }),
       readFileSync: vi.fn((path: string) => {
+        if (typeof path === "string" && isSystemTemplatePath(path))
+          return realReadFileSync(path, "utf-8");
         if (path.includes("config.json") || path.includes("talon.json"))
           return JSON.stringify(configJson ?? {});
         for (const [key, val] of Object.entries(promptFiles)) {
@@ -387,7 +396,7 @@ describe("config", () => {
       expect(parts.staticText).toContain("I am Talon.");
       expect(parts.staticText).toContain("Be helpful.");
       expect(parts.staticText).toContain("User prefers dark mode.");
-      expect(parts.staticText).toContain("Cron Jobs");
+      expect(parts.staticText).toContain("Scheduled jobs (cron)");
 
       // Volatile content must NOT pollute the static prefix.
       expect(parts.staticText).not.toContain("Daily Memory");
@@ -419,7 +428,7 @@ describe("config", () => {
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
       expect(config.systemPrompt).toContain("workspace");
-      expect(config.systemPrompt).toContain("Cron Jobs");
+      expect(config.systemPrompt).toContain("Scheduled jobs (cron)");
     });
 
     it("loads terminal.md prompt for terminal frontend", async () => {
@@ -496,6 +505,27 @@ describe("config", () => {
       const config = loadConfig();
       expect(config.systemPrompt).toContain("Persistent Memory");
       expect(config.systemPrompt).toContain("User prefers dark mode.");
+    });
+
+    it("caps oversized memory.md and appends a truncation pointer", async () => {
+      const line = "remembered fact about the user\n";
+      const bigMemory = line.repeat(600); // ~19k chars > MEMORY_INJECT_MAX_CHARS
+      mockFs({ frontend: "terminal" }, { "memory.md": bigMemory });
+
+      const { loadConfig } = await import("../util/config.js");
+      const { MEMORY_INJECT_MAX_CHARS } = await import(
+        "../core/prompt/assemble.js"
+      );
+      const config = loadConfig();
+      expect(config.systemPrompt).toContain("Persistent Memory");
+      expect(config.systemPrompt).toContain("truncated");
+      // The whole prompt stays bounded: memory contributes at most the cap.
+      const memorySection = config.systemPrompt
+        .split("Persistent Memory")[1]
+        .split("---")[0];
+      expect(memorySection.length).toBeLessThan(
+        MEMORY_INJECT_MAX_CHARS + 500,
+      );
     });
 
     it("includes workspace file listing when files exist", async () => {

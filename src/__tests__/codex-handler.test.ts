@@ -395,7 +395,7 @@ describe("codex / handleMessage — happy path", () => {
 
     const sentInput = MOCK_RUN_STREAMED_CALLS[0].input;
     // System prompt is prepended (with Codex suffix added by prepareSystemPrompt)
-    expect(sentInput).toMatch(/Codex Delivery/);
+    expect(sentInput).toMatch(/Response flow/);
     expect(sentInput).toContain("First message");
   });
 });

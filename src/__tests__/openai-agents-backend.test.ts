@@ -35,7 +35,7 @@ describe("openai-agents / constants", () => {
     expect(OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX).toContain("end_turn");
     expect(OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX).toContain("send");
     expect(OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX).toContain("react");
-    expect(OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX).toContain("tool-only delivery");
+    expect(OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX).toContain("Response flow");
     expect(OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX).toContain("FLOW VIOLATION");
   });
 });

@@ -41,7 +41,7 @@ describe("codex / constants", () => {
     expect(CODEX_SYSTEM_PROMPT_SUFFIX).toContain("end_turn");
     expect(CODEX_SYSTEM_PROMPT_SUFFIX).toContain("send");
     expect(CODEX_SYSTEM_PROMPT_SUFFIX).toContain("react");
-    expect(CODEX_SYSTEM_PROMPT_SUFFIX).toContain("Codex Delivery");
+    expect(CODEX_SYSTEM_PROMPT_SUFFIX).toContain("Response flow");
   });
 });
 

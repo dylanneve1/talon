@@ -51,6 +51,13 @@ export type FlowViolationInputs = {
   retryCount?: number;
   /** Maximum synthetic flow-violation retries before accepting the drop. */
   maxRetries?: number;
+  /**
+   * Reminder text to ship on retry. Defaults to the legacy
+   * telegram-shaped `FLOW_VIOLATION_REMINDER`; backends should pass
+   * `buildFlowViolationReminder(frontend)` so the tool names match
+   * what's actually registered (Teams has `send_message`, not `send`).
+   */
+  reminder?: string;
 };
 
 /** Outcome of the flow-violation check. */
@@ -111,6 +118,6 @@ export function detectFlowViolation(
     trailing,
     reason,
     shouldRetry: retryCount < maxRetries,
-    reminder: FLOW_VIOLATION_REMINDER,
+    reminder: inputs.reminder ?? FLOW_VIOLATION_REMINDER,
   };
 }

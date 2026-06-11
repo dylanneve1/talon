@@ -36,6 +36,16 @@ export {
 
 export { formatUserPrompt, type PromptFormatInputs } from "./prompt-format.js";
 
+export {
+  buildDeliveryContract,
+  buildFlowViolationReminder,
+  buildFirstTurnReminder,
+  deliveryToolsForFrontend,
+  registerFrontendDeliveryTools,
+  type DeliveryMode,
+  type DeliveryToolNames,
+} from "./delivery-contract.js";
+
 export { extractSessionName } from "./session-name.js";
 
 export {

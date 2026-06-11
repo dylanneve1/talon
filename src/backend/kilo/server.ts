@@ -24,6 +24,7 @@ import {
 import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../registry.js";
 import { logWarn } from "../../util/log.js";
+import { buildDeliveryContract } from "../shared/delivery-contract.js";
 import { clearModelCatalogCache } from "./models.js";
 import {
   guessProviderID,
@@ -74,26 +75,16 @@ export const TALON_MCP_SERVER_NAME = SHARED_TALON_MCP_SERVER_NAME;
  *      bridges to Telegram, so it's the right path when you need
  *      reply-to targeting, buttons, photos, polls, etc.
  *
- * Both routes work; pick whichever fits the message. The suffix below
- * keeps it short — the tool descriptions themselves carry the detail.
+ * Both routes work; pick whichever fits the message. The shared
+ * text-or-tools contract (prompts/system/contract-text-or-tools.md)
+ * documents the choice — the tool descriptions carry the detail.
+ * Telegram-shaped tool names: this constant is static and the prior
+ * hand-written text hardcoded the same names.
  */
-export const KILO_SYSTEM_PROMPT_SUFFIX = `
-
-## Kilo Delivery
-
-Two ways to deliver a reply — pick whichever fits:
-
-- **Plain text** — your assistant text is the reply. Just answer
-  normally. (Reasoning content stays private.)
-- **Delivery tools** — call \`end_turn(text="...", reply_to=N)\` for
-  threaded replies, \`send(type="text"|"photo"|"poll"|...)\` for rich
-  content, or \`react(emoji="...")\` for emoji acknowledgements. Use
-  these when you need reply targeting, buttons, attachments, or
-  multiple bubbles.
-
-If you call a delivery tool, don't also repeat the same text in plain
-output — Talon dedupes but it's cleaner to commit to one route.
-`;
+export const KILO_SYSTEM_PROMPT_SUFFIX = `\n\n${buildDeliveryContract(
+  "text-or-tools",
+  "telegram",
+)}\n`;
 
 // ── State ───────────────────────────────────────────────────────────────────
 

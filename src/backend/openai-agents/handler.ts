@@ -62,11 +62,13 @@ import {
   classifyRetry,
   summarizeUsage,
   routeDelivery,
+  buildFirstTurnReminder,
+  buildFlowViolationReminder,
 } from "../shared/index.js";
 import { detectFlowViolation } from "../shared/flow-violation.js";
 
 import {
-  OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX,
+  buildOpenAiAgentsSuffix,
   OPENAI_AGENTS_DEFAULT_MODEL,
   OPENAI_AGENTS_MAX_TURNS,
   OPENAI_AGENTS_AGENT_NAME,
@@ -127,21 +129,34 @@ export async function handleMessage(
     OPENAI_AGENTS_DEFAULT_MODEL;
   log("agent", `[${chatId}] OpenAI Agents model resolved: ${activeModel}`);
 
+  // Primary messaging frontend drives the delivery-contract suffix and
+  // the frontend-aware flow-violation/first-turn text. Empty in
+  // terminal mode (no delivery tools — contract enforcement is skipped
+  // below anyway).
+  const frontends = getActiveFrontends();
+  const frontend: string | undefined = frontends[0];
+
   // Per-session frozen prompt + Agents-specific delivery suffix.
   const { text: systemPrompt } = prepareSystemPrompt({
     config,
     previousTurns,
-    backendSuffix: OPENAI_AGENTS_SYSTEM_PROMPT_SUFFIX,
+    backendSuffix: buildOpenAiAgentsSuffix(frontend ?? "telegram"),
     chatId,
     sessionEpoch: session.createdAt,
   });
 
-  const prompt = formatUserPrompt({
+  let prompt = formatUserPrompt({
     text,
     senderName: senderName ?? "user",
     isGroup,
     messageId,
   });
+  // First-turn nudge — see the claude-sdk handler for rationale: turn 0
+  // is where flow violations cluster, and one line in the user message
+  // costs nothing on later turns and never touches the cached prefix.
+  if (frontend && previousTurns === 0 && !_retried) {
+    prompt += `\n\n${buildFirstTurnReminder(frontend)}`;
+  }
 
   log("agent", `[${chatId}] <- (${text.length} chars)`);
   traceMessage(chatId, "in", text, { senderName, isGroup });
@@ -153,7 +168,6 @@ export async function handleMessage(
   // every turn by ~5s and intermittently raced into
   // `MCP error -32001: Request timed out`. See `mcp-pool.ts`.
   const bridgeUrl = `http://127.0.0.1:${state.gatewayPortFn()}`;
-  const frontends = getActiveFrontends();
   let mcpBundle: Awaited<ReturnType<typeof getOrCreateBundle>>;
   try {
     mcpBundle = await getOrCreateBundle({
@@ -426,6 +440,9 @@ export async function handleMessage(
           turnTerminated: streamState.turnTerminated,
           deliveredTextNorms: streamState.deliveredTextNorms,
           retried: _retried,
+          ...(frontend
+            ? { reminder: buildFlowViolationReminder(frontend) }
+            : {}),
         })
       : ({ violated: false } as const);
 
