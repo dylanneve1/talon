@@ -51,10 +51,16 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
           throw new AbortError(classified);
         }
         const pRetryDelay = 1000 * Math.pow(2, attempt - 1);
-        const delayMs = classified.retryAfterMs ?? pRetryDelay;
+        // Total wait = p-retry's own backoff plus any extra needed to honour
+        // the server-requested Retry-After.  When retryAfterMs < pRetryDelay
+        // p-retry's delay is already sufficient and no extra sleep is needed.
+        const totalDelayMs = Math.max(
+          pRetryDelay,
+          classified.retryAfterMs ?? pRetryDelay,
+        );
         log(
           "gateway",
-          `Retry ${attempt}/3 (${classified.reason}) after ${delayMs}ms`,
+          `Retry ${attempt}/3 (${classified.reason}) after ${totalDelayMs}ms`,
         );
         if (classified.retryAfterMs && classified.retryAfterMs > pRetryDelay) {
           await new Promise<void>((resolve) =>

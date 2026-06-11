@@ -40,7 +40,7 @@ export function appendDailyLog(
     ensureLogsDir();
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
-    const timeStr = now.toTimeString().slice(0, 5); // HH:MM
+    const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const logFile = resolve(LOGS_DIR, `${dateStr}.md`);
 
     const label = formatLabel(chatName, chatContext);
@@ -64,7 +64,7 @@ export function appendDailyLogResponse(
     ensureLogsDir();
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
-    const timeStr = now.toTimeString().slice(0, 5); // HH:MM
+    const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const logFile = resolve(LOGS_DIR, `${dateStr}.md`);
 
     const label = chatContext?.chatTitle

@@ -135,10 +135,11 @@ export async function handleSharedAction(
         // The Content-Length header is advisory but saves bandwidth when present.
         const MAX_BYTES = 20 * 1024 * 1024; // 20 MB
         const contentLength = resp.headers.get("content-length");
-        if (contentLength && Number(contentLength) > MAX_BYTES) {
+        const contentLengthNum = contentLength ? parseInt(contentLength, 10) : NaN;
+        if (Number.isFinite(contentLengthNum) && contentLengthNum > MAX_BYTES) {
           return {
             ok: false,
-            error: `File too large (${(Number(contentLength) / 1024 / 1024).toFixed(0)}MB, max 20MB)`,
+            error: `File too large (${(contentLengthNum / 1024 / 1024).toFixed(0)}MB, max 20MB)`,
           };
         }
 
