@@ -13,7 +13,6 @@ vi.mock("../util/log.js", () => ({
 // mcp-launcher.test.ts.
 vi.mock("../util/mcp-launcher.js", () => ({
   wrapMcpServer: <T>(server: T) => server,
-  ensureLauncher: () => "/tmp/fake-launcher.mjs",
 }));
 
 describe("plugin system", () => {

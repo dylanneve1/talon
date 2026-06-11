@@ -26,6 +26,15 @@ import {
   type StartOutcome,
   type StopOutcome,
 } from "./core/daemon/control.js";
+import { MCP_LAUNCH_SUBCOMMAND, runSupervisor } from "./util/mcp-launcher.js";
+
+// MCP supervisor dispatch — must run before anything else. Talon
+// supervises MCP stdio children by re-invoking its own entrypoint with
+// this hidden subcommand (see util/mcp-launcher.ts). runSupervisor
+// never resolves; the supervisor process exits from its own handlers.
+if (process.argv[2] === MCP_LAUNCH_SUBCOMMAND) {
+  await runSupervisor(process.argv.slice(3));
+}
 
 const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");
 const CONFIG_FILE = pathFiles.config;

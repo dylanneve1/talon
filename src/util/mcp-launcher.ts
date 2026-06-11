@@ -1,38 +1,77 @@
 /**
- * MCP supervisor launcher.
+ * MCP supervisor — one universal launch method for every install type.
  *
- * Every MCP stdio server Talon hands to the Claude Agent SDK is wrapped
- * through a checked-in Node supervisor:
- * `node src/util/mcp-launcher.mjs <real-cmd> [args...]`.
+ * Every MCP stdio server Talon hands to a backend SDK is wrapped
+ * through a supervisor process that proxies stdio, filters non-JSON
+ * stdout lines, and kills the child when Talon dies — no orphans, no
+ * /proc scan, no per-plugin signature list.
  *
- * The supervisor proxies stdio between the SDK and the real child, and
- * watches its own `process.stdin` for EOF. When the SDK's pipe closes —
- * for any reason, including Talon crashing or being SIGKILLed — the
- * kernel closes our stdin, we SIGTERM the child, then SIGKILL if it
- * hasn't exited within a short grace, then exit. No orphans, no /proc
- * scan, no per-plugin signature list.
+ * The supervisor is Talon itself: `wrapMcpServer()` re-invokes the
+ * current process (`process.execPath` + `process.execArgv` + entry
+ * script) with the hidden `_mcp-launch` subcommand, the same
+ * self-reinvocation respawn.ts uses for /restart. This is the only
+ * shape that works everywhere with no fallbacks:
  *
- * Talon now requires a normal source or package install with this launcher
- * file present on disk. Standalone bun-compiled binaries are unsupported.
+ *   - tsx / node source runs: the tsx loader flags ride along in
+ *     execArgv, so the TS entry resolves in the supervisor too.
+ *   - bun source runs: execPath is bun, which runs the entry directly.
+ *   - bun-compiled binaries: there is no source tree on disk and
+ *     possibly no system JS runtime — the binary re-invokes itself
+ *     (argv[1] points into the embedded bundle and is omitted).
+ *   - npm installs: `node bin/talon.js _mcp-launch …` via cli.ts.
+ *
+ * CONTRACT: every entrypoint whose process wraps MCP servers MUST
+ * dispatch the subcommand before doing anything else:
+ *
+ *   if (process.argv[2] === MCP_LAUNCH_SUBCOMMAND) {
+ *     await runSupervisor(process.argv.slice(3));
+ *   }
+ *
+ * src/index.ts and src/cli.ts are the two real entrypoints; both
+ * dispatch. index.ts additionally defers the whole app graph behind a
+ * dynamic import so supervisor processes stay light.
+ *
+ * Child-shutdown signals (both terminate the child with SIGTERM, then
+ * SIGKILL after a grace period):
+ *
+ *   1. Our own stdin closes — the SDK-side pipe is gone, so the MCP
+ *      child's protocol counterpart is dead. Catches "Talon exited",
+ *      including SIGKILL.
+ *   2. `TALON_BRIDGE_URL/health` stops responding for several
+ *      consecutive pings — Talon's gateway is gone. Catches the
+ *      "kilo serve / opencode serve outlives Talon" case where those
+ *      daemons keep our stdin open across Talon restarts.
  */
 
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { spawn } from "node:child_process";
+import { resolve } from "node:path";
 
-const LAUNCHER_PATH = fileURLToPath(
-  new URL("./mcp-launcher.mjs", import.meta.url),
-);
+/** Hidden CLI subcommand that turns a Talon process into the supervisor. */
+export const MCP_LAUNCH_SUBCOMMAND = "_mcp-launch";
+
+export type LauncherInvocation = { command: string; args: string[] };
 
 /**
- * Resolve the checked-in launcher script path and verify it exists on disk.
+ * `bun build --compile` rewrites argv[1] into the binary's embedded
+ * virtual filesystem (`/$bunfs/` on POSIX, a `~BUN` drive path on
+ * Windows). Such paths don't exist on disk and must not be passed to a
+ * re-invocation — the binary's entry is baked in.
  */
-export function ensureLauncher(): string {
-  if (!existsSync(LAUNCHER_PATH)) {
-    throw new Error(
-      `MCP launcher missing at ${LAUNCHER_PATH}. Talon must run from a normal source or package install; bun-compiled binaries are not supported.`,
-    );
-  }
-  return LAUNCHER_PATH;
+function isEmbeddedEntry(entry: string): boolean {
+  return entry.includes("$bunfs") || entry.includes("~BUN");
+}
+
+/**
+ * The command prefix that re-invokes this process as the supervisor.
+ * Callers append the real MCP command after it.
+ */
+export function supervisorInvocation(): LauncherInvocation {
+  const entry = process.argv[1] ?? "";
+  const entryArgs = entry && !isEmbeddedEntry(entry) ? [resolve(entry)] : [];
+  return {
+    command: process.execPath,
+    args: [...process.execArgv, ...entryArgs, MCP_LAUNCH_SUBCOMMAND],
+  };
 }
 
 type StdioServer = {
@@ -42,29 +81,219 @@ type StdioServer = {
 };
 
 /**
- * Rewrite `{command, args}` so the real command runs under the launcher.
+ * Rewrite `{command, args}` so the real command runs under the supervisor.
  *
- * Plugin-agnostic: the launcher doesn't know or care what it's supervising.
- * Platform-agnostic: relies on pipe EOF, which POSIX and Windows both
- * deliver when the parent end of a pipe is closed.
+ * Plugin-agnostic: the supervisor doesn't know or care what it's
+ * supervising. Platform-agnostic: relies on pipe EOF, which POSIX and
+ * Windows both deliver when the parent end of a pipe is closed.
  */
 export function wrapMcpServer<T extends StdioServer>(server: T): T {
+  const launcher = supervisorInvocation();
   return {
     ...server,
-    command: "node",
-    args: [ensureLauncher(), server.command, ...server.args],
+    command: launcher.command,
+    args: [...launcher.args, server.command, ...server.args],
   };
 }
 
 /**
  * Same wrap, single-array shape used by `@kilocode/sdk` and
  * `@opencode-ai/sdk` `oc.mcp.add({config: {command: [cmd, ...args]}})`.
- * Returns `["node", <launcher>, ...originalCommand]` so kilo / opencode
- * spawn the MCP server under the same supervisor Claude SDK uses.
  */
 export function wrapMcpCommand(command: readonly string[]): string[] {
   if (command.length === 0) {
     throw new Error("wrapMcpCommand: command array must not be empty");
   }
-  return ["node", ensureLauncher(), ...command];
+  const launcher = supervisorInvocation();
+  return [launcher.command, ...launcher.args, ...command];
+}
+
+// ── Supervisor implementation ───────────────────────────────────────────────
+
+// Ping cadence and tolerance are sized so a Talon restart that takes ~30s
+// doesn't kill MCP children, but a permanent Talon-down state evicts them
+// within ~1 minute.
+const BRIDGE_PING_INTERVAL_MS = 15_000;
+const BRIDGE_PING_TIMEOUT_MS = 2_000;
+const BRIDGE_FAILURES_BEFORE_EXIT = 4;
+
+/**
+ * Run the supervisor over `argvTail` = [cmd, ...args].
+ *
+ * Never resolves: the process exits from the child-exit / stdin-EOF /
+ * bridge-watchdog handlers. Entrypoints `await` it so nothing after
+ * the dispatch ever runs.
+ */
+export function runSupervisor(argvTail: string[]): Promise<never> {
+  const [cmd, ...args] = argvTail;
+  if (!cmd) {
+    process.stderr.write("mcp-launcher: missing command\n");
+    process.exit(2);
+  }
+
+  const BRIDGE_URL = process.env.TALON_BRIDGE_URL;
+
+  const child = spawn(cmd, args, {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: process.env,
+  });
+
+  // Any pipe end-point can throw EPIPE if the other side closes mid-write.
+  // We silence those; the exit and close paths already drive shutdown.
+  const swallow = () => {};
+  child.stdin.on("error", swallow);
+  child.stdout.on("error", swallow);
+  child.stderr.on("error", swallow);
+  process.stdin.on("error", swallow);
+  process.stdout.on("error", swallow);
+  process.stderr.on("error", swallow);
+
+  process.stdin.pipe(child.stdin);
+
+  // Stdout filter: MCP stdio convention says child stdout carries one
+  // JSON-RPC message per line and nothing else. Some plugins violate
+  // this and print log/banner lines (tailscale-mcp, ccusage, polymarket
+  // at startup). Strict MCP clients can hit those lines, raise a parse
+  // error, and crash the task group that owns the session — taking down
+  // every other MCP server connection in the process.
+  //
+  // Filter line-by-line: anything that parses as a JSON object goes
+  // through to stdout; everything else is re-routed to stderr with a
+  // tag so it's still visible in logs. Tolerant MCP clients (e.g. the
+  // claude binary) see exactly what they did before — this is a no-op
+  // for clean servers.
+  //
+  // A JSON-RPC line must start with `{` (objects). The MCP spec permits
+  // array batches (`[`) but our plugins only emit objects, and several
+  // plugins log lines that START with `[` (e.g. tailscale-mcp's
+  // `[ISO-timestamp] [INFO] …`). Restrict to `{` and verify it's
+  // parseable JSON before forwarding, so a stray `{ tip: "..." }`
+  // shell-style line that isn't valid JSON still goes to stderr.
+  const looksJson = (line: string): boolean => {
+    const s = line.trimStart();
+    if (s.length === 0 || s[0] !== "{") return false;
+    try {
+      JSON.parse(s);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  let buf = "";
+  child.stdout.setEncoding("utf-8");
+  child.stdout.on("data", (chunk: string) => {
+    buf += chunk;
+    let nl;
+    while ((nl = buf.indexOf("\n")) !== -1) {
+      const line = buf.slice(0, nl + 1);
+      buf = buf.slice(nl + 1);
+      if (looksJson(line)) {
+        process.stdout.write(line);
+      } else if (line.trim().length > 0) {
+        process.stderr.write(`[mcp-launcher: stdout→stderr] ${line}`);
+      }
+    }
+  });
+  child.stdout.on("end", () => {
+    if (buf.length === 0) return;
+    if (looksJson(buf)) {
+      process.stdout.write(buf);
+    } else {
+      process.stderr.write(`[mcp-launcher: stdout→stderr] ${buf}`);
+    }
+    buf = "";
+  });
+
+  child.stderr.pipe(process.stderr);
+
+  let terminating = false;
+
+  function terminate(exitCode: number): void {
+    if (terminating) return;
+    terminating = true;
+    try {
+      child.kill("SIGTERM");
+    } catch {
+      /* already gone */
+    }
+    const force = setTimeout(() => {
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* already gone */
+      }
+    }, 1000);
+    force.unref?.();
+    child.once("exit", () => {
+      clearTimeout(force);
+      process.exit(exitCode);
+    });
+  }
+
+  process.stdin.on("end", () => terminate(0));
+  process.stdin.on("close", () => terminate(0));
+
+  child.once("exit", (code, signal) => {
+    if (terminating) return;
+    process.exit(code ?? (signal ? 1 : 0));
+  });
+  child.once("error", (err) => {
+    process.stderr.write(`mcp-launcher: spawn error: ${err.message}\n`);
+    process.exit(1);
+  });
+
+  const signals: NodeJS.Signals[] =
+    process.platform === "win32"
+      ? ["SIGTERM", "SIGINT"]
+      : ["SIGTERM", "SIGINT", "SIGHUP"];
+  for (const sig of signals) {
+    process.on(sig, () => terminate(0));
+  }
+
+  // Bridge-health watchdog. Only enabled when TALON_BRIDGE_URL is set
+  // (every Talon-spawned MCP server has it; ad-hoc supervisor uses
+  // without the env var keep the stdin-EOF-only behavior).
+  if (BRIDGE_URL) {
+    let consecutiveFailures = 0;
+    const tick = async (): Promise<void> => {
+      if (terminating) return;
+      try {
+        const resp = await fetch(`${BRIDGE_URL}/health`, {
+          signal: AbortSignal.timeout(BRIDGE_PING_TIMEOUT_MS),
+        });
+        if (resp.ok) {
+          consecutiveFailures = 0;
+          return;
+        }
+        consecutiveFailures += 1;
+      } catch {
+        consecutiveFailures += 1;
+      }
+      if (consecutiveFailures >= BRIDGE_FAILURES_BEFORE_EXIT) {
+        // Talon's gateway is gone. The MCP child has nothing useful to
+        // serve — bridge calls would 404 against a dead port — so shut
+        // down. Kilo/OpenCode notice the stdio close on the next
+        // interaction and drop the registration on their side.
+        process.stderr.write(
+          `mcp-launcher: bridge ${BRIDGE_URL} unreachable for ${
+            consecutiveFailures * (BRIDGE_PING_INTERVAL_MS / 1000)
+          }s; shutting down child\n`,
+        );
+        terminate(0);
+      }
+    };
+    // Stagger first tick so a process-wide restart doesn't have every
+    // supervisor pinging the bridge in lockstep.
+    const initialDelay = Math.floor(Math.random() * BRIDGE_PING_INTERVAL_MS);
+    const startTimer = setTimeout(() => {
+      void tick();
+      const interval = setInterval(() => void tick(), BRIDGE_PING_INTERVAL_MS);
+      interval.unref?.();
+    }, initialDelay);
+    startTimer.unref?.();
+  }
+
+  // The child + stdin pipe keep the event loop alive; exit happens via
+  // the handlers above.
+  return new Promise<never>(() => {});
 }

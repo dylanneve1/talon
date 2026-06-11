@@ -120,8 +120,9 @@ function packInto(dir: string): string {
   const packedFiles = new Set(pack.files.map((file) => file.path));
   for (const required of [
     "bin/talon.js",
+    "src/app.ts",
     "src/cli.ts",
-    "src/util/mcp-launcher.mjs",
+    "src/util/mcp-launcher.ts",
     "prompts/base.md",
     "tsconfig.json",
   ]) {

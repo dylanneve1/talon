@@ -153,7 +153,18 @@ async function spawnHarness(opts: {
     harnessPath,
     `
     import { spawn } from "node:child_process";
-    import { wrapMcpServer } from ${JSON.stringify(LAUNCHER_MODULE)};
+    import {
+      MCP_LAUNCH_SUBCOMMAND,
+      runSupervisor,
+      wrapMcpServer,
+    } from ${JSON.stringify(LAUNCHER_MODULE)};
+
+    // The universal-launch contract: every entry that wraps MCP servers
+    // dispatches the supervisor subcommand (wrapMcpServer re-invokes
+    // THIS harness as the supervisor, mirroring src/index.ts).
+    if (process.argv[2] === MCP_LAUNCH_SUBCOMMAND) {
+      await runSupervisor(process.argv.slice(3));
+    }
 
     const launchers = [];
     const idlers = [];

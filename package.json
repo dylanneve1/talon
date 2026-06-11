@@ -36,6 +36,7 @@
     "src/plugins/",
     "src/storage/",
     "src/util/",
+    "src/app.ts",
     "src/bootstrap.ts",
     "src/cli.ts",
     "src/index.ts",
