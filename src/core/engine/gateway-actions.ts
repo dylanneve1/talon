@@ -61,9 +61,11 @@ import {
 import {
   deleteInstructionSkill,
   formatInstructionSkill,
+  formatInstructionSkillSearchResult,
   listInstructionSkills,
   readInstructionSkill,
   saveInstructionSkill,
+  searchInstructionSkills,
   validateInstructionSkillBody,
   validateInstructionSkillDescription,
   validateInstructionSkillName,
@@ -887,6 +889,24 @@ export async function handleSharedAction(
       return {
         ok: true,
         text: `Instruction skills (${skills.length}):\n${skills.map(formatInstructionSkill).join("\n")}`,
+      };
+    }
+
+    case "find_instruction_skills": {
+      const query = String(body.query ?? "").trim();
+      if (!query) return { ok: false, error: "Missing query" };
+      const limit = Math.min(50, Math.max(1, Number(body.limit ?? 10)));
+      const results = searchInstructionSkills(query, limit);
+      if (results.length === 0)
+        return {
+          ok: true,
+          text: `No instruction skills matched "${query}". Use list_instruction_skills to browse all saved workflows.`,
+        };
+      return {
+        ok: true,
+        text:
+          `Instruction skill matches for "${query}" (${results.length}):\n` +
+          results.map(formatInstructionSkillSearchResult).join("\n"),
       };
     }
 

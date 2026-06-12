@@ -45,6 +45,7 @@ import {
   readInstructionSkill,
   renderInstructionSkillsPrompt,
   saveInstructionSkill,
+  searchInstructionSkills,
   validateInstructionSkillBody,
   validateInstructionSkillDescription,
   validateInstructionSkillName,
@@ -104,11 +105,30 @@ describe("save / read / list / delete", () => {
 
     const prompt = renderInstructionSkillsPrompt();
     expect(prompt).toContain("## Available Instruction Skills");
+    expect(prompt).toContain("find_instruction_skills");
     expect(prompt).toContain("read_instruction_skill");
     expect(prompt).toContain("review-pr");
 
     expect(deleteInstructionSkill("review-pr")).toBe(true);
     expect(existsSync(instructionSkillPath("review-pr"))).toBe(false);
     expect(deleteInstructionSkill("review-pr")).toBe(false);
+  });
+
+  it("searches instruction skills by relevant workflow terms", () => {
+    saveInstructionSkill({
+      name: "github-review",
+      description: "address GitHub pull request review comments",
+      body: "Use the GraphQL unresolved review thread flow, inspect inline comments, patch code, run tests, then resolve threads.",
+    });
+    saveInstructionSkill({
+      name: "release-check",
+      description: "ship a release",
+      body: "Check CI first.",
+    });
+
+    const results = searchInstructionSkills("unresolved review comments");
+    expect(results.map((result) => result.skill.name)[0]).toBe("github-review");
+    expect(results[0].snippet).toContain("unresolved review thread");
+    expect(searchInstructionSkills("no-such-workflow")).toEqual([]);
   });
 });

@@ -110,6 +110,25 @@ Use instruction skills for reusable procedures that require judgement rather tha
   },
 
   {
+    name: "find_instruction_skills",
+    description:
+      "Search saved instruction skills by query and return ranked discovery results. Use this to select the relevant workflow before loading its full body with read_instruction_skill.",
+    schema: {
+      query: z
+        .string()
+        .describe(
+          "Search terms describing the workflow you need, e.g. 'github review comments' or 'release checklist'",
+        ),
+      limit: z
+        .number()
+        .optional()
+        .describe("Maximum results to return (default 10, max 50)"),
+    },
+    execute: (params, bridge) => bridge("find_instruction_skills", params),
+    tag: "skills",
+  },
+
+  {
     name: "read_instruction_skill",
     description:
       "Read the full markdown body for a saved instruction skill. Load it before following that workflow; descriptions are only discovery hints.",

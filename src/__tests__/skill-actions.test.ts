@@ -223,6 +223,14 @@ describe("instruction skills", () => {
     expect(listed.text).toContain("review-flow");
     expect(listed.text).toContain("review pull requests carefully");
 
+    const found = await act({
+      action: "find_instruction_skills",
+      query: "pull request tests",
+    });
+    expect(found.ok).toBe(true);
+    expect(found.text).toContain("review-flow");
+    expect(found.text).toContain("score");
+
     const read = await act({
       action: "read_instruction_skill",
       name: "review-flow",
@@ -272,6 +280,9 @@ describe("instruction skills", () => {
           body: "   ",
         })
       ).ok,
+    ).toBe(false);
+    expect(
+      (await act({ action: "find_instruction_skills", query: "" })).ok,
     ).toBe(false);
   });
 });

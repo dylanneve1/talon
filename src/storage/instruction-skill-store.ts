@@ -27,10 +27,17 @@ export type InstructionSkill = {
   updatedAt: number;
 };
 
+export type InstructionSkillSearchResult = {
+  skill: InstructionSkill;
+  score: number;
+  snippet: string;
+};
+
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 const DESCRIPTION_MAX_CHARS = 300;
 const BODY_MAX_BYTES = 128 * 1024;
 const PROMPT_LIST_LIMIT = 25;
+const SEARCH_RESULT_LIMIT = 10;
 
 export function instructionSkillsDir(): string {
   return resolve(dirs.workspace, "instruction-skills");
@@ -173,6 +180,65 @@ export function listInstructionSkills(): InstructionSkill[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function tokenizeQuery(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^a-z0-9_-]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function scoreInstructionSkill(
+  skill: InstructionSkill,
+  tokens: string[],
+): number {
+  const name = skill.name.toLowerCase();
+  const description = skill.description.toLowerCase();
+  const body = skill.body.toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (name === token) score += 20;
+    else if (name.includes(token)) score += 12;
+    if (description.includes(token)) score += 6;
+    if (body.includes(token)) score += 2;
+  }
+  return score;
+}
+
+function snippetFor(skill: InstructionSkill, tokens: string[]): string {
+  const body = skill.body.replace(/\s+/g, " ").trim();
+  if (!body) return "";
+  const lower = body.toLowerCase();
+  const hit = tokens
+    .map((token) => lower.indexOf(token))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0];
+  const start = Math.max(0, (hit ?? 0) - 80);
+  const end = Math.min(body.length, start + 220);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < body.length ? "..." : "";
+  return `${prefix}${body.slice(start, end)}${suffix}`;
+}
+
+export function searchInstructionSkills(
+  query: string,
+  limit = SEARCH_RESULT_LIMIT,
+): InstructionSkillSearchResult[] {
+  const tokens = tokenizeQuery(query);
+  if (tokens.length === 0) return [];
+  return listInstructionSkills()
+    .map((skill) => ({
+      skill,
+      score: scoreInstructionSkill(skill, tokens),
+      snippet: snippetFor(skill, tokens),
+    }))
+    .filter((result) => result.score > 0)
+    .sort(
+      (a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name),
+    )
+    .slice(0, Math.max(1, Math.min(50, limit)));
+}
+
 export function deleteInstructionSkill(name: string): boolean {
   const path = instructionSkillPath(name);
   if (!existsSync(path)) return false;
@@ -187,6 +253,14 @@ export function formatInstructionSkill(skill: InstructionSkill): string {
   return `- ${skill.name} (updated ${updated}) — ${skill.description}`;
 }
 
+export function formatInstructionSkillSearchResult(
+  result: InstructionSkillSearchResult,
+): string {
+  const base = `${formatInstructionSkill(result.skill)} (score ${result.score})`;
+  if (!result.snippet) return base;
+  return `${base}\n  ${result.snippet}`;
+}
+
 export function renderInstructionSkillsPrompt(): string {
   const skills = listInstructionSkills();
   if (skills.length === 0) return "";
@@ -195,7 +269,7 @@ export function renderInstructionSkillsPrompt(): string {
   const lines = [
     "## Available Instruction Skills",
     "",
-    "Instruction skills are reusable markdown workflows. Load the full body with `read_instruction_skill` before following one; do not guess from the description alone.",
+    "Instruction skills are reusable markdown workflows. Use `find_instruction_skills` when the relevant workflow is not obvious, then load the full body with `read_instruction_skill` before following one; do not guess from the description alone.",
     "",
     ...visible.map(formatInstructionSkill),
   ];

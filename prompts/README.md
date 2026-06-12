@@ -20,11 +20,21 @@ placed after the cache boundary):
 | 6   | Plugin additions      | each plugin's `systemPrompt()` contribution                            | static        |
 | 7   | **Delivery contract** | `system/contract-*.md`, appended by the **backend** as its suffix      | static (tail) |
 | 8   | Daily-memory pointer  | `system/daily-memory.md` (names today's file)                          | dynamic       |
-| 9   | Workspace listing     | generated tree of `~/.talon/workspace/`                                | dynamic       |
+| 9   | Instruction skills    | generated index of `workspace/instruction-skills/*.md`                 | dynamic       |
+| 10  | Workspace listing     | generated tree of `~/.talon/workspace/`                                | dynamic       |
 
 The delivery contract is deliberately LAST in the static prefix: it is the
 one section the model must not miss, and the end of the prompt is the
 highest-salience position.
+
+Instruction skills are deliberately an index, not full bodies. The dynamic
+prompt names saved markdown workflows and their descriptions; agents use
+`find_instruction_skills` to select a relevant workflow and
+`read_instruction_skill` to load the full body before following it. This
+progressive-disclosure path is backend-agnostic: Claude SDK, Codex, Kilo,
+OpenCode, and OpenAI Agents all receive the same prompt index and call the
+same shared gateway tools, even when a backend has no native "skills"
+feature.
 
 ## File ownership — two kinds of prompt files
 
