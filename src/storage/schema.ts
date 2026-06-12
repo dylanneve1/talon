@@ -27,7 +27,7 @@ export const MIGRATIONS: readonly string[] = [
     file_path       TEXT
   );
   CREATE INDEX idx_history_chat ON history_messages(chat_id, id);
-  CREATE INDEX idx_history_chat_msg ON history_messages(chat_id, msg_id);
+  CREATE UNIQUE INDEX idx_history_chat_msg ON history_messages(chat_id, msg_id);
   CREATE INDEX idx_history_chat_sender ON history_messages(chat_id, sender_id, id);
 
   CREATE VIRTUAL TABLE history_fts USING fts5(

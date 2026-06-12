@@ -40,7 +40,7 @@ function rowToMessage(row: Row): HistoryMessage {
 export function insert(chatId: string, msg: HistoryMessage): void {
   getDatabase()
     .prepare(
-      `INSERT INTO history_messages (chat_id, ${ROW_COLUMNS})
+      `INSERT OR IGNORE INTO history_messages (chat_id, ${ROW_COLUMNS})
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
@@ -122,13 +122,18 @@ export function bySenderName(
   nameFragment: string,
   limit: number,
 ): HistoryMessage[] {
+  const escaped = nameFragment
+    .toLowerCase()
+    .replace(/\\/g, "\\\\")
+    .replace(/%/g, "\\%")
+    .replace(/_/g, "\\_");
   const rows = getDatabase()
     .prepare(
       `SELECT ${ROW_COLUMNS} FROM history_messages
-       WHERE chat_id = ? AND lower(sender_name) LIKE ?
+       WHERE chat_id = ? AND lower(sender_name) LIKE ? ESCAPE '\\'
        ORDER BY id DESC LIMIT ?`,
     )
-    .all(chatId, `%${nameFragment.toLowerCase()}%`, limit) as Row[];
+    .all(chatId, `%${escaped}%`, limit) as Row[];
   return rows.reverse().map(rowToMessage);
 }
 

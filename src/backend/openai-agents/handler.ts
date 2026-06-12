@@ -68,7 +68,10 @@ import {
   recordTurnMetrics,
   recordFlowViolation,
 } from "../shared/index.js";
-import { detectFlowViolation } from "../shared/flow-violation.js";
+import {
+  detectFlowViolation,
+  FLOW_VIOLATION_MAX_RETRIES,
+} from "../shared/flow-violation.js";
 
 import {
   buildOpenAiAgentsSuffix,
@@ -103,6 +106,7 @@ export function getActiveAbort(chatId: string): AbortController | undefined {
 export async function handleMessage(
   params: QueryParams,
   _retried = false,
+  _flowRetries = 0,
 ): Promise<QueryResult> {
   const state = getState();
   const config = state.config;
@@ -157,7 +161,7 @@ export async function handleMessage(
   // First-turn nudge — see the claude-sdk handler for rationale: turn 0
   // is where flow violations cluster, and one line in the user message
   // costs nothing on later turns and never touches the cached prefix.
-  if (frontend && previousTurns === 0 && !_retried) {
+  if (frontend && previousTurns === 0 && !_retried && _flowRetries === 0) {
     prompt += `\n\n${buildFirstTurnReminder(frontend)}`;
   }
 
@@ -453,7 +457,10 @@ export async function handleMessage(
           trailingText: streamState.lastTrailingText,
           turnTerminated: streamState.turnTerminated,
           deliveredTextNorms: streamState.deliveredTextNorms,
-          retried: _retried,
+          toolCalls: streamState.toolCalls,
+          retried: _flowRetries > 0,
+          retryCount: _flowRetries,
+          maxRetries: FLOW_VIOLATION_MAX_RETRIES,
           ...(frontend
             ? { reminder: buildFlowViolationReminder(frontend) }
             : {}),
@@ -473,7 +480,11 @@ export async function handleMessage(
 
     if (violation.shouldRetry) {
       // Recursive call owns the `incrementTurns` for this user message.
-      return handleMessage({ ...params, text: violation.reminder }, true);
+      return handleMessage(
+        { ...params, text: violation.reminder },
+        _retried,
+        _flowRetries + 1,
+      );
     }
   }
 
@@ -484,7 +495,7 @@ export async function handleMessage(
   // Guarded by `!_retried` so the FLOW_VIOLATION_REMINDER doesn't get
   // captured as the session name when the retry recurses through this
   // path with `params.text = reminder`.
-  if (previousTurns === 0 && !_retried) {
+  if (previousTurns === 0 && !_retried && _flowRetries === 0) {
     const name = extractSessionName(text);
     if (name) setSessionName(chatId, name);
   }
