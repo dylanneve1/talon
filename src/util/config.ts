@@ -221,7 +221,14 @@ const configSchema = z.object({
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   /** Background memory-consolidation (dream) runs. Mirrors `pulse`/`heartbeat`. */
   dream: z.boolean().default(true),
-  heartbeat: z.boolean().default(false),
+  /**
+   * Periodic background agent (default: on, hourly). Advances open
+   * goals, runs user-defined maintenance, and proactively messages
+   * chats when something worth knowing comes up. Disable with
+   * `"heartbeat": false`; requires a backend with the background
+   * capability.
+   */
+  heartbeat: z.boolean().default(true),
   heartbeatIntervalMinutes: z.number().int().min(5).default(60),
   heartbeatModel: z.string().optional(), // Model for heartbeat agent (defaults to main model)
   braveApiKey: z.string().optional(),
