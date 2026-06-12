@@ -10,21 +10,17 @@
  * BLAKE3 WASM module: edit the .sql, run `npm run build:sql`, commit
  * both; sql-embed.test.ts fails CI on drift.
  *
- * Formats:
- *   - migrations/NNN_*.sql — whole-file migration steps, ordered by
- *     filename; appended to the MIGRATIONS array (cursor is
- *     `PRAGMA user_version`, see db.ts). Never edit or reorder a
- *     shipped migration — add a new file.
- *   - <store>.sql — named statements, one per `-- name: <key>` marker;
- *     emitted as `export const <store>Sql = { <key>: "...", ... }`.
+ * schema.sql is embedded whole as `export const SCHEMA`. Each other
+ * <store>.sql is split into named blocks (`-- name: <key>` markers)
+ * and emitted as `export const <store>Sql = { <key>: "...", ... }`.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type SqlSources = {
-  /** Migration steps in apply order: [filename, content]. */
-  migrations: Array<[string, string]>;
+  /** Content of schema.sql — the complete idempotent DDL. */
+  schema: string;
   /** Store statement files: [basename without .sql, content]. */
   stores: Array<[string, string]>;
 };
@@ -72,19 +68,15 @@ export function parseNamedStatements(
 }
 
 export function readSqlSources(dir: string): SqlSources {
-  const sqlFiles = (d: string) =>
-    readdirSync(d)
-      .filter((f) => f.endsWith(".sql"))
-      .sort();
   return {
-    migrations: sqlFiles(join(dir, "migrations")).map((f) => [
-      f,
-      readFileSync(join(dir, "migrations", f), "utf8"),
-    ]),
-    stores: sqlFiles(dir).map((f) => [
-      f.replace(/\.sql$/, ""),
-      readFileSync(join(dir, f), "utf8"),
-    ]),
+    schema: readFileSync(join(dir, "schema.sql"), "utf8"),
+    stores: readdirSync(dir)
+      .filter((f) => f.endsWith(".sql") && f !== "schema.sql")
+      .sort()
+      .map((f) => [
+        f.replace(/\.sql$/, ""),
+        readFileSync(join(dir, f), "utf8"),
+      ]),
   };
 }
 
@@ -99,20 +91,14 @@ function templateLiteral(sql: string): string {
 
 /** Render the full statements.generated.ts module text. */
 export function buildSqlModule(sources: SqlSources): string {
-  if (sources.migrations.length === 0) {
-    throw new Error("no migration files found");
-  }
+  if (!sources.schema.trim()) throw new Error("schema.sql is empty");
   const parts: string[] = [
     "// AUTO-GENERATED FILE — DO NOT EDIT.",
     "// Source of truth: the .sql files in this directory.",
     "// Regenerate with `npm run build:sql` (drift-guarded by sql-embed.test.ts).",
     "",
-    "/** Append-only migration list; cursor is `PRAGMA user_version` (db.ts). */",
-    "export const MIGRATIONS: readonly string[] = [",
-    ...sources.migrations.map(
-      ([name, sql]) => `  // ${name}\n  ${templateLiteral(sql.trim())},`,
-    ),
-    "];",
+    "/** The complete idempotent schema, ensured on every open (db.ts). */",
+    `export const SCHEMA = ${templateLiteral(sources.schema.trim())};`,
   ];
   for (const [basename, content] of sources.stores) {
     parts.push("", `export const ${exportName(basename)} = {`);

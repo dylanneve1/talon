@@ -3,9 +3,11 @@
 Every SQL statement in the codebase lives in the `.sql` files here —
 the repositories and `db.ts` contain no SQL text.
 
-- `migrations/NNN_*.sql` — whole-file migration steps, applied in
-  filename order. The cursor is `PRAGMA user_version` (see `db.ts`).
-  Never edit or reorder a shipped migration — add a new file.
+- `schema.sql` — the complete schema. Every statement is idempotent
+  (`IF NOT EXISTS`) and the whole file is applied on every database
+  open, so fresh and existing databases both end up current. Reshaping
+  something that already shipped needs an explicit upgrade path, not
+  an edit here.
 - `<store>.sql` — named statements, one per `-- name: <key>` marker,
   consumed by `repositories/<store>-repo.ts`.
 

@@ -38,7 +38,7 @@ describe("sql embed", () => {
     for (const name of exportNames) {
       expect(generated, `missing export ${name}`).toHaveProperty(name);
     }
-    expect(generated.MIGRATIONS.length).toBeGreaterThanOrEqual(2);
+    expect(generated.SCHEMA).toContain("CREATE TABLE IF NOT EXISTS");
   });
 });
 

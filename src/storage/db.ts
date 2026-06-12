@@ -1,5 +1,5 @@
 /**
- * SQLite connection + migration runner — the high-performance data
+ * SQLite connection + schema setup — the high-performance data
  * layer's entry point.
  *
  * One database at ~/.talon/data/talon.db, opened through the runtime's
@@ -10,13 +10,13 @@
  * orchestrated from TypeScript.
  *
  * Layering (keep it this way):
- *   - sql/<name>.sql            every SQL statement, plain SQL files
- *   - sql/migrations/*.sql      all DDL, versioned migration steps
+ *   - sql/schema.sql            all DDL, idempotent, ensured on open
+ *   - sql/<store>.sql           every statement for one store
  *   - sql/statements.generated.ts  committed embed of the above
  *                               (`npm run build:sql`, see sql/embed.ts)
  *   - repositories/<store>.ts   statement execution for one store, typed rows
  *   - <store>.ts                public API + domain logic, ZERO SQL
- *   - db.ts (this file)         connection, pragmas, migration cursor
+ *   - db.ts (this file)         connection, pragmas, schema setup
  *
  * Why this over the JSON stores it replaces: transactional row writes
  * instead of rewrite-the-whole-file flush timers, indexed reads instead
@@ -28,14 +28,14 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { files } from "../util/paths.js";
 import { log } from "../util/log.js";
-import { MIGRATIONS } from "./sql/statements.generated.js";
+import { SCHEMA } from "./sql/statements.generated.js";
 
 /**
  * The driver surface the repositories use — the intersection of
  * node:sqlite's DatabaseSync and bun:sqlite's Database, which are
  * API-compatible for exactly this set (verified empirically: prepared
  * statements with positional params, identical row object shapes,
- * multi-statement exec, FTS5 virtual tables, PRAGMA user_version).
+ * multi-statement exec, FTS5 virtual tables).
  */
 export type SqlStatement = {
   get(...params: unknown[]): unknown;
@@ -61,25 +61,26 @@ const Database = IS_BUN ? sqliteModule.Database : sqliteModule.DatabaseSync;
 
 let db: SqlDatabase | null = null;
 
-function migrate(database: SqlDatabase): void {
-  const row = database.prepare("PRAGMA user_version").get() as {
-    user_version: number;
-  };
-  let version = row.user_version;
-  while (version < MIGRATIONS.length) {
-    const step = MIGRATIONS[version];
-    database.exec("BEGIN");
-    try {
-      database.exec(step);
-      version += 1;
-      database.exec(`PRAGMA user_version = ${version}`);
-      database.exec("COMMIT");
-    } catch (err) {
-      database.exec("ROLLBACK");
-      throw err;
-    }
-    log("db", `Migrated database to schema v${version}`);
+/**
+ * Apply the complete schema. Every statement is IF NOT EXISTS, so this
+ * is a no-op on an up-to-date database and creates exactly what's
+ * missing on a fresh or older one.
+ */
+function ensureSchema(database: SqlDatabase): void {
+  const row = database
+    .prepare(
+      "SELECT COUNT(*) AS tables FROM sqlite_master WHERE type = 'table'",
+    )
+    .get() as { tables: number };
+  database.exec("BEGIN");
+  try {
+    database.exec(SCHEMA);
+    database.exec("COMMIT");
+  } catch (err) {
+    database.exec("ROLLBACK");
+    throw err;
   }
+  if (row.tables === 0) log("db", "Initialized database schema");
 }
 
 function defaultPath(): string {
@@ -102,7 +103,7 @@ export function getDatabase(path: string = defaultPath()): SqlDatabase {
   database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA synchronous = NORMAL");
   database.exec("PRAGMA foreign_keys = ON");
-  migrate(database);
+  ensureSchema(database);
   db = database;
   return database;
 }
