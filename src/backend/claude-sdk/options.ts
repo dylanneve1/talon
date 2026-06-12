@@ -62,9 +62,7 @@ export function getActiveFrontends(): readonly string[] {
  * Build the MCP servers map for a chat query.
  * Includes frontend-specific tool servers and Brave Search, if configured.
  */
-export function buildMcpServers(
-  chatId: string,
-): Record<
+export function buildMcpServers(chatId: string): Record<
   string,
   {
     command: string;
