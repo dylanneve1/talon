@@ -88,9 +88,7 @@ export function listByChat(
       .all(chatId, ...statuses) as Row[];
     return rows.map(rowToGoal);
   }
-  const rows = getDatabase()
-    .prepare(goalsSql.listByChat)
-    .all(chatId) as Row[];
+  const rows = getDatabase().prepare(goalsSql.listByChat).all(chatId) as Row[];
   return rows.map(rowToGoal);
 }
 
