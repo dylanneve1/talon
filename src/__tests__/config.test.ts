@@ -552,7 +552,10 @@ describe("config", () => {
       expect(config.systemPrompt).toContain("visible.txt");
       expect(config.systemPrompt).not.toContain(".hidden");
       expect(config.systemPrompt).not.toContain("node_modules");
-      expect(config.systemPrompt).not.toContain("talon.log");
+      // Scope to the rendered listing entry ("talon.log (500B)") — the
+      // bare substring legitimately appears in prompt docs now (the Lua
+      // trigger host API is named talon.log).
+      expect(config.systemPrompt).not.toMatch(/talon\.log \(/);
     });
 
     it("shows subdirectory summary when it has more than 8 files", async () => {
