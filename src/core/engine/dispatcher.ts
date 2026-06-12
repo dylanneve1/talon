@@ -13,11 +13,6 @@ import { randomBytes } from "node:crypto";
 import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import { pipeEventsToCallbacks } from "../agent-runtime/event-bridge.js";
-import {
-  clearTurnEffortOverride,
-  routeEffortForTurn,
-  setTurnEffortOverride,
-} from "../models/effort-router.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
 import { maybeStartDream } from "../background/dream.js";
 
@@ -157,17 +152,6 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   // Dream check — fire-and-forget background memory consolidation if due
   maybeStartDream();
 
-  // Adaptive effort routing (opt-in, heuristic — no extra model calls).
-  // Computes a per-turn effort from the message text; set/cleared
-  // inside the try/finally below so a stale override can never outlive
-  // its turn. Per-chat serialization above guarantees one live
-  // override per chat.
-  const routedEffort = routeEffortForTurn(
-    params.chatId,
-    params.prompt,
-    resolvedRef,
-  );
-
   logDebug(
     "dispatcher",
     `[${reqId}] ${params.source} chat=${params.chatId} started (active=${activeCount})`,
@@ -176,7 +160,6 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
 
   let typingTimer: ReturnType<typeof setInterval> | undefined;
   try {
-    if (routedEffort) setTurnEffortOverride(params.chatId, routedEffort);
     await sendTyping(params.numericChatId).catch((err: unknown) => {
       logWarn(
         "dispatcher",
@@ -238,7 +221,6 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
     };
   } finally {
     clearInterval(typingTimer);
-    clearTurnEffortOverride(params.chatId);
     context.release(params.numericChatId);
   }
 }

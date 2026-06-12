@@ -16,6 +16,7 @@ import { stickerTools } from "./stickers.js";
 import { schedulingTools } from "./scheduling.js";
 import { triggerTools } from "./triggers.js";
 import { goalTools } from "./goals.js";
+import { skillTools } from "./skills.js";
 import { webTools } from "./web.js";
 import { adminTools } from "./admin.js";
 
@@ -30,6 +31,7 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...schedulingTools,
   ...triggerTools,
   ...goalTools,
+  ...skillTools,
   ...webTools,
   ...adminTools,
 ];

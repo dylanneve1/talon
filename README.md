@@ -20,9 +20,9 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 | **Plugins**           | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search                                                          |
 | **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary) — backend-agnostic                                                 |
 | **Goals**             | Persistent multi-day objectives the agent commits to in chat; every heartbeat run re-reads them, makes progress, and records what it did     |
+| **Skills**            | Agent-authored reusable scripts (bash/python/node) — procedures worked out once get saved and replayed locally at zero token cost            |
 | **Triggers**          | Self-authored watcher scripts (bash/python/node) that wake the bot when conditions are met                                                   |
 | **Per-chat settings** | Model, effort level, and pulse toggle per conversation via inline keyboard                                                                   |
-| **Adaptive effort**   | Opt-in (`adaptiveEffort: true`): per-turn reasoning effort picked by a local heuristic — light chatter runs cheap, hard questions run deep   |
 | **Model registry**    | Models discovered from the active backend at startup — new models appear in all pickers automatically                                        |
 
 ---

@@ -195,9 +195,10 @@ export function assembleSystemPrompt(
     loaded.push(truncated ? "memory(capped)" : "memory");
   }
 
-  // 5. Capability docs — workspace layout, cron, triggers, goals.
-  //    Concise by design: per-tool protocols and examples live in the
-  //    MCP tool descriptions, which the model also has in context.
+  // 5. Capability docs — workspace layout, cron, triggers, goals,
+  //    skills. Concise by design: per-tool protocols and examples
+  //    live in the MCP tool descriptions, which the model also has
+  //    in context.
   staticParts.push(
     loadSystemTemplate("workspace"),
     loadSystemTemplate("cron"),
@@ -205,6 +206,7 @@ export function assembleSystemPrompt(
     loadSystemTemplate("goals", {
       maxOpenGoals: String(MAX_OPEN_GOALS_PER_CHAT),
     }),
+    loadSystemTemplate("skills"),
   );
 
   // 6. Plugin contributions. Static: they only change on plugin

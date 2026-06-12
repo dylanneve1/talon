@@ -269,19 +269,6 @@ const configSchema = z.object({
   plugins: z.array(pluginEntrySchema).default([]),
 
   /**
-   * Adaptive effort routing (opt-in, default off). When true and a
-   * chat has no explicit /effort pick, each turn's reasoning effort is
-   * selected by a cheap text heuristic — short chatter routes to low
-   * effort, analysis/debugging/long messages route to high. Purely
-   * local classification: no extra model calls, no added latency. A
-   * chat's stored /effort setting always wins over the router.
-   *
-   * Optional (not `.default(false)`) so the many hand-built
-   * `TalonConfig` test fixtures stay valid; absence means off.
-   */
-  adaptiveEffort: z.boolean().optional(),
-
-  /**
    * Tool-surface trimming. Every registered MCP tool costs context
    * tokens in every session (name + description + schema), so
    * deployments that never use a tool group can reclaim that budget:

@@ -89,7 +89,6 @@ import {
   isCodexOAuthIncompat,
 } from "./models.js";
 import { supportsReasoningLevel } from "../../core/models/reasoning-levels.js";
-import { getTurnEffortOverride } from "../../core/models/effort-router.js";
 import { markOAuthIncompat } from "./oauth-incompat.js";
 import { classifyRateLimits, readLastRolloutSnapshot } from "./token-usage.js";
 
@@ -412,9 +411,7 @@ export async function handleMessage(
   );
   const supportedReasoningLevels =
     activeModelInfo?.supportedReasoningLevels ?? [];
-  // Stored /effort pick wins; the turn-scoped router override only
-  // exists when the chat has no pick (see core/models/effort-router.ts).
-  const requestedEffort = chatSettings.effort ?? getTurnEffortOverride(chatId);
+  const requestedEffort = chatSettings.effort;
   const modelReasoningEffort =
     requestedEffort &&
     requestedEffort !== "off" &&

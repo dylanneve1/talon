@@ -10,7 +10,8 @@
  * orchestrated from TypeScript.
  *
  * Layering (keep it this way):
- *   - schema.ts                 all DDL, versioned migrations
+ *   - migrations/NNN-*.sql      all DDL, one file per versioned migration
+ *   - schema.ts                 migration-file loader (no SQL in TS)
  *   - repositories/<store>.ts   all statements for one store, typed rows
  *   - <store>.ts                public API + domain logic, ZERO SQL
  *   - db.ts (this file)         connection, pragmas, migration cursor
@@ -25,7 +26,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { files } from "../util/paths.js";
 import { log } from "../util/log.js";
-import { MIGRATIONS } from "./schema.js";
+import { loadMigrations } from "./schema.js";
 
 /**
  * The driver surface the repositories use — the intersection of
@@ -63,8 +64,9 @@ function migrate(database: SqlDatabase): void {
     user_version: number;
   };
   let version = row.user_version;
-  while (version < MIGRATIONS.length) {
-    const step = MIGRATIONS[version];
+  const migrations = loadMigrations();
+  while (version < migrations.length) {
+    const step = migrations[version];
     database.exec("BEGIN");
     try {
       database.exec(step);

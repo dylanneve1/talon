@@ -30,7 +30,6 @@ import {
 } from "./core/background/triggers.js";
 import { initDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat.js";
-import { initEffortRouter } from "./core/models/effort-router.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
 import type { ContextManager } from "./core/types.js";
@@ -229,11 +228,6 @@ export async function initBackendAndDispatcher(
       resetSession(cid);
       clearHistory(cid);
     }
-  }
-
-  initEffortRouter({ enabled: config.adaptiveEffort === true });
-  if (config.adaptiveEffort) {
-    log("dispatcher", "Adaptive effort routing enabled (heuristic)");
   }
 
   initDispatcher({

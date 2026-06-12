@@ -47,6 +47,23 @@ import {
 } from "../../storage/trigger-store.js";
 import { cancelTrigger, spawnTrigger } from "../background/triggers.js";
 import {
+  deleteSkill,
+  formatSkill,
+  getAllSkills,
+  getSkill,
+  recordSkillUse,
+  saveSkill,
+  validateSkillDescription,
+  validateSkillLanguage,
+  validateSkillName,
+  validateSkillScript,
+} from "../../storage/skill-store.js";
+import {
+  runSkill,
+  validateSkillTimeout,
+  DEFAULT_SKILL_TIMEOUT_SECONDS,
+} from "../skills/runner.js";
+import {
   addGoal,
   countOpenGoalsForChat,
   deleteGoal,
@@ -711,6 +728,107 @@ export async function handleSharedAction(
         return { ok: false, error: "Goal belongs to a different chat" };
       deleteGoal(goalId);
       return { ok: true, text: `Deleted goal "${goal.title}" (${goalId})` };
+    }
+
+    // ── Skills (reusable agent-authored scripts — global, not chat-scoped) ─
+
+    case "save_skill": {
+      const name = String(body.name ?? "").trim();
+      const description = String(body.description ?? "").trim();
+      const language = body.language;
+      const script = String(body.script ?? "");
+
+      const nameErr = validateSkillName(name);
+      if (nameErr) return { ok: false, error: nameErr };
+      const descErr = validateSkillDescription(description);
+      if (descErr) return { ok: false, error: descErr };
+      if (!validateSkillLanguage(language))
+        return {
+          ok: false,
+          error: "Unsupported language. Choose one of: bash, python, node",
+        };
+      const scriptErr = validateSkillScript(script);
+      if (scriptErr) return { ok: false, error: scriptErr };
+
+      const existed = Boolean(getSkill(name));
+      let skill;
+      try {
+        skill = saveSkill({ name, description, language, script });
+      } catch (err) {
+        return {
+          ok: false,
+          error: `Failed to save skill: ${err instanceof Error ? err.message : err}`,
+        };
+      }
+      log("gateway", `save_skill: "${name}" (${language})`);
+      return {
+        ok: true,
+        text:
+          `${existed ? "Updated" : "Saved"} skill "${name}" (${language})\n` +
+          `Script: ${skill.scriptPath}\n` +
+          `Run it with run_skill(name="${name}").`,
+      };
+    }
+
+    case "list_skills": {
+      const skills = getAllSkills();
+      if (skills.length === 0)
+        return {
+          ok: true,
+          text: "No skills saved yet. Use save_skill to store a reusable procedure.",
+        };
+      return {
+        ok: true,
+        text: `Skills (${skills.length}):\n${skills.map(formatSkill).join("\n")}`,
+      };
+    }
+
+    case "run_skill": {
+      const name = String(body.name ?? "").trim();
+      if (!name) return { ok: false, error: "Missing name" };
+      const skill = getSkill(name);
+      if (!skill)
+        return {
+          ok: false,
+          error: `No skill named "${name}". See list_skills.`,
+        };
+
+      const args = Array.isArray(body.args) ? body.args.map(String) : [];
+      const timeoutSeconds =
+        body.timeout_seconds != null
+          ? Number(body.timeout_seconds)
+          : DEFAULT_SKILL_TIMEOUT_SECONDS;
+      const timeoutErr = validateSkillTimeout(timeoutSeconds);
+      if (timeoutErr) return { ok: false, error: timeoutErr };
+
+      const result = await runSkill(skill, args, timeoutSeconds);
+      // Usage stats only count completed (non-timeout, spawned) runs.
+      if (!result.timedOut && result.exitCode !== null) {
+        recordSkillUse(name);
+      }
+
+      const status = result.timedOut
+        ? `TIMED OUT after ${timeoutSeconds}s`
+        : `exit ${result.exitCode ?? "n/a"}`;
+      const parts = [`Skill "${name}" finished (${status}, ${result.durationMs}ms)`];
+      if (result.stdout.trim()) parts.push(`stdout:\n${result.stdout.trim()}`);
+      if (result.stderr.trim()) parts.push(`stderr:\n${result.stderr.trim()}`);
+      if (!result.stdout.trim() && !result.stderr.trim())
+        parts.push("(no output)");
+      return {
+        ok: !result.timedOut && result.exitCode === 0,
+        ...(result.timedOut || result.exitCode !== 0
+          ? { error: parts.join("\n\n") }
+          : { text: parts.join("\n\n") }),
+      };
+    }
+
+    case "delete_skill": {
+      const name = String(body.name ?? "").trim();
+      if (!name) return { ok: false, error: "Missing name" };
+      if (!deleteSkill(name))
+        return { ok: false, error: `No skill named "${name}"` };
+      return { ok: true, text: `Deleted skill "${name}".` };
     }
 
     // ── Plugin hot-reload ──────────────────────────────────────────────

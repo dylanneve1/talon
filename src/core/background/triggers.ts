@@ -227,7 +227,13 @@ function handleTimeout(trigger: Trigger): void {
   killChild(trigger.id, c);
 }
 
-function commandForLanguage(
+/**
+ * Resolve the interpreter invocation for a script language. Shared
+ * with the skills runner (core/skills/runner.ts) — skills use the
+ * bash/python/node subset. Returns null when no interpreter is
+ * available (currently only possible for bash on Windows).
+ */
+export function commandForLanguage(
   lang: Trigger["language"],
 ): { cmd: string; args: string[] } | null {
   switch (lang) {
