@@ -5,3 +5,17 @@ coverage/
 *.log
 .env
 .git/
+.github/
+docs/
+
+# Test tree — `COPY src/ src/` would otherwise bake ~2300 tests into the
+# production image; the runtime never imports them.
+src/__tests__/
+
+# Native build state — the embedded artifacts in src/native/ are the
+# artifact of record; local cargo/zig/gleam caches are huge and would
+# bloat the docker build context upload.
+native/**/target/
+native/**/.zig-cache/
+native/**/build/
+native/**/*.wasm

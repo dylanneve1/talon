@@ -831,6 +831,40 @@ async function runDoctor(): Promise<void> {
       ? `  ${pc.green("\u2713")} Workspace: ${pc.dim(dirs.root)}`
       : `  ${pc.yellow("!")} Workspace missing`,
   );
+  // Native plane: instantiate the embedded modules (Rust blake3, Zig
+  // textops, Gleam scheduler-core) and verify a known answer from each.
+  // Catches a corrupted install \u2014 truncated artifact, engine without
+  // wasm support \u2014 here instead of mid-message in a frontend.
+  try {
+    const { blake3Hex } = await import("./native/blake3.js");
+    const { splitMessage } = await import("./native/textops.js");
+    const { backoffDelayMs } = await import("./native/scheduler-core.js");
+    const emptyDigest = await blake3Hex("");
+    const chunks = splitMessage("doctor check ".repeat(4), 16);
+    const delayMs = backoffDelayMs(1, { baseMs: 1000, capMs: 2000, seed: 1 });
+    const healthy =
+      emptyDigest ===
+        "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262" &&
+      chunks.length > 1 &&
+      chunks.every((c) => c.length <= 16) &&
+      delayMs >= 750 &&
+      delayMs <= 1250;
+    if (healthy) {
+      console.log(
+        `  ${pc.green("\u2713")} Native modules: blake3 (Rust), textops (Zig), scheduler-core (Gleam)`,
+      );
+    } else {
+      console.log(
+        `  ${pc.red("\u2717")} Native modules loaded but returned unexpected results`,
+      );
+      issues++;
+    }
+  } catch (err) {
+    console.log(
+      `  ${pc.red("\u2717")} Native modules failed to load: ${pc.dim(err instanceof Error ? err.message : String(err))}`,
+    );
+    issues++;
+  }
   // Backend-specific binary check (only required for the active backend).
   const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
   const activeBackend = doctorConfig?.backend ?? "claude";
