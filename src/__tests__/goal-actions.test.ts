@@ -81,9 +81,9 @@ describe("add_goal", () => {
 
   it("rejects empty titles, bad priorities, and bad due dates", async () => {
     const chatId = freshChatId();
-    expect(
-      (await act(chatId, { action: "add_goal", title: "  " })).ok,
-    ).toBe(false);
+    expect((await act(chatId, { action: "add_goal", title: "  " })).ok).toBe(
+      false,
+    );
     expect(
       (
         await act(chatId, {

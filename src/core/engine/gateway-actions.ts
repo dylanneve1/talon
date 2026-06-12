@@ -810,7 +810,9 @@ export async function handleSharedAction(
       const status = result.timedOut
         ? `TIMED OUT after ${timeoutSeconds}s`
         : `exit ${result.exitCode ?? "n/a"}`;
-      const parts = [`Skill "${name}" finished (${status}, ${result.durationMs}ms)`];
+      const parts = [
+        `Skill "${name}" finished (${status}, ${result.durationMs}ms)`,
+      ];
       if (result.stdout.trim()) parts.push(`stdout:\n${result.stdout.trim()}`);
       if (result.stderr.trim()) parts.push(`stderr:\n${result.stderr.trim()}`);
       if (!result.stdout.trim() && !result.stderr.trim())

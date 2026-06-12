@@ -1,4 +1,5 @@
 {% if mode == "goals-fallback" %}
+
 ## Open goals ({{count}})
 
 These are open goals you are responsible for advancing. For each one,

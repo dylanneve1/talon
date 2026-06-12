@@ -167,7 +167,10 @@ export function deleteGoal(id: string): boolean {
  * `list_goals` tool output and the heartbeat prompt section so both
  * surfaces describe goals identically.
  */
-export function formatGoal(goal: Goal, opts?: { withChatId?: boolean }): string {
+export function formatGoal(
+  goal: Goal,
+  opts?: { withChatId?: boolean },
+): string {
   const lines = [
     `- ${goal.title} [${goal.status}${goal.priority !== "normal" ? `, ${goal.priority} priority` : ""}]`,
     `  ID: ${goal.id}${opts?.withChatId ? ` | Chat: ${goal.chatId}` : ""}`,

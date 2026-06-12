@@ -71,7 +71,10 @@ export function get(id: string): Goal | undefined {
 }
 
 /** Goals for one chat, optionally filtered by status, newest-updated first. */
-export function listByChat(chatId: string, statuses?: readonly string[]): Goal[] {
+export function listByChat(
+  chatId: string,
+  statuses?: readonly string[],
+): Goal[] {
   if (statuses && statuses.length > 0) {
     const placeholders = statuses.map(() => "?").join(", ");
     const rows = getDatabase()

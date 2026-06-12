@@ -62,9 +62,7 @@ const EXTENSIONS: Record<SkillLanguage, string> = {
 
 // ── Validation ──────────────────────────────────────────────────────────────
 
-export function validateSkillLanguage(
-  value: unknown,
-): value is SkillLanguage {
+export function validateSkillLanguage(value: unknown): value is SkillLanguage {
   return (
     typeof value === "string" &&
     (SKILL_LANGUAGES as readonly string[]).includes(value)

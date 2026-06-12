@@ -94,7 +94,9 @@ Record a progress_note whenever you advance a goal — the next heartbeat run re
       due: z
         .string()
         .optional()
-        .describe("New soft deadline, ISO 8601. Pass an empty string to clear."),
+        .describe(
+          "New soft deadline, ISO 8601. Pass an empty string to clear.",
+        ),
       chat_id: goalChatId,
     },
     execute: (params, bridge) => bridge("update_goal", params),

@@ -179,9 +179,9 @@ describe("validation helpers", () => {
   it("validates descriptions and progress notes", () => {
     expect(validateDescription(undefined)).toBeNull();
     expect(validateDescription("fine")).toBeNull();
-    expect(
-      validateDescription("x".repeat(MAX_DESCRIPTION_LENGTH + 1)),
-    ).toMatch(/too long/);
+    expect(validateDescription("x".repeat(MAX_DESCRIPTION_LENGTH + 1))).toMatch(
+      /too long/,
+    );
     expect(validateProgressNote(undefined)).toBeNull();
     expect(
       validateProgressNote("x".repeat(MAX_PROGRESS_NOTE_LENGTH + 1)),

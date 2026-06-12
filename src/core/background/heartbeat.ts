@@ -378,9 +378,7 @@ export function renderGoalsBlock(): { text: string; count: number } {
     const goals = getOpenGoals();
     count = goals.length;
     if (count > 0) {
-      text = goals
-        .map((g) => formatGoal(g, { withChatId: true }))
-        .join("\n\n");
+      text = goals.map((g) => formatGoal(g, { withChatId: true })).join("\n\n");
     }
   } catch (err) {
     logWarn(
