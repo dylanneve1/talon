@@ -1,0 +1,25 @@
+# BLAKE3 hashing compiled to wasm32-unknown-unknown with a hand-rolled
+# C ABI — no wasm-bindgen, no JS glue. See README.md for the ABI contract.
+[package]
+name = "blake3-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# default-features = false drops "std" (and with it any platform detection);
+# on wasm32 the portable pure-Rust implementation is used. rayon/mmap/neon
+# are opt-in features and stay off.
+blake3 = { version = "1.8.2", default-features = false }
+
+[profile.release]
+# Size-optimized: the .wasm is committed (as base64) into the TS tree and
+# shipped inside the bun single-binary, so every KB counts.
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
