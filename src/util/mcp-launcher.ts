@@ -51,11 +51,12 @@ export const MCP_LAUNCH_SUBCOMMAND = "_mcp-launch";
 
 /**
  * Embedder hook. Self-reinvocation assumes the running entry dispatches
- * `_mcp-launch` — true for Talon's own entrypoints, false for processes
- * that embed Talon (vitest harnesses, apps importing it as a library),
- * whose argv[1] is their own entry. Such embedders set this env var to
- * a JSON string array `[command, ...argsPrefix]` that launches an entry
- * which DOES dispatch (e.g. `["node", "--import", "<tsx esm url>",
+ * Talon's hidden subcommands (`_mcp-launch`, `_lua-run`) — true for
+ * Talon's own entrypoints, false for processes that embed Talon (vitest
+ * harnesses, apps importing it as a library), whose argv[1] is their own
+ * entry. Such embedders set this env var to a JSON string array
+ * `[command, ...argsPrefix]` that launches an entry which DOES dispatch
+ * (e.g. `["node", "--import", "<tsx esm url>",
  * "<abs path to src/cli.ts>"]`).
  */
 export const SUPERVISOR_CMD_ENV = "TALON_MCP_SUPERVISOR_CMD";
@@ -73,10 +74,14 @@ function isEmbeddedEntry(entry: string): boolean {
 }
 
 /**
- * The command prefix that re-invokes this process as the supervisor.
- * Callers append the real MCP command after it.
+ * The command prefix that re-invokes the current Talon process with a
+ * hidden subcommand, in every install shape (tsx source run, bun source
+ * run, bun-compiled binary, npm install). Used for MCP supervision
+ * (`_mcp-launch`) and the WASM Lua trigger runner (`_lua-run`) — any
+ * subcommand passed here must be dispatched by src/index.ts and
+ * src/cli.ts before the app graph loads.
  */
-export function supervisorInvocation(): LauncherInvocation {
+export function selfInvocation(subcommand: string): LauncherInvocation {
   const override = process.env[SUPERVISOR_CMD_ENV];
   if (override) {
     let parsed: unknown;
@@ -96,7 +101,7 @@ export function supervisorInvocation(): LauncherInvocation {
     }
     return {
       command: parsed[0],
-      args: [...parsed.slice(1), MCP_LAUNCH_SUBCOMMAND],
+      args: [...parsed.slice(1), subcommand],
     };
   }
 
@@ -104,8 +109,16 @@ export function supervisorInvocation(): LauncherInvocation {
   const entryArgs = entry && !isEmbeddedEntry(entry) ? [resolve(entry)] : [];
   return {
     command: process.execPath,
-    args: [...process.execArgv, ...entryArgs, MCP_LAUNCH_SUBCOMMAND],
+    args: [...process.execArgv, ...entryArgs, subcommand],
   };
+}
+
+/**
+ * The command prefix that re-invokes this process as the MCP supervisor.
+ * Callers append the real MCP command after it.
+ */
+export function supervisorInvocation(): LauncherInvocation {
+  return selfInvocation(MCP_LAUNCH_SUBCOMMAND);
 }
 
 type StdioServer = {

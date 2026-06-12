@@ -36,6 +36,10 @@ export default defineConfig({
         "src/backend/kilo/one-shot.ts",
         "src/backend/opencode/handler.ts",
         "src/backend/opencode/one-shot.ts",
+        // The Lua runner is a process entry (`_lua-run`): exercised end-to-end
+        // by lua-runner.test.ts as a real child process, which v8 in-process
+        // coverage can't see.
+        "src/core/scripting/lua-runner.ts",
         "**/*.d.ts",
         "**/dist/**",
       ],

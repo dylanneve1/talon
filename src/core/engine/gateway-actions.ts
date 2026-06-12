@@ -352,7 +352,7 @@ export async function handleSharedAction(
       if (!validateLanguage(language))
         return {
           ok: false,
-          error: `Unsupported language. Choose one of: bash, python, node`,
+          error: `Unsupported language. Choose one of: bash, python, node, lua`,
         };
       const scriptErr = validateScript(script);
       if (scriptErr) return { ok: false, error: scriptErr };
