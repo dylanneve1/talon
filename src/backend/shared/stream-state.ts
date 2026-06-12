@@ -21,11 +21,22 @@
 
 import { captureDeliveredText } from "./delivered-text.js";
 import { isTurnTerminator, stripMcpPrefix } from "../../core/tools/index.js";
+import { updateLiveTurn } from "../../storage/sessions.js";
 
 // ── State shape ─────────────────────────────────────────────────────────────
 
 /** Mutable state accumulated while iterating a backend's stream. */
 export interface StreamState {
+  // ── Live-stats binding ────────────────────────────────────────────────────
+  /**
+   * Chat this stream belongs to. When set, token mutators mirror the
+   * accumulated counts into the chat's live-turn overlay (see
+   * `storage/sessions.ts: updateLiveTurn`) so /status reflects the
+   * in-progress turn in real time. Undefined keeps the state pure
+   * (tests, contexts with no session).
+   */
+  chatId?: string;
+
   // ── Text accumulation ─────────────────────────────────────────────────────
   /** Text in the current pre-tool segment (not yet emitted as progress). */
   currentBlockText: string;
@@ -116,8 +127,9 @@ export interface StreamState {
 
 // ── Factories ───────────────────────────────────────────────────────────────
 
-export function createStreamState(): StreamState {
+export function createStreamState(chatId?: string): StreamState {
   return {
+    chatId,
     currentBlockText: "",
     allResponseText: "",
     lastTrailingText: "",
@@ -226,6 +238,28 @@ export function recordTokens(
   state.sdkOutputTokens = Math.max(0, tokens.outputTokens ?? 0);
   state.sdkCacheRead = Math.max(0, tokens.cacheRead ?? 0);
   state.sdkCacheWrite = Math.max(0, tokens.cacheWrite ?? 0);
+  pushLiveUsage(state);
+}
+
+/**
+ * Mirror the stream state's current token/context counts into the
+ * chat's live-turn overlay so /status updates mid-turn. No-op when the
+ * state isn't bound to a chat. Backends whose streams report usage
+ * incrementally (Kilo/OpenCode SSE, per-call usage events) get this for
+ * free via `recordTokens`; backends with out-of-band signals (Codex
+ * rollout polls) call it directly after mutating the state.
+ */
+export function pushLiveUsage(state: StreamState): void {
+  if (!state.chatId) return;
+  updateLiveTurn(state.chatId, {
+    inputTokens: state.sdkInputTokens,
+    outputTokens: state.sdkOutputTokens,
+    cacheRead: state.sdkCacheRead,
+    cacheWrite: state.sdkCacheWrite,
+    contextTokens: state.contextTokens,
+    contextWindow: state.contextWindow ?? 0,
+    numApiCalls: state.numApiCalls,
+  });
 }
 
 /**

@@ -18,6 +18,7 @@ import {
   recordUsage,
   setSessionId,
   setSessionName,
+  updateLiveTurn,
 } from "../../storage/sessions.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { traceMessage } from "../../util/trace.js";
@@ -57,6 +58,7 @@ import {
   buildFirstTurnReminder,
   recordToolCall,
   recordTurnMetrics,
+  recordFailedTurnAccounting,
   recordFlowViolation,
 } from "../shared/index.js";
 
@@ -179,6 +181,20 @@ export async function* runChatTurn(
   activeQueries.set(chatId, qi);
   const state = createStreamState();
 
+  // Per-API-call usage accumulator for live mid-turn stats. Each
+  // assistant message carries its API call's usage as it lands; the
+  // authoritative per-turn totals still come from the final result
+  // message (processResultMessage) — this only feeds the live-turn
+  // overlay so /status moves while a long agentic turn runs, and the
+  // failure path below so an errored turn's burn isn't lost.
+  const liveAcc = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    calls: 0,
+  };
+
   let postResultTimer: ReturnType<typeof setTimeout> | null = null;
   let postResultForceClosed = false;
   const armPostResultWatchdog = (): void => {
@@ -234,6 +250,28 @@ export async function* runChatTurn(
       if (isAssistant(message)) {
         const result = processAssistantMessage(message, state);
         state.lastTrailingText = result.trailingText;
+
+        const u = message.message.usage;
+        if (u) {
+          liveAcc.input += u.input_tokens ?? 0;
+          liveAcc.output += u.output_tokens ?? 0;
+          liveAcc.cacheRead += u.cache_read_input_tokens ?? 0;
+          liveAcc.cacheWrite += u.cache_creation_input_tokens ?? 0;
+          liveAcc.calls += 1;
+          updateLiveTurn(chatId, {
+            inputTokens: liveAcc.input,
+            outputTokens: liveAcc.output,
+            cacheRead: liveAcc.cacheRead,
+            cacheWrite: liveAcc.cacheWrite,
+            // This call's full prompt = current context fill.
+            contextTokens:
+              (u.input_tokens ?? 0) +
+              (u.cache_read_input_tokens ?? 0) +
+              (u.cache_creation_input_tokens ?? 0),
+            contextWindow: state.contextWindow ?? 0,
+            numApiCalls: liveAcc.calls,
+          });
+        }
 
         // Emit progress text segments BEFORE the tool calls they
         // precede, so a model that says "let me check…" then calls a
@@ -314,6 +352,39 @@ export async function* runChatTurn(
   }
 
   if (propagateError) {
+    // Terminal failure — account for whatever the turn consumed before
+    // dying (failed turns burn real tokens). The result message never
+    // arrived, so state.sdk* is usually empty; fall back to the per-call
+    // accumulator. Retried turns return earlier and never reach here.
+    const sawResultUsage =
+      state.sdkInputTokens +
+        state.sdkOutputTokens +
+        state.sdkCacheRead +
+        state.sdkCacheWrite >
+      0;
+    recordFailedTurnAccounting({
+      backend: "claude",
+      chatId,
+      durationMs: Date.now() - t0,
+      toolCalls: state.toolCalls,
+      apiCalls: state.numApiCalls || liveAcc.calls,
+      model: activeModel,
+      usage: sawResultUsage
+        ? {
+            inputTokens: state.sdkInputTokens,
+            outputTokens: state.sdkOutputTokens,
+            cacheRead: state.sdkCacheRead,
+            cacheWrite: state.sdkCacheWrite,
+          }
+        : {
+            inputTokens: liveAcc.input,
+            outputTokens: liveAcc.output,
+            cacheRead: liveAcc.cacheRead,
+            cacheWrite: liveAcc.cacheWrite,
+          },
+      contextTokens: state.contextTokens,
+      contextWindow: state.contextWindow,
+    });
     yield propagateError;
     return;
   }

@@ -71,6 +71,8 @@ import {
   applyRetryDecision,
   recordToolCall,
   recordTurnMetrics,
+  recordFailedTurnAccounting,
+  pushLiveUsage,
   type StreamState,
 } from "../shared/index.js";
 
@@ -79,6 +81,7 @@ import {
   CODEX_DEFAULT_MODEL,
   CODEX_CHATGPT_DEFAULT_MODEL,
   CODEX_THREAD_PERMISSIONS,
+  CODEX_LIVE_POLL_INTERVAL_MS,
 } from "./constants.js";
 import { getState } from "./state.js";
 import { ensureCodex, getCodexAuthInfo } from "./init.js";
@@ -450,7 +453,9 @@ export async function handleMessage(
         ?.totals ?? null)
     : { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
 
-  const streamState = createStreamState();
+  // Bind the stream state to the chat so token mutators mirror counts
+  // into the live-turn overlay — /status updates while the turn runs.
+  const streamState = createStreamState(chatId);
   const seenToolCallIds = new Set<string>();
   const codexToolMetrics = { count: 0 };
   const abortController = new AbortController();
@@ -459,6 +464,110 @@ export async function handleMessage(
   let usage: Usage | null = null;
   let turnFailedError: string | undefined;
   let resolvedThreadId: string | undefined;
+
+  // Throttled mid-turn rollout poll. The Codex CLI appends a
+  // `token_count` event to the rollout JSONL after every API call, so
+  // tailing it during the turn gives live context-fill / token / API-call
+  // stats long before `turn.completed` (which terminator turns never even
+  // see). Fire-and-forget with an in-flight guard — never blocks the
+  // event loop, never throws.
+  let rolloutPollInFlight = false;
+  let lastRolloutPollAt = 0;
+  const pollRolloutForLiveStats = () => {
+    if (!resolvedThreadId || rolloutPollInFlight) return;
+    const now = Date.now();
+    if (now - lastRolloutPollAt < CODEX_LIVE_POLL_INTERVAL_MS) return;
+    rolloutPollInFlight = true;
+    lastRolloutPollAt = now;
+    readLastRolloutSnapshot(resolvedThreadId)
+      .then((snap) => {
+        if (!snap) return;
+        if (snap.usage) {
+          streamState.contextTokens = snap.usage.contextTokens;
+          if (snap.usage.contextWindow) {
+            streamState.contextWindow = snap.usage.contextWindow;
+          }
+        }
+        if (typeof snap.numApiCalls === "number") {
+          streamState.numApiCalls = snap.numApiCalls;
+        }
+        // Same delta-vs-baseline math as the post-loop accounting; the
+        // final pass recomputes and overwrites, so a torn mid-turn read
+        // can't corrupt the committed numbers.
+        if (snap.totals && baselineTotals) {
+          streamState.sdkInputTokens = Math.max(
+            0,
+            snap.totals.inputTokens - baselineTotals.inputTokens,
+          );
+          streamState.sdkOutputTokens = Math.max(
+            0,
+            snap.totals.outputTokens - baselineTotals.outputTokens,
+          );
+          streamState.sdkCacheRead = Math.max(
+            0,
+            snap.totals.cachedInputTokens - baselineTotals.cachedInputTokens,
+          );
+        }
+        pushLiveUsage(streamState);
+      })
+      .catch(() => {})
+      .finally(() => {
+        rolloutPollInFlight = false;
+      });
+  };
+
+  // Final authoritative usage settlement — shared by the success
+  // post-loop and the terminal-failure path so failed turns account for
+  // the tokens they burned too.
+  //
+  // Codex's `turn.completed.usage` is CUMULATIVE across all API calls in
+  // the turn, so it's useless as a "current context fill" signal — a
+  // 20-call agentic turn easily reports 2M+ input tokens against a 272k
+  // window. The Codex CLI writes a per-call `token_count` event into the
+  // rollout JSONL with the LAST call's prompt size and the model's actual
+  // context window. Read that here for an accurate /status display.
+  // Falls back silently to "unknown" if the rollout file isn't available
+  // (e.g. CODEX_HOME pointed elsewhere, permission issues, first run).
+  const settleUsageAccounting = async (): Promise<void> => {
+    if (usage) {
+      recordTokens(streamState, {
+        inputTokens: usage.input_tokens,
+        outputTokens: usage.output_tokens,
+        cacheRead: usage.cached_input_tokens,
+        cacheWrite: 0, // Codex doesn't report cache writes
+      });
+    }
+    if (!resolvedThreadId) return;
+    const last = await readLastRolloutSnapshot(resolvedThreadId).catch(
+      () => null,
+    );
+    if (!last) return;
+    if (last.usage) {
+      streamState.contextTokens = last.usage.contextTokens;
+      if (last.usage.contextWindow) {
+        streamState.contextWindow = last.usage.contextWindow;
+      }
+    }
+    if (typeof last.numApiCalls === "number") {
+      streamState.numApiCalls = last.numApiCalls;
+    }
+    // Terminator-driven turns abort the stream before `turn.completed`
+    // fires, so the SDK-side `usage` capture above is null on almost
+    // every Talon turn (end_turn ships the reply, then we cancel the
+    // wrap-up round-trip). Recover this turn's real usage by diffing
+    // the rollout's cumulative totals against the pre-turn baseline.
+    // recordTokens clamps negatives to 0, which covers a rolled-over
+    // or replaced rollout file.
+    if (!usage && last.totals && baselineTotals) {
+      recordTokens(streamState, {
+        inputTokens: last.totals.inputTokens - baselineTotals.inputTokens,
+        outputTokens: last.totals.outputTokens - baselineTotals.outputTokens,
+        cacheRead:
+          last.totals.cachedInputTokens - baselineTotals.cachedInputTokens,
+        cacheWrite: 0, // Codex doesn't report cache writes
+      });
+    }
+  };
 
   const setupMs = Date.now() - t0;
   let turnMs = 0;
@@ -503,6 +612,8 @@ export async function handleMessage(
       } else if (event.type === "error") {
         turnFailedError = event.message;
       }
+
+      pollRolloutForLiveStats();
 
       // Terminator-driven abort: a delivery tool already shipped the
       // reply via the bridge. Cancel further model generation to skip
@@ -554,6 +665,29 @@ export async function handleMessage(
       });
       if (outcome.retry) return outcome.retry;
 
+      // Terminal failure — recover whatever usage the rollout recorded
+      // before the turn died, then account for it (failed turns burn
+      // real tokens; they must not vanish from /status and /metrics).
+      // The retry path above did its own accounting inside the
+      // recursive attempt.
+      await settleUsageAccounting().catch(() => {});
+      recordFailedTurnAccounting({
+        backend: "codex",
+        chatId,
+        durationMs: Date.now() - t0,
+        toolCalls: codexToolMetrics.count,
+        apiCalls: streamState.numApiCalls,
+        model: activeModel,
+        usage: {
+          inputTokens: streamState.sdkInputTokens,
+          outputTokens: streamState.sdkOutputTokens,
+          cacheRead: streamState.sdkCacheRead,
+          cacheWrite: streamState.sdkCacheWrite,
+        },
+        contextTokens: streamState.contextTokens,
+        contextWindow: streamState.contextWindow,
+      });
+
       logError(
         "agent",
         `[${chatId}] Codex error: ${outcome.classified.message}`,
@@ -591,55 +725,7 @@ export async function handleMessage(
     }
   }
 
-  if (usage) {
-    recordTokens(streamState, {
-      inputTokens: usage.input_tokens,
-      outputTokens: usage.output_tokens,
-      cacheRead: usage.cached_input_tokens,
-      cacheWrite: 0, // Codex doesn't report cache writes
-    });
-  }
-
-  // Codex's `turn.completed.usage` is CUMULATIVE across all API calls in
-  // the turn, so it's useless as a "current context fill" signal — a
-  // 20-call agentic turn easily reports 2M+ input tokens against a 272k
-  // window. The Codex CLI writes a per-call `token_count` event into the
-  // rollout JSONL with the LAST call's prompt size and the model's actual
-  // context window. Read that here for an accurate /status display.
-  // Falls back silently to "unknown" if the rollout file isn't available
-  // (e.g. CODEX_HOME pointed elsewhere, permission issues, first run).
-  if (resolvedThreadId) {
-    const last = await readLastRolloutSnapshot(resolvedThreadId).catch(
-      () => null,
-    );
-    if (last) {
-      if (last.usage) {
-        streamState.contextTokens = last.usage.contextTokens;
-        if (last.usage.contextWindow) {
-          streamState.contextWindow = last.usage.contextWindow;
-        }
-      }
-      if (typeof last.numApiCalls === "number") {
-        streamState.numApiCalls = last.numApiCalls;
-      }
-      // Terminator-driven turns abort the stream before `turn.completed`
-      // fires, so the SDK-side `usage` capture above is null on almost
-      // every Talon turn (end_turn ships the reply, then we cancel the
-      // wrap-up round-trip). Recover this turn's real usage by diffing
-      // the rollout's cumulative totals against the pre-turn baseline.
-      // recordTokens clamps negatives to 0, which covers a rolled-over
-      // or replaced rollout file.
-      if (!usage && last.totals && baselineTotals) {
-        recordTokens(streamState, {
-          inputTokens: last.totals.inputTokens - baselineTotals.inputTokens,
-          outputTokens: last.totals.outputTokens - baselineTotals.outputTokens,
-          cacheRead:
-            last.totals.cachedInputTokens - baselineTotals.cachedInputTokens,
-          cacheWrite: 0, // Codex doesn't report cache writes
-        });
-      }
-    }
-  }
+  await settleUsageAccounting();
 
   // Surface a synthetic error if Codex failed the turn upstream.
   if (turnFailedError) {

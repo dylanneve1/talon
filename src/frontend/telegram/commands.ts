@@ -669,7 +669,7 @@ export function registerCommands(
 
     const backendLabel = be?.label ?? "";
     const lines = [
-      `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code>${backendLabel ? ` \u00B7 <i>${escapeHtml(backendLabel)}</i>` : ""} \u00B7 effort: ${effortName}`,
+      `<b>\uD83E\uDD85 Talon</b> \u00B7 <code>${escapeHtml(formatModelLabel(activeModel))}</code>${backendLabel ? ` \u00B7 <i>${escapeHtml(backendLabel)}</i>` : ""} \u00B7 effort: ${effortName}${info.turnInProgress ? " \u00B7 \u23F3 turn running" : ""}`,
       "",
       `<b>Context</b>  ${contextUsedText} / ${contextMaxText} (${context.known ? `${context.pct}%` : "unknown"})${contextWarn}`,
       `<code>${context.bar}</code>`,

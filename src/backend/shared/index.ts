@@ -83,6 +83,7 @@ export {
   closeCurrentSegment,
   recordToolUse,
   recordTokens,
+  pushLiveUsage,
   finalizeResponseText,
   type StreamState,
 } from "./stream-state.js";
@@ -103,6 +104,7 @@ export { nonTerminalFrontends } from "./frontends.js";
 export {
   recordToolCall,
   recordTurnMetrics,
+  recordFailedTurnAccounting,
   recordFlowViolation,
   type TurnMetricInputs,
 } from "./metrics.js";

@@ -1759,6 +1759,34 @@ describe("codex / handleMessage — session name", () => {
   });
 });
 
+describe("codex / handleMessage — terminal failure accounting", () => {
+  it("records a failed-turn metric when both attempts throw", async () => {
+    setupHandler();
+    MOCK_RUN_STREAMED_THROW_QUEUE = [
+      new Error("upstream exploded"),
+      new Error("upstream exploded again"),
+    ];
+    MOCK_EVENTS = [];
+
+    await expect(
+      handleMessage({
+        chatId: "test-chat",
+        text: "hi",
+        senderName: "Dylan",
+        isGroup: false,
+      }),
+    ).rejects.toThrow();
+
+    const metrics = getMetrics();
+    // Only the TERMINAL attempt records (the first attempt's retry path
+    // defers to the recursive call) — exactly one failed turn.
+    expect(metrics.counters["backend.codex.turn_failed"]).toBe(1);
+    expect(metrics.counters["backend.codex.queries"]).toBe(1);
+    // Nothing streamed before the failure → no phantom usage.
+    expect(metrics.counters["tokens.input_total"] ?? 0).toBe(0);
+  });
+});
+
 describe("codex / handleMessage — error recovery", () => {
   // The classifyRetry-driven recovery ladder is shared with every other
   // backend (see backend/shared/model-retry.ts). These tests verify that

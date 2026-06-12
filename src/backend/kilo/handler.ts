@@ -64,6 +64,7 @@ import {
   sleep,
   applyRetryDecision,
   recordTurnMetrics,
+  recordFailedTurnAccounting,
 } from "../shared/index.js";
 import { processStreamEvent, finalizePartsIntoState } from "./events.js";
 import { subscribeSseStream } from "../remote-server/sse-stream.js";
@@ -149,7 +150,9 @@ export async function handleMessage(
   traceMessage(chatId, "in", text, { senderName, isGroup });
   activeSessions.set(chatId, sessionId);
 
-  const state = createStreamState();
+  // Bind the stream state to the chat so token mutators mirror counts
+  // into the live-turn overlay — /status updates while the turn runs.
+  const state = createStreamState(chatId);
   state.newSessionId = sessionId;
   const promptStartedAt = Date.now();
   const seenQuestionIds = new Set<string>();
@@ -199,6 +202,26 @@ export async function handleMessage(
       backendLabel: "Kilo",
     });
     if (outcome.retry) return outcome.retry;
+
+    // Terminal failure — account for whatever the turn consumed before
+    // dying and drop the live overlay (the retry path above did its own
+    // accounting inside the recursive attempt).
+    recordFailedTurnAccounting({
+      backend: "kilo",
+      chatId,
+      durationMs: Date.now() - t0,
+      toolCalls: state.toolCalls,
+      apiCalls: state.numApiCalls,
+      model: activeModel,
+      usage: {
+        inputTokens: state.sdkInputTokens,
+        outputTokens: state.sdkOutputTokens,
+        cacheRead: state.sdkCacheRead,
+        cacheWrite: state.sdkCacheWrite,
+      },
+      contextTokens: state.contextTokens,
+      contextWindow: state.contextWindow,
+    });
 
     logError("agent", `[${chatId}] Kilo error: ${outcome.classified.message}`);
     throw outcome.classified;

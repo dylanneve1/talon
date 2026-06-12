@@ -70,6 +70,114 @@ export type SessionState = {
 // from here; writes go through persist() so each mutation commits.
 const cache = new Map<string, SessionState>();
 
+// ── Live-turn overlay ───────────────────────────────────────────────────────
+//
+// Mid-turn usage snapshot for the chat's IN-PROGRESS turn. Backends push
+// updates here as their stream produces usage signals (per-API-call usage
+// events, rollout polls, SSE summaries), so /status reflects reality while
+// a long agentic turn is still running instead of showing the previous
+// turn's numbers. Never persisted — recordUsage() commits the final turn
+// totals and clears the overlay; clearLiveTurn() in the backends' finally
+// blocks covers error/abort exits.
+//
+// All token fields are ABSOLUTE this-turn-so-far values (not deltas):
+// each update replaces the fields it carries, and getSessionInfo() adds
+// them on top of the persisted cumulative totals at read time.
+
+export type LiveTurnUsage = {
+  /** Effective input tokens consumed so far this turn. */
+  inputTokens: number;
+  /** Output tokens generated so far this turn. */
+  outputTokens: number;
+  /** Cache-read tokens so far this turn. */
+  cacheRead: number;
+  /** Cache-write tokens so far this turn. */
+  cacheWrite: number;
+  /** Latest known context fill (last API call's prompt size). */
+  contextTokens: number;
+  /** Model context window, if the stream reported it. */
+  contextWindow: number;
+  /** API round-trips observed so far this turn. */
+  numApiCalls: number;
+  /** When the turn started (first update). */
+  startedAt: number;
+  /** Last update timestamp. */
+  updatedAt: number;
+};
+
+const liveTurns = new Map<string, LiveTurnUsage>();
+
+/**
+ * Merge a partial mid-turn usage snapshot into the chat's live overlay.
+ * Fields not provided keep their previous value; numeric fields are
+ * absolute this-turn-so-far values, clamped to ≥ 0.
+ */
+export function updateLiveTurn(
+  chatId: string,
+  partial: Partial<Omit<LiveTurnUsage, "startedAt" | "updatedAt">>,
+): void {
+  const now = Date.now();
+  const prev = liveTurns.get(chatId);
+  const next: LiveTurnUsage = prev ?? {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    contextTokens: 0,
+    contextWindow: 0,
+    numApiCalls: 0,
+    startedAt: now,
+    updatedAt: now,
+  };
+  for (const key of [
+    "inputTokens",
+    "outputTokens",
+    "cacheRead",
+    "cacheWrite",
+    "contextTokens",
+    "contextWindow",
+    "numApiCalls",
+  ] as const) {
+    const v = partial[key];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      next[key] = Math.max(0, v);
+    }
+  }
+  next.updatedAt = now;
+  liveTurns.set(chatId, next);
+}
+
+/** Drop the chat's live-turn overlay (turn finished, failed, or aborted). */
+export function clearLiveTurn(chatId: string): void {
+  liveTurns.delete(chatId);
+}
+
+/** Read the chat's live-turn overlay, if a turn is in progress. */
+export function getLiveTurn(chatId: string): LiveTurnUsage | undefined {
+  return liveTurns.get(chatId);
+}
+
+/**
+ * Project the persisted cumulative usage through the live overlay: token
+ * totals gain the in-progress turn's so-far counts; context fill, window
+ * and API-call count show the freshest known values. Returns the stored
+ * usage object untouched when no turn is live.
+ */
+function withLiveTurn(chatId: string, usage: SessionUsage): SessionUsage {
+  const live = liveTurns.get(chatId);
+  if (!live) return usage;
+  return {
+    ...usage,
+    totalInputTokens: usage.totalInputTokens + live.inputTokens,
+    totalOutputTokens: usage.totalOutputTokens + live.outputTokens,
+    totalCacheRead: usage.totalCacheRead + live.cacheRead,
+    totalCacheWrite: usage.totalCacheWrite + live.cacheWrite,
+    contextTokens: live.contextTokens || usage.contextTokens,
+    contextWindow: live.contextWindow || usage.contextWindow,
+    numApiCalls: live.numApiCalls || usage.numApiCalls,
+  };
+}
+
 // ── Persistence lifecycle ───────────────────────────────────────────────────
 
 /**
@@ -242,6 +350,10 @@ export function recordUsage(
     costUsd?: number;
   },
 ): void {
+  // The turn is finalizing — the overlay's job is done. Clear it BEFORE
+  // mutating the totals so a concurrent /status never sees the turn
+  // counted twice (overlay + committed totals).
+  clearLiveTurn(chatId);
   const session = getSession(chatId);
   session.usage.totalInputTokens += turn.inputTokens;
   session.usage.totalOutputTokens += turn.outputTokens;
@@ -295,6 +407,7 @@ export function resetSession(chatId: string): void {
   const turns = session?.turns ?? 0;
   const name = session?.sessionName;
   cache.delete(chatId);
+  clearLiveTurn(chatId);
   try {
     repo.remove(chatId);
   } catch (err) {
@@ -317,6 +430,8 @@ export type SessionInfo = {
   usage: SessionUsage;
   sessionName?: string;
   lastModel?: string;
+  /** True when a turn is currently streaming and `usage` includes its live so-far counts. */
+  turnInProgress?: boolean;
 };
 
 export function getSessionInfo(chatId: string): SessionInfo {
@@ -326,9 +441,10 @@ export function getSessionInfo(chatId: string): SessionInfo {
     turns: session?.turns ?? 0,
     lastActive: session?.lastActive ?? 0,
     createdAt: session?.createdAt ?? 0,
-    usage: session?.usage ?? emptyUsage(),
+    usage: withLiveTurn(chatId, session?.usage ?? emptyUsage()),
     sessionName: session?.sessionName,
     lastModel: session?.lastModel,
+    turnInProgress: liveTurns.has(chatId),
   };
 }
 
@@ -345,9 +461,10 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
       turns: session.turns,
       lastActive: session.lastActive,
       createdAt: session.createdAt,
-      usage: session.usage ?? emptyUsage(),
+      usage: withLiveTurn(chatId, session.usage ?? emptyUsage()),
       sessionName: session.sessionName,
       lastModel: session.lastModel,
+      turnInProgress: liveTurns.has(chatId),
     },
   }));
 }

@@ -41,6 +41,7 @@
 import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { stripMcpPrefix } from "../../core/tools/index.js";
 import { cacheHitPercent, type TokenUsageSnapshot } from "./usage.js";
+import { clearLiveTurn, recordUsage } from "../../storage/sessions.js";
 
 /**
  * Count one tool call. `toolName` may be raw from any backend —
@@ -115,6 +116,67 @@ export function recordTurnMetrics(inputs: TurnMetricInputs): void {
       recordHistogram("cache_hit_percent", pct);
       recordHistogram(`${b}.cache_hit_percent`, pct);
     }
+  }
+}
+
+/**
+ * Terminal-failure accounting — call right before re-throwing a turn
+ * that exhausted its retries.
+ *
+ * Historically every backend skipped BOTH `recordTurnMetrics` and
+ * `recordUsage` when a turn errored: the tokens the failed turn burned
+ * vanished from /status and /metrics, latency histograms only sampled
+ * successes, and the live-turn overlay leaked until the next turn.
+ * This helper closes all three gaps in one call:
+ *
+ *   - per-turn metrics with `failed: true` (also feeds
+ *     `backend.<id>.turn_failed`)
+ *   - session usage, but only when the stream actually reported tokens —
+ *     an all-zero recordUsage would wipe the context display for no
+ *     benefit
+ *   - the live-turn overlay is always cleared
+ *
+ * NOT for retry paths: when a turn is retried, the recursive attempt
+ * does its own accounting and this helper must not run for the outer
+ * attempt (it would double-count the query).
+ */
+export function recordFailedTurnAccounting(inputs: {
+  backend: string;
+  chatId: string;
+  durationMs: number;
+  toolCalls?: number;
+  apiCalls?: number;
+  model?: string;
+  usage: TokenUsageSnapshot;
+  contextTokens?: number;
+  contextWindow?: number;
+}): void {
+  recordTurnMetrics({
+    backend: inputs.backend,
+    durationMs: inputs.durationMs,
+    toolCalls: inputs.toolCalls,
+    apiCalls: inputs.apiCalls,
+    failed: true,
+    usage: inputs.usage,
+  });
+  const u = inputs.usage;
+  const sawUsage =
+    u.inputTokens + u.outputTokens + u.cacheRead + u.cacheWrite > 0;
+  if (sawUsage) {
+    recordUsage(inputs.chatId, {
+      inputTokens: u.inputTokens,
+      outputTokens: u.outputTokens,
+      cacheRead: u.cacheRead,
+      cacheWrite: u.cacheWrite,
+      durationMs: inputs.durationMs,
+      model: inputs.model,
+      contextTokens: inputs.contextTokens || undefined,
+      contextWindow: inputs.contextWindow,
+      numApiCalls: inputs.apiCalls || undefined,
+    });
+  } else {
+    // recordUsage clears the overlay itself; cover the zero-usage path.
+    clearLiveTurn(inputs.chatId);
   }
 }
 

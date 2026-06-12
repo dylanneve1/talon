@@ -66,6 +66,7 @@ import {
   buildFlowViolationReminder,
   recordToolCall,
   recordTurnMetrics,
+  recordFailedTurnAccounting,
   recordFlowViolation,
 } from "../shared/index.js";
 import {
@@ -95,6 +96,32 @@ const errMsg = (e: unknown): string =>
 // (e.g. user-driven cancel) can stop a running turn.
 
 const activeAborts = new Map<string, AbortController>();
+
+/**
+ * Read the aggregated usage off a run's state. `_context` is named with
+ * an underscore in the SDK type but is structurally public; the SDK
+ * updates it as each model call in the agentic loop completes, so this
+ * is valid both mid-stream (live stats) and after `stream.completed`.
+ */
+function readRunUsage(runState: unknown):
+  | {
+      inputTokens?: number;
+      outputTokens?: number;
+      inputTokensDetails?: { cachedTokens?: number };
+    }
+  | undefined {
+  return (
+    runState as {
+      _context?: {
+        usage?: {
+          inputTokens?: number;
+          outputTokens?: number;
+          inputTokensDetails?: { cachedTokens?: number };
+        };
+      };
+    }
+  )._context?.usage;
+}
 
 /** Get the in-flight abort controller for a chat, if a turn is running. */
 export function getActiveAbort(chatId: string): AbortController | undefined {
@@ -192,7 +219,9 @@ export async function handleMessage(
     throw err;
   }
 
-  const streamState = createStreamState();
+  // Bind the stream state to the chat so token mutators mirror counts
+  // into the live-turn overlay — /status updates while the turn runs.
+  const streamState = createStreamState(chatId);
   const seenToolCallIds = new Set<string>();
   const abortController = new AbortController();
   activeAborts.set(chatId, abortController);
@@ -270,6 +299,26 @@ export async function handleMessage(
       session: getOrCreateSession(chatId),
     });
 
+    // The Agents SDK aggregates usage on the run context as each model
+    // call inside the loop completes — sample it (throttled) so the
+    // live-turn overlay tracks the agentic loop instead of jumping from
+    // 0 to final at the end. recordTokens mirrors into the overlay via
+    // the chat-bound stream state.
+    let lastLiveUsagePushAt = 0;
+    const pushRunUsageLive = (): void => {
+      const now = Date.now();
+      if (now - lastLiveUsagePushAt < 1000) return;
+      lastLiveUsagePushAt = now;
+      const u = readRunUsage(stream.state);
+      if (!u) return;
+      recordTokens(streamState, {
+        inputTokens: u.inputTokens ?? 0,
+        outputTokens: u.outputTokens ?? 0,
+        cacheRead: u.inputTokensDetails?.cachedTokens ?? 0,
+        cacheWrite: 0, // OpenAI Responses API doesn't report cache writes.
+      });
+    };
+
     for await (const event of stream) {
       if (abortController.signal.aborted && !streamState.turnTerminated) break;
 
@@ -280,6 +329,7 @@ export async function handleMessage(
           onToolUse,
           chatId,
         });
+        pushRunUsageLive();
       }
       // `raw_model_stream_event` and `agent_updated_stream_event`
       // events are intentionally not surfaced — token-by-token
@@ -330,17 +380,7 @@ export async function handleMessage(
     // Token usage from the underlying RunResult. The SDK aggregates
     // `usage` across all turns in the loop. `_context` is named with
     // an underscore in the SDK type but is structurally public.
-    const usage = (
-      stream.state as unknown as {
-        _context?: {
-          usage?: {
-            inputTokens?: number;
-            outputTokens?: number;
-            inputTokensDetails?: { cachedTokens?: number };
-          };
-        };
-      }
-    )._context?.usage;
+    const usage = readRunUsage(stream.state);
     if (usage) {
       recordTokens(streamState, {
         inputTokens: usage.inputTokens ?? 0,
@@ -389,6 +429,26 @@ export async function handleMessage(
           true,
         );
       }
+
+      // Terminal failure — account for whatever the turn consumed
+      // before dying and drop the live overlay (the retry branches
+      // above re-enter handleMessage, which does its own accounting).
+      recordFailedTurnAccounting({
+        backend: "openai-agents",
+        chatId,
+        durationMs: Date.now() - t0,
+        toolCalls: streamState.toolCalls,
+        apiCalls: streamState.numApiCalls,
+        model: activeModel,
+        usage: {
+          inputTokens: streamState.sdkInputTokens,
+          outputTokens: streamState.sdkOutputTokens,
+          cacheRead: streamState.sdkCacheRead,
+          cacheWrite: streamState.sdkCacheWrite,
+        },
+        contextTokens: streamState.contextTokens,
+        contextWindow: streamState.contextWindow,
+      });
 
       logError(
         "agent",

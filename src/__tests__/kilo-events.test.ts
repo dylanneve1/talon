@@ -539,3 +539,132 @@ describe("finalizePartsIntoState — SSE captured tools to skip", () => {
     ).not.toThrow();
   });
 });
+
+describe("processStreamEvent — message.updated (live usage)", () => {
+  it("pulls assistant usage into stream state as it lands mid-turn", async () => {
+    const ctx = baseContext();
+    const outcome = await processStreamEvent(
+      {
+        type: "message.updated",
+        properties: {
+          sessionID: SESSION_ID,
+          info: {
+            role: "assistant",
+            tokens: {
+              input: 1200,
+              output: 80,
+              cache: { read: 900, write: 50 },
+            },
+          },
+        },
+      },
+      ctx as never,
+    );
+
+    expect(outcome).toEqual({ kind: "continue" });
+    expect(ctx.state.sdkInputTokens).toBe(1200);
+    expect(ctx.state.sdkOutputTokens).toBe(80);
+    expect(ctx.state.sdkCacheRead).toBe(900);
+    expect(ctx.state.sdkCacheWrite).toBe(50);
+    // Context fill = everything that entered the window on the call.
+    expect(ctx.state.contextTokens).toBe(1200 + 900 + 50);
+  });
+
+  it("later updates replace earlier ones (message totals, not deltas)", async () => {
+    const ctx = baseContext();
+    for (const input of [500, 1500]) {
+      await processStreamEvent(
+        {
+          type: "message.updated",
+          properties: {
+            sessionID: SESSION_ID,
+            info: { role: "assistant", tokens: { input, output: 10 } },
+          },
+        },
+        ctx as never,
+      );
+    }
+    expect(ctx.state.sdkInputTokens).toBe(1500);
+  });
+
+  it("ignores non-assistant messages and token-less updates", async () => {
+    const ctx = baseContext();
+    await processStreamEvent(
+      {
+        type: "message.updated",
+        properties: {
+          sessionID: SESSION_ID,
+          info: { role: "user", tokens: { input: 999 } },
+        },
+      },
+      ctx as never,
+    );
+    await processStreamEvent(
+      {
+        type: "message.updated",
+        properties: { sessionID: SESSION_ID, info: { role: "assistant" } },
+      },
+      ctx as never,
+    );
+    expect(ctx.state.sdkInputTokens).toBe(0);
+    expect(ctx.state.contextTokens).toBe(0);
+  });
+
+  it("drops message.updated events scoped to other sessions", async () => {
+    const ctx = baseContext();
+    const outcome = await processStreamEvent(
+      {
+        type: "message.updated",
+        properties: {
+          sessionID: "sess_other",
+          info: { role: "assistant", tokens: { input: 999 } },
+        },
+      },
+      ctx as never,
+    );
+    expect(outcome).toEqual({ kind: "stop", reason: "out_of_scope" });
+    expect(ctx.state.sdkInputTokens).toBe(0);
+  });
+});
+
+describe("processStreamEvent — message.updated info-level scoping", () => {
+  it("ignores assistant updates whose info.sessionID belongs to another session", async () => {
+    // The global SSE stream interleaves every chat's events, and
+    // message.updated carries its session id inside `info` rather than
+    // at the properties level the generic filter checks.
+    const ctx = baseContext();
+    const outcome = await processStreamEvent(
+      {
+        type: "message.updated",
+        properties: {
+          info: {
+            role: "assistant",
+            sessionID: "sess_other_chat",
+            tokens: { input: 9999, output: 1 },
+          },
+        },
+      },
+      ctx as never,
+    );
+    expect(outcome).toEqual({ kind: "continue" });
+    expect(ctx.state.sdkInputTokens).toBe(0);
+  });
+
+  it("accepts assistant updates whose info.sessionID matches", async () => {
+    const ctx = baseContext();
+    await processStreamEvent(
+      {
+        type: "message.updated",
+        properties: {
+          info: {
+            role: "assistant",
+            sessionID: SESSION_ID,
+            tokens: { input: 777, output: 3 },
+          },
+        },
+      },
+      ctx as never,
+    );
+    expect(ctx.state.sdkInputTokens).toBe(777);
+  });
+});

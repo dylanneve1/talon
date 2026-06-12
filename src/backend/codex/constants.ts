@@ -101,3 +101,11 @@ export const CODEX_THREAD_PERMISSIONS = {
   sandboxMode: "danger-full-access";
   networkAccessEnabled: boolean;
 };
+
+/**
+ * Minimum interval between mid-turn rollout JSONL polls for live /status
+ * stats. Each poll reverse-scans one file (~O(1) in the common case);
+ * 1.5s keeps the stats fresh per API call (calls take 5–30s) without
+ * measurable I/O cost on long agentic turns.
+ */
+export const CODEX_LIVE_POLL_INTERVAL_MS = 1500;

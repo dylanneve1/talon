@@ -28,10 +28,15 @@
 import {
   appendText,
   closeCurrentSegment,
+  recordTokens,
   recordToolUse,
   recordToolCall,
   type StreamState,
 } from "../shared/index.js";
+import {
+  extractAssistantUsage,
+  type RemoteAssistantInfo,
+} from "./session-helpers.js";
 import { log, logDebug } from "../../util/log.js";
 
 /** Format an error for a debug log line. */
@@ -123,6 +128,9 @@ export async function processStreamEvent(
     case "message.part.updated": {
       return processPartUpdate(props, ctx);
     }
+    case "message.updated": {
+      return processMessageUpdate(props, ctx);
+    }
     case "session.turn.close": {
       return { kind: "stop", reason: "turn.close" };
     }
@@ -132,6 +140,52 @@ export async function processStreamEvent(
     default:
       return { kind: "continue" };
   }
+}
+
+/**
+ * `message.updated` — the server PATCHes the assistant message as the
+ * turn progresses, and once a model call completes the `info.tokens`
+ * block carries that message's usage. Pull it into stream state as it
+ * lands so token/context stats are live mid-turn instead of appearing
+ * only at the post-loop accounting. `recordTokens` also mirrors the
+ * counts into the chat's live-turn overlay when the state is bound to a
+ * chat (see `shared/stream-state.ts: pushLiveUsage`).
+ *
+ * Values are the message's totals (not deltas), matching what the
+ * post-loop `extractAssistantUsage(lastAssistant.info)` reads — so the
+ * end-of-turn numbers are identical, just earlier.
+ */
+function processMessageUpdate(
+  props: Record<string, unknown>,
+  ctx: EventProcessingContext,
+): ProcessEventOutcome {
+  const info = props.info as
+    | (RemoteAssistantInfo & { sessionID?: string })
+    | undefined;
+  if (!info || typeof info !== "object" || info.role !== "assistant") {
+    return { kind: "continue" };
+  }
+  // `message.updated` carries its session id INSIDE `info`, not at the
+  // properties level the generic scope filter checks — the SSE stream is
+  // global, so without this a busy sibling chat's usage would bleed into
+  // this turn's stats.
+  if (typeof info.sessionID === "string" && info.sessionID !== ctx.sessionId) {
+    return { kind: "continue" };
+  }
+  const usage = extractAssistantUsage(info);
+  if (
+    usage.inputTokens ||
+    usage.outputTokens ||
+    usage.cacheRead ||
+    usage.cacheWrite
+  ) {
+    // Context fill = everything that entered the model's window on the
+    // call: fresh input plus cache reads/writes.
+    ctx.state.contextTokens =
+      usage.inputTokens + usage.cacheRead + usage.cacheWrite;
+    recordTokens(ctx.state, usage);
+  }
+  return { kind: "continue" };
 }
 
 function processPartDelta(
