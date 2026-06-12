@@ -1,11 +1,21 @@
 name: Release Please
 
+# Runs on every push to main, so the release PR is created and kept
+# up-to-date automatically, and merging the release PR cuts the release
+# in the same flow (that merge is itself a push) — no manual dispatching
+# at any step. workflow_dispatch stays as an escape hatch for re-runs.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
   pull-requests: write
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
 
 jobs:
   release-please:
