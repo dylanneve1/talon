@@ -40,6 +40,20 @@ export interface CodexLastTokenUsage {
 }
 
 /**
+ * Cumulative token totals from `token_count.info.total_token_usage`.
+ *
+ * Cumulative across the ENTIRE rollout file — i.e. every API call of
+ * every turn in the session, not just the current turn. Callers that
+ * want per-turn usage must snapshot before the turn and diff after
+ * (see the terminator-abort fallback in `handler.ts`).
+ */
+export interface CodexTokenTotals {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+}
+
+/**
  * Subset of the rollout `token_count.rate_limits` payload Talon cares
  * about. The CLI writes this on every `token_count` event regardless of
  * whether anything is exhausted; we read the latest one to decide
@@ -93,6 +107,12 @@ export interface CodexRolloutSnapshot {
   rateLimits?: CodexRateLimitsSnapshot;
   /** Inferred number of Codex model API calls represented in the rollout. */
   numApiCalls?: number;
+  /**
+   * Latest cumulative session-wide token totals found in the rollout.
+   * Backfilled from an earlier `token_count` event when the newest one
+   * carries `info: null` (the exhausted-account / preflight shape).
+   */
+  totals?: CodexTokenTotals;
 }
 
 /**
@@ -242,6 +262,7 @@ export async function readLastRolloutSnapshot(
   // non-empty line, so this typically loops once or twice.
   const lines = raw.split("\n");
   let snapshot: CodexRolloutSnapshot | null = null;
+  let totals: CodexTokenTotals | undefined;
   let numApiCalls = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
@@ -256,12 +277,14 @@ export async function readLastRolloutSnapshot(
     if (payload?.type !== "token_count") continue;
     const extracted = extractSnapshotFromTokenCountPayload(payload);
     if (isApiCallTokenCount(extracted)) numApiCalls++;
+    if (!totals) totals = extracted.totals;
     if (!snapshot) {
       snapshot = extracted;
     }
   }
   if (!snapshot) return null;
   snapshot.numApiCalls = numApiCalls;
+  snapshot.totals = totals;
   return snapshot;
 }
 
@@ -289,6 +312,11 @@ export function extractSnapshotFromTokenCountPayload(
   const p = payload as {
     info?: {
       last_token_usage?: { input_tokens?: number };
+      total_token_usage?: {
+        input_tokens?: number;
+        cached_input_tokens?: number;
+        output_tokens?: number;
+      };
       model_context_window?: number;
     } | null;
     rate_limits?: {
@@ -306,6 +334,22 @@ export function extractSnapshotFromTokenCountPayload(
   };
 
   const result: CodexRolloutSnapshot = {};
+
+  const total = p.info?.total_token_usage;
+  if (
+    typeof total?.input_tokens === "number" &&
+    Number.isFinite(total.input_tokens)
+  ) {
+    const cached = total.cached_input_tokens;
+    const output = total.output_tokens;
+    result.totals = {
+      inputTokens: total.input_tokens,
+      cachedInputTokens:
+        typeof cached === "number" && Number.isFinite(cached) ? cached : 0,
+      outputTokens:
+        typeof output === "number" && Number.isFinite(output) ? output : 0,
+    };
+  }
 
   const lastInput = p.info?.last_token_usage?.input_tokens;
   if (typeof lastInput === "number" && Number.isFinite(lastInput)) {

@@ -438,6 +438,18 @@ export async function handleMessage(
     ? codex.resumeThread(session.sessionId, threadOptions)
     : codex.startThread(threadOptions);
 
+  // Baseline cumulative token totals from the rollout JSONL, captured
+  // BEFORE the turn runs. `total_token_usage` accumulates across the
+  // whole session file, so this turn's usage = post-turn totals minus
+  // this baseline. Fresh threads have no rollout yet → zero baseline.
+  // `null` = resumed thread whose baseline couldn't be read; the
+  // post-loop fallback must then skip recording rather than report
+  // session-wide totals as a single turn's usage.
+  const baselineTotals = session.sessionId
+    ? ((await readLastRolloutSnapshot(session.sessionId).catch(() => null))
+        ?.totals ?? null)
+    : { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+
   const streamState = createStreamState();
   const seenToolCallIds = new Set<string>();
   const codexToolMetrics = { count: 0 };
@@ -609,6 +621,22 @@ export async function handleMessage(
       }
       if (typeof last.numApiCalls === "number") {
         streamState.numApiCalls = last.numApiCalls;
+      }
+      // Terminator-driven turns abort the stream before `turn.completed`
+      // fires, so the SDK-side `usage` capture above is null on almost
+      // every Talon turn (end_turn ships the reply, then we cancel the
+      // wrap-up round-trip). Recover this turn's real usage by diffing
+      // the rollout's cumulative totals against the pre-turn baseline.
+      // recordTokens clamps negatives to 0, which covers a rolled-over
+      // or replaced rollout file.
+      if (!usage && last.totals && baselineTotals) {
+        recordTokens(streamState, {
+          inputTokens: last.totals.inputTokens - baselineTotals.inputTokens,
+          outputTokens: last.totals.outputTokens - baselineTotals.outputTokens,
+          cacheRead:
+            last.totals.cachedInputTokens - baselineTotals.cachedInputTokens,
+          cacheWrite: 0, // Codex doesn't report cache writes
+        });
       }
     }
   }

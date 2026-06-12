@@ -391,6 +391,47 @@ describe("extractSnapshotFromTokenCountPayload", () => {
     const snap = extractSnapshotFromTokenCountPayload({ type: "token_count" });
     expect(snap.usage).toBeUndefined();
     expect(snap.rateLimits).toBeUndefined();
+    expect(snap.totals).toBeUndefined();
+  });
+
+  it("extracts cumulative totals from total_token_usage", () => {
+    const snap = extractSnapshotFromTokenCountPayload({
+      type: "token_count",
+      info: {
+        total_token_usage: {
+          input_tokens: 5_714_742,
+          cached_input_tokens: 5_414_656,
+          output_tokens: 16_467,
+        },
+        last_token_usage: { input_tokens: 143_372 },
+        model_context_window: 258_400,
+      },
+    });
+    expect(snap.totals).toEqual({
+      inputTokens: 5_714_742,
+      cachedInputTokens: 5_414_656,
+      outputTokens: 16_467,
+    });
+  });
+
+  it("coerces missing cached/output fields in total_token_usage to 0", () => {
+    const snap = extractSnapshotFromTokenCountPayload({
+      type: "token_count",
+      info: { total_token_usage: { input_tokens: 1000 } },
+    });
+    expect(snap.totals).toEqual({
+      inputTokens: 1000,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+    });
+  });
+
+  it("omits totals when total_token_usage.input_tokens is non-numeric", () => {
+    const snap = extractSnapshotFromTokenCountPayload({
+      type: "token_count",
+      info: { total_token_usage: { input_tokens: "nope" } },
+    });
+    expect(snap.totals).toBeUndefined();
   });
 });
 
@@ -508,5 +549,46 @@ describe("readLastRolloutSnapshot", () => {
   it("returns null when no rollout matches the thread_id", async () => {
     const result = await readLastRolloutSnapshot("nonexistent-thread");
     expect(result).toBeNull();
+  });
+
+  it("returns the LATEST cumulative totals from the rollout", async () => {
+    writeRollout({
+      year: "2026",
+      month: "06",
+      day: "12",
+      threadId: "thread-totals",
+      events: [
+        tokenCountEvent({ lastInput: 21_252, lastCached: 2_432 }),
+        tokenCountEvent({ lastInput: 45_152, lastCached: 23_296 }),
+      ],
+    });
+    const snap = await readLastRolloutSnapshot("thread-totals");
+    expect(snap?.totals).toEqual({
+      inputTokens: 45_152,
+      cachedInputTokens: 23_296,
+      outputTokens: 0,
+    });
+  });
+
+  it("backfills totals from an earlier event when the newest token_count has info:null", async () => {
+    // Exhausted/preflight events write `info: null` — totals must come
+    // from the most recent event that actually carried them, otherwise
+    // the per-turn usage fallback in handler.ts would silently skip.
+    writeRollout({
+      year: "2026",
+      month: "06",
+      day: "12",
+      threadId: "thread-totals-backfill",
+      events: [
+        { timestamp: "1", type: "event_msg", payload: healthyPayload(50_000) },
+        { timestamp: "2", type: "event_msg", payload: exhaustedPayload() },
+      ],
+    });
+    const snap = await readLastRolloutSnapshot("thread-totals-backfill");
+    expect(snap?.totals).toEqual({
+      inputTokens: 50_000,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+    });
   });
 });

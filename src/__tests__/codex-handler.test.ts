@@ -562,6 +562,143 @@ describe("codex / handleMessage — context tokens wiring", () => {
     ).resolves.toBeDefined();
     expect(sessions.getSession("test-chat").usage.contextTokens).toBe(0);
   });
+
+  // ── Terminator-abort token fallback ────────────────────────────────
+  //
+  // Almost every Talon turn ends via the end_turn terminator, which
+  // aborts the Codex stream BEFORE `turn.completed` fires — so the
+  // SDK-side usage capture stays null and every token metric read 0
+  // (the 2026-06-12 all-zeros bug). The handler must fall back to
+  // diffing the rollout's cumulative `total_token_usage` against a
+  // pre-turn baseline.
+
+  function writeRolloutWithTotals(
+    threadId: string,
+    totals: { input: number; cached: number; output: number },
+  ): void {
+    const dir = join(fakeCodexHome, "sessions", "2026", "06", "12");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `rollout-2026-06-12T00-00-00-${threadId}.jsonl`);
+    const event = {
+      timestamp: "2026-06-12T00:00:00.000Z",
+      type: "event_msg",
+      payload: {
+        type: "token_count",
+        info: {
+          total_token_usage: {
+            input_tokens: totals.input,
+            cached_input_tokens: totals.cached,
+            output_tokens: totals.output,
+          },
+          last_token_usage: { input_tokens: totals.input },
+          model_context_window: 258400,
+        },
+      },
+    };
+    writeFileSync(file, JSON.stringify(event));
+  }
+
+  /** Event list for a turn that ends via end_turn with NO turn.completed. */
+  function terminatedTurnEvents(threadId: string): unknown[] {
+    return [
+      { type: "thread.started", thread_id: threadId },
+      { type: "turn.started" },
+      {
+        type: "item.completed",
+        item: {
+          id: "i1",
+          type: "mcp_tool_call",
+          server: "telegram-tools",
+          tool: "end_turn",
+          arguments: { text: "done!" },
+          status: "completed",
+        },
+      },
+      // No turn.completed — the terminator abort kills the stream first.
+    ];
+  }
+
+  it("records token usage from rollout totals when the terminator aborts before turn.completed", async () => {
+    setupHandler();
+    writeRolloutWithTotals("thr_term_fresh", {
+      input: 21252,
+      cached: 2432,
+      output: 313,
+    });
+    MOCK_EVENTS = terminatedTurnEvents("thr_term_fresh") as never;
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "hi",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    // Fresh thread → zero baseline → this turn's usage IS the totals.
+    expect(result.inputTokens).toBe(21252);
+    expect(result.outputTokens).toBe(313);
+    expect(result.cacheRead).toBe(2432);
+
+    const metrics = getMetrics();
+    expect(metrics.counters["tokens.input_total"]).toBe(21252);
+    expect(metrics.counters["tokens.output_total"]).toBe(313);
+    expect(metrics.counters["backend.codex.tokens.input"]).toBe(21252);
+    expect(metrics.counters["backend.codex.tokens.cache_read"]).toBe(2432);
+  });
+
+  it("records only this turn's delta on a resumed thread", async () => {
+    setupHandler();
+    sessions.setSessionId("test-chat", "thr_term_delta");
+    // Previous turns left cumulative totals in the rollout…
+    writeRolloutWithTotals("thr_term_delta", {
+      input: 1000,
+      cached: 800,
+      output: 100,
+    });
+    MOCK_EVENTS = terminatedTurnEvents("thr_term_delta") as never;
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "hi again",
+      senderName: "Dylan",
+      isGroup: false,
+      // …and this turn's API calls grow them. Simulated mid-turn (the
+      // baseline is captured before runStreamed; tool events fire after).
+      onToolUse: () => {
+        writeRolloutWithTotals("thr_term_delta", {
+          input: 1500,
+          cached: 1200,
+          output: 160,
+        });
+      },
+    });
+
+    expect(result.inputTokens).toBe(500);
+    expect(result.cacheRead).toBe(400);
+    expect(result.outputTokens).toBe(60);
+  });
+
+  it("does not re-count previous turns' usage when the rollout didn't grow", async () => {
+    setupHandler();
+    sessions.setSessionId("test-chat", "thr_term_static");
+    writeRolloutWithTotals("thr_term_static", {
+      input: 1000,
+      cached: 800,
+      output: 100,
+    });
+    MOCK_EVENTS = terminatedTurnEvents("thr_term_static") as never;
+
+    const result = await handleMessage({
+      chatId: "test-chat",
+      text: "hi again",
+      senderName: "Dylan",
+      isGroup: false,
+    });
+
+    expect(result.inputTokens).toBe(0);
+    expect(result.outputTokens).toBe(0);
+    expect(result.cacheRead).toBe(0);
+  });
 });
 
 describe("codex / handleMessage — error paths", () => {
