@@ -1,17 +1,19 @@
 /**
- * Sessions repository — every SQL statement that touches the
- * `sessions` table lives here, and nowhere else. The public store
- * (storage/sessions.ts) holds the domain API and the in-memory
- * write-through cache; this module owns the statements and the
+ * Sessions repository — executes the statements in sql/sessions.sql
+ * against the `sessions` table; no SQL text lives here. The public
+ * store (storage/sessions.ts) holds the domain API and the in-memory
+ * write-through cache; this module owns statement execution and the
  * row↔domain mapping.
  *
- * One row per chat, real columns for the hot fields (see schema.ts
- * migration 2 for the rationale). `fastest_response_ms` is NULL when
- * no timed turn has been recorded — the domain value is Infinity,
- * which neither JSON nor a sensible column default can hold.
+ * One row per chat, real columns for the hot fields (see
+ * sql/schema.sql for the rationale).
+ * `fastest_response_ms` is NULL when no timed turn has been recorded —
+ * the domain value is Infinity, which neither JSON nor a sensible
+ * column default can hold.
  */
 
 import { getDatabase, inTransaction } from "../db.js";
+import { dbSql, sessionsSql } from "../sql/statements.generated.js";
 import type { SessionState } from "../sessions.js";
 
 type Row = {
@@ -36,13 +38,6 @@ type Row = {
   last_response_ms: number;
   fastest_response_ms: number | null;
 };
-
-const COLUMNS =
-  "chat_id, session_id, session_name, last_model, turns, last_active, created_at, " +
-  "last_bot_message_id, total_input_tokens, total_output_tokens, total_cache_read, " +
-  "total_cache_write, last_prompt_tokens, context_tokens, context_window, " +
-  "num_api_calls, estimated_cost_usd, total_response_ms, last_response_ms, " +
-  "fastest_response_ms";
 
 function rowToSession(row: Row): SessionState {
   return {
@@ -85,10 +80,7 @@ export function upsert(chatId: string, session: SessionState): void {
   const usage = session.usage;
   const fastest = usage?.fastestResponseMs;
   getDatabase()
-    .prepare(
-      `INSERT OR REPLACE INTO sessions (${COLUMNS})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+    .prepare(sessionsSql.upsert)
     .run(
       chatId,
       session.sessionId ?? null,
@@ -125,9 +117,7 @@ export function upsertMany(
 
 /** Every persisted session — used to prime the in-memory cache. */
 export function all(): Array<{ chatId: string; session: SessionState }> {
-  const rows = getDatabase()
-    .prepare(`SELECT ${COLUMNS} FROM sessions`)
-    .all() as Row[];
+  const rows = getDatabase().prepare(sessionsSql.all).all() as Row[];
   return rows.map((row) => ({
     chatId: row.chat_id,
     session: rowToSession(row),
@@ -135,10 +125,10 @@ export function all(): Array<{ chatId: string; session: SessionState }> {
 }
 
 export function remove(chatId: string): void {
-  getDatabase().prepare("DELETE FROM sessions WHERE chat_id = ?").run(chatId);
+  getDatabase().prepare(sessionsSql.remove).run(chatId);
 }
 
 /** WAL → main-file compaction; used on shutdown. */
 export function checkpoint(): void {
-  getDatabase().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  getDatabase().exec(dbSql.walCheckpoint);
 }

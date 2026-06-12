@@ -1,11 +1,12 @@
 /**
- * History repository — every SQL statement that touches the history
- * tables lives here, and nowhere else. The public store
+ * History repository — executes the statements in sql/history.sql
+ * against the history tables; no SQL text lives here. The public store
  * (storage/history.ts) holds the domain API and formatting; this
- * module owns the statements and row↔domain mapping.
+ * module owns statement execution and the row↔domain mapping.
  */
 
 import { getDatabase, inTransaction } from "../db.js";
+import { dbSql, historySql } from "../sql/statements.generated.js";
 import type { HistoryMessage } from "../history.js";
 
 type Row = {
@@ -19,9 +20,6 @@ type Row = {
   sticker_file_id: string | null;
   file_path: string | null;
 };
-
-const ROW_COLUMNS =
-  "msg_id, sender_id, sender_name, text, reply_to_msg_id, timestamp, media_type, sticker_file_id, file_path";
 
 function rowToMessage(row: Row): HistoryMessage {
   return {
@@ -39,10 +37,7 @@ function rowToMessage(row: Row): HistoryMessage {
 
 export function insert(chatId: string, msg: HistoryMessage): void {
   getDatabase()
-    .prepare(
-      `INSERT OR IGNORE INTO history_messages (chat_id, ${ROW_COLUMNS})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+    .prepare(historySql.insert)
     .run(
       chatId,
       msg.msgId,
@@ -70,10 +65,7 @@ export function insertMany(
 /** Most-recent `limit` messages, in chronological order. */
 export function recent(chatId: string, limit: number): HistoryMessage[] {
   const rows = getDatabase()
-    .prepare(
-      `SELECT ${ROW_COLUMNS} FROM history_messages
-       WHERE chat_id = ? ORDER BY id DESC LIMIT ?`,
-    )
+    .prepare(historySql.recent)
     .all(chatId, limit) as Row[];
   return rows.reverse().map(rowToMessage);
 }
@@ -83,17 +75,11 @@ export function setFilePath(
   msgId: number,
   filePath: string,
 ): void {
-  getDatabase()
-    .prepare(
-      "UPDATE history_messages SET file_path = ? WHERE chat_id = ? AND msg_id = ?",
-    )
-    .run(filePath, chatId, msgId);
+  getDatabase().prepare(historySql.setFilePath).run(filePath, chatId, msgId);
 }
 
 export function deleteChat(chatId: string): void {
-  getDatabase()
-    .prepare("DELETE FROM history_messages WHERE chat_id = ?")
-    .run(chatId);
+  getDatabase().prepare(historySql.deleteChat).run(chatId);
 }
 
 /**
@@ -107,12 +93,7 @@ export function searchFts(
   limit: number,
 ): HistoryMessage[] {
   const rows = getDatabase()
-    .prepare(
-      `SELECT ${ROW_COLUMNS} FROM history_messages
-       WHERE chat_id = ?
-         AND id IN (SELECT rowid FROM history_fts WHERE history_fts MATCH ?)
-       ORDER BY id DESC LIMIT ?`,
-    )
+    .prepare(historySql.searchFts)
     .all(chatId, match, limit) as Row[];
   return rows.reverse().map(rowToMessage);
 }
@@ -128,11 +109,7 @@ export function bySenderName(
     .replace(/%/g, "\\%")
     .replace(/_/g, "\\_");
   const rows = getDatabase()
-    .prepare(
-      `SELECT ${ROW_COLUMNS} FROM history_messages
-       WHERE chat_id = ? AND lower(sender_name) LIKE ? ESCAPE '\\'
-       ORDER BY id DESC LIMIT ?`,
-    )
+    .prepare(historySql.bySenderName)
     .all(chatId, `%${escaped}%`, limit) as Row[];
   return rows.reverse().map(rowToMessage);
 }
@@ -141,12 +118,9 @@ export function byMsgId(
   chatId: string,
   msgId: number,
 ): HistoryMessage | undefined {
-  const row = getDatabase()
-    .prepare(
-      `SELECT ${ROW_COLUMNS} FROM history_messages
-       WHERE chat_id = ? AND msg_id = ? ORDER BY id DESC LIMIT 1`,
-    )
-    .get(chatId, msgId) as Row | undefined;
+  const row = getDatabase().prepare(historySql.byMsgId).get(chatId, msgId) as
+    | Row
+    | undefined;
   return row ? rowToMessage(row) : undefined;
 }
 
@@ -156,20 +130,15 @@ export function bySenderId(
   limit: number,
 ): HistoryMessage[] {
   const rows = getDatabase()
-    .prepare(
-      `SELECT ${ROW_COLUMNS} FROM history_messages
-       WHERE chat_id = ? AND sender_id = ? ORDER BY id DESC LIMIT ?`,
-    )
+    .prepare(historySql.bySenderId)
     .all(chatId, senderId, limit) as Row[];
   return rows.reverse().map(rowToMessage);
 }
 
 export function latestMsgId(chatId: string): number | undefined {
-  const row = getDatabase()
-    .prepare(
-      "SELECT msg_id FROM history_messages WHERE chat_id = ? ORDER BY id DESC LIMIT 1",
-    )
-    .get(chatId) as { msg_id: number } | undefined;
+  const row = getDatabase().prepare(historySql.latestMsgId).get(chatId) as
+    | { msg_id: number }
+    | undefined;
   return row?.msg_id;
 }
 
@@ -183,18 +152,7 @@ export type KnownUser = {
 /** Distinct senders, most recently seen first, with current name. */
 export function knownUsers(chatId: string): KnownUser[] {
   const rows = getDatabase()
-    .prepare(
-      `SELECT sender_id,
-              MAX(timestamp) AS last_seen,
-              COUNT(*) AS message_count,
-              (SELECT sender_name FROM history_messages i
-               WHERE i.chat_id = o.chat_id AND i.sender_id = o.sender_id
-               ORDER BY i.id DESC LIMIT 1) AS name
-       FROM history_messages o
-       WHERE chat_id = ?
-       GROUP BY sender_id
-       ORDER BY last_seen DESC`,
-    )
+    .prepare(historySql.knownUsers)
     .all(chatId) as Array<{
     sender_id: number;
     last_seen: number;
@@ -217,15 +175,7 @@ export type ChatStats = {
 };
 
 export function statsByChat(chatId: string): ChatStats {
-  const row = getDatabase()
-    .prepare(
-      `SELECT COUNT(*) AS total,
-              COUNT(DISTINCT sender_id) AS users,
-              COALESCE(MIN(timestamp), 0) AS oldest,
-              COALESCE(MAX(timestamp), 0) AS newest
-       FROM history_messages WHERE chat_id = ?`,
-    )
-    .get(chatId) as {
+  const row = getDatabase().prepare(historySql.statsByChat).get(chatId) as {
     total: number;
     users: number;
     oldest: number;
@@ -240,13 +190,13 @@ export function statsByChat(chatId: string): ChatStats {
 }
 
 export function distinctChatCount(): number {
-  const row = getDatabase()
-    .prepare("SELECT COUNT(DISTINCT chat_id) AS chats FROM history_messages")
-    .get() as { chats: number };
+  const row = getDatabase().prepare(historySql.distinctChatCount).get() as {
+    chats: number;
+  };
   return row.chats;
 }
 
 /** WAL → main-file compaction; used on shutdown. */
 export function checkpoint(): void {
-  getDatabase().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  getDatabase().exec(dbSql.walCheckpoint);
 }

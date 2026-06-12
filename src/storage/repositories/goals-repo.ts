@@ -1,11 +1,12 @@
 /**
- * Goals repository — every SQL statement that touches the `goals`
- * table lives here, and nowhere else. The public store
+ * Goals repository — executes the statements in sql/goals.sql against
+ * the `goals` table; no SQL text lives here. The public store
  * (storage/goal-store.ts) holds the domain API and validation; this
- * module owns the statements and the row↔domain mapping.
+ * module owns statement execution and the row↔domain mapping.
  */
 
 import { getDatabase } from "../db.js";
+import { goalsSql } from "../sql/statements.generated.js";
 import type { Goal, GoalPriority, GoalStatus } from "../goal-store.js";
 
 type Row = {
@@ -21,10 +22,6 @@ type Row = {
   last_progress_note: string | null;
   last_progress_at: number | null;
 };
-
-const COLUMNS =
-  "id, chat_id, title, description, status, priority, created_at, " +
-  "updated_at, due_at, last_progress_note, last_progress_at";
 
 function rowToGoal(row: Row): Goal {
   return {
@@ -42,12 +39,22 @@ function rowToGoal(row: Row): Goal {
   };
 }
 
+/**
+ * Expand the `(/* statuses *​/)` placeholder list in a statement to
+ * one `?` per status. The status values themselves stay bound
+ * parameters — only the placeholder count is interpolated, never
+ * caller data.
+ */
+function expandStatusPlaceholders(sql: string, count: number): string {
+  return sql.replace(
+    /\(\/\* statuses \*\/\)/,
+    `(${Array.from({ length: count }, () => "?").join(", ")})`,
+  );
+}
+
 export function upsert(goal: Goal): void {
   getDatabase()
-    .prepare(
-      `INSERT OR REPLACE INTO goals (${COLUMNS})
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
+    .prepare(goalsSql.upsert)
     .run(
       goal.id,
       goal.chatId,
@@ -64,9 +71,7 @@ export function upsert(goal: Goal): void {
 }
 
 export function get(id: string): Goal | undefined {
-  const row = getDatabase()
-    .prepare(`SELECT ${COLUMNS} FROM goals WHERE id = ?`)
-    .get(id) as Row | undefined;
+  const row = getDatabase().prepare(goalsSql.get).get(id) as Row | undefined;
   return row ? rowToGoal(row) : undefined;
 }
 
@@ -76,20 +81,15 @@ export function listByChat(
   statuses?: readonly string[],
 ): Goal[] {
   if (statuses && statuses.length > 0) {
-    const placeholders = statuses.map(() => "?").join(", ");
     const rows = getDatabase()
       .prepare(
-        `SELECT ${COLUMNS} FROM goals
-         WHERE chat_id = ? AND status IN (${placeholders})
-         ORDER BY updated_at DESC`,
+        expandStatusPlaceholders(goalsSql.listByChatAndStatus, statuses.length),
       )
       .all(chatId, ...statuses) as Row[];
     return rows.map(rowToGoal);
   }
   const rows = getDatabase()
-    .prepare(
-      `SELECT ${COLUMNS} FROM goals WHERE chat_id = ? ORDER BY updated_at DESC`,
-    )
+    .prepare(goalsSql.listByChat)
     .all(chatId) as Row[];
   return rows.map(rowToGoal);
 }
@@ -97,13 +97,8 @@ export function listByChat(
 /** Goals across ALL chats with one of the given statuses (heartbeat scan). */
 export function listByStatus(statuses: readonly string[]): Goal[] {
   if (statuses.length === 0) return [];
-  const placeholders = statuses.map(() => "?").join(", ");
   const rows = getDatabase()
-    .prepare(
-      `SELECT ${COLUMNS} FROM goals
-       WHERE status IN (${placeholders})
-       ORDER BY updated_at DESC`,
-    )
+    .prepare(expandStatusPlaceholders(goalsSql.listByStatus, statuses.length))
     .all(...statuses) as Row[];
   return rows.map(rowToGoal);
 }
@@ -113,19 +108,17 @@ export function countByChatAndStatus(
   statuses: readonly string[],
 ): number {
   if (statuses.length === 0) return 0;
-  const placeholders = statuses.map(() => "?").join(", ");
   const row = getDatabase()
     .prepare(
-      `SELECT COUNT(*) AS n FROM goals
-       WHERE chat_id = ? AND status IN (${placeholders})`,
+      expandStatusPlaceholders(goalsSql.countByChatAndStatus, statuses.length),
     )
     .get(chatId, ...statuses) as { n: number };
   return row.n;
 }
 
 export function remove(id: string): boolean {
-  const result = getDatabase()
-    .prepare("DELETE FROM goals WHERE id = ?")
-    .run(id) as { changes?: number };
+  const result = getDatabase().prepare(goalsSql.remove).run(id) as {
+    changes?: number;
+  };
   return (result.changes ?? 0) > 0;
 }

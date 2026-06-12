@@ -3,3 +3,6 @@ src/native/**/*.mjs
 src/native/**/*.d.mts
 src/native/*.mjs
 src/native/*.d.mts
+
+# Generated SQL embed (source of truth: src/storage/sql/*.sql — drift-guarded)
+src/storage/sql/statements.generated.ts

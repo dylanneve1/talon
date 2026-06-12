@@ -1,5 +1,5 @@
 /**
- * SQLite connection + migration runner — the high-performance data
+ * SQLite connection + schema setup — the high-performance data
  * layer's entry point.
  *
  * One database at ~/.talon/data/talon.db, opened through the runtime's
@@ -10,11 +10,13 @@
  * orchestrated from TypeScript.
  *
  * Layering (keep it this way):
- *   - migrations/NNN-*.sql      all DDL, one file per versioned migration
- *   - schema.ts                 migration-file loader (no SQL in TS)
- *   - repositories/<store>.ts   all statements for one store, typed rows
+ *   - sql/schema.sql            all DDL, idempotent, ensured on open
+ *   - sql/<store>.sql           every statement for one store
+ *   - sql/statements.generated.ts  committed embed of the above
+ *                               (`npm run build:sql`, see sql/embed.ts)
+ *   - repositories/<store>.ts   statement execution for one store, typed rows
  *   - <store>.ts                public API + domain logic, ZERO SQL
- *   - db.ts (this file)         connection, pragmas, migration cursor
+ *   - db.ts (this file)         connection, pragmas, schema setup
  *
  * Why this over the JSON stores it replaces: transactional row writes
  * instead of rewrite-the-whole-file flush timers, indexed reads instead
@@ -26,14 +28,14 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { files } from "../util/paths.js";
 import { log } from "../util/log.js";
-import { loadMigrations } from "./schema.js";
+import { SCHEMA, dbSql } from "./sql/statements.generated.js";
 
 /**
  * The driver surface the repositories use — the intersection of
  * node:sqlite's DatabaseSync and bun:sqlite's Database, which are
  * API-compatible for exactly this set (verified empirically: prepared
  * statements with positional params, identical row object shapes,
- * multi-statement exec, FTS5 virtual tables, PRAGMA user_version).
+ * multi-statement exec, FTS5 virtual tables).
  */
 export type SqlStatement = {
   get(...params: unknown[]): unknown;
@@ -59,26 +61,38 @@ const Database = IS_BUN ? sqliteModule.Database : sqliteModule.DatabaseSync;
 
 let db: SqlDatabase | null = null;
 
-function migrate(database: SqlDatabase): void {
-  const row = database.prepare("PRAGMA user_version").get() as {
-    user_version: number;
-  };
-  let version = row.user_version;
-  const migrations = loadMigrations();
-  while (version < migrations.length) {
-    const step = migrations[version];
-    database.exec("BEGIN");
-    try {
-      database.exec(step);
-      version += 1;
-      database.exec(`PRAGMA user_version = ${version}`);
-      database.exec("COMMIT");
-    } catch (err) {
-      database.exec("ROLLBACK");
-      throw err;
-    }
-    log("db", `Migrated database to schema v${version}`);
+/**
+ * Apply the complete schema. Every statement is IF NOT EXISTS, so this
+ * is a no-op on an up-to-date database and creates exactly what's
+ * missing on a fresh or older one.
+ *
+ * Column reconciliation runs first: `ALTER TABLE … ADD COLUMN` has no
+ * IF NOT EXISTS form, so columns added to already-shipped tables
+ * (media_index.content_hash) are ensured by attempting the ALTER and
+ * swallowing the two expected failures — "duplicate column name"
+ * (column already there) and "no such table" (fresh database; the
+ * CREATE TABLE in schema.sql includes the column).
+ */
+function ensureSchema(database: SqlDatabase): void {
+  const row = database
+    .prepare(
+      "SELECT COUNT(*) AS tables FROM sqlite_master WHERE type = 'table'",
+    )
+    .get() as { tables: number };
+  try {
+    database.exec(dbSql.addMediaContentHashColumn);
+  } catch {
+    /* duplicate column or no such table — both mean nothing to do */
   }
+  database.exec("BEGIN");
+  try {
+    database.exec(SCHEMA);
+    database.exec("COMMIT");
+  } catch (err) {
+    database.exec("ROLLBACK");
+    throw err;
+  }
+  if (row.tables === 0) log("db", "Initialized database schema");
 }
 
 function defaultPath(): string {
@@ -101,7 +115,7 @@ export function getDatabase(path: string = defaultPath()): SqlDatabase {
   database.exec("PRAGMA journal_mode = WAL");
   database.exec("PRAGMA synchronous = NORMAL");
   database.exec("PRAGMA foreign_keys = ON");
-  migrate(database);
+  ensureSchema(database);
   db = database;
   return database;
 }

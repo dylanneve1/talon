@@ -1,23 +1,23 @@
 /**
- * Chat-settings repository — every SQL statement that touches the
- * `chat_settings` table lives here, and nowhere else. The public store
- * (storage/chat-settings.ts) holds the domain API and the in-memory
- * write-through cache; this module owns the statements.
+ * Chat-settings repository — executes the statements in
+ * sql/chat-settings.sql against the `chat_settings` table; no SQL text
+ * lives here. The public store (storage/chat-settings.ts) holds the
+ * domain API and the in-memory write-through cache; this module owns
+ * statement execution.
  *
- * One JSON document per chat (see schema.ts migration 2): the access
- * pattern is whole-record get/set, so a keyed JSON value column is the
- * right shape — settings evolve frequently and no field is queried
- * independently in SQL.
+ * One JSON document per chat (see sql/schema.sql): the
+ * access pattern is whole-record get/set, so a keyed JSON value column
+ * is the right shape — settings evolve frequently and no field is
+ * queried independently in SQL.
  */
 
 import { getDatabase, inTransaction } from "../db.js";
+import { chatSettingsSql, dbSql } from "../sql/statements.generated.js";
 import type { ChatSettings } from "../chat-settings.js";
 
 export function upsert(chatId: string, settings: ChatSettings): void {
   getDatabase()
-    .prepare(
-      "INSERT OR REPLACE INTO chat_settings (chat_id, settings) VALUES (?, ?)",
-    )
+    .prepare(chatSettingsSql.upsert)
     .run(chatId, JSON.stringify(settings));
 }
 
@@ -37,9 +37,10 @@ export function upsertMany(
  * should ever write malformed JSON through upsert()).
  */
 export function all(): Array<{ chatId: string; settings: ChatSettings }> {
-  const rows = getDatabase()
-    .prepare("SELECT chat_id, settings FROM chat_settings")
-    .all() as Array<{ chat_id: string; settings: string }>;
+  const rows = getDatabase().prepare(chatSettingsSql.all).all() as Array<{
+    chat_id: string;
+    settings: string;
+  }>;
   const result: Array<{ chatId: string; settings: ChatSettings }> = [];
   for (const row of rows) {
     try {
@@ -55,12 +56,10 @@ export function all(): Array<{ chatId: string; settings: ChatSettings }> {
 }
 
 export function remove(chatId: string): void {
-  getDatabase()
-    .prepare("DELETE FROM chat_settings WHERE chat_id = ?")
-    .run(chatId);
+  getDatabase().prepare(chatSettingsSql.remove).run(chatId);
 }
 
 /** WAL → main-file compaction; used on shutdown. */
 export function checkpoint(): void {
-  getDatabase().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  getDatabase().exec(dbSql.walCheckpoint);
 }
