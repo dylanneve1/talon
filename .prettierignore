@@ -1,0 +1,5 @@
+# Generated artifacts (Gleam-emitted JS — drift-guarded against source in CI)
+src/native/**/*.mjs
+src/native/**/*.d.mts
+src/native/*.mjs
+src/native/*.d.mts

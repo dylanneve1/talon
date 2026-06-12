@@ -240,6 +240,30 @@ jobs:
           echo "supervisor stderr: $err"
           [[ "$err" == *'mcp-launcher: stdout'* ]] || { echo "::error::non-JSON line was not rerouted to stderr"; exit 1; }
 
+  # ── Gleam artifact drift guard ─────────────────────────────────
+  # The scheduler decision core is Gleam compiled to JS with the
+  # artifacts committed under src/native/. Rebuild from source and fail
+  # if the committed artifacts drifted.
+  gleam-artifact:
+    name: Gleam Artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install gleam
+        run: |
+          mkdir -p "$HOME/.gleam-bin"
+          curl -fsSL https://github.com/gleam-lang/gleam/releases/download/v1.17.0/gleam-v1.17.0-x86_64-unknown-linux-musl.tar.gz -o /tmp/gleam.tgz
+          tar -xzf /tmp/gleam.tgz -C "$HOME/.gleam-bin"
+          echo "$HOME/.gleam-bin" >> "$GITHUB_PATH"
+          "$HOME/.gleam-bin/gleam" --version
+
+      - name: Rebuild and check drift
+        run: |
+          (cd native/scheduler-core && gleam build --target javascript && node embed.mjs)
+          git diff --exit-code src/native/
+
   # ── Real backend live integration tier ───────────────────────
   # Installs the real backend CLI, then exercises the deployed backend surface
   # that fixture tests cannot fully represent: Kilo/OpenCode live HTTP model
@@ -497,6 +521,7 @@ jobs:
       - functional-cross-platform
       - integration
       - bun-compile
+      - gleam-artifact
       - backend-live
       - fuzz
       - security
