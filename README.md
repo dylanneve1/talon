@@ -18,7 +18,7 @@ Multi-platform agentic AI harness. Runs on **Telegram**, **Discord**, **Microsof
 | **Pluggable backend** | Claude Agent SDK, Kilo, OpenCode, Codex, OpenAI Agents — selectable per-process via `backend` config. Streaming, model fallback, context-overflow recovery. |
 | **MCP tools**         | Messaging, media, history, search, web fetch, cron jobs, triggers, goals, stickers, file system, admin controls                              |
 | **Plugins**           | Hot-reloadable plugin system. Built-in: GitHub, MemPalace, Playwright, Brave Search                                                          |
-| **Background agents** | Heartbeat (periodic maintenance) and Dream (memory consolidation + diary) — backend-agnostic                                                 |
+| **Background agents** | Heartbeat (hourly by default — advances goals, proactively messages when something matters) and Dream (memory consolidation + diary)         |
 | **Goals**             | Persistent multi-day objectives the agent commits to in chat; every heartbeat run re-reads them, makes progress, and records what it did     |
 | **Skills**            | Agent-authored reusable scripts (bash/python/node) — procedures worked out once get saved and replayed locally at zero token cost            |
 | **Triggers**          | Self-authored watcher scripts (bash/python/node) that wake the bot when conditions are met                                                   |

@@ -48,7 +48,7 @@ If the instructions file does not exist or is empty, perform these default tasks
 
 ## Rules
 
-- Outbound messages must be high-signal (goal completed, something needs the user's attention) — never status spam. Every outbound tool call needs an explicit `chat_id`.
+- Reach out when you find something a user would genuinely want to know — goal completed or blocked, deadline approaching, something broken, a finding they care about. Don't send filler ("still working on it", uneventful-run summaries). The bar: "would they be glad this interrupted them?" Every outbound tool call needs an explicit `chat_id`.
 - Be concise in log entries, progress notes, and memory updates.
 - If a task fails, log the error and move on to the next task.
 - Do NOT modify the instructions file — only read it.
