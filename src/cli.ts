@@ -800,164 +800,35 @@ async function tailLogs(): Promise<void> {
 
 // ── Doctor ──────────────────────────────────────────────────────────────────
 
+const DOCTOR_ICONS: Record<string, string> = {
+  ok: pc.green("\u2713"),
+  warn: pc.yellow("!"),
+  fail: pc.red("\u2717"),
+  info: pc.dim("-"),
+};
+
 async function runDoctor(): Promise<void> {
   printBanner();
   console.log(`  ${pc.bold("Environment check")}\n`);
-  let issues = 0;
-  const major = parseInt(process.versions.node.split(".")[0], 10);
-  console.log(
-    major >= 24
-      ? `  ${pc.green("\u2713")} Node.js ${process.versions.node}`
-      : `  ${pc.red("\u2717")} Node.js ${process.versions.node} ${pc.dim("(need >=24)")}`,
-  );
-  if (major < 24) issues++;
-  if (existsSync(CONFIG_FILE)) {
-    const config = loadConfig();
-    const fes = Array.isArray(config.frontend)
-      ? config.frontend
-      : [config.frontend];
-    console.log(
-      isConfigured(config)
-        ? `  ${pc.green("\u2713")} Frontend: ${fes.join(", ")} (configured)`
-        : `  ${pc.red("\u2717")} Frontend not fully configured`,
-    );
-    if (!isConfigured(config)) issues++;
-  } else {
-    console.log(`  ${pc.red("\u2717")} No config file`);
-    issues++;
+  const { collectDoctorReport } = await import("./core/doctor.js");
+  const hasConfigFile = existsSync(CONFIG_FILE);
+  const report = await collectDoctorReport({
+    config: hasConfigFile ? loadConfig() : undefined,
+    hasConfigFile,
+  });
+  for (const check of report.checks) {
+    const detail = check.detail ? ` ${pc.dim(`(${check.detail})`)}` : "";
+    console.log(`  ${DOCTOR_ICONS[check.status]} ${check.label}${detail}`);
   }
-  console.log(
-    existsSync(dirs.root)
-      ? `  ${pc.green("\u2713")} Workspace: ${pc.dim(dirs.root)}`
-      : `  ${pc.yellow("!")} Workspace missing`,
-  );
-  // Native plane: instantiate the embedded modules (Rust blake3, Zig
-  // textops, Gleam scheduler-core) and verify a known answer from each.
-  // Catches a corrupted install \u2014 truncated artifact, engine without
-  // wasm support \u2014 here instead of mid-message in a frontend.
-  try {
-    const { blake3Hex } = await import("./native/blake3.js");
-    const { splitMessage } = await import("./native/textops.js");
-    const { backoffDelayMs } = await import("./native/scheduler-core.js");
-    const emptyDigest = await blake3Hex("");
-    const chunks = splitMessage("doctor check ".repeat(4), 16);
-    const delayMs = backoffDelayMs(1, { baseMs: 1000, capMs: 2000, seed: 1 });
-    const healthy =
-      emptyDigest ===
-        "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262" &&
-      chunks.length > 1 &&
-      chunks.every((c) => c.length <= 16) &&
-      delayMs >= 750 &&
-      delayMs <= 1250;
-    if (healthy) {
-      console.log(
-        `  ${pc.green("\u2713")} Native modules: blake3 (Rust), textops (Zig), scheduler-core (Gleam)`,
-      );
-    } else {
-      console.log(
-        `  ${pc.red("\u2717")} Native modules loaded but returned unexpected results`,
-      );
-      issues++;
-    }
-  } catch (err) {
+  // Native plane, one line per embedded module with provenance.
+  for (const mod of report.native) {
+    const size = mod.sizeBytes
+      ? ` \u00b7 ${(mod.sizeBytes / 1024).toFixed(1)} KB`
+      : "";
+    const note = mod.note ? ` ${pc.dim(`(${mod.note})`)}` : "";
     console.log(
-      `  ${pc.red("\u2717")} Native modules failed to load: ${pc.dim(err instanceof Error ? err.message : String(err))}`,
+      `  ${mod.ok ? pc.green("\u2713") : pc.red("\u2717")} Native: ${mod.name} ${pc.dim(`${mod.language} \u2192 ${mod.target}${size}`)}${note}`,
     );
-    issues++;
-  }
-  // Backend-specific binary check (only required for the active backend).
-  const doctorConfig = existsSync(CONFIG_FILE) ? loadConfig() : undefined;
-  const activeBackend = doctorConfig?.backend ?? "claude";
-  if (activeBackend === "claude") {
-    try {
-      const { execFileSync } = await import("node:child_process");
-      if (doctorConfig?.claudeBinary) {
-        const cmd = process.platform === "win32" ? "where" : "which";
-        try {
-          execFileSync(cmd, [doctorConfig.claudeBinary], { stdio: "pipe" });
-          console.log(
-            `  ${pc.green("\u2713")} Claude Code binary: ${pc.dim(doctorConfig.claudeBinary)}`,
-          );
-        } catch {
-          console.log(
-            `  ${pc.red("\u2717")} Claude Code binary not found: ${pc.dim(doctorConfig.claudeBinary)}`,
-          );
-          issues++;
-        }
-      } else {
-        const lookupCmd = process.platform === "win32" ? "where" : "which";
-        execFileSync(lookupCmd, ["claude"], { stdio: "pipe" });
-        console.log(`  ${pc.green("\u2713")} Claude Code installed`);
-      }
-    } catch {
-      console.log(`  ${pc.red("\u2717")} Claude Code not found`);
-      issues++;
-    }
-  } else if (activeBackend === "codex") {
-    try {
-      const { execFileSync } = await import("node:child_process");
-      const lookupCmd = process.platform === "win32" ? "where" : "which";
-      execFileSync(lookupCmd, ["codex"], { stdio: "pipe" });
-      console.log(`  ${pc.green("\u2713")} Codex CLI installed`);
-      const { detectCodexAuth } = await import("./backend/codex/auth.js");
-      const auth = detectCodexAuth({
-        codexApiKey: doctorConfig?.codexApiKey,
-        openaiApiKey: doctorConfig?.openaiApiKey,
-        openaiBaseUrl: doctorConfig?.openaiBaseUrl,
-      });
-      for (const diagnostic of auth.diagnostics) {
-        console.log(`  ${pc.yellow("!")} ${diagnostic}`);
-      }
-      if (auth.mode !== "none") {
-        console.log(
-          `  ${pc.green("\u2713")} Codex auth: ${pc.dim(
-            auth.baseUrl ? `${auth.source} (${auth.baseUrl})` : auth.source,
-          )}`,
-        );
-      } else {
-        console.log(
-          `  ${pc.yellow("!")} Codex auth missing (set CODEX_API_KEY, TALON_CODEX_KEY, codexApiKey, or run \`codex login\`)`,
-        );
-        issues++;
-      }
-    } catch {
-      console.log(
-        `  ${pc.red("\u2717")} Codex CLI not found (npm i -g @openai/codex)`,
-      );
-      issues++;
-    }
-  } else if (activeBackend === "kilo" || activeBackend === "opencode") {
-    // Kilo / OpenCode are bundled as npm deps \u2014 no external binary to check.
-    console.log(
-      `  ${pc.green("\u2713")} ${activeBackend === "kilo" ? "Kilo" : "OpenCode"} SDK bundled`,
-    );
-  } else if (activeBackend === "openai-agents") {
-    console.log(`  ${pc.green("\u2713")} OpenAI Agents SDK bundled`);
-    const hasEnvKey = Boolean(process.env.OPENAI_API_KEY);
-    const hasCfgKey = Boolean(doctorConfig?.openaiApiKey);
-    const envBase = process.env.OPENAI_BASE_URL;
-    const cfgBase = doctorConfig?.openaiBaseUrl;
-    if (hasEnvKey || hasCfgKey) {
-      const sources: string[] = [];
-      if (hasEnvKey) sources.push("OPENAI_API_KEY env");
-      if (hasCfgKey) sources.push("openaiApiKey in talon.json");
-      console.log(
-        `  ${pc.green("\u2713")} OpenAI Agents auth: ${pc.dim(sources.join(", "))}`,
-      );
-    } else {
-      console.log(
-        `  ${pc.yellow("!")} OpenAI Agents auth missing (set OPENAI_API_KEY or openaiApiKey in talon.json)`,
-      );
-      issues++;
-    }
-    if (envBase || cfgBase) {
-      const baseSrc = envBase ? `env (${envBase})` : `config (${cfgBase})`;
-      console.log(
-        `  ${pc.green("\u2713")} OpenAI-compatible endpoint: ${pc.dim(baseSrc)}`,
-      );
-    } else {
-      console.log(`  ${pc.dim("-")} Endpoint: api.openai.com (default)`);
-    }
   }
   const instance = await findRunningInstance();
   if (instance) {
@@ -966,9 +837,9 @@ async function runDoctor(): Promise<void> {
     console.log(`  ${pc.dim("-")} Bot is not running`);
   }
   console.log(
-    issues === 0
+    report.issues === 0
       ? `\n  ${pc.green("All checks passed.")}\n`
-      : `\n  ${pc.yellow(`${issues} issue(s) found.`)}\n`,
+      : `\n  ${pc.yellow(`${report.issues} issue(s) found.`)}\n`,
   );
 }
 

@@ -40,6 +40,7 @@ import {
   formatTokenCount,
   formatBytes,
   parseInterval,
+  renderDoctorMessage,
   renderMetricsMessages,
   renderSettingsText,
   renderSettingsKeyboard,
@@ -53,6 +54,7 @@ import {
   resolveBackendForChat,
 } from "./model-menu.js";
 import { getBackendIdForChat } from "../../core/engine/backend-controller.js";
+import { collectDoctorReport } from "../../core/doctor.js";
 import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 
 import {
@@ -113,6 +115,7 @@ export function registerCommands(
         "<b>Session</b>",
         "  /status -- session info, usage, and stats",
         "  /metrics -- aggregate performance metrics (admin)",
+        "  /doctor -- environment and native-module health (admin)",
         "  /memory -- view what Talon remembers",
         "  /dream -- force memory consolidation now",
         "  /ping -- health check with latency",
@@ -664,6 +667,33 @@ export function registerCommands(
     }
     for (const message of renderMetricsMessages(getMetrics())) {
       await ctx.reply(message, { parse_mode: "HTML" });
+    }
+  });
+
+  bot.command("doctor", async (ctx) => {
+    if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
+      await ctx.reply("Not authorized.");
+      return;
+    }
+    const sent = await ctx.reply("🩺 Running checks...");
+    try {
+      // Same checks as `talon doctor` — config exists by definition
+      // when the bot is processing this command.
+      const report = await collectDoctorReport({ config, hasConfigFile: true });
+      await bot.api.editMessageText(
+        ctx.chat.id,
+        sent.message_id,
+        renderDoctorMessage(report),
+        { parse_mode: "HTML" },
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      await bot.api.editMessageText(
+        ctx.chat.id,
+        sent.message_id,
+        `🩺 Doctor failed: ${escapeHtml(msg)}`,
+        { parse_mode: "HTML" },
+      );
     }
   });
 
