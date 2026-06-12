@@ -263,6 +263,38 @@ jobs:
         run: |
           (cd native/scheduler-core && gleam build --target javascript && node embed.mjs)
           git diff --exit-code src/native/
+
+  # ── Zig artifact drift guard ───────────────────────────────────
+  # The textops message-splitting core is Zig compiled to
+  # wasm32-freestanding, embedded as base64 in
+  # src/native/textops-wasm-bytes.ts. Rebuild from source with the
+  # pinned compiler (native/textops-wasm/.zig-version — Zig codegen
+  # changes between releases, so the version is part of the artifact
+  # contract) and fail if the committed bytes drifted.
+  zig-artifact:
+    name: Zig Artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install zig (pinned)
+        run: |
+          ZIG_VERSION="$(cat native/textops-wasm/.zig-version)"
+          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -o /tmp/zig.tar.xz
+          echo "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  /tmp/zig.tar.xz" | sha256sum -c -
+          mkdir -p "$HOME/.zig-bin"
+          tar -xJf /tmp/zig.tar.xz -C "$HOME/.zig-bin" --strip-components=1
+          echo "$HOME/.zig-bin" >> "$GITHUB_PATH"
+          "$HOME/.zig-bin/zig" version
+
+      - name: Rebuild and check drift
+        run: |
+          npm run build:zig
+          git diff --exit-code src/native/textops-wasm-bytes.ts
+
   # ── WASM artifact reproducibility ──────────────────────────────
   # The Rust blake3-wasm crate (native/blake3-wasm) is committed alongside
   # its built artifact, embedded as base64 in src/native/blake3-wasm-bytes.ts.
@@ -553,6 +585,7 @@ jobs:
       - integration
       - bun-compile
       - gleam-artifact
+      - zig-artifact
       - wasm-artifact
       - backend-live
       - fuzz

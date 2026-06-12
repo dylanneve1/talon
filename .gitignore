@@ -27,3 +27,7 @@ src/__tests__/integration/stub-claude/fake-claude.cjs
 src/__tests__/integration/stub-claude/sea-prep.blob
 .claude/
 native/scheduler-core/build/
+
+# textops-wasm build outputs (artifact of record is the embedded TS module)
+native/textops-wasm/.zig-cache/
+native/textops-wasm/textops.wasm

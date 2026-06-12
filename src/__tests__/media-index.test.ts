@@ -602,4 +602,128 @@ describe("media-index", () => {
       expect(getRecentMedia("legacy-once")).toHaveLength(1);
     });
   });
+
+  describe("content hashing and dedupe (native/blake3-wasm)", () => {
+    it("records the BLAKE3 content hash in the background", async () => {
+      const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
+      const cid = `hash-${Date.now()}`;
+      const file = join(tempHome, "cat.jpg");
+      writeFileSync(file, "pretend jpeg bytes");
+      addMedia({
+        chatId: cid,
+        msgId: 1,
+        senderName: "Alice",
+        type: "photo",
+        filePath: file,
+        timestamp: Date.now(),
+      });
+      await vi.waitFor(() => {
+        expect(getRecentMedia(cid)[0].contentHash).toMatch(/^[0-9a-f]{64}$/);
+      });
+    });
+
+    it("dedupes identical content onto one file on disk", async () => {
+      const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
+      const cid = `dedupe-${Date.now()}`;
+      const original = join(tempHome, "first.jpg");
+      const duplicate = join(tempHome, "second.jpg");
+      writeFileSync(original, "same bytes either way");
+      writeFileSync(duplicate, "same bytes either way");
+
+      addMedia({
+        chatId: cid,
+        msgId: 1,
+        senderName: "Alice",
+        type: "photo",
+        filePath: original,
+        timestamp: Date.now() - 1000,
+      });
+      await vi.waitFor(() => {
+        expect(getRecentMedia(cid)[0].contentHash).toBeDefined();
+      });
+
+      addMedia({
+        chatId: cid,
+        msgId: 2,
+        senderName: "Bob",
+        type: "photo",
+        filePath: duplicate,
+        timestamp: Date.now(),
+      });
+      await vi.waitFor(() => {
+        const [second] = getRecentMedia(cid);
+        expect(second.msgId).toBe(2);
+        expect(second.filePath).toBe(original);
+      });
+      expect(existsSync(duplicate)).toBe(false);
+      expect(existsSync(original)).toBe(true);
+    });
+
+    it("keeps distinct content on distinct files", async () => {
+      const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
+      const cid = `distinct-${Date.now()}`;
+      const a = join(tempHome, "a.jpg");
+      const b = join(tempHome, "b.jpg");
+      writeFileSync(a, "content A");
+      writeFileSync(b, "content B");
+      addMedia({
+        chatId: cid,
+        msgId: 1,
+        senderName: "Alice",
+        type: "photo",
+        filePath: a,
+        timestamp: Date.now() - 1000,
+      });
+      addMedia({
+        chatId: cid,
+        msgId: 2,
+        senderName: "Bob",
+        type: "photo",
+        filePath: b,
+        timestamp: Date.now(),
+      });
+      await vi.waitFor(() => {
+        for (const entry of getRecentMedia(cid)) {
+          expect(entry.contentHash).toBeDefined();
+        }
+      });
+      expect(existsSync(a)).toBe(true);
+      expect(existsSync(b)).toBe(true);
+      const paths = getRecentMedia(cid).map((e) => e.filePath);
+      expect(new Set(paths).size).toBe(2);
+    });
+
+    it("expiry keeps a deduped file that live entries still reference", async () => {
+      const { addMedia, getRecentMedia, loadMediaIndex } = await freshImport();
+      loadMediaIndex();
+      const cid = `shared-${Date.now()}`;
+      const shared = join(tempHome, "shared.jpg");
+      writeFileSync(shared, "shared bytes");
+      const eightDaysAgo = Date.now() - 8 * 24 * 60 * 60 * 1000;
+      addMedia({
+        chatId: cid,
+        msgId: 1,
+        senderName: "Alice",
+        type: "photo",
+        filePath: shared,
+        timestamp: eightDaysAgo,
+      });
+      addMedia({
+        chatId: cid,
+        msgId: 2,
+        senderName: "Bob",
+        type: "photo",
+        filePath: shared,
+        timestamp: Date.now(),
+      });
+      loadMediaIndex(); // runs the expiry sweep
+      const remaining = getRecentMedia(cid);
+      expect(remaining).toHaveLength(1);
+      expect(remaining[0].msgId).toBe(2);
+      expect(existsSync(shared)).toBe(true);
+    });
+  });
 });
