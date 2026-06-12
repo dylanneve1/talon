@@ -66,7 +66,12 @@ export function buildMcpServers(
   chatId: string,
 ): Record<
   string,
-  { command: string; args: string[]; env: Record<string, string> }
+  {
+    command: string;
+    args: string[];
+    env: Record<string, string>;
+    alwaysLoad?: boolean;
+  }
 > {
   const config = getConfig();
   const bridgeUrl = `http://127.0.0.1:${getBridgePort()}`;
@@ -80,7 +85,12 @@ export function buildMcpServers(
 
   const servers: Record<
     string,
-    { command: string; args: string[]; env: Record<string, string> }
+    {
+      command: string;
+      args: string[];
+      env: Record<string, string>;
+      alwaysLoad?: boolean;
+    }
   > = {};
 
   for (const frontend of frontends) {
@@ -89,6 +99,21 @@ export function buildMcpServers(
       command: mcpCommand,
       args: mcpArgs,
       env: buildTalonMcpEnv({ bridgeUrl, chatId, frontend, config }),
+      // Always include the frontend's tools in the turn-1 prompt instead of
+      // deferring them behind the SDK's tool search. These are the bot's
+      // primary surface — it needs `end_turn`/`send`/`react` on EVERY turn to
+      // reply at all. When deferred, the SDK evicts their schemas between
+      // turns, so a bare `end_turn` fails with "no such tool" and the user's
+      // reply silently doesn't send (the model has to burn a round-trip
+      // re-fetching the schema via tool_search first). `alwaysLoad` also
+      // blocks startup until this server is connected (capped at the 5s MCP
+      // connect timeout) so the tools are present when the first prompt is
+      // built — fixing the post-restart race where turn-1 ran before the
+      // server finished connecting. Per-tool `_meta['anthropic/alwaysLoad']`
+      // does NOT add that blocking, which is why server-level is the correct
+      // lever here. Cost: ~50 frontend tool schemas loaded every turn (~10k
+      // tokens, cached, negligible on the 1M-context models Talon runs).
+      alwaysLoad: true,
     });
   }
 
