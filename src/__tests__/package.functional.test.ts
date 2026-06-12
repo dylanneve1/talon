@@ -23,9 +23,16 @@ const workDirs: string[] = [];
 
 afterEach(() => {
   for (const dir of workDirs.splice(0)) {
-    rmSync(dir, { recursive: true, force: true });
+    // Windows: removing an npm-installed tree can hit transient EBUSY
+    // and take minutes — retry and give the hook real headroom.
+    rmSync(dir, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 200,
+    });
   }
-}, 60_000);
+}, 180_000);
 
 function makeWorkDir(name: string): string {
   const dir = mkdtempSync(join(tmpdir(), `talon-${name}-`));

@@ -3,6 +3,9 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
+    // Per-worker throwaway SQLite path — keeps suites away from the
+    // real ~/.talon/data/talon.db (see src/__tests__/setup/test-db.ts).
+    setupFiles: ["src/__tests__/setup/test-db.ts"],
     // The codex-handler integration tests drive a full
     // initCodexAgent + handleMessage flow per case; some retry-path
     // tests do 2-3 round trips through the SDK mock and hit the real

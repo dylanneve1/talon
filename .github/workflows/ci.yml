@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -60,16 +60,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            node-version: 22
+            node-version: 24
             coverage: true
           - os: ubuntu-latest
             node-version: 24
             coverage: false
           - os: macos-latest
-            node-version: 22
+            node-version: 24
             coverage: false
           - os: windows-latest
-            node-version: 22
+            node-version: 24
             coverage: false
     steps:
       - uses: actions/checkout@v6
@@ -131,7 +131,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -177,7 +177,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -214,7 +214,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - uses: oven-sh/setup-bun@v2
@@ -228,15 +228,41 @@ jobs:
 
       - name: Supervisor sanity (_mcp-launch supervises a child)
         run: |
-          out=$(echo '{"jsonrpc":"2.0","id":1,"method":"ping"}' | timeout 30 ./talon-bin _mcp-launch cat)
+          # Hold stdin open briefly: closing it instantly can SIGTERM the
+          # child before the line round-trips through the supervisor.
+          out=$({ echo '{"jsonrpc":"2.0","id":1,"method":"ping"}'; sleep 2; } | timeout 30 ./talon-bin _mcp-launch cat)
           echo "supervisor stdout: $out"
           [[ "$out" == *'"method":"ping"'* ]] || { echo "::error::JSON line did not pass through supervisor"; exit 1; }
 
       - name: Supervisor filters non-JSON stdout to stderr
         run: |
-          err=$(echo 'plain banner line' | timeout 30 ./talon-bin _mcp-launch cat 2>&1 >/dev/null)
+          err=$({ echo 'plain banner line'; sleep 2; } | timeout 30 ./talon-bin _mcp-launch cat 2>&1 >/dev/null)
           echo "supervisor stderr: $err"
           [[ "$err" == *'mcp-launcher: stdout'* ]] || { echo "::error::non-JSON line was not rerouted to stderr"; exit 1; }
+
+  # ── Gleam artifact drift guard ─────────────────────────────────
+  # The scheduler decision core is Gleam compiled to JS with the
+  # artifacts committed under src/native/. Rebuild from source and fail
+  # if the committed artifacts drifted.
+  gleam-artifact:
+    name: Gleam Artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install gleam
+        run: |
+          mkdir -p "$HOME/.gleam-bin"
+          curl -fsSL https://github.com/gleam-lang/gleam/releases/download/v1.17.0/gleam-v1.17.0-x86_64-unknown-linux-musl.tar.gz -o /tmp/gleam.tgz
+          tar -xzf /tmp/gleam.tgz -C "$HOME/.gleam-bin"
+          echo "$HOME/.gleam-bin" >> "$GITHUB_PATH"
+          "$HOME/.gleam-bin/gleam" --version
+
+      - name: Rebuild and check drift
+        run: |
+          (cd native/scheduler-core && gleam build --target javascript && node embed.mjs)
+          git diff --exit-code src/native/
 
   # ── Real backend live integration tier ───────────────────────
   # Installs the real backend CLI, then exercises the deployed backend surface
@@ -288,7 +314,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -326,7 +352,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -358,7 +384,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -425,7 +451,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           # Note: NO cache — fresh tmpdir means no cached node_modules
           # state can paper over portability bugs.
 
@@ -474,7 +500,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -495,6 +521,7 @@ jobs:
       - functional-cross-platform
       - integration
       - bun-compile
+      - gleam-artifact
       - backend-live
       - fuzz
       - security
@@ -506,29 +533,20 @@ jobs:
     timeout-minutes: 2
     steps:
       - name: Check required jobs
+        env:
+          # Single source of truth: every job in the `needs` list above
+          # is checked automatically — no second hand-written list to
+          # forget when adding a job. (Jobs skipped by their `if` are
+          # fine; dep-review is PR-only, for example.)
+          NEEDS: ${{ toJSON(needs) }}
         run: |
           fail=0
-          check() {
-            local name=$1
-            local result=$2
+          while IFS=$'\t' read -r name result; do
             if [[ "$result" != "success" && "$result" != "skipped" ]]; then
               echo "::error::Job '$name' failed (result=$result)"
               fail=1
             fi
-          }
-          check "Quality" "${{ needs.quality.result }}"
-          check "Tests" "${{ needs.test.result }}"
-          check "Functional" "${{ needs.functional-cross-platform.result }}"
-          check "Integration" "${{ needs.integration.result }}"
-          check "Bun Compile" "${{ needs.bun-compile.result }}"
-          check "Backend Live" "${{ needs.backend-live.result }}"
-          check "Fuzz" "${{ needs.fuzz.result }}"
-          check "Security" "${{ needs.security.result }}"
-          check "Secrets" "${{ needs.secrets.result }}"
-          check "Lockfile" "${{ needs.lockfile.result }}"
-          check "Docker" "${{ needs.docker.result }}"
-          check "Tarball" "${{ needs.tarball.result }}"
-          # dep-review is PR-only — skipped on push to main, that's fine
+          done < <(jq -r 'to_entries[] | [.key, .value.result] | @tsv' <<< "$NEEDS")
           if [[ $fail -eq 1 ]]; then
             echo "::error::One or more required jobs failed"
             exit 1

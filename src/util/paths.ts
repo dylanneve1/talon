@@ -66,7 +66,9 @@ export const files = {
   log: resolve(TALON_ROOT, "talon.log"),
   /** Session store: ~/.talon/data/sessions.json */
   sessions: resolve(TALON_ROOT, "data", "sessions.json"),
-  /** Chat history: ~/.talon/data/history.json */
+  /** SQLite database (history; other stores migrate in): ~/.talon/data/talon.db */
+  database: resolve(TALON_ROOT, "data", "talon.db"),
+  /** Legacy JSON chat history (imported into talon.db on first boot) */
   history: resolve(TALON_ROOT, "data", "history.json"),
   /** Per-chat settings: ~/.talon/data/chat-settings.json */
   chatSettings: resolve(TALON_ROOT, "data", "chat-settings.json"),

@@ -1,23 +1,28 @@
 /**
- * Group message history buffer. Stores recent messages from all users
- * so Claude has full conversation context even for messages that didn't
- * trigger the bot.
+ * Group message history. Stores messages from all users so the agent
+ * has full conversation context even for messages that didn't trigger
+ * the bot.
  *
- * Persisted via the unified `JsonStore<T>` envelope at
- * `~/.talon/data/history.json`. A migrate hook accepts the
- * pre-envelope bare-object shape (`Record<chatId, HistoryMessage[]>`)
- * so existing on-disk state loads unchanged. Survives restarts so
- * pulse, search, and group threading context don't lose state.
+ * Backed by SQLite with an FTS5 full-text index (see
+ * repositories/history-repo.ts for the statements; this module holds
+ * the domain API and formatting — no SQL here). Compared to the JSON
+ * buffer this replaces:
+ *   - retention is unbounded — no 500-message cap, because nothing is
+ *     held in process memory and reads are indexed
+ *   - searchHistory is real full-text search (FTS5), not a linear
+ *     `includes()` scan over the tail
+ *   - writes are transactional rows, not rewrite-the-file-on-flush
+ *
+ * The legacy ~/.talon/data/history.json (JsonStore envelope or bare
+ * pre-envelope shape) is imported once on first load, then renamed to
+ * history.json.imported.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync, renameSync } from "node:fs";
 import { log, logError } from "../util/log.js";
-import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { formatSmartTimestamp, formatRelativeAge } from "../util/time.js";
-import { registerCleanup } from "../util/cleanup-registry.js";
-import { JsonStore } from "../core/agent-runtime/store.js";
+import * as repo from "./repositories/history-repo.js";
 
 export type HistoryMessage = {
   msgId: number;
@@ -38,113 +43,82 @@ export type HistoryMessage = {
   filePath?: string;
 };
 
-type HistoryShape = Record<string, HistoryMessage[]>;
+// ── Persistence lifecycle ───────────────────────────────────────────────────
 
-const MAX_HISTORY_PER_CHAT = 500;
-const MAX_CHAT_COUNT = 1000;
-const STORE_FILE = files.history;
-const SCHEMA_VERSION = 1 as const;
-
-const store = new JsonStore<HistoryShape>({
-  path: STORE_FILE,
-  defaultValue: {},
-  schemaVersion: SCHEMA_VERSION,
-  migrate: (raw, fromVersion) => {
-    if (fromVersion !== 0) return null;
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-      return { value: {}, schemaVersion: SCHEMA_VERSION };
-    }
-    const out: HistoryShape = {};
-    for (const [chatId, messages] of Object.entries(
-      raw as Record<string, unknown>,
-    )) {
-      if (Array.isArray(messages)) {
-        out[chatId] = messages.slice(-MAX_HISTORY_PER_CHAT) as HistoryMessage[];
-      }
-    }
-    return { value: out, schemaVersion: SCHEMA_VERSION };
-  },
-});
-
-// ── Persistence ─────────────────────────────────────────────────────────────
-
+/**
+ * Run the one-time import of the legacy JSON buffer and report
+ * readiness. Idempotent; called once at boot.
+ */
 export function loadHistory(): void {
-  store.reset();
   try {
-    store.loadSync();
+    importLegacyJson();
+    const chats = repo.distinctChatCount();
+    if (chats > 0) log("history", `History ready (${chats} chat(s))`);
   } catch (err) {
     logError("history", "History load failed", err);
-    return;
   }
-  // Cap per-chat history on load — bounds memory if the on-disk file
-  // grew past the limit between runs (e.g. limit lowered in a config
-  // change).
-  store.update((data) => {
-    for (const chatId of Object.keys(data)) {
-      if (data[chatId].length > MAX_HISTORY_PER_CHAT) {
-        data[chatId] = data[chatId].slice(-MAX_HISTORY_PER_CHAT);
+}
+
+/**
+ * Legacy JsonStore envelope ({schemaVersion, savedAt, data}) or the
+ * even older bare Record<chatId, HistoryMessage[]> shape.
+ */
+function importLegacyJson(): void {
+  const legacyPath = files.history;
+  if (!existsSync(legacyPath)) return;
+  try {
+    const raw = JSON.parse(readFileSync(legacyPath, "utf-8")) as Record<
+      string,
+      unknown
+    >;
+    const data = (
+      raw && typeof raw === "object" && "data" in raw ? raw.data : raw
+    ) as Record<string, HistoryMessage[]>;
+
+    const entries: Array<{ chatId: string; msg: HistoryMessage }> = [];
+    for (const [chatId, messages] of Object.entries(data ?? {})) {
+      if (!Array.isArray(messages)) continue;
+      for (const msg of messages) {
+        if (typeof msg?.msgId !== "number" || typeof msg?.text !== "string")
+          continue;
+        entries.push({ chatId, msg });
       }
     }
-  });
-  const size = Object.keys(store.get()).length;
-  if (size > 0) {
-    log("history", `Loaded history for ${size} chat(s)`);
-  }
-}
-
-function saveHistory(): void {
-  if (!store.isDirty()) return;
-  try {
-    const dir = dirname(STORE_FILE);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    store.saveSync();
-  } catch (err) {
-    logError("history", "Failed to persist history", err);
-    recordError(
-      `History save failed: ${err instanceof Error ? err.message : err}`,
+    const imported = repo.insertMany(entries);
+    renameSync(legacyPath, `${legacyPath}.imported`);
+    log(
+      "history",
+      `Imported ${imported} message(s) from legacy history.json into SQLite`,
     );
+  } catch (err) {
+    logError("history", "Legacy history import failed", err);
   }
 }
 
-// Auto-save every 30 seconds (less frequent than sessions since history is larger)
-const autoSaveTimer = setInterval(saveHistory, 30_000);
-registerCleanup(saveHistory);
-
+/**
+ * SQLite commits on every write — there is no dirty buffer to flush.
+ * Kept for the shutdown path: compacts the WAL into the main file.
+ */
 export function flushHistory(): void {
-  clearInterval(autoSaveTimer);
-  store.update(() => undefined);
-  saveHistory();
+  try {
+    repo.checkpoint();
+  } catch {
+    /* shutting down — best effort */
+  }
 }
 
 // ── Core operations ─────────────────────────────────────────────────────────
 
 export function pushMessage(chatId: string, msg: HistoryMessage): void {
-  store.update((data) => {
-    let history = data[chatId];
-    if (!history) {
-      const keys = Object.keys(data);
-      if (keys.length >= MAX_CHAT_COUNT) {
-        const evictCount = Math.floor(MAX_CHAT_COUNT * 0.1);
-        for (let i = 0; i < evictCount; i++) {
-          const oldest = keys[i];
-          if (!oldest) break;
-          delete data[oldest];
-        }
-      }
-      history = [];
-      data[chatId] = history;
-    }
-    history.push(msg);
-    if (history.length > MAX_HISTORY_PER_CHAT) {
-      history.splice(0, history.length - MAX_HISTORY_PER_CHAT);
-    }
-  });
+  try {
+    repo.insert(chatId, msg);
+  } catch (err) {
+    logError("history", "Failed to persist message", err);
+  }
 }
 
 export function getRecentHistory(chatId: string, limit = 50): HistoryMessage[] {
-  const history = store.get()[chatId];
-  if (!history) return [];
-  return history.slice(-limit);
+  return repo.recent(chatId, limit);
 }
 
 /** Update a message's file path after media download. */
@@ -153,21 +127,11 @@ export function setMessageFilePath(
   msgId: number,
   filePath: string,
 ): void {
-  const existing = store.get()[chatId];
-  if (!existing) return;
-  if (!existing.some((m) => m.msgId === msgId)) return;
-  store.update((data) => {
-    const history = data[chatId];
-    const msg = history.find((m) => m.msgId === msgId);
-    if (msg) msg.filePath = filePath;
-  });
+  repo.setFilePath(chatId, msgId, filePath);
 }
 
 export function clearHistory(chatId: string): void {
-  if (!store.get()[chatId]) return;
-  store.update((data) => {
-    delete data[chatId];
-  });
+  repo.deleteChat(chatId);
 }
 
 // ── Formatted queries ───────────────────────────────────────────────────────
@@ -189,21 +153,41 @@ export function getRecentFormatted(chatId: string, limit = 20): string {
   return messages.map(formatMessage).join("\n");
 }
 
+/**
+ * Build an FTS5 MATCH expression from free-form user input. Every
+ * token is double-quoted so FTS operators (AND, NEAR, *, ^) in user
+ * text are treated as literals, not syntax.
+ */
+function ftsQuery(query: string): string {
+  return query
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) => `"${token.replaceAll('"', '""')}"`)
+    .join(" ");
+}
+
+/** Legacy contract: empty chats answer "No messages in history." */
+function chatIsEmpty(chatId: string): boolean {
+  return repo.latestMsgId(chatId) === undefined;
+}
+
 export function searchHistory(
   chatId: string,
   query: string,
   limit = 20,
 ): string {
-  const history = store.get()[chatId];
-  if (!history || history.length === 0) return "No messages in history.";
-  const lower = query.toLowerCase();
-  const matches = history.filter(
-    (m) =>
-      m.text.toLowerCase().includes(lower) ||
-      m.senderName.toLowerCase().includes(lower),
-  );
-  if (matches.length === 0) return `No messages matching "${query}".`;
-  return matches.slice(-limit).map(formatMessage).join("\n");
+  if (chatIsEmpty(chatId)) return "No messages in history.";
+  const match = ftsQuery(query);
+  if (!match) return `No messages matching "${query}".`;
+  let messages: HistoryMessage[];
+  try {
+    messages = repo.searchFts(chatId, match, limit);
+  } catch (err) {
+    logError("history", `FTS search failed for ${JSON.stringify(query)}`, err);
+    return `No messages matching "${query}".`;
+  }
+  if (messages.length === 0) return `No messages matching "${query}".`;
+  return messages.map(formatMessage).join("\n");
 }
 
 export function getMessagesByUser(
@@ -211,50 +195,28 @@ export function getMessagesByUser(
   userName: string,
   limit = 20,
 ): string {
-  const history = store.get()[chatId];
-  if (!history || history.length === 0) return "No messages in history.";
-  const lower = userName.toLowerCase();
-  const matches = history.filter((m) =>
-    m.senderName.toLowerCase().includes(lower),
-  );
-  if (matches.length === 0) return `No messages from "${userName}".`;
-  return matches.slice(-limit).map(formatMessage).join("\n");
+  if (chatIsEmpty(chatId)) return "No messages in history.";
+  const messages = repo.bySenderName(chatId, userName, limit);
+  if (messages.length === 0) return `No messages from "${userName}".`;
+  return messages.map(formatMessage).join("\n");
 }
 
 export function getMessageById(chatId: string, msgId: number): string {
-  const history = store.get()[chatId];
-  if (!history) return "No messages in history.";
-  const msg = history.find((m) => m.msgId === msgId);
+  if (chatIsEmpty(chatId)) return "No messages in history.";
+  const msg = repo.byMsgId(chatId, msgId);
   if (!msg) return `Message ${msgId} not found in recent history.`;
   return formatMessage(msg);
 }
 
 export function getKnownUsers(chatId: string): string {
-  const history = store.get()[chatId];
-  if (!history || history.length === 0) return "No users seen yet.";
-  const users = new Map<
-    number,
-    { name: string; lastSeen: number; messageCount: number }
-  >();
-  for (const m of history) {
-    const existing = users.get(m.senderId);
-    if (!existing || m.timestamp > existing.lastSeen) {
-      users.set(m.senderId, {
-        name: m.senderName,
-        lastSeen: m.timestamp,
-        messageCount: (existing?.messageCount ?? 0) + 1,
-      });
-    } else {
-      existing.messageCount++;
-    }
-  }
-  const lines = [...users.entries()]
-    .sort((a, b) => b[1].lastSeen - a[1].lastSeen)
-    .map(([id, u]) => {
-      const ago = formatRelativeAge(u.lastSeen);
-      return `${u.name} (user_id: ${id}) — ${u.messageCount} msgs, last seen ${ago}`;
-    });
-  return lines.join("\n");
+  const users = repo.knownUsers(chatId);
+  if (users.length === 0) return "No users seen yet.";
+  return users
+    .map(
+      (u) =>
+        `${u.name} (user_id: ${u.senderId}) — ${u.messageCount} msgs, last seen ${formatRelativeAge(u.lastSeen)}`,
+    )
+    .join("\n");
 }
 
 export function getRecentBySenderId(
@@ -262,30 +224,13 @@ export function getRecentBySenderId(
   senderId: number,
   limit = 5,
 ): HistoryMessage[] {
-  const history = store.get()[chatId];
-  if (!history) return [];
-  const matches = history.filter((m) => m.senderId === senderId);
-  return matches.slice(-limit);
+  return repo.bySenderId(chatId, senderId, limit);
 }
 
 export function getLatestMessageId(chatId: string): number | undefined {
-  const history = store.get()[chatId];
-  if (!history || history.length === 0) return undefined;
-  return history[history.length - 1].msgId;
+  return repo.latestMsgId(chatId);
 }
 
-export function getHistoryStats(chatId: string): {
-  totalMessages: number;
-  uniqueUsers: number;
-  oldestTimestamp: number;
-  newestTimestamp: number;
-} {
-  const history = store.get()[chatId] ?? [];
-  const users = new Set(history.map((m) => m.senderId));
-  return {
-    totalMessages: history.length,
-    uniqueUsers: users.size,
-    oldestTimestamp: history[0]?.timestamp ?? 0,
-    newestTimestamp: history[history.length - 1]?.timestamp ?? 0,
-  };
+export function getHistoryStats(chatId: string): repo.ChatStats {
+  return repo.statsByChat(chatId);
 }
