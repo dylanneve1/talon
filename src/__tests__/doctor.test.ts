@@ -14,6 +14,7 @@ describe("checkNativeModules", () => {
       "blake3",
       "textops",
       "strsim",
+      "sqlguard",
       "htmlents",
       "scheduler-core",
     ]);
@@ -27,6 +28,8 @@ describe("checkNativeModules", () => {
     expect(byName.textops.sizeBytes).toBeGreaterThan(0);
     expect(byName.strsim.language).toBe("C");
     expect(byName.strsim.sizeBytes).toBeGreaterThan(0);
+    expect(byName.sqlguard.language).toBe("C");
+    expect(byName.sqlguard.sizeBytes).toBeGreaterThan(0);
     expect(byName.htmlents.language).toBe("C++");
     expect(byName.htmlents.sizeBytes).toBeGreaterThan(0);
     expect(byName["scheduler-core"].language).toBe("Gleam");
@@ -51,7 +54,7 @@ describe("collectDoctorReport", () => {
     const labels = report.checks.map((c) => c.label);
     expect(labels).toContain("Frontend: terminal");
     expect(labels).toContain("Kilo SDK bundled");
-    expect(report.native).toHaveLength(5);
+    expect(report.native).toHaveLength(6);
     // Node version and workspace presence vary by machine — assert
     // that nothing *else* (frontend, backend, native) raises an issue.
     const envCheck = (label: string) =>

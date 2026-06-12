@@ -75,7 +75,7 @@
     "ci:protect": "node .github/scripts/enforce-ci-gate.mjs",
     "build:gleam": "cd native/scheduler-core && gleam build --target javascript && node embed.mjs",
     "build:zig": "node native/textops-wasm/build.mjs",
-    "build:c": "node native/strsim-c/build.mjs",
+    "build:c": "node native/strsim-c/build.mjs && node native/sqlguard-c/build.mjs",
     "build:cpp": "node native/htmlents-cpp/build.mjs",
     "build:native": "npm run build:wasm && npm run build:zig && npm run build:c && npm run build:cpp && npm run build:gleam",
     "build:driver": "node native/talon-driver/build.mjs",

@@ -314,6 +314,7 @@ jobs:
           git diff --exit-code \
             src/native/textops-wasm-bytes.ts \
             src/native/strsim-wasm-bytes.ts \
+            src/native/sqlguard-wasm-bytes.ts \
             src/native/htmlents-wasm-bytes.ts
 
       # The talon-driver launcher is a native per-arch binary (not an

@@ -19,6 +19,7 @@
  */
 
 import { existsSync, readFileSync, renameSync } from "node:fs";
+import { ftsQuote } from "../native/sqlguard.js";
 import { log, logError } from "../util/log.js";
 import { files } from "../util/paths.js";
 import { formatSmartTimestamp, formatRelativeAge } from "../util/time.js";
@@ -160,14 +161,11 @@ export function getRecentFormatted(chatId: string, limit = 20): string {
 /**
  * Build an FTS5 MATCH expression from free-form user input. Every
  * token is double-quoted so FTS operators (AND, NEAR, *, ^) in user
- * text are treated as literals, not syntax.
+ * text are treated as literals, not syntax. Delegates to the C core
+ * (native/sqlguard-c) for byte-identical output.
  */
 function ftsQuery(query: string): string {
-  return query
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((token) => `"${token.replaceAll('"', '""')}"`)
-    .join(" ");
+  return ftsQuote(query);
 }
 
 /** Legacy contract: empty chats answer "No messages in history." */

@@ -86,6 +86,23 @@ export const NATIVE_MODULES: readonly NativeModuleSpec[] = [
     },
   },
   {
+    name: "sqlguard",
+    language: "C",
+    target: "wasm32-freestanding",
+    sourceDir: "native/sqlguard-c",
+    sizeBytes: async () =>
+      base64ByteLength(
+        (await import("./sqlguard-wasm-bytes.js")).SQLGUARD_WASM_BASE64,
+      ),
+    selfTest: async () => {
+      const { escapeLike, ftsQuote } = await import("./sqlguard.js");
+      const escaped = escapeLike("100%_data");
+      expect(escaped === "100\\%\\_data", "escape_like self-test mismatch");
+      const quoted = ftsQuote("hello world");
+      expect(quoted === '"hello" "world"', "fts_quote self-test mismatch");
+    },
+  },
+  {
     name: "htmlents",
     language: "C++",
     target: "wasm32-freestanding",

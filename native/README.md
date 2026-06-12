@@ -1,7 +1,7 @@
 # Talon native plane
 
 Talon's hot paths and policy cores are written in systems languages and
-embedded into the TypeScript runtime. Five embedded modules, five
+embedded into the TypeScript runtime. Six embedded modules, five
 languages, one contract — plus a native launcher binary that fronts the
 CLI for the distribution channels.
 
@@ -10,6 +10,7 @@ CLI for the distribution channels.
 | [blake3-wasm](blake3-wasm/) | Rust | wasm32-unknown-unknown | media dedupe / content hashing (`src/native/blake3.ts`) |
 | [textops-wasm](textops-wasm/) | Zig | wasm32-freestanding | message splitting for every frontend (`src/native/textops.ts`) |
 | [strsim-c](strsim-c/) | C | wasm32-freestanding | "did you mean ...?" for Telegram + CLI (`src/native/strsim.ts`) |
+| [sqlguard-c](sqlguard-c/) | C | wasm32-freestanding | SQL LIKE / FTS5 escaping for model-controlled input (`src/native/sqlguard.ts`) |
 | [htmlents-cpp](htmlents-cpp/) | C++ | wasm32-freestanding | HTML escaping on every Telegram render (`src/native/htmlents.ts`) |
 | [scheduler-core](scheduler-core/) | Gleam | JavaScript | cron/heartbeat backoff, breaker, catch-up policy (`src/native/scheduler-core.ts`) |
 
@@ -53,10 +54,10 @@ Each module only needs its own toolchain:
 ```sh
 npm run build:wasm        # Rust  → blake3
 npm run build:zig         # Zig   → textops
-npm run build:c           # C     → strsim
+npm run build:c           # C     → strsim, sqlguard
 npm run build:cpp         # C++   → htmlents
 npm run build:gleam       # Gleam → scheduler-core
-npm run build:native      # all five embedded modules
+npm run build:native      # all six embedded modules
 
 npm run build:driver      # C launcher → bin/talon (host)
 npm run build:driver:all  # launcher cross-compile matrix → dist/

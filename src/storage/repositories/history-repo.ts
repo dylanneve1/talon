@@ -5,6 +5,7 @@
  * module owns statement execution and the row↔domain mapping.
  */
 
+import { escapeLike } from "../../native/sqlguard.js";
 import { getDatabase, inTransaction } from "../db.js";
 import { dbSql, historySql } from "../sql/statements.generated.js";
 import type { HistoryMessage } from "../history.js";
@@ -103,11 +104,7 @@ export function bySenderName(
   nameFragment: string,
   limit: number,
 ): HistoryMessage[] {
-  const escaped = nameFragment
-    .toLowerCase()
-    .replace(/\\/g, "\\\\")
-    .replace(/%/g, "\\%")
-    .replace(/_/g, "\\_");
+  const escaped = escapeLike(nameFragment);
   const rows = getDatabase()
     .prepare(historySql.bySenderName)
     .all(chatId, `%${escaped}%`, limit) as Row[];
