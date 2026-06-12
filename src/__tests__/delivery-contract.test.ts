@@ -22,8 +22,8 @@ describe("renderTemplate", () => {
     expect(renderTemplate("a {{x}} b {{y}}", { x: "1" })).toBe("a 1 b ");
   });
 
-  it("keeps {{#if}} blocks only when the variable is non-empty", () => {
-    const t = "start{{#if flag}} kept{{/if}} end";
+  it("keeps {% if %} blocks only when the variable is non-empty", () => {
+    const t = "start{% if flag %} kept{% endif %} end";
     expect(renderTemplate(t, { flag: "yes" })).toBe("start kept end");
     expect(renderTemplate(t, {})).toBe("start end");
     expect(renderTemplate(t, { flag: "" })).toBe("start end");

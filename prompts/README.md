@@ -40,8 +40,18 @@ code — delivery tool names, flow enforcement, trigger limits. A stale
 seeded copy would silently describe a contract the code no longer
 implements, so these are not user-customisable.
 
-Templates support a minimal syntax (`src/core/prompt/templates.ts`):
-`{{var}}` substitution and `{{#if var}}…{{/if}}` conditionals. Nothing else.
+System templates are [Liquid](https://liquidjs.com) (rendered by
+`src/core/prompt/templates.ts`): `{{var}}` output (missing vars render
+empty), `{% if var %}…{% else %}…{% endif %}` conditionals (JS
+truthiness — `""` is falsy), and `{% render 'partial' %}` includes
+resolved against `system/`. Prefer composing related sections inside
+one file with conditionals over adding a new file per fragment —
+`heartbeat-agent.md` (system prompt + goals-fallback section selected
+via `mode`) is the pattern.
+
+User-editable prompts are NOT Liquid: their consumers substitute
+`{{var}}` placeholders with plain string replacement, so a user edit
+can never break prompt assembly with a template syntax error.
 
 ## The delivery contract (response flow)
 

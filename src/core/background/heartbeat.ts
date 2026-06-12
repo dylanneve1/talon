@@ -16,6 +16,8 @@ import { files as pathFiles, dirs } from "../../util/paths.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { toYMD } from "../../util/time.js";
 import { getDefaultModel } from "../models/catalog.js";
+import { loadSystemTemplate } from "../prompt/templates.js";
+import { formatGoal, getOpenGoals } from "../../storage/goal-store.js";
 import type { OneShotAgentParams } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 
@@ -107,6 +109,13 @@ let configRef: {
    * deployments (the agent runs to stdout, not a chat).
    */
   frontends?: readonly string[];
+  /**
+   * MemPalace presence flag — when true, the heartbeat system prompt
+   * tells the agent to recall palace context before working a goal and
+   * to store durable learnings afterwards. Mirrors dream.ts: the actual
+   * MCP server registration lives in the backend's runOneShotAgent.
+   */
+  mempalace?: boolean;
 } | null = null;
 
 export function initHeartbeat(cfg: {
@@ -122,6 +131,8 @@ export function initHeartbeat(cfg: {
   getBackend?: () => Backend | null;
   /** Non-terminal frontends present at startup (telegram, discord, …). */
   frontends?: readonly string[];
+  /** True when the mempalace plugin is registered (see dream.ts). */
+  mempalace?: boolean;
 }): void {
   configRef = cfg;
 }
@@ -293,40 +304,57 @@ async function executeHeartbeat(trigger: "auto" | "forced"): Promise<void> {
 // ── Heartbeat agent ─────────────────────────────────────────────────────────
 
 /**
- * Build the heartbeat agent system prompt. Adapts to whatever non-terminal
- * frontends are currently configured — names each `${frontend}-tools` MCP
- * server it actually has access to, instead of hard-coding "telegram-tools".
+ * Build the heartbeat agent system prompt from the package-owned
+ * template `prompts/system/heartbeat-agent.md`. Adapts to whatever
+ * non-terminal frontends are currently configured — names each
+ * `${frontend}-tools` MCP server it actually has access to, instead
+ * of hard-coding "telegram-tools".
  *
- * Terminal-only deployments get a minimal prompt (no outbound section, since
- * there's no chat to message). Multi-frontend deployments get a list of every
- * `${frontend}-tools` server available.
+ * Terminal-only deployments get a minimal prompt: the template's
+ * `outbound` block (goal tools + messaging — both ride in the
+ * `${frontend}-tools` servers) is omitted since there's no chat to
+ * reach. The `mempalace` block renders only when the plugin is
+ * registered.
  *
  * Exported for tests.
  */
 export function buildHeartbeatSystemPrompt(): string {
-  const base = [
-    "You are a background heartbeat agent for Talon. You have access to",
-    "filesystem tools and all registered MCP plugins. Follow the",
-    "user-defined instructions precisely. Be efficient — you have limited time.",
-  ];
-
   const frontends = configRef?.frontends ?? [];
+  // trim: omitted {{#if}} blocks leave their tag lines' newlines behind.
+  return loadSystemTemplate("heartbeat-agent", {
+    mempalace: configRef?.mempalace ? "yes" : undefined,
+    outbound: frontends.length > 0 ? "yes" : undefined,
+    toolList: frontends.map((f) => `\`${f}-tools\``).join(", "),
+    exampleFrontend: frontends[0],
+  }).trim();
+}
 
-  if (frontends.length === 0) {
-    return base.join("\n");
+/**
+ * Render the open-goal listing for the heartbeat prompt. Cross-chat
+ * by design: the heartbeat is a global agent, so it sees every chat's
+ * open goals (with chat ids for routing updates back).
+ *
+ * Exported for tests.
+ */
+export function renderGoalsBlock(): { text: string; count: number } {
+  let text = "(no open goals)";
+  let count = 0;
+  try {
+    const goals = getOpenGoals();
+    count = goals.length;
+    if (count > 0) {
+      text = goals
+        .map((g) => formatGoal(g, { withChatId: true }))
+        .join("\n\n");
+    }
+  } catch (err) {
+    logWarn(
+      "heartbeat",
+      `Failed to load goals for heartbeat prompt: ${err instanceof Error ? err.message : err}`,
+    );
+    text = "(goal store unavailable this run)";
   }
-
-  const toolList = frontends.map((f) => `\`${f}-tools\``).join(", ");
-  const exampleFrontend = frontends[0];
-  const outbound = [
-    "",
-    `OUTBOUND MESSAGING: You also have access to the frontend tool servers — ${toolList} — which expose \`send\`, \`react\`, and the rest of the messaging surface. Because there is NO ambient chat in heartbeat mode, every outbound tool call MUST include an explicit \`chat_id\` parameter. The bridge promotes that chat_id to the routing target, so \`send(type="text", text="...", chat_id=N)\` from \`${exampleFrontend}-tools\` delivers a message to chat N on that frontend. Known chat IDs live in your memory.md (per-frontend — for Telegram, Dylan's DM ID and group IDs are recorded; other frontends list their own). Without \`chat_id\`, the gateway returns 'No active chat context and no explicit numeric chat_id'.`,
-    "",
-    "Use outbound messaging sparingly — proactive pings should be",
-    "high-signal (e.g. 'PR ready, link: ...') and not status spam.",
-  ];
-
-  return [...base, ...outbound].join("\n");
+  return { text, count };
 }
 
 async function runHeartbeatAgent(
@@ -349,9 +377,14 @@ async function runHeartbeatAgent(
   // Load prompt template from the prompts directory (seeded to ~/.talon/prompts/)
   const promptPath = resolve(dirs.prompts, "heartbeat.md");
 
+  const goalsBlock = renderGoalsBlock();
+
   let prompt: string;
+  let hadGoalsVar: boolean;
   try {
-    prompt = readFileSync(promptPath, "utf-8")
+    const raw = readFileSync(promptPath, "utf-8");
+    hadGoalsVar = raw.includes("{{goals}}");
+    prompt = raw
       .replace(/\{\{workspace\}\}/g, workspace)
       .replace(/\{\{logsDir\}\}/g, logsDir)
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
@@ -359,9 +392,23 @@ async function runHeartbeatAgent(
       .replace(/\{\{instructionsFile\}\}/g, instructionsFile)
       .replace(/\{\{dailyMemoryFile\}\}/g, dailyMemoryFile)
       .replace(/\{\{runCount\}\}/g, String(runCount))
-      .replace(/\{\{intervalMinutes\}\}/g, String(intervalMinutesRef));
+      .replace(/\{\{intervalMinutes\}\}/g, String(intervalMinutesRef))
+      .replace(/\{\{goals\}\}/g, goalsBlock.text);
   } catch {
     throw new Error(`Failed to read heartbeat prompt from ${promptPath}`);
+  }
+
+  // Seeded heartbeat.md copies predating the goals feature have no
+  // {{goals}} placeholder — append the goals-fallback section of the
+  // heartbeat-agent template so goals reach the agent regardless of
+  // template vintage. Only when there ARE open goals: a stale
+  // template + zero goals needs no extra tokens.
+  if (!hadGoalsVar && goalsBlock.count > 0) {
+    prompt += `\n\n${loadSystemTemplate("heartbeat-agent", {
+      mode: "goals-fallback",
+      count: String(goalsBlock.count),
+      goals: goalsBlock.text,
+    }).trim()}`;
   }
 
   const model =

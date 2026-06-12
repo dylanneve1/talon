@@ -1,12 +1,15 @@
 /**
- * Package-owned prompt templates — loader + minimal renderer.
+ * Package-owned prompt templates — loader + Liquid renderer.
  *
  * Talon's prompt text lives in two places with different ownership:
  *
  *   - **User-editable prompts** (`identity.md`, `base.md`/`custom.md`,
  *     frontend files like `telegram.md`) are seeded once into
  *     `~/.talon/prompts/` and read from there — user edits win, and
- *     package updates deliberately never overwrite them.
+ *     package updates deliberately never overwrite them. These are
+ *     rendered with plain `{{name}}` string replacement by their
+ *     consumers (heartbeat/dream), NOT through Liquid — a user file
+ *     must never be able to break prompt assembly with a syntax error.
  *
  *   - **System templates** (`prompts/system/*.md` — delivery
  *     contracts, capability docs, section wrappers) are read straight
@@ -15,19 +18,23 @@
  *     flow enforcement, trigger limits); a stale seeded copy would
  *     silently document a contract the code no longer implements.
  *
- * Template syntax — kept deliberately tiny:
+ * System templates are [Liquid](https://liquidjs.com) — `{{name}}`
+ * output (missing → empty string, matching the legacy renderer),
+ * `{% if %}`/`{% else %}` conditionals, and `{% render 'partial' %}`
+ * includes resolved against `prompts/system/`. Liquid was chosen over
+ * a homegrown DSL so prompt text can be composed (sections,
+ * conditionals, partials) inside fewer files instead of one file per
+ * fragment — and over JS-in-template engines because templates stay
+ * pure prose: no code execution.
  *
- *   - `{{name}}` — substitute the variable (missing → empty string).
- *   - `{{#if name}}…{{/if}}` — keep the enclosed text only when the
- *     variable is present and non-empty. No nesting, no else.
- *
- * Templates are cached per (file, no-vars) read: the file content is
- * read once per process; rendering with vars is pure string work.
+ * Templates are parsed once per process and cached; rendering with
+ * vars is pure in-memory work.
  */
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Liquid, type Template } from "liquidjs";
 
 // ── Package prompt directory ────────────────────────────────────────────────
 
@@ -44,25 +51,33 @@ const SYSTEM_DIR = resolve(PACKAGE_PROMPTS_DIR, "system");
 export type TemplateVars = Record<string, string | undefined>;
 
 /**
- * Render `{{#if name}}…{{/if}}` blocks then `{{name}}` substitutions.
- * Unknown variables render as empty strings — a template must degrade
- * to readable prose when an optional var (e.g. a frontend without
+ * One engine instance per process. `root` lets templates compose via
+ * `{% render 'partial-name' %}` against `prompts/system/`. Variables
+ * stay lenient (unknown → empty string) — a template must degrade to
+ * readable prose when an optional var (e.g. a frontend without
  * reactions) is absent.
  */
+const liquid = new Liquid({
+  root: SYSTEM_DIR,
+  extname: ".md",
+  // JS truthiness, not Shopify's: `""` and `0` are falsy. The legacy
+  // renderer treated empty-string vars as "absent", and callers rely
+  // on it (`truncated: truncated ? "yes" : undefined`-style flags).
+  jsTruthy: true,
+});
+
+/**
+ * Render a raw Liquid template string with `vars`. For one-off
+ * strings (tests, dynamic snippets); file templates should go through
+ * `loadSystemTemplate`, which caches the parse.
+ */
 export function renderTemplate(template: string, vars: TemplateVars): string {
-  const withConditionals = template.replace(
-    /\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
-    (_m, name: string, body: string) => (vars[name] ? body : ""),
-  );
-  return withConditionals.replace(
-    /\{\{(\w+)\}\}/g,
-    (_m, name: string) => vars[name] ?? "",
-  );
+  return liquid.parseAndRenderSync(template, vars);
 }
 
 // ── Loader ──────────────────────────────────────────────────────────────────
 
-const fileCache = new Map<string, string>();
+const parseCache = new Map<string, Template[]>();
 
 /**
  * Load a system template by name (e.g. `"contract-tool-only"`) and
@@ -75,15 +90,16 @@ export function loadSystemTemplate(
   vars: TemplateVars = {},
 ): string {
   const path = resolve(SYSTEM_DIR, `${name}.md`);
-  let raw = fileCache.get(path);
-  if (raw === undefined) {
-    raw = readFileSync(path, "utf-8").trim();
-    fileCache.set(path, raw);
+  let parsed = parseCache.get(path);
+  if (parsed === undefined) {
+    // The filepath argument anchors relative {% render %} resolution.
+    parsed = liquid.parse(readFileSync(path, "utf-8").trim(), path);
+    parseCache.set(path, parsed);
   }
-  return renderTemplate(raw, vars);
+  return liquid.renderSync(parsed, vars) as string;
 }
 
-/** Test seam: drop the file cache (e.g. after writing fixture templates). */
+/** Test seam: drop the parse cache (e.g. after writing fixture templates). */
 export function clearTemplateCache(): void {
-  fileCache.clear();
+  parseCache.clear();
 }

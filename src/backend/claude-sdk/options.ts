@@ -21,6 +21,7 @@ import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import { getPluginMcpServers } from "../../core/plugin.js";
 import { resolveModelId } from "../../core/models/catalog.js";
+import { getTurnEffortOverride } from "../../core/models/effort-router.js";
 import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isTurnTerminator } from "../../core/tools/index.js";
 import {
@@ -304,7 +305,10 @@ export function buildSdkOptions(
   const config = getConfig();
   const chatSettings = getChatSettings(chatId);
   const activeModel = modelOverride ?? chatSettings.model ?? config.model;
-  const activeEffort = chatSettings.effort ?? "adaptive";
+  // Stored /effort pick wins; the turn-scoped router override only
+  // exists when the chat has no pick (see core/models/effort-router.ts).
+  const activeEffort =
+    chatSettings.effort ?? getTurnEffortOverride(chatId) ?? "adaptive";
   const resolvedActiveModel = resolveModelId(activeModel);
 
   const thinkingConfig = EFFORT_MAP[activeEffort] ?? {

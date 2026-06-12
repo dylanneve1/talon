@@ -30,6 +30,7 @@ import {
 } from "./core/background/triggers.js";
 import { initDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat.js";
+import { initEffortRouter } from "./core/models/effort-router.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
 import type { ContextManager } from "./core/types.js";
@@ -230,6 +231,11 @@ export async function initBackendAndDispatcher(
     }
   }
 
+  initEffortRouter({ enabled: config.adaptiveEffort === true });
+  if (config.adaptiveEffort) {
+    log("dispatcher", "Adaptive effort routing enabled (heuristic)");
+  }
+
   initDispatcher({
     // Dispatcher reads the backend per query so per-chat overrides
     // and chat-role rebinds both propagate without re-init. The
@@ -320,6 +326,7 @@ export async function initBackendAndDispatcher(
     workspace: config.workspace,
     getBackend: () => getBackendForRole("heartbeat"),
     frontends: frontendNames,
+    mempalace: Boolean(mempalaceCfg),
   });
 
   return { backend };

@@ -29,11 +29,22 @@ const existsSyncMock = vi.fn(() => false);
 const readFileSyncMock = vi.fn(() => "null");
 const mkdirSyncMock = vi.fn();
 
-vi.mock("node:fs", () => ({
-  existsSync: existsSyncMock,
-  readFileSync: readFileSyncMock,
-  mkdirSync: mkdirSyncMock,
-}));
+// Package-owned system templates (prompts/system/*.md) are real files
+// shipped with the code — buildHeartbeatSystemPrompt renders
+// heartbeat-agent.md through them. Let those reads hit the real fs;
+// everything else (state files, the user's seeded heartbeat.md) stays
+// mocked.
+vi.mock("node:fs", async (importOriginal) => {
+  const real = await importOriginal<typeof import("node:fs")>();
+  return {
+    existsSync: existsSyncMock,
+    readFileSync: (path: unknown, ...args: unknown[]) =>
+      /[/\\]prompts[/\\]system[/\\]/.test(String(path))
+        ? (real.readFileSync as (...a: unknown[]) => unknown)(path, ...args)
+        : readFileSyncMock(),
+    mkdirSync: mkdirSyncMock,
+  };
+});
 
 const appendFileMock = vi.fn(async () => {});
 const mkdirAsyncMock = vi.fn(async () => undefined);

@@ -57,6 +57,7 @@ import { todayAndYesterday } from "../../util/time.js";
 import { log } from "../../util/log.js";
 import { loadSystemTemplate } from "./templates.js";
 import { renderWorkspaceListing } from "./workspace-listing.js";
+import { MAX_OPEN_GOALS_PER_CHAT } from "../../storage/goal-store.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -194,13 +195,16 @@ export function assembleSystemPrompt(
     loaded.push(truncated ? "memory(capped)" : "memory");
   }
 
-  // 5. Capability docs — workspace layout, cron, triggers. Concise by
-  //    design: per-tool protocols and examples live in the MCP tool
-  //    descriptions, which the model also has in context.
+  // 5. Capability docs — workspace layout, cron, triggers, goals.
+  //    Concise by design: per-tool protocols and examples live in the
+  //    MCP tool descriptions, which the model also has in context.
   staticParts.push(
     loadSystemTemplate("workspace"),
     loadSystemTemplate("cron"),
     loadSystemTemplate("triggers"),
+    loadSystemTemplate("goals", {
+      maxOpenGoals: String(MAX_OPEN_GOALS_PER_CHAT),
+    }),
   );
 
   // 6. Plugin contributions. Static: they only change on plugin

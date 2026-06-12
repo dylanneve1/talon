@@ -92,6 +92,7 @@
     "croner": "^10.0.1",
     "discord.js": "^14.16.3",
     "grammy": "^1.42.0",
+    "liquidjs": "^10.27.0",
     "marked": "^18.0.0",
     "p-retry": "^8.0.0",
     "picocolors": "^1.1.1",

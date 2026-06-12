@@ -39,6 +39,7 @@ export type LogComponent =
   | "dream"
   | "heartbeat"
   | "dispatcher"
+  | "effort-router"
   | "gateway"
   | "plugin"
   | "teams"
