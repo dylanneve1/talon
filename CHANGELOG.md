@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.17.0](https://github.com/dylanneve1/talon/compare/v1.16.0...v1.17.0) (2026-06-12)
+
+
+### Features
+
+* **agency:** persistent goals, goal-driven heartbeat, adaptive effort routing ([#315](https://github.com/dylanneve1/talon/issues/315)) ([fba8f1c](https://github.com/dylanneve1/talon/commit/fba8f1c9b97af6784b277364c7030d7224e73f69))
+* **behaviour:** promise-backing rule, heartbeat on by default, encourage proactive outreach ([#318](https://github.com/dylanneve1/talon/issues/318)) ([68d5c72](https://github.com/dylanneve1/talon/commit/68d5c7234510ccaf73f29bf268a0042514c12df4))
+* **metrics:** aggregate token + cache usage in unified turn metrics ([#303](https://github.com/dylanneve1/talon/issues/303)) ([ca6f845](https://github.com/dylanneve1/talon/commit/ca6f8455e2362a5daa29e437b37ea68a2b38f2d4))
+* **native:** C + C++ modules, shared wasm runtime, native registry ([#319](https://github.com/dylanneve1/talon/issues/319)) ([b84916b](https://github.com/dylanneve1/talon/commit/b84916bea53a3bf32ed94ed4b94594ec6e6ca57d))
+* **native:** C sqlguard module — SQL LIKE / FTS5 escaping for model-controlled input ([#323](https://github.com/dylanneve1/talon/issues/323)) ([8201b82](https://github.com/dylanneve1/talon/commit/8201b820361e56428c710f21318bdbabffa462fd))
+* **native:** Gleam scheduler decision core — typed policy functions compiled to JS ([#307](https://github.com/dylanneve1/talon/issues/307)) ([e1c4acc](https://github.com/dylanneve1/talon/commit/e1c4accfdcf3625eb57272436fce9cac1b2e08d5))
+* **native:** Rust→WASM BLAKE3 hashing module — first brick of the data/indexing plane ([#308](https://github.com/dylanneve1/talon/issues/308)) ([300b869](https://github.com/dylanneve1/talon/commit/300b869bee683a2be0e6513ad9c9d0d7c67aec41))
+* **native:** talon-driver — native launcher binary for apt/brew/source ([#322](https://github.com/dylanneve1/talon/issues/322)) ([8d12538](https://github.com/dylanneve1/talon/commit/8d1253857f499a58ed606f9211a692d17b69e802))
+* **native:** Zig→WASM message-splitting core; pipe blake3 + Gleam scheduler into runtime ([#312](https://github.com/dylanneve1/talon/issues/312)) ([51005b8](https://github.com/dylanneve1/talon/commit/51005b843f9a8cd36808f8419133375782534fa1))
+* **storage:** migrate sessions, chat-settings, media-index to SQLite ([#306](https://github.com/dylanneve1/talon/issues/306)) ([066a0b5](https://github.com/dylanneve1/talon/commit/066a0b54d6d973b5f1ee3304949c00bfcf068075))
+* **storage:** SQLite data layer — FTS5 chat history, repository pattern, Node 24 ([#305](https://github.com/dylanneve1/talon/issues/305)) ([27cce68](https://github.com/dylanneve1/talon/commit/27cce68ad423580a52c84ec31c19944eeb56d7e6))
+* streaming BLAKE3 + due-driven heartbeat; Node-24 packaging alignment; auto release-please ([#313](https://github.com/dylanneve1/talon/issues/313)) ([3cdb9fd](https://github.com/dylanneve1/talon/commit/3cdb9fdba8b12b1c115a18734d9bac7fa78761f8))
+* **telegram:** /doctor command — shared doctor core with native-module report ([#317](https://github.com/dylanneve1/talon/issues/317)) ([97f62e4](https://github.com/dylanneve1/talon/commit/97f62e491b6c65a4ee7d423f478a2fece1643ee8))
+* **triggers:** Lua scripting language — WASM-sandboxed via wasmoon ([#309](https://github.com/dylanneve1/talon/issues/309)) ([12fd90f](https://github.com/dylanneve1/talon/commit/12fd90f54dff90ae2a6a9fa5c92fbb1170a51c20))
+
+
+### Bug Fixes
+
+* **daemon:** prevent duplicate daemons after /restart ([#301](https://github.com/dylanneve1/talon/issues/301)) ([aeba50f](https://github.com/dylanneve1/talon/commit/aeba50f19542187bdf5419099e5aea1006eb633e))
+* four correctness bugs — infinite retry loop, FTS corruption, LIKE injection, nested transaction crash ([#310](https://github.com/dylanneve1/talon/issues/310)) ([4cd2a01](https://github.com/dylanneve1/talon/commit/4cd2a01fc9dcf9f3cb5567285a8cec3770981220))
+* **metrics:** unify codex tool names, count failed MCP calls, fix count-histogram rendering ([#298](https://github.com/dylanneve1/talon/issues/298)) ([be22f3f](https://github.com/dylanneve1/talon/commit/be22f3f1399345bf9c9f8c49080cb7edd9023c08))
+
 ## [1.16.0](https://github.com/dylanneve1/talon/compare/v1.15.1...v1.16.0) (2026-06-11)
 
 
