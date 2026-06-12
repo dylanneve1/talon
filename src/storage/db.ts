@@ -10,8 +10,11 @@
  * orchestrated from TypeScript.
  *
  * Layering (keep it this way):
- *   - schema.ts                 all DDL, versioned migrations
- *   - repositories/<store>.ts   all statements for one store, typed rows
+ *   - sql/<name>.sql            every SQL statement, plain SQL files
+ *   - sql/migrations/*.sql      all DDL, versioned migration steps
+ *   - sql/statements.generated.ts  committed embed of the above
+ *                               (`npm run build:sql`, see sql/embed.ts)
+ *   - repositories/<store>.ts   statement execution for one store, typed rows
  *   - <store>.ts                public API + domain logic, ZERO SQL
  *   - db.ts (this file)         connection, pragmas, migration cursor
  *
@@ -25,7 +28,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { files } from "../util/paths.js";
 import { log } from "../util/log.js";
-import { MIGRATIONS } from "./schema.js";
+import { MIGRATIONS } from "./sql/statements.generated.js";
 
 /**
  * The driver surface the repositories use — the intersection of

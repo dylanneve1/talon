@@ -1,17 +1,19 @@
 /**
- * Media-index repository — every SQL statement that touches the
- * `media_index` table lives here, and nowhere else. The public store
- * (storage/media-index.ts) holds the domain API, formatting and the
- * expiry sweep's file deletion; this module owns the statements and
- * the row↔domain mapping.
+ * Media-index repository — executes the statements in
+ * sql/media-index.sql against the `media_index` table; no SQL text
+ * lives here. The public store (storage/media-index.ts) holds the
+ * domain API, formatting and the expiry sweep's file deletion; this
+ * module owns statement execution and the row↔domain mapping.
  *
  * (chat_id, msg_id) is the primary key — the legacy store's "id"
  * string was `chatId:msgId`, reconstructed here on read. Indexes back
  * each real lookup pattern: recent-by-chat, by-chat-and-type, and the
- * timestamp-only scan the expiry sweep does (see schema.ts).
+ * timestamp-only scan the expiry sweep does (see
+ * sql/migrations/002_stores.sql).
  */
 
 import { getDatabase, inTransaction } from "../db.js";
+import { dbSql, mediaIndexSql } from "../sql/statements.generated.js";
 import type { MediaEntry } from "../media-index.js";
 
 type Row = {
@@ -23,9 +25,6 @@ type Row = {
   caption: string | null;
   timestamp: number;
 };
-
-const COLUMNS =
-  "chat_id, msg_id, sender_name, type, file_path, caption, timestamp";
 
 function rowToEntry(row: Row): MediaEntry {
   return {
@@ -43,10 +42,7 @@ function rowToEntry(row: Row): MediaEntry {
 /** Insert-or-replace keyed by (chat_id, msg_id) — re-downloads dedupe. */
 export function upsert(entry: Omit<MediaEntry, "id">): void {
   getDatabase()
-    .prepare(
-      `INSERT OR REPLACE INTO media_index (${COLUMNS})
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    )
+    .prepare(mediaIndexSql.upsert)
     .run(
       entry.chatId,
       entry.msgId,
@@ -72,10 +68,7 @@ export function upsertMany(entries: Array<Omit<MediaEntry, "id">>): number {
  */
 export function recentByChat(chatId: string, limit: number): MediaEntry[] {
   const rows = getDatabase()
-    .prepare(
-      `SELECT ${COLUMNS} FROM media_index
-       WHERE chat_id = ? ORDER BY timestamp DESC, rowid ASC LIMIT ?`,
-    )
+    .prepare(mediaIndexSql.recentByChat)
     .all(chatId, limit) as Row[];
   return rows.map(rowToEntry);
 }
@@ -86,11 +79,7 @@ export function byType(
   limit: number,
 ): MediaEntry[] {
   const rows = getDatabase()
-    .prepare(
-      `SELECT ${COLUMNS} FROM media_index
-       WHERE chat_id = ? AND type = ?
-       ORDER BY timestamp DESC, rowid ASC LIMIT ?`,
-    )
+    .prepare(mediaIndexSql.byType)
     .all(chatId, type, limit) as Row[];
   return rows.map(rowToEntry);
 }
@@ -98,7 +87,7 @@ export function byType(
 /** Entries older than `cutoff` — selected so the sweep can unlink files. */
 export function olderThan(cutoff: number): MediaEntry[] {
   const rows = getDatabase()
-    .prepare(`SELECT ${COLUMNS} FROM media_index WHERE timestamp < ?`)
+    .prepare(mediaIndexSql.olderThan)
     .all(cutoff) as Row[];
   return rows.map(rowToEntry);
 }
@@ -106,12 +95,14 @@ export function olderThan(cutoff: number): MediaEntry[] {
 /** Delete entries older than `cutoff`; returns the number removed. */
 export function deleteOlderThan(cutoff: number): number {
   const result = getDatabase()
-    .prepare("DELETE FROM media_index WHERE timestamp < ?")
-    .run(cutoff) as { changes: number | bigint };
+    .prepare(mediaIndexSql.deleteOlderThan)
+    .run(cutoff) as {
+    changes: number | bigint;
+  };
   return Number(result.changes);
 }
 
 /** WAL → main-file compaction; used on shutdown. */
 export function checkpoint(): void {
-  getDatabase().exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  getDatabase().exec(dbSql.walCheckpoint);
 }
