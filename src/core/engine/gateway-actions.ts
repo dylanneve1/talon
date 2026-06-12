@@ -59,6 +59,16 @@ import {
   validateSkillScript,
 } from "../../storage/skill-store.js";
 import {
+  deleteInstructionSkill,
+  formatInstructionSkill,
+  listInstructionSkills,
+  readInstructionSkill,
+  saveInstructionSkill,
+  validateInstructionSkillBody,
+  validateInstructionSkillDescription,
+  validateInstructionSkillName,
+} from "../../storage/instruction-skill-store.js";
+import {
   runSkill,
   validateSkillTimeout,
   DEFAULT_SKILL_TIMEOUT_SECONDS,
@@ -831,6 +841,84 @@ export async function handleSharedAction(
       if (!deleteSkill(name))
         return { ok: false, error: `No skill named "${name}"` };
       return { ok: true, text: `Deleted skill "${name}".` };
+    }
+
+    // ── Instruction skills (markdown workflows — global, not chat-scoped) ─
+
+    case "save_instruction_skill": {
+      const name = String(body.name ?? "").trim();
+      const description = String(body.description ?? "").trim();
+      const skillBody = String(body.body ?? "");
+
+      const nameErr = validateInstructionSkillName(name);
+      if (nameErr) return { ok: false, error: nameErr };
+      const descErr = validateInstructionSkillDescription(description);
+      if (descErr) return { ok: false, error: descErr };
+      const bodyErr = validateInstructionSkillBody(skillBody);
+      if (bodyErr) return { ok: false, error: bodyErr };
+
+      const existed = Boolean(readInstructionSkill(name));
+      let skill;
+      try {
+        skill = saveInstructionSkill({ name, description, body: skillBody });
+      } catch (err) {
+        return {
+          ok: false,
+          error: `Failed to save instruction skill: ${err instanceof Error ? err.message : err}`,
+        };
+      }
+      log("gateway", `save_instruction_skill: "${name}"`);
+      return {
+        ok: true,
+        text:
+          `${existed ? "Updated" : "Saved"} instruction skill "${name}"\n` +
+          `Markdown: ${skill.path}\n` +
+          `Load it with read_instruction_skill(name="${name}").`,
+      };
+    }
+
+    case "list_instruction_skills": {
+      const skills = listInstructionSkills();
+      if (skills.length === 0)
+        return {
+          ok: true,
+          text: "No instruction skills saved yet. Use save_instruction_skill to store a reusable markdown workflow.",
+        };
+      return {
+        ok: true,
+        text: `Instruction skills (${skills.length}):\n${skills.map(formatInstructionSkill).join("\n")}`,
+      };
+    }
+
+    case "read_instruction_skill": {
+      const name = String(body.name ?? "").trim();
+      if (!name) return { ok: false, error: "Missing name" };
+      const skill = readInstructionSkill(name);
+      if (!skill)
+        return {
+          ok: false,
+          error: `No instruction skill named "${name}". See list_instruction_skills.`,
+        };
+      return {
+        ok: true,
+        text: [
+          `# ${skill.name}`,
+          "",
+          skill.description,
+          "",
+          `Path: ${skill.path}`,
+          "",
+          skill.body,
+        ].join("\n"),
+      };
+    }
+
+    case "delete_instruction_skill": {
+      const name = String(body.name ?? "").trim();
+      if (!name) return { ok: false, error: "Missing name" };
+      if (!deleteInstructionSkill(name))
+        return { ok: false, error: `No instruction skill named "${name}"` };
+      return { ok: true, text: `Deleted instruction skill "${name}".` };
     }
 
     // ── Plugin hot-reload ──────────────────────────────────────────────

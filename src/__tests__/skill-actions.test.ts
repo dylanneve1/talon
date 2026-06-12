@@ -206,3 +206,72 @@ describe("list_skills / delete_skill", () => {
     );
   });
 });
+
+describe("instruction skills", () => {
+  it("saves, lists, reads, updates, and deletes markdown workflow skills", async () => {
+    const saved = await act({
+      action: "save_instruction_skill",
+      name: "review-flow",
+      description: "review pull requests carefully",
+      body: "## Steps\n\n1. Read the diff.\n2. Check tests.",
+    });
+    expect(saved.ok).toBe(true);
+    expect(saved.text).toContain('Saved instruction skill "review-flow"');
+
+    const listed = await act({ action: "list_instruction_skills" });
+    expect(listed.ok).toBe(true);
+    expect(listed.text).toContain("review-flow");
+    expect(listed.text).toContain("review pull requests carefully");
+
+    const read = await act({
+      action: "read_instruction_skill",
+      name: "review-flow",
+    });
+    expect(read.ok).toBe(true);
+    expect(read.text).toContain("# review-flow");
+    expect(read.text).toContain("Check tests");
+
+    const updated = await act({
+      action: "save_instruction_skill",
+      name: "review-flow",
+      description: "review pull requests with tests",
+      body: "## Steps\n\nUse the review skill.",
+    });
+    expect(updated.ok).toBe(true);
+    expect(updated.text).toContain('Updated instruction skill "review-flow"');
+
+    expect(
+      (await act({ action: "delete_instruction_skill", name: "review-flow" }))
+        .ok,
+    ).toBe(true);
+    const missing = await act({
+      action: "read_instruction_skill",
+      name: "review-flow",
+    });
+    expect(missing.ok).toBe(false);
+    expect(missing.error).toContain("list_instruction_skills");
+  });
+
+  it("rejects invalid instruction skill inputs", async () => {
+    expect(
+      (
+        await act({
+          action: "save_instruction_skill",
+          name: "bad name",
+          description: "x",
+          body: "## Body",
+        })
+      ).ok,
+    ).toBe(false);
+    expect(
+      (
+        await act({
+          action: "save_instruction_skill",
+          name: "empty-body",
+          description: "x",
+          body: "   ",
+        })
+      ).ok,
+    ).toBe(false);
+  });
+});

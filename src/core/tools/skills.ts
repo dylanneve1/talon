@@ -1,6 +1,5 @@
 /**
- * Skill tools — save, list, run, and delete reusable agent-authored
- * scripts.
+ * Skill tools — reusable agent-authored scripts and instruction bundles.
  *
  * Skills close the loop on procedures the agent works out during a
  * conversation: instead of re-deriving a multi-step pipeline (API
@@ -74,6 +73,61 @@ Make scripts parameterizable: extra arguments passed to run_skill arrive as argv
       name: z.string().describe("Skill name to delete"),
     },
     execute: (params, bridge) => bridge("delete_skill", params),
+    tag: "skills",
+  },
+
+  {
+    name: "save_instruction_skill",
+    description: `Save (or update) a reusable instruction skill — a markdown workflow bundle you can load later with read_instruction_skill.
+
+Use instruction skills for reusable procedures that require judgement rather than subprocess execution: review protocols, debugging playbooks, backend investigation steps, release checklists, or house style instructions. They are not factual memory; store facts in memory/palace instead. Saving to an existing name replaces that instruction skill.`,
+    schema: {
+      name: z
+        .string()
+        .describe(
+          "Unique instruction skill name, 1-64 chars of letters/digits/dash/underscore (becomes the markdown filename)",
+        ),
+      description: z
+        .string()
+        .describe(
+          "One line: what workflow this covers and when to use it (shown in list_instruction_skills)",
+        ),
+      body: z
+        .string()
+        .describe("Full markdown instructions for the workflow (max 128KB)"),
+    },
+    execute: (params, bridge) => bridge("save_instruction_skill", params),
+    tag: "skills",
+  },
+
+  {
+    name: "list_instruction_skills",
+    description:
+      "List saved instruction skills with descriptions. Check here before re-deriving a reusable workflow or process.",
+    schema: {},
+    execute: (_params, bridge) => bridge("list_instruction_skills", {}),
+    tag: "skills",
+  },
+
+  {
+    name: "read_instruction_skill",
+    description:
+      "Read the full markdown body for a saved instruction skill. Load it before following that workflow; descriptions are only discovery hints.",
+    schema: {
+      name: z.string().describe("Instruction skill name"),
+    },
+    execute: (params, bridge) => bridge("read_instruction_skill", params),
+    tag: "skills",
+  },
+
+  {
+    name: "delete_instruction_skill",
+    description:
+      "Delete a saved instruction skill and its markdown file permanently.",
+    schema: {
+      name: z.string().describe("Instruction skill name to delete"),
+    },
+    execute: (params, bridge) => bridge("delete_instruction_skill", params),
     tag: "skills",
   },
 ];
