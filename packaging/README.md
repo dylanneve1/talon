@@ -34,3 +34,18 @@ A `.deb` or bottle that vendors its own Node can drop it at
 any system Node (full resolution order is in the driver's README). The
 npm package is unchanged — it keeps shipping the portable
 `bin/talon.js`, which works on every platform including Windows.
+
+## Supervision harness (`talon-warden`)
+
+The same channels should ship the Rust trigger-supervision harness
+([`native/talon-warden`](../native/talon-warden/)) as
+`bin/talon-warden` beside `bin/talon.js` (or anywhere, with
+`TALON_WARDEN=<path>` set in the service environment). It is optional:
+without it the trigger supervisor uses its in-process TS path; with it
+trigger children get own-process-group kills, out-of-process timeouts,
+and orphan-free teardown. Build per arch on a matching-OS builder:
+
+```sh
+npm run build:warden                                       # host arch → bin/talon-warden
+node native/talon-warden/build.mjs --target=<rust-triple>  # cross (Linux targets) → dist/
+```

@@ -273,6 +273,34 @@ export async function collectDoctorReport(opts: {
       : { label: "Workspace missing", status: "warn" },
   );
 
+  // The warden is optional by design (built per-arch, absent on plain
+  // npm installs), so a missing binary is informational — triggers run
+  // on the in-process TS path. When present, report the live version.
+  {
+    const { wardenBinaryPath, wardenVersion } =
+      await import("../native/warden.js");
+    const wardenBin = wardenBinaryPath();
+    if (wardenBin) {
+      const version = wardenVersion();
+      checks.push(
+        version
+          ? { label: `Trigger supervision: ${version}`, status: "ok" }
+          : {
+              label: "Trigger supervision: warden binary unresponsive",
+              status: "warn",
+              detail: wardenBin,
+              issue: true,
+            },
+      );
+    } else {
+      checks.push({
+        label: "Trigger supervision: TS fallback (no warden binary)",
+        status: "info",
+        detail: "npm run build:warden",
+      });
+    }
+  }
+
   const native = await checkNativeModules();
   checks.push(...(await checkBackend(opts.config)));
 

@@ -79,7 +79,8 @@
     "build:cpp": "node native/htmlents-cpp/build.mjs",
     "build:native": "npm run build:wasm && npm run build:zig && npm run build:c && npm run build:cpp && npm run build:gleam",
     "build:driver": "node native/talon-driver/build.mjs",
-    "build:driver:all": "node native/talon-driver/build.mjs --all"
+    "build:driver:all": "node native/talon-driver/build.mjs --all",
+    "build:warden": "node native/talon-warden/build.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.175",

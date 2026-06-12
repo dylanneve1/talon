@@ -36,3 +36,10 @@ native/*/*.wasm
 # never committed (npm keeps shipping the portable bin/talon.js shim).
 bin/talon
 native/talon-driver/dist/
+
+# talon-warden supervision harness — per-arch native binary like the
+# launcher: built by packaging/CI/source installs, never committed.
+# Without it triggers.ts falls back to in-process TS supervision.
+bin/talon-warden
+native/talon-warden/target/
+native/talon-warden/dist/

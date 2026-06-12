@@ -1,0 +1,26 @@
+# talon-warden — trigger supervision harness compiled to a native
+# per-arch binary. A real executable like talon-driver, not an embedded
+# wasm artifact. See README.md for the NDJSON protocol contract.
+[package]
+name = "talon-warden"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "talon-warden"
+path = "src/main.rs"
+
+[dependencies]
+# Process-group signalling (kill(-pgid)), getppid, prctl, SIGPIPE — the
+# only platform surface std doesn't cover. No serde: the NDJSON protocol
+# is hand-rolled (same no-glue ethos as blake3-wasm's hand-rolled C ABI).
+libc = "0.2"
+
+[profile.release]
+# Small, stripped, single-unit: the warden ships in .deb/bottle channels
+# beside the launcher, and supervision is I/O-bound — size over speed.
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = "symbols"

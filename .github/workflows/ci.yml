@@ -365,6 +365,54 @@ jobs:
       - name: Committed bytes must match committed Rust source
         run: git diff --exit-code src/native/blake3-wasm-bytes.ts
 
+  # ── Warden supervision harness ─────────────────────────────────
+  # talon-warden (native/talon-warden) is a native per-arch Rust binary
+  # like the launcher — nothing to drift-check. Build it with the pinned
+  # toolchain (rust-toolchain.toml), run its unit tests, then run the
+  # behavior suite plus the trigger supervisor suites over the real
+  # binary — this is the job of record for the warden supervision path
+  # (elsewhere the warden tests self-skip when cargo is absent, and the
+  # trigger suites run the TS fallback). Both OSes: process groups,
+  # pdeathsig vs ppid-polling, and signal forwarding are exactly the
+  # things that differ between Linux and macOS.
+  warden:
+    name: Warden (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/talon-warden
+
+      - name: Unit tests (pinned toolchain via rust-toolchain.toml)
+        run: cargo test --locked
+        working-directory: native/talon-warden
+
+      - name: Build the harness
+        run: npm run build:warden
+
+      - name: Warden behavior + trigger supervisor suites (warden path)
+        run: |
+          npm ci
+          npx vitest run src/__tests__/talon-warden.test.ts \
+            src/__tests__/triggers.test.ts \
+            src/__tests__/triggers-extended.test.ts
+
   # ── Real backend live integration tier ───────────────────────
   # Installs the real backend CLI, then exercises the deployed backend surface
   # that fixture tests cannot fully represent: Kilo/OpenCode live HTTP model
@@ -623,6 +671,7 @@ jobs:
       - gleam-artifact
       - zig-artifact
       - wasm-artifact
+      - warden
       - backend-live
       - fuzz
       - security

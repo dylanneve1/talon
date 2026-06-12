@@ -2,8 +2,9 @@
 
 Talon's hot paths and policy cores are written in systems languages and
 embedded into the TypeScript runtime. Six embedded modules, five
-languages, one contract — plus a native launcher binary that fronts the
-CLI for the distribution channels.
+languages, one contract — plus two real executables: a native launcher
+that fronts the CLI for the distribution channels, and a Rust
+supervision harness that fronts every trigger child.
 
 | Module | Language | Target | Used by |
 | --- | --- | --- | --- |
@@ -14,12 +15,13 @@ CLI for the distribution channels.
 | [htmlents-cpp](htmlents-cpp/) | C++ | wasm32-freestanding | HTML escaping on every Telegram render (`src/native/htmlents.ts`) |
 | [scheduler-core](scheduler-core/) | Gleam | JavaScript | cron/heartbeat backoff, breaker, catch-up policy (`src/native/scheduler-core.ts`) |
 
-The launcher is a different kind of native component — a real
-executable, not an embedded artifact:
+The launcher and the warden are a different kind of native component —
+real executables, not embedded artifacts:
 
 | Component | Language | Target | Role |
 | --- | --- | --- | --- |
 | [talon-driver](talon-driver/) | C | native per-arch ELF / Mach-O | the `talon` front-door: finds Node >= 24, execs `bin/talon.js` (apt / brew / source installs) |
+| [talon-warden](talon-warden/) | Rust | native per-arch ELF / Mach-O | trigger supervision harness: own-process-group children, out-of-process timeouts, orphan-free teardown (`src/native/warden.ts` → `core/background/triggers.ts`, with TS fallback when absent) |
 
 ## The contract
 
@@ -61,6 +63,7 @@ npm run build:native      # all six embedded modules
 
 npm run build:driver      # C launcher → bin/talon (host)
 npm run build:driver:all  # launcher cross-compile matrix → dist/
+npm run build:warden      # Rust supervision harness → bin/talon-warden (host)
 ```
 
 ## Adding a module

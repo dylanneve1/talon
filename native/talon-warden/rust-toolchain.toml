@@ -1,0 +1,7 @@
+# Pin the toolchain to match native/blake3-wasm — one Rust pin for the
+# whole native plane. The warden binary is not committed (no drift
+# check), but a single pinned compiler keeps CI builds and local builds
+# byte-comparable and avoids a second rustup download in CI.
+# To bump: update both rust-toolchain.toml files together.
+[toolchain]
+channel = "1.93.1"

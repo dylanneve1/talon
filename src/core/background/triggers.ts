@@ -25,6 +25,17 @@
  * re-spawns them (with an orphan-kill probe to avoid duplicates outside
  * cgroup-managed setups). Persistent triggers also skip the hard timeout.
  *
+ * Supervision plumbing has two paths with identical policy:
+ *   - Warden path (preferred): the script runs under the Rust
+ *     talon-warden harness (native/talon-warden) in its OWN process
+ *     group — cancel/timeout/shutdown kills reach grandchildren, the
+ *     timeout is enforced out-of-process, and the warden tears the tree
+ *     down itself if Talon dies uncleanly. Output arrives as framed
+ *     NDJSON events (src/native/warden.ts) feeding the same line
+ *     handlers.
+ *   - Direct path (fallback): in-process spawn + readline, used when
+ *     the warden binary isn't built (npm installs) or on Windows.
+ *
  * Knows nothing about backend or frontend — dependencies are injected.
  */
 
@@ -45,6 +56,7 @@ import { log, logError, logWarn } from "../../util/log.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { selfInvocation } from "../../util/mcp-launcher.js";
 import { LUA_RUN_SUBCOMMAND } from "../scripting/lua-runner.js";
+import { spawnWarden, type WardenExitEvent } from "../../native/warden.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -66,6 +78,15 @@ const LINE_BUFFER_MAX = 80;
 
 const SIGTERM_GRACE_MS = 5_000;
 const FIRE_PREFIX = "TALON_FIRE:";
+
+/** Trigger ids currently supervised by the Rust warden harness. */
+const wardened = new Set<string>();
+/**
+ * Extra headroom before SIGKILLing a warden handle. The warden runs its
+ * own TERM → grace → KILL escalation on the child's process group;
+ * SIGKILLing the warden mid-escalation would orphan that cleanup.
+ */
+const WARDEN_GRACE_SLACK_MS = 2_000;
 
 export function initTriggers(d: TriggerDeps): void {
   deps = d;
@@ -93,17 +114,183 @@ export function spawnTrigger(trigger: Trigger): void {
     return;
   }
 
+  if (spawnViaWarden(trigger, command)) return;
+  spawnDirect(trigger, command);
+}
+
+/** Env contract every trigger child sees, on both supervision paths. */
+function triggerEnv(trigger: Trigger): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    TALON_TRIGGER_ID: trigger.id,
+    TALON_TRIGGER_NAME: trigger.name,
+    TALON_CHAT_ID: trigger.chatId,
+  };
+}
+
+function clampedTimeoutMs(timeoutSeconds: number): number {
+  return Math.min(Math.max(timeoutSeconds, 1), 7 * 24 * 60 * 60) * 1000;
+}
+
+/**
+ * Open the trigger's append-mode run log and register it. Without the
+ * error handler, a disk/permission failure on the log file would emit
+ * an unhandled `error` event and crash the whole Node process. Log it
+ * instead and let the trigger keep running — the script's behaviour
+ * matters more than its diagnostic log.
+ */
+function openLogStream(trigger: Trigger): WriteStream {
+  const logStream = createWriteStream(trigger.logPath, {
+    flags: "a",
+    mode: 0o600,
+  });
+  logStream.on("error", (err) =>
+    logError("triggers", `log stream error [${trigger.id}]`, err),
+  );
+  logStreams.set(trigger.id, logStream);
+  return logStream;
+}
+
+/**
+ * Hard timeout — persistent triggers run without one. They're
+ * long-running watchers whose lifetime is tied to Talon's, not to a
+ * wall-clock deadline. If a persistent script hangs, the user can
+ * trigger_cancel it explicitly. On the warden path the warden enforces
+ * the same deadline out-of-process; this timer stays as the status
+ * bookkeeper and a second line of defence — whichever fires first wins,
+ * and both converge on status "timed_out" plus a kill.
+ */
+function armTimeout(trigger: Trigger): void {
+  if (trigger.persistent) return;
+  const timer = setTimeout(
+    () => handleTimeout(trigger),
+    clampedTimeoutMs(trigger.timeoutSeconds),
+  );
+  timer.unref();
+  timeouts.set(trigger.id, timer);
+}
+
+/**
+ * Spawn under the Rust warden harness. Returns false when the warden
+ * binary is unavailable (npm install, Windows, TALON_NO_WARDEN) so the
+ * caller falls back to the direct path. Once this returns true, warden
+ * events drive the trigger to a terminal state through the same
+ * handlers the direct path uses.
+ */
+function spawnViaWarden(
+  trigger: Trigger,
+  command: { cmd: string; args: string[] },
+): boolean {
+  const warden = spawnWarden({
+    command: command.cmd,
+    args: [...command.args, trigger.scriptPath],
+    timeoutMs: trigger.persistent
+      ? 0
+      : clampedTimeoutMs(trigger.timeoutSeconds),
+    graceMs: SIGTERM_GRACE_MS,
+    env: triggerEnv(trigger),
+    onStart: (event) => {
+      // The child's pid arrives one event later than the direct path
+      // learns it; the maps below were registered synchronously so
+      // cancel/shutdown already work during this window.
+      updateTrigger(trigger.id, {
+        pid: event.pid,
+        pidStarttime: event.pidStarttime ?? undefined,
+      });
+      // Same crash-window rationale as the direct path: flush the pid
+      // so the next boot's orphan probe can see it.
+      if (trigger.persistent) persistNow();
+      log(
+        "triggers",
+        `Spawned "${trigger.name}" [${trigger.id}] pid=${event.pid} (${trigger.language}, warden)`,
+      );
+      logStreams
+        .get(trigger.id)
+        ?.write(
+          `--- spawn ${new Date().toISOString()} pid=${event.pid} (warden) ---\n`,
+        );
+    },
+    onLine: (event) =>
+      event.stream === "stdout"
+        ? handleStdoutLine(trigger.id, event.text)
+        : handleStderrLine(trigger.id, event.text),
+    onExit: (event) => handleWardenExit(trigger, event),
+    onSpawnError: (message) => {
+      // The warden can die before reporting a child start when a
+      // cancel/shutdown/timeout TERM races its process startup. If a
+      // status other than "running" was already recorded (spawnViaWarden
+      // set "running" synchronously, so anything else means a handler
+      // won that race), this is not a spawn failure — settle through
+      // finalizeExit so cleanup, persistence, and wake fires stay on
+      // the one path.
+      const t = getTrigger(trigger.id);
+      if (t && t.status !== "running") {
+        finalizeExit(trigger.id, null, null).catch((err) =>
+          logError("triggers", `finalizeExit failed [${trigger.id}]`, err),
+        );
+        return;
+      }
+      // Mirror the direct path's fail-before-start: unwind the maps so
+      // the trigger doesn't look alive, then record the failure.
+      const timer = timeouts.get(trigger.id);
+      if (timer) clearTimeout(timer);
+      timeouts.delete(trigger.id);
+      children.delete(trigger.id);
+      wardened.delete(trigger.id);
+      lineBuffers.delete(trigger.id);
+      const stream = logStreams.get(trigger.id);
+      if (stream) {
+        stream.end();
+        logStreams.delete(trigger.id);
+      }
+      failTrigger(trigger, message);
+    },
+  });
+  if (!warden) return false;
+
+  children.set(trigger.id, warden);
+  wardened.add(trigger.id);
+  lineBuffers.set(trigger.id, []);
+  updateTrigger(trigger.id, { status: "running", startedAt: Date.now() });
+  if (trigger.persistent) persistNow();
+  openLogStream(trigger);
+  armTimeout(trigger);
+  return true;
+}
+
+function handleWardenExit(trigger: Trigger, event: WardenExitEvent): void {
+  if (event.timedOut) {
+    // The warden's out-of-process deadline fired before the TS timer —
+    // record the same terminal status handleTimeout would have.
+    const t = getTrigger(trigger.id);
+    if (t && (t.status === "running" || t.status === "pending")) {
+      updateTrigger(trigger.id, {
+        status: "timed_out",
+        lastError: `Timed out after ${trigger.timeoutSeconds}s`,
+      });
+      persistNow();
+    }
+  }
+  finalizeExit(
+    trigger.id,
+    event.code,
+    (event.signal as NodeJS.Signals | null) ?? null,
+  ).catch((err) =>
+    logError("triggers", `finalizeExit failed [${trigger.id}]`, err),
+  );
+}
+
+/** The original in-process supervision path — no warden binary needed. */
+function spawnDirect(
+  trigger: Trigger,
+  command: { cmd: string; args: string[] },
+): void {
   let child: ChildProcess;
   try {
     child = spawn(command.cmd, [...command.args, trigger.scriptPath], {
       stdio: ["ignore", "pipe", "pipe"],
       // detached:false → child is in our process group → killed if we crash
-      env: {
-        ...process.env,
-        TALON_TRIGGER_ID: trigger.id,
-        TALON_TRIGGER_NAME: trigger.name,
-        TALON_CHAT_ID: trigger.chatId,
-      },
+      env: triggerEnv(trigger),
     });
   } catch (err) {
     failTrigger(
@@ -158,18 +345,7 @@ export function spawnTrigger(trigger: Trigger): void {
     `Spawned "${trigger.name}" [${trigger.id}] pid=${child.pid} (${trigger.language})`,
   );
 
-  const logStream = createWriteStream(trigger.logPath, {
-    flags: "a",
-    mode: 0o600,
-  });
-  // Without this handler, a disk/permission failure on the log file would emit
-  // an unhandled `error` event and crash the whole Node process. Log it instead
-  // and let the trigger keep running — the script's behaviour matters more than
-  // its diagnostic log.
-  logStream.on("error", (err) =>
-    logError("triggers", `log stream error [${trigger.id}]`, err),
-  );
-  logStreams.set(trigger.id, logStream);
+  const logStream = openLogStream(trigger);
   logStream.write(
     `--- spawn ${new Date(startedAt).toISOString()} pid=${child.pid} ---\n`,
   );
@@ -184,11 +360,7 @@ export function spawnTrigger(trigger: Trigger): void {
   }
   if (child.stderr) {
     const rlErr = createInterface({ input: child.stderr, crlfDelay: Infinity });
-    rlErr.on("line", (line) => {
-      const stream = logStreams.get(trigger.id);
-      stream?.write(`[stderr] ${line}\n`);
-      pushBufferLine(trigger.id, `[stderr] ${line}`);
-    });
+    rlErr.on("line", (line) => handleStderrLine(trigger.id, line));
   }
 
   child.on("exit", (code, signal) => {
@@ -197,16 +369,7 @@ export function spawnTrigger(trigger: Trigger): void {
     );
   });
 
-  // Hard timeout — persistent triggers run without one. They're long-running
-  // watchers whose lifetime is tied to Talon's, not to a wall-clock deadline.
-  // If a persistent script hangs, the user can trigger_cancel it explicitly.
-  if (!trigger.persistent) {
-    const timeoutMs =
-      Math.min(Math.max(trigger.timeoutSeconds, 1), 7 * 24 * 60 * 60) * 1000;
-    const timer = setTimeout(() => handleTimeout(trigger), timeoutMs);
-    timer.unref();
-    timeouts.set(trigger.id, timer);
-  }
+  armTimeout(trigger);
 }
 
 function handleTimeout(trigger: Trigger): void {
@@ -302,6 +465,13 @@ function handleStdoutLine(triggerId: string, line: string): void {
   }
 }
 
+/** Stderr lines are logged and buffered (tagged) but never fire wakes. */
+function handleStderrLine(triggerId: string, line: string): void {
+  const stream = logStreams.get(triggerId);
+  stream?.write(`[stderr] ${line}\n`);
+  pushBufferLine(triggerId, `[stderr] ${line}`);
+}
+
 function pushBufferLine(triggerId: string, line: string): void {
   const buf = lineBuffers.get(triggerId);
   if (!buf) return;
@@ -360,6 +530,12 @@ function killChild(id: string, child: ChildProcess): void {
   } catch {
     /* already dead */
   }
+  // Warden handles forward the TERM to the child's process group and run
+  // their own grace escalation — give them headroom to finish it before
+  // the last-resort SIGKILL here.
+  const graceMs = wardened.has(id)
+    ? SIGTERM_GRACE_MS + WARDEN_GRACE_SLACK_MS
+    : SIGTERM_GRACE_MS;
   const grace = setTimeout(() => {
     if (children.has(id)) {
       try {
@@ -368,7 +544,7 @@ function killChild(id: string, child: ChildProcess): void {
         /* already dead */
       }
     }
-  }, SIGTERM_GRACE_MS);
+  }, graceMs);
   grace.unref();
 }
 
@@ -380,6 +556,7 @@ async function finalizeExit(
   signal: NodeJS.Signals | null,
 ): Promise<void> {
   children.delete(id);
+  wardened.delete(id);
   const timer = timeouts.get(id);
   if (timer) {
     clearTimeout(timer);
@@ -671,6 +848,7 @@ export const _internals = {
   children,
   timeouts,
   logStreams,
+  wardened,
   handleStdoutLine,
   handleTimeout,
   finalizeExit,
