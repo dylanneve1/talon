@@ -91,8 +91,11 @@ describe("save / get / delete lifecycle", () => {
     });
     expect(skill.scriptPath).toContain(join("skills", "greet.sh"));
     expect(readFileSync(skill.scriptPath, "utf-8")).toBe("echo hello");
-    // 0o700 — owner read/write/exec only
-    expect(statSync(skill.scriptPath).mode & 0o777).toBe(0o700);
+    // 0o700 — owner read/write/exec only. Windows has no POSIX modes
+    // (chmod is a no-op; stat reports 0o666), so assert POSIX-only.
+    if (process.platform !== "win32") {
+      expect(statSync(skill.scriptPath).mode & 0o777).toBe(0o700);
+    }
 
     const loaded = getSkill("greet");
     expect(loaded).toEqual(skill);
