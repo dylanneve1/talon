@@ -3,6 +3,7 @@
  */
 
 import { escapeHtml } from "./formatting.js";
+import type { DoctorReport } from "../../core/doctor.js";
 import type { ModelInfo } from "../../core/models/catalog.js";
 import type { ReasoningEffortLevel } from "../../core/types.js";
 import { REASONING_LEVEL_LABELS } from "../../core/models/reasoning-levels.js";
@@ -208,6 +209,52 @@ export function renderMetricsMessages(
   }
 
   return chunks;
+}
+
+const DOCTOR_ICONS: Record<string, string> = {
+  ok: "✅",
+  warn: "⚠️",
+  fail: "❌",
+  info: "▫️",
+};
+
+/**
+ * Render a DoctorReport as one Telegram HTML message. Same data as
+ * `talon doctor` (src/core/doctor.ts) plus in-process runtime info —
+ * when this renders, the bot is by definition running, so the CLI's
+ * "is the bot up" probe becomes an uptime line instead.
+ */
+export function renderDoctorMessage(report: DoctorReport): string {
+  const lines = ["<b>🩺 Talon Doctor</b>", "", "<b>Environment</b>"];
+
+  for (const check of report.checks) {
+    const detail = check.detail ? ` (${escapeHtml(check.detail)})` : "";
+    lines.push(
+      `${DOCTOR_ICONS[check.status]} ${escapeHtml(check.label)}${detail}`,
+    );
+  }
+
+  lines.push("", "<b>Native modules</b>");
+  for (const mod of report.native) {
+    const size =
+      mod.sizeBytes !== undefined ? ` · ${formatBytes(mod.sizeBytes)}` : "";
+    const note = mod.note ? ` (${escapeHtml(mod.note)})` : "";
+    lines.push(
+      `${mod.ok ? DOCTOR_ICONS.ok : DOCTOR_ICONS.fail} <code>${escapeHtml(mod.name)}</code> — ${escapeHtml(mod.language)} → ${escapeHtml(mod.target)}${size}${note}`,
+    );
+  }
+
+  lines.push(
+    "",
+    "<b>Process</b>",
+    `Uptime ${formatDuration(process.uptime() * 1000)} · PID ${process.pid} · Node ${escapeHtml(process.versions.node)}`,
+    "",
+    report.issues === 0
+      ? `${DOCTOR_ICONS.ok} All checks passed.`
+      : `${DOCTOR_ICONS.warn} ${report.issues} issue(s) found.`,
+  );
+
+  return lines.join("\n");
 }
 
 export function renderSettingsText(
