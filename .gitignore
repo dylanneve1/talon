@@ -31,3 +31,8 @@ native/scheduler-core/build/
 # native module build outputs (artifact of record is the embedded TS module)
 native/*/.zig-cache/
 native/*/*.wasm
+
+# talon-driver launcher — per-arch native binary, built by packaging/CI,
+# never committed (npm keeps shipping the portable bin/talon.js shim).
+bin/talon
+native/talon-driver/dist/

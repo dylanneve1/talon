@@ -33,6 +33,9 @@ const FORBIDDEN_PATTERNS = [
   /\bid_(rsa|ed25519|ecdsa)$/,
 
   // Build / dev artifacts that should never ship
+  // bin/ must contain only the portable talon.js shim — never the
+  // per-arch talon-driver binary (it would ship one arch to everyone).
+  /^bin\/(?!talon\.js$)/,
   /__tests__\//,
   /\.test\.[mc]?[jt]sx?$/,
   /\.spec\.[mc]?[jt]sx?$/,

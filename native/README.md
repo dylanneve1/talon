@@ -1,8 +1,9 @@
 # Talon native plane
 
 Talon's hot paths and policy cores are written in systems languages and
-embedded into the TypeScript runtime. Five modules, five languages, one
-contract.
+embedded into the TypeScript runtime. Five embedded modules, five
+languages, one contract — plus a native launcher binary that fronts the
+CLI for the distribution channels.
 
 | Module | Language | Target | Used by |
 | --- | --- | --- | --- |
@@ -11,6 +12,13 @@ contract.
 | [strsim-c](strsim-c/) | C | wasm32-freestanding | "did you mean ...?" for Telegram + CLI (`src/native/strsim.ts`) |
 | [htmlents-cpp](htmlents-cpp/) | C++ | wasm32-freestanding | HTML escaping on every Telegram render (`src/native/htmlents.ts`) |
 | [scheduler-core](scheduler-core/) | Gleam | JavaScript | cron/heartbeat backoff, breaker, catch-up policy (`src/native/scheduler-core.ts`) |
+
+The launcher is a different kind of native component — a real
+executable, not an embedded artifact:
+
+| Component | Language | Target | Role |
+| --- | --- | --- | --- |
+| [talon-driver](talon-driver/) | C | native per-arch ELF / Mach-O | the `talon` front-door: finds Node >= 24, execs `bin/talon.js` (apt / brew / source installs) |
 
 ## The contract
 
@@ -43,12 +51,15 @@ contract.
 Each module only needs its own toolchain:
 
 ```sh
-npm run build:wasm    # Rust  → blake3
-npm run build:zig     # Zig   → textops
-npm run build:c       # C     → strsim
-npm run build:cpp     # C++   → htmlents
-npm run build:gleam   # Gleam → scheduler-core
-npm run build:native  # all five
+npm run build:wasm        # Rust  → blake3
+npm run build:zig         # Zig   → textops
+npm run build:c           # C     → strsim
+npm run build:cpp         # C++   → htmlents
+npm run build:gleam       # Gleam → scheduler-core
+npm run build:native      # all five embedded modules
+
+npm run build:driver      # C launcher → bin/talon (host)
+npm run build:driver:all  # launcher cross-compile matrix → dist/
 ```
 
 ## Adding a module

@@ -280,6 +280,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
       - name: Cache zig toolchain
         id: zig-cache
         uses: actions/cache@v4
@@ -310,6 +315,22 @@ jobs:
             src/native/textops-wasm-bytes.ts \
             src/native/strsim-wasm-bytes.ts \
             src/native/htmlents-wasm-bytes.ts
+
+      # The talon-driver launcher is a native per-arch binary (not an
+      # embedded artifact), so there is nothing to drift-check — instead
+      # cross-compile the whole distribution matrix as a build guard, so
+      # a source change that breaks any target arch fails here.
+      - name: Cross-compile the launcher (all targets)
+        run: npm run build:driver:all
+
+      # Run the launcher's behavior suite here — this is the only job with
+      # the pinned zig toolchain, so it's where the build-and-drive tests
+      # in src/__tests__/talon-driver.test.ts actually execute (elsewhere
+      # they self-skip when zig is absent).
+      - name: Driver behavior tests
+        run: |
+          npm ci
+          npx vitest run src/__tests__/talon-driver.test.ts
 
   # ── WASM artifact reproducibility ──────────────────────────────
   # The Rust blake3-wasm crate (native/blake3-wasm) is committed alongside
