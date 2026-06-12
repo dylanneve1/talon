@@ -4,7 +4,11 @@
  *
  * Contract (the "standard"):
  *   - Script body lives at ~/.talon/data/trigger-runs/<chatId>/<id>.<ext>
- *   - Talon spawns it under bash / python3 / node depending on `language`
+ *   - Talon spawns it under bash / python3 / node depending on `language`.
+ *     `lua` is special: it runs inside Talon itself via the hidden
+ *     `_lua-run` subcommand (WASM-sandboxed wasmoon VM, see
+ *     core/scripting/lua-runner.ts) — still a child process, so the
+ *     whole supervision contract below applies unchanged.
  *   - Mid-run protocol: any line starting with `TALON_FIRE: <text>` fires a
  *     wake-up message containing <text>; the script keeps running. Useful for
  *     long-running watchers that emit multiple events.
@@ -39,6 +43,8 @@ import {
 } from "../../storage/trigger-store.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
+import { selfInvocation } from "../../util/mcp-launcher.js";
+import { LUA_RUN_SUBCOMMAND } from "../scripting/lua-runner.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -234,6 +240,17 @@ function commandForLanguage(
       };
     case "node":
       return { cmd: "node", args: [] };
+    case "lua": {
+      // Lua has no host interpreter dependency: Talon re-invokes its own
+      // entrypoint with the `_lua-run` subcommand (same self-invocation
+      // shape as MCP supervision) and runs the script in a WASM-sandboxed
+      // wasmoon VM. Works for tsx source runs (loader flags ride along in
+      // execArgv) and bun-compiled binaries (embedded argv[1] omitted —
+      // the binary re-invokes itself). The spawn() above appends
+      // trigger.scriptPath, which is exactly the runner's argv contract.
+      const inv = selfInvocation(LUA_RUN_SUBCOMMAND);
+      return { cmd: inv.command, args: inv.args };
+    }
   }
 }
 
@@ -651,6 +668,7 @@ export const _internals = {
   handleStdoutLine,
   handleTimeout,
   finalizeExit,
+  commandForLanguage,
 };
 
 function failTrigger(t: Trigger, message: string): void {

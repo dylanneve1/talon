@@ -110,10 +110,11 @@ describe("trigger-store", () => {
   });
 
   describe("validation", () => {
-    it("validateLanguage accepts only the three supported languages", () => {
+    it("validateLanguage accepts only the four supported languages", () => {
       expect(validateLanguage("bash")).toBe(true);
       expect(validateLanguage("python")).toBe(true);
       expect(validateLanguage("node")).toBe(true);
+      expect(validateLanguage("lua")).toBe(true);
       expect(validateLanguage("ruby")).toBe(false);
       expect(validateLanguage(undefined)).toBe(false);
       expect(validateLanguage(123)).toBe(false);
@@ -161,6 +162,7 @@ describe("trigger-store", () => {
       );
       expect(triggerScriptPath("c1", id, "python")).toMatch(/\.py$/);
       expect(triggerScriptPath("c1", id, "node")).toMatch(/\.js$/);
+      expect(triggerScriptPath("c1", id, "lua")).toMatch(/\.lua$/);
     });
 
     it("triggerLogPath always uses .log", () => {

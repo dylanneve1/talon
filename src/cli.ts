@@ -27,13 +27,17 @@ import {
   type StopOutcome,
 } from "./core/daemon/control.js";
 import { MCP_LAUNCH_SUBCOMMAND, runSupervisor } from "./util/mcp-launcher.js";
+import { LUA_RUN_SUBCOMMAND, runLuaMain } from "./core/scripting/lua-runner.js";
 
-// MCP supervisor dispatch — must run before anything else. Talon
-// supervises MCP stdio children by re-invoking its own entrypoint with
-// this hidden subcommand (see util/mcp-launcher.ts). runSupervisor
-// never resolves; the supervisor process exits from its own handlers.
+// Hidden subcommand dispatch — must run before anything else. Talon
+// supervises MCP stdio children (`_mcp-launch`) and runs WASM-sandboxed
+// Lua trigger scripts (`_lua-run`) by re-invoking its own entrypoint
+// (see util/mcp-launcher.ts). Neither call resolves; the helper process
+// exits from its own handlers.
 if (process.argv[2] === MCP_LAUNCH_SUBCOMMAND) {
   await runSupervisor(process.argv.slice(3));
+} else if (process.argv[2] === LUA_RUN_SUBCOMMAND) {
+  await runLuaMain(process.argv.slice(3));
 }
 
 const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..");

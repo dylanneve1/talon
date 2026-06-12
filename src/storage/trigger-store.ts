@@ -28,7 +28,7 @@ import { JsonStore } from "../core/agent-runtime/store.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type TriggerLanguage = "bash" | "python" | "node";
+export type TriggerLanguage = "bash" | "python" | "node" | "lua";
 
 export type TriggerStatus =
   | "pending" // created, not yet spawned (transient)
@@ -225,6 +225,8 @@ export function languageExtension(lang: TriggerLanguage): string {
       return "py";
     case "node":
       return "js";
+    case "lua":
+      return "lua";
   }
 }
 
@@ -256,6 +258,7 @@ const SUPPORTED_LANGUAGES: readonly TriggerLanguage[] = [
   "bash",
   "python",
   "node",
+  "lua",
 ];
 const SCRIPT_MAX_BYTES = 64 * 1024;
 

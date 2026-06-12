@@ -24,7 +24,15 @@ Stdout protocol:
   - Hard timeout (default 24h, max 7d) kills the script and fires a
     "timed_out" wake-up.
 
-Languages: "bash", "python", "node".
+Languages: "bash", "python", "node", "lua".
+
+Lua is special: it runs in a WASM sandbox (Lua 5.4) with NO host filesystem,
+network, environment, or subprocess access — io/os only see an in-memory FS.
+A "talon" table provides the host API: talon.fire(text) emits a TALON_FIRE
+wake-up, talon.log(text) writes to the run log, talon.sleep(ms) sleeps.
+print() is safe and cannot forge the fire protocol. Pick lua for
+pure-compute or timer-driven logic; pick bash/python/node when the watcher
+needs network or file access.
 
 Examples:
   bash, name="pr-merge-watch":
@@ -64,8 +72,10 @@ export const triggerTools: ToolDefinition[] = [
           "Short identifier, unique per chat (letters, digits, space, dot, dash, underscore)",
         ),
       language: z
-        .enum(["bash", "python", "node"])
-        .describe("Interpreter to run the script under"),
+        .enum(["bash", "python", "node", "lua"])
+        .describe(
+          "Interpreter to run the script under (lua = WASM-sandboxed, no host access)",
+        ),
       script: z
         .string()
         .min(1)
