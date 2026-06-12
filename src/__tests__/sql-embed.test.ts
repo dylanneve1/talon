@@ -21,10 +21,13 @@ const sqlDir = fileURLToPath(new URL("../storage/sql", import.meta.url));
 describe("sql embed", () => {
   it("statements.generated.ts matches the .sql sources (run `npm run build:sql`)", () => {
     const expected = buildSqlModule(readSqlSources(sqlDir));
+    // CRLF-normalize the committed artifact too: a Windows checkout
+    // without the .gitattributes pin would otherwise diff on line
+    // endings alone (sources are normalized inside readSqlSources).
     const committed = readFileSync(
       join(sqlDir, "statements.generated.ts"),
       "utf8",
-    );
+    ).replaceAll("\r\n", "\n");
     expect(committed).toBe(expected);
   });
 

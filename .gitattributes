@@ -1,0 +1,6 @@
+# The SQL embed pipeline (sql/embed.ts) does byte-exact drift
+# comparison between the .sql sources and the committed generated
+# module — pin both to LF so Windows checkouts (autocrlf) don't
+# manufacture a diff.
+*.sql text eol=lf
+src/storage/sql/statements.generated.ts text eol=lf

@@ -67,16 +67,23 @@ export function parseNamedStatements(
   return statements;
 }
 
+/**
+ * Read a .sql source with line endings normalized to LF. Belt to the
+ * .gitattributes braces: a Windows checkout (or editor) that produces
+ * CRLF must not change the embedded bytes, or the drift test fails on
+ * exactly one OS.
+ */
+function readSqlFile(path: string): string {
+  return readFileSync(path, "utf8").replaceAll("\r\n", "\n");
+}
+
 export function readSqlSources(dir: string): SqlSources {
   return {
-    schema: readFileSync(join(dir, "schema.sql"), "utf8"),
+    schema: readSqlFile(join(dir, "schema.sql")),
     stores: readdirSync(dir)
       .filter((f) => f.endsWith(".sql") && f !== "schema.sql")
       .sort()
-      .map((f) => [
-        f.replace(/\.sql$/, ""),
-        readFileSync(join(dir, f), "utf8"),
-      ]),
+      .map((f) => [f.replace(/\.sql$/, ""), readSqlFile(join(dir, f))]),
   };
 }
 
