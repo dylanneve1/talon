@@ -35,15 +35,19 @@ The module exports its linear `memory` plus:
 | `alloc(len) -> ptr`             | Allocate `len` bytes, return the offset. Returns `0` for `len == 0` or allocator exhaustion. Region is uninitialized.                                       |
 | `dealloc(ptr, len)`             | Release a region from `alloc` — must pass the **same `len`**. `ptr == 0` or `len == 0` is a no-op.                                                          |
 | `blake3_hash(ptr, len, outPtr)` | Hash `len` bytes at `ptr`, write the 32-byte digest to `outPtr` (caller-allocated, ≥32 bytes). `ptr` may be `0` only when `len == 0`. Regions must not overlap. |
+| `hasher_new() -> handle`        | Allocate an incremental hasher; opaque non-zero handle (`0` on exhaustion). Every handle must be consumed by exactly one `hasher_finalize` or `hasher_free`.   |
+| `hasher_update(handle, ptr, len)` | Feed `len` bytes at `ptr` into the hasher. Any number of calls. `ptr` may be `0` only when `len == 0`. Never allocates — cannot grow/detach memory.          |
+| `hasher_finalize(handle, outPtr)` | Write the 32-byte digest to `outPtr` (caller-allocated, ≥32 bytes) and **consume** the handle.                                                               |
+| `hasher_free(handle)`           | Consume a handle without finalizing — host error-path cleanup.                                                                                                 |
 
-Calls are synchronous and stateless between invocations — one instance is
-memoized for the process lifetime. Callers must allocate, copy in, hash,
-copy out, and dealloc with no awaits in between (see `src/native/blake3.ts`).
-
-The hosted file API reads whole files and refuses anything over 256MB
-(`BLAKE3_MAX_FILE_BYTES`) — one-shot hashing bounds memory at ~2× file
-size. Streaming needs hasher state across the boundary
-(`hasher_new/update/finalize`); that incremental ABI is a later rev.
+One-shot calls are synchronous and stateless between invocations — one
+instance is memoized for the process lifetime, and callers allocate, copy
+in, hash, copy out, and dealloc with no awaits in between. Incremental
+state lives behind its handle, so interleaved hashers are independent;
+`src/native/blake3.ts` uses this to stream files chunk-by-chunk
+(`blake3HexFile`), bounding peak memory at one 1MiB scratch region per
+call with no file-size ceiling (the v1 one-shot file path refused
+anything over 256MB).
 
 ## Rebuilding
 

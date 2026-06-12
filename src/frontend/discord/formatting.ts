@@ -7,6 +7,8 @@
  * provide an escape helper for embedding user-supplied text inside markdown.
  */
 
+import { splitMessage as splitNative } from "../../native/textops.js";
+
 export const DISCORD_MAX_TEXT = 2000;
 /**
  * Headroom under DISCORD_MAX_TEXT for callers that interpolate user-supplied
@@ -19,42 +21,14 @@ export const DISCORD_SAFE_RESERVE = 100;
  * Split a message into chunks ≤ max characters, preferring paragraph/newline/space
  * boundaries. Code fences are kept intact: if a split would land inside a fenced
  * block, the block is closed before the split and reopened in the next chunk.
+ *
+ * Delegates to the shared Zig core (native/textops-wasm), which fixes two bugs
+ * in the JS loop this replaces: fence state was tracked by counting raw ```
+ * occurrences (inline runs flipped it), and appending the close marker could
+ * push a chunk past the 2000-char limit.
  */
 export function splitMessage(text: string, max = DISCORD_MAX_TEXT): string[] {
-  if (text.length <= max) return [text];
-
-  const chunks: string[] = [];
-  let rest = text;
-  let openFence: string | null = null; // tracks an unclosed ``` block carried into next chunk
-
-  while (rest.length > 0) {
-    if (rest.length <= max) {
-      chunks.push(openFence ? openFence + rest : rest);
-      break;
-    }
-
-    let at = rest.lastIndexOf("\n\n", max);
-    if (at <= max * 0.3) at = rest.lastIndexOf("\n", max);
-    if (at <= max * 0.3) at = rest.lastIndexOf(" ", max);
-    if (at <= 0) at = max;
-
-    let head = rest.slice(0, at);
-    if (openFence) head = openFence + head;
-
-    // Detect unclosed fence in this chunk; if so, close it here and reopen next.
-    const fences = head.match(/```/g)?.length ?? 0;
-    if (fences % 2 === 1) {
-      head = head + "\n```";
-      openFence = "```\n";
-    } else {
-      openFence = null;
-    }
-
-    chunks.push(head);
-    rest = rest.slice(at).trimStart();
-  }
-
-  return chunks;
+  return splitNative(text, max);
 }
 
 /**

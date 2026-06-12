@@ -22,10 +22,11 @@ type Row = {
   file_path: string;
   caption: string | null;
   timestamp: number;
+  content_hash: string | null;
 };
 
 const COLUMNS =
-  "chat_id, msg_id, sender_name, type, file_path, caption, timestamp";
+  "chat_id, msg_id, sender_name, type, file_path, caption, timestamp, content_hash";
 
 function rowToEntry(row: Row): MediaEntry {
   return {
@@ -37,6 +38,7 @@ function rowToEntry(row: Row): MediaEntry {
     filePath: row.file_path,
     caption: row.caption ?? undefined,
     timestamp: row.timestamp,
+    contentHash: row.content_hash ?? undefined,
   };
 }
 
@@ -45,7 +47,7 @@ export function upsert(entry: Omit<MediaEntry, "id">): void {
   getDatabase()
     .prepare(
       `INSERT OR REPLACE INTO media_index (${COLUMNS})
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       entry.chatId,
@@ -55,7 +57,61 @@ export function upsert(entry: Omit<MediaEntry, "id">): void {
       entry.filePath,
       entry.caption ?? null,
       entry.timestamp,
+      entry.contentHash ?? null,
     );
+}
+
+/** Record the BLAKE3 content hash once the async hash completes. */
+export function setContentHash(
+  chatId: string,
+  msgId: number,
+  hash: string,
+): void {
+  getDatabase()
+    .prepare(
+      "UPDATE media_index SET content_hash = ? WHERE chat_id = ? AND msg_id = ?",
+    )
+    .run(hash, chatId, msgId);
+}
+
+/** Repoint an entry at another file (content dedupe). */
+export function setFilePath(
+  chatId: string,
+  msgId: number,
+  filePath: string,
+): void {
+  getDatabase()
+    .prepare(
+      "UPDATE media_index SET file_path = ? WHERE chat_id = ? AND msg_id = ?",
+    )
+    .run(filePath, chatId, msgId);
+}
+
+/**
+ * Oldest entry with this content hash other than the given row — the
+ * canonical copy a duplicate download is deduped against.
+ */
+export function firstByContentHash(
+  hash: string,
+  excludeChatId: string,
+  excludeMsgId: number,
+): MediaEntry | undefined {
+  const row = getDatabase()
+    .prepare(
+      `SELECT ${COLUMNS} FROM media_index
+       WHERE content_hash = ? AND NOT (chat_id = ? AND msg_id = ?)
+       ORDER BY timestamp ASC, rowid ASC LIMIT 1`,
+    )
+    .get(hash, excludeChatId, excludeMsgId) as Row | undefined;
+  return row ? rowToEntry(row) : undefined;
+}
+
+/** Entries currently pointing at a file — dedupe makes this > 1. */
+export function countByFilePath(filePath: string): number {
+  const row = getDatabase()
+    .prepare("SELECT COUNT(*) AS n FROM media_index WHERE file_path = ?")
+    .get(filePath) as { n: number };
+  return row.n;
 }
 
 /** Bulk-upsert inside one transaction (legacy JSON import). */

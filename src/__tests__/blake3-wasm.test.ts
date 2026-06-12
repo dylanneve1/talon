@@ -11,16 +11,12 @@
  * from memory.
  */
 
-import { mkdtemp, rm, truncate, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  BLAKE3_MAX_FILE_BYTES,
-  blake3Hex,
-  blake3HexFile,
-} from "../native/blake3.js";
+import { blake3Hex, blake3HexFile } from "../native/blake3.js";
 
 /** Official test-vector input: repeating byte pattern 0,1,...,250,0,1,... */
 function officialInput(len: number): Uint8Array {
@@ -133,17 +129,48 @@ describe("blake3 wasm module", () => {
     );
   });
 
-  it("refuses files over the one-shot size limit before reading them", async () => {
-    const path = join(dir, "oversize.bin");
-    await writeFile(path, Buffer.alloc(0));
-    // Sparse-extend past the limit — instant, no real disk writes.
-    await truncate(path, BLAKE3_MAX_FILE_BYTES + 1);
-    await expect(blake3HexFile(path)).rejects.toThrow(/one-shot limit/);
+  it("streams multi-chunk files identically to one-shot hashing", async () => {
+    // 5MiB+13: several 1MiB streaming chunks plus a ragged tail, so the
+    // incremental hasher_update path crosses chunk boundaries unevenly.
+    const bytes = randomBytes(5 * 1024 * 1024 + 13);
+    const path = join(dir, "large.bin");
+    await writeFile(path, bytes);
+    await expect(blake3HexFile(path)).resolves.toBe(await blake3Hex(bytes));
   });
 
-  it("rejects on missing files", async () => {
-    await expect(
-      blake3HexFile(join(dir, "does-not-exist.bin")),
-    ).rejects.toThrow();
+  it("matches the official vectors through the streaming file path", async () => {
+    // Pin the incremental ABI to upstream truth, not just to blake3Hex.
+    const { inputLen, hash } = OFFICIAL_VECTORS[3]; // 100KiB chunk-tree case
+    const path = join(dir, "vector.bin");
+    await writeFile(path, officialInput(inputLen));
+    await expect(blake3HexFile(path)).resolves.toBe(hash);
+  });
+
+  it("interleaves concurrent file hashes without cross-talk", async () => {
+    // Distinct contents hashed concurrently: per-handle hasher state must
+    // not bleed across awaits between file-read chunks.
+    const files = await Promise.all(
+      Array.from({ length: 8 }, async (_, i) => {
+        const bytes = randomBytes(512 * 1024 + i);
+        const path = join(dir, `interleave-${i}.bin`);
+        await writeFile(path, bytes);
+        return { path, expected: await blake3Hex(bytes) };
+      }),
+    );
+    const hashes = await Promise.all(files.map((f) => blake3HexFile(f.path)));
+    expect(hashes).toEqual(files.map((f) => f.expected));
+  });
+
+  it("rejects on missing files without leaking the hasher handle", async () => {
+    // The createReadStream rejection takes the hasher_free cleanup path;
+    // 50 failures then a correct success would catch a leak-induced fault.
+    for (let i = 0; i < 50; i++) {
+      await expect(
+        blake3HexFile(join(dir, "does-not-exist.bin")),
+      ).rejects.toThrow();
+    }
+    await expect(blake3Hex("")).resolves.toBe(
+      "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+    );
   });
 });

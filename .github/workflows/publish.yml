@@ -22,7 +22,8 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          # Matches engines (>=24) and the CI test matrix.
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - run: npm ci
@@ -50,7 +51,7 @@ jobs:
     steps:
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
 
       - name: Wait for npm registry propagation
         run: sleep 15
@@ -66,7 +67,25 @@ jobs:
           test -f node_modules/talon-agent/src/index.ts
           test -f node_modules/talon-agent/bin/talon.js
           test -d node_modules/talon-agent/prompts
+          # Embedded native artifacts — a files[] regression here means the
+          # package imports fail at runtime, not just at install time.
+          test -f node_modules/talon-agent/src/native/blake3-wasm-bytes.ts
+          test -f node_modules/talon-agent/src/native/textops-wasm-bytes.ts
+          test -d node_modules/talon-agent/src/native/scheduler-core
           echo "Package contents verified"
+
+      - name: Execute the installed CLI
+        run: |
+          # File-existence checks can't catch a broken bin shim or a bad
+          # import graph — actually run the CLI from the installed package.
+          VERSION_OUTPUT=$(./node_modules/.bin/talon --version)
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION_OUTPUT" != "$TAG_VERSION" ]; then
+            echo "::error::talon --version printed '$VERSION_OUTPUT', expected '$TAG_VERSION'"
+            exit 1
+          fi
+          ./node_modules/.bin/talon --help
+          echo "CLI execution verified"
 
   # ── Docker image → GHCR ───────────────────────────────────────
   docker:

@@ -17,6 +17,13 @@ import {
 } from "../../storage/cron-store.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { log, logError, logWarn } from "../../util/log.js";
+import {
+  jobAllowsRun,
+  pruneJobHealth,
+  recordJobFailure,
+  recordJobSuccess,
+  type JobHealthOptions,
+} from "./job-health.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -57,17 +64,33 @@ export function stopCronTimer(): void {
 // has had a chance to update lastRunAt.
 const runningJobs = new Set<string>();
 
+// Per-job circuit breaker policy (Gleam scheduler core via job-health):
+// 3 consecutive failures open the breaker; cooldown starts at 5 minutes
+// and escalates per re-open up to 6 hours. Without this, a job whose
+// target chat is gone (or whose query always faults) fails every
+// matching tick forever.
+const JOB_HEALTH: JobHealthOptions = {
+  threshold: 3,
+  baseCooldownMs: 5 * 60_000,
+  maxCooldownMs: 6 * 60 * 60_000,
+};
+
 async function runCronTick(): Promise<void> {
   if (!deps) return;
   if (getActiveCount() > 10) return; // safety valve — don't pile on if heavily loaded
 
   const now = new Date();
   const jobs = getAllCronJobs();
+  pruneJobHealth(new Set(jobs.map((j) => j.id)));
 
   for (const job of jobs) {
     if (!job.enabled) continue;
     if (runningJobs.has(job.id)) continue; // already in-flight this tick or a previous one
     if (!isDue(job, now)) continue;
+    if (!jobAllowsRun(job.id, now.getTime(), JOB_HEALTH)) {
+      log("cron", `Skipping "${job.name}" [${job.id}] — breaker open`);
+      continue;
+    }
     if (getActiveCount() > 10) break;
 
     runningJobs.add(job.id);
@@ -77,6 +100,7 @@ async function runCronTick(): Promise<void> {
         `Executing "${job.name}" [${job.id}] (${job.type}) in chat ${job.chatId}`,
       );
       await executeJob(job);
+      recordJobSuccess(job.id, Date.now(), JOB_HEALTH);
       recordCronRun(job.id);
       appendDailyLog(
         "Cron",
@@ -85,6 +109,13 @@ async function runCronTick(): Promise<void> {
       log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
     } catch (err) {
       logError("cron", `Job "${job.name}" [${job.id}] failed`, err);
+      const cooldown = recordJobFailure(job.id, Date.now(), JOB_HEALTH);
+      if (cooldown !== null) {
+        logWarn(
+          "cron",
+          `Breaker opened for "${job.name}" [${job.id}] — cooling down ~${Math.round(cooldown / 60_000)}min`,
+        );
+      }
     } finally {
       runningJobs.delete(job.id);
     }

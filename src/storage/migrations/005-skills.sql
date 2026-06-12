@@ -1,4 +1,4 @@
--- 4 — agent-authored skills. Metadata rows only: the script body
+-- 5 — agent-authored skills. Metadata rows only: the script body
 -- lives on disk under ~/.talon/workspace/skills/ (mirroring the
 -- trigger-store split) so the agent can also Read/Edit a skill as a
 -- normal workspace file. Skills are global capabilities, not chat

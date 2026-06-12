@@ -16,8 +16,10 @@
  */
 
 import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { blake3HexFile } from "../native/blake3.js";
 import { log, logError } from "../util/log.js";
 import { files } from "../util/paths.js";
+import { setMessageFilePath } from "./history.js";
 import * as repo from "./repositories/media-index-repo.js";
 
 export type MediaEntry = {
@@ -36,6 +38,11 @@ export type MediaEntry = {
   filePath: string;
   caption?: string;
   timestamp: number;
+  /**
+   * BLAKE3 hex digest of the file contents (native/blake3-wasm).
+   * Filled in asynchronously after addMedia; undefined until hashed.
+   */
+  contentHash?: string;
 };
 
 const RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -117,6 +124,50 @@ export function addMedia(entry: Omit<MediaEntry, "id">): void {
     repo.upsert(entry);
   } catch (err) {
     logError("workspace", "Media index save failed", err);
+    return;
+  }
+  // Hash + dedupe off the hot path — the caller is mid-message-handling
+  // and the row is already queryable without the hash.
+  void hashAndDedupe(entry).catch((err) =>
+    logError(
+      "workspace",
+      `Media content hash failed for ${entry.filePath}`,
+      err,
+    ),
+  );
+}
+
+/**
+ * BLAKE3-hash a downloaded file (native/blake3-wasm) and record the
+ * digest. If another entry already holds identical content, repoint
+ * this entry — and the history row for the same message — at the
+ * canonical copy and drop the duplicate file, so re-posted media costs
+ * one copy on disk no matter how many messages carry it.
+ */
+async function hashAndDedupe(entry: Omit<MediaEntry, "id">): Promise<void> {
+  if (!existsSync(entry.filePath)) return; // gone already (expiry, tests)
+  const hash = await blake3HexFile(entry.filePath);
+  repo.setContentHash(entry.chatId, entry.msgId, hash);
+
+  const canonical = repo.firstByContentHash(hash, entry.chatId, entry.msgId);
+  if (!canonical) return;
+  if (canonical.filePath === entry.filePath) return; // re-download of the same path
+  if (!existsSync(canonical.filePath)) return; // canonical copy lost — keep ours
+
+  repo.setFilePath(entry.chatId, entry.msgId, canonical.filePath);
+  setMessageFilePath(entry.chatId, entry.msgId, canonical.filePath);
+  // The fresh download is unreferenced once repointed — but check, in
+  // case earlier rows (pre-hash legacy imports) still claim the path.
+  if (repo.countByFilePath(entry.filePath) === 0) {
+    try {
+      unlinkSync(entry.filePath);
+      log(
+        "workspace",
+        `Deduped ${entry.filePath} -> ${canonical.filePath} (blake3 ${hash.slice(0, 12)}…)`,
+      );
+    } catch {
+      /* dedupe is best-effort; the entry already points at the canonical copy */
+    }
   }
 }
 
@@ -156,14 +207,17 @@ function purgeExpired(): void {
   const cutoff = Date.now() - RETENTION_MS;
   try {
     const expired = repo.olderThan(cutoff);
-    for (const e of expired) {
+    const removed = repo.deleteOlderThan(cutoff);
+    // Rows first, files second: content dedupe means several entries can
+    // share one file, so only unlink paths no surviving row references.
+    for (const path of new Set(expired.map((e) => e.filePath))) {
+      if (repo.countByFilePath(path) > 0) continue;
       try {
-        if (existsSync(e.filePath)) unlinkSync(e.filePath);
+        if (existsSync(path)) unlinkSync(path);
       } catch {
         /* skip */
       }
     }
-    const removed = repo.deleteOlderThan(cutoff);
     if (removed > 0) {
       log("workspace", `Purged ${removed} expired media entries`);
     }

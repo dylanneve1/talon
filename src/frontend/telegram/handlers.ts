@@ -881,7 +881,6 @@ function createStreamCallbacks(
 async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
   const {
     bot,
-    config,
     chatId,
     numericChatId,
     replyToId,
@@ -920,7 +919,7 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       trackDmUser(senderId, senderName, senderUsername);
     }
 
-    const result = await execute({
+    await execute({
       chatId: String(chatId),
       numericChatId,
       prompt,

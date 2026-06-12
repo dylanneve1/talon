@@ -1,4 +1,4 @@
--- 3 — persistent goals. Real columns: the hot reads are filtered
+-- 4 — persistent goals. Real columns: the hot reads are filtered
 -- (per-chat listing for the goal tools, cross-chat active scan for
 -- the heartbeat) and ordered by recency, so each gets an index.
 -- Progress is a single rolling note + timestamp rather than a

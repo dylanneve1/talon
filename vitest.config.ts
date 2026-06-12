@@ -47,11 +47,13 @@ export default defineConfig({
       // Catches "tests dropped on critical code" without being so tight
       // that minor refactors break CI. Tightened over time as the suite
       // grows. Each ratchet should bump in increments of ~5%.
+      // Ratcheted 60 → 65 at actuals of 70.5/69.4/70.5 (2026-06);
+      // branches stays 60 (actual 63.2 — too tight for a 5pt bump).
       thresholds: {
-        lines: 60,
-        functions: 60,
+        lines: 65,
+        functions: 65,
         branches: 60,
-        statements: 60,
+        statements: 65,
       },
     },
   },

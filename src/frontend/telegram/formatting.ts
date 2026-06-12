@@ -2,25 +2,16 @@
  * Telegram message formatting and splitting utilities.
  */
 
-/** Split a message into chunks that fit Telegram's 4096 char limit. */
+import { splitMessage as splitNative } from "../../native/textops.js";
+
+/**
+ * Split a message into chunks that fit Telegram's 4096 char limit.
+ * Delegates to the shared Zig core (native/textops-wasm): fence-aware
+ * — splits never strand an open ``` block — and surrogate-safe, unlike
+ * the JS loop this replaces.
+ */
 export function splitMessage(text: string, max: number): string[] {
-  if (text.length <= max) return [text];
-  const chunks: string[] = [];
-  let rest = text;
-  while (rest.length > 0) {
-    if (rest.length <= max) {
-      chunks.push(rest);
-      break;
-    }
-    // Prefer splitting at paragraph breaks, then newlines, then spaces
-    let at = rest.lastIndexOf("\n\n", max);
-    if (at <= max * 0.3) at = rest.lastIndexOf("\n", max);
-    if (at <= max * 0.3) at = rest.lastIndexOf(" ", max);
-    if (at <= 0) at = max;
-    chunks.push(rest.slice(0, at));
-    rest = rest.slice(at).trimStart();
-  }
-  return chunks;
+  return splitNative(text, max);
 }
 
 /**

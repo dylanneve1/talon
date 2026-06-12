@@ -1,0 +1,34 @@
+# Talon systemd service for npm package installs (`npm install -g talon-agent`).
+# Use packaging/systemd/talon.service instead when running from a source
+# checkout.
+#
+# Install:
+#   sudo cp packaging/systemd/talon-package.service /etc/systemd/system/talon.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now talon
+#
+# `talon run` is the attached foreground mode — under systemd the unit IS
+# the supervisor, so the self-daemonizing `talon start` would double-fork
+# out from under Type=simple.
+
+[Unit]
+Description=Talon — multi-platform agentic AI harness
+After=network.target
+
+[Service]
+Type=simple
+# EDIT: the user whose ~/.talon holds the config/state
+# User=your-username
+# `env` resolves the global npm bin wherever the node install put it.
+ExecStart=/usr/bin/env talon run
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits
+MemoryMax=1G
+CPUQuota=80%
+
+[Install]
+WantedBy=multi-user.target

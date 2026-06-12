@@ -12,6 +12,7 @@
 
 import * as cheerio from "cheerio";
 import { marked } from "marked";
+import { splitMessage } from "../../native/textops.js";
 
 /** Max safe message length for a single Adaptive Card. */
 const MAX_CHUNK = 10_000;
@@ -223,26 +224,14 @@ export function buildAdaptiveCard(
 /**
  * Split a long message into chunks that each fit within an Adaptive Card.
  * Splits on paragraph boundaries when possible.
+ *
+ * Delegates to the shared Zig core (native/textops-wasm). Fence
+ * tracking matters here too: `marked.lexer` mis-parses a chunk whose
+ * fenced block was cut open, so closed/reopened fences keep every
+ * chunk rendering as a proper monospace block.
  */
 export function splitTeamsMessage(text: string, maxLen = MAX_CHUNK): string[] {
-  if (text.length <= maxLen) return [text];
-
-  const chunks: string[] = [];
-  let remaining = text;
-
-  while (remaining.length > maxLen) {
-    let splitIdx = remaining.lastIndexOf("\n\n", maxLen);
-    if (splitIdx < maxLen * 0.3) {
-      splitIdx = remaining.lastIndexOf("\n", maxLen);
-    }
-    if (splitIdx < maxLen * 0.3) {
-      splitIdx = maxLen;
-    }
-    chunks.push(remaining.slice(0, splitIdx).trimEnd());
-    remaining = remaining.slice(splitIdx).trimStart();
-  }
-  if (remaining) chunks.push(remaining);
-  return chunks;
+  return splitMessage(text, maxLen);
 }
 
 /**
