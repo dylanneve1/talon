@@ -112,7 +112,8 @@ describe("pushMessage — retention across many chats", () => {
     for (const i of [0, 1, 50, 199]) {
       expect(getRecentHistory(`${prefix}${i}`)).toHaveLength(1);
     }
-  });
+    // 1001 row commits: Windows CI disks need more than the 15s default.
+  }, 60_000);
 
   it("flushHistory checkpoints without touching the legacy JSON writer", () => {
     const id = uniqueChat();
