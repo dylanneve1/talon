@@ -41,7 +41,7 @@ npx talon chat        # terminal chat mode
 
 **Prerequisites:**
 
-- [Node.js 22+](https://nodejs.org/)
+- [Node.js 24+](https://nodejs.org/)
 - Backend-specific:
   - `claude` backend: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated (`claude` CLI on PATH).
   - `kilo` backend: nothing extra — `@kilocode/sdk` spawns a local server. Free models are accessible without auth; routed models use Kilo's own credentials.

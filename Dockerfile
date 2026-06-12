@@ -1,4 +1,5 @@
-FROM node:22-slim
+# node:24 matches the package's engines field (>=24) and the CI test matrix.
+FROM node:24-slim
 
 WORKDIR /app
 
@@ -11,7 +12,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 # The Claude Agent SDK ships native `claude` binaries for both linux-x64-musl
-# (Alpine) and linux-x64 (glibc) and probes them in that order. node:22-slim is
+# (Alpine) and linux-x64 (glibc) and probes them in that order. node:24-slim is
 # Debian/glibc, so the musl variant is unusable but resolves first — when the
 # SDK tries to spawn it, the dynamic linker fails and Talon errors at startup
 # with "native binary not found". Remove the wrong variant so the SDK falls

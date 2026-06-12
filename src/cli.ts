@@ -1207,6 +1207,17 @@ switch (command) {
   case "doctor":
     runDoctor();
     break;
+  case "--version":
+  case "-v": {
+    // Read at invocation (not import) so `--version` stays dependency-free
+    // and works before any config exists — the publish smoke test runs it
+    // against the freshly installed package.
+    const pkg = JSON.parse(
+      readFileSync(resolve(PKG_ROOT, "package.json"), "utf-8"),
+    ) as { version: string };
+    console.log(pkg.version);
+    break;
+  }
   case "--help":
   case "-h":
     printBanner();
@@ -1222,6 +1233,7 @@ switch (command) {
     console.log(`    ${pc.cyan("config")}     View/edit configuration`);
     console.log(`    ${pc.cyan("logs")}       Tail log file`);
     console.log(`    ${pc.cyan("doctor")}     Validate environment`);
+    console.log(`    ${pc.cyan("--version")}  Print the package version`);
     console.log();
     console.log(
       `  Run ${pc.cyan("talon")} with no args for interactive menu.\n`,

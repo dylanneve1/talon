@@ -9,7 +9,7 @@
 # `@openai/codex-sdk`). The root `Dockerfile` is the production-
 # optimised build.
 
-FROM node:22-slim
+FROM node:24-slim
 
 # `codex` requires curl/git/ripgrep on PATH for its built-in tools.
 RUN apt-get update && \

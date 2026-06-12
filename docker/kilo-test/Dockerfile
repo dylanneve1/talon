@@ -7,7 +7,7 @@
 # runs from TypeScript sources via `node --import tsx`. The root
 # `Dockerfile` is the production-optimised build.
 
-FROM node:22-slim
+FROM node:24-slim
 
 WORKDIR /app
 
