@@ -49,3 +49,16 @@ and orphan-free teardown. Build per arch on a matching-OS builder:
 npm run build:warden                                       # host arch → bin/talon-warden
 node native/talon-warden/build.mjs --target=<rust-triple>  # cross (Linux targets) → dist/
 ```
+
+## Hashing addon (`talon-blake3.node`)
+
+Optional like the warden: ship
+([`native/blake3-napi`](../native/blake3-napi/)) as
+`bin/talon-blake3.node` (override: `TALON_BLAKE3_NODE`) and media
+hashing runs on native SIMD off the event loop; without it the embedded
+wasm module does the hashing. Build per arch the same way:
+
+```sh
+npm run build:napi                                        # host arch → bin/talon-blake3.node
+node native/blake3-napi/build.mjs --target=<rust-triple>  # cross (Linux targets) → dist/
+```

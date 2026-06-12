@@ -16,7 +16,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { blake3Hex, blake3HexFile } from "../native/blake3.js";
+// Wasm-pinned exports: this suite proves the embedded wasm module,
+// regardless of whether the optional napi addon is built locally.
+import {
+  blake3HexWasm as blake3Hex,
+  blake3HexFileWasm as blake3HexFile,
+} from "../native/blake3.js";
 
 /** Official test-vector input: repeating byte pattern 0,1,...,250,0,1,... */
 function officialInput(len: number): Uint8Array {

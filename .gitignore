@@ -43,3 +43,10 @@ native/talon-driver/dist/
 bin/talon-warden
 native/talon-warden/target/
 native/talon-warden/dist/
+
+# blake3-napi addon — per-arch .node library like the warden binary:
+# built by packaging/CI/source installs, never committed. Without it
+# src/native/blake3.ts falls back to the embedded wasm module.
+bin/talon-blake3.node
+native/blake3-napi/target/
+native/blake3-napi/dist/

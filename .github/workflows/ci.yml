@@ -413,6 +413,53 @@ jobs:
             src/__tests__/triggers.test.ts \
             src/__tests__/triggers-extended.test.ts
 
+  # ── Blake3 napi addon ──────────────────────────────────────────
+  # blake3-napi (native/blake3-napi) is a per-arch .node library like
+  # the warden is a per-arch binary — nothing to drift-check. Build it
+  # with the pinned toolchain, run its unit tests, then drive the real
+  # artifact through the TS boundary: digest agreement with the wasm
+  # twin, fallback modes, and the media-index consumer. This is the job
+  # of record for the native hashing path (elsewhere the napi tests
+  # self-skip when cargo is absent and hashing uses the wasm fallback).
+  # Both OSes: cdylib loading and mmap behaviour differ.
+  napi:
+    name: Blake3 Napi (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/blake3-napi
+
+      - name: Unit tests (pinned toolchain via rust-toolchain.toml)
+        run: cargo test --locked
+        working-directory: native/blake3-napi
+
+      - name: Build the addon
+        run: npm run build:napi
+
+      - name: Addon behavior + wasm parity + media-index consumer
+        run: |
+          npm ci
+          npx vitest run src/__tests__/blake3-napi.test.ts \
+            src/__tests__/blake3-wasm.test.ts \
+            src/__tests__/media-index.test.ts
+
   # ── Real backend live integration tier ───────────────────────
   # Installs the real backend CLI, then exercises the deployed backend surface
   # that fixture tests cannot fully represent: Kilo/OpenCode live HTTP model
@@ -672,6 +719,7 @@ jobs:
       - zig-artifact
       - wasm-artifact
       - warden
+      - napi
       - backend-live
       - fuzz
       - security

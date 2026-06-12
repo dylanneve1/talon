@@ -2,9 +2,9 @@
 
 Talon's hot paths and policy cores are written in systems languages and
 embedded into the TypeScript runtime. Six embedded modules, five
-languages, one contract — plus two real executables: a native launcher
-that fronts the CLI for the distribution channels, and a Rust
-supervision harness that fronts every trigger child.
+languages, one contract — plus two real executables (a native launcher
+that fronts the CLI, a Rust supervision harness that fronts every
+trigger child) and one in-process napi addon for hashing throughput.
 
 | Module | Language | Target | Used by |
 | --- | --- | --- | --- |
@@ -22,6 +22,13 @@ real executables, not embedded artifacts:
 | --- | --- | --- | --- |
 | [talon-driver](talon-driver/) | C | native per-arch ELF / Mach-O | the `talon` front-door: finds Node >= 24, execs `bin/talon.js` (apt / brew / source installs) |
 | [talon-warden](talon-warden/) | Rust | native per-arch ELF / Mach-O | trigger supervision harness: own-process-group children, out-of-process timeouts, orphan-free teardown (`src/native/warden.ts` → `core/background/triggers.ts`, with TS fallback when absent) |
+
+The addon is the third shape — in-process like the wasm modules, but a
+real per-arch artifact like the executables, loaded only when present:
+
+| Component | Language | Target | Role |
+| --- | --- | --- | --- |
+| [blake3-napi](blake3-napi/) | Rust | native per-arch .node (N-API) | media hashing fast path: SIMD + rayon, mmap'd files hashed off the event loop (`src/native/blake3.ts`, embedded-wasm fallback when absent) |
 
 ## The contract
 
@@ -64,6 +71,7 @@ npm run build:native      # all six embedded modules
 npm run build:driver      # C launcher → bin/talon (host)
 npm run build:driver:all  # launcher cross-compile matrix → dist/
 npm run build:warden      # Rust supervision harness → bin/talon-warden (host)
+npm run build:napi        # Rust blake3 addon → bin/talon-blake3.node (host)
 ```
 
 ## Adding a module
