@@ -41,7 +41,7 @@ vi.mock("node:fs", async (importOriginal) => {
     readFileSync: (path: unknown, ...args: unknown[]) =>
       /[/\\]prompts[/\\]system[/\\]/.test(String(path))
         ? (real.readFileSync as (...a: unknown[]) => unknown)(path, ...args)
-        : readFileSyncMock(),
+        : (readFileSyncMock as (...a: unknown[]) => unknown)(path, ...args),
     mkdirSync: mkdirSyncMock,
   };
 });
