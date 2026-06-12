@@ -1075,6 +1075,20 @@ async function daemonRestart(): Promise<void> {
 
 // ── Entry point ─────────────────────────────────────────────────────────────
 
+/** Every dispatchable subcommand — the unknown-command suggester's vocabulary. */
+const CLI_COMMANDS = [
+  "setup",
+  "status",
+  "config",
+  "logs",
+  "start",
+  "stop",
+  "restart",
+  "run",
+  "chat",
+  "doctor",
+];
+
 const command = process.argv[2];
 switch (command) {
   case "setup":
@@ -1147,9 +1161,14 @@ switch (command) {
   case undefined:
     mainMenu();
     break;
-  default:
-    console.error(
-      `  Unknown command: ${command}\n  Run ${pc.cyan("talon --help")} for usage.\n`,
-    );
+  default: {
+    // "did you mean ...?" via the C similarity core (native/strsim-c).
+    const { closestMatch } = await import("./native/strsim.js");
+    const suggestion = closestMatch(command, CLI_COMMANDS);
+    const hint = suggestion
+      ? `Did you mean ${pc.cyan(`talon ${suggestion.value}`)}?`
+      : `Run ${pc.cyan("talon --help")} for usage.`;
+    console.error(`  Unknown command: ${command}\n  ${hint}\n`);
     process.exit(1);
+  }
 }

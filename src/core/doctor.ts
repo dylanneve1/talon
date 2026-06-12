@@ -13,6 +13,7 @@
 
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { NATIVE_MODULES } from "../native/registry.js";
 import { dirs } from "../util/paths.js";
 
 export type DoctorStatus = "ok" | "warn" | "fail" | "info";
@@ -32,7 +33,7 @@ export interface DoctorCheck {
 /** One embedded native module: provenance plus a live self-test result. */
 export interface NativeModuleCheck {
   name: string;
-  /** Source language ("Rust", "Zig", "Gleam"). */
+  /** Source language ("Rust", "Zig", "C", "C++", "Gleam"). */
   language: string;
   /** Compile target ("wasm32-unknown-unknown", "wasm32-freestanding", "JavaScript"). */
   target: string;
@@ -66,17 +67,6 @@ export interface DoctorConfigSlice {
   openaiBaseUrl?: string;
 }
 
-const BLAKE3_EMPTY_DIGEST =
-  "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262";
-
-/** Decoded byte length of a base64 string without materializing it. */
-function base64ByteLength(b64: string): number {
-  let padding = 0;
-  if (b64.endsWith("==")) padding = 2;
-  else if (b64.endsWith("=")) padding = 1;
-  return Math.floor((b64.length * 3) / 4) - padding;
-}
-
 function errorNote(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -85,69 +75,28 @@ function errorNote(err: unknown): string {
  * Instantiate each embedded module and verify a known answer from it.
  * Catches a corrupted install — truncated artifact, engine without
  * wasm support — at check time instead of mid-message in a frontend.
+ * The module list, provenance, and self-tests live in the native
+ * registry (src/native/registry.ts) — a new native module shows up
+ * here by registering there.
  */
 export async function checkNativeModules(): Promise<NativeModuleCheck[]> {
   const results: NativeModuleCheck[] = [];
-
-  // Rust → wasm32: BLAKE3 hashing (media dedupe, workspace digests).
-  const blake3: NativeModuleCheck = {
-    name: "blake3",
-    language: "Rust",
-    target: "wasm32-unknown-unknown",
-    ok: false,
-  };
-  try {
-    const { BLAKE3_WASM_BASE64 } =
-      await import("../native/blake3-wasm-bytes.js");
-    blake3.sizeBytes = base64ByteLength(BLAKE3_WASM_BASE64);
-    const { blake3Hex } = await import("../native/blake3.js");
-    const digest = await blake3Hex("");
-    blake3.ok = digest === BLAKE3_EMPTY_DIGEST;
-    if (!blake3.ok) blake3.note = "self-test digest mismatch";
-  } catch (err) {
-    blake3.note = errorNote(err);
+  for (const spec of NATIVE_MODULES) {
+    const check: NativeModuleCheck = {
+      name: spec.name,
+      language: spec.language,
+      target: spec.target,
+      ok: false,
+    };
+    try {
+      check.sizeBytes = await spec.sizeBytes?.();
+      await spec.selfTest();
+      check.ok = true;
+    } catch (err) {
+      check.note = errorNote(err);
+    }
+    results.push(check);
   }
-  results.push(blake3);
-
-  // Zig → wasm32: message splitting (every frontend's chunker).
-  const textops: NativeModuleCheck = {
-    name: "textops",
-    language: "Zig",
-    target: "wasm32-freestanding",
-    ok: false,
-  };
-  try {
-    const { TEXTOPS_WASM_BASE64 } =
-      await import("../native/textops-wasm-bytes.js");
-    textops.sizeBytes = base64ByteLength(TEXTOPS_WASM_BASE64);
-    const { splitMessage } = await import("../native/textops.js");
-    const chunks = splitMessage("doctor check ".repeat(4), 16);
-    textops.ok = chunks.length > 1 && chunks.every((c) => c.length <= 16);
-    if (!textops.ok) textops.note = "self-test split out of bounds";
-  } catch (err) {
-    textops.note = errorNote(err);
-  }
-  results.push(textops);
-
-  // Gleam → JS: scheduler decision core (backoff, breaker, catch-up).
-  const scheduler: NativeModuleCheck = {
-    name: "scheduler-core",
-    language: "Gleam",
-    target: "JavaScript",
-    ok: false,
-  };
-  try {
-    const { backoffDelayMs } = await import("../native/scheduler-core.js");
-    const delayMs = backoffDelayMs(1, { baseMs: 1000, capMs: 2000, seed: 1 });
-    // Attempt 1 at base 1000ms with ±25% jitter must land in [750, 1250].
-    scheduler.ok = delayMs >= 750 && delayMs <= 1250;
-    if (!scheduler.ok)
-      scheduler.note = `self-test delay ${delayMs}ms outside jitter window`;
-  } catch (err) {
-    scheduler.note = errorNote(err);
-  }
-  results.push(scheduler);
-
   return results;
 }
 

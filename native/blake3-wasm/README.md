@@ -58,7 +58,8 @@ npm run build:wasm
 That runs, from this directory:
 
 1. `cargo build --release --target wasm32-unknown-unknown --locked`
-2. `node embed.mjs` — regenerates `src/native/blake3-wasm-bytes.ts`
+2. the shared embed step (`native/shared/build-lib.mjs`) — regenerates
+   `src/native/blake3-wasm-bytes.ts`
 
 The generated TS module is the runtime artifact of record and is
 committed; the raw `.wasm` is not. The toolchain is pinned in

@@ -95,9 +95,11 @@ That runs, from this directory:
 
 1. `zig build-exe src/textops.zig -target wasm32-freestanding ...`
    (exact flag set in `build.mjs`)
-2. `node embed.mjs` — regenerates `src/native/textops-wasm-bytes.ts`
+2. the shared embed step (`native/shared/build-lib.mjs`) — regenerates
+   `src/native/textops-wasm-bytes.ts`
 
 The generated TS module is the runtime artifact of record and is
 committed; the raw `.wasm` is not. The compiler is pinned in
-`.zig-version` and enforced by `build.mjs`; the zig-artifact CI job
+`native/.zig-version` (one pin for every module on the zig toolchain —
+Zig, C, and C++) and enforced by `build.mjs`; the zig-toolchain CI job
 rebuilds with the pinned toolchain and fails on drift.

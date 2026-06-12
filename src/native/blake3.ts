@@ -6,12 +6,9 @@
  * native/blake3-wasm and exports a raw C ABI — alloc / dealloc /
  * blake3_hash for one-shot hashing plus hasher_new / hasher_update /
  * hasher_finalize / hasher_free for streaming — no wasm-bindgen, no JS
- * glue. See that crate's README for the full ABI contract.
- *
- * The wasm bytes are embedded as base64 (./blake3-wasm-bytes.ts) so this
- * module works identically under node, tsx, bun, and `bun build --compile`
- * single binaries — no fs paths or import.meta.url asset resolution, which
- * compiled binaries cannot serve.
+ * glue. See that crate's README for the full ABI contract, and
+ * src/native/runtime.ts for the embedding and memory conventions
+ * shared by every native module.
  *
  * Memory discipline: every call allocates its own regions (and, for
  * files, its own hasher handle), and releases them before returning —
@@ -24,6 +21,13 @@
 
 import { createReadStream } from "node:fs";
 import { BLAKE3_WASM_BASE64 } from "./blake3-wasm-bytes.js";
+import {
+  allocRegion,
+  embeddedWasm,
+  toBytes,
+  writeRegion,
+  type WasmCoreExports,
+} from "./runtime.js";
 
 /** BLAKE3 digest length in bytes (fixed by the wasm ABI). */
 const HASH_LEN = 32;
@@ -36,10 +40,7 @@ const HASH_LEN = 32;
 const FILE_CHUNK_BYTES = 1024 * 1024;
 
 /** The C-ABI surface exported by native/blake3-wasm. */
-interface Blake3Exports {
-  memory: WebAssembly.Memory;
-  alloc(len: number): number;
-  dealloc(ptr: number, len: number): void;
+interface Blake3Exports extends WasmCoreExports {
   blake3_hash(inputPtr: number, len: number, outPtr: number): void;
   /** Returns an opaque handle (0 on exhaustion); consume with finalize/free. */
   hasher_new(): number;
@@ -50,50 +51,23 @@ interface Blake3Exports {
   hasher_free(handle: number): void;
 }
 
-let exportsPromise: Promise<Blake3Exports> | null = null;
-
-/**
- * Lazily instantiate the embedded wasm module exactly once. Decoding
- * ~29KB of base64 and compiling the module is microseconds of work, but
- * deferring it keeps module import side-effect free for consumers that
- * never hash.
- */
-function getExports(): Promise<Blake3Exports> {
-  if (!exportsPromise) {
-    const wasmBytes = Buffer.from(BLAKE3_WASM_BASE64, "base64");
-    exportsPromise = WebAssembly.instantiate(wasmBytes, {}).then(
-      (result) => result.instance.exports as unknown as Blake3Exports,
-    );
-  }
-  return exportsPromise;
-}
+const blake3Wasm = embeddedWasm<Blake3Exports>(BLAKE3_WASM_BASE64);
 
 /**
  * Hash bytes (or the UTF-8 encoding of a string) with BLAKE3.
  * Returns the 64-char lowercase hex digest.
  */
 export async function blake3Hex(data: Uint8Array | string): Promise<string> {
-  const input =
-    typeof data === "string" ? new TextEncoder().encode(data) : data;
-  const wasm = await getExports();
+  const input = toBytes(data);
+  const wasm = await blake3Wasm.load();
 
-  // Allocate both regions BEFORE taking any memory views: alloc may grow
-  // linear memory, which detaches existing ArrayBuffer views.
-  const inputPtr = wasm.alloc(input.length); // 0 (null) when input is empty
-  const outPtr = wasm.alloc(HASH_LEN);
-  // alloc returns 0 on allocator exhaustion (and for len 0, which is fine
-  // for the input). Never write through a null pointer — offset 0 is the
-  // module's data section.
-  if (outPtr === 0 || (inputPtr === 0 && input.length > 0)) {
-    wasm.dealloc(inputPtr, input.length);
-    throw new Error(
-      `blake3Hex: wasm allocation failed for ${input.length}-byte input`,
-    );
-  }
+  // Allocate both regions BEFORE taking any memory views (runtime.ts
+  // convention: alloc may grow linear memory and detach views).
+  const inputPtr = allocRegion(wasm, input.length, "blake3Hex");
+  let outPtr = 0;
   try {
-    if (input.length > 0) {
-      new Uint8Array(wasm.memory.buffer, inputPtr, input.length).set(input);
-    }
+    outPtr = allocRegion(wasm, HASH_LEN, "blake3Hex digest");
+    writeRegion(wasm, inputPtr, input);
     wasm.blake3_hash(inputPtr, input.length, outPtr);
     // Copy the digest out of linear memory before dealloc reclaims it.
     return Buffer.from(wasm.memory.buffer, outPtr, HASH_LEN).toString("hex");
@@ -116,18 +90,15 @@ export async function blake3Hex(data: Uint8Array | string): Promise<string> {
  * and detach existing views; hasher_update itself never allocates.
  */
 export async function blake3HexFile(path: string): Promise<string> {
-  const wasm = await getExports();
+  const wasm = await blake3Wasm.load();
   const handle = wasm.hasher_new();
   if (handle === 0) {
     throw new Error("blake3HexFile: wasm hasher allocation failed");
   }
   let finalized = false;
-  const scratch = wasm.alloc(FILE_CHUNK_BYTES);
-  if (scratch === 0) {
-    wasm.hasher_free(handle);
-    throw new Error("blake3HexFile: wasm scratch allocation failed");
-  }
+  let scratch = 0;
   try {
+    scratch = allocRegion(wasm, FILE_CHUNK_BYTES, "blake3HexFile scratch");
     const stream = createReadStream(path, {
       highWaterMark: FILE_CHUNK_BYTES,
     });
@@ -141,10 +112,7 @@ export async function blake3HexFile(path: string): Promise<string> {
         wasm.hasher_update(handle, scratch, slice.length);
       }
     }
-    const outPtr = wasm.alloc(HASH_LEN);
-    if (outPtr === 0) {
-      throw new Error("blake3HexFile: wasm digest allocation failed");
-    }
+    const outPtr = allocRegion(wasm, HASH_LEN, "blake3HexFile digest");
     try {
       wasm.hasher_finalize(handle, outPtr);
       finalized = true;

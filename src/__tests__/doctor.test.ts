@@ -8,11 +8,13 @@ import {
 import { renderDoctorMessage } from "../frontend/telegram/helpers.js";
 
 describe("checkNativeModules", () => {
-  it("verifies all three embedded modules with provenance", async () => {
+  it("verifies every registered module with provenance", async () => {
     const native = await checkNativeModules();
     expect(native.map((m) => m.name)).toEqual([
       "blake3",
       "textops",
+      "strsim",
+      "htmlents",
       "scheduler-core",
     ]);
     for (const mod of native) {
@@ -23,6 +25,10 @@ describe("checkNativeModules", () => {
     expect(byName.blake3.sizeBytes).toBeGreaterThan(0);
     expect(byName.textops.language).toBe("Zig");
     expect(byName.textops.sizeBytes).toBeGreaterThan(0);
+    expect(byName.strsim.language).toBe("C");
+    expect(byName.strsim.sizeBytes).toBeGreaterThan(0);
+    expect(byName.htmlents.language).toBe("C++");
+    expect(byName.htmlents.sizeBytes).toBeGreaterThan(0);
     expect(byName["scheduler-core"].language).toBe("Gleam");
     // Gleam compiles to plain JS — there is no embedded wasm artifact.
     expect(byName["scheduler-core"].sizeBytes).toBeUndefined();
@@ -45,7 +51,7 @@ describe("collectDoctorReport", () => {
     const labels = report.checks.map((c) => c.label);
     expect(labels).toContain("Frontend: terminal");
     expect(labels).toContain("Kilo SDK bundled");
-    expect(report.native).toHaveLength(3);
+    expect(report.native).toHaveLength(5);
     // Node version and workspace presence vary by machine — assert
     // that nothing *else* (frontend, backend, native) raises an issue.
     const envCheck = (label: string) =>

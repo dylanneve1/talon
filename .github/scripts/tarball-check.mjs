@@ -121,13 +121,16 @@ if (!files.some((f) => /^README/i.test(f.path))) {
 }
 
 // Embedded native artifacts MUST ship: blake3 hashing, the textops
-// splitter, and the Gleam scheduler core are imported by runtime code,
-// so a files[] regression that drops src/native/ breaks the installed
-// package at import time. (The native/ SOURCE trees are intentionally
-// not shipped — the embedded artifacts are the artifact of record.)
+// splitter, the strsim suggester, the htmlents escaper, and the Gleam
+// scheduler core are imported by runtime code, so a files[] regression
+// that drops src/native/ breaks the installed package at import time.
+// (The native/ SOURCE trees are intentionally not shipped — the
+// embedded artifacts are the artifact of record.)
 const REQUIRED_PATHS = [
   "src/native/blake3-wasm-bytes.ts",
   "src/native/textops-wasm-bytes.ts",
+  "src/native/strsim-wasm-bytes.ts",
+  "src/native/htmlents-wasm-bytes.ts",
   "src/native/scheduler-core/scheduler_core.mjs",
   "bin/talon.js",
   "prompts/README.md",

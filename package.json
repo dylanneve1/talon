@@ -62,7 +62,7 @@
     "test:codex:backend": "vitest run --reporter=verbose --reporter=json --outputFile=codex-backend-results.json src/__tests__/integration/codex-live-discovery.test.ts",
     "test:openai-agents:backend": "vitest run --reporter=verbose --reporter=json --outputFile=openai-agents-backend-results.json src/__tests__/integration/openai-agents-live-discovery.test.ts",
     "build:sql": "tsx scripts/embed-sql.ts",
-    "build:wasm": "cd native/blake3-wasm && node build.mjs",
+    "build:wasm": "node native/blake3-wasm/build.mjs",
     "tarball:check": "node .github/scripts/tarball-check.mjs",
     "build:stub-sea": "node src/__tests__/integration/stub-claude/build-sea.mjs",
     "test:watch": "vitest",
@@ -74,7 +74,10 @@
     "format:check": "prettier --check src/ prompts/",
     "ci:protect": "node .github/scripts/enforce-ci-gate.mjs",
     "build:gleam": "cd native/scheduler-core && gleam build --target javascript && node embed.mjs",
-    "build:zig": "cd native/textops-wasm && node build.mjs"
+    "build:zig": "node native/textops-wasm/build.mjs",
+    "build:c": "node native/strsim-c/build.mjs",
+    "build:cpp": "node native/htmlents-cpp/build.mjs",
+    "build:native": "npm run build:wasm && npm run build:zig && npm run build:c && npm run build:cpp && npm run build:gleam"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.154",

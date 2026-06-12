@@ -14,7 +14,11 @@ import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions.js";
 import { initUserClient, disconnectUserClient } from "./userbot.js";
-import { registerCommands, setAdminUserId } from "./commands.js";
+import {
+  registerCommands,
+  setAdminUserId,
+  TELEGRAM_COMMANDS,
+} from "./commands.js";
 import { setAccessControl } from "./handlers.js";
 import { registerMiddleware } from "./middleware.js";
 import { registerCallbacks } from "./callbacks.js";
@@ -82,29 +86,7 @@ export function createTelegramFrontend(
       registerCallbacks(bot, config, gateway);
 
       await bot.api.deleteMyCommands();
-      await bot.api.setMyCommands([
-        { command: "start", description: "Introduction" },
-        {
-          command: "settings",
-          description: "View and change all chat settings",
-        },
-        { command: "memory", description: "View what Talon remembers" },
-        { command: "status", description: "Session info, usage, and stats" },
-        { command: "ping", description: "Health check with latency" },
-        { command: "model", description: "Show or change model" },
-        { command: "effort", description: "Set thinking effort level" },
-        { command: "pulse", description: "Conversation engagement settings" },
-        { command: "reset", description: "Clear session and start fresh" },
-        { command: "restart", description: "Restart the bot (admin)" },
-        { command: "metrics", description: "Aggregate performance metrics" },
-        {
-          command: "doctor",
-          description: "Environment and native-module health",
-        },
-        { command: "dream", description: "Force memory consolidation" },
-        { command: "plugins", description: "List loaded plugins" },
-        { command: "help", description: "All commands and features" },
-      ]);
+      await bot.api.setMyCommands([...TELEGRAM_COMMANDS]);
       log("commands", "Registered bot commands with Telegram");
 
       const apiId = config.apiId ?? 0;

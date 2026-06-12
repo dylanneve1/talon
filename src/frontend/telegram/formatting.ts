@@ -2,6 +2,7 @@
  * Telegram message formatting and splitting utilities.
  */
 
+import { escapeHtml as escapeNative } from "../../native/htmlents.js";
 import { splitMessage as splitNative } from "../../native/textops.js";
 
 /**
@@ -17,14 +18,11 @@ export function splitMessage(text: string, max: number): string[] {
 /**
  * Escape HTML special characters for Telegram HTML parse mode.
  * Must be applied to all text that is NOT inside an HTML tag.
+ * Delegates to the C++ core (native/htmlents-cpp): one pass over the
+ * bytes instead of the five chained regex passes this replaces.
  */
 export function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return escapeNative(text);
 }
 
 /**

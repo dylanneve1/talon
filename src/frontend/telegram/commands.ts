@@ -34,6 +34,7 @@ import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { escapeHtml } from "./formatting.js";
+import { closestMatch } from "../../native/strsim.js";
 import {
   formatModelLabel,
   formatDuration,
@@ -72,6 +73,39 @@ import {
 
 // Admin user ID is set via talon.json or TALON_ADMIN_USER_ID env var
 let ADMIN_USER_ID = 0;
+
+/**
+ * User-facing command menu — the single source for Telegram's command
+ * menu (setMyCommands in index.ts) and the unknown-command suggester
+ * below. Admin-only commands (/admin) stay off the menu and out of
+ * suggestions deliberately.
+ */
+export const TELEGRAM_COMMANDS: ReadonlyArray<{
+  command: string;
+  description: string;
+}> = [
+  { command: "start", description: "Introduction" },
+  {
+    command: "settings",
+    description: "View and change all chat settings",
+  },
+  { command: "memory", description: "View what Talon remembers" },
+  { command: "status", description: "Session info, usage, and stats" },
+  { command: "ping", description: "Health check with latency" },
+  { command: "model", description: "Show or change model" },
+  { command: "effort", description: "Set thinking effort level" },
+  { command: "pulse", description: "Conversation engagement settings" },
+  { command: "reset", description: "Clear session and start fresh" },
+  { command: "restart", description: "Restart the bot (admin)" },
+  { command: "metrics", description: "Aggregate performance metrics" },
+  {
+    command: "doctor",
+    description: "Environment and native-module health",
+  },
+  { command: "dream", description: "Force memory consolidation" },
+  { command: "plugins", description: "List loaded plugins" },
+  { command: "help", description: "All commands and features" },
+];
 
 /** Set the admin user ID (called from config at startup). */
 export function setAdminUserId(id: number | undefined): void {
@@ -752,6 +786,28 @@ export function registerCommands(
     await ctx.reply(
       `<b>Plugins (${plugins.length})</b>\n\n${lines.join("\n")}`,
       { parse_mode: "HTML" },
+    );
+  });
+
+  // Unknown /command → "did you mean ...?" via the C similarity core
+  // (native/strsim-c). Registered after every real command, so grammY
+  // only reaches this when nothing above matched. Only bare commands
+  // are intercepted — a close miss gets a suggestion, anything else
+  // keeps flowing to the agent as a normal message.
+  const commandNames = TELEGRAM_COMMANDS.map((c) => c.command);
+  bot.on("message::bot_command", async (ctx, next) => {
+    const typed = /^\/([a-zA-Z0-9_]+)(?:@(\w+))?\s*$/.exec(ctx.msg.text ?? "");
+    if (!typed) return next();
+    const [, name, mention] = typed;
+    // In groups a command can be addressed to another bot — not ours
+    // to answer.
+    if (mention && mention.toLowerCase() !== ctx.me.username.toLowerCase()) {
+      return next();
+    }
+    const suggestion = closestMatch(name.toLowerCase(), commandNames);
+    if (!suggestion) return next();
+    await ctx.reply(
+      `Unknown command /${name} — did you mean /${suggestion.value}?`,
     );
   });
 }
