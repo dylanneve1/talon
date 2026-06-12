@@ -261,7 +261,7 @@ jobs:
 
       - name: Rebuild and check drift
         run: |
-          cd native/scheduler-core && gleam build --target javascript && node embed.mjs
+          (cd native/scheduler-core && gleam build --target javascript && node embed.mjs)
           git diff --exit-code src/native/
 
   # ── Real backend live integration tier ───────────────────────
