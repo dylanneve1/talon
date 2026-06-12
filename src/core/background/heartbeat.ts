@@ -16,6 +16,11 @@ import { files as pathFiles, dirs } from "../../util/paths.js";
 import { log, logError, logWarn } from "../../util/log.js";
 import { toYMD } from "../../util/time.js";
 import { getDefaultModel } from "../models/catalog.js";
+import {
+  catchupRunCount,
+  missedRunCount,
+  nextDueMs,
+} from "../../native/scheduler-core.js";
 import type { OneShotAgentParams } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 
@@ -147,19 +152,49 @@ export function startHeartbeatTimer(intervalMinutes: number): void {
   const intervalMs = intervalMinutes * 60 * 1000;
   log(
     "heartbeat",
-    `Starting heartbeat timer (every ${intervalMinutes}min, first run in 5min)`,
+    `Starting heartbeat timer (every ${intervalMinutes}min, first due check in 5min)`,
   );
 
   startupTimer = setTimeout(() => {
     startupTimer = null;
-    // Run immediately after startup delay
-    executeHeartbeat("auto").catch(() => {});
-
-    // Then set up the recurring interval
+    runIfDue(intervalMs, true);
+    // Due checks every minute instead of one fixed setInterval(intervalMs):
+    // the cadence is computed from persisted last_run via the Gleam
+    // scheduler core, so it survives process restarts (a quick restart no
+    // longer resets the phase or double-fires) and system suspends (any
+    // number of missed fire times collapses into one catch-up run).
     timer = setInterval(() => {
-      executeHeartbeat("auto").catch(() => {});
-    }, intervalMs);
+      runIfDue(intervalMs, false);
+    }, DUE_CHECK_INTERVAL_MS);
   }, STARTUP_DELAY_MS);
+}
+
+const DUE_CHECK_INTERVAL_MS = 60 * 1000;
+
+/**
+ * Fire the heartbeat when its cadence says one (or more) runs are due.
+ * Decision logic is the Gleam scheduler core: `missedRunCount` counts
+ * fire times in (last_run, now], and the "once" catch-up policy
+ * collapses them into a single run.
+ */
+function runIfDue(intervalMs: number, startup: boolean): void {
+  if (running) return;
+  const lastRun = readHeartbeatState()?.last_run ?? 0;
+  if (lastRun <= 0) {
+    // Never ran on this install — fire now to establish the cadence.
+    executeHeartbeat("auto").catch(() => {});
+    return;
+  }
+  const now = Date.now();
+  const missed = missedRunCount(lastRun, intervalMs, now);
+  if (catchupRunCount(missed, "once", 1) > 0) {
+    executeHeartbeat("auto").catch(() => {});
+  } else if (startup) {
+    log(
+      "heartbeat",
+      `Cadence restored from state — next heartbeat due ${new Date(nextDueMs(lastRun, intervalMs, now)).toISOString()}`,
+    );
+  }
 }
 
 /**

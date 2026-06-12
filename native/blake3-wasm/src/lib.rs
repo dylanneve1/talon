@@ -25,8 +25,27 @@
 //!   of at least 32 bytes. `ptr` may be 0 only when `len == 0` (the empty
 //!   input). Input and output regions must not overlap.
 //!
-//! Calls are synchronous and the module keeps no state between them, so a
-//! single instance can be reused for every hash for the process lifetime.
+//! Incremental hashing (streaming inputs that don't fit in memory):
+//!
+//! - `hasher_new() -> handle`
+//!   Allocate a hasher and return an opaque non-zero handle (0 on
+//!   allocator exhaustion). Every handle must be consumed by exactly one
+//!   `hasher_finalize` or `hasher_free`.
+//!
+//! - `hasher_update(handle, ptr: *const u8, len: usize)`
+//!   Feed `len` bytes at `ptr` into the hasher. May be called any number
+//!   of times. `ptr` may be 0 only when `len == 0`.
+//!
+//! - `hasher_finalize(handle, out_ptr: *mut u8)`
+//!   Write the 32-byte digest to `out_ptr` and CONSUME the handle — it
+//!   must not be used again.
+//!
+//! - `hasher_free(handle)`
+//!   Consume a handle without finalizing (host-side error cleanup).
+//!
+//! One-shot calls keep no state between them; incremental state lives
+//! behind the handle, so interleaved hashers are independent and a single
+//! instance can be reused for every hash for the process lifetime.
 
 use std::alloc::{alloc as rust_alloc, dealloc as rust_dealloc, Layout};
 
@@ -69,4 +88,55 @@ pub unsafe extern "C" fn blake3_hash(ptr: *const u8, len: usize, out_ptr: *mut u
     };
     let hash = blake3::hash(input);
     core::ptr::copy_nonoverlapping(hash.as_bytes().as_ptr(), out_ptr, OUT_LEN);
+}
+
+// ── Incremental hashing ─────────────────────────────────────────────────────
+//
+// Handles are `Box<blake3::Hasher>` pointers passed as plain integers so
+// the ABI surface stays FFI-safe ints. The hasher's state is fixed-size;
+// `update` never allocates, so linear memory cannot grow (and host views
+// cannot detach) between a host-side `alloc` and the `update` that reads
+// from it.
+
+/// Allocate an incremental hasher; returns an opaque handle (0 on
+/// allocator exhaustion). Consume with `hasher_finalize` or `hasher_free`.
+#[no_mangle]
+pub extern "C" fn hasher_new() -> usize {
+    Box::into_raw(Box::new(blake3::Hasher::new())) as usize
+}
+
+/// # Safety
+/// `handle` must come from `hasher_new` and not yet be consumed; `ptr`
+/// must be valid for reads of `len` bytes (or null when `len == 0`).
+#[no_mangle]
+pub unsafe extern "C" fn hasher_update(handle: usize, ptr: *const u8, len: usize) {
+    if handle == 0 || len == 0 {
+        return;
+    }
+    let hasher = &mut *(handle as *mut blake3::Hasher);
+    hasher.update(core::slice::from_raw_parts(ptr, len));
+}
+
+/// # Safety
+/// `handle` must come from `hasher_new` and not yet be consumed; `out_ptr`
+/// must be valid for writes of 32 bytes. Consumes the handle.
+#[no_mangle]
+pub unsafe extern "C" fn hasher_finalize(handle: usize, out_ptr: *mut u8) {
+    if handle == 0 {
+        return;
+    }
+    let hasher = Box::from_raw(handle as *mut blake3::Hasher);
+    let hash = hasher.finalize();
+    core::ptr::copy_nonoverlapping(hash.as_bytes().as_ptr(), out_ptr, OUT_LEN);
+}
+
+/// # Safety
+/// `handle` must come from `hasher_new` and not yet be consumed. Consumes
+/// the handle without producing a digest (error-path cleanup).
+#[no_mangle]
+pub unsafe extern "C" fn hasher_free(handle: usize) {
+    if handle == 0 {
+        return;
+    }
+    drop(Box::from_raw(handle as *mut blake3::Hasher));
 }

@@ -164,6 +164,70 @@ describe("startHeartbeatTimer", () => {
   });
 });
 
+describe("startHeartbeatTimer — due-driven cadence (Gleam scheduler core)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    initHeartbeat({
+      model: "claude-sonnet-4-6",
+      getBackend: () => makeMockBackend(),
+    });
+    readFileSyncMock.mockReset();
+    runOneShotAgentMock.mockReset();
+    runOneShotAgentMock.mockImplementation(async () => {});
+    writeAtomicSyncMock.mockClear();
+  });
+
+  afterEach(() => {
+    stopHeartbeatTimer();
+    vi.useRealTimers();
+  });
+
+  /** Persisted state whose last_run is always `agoMs` before "now". */
+  function mockState(agoMs: number): void {
+    existsSyncMock.mockReturnValue(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    readFileSyncMock.mockImplementation(((filePath: string) => {
+      const p = String(filePath).replace(/\\/g, "/");
+      if (p.endsWith("heartbeat_state.json"))
+        return JSON.stringify({
+          last_run: Date.now() - agoMs,
+          status: "idle",
+          run_count: 3,
+        });
+      if (p.endsWith("/heartbeat.md")) return "heartbeat prompt";
+      return "null";
+    }) as any);
+  }
+
+  it("skips the startup run when the persisted cadence is not yet due", async () => {
+    mockState(10 * 60 * 1000); // ran 10min ago, interval 60min
+    startHeartbeatTimer(60);
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100); // startup delay
+    await vi.advanceTimersByTimeAsync(3 * 60 * 1000); // a few due checks
+    expect(runOneShotAgentMock).not.toHaveBeenCalled();
+  });
+
+  it("collapses several missed fire times into one catch-up run", async () => {
+    mockState(3 * 60 * 60 * 1000); // 3 missed hourly fires (downtime/suspend)
+    startHeartbeatTimer(60);
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100);
+    expect(runOneShotAgentMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("fires after the startup delay on a fresh install (no state)", async () => {
+    existsSyncMock.mockReturnValue(false);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    readFileSyncMock.mockImplementation(((filePath: string) => {
+      const p = String(filePath).replace(/\\/g, "/");
+      if (p.endsWith("/heartbeat.md")) return "heartbeat prompt";
+      return "null";
+    }) as any);
+    startHeartbeatTimer(60);
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 100);
+    expect(runOneShotAgentMock).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("forceHeartbeat", () => {
   beforeEach(() => {
     initHeartbeat({
