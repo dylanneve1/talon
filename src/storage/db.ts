@@ -104,16 +104,37 @@ export function getDatabase(path: string = defaultPath()): SqlDatabase {
   return database;
 }
 
-/** Run `fn` inside a transaction; rolls back on throw. */
+let transactionDepth = 0;
+
+/** Run `fn` inside a transaction; rolls back on throw. Nested calls use SAVEPOINTs. */
 export function inTransaction<T>(fn: () => T): T {
   const database = getDatabase();
+  if (transactionDepth > 0) {
+    const sp = `sp${transactionDepth}`;
+    database.exec(`SAVEPOINT "${sp}"`);
+    transactionDepth++;
+    try {
+      const result = fn();
+      database.exec(`RELEASE "${sp}"`);
+      transactionDepth--;
+      return result;
+    } catch (err) {
+      database.exec(`ROLLBACK TO "${sp}"`);
+      database.exec(`RELEASE "${sp}"`);
+      transactionDepth--;
+      throw err;
+    }
+  }
   database.exec("BEGIN");
+  transactionDepth++;
   try {
     const result = fn();
     database.exec("COMMIT");
+    transactionDepth--;
     return result;
   } catch (err) {
     database.exec("ROLLBACK");
+    transactionDepth--;
     throw err;
   }
 }
