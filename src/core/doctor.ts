@@ -301,6 +301,27 @@ export async function collectDoctorReport(opts: {
     }
   }
 
+  // Same optional contract for the hashing addon: absent means the
+  // embedded wasm module is doing the hashing (correct, just slower
+  // and on the event loop), so it's informational, not an issue. The
+  // addon was digest-verified at load time by nativeBlake3().
+  {
+    const { nativeBlake3 } = await import("../native/blake3.js");
+    const addon = nativeBlake3();
+    checks.push(
+      addon
+        ? {
+            label: `Media hashing: blake3 native addon v${addon.version()}`,
+            status: "ok",
+          }
+        : {
+            label: "Media hashing: embedded wasm (no native addon)",
+            status: "info",
+            detail: "npm run build:napi",
+          },
+    );
+  }
+
   const native = await checkNativeModules();
   checks.push(...(await checkBackend(opts.config)));
 

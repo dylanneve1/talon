@@ -1,0 +1,7 @@
+# Pin the toolchain to match the rest of the native plane (blake3-wasm,
+# talon-warden) — one Rust pin everywhere. The addon is not committed
+# (no drift check), but a single pinned compiler keeps CI and local
+# builds byte-comparable and avoids extra rustup downloads in CI.
+# To bump: update all three rust-toolchain.toml files together.
+[toolchain]
+channel = "1.93.1"

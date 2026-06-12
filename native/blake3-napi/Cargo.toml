@@ -1,0 +1,33 @@
+# blake3-napi — BLAKE3 media hashing as an in-process napi-rs addon.
+# The third delivery shape in the native plane: not an embedded wasm
+# artifact, not a standalone executable, but a .node library loaded
+# into the Node process for CPU-bound work that wants native SIMD,
+# threads, and direct fs access. See README.md for the contract.
+[package]
+name = "blake3-napi"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Native (non-wasm) blake3 keeps its defaults: runtime SIMD dispatch
+# (AVX-512/AVX2/SSE on x86, NEON on aarch64). rayon + mmap add
+# multi-threaded hashing and zero-copy file input for the media path.
+blake3 = { version = "1.8.2", features = ["rayon", "mmap"] }
+napi = { version = "2.16", default-features = false, features = ["napi8"] }
+napi-derive = "2.16"
+
+[build-dependencies]
+napi-build = "2.1"
+
+[profile.release]
+# Speed-optimized, unlike the size-optimized wasm twin: this artifact
+# is built per-arch and never committed, and hashing throughput on
+# multi-megabyte media files is the whole point.
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = "symbols"

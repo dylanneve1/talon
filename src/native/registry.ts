@@ -47,8 +47,11 @@ export const NATIVE_MODULES: readonly NativeModuleSpec[] = [
         (await import("./blake3-wasm-bytes.js")).BLAKE3_WASM_BASE64,
       ),
     selfTest: async () => {
-      const { blake3Hex } = await import("./blake3.js");
-      const digest = await blake3Hex("");
+      // Pinned to the wasm export: this entry vouches for the EMBEDDED
+      // bytes. blake3Hex() would route through the napi addon when
+      // bin/talon-blake3.node is installed and mask wasm corruption.
+      const { blake3HexWasm } = await import("./blake3.js");
+      const digest = await blake3HexWasm("");
       expect(digest === BLAKE3_EMPTY_DIGEST, "self-test digest mismatch");
     },
   },
