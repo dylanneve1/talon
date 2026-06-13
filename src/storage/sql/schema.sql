@@ -129,12 +129,12 @@ CREATE TABLE IF NOT EXISTS goals (
 CREATE INDEX IF NOT EXISTS idx_goals_chat_status ON goals(chat_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status, updated_at DESC);
 
--- Agent-authored skills. Metadata rows only: the script body lives on
--- disk under ~/.talon/workspace/skills/ (mirroring the trigger-store
--- split) so the agent can also Read/Edit a skill as a normal workspace
--- file. Skills are global capabilities, not chat data — no chat_id
+-- Agent-authored scripts. Metadata rows only: the script body lives on
+-- disk under ~/.talon/workspace/scripts/ (mirroring the trigger-store
+-- split) so the agent can also Read/Edit a script as a normal workspace
+-- file. Scripts are global capabilities, not chat data — no chat_id
 -- column. `name` is the lookup key; UNIQUE enforces one per name.
-CREATE TABLE IF NOT EXISTS skills (
+CREATE TABLE IF NOT EXISTS scripts (
   id           TEXT    PRIMARY KEY,
   name         TEXT    NOT NULL UNIQUE,
   description  TEXT    NOT NULL,

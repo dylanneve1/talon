@@ -1,8 +1,8 @@
 /**
- * Skill runner — run-to-completion execution of saved skills.
+ * Script runner — run-to-completion execution of saved scripts.
  *
  * Unlike triggers (supervised long-running watchers with a fire
- * protocol), a skill invocation is a plain subprocess: spawn the
+ * protocol), a script invocation is a plain subprocess: spawn the
  * interpreter on the script with the caller's args, capture output,
  * enforce a timeout, return the result to the calling turn. Local
  * execution — no model involvement, no token cost.
@@ -16,15 +16,15 @@ import { spawn } from "node:child_process";
 import { dirs } from "../../util/paths.js";
 import { log } from "../../util/log.js";
 import { commandForLanguage } from "../background/triggers.js";
-import type { Skill } from "../../storage/skill-store.js";
+import type { Script } from "../../storage/script-store.js";
 
-export const DEFAULT_SKILL_TIMEOUT_SECONDS = 60;
-export const MAX_SKILL_TIMEOUT_SECONDS = 300;
+export const DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60;
+export const MAX_SCRIPT_TIMEOUT_SECONDS = 300;
 
 /** Cap on captured stdout/stderr — keeps tool results context-friendly. */
 const OUTPUT_CAP_CHARS = 16_000;
 
-export type SkillRunResult = {
+export type ScriptRunResult = {
   exitCode: number | null;
   stdout: string;
   stderr: string;
@@ -32,30 +32,30 @@ export type SkillRunResult = {
   durationMs: number;
 };
 
-export function validateSkillTimeout(seconds: number): string | null {
+export function validateScriptTimeout(seconds: number): string | null {
   if (!Number.isFinite(seconds) || seconds <= 0)
     return "Timeout must be a positive number";
-  if (seconds > MAX_SKILL_TIMEOUT_SECONDS)
-    return `Timeout exceeds max (${MAX_SKILL_TIMEOUT_SECONDS}s)`;
+  if (seconds > MAX_SCRIPT_TIMEOUT_SECONDS)
+    return `Timeout exceeds max (${MAX_SCRIPT_TIMEOUT_SECONDS}s)`;
   return null;
 }
 
 /**
- * Run a skill to completion. Resolves (never rejects) with the
+ * Run a script to completion. Resolves (never rejects) with the
  * captured result; spawn failures surface as `exitCode: null` with
  * the error message in stderr.
  */
-export function runSkill(
-  skill: Skill,
+export function runScript(
+  script: Script,
   args: readonly string[] = [],
-  timeoutSeconds = DEFAULT_SKILL_TIMEOUT_SECONDS,
-): Promise<SkillRunResult> {
-  const command = commandForLanguage(skill.language);
+  timeoutSeconds = DEFAULT_SCRIPT_TIMEOUT_SECONDS,
+): Promise<ScriptRunResult> {
+  const command = commandForLanguage(script.language);
   if (!command) {
     return Promise.resolve({
       exitCode: null,
       stdout: "",
-      stderr: `No ${skill.language} interpreter available on this host`,
+      stderr: `No ${script.language} interpreter available on this host`,
       timedOut: false,
       durationMs: 0,
     });
@@ -70,7 +70,7 @@ export function runSkill(
 
     const child = spawn(
       command.cmd,
-      [...command.args, skill.scriptPath, ...args],
+      [...command.args, script.scriptPath, ...args],
       {
         cwd: dirs.workspace,
         env: process.env,
@@ -105,8 +105,8 @@ export function runSkill(
       clearTimeout(timer);
       const durationMs = Date.now() - t0;
       log(
-        "skills",
-        `ran "${skill.name}" (exit=${exitCode ?? "n/a"}${timedOut ? ", TIMED OUT" : ""}, ${durationMs}ms)`,
+        "scripts",
+        `ran "${script.name}" (exit=${exitCode ?? "n/a"}${timedOut ? ", TIMED OUT" : ""}, ${durationMs}ms)`,
       );
       resolvePromise({
         exitCode,

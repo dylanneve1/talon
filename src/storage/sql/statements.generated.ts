@@ -134,12 +134,12 @@ CREATE TABLE IF NOT EXISTS goals (
 CREATE INDEX IF NOT EXISTS idx_goals_chat_status ON goals(chat_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_goals_status ON goals(status, updated_at DESC);
 
--- Agent-authored skills. Metadata rows only: the script body lives on
--- disk under ~/.talon/workspace/skills/ (mirroring the trigger-store
--- split) so the agent can also Read/Edit a skill as a normal workspace
--- file. Skills are global capabilities, not chat data — no chat_id
+-- Agent-authored scripts. Metadata rows only: the script body lives on
+-- disk under ~/.talon/workspace/scripts/ (mirroring the trigger-store
+-- split) so the agent can also Read/Edit a script as a normal workspace
+-- file. Scripts are global capabilities, not chat data — no chat_id
 -- column. \`name\` is the lookup key; UNIQUE enforces one per name.
-CREATE TABLE IF NOT EXISTS skills (
+CREATE TABLE IF NOT EXISTS scripts (
   id           TEXT    PRIMARY KEY,
   name         TEXT    NOT NULL UNIQUE,
   description  TEXT    NOT NULL,
@@ -271,6 +271,23 @@ ORDER BY timestamp ASC, rowid ASC LIMIT 1`,
   countByFilePath: `SELECT COUNT(*) AS n FROM media_index WHERE file_path = ?`,
 } as const;
 
+export const scriptsSql = {
+  upsert: `INSERT OR REPLACE INTO scripts
+  (id, name, description, language, script_path, created_at,
+   updated_at, use_count, last_used_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  getByName: `SELECT id, name, description, language, script_path, created_at,
+       updated_at, use_count, last_used_at
+FROM scripts WHERE name = ?`,
+  all: `SELECT id, name, description, language, script_path, created_at,
+       updated_at, use_count, last_used_at
+FROM scripts
+ORDER BY last_used_at DESC NULLS LAST, updated_at DESC`,
+  count: `SELECT COUNT(*) AS n FROM scripts`,
+  recordUse: `UPDATE scripts SET use_count = use_count + 1, last_used_at = ? WHERE name = ?`,
+  removeByName: `DELETE FROM scripts WHERE name = ?`,
+} as const;
+
 export const sessionsSql = {
   upsert: `INSERT OR REPLACE INTO sessions
   (chat_id, session_id, session_name, last_model, turns, last_active,
@@ -286,21 +303,4 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
        last_response_ms, fastest_response_ms
 FROM sessions`,
   remove: `DELETE FROM sessions WHERE chat_id = ?`,
-} as const;
-
-export const skillsSql = {
-  upsert: `INSERT OR REPLACE INTO skills
-  (id, name, description, language, script_path, created_at,
-   updated_at, use_count, last_used_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  getByName: `SELECT id, name, description, language, script_path, created_at,
-       updated_at, use_count, last_used_at
-FROM skills WHERE name = ?`,
-  all: `SELECT id, name, description, language, script_path, created_at,
-       updated_at, use_count, last_used_at
-FROM skills
-ORDER BY last_used_at DESC NULLS LAST, updated_at DESC`,
-  count: `SELECT COUNT(*) AS n FROM skills`,
-  recordUse: `UPDATE skills SET use_count = use_count + 1, last_used_at = ? WHERE name = ?`,
-  removeByName: `DELETE FROM skills WHERE name = ?`,
 } as const;

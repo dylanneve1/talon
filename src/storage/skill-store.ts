@@ -1,85 +1,56 @@
 /**
- * Skill store — reusable, agent-authored scripts.
+ * Skill store — reusable markdown workflow bundles.
  *
- * A skill is a procedure the agent worked out once and saved for
- * reuse: an API call chain, a report generator, a data transform.
- * Unlike triggers (long-running watchers that wake the agent), a
- * skill is run-to-completion on demand via the `run_skill` tool and
- * its output is returned to the calling turn — local execution, zero
- * inference cost.
- *
- * Skills are global capabilities, not chat data: any chat can run a
- * skill saved in another. Metadata lives in SQLite (see
- * repositories/skills-repo.ts); the script body lives on disk at
- * ~/.talon/workspace/skills/<name>.<ext> so the agent can also Read
- * and Edit a skill like a normal workspace file (the workspace
- * listing in the system prompt makes the directory discoverable).
+ * These are distinct from executable `save_script` scripts. Skills are
+ * guidance the agent can load into context when a repeatable workflow
+ * needs judgement: review protocols, release checklists, backend-
+ * specific debugging procedures, and similar reusable know-how.
  */
 
-import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, resolve } from "node:path";
 import { dirs } from "../util/paths.js";
-import * as repo from "./repositories/skills-repo.js";
-
-export type SkillLanguage = "bash" | "python" | "node";
 
 export type Skill = {
-  id: string;
-  /** Unique lookup key — also the script's filename stem. */
   name: string;
-  /** One-liner shown in listings; tells the agent when to reach for it. */
   description: string;
-  language: SkillLanguage;
-  scriptPath: string;
-  createdAt: number;
+  body: string;
+  path: string;
   updatedAt: number;
-  useCount: number;
-  lastUsedAt?: number;
 };
 
-export const SKILL_LANGUAGES: readonly SkillLanguage[] = [
-  "bash",
-  "python",
-  "node",
-];
+export type SkillSearchResult = {
+  skill: Skill;
+  score: number;
+  snippet: string;
+};
 
-/**
- * Stricter than the trigger name rule: a skill name doubles as its
- * script filename, so no spaces or dots.
- */
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
-const SCRIPT_MAX_BYTES = 64 * 1024;
 const DESCRIPTION_MAX_CHARS = 300;
+const BODY_MAX_BYTES = 128 * 1024;
+const PROMPT_LIST_LIMIT = 25;
+const SEARCH_RESULT_LIMIT = 10;
 
-const EXTENSIONS: Record<SkillLanguage, string> = {
-  bash: "sh",
-  python: "py",
-  // .mjs so agent-written ESM runs as-is — the skills dir has no
-  // package.json, so a bare .js would default to CommonJS.
-  node: "mjs",
-};
+export function skillsDir(): string {
+  return resolve(dirs.workspace, "skills");
+}
 
-// ── Validation ──────────────────────────────────────────────────────────────
-
-export function validateSkillLanguage(value: unknown): value is SkillLanguage {
-  return (
-    typeof value === "string" &&
-    (SKILL_LANGUAGES as readonly string[]).includes(value)
-  );
+export function skillPath(name: string): string {
+  return resolve(skillsDir(), `${name}.md`);
 }
 
 export function validateSkillName(name: string): string | null {
   if (!name) return "Missing name";
   if (!NAME_RE.test(name))
-    return "Name must be 1-64 chars of letters, digits, dash, underscore (it becomes the script filename)";
-  return null;
-}
-
-export function validateSkillScript(script: string): string | null {
-  if (!script || !script.trim()) return "Missing script body";
-  if (Buffer.byteLength(script, "utf-8") > SCRIPT_MAX_BYTES)
-    return `Script too large (max ${SCRIPT_MAX_BYTES} bytes)`;
+    return "Name must be 1-64 chars of letters, digits, dash, underscore (it becomes the markdown filename)";
   return null;
 }
 
@@ -90,107 +61,217 @@ export function validateSkillDescription(description: string): string | null {
   return null;
 }
 
-// ── Script files ────────────────────────────────────────────────────────────
-
-export function skillsDir(): string {
-  return resolve(dirs.workspace, "skills");
+export function validateSkillBody(body: string): string | null {
+  if (!body || !body.trim()) return "Missing instruction body";
+  if (Buffer.byteLength(body, "utf-8") > BODY_MAX_BYTES)
+    return `Instruction body too large (max ${BODY_MAX_BYTES} bytes)`;
+  return null;
 }
 
-export function skillScriptPath(name: string, lang: SkillLanguage): string {
-  return resolve(skillsDir(), `${name}.${EXTENSIONS[lang]}`);
+function escapeFrontMatter(value: string): string {
+  return JSON.stringify(value);
 }
 
-/** Write a skill's script body, creating the skills dir as needed. */
-export function writeSkillScript(
-  name: string,
-  lang: SkillLanguage,
-  body: string,
-): string {
-  const path = skillScriptPath(name, lang);
-  mkdirSync(dirname(path), { recursive: true });
-  // 0o700: only the user running Talon should be able to read/exec scripts
-  writeFileSync(path, body, { encoding: "utf-8", mode: 0o700 });
-  return path;
+function unquoteFrontMatter(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return trimmed.slice(1, -1);
+    }
+  }
+  return trimmed;
 }
 
-// ── CRUD ────────────────────────────────────────────────────────────────────
-
-export function generateSkillId(): string {
-  return `skill_${randomUUID()}`;
+function serializeSkill(input: {
+  name: string;
+  description: string;
+  body: string;
+}): string {
+  return [
+    "---",
+    `name: ${escapeFrontMatter(input.name)}`,
+    `description: ${escapeFrontMatter(input.description)}`,
+    "---",
+    "",
+    input.body.trimEnd(),
+    "",
+  ].join("\n");
 }
 
-/**
- * Create or replace a skill: writes the script file, then upserts the
- * metadata row. On replace, the previous script file is removed first
- * when the language (and therefore extension) changed.
- */
+function parseSkill(path: string, raw: string): Skill {
+  const fallbackName = basename(path, ".md");
+  if (!raw.startsWith("---\n")) {
+    return {
+      name: fallbackName,
+      description: "",
+      body: raw.trim(),
+      path,
+      updatedAt: 0,
+    };
+  }
+
+  const end = raw.indexOf("\n---", 4);
+  if (end < 0) {
+    return {
+      name: fallbackName,
+      description: "",
+      body: raw.trim(),
+      path,
+      updatedAt: 0,
+    };
+  }
+
+  const header = raw.slice(4, end).trim();
+  const body = raw.slice(end + "\n---".length).trim();
+  let name = fallbackName;
+  let description = "";
+  for (const line of header.split("\n")) {
+    const [key, ...rest] = line.split(":");
+    const value = rest.join(":");
+    if (key.trim() === "name") name = unquoteFrontMatter(value);
+    if (key.trim() === "description") description = unquoteFrontMatter(value);
+  }
+  return { name, description, body, path, updatedAt: 0 };
+}
+
 export function saveSkill(input: {
   name: string;
   description: string;
-  language: SkillLanguage;
-  script: string;
+  body: string;
 }): Skill {
-  const existing = repo.getByName(input.name);
-  if (existing && existing.language !== input.language) {
-    try {
-      rmSync(existing.scriptPath, { force: true });
-    } catch {
-      /* best effort */
-    }
+  const dir = skillsDir();
+  mkdirSync(dir, { recursive: true });
+  const path = skillPath(input.name);
+  const content = serializeSkill(input);
+  writeFileSync(path, content, { encoding: "utf-8", mode: 0o600 });
+  return readSkill(input.name)!;
+}
+
+export function readSkill(name: string): Skill | undefined {
+  // Reject names that fail validation (e.g. "../escape") before they
+  // are turned into a filesystem path — guards against path traversal.
+  if (validateSkillName(name)) return undefined;
+  const path = skillPath(name);
+  if (!existsSync(path)) return undefined;
+  const raw = readFileSync(path, "utf-8");
+  const skill = parseSkill(path, raw);
+  try {
+    skill.updatedAt = Math.floor(statSync(path).mtimeMs);
+  } catch {
+    skill.updatedAt = 0;
   }
-  const scriptPath = writeSkillScript(input.name, input.language, input.script);
-  const now = Date.now();
-  const skill: Skill = {
-    id: existing?.id ?? generateSkillId(),
-    name: input.name,
-    description: input.description,
-    language: input.language,
-    scriptPath,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-    useCount: existing?.useCount ?? 0,
-    lastUsedAt: existing?.lastUsedAt,
-  };
-  repo.upsert(skill);
   return skill;
 }
 
-export function getSkill(name: string): Skill | undefined {
-  return repo.getByName(name);
+export function listSkills(): Skill[] {
+  const dir = skillsDir();
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".md"))
+    .map((file) => readSkill(file.replace(/\.md$/, "")))
+    .filter((skill): skill is Skill => Boolean(skill))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function getAllSkills(): Skill[] {
-  return repo.all();
+function tokenizeQuery(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^a-z0-9_-]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
 }
 
-export function countSkills(): number {
-  return repo.count();
-}
-
-export function recordSkillUse(name: string): void {
-  repo.recordUse(name, Date.now());
-}
-
-/** Delete a skill and best-effort clean up its on-disk script. */
-export function deleteSkill(name: string): boolean {
-  const skill = repo.getByName(name);
-  if (!skill) return false;
-  repo.removeByName(name);
-  try {
-    rmSync(skill.scriptPath, { force: true });
-  } catch {
-    /* best effort */
+function scoreSkill(skill: Skill, tokens: string[]): number {
+  const name = skill.name.toLowerCase();
+  const description = skill.description.toLowerCase();
+  const body = skill.body.toLowerCase();
+  let score = 0;
+  for (const token of tokens) {
+    if (name === token) score += 20;
+    else if (name.includes(token)) score += 12;
+    if (description.includes(token)) score += 6;
+    if (body.includes(token)) score += 2;
   }
+  return score;
+}
+
+function snippetFor(skill: Skill, tokens: string[]): string {
+  const body = skill.body.replace(/\s+/g, " ").trim();
+  if (!body) return "";
+  const lower = body.toLowerCase();
+  const hit = tokens
+    .map((token) => lower.indexOf(token))
+    .filter((index) => index >= 0)
+    .sort((a, b) => a - b)[0];
+  const start = Math.max(0, (hit ?? 0) - 80);
+  const end = Math.min(body.length, start + 220);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < body.length ? "..." : "";
+  return `${prefix}${body.slice(start, end)}${suffix}`;
+}
+
+export function searchSkills(
+  query: string,
+  limit = SEARCH_RESULT_LIMIT,
+): SkillSearchResult[] {
+  const tokens = tokenizeQuery(query);
+  if (tokens.length === 0) return [];
+  return listSkills()
+    .map((skill) => ({
+      skill,
+      score: scoreSkill(skill, tokens),
+      snippet: snippetFor(skill, tokens),
+    }))
+    .filter((result) => result.score > 0)
+    .sort(
+      (a, b) => b.score - a.score || a.skill.name.localeCompare(b.skill.name),
+    )
+    .slice(0, Math.max(1, Math.min(50, limit)));
+}
+
+export function deleteSkill(name: string): boolean {
+  // Reject names that fail validation (e.g. "../escape") before they
+  // are turned into a filesystem path — guards against path traversal.
+  if (validateSkillName(name)) return false;
+  const path = skillPath(name);
+  if (!existsSync(path)) return false;
+  rmSync(path, { force: true });
   return true;
 }
 
-// ── Formatting ──────────────────────────────────────────────────────────────
-
-/** One-line listing entry shared by `list_skills` and prompt surfaces. */
 export function formatSkill(skill: Skill): string {
-  const used =
-    skill.useCount > 0
-      ? `used ${skill.useCount}×${skill.lastUsedAt ? `, last ${new Date(skill.lastUsedAt).toISOString().slice(0, 10)}` : ""}`
-      : "never used";
-  return `- ${skill.name} (${skill.language}, ${used}) — ${skill.description}`;
+  const updated = skill.updatedAt
+    ? new Date(skill.updatedAt).toISOString().slice(0, 10)
+    : "unknown";
+  return `- ${skill.name} (updated ${updated}) — ${skill.description}`;
+}
+
+export function formatSkillSearchResult(result: SkillSearchResult): string {
+  const base = `${formatSkill(result.skill)} (score ${result.score})`;
+  if (!result.snippet) return base;
+  return `${base}\n  ${result.snippet}`;
+}
+
+export function renderSkillsPrompt(): string {
+  const skills = listSkills();
+  if (skills.length === 0) return "";
+  const visible = skills.slice(0, PROMPT_LIST_LIMIT);
+  const hidden = skills.length - visible.length;
+  const lines = [
+    "## Available Skills",
+    "",
+    "Skills are reusable markdown workflows. Use `find_skills` when the relevant workflow is not obvious, then load the full body with `read_skill` before following one; do not guess from the description alone.",
+    "",
+    ...visible.map(formatSkill),
+  ];
+  if (hidden > 0) {
+    lines.push(`- ... ${hidden} more hidden; use list_skills`);
+  }
+  return lines.join("\n");
 }

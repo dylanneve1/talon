@@ -1,8 +1,8 @@
 /**
- * Skill gateway actions — save/list/run/delete through
- * handleSharedAction, with run_skill executing REAL subprocesses
+ * Script + skill gateway actions — save/list/run/delete through
+ * handleSharedAction, with run_script executing REAL subprocesses
  * (bash + node) against a tmpdir workspace. Validation and store
- * internals are covered by skill-store.test.ts.
+ * internals are covered by script-store.test.ts / skill-store.test.ts.
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
@@ -57,34 +57,34 @@ afterAll(() => {
   rmSync(workspaceDir, { recursive: true, force: true });
 });
 
-describe("save_skill", () => {
+describe("save_script", () => {
   it("saves and reports update-vs-create", async () => {
     const first = await act({
-      action: "save_skill",
+      action: "save_script",
       name: "echo-args",
       description: "echoes its args",
       language: "bash",
       script: 'echo "args: $@"',
     });
     expect(first.ok).toBe(true);
-    expect(first.text).toContain('Saved skill "echo-args"');
+    expect(first.text).toContain('Saved script "echo-args"');
 
     const second = await act({
-      action: "save_skill",
+      action: "save_script",
       name: "echo-args",
       description: "echoes its args (v2)",
       language: "bash",
       script: 'echo "args: $@"',
     });
     expect(second.ok).toBe(true);
-    expect(second.text).toContain('Updated skill "echo-args"');
+    expect(second.text).toContain('Updated script "echo-args"');
   });
 
   it("rejects bad names, languages, and empty scripts", async () => {
     expect(
       (
         await act({
-          action: "save_skill",
+          action: "save_script",
           name: "bad name",
           description: "x",
           language: "bash",
@@ -95,8 +95,8 @@ describe("save_skill", () => {
     expect(
       (
         await act({
-          action: "save_skill",
-          name: "lua-skill",
+          action: "save_script",
+          name: "lua-script",
           description: "x",
           language: "lua",
           script: "print(1)",
@@ -106,7 +106,7 @@ describe("save_skill", () => {
     expect(
       (
         await act({
-          action: "save_skill",
+          action: "save_script",
           name: "empty",
           description: "x",
           language: "bash",
@@ -117,10 +117,10 @@ describe("save_skill", () => {
   });
 });
 
-describe("run_skill", () => {
-  it("runs a bash skill with args and returns stdout", async () => {
+describe("run_script", () => {
+  it("runs a bash script with args and returns stdout", async () => {
     const result = await act({
-      action: "run_skill",
+      action: "run_script",
       name: "echo-args",
       args: ["alpha", "beta"],
     });
@@ -129,15 +129,15 @@ describe("run_skill", () => {
     expect(result.text).toContain("args: alpha beta");
   });
 
-  it("runs a node skill with cwd set to the workspace", async () => {
+  it("runs a node script with cwd set to the workspace", async () => {
     await act({
-      action: "save_skill",
+      action: "save_script",
       name: "node-cwd",
       description: "prints cwd",
       language: "node",
       script: "console.log(process.cwd())",
     });
-    const result = await act({ action: "run_skill", name: "node-cwd" });
+    const result = await act({ action: "run_script", name: "node-cwd" });
     expect(result.ok).toBe(true);
     // realpath vs symlinked tmpdir (macOS /var → /private/var): match the leaf
     expect(result.text).toContain("talon-skill-actions-");
@@ -145,13 +145,13 @@ describe("run_skill", () => {
 
   it("surfaces non-zero exits as errors with stderr", async () => {
     await act({
-      action: "save_skill",
+      action: "save_script",
       name: "fails",
       description: "always fails",
       language: "bash",
       script: 'echo "boom" >&2; exit 3',
     });
-    const result = await act({ action: "run_skill", name: "fails" });
+    const result = await act({ action: "run_script", name: "fails" });
     expect(result.ok).toBe(false);
     expect(result.error).toContain("exit 3");
     expect(result.error).toContain("boom");
@@ -159,14 +159,14 @@ describe("run_skill", () => {
 
   it("kills runaway scripts at the timeout", async () => {
     await act({
-      action: "save_skill",
+      action: "save_script",
       name: "sleeper",
       description: "sleeps forever",
       language: "bash",
       script: "sleep 60",
     });
     const result = await act({
-      action: "run_skill",
+      action: "run_script",
       name: "sleeper",
       timeout_seconds: 1,
     });
@@ -174,13 +174,13 @@ describe("run_skill", () => {
     expect(result.error).toContain("TIMED OUT");
   }, 15_000);
 
-  it("rejects unknown skills and bad timeouts", async () => {
-    const missing = await act({ action: "run_skill", name: "nope" });
+  it("rejects unknown scripts and bad timeouts", async () => {
+    const missing = await act({ action: "run_script", name: "nope" });
     expect(missing.ok).toBe(false);
-    expect(missing.error).toContain("list_skills");
+    expect(missing.error).toContain("list_scripts");
 
     const badTimeout = await act({
-      action: "run_skill",
+      action: "run_script",
       name: "echo-args",
       timeout_seconds: 9999,
     });
@@ -189,42 +189,42 @@ describe("run_skill", () => {
   });
 });
 
-describe("list_skills / delete_skill", () => {
-  it("lists saved skills with descriptions", async () => {
-    const result = await act({ action: "list_skills" });
+describe("list_scripts / delete_script", () => {
+  it("lists saved scripts with descriptions", async () => {
+    const result = await act({ action: "list_scripts" });
     expect(result.ok).toBe(true);
     expect(result.text).toContain("echo-args");
     expect(result.text).toContain("echoes its args (v2)");
   });
 
   it("deletes and refuses unknowns", async () => {
-    expect((await act({ action: "delete_skill", name: "fails" })).ok).toBe(
+    expect((await act({ action: "delete_script", name: "fails" })).ok).toBe(
       true,
     );
-    expect((await act({ action: "delete_skill", name: "fails" })).ok).toBe(
+    expect((await act({ action: "delete_script", name: "fails" })).ok).toBe(
       false,
     );
   });
 });
 
-describe("instruction skills", () => {
+describe("skills", () => {
   it("saves, lists, reads, updates, and deletes markdown workflow skills", async () => {
     const saved = await act({
-      action: "save_instruction_skill",
+      action: "save_skill",
       name: "review-flow",
       description: "review pull requests carefully",
       body: "## Steps\n\n1. Read the diff.\n2. Check tests.",
     });
     expect(saved.ok).toBe(true);
-    expect(saved.text).toContain('Saved instruction skill "review-flow"');
+    expect(saved.text).toContain('Saved skill "review-flow"');
 
-    const listed = await act({ action: "list_instruction_skills" });
+    const listed = await act({ action: "list_skills" });
     expect(listed.ok).toBe(true);
     expect(listed.text).toContain("review-flow");
     expect(listed.text).toContain("review pull requests carefully");
 
     const found = await act({
-      action: "find_instruction_skills",
+      action: "find_skills",
       query: "pull request tests",
     });
     expect(found.ok).toBe(true);
@@ -232,7 +232,7 @@ describe("instruction skills", () => {
     expect(found.text).toContain("score");
 
     const read = await act({
-      action: "read_instruction_skill",
+      action: "read_skill",
       name: "review-flow",
     });
     expect(read.ok).toBe(true);
@@ -240,31 +240,30 @@ describe("instruction skills", () => {
     expect(read.text).toContain("Check tests");
 
     const updated = await act({
-      action: "save_instruction_skill",
+      action: "save_skill",
       name: "review-flow",
       description: "review pull requests with tests",
       body: "## Steps\n\nUse the review skill.",
     });
     expect(updated.ok).toBe(true);
-    expect(updated.text).toContain('Updated instruction skill "review-flow"');
+    expect(updated.text).toContain('Updated skill "review-flow"');
 
     expect(
-      (await act({ action: "delete_instruction_skill", name: "review-flow" }))
-        .ok,
+      (await act({ action: "delete_skill", name: "review-flow" })).ok,
     ).toBe(true);
     const missing = await act({
-      action: "read_instruction_skill",
+      action: "read_skill",
       name: "review-flow",
     });
     expect(missing.ok).toBe(false);
-    expect(missing.error).toContain("list_instruction_skills");
+    expect(missing.error).toContain("list_skills");
   });
 
-  it("rejects invalid instruction skill inputs", async () => {
+  it("rejects invalid skill inputs", async () => {
     expect(
       (
         await act({
-          action: "save_instruction_skill",
+          action: "save_skill",
           name: "bad name",
           description: "x",
           body: "## Body",
@@ -274,15 +273,13 @@ describe("instruction skills", () => {
     expect(
       (
         await act({
-          action: "save_instruction_skill",
+          action: "save_skill",
           name: "empty-body",
           description: "x",
           body: "   ",
         })
       ).ok,
     ).toBe(false);
-    expect(
-      (await act({ action: "find_instruction_skills", query: "" })).ok,
-    ).toBe(false);
+    expect((await act({ action: "find_skills", query: "" })).ok).toBe(false);
   });
 });

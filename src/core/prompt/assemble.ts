@@ -27,7 +27,7 @@
  *   DYNAMIC
  *   1. Daily-memory pointer                 prompts/system/daily-memory.md
  *                                           (names today's file — changes at midnight)
- *   2. Instruction-skill index              workspace/instruction-skills/*.md
+ *   2. Skill index                          workspace/skills/*.md
  *   3. Workspace file listing               workspace-listing.ts
  *                                           (file sizes change as logs grow)
  *
@@ -59,7 +59,7 @@ import { log } from "../../util/log.js";
 import { loadSystemTemplate } from "./templates.js";
 import { renderWorkspaceListing } from "./workspace-listing.js";
 import { MAX_OPEN_GOALS_PER_CHAT } from "../../storage/goal-store.js";
-import { renderInstructionSkillsPrompt } from "../../storage/instruction-skill-store.js";
+import { renderSkillsPrompt } from "../../storage/skill-store.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -229,10 +229,10 @@ export function assembleSystemPrompt(
     }),
   );
 
-  // Dynamic 2: instruction-skill index. Names/descriptions are enough
-  // for discovery; full markdown bodies stay on disk until loaded.
-  const instructionSkills = renderInstructionSkillsPrompt();
-  if (instructionSkills) dynamicParts.push(instructionSkills);
+  // Dynamic 2: skill index. Names/descriptions are enough for
+  // discovery; full markdown bodies stay on disk until loaded.
+  const skills = renderSkillsPrompt();
+  if (skills) dynamicParts.push(skills);
 
   // Dynamic 3: workspace file listing (sizes change as logs grow).
   const workspaceFiles = renderWorkspaceListing(dirs.workspace);
