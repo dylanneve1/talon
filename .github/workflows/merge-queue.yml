@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Update auto-merge PRs and re-dispatch CI
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const { owner, repo } = context.repo;
