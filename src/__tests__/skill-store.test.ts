@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { parse } from "yaml";
 
 vi.mock("../util/log.js", () => ({
@@ -81,7 +81,7 @@ describe("save / read / list / delete", () => {
     });
 
     expect(skill.path).toBe(skillPath("review-pr"));
-    expect(skill.path.endsWith("/SKILL.md")).toBe(true);
+    expect(basename(skill.path)).toBe("SKILL.md");
 
     const raw = readFileSync(skill.path, "utf-8");
     // Frontmatter parses as real YAML and round-trips name + description.
