@@ -163,6 +163,19 @@ export interface ContextManager {
   getMessageCount(chatId: number): number;
 }
 
+/**
+ * Streaming delivery callbacks the frontend supplies and the dispatcher
+ * forwards. This is the single source of truth for the streaming contract:
+ * the `AgentEvent → callback` bridge (`agent-runtime/event-bridge.ts`)
+ * reuses this exact shape, so the two can't drift (a new callback added
+ * here is one the bridge is then statically required to forward).
+ */
+export type StreamingCallbacks = {
+  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
+  onTextBlock?: (text: string) => Promise<void>;
+  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
+};
+
 /** Parameters for the dispatcher. */
 export type ExecuteParams = {
   chatId: string;
@@ -173,10 +186,7 @@ export type ExecuteParams = {
   /** Provider message ID. Numeric for Telegram, string snowflake for Discord. */
   messageId?: number | string;
   source: "message" | "pulse" | "cron" | "trigger";
-  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
-  onTextBlock?: (text: string) => Promise<void>;
-  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
-};
+} & StreamingCallbacks;
 
 /** What the dispatcher returns after execution. */
 export type ExecuteResult = {

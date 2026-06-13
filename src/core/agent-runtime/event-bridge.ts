@@ -36,19 +36,17 @@
  */
 
 import type { AgentError, AgentEvent, AgentResult } from "./events.js";
+import type { StreamingCallbacks } from "../types.js";
 
 /**
- * Callback bundle (mirrors the dispatcher's `ExecuteParams`
- * callback fields). The bridge invokes
- * whichever callbacks are present; missing ones are silently
- * skipped. Errors thrown by callbacks are surfaced as failed
- * promises (the bridge does not swallow them).
+ * Callback bundle the bridge fans events out to. This is the dispatcher's
+ * `StreamingCallbacks` contract verbatim (single-sourced in `core/types.ts`),
+ * so the two cannot drift — the dispatcher passes its `ExecuteParams`
+ * callbacks straight in. The bridge invokes whichever callbacks are present;
+ * missing ones are silently skipped. Errors thrown by callbacks are surfaced
+ * as failed promises (the bridge does not swallow them).
  */
-export interface LegacyCallbacks {
-  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
-  onTextBlock?: (text: string) => Promise<void>;
-  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
-}
+export type LegacyCallbacks = StreamingCallbacks;
 
 /**
  * Error thrown when the bridge sees an `error` event in the
