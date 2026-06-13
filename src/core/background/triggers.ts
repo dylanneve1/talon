@@ -361,6 +361,9 @@ function spawnDirect(
   if (child.stderr) {
     const rlErr = createInterface({ input: child.stderr, crlfDelay: Infinity });
     rlErr.on("line", (line) => handleStderrLine(trigger.id, line));
+    rlErr.on("error", (err) =>
+      logWarn("triggers", `stderr reader error [${trigger.id}]: ${err}`),
+    );
   }
 
   child.on("exit", (code, signal) => {
