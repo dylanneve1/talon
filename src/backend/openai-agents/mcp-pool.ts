@@ -228,15 +228,16 @@ async function buildBundle(args: BundleInputs): Promise<OpenAIAgentsMcpBundle> {
     );
   }
 
-  // Plugin MCP servers.
+  // Plugin MCP servers. `getPluginMcpServers` already runs each command
+  // through the supervisor wrap (`wrapMcpServer`), so the returned
+  // command/args are launcher-ready — do NOT wrap a second time.
   const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
   for (const [name, cfg] of Object.entries(pluginServers)) {
-    const wrapped = wrapMcpCommand([cfg.command, ...cfg.args]);
     built.push(
       new MCPServerStdio({
         name,
-        command: wrapped[0],
-        args: wrapped.slice(1),
+        command: cfg.command,
+        args: cfg.args,
         env: cfg.env ?? {},
         cacheToolsList: true,
       }),
