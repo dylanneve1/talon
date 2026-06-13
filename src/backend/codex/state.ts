@@ -12,7 +12,7 @@
 import type { Codex } from "@openai/codex-sdk";
 import type { ReasoningEffortLevel } from "../../core/types.js";
 import type { TalonConfig } from "../../util/config.js";
-import type { FrontendName } from "../registry.js";
+import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 
 /**
  * Optional metadata captured during discovery. The OAuth path

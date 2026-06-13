@@ -77,7 +77,7 @@ describe("openai-agents / state lifecycle", () => {
 describe("openai-agents / factory registration", () => {
   it("registers as `openai-agents` in the backend registry", async () => {
     const { clearBackends, registerBackend, hasBackend, getBackend } =
-      await import("../backend/registry.js");
+      await import("../core/agent-runtime/backend-registry.js");
     clearBackends();
 
     await import("../backend/openai-agents/factory.js");

@@ -19,7 +19,7 @@ import {
   getBackend,
   listBackends,
   hasBackend,
-} from "../backend/registry.js";
+} from "../core/agent-runtime/backend-registry.js";
 
 const ALL_BACKENDS = [
   "claude",
@@ -85,7 +85,8 @@ describe("backend registry parity — all built-in backends present", () => {
 
 describe("backend registry parity — duplicate registration is rejected", () => {
   it("re-registering an existing id throws", async () => {
-    const { registerBackend } = await import("../backend/registry.js");
+    const { registerBackend } =
+      await import("../core/agent-runtime/backend-registry.js");
     expect(() =>
       registerBackend({
         id: "claude",

@@ -44,7 +44,7 @@
 import OpenAI from "openai";
 import { setDefaultOpenAIClient, setOpenAIAPI } from "@openai/agents";
 import type { TalonConfig } from "../../util/config.js";
-import type { FrontendName } from "../registry.js";
+import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import { log, logWarn } from "../../util/log.js";
 import { nonTerminalFrontends } from "../shared/frontends.js";
 import { getState } from "./state.js";

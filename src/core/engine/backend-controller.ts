@@ -47,7 +47,7 @@ import {
   getBackend,
   listBackends,
   type BackendInitContext,
-} from "../../backend/registry.js";
+} from "../agent-runtime/backend-registry.js";
 import { log, logWarn } from "../../util/log.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────

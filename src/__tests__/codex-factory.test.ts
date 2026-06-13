@@ -24,7 +24,7 @@ vi.mock("../core/plugin.js", () => ({
 }));
 
 const { clearBackends, getBackend, hasBackend } =
-  await import("../backend/registry.js");
+  await import("../core/agent-runtime/backend-registry.js");
 const { resetState } = await import("../backend/codex/state.js");
 
 beforeAll(async () => {
