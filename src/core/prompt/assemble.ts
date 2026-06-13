@@ -27,7 +27,7 @@
  *   DYNAMIC
  *   1. Daily-memory pointer                 prompts/system/daily-memory.md
  *                                           (names today's file — changes at midnight)
- *   2. Skill index                          workspace/skills/*.md
+ *   2. Skill index                          workspace/skills/<name>/SKILL.md
  *   3. Workspace file listing               workspace-listing.ts
  *                                           (file sizes change as logs grow)
  *

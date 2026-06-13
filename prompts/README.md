@@ -20,7 +20,7 @@ placed after the cache boundary):
 | 6   | Plugin additions      | each plugin's `systemPrompt()` contribution                            | static        |
 | 7   | **Delivery contract** | `system/contract-*.md`, appended by the **backend** as its suffix      | static (tail) |
 | 8   | Daily-memory pointer  | `system/daily-memory.md` (names today's file)                          | dynamic       |
-| 9   | Skills                | generated index of `workspace/skills/*.md`                             | dynamic       |
+| 9   | Skills                | generated index of `workspace/skills/<name>/SKILL.md`                  | dynamic       |
 | 10  | Workspace listing     | generated tree of `~/.talon/workspace/`                                | dynamic       |
 
 The delivery contract is deliberately LAST in the static prefix: it is the
@@ -28,9 +28,11 @@ one section the model must not miss, and the end of the prompt is the
 highest-salience position.
 
 Skills are deliberately an index, not full bodies. The dynamic
-prompt names saved markdown workflows and their descriptions; agents use
+prompt names saved SKILL.md workflows and their descriptions; agents use
 `find_skills` to select a relevant workflow and `read_skill` to load the
-full body before following it. This progressive-disclosure path is
+full body (and discover any bundled files) before following it. Each skill
+follows Anthropic's Agent Skills standard: a `skills/<name>/SKILL.md` folder
+that may also bundle supporting files. This progressive-disclosure path is
 backend-agnostic: Claude SDK, Codex, Kilo, OpenCode, and OpenAI Agents all
 receive the same prompt index and call the same shared gateway tools, even
 when a backend has no native "skills" feature.

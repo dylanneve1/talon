@@ -1,5 +1,5 @@
 /**
- * Skill store — markdown workflow bundle lifecycle.
+ * Skill store — SKILL.md workflow bundle lifecycle (folder layout).
  */
 
 import { describe, it, expect, vi, beforeAll, afterAll } from "vitest";
@@ -9,9 +9,11 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { parse } from "yaml";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
@@ -71,7 +73,7 @@ describe("validation", () => {
 });
 
 describe("save / read / list / delete", () => {
-  it("writes markdown with front matter and round-trips the body", () => {
+  it("writes <name>/SKILL.md with YAML frontmatter and round-trips the body", () => {
     const skill = saveSkill({
       name: "review-pr",
       description: "review pull requests",
@@ -79,9 +81,15 @@ describe("save / read / list / delete", () => {
     });
 
     expect(skill.path).toBe(skillPath("review-pr"));
-    expect(readFileSync(skill.path, "utf-8")).toContain(
-      'description: "review pull requests"',
-    );
+    expect(skill.path.endsWith("/SKILL.md")).toBe(true);
+
+    const raw = readFileSync(skill.path, "utf-8");
+    // Frontmatter parses as real YAML and round-trips name + description.
+    const fmEnd = raw.indexOf("\n---", 4);
+    const fm = parse(raw.slice(4, fmEnd)) as Record<string, unknown>;
+    expect(fm.name).toBe("review-pr");
+    expect(fm.description).toBe("review pull requests");
+
     if (process.platform !== "win32") {
       expect(statSync(skill.path).mode & 0o777).toBe(0o600);
     }
@@ -90,6 +98,37 @@ describe("save / read / list / delete", () => {
     expect(loaded?.name).toBe("review-pr");
     expect(loaded?.description).toBe("review pull requests");
     expect(loaded?.body).toContain("Run tests");
+  });
+
+  it("enumerates bundled resources and preserves them across updates", () => {
+    saveSkill({
+      name: "bundled",
+      description: "skill with extras",
+      body: "## Steps\n\nUse helper.py.",
+    });
+
+    const dir = dirname(skillPath("bundled"));
+    writeFileSync(join(dir, "helper.py"), "print('hi')\n");
+    writeFileSync(join(dir, "template.md"), "# Template\n");
+
+    const loaded = readSkill("bundled");
+    expect(loaded?.resources).toContain("helper.py");
+    expect(loaded?.resources).toContain("template.md");
+    expect(loaded?.resources).not.toContain("SKILL.md");
+
+    // Updating the skill must not delete sibling bundled files.
+    saveSkill({
+      name: "bundled",
+      description: "skill with extras (v2)",
+      body: "## Steps\n\nUpdated.",
+    });
+    expect(existsSync(join(dir, "helper.py"))).toBe(true);
+    expect(existsSync(join(dir, "template.md"))).toBe(true);
+    const reloaded = readSkill("bundled");
+    expect(reloaded?.description).toBe("skill with extras (v2)");
+    expect(reloaded?.resources).toContain("helper.py");
+
+    deleteSkill("bundled");
   });
 
   it("lists, formats, renders prompt discovery, and deletes", () => {

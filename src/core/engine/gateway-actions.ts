@@ -6,7 +6,7 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import * as cheerio from "cheerio";
 import { dirs } from "../../util/paths.js";
 import {
@@ -874,7 +874,8 @@ export async function handleSharedAction(
         ok: true,
         text:
           `${existed ? "Updated" : "Saved"} skill "${name}"\n` +
-          `Markdown: ${skill.path}\n` +
+          `SKILL.md: ${skill.path}\n` +
+          `Bundle supporting files alongside it in that folder if needed.\n` +
           `Load it with read_skill(name="${name}").`,
       };
     }
@@ -919,18 +920,21 @@ export async function handleSharedAction(
           ok: false,
           error: `No skill named "${name}". See list_skills.`,
         };
-      return {
-        ok: true,
-        text: [
-          `# ${skill.name}`,
-          "",
-          skill.description,
-          "",
-          `Path: ${skill.path}`,
-          "",
-          skill.body,
-        ].join("\n"),
-      };
+      const skillDirPath = dirname(skill.path);
+      const lines = [
+        `# ${skill.name}`,
+        "",
+        skill.description,
+        "",
+        `Path: ${skill.path}`,
+      ];
+      if (skill.resources.length > 0) {
+        lines.push(
+          `Bundled files (read with the Read tool from ${skillDirPath}): ${skill.resources.join(", ")}`,
+        );
+      }
+      lines.push("", skill.body);
+      return { ok: true, text: lines.join("\n") };
     }
 
     case "delete_skill": {

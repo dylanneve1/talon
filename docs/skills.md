@@ -1,17 +1,51 @@
 # Skills
 
-Skills are Talon-native markdown workflow bundles for reusable procedures that
-need judgement. They are distinct from executable scripts and from factual
-memory.
+Skills are reusable workflow bundles for procedures that need judgement. They
+follow Anthropic's Agent Skills (SKILL.md) standard. They are distinct from
+executable scripts and from factual memory.
 
 ## Storage
 
 - Scripts: executable programs in `workspace/scripts/`, created with
   `save_script`, run with `run_script`.
-- Skills: markdown workflows in `workspace/skills/*.md`, created with
+- Skills: SKILL.md bundles in `workspace/skills/<name>/SKILL.md`, created with
   `save_skill`, selected with `find_skills`, loaded with `read_skill`.
 - Facts, preferences, and history: `memory/memory.md`, MemPalace, and daily
   notes, not skills.
+
+### Skill layout (SKILL.md standard)
+
+Each skill is a **folder** under `workspace/skills/<name>/` whose entry file is
+`SKILL.md`:
+
+```
+workspace/skills/<name>/
+  SKILL.md          # YAML frontmatter + markdown body
+  helper.py         # optional bundled resource
+  template.md       # optional bundled resource
+```
+
+`SKILL.md` opens with YAML frontmatter. Required keys are `name` and
+`description`; optional keys (e.g. `license`, `metadata`, `allowed-tools`) are
+tolerated and preserved on read. The markdown body follows the closing `---`.
+
+```markdown
+---
+name: review-pr
+description: review pull requests carefully
+---
+
+## Steps
+
+1. Read the diff.
+2. Run tests.
+```
+
+**Bundled resources.** A skill folder may contain supporting files (scripts,
+templates, references) alongside `SKILL.md`. `save_skill` overwrites only
+`SKILL.md` and never touches sibling files, so updates preserve bundled
+resources. `read_skill` enumerates them and tells the agent to open them with
+the normal Read tool. Deleting a skill removes the whole folder.
 
 ## Loading Policy
 
@@ -41,9 +75,9 @@ shared prompt and shared gateway tools:
 - OpenAI Agents receives the same prompt and tool surface through the Responses
   backend.
 
-If a backend later gains native skills, it can mirror `workspace/skills/*.md`
-into that native format, but the markdown store remains the source of truth so
-workflows are portable across backends.
+If a backend later gains native skills, it can mirror
+`workspace/skills/<name>/SKILL.md` into that native format, but the SKILL.md
+store remains the source of truth so workflows are portable across backends.
 
 ## Migration Boundary
 

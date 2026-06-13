@@ -1,10 +1,17 @@
 /**
- * Skill store — reusable markdown workflow bundles.
+ * Skill store — reusable workflow bundles following Anthropic's Agent
+ * Skills (SKILL.md) standard.
  *
  * These are distinct from executable `save_script` scripts. Skills are
  * guidance the agent can load into context when a repeatable workflow
  * needs judgement: review protocols, release checklists, backend-
  * specific debugging procedures, and similar reusable know-how.
+ *
+ * Layout: each skill is a FOLDER under `workspace/skills/<name>/`
+ * containing a `SKILL.md` entry file (YAML frontmatter + markdown body).
+ * The folder may also bundle supporting files (scripts, templates,
+ * references) alongside SKILL.md; those are preserved across updates and
+ * surfaced to the agent on read.
  */
 
 import {
@@ -17,6 +24,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, resolve } from "node:path";
+import { parseDocument, stringify } from "yaml";
 import { dirs } from "../util/paths.js";
 
 export type Skill = {
@@ -25,6 +33,10 @@ export type Skill = {
   body: string;
   path: string;
   updatedAt: number;
+  /** Relative filenames bundled in the skill folder (excludes SKILL.md). */
+  resources: string[];
+  /** Frontmatter keys beyond name/description, preserved on read. */
+  extra?: Record<string, unknown>;
 };
 
 export type SkillSearchResult = {
@@ -33,6 +45,7 @@ export type SkillSearchResult = {
   snippet: string;
 };
 
+const SKILL_FILE = "SKILL.md";
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 const DESCRIPTION_MAX_CHARS = 300;
 const BODY_MAX_BYTES = 128 * 1024;
@@ -43,14 +56,26 @@ export function skillsDir(): string {
   return resolve(dirs.workspace, "skills");
 }
 
+export function skillDir(name: string): string {
+  return resolve(skillsDir(), name);
+}
+
+export function skillFilePath(name: string): string {
+  return resolve(skillDir(name), SKILL_FILE);
+}
+
+/**
+ * Path to a skill's SKILL.md entry file. Retained under the historical
+ * `skillPath` name for callers that reference it.
+ */
 export function skillPath(name: string): string {
-  return resolve(skillsDir(), `${name}.md`);
+  return skillFilePath(name);
 }
 
 export function validateSkillName(name: string): string | null {
   if (!name) return "Missing name";
   if (!NAME_RE.test(name))
-    return "Name must be 1-64 chars of letters, digits, dash, underscore (it becomes the markdown filename)";
+    return "Name must be 1-64 chars of letters, digits, dash, underscore (it becomes the skill folder name)";
   return null;
 }
 
@@ -68,44 +93,24 @@ export function validateSkillBody(body: string): string | null {
   return null;
 }
 
-function escapeFrontMatter(value: string): string {
-  return JSON.stringify(value);
-}
-
-function unquoteFrontMatter(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) return "";
-  if (
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-  ) {
-    try {
-      return JSON.parse(trimmed);
-    } catch {
-      return trimmed.slice(1, -1);
-    }
-  }
-  return trimmed;
-}
-
 function serializeSkill(input: {
   name: string;
   description: string;
   body: string;
+  extra?: Record<string, unknown>;
 }): string {
-  return [
-    "---",
-    `name: ${escapeFrontMatter(input.name)}`,
-    `description: ${escapeFrontMatter(input.description)}`,
-    "---",
-    "",
-    input.body.trimEnd(),
-    "",
-  ].join("\n");
+  const frontmatter: Record<string, unknown> = {
+    name: input.name,
+    description: input.description,
+    ...input.extra,
+  };
+  // Keep name/description first; stringify preserves insertion order.
+  const yaml = stringify(frontmatter).trimEnd();
+  return ["---", yaml, "---", "", input.body.trimEnd(), ""].join("\n");
 }
 
-function parseSkill(path: string, raw: string): Skill {
-  const fallbackName = basename(path, ".md");
+function parseSkill(path: string, raw: string): Omit<Skill, "resources"> {
+  const fallbackName = basename(resolve(path, ".."));
   if (!raw.startsWith("---\n")) {
     return {
       name: fallbackName,
@@ -127,27 +132,67 @@ function parseSkill(path: string, raw: string): Skill {
     };
   }
 
-  const header = raw.slice(4, end).trim();
-  const body = raw.slice(end + "\n---".length).trim();
-  let name = fallbackName;
-  let description = "";
-  for (const line of header.split("\n")) {
-    const [key, ...rest] = line.split(":");
-    const value = rest.join(":");
-    if (key.trim() === "name") name = unquoteFrontMatter(value);
-    if (key.trim() === "description") description = unquoteFrontMatter(value);
+  const header = raw.slice(4, end);
+  const body = raw
+    .slice(end + "\n---".length)
+    .replace(/^\n/, "")
+    .trimEnd();
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    const value = parseDocument(header).toJS();
+    if (value && typeof value === "object") {
+      parsed = value as Record<string, unknown>;
+    }
+  } catch {
+    parsed = {};
   }
-  return { name, description, body, path, updatedAt: 0 };
+
+  const name =
+    typeof parsed.name === "string" && parsed.name.trim()
+      ? parsed.name
+      : fallbackName;
+  const description =
+    typeof parsed.description === "string" ? parsed.description : "";
+
+  const extra: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (key === "name" || key === "description") continue;
+    extra[key] = value;
+  }
+
+  return {
+    name,
+    description,
+    body,
+    path,
+    updatedAt: 0,
+    ...(Object.keys(extra).length > 0 ? { extra } : {}),
+  };
+}
+
+function listResources(dir: string): string[] {
+  try {
+    return readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name !== SKILL_FILE)
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
 }
 
 export function saveSkill(input: {
   name: string;
   description: string;
   body: string;
+  extra?: Record<string, unknown>;
 }): Skill {
-  const dir = skillsDir();
+  const dir = skillDir(input.name);
+  // Recursive mkdir preserves any sibling bundled files on update; we
+  // only overwrite SKILL.md, never the rest of the folder.
   mkdirSync(dir, { recursive: true });
-  const path = skillPath(input.name);
+  const path = skillFilePath(input.name);
   const content = serializeSkill(input);
   writeFileSync(path, content, { encoding: "utf-8", mode: 0o600 });
   return readSkill(input.name)!;
@@ -157,10 +202,12 @@ export function readSkill(name: string): Skill | undefined {
   // Reject names that fail validation (e.g. "../escape") before they
   // are turned into a filesystem path — guards against path traversal.
   if (validateSkillName(name)) return undefined;
-  const path = skillPath(name);
+  const dir = skillDir(name);
+  const path = skillFilePath(name);
   if (!existsSync(path)) return undefined;
   const raw = readFileSync(path, "utf-8");
-  const skill = parseSkill(path, raw);
+  const parsed = parseSkill(path, raw);
+  const skill: Skill = { ...parsed, resources: listResources(dir) };
   try {
     skill.updatedAt = Math.floor(statSync(path).mtimeMs);
   } catch {
@@ -172,9 +219,10 @@ export function readSkill(name: string): Skill | undefined {
 export function listSkills(): Skill[] {
   const dir = skillsDir();
   if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => name.endsWith(".md"))
-    .map((file) => readSkill(file.replace(/\.md$/, "")))
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .filter((entry) => existsSync(resolve(dir, entry.name, SKILL_FILE)))
+    .map((entry) => readSkill(entry.name))
     .filter((skill): skill is Skill => Boolean(skill))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -239,9 +287,9 @@ export function deleteSkill(name: string): boolean {
   // Reject names that fail validation (e.g. "../escape") before they
   // are turned into a filesystem path — guards against path traversal.
   if (validateSkillName(name)) return false;
-  const path = skillPath(name);
-  if (!existsSync(path)) return false;
-  rmSync(path, { force: true });
+  const dir = skillDir(name);
+  if (!existsSync(dir)) return false;
+  rmSync(dir, { recursive: true, force: true });
   return true;
 }
 
@@ -266,7 +314,7 @@ export function renderSkillsPrompt(): string {
   const lines = [
     "## Available Skills",
     "",
-    "Skills are reusable markdown workflows. Use `find_skills` when the relevant workflow is not obvious, then load the full body with `read_skill` before following one; do not guess from the description alone.",
+    "Skills are reusable workflow bundles (a `SKILL.md` per skill folder, optionally with bundled supporting files). Use `find_skills` when the relevant workflow is not obvious, then load the full body with `read_skill` before following one; do not guess from the description alone.",
     "",
     ...visible.map(formatSkill),
   ];

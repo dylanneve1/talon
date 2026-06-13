@@ -1,12 +1,13 @@
 /**
- * Skill tools — reusable markdown workflow bundles.
+ * Skill tools — reusable workflow bundles following Anthropic's Agent
+ * Skills (SKILL.md) standard.
  *
  * Skills are guidance the agent loads into context when a repeatable
  * workflow needs judgement: review protocols, release checklists,
  * backend-specific debugging procedures, and similar reusable know-how.
- * Unlike scripts (executable subprocesses), a skill is markdown the
- * agent reads and follows. Skills are global (not chat-scoped) and
- * survive restarts.
+ * Unlike scripts (executable subprocesses), a skill is a SKILL.md the
+ * agent reads and follows, optionally bundling supporting files in its
+ * folder. Skills are global (not chat-scoped) and survive restarts.
  */
 
 import { z } from "zod";
@@ -15,14 +16,14 @@ import type { ToolDefinition } from "./types.js";
 export const skillTools: ToolDefinition[] = [
   {
     name: "save_skill",
-    description: `Save (or update) a reusable skill — a markdown workflow bundle you can load later with read_skill.
+    description: `Save (or update) a reusable skill — a SKILL.md workflow bundle you can load later with read_skill. Follows Anthropic's Agent Skills standard: each skill is a folder (skills/<name>/SKILL.md) with YAML frontmatter (name, description) plus a markdown body, and may bundle supporting files (scripts, templates, references) alongside SKILL.md.
 
-Use skills for reusable procedures that require judgement rather than subprocess execution: review protocols, debugging playbooks, backend investigation steps, release checklists, or house style instructions. They are not factual memory; store facts in memory/palace instead. Saving to an existing name replaces that skill.`,
+Use skills for reusable procedures that require judgement rather than subprocess execution: review protocols, debugging playbooks, backend investigation steps, release checklists, or house style instructions. They are not factual memory; store facts in memory/palace instead. Saving to an existing name overwrites SKILL.md but preserves any other files bundled in the folder.`,
     schema: {
       name: z
         .string()
         .describe(
-          "Unique skill name, 1-64 chars of letters/digits/dash/underscore (becomes the markdown filename)",
+          "Unique skill name, 1-64 chars of letters/digits/dash/underscore (becomes the skill folder name)",
         ),
       description: z
         .string()
@@ -68,7 +69,7 @@ Use skills for reusable procedures that require judgement rather than subprocess
   {
     name: "read_skill",
     description:
-      "Read the full markdown body for a saved skill. Load it before following that workflow; descriptions are only discovery hints.",
+      "Read the full SKILL.md body for a saved skill. Load it before following that workflow; descriptions are only discovery hints. If the skill bundles supporting files in its folder, they are listed so you can open them with the Read tool.",
     schema: {
       name: z.string().describe("Skill name"),
     },
@@ -78,7 +79,8 @@ Use skills for reusable procedures that require judgement rather than subprocess
 
   {
     name: "delete_skill",
-    description: "Delete a saved skill and its markdown file permanently.",
+    description:
+      "Delete a saved skill and its entire folder (SKILL.md plus any bundled files) permanently.",
     schema: {
       name: z.string().describe("Skill name to delete"),
     },
