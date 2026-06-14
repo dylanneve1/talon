@@ -65,7 +65,8 @@ export async function* handlerToEvents(
 
   // Handler `onStreamDelta` delivers the FULL accumulated text so far,
   // not the new chunk. `AgentEvent.text_delta.text` carries the delta —
-  // the bridge consumer (`pipeEventsToCallbacks`) re-accumulates. The
+  // event-native consumers (the frontends, via the dispatcher's
+  // `onEvent` sink) re-accumulate if they need the running total. The
   // wrapper tracks the prior accumulated value and emits only the
   // trailing slice.
   let lastAccumulated = "";

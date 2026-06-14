@@ -1,9 +1,12 @@
-# AgentEvent migration — retiring the legacy callback bridge
+# AgentEvent migration — the legacy callback bridge is gone
 
-## Where we are
+## Status: done
 
-Talon's chat-turn streaming currently does a **callbacks → events → callbacks**
-round-trip:
+Chat-turn streaming is now **event-native end to end**. The backend emits the
+canonical `AgentEvent` stream, the dispatcher forwards it verbatim, and each
+frontend consumes `AgentEvent`s directly. The `callbacks → events → callbacks`
+round-trip and the `event-bridge.ts` translator that powered its second leg
+have been deleted.
 
 ```
 backend handler (onStreamDelta/onTextBlock/onToolUse, SDK-native)
@@ -12,81 +15,85 @@ backend handler (onStreamDelta/onTextBlock/onToolUse, SDK-native)
         ▼
   AsyncIterable<AgentEvent>   ← the canonical contract (ChatBackend.runChatTurn)
         │
-        │  core/agent-runtime/event-bridge.ts     (AgentEvent → callbacks)
+        │  core/engine/dispatcher.ts   (for-await, forwards each event)
         ▼
-dispatcher (core/engine/dispatcher.ts) → frontend callbacks
-        (telegram / discord / teams / terminal)
+   params.onEvent(event)      ← the frontend's event sink
+   (telegram / discord / teams / terminal switch on event.type)
 ```
 
 - **Producing side** (`handler-to-events.ts`) is *canonical*, not legacy:
   callback-driven SDKs (Codex, OpenCode, Kilo, OpenAI Agents) wrap their loop
   to emit `AgentEvent`. Claude SDK emits events natively. This stays.
-- **Consuming side** (`event-bridge.ts` → `pipeEventsToCallbacks`) is the
-  **legacy** half. It exists only because the dispatcher and the four
-  frontends still consume the old `StreamingCallbacks` shape
-  (`onStreamDelta` / `onTextBlock` / `onToolUse`) instead of reading
-  `AgentEvent` directly.
+- **Consuming side** is now event-native. The old `event-bridge.ts`
+  (`pipeEventsToCallbacks` + `LegacyCallbacks`) is **deleted**. Frontends no
+  longer hand the dispatcher a `StreamingCallbacks` bundle; they hand it one
+  `onEvent` sink.
 
-The end state: frontends consume `AgentEvent` directly; the dispatcher hands
-the stream through; `event-bridge.ts` is deleted.
+## The contract
 
-## Why this can't be one PR
+`ExecuteParams` (in `core/types.ts`) carries a single streaming sink:
 
-The bridge has a single caller (`dispatcher.ts:~197`) but its *output* fans
-into four frontends' delivery paths, each with its own streaming UX (Telegram
-message-edit throttling, Discord typing, Teams cards, terminal print). That's
-streaming-critical, user-visible, and per-frontend. A big-bang rewrite is high
-risk and hard to review. Stage it.
+```ts
+export type StreamEventSink = {
+  onEvent?: (event: AgentEvent) => void | Promise<void>;
+};
+```
 
-## What's already locked down
+The dispatcher consumes the backend stream and forwards every event in order:
 
-- `agent-runtime/event-bridge.ts` is fully characterized by
-  `__tests__/agent-runtime-event-bridge.test.ts` (16 cases: text/thinking
-  accumulation, `assistant_message` folding + `deliveryAck`, await-ordering,
-  `tool_call` record + non-object→`{}`, terminators, silent events, missing
-  callbacks). These tests are the safety net for every stage below.
-- The streaming-callback contract is now **single-sourced** as
-  `StreamingCallbacks` in `core/types.ts`, reused by both `ExecuteParams` and
-  the bridge's `LegacyCallbacks` (this PR). Adding a callback in one place now
-  statically obligates the bridge to forward it — no silent drift.
+```ts
+for await (const event of stream) {
+  if (event.type === "completed") agentResult = event.result;
+  await params.onEvent?.(event);          // serial: awaited in stream order
+  if (event.type === "error") throw new AgentRunError(event.error);
+}
+```
 
-## Staged plan
+- `completed` is captured for the dispatcher's `ExecuteResult` return value.
+- `error` is forwarded to the sink, then rethrown as `AgentRunError`
+  (`core/agent-runtime/events.ts`) so callers' `try/catch` paths — which
+  classify via `core/errors.ts` — keep working unchanged.
+- Every other event reaches the frontend verbatim.
 
-**Stage 0 — single-source the contract.** ✅ done in this PR.
+### What each frontend's `onEvent` must honour
 
-**Stage 1 — give the dispatcher an event-native entry point.** Add a
-dispatcher path that consumes `AgentEvent` and exposes it to the frontend
-*alongside* the existing callback path (additive, behind the same
-`ExecuteParams`). No frontend changes yet; default behavior unchanged. Land
-with tests asserting parity between the event path and the callback path.
+These are the same guarantees the old bridge enforced centrally — now each
+frontend owns them (and each is independently revertible):
 
-**Stage 2 — port frontends one at a time.** For each of terminal → teams →
-discord → telegram (simplest first, highest-traffic last), switch its handler
-to consume `AgentEvent` directly and drop its `StreamingCallbacks` usage.
-One frontend per PR, each independently revertible. Terminal first because it
-has the simplest delivery (print) and no throttling state.
+- **Ordering / back-pressure.** The dispatcher `await`s each `onEvent`. A
+  consumer that needs serial delivery (Telegram's typing-indicator + send
+  ordering for `assistant_message` blocks) awaits inside `onEvent`. A consumer
+  that wants fire-and-forget throttling (Telegram draft edits on `text_delta`)
+  simply doesn't await its own work — Telegram fires draft sends with `void`
+  to preserve the old non-blocking behaviour.
+- **`assistant_message.deliveryAck`.** The consumer MUST `resolve()` on
+  successful delivery and `reject(err)` on failure. That's how callback-shaped
+  backends learn a block landed (notably Codex oversized-message retries). When
+  there is no ack and delivery throws, the consumer rethrows so the turn fails.
+- **`tool_call.input` shape.** It's typed `unknown` (backends may emit arrays).
+  Frontends that render tool echoes via a `Record<string, unknown>` use the
+  shared `toolInputToRecord(name, input)` helper (coerces non-plain-objects to
+  `{}` with a warning); consumers that can render the real shape may read
+  `event.input` directly.
+- **Text accumulation.** `text_delta.text` is the *delta*. A consumer that
+  wants the running total (Telegram's draft UI) re-accumulates it itself.
 
-**Stage 3 — drop the callback fields.** Once no frontend supplies
-`StreamingCallbacks`, remove them from `ExecuteParams`, delete
-`pipeEventsToCallbacks` + `LegacyCallbacks` + `event-bridge.ts`, and have the
-dispatcher consume the stream directly. `handler-to-events.ts` stays (it's the
-canonical producer).
+## What's locked down
 
-**Stage 4 — collapse the round-trip (optional).** With both ends event-native,
-the `accumulate → delta → re-accumulate` dance (`handler-to-events` emits
-deltas from accumulated text; the old bridge re-accumulated) can be simplified
-where a backend can emit deltas directly.
+- `dispatcher.test.ts` pins the event-forwarding contract: events reach
+  `onEvent`, a `deliveryAck` reject drives the backend retry path, and an
+  `error` terminator is rethrown as `AgentRunError`.
+- `integration.test.ts` pins the dispatcher → backend → `onEvent` path and the
+  `AgentRunError` classification.
+- `handler-to-events.test.ts` still pins the *producing* side (callbacks →
+  `AgentEvent`), which is unchanged.
 
-## Risk notes
+## History
 
-- `onTextBlock` is **async** and the bridge serializes it (each block awaited
-  before the next event) to keep Telegram's typing-indicator + send ordering
-  correct. Any event-native frontend MUST preserve that ordering guarantee —
-  port it as an `for await` that awaits block delivery, not fire-and-forget.
-- `assistant_message.deliveryAck` is how a backend learns a block was actually
-  delivered (resolve) or failed (reject). Event-native frontends must keep
-  resolving/rejecting it.
-- `tool_call.input` can be a non-plain-object (arrays from some backends); the
-  legacy `onToolUse` contract coerces to `{}` with a warning. An event-native
-  consumer can preserve the real shape — a latent improvement, but verify each
-  frontend's tool-echo rendering first.
+This was scoped as a staged plan — single-source the streaming contract → add
+an event-native dispatcher entry point → port frontends one at a time
+(terminal → teams → discord → telegram) → delete the bridge → optionally
+collapse the accumulate↔delta dance. It then landed in one pass: the contract
+change, all four frontend ports, and the bridge deletion together. The
+characterization tests that protected each stage now live in
+`dispatcher.test.ts` and `integration.test.ts`.

@@ -36,6 +36,7 @@ import { Gateway } from "../../core/engine/gateway.js";
 import { makeRecordingHandler } from "./recording-handler.js";
 import type { Frontend } from "../../bootstrap.js";
 import type { ContextManager } from "../../core/types.js";
+import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 
 // ── Preflight gating ───────────────────────────────────────────────────────
 
@@ -290,11 +291,15 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
       senderName: "Test",
       isGroup: false,
       source: "message",
-      onTextBlock: async (text) => {
-        textBlocks.push(text);
-      },
-      onToolUse: (name, input) => {
-        toolUses.push({ name, input });
+      onEvent: async (event) => {
+        if (event.type === "assistant_message") {
+          textBlocks.push(event.text);
+        } else if (event.type === "tool_call") {
+          toolUses.push({
+            name: event.name,
+            input: toolInputToRecord(event.name, event.input),
+          });
+        }
       },
     });
 

@@ -136,15 +136,13 @@ describe("integration: dispatcher lifecycle", () => {
       });
       expect.unreachable();
     } catch (err) {
-      // The dispatcher now consumes the backend's `AgentEvent` stream
-      // and pipes events through the legacy bridge — errors arrive
-      // wrapped as `BridgedAgentError` carrying the canonical
-      // `AgentError`. The classification is preserved through the
-      // wrapper.
-      const { BridgedAgentError } =
-        await import("../core/agent-runtime/event-bridge.js");
-      expect(err).toBeInstanceOf(BridgedAgentError);
-      const bridged = err as InstanceType<typeof BridgedAgentError>;
+      // The dispatcher consumes the backend's `AgentEvent` stream
+      // directly and rethrows the `error` terminator as `AgentRunError`,
+      // carrying the canonical `AgentError`. The classification is
+      // preserved.
+      const { AgentRunError } = await import("../core/agent-runtime/events.js");
+      expect(err).toBeInstanceOf(AgentRunError);
+      const bridged = err as InstanceType<typeof AgentRunError>;
       expect(bridged.kind).toBe("rate_limit");
       expect(bridged.retryable).toBe(true);
     }
@@ -207,18 +205,14 @@ describe("integration: dispatcher lifecycle", () => {
     expect(order[1]).toBe("start:B");
   });
 
-  it("stream callbacks are invoked from the backend's event stream", async () => {
-    // The dispatcher consumes `backend.chat.runChatTurn` and pipes
-    // events back through the legacy callback shape via
-    // `pipeEventsToCallbacks`. The caller-supplied
-    // `onStreamDelta` / `onTextBlock` callbacks fire whenever the
-    // stream produces `text_delta` / `assistant_message` — not
-    // because they're forwarded to the SDK directly. This test
-    // verifies the round-trip: a backend that emits text via its
-    // streaming callbacks → events → caller callbacks.
+  it("events are forwarded from the backend's stream to the caller's onEvent sink", async () => {
+    // The dispatcher consumes `backend.chat.runChatTurn` and forwards
+    // every `AgentEvent` straight to the caller's `onEvent` sink — no
+    // callback bridge. This test verifies a backend's `text_delta` /
+    // `assistant_message` events reach the frontend verbatim.
     const { backend } = setup();
-    const onStreamDelta = vi.fn();
-    const onTextBlock = vi.fn();
+    const deltas: string[] = [];
+    let block: string | undefined;
     // Override the backend's chat slot with one that emits text via
     // the wrapped legacy callbacks (handlerToEvents relays them as
     // text_delta events).
@@ -260,11 +254,15 @@ describe("integration: dispatcher lifecycle", () => {
       senderName: "User",
       isGroup: true,
       source: "pulse",
-      onStreamDelta,
-      onTextBlock,
+      onEvent: (event) => {
+        if (event.type === "text_delta") deltas.push(event.text);
+        if (event.type === "assistant_message") {
+          block = event.text;
+        }
+      },
     });
 
-    expect(onStreamDelta).toHaveBeenCalled();
-    expect(onTextBlock).toHaveBeenCalledWith("hello world");
+    expect(deltas).toContain("hello");
+    expect(block).toBe("hello world");
   });
 });

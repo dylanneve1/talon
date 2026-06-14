@@ -1950,11 +1950,15 @@ describe("processAndReply — onToolUse callback triggers appendDailyLogResponse
 
       executeMock.mockImplementationOnce(
         async (params: Record<string, unknown>) => {
-          const onToolUse = params.onToolUse as (
-            toolName: string,
-            input: Record<string, unknown>,
-          ) => void;
-          onToolUse?.(c.toolName, c.input);
+          const onEvent = params.onEvent as (
+            event: Record<string, unknown>,
+          ) => void | Promise<void>;
+          await onEvent?.({
+            type: "tool_call",
+            id: "t1",
+            name: c.toolName,
+            input: c.input,
+          });
           return {
             text: "",
             durationMs: 5,
@@ -1997,10 +2001,13 @@ describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", 
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onTextBlock = params.onTextBlock as (
-          text: string,
-        ) => Promise<void>;
-        await onTextBlock?.("**Bold response**");
+        const onEvent = params.onEvent as (
+          event: Record<string, unknown>,
+        ) => void | Promise<void>;
+        await onEvent?.({
+          type: "assistant_message",
+          text: "**Bold response**",
+        });
         return {
           text: "",
           durationMs: 5,
@@ -2037,10 +2044,10 @@ describe("createStreamCallbacks — onTextBlock delivers message via sendHtml", 
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onTextBlock = params.onTextBlock as (
-          text: string,
-        ) => Promise<void>;
-        await onTextBlock?.("Hi! 👋");
+        const onEvent = params.onEvent as (
+          event: Record<string, unknown>,
+        ) => void | Promise<void>;
+        await onEvent?.({ type: "assistant_message", text: "Hi! 👋" });
         return {
           text: "Hi! 👋",
           durationMs: 5,
@@ -2195,14 +2202,13 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
+        const onEvent = params.onEvent as (
+          event: Record<string, unknown>,
+        ) => void | Promise<void>;
         // Wait 1100ms so the internal 1000ms stream.started timer fires first
         await new Promise((r) => setTimeout(r, 1100));
         // Now state.started = true; accumulated delta > 40 chars > lastSentLength=0
-        if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
+        await onEvent?.({ type: "text_delta", text: "a".repeat(50) });
         return {
           text: "",
           durationMs: 10,
@@ -2238,13 +2244,12 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
+        const onEvent = params.onEvent as (
+          event: Record<string, unknown>,
+        ) => void | Promise<void>;
         await new Promise((r) => setTimeout(r, 1100));
         // accumulated.length > 3900 → triggers truncation + ellipsis
-        if (onStreamDelta) await onStreamDelta("b".repeat(4000), "text");
+        await onEvent?.({ type: "text_delta", text: "b".repeat(4000) });
         return {
           text: "",
           durationMs: 10,
@@ -2289,12 +2294,11 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
+        const onEvent = params.onEvent as (
+          event: Record<string, unknown>,
+        ) => void | Promise<void>;
         await new Promise((r) => setTimeout(r, 1100));
-        if (onStreamDelta) await onStreamDelta("c".repeat(50), "text");
+        await onEvent?.({ type: "text_delta", text: "c".repeat(50) });
         return {
           text: "",
           durationMs: 10,
@@ -2338,12 +2342,11 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
+        const onEvent = params.onEvent as (
+          event: Record<string, unknown>,
+        ) => void | Promise<void>;
         // Call IMMEDIATELY — state.started is still false (timer hasn't fired)
-        if (onStreamDelta) await onStreamDelta("a".repeat(50), "text");
+        await onEvent?.({ type: "text_delta", text: "a".repeat(50) });
         return {
           text: "",
           durationMs: 10,
@@ -2379,13 +2382,12 @@ describe("createStreamCallbacks — onStreamDelta streaming path", () => {
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
+        const onEvent = params.onEvent as (
+          event: Record<string, unknown>,
+        ) => void | Promise<void>;
         await new Promise((r) => setTimeout(r, 1100)); // wait for started
         // Only 20 chars since lastSentLength=0 → 20 < 40 → early return
-        if (onStreamDelta) await onStreamDelta("a".repeat(20), "text");
+        await onEvent?.({ type: "text_delta", text: "a".repeat(20) });
         return {
           text: "",
           durationMs: 10,

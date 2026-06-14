@@ -57,10 +57,10 @@ export interface ChatRunParams {
 /**
  * The chat-turn surface. `runChatTurn` returns an
  * `AsyncIterable<AgentEvent>` carrying per-token deltas, tool
- * events, usage, and the terminator. Consumers that need
- * callback-driven delivery (the dispatcher, frontend logging) use
- * `pipeEventsToCallbacks` from `event-bridge.ts`; consumers that
- * want the raw stream iterate it directly.
+ * events, usage, and the terminator. Consumers iterate the stream
+ * directly — the dispatcher forwards each event to the frontend's
+ * `onEvent` sink, and frontends switch on `event.type` to drive
+ * their delivery UX.
  */
 export interface ChatBackend {
   runChatTurn(params: ChatRunParams): AsyncIterable<AgentEvent>;

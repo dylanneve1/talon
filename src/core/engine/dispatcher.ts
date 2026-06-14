@@ -12,7 +12,7 @@
 import { randomBytes } from "node:crypto";
 import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
-import { pipeEventsToCallbacks } from "../agent-runtime/event-bridge.js";
+import { AgentRunError, type AgentResult } from "../agent-runtime/events.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
 import { maybeStartDream } from "../background/dream.js";
 
@@ -114,7 +114,8 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
   // pick and no operator default), refuse to call the backend — it
   // would either error opaquely or run on the wrong default. Reply
   // with a clear "use /model to pick one" message routed through the
-  // same onTextBlock callback the backend would use for output.
+  // same event sink the backend would use for output (as an
+  // `assistant_message` event, so the frontend delivers it normally).
   const {
     model: resolvedModel,
     ref: resolvedRef,
@@ -131,11 +132,11 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
       `[${reqId}] refusing query: no model resolved (chat=${params.chatId}, backend=${backendId})`,
     );
     try {
-      await params.onTextBlock?.(message);
+      await params.onEvent?.({ type: "assistant_message", text: message });
     } catch (err) {
       logWarn(
         "dispatcher",
-        `onTextBlock(no-model) threw: ${err instanceof Error ? err.message : String(err)}`,
+        `onEvent(no-model) threw: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
     return {
@@ -175,12 +176,13 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
       });
     }, 4000);
 
-    // Consume the backend's native `AgentEvent` stream and pipe it
-    // back into the legacy callback shape the dispatcher's caller
-    // contract still uses. `pipeEventsToCallbacks` mirrors
-    // text_delta / assistant_message / tool_call into the supplied
-    // hooks and returns the final `AgentResult` from the
-    // `completed` event.
+    // Consume the backend's native `AgentEvent` stream and forward
+    // every event straight to the frontend's `onEvent` sink (no
+    // callback bridge). Capture the `completed` event's `AgentResult`
+    // for the dispatcher's return value, and rethrow an `error`
+    // terminator as `AgentRunError` so callers' catch paths keep
+    // working. Events are awaited in stream order so a consumer that
+    // needs serial delivery gets it.
     if (!backend.chat) {
       throw new Error(
         `Backend "${backend.id}" has no chat capability — cannot run a turn.`,
@@ -194,11 +196,35 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
       isGroup: params.isGroup,
       messageId: params.messageId,
     });
-    const agentResult = await pipeEventsToCallbacks(stream, {
-      onStreamDelta: params.onStreamDelta,
-      onTextBlock: params.onTextBlock,
-      onToolUse: params.onToolUse,
-    });
+    let agentResult: AgentResult | undefined;
+    for await (const event of stream) {
+      if (event.type === "completed") {
+        agentResult = event.result;
+      }
+
+      // The dispatcher owns `assistant_message.deliveryAck` settlement
+      // so it is ALWAYS resolved — even when no `onEvent` sink is
+      // supplied, or the sink ignores the event. Otherwise the
+      // callback-shaped backend (handler-to-events) blocks forever
+      // awaiting delivery confirmation. The frontend's job is just to
+      // deliver and throw on failure; the dispatcher maps that onto the
+      // ack (resolve on success → block delivered; reject on throw →
+      // backend retries, e.g. Codex oversized-message path).
+      if (event.type === "assistant_message" && event.deliveryAck) {
+        try {
+          await params.onEvent?.(event);
+          event.deliveryAck.resolve();
+        } catch (err) {
+          event.deliveryAck.reject(err);
+        }
+        continue;
+      }
+
+      await params.onEvent?.(event);
+      if (event.type === "error") {
+        throw new AgentRunError(event.error);
+      }
+    }
     const result = {
       text: agentResult?.text ?? "",
       durationMs: agentResult?.durationMs ?? 0,

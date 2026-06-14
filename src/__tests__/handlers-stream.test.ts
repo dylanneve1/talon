@@ -158,14 +158,14 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
 
     executeMock.mockImplementationOnce(
       async (params: Record<string, unknown>) => {
-        const onStreamDelta = params.onStreamDelta as (
-          acc: string,
-          phase?: string,
-        ) => Promise<void>;
+        const onEvent = params.onEvent as (
+          event: Record<string, unknown>,
+        ) => void | Promise<void>;
         // Wait for the 1000ms stream.started timer to fire
         await new Promise((r) => setTimeout(r, 1100));
-        // With draftsSupported === null and state.started = true, onStreamDelta runs
-        if (onStreamDelta) await onStreamDelta("x".repeat(50), "text");
+        // With draftsSupported === null and state.started = true, the
+        // text_delta event drives a draft edit (re-accumulated to 50 chars).
+        await onEvent?.({ type: "text_delta", text: "x".repeat(50) });
         return {
           text: "",
           durationMs: 10,

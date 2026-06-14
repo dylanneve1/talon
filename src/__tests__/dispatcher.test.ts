@@ -187,14 +187,12 @@ describe("dispatcher", () => {
     expect(deps.onActivity).not.toHaveBeenCalled();
   });
 
-  it("invokes the caller's stream callbacks from the backend's event stream", async () => {
-    // The dispatcher pipes backend events back through
-    // `pipeEventsToCallbacks` — the caller's `onTextBlock` /
-    // `onStreamDelta` fire from the event stream, not from being
-    // passed verbatim into `backend.query`. This pins the
-    // round-trip: a backend that emits text via its callbacks → the
-    // wrapper turns them into events → the pipe invokes the
-    // caller's hooks.
+  it("forwards the backend's event stream to the caller's onEvent sink", async () => {
+    // The dispatcher forwards the backend's canonical `AgentEvent`
+    // stream straight to `params.onEvent` — no callback bridge. A
+    // backend that emits text via its callbacks → the wrapper turns
+    // them into events → the dispatcher hands each event to the
+    // frontend's sink verbatim.
     const deps = createMockDeps();
     deps.query.mockImplementation(async (params) => {
       params.onStreamDelta?.("hi");
@@ -209,8 +207,8 @@ describe("dispatcher", () => {
       };
     });
     initDispatcher(deps);
-    const onStreamDelta = vi.fn();
-    const onTextBlock = vi.fn();
+    const events: string[] = [];
+    let deliveredBlock: string | undefined;
 
     await execute({
       chatId: "444",
@@ -219,15 +217,58 @@ describe("dispatcher", () => {
       senderName: "User",
       isGroup: false,
       source: "message",
-      onStreamDelta,
-      onTextBlock,
+      onEvent: (event) => {
+        events.push(event.type);
+        if (event.type === "assistant_message") {
+          deliveredBlock = event.text;
+        }
+      },
     });
 
-    expect(onStreamDelta).toHaveBeenCalled();
-    expect(onTextBlock).toHaveBeenCalledWith("hi there");
+    expect(events).toContain("text_delta");
+    expect(events).toContain("assistant_message");
+    expect(events).toContain("completed");
+    expect(deliveredBlock).toBe("hi there");
   });
 
-  it("propagates async text-block delivery failures back to callback-shaped backends", async () => {
+  it("settles assistant_message deliveryAck even with no onEvent sink", async () => {
+    // Regression: the callback-shaped backend (handler-to-events) awaits
+    // the `assistant_message.deliveryAck` before its handler can resolve.
+    // The dispatcher owns ack settlement, so a turn with NO onEvent sink
+    // must still complete — otherwise the backend blocks forever and the
+    // turn hangs.
+    const deps = createMockDeps();
+    deps.query.mockImplementation(async (params) => {
+      await params.onTextBlock?.("delivered with no sink");
+      return {
+        text: "delivered with no sink",
+        durationMs: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      };
+    });
+    initDispatcher(deps);
+
+    // No onEvent supplied at all.
+    const result = await execute({
+      chatId: "no-sink",
+      numericChatId: 447,
+      prompt: "stream",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+    });
+
+    expect(result.text).toBe("delivered with no sink");
+  });
+
+  it("rejects the deliveryAck when onEvent throws, letting the backend retry", async () => {
+    // The dispatcher owns the ack: when the frontend's onEvent throws on
+    // an `assistant_message`, the dispatcher rejects the ack — the
+    // callback-shaped backend (Codex oversized-message path) catches the
+    // delivery failure and retries with a smaller block.
     const deps = createMockDeps();
     deps.query.mockImplementation(async (params) => {
       try {
@@ -254,10 +295,8 @@ describe("dispatcher", () => {
     });
     initDispatcher(deps);
 
-    const onTextBlock = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("Telegram message too long"))
-      .mockResolvedValueOnce(undefined);
+    const delivered: string[] = [];
+    let firstBlock = true;
 
     const result = await execute({
       chatId: "delivery-retry",
@@ -266,13 +305,47 @@ describe("dispatcher", () => {
       senderName: "User",
       isGroup: false,
       source: "message",
-      onTextBlock,
+      onEvent: async (event) => {
+        if (event.type !== "assistant_message") return;
+        delivered.push(event.text);
+        if (firstBlock) {
+          firstBlock = false;
+          throw new Error("Telegram message too long");
+        }
+      },
     });
 
-    expect(onTextBlock).toHaveBeenCalledTimes(2);
-    expect(onTextBlock).toHaveBeenNthCalledWith(1, "too long");
-    expect(onTextBlock).toHaveBeenNthCalledWith(2, "short retry");
+    expect(delivered).toEqual(["too long", "short retry"]);
     expect(result.text).toBe("short retry");
+  });
+
+  it("rethrows an error terminator as AgentRunError", async () => {
+    const { AgentRunError } = await import("../core/agent-runtime/events.js");
+    const deps = createMockDeps();
+    deps.query.mockRejectedValueOnce(
+      new (await import("../core/errors.js")).TalonError("rate limited", {
+        reason: "rate_limit",
+        retryable: true,
+      }),
+    );
+    initDispatcher(deps);
+
+    const seen: string[] = [];
+    await expect(
+      execute({
+        chatId: "err-chat",
+        numericChatId: 446,
+        prompt: "boom",
+        senderName: "User",
+        isGroup: false,
+        source: "message",
+        onEvent: (event) => {
+          seen.push(event.type);
+        },
+      }),
+    ).rejects.toBeInstanceOf(AgentRunError);
+    // The error event is forwarded to the sink before the throw.
+    expect(seen).toContain("error");
   });
 
   it("tracks active count", async () => {

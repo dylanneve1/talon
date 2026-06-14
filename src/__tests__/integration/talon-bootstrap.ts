@@ -10,8 +10,8 @@
  * backend pool boot, model discovery (the stub advertises mock models via
  * the standard `SDKControlInitializeResponse.models` field), dispatcher
  * wiring, active-model resolution, SDK query, stream processing, the
- * event→callback bridge, dedup, and session bookkeeping — only the binary
- * the SDK spawns is fake.
+ * event-native `onEvent` sink, dedup, and session bookkeeping — only the
+ * binary the SDK spawns is fake.
  *
  * Usage in tests:
  *
@@ -35,6 +35,7 @@ import { tmpdir } from "node:os";
 import type { TalonConfig } from "../../util/config.js";
 import { initBackendAndDispatcher, type Frontend } from "../../bootstrap.js";
 import { execute as dispatcherExecute } from "../../core/engine/dispatcher.js";
+import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { resetSession } from "../../storage/sessions.js";
 import { Gateway } from "../../core/engine/gateway.js";
 import type { FrontendActionHandler } from "../../core/types.js";
@@ -321,7 +322,9 @@ export async function runTalonTurn(
   try {
     // Drive the turn through the PRODUCTION dispatcher — per-chat
     // serialization, send-time model guard, active-model resolution,
-    // and the event-stream → callback bridge all run for real.
+    // and the event-native stream forwarding all run for real.
+    let textAccum = "";
+    let thinkingAccum = "";
     const result = await dispatcherExecute({
       chatId,
       numericChatId,
@@ -329,14 +332,27 @@ export async function runTalonTurn(
       senderName,
       isGroup,
       source: "message",
-      onTextBlock: async (text) => {
-        textChunks.push(text);
-      },
-      onToolUse: (name, input) => {
-        toolUses.push({ name, input });
-      },
-      onStreamDelta: (accumulated, phase) => {
-        streamDeltas.push({ phase, text: accumulated });
+      onEvent: async (event) => {
+        switch (event.type) {
+          case "text_delta":
+            textAccum += event.text;
+            streamDeltas.push({ phase: "text", text: textAccum });
+            break;
+          case "reasoning":
+            thinkingAccum += event.text;
+            streamDeltas.push({ phase: "thinking", text: thinkingAccum });
+            break;
+          case "assistant_message":
+            textChunks.push(event.text);
+            textAccum += event.text;
+            break;
+          case "tool_call":
+            toolUses.push({
+              name: event.name,
+              input: toolInputToRecord(event.name, event.input),
+            });
+            break;
+        }
       },
     });
 

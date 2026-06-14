@@ -8,7 +8,6 @@
  *   - `Backend` + capability interfaces + `composeBackend` (capabilities.ts)
  *   - `JsonStore<T>`                                       (store.ts)
  *   - Backend contract assertions                          (contract-tests.ts)
- *   - Event → legacy callback bridge                       (event-bridge.ts)
  */
 
 export {
@@ -18,10 +17,12 @@ export {
   type AgentResult,
   type UsageSnapshot,
   addUsage,
+  AgentRunError,
   classifiedToAgentError,
   emptyUsage,
   isAgentEventOf,
   isAgentRunTerminator,
+  toolInputToRecord,
 } from "./events.js";
 
 export {
@@ -62,9 +63,3 @@ export {
   assertModelCatalogDefaultShape,
   assertUsageTelemetryShape,
 } from "./contract-tests.js";
-
-export {
-  BridgedAgentError,
-  type LegacyCallbacks,
-  pipeEventsToCallbacks,
-} from "./event-bridge.js";

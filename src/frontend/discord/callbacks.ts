@@ -554,7 +554,11 @@ async function forwardToAgent(
       senderName: sender,
       isGroup,
       source: "message",
-      onTextBlock,
+      onEvent: async (event) => {
+        if (event.type === "assistant_message") {
+          await onTextBlock(event.text);
+        }
+      },
     });
   } catch (err) {
     logError(

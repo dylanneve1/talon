@@ -18,6 +18,7 @@ import {
   generateTerminalChatId,
 } from "../../util/chat-id.js";
 import { resolveModel } from "../../core/models/catalog.js";
+import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { createRenderer } from "./renderer.js";
 import { createInput } from "./input.js";
 import {
@@ -217,25 +218,35 @@ export function createTerminalFrontend(
             senderName: "User",
             isGroup: false,
             source: "message",
-            onStreamDelta: (_accumulated, phase) => {
-              if (phase === "thinking" && currentPhase !== "thinking") {
-                currentPhase = "thinking";
-                renderer.updateSpinnerLabel("thinking");
-              } else if (phase === "text" && currentPhase !== "text") {
-                currentPhase = "text";
-                renderer.updateSpinnerLabel("responding");
+            onEvent: async (event) => {
+              switch (event.type) {
+                case "text_delta":
+                  if (currentPhase !== "text") {
+                    currentPhase = "text";
+                    renderer.updateSpinnerLabel("responding");
+                  }
+                  break;
+                case "reasoning":
+                  if (currentPhase !== "thinking") {
+                    currentPhase = "thinking";
+                    renderer.updateSpinnerLabel("thinking");
+                  }
+                  break;
+                case "tool_call":
+                  renderer.stopSpinner();
+                  currentPhase = "tool";
+                  toolCallCount++;
+                  renderer.renderToolCall(
+                    event.name,
+                    toolInputToRecord(event.name, event.input),
+                  );
+                  renderer.startSpinner("running tools");
+                  break;
+                case "assistant_message":
+                  renderer.stopSpinner();
+                  renderer.renderAssistantMessage(event.text);
+                  break;
               }
-            },
-            onToolUse: (toolName, toolInput) => {
-              renderer.stopSpinner();
-              currentPhase = "tool";
-              toolCallCount++;
-              renderer.renderToolCall(toolName, toolInput);
-              renderer.startSpinner("running tools");
-            },
-            onTextBlock: async (blockText) => {
-              renderer.stopSpinner();
-              renderer.renderAssistantMessage(blockText);
             },
           });
 

@@ -164,16 +164,32 @@ export interface ContextManager {
 }
 
 /**
- * Streaming delivery callbacks the frontend supplies and the dispatcher
- * forwards. This is the single source of truth for the streaming contract:
- * the `AgentEvent → callback` bridge (`agent-runtime/event-bridge.ts`)
- * reuses this exact shape, so the two can't drift (a new callback added
- * here is one the bridge is then statically required to forward).
+ * Event-native streaming sink. The frontend supplies one `onEvent`
+ * consumer and the dispatcher forwards the backend's canonical
+ * `AgentEvent` stream into it verbatim — no callback bridge, no
+ * back-translation. Frontends switch on `event.type` and drive their
+ * own delivery UX (Telegram draft edits, Discord/Teams messages,
+ * terminal print).
+ *
+ * Ordering + back-pressure: the dispatcher `await`s each `onEvent`
+ * call in stream order, so a consumer that needs serial delivery
+ * (e.g. Telegram's typing-indicator + send ordering for
+ * `assistant_message` blocks) gets it by awaiting inside `onEvent`.
+ * A consumer that wants fire-and-forget throttling (e.g. draft edits
+ * on `text_delta`) simply returns without awaiting its own work.
+ *
+ * Delivery acknowledgement: the dispatcher (not the consumer) owns
+ * `assistant_message.deliveryAck` settlement — it resolves the ack
+ * when `onEvent` returns and rejects it when `onEvent` throws. So a
+ * consumer signals a failed `assistant_message` delivery by *throwing*
+ * (which lets callback-shaped backends retry, notably Codex
+ * oversized-message), and a successful one by returning. This keeps
+ * the ack settled even when no `onEvent` is supplied at all.
  */
-export type StreamingCallbacks = {
-  onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
-  onTextBlock?: (text: string) => Promise<void>;
-  onToolUse?: (toolName: string, input: Record<string, unknown>) => void;
+export type StreamEventSink = {
+  onEvent?: (
+    event: import("./agent-runtime/events.js").AgentEvent,
+  ) => void | Promise<void>;
 };
 
 /** Parameters for the dispatcher. */
@@ -186,7 +202,7 @@ export type ExecuteParams = {
   /** Provider message ID. Numeric for Telegram, string snowflake for Discord. */
   messageId?: number | string;
   source: "message" | "pulse" | "cron" | "trigger";
-} & StreamingCallbacks;
+} & StreamEventSink;
 
 /** What the dispatcher returns after execution. */
 export type ExecuteResult = {

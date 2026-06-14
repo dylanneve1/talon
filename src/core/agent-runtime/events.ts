@@ -168,6 +168,60 @@ export function isAgentRunTerminator(event: AgentEvent): boolean {
 }
 
 /**
+ * Error thrown when an `AgentEvent` stream terminates with an `error`
+ * event. The dispatcher consumes the canonical event stream directly
+ * (no callback bridge) and rethrows the `error` terminator as this so
+ * callers' `try/catch` paths keep working — it carries the canonical
+ * `AgentError` so downstream code can read `kind` / `retryable`
+ * without re-classifying.
+ */
+export class AgentRunError extends Error {
+  readonly kind: AgentError["kind"];
+  readonly retryable: boolean;
+  readonly raw?: string;
+
+  constructor(error: AgentError) {
+    super(error.message);
+    this.name = "AgentRunError";
+    this.kind = error.kind;
+    this.retryable = error.retryable;
+    this.raw = error.raw;
+  }
+}
+
+/**
+ * Coerce a `tool_call.input` (typed `unknown` — backends may emit
+ * arrays or primitives) into the `Record<string, unknown>` shape that
+ * frontend tool-echo renderers expect. Non-plain-objects collapse to
+ * `{}` with a warning so operators can diagnose a tool that receives
+ * empty args when it shouldn't. Event-native consumers that can render
+ * the real shape may read `event.input` directly instead.
+ */
+export function toolInputToRecord(
+  name: string,
+  input: unknown,
+): Record<string, unknown> {
+  if (isPlainObject(input)) return input;
+  if (input !== undefined && input !== null) {
+    const typeLabel = Array.isArray(input) ? "array" : typeof input;
+    console.warn(
+      `[agent-event] tool_call "${name}": input is ${typeLabel}, ` +
+        `not a plain object — coercing to {} for the legacy Record<string, unknown> tool-echo shape.`,
+    );
+  }
+  return {};
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.getPrototypeOf(value) === Object.prototype
+  );
+}
+
+/**
  * Zero usage. Use as the seed for accumulation, or as the value when
  * a backend reports nothing.
  */

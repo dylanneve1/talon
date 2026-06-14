@@ -18,6 +18,7 @@ import type { Client, Message, Attachment, TextBasedChannel } from "discord.js";
 import { ChannelType } from "discord.js";
 import type { TalonConfig } from "../../util/config.js";
 import { execute } from "../../core/engine/dispatcher.js";
+import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import {
   appendDailyLog,
@@ -672,16 +673,25 @@ async function processAndReply(p: ProcessAndReplyParams): Promise<void> {
     // rejects it as "Unknown Message" when the model tries to react/edit.
     messageId: p.messageId,
     source: "message",
-    onTextBlock,
-    onToolUse: (toolName, input) => {
-      if (
-        toolName === "send" &&
-        input.type === "text" &&
-        typeof input.text === "string"
-      ) {
-        appendDailyLogResponse("Talon", input.text, {
-          chatTitle: p.chatTitle,
-        });
+    onEvent: async (event) => {
+      switch (event.type) {
+        case "assistant_message":
+          // Throw on delivery failure — the dispatcher rejects the ack.
+          await onTextBlock(event.text);
+          break;
+        case "tool_call": {
+          const input = toolInputToRecord(event.name, event.input);
+          if (
+            event.name === "send" &&
+            input.type === "text" &&
+            typeof input.text === "string"
+          ) {
+            appendDailyLogResponse("Talon", input.text, {
+              chatTitle: p.chatTitle,
+            });
+          }
+          break;
+        }
       }
     },
   });

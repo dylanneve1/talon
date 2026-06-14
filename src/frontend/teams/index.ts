@@ -14,6 +14,7 @@ import type { Gateway } from "../../core/engine/gateway.js";
 import { log, logError } from "../../util/log.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
 import { resolveModel } from "../../core/models/catalog.js";
+import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { createTeamsActionHandler, postToTeams } from "./actions.js";
 import { splitTeamsMessage, buildAdaptiveCard } from "./formatting.js";
 import { buildCacheDisplay } from "../shared/status-context.js";
@@ -346,36 +347,50 @@ export function createTeamsFrontend(
               senderName: msg.senderName,
               isGroup: true,
               source: "message",
-              onStreamDelta: (_accumulated, phase) => {
-                if (phase) log("teams", `  phase: ${phase}`);
-              },
-              onToolUse: (toolName, input) => {
-                const detail = (input.description ??
-                  input.command ??
-                  input.action ??
-                  input.query ??
-                  input.url ??
-                  input.name ??
-                  "") as string;
-                log(
-                  "teams",
-                  `  tool: ${toolName}${detail ? ` — ${String(detail).slice(0, 100)}` : ""}`,
-                );
-              },
-              // Deliver assistant text (progress text before tool calls AND
-              // the end-of-turn trailing-text fallback) to the Teams chat.
-              // Without this, prose-only assistant turns would be silently
-              // dropped — same scratchpad bug Telegram hit.
-              onTextBlock: async (blockText) => {
-                if (!blockText.trim()) return;
-                try {
-                  await postToTeams(webhookUrl, blockText);
-                  gateway.incrementMessages(numericChatId);
-                } catch (err) {
-                  logError(
-                    "teams",
-                    `onTextBlock postToTeams failed: ${err instanceof Error ? err.message : err}`,
-                  );
+              onEvent: async (event) => {
+                switch (event.type) {
+                  case "text_delta":
+                    log("teams", `  phase: text`);
+                    break;
+                  case "reasoning":
+                    log("teams", `  phase: thinking`);
+                    break;
+                  case "tool_call": {
+                    const input = toolInputToRecord(event.name, event.input);
+                    const detail = (input.description ??
+                      input.command ??
+                      input.action ??
+                      input.query ??
+                      input.url ??
+                      input.name ??
+                      "") as string;
+                    log(
+                      "teams",
+                      `  tool: ${event.name}${detail ? ` — ${String(detail).slice(0, 100)}` : ""}`,
+                    );
+                    break;
+                  }
+                  // Deliver assistant text (progress text before tool calls AND
+                  // the end-of-turn trailing-text fallback) to the Teams chat.
+                  // Without this, prose-only assistant turns would be silently
+                  // dropped — same scratchpad bug Telegram hit.
+                  case "assistant_message": {
+                    if (!event.text.trim()) break;
+                    try {
+                      await postToTeams(webhookUrl, event.text);
+                      gateway.incrementMessages(numericChatId);
+                    } catch (err) {
+                      // Post failures are swallowed (logged, not rethrown) —
+                      // preserves the old `onTextBlock` semantics where Teams
+                      // never propagated delivery errors back to the backend.
+                      // Returning normally lets the dispatcher resolve the ack.
+                      logError(
+                        "teams",
+                        `onEvent postToTeams failed: ${err instanceof Error ? err.message : err}`,
+                      );
+                    }
+                    break;
+                  }
                 }
               },
             })

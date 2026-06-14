@@ -7,6 +7,7 @@ import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../util/config.js";
 import { markdownToTelegramHtml, escapeHtml } from "./formatting.js";
 import { execute } from "../../core/engine/dispatcher.js";
+import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import { classify, friendlyMessage } from "../../core/errors.js";
 import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
@@ -919,6 +920,32 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       trackDmUser(senderId, senderName, senderUsername);
     }
 
+    // Re-accumulate the running text / thinking totals from the
+    // canonical delta stream — Telegram's draft-edit UI wants the full
+    // text-so-far, while `AgentEvent.text_delta` carries only the new
+    // slice.
+    let textAccum = "";
+    let thinkingAccum = "";
+
+    const onToolUse = (toolName: string, input: Record<string, unknown>) => {
+      // Tool names arrive MCP-prefixed (e.g. `mcp__telegram-tools__end_turn`)
+      // when routed through MCP — strip the prefix so equality checks
+      // match the registry's bare names. Both `end_turn(text=...)` and
+      // `send(type="text")` are user-facing text deliveries; capture
+      // both so the daily log records bot responses regardless of which
+      // delivery tool the model used.
+      const bareName = stripMcpPrefix(toolName);
+      if (bareName === "end_turn" && typeof input.text === "string") {
+        appendDailyLogResponse("Talon", input.text, { chatTitle });
+      } else if (
+        bareName === "send" &&
+        input.type === "text" &&
+        typeof input.text === "string"
+      ) {
+        appendDailyLogResponse("Talon", input.text, { chatTitle });
+      }
+    };
+
     await execute({
       chatId: String(chatId),
       numericChatId,
@@ -927,24 +954,30 @@ async function processAndReply(params: ProcessAndReplyParams): Promise<void> {
       isGroup,
       messageId,
       source: "message",
-      onStreamDelta,
-      onTextBlock,
-      onToolUse: (toolName, input) => {
-        // Tool names arrive MCP-prefixed (e.g. `mcp__telegram-tools__end_turn`)
-        // when routed through MCP — strip the prefix so equality checks
-        // match the registry's bare names. Both `end_turn(text=...)` and
-        // `send(type="text")` are user-facing text deliveries; capture
-        // both so the daily log records bot responses regardless of which
-        // delivery tool the model used.
-        const bareName = stripMcpPrefix(toolName);
-        if (bareName === "end_turn" && typeof input.text === "string") {
-          appendDailyLogResponse("Talon", input.text, { chatTitle });
-        } else if (
-          bareName === "send" &&
-          input.type === "text" &&
-          typeof input.text === "string"
-        ) {
-          appendDailyLogResponse("Talon", input.text, { chatTitle });
+      onEvent: async (event) => {
+        switch (event.type) {
+          case "text_delta":
+            textAccum += event.text;
+            // Fire-and-forget: draft edits are throttled + self-mutexed
+            // (`state.editing`), so we must NOT block stream consumption
+            // on them — same non-awaited semantics the old bridge had.
+            void onStreamDelta(textAccum, "text");
+            break;
+          case "reasoning":
+            thinkingAccum += event.text;
+            void onStreamDelta(thinkingAccum, "thinking");
+            break;
+          case "assistant_message":
+            // Keep the running total monotonic so a following
+            // `text_delta` continues where the block left off.
+            textAccum += event.text;
+            // Throw on delivery failure — the dispatcher rejects the
+            // ack and the backend decides whether to retry.
+            await onTextBlock(event.text);
+            break;
+          case "tool_call":
+            onToolUse(event.name, toolInputToRecord(event.name, event.input));
+            break;
         }
       },
     });
