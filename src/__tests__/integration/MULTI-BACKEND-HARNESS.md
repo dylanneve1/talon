@@ -11,10 +11,10 @@ Each backend connects differently, so each needs its own stub transport.
 | backend | transport | stub | status |
 |---|---|---|---|
 | claude | spawned binary, stdio stream-json (1 long-lived process) | `stub-claude/fake-claude.mjs` | ✅ pre-existing |
-| codex | spawned binary, stdio JSONL `ThreadEvent`s (re-spawned per turn) | `stub-codex/fake-codex.mjs` | ✅ done (this PR) |
-| opencode | loopback HTTP server + SSE (`@opencode-ai/sdk/v2`) | `stub-remote/` (TODO) | 🚧 specced below |
-| kilo | loopback HTTP server + SSE (`@kilocode/sdk/v2`, same wire as opencode) | shares `stub-remote/` | 🚧 specced below |
-| openai-agents | OpenAI **Responses API** client (`@openai/agents` SDK) | `stub-openai/` (TODO) | 🚧 specced below |
+| codex | spawned binary, stdio JSONL `ThreadEvent`s (re-spawned per turn) | `stub-codex/fake-codex.mjs` | ✅ done |
+| opencode | loopback HTTP server + SSE (`@opencode-ai/sdk/v2`) | `stub-remote/fake-remote-server.ts` | ✅ done |
+| kilo | loopback HTTP server + SSE (`@kilocode/sdk/v2`, same wire as opencode) | shares `stub-remote/` | ✅ done |
+| openai-agents | OpenAI Responses **or chat_completions** client (`@openai/agents`) | `stub-openai/` (TODO) | 🚧 specced below |
 
 The shared injection trick: each backend already supports pointing its transport
 at a test target —
@@ -83,22 +83,33 @@ resolves. Discovery otherwise hits the curated/cached catalog.
 
 ---
 
-## openai-agents fake Responses API (`stub-openai/`)
+## openai-agents fake API (`stub-openai/`) — the remaining piece
 
-Hardest: the `@openai/agents` SDK owns the wire format. Point it at a fake server
-via `TALON_AGENTS_URL` + `TALON_AGENTS_KEY` (init forces these into the OpenAI
-client `baseURL`/`apiKey`). Needs:
+The `@openai/agents` SDK owns the wire format. Point it at a fake server via
+`TALON_AGENTS_URL` + `TALON_AGENTS_KEY` (init forces these into the OpenAI
+client `baseURL`/`apiKey`).
+
+**Key simplification:** when `TALON_AGENTS_URL` is set, init defaults the api
+mode to **`chat_completions`** (`init.ts:93-102`) — standard OpenAI streaming,
+much easier to emulate than the Responses API. Force it explicitly to be safe.
+
+Needs:
 - `GET /models` → `{ data: [ { id, … } ] }` (discovery, `discovery.ts:188`)
-- `POST /responses` (default api mode) **streaming SSE** in the Responses API
-  event format the SDK parses into `run_item_stream_event`s — the handler
-  switches on `event.type === "tool_called"` / `"message_output_created"`
-  (`handler.ts:650`). Tool calls carry `{name, callId, arguments}`;
-  message output carries `{role:"assistant", content:[{type:"output_text",text}]}`.
-- MCP: openai-agents connects MCP servers as **stdio subprocesses** itself
-  (`MCPServerStdio`), so tool calls execute in-process via the SDK — the fake
-  API only needs to *emit* the `tool_called` event with the right name/args; the
-  SDK invokes the real MCP server (→ gateway). Verify the exact Responses-API
-  streaming envelope against `@openai/agents` before building; this is the main
-  risk.
+- `POST /chat/completions` **streaming SSE** in the standard chat-completions
+  chunk format:
+  - text: `data: {"choices":[{"delta":{"content":"…"}}]}` … `data: {"choices":[{"delta":{},"finish_reason":"stop"}]}` … `data: [DONE]`
+  - tool: `delta.tool_calls:[{index,id,function:{name,arguments}}]` then
+    `finish_reason:"tool_calls"`
+- The handler switches on the SDK's `run_item_stream_event`s
+  (`tool_called` / `message_output_created`, `handler.ts:650`); a plain text
+  completion lands as `message_output_created` → delivered.
+- **Multi-request agent loop:** after a tool call the SDK executes the MCP tool
+  ITSELF (it connects MCP servers as `MCPServerStdio` subprocesses — so unlike
+  opencode the fake does NOT dispatch MCP; it only emits the `tool_call` chunk
+  and the SDK routes it to the gateway), then re-POSTs `/chat/completions` with
+  the tool result. So the fake must serve N requests per turn — use a per-turn
+  counter (like the codex stub) to return the tool call first, the final text
+  second.
 
-Tractability order: opencode/kilo (one server, two backends) → openai-agents.
+Main risk: matching the SDK's chat-completions tool-call delta accumulation
+exactly. Build text delivery first (single request), then the tool loop.
