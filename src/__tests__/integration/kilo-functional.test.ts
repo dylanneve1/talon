@@ -1,35 +1,28 @@
 /**
  * Functional tests for the **kilo** backend through the production dispatcher,
  * driven by the SAME in-process fake HTTP server as opencode (kilo is an
- * opencode fork exposing the same wire API). Proves the one fake server covers
- * both backends, and surfaces any kilo-specific divergence.
+ * opencode fork exposing the same wire API) via the shared harness. Proves the
+ * one fake server + one adapter (parameterized by port env) covers both.
  */
-import { describe, it, expect, afterAll, vi } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
+import { createStubHarness } from "./stub-harness/harness.js";
+import { remoteAdapter } from "./stub-harness/adapters/remote.js";
 
-// Set the fixed port BEFORE the kilo module reads KILO_PORT at eval.
-vi.hoisted(() => {
-  process.env.KILO_PORT = process.env.KILO_STUB_PORT ?? "4391";
-});
-
-import { runKiloTurn, teardownKiloBootstrap } from "./kilo-bootstrap.js";
-import { makeRecordingHandler } from "./recording-handler.js";
+const harness = createStubHarness(
+  remoteAdapter({ id: "kilo", portEnv: "KILO_PORT" }),
+  { recordingSeed: 7000 },
+);
 
 describe("kilo backend — stub functional (HTTP + SSE + MCP)", () => {
-  const recording = makeRecordingHandler({ seed: 7000 });
-
-  afterAll(async () => {
-    await teardownKiloBootstrap();
-  });
+  afterAll(() => harness.teardown());
 
   it("delivers plain assistant text (text-preferred contract)", async () => {
-    recording.reset();
+    harness.recording.reset();
     const replyText = `kilo-text-${Date.now()}`;
 
-    const turn = await runKiloTurn({
+    const turn = await harness.runTurn({
       prompt: "say hello",
       turn: { emit: [{ type: "text", text: replyText }] },
-      resetSession: true,
-      bootstrap: { frontend: "telegram", gatewayHandler: recording.handler },
     });
 
     expect(turn.text).toContain(replyText);
@@ -37,9 +30,9 @@ describe("kilo backend — stub functional (HTTP + SSE + MCP)", () => {
   }, 45_000);
 
   it("routes an MCP tool (react) side-effect through the gateway", async () => {
-    recording.reset();
+    harness.recording.reset();
 
-    const turn = await runKiloTurn({
+    const turn = await harness.runTurn({
       prompt: "react please",
       turn: {
         emit: [
@@ -51,14 +44,16 @@ describe("kilo backend — stub functional (HTTP + SSE + MCP)", () => {
           },
         ],
       },
-      resetSession: true,
-      bootstrap: { frontend: "telegram", gatewayHandler: recording.handler },
     });
 
     expect(
-      turn.mcpRegistrations.some((n) => n.startsWith("talon-tools-")),
+      (turn.extras.mcpRegistrations as string[]).some((n) =>
+        n.startsWith("talon-tools-"),
+      ),
     ).toBe(true);
     expect(turn.toolUses.find((t) => t.name.endsWith("react"))).toBeDefined();
-    expect(recording.byAction("react").length).toBeGreaterThanOrEqual(1);
+    expect(harness.recording.byAction("react").length).toBeGreaterThanOrEqual(
+      1,
+    );
   }, 45_000);
 });

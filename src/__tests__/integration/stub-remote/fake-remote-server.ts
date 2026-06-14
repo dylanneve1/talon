@@ -80,12 +80,31 @@ export async function startFakeRemoteServer(
   let lastAssistant: Record<string, unknown> | null = null;
   const sessions = new Set<string>();
 
+  const dbg = (msg: string) => {
+    if (process.env.STUB_REMOTE_DEBUG)
+      process.stderr.write(`[fake-remote] ${msg}\n`);
+  };
+
+  // Event-driven "wait until an SSE client is connected". The backend subscribes
+  // to the SSE stream just before promptAsync but doesn't await it, so the
+  // connection can land a few ms after the prompt POST. Resolving on the actual
+  // connect (vs polling) is both cleaner and race-free.
+  const sseWaiters = new Set<() => void>();
+  const whenSseClient = (timeoutMs = 5000): Promise<void> =>
+    new Promise((resolve) => {
+      if (sseClients.size > 0) return resolve();
+      const done = () => {
+        clearTimeout(timer);
+        sseWaiters.delete(done);
+        resolve();
+      };
+      const timer = setTimeout(done, timeoutMs);
+      sseWaiters.add(done);
+    });
+
   const pushSse = (event: Record<string, unknown>) => {
     const frame = `data: ${JSON.stringify(event)}\n\n`;
-    if (process.env.STUB_REMOTE_DEBUG)
-      process.stderr.write(
-        `[fake-remote] push ${event.type} to ${sseClients.size} client(s)\n`,
-      );
+    dbg(`push ${event.type} to ${sseClients.size} client(s)`);
     for (const res of sseClients) {
       try {
         res.write(frame);
@@ -133,19 +152,8 @@ export async function startFakeRemoteServer(
     return talon[talon.length - 1] ?? [...mcpServers.keys()].pop();
   };
 
-  const waitForSseClient = async () => {
-    // The backend subscribes to the SSE stream just before promptAsync but does
-    // not await it, so the connection may land a few ms after the prompt POST.
-    // Wait (briefly) for a client so the turn's events aren't pushed into the
-    // void. The real opencode server has a persistent stream, so this only
-    // papers over the test's start-up race, not a production concern.
-    for (let i = 0; i < 200 && sseClients.size === 0; i++) {
-      await new Promise((r) => setTimeout(r, 10));
-    }
-  };
-
   const runTurn = async (sessionID: string) => {
-    await waitForSseClient();
+    await whenSseClient();
     const parts: Array<Record<string, unknown>> = [];
     for (const item of currentTurn.emit) {
       if (item.type === "text") {
@@ -220,11 +228,6 @@ export async function startFakeRemoteServer(
     pushSse({ type: "session.idle", properties: { sessionID } });
   };
 
-  const dbg = (msg: string) => {
-    if (process.env.STUB_REMOTE_DEBUG)
-      process.stderr.write(`[fake-remote] ${msg}\n`);
-  };
-
   const server: Server = createServer((req, res) => {
     const url = (req.url ?? "").split("?")[0];
     const method = req.method ?? "GET";
@@ -242,6 +245,8 @@ export async function startFakeRemoteServer(
       });
       res.write(": connected\n\n");
       sseClients.add(res);
+      // Wake anything waiting for a live stream (see whenSseClient).
+      for (const w of [...sseWaiters]) w();
       req.on("close", () => sseClients.delete(res));
       return;
     }

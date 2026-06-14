@@ -1,115 +1,101 @@
-# Multi-backend functional harness — design + status
+# Multi-backend functional harness
 
-Goal: drive Talon's **real composition root** + production `dispatcher.execute()`
-against a deterministic stub for **every backend transport**, exercising the full
-MCP-tool-delivery-through-the-gateway path, with no live model credentials. The
-point is to *find issues* by running each backend's real factory/handler/event
-code against scripted input.
+Drives Talon's **real composition root** + production `dispatcher.execute()`
+against a deterministic stub for **every backend transport**, exercising the
+full MCP-tool-delivery-through-the-gateway path, with no live model credentials.
+The point is to _find issues_ by running each backend's real
+factory/handler/event code against scripted input — and to keep that cheap to
+extend as backends are added.
 
-Each backend connects differently, so each needs its own stub transport.
+## Status: all 5 backends covered
 
-| backend | transport | stub | status |
-|---|---|---|---|
-| claude | spawned binary, stdio stream-json (1 long-lived process) | `stub-claude/fake-claude.mjs` | ✅ pre-existing |
-| codex | spawned binary, stdio JSONL `ThreadEvent`s (re-spawned per turn) | `stub-codex/fake-codex.mjs` | ✅ done |
-| opencode | loopback HTTP server + SSE (`@opencode-ai/sdk/v2`) | `stub-remote/fake-remote-server.ts` | ✅ done |
-| kilo | loopback HTTP server + SSE (`@kilocode/sdk/v2`, same wire as opencode) | shares `stub-remote/` | ✅ done |
-| openai-agents | OpenAI Responses **or chat_completions** client (`@openai/agents`) | `stub-openai/` (TODO) | 🚧 specced below |
+| backend       | transport                                                      | stub                                            | delivery                        |
+| ------------- | -------------------------------------------------------------- | ----------------------------------------------- | ------------------------------- |
+| claude        | spawned binary, stdio stream-json (1 long-lived process)       | `stub-claude/` (pre-existing, separate harness) | `end_turn` tool                 |
+| codex         | spawned binary, stdio JSONL `ThreadEvent`s (per-turn re-spawn) | `stub-codex/fake-codex.mjs`                     | `end_turn` tool                 |
+| opencode      | loopback HTTP + SSE (`@opencode-ai/sdk/v2`)                    | `stub-remote/fake-remote-server.ts`             | plain **text** (text-preferred) |
+| kilo          | loopback HTTP + SSE (`@kilocode/sdk/v2`, opencode fork)        | shares `stub-remote/`                           | plain **text**                  |
+| openai-agents | OpenAI `chat_completions` client (`@openai/agents`)            | `stub-openai/fake-openai-server.ts`             | `end_turn` tool                 |
 
-The shared injection trick: each backend already supports pointing its transport
-at a test target —
-- claude → `claudeBinary` config
-- **codex → `codexBinary` config / `TALON_CODEX_BINARY` (added in this PR)**
-- opencode/kilo → `OPENCODE_PORT` / `KILO_PORT` env (the backend probes
-  `GET {baseUrl}/global/health` and *reuses* an already-listening server — so a
-  fake HTTP server pre-started on that port is adopted; no real `opencode serve`
-  spawn)
-- openai-agents → `TALON_AGENTS_URL` / `openaiBaseUrl` (OpenAI client `baseURL`)
+## Architecture
 
----
+```
+stub-harness/
+  types.ts              StubBackendAdapter<Turn>, StubTurnResult, TurnContext
+  harness.ts            createStubHarness(adapter) → { runTurn, recording, teardown }
+  adapters/
+    codex.ts            codexAdapter()
+    remote.ts           remoteAdapter({ id, portEnv })   ← opencode + kilo
+    openai-agents.ts    openaiAgentsAdapter()
+stub-codex/             fake codex binary + protocol/helpers
+stub-remote/            fake opencode/kilo HTTP+SSE server
+stub-openai/            fake OpenAI chat_completions server
+*-functional.test.ts    one file per backend, ~10 lines of setup each
+```
 
-## opencode / kilo fake HTTP server (`stub-remote/`)
+`createStubHarness(adapter)` owns everything backend-independent: booting the
+composition root once (lazily, on first turn), a live `Gateway` + recording
+action handler (so MCP tool calls route through the real
+SDK→MCP→bridge→gateway chain), the frontend seam, per-turn temp dirs, and
+driving `dispatcher.execute()`. A `StubBackendAdapter` supplies only the
+transport-specific stub:
 
-Pre-start a Node `http` server on a free port, set `OPENCODE_PORT`/`KILO_PORT` to
-it, boot the backend (it adopts the server via the health probe). The client is
-`openapi-fetch`-style with `throwOnError: true` — every endpoint returns a 2xx
-JSON body that becomes the SDK call's `.data`; non-2xx throws.
+```ts
+interface StubBackendAdapter<Turn> {
+  readonly id: BackendId;
+  readonly model: string;
+  prepare?(): Promise<void> | void; // start fake server / set stub env
+  configOverrides?(): Partial<TalonConfig>; // binary path, base URL, …
+  applyTurn(turn, ctx): void | Promise<void>; // script the next dispatcher turn
+  afterTurn?(ctx): void;
+  collectExtras?(ctx): Record<string, unknown>;
+  teardown?(): Promise<void> | void;
+}
+```
 
-### Endpoints the handler exercises (verified against the SDK `sdk.gen.js` URL map)
+**Adding a backend = adding one adapter** (+ a fake server if its transport is
+new). No harness changes. The adapter's `prepare()` runs BEFORE
+`initBackendAndDispatcher`, which matters because backend factory modules read
+their port/auth env at import time and that import happens inside the
+composition root — so e.g. the remote adapter starts its fake server on a
+**dynamic** port and assigns it into `OPENCODE_PORT`/`KILO_PORT` there (no fixed
+ports, no `vi.hoisted`).
 
-| SDK call | method + path | fake response |
-|---|---|---|
-| `global.health` (reuse probe) | `GET /global/health` | `200 {}` |
-| `global.event()` | `GET /global/event` (SSE) | `text/event-stream`; keep open; push events |
-| `session.create()` | `POST /session` | `{ id: "ses_stub_…" }` (handler reads `data.id`) |
-| `session.get()` | `GET /session/{id}` | `200 {}` (existence check) |
-| `session.promptAsync()` | `POST /session/{id}/message` | `200`; **side effect**: run the scripted turn (dispatch MCP tools, then push SSE events) |
-| `session.messages()` | `GET /session/{id}/message` | `{ data: [ …messages ] }` — last must be `{ role:"assistant", parts:[…], info:{ tokens:{…} } }` |
-| `provider.list()` | `GET /provider` | buckets: `{ "<bucket>": [ { id, models: { "<modelID>": { providerID } } } ] }` |
-| `mcp.add()` | `POST /mcp` | `200`; record `{name, config:{command,args,env}}` for later dispatch |
-| `mcp.disconnect()` | `DELETE /mcp/{name}` (≈) | `200` |
-| `session.abort()` | `POST /session/{id}/abort` | `200` |
+## How each transport is stubbed
 
-### SSE event shape (verified in `opencode/handler.ts:599`)
+- **codex** — fake `codex` binary: reads the prompt from stdin, emits scripted
+  `thread.started → turn.started → item.completed(agent_message|mcp_tool_call) →
+turn.completed` JSONL, exits 0. Reconstructs the MCP server map from the
+  codex-sdk's flattened `--config mcp_servers.*` TOML argv and dispatches tool
+  calls through a real MCP client → gateway. A counter file tracks "which turn"
+  across the per-turn re-spawns. Pointed at via `codexBinary` / `TALON_CODEX_BINARY`.
+- **opencode / kilo** — in-process fake HTTP server adopted via the backend's
+  `/global/health` reuse probe. Serves session/provider/mcp endpoints + a
+  `/global/event` SSE stream; pushes scripted events
+  (`message.part.updated` for tools, `message.updated` for usage, `session.idle`
+  to close the turn) and dispatches MCP side-effects through the gateway. One
+  server + one adapter (parameterized by id + port env) covers both backends.
+- **openai-agents** — fake OpenAI `chat_completions` server. The SDK runs MCP
+  tools as its own stdio subprocesses, so the fake only streams the model's
+  output and resolves the real (SDK-mangled, e.g. `mcp_telegram_tools__end_turn`)
+  function name from the request's `tools` catalog — the script just says
+  `end_turn`. A per-response counter walks the multi-request agentic loop.
 
-The handler accepts **either** `{payload:{type,properties}}` **or** bare
-`{type,properties}` — so emit bare. Frame each as `data: <json>\n\n`. Events the
-handler switches on (`remote-server/events.ts`):
-- `message.part.delta` — `{properties:{part:{text}}}` streaming text (optional)
-- `message.part.updated` — `{properties:{part:{type:"tool", tool, callID, state:{status:"completed", input}}}}` → drives `onToolUse`
-- `message.updated` — `{properties:{info:{role:"assistant", sessionID, tokens:{input,output,…}}}}` → usage
-- `session.idle` **or** `session.turn.close` — terminator; the handler's `await sseDone` resolves
+## Wire-level facts the build surfaced (else a naive stub silently hangs)
 
-Minimum viable turn: on promptAsync, push one `message.updated` (usage) then
-`session.idle`; have `session.messages` return the final assistant message
-(text part for a text reply). For a tool side-effect, also connect a real MCP
-client to the recorded `/mcp` server config and `callTool` (routes to the
-gateway), and include a tool part.
-
-### Delivery model note (important, may surface an issue)
-
-opencode/kilo use the **text-preferred** contract: plain assistant **text** is
-the reply (delivered by Talon's handler via `onTextBlock` from the last
-assistant message's text parts), *not* an `end_turn` MCP tool. So the basic
-delivery path needs no MCP at all — script a text part. MCP tools are for
-genuine side-effects (`react`, `send`). This asymmetry vs claude/codex
-(delivery-via-tool) is exactly the kind of structural difference worth a test.
-
-### Model resolution
-
-`config.model = "<modelID>"` (e.g. `stub-model`); `provider.list` must contain a
-bucket whose provider `.models["<modelID>"]` exists so `resolveProviderID`
-resolves. Discovery otherwise hits the curated/cached catalog.
-
----
-
-## openai-agents fake API (`stub-openai/`) — the remaining piece
-
-The `@openai/agents` SDK owns the wire format. Point it at a fake server via
-`TALON_AGENTS_URL` + `TALON_AGENTS_KEY` (init forces these into the OpenAI
-client `baseURL`/`apiKey`).
-
-**Key simplification:** when `TALON_AGENTS_URL` is set, init defaults the api
-mode to **`chat_completions`** (`init.ts:93-102`) — standard OpenAI streaming,
-much easier to emulate than the Responses API. Force it explicitly to be safe.
-
-Needs:
-- `GET /models` → `{ data: [ { id, … } ] }` (discovery, `discovery.ts:188`)
-- `POST /chat/completions` **streaming SSE** in the standard chat-completions
-  chunk format:
-  - text: `data: {"choices":[{"delta":{"content":"…"}}]}` … `data: {"choices":[{"delta":{},"finish_reason":"stop"}]}` … `data: [DONE]`
-  - tool: `delta.tool_calls:[{index,id,function:{name,arguments}}]` then
-    `finish_reason:"tool_calls"`
-- The handler switches on the SDK's `run_item_stream_event`s
-  (`tool_called` / `message_output_created`, `handler.ts:650`); a plain text
-  completion lands as `message_output_created` → delivered.
-- **Multi-request agent loop:** after a tool call the SDK executes the MCP tool
-  ITSELF (it connects MCP servers as `MCPServerStdio` subprocesses — so unlike
-  opencode the fake does NOT dispatch MCP; it only emits the `tool_call` chunk
-  and the SDK routes it to the gateway), then re-POSTs `/chat/completions` with
-  the tool result. So the fake must serve N requests per turn — use a per-turn
-  counter (like the codex stub) to return the tool call first, the final text
-  second.
-
-Main risk: matching the SDK's chat-completions tool-call delta accumulation
-exactly. Build text delivery first (single request), then the tool loop.
+- **codex** had no executable-path override like claude's `claudeBinary` →
+  added `codexBinary` config + `TALON_CODEX_BINARY` → codex-sdk
+  `codexPathOverride` (the one production change in this work; additive + guarded).
+- **opencode/kilo**: promptAsync posts to `/session/{id}/prompt_async` (not
+  `/message`); `mcp.add` sends `config.command` as a full `[exe, ...args]`
+  **array** + `config.environment` (not `env`); disconnect is
+  `POST /mcp/{name}/disconnect`; after a chat switch the current chat's MCP
+  server is the **most-recent** registration (the prior one's gateway context is
+  cleared → "No active chat context" if you pick the stale one); the SSE
+  subscribe is fired-but-not-awaited just before promptAsync (the fake waits on
+  the actual connect, event-driven, before emitting).
+- **openai-agents** is tool-preferred (delivers via `end_turn`, not text — plain
+  text triggers the flow-violation re-prompt loop), and MCP function names are
+  SDK-generated (resolve them from the request, don't hardcode).
+- **Delivery split now under test:** claude/codex/openai-agents deliver via the
+  `end_turn` **tool**; opencode/kilo deliver via plain assistant **text**.

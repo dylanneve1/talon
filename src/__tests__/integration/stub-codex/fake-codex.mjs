@@ -145,7 +145,9 @@ const dispatchMcpTool = async (server, tool, args) => {
   const conn = await getMcpClient(server);
   if (!conn) return null;
   try {
-    log(`MCP tools/call ${server}.${tool} ${JSON.stringify(args).slice(0, 200)}`);
+    log(
+      `MCP tools/call ${server}.${tool} ${JSON.stringify(args).slice(0, 200)}`,
+    );
     const result = await conn.client.callTool({
       name: tool,
       arguments: args ?? {},
@@ -195,7 +197,8 @@ const nextTurnIndex = () => {
   if (!statePath) return 0;
   let idx = 0;
   try {
-    if (existsSync(statePath)) idx = Number(readFileSync(statePath, "utf8")) || 0;
+    if (existsSync(statePath))
+      idx = Number(readFileSync(statePath, "utf8")) || 0;
   } catch {
     idx = 0;
   }
@@ -219,7 +222,10 @@ const emit = (obj) => {
 };
 
 const completedItem = (item) =>
-  emit({ type: "item.completed", item: { id: "i_" + randomUUID().slice(0, 8), ...item } });
+  emit({
+    type: "item.completed",
+    item: { id: "i_" + randomUUID().slice(0, 8), ...item },
+  });
 
 // ── Read the whole prompt from stdin, then run the scripted turn ─────────────
 

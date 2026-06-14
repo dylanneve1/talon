@@ -1,41 +1,32 @@
 /**
  * Functional tests for the **opencode** backend (same wire API as kilo) through
- * the production dispatcher, driven by an in-process fake HTTP server.
+ * the production dispatcher, driven by the in-process fake HTTP server via the
+ * shared multi-backend harness.
  *
  * Structural difference vs claude/codex: opencode delivers via plain assistant
  * TEXT (text-preferred contract) read from `session.messages` after the SSE
- * stream signals `session.idle` — not via an `end_turn` tool. MCP tools are
- * for genuine side-effects (react/send).
+ * stream signals `session.idle` — not via an `end_turn` tool. MCP tools are for
+ * genuine side-effects (react/send).
  */
-import { describe, it, expect, afterAll, vi } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
+import { createStubHarness } from "./stub-harness/harness.js";
+import { remoteAdapter } from "./stub-harness/adapters/remote.js";
 
-// Set the fixed port BEFORE the opencode module reads OPENCODE_PORT at eval.
-vi.hoisted(() => {
-  process.env.OPENCODE_PORT = process.env.OPENCODE_STUB_PORT ?? "4291";
-});
-
-import {
-  runOpencodeTurn,
-  teardownOpencodeBootstrap,
-} from "./opencode-bootstrap.js";
-import { makeRecordingHandler } from "./recording-handler.js";
+const harness = createStubHarness(
+  remoteAdapter({ id: "opencode", portEnv: "OPENCODE_PORT" }),
+  { recordingSeed: 6000 },
+);
 
 describe("opencode backend — stub functional (HTTP + SSE + MCP)", () => {
-  const recording = makeRecordingHandler({ seed: 6000 });
-
-  afterAll(async () => {
-    await teardownOpencodeBootstrap();
-  });
+  afterAll(() => harness.teardown());
 
   it("delivers plain assistant text (text-preferred contract)", async () => {
-    recording.reset();
+    harness.recording.reset();
     const replyText = `opencode-text-${Date.now()}`;
 
-    const turn = await runOpencodeTurn({
+    const turn = await harness.runTurn({
       prompt: "say hello",
       turn: { emit: [{ type: "text", text: replyText }] },
-      resetSession: true,
-      bootstrap: { frontend: "telegram", gatewayHandler: recording.handler },
     });
 
     expect(turn.text).toContain(replyText);
@@ -43,9 +34,9 @@ describe("opencode backend — stub functional (HTTP + SSE + MCP)", () => {
   }, 45_000);
 
   it("routes an MCP tool (react) side-effect through the gateway", async () => {
-    recording.reset();
+    harness.recording.reset();
 
-    const turn = await runOpencodeTurn({
+    const turn = await harness.runTurn({
       prompt: "react please",
       turn: {
         emit: [
@@ -57,21 +48,16 @@ describe("opencode backend — stub functional (HTTP + SSE + MCP)", () => {
           },
         ],
       },
-      resetSession: true,
-      bootstrap: { frontend: "telegram", gatewayHandler: recording.handler },
     });
 
-    // The fake server registered the chat MCP server.
     expect(
-      turn.mcpRegistrations.some((n) => n.startsWith("talon-tools-")),
-      `expected a talon-tools MCP registration; got ${turn.mcpRegistrations.join(", ")}`,
+      (turn.extras.mcpRegistrations as string[]).some((n) =>
+        n.startsWith("talon-tools-"),
+      ),
     ).toBe(true);
-
-    // onToolUse fired for the react tool.
-    const reactCall = turn.toolUses.find((t) => t.name.endsWith("react"));
-    expect(reactCall, "expected a react tool use").toBeDefined();
-
-    // The tool actually routed to the gateway.
-    expect(recording.byAction("react").length).toBeGreaterThanOrEqual(1);
+    expect(turn.toolUses.find((t) => t.name.endsWith("react"))).toBeDefined();
+    expect(harness.recording.byAction("react").length).toBeGreaterThanOrEqual(
+      1,
+    );
   }, 45_000);
 });
