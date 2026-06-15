@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import type { TalonConfig } from "../../../util/config.js";
 import { initBackendAndDispatcher, type Frontend } from "../../../bootstrap.js";
 import { execute as dispatcherExecute } from "../../../core/engine/dispatcher.js";
+import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
 import { resetSession } from "../../../storage/sessions.js";
 import { initWorkspace } from "../../../util/workspace.js";
 import { Gateway } from "../../../core/engine/gateway.js";
@@ -171,11 +172,18 @@ export function createStubHarness<Turn>(
         senderName,
         isGroup,
         source: "message",
-        onTextBlock: async (text) => {
-          textChunks.push(text);
-        },
-        onToolUse: (name, input) => {
-          toolUses.push({ name, input });
+        onEvent: async (event) => {
+          switch (event.type) {
+            case "assistant_message":
+              textChunks.push(event.text);
+              break;
+            case "tool_call":
+              toolUses.push({
+                name: event.name,
+                input: toolInputToRecord(event.name, event.input),
+              });
+              break;
+          }
         },
       });
 
