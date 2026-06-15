@@ -207,7 +207,10 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
         name,
         config: {
           type: "local",
-          command: wrapMcpCommand([cfg.command, ...cfg.args]),
+          // `getPluginMcpServers` already applied the supervisor wrap
+          // (`wrapMcpServer`), so the command/args are launcher-ready —
+          // do NOT wrap a second time.
+          command: [cfg.command, ...cfg.args],
           environment: cfg.env ?? {},
         },
       });
