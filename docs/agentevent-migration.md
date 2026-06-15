@@ -39,17 +39,40 @@ export type StreamEventSink = {
 };
 ```
 
-The dispatcher consumes the backend stream and forwards every event in order:
+The dispatcher consumes the backend stream and forwards every event in order.
+`assistant_message` events get special handling so the dispatcher — not the
+frontend — owns `deliveryAck` settlement:
 
 ```ts
 for await (const event of stream) {
   if (event.type === "completed") agentResult = event.result;
+
+  // The dispatcher owns assistant_message.deliveryAck settlement, so the ack
+  // is ALWAYS settled — even with no onEvent sink, or a sink that ignores the
+  // event. The frontend's job is just to deliver and throw on failure; the
+  // dispatcher maps return → resolve (block delivered) and throw → reject
+  // (backend retries, e.g. the Codex oversized-message path). Without this the
+  // callback-shaped backend blocks forever awaiting delivery confirmation.
+  if (event.type === "assistant_message" && event.deliveryAck) {
+    try {
+      await params.onEvent?.(event);
+      event.deliveryAck.resolve();
+    } catch (err) {
+      event.deliveryAck.reject(err);
+    }
+    continue;
+  }
+
   await params.onEvent?.(event);          // serial: awaited in stream order
   if (event.type === "error") throw new AgentRunError(event.error);
 }
 ```
 
 - `completed` is captured for the dispatcher's `ExecuteResult` return value.
+- `assistant_message` with a `deliveryAck` is delivered, then the **dispatcher**
+  settles the ack: resolve when `onEvent` returns, reject when it throws. The
+  ack is always settled — even with no sink — so the callback-shaped backend
+  (`handler-to-events`) never blocks awaiting delivery confirmation.
 - `error` is forwarded to the sink, then rethrown as `AgentRunError`
   (`core/agent-runtime/events.ts`) so callers' `try/catch` paths — which
   classify via `core/errors.ts` — keep working unchanged.
@@ -66,10 +89,12 @@ frontend owns them (and each is independently revertible):
   that wants fire-and-forget throttling (Telegram draft edits on `text_delta`)
   simply doesn't await its own work — Telegram fires draft sends with `void`
   to preserve the old non-blocking behaviour.
-- **`assistant_message.deliveryAck`.** The consumer MUST `resolve()` on
-  successful delivery and `reject(err)` on failure. That's how callback-shaped
-  backends learn a block landed (notably Codex oversized-message retries). When
-  there is no ack and delivery throws, the consumer rethrows so the turn fails.
+- **`assistant_message` delivery.** The consumer does **not** settle
+  `deliveryAck` — the dispatcher owns it. The consumer signals success by
+  returning from `onEvent` and failure by **throwing**; the dispatcher resolves
+  the ack on return and rejects it on throw. That reject is how callback-shaped
+  backends learn a block failed to land and retry (notably the Codex
+  oversized-message path).
 - **`tool_call.input` shape.** It's typed `unknown` (backends may emit arrays).
   Frontends that render tool echoes via a `Record<string, unknown>` use the
   shared `toolInputToRecord(name, input)` helper (coerces non-plain-objects to
@@ -81,8 +106,9 @@ frontend owns them (and each is independently revertible):
 ## What's locked down
 
 - `dispatcher.test.ts` pins the event-forwarding contract: events reach
-  `onEvent`, a `deliveryAck` reject drives the backend retry path, and an
-  `error` terminator is rethrown as `AgentRunError`.
+  `onEvent`, the ack is settled even with no sink, a `deliveryAck` reject drives
+  the backend retry path, and an `error` terminator is rethrown as
+  `AgentRunError`.
 - `integration.test.ts` pins the dispatcher → backend → `onEvent` path and the
   `AgentRunError` classification.
 - `handler-to-events.test.ts` still pins the *producing* side (callbacks →
