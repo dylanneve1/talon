@@ -9,8 +9,8 @@
  * models, and sessions.
  */
 
-import { registerBackend } from "../registry.js";
-import type { BackendFactory } from "../registry.js";
+import { registerBackend } from "../../core/agent-runtime/backend-registry.js";
+import type { BackendFactory } from "../../core/agent-runtime/backend-registry.js";
 import { log } from "../../util/log.js";
 import { handlerToEvents } from "../shared/handler-to-events.js";
 import {

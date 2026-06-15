@@ -16,7 +16,7 @@
  */
 
 import type { TalonConfig } from "../../util/config.js";
-import type { FrontendName } from "../registry.js";
+import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import type { RemoteAgentClient } from "./client.js";
 
 /** Mutable per-backend state shared across the lifecycle / mcp / session helpers. */

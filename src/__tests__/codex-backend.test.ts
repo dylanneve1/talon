@@ -208,7 +208,7 @@ describe("codex / factory registration", () => {
   it("registers as `codex` in the backend registry", async () => {
     // Reset registry to ensure clean import
     const { clearBackends, registerBackend, hasBackend, getBackend } =
-      await import("../backend/registry.js");
+      await import("../core/agent-runtime/backend-registry.js");
     clearBackends();
 
     // Importing the factory module triggers `registerBackend`.

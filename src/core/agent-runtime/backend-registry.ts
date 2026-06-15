@@ -19,10 +19,18 @@
  *
  * The registry is module-scoped — every Talon process has its own map.
  * `clearBackends()` is exposed for test isolation.
+ *
+ * Layering: this lives in `core/` (not `backend/`) on purpose. It is
+ * generic infrastructure — a typed `id → factory` map that depends only
+ * on the core `Backend` contract and `TalonConfig`, never on a concrete
+ * backend. Keeping it here lets `core/engine/backend-controller` resolve
+ * backends without `core` importing `backend/` (the dependency arrow runs
+ * backend → core: each backend's `factory.ts` imports `registerBackend`
+ * from here to self-register). Do not move it back under `backend/`.
  */
 
-import type { Backend } from "../core/agent-runtime/capabilities.js";
-import type { TalonConfig } from "../util/config.js";
+import type { Backend } from "./capabilities.js";
+import type { TalonConfig } from "../../util/config.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

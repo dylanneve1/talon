@@ -22,7 +22,7 @@ import {
   type KiloClient,
 } from "@kilocode/sdk/v2";
 import type { TalonConfig } from "../../util/config.js";
-import type { FrontendName } from "../registry.js";
+import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import { logWarn } from "../../util/log.js";
 import { buildDeliveryContract } from "../shared/delivery-contract.js";
 import { clearModelCatalogCache } from "./models.js";

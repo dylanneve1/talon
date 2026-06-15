@@ -11,7 +11,7 @@ import {
   registerBackend,
   clearBackends,
   type BackendFactory,
-} from "../backend/registry.js";
+} from "../core/agent-runtime/backend-registry.js";
 import {
   initBackendController,
   getActiveBackend,

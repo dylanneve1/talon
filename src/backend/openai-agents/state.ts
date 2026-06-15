@@ -9,7 +9,7 @@
  */
 
 import type { TalonConfig } from "../../util/config.js";
-import type { FrontendName } from "../registry.js";
+import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import { TalonSession } from "./session.js";
 import type { ReasoningEffortLevel } from "../../core/types.js";
 
