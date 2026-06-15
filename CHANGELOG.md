@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.18.0](https://github.com/dylanneve1/talon/compare/v1.17.0...v1.18.0) (2026-06-14)
+
+
+### Features
+
+* **native:** blake3-napi — in-process napi-rs addon for media hashing ([#328](https://github.com/dylanneve1/talon/issues/328)) ([ba22e94](https://github.com/dylanneve1/talon/commit/ba22e94fda9dd6b72ba824971b6b8475310daf2a))
+* **native:** talon-warden — Rust supervision harness for trigger children ([#326](https://github.com/dylanneve1/talon/issues/326)) ([91cd62f](https://github.com/dylanneve1/talon/commit/91cd62f6957022a377d60f0d33b8840e413f58ab))
+* **skills:** SKILL.md skill bundles + rename executable skills→scripts ([#333](https://github.com/dylanneve1/talon/issues/333)) ([9847322](https://github.com/dylanneve1/talon/commit/98473222a88d1d31723b32757b371a53386cc404))
+* **stats:** real-time stats for all backends + robust failed-turn accounting ([#327](https://github.com/dylanneve1/talon/issues/327)) ([7796983](https://github.com/dylanneve1/talon/commit/7796983c0593146f0f046f12fd0fffac8723f138))
+
+
+### Bug Fixes
+
+* **claude-sdk:** always-load frontend tool servers (no defer) ([#329](https://github.com/dylanneve1/talon/issues/329)) ([c4a52e2](https://github.com/dylanneve1/talon/commit/c4a52e287c92f1fb3cefff1b8c9827b6b3f4ffce))
+* **codex:** record token usage when terminator aborts before turn.completed ([#324](https://github.com/dylanneve1/talon/issues/324)) ([edc2e1e](https://github.com/dylanneve1/talon/commit/edc2e1e6ede0e072557a2da83d5372c25213cd06))
+* stderr readline crash risk and cron non-null assertion ([#335](https://github.com/dylanneve1/talon/issues/335)) ([d5ea5ab](https://github.com/dylanneve1/talon/commit/d5ea5abb3b206359a208f7db14cb1b13446062c5))
+
 ## [1.17.0](https://github.com/dylanneve1/talon/compare/v1.16.0...v1.17.0) (2026-06-12)
 
 
