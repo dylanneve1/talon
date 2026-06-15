@@ -193,10 +193,17 @@ export function ensureCodex(chatId: string): Codex {
   const apiKey = getCodexAuthInfo()?.apiKey;
   const baseUrl = getCodexAuthInfo()?.baseUrl;
 
+  // Optional executable override (mirrors `claudeBinary`). Env var wins so
+  // a test harness can point Codex at a stub binary without mutating the
+  // persisted config. When unset, the codex-sdk resolves `codex` itself.
+  const codexPathOverride =
+    process.env.TALON_CODEX_BINARY || state.config.codexBinary || undefined;
+
   const codex = new Codex({
     apiKey,
     baseUrl,
     config: codexConfig,
+    ...(codexPathOverride ? { codexPathOverride } : {}),
     env: codexSubprocessEnv(),
   });
   // Stash chat id on the instance for cache-key matching above.

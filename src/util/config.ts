@@ -190,6 +190,14 @@ const configSchema = z.object({
    */
   enabledBackends: z.array(z.enum(BACKEND_ID_ENUM)).optional(),
   claudeBinary: z.string().optional(),
+  /**
+   * Override the path to the `codex` executable the Codex backend spawns
+   * (passed through to the codex-sdk's `codexPathOverride`). Mirrors
+   * `claudeBinary`. Primarily for functional tests that point Codex at a
+   * stub binary; also accepts the `TALON_CODEX_BINARY` env var. When
+   * unset, the codex-sdk resolves `codex` from its package / PATH.
+   */
+  codexBinary: z.string().optional(),
   model: z.string().default("default"),
   /**
    * Per-backend default model overrides. Keyed by backend id
