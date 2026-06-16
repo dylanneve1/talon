@@ -351,6 +351,17 @@ const configSchema = z.object({
   // Playwright — headless browser automation via MCP
   playwright: playwrightConfigSchema.optional(),
 
+  // Soul — compiled, self-organizing identity kernel (experimental).
+  // Off by default; when enabled, the projected identity surface is injected
+  // into the system prompt and the organic pass runs on the dream cadence.
+  soul: z
+    .object({
+      enabled: z.boolean().default(false),
+      /** Kernel persistence path (default: ~/.talon/data/soul.json) */
+      path: z.string().min(1).optional(),
+    })
+    .optional(),
+
   // Discord — discord.js v14-based frontend
   discord: discordConfigSchema.optional(),
 
