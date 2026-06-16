@@ -430,7 +430,9 @@ jobs:
   # twin, fallback modes, and the media-index consumer. This is the job
   # of record for the native hashing path (elsewhere the napi tests
   # self-skip when cargo is absent and hashing uses the wasm fallback).
-  # Both OSes: cdylib loading and mmap behaviour differ.
+  # All three OSes: cdylib loading and mmap behaviour differ, and the
+  # addon must prove it builds + loads on the Windows MSVC toolchain
+  # rather than silently riding the wasm fallback there.
   napi:
     name: Blake3 Napi (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -440,7 +442,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
 
@@ -470,6 +472,9 @@ jobs:
         # (the tests themselves pass first). One fork, run sequentially,
         # removes the concurrent native-addon load/teardown that causes
         # the flake without changing any test logic.
+        # shell: bash so the multi-line `\` continuations run identically
+        # on Windows (the default shell there is pwsh, which breaks on `\`).
+        shell: bash
         run: |
           npm ci
           npx vitest run --pool=forks --no-file-parallelism --maxWorkers=1 \
