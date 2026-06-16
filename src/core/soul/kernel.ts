@@ -16,7 +16,8 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { SoulDag, type DagSnapshot } from "./dag.js";
 import { hashContent } from "./hash.js";
-import { ingest, ingestAll, type IngestResult } from "./compiler.js";
+import { ingest, ingestAll, appendSpine, type IngestResult } from "./compiler.js";
+import { Adwin } from "./drift.js";
 import { projectRuntime, type Projection } from "./projector.js";
 import { seedReflexes } from "./reflex.js";
 import { clusterEvidence } from "./cluster.js";
@@ -48,6 +49,7 @@ interface PersistShape {
   readonly dag: DagSnapshot;
   readonly commits: readonly SoulCommit[];
   readonly valence?: ValenceSnapshot;
+  readonly drift?: readonly number[];
 }
 
 export interface GenesisOptions {
@@ -63,6 +65,7 @@ export class SoulKernel {
     readonly config: SoulConfig,
     private readonly commits: SoulCommit[],
     private readonly valenceModel: ValenceModel = new ValenceModel(),
+    private readonly drift: Adwin = new Adwin(),
   ) {}
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -110,9 +113,32 @@ export class SoulKernel {
       const outcome = signal.continued ? 1 : -1;
       for (const cue of signal.cues) this.valenceModel.observe(cue, outcome);
     }
-    return ingest(this.dag, signal, this.config, (c) =>
+    const result = ingest(this.dag, signal, this.config, (c) =>
       this.valenceModel.valence(c),
     );
+    this.trackDrift(signal);
+    return result;
+  }
+
+  /**
+   * Feed an interaction's scalar outcome to ADWIN; a detected distribution shift
+   * is a developmental inflection, recorded as an epoch in the Spine.
+   */
+  private trackDrift(signal: Signal): void {
+    let outcome: number | undefined;
+    if (signal.kind === "engagement") outcome = signal.continued ? 1 : -1;
+    else if (signal.kind === "reaction") outcome = this.valenceModel.valence(signal.emoji);
+    else if (signal.kind === "correction") outcome = -1;
+    if (outcome === undefined) return;
+
+    const change = this.drift.add(outcome);
+    if (change.changed) {
+      appendSpine(
+        this.dag,
+        `Epoch: behavioral reception shifted (${change.meanBefore!.toFixed(2)} → ${change.meanAfter!.toFixed(2)})`,
+        signal.at,
+      );
+    }
   }
 
   ingestAll(signals: readonly Signal[]): IngestResult[] {
@@ -341,6 +367,7 @@ export class SoulKernel {
       dag: this.dag.snapshot(),
       commits: [...this.commits],
       valence: this.valenceModel.snapshot(),
+      drift: this.drift.snapshot(),
     };
   }
 
@@ -358,6 +385,7 @@ export class SoulKernel {
       data.config,
       [...data.commits],
       data.valence ? ValenceModel.restore(data.valence) : new ValenceModel(),
+      data.drift ? Adwin.restore(data.drift) : new Adwin(),
     );
   }
 

@@ -71,6 +71,8 @@ export { emojiValence } from "./signals.js";
 export type { Signal } from "./signals.js";
 export { ValenceModel } from "./valence.js";
 export type { ValenceSnapshot } from "./valence.js";
+export { Adwin } from "./drift.js";
+export type { AdwinChange } from "./drift.js";
 export {
   HashingEmbedder,
   cosineSimilarity,
