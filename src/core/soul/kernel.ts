@@ -23,6 +23,7 @@ import { seedReflexes } from "./reflex.js";
 import { clusterEvidence } from "./cluster.js";
 import { consolidate, type ConsolidateResult } from "./consolidate.js";
 import { reflect, type ReflectOptions, type ReflectResult } from "./reflect.js";
+import { compileLens } from "./lens.js";
 import { detectTensions } from "./lattice.js";
 import { ValenceModel, type ValenceSnapshot } from "./valence.js";
 import { retrieveValues, type RetrievalWeights } from "./retrieve.js";
@@ -249,6 +250,22 @@ export class SoulKernel {
         ? { embeddingWeight: opts.embeddingWeight }
         : {}),
       ...(opts?.synthesize ? { synthesize: opts.synthesize } : {}),
+    });
+  }
+
+  /**
+   * Compile (or recompile) the lens for a subject from actor-tagged evidence —
+   * how Talon refracts for that person. Supersedes the prior lens. Caller
+   * commits. Returns the lens hash or undefined if the subject has no evidence.
+   */
+  compileLens(
+    subject: string,
+    opts?: { now?: number; boost?: number; maxEvidence?: number },
+  ): Hash | undefined {
+    return compileLens(this.dag, subject, {
+      now: opts?.now ?? Date.now(),
+      ...(opts?.boost !== undefined ? { boost: opts.boost } : {}),
+      ...(opts?.maxEvidence !== undefined ? { maxEvidence: opts.maxEvidence } : {}),
     });
   }
 

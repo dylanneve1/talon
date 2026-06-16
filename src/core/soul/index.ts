@@ -103,6 +103,8 @@ export type { PageRankOptions } from "./centrality.js";
 export { consolidate, liveValues, isSuperseded } from "./consolidate.js";
 export type { ConsolidateOptions, ConsolidateResult } from "./consolidate.js";
 export { reflect } from "./reflect.js";
+export { compileLens, liveLens } from "./lens.js";
+export type { LensOptions } from "./lens.js";
 export type { ReflectOptions, ReflectResult } from "./reflect.js";
 export {
   hashContent,

@@ -70,6 +70,7 @@ function lensFactors(dag: SoulDag, subject?: string): Map<Hash, number> {
   const factors = new Map<Hash, number>();
   if (!subject) return factors;
   for (const node of dag.nodesOfKind("lens")) {
+    if (isSuperseded(dag, node.hash)) continue;
     const lens = node.payload as LensPayload;
     if (lens.subject !== subject) continue;
     for (const a of lens.amplify) factors.set(a.node, a.factor);
