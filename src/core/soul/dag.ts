@@ -173,6 +173,15 @@ export class SoulDag {
     return out;
   }
 
+  /** Every edge in the graph, optionally filtered by kind. */
+  allEdges(kind?: EdgeKind): AssocEdge[] {
+    const out: AssocEdge[] = [];
+    for (const e of this.edges.values()) {
+      if (!kind || e.kind === kind) out.push(e);
+    }
+    return out;
+  }
+
   // ── Structure ────────────────────────────────────────────────────────────────
 
   childrenOf(hash: Hash): Hash[] {

@@ -15,6 +15,7 @@
  */
 
 import { SoulDag } from "./dag.js";
+import { tensionPairs } from "./lattice.js";
 import { confidence, effectiveSalience } from "./salience.js";
 import type {
   Hash,
@@ -42,9 +43,18 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-function evidenceText(dag: SoulDag, hash: Hash): string | undefined {
+function evidenceText(dag: SoulDag, hash: Hash | undefined): string | undefined {
+  if (!hash) return undefined;
   const node = dag.getNode(hash);
   return node?.payload.kind === "evidence" ? node.payload.text : undefined;
+}
+
+/** The medoid evidence hash of a value node, if it is one. */
+function valueMedoid(dag: SoulDag, hash: Hash): Hash | undefined {
+  const node = dag.getNode(hash);
+  return node?.payload.kind === "value"
+    ? (node.payload as ValuePayload).medoid
+    : undefined;
 }
 
 /** Map of value-hash → amplification factor for a subject's lens. */
@@ -144,6 +154,21 @@ export function projectRuntime(
   if (valueLines.length) {
     const header = opts.lens ? `## Values (with ${opts.lens})` : "## Values";
     lines.push("", header, ...valueLines);
+  }
+
+  // Tensions — opposed values held together, navigated not resolved.
+  const includedSet = new Set(included);
+  const tensionLines: string[] = [];
+  for (const pair of tensionPairs(dag)) {
+    if (!includedSet.has(pair.a) || !includedSet.has(pair.b)) continue;
+    const ta = evidenceText(dag, valueMedoid(dag, pair.a));
+    const tb = evidenceText(dag, valueMedoid(dag, pair.b));
+    if (!ta || !tb) continue;
+    const line = `- "${ta}"  ⟷  "${tb}"`;
+    if (spend(line)) tensionLines.push(line);
+  }
+  if (tensionLines.length) {
+    lines.push("", "## Tensions (navigated, not resolved)", ...tensionLines);
   }
 
   // Continuity — most recent spine events first, with remaining budget.

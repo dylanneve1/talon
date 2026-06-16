@@ -64,6 +64,8 @@ export {
 export type { Embedder } from "./embedder.js";
 export { clusterEvidence } from "./cluster.js";
 export type { Embedded, EvidenceCluster } from "./cluster.js";
+export { detectTensions, tensionPairs } from "./lattice.js";
+export type { TensionOptions } from "./lattice.js";
 export {
   hashContent,
   hashPayload,
