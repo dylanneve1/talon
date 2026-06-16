@@ -372,9 +372,11 @@ jobs:
   # behavior suite plus the trigger supervisor suites over the real
   # binary — this is the job of record for the warden supervision path
   # (elsewhere the warden tests self-skip when cargo is absent, and the
-  # trigger suites run the TS fallback). Both OSes: process groups,
-  # pdeathsig vs ppid-polling, and signal forwarding are exactly the
-  # things that differ between Linux and macOS.
+  # trigger suites run the TS fallback). All three OSes: process groups +
+  # pdeathsig vs ppid-polling (Unix) vs kill-on-close Job Objects
+  # (Windows) are exactly the things that differ. The bash/signal
+  # behaviour suite + trigger supervisor suites run on Unix; Windows runs
+  # the cmd-based warden smoke suite over the real talon-warden.exe.
   warden:
     name: Warden (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -384,7 +386,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v6
 
@@ -407,11 +409,18 @@ jobs:
         run: npm run build:warden
 
       - name: Warden behavior + trigger supervisor suites (warden path)
+        if: runner.os != 'Windows'
         run: |
           npm ci
           npx vitest run src/__tests__/talon-warden.test.ts \
             src/__tests__/triggers.test.ts \
             src/__tests__/triggers-extended.test.ts
+
+      - name: Warden smoke suite (Windows, Job Object path)
+        if: runner.os == 'Windows'
+        run: |
+          npm ci
+          npx vitest run src/__tests__/talon-warden.test.ts
 
   # ── Blake3 napi addon ──────────────────────────────────────────
   # blake3-napi (native/blake3-napi) is a per-arch .node library like

@@ -48,17 +48,24 @@ execFileSync("cargo", cargoArgs, {
   },
 });
 
+// Windows toolchains emit a .exe; the host build follows the runner's
+// platform, a cross build follows the target triple.
+const isWindows = target
+  ? target.includes("windows")
+  : process.platform === "win32";
+const ext = isWindows ? ".exe" : "";
+
 const built = target
-  ? join(here, "target", target, "release", "talon-warden")
-  : join(here, "target", "release", "talon-warden");
+  ? join(here, "target", target, "release", `talon-warden${ext}`)
+  : join(here, "target", "release", `talon-warden${ext}`);
 
 let outPath;
 if (target) {
   const distDir = join(here, "dist");
   mkdirSync(distDir, { recursive: true });
-  outPath = join(distDir, `talon-warden-${target}`);
+  outPath = join(distDir, `talon-warden-${target}${ext}`);
 } else {
-  outPath = join(repoRoot, "bin", "talon-warden");
+  outPath = join(repoRoot, "bin", `talon-warden${ext}`);
 }
 copyFileSync(built, outPath);
 console.log(`built ${outPath}${target ? ` (${target})` : " (host)"}`);

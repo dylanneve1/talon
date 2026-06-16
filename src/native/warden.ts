@@ -77,10 +77,12 @@ let cachedPath: string | null | undefined;
 
 /**
  * Resolve the warden binary, or null when supervision must fall back to
- * the TS path: Windows (the warden is Unix-only), TALON_NO_WARDEN=1
- * (operator escape hatch), or no executable found. TALON_WARDEN
- * overrides the default `bin/talon-warden` location (used by tests and
- * packaging layouts that install the binary elsewhere).
+ * the TS path: TALON_NO_WARDEN=1 (operator escape hatch) or no
+ * executable found. The warden is cross-platform — a process-group
+ * harness on Unix, a kill-on-close Job Object harness on Windows (where
+ * the binary is `talon-warden.exe`). TALON_WARDEN overrides the default
+ * `bin/talon-warden` location (used by tests and packaging layouts that
+ * install the binary elsewhere).
  */
 export function wardenBinaryPath(): string | null {
   if (cachedPath === undefined) cachedPath = resolveWardenPath();
@@ -88,8 +90,10 @@ export function wardenBinaryPath(): string | null {
 }
 
 function resolveWardenPath(): string | null {
-  if (process.platform === "win32") return null;
   if (process.env.TALON_NO_WARDEN === "1") return null;
+
+  const binName =
+    process.platform === "win32" ? "talon-warden.exe" : "talon-warden";
 
   const candidates: string[] = [];
   if (process.env.TALON_WARDEN) {
@@ -101,7 +105,7 @@ function resolveWardenPath(): string | null {
       // compiled binary ships through channels that install the warden
       // and set TALON_WARDEN, or it just falls back.
       candidates.push(
-        fileURLToPath(new URL("../../bin/talon-warden", import.meta.url)),
+        fileURLToPath(new URL(`../../bin/${binName}`, import.meta.url)),
       );
     } catch {
       /* no resolvable location */

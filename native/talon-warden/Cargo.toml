@@ -11,11 +11,26 @@ publish = false
 name = "talon-warden"
 path = "src/main.rs"
 
-[dependencies]
-# Process-group signalling (kill(-pgid)), getppid, prctl, SIGPIPE — the
-# only platform surface std doesn't cover. No serde: the NDJSON protocol
-# is hand-rolled (same no-glue ethos as blake3-wasm's hand-rolled C ABI).
+# Platform surface std doesn't cover. No serde: the NDJSON protocol is
+# hand-rolled (same no-glue ethos as blake3-wasm's hand-rolled C ABI).
+
+# Unix: process-group signalling (kill(-pgid)), getppid, prctl, SIGPIPE.
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Windows: kill-on-close Job Objects (tree teardown + warden-death
+# teardown), console control events (graceful break + parent forwarding),
+# a process snapshot to resolve the parent for liveness waits.
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.59"
+features = [
+  "Win32_Foundation",
+  "Win32_Security", # SECURITY_ATTRIBUTES in CreateJobObjectW's signature
+  "Win32_System_Console",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+]
 
 [profile.release]
 # Small, stripped, single-unit: the warden ships in .deb/bottle channels

@@ -37,8 +37,13 @@ function findCargo(): string | null {
   }
 }
 
-const cargo = process.platform === "win32" ? null : findCargo();
-const suite = cargo ? describe : describe.skip;
+const cargo = findCargo();
+const isWindows = process.platform === "win32";
+// The behavioural suite drives bash scripts and POSIX signals, so it
+// runs on Unix; Windows gets a focused smoke suite over the real .exe
+// (spawn, NDJSON framing, exit codes) below. Both need cargo.
+const suite = cargo && !isWindows ? describe : describe.skip;
+const winSuite = cargo && isWindows ? describe : describe.skip;
 if (!cargo) {
   console.warn("talon-warden tests skipped: cargo toolchain not found");
 }
@@ -514,5 +519,140 @@ suite("talon-warden harness", () => {
       delete process.env.TALON_WARDEN;
       _resetWardenCacheForTesting();
     }
+  });
+});
+
+/**
+ * Windows smoke suite — the Job Object harness over the real
+ * talon-warden.exe. The POSIX behavioural suite above drives bash and
+ * signals; here we assert the platform-agnostic protocol contract on
+ * Windows (spawn, NDJSON framing, exit-code reporting, usage/spawn
+ * errors) using `cmd` builtins. Tree-teardown timing (CTRL_BREAK grace,
+ * job kill of grandchildren, parent-death) is left to a follow-up that
+ * adds Windows-native equivalents of the bash teardown cases.
+ */
+winSuite("talon-warden harness (windows)", () => {
+  let wardenBin: string;
+  const liveChildren: ChildProcess[] = [];
+
+  beforeAll(() => {
+    execFileSync(cargo!, ["build", "--release", "--locked"], {
+      cwd: wardenDir,
+      stdio: "inherit",
+    });
+    wardenBin = join(wardenDir, "target", "release", "talon-warden.exe");
+  }, 180_000);
+
+  afterEach(() => {
+    for (const child of liveChildren.splice(0)) {
+      try {
+        child.kill();
+      } catch {
+        /* already gone */
+      }
+    }
+  });
+
+  function runWarden(args: string[]): Promise<WardenRun> {
+    return new Promise((resolve, reject) => {
+      const child = spawn(wardenBin, args, {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      liveChildren.push(child);
+      let stdout = "";
+      let stderr = "";
+      child.stdout.on("data", (d: Buffer) => (stdout += d.toString()));
+      child.stderr.on("data", (d: Buffer) => (stderr += d.toString()));
+      child.on("error", reject);
+      child.on("close", (status, signal) => {
+        const events = stdout
+          .split("\n")
+          .filter((line) => line.trim() !== "")
+          .map((line) => JSON.parse(line) as WardenEvent);
+        resolve({ events, status, signal, stderr });
+      });
+    });
+  }
+
+  it("reports its version", () => {
+    const out = execFileSync(wardenBin, ["--version"], { encoding: "utf-8" });
+    expect(out).toMatch(/^talon-warden \d+\.\d+\.\d+/);
+  });
+
+  it("rejects bad usage with exit 2 and a usage message", async () => {
+    const noTimeout = await runWarden(["--", "cmd", "/c", "exit 0"]);
+    expect(noTimeout.status).toBe(2);
+    expect(noTimeout.stderr).toContain("usage:");
+  });
+
+  it("frames start → line → exit for a clean run", async () => {
+    const run = await runWarden([
+      "--timeout-ms=10000",
+      "--",
+      "cmd",
+      "/c",
+      "echo hello",
+    ]);
+    expect(run.status).toBe(0);
+
+    const start = run.events[0];
+    expect(start.event).toBe("start");
+    expect(Number(start.pid)).toBeGreaterThan(0);
+
+    const lines = run.events.filter((e) => e.event === "line");
+    // cmd's echo can carry a trailing space before the newline; trim it.
+    expect(lines.some((e) => String(e.text).trim() === "hello")).toBe(true);
+
+    const exit = run.events.at(-1)!;
+    expect(exit).toMatchObject({
+      event: "exit",
+      code: 0,
+      signal: null,
+      timedOut: false,
+      reason: "exited",
+    });
+  });
+
+  it("reports non-zero exit codes", async () => {
+    const run = await runWarden([
+      "--timeout-ms=10000",
+      "--",
+      "cmd",
+      "/c",
+      "exit 7",
+    ]);
+    expect(run.status).toBe(0); // supervision itself succeeded
+    expect(run.events.at(-1)).toMatchObject({ event: "exit", code: 7 });
+  });
+
+  it("emits an error event and exits 3 when the command cannot spawn", async () => {
+    const run = await runWarden([
+      "--timeout-ms=1000",
+      "--",
+      "C:\\nonexistent\\never-a-binary.exe",
+    ]);
+    expect(run.status).toBe(3);
+    expect(run.events).toHaveLength(1);
+    expect(run.events[0].event).toBe("error");
+    expect(String(run.events[0].message)).toContain("spawn failed");
+  });
+
+  it("enforces the timeout and reports reason=timeout", async () => {
+    const begun = Date.now();
+    // ping as a portable sleep: ~3s of waiting, deadline fires first.
+    const run = await runWarden([
+      "--timeout-ms=300",
+      "--grace-ms=200",
+      "--",
+      "cmd",
+      "/c",
+      "ping -n 30 127.0.0.1 >NUL",
+    ]);
+    expect(Date.now() - begun).toBeLessThan(8_000);
+    expect(run.events.at(-1)).toMatchObject({
+      event: "exit",
+      timedOut: true,
+      reason: "timeout",
+    });
   });
 });
