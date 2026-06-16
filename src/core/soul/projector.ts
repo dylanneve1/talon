@@ -173,6 +173,24 @@ export function projectRuntime(
     lines.push("", header, ...valueLines);
   }
 
+  // Themes — higher-order reflections over the values.
+  const themeNodes = dag
+    .nodesOfKind("theme")
+    .map((n) => n.payload)
+    .filter((p): p is Extract<typeof p, { kind: "theme" }> => p.kind === "theme")
+    .map((p) => ({
+      label: p.insight ?? evidenceText(dag, p.medoid) ?? "",
+      salience: 0,
+      medoid: p.medoid,
+    }))
+    .filter((t) => t.label.length > 0);
+  const themeLines: string[] = [];
+  for (const t of themeNodes) {
+    const line = `- ${t.label}`;
+    if (spend(line)) themeLines.push(line);
+  }
+  if (themeLines.length) lines.push("", "## Themes (reflections)", ...themeLines);
+
   // Tensions — opposed values held together, navigated not resolved.
   const includedSet = new Set(included);
   const tensionLines: string[] = [];

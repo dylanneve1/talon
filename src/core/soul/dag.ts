@@ -35,6 +35,8 @@ export function structuralChildren(payload: NodePayload): Hash[] {
       return [];
     case "value":
       return dedupe([payload.medoid, ...payload.members]);
+    case "theme":
+      return dedupe([payload.medoid, ...payload.values]);
     case "spine":
       return dedupe([
         ...payload.affects,

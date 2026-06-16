@@ -34,6 +34,7 @@ export type Hash = string & { readonly __brand: "SoulHash" };
 export type NodeKind =
   | "evidence" // a verbatim ground-truth fragment — the atoms
   | "value" // an emergent cluster of evidence (a trait/value)
+  | "theme" // a higher-order reflection over co-activating, coherent values
   | "spine" // an append-only developmental-narrative event
   | "reflex" // a compiled behavioral rule (trigger → guard → action)
   | "lens"; // a per-relationship refraction of identity
@@ -86,6 +87,24 @@ export interface ValuePayload {
    * frequent co-activation form a tension edge.
    */
   readonly axis?: string;
+}
+
+/**
+ * A higher-order reflection: an abstraction over values that are both
+ * semantically coherent and frequently co-active. The soul's "higher-level
+ * inferences over time" (Generative Agents). Structure is discovered
+ * mechanically; the optional `insight` is the ONE place a single gated model
+ * pass may write a natural-language label — it can never change which values are
+ * grouped, and falls back to the medoid evidence when absent.
+ */
+export interface ThemePayload {
+  readonly kind: "theme";
+  /** The value-node hashes this theme abstracts over (sorted, deduped). */
+  readonly values: readonly Hash[];
+  /** Representative real evidence fragment across all member values. */
+  readonly medoid: Hash;
+  /** Optional model-written label; absent ⇒ the medoid text is used. */
+  readonly insight?: string;
 }
 
 /**
@@ -145,6 +164,7 @@ export interface LensPayload {
 export type NodePayload =
   | EvidencePayload
   | ValuePayload
+  | ThemePayload
   | SpinePayload
   | ReflexPayload
   | LensPayload;

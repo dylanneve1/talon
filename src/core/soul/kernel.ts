@@ -21,6 +21,7 @@ import { projectRuntime, type Projection } from "./projector.js";
 import { seedReflexes } from "./reflex.js";
 import { clusterEvidence } from "./cluster.js";
 import { consolidate, type ConsolidateResult } from "./consolidate.js";
+import { reflect, type ReflectOptions, type ReflectResult } from "./reflect.js";
 import { detectTensions } from "./lattice.js";
 import { ValenceModel, type ValenceSnapshot } from "./valence.js";
 import { retrieveValues, type RetrievalWeights } from "./retrieve.js";
@@ -180,7 +181,12 @@ export class SoulKernel {
   async dream(
     embedder: Embedder,
     opts?: { now?: number; tension?: { minCoactivation: number; minDistance: number } },
-  ): Promise<{ crystallized: number; consolidated: ConsolidateResult; tensions: number }> {
+  ): Promise<{
+    crystallized: number;
+    consolidated: ConsolidateResult;
+    tensions: number;
+    themes: number;
+  }> {
     const now = opts?.now ?? Date.now();
     const crystallized = await this.crystallize(embedder, now);
     const consolidated = await consolidate(this.dag, embedder, this.config, {
@@ -191,11 +197,32 @@ export class SoulKernel {
       ...tension,
       now,
     });
+    const reflected = await reflect(this.dag, embedder, this.config, { now });
     return {
       crystallized: crystallized.length,
       consolidated,
       tensions: tensions.length,
+      themes: reflected.created.length,
     };
+  }
+
+  /**
+   * Form higher-order themes over the value graph (Generative-Agents
+   * reflection, model-free). Pass `synthesize` only if you want the optional,
+   * label-only gated model pass. Caller commits.
+   */
+  async reflect(
+    embedder: Embedder,
+    opts?: Partial<ReflectOptions> & { now?: number },
+  ): Promise<ReflectResult> {
+    return reflect(this.dag, embedder, this.config, {
+      now: opts?.now ?? Date.now(),
+      ...(opts?.affinity !== undefined ? { affinity: opts.affinity } : {}),
+      ...(opts?.embeddingWeight !== undefined
+        ? { embeddingWeight: opts.embeddingWeight }
+        : {}),
+      ...(opts?.synthesize ? { synthesize: opts.synthesize } : {}),
+    });
   }
 
   /** Run a single consolidation pass directly. Caller commits. */

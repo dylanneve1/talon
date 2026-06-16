@@ -98,6 +98,8 @@ export { associativeRecall, prime } from "./associative.js";
 export type { RecallResult, RecallOptions, PrimeOptions } from "./associative.js";
 export { consolidate, liveValues, isSuperseded } from "./consolidate.js";
 export type { ConsolidateOptions, ConsolidateResult } from "./consolidate.js";
+export { reflect } from "./reflect.js";
+export type { ReflectOptions, ReflectResult } from "./reflect.js";
 export {
   hashContent,
   hashPayload,
