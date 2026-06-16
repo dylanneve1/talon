@@ -94,6 +94,8 @@ export { clusterEvidence } from "./cluster.js";
 export type { Embedded, EvidenceCluster } from "./cluster.js";
 export { detectTensions, tensionPairs } from "./lattice.js";
 export type { TensionOptions } from "./lattice.js";
+export { associativeRecall, prime } from "./associative.js";
+export type { RecallResult, RecallOptions, PrimeOptions } from "./associative.js";
 export { consolidate, liveValues, isSuperseded } from "./consolidate.js";
 export type { ConsolidateOptions, ConsolidateResult } from "./consolidate.js";
 export {

@@ -24,6 +24,11 @@ import { consolidate, type ConsolidateResult } from "./consolidate.js";
 import { detectTensions } from "./lattice.js";
 import { ValenceModel, type ValenceSnapshot } from "./valence.js";
 import { retrieveValues, type RetrievalWeights } from "./retrieve.js";
+import {
+  associativeRecall,
+  type RecallOptions,
+  type RecallResult,
+} from "./associative.js";
 import type { Embedder } from "./embedder.js";
 import type { Signal } from "./signals.js";
 import {
@@ -243,6 +248,14 @@ export class SoulKernel {
       ...(opts.lens !== undefined ? { lens: opts.lens } : {}),
       order: ranked.map((r) => r.hash),
     });
+  }
+
+  /**
+   * Associative recall (modern Hopfield): the constellation of values bound to
+   * the cues by co-activation, as a one-step softmax. Read-only.
+   */
+  recall(cues: Hash[], opts?: RecallOptions): RecallResult[] {
+    return associativeRecall(this.dag, cues, opts ?? {});
   }
 
   graph(): SoulDag {
