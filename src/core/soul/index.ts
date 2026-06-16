@@ -62,6 +62,14 @@ export {
   norm,
 } from "./embedder.js";
 export type { Embedder } from "./embedder.js";
+export { TalonEmbedder } from "./talon-embedder.js";
+export type { TalonEmbedderOptions } from "./talon-embedder.js";
+export {
+  resolveSoulSettings,
+  soulEnabled,
+  DEFAULT_SOUL_SETTINGS,
+} from "./settings.js";
+export type { SoulSettings } from "./settings.js";
 export { clusterEvidence } from "./cluster.js";
 export type { Embedded, EvidenceCluster } from "./cluster.js";
 export { detectTensions, tensionPairs } from "./lattice.js";
