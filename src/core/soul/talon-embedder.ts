@@ -48,8 +48,9 @@ export class TalonEmbedder implements Embedder {
   /** Synchronous single-text embedding — handy for internal hot paths. */
   embedOne(text: string): number[] {
     const counts = new Map<string, number>();
-    const bump = (feature: string): void =>
+    const bump = (feature: string): void => {
       counts.set(feature, (counts.get(feature) ?? 0) + 1);
+    };
 
     const lower = text.toLowerCase();
     const words = lower.match(TOKEN_RE) ?? [];
