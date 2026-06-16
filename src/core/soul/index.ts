@@ -49,6 +49,11 @@ export type {
   CritiqueThresholds,
   FailureMode,
 } from "./critic.js";
+export { deriveFailureModes, assessText } from "./emergent-critic.js";
+export type {
+  EmergentFailureMode,
+  FailureRisk,
+} from "./emergent-critic.js";
 export { emojiValence } from "./signals.js";
 export type { Signal } from "./signals.js";
 export { ValenceModel } from "./valence.js";
