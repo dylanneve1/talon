@@ -19,6 +19,12 @@ export type { GenesisOptions } from "./kernel.js";
 export { SoulDag, structuralChildren } from "./dag.js";
 export { projectRuntime, estimateTokens } from "./projector.js";
 export type { Projection, ProjectionOptions } from "./projector.js";
+export { retrieveValues, DEFAULT_RETRIEVAL_WEIGHTS } from "./retrieve.js";
+export type {
+  RetrievedValue,
+  RetrievalWeights,
+  RetrieveOptions,
+} from "./retrieve.js";
 export {
   evaluateReflexes,
   evaluateReflex,

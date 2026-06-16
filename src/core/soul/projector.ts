@@ -30,6 +30,13 @@ export interface ProjectionOptions {
   readonly config: SoulConfig;
   /** If set, refract the projection through this subject's lens, when present. */
   readonly lens?: string;
+  /**
+   * Optional precomputed value ordering (e.g. from context-conditioned
+   * retrieval). When present it overrides salience ranking, letting the soul
+   * surface what is relevant to the current moment. Hashes not listed are
+   * dropped from the value section.
+   */
+  readonly order?: readonly Hash[];
 }
 
 export interface Projection {
@@ -97,6 +104,14 @@ function rankValues(dag: SoulDag, opts: ProjectionOptions): RankedValue[] {
   }
   // Highest weighted salience first; hash tiebreak keeps output deterministic.
   ranked.sort((a, b) => b.weighted - a.weighted || a.hash.localeCompare(b.hash));
+
+  // An explicit retrieval order (context-conditioned) overrides salience rank.
+  if (opts.order) {
+    const rank = new Map(opts.order.map((h, i) => [h, i]));
+    return ranked
+      .filter((r) => rank.has(r.hash))
+      .sort((a, b) => rank.get(a.hash)! - rank.get(b.hash)!);
+  }
   return ranked;
 }
 

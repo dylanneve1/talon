@@ -23,6 +23,7 @@ import { clusterEvidence } from "./cluster.js";
 import { consolidate, type ConsolidateResult } from "./consolidate.js";
 import { detectTensions } from "./lattice.js";
 import { ValenceModel, type ValenceSnapshot } from "./valence.js";
+import { retrieveValues, type RetrievalWeights } from "./retrieve.js";
 import type { Embedder } from "./embedder.js";
 import type { Signal } from "./signals.js";
 import {
@@ -212,6 +213,35 @@ export class SoulKernel {
       now: opts?.now ?? Date.now(),
       config: this.config,
       lens: opts?.lens,
+    });
+  }
+
+  /**
+   * Context-conditioned projection (Generative-Agents retrieval): surfaces the
+   * values most relevant to the current moment, not just the globally salient
+   * ones. Async because relevance embeds the context against value medoids.
+   */
+  async projectFor(
+    embedder: Embedder,
+    opts: {
+      context?: string;
+      now?: number;
+      lens?: string;
+      weights?: RetrievalWeights;
+    },
+  ): Promise<Projection> {
+    const now = opts.now ?? Date.now();
+    const ranked = await retrieveValues(this.dag, embedder, {
+      now,
+      config: this.config,
+      ...(opts.context !== undefined ? { context: opts.context } : {}),
+      ...(opts.weights ? { weights: opts.weights } : {}),
+    });
+    return projectRuntime(this.dag, {
+      now,
+      config: this.config,
+      ...(opts.lens !== undefined ? { lens: opts.lens } : {}),
+      order: ranked.map((r) => r.hash),
     });
   }
 
