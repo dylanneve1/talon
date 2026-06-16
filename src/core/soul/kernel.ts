@@ -19,6 +19,14 @@ import { hashContent } from "./hash.js";
 import { ingest, ingestAll, appendSpine, type IngestResult } from "./compiler.js";
 import { Adwin } from "./drift.js";
 import { diffSnapshots, renderDelta, type SoulDelta } from "./delta.js";
+import {
+  CompositionalMemory,
+  bundle,
+  cleanup,
+  symbolVector,
+  type Hypervector,
+} from "./hdc.js";
+import { liveValues } from "./consolidate.js";
 import { projectRuntime, type Projection } from "./projector.js";
 import { seedReflexes } from "./reflex.js";
 import { clusterEvidence } from "./cluster.js";
@@ -59,6 +67,7 @@ interface PersistShape {
   readonly valence?: ValenceSnapshot;
   readonly drift?: readonly number[];
   readonly approvals?: ApprovalSnapshot;
+  readonly episodic?: { dim: number; acc: number[]; count: number };
 }
 
 export interface GenesisOptions {
@@ -76,8 +85,45 @@ export class SoulKernel {
     private readonly valenceModel: ValenceModel = new ValenceModel(),
     private readonly drift: Adwin = new Adwin(),
     private readonly approvals: ApprovalQueue = new ApprovalQueue(),
+    private readonly episodic: CompositionalMemory = new CompositionalMemory(),
   ) {
     this.lastSnapshot = dag.snapshot();
+  }
+
+  // ── Episodic memory (VSA / hyperdimensional) ─────────────────────────────────
+
+  /** Bundle a context string into a single hypervector (set of its words). */
+  private contextVector(text: string): Hypervector {
+    const words = (text.toLowerCase().match(/[a-z0-9]+/g) ?? []).map((w) =>
+      symbolVector(`ctx:${w}`),
+    );
+    return words.length ? bundle(words) : symbolVector("ctx:∅");
+  }
+
+  /**
+   * Remember an episode: in this context, these values were the right move. Binds
+   * context ⊗ value and superposes it into the compositional memory. Call on
+   * positive-outcome turns.
+   */
+  rememberEpisode(context: string, valueHashes: readonly Hash[]): void {
+    const ctx = this.contextVector(context);
+    for (const v of valueHashes) {
+      if (this.dag.hasNode(v)) this.episodic.add(ctx, symbolVector(`val:${v}`));
+    }
+  }
+
+  /**
+   * Recall the value most associated with a context (VSA unbind + cleanup over
+   * live values): "in a situation like this, what do I do?" Returns the best
+   * value hash and its similarity, or undefined when memory is empty.
+   */
+  recallByContext(context: string): { value: Hash; score: number } | undefined {
+    if (this.episodic.episodes === 0) return undefined;
+    const items = new Map<string, Hypervector>();
+    for (const v of liveValues(this.dag)) items.set(v, symbolVector(`val:${v}`));
+    if (items.size === 0) return undefined;
+    const recalled = cleanup(this.episodic.query(this.contextVector(context)), items);
+    return recalled ? { value: recalled.token as Hash, score: recalled.score } : undefined;
   }
 
   /** Snapshot at the previous commit — diffed to produce the delta stream. */
@@ -445,6 +491,7 @@ export class SoulKernel {
       valence: this.valenceModel.snapshot(),
       drift: this.drift.snapshot(),
       approvals: this.approvals.snapshot(),
+      episodic: this.episodic.snapshot(),
     };
   }
 
@@ -464,6 +511,7 @@ export class SoulKernel {
       data.valence ? ValenceModel.restore(data.valence) : new ValenceModel(),
       data.drift ? Adwin.restore(data.drift) : new Adwin(),
       data.approvals ? ApprovalQueue.restore(data.approvals) : new ApprovalQueue(),
+      data.episodic ? CompositionalMemory.restore(data.episodic) : new CompositionalMemory(),
     );
   }
 

@@ -78,6 +78,17 @@ export type { SoulDelta } from "./delta.js";
 export { ApprovalQueue } from "./governance.js";
 export type { Proposal, ProposalStatus, ApprovalSnapshot } from "./governance.js";
 export {
+  CompositionalMemory,
+  symbolVector,
+  bind,
+  bundle,
+  permute,
+  cleanup,
+  hdCosine,
+  DEFAULT_HD_DIM,
+} from "./hdc.js";
+export type { Hypervector } from "./hdc.js";
+export {
   HashingEmbedder,
   cosineSimilarity,
   cosineDistance,
