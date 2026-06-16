@@ -454,9 +454,17 @@ jobs:
         run: npm run build:napi
 
       - name: Addon behavior + wasm parity + media-index consumer
+        # Pin to a single persistent fork. These three files load the
+        # native blake3 .node addon and a real better-sqlite3 handle;
+        # under vitest's default multi-fork pool the per-file worker
+        # churn intermittently dies with "Worker exited unexpectedly"
+        # (the tests themselves pass first). One fork, run sequentially,
+        # removes the concurrent native-addon load/teardown that causes
+        # the flake without changing any test logic.
         run: |
           npm ci
-          npx vitest run src/__tests__/blake3-napi.test.ts \
+          npx vitest run --pool=forks --no-file-parallelism --maxWorkers=1 \
+            src/__tests__/blake3-napi.test.ts \
             src/__tests__/blake3-wasm.test.ts \
             src/__tests__/media-index.test.ts
 
