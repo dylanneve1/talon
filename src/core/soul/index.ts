@@ -44,6 +44,13 @@ export {
 export { ingest, ingestAll, appendSpine } from "./compiler.js";
 export type { IngestResult } from "./compiler.js";
 export {
+  retrievability,
+  effectiveStrength,
+  reinforceFsrs,
+  nextStability,
+  initialStability,
+} from "./forgetting.js";
+export {
   critique,
   extractFeatures,
   isFlagged,

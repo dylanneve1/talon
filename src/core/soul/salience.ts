@@ -20,6 +20,7 @@
  */
 
 import type { SoulDag } from "./dag.js";
+import { retrievability } from "./forgetting.js";
 import type { ActivationState, Hash } from "./types.js";
 
 /** Exponential decay multiplier for an elapsed interval given a half-life. */
@@ -28,12 +29,19 @@ export function decayFactor(elapsedMs: number, halfLifeMs: number): number {
   return Math.pow(0.5, elapsedMs / halfLifeMs);
 }
 
-/** Salience as it stands *now*, after lazy time-decay from its last activation. */
+/**
+ * Salience as it stands *now*, after lazy time-decay from its last activation.
+ * When the node carries an FSRS stability, decay follows the power-law
+ * retrievability curve; otherwise it is the fixed-half-life exponential.
+ */
 export function effectiveSalience(
   state: ActivationState,
   now: number,
   halfLifeMs: number,
 ): number {
+  if (state.stability !== undefined) {
+    return state.salience * retrievability(now - state.lastActivatedAt, state.stability);
+  }
   return state.salience * decayFactor(now - state.lastActivatedAt, halfLifeMs);
 }
 

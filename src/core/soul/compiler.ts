@@ -19,6 +19,7 @@
 
 import { SoulDag } from "./dag.js";
 import { coactivate, reinforce } from "./salience.js";
+import { reinforceFsrs } from "./forgetting.js";
 import { emojiValence } from "./signals.js";
 import type {
   CorrectionSignal,
@@ -81,6 +82,27 @@ function addEvidence(
   });
 }
 
+function reinforceNode(
+  dag: SoulDag,
+  hash: Hash,
+  cfg: SoulConfig,
+  amount: number,
+  valence: number,
+  at: number,
+): void {
+  if (cfg.adaptiveForgetting) {
+    reinforceFsrs(dag.stateOf(hash), { now: at, cfg, amount, valence });
+    dag.touch(hash);
+    return;
+  }
+  reinforce(dag, hash, {
+    now: at,
+    halfLifeMs: cfg.decayHalfLifeMs,
+    amount,
+    valence,
+  });
+}
+
 function ingestOutcome(
   dag: SoulDag,
   nodes: readonly Hash[],
@@ -90,12 +112,7 @@ function ingestOutcome(
 ): Hash[] {
   const present = nodes.filter((h) => dag.hasNode(h));
   for (const h of present) {
-    reinforce(dag, h, {
-      now: at,
-      halfLifeMs: cfg.decayHalfLifeMs,
-      amount: cfg.reinforce,
-      valence,
-    });
+    reinforceNode(dag, h, cfg, cfg.reinforce, valence, at);
   }
   if (present.length > 1) {
     coactivate(dag, present, { now: at, increment: cfg.hebbIncrement });

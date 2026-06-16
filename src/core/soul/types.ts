@@ -190,6 +190,13 @@ export interface ActivationState {
   activations: number;
   /** Last activation (unix ms) — used by the decay clock. */
   lastActivatedAt: number;
+  /**
+   * Optional FSRS/DSR memory stability (ms-scale time constant). Present only
+   * under adaptive forgetting; grows with successful recall so well-established
+   * traits decay slowly and transients fade fast. When absent, decay is the
+   * fixed-half-life exponential.
+   */
+  stability?: number;
 }
 
 // ── Commits (the version chain) ──────────────────────────────────────────────
@@ -226,6 +233,12 @@ export interface SoulConfig {
   readonly driftThreshold: number;
   /** Token budget for the runtime projection surface. */
   readonly runtimeBudgetTokens: number;
+  /**
+   * When true, use FSRS/DSR adaptive forgetting (per-node stability that grows
+   * with recall) instead of fixed-half-life exponential decay. Default false to
+   * preserve the simple baseline.
+   */
+  readonly adaptiveForgetting?: boolean;
 }
 
 export const DEFAULT_SOUL_CONFIG: SoulConfig = {
