@@ -31,6 +31,7 @@ import {
   resetPulseCheckpoint,
 } from "../../core/background/pulse.js";
 import { forceDream } from "../../core/background/dream.js";
+import { getSoul } from "../../core/soul/service.js";
 import { isUserClientReady } from "./userbot.js";
 import { getWorkspaceDiskUsage } from "../../util/workspace.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
@@ -758,6 +759,37 @@ export function registerCommands(
           { parse_mode: "HTML" },
         );
       });
+  });
+
+  // /soul — introspect the compiled identity (read-only). `/soul dream`
+  // (admin) runs the organic maintenance pass. Inert when the soul is
+  // disabled (TALON_SOUL_ENABLED), so it's safe to ship dormant.
+  bot.command("soul", async (ctx) => {
+    const soul = getSoul();
+    if (!soul.enabled) {
+      await ctx.reply("Soul is disabled (set TALON_SOUL_ENABLED to enable).");
+      return;
+    }
+    const arg = (ctx.match ?? "").trim().toLowerCase();
+    if (arg === "dream") {
+      if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
+        await ctx.reply("Not authorized.");
+        return;
+      }
+      const sent = await ctx.reply("🧠 Soul dreaming...");
+      void soul
+        .dream()
+        .then(() =>
+          bot.api.editMessageText(
+            ctx.chat.id,
+            sent.message_id,
+            "🧠 Soul dream complete.",
+          ),
+        )
+        .catch(() => undefined);
+      return;
+    }
+    await ctx.reply(soul.introspect());
   });
 
   bot.command("restart", async (ctx) => {

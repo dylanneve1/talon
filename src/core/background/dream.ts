@@ -20,6 +20,7 @@ import { log, logError, logWarn } from "../../util/log.js";
 import { getDefaultModel } from "../models/catalog.js";
 import type { OneShotAgentParams } from "../types.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
+import { getSoul } from "../soul/service.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,6 +129,10 @@ async function executeDream(trigger: "auto" | "forced"): Promise<void> {
       "dream",
       `Memory consolidation complete (${trigger}), log: ${dreamLogPath}`,
     );
+    // The soul's organic maintenance shares the dream cadence. Inert (no-op)
+    // unless the soul is enabled, and isolated so a soul failure never breaks
+    // memory consolidation.
+    await getSoul().dream();
   } catch (err) {
     logError("dream", `Memory consolidation failed (${trigger})`, err);
     writeDreamState({ last_run: state?.last_run ?? 0, status: "idle" });
