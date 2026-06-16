@@ -25,7 +25,8 @@ describe("associativeRecall", () => {
     const pushback = value(dag, "push back");
     const sticker = value(dag, "send a sticker");
     // push-back fires with be-direct a lot, with sticker once
-    for (let t = 0; t < 5; t++) coactivate(dag, [pushback, direct], { now: t, increment: 1 });
+    for (let t = 0; t < 5; t++)
+      coactivate(dag, [pushback, direct], { now: t, increment: 1 });
     coactivate(dag, [pushback, sticker], { now: 6, increment: 1 });
 
     const recalled = associativeRecall(dag, [pushback]);
@@ -45,7 +46,8 @@ describe("associativeRecall", () => {
     const cue = value(dag, "cue");
     const strong = value(dag, "strong");
     const weak = value(dag, "weak");
-    for (let t = 0; t < 4; t++) coactivate(dag, [cue, strong], { now: t, increment: 1 });
+    for (let t = 0; t < 4; t++)
+      coactivate(dag, [cue, strong], { now: t, increment: 1 });
     coactivate(dag, [cue, weak], { now: 5, increment: 1 });
 
     const soft = associativeRecall(dag, [cue], { beta: 0.1 });
@@ -61,7 +63,8 @@ describe("prime", () => {
     const dag = new SoulDag();
     const cue = value(dag, "cue");
     const partner = value(dag, "partner");
-    for (let t = 0; t < 3; t++) coactivate(dag, [cue, partner], { now: t, increment: 1 });
+    for (let t = 0; t < 3; t++)
+      coactivate(dag, [cue, partner], { now: t, increment: 1 });
     const before = dag.stateOf(partner).salience;
     const primed = prime(dag, [cue], { now: 10, gain: 4 });
     expect(primed).toContain(partner);

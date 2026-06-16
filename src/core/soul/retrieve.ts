@@ -99,7 +99,11 @@ export async function retrieveValues(
   if (rows.length === 0) return [];
 
   const rawRecency = rows.map((r) =>
-    effectiveSalience(dag.stateOf(r.hash), opts.now, opts.config.decayHalfLifeMs),
+    effectiveSalience(
+      dag.stateOf(r.hash),
+      opts.now,
+      opts.config.decayHalfLifeMs,
+    ),
   );
   const rawImportance = rows.map((r) => {
     const conf = Math.abs(confidence(dag.stateOf(r.hash)));
@@ -112,9 +116,14 @@ export async function retrieveValues(
   // Relevance via one embed call over [context, ...medoids].
   let rawRelevance = rows.map(() => 0);
   if (opts.context) {
-    const vecs = await embedder.embed([opts.context, ...rows.map((r) => r.text)]);
+    const vecs = await embedder.embed([
+      opts.context,
+      ...rows.map((r) => r.text),
+    ]);
     const ctx = vecs[0]!;
-    rawRelevance = rows.map((_, i) => Math.max(0, cosineSimilarity(ctx, vecs[i + 1]!)));
+    rawRelevance = rows.map((_, i) =>
+      Math.max(0, cosineSimilarity(ctx, vecs[i + 1]!)),
+    );
   }
 
   const nR = minMax(rawRecency);

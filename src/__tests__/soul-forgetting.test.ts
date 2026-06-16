@@ -12,7 +12,10 @@ import {
   retrievability,
 } from "../core/soul/forgetting.js";
 import { SoulKernel } from "../core/soul/kernel.js";
-import { DEFAULT_SOUL_CONFIG, type ActivationState } from "../core/soul/types.js";
+import {
+  DEFAULT_SOUL_CONFIG,
+  type ActivationState,
+} from "../core/soul/types.js";
 
 const cfg = { ...DEFAULT_SOUL_CONFIG, adaptiveForgetting: true };
 
@@ -80,7 +83,12 @@ describe("kernel integration", () => {
     });
     const v = soul.graph().nodesOfKind("value")[0]!.hash;
     for (let t = 2; t < 8; t++) {
-      soul.ingest({ kind: "reaction", at: t * 1000, emoji: "🔥", activeNodes: [v] });
+      soul.ingest({
+        kind: "reaction",
+        at: t * 1000,
+        emoji: "🔥",
+        activeNodes: [v],
+      });
     }
     expect(soul.graph().stateOf(v).stability).toBeDefined();
     expect(soul.graph().stateOf(v).stability!).toBeGreaterThan(

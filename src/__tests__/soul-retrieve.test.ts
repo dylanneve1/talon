@@ -31,9 +31,7 @@ describe("retrieveValues", () => {
       weights: { recency: 0, importance: 0, relevance: 1 },
     });
     expect(ranked[0]!.relevance).toBeGreaterThanOrEqual(ranked[1]!.relevance);
-    expect(
-      soul.graph().getNode(ranked[0]!.hash)?.payload.kind,
-    ).toBe("value");
+    expect(soul.graph().getNode(ranked[0]!.hash)?.payload.kind).toBe("value");
     // the "push back" value should be the most relevant to an argue/agree prompt
     const top = soul.graph().getNode(ranked[0]!.hash);
     if (top?.payload.kind === "value") {

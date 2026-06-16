@@ -12,11 +12,7 @@
  * output deterministic and reproducible across runs.
  */
 
-import {
-  centroid,
-  cosineDistance,
-  medoidIndex,
-} from "./embedder.js";
+import { centroid, cosineDistance, medoidIndex } from "./embedder.js";
 import type { Hash } from "./types.js";
 
 export interface Embedded {

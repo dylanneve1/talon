@@ -122,7 +122,8 @@ export class HashingEmbedder implements Embedder {
     for (const w of lower.split(/[^a-z0-9]+/).filter(Boolean)) add(`w:${w}`);
     // character 3-grams over the normalized stream
     const stream = lower.replace(/\s+/g, " ");
-    for (let i = 0; i + 3 <= stream.length; i++) add(`g:${stream.slice(i, i + 3)}`);
+    for (let i = 0; i + 3 <= stream.length; i++)
+      add(`g:${stream.slice(i, i + 3)}`);
     return normalize(vec);
   }
 }

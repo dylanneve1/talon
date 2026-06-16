@@ -13,7 +13,11 @@ import {
 } from "../core/soul/consolidate.js";
 import { reinforce } from "../core/soul/salience.js";
 import { TalonEmbedder } from "../core/soul/talon-embedder.js";
-import { DEFAULT_SOUL_CONFIG, type EvidencePayload, type Hash } from "../core/soul/types.js";
+import {
+  DEFAULT_SOUL_CONFIG,
+  type EvidencePayload,
+  type Hash,
+} from "../core/soul/types.js";
 
 const embedder = new TalonEmbedder();
 const cfg = DEFAULT_SOUL_CONFIG;
@@ -37,10 +41,23 @@ describe("consolidate", () => {
     const b = value(dag, ["keep replies short and concise please"]);
     value(dag, ["book a flight to nice in june"]); // unrelated, stays alone
 
-    reinforce(dag, a, { now: 1, halfLifeMs: cfg.decayHalfLifeMs, amount: 3, valence: 2 });
-    reinforce(dag, b, { now: 1, halfLifeMs: cfg.decayHalfLifeMs, amount: 5, valence: 4 });
+    reinforce(dag, a, {
+      now: 1,
+      halfLifeMs: cfg.decayHalfLifeMs,
+      amount: 3,
+      valence: 2,
+    });
+    reinforce(dag, b, {
+      now: 1,
+      halfLifeMs: cfg.decayHalfLifeMs,
+      amount: 5,
+      valence: 4,
+    });
 
-    const res = await consolidate(dag, embedder, cfg, { now: 2, mergeThreshold: 0.5 });
+    const res = await consolidate(dag, embedder, cfg, {
+      now: 2,
+      mergeThreshold: 0.5,
+    });
     expect(res.created.length).toBe(1);
     expect(res.superseded.length).toBe(2);
     // exactly the unrelated value plus the new merged one remain live
@@ -51,10 +68,23 @@ describe("consolidate", () => {
     const dag = new SoulDag();
     const a = value(dag, ["be sharp and direct"]);
     const b = value(dag, ["stay sharp, be direct"]);
-    reinforce(dag, a, { now: 1, halfLifeMs: cfg.decayHalfLifeMs, amount: 4, valence: 3 });
-    reinforce(dag, b, { now: 1, halfLifeMs: cfg.decayHalfLifeMs, amount: 6, valence: 5 });
+    reinforce(dag, a, {
+      now: 1,
+      halfLifeMs: cfg.decayHalfLifeMs,
+      amount: 4,
+      valence: 3,
+    });
+    reinforce(dag, b, {
+      now: 1,
+      halfLifeMs: cfg.decayHalfLifeMs,
+      amount: 6,
+      valence: 5,
+    });
 
-    const res = await consolidate(dag, embedder, cfg, { now: 1, mergeThreshold: 0.6 });
+    const res = await consolidate(dag, embedder, cfg, {
+      now: 1,
+      mergeThreshold: 0.6,
+    });
     const merged = res.created[0]!;
     // salience ≈ 4 + 6, evidence = 3 + 5 — nothing learned is lost
     expect(dag.stateOf(merged).salience).toBeCloseTo(10, 5);

@@ -68,7 +68,10 @@ const SYCOPHANCY = [
 const EMOJI_RE =
   /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{1F000}-\u{1F0FF}]/gu;
 
-function countOccurrences(haystack: string, needles: readonly string[]): number {
+function countOccurrences(
+  haystack: string,
+  needles: readonly string[],
+): number {
   let n = 0;
   for (const needle of needles) {
     let from = 0;

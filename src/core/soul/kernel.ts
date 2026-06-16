@@ -16,7 +16,12 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { SoulDag, type DagSnapshot } from "./dag.js";
 import { hashContent } from "./hash.js";
-import { ingest, ingestAll, appendSpine, type IngestResult } from "./compiler.js";
+import {
+  ingest,
+  ingestAll,
+  appendSpine,
+  type IngestResult,
+} from "./compiler.js";
 import { Adwin } from "./drift.js";
 import { diffSnapshots, renderDelta, type SoulDelta } from "./delta.js";
 import {
@@ -120,10 +125,16 @@ export class SoulKernel {
   recallByContext(context: string): { value: Hash; score: number } | undefined {
     if (this.episodic.episodes === 0) return undefined;
     const items = new Map<string, Hypervector>();
-    for (const v of liveValues(this.dag)) items.set(v, symbolVector(`val:${v}`));
+    for (const v of liveValues(this.dag))
+      items.set(v, symbolVector(`val:${v}`));
     if (items.size === 0) return undefined;
-    const recalled = cleanup(this.episodic.query(this.contextVector(context)), items);
-    return recalled ? { value: recalled.token as Hash, score: recalled.score } : undefined;
+    const recalled = cleanup(
+      this.episodic.query(this.contextVector(context)),
+      items,
+    );
+    return recalled
+      ? { value: recalled.token as Hash, score: recalled.score }
+      : undefined;
   }
 
   /** Snapshot at the previous commit — diffed to produce the delta stream. */
@@ -226,7 +237,8 @@ export class SoulKernel {
   private trackDrift(signal: Signal): void {
     let outcome: number | undefined;
     if (signal.kind === "engagement") outcome = signal.continued ? 1 : -1;
-    else if (signal.kind === "reaction") outcome = this.valenceModel.valence(signal.emoji);
+    else if (signal.kind === "reaction")
+      outcome = this.valenceModel.valence(signal.emoji);
     else if (signal.kind === "correction") outcome = -1;
     if (outcome === undefined) return;
 
@@ -306,7 +318,10 @@ export class SoulKernel {
    */
   async dream(
     embedder: Embedder,
-    opts?: { now?: number; tension?: { minCoactivation: number; minDistance: number } },
+    opts?: {
+      now?: number;
+      tension?: { minCoactivation: number; minDistance: number };
+    },
   ): Promise<{
     crystallized: number;
     consolidated: ConsolidateResult;
@@ -363,7 +378,9 @@ export class SoulKernel {
     return compileLens(this.dag, subject, {
       now: opts?.now ?? Date.now(),
       ...(opts?.boost !== undefined ? { boost: opts.boost } : {}),
-      ...(opts?.maxEvidence !== undefined ? { maxEvidence: opts.maxEvidence } : {}),
+      ...(opts?.maxEvidence !== undefined
+        ? { maxEvidence: opts.maxEvidence }
+        : {}),
     });
   }
 
@@ -502,7 +519,9 @@ export class SoulKernel {
 
   static fromJSON(data: PersistShape): SoulKernel {
     if (data.version !== PERSIST_VERSION) {
-      throw new Error(`SoulKernel: unsupported persist version ${data.version}`);
+      throw new Error(
+        `SoulKernel: unsupported persist version ${data.version}`,
+      );
     }
     return new SoulKernel(
       SoulDag.restore(data.dag),
@@ -510,8 +529,12 @@ export class SoulKernel {
       [...data.commits],
       data.valence ? ValenceModel.restore(data.valence) : new ValenceModel(),
       data.drift ? Adwin.restore(data.drift) : new Adwin(),
-      data.approvals ? ApprovalQueue.restore(data.approvals) : new ApprovalQueue(),
-      data.episodic ? CompositionalMemory.restore(data.episodic) : new CompositionalMemory(),
+      data.approvals
+        ? ApprovalQueue.restore(data.approvals)
+        : new ApprovalQueue(),
+      data.episodic
+        ? CompositionalMemory.restore(data.episodic)
+        : new CompositionalMemory(),
     );
   }
 

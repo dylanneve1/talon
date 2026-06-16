@@ -117,7 +117,9 @@ export async function reflect(
     const members = idxs.map((i) => values[i]!).sort();
 
     // Medoid over all evidence across the member values.
-    const evidence = [...new Set(members.flatMap((v) => memberEvidence(dag, v)))];
+    const evidence = [
+      ...new Set(members.flatMap((v) => memberEvidence(dag, v))),
+    ];
     const evVecs = await embedder.embed(
       evidence.map((h) => {
         const e = dag.getNode(h);
@@ -129,9 +131,10 @@ export async function reflect(
     const insight = opts.synthesize?.(
       evidence.map((h) => ({
         hash: h,
-        text: dag.getNode(h)?.payload.kind === "evidence"
-          ? (dag.getNode(h)!.payload as { text: string }).text
-          : "",
+        text:
+          dag.getNode(h)?.payload.kind === "evidence"
+            ? (dag.getNode(h)!.payload as { text: string }).text
+            : "",
       })),
     );
 
@@ -149,7 +152,8 @@ export async function reflect(
     // Theme salience aggregates its members so it can be ranked/projected.
     const st = dag.stateOf(theme);
     st.salience = members.reduce(
-      (s, v) => s + effectiveSalience(dag.stateOf(v), opts.now, cfg.decayHalfLifeMs),
+      (s, v) =>
+        s + effectiveSalience(dag.stateOf(v), opts.now, cfg.decayHalfLifeMs),
       0,
     );
     st.lastActivatedAt = opts.now;

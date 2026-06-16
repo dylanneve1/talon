@@ -66,7 +66,12 @@ describe("crystallize", () => {
       text: "push back on bad ideas, do not just agree",
     });
     const [value] = await soul.crystallize(embedder, 3);
-    soul.ingest({ kind: "reaction", at: 4, emoji: "🔥", activeNodes: [value!] });
+    soul.ingest({
+      kind: "reaction",
+      at: 4,
+      emoji: "🔥",
+      activeNodes: [value!],
+    });
     soul.commit("c", 5);
     const out = soul.project({ now: 5 });
     expect(out.text).toContain("push back on bad ideas");

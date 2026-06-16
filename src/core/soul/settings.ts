@@ -34,8 +34,7 @@ function envFlag(name: string): boolean | undefined {
 export function resolveSoulSettings(
   override?: Partial<SoulSettings>,
 ): SoulSettings {
-  const enabled =
-    override?.enabled ?? envFlag("TALON_SOUL_ENABLED") ?? false;
+  const enabled = override?.enabled ?? envFlag("TALON_SOUL_ENABLED") ?? false;
   return {
     enabled,
     ...(override?.path ? { path: override.path } : {}),

@@ -18,12 +18,7 @@ import { SoulDag } from "./dag.js";
 import { isSuperseded } from "./consolidate.js";
 import { tensionPairs } from "./lattice.js";
 import { confidence, effectiveSalience } from "./salience.js";
-import type {
-  Hash,
-  LensPayload,
-  SoulConfig,
-  ValuePayload,
-} from "./types.js";
+import type { Hash, LensPayload, SoulConfig, ValuePayload } from "./types.js";
 
 export interface ProjectionOptions {
   readonly now: number;
@@ -51,7 +46,10 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
-function evidenceText(dag: SoulDag, hash: Hash | undefined): string | undefined {
+function evidenceText(
+  dag: SoulDag,
+  hash: Hash | undefined,
+): string | undefined {
   if (!hash) return undefined;
   const node = dag.getNode(hash);
   return node?.payload.kind === "evidence" ? node.payload.text : undefined;
@@ -94,7 +92,11 @@ function rankValues(dag: SoulDag, opts: ProjectionOptions): RankedValue[] {
     const text = evidenceText(dag, value.medoid);
     if (!text) continue; // a value with no resolvable medoid is not projectable
     const state = dag.stateOf(node.hash);
-    const base = effectiveSalience(state, opts.now, opts.config.decayHalfLifeMs);
+    const base = effectiveSalience(
+      state,
+      opts.now,
+      opts.config.decayHalfLifeMs,
+    );
     const factor = factors.get(node.hash) ?? 1;
     ranked.push({
       hash: node.hash,
@@ -104,7 +106,9 @@ function rankValues(dag: SoulDag, opts: ProjectionOptions): RankedValue[] {
     });
   }
   // Highest weighted salience first; hash tiebreak keeps output deterministic.
-  ranked.sort((a, b) => b.weighted - a.weighted || a.hash.localeCompare(b.hash));
+  ranked.sort(
+    (a, b) => b.weighted - a.weighted || a.hash.localeCompare(b.hash),
+  );
 
   // An explicit retrieval order (context-conditioned) overrides salience rank.
   if (opts.order) {
@@ -178,7 +182,9 @@ export function projectRuntime(
   const themeNodes = dag
     .nodesOfKind("theme")
     .map((n) => n.payload)
-    .filter((p): p is Extract<typeof p, { kind: "theme" }> => p.kind === "theme")
+    .filter(
+      (p): p is Extract<typeof p, { kind: "theme" }> => p.kind === "theme",
+    )
     .map((p) => ({
       label: p.insight ?? evidenceText(dag, p.medoid) ?? "",
       salience: 0,
@@ -190,7 +196,8 @@ export function projectRuntime(
     const line = `- ${t.label}`;
     if (spend(line)) themeLines.push(line);
   }
-  if (themeLines.length) lines.push("", "## Themes (reflections)", ...themeLines);
+  if (themeLines.length)
+    lines.push("", "## Themes (reflections)", ...themeLines);
 
   // Tensions — opposed values held together, navigated not resolved.
   const includedSet = new Set(included);
@@ -211,7 +218,9 @@ export function projectRuntime(
   const spine = dag
     .nodesOfKind("spine")
     .map((n) => n.payload)
-    .filter((p): p is Extract<typeof p, { kind: "spine" }> => p.kind === "spine")
+    .filter(
+      (p): p is Extract<typeof p, { kind: "spine" }> => p.kind === "spine",
+    )
     .sort((a, b) => b.at - a.at);
   const spineLines: string[] = [];
   for (const s of spine) {

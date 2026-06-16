@@ -36,8 +36,15 @@ describe("kernel delta", () => {
 
   it("a correction shows up as a spine addition in the delta", () => {
     const soul = SoulKernel.genesis({ now: 1 });
-    soul.ingest({ kind: "correction", at: 2, text: "be grounded", actor: "dylan" });
+    soul.ingest({
+      kind: "correction",
+      at: 2,
+      text: "be grounded",
+      actor: "dylan",
+    });
     soul.commit("c", 3);
-    expect(soul.delta().addedSpine.some((s) => s.includes("be grounded"))).toBe(true);
+    expect(soul.delta().addedSpine.some((s) => s.includes("be grounded"))).toBe(
+      true,
+    );
   });
 });

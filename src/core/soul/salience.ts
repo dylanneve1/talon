@@ -40,7 +40,10 @@ export function effectiveSalience(
   halfLifeMs: number,
 ): number {
   if (state.stability !== undefined) {
-    return state.salience * retrievability(now - state.lastActivatedAt, state.stability);
+    return (
+      state.salience *
+      retrievability(now - state.lastActivatedAt, state.stability)
+    );
   }
   return state.salience * decayFactor(now - state.lastActivatedAt, halfLifeMs);
 }

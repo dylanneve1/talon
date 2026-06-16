@@ -32,7 +32,11 @@ export {
   seedReflexes,
   BUILTIN_PREDICATES,
 } from "./reflex.js";
-export type { ReflexContext, ReflexVerdict, ReflexPredicate } from "./reflex.js";
+export type {
+  ReflexContext,
+  ReflexVerdict,
+  ReflexPredicate,
+} from "./reflex.js";
 export {
   reinforce,
   coactivate,
@@ -63,10 +67,7 @@ export type {
   FailureMode,
 } from "./critic.js";
 export { deriveFailureModes, assessText } from "./emergent-critic.js";
-export type {
-  EmergentFailureMode,
-  FailureRisk,
-} from "./emergent-critic.js";
+export type { EmergentFailureMode, FailureRisk } from "./emergent-critic.js";
 export { emojiValence } from "./signals.js";
 export type { Signal } from "./signals.js";
 export { ValenceModel } from "./valence.js";
@@ -76,7 +77,11 @@ export type { AdwinChange } from "./drift.js";
 export { diffSnapshots, renderDelta, explainDelta } from "./delta.js";
 export type { SoulDelta } from "./delta.js";
 export { ApprovalQueue } from "./governance.js";
-export type { Proposal, ProposalStatus, ApprovalSnapshot } from "./governance.js";
+export type {
+  Proposal,
+  ProposalStatus,
+  ApprovalSnapshot,
+} from "./governance.js";
 export {
   CompositionalMemory,
   symbolVector,
@@ -112,7 +117,11 @@ export type { Embedded, EvidenceCluster } from "./cluster.js";
 export { detectTensions, tensionPairs } from "./lattice.js";
 export type { TensionOptions } from "./lattice.js";
 export { associativeRecall, prime } from "./associative.js";
-export type { RecallResult, RecallOptions, PrimeOptions } from "./associative.js";
+export type {
+  RecallResult,
+  RecallOptions,
+  PrimeOptions,
+} from "./associative.js";
 export { pagerank } from "./centrality.js";
 export type { PageRankOptions } from "./centrality.js";
 export { consolidate, liveValues, isSuperseded } from "./consolidate.js";

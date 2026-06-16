@@ -10,7 +10,9 @@ import type { Hash } from "../core/soul/types.js";
 
 const embedder = new HashingEmbedder(512);
 
-async function embed(texts: string[]): Promise<{ hash: Hash; vector: number[] }[]> {
+async function embed(
+  texts: string[],
+): Promise<{ hash: Hash; vector: number[] }[]> {
   const vectors = await embedder.embed(texts);
   return texts.map((_, i) => ({
     hash: (`sha256:` + String(i).padStart(64, "0")) as Hash,

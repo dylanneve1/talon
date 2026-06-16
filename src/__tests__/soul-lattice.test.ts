@@ -31,7 +31,8 @@ describe("detectTensions", () => {
     const concise = value(dag, "keep replies short and concise");
     const thorough = value(dag, "give exhaustive thorough detailed answers");
     // they fire together a lot
-    for (let t = 0; t < 5; t++) coactivate(dag, [concise, thorough], { now: t, increment: 1 });
+    for (let t = 0; t < 5; t++)
+      coactivate(dag, [concise, thorough], { now: t, increment: 1 });
 
     const edges = await detectTensions(dag, embedder, opts);
     expect(edges.length).toBeGreaterThan(0);
@@ -51,7 +52,8 @@ describe("detectTensions", () => {
     const dag = new SoulDag();
     const a = value(dag, "keep replies short and concise");
     const b = value(dag, "keep responses short and concise please");
-    for (let t = 0; t < 5; t++) coactivate(dag, [a, b], { now: t, increment: 1 });
+    for (let t = 0; t < 5; t++)
+      coactivate(dag, [a, b], { now: t, increment: 1 });
     const edges = await detectTensions(dag, embedder, opts);
     expect(edges).toHaveLength(0); // too close to be a tension
   });
@@ -62,7 +64,8 @@ describe("tensionPairs", () => {
     const dag = new SoulDag();
     const a = value(dag, "keep replies short and concise");
     const b = value(dag, "give exhaustive thorough detailed answers");
-    for (let t = 0; t < 5; t++) coactivate(dag, [a, b], { now: t, increment: 1 });
+    for (let t = 0; t < 5; t++)
+      coactivate(dag, [a, b], { now: t, increment: 1 });
     await detectTensions(dag, embedder, opts);
     expect(tensionPairs(dag)).toHaveLength(1);
   });

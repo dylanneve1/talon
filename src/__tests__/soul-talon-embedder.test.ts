@@ -34,7 +34,10 @@ describe("TalonEmbedder", () => {
 
   it("is robust to a typo (shared character n-grams)", async () => {
     const e = new TalonEmbedder();
-    const [a, b] = await e.embed(["verify before stating", "verfiy before stating"]);
+    const [a, b] = await e.embed([
+      "verify before stating",
+      "verfiy before stating",
+    ]);
     expect(cosineDistance(a!, b!)).toBeLessThan(0.4);
   });
 });

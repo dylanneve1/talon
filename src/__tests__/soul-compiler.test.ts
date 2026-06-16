@@ -7,7 +7,11 @@ import { describe, expect, it } from "vitest";
 import { SoulDag } from "../core/soul/dag.js";
 import { ingest, ingestAll, appendSpine } from "../core/soul/compiler.js";
 import { confidence } from "../core/soul/salience.js";
-import { DEFAULT_SOUL_CONFIG, type EvidencePayload, type Hash } from "../core/soul/types.js";
+import {
+  DEFAULT_SOUL_CONFIG,
+  type EvidencePayload,
+  type Hash,
+} from "../core/soul/types.js";
 
 const cfg = DEFAULT_SOUL_CONFIG;
 
@@ -25,7 +29,11 @@ describe("reaction signals", () => {
   it("a positive emoji reinforces the active values", () => {
     const dag = new SoulDag();
     const v = value(dag, "concise");
-    ingest(dag, { kind: "reaction", at: 1, emoji: "🔥", activeNodes: [v] }, cfg);
+    ingest(
+      dag,
+      { kind: "reaction", at: 1, emoji: "🔥", activeNodes: [v] },
+      cfg,
+    );
     expect(dag.stateOf(v).salience).toBeGreaterThan(0);
     expect(confidence(dag.stateOf(v))).toBeGreaterThan(0);
   });
@@ -33,7 +41,11 @@ describe("reaction signals", () => {
   it("a negative emoji drives confidence down", () => {
     const dag = new SoulDag();
     const v = value(dag, "wall of text");
-    ingest(dag, { kind: "reaction", at: 1, emoji: "👎", activeNodes: [v] }, cfg);
+    ingest(
+      dag,
+      { kind: "reaction", at: 1, emoji: "👎", activeNodes: [v] },
+      cfg,
+    );
     expect(confidence(dag.stateOf(v))).toBeLessThan(0);
   });
 
@@ -95,7 +107,12 @@ describe("reflex-fire signals", () => {
     const dag = new SoulDag();
     const blocked = ingest(
       dag,
-      { kind: "reflex-fire", at: 1, name: "RULE-0-DELIVERY", severity: "block" },
+      {
+        kind: "reflex-fire",
+        at: 1,
+        name: "RULE-0-DELIVERY",
+        severity: "block",
+      },
       cfg,
     );
     expect(blocked.spineAdded).toBeDefined();

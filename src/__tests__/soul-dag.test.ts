@@ -6,7 +6,11 @@
 import { describe, expect, it } from "vitest";
 import { SoulDag, structuralChildren } from "../core/soul/dag.js";
 import { hashPayload } from "../core/soul/hash.js";
-import type { EvidencePayload, ValuePayload, Hash } from "../core/soul/types.js";
+import type {
+  EvidencePayload,
+  ValuePayload,
+  Hash,
+} from "../core/soul/types.js";
 
 function evidence(text: string, at = 1): EvidencePayload {
   return {

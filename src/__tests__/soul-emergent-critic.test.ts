@@ -5,7 +5,10 @@
 
 import { describe, expect, it } from "vitest";
 import { SoulKernel } from "../core/soul/kernel.js";
-import { deriveFailureModes, assessText } from "../core/soul/emergent-critic.js";
+import {
+  deriveFailureModes,
+  assessText,
+} from "../core/soul/emergent-critic.js";
 import { TalonEmbedder } from "../core/soul/talon-embedder.js";
 
 const embedder = new TalonEmbedder();
@@ -19,7 +22,8 @@ function withCorrections(): SoulKernel {
     "stop kissing up, just answer plainly",
   ];
   let t = 2;
-  for (const text of corrections) soul.ingest({ kind: "correction", at: t++, text });
+  for (const text of corrections)
+    soul.ingest({ kind: "correction", at: t++, text });
   return soul;
 }
 
@@ -34,7 +38,9 @@ describe("deriveFailureModes", () => {
 
   it("returns nothing when there are no corrections", async () => {
     const soul = SoulKernel.genesis({ now: 1 });
-    expect(await deriveFailureModes(soul.graph(), embedder, 0.6)).toHaveLength(0);
+    expect(await deriveFailureModes(soul.graph(), embedder, 0.6)).toHaveLength(
+      0,
+    );
   });
 });
 

@@ -55,7 +55,10 @@ describe("kernel drift → spine epoch", () => {
     const epoch = soul
       .graph()
       .nodesOfKind("spine")
-      .some((n) => n.payload.kind === "spine" && n.payload.event.startsWith("Epoch:"));
+      .some(
+        (n) =>
+          n.payload.kind === "spine" && n.payload.event.startsWith("Epoch:"),
+      );
     expect(epoch).toBe(true);
   });
 });

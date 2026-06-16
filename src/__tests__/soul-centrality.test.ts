@@ -35,7 +35,8 @@ describe("pagerank", () => {
     const leaves = [value(dag, "l1"), value(dag, "l2"), value(dag, "l3")];
     // every leaf co-activates with the hub
     for (const l of leaves) {
-      for (let t = 0; t < 3; t++) coactivate(dag, [hub, l], { now: t, increment: 1 });
+      for (let t = 0; t < 3; t++)
+        coactivate(dag, [hub, l], { now: t, increment: 1 });
     }
     const pr = pagerank(dag);
     for (const l of leaves) {

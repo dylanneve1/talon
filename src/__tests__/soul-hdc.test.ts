@@ -85,12 +85,12 @@ describe("kernel episodic memory", () => {
     const { SoulKernel } = await import("../core/soul/kernel.js");
     const soul = SoulKernel.genesis({
       now: 1,
-      seedValues: [
-        { text: "keep it concise" },
-        { text: "push back hard" },
-      ],
+      seedValues: [{ text: "keep it concise" }, { text: "push back hard" }],
     });
-    const [concise, pushback] = soul.graph().nodesOfKind("value").map((n) => n.hash);
+    const [concise, pushback] = soul
+      .graph()
+      .nodesOfKind("value")
+      .map((n) => n.hash);
     soul.rememberEpisode("quick simple question", [concise!]);
     soul.rememberEpisode("heated argument debate", [pushback!]);
 

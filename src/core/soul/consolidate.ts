@@ -22,11 +22,7 @@
  */
 
 import type { SoulDag } from "./dag.js";
-import {
-  cosineDistance,
-  medoidIndex,
-  type Embedder,
-} from "./embedder.js";
+import { cosineDistance, medoidIndex, type Embedder } from "./embedder.js";
 import { effectiveSalience } from "./salience.js";
 import type { Hash, SoulConfig, ValuePayload } from "./types.js";
 

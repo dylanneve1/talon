@@ -88,7 +88,9 @@ export async function detectTensions(
 }
 
 /** Unique tension pairs (deduped across symmetric edges), strongest first. */
-export function tensionPairs(dag: SoulDag): { a: Hash; b: Hash; weight: number }[] {
+export function tensionPairs(
+  dag: SoulDag,
+): { a: Hash; b: Hash; weight: number }[] {
   const seen = new Set<string>();
   const pairs: { a: Hash; b: Hash; weight: number }[] = [];
   for (const e of dag.allEdges("tension")) {

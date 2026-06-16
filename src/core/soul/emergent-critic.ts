@@ -38,7 +38,8 @@ function correctionEvidence(dag: SoulDag): { hash: Hash; text: string }[] {
   const out: { hash: Hash; text: string }[] = [];
   for (const node of dag.nodesOfKind("evidence")) {
     const p = node.payload as EvidencePayload;
-    if (p.source.origin === "correction") out.push({ hash: node.hash, text: p.text });
+    if (p.source.origin === "correction")
+      out.push({ hash: node.hash, text: p.text });
   }
   return out;
 }
@@ -57,7 +58,10 @@ export async function deriveFailureModes(
   if (corrections.length === 0) return [];
 
   const vectors = await embedder.embed(corrections.map((c) => c.text));
-  const embedded = corrections.map((c, i) => ({ hash: c.hash, vector: vectors[i]! }));
+  const embedded = corrections.map((c, i) => ({
+    hash: c.hash,
+    vector: vectors[i]!,
+  }));
   const clusters = clusterEvidence(embedded, threshold);
 
   const textByHash = new Map(corrections.map((c) => [c.hash, c.text]));

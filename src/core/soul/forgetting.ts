@@ -75,7 +75,10 @@ export function effectiveStrength(
     );
     return state.salience * f;
   }
-  return state.salience * retrievability(now - state.lastActivatedAt, state.stability);
+  return (
+    state.salience *
+    retrievability(now - state.lastActivatedAt, state.stability)
+  );
 }
 
 export interface FsrsReinforceOpts {

@@ -38,7 +38,12 @@ describe("compileLens", () => {
     const first = compileLens(soul.graph(), "dylan", { now: 2 })!;
     const second = compileLens(soul.graph(), "dylan", { now: 3 })!;
     // identical content dedupes to the same node; force a change then recompile
-    soul.ingest({ kind: "directive", at: 4, text: "be playful with dylan", actor: "dylan" });
+    soul.ingest({
+      kind: "directive",
+      at: 4,
+      text: "be playful with dylan",
+      actor: "dylan",
+    });
     const third = compileLens(soul.graph(), "dylan", { now: 5 })!;
     expect(third).not.toBe(first);
     expect(liveLens(soul.graph(), "dylan")).toBe(third);
@@ -54,14 +59,19 @@ describe("compileLens", () => {
       ],
     });
     // both values earn equal salience; the lens then amplifies dylan's
-    const vals = soul.graph().nodesOfKind("value").map((n) => n.hash);
+    const vals = soul
+      .graph()
+      .nodesOfKind("value")
+      .map((n) => n.hash);
     for (const v of vals) {
       soul.ingest({ kind: "reaction", at: 2, emoji: "🔥", activeNodes: [v] });
     }
     compileLens(soul.graph(), "dylan", { now: 3, boost: 10 });
     soul.commit("lens", 3);
     const out = soul.project({ now: 3, lens: "dylan" });
-    const firstValue = out.text.split("\n").find((l) => l.startsWith("- [conf"));
+    const firstValue = out.text
+      .split("\n")
+      .find((l) => l.startsWith("- [conf"));
     expect(firstValue).toContain("dylan");
   });
 });

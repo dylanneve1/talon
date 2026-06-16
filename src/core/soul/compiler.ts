@@ -21,11 +21,7 @@ import { SoulDag } from "./dag.js";
 import { coactivate, reinforce } from "./salience.js";
 import { reinforceFsrs } from "./forgetting.js";
 import { emojiValence } from "./signals.js";
-import type {
-  CorrectionSignal,
-  DirectiveSignal,
-  Signal,
-} from "./signals.js";
+import type { CorrectionSignal, DirectiveSignal, Signal } from "./signals.js";
 import type { EvidencePayload, Hash, SoulConfig } from "./types.js";
 
 export interface IngestResult {
@@ -139,10 +135,7 @@ function ingestCorrection(
   return { evidenceAdded: evidence, spineAdded: spine, touched: penalized };
 }
 
-function ingestDirective(
-  dag: SoulDag,
-  sig: DirectiveSignal,
-): IngestResult {
+function ingestDirective(dag: SoulDag, sig: DirectiveSignal): IngestResult {
   const evidence = addEvidence(
     dag,
     sig.text,

@@ -36,11 +36,7 @@ describe("vector math", () => {
 
   it("medoidIndex finds the most central member", () => {
     // two tight points and one outlier; medoid is one of the tight pair
-    const vs = [
-      normalize([1, 0]),
-      normalize([0.99, 0.01]),
-      normalize([0, 1]),
-    ];
+    const vs = [normalize([1, 0]), normalize([0.99, 0.01]), normalize([0, 1])];
     expect(medoidIndex(vs)).not.toBe(2);
   });
 });

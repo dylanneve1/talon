@@ -9,12 +9,12 @@ from behavioral telemetry and projected into the system prompt by **selection**.
 
 ## The thesis: the model never writes its own soul
 
-There are two jobs — *being the self* (the reasoning model reads the soul and
-acts) and *writing the self* (turning experience into identity). If the reasoning
+There are two jobs — _being the self_ (the reasoning model reads the soul and
+acts) and _writing the self_ (turning experience into identity). If the reasoning
 model does the second, it can rationalize, flatter itself, and confabulate a
 coherent self-story that isn't true. So **writing the self is strictly
 model-free**: continuous, deterministic, evidence-grounded. The reasoning model is
-a *reader* of the soul, never its author. That is the safety property, not just a
+a _reader_ of the soul, never its author. That is the safety property, not just a
 cost saving.
 
 The only neural component anywhere is an optional **local embedder** (for
@@ -29,7 +29,7 @@ important decision is the split between:
 - **Content** (hashed, immutable) — a node's semantic identity: kind + verbatim
   payload + referenced child hashes. A change of content is a new node.
 - **State** (mutable, keyed by hash) — salience, evidence weight, activation
-  counts. Churns every tick; lives *outside* the Merkle structure.
+  counts. Churns every tick; lives _outside_ the Merkle structure.
 
 So reinforcing a value a thousand times never churns a single content hash.
 Versioning, provenance, dedup, and partial recompilation fall out structurally;
@@ -37,13 +37,13 @@ learning and decay live in the state layer.
 
 ## The five structures
 
-| Structure | Node kind | What it is |
-|---|---|---|
-| Spine | `spine` | append-only causal narrative — *why* Talon became Talon |
-| Lattice | `value` + edges | values as evidence clusters; tension/affinity edges self-organize via Hebbian co-activation |
-| Reflexes | `reflex` | `trigger → guard → action` rules the harness *enforces* |
-| Holograph | `lens` | identity refracted per interlocutor (selection + reweighting) |
-| Critic | (classifiers) | frozen feature-based gates over failure modes |
+| Structure | Node kind       | What it is                                                                                  |
+| --------- | --------------- | ------------------------------------------------------------------------------------------- |
+| Spine     | `spine`         | append-only causal narrative — _why_ Talon became Talon                                     |
+| Lattice   | `value` + edges | values as evidence clusters; tension/affinity edges self-organize via Hebbian co-activation |
+| Reflexes  | `reflex`        | `trigger → guard → action` rules the harness _enforces_                                     |
+| Holograph | `lens`          | identity refracted per interlocutor (selection + reweighting)                               |
+| Critic    | (classifiers)   | frozen feature-based gates over failure modes                                               |
 
 The atoms under all of it are `evidence` nodes — verbatim ground truth. The kernel
 never paraphrases; it only ever quotes.

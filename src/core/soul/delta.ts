@@ -41,10 +41,7 @@ function countEdges(snap: DagSnapshot, kind: string): number {
 }
 
 /** Diff two snapshots into a structural delta. Append-only ⇒ only additions. */
-export function diffSnapshots(
-  prev: DagSnapshot,
-  curr: DagSnapshot,
-): SoulDelta {
+export function diffSnapshots(prev: DagSnapshot, curr: DagSnapshot): SoulDelta {
   const prevHashes = new Set(prev.nodes.map((n) => n.hash));
   const map = payloadMap(curr);
 
@@ -63,7 +60,8 @@ export function diffSnapshots(
         break;
       case "theme":
         addedThemes.push(
-          (p as ThemePayload).insight ?? evidenceText(map, (p as ThemePayload).medoid),
+          (p as ThemePayload).insight ??
+            evidenceText(map, (p as ThemePayload).medoid),
         );
         break;
       case "spine":
@@ -117,7 +115,9 @@ export function explainDelta(delta: SoulDelta): string {
   for (const s of delta.addedSpine) lines.push(`+ spine: ${s}`);
   for (const r of delta.addedReflexes) lines.push(`+ reflex: ${r}`);
   for (const l of delta.addedLenses) lines.push(`+ lens: ${l}`);
-  if (delta.supersededCount > 0) lines.push(`~ ${delta.supersededCount} value(s) merged away`);
-  if (delta.newTensions > 0) lines.push(`~ ${delta.newTensions} new tension(s)`);
+  if (delta.supersededCount > 0)
+    lines.push(`~ ${delta.supersededCount} value(s) merged away`);
+  if (delta.newTensions > 0)
+    lines.push(`~ ${delta.newTensions} new tension(s)`);
   return lines.length ? lines.join("\n") : "no structural change";
 }

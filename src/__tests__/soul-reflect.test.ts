@@ -31,7 +31,8 @@ describe("reflect", () => {
       embeddingWeight: 1, // semantic-only for a deterministic lexical test
     });
     expect(res.created.length).toBe(1);
-    const theme = soul.graph().getNode(res.created[0]!)!.payload as ThemePayload;
+    const theme = soul.graph().getNode(res.created[0]!)!
+      .payload as ThemePayload;
     expect(theme.values.length).toBe(2); // the two concise values, not the flight
   });
 
@@ -40,7 +41,11 @@ describe("reflect", () => {
       "be sharp and direct",
       "stay sharp, be direct and blunt",
     ]);
-    await reflect(soul.graph(), embedder, soul.config, { now: 2, affinity: 0.4, embeddingWeight: 1 });
+    await reflect(soul.graph(), embedder, soul.config, {
+      now: 2,
+      affinity: 0.4,
+      embeddingWeight: 1,
+    });
     soul.commit("reflect", 2);
     expect(soul.project({ now: 2 }).text).toContain("## Themes (reflections)");
   });
@@ -60,7 +65,8 @@ describe("reflect", () => {
         return "I value epistemic care";
       },
     });
-    const theme = soul.graph().getNode(res.created[0]!)!.payload as ThemePayload;
+    const theme = soul.graph().getNode(res.created[0]!)!
+      .payload as ThemePayload;
     expect(theme.insight).toBe("I value epistemic care");
     expect(sawMembers).toBeGreaterThan(0);
     soul.commit("r", 2);

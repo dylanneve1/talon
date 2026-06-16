@@ -109,7 +109,11 @@ export function evaluateReflexes(
   ctx: ReflexContext,
   overrides?: Readonly<Record<string, ReflexPredicate>>,
 ): ReflexVerdict[] {
-  const order: Record<ReflexSeverity, number> = { block: 0, warn: 1, advise: 2 };
+  const order: Record<ReflexSeverity, number> = {
+    block: 0,
+    warn: 1,
+    advise: 2,
+  };
   return reflexes
     .map((r) => evaluateReflex(r, ctx, overrides))
     .filter((v) => v.fired)

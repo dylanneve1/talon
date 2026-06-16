@@ -43,7 +43,7 @@ export function symbolVector(token: string, dim = DEFAULT_HD_DIM): Hypervector {
     x ^= x >>> 17;
     x ^= y ^ (y >>> 26);
     s1 = x >>> 0;
-    v[i] = ((s1 >>> i % 31) & 1) === 0 ? 1 : -1;
+    v[i] = ((s1 >>> (i % 31)) & 1) === 0 ? 1 : -1;
   }
   return v;
 }
@@ -104,7 +104,11 @@ export class CompositionalMemory {
   private readonly acc: Int32Array;
   private count = 0;
 
-  constructor(readonly dim = DEFAULT_HD_DIM, acc?: Int32Array, count = 0) {
+  constructor(
+    readonly dim = DEFAULT_HD_DIM,
+    acc?: Int32Array,
+    count = 0,
+  ) {
     this.acc = acc ?? new Int32Array(dim);
     this.count = count;
   }
@@ -136,7 +140,15 @@ export class CompositionalMemory {
     return { dim: this.dim, acc: Array.from(this.acc), count: this.count };
   }
 
-  static restore(snap: { dim: number; acc: number[]; count: number }): CompositionalMemory {
-    return new CompositionalMemory(snap.dim, Int32Array.from(snap.acc), snap.count);
+  static restore(snap: {
+    dim: number;
+    acc: number[];
+    count: number;
+  }): CompositionalMemory {
+    return new CompositionalMemory(
+      snap.dim,
+      Int32Array.from(snap.acc),
+      snap.count,
+    );
   }
 }

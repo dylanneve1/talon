@@ -9,7 +9,11 @@ import { SoulDag } from "../core/soul/dag.js";
 import { projectRuntime, estimateTokens } from "../core/soul/projector.js";
 import { reinforce } from "../core/soul/salience.js";
 import { seedReflexes } from "../core/soul/reflex.js";
-import { DEFAULT_SOUL_CONFIG, type EvidencePayload, type Hash } from "../core/soul/types.js";
+import {
+  DEFAULT_SOUL_CONFIG,
+  type EvidencePayload,
+  type Hash,
+} from "../core/soul/types.js";
 
 const cfg = DEFAULT_SOUL_CONFIG;
 

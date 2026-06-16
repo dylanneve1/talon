@@ -58,7 +58,9 @@ export function associativeRecall(
   // Numerically-stable softmax over β·score.
   const entries = [...score.entries()];
   const max = Math.max(...entries.map(([, w]) => w));
-  const exps = entries.map(([h, w]) => [h, Math.exp(beta * (w - max))] as const);
+  const exps = entries.map(
+    ([h, w]) => [h, Math.exp(beta * (w - max))] as const,
+  );
   const z = exps.reduce((s, [, e]) => s + e, 0);
 
   const out = exps
