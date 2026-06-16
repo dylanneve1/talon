@@ -37,6 +37,18 @@ export {
 } from "./salience.js";
 export { ingest, ingestAll, appendSpine } from "./compiler.js";
 export type { IngestResult } from "./compiler.js";
+export {
+  critique,
+  extractFeatures,
+  isFlagged,
+  DEFAULT_THRESHOLDS,
+} from "./critic.js";
+export type {
+  Critique,
+  CritiqueFeatures,
+  CritiqueThresholds,
+  FailureMode,
+} from "./critic.js";
 export { emojiValence } from "./signals.js";
 export type { Signal } from "./signals.js";
 export {
