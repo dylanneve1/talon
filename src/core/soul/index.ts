@@ -74,6 +74,8 @@ export { clusterEvidence } from "./cluster.js";
 export type { Embedded, EvidenceCluster } from "./cluster.js";
 export { detectTensions, tensionPairs } from "./lattice.js";
 export type { TensionOptions } from "./lattice.js";
+export { consolidate, liveValues, isSuperseded } from "./consolidate.js";
+export type { ConsolidateOptions, ConsolidateResult } from "./consolidate.js";
 export {
   hashContent,
   hashPayload,

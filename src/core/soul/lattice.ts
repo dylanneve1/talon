@@ -14,6 +14,7 @@
  */
 
 import type { SoulDag } from "./dag.js";
+import { isSuperseded } from "./consolidate.js";
 import { cosineDistance, type Embedder } from "./embedder.js";
 import type { AssocEdge, Hash, ValuePayload } from "./types.js";
 
@@ -47,6 +48,7 @@ export async function detectTensions(
   const texts: string[] = [];
   const hashes: Hash[] = [];
   for (const v of values) {
+    if (isSuperseded(dag, v.hash)) continue;
     const text = medoidText(dag, v.hash);
     if (text) {
       texts.push(text);

@@ -15,6 +15,7 @@
  */
 
 import { SoulDag } from "./dag.js";
+import { isSuperseded } from "./consolidate.js";
 import { tensionPairs } from "./lattice.js";
 import { confidence, effectiveSalience } from "./salience.js";
 import type {
@@ -80,6 +81,7 @@ function rankValues(dag: SoulDag, opts: ProjectionOptions): RankedValue[] {
   const factors = lensFactors(dag, opts.lens);
   const ranked: RankedValue[] = [];
   for (const node of dag.nodesOfKind("value")) {
+    if (isSuperseded(dag, node.hash)) continue; // merged-away values are dead
     const value = node.payload as ValuePayload;
     const text = evidenceText(dag, value.medoid);
     if (!text) continue; // a value with no resolvable medoid is not projectable

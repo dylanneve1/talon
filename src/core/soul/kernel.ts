@@ -20,6 +20,8 @@ import { ingest, ingestAll, type IngestResult } from "./compiler.js";
 import { projectRuntime, type Projection } from "./projector.js";
 import { seedReflexes } from "./reflex.js";
 import { clusterEvidence } from "./cluster.js";
+import { consolidate, type ConsolidateResult } from "./consolidate.js";
+import { detectTensions } from "./lattice.js";
 import type { Embedder } from "./embedder.js";
 import type { Signal } from "./signals.js";
 import {
@@ -145,6 +147,47 @@ export class SoulKernel {
       created.push(value);
     }
     return created;
+  }
+
+  /**
+   * The organic maintenance pass — Talon's "dream". Runs the full mechanical
+   * growth cycle in order: crystallize loose evidence into values, let the
+   * lattice reorganize (merge drifted-together values, migrating learned state),
+   * then recompute tensions. Everything here is geometry + arithmetic; no model.
+   * Returns a small summary. Caller commits.
+   */
+  async dream(
+    embedder: Embedder,
+    opts?: { now?: number; tension?: { minCoactivation: number; minDistance: number } },
+  ): Promise<{ crystallized: number; consolidated: ConsolidateResult; tensions: number }> {
+    const now = opts?.now ?? Date.now();
+    const crystallized = await this.crystallize(embedder, now);
+    const consolidated = await consolidate(this.dag, embedder, this.config, {
+      now,
+    });
+    const tension = opts?.tension ?? { minCoactivation: 3, minDistance: 0.5 };
+    const tensions = await detectTensions(this.dag, embedder, {
+      ...tension,
+      now,
+    });
+    return {
+      crystallized: crystallized.length,
+      consolidated,
+      tensions: tensions.length,
+    };
+  }
+
+  /** Run a single consolidation pass directly. Caller commits. */
+  async consolidate(
+    embedder: Embedder,
+    opts?: { now?: number; mergeThreshold?: number },
+  ): Promise<ConsolidateResult> {
+    return consolidate(this.dag, embedder, this.config, {
+      now: opts?.now ?? Date.now(),
+      ...(opts?.mergeThreshold !== undefined
+        ? { mergeThreshold: opts.mergeThreshold }
+        : {}),
+    });
   }
 
   // ── Read ─────────────────────────────────────────────────────────────────────
