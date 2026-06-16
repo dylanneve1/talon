@@ -88,11 +88,23 @@ index.ts       public surface
 
 ## Status
 
-Implemented and tested (61+ tests, model-free end to end): substrate, DAG store,
-salience dynamics, reflex enforcer, signals + compiler, projector, kernel
-orchestrator + persistence, mechanical Critic.
+Implemented and tested (150+ tests, model-free end to end):
 
-Next phases: local-embedder integration (clustering evidence → emergent values
-with medoid labels, dedup, contradiction/drift distances), relational-holograph
-lens compilation from MemPalace + KG, harness wiring (telemetry taps + prompt
-injection + reflex enforcement), and the protected-node approval queue.
+- **Substrate** — content-addressed Merkle DAG, dirty-tracking, commits, persistence.
+- **Learning** — salience decay/reinforce, Hebbian edges, predictive-coding updates.
+- **Emergence** — value clustering (`crystallize`), self-reorganizing `consolidate`
+  ("dream") with adaptive thresholds + state migration, reflection into `theme`s.
+- **Embedding** — our own `TalonEmbedder` (model-free) behind a pluggable seam.
+- **Adaptation** — learned valence (meaning from outcomes), FSRS/DSR forgetting,
+  ADWIN drift → Spine epochs, emergent failure modes.
+- **Recall** — Generative-Agents context retrieval, PageRank centrality, modern
+  Hopfield associative recall, VSA/HDC compositional episodic memory.
+- **Refraction** — relational holograph lens compilation.
+- **Surfaces** — projector (selection), delta stream, mechanical Critic.
+- **Governance** — protected-node approval queue; runtime gate (off by default).
+
+See `RESEARCH.md` for the literature behind each mechanism.
+
+Remaining: **harness wiring** — telemetry taps (reactions/engagement/corrections →
+signals), prompt injection of the projected surface, and live reflex enforcement.
+This touches the live Talon runtime and is gated behind `TALON_SOUL_ENABLED`.

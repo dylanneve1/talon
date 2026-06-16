@@ -56,14 +56,31 @@ load-bearing ideas to the literature they come from, and notes where each lives.
 - Recall from a cue = softmax over Hebbian edge weights, p ∝ exp(β·w); `prime`
   applies the update to the lattice so the soul recalls in constellations.
 
+### Reflection — `reflect.ts`
+- Park et al. (2023): synthesize higher-level inferences over time. Done
+  structurally — themes form over values that are coherent AND co-active. The one
+  optional, gated model pass (a label-only `synthesize` hook) lives here and can
+  never change which values group.
+
+### Concept-drift detection — `drift.ts`
+- Bifet & Gavaldà, "Learning from Time-Changing Data with Adaptive Windowing"
+  (ADWIN, 2007). Detects shifts in interaction-outcome distribution and opens a
+  developmental epoch in the Spine.
+
+### Personalized PageRank centrality — `centrality.ts`
+- Page, Brin, Motwani & Winograd (1999). Structural importance over the
+  co-activation graph; personalizable to a context.
+
+### Hyperdimensional / Vector-Symbolic memory — `hdc.ts`
+- Kanerva, "Hyperdimensional Computing" (2009). bind/bundle/permute/cleanup over
+  high-dim bipolar vectors give a compositional, model-free episodic memory:
+  context⊗value bound and bundled, recalled by unbinding — "in a situation like
+  this, what do I do?"
+
 ## Future directions (researched, not yet built)
 
-- **Reflection** (Park et al. 2023): periodically synthesize higher-level
-  insights from clusters of evidence. This is the one place a *single, gated*
-  model pass could help (naming/insight) — kept off the continuous loop by design.
-- **Concept-drift detection** (Bifet & Gavaldà, ADWIN, 2007): detect when
-  behavior distribution shifts to open a new developmental epoch in the Spine.
-- **Vector-symbolic / hyperdimensional computing** (Kanerva, 2009): bind
-  context⊗value into composite hypervectors for compositional, model-free recall.
-- **Personalized PageRank centrality** (Page et al., 1999) over the lattice as a
-  richer "importance" signal than degree centrality.
+- **Holographic Reduced Representations** (Plate, 1995) as a circular-convolution
+  alternative to elementwise binding, for graceful capacity scaling.
+- **Sparse distributed memory** (Kanerva, 1988) as an alternative episodic store.
+- **Active-inference planning** (Friston et al.) atop the existing predictive-
+  coding updates, to *select* behavior, not just learn from it.
