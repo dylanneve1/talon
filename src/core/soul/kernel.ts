@@ -18,6 +18,7 @@ import { SoulDag, type DagSnapshot } from "./dag.js";
 import { hashContent } from "./hash.js";
 import { ingest, ingestAll, appendSpine, type IngestResult } from "./compiler.js";
 import { Adwin } from "./drift.js";
+import { diffSnapshots, renderDelta, type SoulDelta } from "./delta.js";
 import { projectRuntime, type Projection } from "./projector.js";
 import { seedReflexes } from "./reflex.js";
 import { clusterEvidence } from "./cluster.js";
@@ -75,7 +76,21 @@ export class SoulKernel {
     private readonly valenceModel: ValenceModel = new ValenceModel(),
     private readonly drift: Adwin = new Adwin(),
     private readonly approvals: ApprovalQueue = new ApprovalQueue(),
-  ) {}
+  ) {
+    this.lastSnapshot = dag.snapshot();
+  }
+
+  /** Snapshot at the previous commit — diffed to produce the delta stream. */
+  private lastSnapshot: DagSnapshot;
+  private lastDelta: SoulDelta = {
+    addedValues: [],
+    addedThemes: [],
+    addedSpine: [],
+    addedReflexes: [],
+    addedLenses: [],
+    supersededCount: 0,
+    newTensions: 0,
+  };
 
   // ── Governance (protected mutations) ─────────────────────────────────────────
 
@@ -399,17 +414,24 @@ export class SoulKernel {
    * count of dirty nodes — deterministic, never authored.
    */
   commit(reason: string, now = Date.now()): SoulCommit {
-    const dirty = this.dag.dirtySet().size;
+    const current = this.dag.snapshot();
+    this.lastDelta = diffSnapshots(this.lastSnapshot, current);
     const commit: SoulCommit = {
       root: this.dag.root(),
       stateDigest: this.stateDigest(),
       parent: this.head()?.root,
       at: now,
-      summary: `${reason}: ${this.dag.size} nodes, ${dirty} touched`,
+      summary: `${reason}: ${renderDelta(this.lastDelta)}`,
     };
     this.commits.push(commit);
     this.dag.clearDirty();
+    this.lastSnapshot = current;
     return commit;
+  }
+
+  /** The structural delta from the most recent commit ("what changed in me"). */
+  delta(): SoulDelta {
+    return this.lastDelta;
   }
 
   // ── Persistence ──────────────────────────────────────────────────────────────

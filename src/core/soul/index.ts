@@ -73,6 +73,8 @@ export { ValenceModel } from "./valence.js";
 export type { ValenceSnapshot } from "./valence.js";
 export { Adwin } from "./drift.js";
 export type { AdwinChange } from "./drift.js";
+export { diffSnapshots, renderDelta, explainDelta } from "./delta.js";
+export type { SoulDelta } from "./delta.js";
 export { ApprovalQueue } from "./governance.js";
 export type { Proposal, ProposalStatus, ApprovalSnapshot } from "./governance.js";
 export {
