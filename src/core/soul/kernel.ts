@@ -19,6 +19,8 @@ import { hashContent } from "./hash.js";
 import { ingest, ingestAll, type IngestResult } from "./compiler.js";
 import { projectRuntime, type Projection } from "./projector.js";
 import { seedReflexes } from "./reflex.js";
+import { clusterEvidence } from "./cluster.js";
+import type { Embedder } from "./embedder.js";
 import type { Signal } from "./signals.js";
 import {
   DEFAULT_SOUL_CONFIG,
@@ -95,6 +97,54 @@ export class SoulKernel {
 
   ingestAll(signals: readonly Signal[]): IngestResult[] {
     return ingestAll(this.dag, signals, this.config);
+  }
+
+  /**
+   * Evidence not yet absorbed into any value — the raw material awaiting
+   * clustering. Membership and medoid roles both count as "claimed".
+   */
+  private looseEvidence(): Hash[] {
+    const claimed = new Set<Hash>();
+    for (const node of this.dag.nodesOfKind("value")) {
+      if (node.payload.kind !== "value") continue;
+      claimed.add(node.payload.medoid);
+      for (const m of node.payload.members) claimed.add(m);
+    }
+    const out: Hash[] = [];
+    for (const node of this.dag.nodesOfKind("evidence")) {
+      if (!claimed.has(node.hash)) out.push(node.hash);
+    }
+    return out;
+  }
+
+  /**
+   * Crystallize loose evidence into emergent values: embed the unabsorbed
+   * fragments, cluster them by cosine geometry, and materialize a value node per
+   * cluster with the medoid as its verbatim label. The model names nothing —
+   * geometry discovers the values. Returns the value hashes created. Caller
+   * commits.
+   */
+  async crystallize(embedder: Embedder, now = Date.now()): Promise<Hash[]> {
+    const loose = this.looseEvidence();
+    if (loose.length === 0) return [];
+
+    const texts = loose.map((h) => {
+      const node = this.dag.getNode(h);
+      return node?.payload.kind === "evidence" ? node.payload.text : "";
+    });
+    const vectors = await embedder.embed(texts);
+    const embedded = loose.map((hash, i) => ({ hash, vector: vectors[i]! }));
+    const clusters = clusterEvidence(embedded, this.config.clusterDistance);
+
+    const created: Hash[] = [];
+    for (const cl of clusters) {
+      const value = this.dag.addNode(
+        { kind: "value", members: [...cl.members].sort(), medoid: cl.medoid },
+        now,
+      );
+      created.push(value);
+    }
+    return created;
   }
 
   // ── Read ─────────────────────────────────────────────────────────────────────

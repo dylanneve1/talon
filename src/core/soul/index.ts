@@ -52,6 +52,19 @@ export type {
 export { emojiValence } from "./signals.js";
 export type { Signal } from "./signals.js";
 export {
+  HashingEmbedder,
+  cosineSimilarity,
+  cosineDistance,
+  normalize,
+  centroid,
+  medoidIndex,
+  dot,
+  norm,
+} from "./embedder.js";
+export type { Embedder } from "./embedder.js";
+export { clusterEvidence } from "./cluster.js";
+export type { Embedded, EvidenceCluster } from "./cluster.js";
+export {
   hashContent,
   hashPayload,
   canonicalize,
