@@ -5,11 +5,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { SoulDag } from "./dag.js";
-import { projectRuntime, estimateTokens } from "./projector.js";
-import { reinforce } from "./salience.js";
-import { seedReflexes } from "./reflex.js";
-import { DEFAULT_SOUL_CONFIG, type EvidencePayload, type Hash } from "./types.js";
+import { SoulDag } from "../core/soul/dag.js";
+import { projectRuntime, estimateTokens } from "../core/soul/projector.js";
+import { reinforce } from "../core/soul/salience.js";
+import { seedReflexes } from "../core/soul/reflex.js";
+import { DEFAULT_SOUL_CONFIG, type EvidencePayload, type Hash } from "../core/soul/types.js";
 
 const cfg = DEFAULT_SOUL_CONFIG;
 

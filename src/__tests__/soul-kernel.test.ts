@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SoulKernel } from "./kernel.js";
+import { SoulKernel } from "../core/soul/kernel.js";
 
 describe("genesis", () => {
   it("installs the load-bearing reflexes and an opening commit", () => {

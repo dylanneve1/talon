@@ -4,10 +4,10 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { SoulDag } from "./dag.js";
-import { ingest, ingestAll, appendSpine } from "./compiler.js";
-import { confidence } from "./salience.js";
-import { DEFAULT_SOUL_CONFIG, type EvidencePayload, type Hash } from "./types.js";
+import { SoulDag } from "../core/soul/dag.js";
+import { ingest, ingestAll, appendSpine } from "../core/soul/compiler.js";
+import { confidence } from "../core/soul/salience.js";
+import { DEFAULT_SOUL_CONFIG, type EvidencePayload, type Hash } from "../core/soul/types.js";
 
 const cfg = DEFAULT_SOUL_CONFIG;
 

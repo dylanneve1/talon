@@ -9,7 +9,7 @@ import {
   extractFeatures,
   isFlagged,
   DEFAULT_THRESHOLDS,
-} from "./critic.js";
+} from "../core/soul/critic.js";
 
 const clean = "Branch is live. Six commits, 61 tests green. Reflex layer next.";
 

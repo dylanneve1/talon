@@ -11,8 +11,8 @@ import {
   hashPayload,
   isHash,
   merkleRoot,
-} from "./hash.js";
-import type { EvidencePayload, Hash } from "./types.js";
+} from "../core/soul/hash.js";
+import type { EvidencePayload, Hash } from "../core/soul/types.js";
 
 describe("canonicalize", () => {
   it("sorts object keys regardless of insertion order", () => {

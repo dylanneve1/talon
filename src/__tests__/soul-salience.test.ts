@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { SoulDag } from "./dag.js";
+import { SoulDag } from "../core/soul/dag.js";
 import {
   applyPredictionError,
   coactivate,
@@ -12,8 +12,8 @@ import {
   decayFactor,
   effectiveSalience,
   reinforce,
-} from "./salience.js";
-import type { EvidencePayload, Hash } from "./types.js";
+} from "../core/soul/salience.js";
+import type { EvidencePayload, Hash } from "../core/soul/types.js";
 
 const HL = 1000; // 1s half-life for readable tests
 

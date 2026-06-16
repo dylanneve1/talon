@@ -9,7 +9,7 @@ import {
   isBlocked,
   seedReflexes,
   type ReflexContext,
-} from "./reflex.js";
+} from "../core/soul/reflex.js";
 
 const reflexes = seedReflexes();
 
