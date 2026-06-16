@@ -25,6 +25,7 @@ import { reflect, type ReflectOptions, type ReflectResult } from "./reflect.js";
 import { detectTensions } from "./lattice.js";
 import { ValenceModel, type ValenceSnapshot } from "./valence.js";
 import { retrieveValues, type RetrievalWeights } from "./retrieve.js";
+import { pagerank } from "./centrality.js";
 import {
   associativeRecall,
   type RecallOptions,
@@ -266,6 +267,7 @@ export class SoulKernel {
     const ranked = await retrieveValues(this.dag, embedder, {
       now,
       config: this.config,
+      centrality: pagerank(this.dag),
       ...(opts.context !== undefined ? { context: opts.context } : {}),
       ...(opts.weights ? { weights: opts.weights } : {}),
     });

@@ -96,6 +96,8 @@ export { detectTensions, tensionPairs } from "./lattice.js";
 export type { TensionOptions } from "./lattice.js";
 export { associativeRecall, prime } from "./associative.js";
 export type { RecallResult, RecallOptions, PrimeOptions } from "./associative.js";
+export { pagerank } from "./centrality.js";
+export type { PageRankOptions } from "./centrality.js";
 export { consolidate, liveValues, isSuperseded } from "./consolidate.js";
 export type { ConsolidateOptions, ConsolidateResult } from "./consolidate.js";
 export { reflect } from "./reflect.js";

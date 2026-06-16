@@ -51,6 +51,11 @@ export interface RetrieveOptions {
   /** Current-moment text; its embedding drives the relevance term. */
   readonly context?: string;
   readonly weights?: RetrievalWeights;
+  /**
+   * Optional precomputed centrality (e.g. PageRank) used for the importance
+   * term. When absent, importance falls back to log-degree centrality.
+   */
+  readonly centrality?: ReadonlyMap<Hash, number>;
 }
 
 function medoidText(dag: SoulDag, valueHash: Hash): string | undefined {
@@ -96,9 +101,13 @@ export async function retrieveValues(
   const rawRecency = rows.map((r) =>
     effectiveSalience(dag.stateOf(r.hash), opts.now, opts.config.decayHalfLifeMs),
   );
-  const rawImportance = rows.map(
-    (r) => Math.abs(confidence(dag.stateOf(r.hash))) + Math.log1p(centrality(dag, r.hash)),
-  );
+  const rawImportance = rows.map((r) => {
+    const conf = Math.abs(confidence(dag.stateOf(r.hash)));
+    const struct = opts.centrality
+      ? (opts.centrality.get(r.hash) ?? 0)
+      : Math.log1p(centrality(dag, r.hash));
+    return conf + struct;
+  });
 
   // Relevance via one embed call over [context, ...medoids].
   let rawRelevance = rows.map(() => 0);
