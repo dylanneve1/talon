@@ -22,6 +22,7 @@ import { seedReflexes } from "./reflex.js";
 import { clusterEvidence } from "./cluster.js";
 import { consolidate, type ConsolidateResult } from "./consolidate.js";
 import { detectTensions } from "./lattice.js";
+import { ValenceModel, type ValenceSnapshot } from "./valence.js";
 import type { Embedder } from "./embedder.js";
 import type { Signal } from "./signals.js";
 import {
@@ -38,6 +39,7 @@ interface PersistShape {
   readonly config: SoulConfig;
   readonly dag: DagSnapshot;
   readonly commits: readonly SoulCommit[];
+  readonly valence?: ValenceSnapshot;
 }
 
 export interface GenesisOptions {
@@ -52,6 +54,7 @@ export class SoulKernel {
     private readonly dag: SoulDag,
     readonly config: SoulConfig,
     private readonly commits: SoulCommit[],
+    private readonly valenceModel: ValenceModel = new ValenceModel(),
   ) {}
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
@@ -94,11 +97,23 @@ export class SoulKernel {
   // ── Write (mechanical) ───────────────────────────────────────────────────────
 
   ingest(signal: Signal): IngestResult {
-    return ingest(this.dag, signal, this.config);
+    // Engagement outcomes teach the valence model what its cues actually mean.
+    if (signal.kind === "engagement" && signal.cues?.length) {
+      const outcome = signal.continued ? 1 : -1;
+      for (const cue of signal.cues) this.valenceModel.observe(cue, outcome);
+    }
+    return ingest(this.dag, signal, this.config, (c) =>
+      this.valenceModel.valence(c),
+    );
   }
 
   ingestAll(signals: readonly Signal[]): IngestResult[] {
-    return ingestAll(this.dag, signals, this.config);
+    return signals.map((s) => this.ingest(s));
+  }
+
+  /** The learned cue→valence model (meaning discovered from outcomes). */
+  valence(): ValenceModel {
+    return this.valenceModel;
   }
 
   /**
@@ -253,6 +268,7 @@ export class SoulKernel {
       config: this.config,
       dag: this.dag.snapshot(),
       commits: [...this.commits],
+      valence: this.valenceModel.snapshot(),
     };
   }
 
@@ -269,6 +285,7 @@ export class SoulKernel {
       SoulDag.restore(data.dag),
       data.config,
       [...data.commits],
+      data.valence ? ValenceModel.restore(data.valence) : new ValenceModel(),
     );
   }
 

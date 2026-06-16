@@ -137,15 +137,19 @@ function ingestDirective(
   return { evidenceAdded: evidence, touched: [] };
 }
 
-/** Apply one signal to the kernel. Pure arithmetic + verbatim evidence. */
+/** Apply one signal to the kernel. Pure arithmetic + verbatim evidence.
+ *
+ * `valenceOf` resolves a cue's valence; pass a learned ValenceModel.valence to
+ * let meaning come from data, or omit to use the static emoji prior. */
 export function ingest(
   dag: SoulDag,
   signal: Signal,
   cfg: SoulConfig,
+  valenceOf: (cue: string) => number = emojiValence,
 ): IngestResult {
   switch (signal.kind) {
     case "reaction": {
-      const v = emojiValence(signal.emoji);
+      const v = valenceOf(signal.emoji);
       const touched = ingestOutcome(dag, signal.activeNodes, v, cfg, signal.at);
       return { touched };
     }
@@ -179,6 +183,7 @@ export function ingestAll(
   dag: SoulDag,
   signals: readonly Signal[],
   cfg: SoulConfig,
+  valenceOf: (cue: string) => number = emojiValence,
 ): IngestResult[] {
-  return signals.map((s) => ingest(dag, s, cfg));
+  return signals.map((s) => ingest(dag, s, cfg, valenceOf));
 }

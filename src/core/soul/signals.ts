@@ -28,6 +28,12 @@ export interface EngagementSignal {
   /** Did the conversation continue after Talon's message, or die? */
   readonly continued: boolean;
   readonly activeNodes: readonly Hash[];
+  /**
+   * Categorical cues observed in the interaction (e.g. emojis used). When
+   * present, the outcome teaches each cue's learned valence — meaning comes from
+   * data, not a hardcoded table.
+   */
+  readonly cues?: readonly string[];
 }
 
 export interface CorrectionSignal {
