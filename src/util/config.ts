@@ -298,6 +298,28 @@ const configSchema = z.object({
   disabledTools: z.array(z.string()).optional(),
   disabledToolTags: z.array(z.string()).optional(),
 
+  /**
+   * Developer build flag. Gates dev-only affordances such as the
+   * `/update` self-update command. Off by default so packaged /
+   * end-user deployments never expose them.
+   */
+  devBuild: z.boolean().default(false),
+
+  /**
+   * Self-update settings for the `/update` command. Only takes effect
+   * when `devBuild` is true AND the process runs from a git checkout.
+   * Pulls `remote/branch` (fast-forward only), reinstalls deps, runs
+   * any `setup` commands, then restarts.
+   */
+  update: z
+    .object({
+      remote: z.string().min(1).default("origin"),
+      branch: z.string().min(1).default("main"),
+      /** Extra shell commands run in the repo root after `npm install`. */
+      setup: z.array(z.string()).optional(),
+    })
+    .optional(),
+
   // GitHub — GitHub API access via official MCP server
   github: z
     .object({

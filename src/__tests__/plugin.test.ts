@@ -39,6 +39,7 @@ describe("plugin system", () => {
     return {
       frontend: "terminal",
       backend: "claude",
+      devBuild: false,
       model: "default",
       maxMessageLength: 4000,
       concurrency: 1,

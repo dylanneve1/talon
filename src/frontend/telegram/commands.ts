@@ -5,6 +5,7 @@
 import type { Bot } from "grammy";
 import { readFileSync, existsSync } from "node:fs";
 import { respawnSelf } from "../../util/respawn.js";
+import { getRepoRoot, runSelfUpdate } from "../../core/update/self-update.js";
 import type { TalonConfig } from "../../util/config.js";
 import { files } from "../../util/paths.js";
 import {
@@ -767,6 +768,64 @@ export function registerCommands(
     await ctx.reply("♻️ Restarting...");
     respawnSelf("telegram /restart");
   });
+
+  // /update — pull latest, reinstall, run setup, restart. Only wired
+  // up for developer builds running from a git checkout; packaged
+  // binaries have no source tree (getRepoRoot() === null) so the
+  // command stays absent entirely.
+  const updateRepoRoot = config.devBuild ? getRepoRoot() : null;
+  if (updateRepoRoot) {
+    bot.command("update", async (ctx) => {
+      if (ADMIN_USER_ID && ctx.from?.id !== ADMIN_USER_ID) {
+        await ctx.reply("Not authorized.");
+        return;
+      }
+      const remote = config.update?.remote ?? "origin";
+      const branch = config.update?.branch ?? "main";
+      const sent = await ctx.reply(
+        `⏳ Updating from <code>${escapeHtml(remote)}/${escapeHtml(branch)}</code>…`,
+        { parse_mode: "HTML" },
+      );
+      const edit = (text: string) =>
+        bot.api
+          .editMessageText(ctx.chat.id, sent.message_id, text, {
+            parse_mode: "HTML",
+          })
+          .catch(() => {});
+
+      // Fire-and-forget so grammY keeps processing other updates.
+      runSelfUpdate({
+        remote,
+        branch,
+        setup: config.update?.setup,
+        repoRoot: updateRepoRoot,
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            const tail = res.steps[res.steps.length - 1]?.output ?? "";
+            await edit(
+              `⚠️ Update failed: ${escapeHtml(res.error ?? "unknown error")}` +
+                (tail ? `\n\n<pre>${escapeHtml(tail.slice(-1500))}</pre>` : ""),
+            );
+            return;
+          }
+          if (!res.changed) {
+            await edit(
+              `✅ Already up to date at <code>${escapeHtml(res.before ?? "?")}</code> — no restart needed.`,
+            );
+            return;
+          }
+          await edit(
+            `✅ Updated <code>${escapeHtml(res.before ?? "?")}</code> → <code>${escapeHtml(res.after ?? "?")}</code>. ♻️ Restarting…`,
+          );
+          respawnSelf("telegram /update");
+        })
+        .catch(async (err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          await edit(`⚠️ Update crashed: ${escapeHtml(msg)}`);
+        });
+    });
+  }
 
   bot.command("plugins", async (ctx) => {
     const plugins = getLoadedPlugins();

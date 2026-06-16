@@ -169,6 +169,7 @@ export async function ensureBooted(args: EnsureBootedArgs = {}): Promise<void> {
   const config: TalonConfig = {
     frontend,
     backend: "claude",
+    devBuild: false,
     claudeBinary: STUB_BINARY,
     model: "claude-sonnet-4-6",
     maxMessageLength: 4000,
