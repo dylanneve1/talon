@@ -1,0 +1,185 @@
+/**
+ * Soul Kernel — the orchestrator.
+ *
+ * Wraps the DAG with a commit chain and persistence, and exposes the public
+ * lifecycle: genesis → ingest(signal)* → commit → project. The reasoning model
+ * touches only `project()` (read); everything that *writes* identity is the
+ * mechanical compiler.
+ *
+ * Commits mirror git: each bundles the structural Merkle root, a digest of the
+ * mutable state at that instant, and a parent link, so a rollback restores both
+ * the structure and the "weather". Summaries are templated from the dirty set —
+ * never model-written.
+ */
+
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { SoulDag, type DagSnapshot } from "./dag.js";
+import { hashContent } from "./hash.js";
+import { ingest, ingestAll, type IngestResult } from "./compiler.js";
+import { projectRuntime, type Projection } from "./projector.js";
+import { seedReflexes } from "./reflex.js";
+import type { Signal } from "./signals.js";
+import {
+  DEFAULT_SOUL_CONFIG,
+  type Hash,
+  type SoulCommit,
+  type SoulConfig,
+} from "./types.js";
+
+const PERSIST_VERSION = 1;
+
+interface PersistShape {
+  readonly version: number;
+  readonly config: SoulConfig;
+  readonly dag: DagSnapshot;
+  readonly commits: readonly SoulCommit[];
+}
+
+export interface GenesisOptions {
+  readonly config?: SoulConfig;
+  readonly now?: number;
+  /** Optional founding directives, each seeded as a single-evidence value. */
+  readonly seedValues?: readonly { text: string; actor?: string }[];
+}
+
+export class SoulKernel {
+  private constructor(
+    private readonly dag: SoulDag,
+    readonly config: SoulConfig,
+    private readonly commits: SoulCommit[],
+  ) {}
+
+  // ── Lifecycle ────────────────────────────────────────────────────────────────
+
+  /** A fresh kernel with the load-bearing reflexes installed. */
+  static genesis(opts: GenesisOptions = {}): SoulKernel {
+    const config = opts.config ?? DEFAULT_SOUL_CONFIG;
+    const now = opts.now ?? Date.now();
+    const dag = new SoulDag();
+    for (const reflex of seedReflexes()) dag.addNode(reflex, now);
+    const kernel = new SoulKernel(dag, config, []);
+    for (const seed of opts.seedValues ?? []) {
+      kernel.addSeedValue(seed.text, now, seed.actor);
+    }
+    kernel.commit("genesis", now);
+    return kernel;
+  }
+
+  /**
+   * Seed a founding value from a verbatim directive: one evidence node, wrapped
+   * in a single-member value whose medoid is itself. Later clustering (embedder
+   * phase) may merge such seeds into larger values.
+   */
+  addSeedValue(text: string, now = Date.now(), actor?: string): Hash {
+    const evidence = this.dag.addNode(
+      {
+        kind: "evidence",
+        text,
+        observedAt: now,
+        source: { origin: "seed", ...(actor ? { actor } : {}) },
+      },
+      now,
+    );
+    return this.dag.addNode(
+      { kind: "value", members: [evidence], medoid: evidence },
+      now,
+    );
+  }
+
+  // ── Write (mechanical) ───────────────────────────────────────────────────────
+
+  ingest(signal: Signal): IngestResult {
+    return ingest(this.dag, signal, this.config);
+  }
+
+  ingestAll(signals: readonly Signal[]): IngestResult[] {
+    return ingestAll(this.dag, signals, this.config);
+  }
+
+  // ── Read ─────────────────────────────────────────────────────────────────────
+
+  project(opts?: { now?: number; lens?: string }): Projection {
+    return projectRuntime(this.dag, {
+      now: opts?.now ?? Date.now(),
+      config: this.config,
+      lens: opts?.lens,
+    });
+  }
+
+  graph(): SoulDag {
+    return this.dag;
+  }
+
+  history(): readonly SoulCommit[] {
+    return this.commits;
+  }
+
+  head(): SoulCommit | undefined {
+    return this.commits[this.commits.length - 1];
+  }
+
+  // ── Commit ───────────────────────────────────────────────────────────────────
+
+  /** Digest of the mutable state, so commits capture the weather, not just structure. */
+  private stateDigest(): Hash {
+    const snap = this.dag.snapshot();
+    return hashContent({
+      state: snap.state
+        .map(([h, s]) => [h, s.salience, s.evidence, s.activations] as const)
+        .sort((a, b) => a[0].localeCompare(b[0])),
+      edges: snap.edges
+        .map((e) => [e.from, e.kind, e.to, e.weight] as const)
+        .sort(),
+    });
+  }
+
+  /**
+   * Snapshot the current identity as a commit. The summary is templated from the
+   * count of dirty nodes — deterministic, never authored.
+   */
+  commit(reason: string, now = Date.now()): SoulCommit {
+    const dirty = this.dag.dirtySet().size;
+    const commit: SoulCommit = {
+      root: this.dag.root(),
+      stateDigest: this.stateDigest(),
+      parent: this.head()?.root,
+      at: now,
+      summary: `${reason}: ${this.dag.size} nodes, ${dirty} touched`,
+    };
+    this.commits.push(commit);
+    this.dag.clearDirty();
+    return commit;
+  }
+
+  // ── Persistence ──────────────────────────────────────────────────────────────
+
+  toJSON(): PersistShape {
+    return {
+      version: PERSIST_VERSION,
+      config: this.config,
+      dag: this.dag.snapshot(),
+      commits: [...this.commits],
+    };
+  }
+
+  save(path: string): void {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(this.toJSON()), "utf8");
+  }
+
+  static fromJSON(data: PersistShape): SoulKernel {
+    if (data.version !== PERSIST_VERSION) {
+      throw new Error(`SoulKernel: unsupported persist version ${data.version}`);
+    }
+    return new SoulKernel(
+      SoulDag.restore(data.dag),
+      data.config,
+      [...data.commits],
+    );
+  }
+
+  static load(path: string): SoulKernel {
+    return SoulKernel.fromJSON(JSON.parse(readFileSync(path, "utf8")));
+  }
+}
