@@ -26,6 +26,11 @@ import { reflect, type ReflectOptions, type ReflectResult } from "./reflect.js";
 import { compileLens } from "./lens.js";
 import { detectTensions } from "./lattice.js";
 import { ValenceModel, type ValenceSnapshot } from "./valence.js";
+import {
+  ApprovalQueue,
+  type ApprovalSnapshot,
+  type Proposal,
+} from "./governance.js";
 import { retrieveValues, type RetrievalWeights } from "./retrieve.js";
 import { pagerank } from "./centrality.js";
 import {
@@ -38,6 +43,7 @@ import type { Signal } from "./signals.js";
 import {
   DEFAULT_SOUL_CONFIG,
   type Hash,
+  type NodePayload,
   type SoulCommit,
   type SoulConfig,
 } from "./types.js";
@@ -51,6 +57,7 @@ interface PersistShape {
   readonly commits: readonly SoulCommit[];
   readonly valence?: ValenceSnapshot;
   readonly drift?: readonly number[];
+  readonly approvals?: ApprovalSnapshot;
 }
 
 export interface GenesisOptions {
@@ -67,7 +74,37 @@ export class SoulKernel {
     private readonly commits: SoulCommit[],
     private readonly valenceModel: ValenceModel = new ValenceModel(),
     private readonly drift: Adwin = new Adwin(),
+    private readonly approvals: ApprovalQueue = new ApprovalQueue(),
   ) {}
+
+  // ── Governance (protected mutations) ─────────────────────────────────────────
+
+  /**
+   * Propose a protected mutation (e.g. a new reflex or core value). It does NOT
+   * take effect — it queues for human approval, so load-bearing identity can
+   * never drift silently.
+   */
+  propose(payload: NodePayload, reason: string, now = Date.now()): Proposal {
+    return this.approvals.propose(payload, reason, now);
+  }
+
+  /** Pending protected proposals awaiting a decision. */
+  pendingApprovals(): Proposal[] {
+    return this.approvals.pending();
+  }
+
+  /** Approve a pending proposal and materialize it in the DAG. Caller commits. */
+  approve(id: string, now = Date.now()): Hash | undefined {
+    const payload = this.approvals.resolve(id, true, now);
+    if (!payload) return undefined;
+    return this.dag.addNode(payload, now);
+  }
+
+  /** Reject a pending proposal; nothing is applied. */
+  reject(id: string, now = Date.now()): boolean {
+    this.approvals.resolve(id, false, now);
+    return this.approvals.get(id)?.status === "rejected";
+  }
 
   // ── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -385,6 +422,7 @@ export class SoulKernel {
       commits: [...this.commits],
       valence: this.valenceModel.snapshot(),
       drift: this.drift.snapshot(),
+      approvals: this.approvals.snapshot(),
     };
   }
 
@@ -403,6 +441,7 @@ export class SoulKernel {
       [...data.commits],
       data.valence ? ValenceModel.restore(data.valence) : new ValenceModel(),
       data.drift ? Adwin.restore(data.drift) : new Adwin(),
+      data.approvals ? ApprovalQueue.restore(data.approvals) : new ApprovalQueue(),
     );
   }
 
