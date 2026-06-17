@@ -43,6 +43,8 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createWriteStream, readFileSync, type WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import { execute as dispatcherExecute } from "../engine/dispatcher.js";
+import { getBackendIdForChat } from "../engine/backend-controller.js";
+import { runJobOneShot } from "./job-oneshot.js";
 import {
   getAllTriggers,
   getTrigger,
@@ -57,6 +59,15 @@ import { appendDailyLog } from "../../storage/daily-log.js";
 import { selfInvocation } from "../../util/mcp-launcher.js";
 import { LUA_RUN_SUBCOMMAND } from "../scripting/lua-runner.js";
 import { spawnWarden, type WardenExitEvent } from "../../native/warden.js";
+
+/** Chat's backend id, or "" if the pool isn't initialised (tests / pre-boot). */
+function safeChatBackendId(chatId: string): string {
+  try {
+    return getBackendIdForChat(chatId);
+  } catch {
+    return "";
+  }
+}
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -717,16 +728,37 @@ async function fireWake(
 
   const header = `[Trigger "${t.name}" (${t.id}) ${promptStatus}]`;
   const body = trimmed ? `${header}\n\n${trimmed}` : `${header}\n\n(no output)`;
+  const wakeHeader =
+    `[System: TRIGGER FIRED. Status: ${promptStatus}. ` +
+    `This is a wake-up message from a long-running script you started earlier. ` +
+    `Decide whether to message the user, take an action, or do nothing.]`;
+
+  // Cross-provider override → isolated one-shot on the target backend. Same
+  // provider (or none) → resume the chat session, optionally on a cheaper
+  // model on the same backend. Only inspect the chat backend when a provider
+  // override is actually set, so the common path stays untouched.
+  if (t.model && t.provider && t.provider !== safeChatBackendId(t.chatId)) {
+    try {
+      await runJobOneShot({
+        chatId: t.chatId,
+        backendId: t.provider,
+        model: t.model,
+        ...(t.instructions ? { instructions: t.instructions } : {}),
+        payload: `${wakeHeader}\n\n${body}`,
+        label: t.name,
+        kind: "trigger",
+      });
+    } catch (err) {
+      logError("triggers", `isolated wake failed [${triggerId}]`, err);
+    }
+    return;
+  }
 
   const instructions =
     t.model && t.instructions
       ? `[Instructions for this run: ${t.instructions}]\n\n`
       : "";
-  const prompt =
-    `[System: TRIGGER FIRED. Status: ${promptStatus}. ` +
-    `This is a wake-up message from a long-running script you started earlier. ` +
-    `Decide whether to message the user, take an action, or do nothing.]` +
-    `\n\n${instructions}${body}`;
+  const prompt = `${wakeHeader}\n\n${instructions}${body}`;
 
   try {
     await deps.execute({

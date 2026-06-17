@@ -120,35 +120,72 @@ function extractText(html: string, maxLength = 8000): string {
 }
 
 /**
- * Validate an explicit per-job model id against the chat's backend. Returns an
- * error message when the id isn't a selectable model there, so create_cron_job /
- * trigger_create can reject a bad override up front (the agent retries or tells
- * the user) instead of silently storing one that fails at fire time.
+ * Validate a per-job model (and optional cross-provider backend) override so
+ * create_cron_job / trigger_create can reject a bad override up front — the
+ * agent retries or tells the user — instead of storing one that fails at fire
+ * time.
+ *
+ * - No provider (or provider === chat backend): the model must be selectable on
+ *   the chat's backend (the override resumes the chat session).
+ * - Cross provider: the backend must exist and support isolated one-shot runs
+ *   (a `background` capability), and the model must be selectable on it.
  */
-async function validateJobModel(
+async function validateJobModelOverride(
   chatId: number,
   model: string,
+  provider?: string,
 ): Promise<string | null> {
   try {
     const { resolveExplicitModelRef } =
       await import("../models/active-model.js");
-    const { getBackendIdForChat, getBackendForChat } =
-      await import("./backend-controller.js");
+    const {
+      getBackendIdForChat,
+      getBackendForChat,
+      acquireBackendInstance,
+      isModelValidForBackend,
+    } = await import("./backend-controller.js");
     const chatIdStr = String(chatId);
-    const ref = await resolveExplicitModelRef(
-      model,
-      getBackendForChat(chatIdStr),
-      getBackendIdForChat(chatIdStr),
-    );
-    if (!ref) {
-      return (
-        `Model "${model}" is not a selectable model on this chat's backend. ` +
-        `Leave model unset to use the chat's model, or pick a valid model id.`
+    const chatBackendId = getBackendIdForChat(chatIdStr);
+
+    // Same backend (or unset provider) → resume path: validate on chat backend.
+    if (!provider || provider === chatBackendId) {
+      const ref = await resolveExplicitModelRef(
+        model,
+        getBackendForChat(chatIdStr),
+        chatBackendId,
       );
+      if (!ref) {
+        return (
+          `Model "${model}" is not a selectable model on this chat's backend. ` +
+          `Leave model unset to use the chat's model, or pick a valid model id.`
+        );
+      }
+      return null;
     }
-    return null;
+
+    // Cross provider → isolated one-shot path: backend must exist + support
+    // background runs, and the model must be valid on it.
+    let acquired: Awaited<ReturnType<typeof acquireBackendInstance>> | null =
+      null;
+    try {
+      acquired = await acquireBackendInstance(provider);
+    } catch {
+      return `Unknown or unavailable provider "${provider}".`;
+    }
+    try {
+      if (!acquired.backend.background) {
+        return `Provider "${provider}" does not support isolated job runs (no background capability).`;
+      }
+      const valid = await isModelValidForBackend(acquired.backend, model);
+      if (!valid) {
+        return `Model "${model}" is not a selectable model on provider "${provider}".`;
+      }
+      return null;
+    } finally {
+      await acquired.release();
+    }
   } catch (err) {
-    return `Could not validate model "${model}": ${err instanceof Error ? err.message : String(err)}`;
+    return `Could not validate model override: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
 
@@ -321,6 +358,7 @@ export async function handleSharedAction(
       const content = String(body.content ?? "");
       const timezone = body.timezone ? String(body.timezone) : undefined;
       const model = body.model ? String(body.model) : undefined;
+      const provider = body.provider ? String(body.provider) : undefined;
       const instructions = body.instructions
         ? String(body.instructions)
         : undefined;
@@ -329,6 +367,11 @@ export async function handleSharedAction(
       if (!content) return { ok: false, error: "Missing content" };
       if (content.length > 10_000)
         return { ok: false, error: "Content too long (max 10,000 chars)" };
+      if (provider && !model)
+        return {
+          ok: false,
+          error: "A 'provider' override also requires a 'model'.",
+        };
 
       const validation = validateCronExpression(schedule, timezone);
       if (!validation.valid)
@@ -339,10 +382,15 @@ export async function handleSharedAction(
 
       // A model override only applies to "query" jobs; validate it up front.
       if (model && jobType === "query") {
-        const modelErr = await validateJobModel(chatId, model);
+        const modelErr = await validateJobModelOverride(
+          chatId,
+          model,
+          provider,
+        );
         if (modelErr) return { ok: false, error: modelErr };
       }
 
+      const isQueryOverride = jobType === "query";
       const id = generateCronId();
       addCronJob({
         id,
@@ -355,8 +403,9 @@ export async function handleSharedAction(
         createdAt: Date.now(),
         runCount: 0,
         timezone,
-        ...(model && jobType === "query" ? { model } : {}),
-        ...(instructions && jobType === "query" ? { instructions } : {}),
+        ...(model && isQueryOverride ? { model } : {}),
+        ...(provider && isQueryOverride ? { provider } : {}),
+        ...(instructions && isQueryOverride ? { instructions } : {}),
       });
       log("gateway", `create_cron_job: "${name}" [${schedule}]`);
       return {
@@ -451,9 +500,16 @@ export async function handleSharedAction(
         : undefined;
       const persistent = body.persistent === true;
       const model = body.model ? String(body.model) : undefined;
+      const provider = body.provider ? String(body.provider) : undefined;
       const instructions = body.instructions
         ? String(body.instructions)
         : undefined;
+
+      if (provider && !model)
+        return {
+          ok: false,
+          error: "A 'provider' override also requires a 'model'.",
+        };
 
       const nameErr = validateName(name);
       if (nameErr) return { ok: false, error: nameErr };
@@ -491,7 +547,11 @@ export async function handleSharedAction(
       }
 
       if (model) {
-        const modelErr = await validateJobModel(chatId, model);
+        const modelErr = await validateJobModelOverride(
+          chatId,
+          model,
+          provider,
+        );
         if (modelErr) return { ok: false, error: modelErr };
       }
 
@@ -523,6 +583,7 @@ export async function handleSharedAction(
         fireCount: 0,
         persistent,
         ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
         ...(instructions ? { instructions } : {}),
       };
       addTrigger(trigger);

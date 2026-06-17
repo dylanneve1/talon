@@ -86,9 +86,16 @@ export type Trigger = {
    */
   model?: string;
   /**
-   * Optional short instructions prepended to the wake prompt when `model` is
-   * set, to orient the override model (authored by the main model at create
-   * time — e.g. how to investigate and what counts as handled).
+   * Optional provider/backend id for the override. When set and different from
+   * the chat's backend, the fired wake-up runs as an isolated one-shot on this
+   * backend instead of resuming the chat session. Unset = the chat's backend.
+   */
+  provider?: string;
+  /**
+   * Optional short instructions prepended to the wake prompt (same-backend) or
+   * used as the system prompt (cross-provider one-shot) when `model` is set, to
+   * orient the override model (authored by the main model at create time — e.g.
+   * how to investigate and what counts as handled).
    */
   instructions?: string;
 };

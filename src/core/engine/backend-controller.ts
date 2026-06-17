@@ -124,6 +124,10 @@ const pool = new Map<string, PoolEntry>();
 const bindings = new Map<BackendHolder, string>();
 /** Captured at first init so subsequent calls don't need ctx plumbed through. */
 let initCtx: BackendInitContext | null = null;
+/** Captured at init so on-demand acquisitions can re-run a factory's init. */
+let poolConfig: TalonConfig | null = null;
+/** Monotonic counter for synthetic job holders (cross-provider one-shots). */
+let jobHolderSeq = 0;
 
 const listeners = new Set<BackendChangeListener>();
 
@@ -241,6 +245,7 @@ export async function initBackendPool(
   ctx: BackendInitContext,
 ): Promise<void> {
   initCtx = ctx;
+  poolConfig = config;
   const initialisedHolders: BackendHolder[] = [];
   try {
     for (const role of ALL_ROLES) {
@@ -292,6 +297,38 @@ export function getBackendForRole(role: BackendRole): Backend {
     );
   }
   return entry.backend;
+}
+
+/**
+ * Acquire a backend instance for a one-off background job (a trigger/cron whose
+ * model override targets a *different* provider than the chat). Initialises the
+ * backend on demand if it isn't already pooled, and pins it with a synthetic
+ * `job:N` holder so a concurrent role rebind can't tear it down mid-run.
+ *
+ * The caller MUST call the returned `release()` when the job finishes — that
+ * drops the holder and cleans the instance up if nothing else holds it.
+ */
+export async function acquireBackendInstance(
+  id: string,
+): Promise<{ backend: Backend; release: () => Promise<void> }> {
+  if (!poolConfig) {
+    throw new Error(
+      "Backend pool not initialised — call initBackendPool first",
+    );
+  }
+  const entry = await ensurePoolEntry(id, poolConfig);
+  const holder = `job:${++jobHolderSeq}` as BackendHolder;
+  entry.holders.add(holder);
+  let released = false;
+  return {
+    backend: entry.backend,
+    release: async () => {
+      if (released) return;
+      released = true;
+      const e = pool.get(id);
+      if (e) await releaseHolderFromEntry(e, holder);
+    },
+  };
 }
 
 /** Backend id bound to a role. Throws if the role isn't bound. */
@@ -607,6 +644,7 @@ export function resetBackendPoolForTest(): void {
   pool.clear();
   bindings.clear();
   initCtx = null;
+  poolConfig = null;
 }
 
 /** Test-only: drop all listeners. */
@@ -629,6 +667,7 @@ export async function initBackendController(
   ctx: BackendInitContext,
 ): Promise<Backend> {
   initCtx = ctx;
+  poolConfig = config;
   const entry = await ensurePoolEntry(id, config);
   const holder = roleHolder("chat");
   entry.holders.add(holder);

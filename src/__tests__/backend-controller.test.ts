@@ -27,6 +27,7 @@ import {
   cleanupBackendController,
   resetBackendControllerForTest,
   clearBackendChangeListenersForTest,
+  acquireBackendInstance,
 } from "../core/engine/backend-controller.js";
 
 function makeStubBackend(label: string): Backend {
@@ -409,5 +410,39 @@ describe("backend-controller", () => {
     cleanupResolve();
     const result = await swapPromise;
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("acquireBackendInstance — cross-provider job runs", () => {
+  it("inits a non-bound backend on demand and cleans up on release", async () => {
+    const cleanupSpy = vi.fn();
+    registerBackend(makeFactory("alpha", "Alpha"));
+    registerBackend(makeFactory("beta", "Beta", { cleanupSpy }));
+    await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
+
+    const { backend, release } = await acquireBackendInstance("beta");
+    expect(backend).toBeDefined();
+    // beta is now pooled (held by the synthetic job holder)
+    await release();
+    // refcount hit zero → factory cleanup ran
+    expect(cleanupSpy).toHaveBeenCalledWith("beta");
+  });
+
+  it("reuses a pooled instance and only cleans up when all holders release", async () => {
+    const cleanupSpy = vi.fn();
+    registerBackend(makeFactory("alpha", "Alpha", { cleanupSpy }));
+    await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
+
+    // alpha is already bound to the chat role; acquiring it pins it again.
+    const { release } = await acquireBackendInstance("alpha");
+    await release();
+    // still held by the chat role → no cleanup
+    expect(cleanupSpy).not.toHaveBeenCalled();
+  });
+
+  it("throws for an unknown backend id", async () => {
+    registerBackend(makeFactory("alpha", "Alpha"));
+    await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
+    await expect(acquireBackendInstance("ghost")).rejects.toThrow(/ghost/);
   });
 });

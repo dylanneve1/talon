@@ -47,8 +47,16 @@ export type CronJob = {
    */
   model?: string;
   /**
-   * Optional short instructions prepended to the run prompt when `model` is set,
-   * to orient the override model (authored by the main model at create time).
+   * Optional provider/backend id for the override (e.g. a different provider
+   * than the chat). When set and different from the chat's backend, the job
+   * runs as an isolated one-shot on this backend instead of resuming the chat
+   * session. Unset = the chat's backend.
+   */
+  provider?: string;
+  /**
+   * Optional short instructions prepended to the run prompt (same-backend) or
+   * used as the system prompt (cross-provider one-shot) when `model` is set, to
+   * orient the override model (authored by the main model at create time).
    */
   instructions?: string;
 };

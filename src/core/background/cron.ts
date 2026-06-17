@@ -10,6 +10,8 @@
 
 import { Cron } from "croner";
 import { execute, getActiveCount } from "../engine/dispatcher.js";
+import { getBackendIdForChat } from "../engine/backend-controller.js";
+import { runJobOneShot } from "./job-oneshot.js";
 import {
   getAllCronJobs,
   recordCronRun,
@@ -24,6 +26,15 @@ import {
   recordJobSuccess,
   type JobHealthOptions,
 } from "./job-health.js";
+
+/** Chat's backend id, or "" if the pool isn't initialised (tests / pre-boot). */
+function safeChatBackendId(chatId: string): string {
+  try {
+    return getBackendIdForChat(chatId);
+  } catch {
+    return "";
+  }
+}
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -206,13 +217,37 @@ async function executeJob(job: CronJob): Promise<void> {
   }
 
   // type === "query" — run through dispatcher with full tool access, timeout-protected
+  const header =
+    `[System: CRON JOB "${job.name}" (schedule: ${job.schedule}). ` +
+    `Execute the task. Be concise and action-oriented.]`;
+
+  // Cross-provider override → isolated one-shot on the target backend. Same
+  // provider (or no provider) → resume the chat session, optionally on a
+  // cheaper model on the same backend. Only inspect the chat backend when a
+  // provider override is actually set, so the common path stays untouched.
+  if (
+    job.model &&
+    job.provider &&
+    job.provider !== safeChatBackendId(job.chatId)
+  ) {
+    await runJobOneShot({
+      chatId: job.chatId,
+      backendId: job.provider,
+      model: job.model,
+      ...(job.instructions ? { instructions: job.instructions } : {}),
+      payload: `${header}\n\n${job.content}`,
+      label: job.name,
+      kind: "cron",
+      timeoutMs: CRON_JOB_TIMEOUT_MS,
+    });
+    return;
+  }
+
   const instructions =
     job.model && job.instructions
       ? `[Instructions for this run: ${job.instructions}]\n\n`
       : "";
-  const prompt =
-    `[System: CRON JOB "${job.name}" (schedule: ${job.schedule}). ` +
-    `Execute the task. Be concise and action-oriented.]\n\n${instructions}${job.content}`;
+  const prompt = `${header}\n\n${instructions}${job.content}`;
 
   await withTimeout(
     execute({

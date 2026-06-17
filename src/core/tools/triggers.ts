@@ -107,6 +107,12 @@ export const triggerTools: ToolDefinition[] = [
         .describe(
           "Optional model override for the wake-up turn. Unset = this chat's model (preferred). Set only when the wake-up handling is mechanical (e.g. 'check what broke and act') and a cheaper model suffices; the wake-up runs with none of this chat's context.",
         ),
+      provider: z
+        .string()
+        .optional()
+        .describe(
+          "Optional backend/provider id for the override (e.g. a cheaper provider). Requires 'model'. When it differs from this chat's backend, the wake-up runs as an isolated one-shot on it. Unset = this chat's backend.",
+        ),
       instructions: z
         .string()
         .optional()
