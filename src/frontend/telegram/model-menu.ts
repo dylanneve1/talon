@@ -32,7 +32,7 @@ import {
   buildModelMenuState,
   type ModelMenuState,
   type SettingsButton,
-} from "./helpers.js";
+} from "./helpers/index.js";
 import {
   hasBackendPool,
   getBackendIdForChat,

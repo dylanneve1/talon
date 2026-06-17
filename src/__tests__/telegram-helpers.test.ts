@@ -11,7 +11,7 @@ import {
   renderEffortRows,
   renderSettingsKeyboard,
   renderSettingsText,
-} from "../frontend/telegram/helpers.js";
+} from "../frontend/telegram/helpers/index.js";
 
 describe("telegram helpers", () => {
   beforeEach(() => {

@@ -21,7 +21,7 @@ import {
   renderModelMenuText,
   renderModelBrowseKeyboard,
   type ModelMenuState,
-} from "../frontend/telegram/helpers.js";
+} from "../frontend/telegram/helpers/index.js";
 
 // ── parseModelCallback ─────────────────────────────────────────────────────
 

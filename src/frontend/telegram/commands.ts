@@ -51,7 +51,7 @@ import {
   renderModelMenuText,
   renderModelMenuKeyboard,
   type SettingsButton,
-} from "./helpers.js";
+} from "./helpers/index.js";
 import {
   buildModelMenuViewForChat,
   resolveBackendForChat,

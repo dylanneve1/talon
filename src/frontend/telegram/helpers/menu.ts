@@ -1,261 +1,19 @@
 /**
- * Shared helpers used by commands, callbacks, and the settings panel.
+ * Settings + model-picker UI: settings text, the `/model` main/browse/backend
+ * keyboards, effort rows, and the menu-state builder. All pure rendering.
  */
 
-import { escapeHtml } from "./formatting.js";
-import type { DoctorReport } from "../../core/doctor.js";
-import type { ModelInfo } from "../../core/models/catalog.js";
-import type { ReasoningEffortLevel } from "../../core/types.js";
-import { REASONING_LEVEL_LABELS } from "../../core/models/reasoning-levels.js";
+import { escapeHtml } from "../formatting.js";
+import type { ReasoningEffortLevel } from "../../../core/types.js";
+import { REASONING_LEVEL_LABELS } from "../../../core/models/reasoning-levels.js";
+import { resolveModel, resolveModelId } from "../../../core/models/catalog.js";
 import {
-  getModels,
-  resolveModel,
-  resolveModelId,
-} from "../../core/models/catalog.js";
-const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
-const DEFAULT_METRICS_MESSAGE_MAX = 3800;
-
-type MetricsSnapshot = {
-  counters: Record<string, number>;
-  histograms: Record<
-    string,
-    { count: number; p50: number; p95: number; p99: number; avg: number }
-  >;
-};
-
-/** Parse a duration string like "30m", "2h", "1h30m" into milliseconds. */
-export function parseInterval(input: string): number | null {
-  const match = input.match(/^(?:(\d+)h)?(?:(\d+)m)?$/);
-  if (!match || (!match[1] && !match[2])) return null;
-  const hours = parseInt(match[1] || "0", 10);
-  const minutes = parseInt(match[2] || "0", 10);
-  const ms = (hours * 60 + minutes) * 60 * 1000;
-  return ms > 0 ? ms : null;
-}
-
-export function formatDuration(ms: number): string {
-  const safeMs = Math.max(0, Math.round(ms));
-  if (safeMs < 1000) return `${safeMs}ms`;
-  const s = Math.floor(safeMs / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
-
-export function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
-
-/** Resolve a model ID to its backend-registered display name. */
-export function formatModelLabel(modelId: string): string {
-  return resolveModel(modelId)?.displayName ?? modelId;
-}
-
-/** Display name for a known ModelInfo. */
-export function formatModelOptionLabel(model: ModelInfo): string {
-  return model.displayName;
-}
-
-/** Compact display name for a known ModelInfo. */
-export function formatCompactModelLabel(model: ModelInfo): string {
-  return model.displayName;
-}
-
-export function getTelegramModelOptions(): ModelInfo[] {
-  const options: ModelInfo[] = [];
-  const seenKeys = new Set<string>();
-
-  for (const model of getModels()) {
-    const key = model.displayName.toLowerCase();
-    if (seenKeys.has(key)) continue;
-    seenKeys.add(key);
-    options.push(model);
-  }
-
-  return options;
-}
-
-function truncateMetricLabel(label: string, max = 80): string {
-  return label.length <= max ? label : `${label.slice(0, max - 3)}...`;
-}
-
-export function renderMetricsMessages(
-  metrics: MetricsSnapshot,
-  maxLen = DEFAULT_METRICS_MESSAGE_MAX,
-): string[] {
-  const firstHeader = "<b>📊 Metrics</b>";
-  const continuationHeader = "<b>📊 Metrics (cont.)</b>";
-  const sections: string[][] = [];
-
-  // Histograms come in two flavours: durations (keys ending in `_ms`,
-  // rendered as human times) and plain counts like `tool_calls_per_turn`
-  // (rendered as bare numbers — "p50=1ms" for a count is nonsense).
-  const histKeys = Object.keys(metrics.histograms).sort();
-  const durationKeys = histKeys.filter((key) => key.endsWith("_ms"));
-  const countKeys = histKeys.filter((key) => !key.endsWith("_ms"));
-  const histLine = (key: string, fmt: (v: number) => string): string => {
-    const h = metrics.histograms[key];
-    return (
-      `  <code>${escapeHtml(truncateMetricLabel(key))}</code>  n=${h.count} ` +
-      `p50=${fmt(h.p50)}  p95=${fmt(h.p95)} ` +
-      `p99=${fmt(h.p99)}  avg=${fmt(h.avg)}`
-    );
-  };
-  if (durationKeys.length > 0) {
-    sections.push([
-      "<b>Latency</b>",
-      ...durationKeys.map((key) => histLine(key, formatDuration)),
-    ]);
-  }
-  if (countKeys.length > 0) {
-    sections.push([
-      "<b>Distributions</b>",
-      ...countKeys.map((key) => histLine(key, String)),
-    ]);
-  }
-
-  const counterKeys = Object.keys(metrics.counters).sort();
-  if (counterKeys.length > 0) {
-    const groups = new Map<string, string[]>();
-    for (const key of counterKeys) {
-      const prefix = key.includes(".") ? key.split(".")[0]! : "general";
-      if (!groups.has(prefix)) groups.set(prefix, []);
-      groups.get(prefix)!.push(key);
-    }
-
-    for (const prefix of [...groups.keys()].sort()) {
-      // tool_calls reads best as a leaderboard — busiest tools first.
-      // Other groups keep alphabetical order (stable lookup by name).
-      const keys =
-        prefix === "tool_calls"
-          ? [...groups.get(prefix)!].sort(
-              (a, b) =>
-                metrics.counters[b]! - metrics.counters[a]! ||
-                a.localeCompare(b),
-            )
-          : groups.get(prefix)!;
-      sections.push([
-        `<b>${escapeHtml(prefix)}</b>`,
-        ...keys.map((key) => {
-          const label = key.includes(".")
-            ? key.split(".").slice(1).join(".")
-            : key;
-          return (
-            `  <code>${escapeHtml(truncateMetricLabel(label))}</code>  ` +
-            `${metrics.counters[key]!.toLocaleString()}`
-          );
-        }),
-      ]);
-    }
-  }
-
-  if (sections.length === 0) {
-    return [`${firstHeader}\n\n<i>No metrics recorded yet.</i>`];
-  }
-
-  const chunks: string[] = [];
-  let header = firstHeader;
-  let current = header;
-
-  const flush = () => {
-    chunks.push(current);
-    header = continuationHeader;
-    current = header;
-  };
-
-  const appendLine = (line: string) => {
-    if (!line && current === header) return;
-
-    const candidate = `${current}\n${line}`;
-    if (candidate.length <= maxLen) {
-      current = candidate;
-      return;
-    }
-
-    if (current !== header) {
-      flush();
-      if (!line) return;
-    }
-
-    const available = maxLen - header.length - 1;
-    if (available < 0) return; // header alone already fills maxLen — skip line
-    const safeLine =
-      line.length <= available
-        ? line
-        : available >= 4
-          ? `${line.slice(0, available - 3)}...`
-          : line.slice(0, available); // not enough room for ellipsis — just truncate
-    current = `${current}\n${safeLine}`;
-  };
-
-  for (const section of sections) {
-    appendLine("");
-    for (const line of section) appendLine(line);
-  }
-
-  if (current !== header || chunks.length === 0) {
-    chunks.push(current);
-  }
-
-  return chunks;
-}
-
-const DOCTOR_ICONS: Record<string, string> = {
-  ok: "✅",
-  warn: "⚠️",
-  fail: "❌",
-  info: "▫️",
-};
-
-/**
- * Render a DoctorReport as one Telegram HTML message. Same data as
- * `talon doctor` (src/core/doctor.ts) plus in-process runtime info —
- * when this renders, the bot is by definition running, so the CLI's
- * "is the bot up" probe becomes an uptime line instead.
- */
-export function renderDoctorMessage(report: DoctorReport): string {
-  const lines = ["<b>🩺 Talon Doctor</b>", "", "<b>Environment</b>"];
-
-  for (const check of report.checks) {
-    const detail = check.detail ? ` (${escapeHtml(check.detail)})` : "";
-    lines.push(
-      `${DOCTOR_ICONS[check.status]} ${escapeHtml(check.label)}${detail}`,
-    );
-  }
-
-  lines.push("", "<b>Native modules</b>");
-  for (const mod of report.native) {
-    const size =
-      mod.sizeBytes !== undefined ? ` · ${formatBytes(mod.sizeBytes)}` : "";
-    const note = mod.note ? ` (${escapeHtml(mod.note)})` : "";
-    lines.push(
-      `${mod.ok ? DOCTOR_ICONS.ok : DOCTOR_ICONS.fail} <code>${escapeHtml(mod.name)}</code> — ${escapeHtml(mod.language)} → ${escapeHtml(mod.target)}${size}${note}`,
-    );
-  }
-
-  lines.push(
-    "",
-    "<b>Process</b>",
-    `Uptime ${formatDuration(process.uptime() * 1000)} · PID ${process.pid} · Node ${escapeHtml(process.versions.node)}`,
-    "",
-    report.issues === 0
-      ? `${DOCTOR_ICONS.ok} All checks passed.`
-      : `${DOCTOR_ICONS.warn} ${report.issues} issue(s) found.`,
-  );
-
-  return lines.join("\n");
-}
+  DEFAULT_PULSE_INTERVAL_MS,
+  formatDuration,
+  formatModelLabel,
+  formatCompactModelLabel,
+  getTelegramModelOptions,
+} from "./format.js";
 
 export function renderSettingsText(
   model: string,
@@ -268,7 +26,7 @@ export function renderSettingsText(
     ? formatDuration(pulseIntervalMs)
     : formatDuration(DEFAULT_PULSE_INTERVAL_MS);
   return [
-    "<b>\uD83E\uDD85 Settings</b>",
+    "<b>🦅 Settings</b>",
     "",
     `<b>Model:</b> <code>${escapeHtml(formatModelLabel(model))}</code>`,
     ...(modelDetails?.length ? modelDetails.map(escapeHtml) : []),
@@ -666,7 +424,7 @@ export function renderSettingsKeyboard(
     ? modelButtons
     : getTelegramModelOptions().map((m) => ({
         text: isSelectedModel(model, m.id)
-          ? `\u2713 ${formatCompactModelLabel(m)}`
+          ? `✓ ${formatCompactModelLabel(m)}`
           : formatCompactModelLabel(m),
         callback_data: `settings:model:${m.id}`,
       }));
@@ -686,11 +444,7 @@ export function renderSettingsKeyboard(
       )
     : [];
 
-  const effortRows = renderEffortRows(
-    effort,
-    reasoningLevels,
-    "settings:effort:",
-  );
+  const effortRows = renderEffortRows(effort, reasoningLevels, "settings:effort:");
 
   return [
     ...modelRows,
@@ -715,12 +469,12 @@ export function renderEffortRows(
     ...reasoningLevels.map((level) => ({
       text:
         effort === level
-          ? `\u2713 ${REASONING_LEVEL_LABELS[level]}`
+          ? `✓ ${REASONING_LEVEL_LABELS[level]}`
           : REASONING_LEVEL_LABELS[level],
       callback_data: `${callbackPrefix}${level}`,
     })),
     {
-      text: effort === "adaptive" ? "\u2713 Auto" : "Auto",
+      text: effort === "adaptive" ? "✓ Auto" : "Auto",
       callback_data: `${callbackPrefix}adaptive`,
     },
   ];

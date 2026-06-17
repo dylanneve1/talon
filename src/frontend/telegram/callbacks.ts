@@ -40,7 +40,7 @@ import {
   renderBackendMenuKeyboard,
   renderBackendMenuText,
   type SettingsButton,
-} from "./helpers.js";
+} from "./helpers/index.js";
 import { parseModelCallback } from "./model-callbacks.js";
 import {
   buildModelMenuViewForChat,
