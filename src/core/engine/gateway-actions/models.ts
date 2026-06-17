@@ -10,7 +10,7 @@ import {
   getBackendIdForChat,
   getAvailableBackends,
   getPooledBackend,
-} from "../backend-controller.js";
+} from "../backend-controller/index.js";
 import type { SharedActionHandlers } from "./types.js";
 
 export const modelHandlers: SharedActionHandlers = {

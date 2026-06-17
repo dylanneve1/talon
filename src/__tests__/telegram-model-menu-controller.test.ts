@@ -47,7 +47,7 @@ import {
   rebindChat,
   releaseChat,
   resetBackendPoolForTest,
-} from "../core/engine/backend-controller.js";
+} from "../core/engine/backend-controller/index.js";
 import {
   registerBackend,
   clearBackends,

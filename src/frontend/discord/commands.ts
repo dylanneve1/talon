@@ -92,7 +92,7 @@ import { deriveNumericChatId } from "../../util/chat-id.js";
 import {
   getBackendIdForChat,
   resolveChatBackend,
-} from "../../core/engine/backend-controller.js";
+} from "../../core/engine/backend-controller/index.js";
 import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 
 import { log, logError, logWarn } from "../../util/log.js";

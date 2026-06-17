@@ -56,7 +56,7 @@ import {
   buildModelMenuViewForChat,
   resolveBackendForChat,
 } from "./model-menu.js";
-import { getBackendIdForChat } from "../../core/engine/backend-controller.js";
+import { getBackendIdForChat } from "../../core/engine/backend-controller/index.js";
 import { collectDoctorReport } from "../../core/doctor.js";
 import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 

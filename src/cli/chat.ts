@@ -38,7 +38,7 @@ export async function startChat(): Promise<void> {
   // Mirror the index.ts wiring: keep the gateway's cached backend
   // reference in sync with chat-role rebinds.
   const { onBackendChange, roleHolder } = await import(
-    "../core/engine/backend-controller.js"
+    "../core/engine/backend-controller/index.js"
   );
   const CHAT_ROLE_HOLDER = roleHolder("chat");
   onBackendChange((holder, newBackend) => {

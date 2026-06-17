@@ -8,7 +8,7 @@ import { resolveExplicitModelRef } from "../../models/active-model.js";
 import {
   getBackendForChat,
   getBackendIdForChat,
-} from "../backend-controller.js";
+} from "../backend-controller/index.js";
 
 /**
  * Parse a goal due date. Accepts ISO 8601 strings (date-only or full

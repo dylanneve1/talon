@@ -27,7 +27,7 @@ import {
   cleanupBackendPool,
   resetBackendPoolForTest,
   clearBackendChangeListenersForTest,
-} from "../core/engine/backend-controller.js";
+} from "../core/engine/backend-controller/index.js";
 
 function makeStubBackend(label: string): Backend {
   return stubBackend({
@@ -327,7 +327,7 @@ describe("backend pool — multi-role bindings", () => {
     );
     // initBackendPool isn't imported with a side door here, so reach
     // via the existing helpers — same exports.
-    const ctrl = await import("../core/engine/backend-controller.js");
+    const ctrl = await import("../core/engine/backend-controller/index.js");
 
     await ctrl.initBackendPool(configFor("alpha"), STUB_CTX);
     // Chat A pins beta as an override; pool now has 2 instances.
@@ -357,7 +357,7 @@ describe("backend pool — multi-role bindings", () => {
     registerBackend(
       makeFactory("gamma", "Gamma", { cleanupSpy: (id) => cleanups.push(id) }),
     );
-    const ctrl = await import("../core/engine/backend-controller.js");
+    const ctrl = await import("../core/engine/backend-controller/index.js");
 
     await ctrl.initBackendPool(configFor("alpha"), STUB_CTX);
     await ctrl.rebindChat("chat-A", "beta", configFor("alpha"));
@@ -382,7 +382,7 @@ describe("backend pool — multi-role bindings", () => {
 
   it("releaseChat on an unbound chat is a no-op", async () => {
     registerBackend(makeFactory("alpha", "Alpha"));
-    const ctrl = await import("../core/engine/backend-controller.js");
+    const ctrl = await import("../core/engine/backend-controller/index.js");
     await ctrl.initBackendPool(configFor("alpha"), STUB_CTX);
 
     // Doesn't throw, doesn't break the pool.

@@ -140,7 +140,7 @@ export async function initBackendAndDispatcher(
     releaseChat,
     isBackendAvailable,
     isModelValidForBackend,
-  } = await import("./core/engine/backend-controller.js");
+  } = await import("./core/engine/backend-controller/index.js");
 
   // Boot the backend pool — binds the chat / heartbeat / dream roles
   // from `config.backend`, `config.heartbeatBackend`,
@@ -247,7 +247,7 @@ export async function initBackendAndDispatcher(
       const { resolveActiveModelForChat } =
         await import("./core/models/active-model.js");
       const { getBackendIdForChat, getBackendForChat: getBE } =
-        await import("./core/engine/backend-controller.js");
+        await import("./core/engine/backend-controller/index.js");
       const beId = getBackendIdForChat(chatId);
       const be = getBE(chatId);
       const { model, ref } = await resolveActiveModelForChat(
@@ -266,7 +266,7 @@ export async function initBackendAndDispatcher(
       const { resolveExplicitModelRef } =
         await import("./core/models/active-model.js");
       const { getBackendIdForChat, getBackendForChat: getBE } =
-        await import("./core/engine/backend-controller.js");
+        await import("./core/engine/backend-controller/index.js");
       return resolveExplicitModelRef(
         modelId,
         getBE(chatId),

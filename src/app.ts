@@ -85,7 +85,7 @@ gateway.backend = backend;
 // touch the gateway field — those roles run from their own getBackend
 // providers (dispatcher routes per chat).
 const { onBackendChange, roleHolder } =
-  await import("./core/engine/backend-controller.js");
+  await import("./core/engine/backend-controller/index.js");
 const CHAT_ROLE_HOLDER = roleHolder("chat");
 onBackendChange((holder, newBackend, info) => {
   if (holder !== CHAT_ROLE_HOLDER) return;

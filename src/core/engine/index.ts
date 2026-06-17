@@ -17,4 +17,4 @@
 
 export * from "./dispatcher.js";
 export * from "./gateway.js";
-export * from "./backend-controller.js";
+export * from "./backend-controller/index.js";

@@ -27,7 +27,7 @@ import {
   cleanupBackendController,
   resetBackendControllerForTest,
   clearBackendChangeListenersForTest,
-} from "../core/engine/backend-controller.js";
+} from "../core/engine/backend-controller/index.js";
 
 function makeStubBackend(label: string): Backend {
   return stubBackend({

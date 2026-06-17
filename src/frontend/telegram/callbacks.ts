@@ -20,7 +20,7 @@ import {
   listAvailableBackends,
   rebindChat,
   releaseChat,
-} from "../../core/engine/backend-controller.js";
+} from "../../core/engine/backend-controller/index.js";
 import {
   registerChat,
   disablePulse,

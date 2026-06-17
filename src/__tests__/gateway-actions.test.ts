@@ -61,7 +61,7 @@ const mockGetAvailableBackends = vi.fn((): { id: string; label: string }[] => [
   { id: "claude", label: "Claude" },
 ]);
 const mockGetPooledBackend = vi.fn((): unknown => null);
-vi.mock("../core/engine/backend-controller.js", () => ({
+vi.mock("../core/engine/backend-controller/index.js", () => ({
   getBackendForChat: mockGetBackendForChat,
   getBackendIdForChat: mockGetBackendIdForChat,
   getAvailableBackends: mockGetAvailableBackends,
