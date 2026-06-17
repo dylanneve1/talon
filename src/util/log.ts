@@ -8,6 +8,7 @@
  */
 
 import pino from "pino";
+import prettyStream from "pino-pretty";
 import {
   existsSync,
   readFileSync,
@@ -15,6 +16,7 @@ import {
   statSync,
   renameSync,
   unlinkSync,
+  createWriteStream,
 } from "node:fs";
 import { dirs, files } from "./paths.js";
 
@@ -103,39 +105,38 @@ if (!quiet) {
 // suites that don't mock this module.
 const IS_VITEST = process.env.VITEST === "true";
 
-const targets = [
-  // Console output (disabled in quiet mode)
-  ...(!quiet
-    ? [
-        {
-          target: "pino-pretty",
-          level: "trace" as const,
-          options: {
-            colorize: true,
-            ignore: "pid,hostname",
-            translateTime: "HH:MM:ss",
-          },
-        },
-      ]
-    : []),
-  // JSON file output (always active outside test runs)
-  ...(!IS_VITEST
-    ? [
-        {
-          target: "pino/file",
-          level: "trace" as const,
-          options: {
-            destination: LOG_FILE,
-            mkdir: true,
-          },
-        },
-      ]
-    : []),
-];
+// In-process streams (pino.multistream), NOT worker-thread transports.
+// `transport: { targets }` spawns a thread-stream worker that resolves the
+// target module ("pino-pretty", "pino/file") by name at runtime — which
+// fails in a `bun build --compile` standalone binary (no node_modules on
+// disk: "unable to determine transport target for pino-pretty"). Wiring
+// the same destinations as direct streams keeps formatting identical and
+// runs everywhere, with no worker.
+const streams: pino.StreamEntry[] = [];
+
+// Console output (disabled in quiet mode), pretty-printed.
+if (!quiet) {
+  streams.push({
+    level: "trace",
+    stream: prettyStream({
+      colorize: true,
+      ignore: "pid,hostname",
+      translateTime: "HH:MM:ss",
+    }),
+  });
+}
+
+// JSON file output (always active outside test runs).
+if (!IS_VITEST) {
+  streams.push({
+    level: "trace",
+    stream: createWriteStream(LOG_FILE, { flags: "a" }),
+  });
+}
 
 const logger =
-  targets.length > 0
-    ? pino({ level: "trace", transport: { targets } })
+  streams.length > 0
+    ? pino({ level: "trace" }, pino.multistream(streams))
     : pino({ level: "silent" });
 
 export function log(component: LogComponent, message: string): void {

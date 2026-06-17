@@ -11,6 +11,22 @@ describe("log.ts — module-level initialization branches", () => {
   const mockUnlinkSync = vi.fn();
   const mockLogFn = vi.fn();
 
+  // pino is called as `pino(opts, multistream(streams))` and exposes
+  // `pino.multistream` — the mock must provide both the callable default
+  // and the multistream factory.
+  const mockPino = () => {
+    const fn = Object.assign(
+      () => ({
+        info: mockLogFn,
+        error: mockLogFn,
+        warn: mockLogFn,
+        debug: mockLogFn,
+      }),
+      { multistream: vi.fn(() => ({ write: vi.fn() })) },
+    );
+    return { default: fn };
+  };
+
   beforeEach(() => {
     vi.resetModules();
     mockMkdirSync.mockClear();
@@ -39,15 +55,10 @@ describe("log.ts — module-level initialization branches", () => {
       renameSync: mockRenameSync,
       unlinkSync: mockUnlinkSync,
       readFileSync: vi.fn(() => "{}"),
+      createWriteStream: vi.fn(() => ({ write: vi.fn() })),
     }));
-    vi.doMock("pino", () => ({
-      default: () => ({
-        info: mockLogFn,
-        error: mockLogFn,
-        warn: mockLogFn,
-        debug: mockLogFn,
-      }),
-    }));
+    vi.doMock("pino-pretty", () => ({ default: () => ({ write: vi.fn() }) }));
+    vi.doMock("pino", () => mockPino());
 
     await import("../util/log.js");
 
@@ -72,15 +83,10 @@ describe("log.ts — module-level initialization branches", () => {
       renameSync: mockRenameSync,
       unlinkSync: mockUnlinkSync,
       readFileSync: vi.fn(() => "{}"),
+      createWriteStream: vi.fn(() => ({ write: vi.fn() })),
     }));
-    vi.doMock("pino", () => ({
-      default: () => ({
-        info: mockLogFn,
-        error: mockLogFn,
-        warn: mockLogFn,
-        debug: mockLogFn,
-      }),
-    }));
+    vi.doMock("pino-pretty", () => ({ default: () => ({ write: vi.fn() }) }));
+    vi.doMock("pino", () => mockPino());
 
     await import("../util/log.js");
 
@@ -108,15 +114,10 @@ describe("log.ts — module-level initialization branches", () => {
       renameSync: mockRenameSync,
       unlinkSync: mockUnlinkSync,
       readFileSync: readFileSyncMock,
+      createWriteStream: vi.fn(() => ({ write: vi.fn() })),
     }));
-    vi.doMock("pino", () => ({
-      default: () => ({
-        info: mockLogFn,
-        error: mockLogFn,
-        warn: mockLogFn,
-        debug: mockLogFn,
-      }),
-    }));
+    vi.doMock("pino-pretty", () => ({ default: () => ({ write: vi.fn() }) }));
+    vi.doMock("pino", () => mockPino());
 
     await import("../util/log.js");
 
