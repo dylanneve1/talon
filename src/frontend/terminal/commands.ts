@@ -264,7 +264,7 @@ export function registerBuiltinCommands(): void {
       const { getSessionInfo } = await import("../../storage/sessions.js");
       const { getChatSettings } =
         await import("../../storage/chat-settings.js");
-      const { getLoadedPlugins } = await import("../../core/plugin.js");
+      const { getLoadedPlugins } = await import("../../core/plugin/index.js");
       const info = getSessionInfo(ctx.chatId());
       const u = info.usage;
       const be = ctx.backend;

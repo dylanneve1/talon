@@ -123,7 +123,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }
   // Destroy plugins (cleanup resources)
   if (config.plugins.length > 0) {
-    const { destroyPlugins } = await import("./core/plugin.js");
+    const { destroyPlugins } = await import("./core/plugin/index.js");
     await destroyPlugins();
   }
   stopPulseTimer();

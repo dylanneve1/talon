@@ -11,7 +11,7 @@ vi.mock("../storage/sessions.js", () => ({
   setSessionId: setSessionIdMock,
 }));
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: getPluginMcpServersMock,
 }));
 

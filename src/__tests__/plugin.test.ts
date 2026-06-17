@@ -61,7 +61,7 @@ describe("plugin system", () => {
   /** Import fresh plugin module with fs mocked to find entry + dynamic import returning plugin. */
   async function setup(plugin: ReturnType<typeof createMockPlugin>) {
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     return mod;
   }
@@ -87,7 +87,7 @@ describe("plugin system", () => {
 
     it("skips plugins with no entry point", async () => {
       vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => false) }));
-      const { loadPlugins, getPluginCount } = await import("../core/plugin.js");
+      const { loadPlugins, getPluginCount } = await import("../core/plugin/index.js");
       await loadPlugins([{ path: "/nonexistent/plugin" }]);
 
       expect(getPluginCount()).toBe(0);
@@ -95,7 +95,7 @@ describe("plugin system", () => {
 
     it("skips plugins missing name", async () => {
       vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-      const mod = await import("../core/plugin.js");
+      const mod = await import("../core/plugin/index.js");
       mod._deps.importModule = async () => ({
         default: { handleAction: vi.fn() },
       });
@@ -392,7 +392,7 @@ describe("plugin system", () => {
         getFrontends: () => ["terminal"],
       }));
 
-      const mod = await import("../core/plugin.js");
+      const mod = await import("../core/plugin/index.js");
       await mod.loadPlugins([{ name: "standalone", command: "node" }]);
       expect(
         mod.getPluginMcpServers("http://localhost:19876", "chat1"),
@@ -449,7 +449,7 @@ describe("plugin system", () => {
         createGitHubPlugin: () => githubPlugin,
       }));
 
-      const mod = await import("../core/plugin.js");
+      const mod = await import("../core/plugin/index.js");
       await mod.loadPlugins([{ name: "github", command: "node" }]);
       await mod.loadBuiltinPlugins(
         createTestConfig({ github: { enabled: true } }),
@@ -546,7 +546,7 @@ describe("plugin system", () => {
       // Plugin with init that never resolves — forces the 30s timeout to win the race
       const plugin = createMockPlugin({ init: () => new Promise(() => {}) });
       vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-      const mod = await import("../core/plugin.js");
+      const mod = await import("../core/plugin/index.js");
       mod._deps.importModule = async () => ({ default: plugin });
 
       const loadPromise = mod.loadPlugins([{ path: "/fake/plugin" }]);
@@ -621,7 +621,7 @@ describe("extractPlugin — invalid optional field types", () => {
   it("rejects plugin when init is not a function", async () => {
     const plugin = { name: "bad-init", init: "not-a-function" };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-init" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -630,7 +630,7 @@ describe("extractPlugin — invalid optional field types", () => {
   it("rejects plugin when getSystemPromptAddition is not a function", async () => {
     const plugin = { name: "bad-gsp", getSystemPromptAddition: 42 };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-gsp" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -639,7 +639,7 @@ describe("extractPlugin — invalid optional field types", () => {
   it("rejects plugin when mcpServerPath is not a string", async () => {
     const plugin = { name: "bad-mcp", mcpServerPath: 99 };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-mcp" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -648,7 +648,7 @@ describe("extractPlugin — invalid optional field types", () => {
   it("rejects plugin when frontends is not an array", async () => {
     const plugin = { name: "bad-frontends", frontends: "telegram" };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-frontends" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -657,7 +657,7 @@ describe("extractPlugin — invalid optional field types", () => {
   it("rejects plugin when handleAction is defined but not a function", async () => {
     const plugin = { name: "bad-handle", handleAction: "not-a-function" };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-handle" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -666,7 +666,7 @@ describe("extractPlugin — invalid optional field types", () => {
   it("rejects plugin when mcpServer is not an object", async () => {
     const plugin = { name: "bad-mcp-server", mcpServer: "not-an-object" };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-mcp-server" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -675,7 +675,7 @@ describe("extractPlugin — invalid optional field types", () => {
   it("rejects plugin when mcpServer is null", async () => {
     const plugin = { name: "null-mcp-server", mcpServer: null };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/null-mcp-server" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -687,7 +687,7 @@ describe("extractPlugin — invalid optional field types", () => {
       mcpServer: { command: 123, args: [] },
     };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-mcp-cmd" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -699,7 +699,7 @@ describe("extractPlugin — invalid optional field types", () => {
       mcpServer: { command: "/usr/bin/python3", args: "not-an-array" },
     };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-mcp-args" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -711,7 +711,7 @@ describe("extractPlugin — invalid optional field types", () => {
       mcpServer: { command: "", args: ["-m", "server"] },
     };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/empty-mcp-cmd" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -723,7 +723,7 @@ describe("extractPlugin — invalid optional field types", () => {
       mcpServer: { command: "/usr/bin/python3", args: ["-m", 42] },
     };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/bad-mcp-args-types" }]);
     expect(mod.getPluginCount()).toBe(0);
@@ -735,7 +735,7 @@ describe("extractPlugin — invalid optional field types", () => {
       mcpServer: { command: "/usr/bin/python3", args: ["-m", "server"] },
     };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/good-mcp-server" }]);
     expect(mod.getPluginCount()).toBe(1);
@@ -750,7 +750,7 @@ describe("extractPlugin — invalid optional field types", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     const { logError } = (await import("../util/log.js")) as unknown as {
       logError: ReturnType<typeof vi.fn>;
     };
@@ -767,7 +767,7 @@ describe("extractPlugin — invalid optional field types", () => {
 
   it("default _deps.importModule can import real modules", async () => {
     vi.resetModules();
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     // Exercise the default importModule implementation (line 159) by importing a built-in
     const result = await mod._deps.importModule("node:path");
     expect(result).toBeDefined();
@@ -783,7 +783,7 @@ describe("extractPlugin — invalid optional field types", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     const { logError } = (await import("../util/log.js")) as unknown as {
       logError: ReturnType<typeof vi.fn>;
     };
@@ -807,7 +807,7 @@ describe("extractPlugin — invalid optional field types", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     const { logError } = (await import("../util/log.js")) as unknown as {
       logError: ReturnType<typeof vi.fn>;
     };
@@ -834,7 +834,7 @@ describe("extractPlugin — invalid optional field types", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     // No `default` export — `mod.default ?? mod` falls back to mod itself
     const pluginMod = { name: "mod-as-plugin", handleAction: async () => null };
     mod._deps.importModule = async () =>
@@ -852,7 +852,7 @@ describe("extractPlugin — invalid optional field types", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     // default export is a number — candidate = 42, typeof 42 !== "object" → return null
     // Note: { default: null } would NOT work because null ?? mod evaluates to mod (not null)
     mod._deps.importModule = async () =>
@@ -870,7 +870,7 @@ describe("extractPlugin — invalid optional field types", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     const { logError } = (await import("../util/log.js")) as unknown as {
       logError: ReturnType<typeof vi.fn>;
     };
@@ -898,7 +898,7 @@ describe("extractPlugin — invalid optional field types", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     const { logError } = (await import("../util/log.js")) as unknown as {
       logError: ReturnType<typeof vi.fn>;
     };
@@ -926,7 +926,7 @@ describe("extractPlugin — invalid optional field types", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     const { logError } = (await import("../util/log.js")) as unknown as {
       logError: ReturnType<typeof vi.fn>;
     };
@@ -953,7 +953,7 @@ describe("extractPlugin — invalid optional field types", () => {
       handleAction: async () => null,
     };
     vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => true) }));
-    const mod = await import("../core/plugin.js");
+    const mod = await import("../core/plugin/index.js");
     mod._deps.importModule = async () => ({ default: plugin });
     await mod.loadPlugins([{ path: "/fake/good-p" }]);
     const loaded = mod.getLoadedPlugins();

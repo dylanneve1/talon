@@ -26,7 +26,7 @@
 import { resolve } from "node:path";
 import type { CodexOptions } from "@openai/codex-sdk";
 import { wrapMcpCommand } from "../../util/mcp-launcher.js";
-import { getPluginMcpServers } from "../../core/plugin.js";
+import { getPluginMcpServers } from "../../core/plugin/index.js";
 import {
   buildTalonMcpEnv,
   talonMcpServerCommand,

@@ -7,7 +7,7 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   handlePluginAction: vi.fn(async () => null),
 }));
 
@@ -421,7 +421,7 @@ describe("teams actions", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       handlePluginAction: vi.fn(async () => null),
     }));
 
@@ -461,7 +461,7 @@ describe("teams actions", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       handlePluginAction: vi.fn(async () => null),
     }));
 
@@ -583,7 +583,7 @@ describe("teams actions — branch coverage", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       handlePluginAction: vi.fn(async () => null),
     }));
 
@@ -667,7 +667,7 @@ describe("teams actions — non-Error throw coverage", () => {
       logWarn: vi.fn(),
       logDebug: vi.fn(),
     }));
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       handlePluginAction: vi.fn(async () => null),
     }));
     vi.doMock("../storage/cron-store.js", () => ({

@@ -38,7 +38,7 @@ import {
   type SystemPromptParts,
   type TalonConfig,
 } from "../../util/config.js";
-import { getPluginPromptAdditions } from "../../core/plugin.js";
+import { getPluginPromptAdditions } from "../../core/plugin/index.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

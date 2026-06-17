@@ -87,7 +87,7 @@ const mockGetLoadedPlugins = vi.fn(
       path: string;
     }>,
 );
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getLoadedPlugins: () => mockGetLoadedPlugins(),
 }));
 

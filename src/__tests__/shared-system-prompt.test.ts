@@ -37,7 +37,7 @@ vi.mock("../util/config.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginPromptAdditions: () => [],
 }));
 

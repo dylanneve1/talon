@@ -15,7 +15,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: vi.fn(() => ({})),
 }));
 
@@ -169,7 +169,7 @@ describe("codex / runOneShotAgent — extended item-type coverage", () => {
     events: AsyncGenerator<Record<string, unknown>>,
   ): Promise<string[]> {
     vi.resetModules();
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       getPluginMcpServers: vi.fn(() => ({})),
     }));
     vi.doMock("@openai/codex-sdk", () => {
@@ -431,7 +431,7 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
   ): Promise<{ log: string; observedModel: string | undefined }> {
     vi.resetModules();
     const observedThreadOptions: Array<Record<string, unknown>> = [];
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       getPluginMcpServers: vi.fn(() => ({})),
     }));
     vi.doMock("@openai/codex-sdk", () => {
@@ -520,7 +520,7 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     // resolveOneShotModel will consult.
     vi.resetModules();
     const observedThreadOptions: Array<Record<string, unknown>> = [];
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       getPluginMcpServers: vi.fn(() => ({})),
     }));
     vi.doMock("@openai/codex-sdk", () => {
@@ -626,7 +626,7 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     // EXPLICIT mismatch path (server returns the canonical text) IS
     // persisted in a separate path because that signal is definitive.
     vi.resetModules();
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       getPluginMcpServers: vi.fn(() => ({})),
     }));
     vi.doMock("@openai/codex-sdk", () => {
@@ -689,7 +689,7 @@ describe("codex / runOneShotAgent — OAuth-aware model swap", () => {
     // explicit mismatch is unambiguous server signal — persist it so
     // the next scheduled run pre-empts to gpt-5.5.
     vi.resetModules();
-    vi.doMock("../core/plugin.js", () => ({
+    vi.doMock("../core/plugin/index.js", () => ({
       getPluginMcpServers: vi.fn(() => ({})),
     }));
     vi.doMock("@openai/codex-sdk", () => {

@@ -80,7 +80,7 @@ export async function bootstrap(
     config.playwright?.enabled === true;
   if (hasPlugins) {
     const { loadPlugins, loadBuiltinPlugins, getPluginPromptAdditions } =
-      await import("./core/plugin.js");
+      await import("./core/plugin/index.js");
 
     // External plugins
     if (config.plugins.length > 0) {
@@ -303,7 +303,7 @@ export async function initBackendAndDispatcher(
   // Only enable mempalace dream integration if the plugin actually registered
   let mempalaceCfg: { pythonPath: string; palacePath: string } | undefined;
   if (config.mempalace?.enabled) {
-    const { getPlugin } = await import("./core/plugin.js");
+    const { getPlugin } = await import("./core/plugin/index.js");
     if (getPlugin("mempalace")) {
       const { dirs, files: pathFiles } = await import("./util/paths.js");
       mempalaceCfg = {

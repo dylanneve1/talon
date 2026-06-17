@@ -19,7 +19,7 @@ import type {
 import type { PreparedSystemPrompt } from "../shared/system-prompt.js";
 import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
-import { getPluginMcpServers } from "../../core/plugin.js";
+import { getPluginMcpServers } from "../../core/plugin/index.js";
 import { resolveModelId } from "../../core/models/catalog.js";
 import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isTurnTerminator } from "../../core/tools/index.js";

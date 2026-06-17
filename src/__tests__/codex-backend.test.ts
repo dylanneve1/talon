@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: vi.fn(() => ({
     "mempalace-tools": {
       command: "python",

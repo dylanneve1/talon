@@ -16,7 +16,7 @@ vi.mock("../storage/chat-settings.js", () => ({
     mockGetChatSettings(...(args as Parameters<typeof mockGetChatSettings>)),
 }));
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: (...args: unknown[]) =>
     mockGetPluginMcpServers(
       ...(args as Parameters<typeof mockGetPluginMcpServers>),

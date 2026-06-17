@@ -11,7 +11,7 @@ export const pluginHandlers: SharedActionHandlers = {
   reload_plugins: async (body, chatId, backend) => {
     try {
       const { reloadPlugins, getPluginPromptAdditions } =
-        await import("../../plugin.js");
+        await import("../../plugin/index.js");
       const { rebuildSystemPrompt } = await import("../../../util/config.js");
       const { clearSystemPromptSnapshots } = await import(
         "../../../backend/shared/system-prompt.js"

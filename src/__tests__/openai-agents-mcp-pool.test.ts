@@ -69,7 +69,7 @@ vi.mock("@openai/agents", () => {
 });
 
 // Mock plugin server map so the pool sees a deterministic set.
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: (_bridgeUrl: string, _chatId: string) => ({
     "fake-plugin-tools": {
       command: "echo",

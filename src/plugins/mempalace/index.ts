@@ -18,7 +18,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execFile as execFileCb, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
-import type { TalonPlugin } from "../../core/plugin.js";
+import type { TalonPlugin } from "../../core/plugin/index.js";
 import { log, logWarn } from "../../util/log.js";
 import { dirs } from "../../util/paths.js";
 

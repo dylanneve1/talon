@@ -26,7 +26,7 @@ export async function startChat(): Promise<void> {
   // system prompt loads terminal.md instead of teams.md/telegram.md.
   (config as Record<string, unknown>).frontend = "terminal";
   const { rebuildSystemPrompt } = await import("../util/config.js");
-  const { getPluginPromptAdditions } = await import("../core/plugin.js");
+  const { getPluginPromptAdditions } = await import("../core/plugin/index.js");
   rebuildSystemPrompt(config, getPluginPromptAdditions());
 
   const gateway = new Gateway("chat");

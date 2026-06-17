@@ -140,7 +140,7 @@ vi.mock("../storage/chat-settings.js", () => ({
   setChatModel: vi.fn(),
 }));
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: () => ({}),
   getPluginPromptAdditions: () => [],
 }));

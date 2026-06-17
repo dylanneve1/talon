@@ -10,7 +10,7 @@ import {
 } from "discord.js";
 import { files } from "../../../util/paths.js";
 import { formatDuration } from "../helpers.js";
-import { getLoadedPlugins } from "../../../core/plugin.js";
+import { getLoadedPlugins } from "../../../core/plugin/index.js";
 import { DISCORD_MAX_TEXT, DISCORD_SAFE_RESERVE } from "../formatting.js";
 import { reply } from "./shared.js";
 

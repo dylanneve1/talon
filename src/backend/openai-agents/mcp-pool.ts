@@ -45,7 +45,7 @@ import { connectMcpServers, MCPServerStdio } from "@openai/agents";
 import type { MCPServer } from "@openai/agents";
 import { resolve } from "node:path";
 import { wrapMcpCommand } from "../../util/mcp-launcher.js";
-import { getPluginMcpServers } from "../../core/plugin.js";
+import { getPluginMcpServers } from "../../core/plugin/index.js";
 import {
   buildTalonMcpEnv,
   talonMcpServerCommand,

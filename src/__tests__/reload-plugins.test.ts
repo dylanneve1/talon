@@ -109,7 +109,7 @@ const mockGetPluginPromptAdditions = vi.fn(() => "prompt additions");
 const mockRebuildSystemPrompt = vi.fn();
 const mockUpdateSystemPrompt = vi.fn();
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   reloadPlugins: (...args: unknown[]) =>
     mockReloadPlugins(...(args as Parameters<typeof mockReloadPlugins>)),
   getPluginPromptAdditions: () => mockGetPluginPromptAdditions(),

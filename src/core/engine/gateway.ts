@@ -20,7 +20,7 @@ import { getHealthStatus } from "../../util/watchdog.js";
 import { getActiveSessionCount } from "../../storage/sessions.js";
 import { log, logError, logDebug } from "../../util/log.js";
 import { handleSharedAction } from "./gateway-actions/index.js";
-import { handlePluginAction } from "../plugin.js";
+import { handlePluginAction } from "../plugin/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
 import type { Backend } from "../agent-runtime/capabilities.js";

@@ -39,7 +39,7 @@ const LAUNCHER_READY = {
   },
 };
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: vi.fn(() => structuredClone(LAUNCHER_READY)),
 }));
 

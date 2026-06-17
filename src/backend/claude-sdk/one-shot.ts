@@ -16,7 +16,7 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { OneShotAgentParams } from "../../core/types.js";
 import { log } from "../../util/log.js";
-import { getPluginMcpServers } from "../../core/plugin.js";
+import { getPluginMcpServers } from "../../core/plugin/index.js";
 import { ALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
 import { buildMcpServers } from "./options.js";
 

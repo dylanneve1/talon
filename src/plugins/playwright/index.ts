@@ -21,7 +21,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { TalonPlugin } from "../../core/plugin.js";
+import type { TalonPlugin } from "../../core/plugin/index.js";
 import { log } from "../../util/log.js";
 
 export function createPlaywrightPlugin(config: {

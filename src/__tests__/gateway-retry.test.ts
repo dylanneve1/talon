@@ -48,7 +48,7 @@ vi.mock("../core/engine/gateway-actions.js", () => ({
   handleSharedAction: vi.fn(async () => null),
 }));
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   handlePluginAction: vi.fn(async () => null),
 }));
 

@@ -96,7 +96,7 @@ vi.mock("@openai/codex-sdk", () => {
   };
 });
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: vi.fn(() => ({})),
   getPluginPromptAdditions: vi.fn(() => []),
 }));

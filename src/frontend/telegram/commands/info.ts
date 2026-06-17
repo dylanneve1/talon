@@ -8,7 +8,7 @@ import { files } from "../../../util/paths.js";
 import { isUserClientReady } from "../userbot.js";
 import { escapeHtml } from "../formatting.js";
 import { formatDuration } from "../helpers/index.js";
-import { getLoadedPlugins } from "../../../core/plugin.js";
+import { getLoadedPlugins } from "../../../core/plugin/index.js";
 
 export function registerInfoCommands(bot: Bot): void {
   bot.command("start", (ctx) =>

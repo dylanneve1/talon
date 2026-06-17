@@ -15,7 +15,7 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-vi.mock("../core/plugin.js", () => ({
+vi.mock("../core/plugin/index.js", () => ({
   handlePluginAction: vi.fn(async () => null),
 }));
 
@@ -465,7 +465,7 @@ describe("gateway HTTP server", () => {
 
 describe("gateway routes to plugin handler", () => {
   it("returns plugin result when handlePluginAction returns non-null", async () => {
-    const { handlePluginAction } = await import("../core/plugin.js");
+    const { handlePluginAction } = await import("../core/plugin/index.js");
     (handlePluginAction as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
       ok: true,
       result: "from plugin",
