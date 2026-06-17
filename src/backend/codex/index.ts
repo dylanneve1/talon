@@ -26,7 +26,7 @@ export {
 
 export { initCodexAgent, ensureCodex } from "./init.js";
 
-export { handleMessage, getActiveAbort } from "./handler.js";
+export { handleMessage, getActiveAbort } from "./handler/index.js";
 
 export { runOneShotAgent } from "./one-shot.js";
 

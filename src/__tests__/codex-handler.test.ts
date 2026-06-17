@@ -107,7 +107,7 @@ vi.mock("../util/trace.js", () => ({
 
 // Modules under test (imported after mocks are wired)
 const { handleMessage, getActiveAbort } =
-  await import("../backend/codex/handler.js");
+  await import("../backend/codex/handler/index.js");
 const { initCodexAgent } = await import("../backend/codex/init.js");
 const { resetState } = await import("../backend/codex/state.js");
 const sessions = await import("../storage/sessions.js");

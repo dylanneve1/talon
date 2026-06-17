@@ -18,7 +18,7 @@ import {
 } from "../../core/agent-runtime/capabilities.js";
 
 import { initCodexAgent, getCodexAuthInfo } from "./init.js";
-import { handleMessage as codexHandleMessage } from "./handler.js";
+import { handleMessage as codexHandleMessage } from "./handler/index.js";
 import { runOneShotAgent as codexRunOneShotAgent } from "./one-shot.js";
 import { resetState as resetCodexState } from "./state.js";
 import {
