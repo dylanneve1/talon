@@ -13,7 +13,7 @@ import type { TalonConfig } from "../../util/config.js";
 import { soulEnabled } from "../../core/soul/settings.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
-import { createTelegramActionHandler, sendText } from "./actions.js";
+import { createTelegramActionHandler, sendText } from "./actions/index.js";
 import { initUserClient, disconnectUserClient } from "./userbot.js";
 import {
   registerCommands,

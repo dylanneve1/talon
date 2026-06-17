@@ -348,7 +348,7 @@ describe("Tool → bridge round-trip", () => {
 import {
   createTelegramActionHandler,
   // re-export for test side-only — handler depends on the InputFile constructor
-} from "../frontend/telegram/actions.js";
+} from "../frontend/telegram/actions/index.js";
 import type { Bot } from "grammy";
 import type { Gateway } from "../core/engine/gateway.js";
 

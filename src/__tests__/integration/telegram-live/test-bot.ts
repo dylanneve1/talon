@@ -14,7 +14,7 @@
  */
 
 import { Bot, InputFile } from "grammy";
-import { createTelegramActionHandler } from "../../../frontend/telegram/actions.js";
+import { createTelegramActionHandler } from "../../../frontend/telegram/actions/index.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 
 export interface TestBotEnv {
