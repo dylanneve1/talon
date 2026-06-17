@@ -258,6 +258,20 @@ export async function initBackendAndDispatcher(
       );
       return { model, ref, backendId: beId };
     },
+    // Per-run model override (triggers/cron): validate + materialise an
+    // explicit model id against the chat's backend. Returns null when the id
+    // isn't selectable, so the dispatcher falls back to the chat model.
+    resolveModelOverride: async (chatId: string, modelId: string) => {
+      const { resolveExplicitModelRef } =
+        await import("./core/models/active-model.js");
+      const { getBackendIdForChat, getBackendForChat: getBE } =
+        await import("./core/engine/backend-controller.js");
+      return resolveExplicitModelRef(
+        modelId,
+        getBE(chatId),
+        getBackendIdForChat(chatId),
+      );
+    },
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),

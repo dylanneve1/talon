@@ -206,9 +206,13 @@ async function executeJob(job: CronJob): Promise<void> {
   }
 
   // type === "query" — run through dispatcher with full tool access, timeout-protected
+  const instructions =
+    job.model && job.instructions
+      ? `[Instructions for this run: ${job.instructions}]\n\n`
+      : "";
   const prompt =
     `[System: CRON JOB "${job.name}" (schedule: ${job.schedule}). ` +
-    `Execute the task. Be concise and action-oriented.]\n\n${job.content}`;
+    `Execute the task. Be concise and action-oriented.]\n\n${instructions}${job.content}`;
 
   await withTimeout(
     execute({
@@ -218,6 +222,7 @@ async function executeJob(job: CronJob): Promise<void> {
       senderName: "Cron",
       isGroup: false,
       source: "cron",
+      ...(job.model ? { modelOverride: job.model } : {}),
     }),
     CRON_JOB_TIMEOUT_MS,
     `Cron job "${job.name}"`,

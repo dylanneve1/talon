@@ -101,6 +101,18 @@ export const triggerTools: ToolDefinition[] = [
         .describe(
           "If true, respawn this trigger automatically when Talon restarts. Default false.",
         ),
+      model: z
+        .string()
+        .optional()
+        .describe(
+          "Optional model override for the wake-up turn. Unset = this chat's model (preferred). Set only when the wake-up handling is mechanical (e.g. 'check what broke and act') and a cheaper model suffices; the wake-up runs with none of this chat's context.",
+        ),
+      instructions: z
+        .string()
+        .optional()
+        .describe(
+          "Short brief for the override model (what this trigger watches, how to investigate, what counts as handled, when to escalate to the chat). Recommended whenever 'model' is set.",
+        ),
     },
     execute: (params, bridge) => bridge("trigger_create", params),
     tag: "triggers",

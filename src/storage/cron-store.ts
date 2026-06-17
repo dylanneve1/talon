@@ -40,6 +40,17 @@ export type CronJob = {
   runCount: number;
   /** IANA timezone (e.g. "America/New_York"). Defaults to system timezone. */
   timezone?: string;
+  /**
+   * Optional model override for `query` jobs — a model id valid on the chat's
+   * backend. Unset = inherit the chat's model (preferred). When set, the run
+   * uses this (typically cheaper) model instead.
+   */
+  model?: string;
+  /**
+   * Optional short instructions prepended to the run prompt when `model` is set,
+   * to orient the override model (authored by the main model at create time).
+   */
+  instructions?: string;
 };
 
 type CronStoreShape = Record<string, CronJob>;

@@ -119,6 +119,39 @@ function extractText(html: string, maxLength = 8000): string {
   return text.slice(0, maxLength);
 }
 
+/**
+ * Validate an explicit per-job model id against the chat's backend. Returns an
+ * error message when the id isn't a selectable model there, so create_cron_job /
+ * trigger_create can reject a bad override up front (the agent retries or tells
+ * the user) instead of silently storing one that fails at fire time.
+ */
+async function validateJobModel(
+  chatId: number,
+  model: string,
+): Promise<string | null> {
+  try {
+    const { resolveExplicitModelRef } =
+      await import("../models/active-model.js");
+    const { getBackendIdForChat, getBackendForChat } =
+      await import("./backend-controller.js");
+    const chatIdStr = String(chatId);
+    const ref = await resolveExplicitModelRef(
+      model,
+      getBackendForChat(chatIdStr),
+      getBackendIdForChat(chatIdStr),
+    );
+    if (!ref) {
+      return (
+        `Model "${model}" is not a selectable model on this chat's backend. ` +
+        `Leave model unset to use the chat's model, or pick a valid model id.`
+      );
+    }
+    return null;
+  } catch (err) {
+    return `Could not validate model "${model}": ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
 export async function handleSharedAction(
   body: Record<string, unknown>,
   chatId: number,
@@ -287,6 +320,10 @@ export async function handleSharedAction(
       const jobType = (body.type as CronJobType) ?? "message";
       const content = String(body.content ?? "");
       const timezone = body.timezone ? String(body.timezone) : undefined;
+      const model = body.model ? String(body.model) : undefined;
+      const instructions = body.instructions
+        ? String(body.instructions)
+        : undefined;
 
       if (!schedule) return { ok: false, error: "Missing schedule expression" };
       if (!content) return { ok: false, error: "Missing content" };
@@ -300,6 +337,12 @@ export async function handleSharedAction(
           error: `Invalid cron expression: ${validation.error}`,
         };
 
+      // A model override only applies to "query" jobs; validate it up front.
+      if (model && jobType === "query") {
+        const modelErr = await validateJobModel(chatId, model);
+        if (modelErr) return { ok: false, error: modelErr };
+      }
+
       const id = generateCronId();
       addCronJob({
         id,
@@ -312,6 +355,8 @@ export async function handleSharedAction(
         createdAt: Date.now(),
         runCount: 0,
         timezone,
+        ...(model && jobType === "query" ? { model } : {}),
+        ...(instructions && jobType === "query" ? { instructions } : {}),
       });
       log("gateway", `create_cron_job: "${name}" [${schedule}]`);
       return {
@@ -405,6 +450,10 @@ export async function handleSharedAction(
         ? String(body.description)
         : undefined;
       const persistent = body.persistent === true;
+      const model = body.model ? String(body.model) : undefined;
+      const instructions = body.instructions
+        ? String(body.instructions)
+        : undefined;
 
       const nameErr = validateName(name);
       if (nameErr) return { ok: false, error: nameErr };
@@ -441,6 +490,11 @@ export async function handleSharedAction(
         };
       }
 
+      if (model) {
+        const modelErr = await validateJobModel(chatId, model);
+        if (modelErr) return { ok: false, error: modelErr };
+      }
+
       const id = generateTriggerId();
       const lang = language as TriggerLanguage;
       let scriptPath: string;
@@ -468,6 +522,8 @@ export async function handleSharedAction(
         timeoutSeconds,
         fireCount: 0,
         persistent,
+        ...(model ? { model } : {}),
+        ...(instructions ? { instructions } : {}),
       };
       addTrigger(trigger);
 

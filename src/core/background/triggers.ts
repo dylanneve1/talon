@@ -718,11 +718,15 @@ async function fireWake(
   const header = `[Trigger "${t.name}" (${t.id}) ${promptStatus}]`;
   const body = trimmed ? `${header}\n\n${trimmed}` : `${header}\n\n(no output)`;
 
+  const instructions =
+    t.model && t.instructions
+      ? `[Instructions for this run: ${t.instructions}]\n\n`
+      : "";
   const prompt =
     `[System: TRIGGER FIRED. Status: ${promptStatus}. ` +
     `This is a wake-up message from a long-running script you started earlier. ` +
     `Decide whether to message the user, take an action, or do nothing.]` +
-    `\n\n${body}`;
+    `\n\n${instructions}${body}`;
 
   try {
     await deps.execute({
@@ -732,6 +736,7 @@ async function fireWake(
       senderName: "Trigger",
       isGroup: false,
       source: "trigger",
+      ...(t.model ? { modelOverride: t.model } : {}),
     });
   } catch (err) {
     logError("triggers", `wake dispatch failed [${triggerId}]`, err);
