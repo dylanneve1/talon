@@ -19,7 +19,7 @@ import {
   registerCommands,
   setAdminUserId,
   TELEGRAM_COMMANDS,
-} from "./commands.js";
+} from "./commands/index.js";
 import { setAccessControl } from "./handlers/index.js";
 import { registerMiddleware } from "./middleware.js";
 import { registerCallbacks } from "./callbacks.js";
