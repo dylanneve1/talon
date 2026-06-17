@@ -25,7 +25,7 @@ import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { log, logError, logWarn } from "../../util/log.js";
-import { createDiscordActionHandler } from "./actions.js";
+import { createDiscordActionHandler } from "./actions/index.js";
 import {
   registerCommandsForGuilds,
   registerInteractionRouter,
