@@ -47,6 +47,13 @@ import {
 } from "../../storage/trigger-store.js";
 import { cancelTrigger, spawnTrigger } from "../background/triggers.js";
 import { decoupledJobsEnabled } from "../background/job-config.js";
+import { resolveExplicitModelRef } from "../models/active-model.js";
+import {
+  getBackendIdForChat,
+  getBackendForChat,
+  acquireBackendInstance,
+  isModelValidForBackend,
+} from "./backend-controller.js";
 import {
   deleteScript,
   formatScript,
@@ -137,14 +144,6 @@ async function validateJobModelOverride(
   provider?: string,
 ): Promise<string | null> {
   try {
-    const { resolveExplicitModelRef } =
-      await import("../models/active-model.js");
-    const {
-      getBackendIdForChat,
-      getBackendForChat,
-      acquireBackendInstance,
-      isModelValidForBackend,
-    } = await import("./backend-controller.js");
     const chatIdStr = String(chatId);
     const chatBackendId = getBackendIdForChat(chatIdStr);
 

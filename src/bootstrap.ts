@@ -30,6 +30,11 @@ import {
 } from "./core/background/triggers.js";
 import { initDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat.js";
+import { setDecoupledJobsEnabled } from "./core/background/job-config.js";
+import {
+  resolveActiveModelForChat,
+  resolveExplicitModelRef,
+} from "./core/models/active-model.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
 import type { ContextManager } from "./core/types.js";
@@ -136,6 +141,7 @@ export async function initBackendAndDispatcher(
     initBackendPool,
     getBackendForRole,
     getBackendForChat,
+    getBackendIdForChat,
     rebindChat,
     releaseChat,
     isBackendAvailable,
@@ -244,12 +250,8 @@ export async function initBackendAndDispatcher(
     // dispatcher refuses and replies with a /model prompt instead
     // of submitting an empty id to the backend.
     resolveActiveModel: async (chatId: string) => {
-      const { resolveActiveModelForChat } =
-        await import("./core/models/active-model.js");
-      const { getBackendIdForChat, getBackendForChat: getBE } =
-        await import("./core/engine/backend-controller.js");
       const beId = getBackendIdForChat(chatId);
-      const be = getBE(chatId);
+      const be = getBackendForChat(chatId);
       const { model, ref } = await resolveActiveModelForChat(
         chatId,
         be,
@@ -261,17 +263,12 @@ export async function initBackendAndDispatcher(
     // Per-run model override (triggers/cron): validate + materialise an
     // explicit model id against the chat's backend. Returns null when the id
     // isn't selectable, so the dispatcher falls back to the chat model.
-    resolveModelOverride: async (chatId: string, modelId: string) => {
-      const { resolveExplicitModelRef } =
-        await import("./core/models/active-model.js");
-      const { getBackendIdForChat, getBackendForChat: getBE } =
-        await import("./core/engine/backend-controller.js");
-      return resolveExplicitModelRef(
+    resolveModelOverride: async (chatId: string, modelId: string) =>
+      resolveExplicitModelRef(
         modelId,
-        getBE(chatId),
+        getBackendForChat(chatId),
         getBackendIdForChat(chatId),
-      );
-    },
+      ),
     context: frontend.context,
     sendTyping: frontend.sendTyping,
     onActivity: () => resetPulseTimer(),
@@ -279,8 +276,6 @@ export async function initBackendAndDispatcher(
 
   // Decoupled-jobs feature gate (per-job model/provider overrides). Off unless
   // explicitly enabled in config.
-  const { setDecoupledJobsEnabled } =
-    await import("./core/background/job-config.js");
   setDecoupledJobsEnabled(config.decoupledJobs ?? false);
 
   initPulse();
