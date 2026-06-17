@@ -23,7 +23,7 @@ export {
   renderOpenCodeModelList,
   formatOpenCodeSelectionError,
   formatOpenCodeUnavailableModel,
-} from "./models.js";
+} from "./models/index.js";
 
 export {
   summarizeOpenCodeAssistantMessages,

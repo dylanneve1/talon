@@ -233,7 +233,7 @@ kiloDescribe("Kilo backend — real bootstrap (integration)", () => {
     //    spawns the test-port `kilo serve` on the very first invocation. So
     //    this also doubles as the server warm-up.
     const { getOpenCodeModelCatalog, clearModelCatalogCache } =
-      await import("../../backend/kilo/models.js");
+      await import("../../backend/kilo/models/index.js");
     clearModelCatalogCache();
     const catalog = await getOpenCodeModelCatalog(/* forceRefresh */ true);
     const free = catalog.connectedFreeModels[0];

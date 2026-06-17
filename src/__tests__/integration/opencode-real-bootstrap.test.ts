@@ -176,7 +176,7 @@ opencodeDescribe("OpenCode backend — real bootstrap (integration)", () => {
 
     // Pick a free model from the live opencode catalog.
     const { getOpenCodeModelCatalog, clearModelCatalogCache } =
-      await import("../../backend/opencode/models.js");
+      await import("../../backend/opencode/models/index.js");
     clearModelCatalogCache();
     const catalog = await getOpenCodeModelCatalog(/* forceRefresh */ true);
     const free = catalog.connectedFreeModels[0];

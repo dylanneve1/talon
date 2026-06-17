@@ -25,7 +25,7 @@ const {
   getBucketPriority,
   normalizeModelLookup,
   parseOpenCodeModelQuery,
-} = await import("../backend/kilo/models.js");
+} = await import("../backend/kilo/models/index.js");
 
 // ---------------------------------------------------------------------------
 // guessProviderID — string-pattern heuristic mapping a model.id to a provider.

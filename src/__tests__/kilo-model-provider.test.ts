@@ -149,7 +149,7 @@ const catalog = {
 // without spinning up a real Kilo server.
 // ---------------------------------------------------------------------------
 
-vi.mock("../backend/kilo/models.js", () => ({
+vi.mock("../backend/kilo/models/index.js", () => ({
   getOpenCodeModelCatalog: vi.fn(async () => catalog),
   getOpenCodeModelInfo: vi.fn(async (id: string) =>
     catalog.models.find((m) => m.id === id),

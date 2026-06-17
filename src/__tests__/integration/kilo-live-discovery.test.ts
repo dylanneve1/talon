@@ -47,7 +47,7 @@ import {
   waitForHealthy,
 } from "./live-backend-helpers.js";
 
-type KiloModelsModule = typeof import("../../backend/kilo/models.js");
+type KiloModelsModule = typeof import("../../backend/kilo/models/index.js");
 
 const KILO_EXECUTABLE_ENV = "KILO_CODE_EXECUTABLE";
 
@@ -118,7 +118,7 @@ kiloDescribe("Kilo live discovery (integration)", () => {
       getOpenCodeModelCatalog,
       resolveOpenCodeModelInput,
       clearModelCatalogCache,
-    } = await import("../../backend/kilo/models.js"));
+    } = await import("../../backend/kilo/models/index.js"));
 
     // Spawn `kilo serve` in detached-style stdio so its output doesn't
     // contaminate our test output. We capture stdout/stderr to a buffer

@@ -22,7 +22,7 @@ import {
   waitForHealthy,
 } from "./live-backend-helpers.js";
 
-type OpenCodeModelsModule = typeof import("../../backend/opencode/models.js");
+type OpenCodeModelsModule = typeof import("../../backend/opencode/models/index.js");
 
 const OPENCODE_EXECUTABLE_ENV = "OPENCODE_EXECUTABLE";
 const OPENCODE_PRESENT = cliAvailable("opencode", OPENCODE_EXECUTABLE_ENV);
@@ -73,7 +73,7 @@ opencodeDescribe("OpenCode live discovery (integration)", () => {
       getOpenCodeModelSelectionValue,
       resolveOpenCodeModelInput,
       clearModelCatalogCache,
-    } = await import("../../backend/opencode/models.js"));
+    } = await import("../../backend/opencode/models/index.js"));
 
     opencodeProc = spawnCli(
       "opencode",

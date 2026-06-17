@@ -36,7 +36,7 @@ export {
   renderOpenCodeModelList,
   formatOpenCodeSelectionError,
   formatOpenCodeUnavailableModel,
-} from "./models.js";
+} from "./models/index.js";
 
 // ── Sessions ───────────────────────────────────────────────────────────────
 export {

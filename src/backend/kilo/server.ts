@@ -25,13 +25,13 @@ import type { TalonConfig } from "../../util/config.js";
 import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
 import { logWarn } from "../../util/log.js";
 import { buildDeliveryContract } from "../shared/delivery-contract.js";
-import { clearModelCatalogCache } from "./models.js";
+import { clearModelCatalogCache } from "./models/index.js";
 import {
   guessProviderID,
   getBucketPriority,
   normalizeModelLookup,
   parseOpenCodeModelQuery,
-} from "./models.js";
+} from "./models/index.js";
 import {
   createRemoteServerState,
   ensureRemoteServer as ensureRemoteServerShared,

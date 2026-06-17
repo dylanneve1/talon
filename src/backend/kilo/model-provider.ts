@@ -22,7 +22,7 @@ import {
   type OpenCodeModelCatalogEntry,
   type OpenCodeModelCatalog,
   type OpenCodeModelResolution as InternalResolution,
-} from "./models.js";
+} from "./models/index.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
