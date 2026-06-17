@@ -53,6 +53,7 @@ import {
   getAvailableBackends,
   getPooledBackend,
   acquireBackendInstance,
+  isModelValidForBackend,
 } from "./backend-controller.js";
 import {
   deleteScript,
@@ -159,6 +160,44 @@ async function validateJobModelOverride(
     return null;
   } catch (err) {
     return `Could not validate model override: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+/**
+ * Validate a cron `query` job's model + optional provider override. Cron runs
+ * isolated, so unlike triggers it may target a different provider — the backend
+ * just has to exist, support isolated (background) runs, and have the model as a
+ * selectable id. Same backend (no provider) validates against the chat backend.
+ * Returns an error string, or null when valid.
+ */
+async function validateCronModelOverride(
+  chatId: number,
+  model: string,
+  provider?: string,
+): Promise<string | null> {
+  const chatBackendId = getBackendIdForChat(String(chatId));
+  if (!provider || provider === chatBackendId) {
+    return validateJobModelOverride(chatId, model);
+  }
+  let acquired: Awaited<ReturnType<typeof acquireBackendInstance>> | null =
+    null;
+  try {
+    acquired = await acquireBackendInstance(provider);
+  } catch {
+    return `Unknown or unavailable provider "${provider}".`;
+  }
+  try {
+    if (!acquired.backend.background) {
+      return `Provider "${provider}" can't run isolated jobs (no background capability).`;
+    }
+    if (!(await isModelValidForBackend(acquired.backend, model))) {
+      return `Model "${model}" is not a selectable model on provider "${provider}".`;
+    }
+    return null;
+  } catch (err) {
+    return `Could not validate provider override: ${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    await acquired.release();
   }
 }
 
@@ -331,17 +370,26 @@ export async function handleSharedAction(
       const content = String(body.content ?? "");
       const timezone = body.timezone ? String(body.timezone) : undefined;
       const model = body.model ? String(body.model) : undefined;
+      const provider = body.provider ? String(body.provider) : undefined;
+      const instructions = body.instructions
+        ? String(body.instructions)
+        : undefined;
 
       if (!schedule) return { ok: false, error: "Missing schedule expression" };
       if (!content) return { ok: false, error: "Missing content" };
       if (content.length > 10_000)
         return { ok: false, error: "Content too long (max 10,000 chars)" };
-      // A model override only makes sense for "query" jobs (a "message" job
-      // just sends text — no model runs).
-      if (model && jobType !== "query")
+      // The overrides only make sense for "query" jobs (a "message" job just
+      // sends text — no model runs).
+      if ((model || provider || instructions) && jobType !== "query")
         return {
           ok: false,
-          error: "A model override only applies to 'query' jobs.",
+          error: "Model/provider/instructions only apply to 'query' jobs.",
+        };
+      if (provider && !model)
+        return {
+          ok: false,
+          error: "A 'provider' override also requires a 'model'.",
         };
 
       const validation = validateCronExpression(schedule, timezone);
@@ -351,10 +399,14 @@ export async function handleSharedAction(
           error: `Invalid cron expression: ${validation.error}`,
         };
 
-      // Validate the model up front so a bad id is rejected here instead of
-      // silently failing at fire time.
+      // Validate the model/provider up front so a bad id is rejected here
+      // instead of silently failing at fire time.
       if (model) {
-        const modelErr = await validateJobModelOverride(chatId, model);
+        const modelErr = await validateCronModelOverride(
+          chatId,
+          model,
+          provider,
+        );
         if (modelErr) return { ok: false, error: modelErr };
       }
 
@@ -371,6 +423,8 @@ export async function handleSharedAction(
         runCount: 0,
         timezone,
         ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
+        ...(instructions ? { instructions } : {}),
       });
       log("gateway", `create_cron_job: "${name}" [${schedule}]`);
       return {

@@ -67,12 +67,14 @@ const mockAcquireBackendInstance = vi.fn(
     throw new Error("not stubbed");
   },
 );
+const mockIsModelValidForBackend = vi.fn(async () => true);
 vi.mock("../core/engine/backend-controller.js", () => ({
   getBackendForChat: mockGetBackendForChat,
   getBackendIdForChat: mockGetBackendIdForChat,
   getAvailableBackends: mockGetAvailableBackends,
   getPooledBackend: mockGetPooledBackend,
   acquireBackendInstance: mockAcquireBackendInstance,
+  isModelValidForBackend: mockIsModelValidForBackend,
 }));
 
 const mockResolveExplicitModelRef = vi.fn(async (): Promise<unknown> => null);
@@ -1871,8 +1873,85 @@ describe("per-job model override + discovery actions", () => {
         42,
       );
       expect(result?.ok).toBe(false);
-      expect(result?.error).toMatch(/only applies to 'query'/i);
+      expect(result?.error).toMatch(/only apply to 'query'/i);
       expect(mockResolveExplicitModelRef).not.toHaveBeenCalled();
+      expect(mockAddCronJob).not.toHaveBeenCalled();
+    });
+
+    it("rejects a provider override without a model", async () => {
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "X",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "do a thing",
+          provider: "codex",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/requires a 'model'/i);
+      expect(mockAddCronJob).not.toHaveBeenCalled();
+    });
+
+    it("persists a cross-provider override after validating it on that backend", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockAcquireBackendInstance.mockResolvedValue({
+        backend: { background: {} }, // supports isolated runs
+        release: mockRelease,
+      });
+      mockIsModelValidForBackend.mockResolvedValue(true);
+
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "Cheap codex job",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "check the thing",
+          model: "gpt-5.5",
+          provider: "codex",
+          instructions: "be terse",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(true);
+      expect(mockAcquireBackendInstance).toHaveBeenCalledWith("codex");
+      expect(mockRelease).toHaveBeenCalled();
+      expect(mockAddCronJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: "gpt-5.5",
+          provider: "codex",
+          instructions: "be terse",
+          type: "query",
+        }),
+      );
+    });
+
+    it("rejects a cross-provider model that isn't valid on that backend", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockAcquireBackendInstance.mockResolvedValue({
+        backend: { background: {} },
+        release: mockRelease,
+      });
+      mockIsModelValidForBackend.mockResolvedValue(false);
+
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "Bad codex job",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "x",
+          model: "nope",
+          provider: "codex",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/not a selectable model on provider/i);
+      expect(mockRelease).toHaveBeenCalled();
       expect(mockAddCronJob).not.toHaveBeenCalled();
     });
   });

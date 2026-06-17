@@ -28,9 +28,7 @@ Examples:
   "0 8 * * 1"     = every Monday at 8:00 AM
 
 Type "message" sends the content as a text message.
-Type "query" runs the content as a Claude prompt with full tool access (can search, create files, send messages, etc).
-
-Model: leave "model" unset to run on this chat's model (preferred). Only set it for a "query" job that should run on a cheaper model from the SAME backend as this chat — e.g. a routine daily task that doesn't need the flagship model. The job still resumes this chat's session (same backend = session continuity preserved). The model must be a valid, selectable model id on this chat's backend; an invalid or cross-backend id is rejected — pick from the available models.`,
+Type "query" runs the content as a Claude prompt with full tool access, as an ISOLATED one-shot — its own session, no chat history. So a "query" cron job never touches the chat session, and may run on a cheaper model or a different provider. Leave "model"/"provider" unset to use this chat's model.`,
     schema: {
       name: z.string().describe("Human-readable name for the job"),
       schedule: z
@@ -52,7 +50,19 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
         .string()
         .optional()
         .describe(
-          "Optional model override for 'query' jobs. Unset = this chat's model (preferred). Set only to run on a cheaper model from the SAME backend as this chat (session continuity is preserved). Must be a valid, selectable model id on this chat's backend — call list_models to see valid ids; an invalid or cross-backend id is rejected.",
+          "Optional model override for 'query' jobs. Unset = this chat's model. Since cron runs isolated, this may be a cheaper model — on this chat's backend, or (with 'provider') a different one. Call list_models to see valid ids.",
+        ),
+      provider: z
+        .string()
+        .optional()
+        .describe(
+          "Optional backend/provider id for the 'query' override (e.g. a cheaper provider). Requires 'model'. Unset = this chat's backend. Call list_backends to see ids.",
+        ),
+      instructions: z
+        .string()
+        .optional()
+        .describe(
+          "Optional short brief for the isolated run — what the job is and how to do it. Becomes the run's system prompt; recommended when using a cheaper override model.",
         ),
     },
     execute: (params, bridge) => bridge("create_cron_job", params),

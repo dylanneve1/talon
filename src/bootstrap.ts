@@ -279,7 +279,25 @@ export async function initBackendAndDispatcher(
   });
 
   initPulse();
-  initCron({ sendMessage: frontend.sendMessage });
+  initCron({
+    sendMessage: frontend.sendMessage,
+    // Isolated cron query jobs with no model override fall back to the chat's
+    // active model + backend.
+    resolveChatModel: async (chatId: string) => {
+      const { resolveActiveModelForChat } =
+        await import("./core/models/active-model.js");
+      const { getBackendIdForChat, getBackendForChat: getBE } =
+        await import("./core/engine/backend-controller.js");
+      const beId = getBackendIdForChat(chatId);
+      const { model } = await resolveActiveModelForChat(
+        chatId,
+        getBE(chatId),
+        beId,
+        config,
+      );
+      return { model, backendId: beId };
+    },
+  });
   initTriggers({ execute: dispatcherExecute });
   resumeTriggersAfterRestart().catch((err) =>
     log("triggers", `resumeAfterRestart failed: ${err}`),
