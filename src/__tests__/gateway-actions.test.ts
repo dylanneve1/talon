@@ -61,11 +61,18 @@ const mockGetAvailableBackends = vi.fn((): { id: string; label: string }[] => [
   { id: "claude", label: "Claude" },
 ]);
 const mockGetPooledBackend = vi.fn((): unknown => null);
+const mockRelease = vi.fn(async () => {});
+const mockAcquireBackendInstance = vi.fn(
+  async (): Promise<{ backend: unknown; release: () => Promise<void> }> => {
+    throw new Error("not stubbed");
+  },
+);
 vi.mock("../core/engine/backend-controller.js", () => ({
   getBackendForChat: mockGetBackendForChat,
   getBackendIdForChat: mockGetBackendIdForChat,
   getAvailableBackends: mockGetAvailableBackends,
   getPooledBackend: mockGetPooledBackend,
+  acquireBackendInstance: mockAcquireBackendInstance,
 }));
 
 const mockResolveExplicitModelRef = vi.fn(async (): Promise<unknown> => null);
@@ -1917,6 +1924,83 @@ describe("per-job model override + discovery actions", () => {
       );
       expect(result?.ok).toBe(false);
       expect(result?.error).toMatch(/unknown backend/i);
+    });
+
+    it("boots a non-active backend on demand, reads its catalog, and releases", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockGetAvailableBackends.mockReturnValue([
+        { id: "claude", label: "Claude" },
+        { id: "codex", label: "Codex" },
+      ]);
+      mockGetPooledBackend.mockReturnValue(null); // codex not pooled
+      mockAcquireBackendInstance.mockResolvedValue({
+        backend: {
+          models: {
+            listModels: async () => ({
+              models: [
+                { id: "gpt-5.5", displayName: "GPT-5.5", selectable: true },
+              ],
+              total: 1,
+            }),
+          },
+        },
+        release: mockRelease,
+      });
+
+      const result = await handleSharedAction(
+        { action: "list_models", backend: "codex" },
+        42,
+      );
+      expect(result?.ok).toBe(true);
+      expect(result?.backend).toBe("codex");
+      expect((result?.models as { id: string }[]).map((m) => m.id)).toEqual([
+        "gpt-5.5",
+      ]);
+      expect(result?.text).toContain("not this chat's backend");
+      expect(mockAcquireBackendInstance).toHaveBeenCalledWith("codex");
+      expect(mockRelease).toHaveBeenCalled(); // torn down after read
+    });
+
+    it("releases the transient instance even when the catalog read throws", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockGetAvailableBackends.mockReturnValue([
+        { id: "claude", label: "Claude" },
+        { id: "codex", label: "Codex" },
+      ]);
+      mockGetPooledBackend.mockReturnValue(null);
+      mockAcquireBackendInstance.mockResolvedValue({
+        backend: {
+          models: {
+            listModels: async () => {
+              throw new Error("catalog boom");
+            },
+          },
+        },
+        release: mockRelease,
+      });
+
+      await expect(
+        handleSharedAction({ action: "list_models", backend: "codex" }, 42),
+      ).rejects.toThrow("catalog boom");
+      expect(mockRelease).toHaveBeenCalled();
+    });
+
+    it("surfaces a boot failure as a clean error", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockGetAvailableBackends.mockReturnValue([
+        { id: "claude", label: "Claude" },
+        { id: "codex", label: "Codex" },
+      ]);
+      mockGetPooledBackend.mockReturnValue(null);
+      mockAcquireBackendInstance.mockRejectedValue(new Error("no api key"));
+
+      const result = await handleSharedAction(
+        { action: "list_models", backend: "codex" },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/could not load backend "codex"/i);
+      expect(result?.error).toMatch(/no api key/i);
     });
   });
 
