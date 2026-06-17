@@ -38,6 +38,15 @@ type DispatcherDeps = {
     ref: import("../agent-runtime/model-ref.js").ModelRef | null;
     backendId: string;
   }>;
+  /**
+   * Resolve an explicit per-run model override against the chat's backend.
+   * Returns the materialised ref, or `null` when the id isn't a selectable
+   * model on that backend. Optional: when unset, overrides are ignored.
+   */
+  resolveModelOverride?: (
+    chatId: string,
+    modelId: string,
+  ) => Promise<import("../agent-runtime/model-ref.js").ModelRef | null>;
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   onActivity: () => void;
@@ -101,8 +110,14 @@ async function run(params: ExecuteParams): Promise<ExecuteResult> {
 }
 
 async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
-  const { getBackend, resolveActiveModel, context, sendTyping, onActivity } =
-    deps!;
+  const {
+    getBackend,
+    resolveActiveModel,
+    resolveModelOverride,
+    context,
+    sendTyping,
+    onActivity,
+  } = deps!;
   // Read the backend fresh per call so backend swaps (chat-role
   // rebinds or per-chat overrides via the controller) take effect on
   // the next query without a dispatcher re-init.
@@ -150,6 +165,38 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
     };
   }
 
+  // Per-run model override (triggers/cron). Resolve against the chat's
+  // backend; on success swap the ref for this turn only, on failure fall
+  // back to the chat model so a stale override never kills the run. The
+  // override is restricted to the chat's own backend, so the session still
+  // resumes — only the model changes.
+  let runRef = resolvedRef;
+  if (params.modelOverride && resolveModelOverride) {
+    try {
+      const overrideRef = await resolveModelOverride(
+        params.chatId,
+        params.modelOverride,
+      );
+      if (overrideRef) {
+        runRef = overrideRef;
+        logDebug(
+          "dispatcher",
+          `[${reqId}] model override → ${params.modelOverride} (${params.source})`,
+        );
+      } else {
+        logWarn(
+          "dispatcher",
+          `[${reqId}] model override "${params.modelOverride}" not resolvable on backend ${backendId}; using chat model`,
+        );
+      }
+    } catch (err) {
+      logWarn(
+        "dispatcher",
+        `[${reqId}] model override resolution threw: ${err instanceof Error ? err.message : String(err)}; using chat model`,
+      );
+    }
+  }
+
   // Dream check — fire-and-forget background memory consolidation if due
   maybeStartDream();
 
@@ -190,7 +237,7 @@ async function executeInner(params: ExecuteParams): Promise<ExecuteResult> {
     }
     const stream = backend.chat.runChatTurn({
       chatId: params.chatId,
-      model: resolvedRef,
+      model: runRef,
       text: params.prompt,
       senderName: params.senderName,
       isGroup: params.isGroup,

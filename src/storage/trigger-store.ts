@@ -79,6 +79,14 @@ export type Trigger = {
    *  by Talon shutdown or crash. (Persistent triggers have no hard timeout,
    *  so timed_out is unreachable for them — see spawnTrigger.) */
   persistent?: boolean;
+  /**
+   * Optional model override for the wake-up turn — a model id valid on the
+   * chat's own backend. Unset = inherit the chat's model (preferred). When set,
+   * the fired wake-up runs on this (typically cheaper) model instead, while
+   * still resuming the chat session (restricted to the same backend so
+   * continuity is preserved).
+   */
+  model?: string;
 };
 
 // ── Constants ────────────────────────────────────────────────────────────────

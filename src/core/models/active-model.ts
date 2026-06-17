@@ -251,6 +251,26 @@ async function validateModelOnBackend(
   }
 }
 
+/**
+ * Validate + materialise an *explicit* model id against a backend, bypassing the
+ * per-chat resolution chain. Returns the `ModelRef` when the id is a selectable
+ * model on the backend, or `null` when it isn't (unknown / not selectable).
+ *
+ * Used for per-job (trigger/cron) model overrides, which are restricted to the
+ * chat's own backend so the wake-up can resume the existing session: at
+ * create-time to reject a bad id with a clear error, and at fire-time to fall
+ * back gracefully if the catalog changed after the job was created.
+ */
+export async function resolveExplicitModelRef(
+  modelId: string,
+  backend: Backend | null,
+  backendId: string | null,
+): Promise<ModelRef | null> {
+  if (!modelId) return null;
+  if (!(await validateModelOnBackend(backend, modelId))) return null;
+  return materialiseRef(modelId, backend, backendId);
+}
+
 async function safeBackendDefault(backend: Backend): Promise<string | null> {
   if (!backend.models?.getDefaultModelId) return null;
   try {

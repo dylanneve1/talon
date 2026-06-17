@@ -53,6 +53,26 @@ vi.mock("../storage/cron-store.js", () => ({
   loadCronJobs: vi.fn(),
 }));
 
+// Backend controller + model resolver — exercised by the per-job model
+// override validation and the list_models / list_backends discovery actions.
+const mockGetBackendForChat = vi.fn((): unknown => ({ models: undefined }));
+const mockGetBackendIdForChat = vi.fn(() => "claude");
+const mockGetAvailableBackends = vi.fn((): { id: string; label: string }[] => [
+  { id: "claude", label: "Claude" },
+]);
+const mockGetPooledBackend = vi.fn((): unknown => null);
+vi.mock("../core/engine/backend-controller.js", () => ({
+  getBackendForChat: mockGetBackendForChat,
+  getBackendIdForChat: mockGetBackendIdForChat,
+  getAvailableBackends: mockGetAvailableBackends,
+  getPooledBackend: mockGetPooledBackend,
+}));
+
+const mockResolveExplicitModelRef = vi.fn(async (): Promise<unknown> => null);
+vi.mock("../core/models/active-model.js", () => ({
+  resolveExplicitModelRef: mockResolveExplicitModelRef,
+}));
+
 // Mock node:fs for fetch_url binary download path
 const mockExistsSync = vi.fn(() => true);
 const mockMkdirSync = vi.fn();
@@ -1769,5 +1789,151 @@ describe("gateway-actions — additional branch coverage", () => {
     );
     // Should succeed (downloaded as bin), covering ct ?? "" right side and ct.split("/")[1] ?? "file" right side
     expect(result?.ok).toBe(true);
+  });
+});
+
+// ── Per-job model override + model/backend discovery ────────────────────────
+
+describe("per-job model override + discovery actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetBackendIdForChat.mockReturnValue("claude");
+    mockGetBackendForChat.mockReturnValue({ models: undefined });
+    mockGetPooledBackend.mockReturnValue(null);
+    mockGetAvailableBackends.mockReturnValue([
+      { id: "claude", label: "Claude" },
+    ]);
+    mockResolveExplicitModelRef.mockResolvedValue(null);
+    mockValidateCronExpression.mockReturnValue({
+      valid: true,
+      next: "2026-04-01T09:00:00.000Z",
+    });
+  });
+
+  describe("create_cron_job model override", () => {
+    it("rejects a query model that isn't selectable on the chat's backend", async () => {
+      mockResolveExplicitModelRef.mockResolvedValue(null);
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "Cheap job",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "do a thing",
+          model: "bogus-model",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/not a selectable model/i);
+      expect(mockAddCronJob).not.toHaveBeenCalled();
+    });
+
+    it("persists a valid query model", async () => {
+      mockResolveExplicitModelRef.mockResolvedValue({
+        id: "claude-haiku-4-5",
+        backend: "claude",
+      });
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "Cheap job",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "do a thing",
+          model: "claude-haiku-4-5",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(true);
+      expect(mockAddCronJob).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "claude-haiku-4-5", type: "query" }),
+      );
+    });
+
+    it("rejects a model override on a non-query job before validating it", async () => {
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "Msg job",
+          schedule: "0 9 * * *",
+          type: "message",
+          content: "hello",
+          model: "claude-haiku-4-5",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/only applies to 'query'/i);
+      expect(mockResolveExplicitModelRef).not.toHaveBeenCalled();
+      expect(mockAddCronJob).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("list_models", () => {
+    it("lists selectable models on the chat's current backend", async () => {
+      mockGetBackendForChat.mockReturnValue({
+        models: {
+          listModels: async () => ({
+            models: [
+              {
+                id: "claude-opus-4-8",
+                displayName: "Opus 4.8",
+                selectable: true,
+                reasoning: true,
+                contextWindow: 1_000_000,
+              },
+              {
+                id: "claude-haiku-4-5",
+                displayName: "Haiku 4.5",
+                selectable: true,
+              },
+              { id: "legacy", displayName: "Legacy", selectable: false },
+            ],
+            total: 3,
+          }),
+        },
+      });
+      const result = await handleSharedAction({ action: "list_models" }, 42);
+      expect(result?.ok).toBe(true);
+      expect(result?.backend).toBe("claude");
+      const ids = (result?.models as { id: string }[]).map((m) => m.id);
+      expect(ids).toEqual(["claude-opus-4-8", "claude-haiku-4-5"]); // non-selectable dropped
+      expect(result?.text).toContain("claude-haiku-4-5");
+    });
+
+    it("reports a fixed-model backend with no catalog", async () => {
+      mockGetBackendForChat.mockReturnValue({ models: undefined });
+      const result = await handleSharedAction({ action: "list_models" }, 42);
+      expect(result?.ok).toBe(true);
+      expect(result?.text).toMatch(/fixed model/i);
+      expect(result?.models).toEqual([]);
+    });
+
+    it("errors on an unknown named backend", async () => {
+      const result = await handleSharedAction(
+        { action: "list_models", backend: "ghost" },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/unknown backend/i);
+    });
+  });
+
+  describe("list_backends", () => {
+    it("lists available backends and flags the current one", async () => {
+      mockGetAvailableBackends.mockReturnValue([
+        { id: "claude", label: "Claude" },
+        { id: "codex", label: "Codex" },
+      ]);
+      mockGetBackendIdForChat.mockReturnValue("codex");
+      const result = await handleSharedAction({ action: "list_backends" }, 42);
+      expect(result?.ok).toBe(true);
+      expect(result?.backends).toEqual([
+        { id: "claude", label: "Claude", current: false },
+        { id: "codex", label: "Codex", current: true },
+      ]);
+      expect(result?.text).toContain("current");
+    });
   });
 });

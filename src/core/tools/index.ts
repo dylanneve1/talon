@@ -20,6 +20,7 @@ import { scriptTools } from "./scripts.js";
 import { skillTools } from "./skills.js";
 import { webTools } from "./web.js";
 import { adminTools } from "./admin.js";
+import { modelTools } from "./models.js";
 
 /** All built-in tool definitions. */
 export const ALL_TOOLS: readonly ToolDefinition[] = [
@@ -36,6 +37,7 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...skillTools,
   ...webTools,
   ...adminTools,
+  ...modelTools,
 ];
 
 /**

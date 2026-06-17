@@ -57,6 +57,7 @@ const {
   getActiveModelForChat,
   describeActiveModelSource,
   getModelByBackendSnapshot,
+  resolveExplicitModelRef,
 } = await import("../core/models/active-model.js");
 const {
   setChatModelForBackend,
@@ -503,5 +504,45 @@ describe("per-backend storage semantics", () => {
     );
     expect(result.model).toBe("legacy-store-value");
     expect(result.source).toBe("override-valid");
+  });
+});
+
+describe("resolveExplicitModelRef — per-job model override", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("materialises a ref for a selectable model on the backend", async () => {
+    const be = fakeBackend({
+      resolveModel: async () => exactResolution("claude-haiku-4-5"),
+    });
+    const ref = await resolveExplicitModelRef("claude-haiku-4-5", be, "claude");
+    expect(ref).not.toBeNull();
+    expect(ref?.id).toBe("claude-haiku-4-5");
+    expect(ref?.backend).toBe("claude");
+  });
+
+  it("returns null for a model that is missing on the backend", async () => {
+    const be = fakeBackend({ resolveModel: async () => missingResolution() });
+    expect(await resolveExplicitModelRef("nope-1", be, "claude")).toBeNull();
+  });
+
+  it("returns null for a non-selectable model", async () => {
+    const be = fakeBackend({
+      resolveModel: async () => exactResolution("legacy-x", false),
+    });
+    expect(await resolveExplicitModelRef("legacy-x", be, "claude")).toBeNull();
+  });
+
+  it("returns null for an empty model id", async () => {
+    const be = fakeBackend({
+      resolveModel: async () => exactResolution("x"),
+    });
+    expect(await resolveExplicitModelRef("", be, "claude")).toBeNull();
+  });
+
+  it("trusts the id when the backend has no catalog to validate against", async () => {
+    const be = fakeBackend({}); // no models catalog
+    const ref = await resolveExplicitModelRef("some-model", be, "claude");
+    expect(ref).not.toBeNull();
+    expect(ref?.id).toBe("some-model");
   });
 });

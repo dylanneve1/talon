@@ -46,6 +46,13 @@ import {
   type TriggerLanguage,
 } from "../../storage/trigger-store.js";
 import { cancelTrigger, spawnTrigger } from "../background/triggers.js";
+import { resolveExplicitModelRef } from "../models/active-model.js";
+import {
+  getBackendForChat,
+  getBackendIdForChat,
+  getAvailableBackends,
+  getPooledBackend,
+} from "./backend-controller.js";
 import {
   deleteScript,
   formatScript,
@@ -117,6 +124,41 @@ function extractText(html: string, maxLength = 8000): string {
   // Get text content, normalize whitespace
   const text = $("body").text().replace(/\s+/g, " ").trim();
   return text.slice(0, maxLength);
+}
+
+/**
+ * Validate a per-job model override so create_cron_job / trigger_create can
+ * reject a bad override up front — the agent retries or tells the user —
+ * instead of storing one that fails at fire time.
+ *
+ * The override is restricted to the chat's own backend so the wake-up can
+ * resume the existing session (a session id is backend-specific). The model
+ * must therefore be selectable on the chat's backend; returns an error string
+ * when it isn't, or `null` when it's valid.
+ */
+async function validateJobModelOverride(
+  chatId: number,
+  model: string,
+): Promise<string | null> {
+  try {
+    const chatIdStr = String(chatId);
+    const ref = await resolveExplicitModelRef(
+      model,
+      getBackendForChat(chatIdStr),
+      getBackendIdForChat(chatIdStr),
+    );
+    if (!ref) {
+      return (
+        `Model "${model}" is not a selectable model on this chat's backend. ` +
+        `Leave model unset to use the chat's model, or pick a valid model id ` +
+        `on the same backend (cross-backend models aren't allowed — they'd ` +
+        `break session continuity).`
+      );
+    }
+    return null;
+  } catch (err) {
+    return `Could not validate model override: ${err instanceof Error ? err.message : String(err)}`;
+  }
 }
 
 export async function handleSharedAction(
@@ -287,11 +329,19 @@ export async function handleSharedAction(
       const jobType = (body.type as CronJobType) ?? "message";
       const content = String(body.content ?? "");
       const timezone = body.timezone ? String(body.timezone) : undefined;
+      const model = body.model ? String(body.model) : undefined;
 
       if (!schedule) return { ok: false, error: "Missing schedule expression" };
       if (!content) return { ok: false, error: "Missing content" };
       if (content.length > 10_000)
         return { ok: false, error: "Content too long (max 10,000 chars)" };
+      // A model override only makes sense for "query" jobs (a "message" job
+      // just sends text — no model runs).
+      if (model && jobType !== "query")
+        return {
+          ok: false,
+          error: "A model override only applies to 'query' jobs.",
+        };
 
       const validation = validateCronExpression(schedule, timezone);
       if (!validation.valid)
@@ -299,6 +349,13 @@ export async function handleSharedAction(
           ok: false,
           error: `Invalid cron expression: ${validation.error}`,
         };
+
+      // Validate the model up front so a bad id is rejected here instead of
+      // silently failing at fire time.
+      if (model) {
+        const modelErr = await validateJobModelOverride(chatId, model);
+        if (modelErr) return { ok: false, error: modelErr };
+      }
 
       const id = generateCronId();
       addCronJob({
@@ -312,6 +369,7 @@ export async function handleSharedAction(
         createdAt: Date.now(),
         runCount: 0,
         timezone,
+        ...(model ? { model } : {}),
       });
       log("gateway", `create_cron_job: "${name}" [${schedule}]`);
       return {
@@ -405,6 +463,7 @@ export async function handleSharedAction(
         ? String(body.description)
         : undefined;
       const persistent = body.persistent === true;
+      const model = body.model ? String(body.model) : undefined;
 
       const nameErr = validateName(name);
       if (nameErr) return { ok: false, error: nameErr };
@@ -441,6 +500,13 @@ export async function handleSharedAction(
         };
       }
 
+      // Validate the model up front so a bad id is rejected here instead of
+      // silently failing at fire time.
+      if (model) {
+        const modelErr = await validateJobModelOverride(chatId, model);
+        if (modelErr) return { ok: false, error: modelErr };
+      }
+
       const id = generateTriggerId();
       const lang = language as TriggerLanguage;
       let scriptPath: string;
@@ -468,6 +534,7 @@ export async function handleSharedAction(
         timeoutSeconds,
         fireCount: 0,
         persistent,
+        ...(model ? { model } : {}),
       };
       addTrigger(trigger);
 
@@ -1017,6 +1084,98 @@ export async function handleSharedAction(
           error: `Plugin reload failed: ${err instanceof Error ? err.message : err}`,
         };
       }
+    }
+
+    // ── Model / backend discovery ────────────────────────────────────────
+
+    case "list_models": {
+      const chatIdStr = String(chatId);
+      const currentId = getBackendIdForChat(chatIdStr);
+      const requested = body.backend ? String(body.backend).trim() : "";
+      const targetId = requested || currentId;
+
+      // Only return a backend we already have a live instance for — never
+      // boot one just to read its catalog. The chat's own backend is always
+      // live; another backend is only listable while it's pooled.
+      const instance =
+        targetId === currentId
+          ? getBackendForChat(chatIdStr)
+          : getPooledBackend(targetId);
+
+      if (!instance) {
+        const avail = getAvailableBackends().map((b) => b.id);
+        if (!avail.includes(targetId))
+          return {
+            ok: false,
+            error: `Unknown backend "${targetId}". Available backends: ${avail.join(", ") || "(none)"}.`,
+          };
+        return {
+          ok: false,
+          error: `Backend "${targetId}" isn't currently active, so its model catalog isn't loaded. Switch this chat to it first, or call list_models with no argument to see this chat's backend ("${currentId}") models.`,
+        };
+      }
+
+      const catalog = instance.models;
+      if (!catalog?.listModels)
+        return {
+          ok: true,
+          backend: targetId,
+          models: [],
+          text: `Backend "${targetId}" runs a fixed model (no selectable model catalog).`,
+        };
+
+      const { models } = await catalog.listModels("all");
+      const selectable = models.filter((m) => m.selectable);
+      const slim = selectable.map((m) => ({
+        id: m.id,
+        displayName: m.displayName,
+        reasoning: m.reasoning ?? false,
+        contextWindow: m.contextWindow,
+        free: m.free ?? false,
+      }));
+      if (slim.length === 0)
+        return {
+          ok: true,
+          backend: targetId,
+          models: [],
+          text: `Backend "${targetId}" exposes no selectable models.`,
+        };
+      const lines = slim.map((m) => {
+        const bits = [
+          m.reasoning ? "reasoning" : null,
+          m.contextWindow ? `${Math.round(m.contextWindow / 1000)}k ctx` : null,
+          m.free ? "free" : null,
+        ].filter(Boolean);
+        const name =
+          m.displayName && m.displayName !== m.id ? ` (${m.displayName})` : "";
+        return `- ${m.id}${name}${bits.length ? ` — ${bits.join(", ")}` : ""}`;
+      });
+      return {
+        ok: true,
+        backend: targetId,
+        models: slim,
+        text: `Selectable models on "${targetId}" (${slim.length}):\n${lines.join("\n")}`,
+      };
+    }
+
+    case "list_backends": {
+      const currentId = getBackendIdForChat(String(chatId));
+      const backends = getAvailableBackends().map((b) => ({
+        id: b.id,
+        label: b.label,
+        current: b.id === currentId,
+      }));
+      if (backends.length === 0)
+        return { ok: true, backends: [], text: "No backends are available." };
+      const lines = backends.map(
+        (b) =>
+          `- ${b.id}${b.label && b.label !== b.id ? ` (${b.label})` : ""}${b.current ? " — current" : ""}`,
+      );
+      return {
+        ok: true,
+        backends,
+        text: `Available backends (${backends.length}):\n${lines.join("\n")}`,
+      };
     }
 
     default:

@@ -10,6 +10,7 @@ import {
   stubChatBackend,
   stubResolveActiveModel,
 } from "./helpers/stub-backend.js";
+import { makeBareModelRef } from "../core/agent-runtime/model-ref.js";
 
 function createMockDeps() {
   const acquired: number[] = [];
@@ -94,6 +95,74 @@ describe("dispatcher", () => {
         text: "hello",
       }),
     );
+  });
+
+  it("uses the per-run model override when it resolves", async () => {
+    const deps = createMockDeps();
+    const resolveModelOverride = vi.fn(async () =>
+      makeBareModelRef("claude", "claude-haiku-4-5", "discovered"),
+    );
+    initDispatcher({ ...deps, resolveModelOverride });
+
+    await execute({
+      chatId: "123",
+      numericChatId: 123,
+      prompt: "hello",
+      senderName: "Trigger",
+      isGroup: false,
+      source: "trigger",
+      modelOverride: "claude-haiku-4-5",
+    });
+
+    expect(resolveModelOverride).toHaveBeenCalledWith(
+      "123",
+      "claude-haiku-4-5",
+    );
+    expect(deps.query).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "claude-haiku-4-5" }),
+    );
+  });
+
+  it("falls back to the chat model when the override does not resolve", async () => {
+    const deps = createMockDeps();
+    const resolveModelOverride = vi.fn(async () => null);
+    initDispatcher({
+      ...deps,
+      resolveActiveModel: stubResolveActiveModel("claude", "stub-model"),
+      resolveModelOverride,
+    });
+
+    await execute({
+      chatId: "123",
+      numericChatId: 123,
+      prompt: "hello",
+      senderName: "Trigger",
+      isGroup: false,
+      source: "trigger",
+      modelOverride: "delisted-model",
+    });
+
+    expect(resolveModelOverride).toHaveBeenCalled();
+    expect(deps.query).toHaveBeenCalledWith(
+      expect.objectContaining({ model: "stub-model" }),
+    );
+  });
+
+  it("ignores the override resolver when no modelOverride is set", async () => {
+    const deps = createMockDeps();
+    const resolveModelOverride = vi.fn(async () => null);
+    initDispatcher({ ...deps, resolveModelOverride });
+
+    await execute({
+      chatId: "123",
+      numericChatId: 123,
+      prompt: "hello",
+      senderName: "User",
+      isGroup: false,
+      source: "message",
+    });
+
+    expect(resolveModelOverride).not.toHaveBeenCalled();
   });
 
   it("acquires and releases context", async () => {

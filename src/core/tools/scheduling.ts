@@ -28,7 +28,9 @@ Examples:
   "0 8 * * 1"     = every Monday at 8:00 AM
 
 Type "message" sends the content as a text message.
-Type "query" runs the content as a Claude prompt with full tool access (can search, create files, send messages, etc).`,
+Type "query" runs the content as a Claude prompt with full tool access (can search, create files, send messages, etc).
+
+Model: leave "model" unset to run on this chat's model (preferred). Only set it for a "query" job that should run on a cheaper model from the SAME backend as this chat — e.g. a routine daily task that doesn't need the flagship model. The job still resumes this chat's session (same backend = session continuity preserved). The model must be a valid, selectable model id on this chat's backend; an invalid or cross-backend id is rejected — pick from the available models.`,
     schema: {
       name: z.string().describe("Human-readable name for the job"),
       schedule: z
@@ -45,6 +47,12 @@ Type "query" runs the content as a Claude prompt with full tool access (can sear
         .optional()
         .describe(
           "IANA timezone (e.g. 'America/New_York'). Defaults to system timezone.",
+        ),
+      model: z
+        .string()
+        .optional()
+        .describe(
+          "Optional model override for 'query' jobs. Unset = this chat's model (preferred). Set only to run on a cheaper model from the SAME backend as this chat (session continuity is preserved). Must be a valid, selectable model id on this chat's backend — call list_models to see valid ids; an invalid or cross-backend id is rejected.",
         ),
     },
     execute: (params, bridge) => bridge("create_cron_job", params),

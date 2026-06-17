@@ -218,6 +218,11 @@ async function executeJob(job: CronJob): Promise<void> {
       senderName: "Cron",
       isGroup: false,
       source: "cron",
+      // Per-job model override (same backend) — runs this query on a cheaper
+      // model while still resuming the chat session. Only "query" jobs reach
+      // here, so a stored model always applies. Falls back to the chat model
+      // if the id no longer resolves.
+      ...(job.model ? { modelOverride: job.model } : {}),
     }),
     CRON_JOB_TIMEOUT_MS,
     `Cron job "${job.name}"`,

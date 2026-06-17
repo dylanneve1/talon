@@ -202,6 +202,16 @@ export type ExecuteParams = {
   /** Provider message ID. Numeric for Telegram, string snowflake for Discord. */
   messageId?: number | string;
   source: "message" | "pulse" | "cron" | "trigger";
+  /**
+   * Optional per-run model override (a model id valid on the chat's backend).
+   * When set and resolvable, the turn runs on this model instead of the chat's
+   * resolved model — used by triggers/cron to run a cheaper model while still
+   * resuming the chat session. Restricted to the chat's own backend so session
+   * continuity is preserved. If it can't be resolved at fire time (e.g. the
+   * catalog changed), the dispatcher falls back to the chat model rather than
+   * failing the run.
+   */
+  modelOverride?: string;
 } & StreamEventSink;
 
 /** What the dispatcher returns after execution. */

@@ -732,6 +732,10 @@ async function fireWake(
       senderName: "Trigger",
       isGroup: false,
       source: "trigger",
+      // Per-trigger model override (same backend) — runs the wake-up turn on a
+      // cheaper model while still resuming the chat session. Falls back to the
+      // chat model if the id no longer resolves.
+      ...(t.model ? { modelOverride: t.model } : {}),
     });
   } catch (err) {
     logError("triggers", `wake dispatch failed [${triggerId}]`, err);

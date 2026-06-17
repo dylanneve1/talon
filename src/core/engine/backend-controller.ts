@@ -124,6 +124,8 @@ const pool = new Map<string, PoolEntry>();
 const bindings = new Map<BackendHolder, string>();
 /** Captured at first init so subsequent calls don't need ctx plumbed through. */
 let initCtx: BackendInitContext | null = null;
+/** Captured at init so config-aware reads (available backends) need no plumbing. */
+let poolConfig: TalonConfig | null = null;
 
 const listeners = new Set<BackendChangeListener>();
 
@@ -241,6 +243,7 @@ export async function initBackendPool(
   ctx: BackendInitContext,
 ): Promise<void> {
   initCtx = ctx;
+  poolConfig = config;
   const initialisedHolders: BackendHolder[] = [];
   try {
     for (const role of ALL_ROLES) {
@@ -335,6 +338,26 @@ export function listAvailableBackends(
 /** Whether a backend id is registered and currently exposed by config. */
 export function isBackendAvailable(id: string, config?: TalonConfig): boolean {
   return listAvailableBackends(config).some((b) => b.id === id);
+}
+
+/**
+ * Available backends using the config captured at init — convenience for
+ * runtime readers (e.g. the `list_backends` tool) that don't have config
+ * plumbed through. Falls back to all registered backends pre-init.
+ */
+export function getAvailableBackends(): { id: string; label: string }[] {
+  return listAvailableBackends(poolConfig ?? undefined);
+}
+
+/**
+ * The live pooled `Backend` instance for an id, or `null` if it isn't currently
+ * pooled. Unlike `getBackendForRole`/`getBackendForChat` this never initialises
+ * on demand — it only returns backends already spun up (role backends + chat
+ * overrides), so a read-only caller (e.g. `list_models` for a non-current
+ * backend) can degrade gracefully instead of forcing a backend to boot.
+ */
+export function getPooledBackend(id: string): Backend | null {
+  return pool.get(id)?.backend ?? null;
 }
 
 /**
@@ -607,6 +630,7 @@ export function resetBackendPoolForTest(): void {
   pool.clear();
   bindings.clear();
   initCtx = null;
+  poolConfig = null;
 }
 
 /** Test-only: drop all listeners. */
@@ -629,6 +653,7 @@ export async function initBackendController(
   ctx: BackendInitContext,
 ): Promise<Backend> {
   initCtx = ctx;
+  poolConfig = config;
   const entry = await ensurePoolEntry(id, config);
   const holder = roleHolder("chat");
   entry.holders.add(holder);
