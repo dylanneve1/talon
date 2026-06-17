@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
+import { basename } from "node:path";
 import type { BackgroundRunner } from "../core/agent-runtime/capabilities.js";
 import type { OneShotAgentParams } from "../core/types.js";
 import {
@@ -39,9 +40,12 @@ describe("job-prompt helpers", () => {
     expect(jobSlug("x".repeat(100)).length).toBe(40);
   });
 
-  it("builds a deterministic log path", () => {
-    const path = jobLogPath("trigger", "err watch", 1000);
-    expect(path).toMatch(/jobs\/trigger-err-watch-1000\.md$/);
+  it("builds a deterministic log file name", () => {
+    // Assert on the basename so the test is path-separator agnostic (Windows
+    // uses backslashes, which a `jobs/...` regex would miss).
+    expect(basename(jobLogPath("trigger", "err watch", 1000))).toBe(
+      "trigger-err-watch-1000.md",
+    );
   });
 
   it("uses the heartbeat context label for outbound tools", () => {
