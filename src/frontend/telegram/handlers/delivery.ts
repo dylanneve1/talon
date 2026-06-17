@@ -8,9 +8,7 @@ import type { TalonConfig } from "../../../util/config.js";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { execute } from "../../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../../core/agent-runtime/events.js";
-import {
-  appendDailyLogResponse,
-} from "../../../storage/daily-log.js";
+import { appendDailyLogResponse } from "../../../storage/daily-log.js";
 import { stripMcpPrefix } from "../../../core/tools/index.js";
 import { logWarn } from "../../../util/log.js";
 import { trackDmUser } from "./access.js";

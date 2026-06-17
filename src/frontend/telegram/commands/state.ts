@@ -23,7 +23,9 @@ export function setAdminUserId(id: number | undefined): void {
  * configured (id 0) or the sender matches. Matches the original inline guard.
  */
 export function isAuthorizedAdmin(ctx: Context): boolean {
-  return adminState.adminUserId === 0 || ctx.from?.id === adminState.adminUserId;
+  return (
+    adminState.adminUserId === 0 || ctx.from?.id === adminState.adminUserId
+  );
 }
 
 export type RegisterDeps = {

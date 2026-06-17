@@ -10,7 +10,10 @@ import {
 } from "../../../storage/sessions.js";
 import { clearHistory } from "../../../storage/history.js";
 import { getChatSettings } from "../../../storage/chat-settings.js";
-import { isPulseEnabled, resetPulseCheckpoint } from "../../../core/background/pulse.js";
+import {
+  isPulseEnabled,
+  resetPulseCheckpoint,
+} from "../../../core/background/pulse.js";
 import { getWorkspaceDiskUsage } from "../../../util/workspace.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import { escapeHtml } from "../formatting.js";

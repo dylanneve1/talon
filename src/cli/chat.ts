@@ -6,16 +6,16 @@
 export async function startChat(): Promise<void> {
   process.env.TALON_QUIET = "1";
 
-  const { bootstrap, initBackendAndDispatcher } = await import("../bootstrap.js");
+  const { bootstrap, initBackendAndDispatcher } =
+    await import("../bootstrap.js");
   const { flushSessions } = await import("../storage/sessions.js");
   const { flushChatSettings } = await import("../storage/chat-settings.js");
   const { flushCronJobs } = await import("../storage/cron-store.js");
   const { flushHistory } = await import("../storage/history.js");
   const { flushMediaIndex } = await import("../storage/media-index.js");
   const { flushTriggers } = await import("../storage/trigger-store.js");
-  const { createTerminalFrontend } = await import(
-    "../frontend/terminal/index.js"
-  );
+  const { createTerminalFrontend } =
+    await import("../frontend/terminal/index.js");
   const { Gateway } = await import("../core/engine/gateway.js");
 
   const { config } = await bootstrap({ frontendNames: ["terminal"] });
@@ -37,9 +37,8 @@ export async function startChat(): Promise<void> {
 
   // Mirror the index.ts wiring: keep the gateway's cached backend
   // reference in sync with chat-role rebinds.
-  const { onBackendChange, roleHolder } = await import(
-    "../core/engine/backend-controller/index.js"
-  );
+  const { onBackendChange, roleHolder } =
+    await import("../core/engine/backend-controller/index.js");
   const CHAT_ROLE_HOLDER = roleHolder("chat");
   onBackendChange((holder, newBackend) => {
     if (holder !== CHAT_ROLE_HOLDER) return;

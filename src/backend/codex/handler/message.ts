@@ -50,7 +50,10 @@ import {
 } from "../constants.js";
 import { getState } from "../state.js";
 import { ensureCodex, getCodexAuthInfo } from "../init.js";
-import { isChatGptModelMismatchError, isSilentOAuthExitError } from "../auth.js";
+import {
+  isChatGptModelMismatchError,
+  isSilentOAuthExitError,
+} from "../auth.js";
 import {
   chatGptFallbackFor,
   getModelInfo,

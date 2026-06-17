@@ -2,10 +2,7 @@
  * Helpers shared by the Discord slash-command handlers + router.
  */
 
-import {
-  type ChatInputCommandInteraction,
-  MessageFlags,
-} from "discord.js";
+import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
 import { deriveNumericChatId } from "../../../util/chat-id.js";
 import {
   suppressMentions,

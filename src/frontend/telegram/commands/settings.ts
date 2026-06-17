@@ -172,7 +172,11 @@ export function registerSettingsCommands(
       await ctx.reply(`<b>Effort:</b> ${current}\nSelect a level:`, {
         parse_mode: "HTML",
         reply_markup: {
-          inline_keyboard: renderEffortRows(current, reasoning.levels, "effort:"),
+          inline_keyboard: renderEffortRows(
+            current,
+            reasoning.levels,
+            "effort:",
+          ),
         },
       });
       return;
@@ -279,7 +283,10 @@ export function registerSettingsCommands(
       backendId: settingsBeId,
       config,
     });
-    const effortName = displayReasoningEffort(chatSets.effort, reasoning.levels);
+    const effortName = displayReasoningEffort(
+      chatSets.effort,
+      reasoning.levels,
+    );
     const pulseOn = isPulseEnabled(cid);
     let modelButtons: Array<SettingsButton> | undefined;
     let pager:

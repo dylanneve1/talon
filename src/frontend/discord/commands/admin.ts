@@ -3,10 +3,7 @@
  * All gate on `isAdmin`.
  */
 
-import {
-  type ChatInputCommandInteraction,
-  MessageFlags,
-} from "discord.js";
+import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
 import type { TalonConfig } from "../../../util/config.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import { respawnSelf } from "../../../util/respawn.js";
@@ -57,7 +54,9 @@ export async function handleDream(
   forceDream()
     .then(async () => {
       const elapsed = formatDuration(Date.now() - start);
-      await i.editReply(`🌙 Dream complete — memory consolidated in ${elapsed}.`);
+      await i.editReply(
+        `🌙 Dream complete — memory consolidated in ${elapsed}.`,
+      );
     })
     .catch(async (err: unknown) => {
       const msg = err instanceof Error ? err.message : String(err);

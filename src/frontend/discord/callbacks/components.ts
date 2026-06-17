@@ -43,11 +43,11 @@ import {
   enablePulse,
   isPulseEnabled,
 } from "../../../core/background/pulse.js";
-import { isInteractionAllowed, registerDiscordChat } from "../handlers/index.js";
 import {
-  renderSettingsText,
-  EFFORT_DESCRIPTIONS,
-} from "../helpers.js";
+  isInteractionAllowed,
+  registerDiscordChat,
+} from "../handlers/index.js";
+import { renderSettingsText, EFFORT_DESCRIPTIONS } from "../helpers.js";
 import { execute } from "../../../core/engine/dispatcher.js";
 import {
   getBackendIdForChat,
@@ -419,7 +419,10 @@ async function refreshSettingsPanel(
       .addOptions(
         modelButtons.slice(0, 25).map((b) => ({
           label: safeSlice(b.text.replace(/^✓ /, ""), 100),
-          value: safeSlice(b.callback_data.replace(/^settings:model:/, ""), 100),
+          value: safeSlice(
+            b.callback_data.replace(/^settings:model:/, ""),
+            100,
+          ),
           default: b.text.startsWith("✓"),
         })),
       );

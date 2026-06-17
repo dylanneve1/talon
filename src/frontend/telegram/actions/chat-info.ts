@@ -199,11 +199,11 @@ export const chatInfoHandlers: TelegramActionHandlers = {
 
   download_sticker: async (body, _chatId, { bot, botToken }) => {
     const file = await bot.api.getFile(String(body.file_id ?? ""));
-    if (!file.file_path)
-      return { ok: false, error: "Could not get file path" };
+    if (!file.file_path) return { ok: false, error: "Could not get file path" };
     const url = `https://api.telegram.org/file/bot${botToken}/${file.file_path}`;
     const resp = await fetch(url);
-    if (!resp.ok) return { ok: false, error: `Download failed: ${resp.status}` };
+    if (!resp.ok)
+      return { ok: false, error: `Download failed: ${resp.status}` };
     const buffer = Buffer.from(await resp.arrayBuffer());
     const ext = file.file_path.split(".").pop() ?? "webp";
     const uploadsDir = dirs.uploads;
@@ -222,8 +222,7 @@ export const chatInfoHandlers: TelegramActionHandlers = {
     const title = String(body.title ?? "");
     const filePath = expandFsPath(String(body.file_path ?? ""));
     const emojis = (body.emoji_list as string[]) ?? ["🎨"];
-    const format =
-      (body.format as "static" | "animated" | "video") ?? "static";
+    const format = (body.format as "static" | "animated" | "video") ?? "static";
     if (!userId || !name || !title || !filePath) {
       return {
         ok: false,
@@ -253,8 +252,7 @@ export const chatInfoHandlers: TelegramActionHandlers = {
     const name = String(body.name ?? "");
     const filePath = expandFsPath(String(body.file_path ?? ""));
     const emojis = (body.emoji_list as string[]) ?? ["🎨"];
-    const format =
-      (body.format as "static" | "animated" | "video") ?? "static";
+    const format = (body.format as "static" | "animated" | "video") ?? "static";
     if (!userId || !name || !filePath) {
       return { ok: false, error: "Required: user_id, name, file_path" };
     }

@@ -28,8 +28,7 @@ export const chatInfoHandlers: DiscordActionHandlers = {
       ok: true,
       id: ch.id,
       type: "channel",
-      title:
-        (ch as { name?: string }).name ?? guildCh.guild?.name ?? "channel",
+      title: (ch as { name?: string }).name ?? guildCh.guild?.name ?? "channel",
       member_count: guildCh.guild?.memberCount,
     };
   },
@@ -50,8 +49,7 @@ export const chatInfoHandlers: DiscordActionHandlers = {
     if (!guild) return { ok: false, error: "Channel has no guild context" };
     return tryAction("get_chat_member", async () => {
       const m =
-        guild.members.cache.get(userId) ??
-        (await guild.members.fetch(userId));
+        guild.members.cache.get(userId) ?? (await guild.members.fetch(userId));
       const isOwner = m.id === guild.ownerId;
       return {
         ok: true,
@@ -150,9 +148,7 @@ export const chatInfoHandlers: DiscordActionHandlers = {
         const who =
           m.author.id === client.user?.id
             ? "bot"
-            : m.member?.displayName ||
-              m.author.globalName ||
-              m.author.username;
+            : m.member?.displayName || m.author.globalName || m.author.username;
         const text = m.content || (m.attachments.size ? "(attachment)" : "");
         return `[${who}] msg_id:${m.id}: ${text.slice(0, 500)}`;
       });
@@ -221,8 +217,7 @@ export const chatInfoHandlers: DiscordActionHandlers = {
     if (!guild) return { ok: false, error: "No guild context" };
     return tryAction("get_member_info", async () => {
       const m =
-        guild.members.cache.get(userId) ??
-        (await guild.members.fetch(userId));
+        guild.members.cache.get(userId) ?? (await guild.members.fetch(userId));
       const roles = m.roles.cache.map((r) => r.name).join(", ");
       return {
         ok: true,

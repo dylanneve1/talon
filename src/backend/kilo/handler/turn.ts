@@ -102,7 +102,10 @@ export async function runKiloTurn(inputs: RunKiloTurnInputs): Promise<void> {
       try {
         await rejectPendingQuestions(oc, sessionId, chatId, seenQuestionIds);
       } catch (err) {
-        logWarn("agent", `[${chatId}] question watchdog failed: ${errMsg(err)}`);
+        logWarn(
+          "agent",
+          `[${chatId}] question watchdog failed: ${errMsg(err)}`,
+        );
       }
       await sleep(350, sseAbort.signal);
     }

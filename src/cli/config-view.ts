@@ -25,7 +25,9 @@ export async function viewConfig(): Promise<void> {
     : [config.frontend];
   console.log(`  ${pc.dim("Frontend")}         ${fes.join(", ")}`);
   if (fes.includes("telegram")) {
-    console.log(`  ${pc.dim("Bot token")}        ${maskToken(config.botToken)}`);
+    console.log(
+      `  ${pc.dim("Bot token")}        ${maskToken(config.botToken)}`,
+    );
     console.log(
       `  ${pc.dim("Admin")}            ${config.adminUserId || pc.dim("not set")}`,
     );

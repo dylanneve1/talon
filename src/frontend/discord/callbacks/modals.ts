@@ -2,10 +2,7 @@
  * Modal submission handler — currently just the /pulse interval modal.
  */
 
-import {
-  type ModalSubmitInteraction,
-  MessageFlags,
-} from "discord.js";
+import { type ModalSubmitInteraction, MessageFlags } from "discord.js";
 import type { TalonConfig } from "../../../util/config.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import { setChatPulseInterval } from "../../../storage/chat-settings.js";

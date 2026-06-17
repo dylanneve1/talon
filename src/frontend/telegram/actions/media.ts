@@ -105,11 +105,9 @@ export const mediaHandlers: TelegramActionHandlers = {
 
   send_sticker: async (body, chatId, { bot, gateway }) => {
     gateway.incrementMessages(chatId);
-    const sent = await bot.api.sendSticker(
-      chatId,
-      String(body.file_id ?? ""),
-      { reply_parameters: replyParams(body) },
-    );
+    const sent = await bot.api.sendSticker(chatId, String(body.file_id ?? ""), {
+      reply_parameters: replyParams(body),
+    });
     return { ok: true, message_id: sent.message_id };
   },
 
@@ -158,10 +156,7 @@ export const mediaHandlers: TelegramActionHandlers = {
 
   send_dice: async (body, chatId, { bot, gateway }) => {
     gateway.incrementMessages(chatId);
-    const sent = await bot.api.sendDice(
-      chatId,
-      (body.emoji as string) || "🎲",
-    );
+    const sent = await bot.api.sendDice(chatId, (body.emoji as string) || "🎲");
     return {
       ok: true,
       message_id: sent.message_id,

@@ -13,7 +13,12 @@
  * Re-exports the same public surface the old single-file module exposed.
  */
 
-export { setAccessControl, shouldHandleInGroup, isAccessAllowed, extractUnauthorizedPreview } from "./access.js";
+export {
+  setAccessControl,
+  shouldHandleInGroup,
+  isAccessAllowed,
+  extractUnauthorizedPreview,
+} from "./access.js";
 export {
   getSenderName,
   getReplyContext,

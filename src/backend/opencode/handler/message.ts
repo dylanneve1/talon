@@ -172,7 +172,10 @@ export async function handleMessage(
       contextWindow: state.contextWindow,
     });
 
-    logError("agent", `[${chatId}] OpenCode error: ${outcome.classified.message}`);
+    logError(
+      "agent",
+      `[${chatId}] OpenCode error: ${outcome.classified.message}`,
+    );
     throw outcome.classified;
   } finally {
     if (activeSessions.get(chatId) === sessionId) {

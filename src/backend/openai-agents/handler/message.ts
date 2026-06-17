@@ -375,7 +375,10 @@ export async function handleMessage(
         contextWindow: streamState.contextWindow,
       });
 
-      logError("agent", `[${chatId}] OpenAI Agents error: ${classified.message}`);
+      logError(
+        "agent",
+        `[${chatId}] OpenAI Agents error: ${classified.message}`,
+      );
       throw classified;
     }
   } finally {

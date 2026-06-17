@@ -8,7 +8,10 @@
 
 import type { Bot } from "grammy";
 import { respawnSelf } from "../../../util/respawn.js";
-import { getRepoRoot, runSelfUpdate } from "../../../core/update/self-update.js";
+import {
+  getRepoRoot,
+  runSelfUpdate,
+} from "../../../core/update/self-update.js";
 import { forceDream } from "../../../core/background/dream.js";
 import { getSoul } from "../../../core/soul/service.js";
 import { escapeHtml } from "../formatting.js";

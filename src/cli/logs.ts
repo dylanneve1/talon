@@ -21,7 +21,9 @@ export function formatLogLine(line: string): string {
   try {
     const obj = JSON.parse(line);
     const level = LEVEL_LABELS[obj.level as number] ?? pc.dim("???");
-    const time = pc.dim(new Date(obj.time as number).toTimeString().slice(0, 8));
+    const time = pc.dim(
+      new Date(obj.time as number).toTimeString().slice(0, 8),
+    );
     const comp = pc.cyan(((obj.component as string) ?? "?").padEnd(10));
     return `  ${time} ${level} ${comp} ${obj.msg}${obj.err ? pc.red(` (${obj.err})`) : ""}`;
   } catch {

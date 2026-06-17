@@ -143,8 +143,11 @@ export function registerInfoCommands(bot: Bot): void {
         : "";
       return `• <b>${escapeHtml(p.plugin.name)}</b>${ver}${mcp}${fe}${desc}`;
     });
-    await ctx.reply(`<b>Plugins (${plugins.length})</b>\n\n${lines.join("\n")}`, {
-      parse_mode: "HTML",
-    });
+    await ctx.reply(
+      `<b>Plugins (${plugins.length})</b>\n\n${lines.join("\n")}`,
+      {
+        parse_mode: "HTML",
+      },
+    );
   });
 }

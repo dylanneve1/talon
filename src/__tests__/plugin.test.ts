@@ -87,7 +87,8 @@ describe("plugin system", () => {
 
     it("skips plugins with no entry point", async () => {
       vi.doMock("node:fs", () => ({ existsSync: vi.fn(() => false) }));
-      const { loadPlugins, getPluginCount } = await import("../core/plugin/index.js");
+      const { loadPlugins, getPluginCount } =
+        await import("../core/plugin/index.js");
       await loadPlugins([{ path: "/nonexistent/plugin" }]);
 
       expect(getPluginCount()).toBe(0);

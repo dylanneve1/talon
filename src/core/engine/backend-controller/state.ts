@@ -65,7 +65,9 @@ export async function ensurePoolEntry(
     throw new Error(`Unknown backend "${id}" — known: ${known}`);
   }
   if (!ctx.initCtx) {
-    throw new Error("Backend pool not initialised — call initBackendPool first");
+    throw new Error(
+      "Backend pool not initialised — call initBackendPool first",
+    );
   }
   const instance = await factory.init(config, ctx.initCtx);
   const entry: PoolEntry = {

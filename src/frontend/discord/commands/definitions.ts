@@ -12,12 +12,7 @@
  *    guild commands on startup (and on guildCreate).
  */
 
-import {
-  type Client,
-  REST,
-  Routes,
-  SlashCommandBuilder,
-} from "discord.js";
+import { type Client, REST, Routes, SlashCommandBuilder } from "discord.js";
 import type { TalonConfig } from "../../../util/config.js";
 import { log, logError, logWarn } from "../../../util/log.js";
 
@@ -150,7 +145,10 @@ export async function registerCommandsForGuilds(
       await rest.put(Routes.applicationCommands(dc.applicationId), {
         body: dmDefs,
       });
-      log("discord", `Registered ${dmDefs.length} global commands (DM-enabled)`);
+      log(
+        "discord",
+        `Registered ${dmDefs.length} global commands (DM-enabled)`,
+      );
     } else {
       await rest.put(Routes.applicationCommands(dc.applicationId), {
         body: [],

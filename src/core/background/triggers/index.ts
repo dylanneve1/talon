@@ -14,12 +14,7 @@
  * Knows nothing about backend or frontend — dependencies are injected.
  */
 
-import {
-  children,
-  timeouts,
-  logStreams,
-  wardened,
-} from "./state.js";
+import { children, timeouts, logStreams, wardened } from "./state.js";
 import { commandForLanguage } from "./command.js";
 import { handleStdoutLine } from "./output.js";
 import { handleTimeout, finalizeExit } from "./exit.js";

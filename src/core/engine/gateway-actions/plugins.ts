@@ -13,9 +13,8 @@ export const pluginHandlers: SharedActionHandlers = {
       const { reloadPlugins, getPluginPromptAdditions } =
         await import("../../plugin/index.js");
       const { rebuildSystemPrompt } = await import("../../../util/config.js");
-      const { clearSystemPromptSnapshots } = await import(
-        "../../../backend/shared/system-prompt.js"
-      );
+      const { clearSystemPromptSnapshots } =
+        await import("../../../backend/shared/system-prompt.js");
 
       // reloadPlugins reads + validates config internally — no double read.
       // Frontends are derived from config if not explicitly provided.

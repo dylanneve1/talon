@@ -45,6 +45,9 @@ export const historyHandlers: SharedActionHandlers = {
 
   list_media: (body, chatId) => ({
     ok: true,
-    text: formatMediaIndex(String(chatId), Math.min(20, Number(body.limit ?? 10))),
+    text: formatMediaIndex(
+      String(chatId),
+      Math.min(20, Number(body.limit ?? 10)),
+    ),
   }),
 };

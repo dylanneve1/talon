@@ -2,10 +2,7 @@
  * Session commands — /reset and /status.
  */
 
-import {
-  type ChatInputCommandInteraction,
-  MessageFlags,
-} from "discord.js";
+import { type ChatInputCommandInteraction, MessageFlags } from "discord.js";
 import type { TalonConfig } from "../../../util/config.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import {
@@ -15,7 +12,10 @@ import {
 } from "../../../storage/sessions.js";
 import { clearHistory } from "../../../storage/history.js";
 import { getChatSettings } from "../../../storage/chat-settings.js";
-import { isPulseEnabled, resetPulseCheckpoint } from "../../../core/background/pulse.js";
+import {
+  isPulseEnabled,
+  resetPulseCheckpoint,
+} from "../../../core/background/pulse.js";
 import { getWorkspaceDiskUsage } from "../../../util/workspace.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import {

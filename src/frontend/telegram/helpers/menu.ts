@@ -444,7 +444,11 @@ export function renderSettingsKeyboard(
       )
     : [];
 
-  const effortRows = renderEffortRows(effort, reasoningLevels, "settings:effort:");
+  const effortRows = renderEffortRows(
+    effort,
+    reasoningLevels,
+    "settings:effort:",
+  );
 
   return [
     ...modelRows,

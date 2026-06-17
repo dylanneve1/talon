@@ -5,7 +5,11 @@
  */
 
 import { readFileSync } from "node:fs";
-import { getAllTriggers, updateTrigger, type Trigger } from "../../../storage/trigger-store.js";
+import {
+  getAllTriggers,
+  updateTrigger,
+  type Trigger,
+} from "../../../storage/trigger-store.js";
 import { log, logError } from "../../../util/log.js";
 import { depsHolder } from "./state.js";
 import { fireWake } from "./output.js";

@@ -12,7 +12,10 @@ import {
 import type { TalonConfig } from "../../../util/config.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import { logError } from "../../../util/log.js";
-import { isInteractionAllowed, registerDiscordChat } from "../handlers/index.js";
+import {
+  isInteractionAllowed,
+  registerDiscordChat,
+} from "../handlers/index.js";
 import { chatIdFromInteraction, reply, client } from "./shared.js";
 import {
   handleStart,
@@ -55,7 +58,8 @@ export function registerInteractionRouter(
       }
       // Buttons & select menus → callbacks.ts handler
       if (interaction.isButton() || interaction.isStringSelectMenu()) {
-        const { handleComponentInteraction } = await import("../callbacks/index.js");
+        const { handleComponentInteraction } =
+          await import("../callbacks/index.js");
         await handleComponentInteraction(interaction, config, gateway);
         return;
       }

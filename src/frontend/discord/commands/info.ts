@@ -131,5 +131,9 @@ export async function handlePlugins(
       : "";
     return `• **${p.plugin.name}**${ver}${mcp}${fe}${desc}`;
   });
-  await reply(i, `**Plugins (${plugins.length})**\n\n${lines.join("\n")}`, true);
+  await reply(
+    i,
+    `**Plugins (${plugins.length})**\n\n${lines.join("\n")}`,
+    true,
+  );
 }

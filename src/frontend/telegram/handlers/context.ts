@@ -12,7 +12,9 @@ import { logWarn } from "../../../util/log.js";
 export function getSenderName(
   from: { first_name?: string; last_name?: string } | undefined,
 ): string {
-  return [from?.first_name, from?.last_name].filter(Boolean).join(" ") || "User";
+  return (
+    [from?.first_name, from?.last_name].filter(Boolean).join(" ") || "User"
+  );
 }
 
 export function getReplyContext(

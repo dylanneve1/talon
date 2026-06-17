@@ -20,7 +20,8 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
   const github = config.github;
   if (github?.enabled) {
     try {
-      const { createGitHubPlugin } = await import("../../plugins/github/index.js");
+      const { createGitHubPlugin } =
+        await import("../../plugins/github/index.js");
       const gh = createGitHubPlugin({ token: github.token });
       const ghConfig = github as unknown as Record<string, unknown>;
       const loaded = registerPlugin(gh, ghConfig);
@@ -44,9 +45,8 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
   const mempalace = config.mempalace;
   if (mempalace?.enabled) {
     try {
-      const { createMempalacePlugin } = await import(
-        "../../plugins/mempalace/index.js"
-      );
+      const { createMempalacePlugin } =
+        await import("../../plugins/mempalace/index.js");
       const { dirs, files: pf } = await import("../../util/paths.js");
       const pythonPath = mempalace.pythonPath ?? pf.mempalacePython;
       const palacePath = mempalace.palacePath ?? dirs.palace;
@@ -78,9 +78,8 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
   const playwright = config.playwright;
   if (playwright?.enabled) {
     try {
-      const { createPlaywrightPlugin } = await import(
-        "../../plugins/playwright/index.js"
-      );
+      const { createPlaywrightPlugin } =
+        await import("../../plugins/playwright/index.js");
       const pwConfig = playwright as unknown as Record<string, unknown>;
       const pw = createPlaywrightPlugin({
         browser: playwright.browser,

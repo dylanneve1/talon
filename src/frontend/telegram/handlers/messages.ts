@@ -9,9 +9,7 @@ import type { Bot, Context } from "grammy";
 import type { TalonConfig } from "../../../util/config.js";
 import { escapeHtml } from "../formatting.js";
 import { friendlyMessage } from "../../../core/errors.js";
-import {
-  setMessageFilePath,
-} from "../../../storage/history.js";
+import { setMessageFilePath } from "../../../storage/history.js";
 import { addMedia } from "../../../storage/media-index.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";
 import { logError } from "../../../util/log.js";

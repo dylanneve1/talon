@@ -4,10 +4,7 @@
  */
 
 import type { ModelInfo } from "../../../core/models/catalog.js";
-import {
-  getModels,
-  resolveModel,
-} from "../../../core/models/catalog.js";
+import { getModels, resolveModel } from "../../../core/models/catalog.js";
 
 export const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
 

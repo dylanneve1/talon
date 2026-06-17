@@ -9,6 +9,10 @@
 import { resolve } from "node:path";
 import { files as pathFiles } from "../util/paths.js";
 
-export const PKG_ROOT = resolve(import.meta.dirname ?? process.cwd(), "..", "..");
+export const PKG_ROOT = resolve(
+  import.meta.dirname ?? process.cwd(),
+  "..",
+  "..",
+);
 export const CONFIG_FILE = pathFiles.config;
 export const LOG_FILE = pathFiles.log;

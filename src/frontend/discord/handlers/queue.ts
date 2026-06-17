@@ -130,7 +130,11 @@ async function flushQueue(chatId: string): Promise<void> {
       }
     }
     try {
-      await sendChunked(last.channel, friendlyMessage(classified), last.replyToId);
+      await sendChunked(
+        last.channel,
+        friendlyMessage(classified),
+        last.replyToId,
+      );
     } catch (notifyErr) {
       logError(
         "bot",

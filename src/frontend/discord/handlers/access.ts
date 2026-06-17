@@ -62,7 +62,10 @@ export function trackDmUser(
   knownDmUsers.add(senderId);
   const tagStr = tag ? ` (${tag})` : "";
   log("users", `New DM user: ${senderName}${tagStr} [id:${senderId}]`);
-  appendDailyLog("System", `New DM user: ${senderName}${tagStr} [id:${senderId}]`);
+  appendDailyLog(
+    "System",
+    `New DM user: ${senderName}${tagStr} [id:${senderId}]`,
+  );
 }
 
 async function notifyUnauthorized(

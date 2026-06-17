@@ -10,7 +10,10 @@ import type { Bot } from "grammy";
 import type { TalonConfig } from "../../../util/config.js";
 import { escapeHtml } from "../formatting.js";
 import { classify, friendlyMessage } from "../../../core/errors.js";
-import { getRecentHistory, type HistoryMessage } from "../../../storage/history.js";
+import {
+  getRecentHistory,
+  type HistoryMessage,
+} from "../../../storage/history.js";
 import { recordMessageProcessed, recordError } from "../../../util/watchdog.js";
 import { log, logError, logWarn, logDebug } from "../../../util/log.js";
 import { appendDailyLog } from "../../../storage/daily-log.js";

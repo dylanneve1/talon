@@ -174,9 +174,7 @@ export async function renderOpenCodeModelList(
           : p.envRequired
             ? `env: ${p.envKeys.join(", ")}`
             : p.source;
-      lines.push(
-        `• ${p.name} (${p.id}) — ${detail} · ${p.modelCount} models`,
-      );
+      lines.push(`• ${p.name} (${p.id}) — ${detail} · ${p.modelCount} models`);
     }
     if (catalog.providers.length > 24)
       lines.push(`…and ${catalog.providers.length - 24} more`);
