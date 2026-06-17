@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.19.0](https://github.com/dylanneve1/talon/compare/v1.18.0...v1.19.0) (2026-06-17)
+
+
+### Features
+
+* **commands:** add /update self-update command for dev git checkouts ([#345](https://github.com/dylanneve1/talon/issues/345)) ([343a69f](https://github.com/dylanneve1/talon/commit/343a69f384cd975be0f1a0262642a2e3afef01d3))
+* **jobs:** per-trigger/per-cron custom model (same backend) + model discovery tools ([#355](https://github.com/dylanneve1/talon/issues/355)) ([c3b887f](https://github.com/dylanneve1/talon/commit/c3b887fcdece00f2b68efdd22b51c30a4a5df812))
+* **soul:** live signal taps — reactions, directives, corrections ([#353](https://github.com/dylanneve1/talon/issues/353)) ([78ec9bf](https://github.com/dylanneve1/talon/commit/78ec9bf344753d361d6ec1390c97fd4d827992be))
+* **soul:** the Soul Kernel — a model-free, self-organizing identity substrate ([#349](https://github.com/dylanneve1/talon/issues/349)) ([fa503c4](https://github.com/dylanneve1/talon/commit/fa503c40ce2b305d19ac0783440ea8c72bad1450))
+* **soul:** wire the Soul Kernel into the runtime (gated, off by default) ([#350](https://github.com/dylanneve1/talon/issues/350)) ([71fc3ea](https://github.com/dylanneve1/talon/commit/71fc3ea4cac0089b4eae518c26aa7cfcb77e916f))
+* **warden:** supervise trigger trees on Windows via Job Objects ([#348](https://github.com/dylanneve1/talon/issues/348)) ([dbf8852](https://github.com/dylanneve1/talon/commit/dbf8852d38195592f390f4606e7e3e93636a14f3))
+
+
+### Bug Fixes
+
+* **mcp:** stop double-wrapping plugin MCP servers ([#337](https://github.com/dylanneve1/talon/issues/337)) ([cceee54](https://github.com/dylanneve1/talon/commit/cceee54f512f762afd48c7603e0b232d58f2c03e))
+
 ## [1.18.0](https://github.com/dylanneve1/talon/compare/v1.17.0...v1.18.0) (2026-06-14)
 
 
