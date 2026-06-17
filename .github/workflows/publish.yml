@@ -238,8 +238,8 @@ jobs:
   # ── Homebrew tap bump ──────────────────────────────────────────
   # Bumps Formula/talon.rb in dylanneve1/homebrew-talon to this version
   # with fresh per-os/arch SHA256s, so `brew install dylanneve1/talon/talon`
-  # tracks the latest release. Needs a tap-write token (HOMEBREW_TAP_TOKEN);
-  # skips cleanly if the secret isn't configured.
+  # tracks the latest release. Uses the cross-repo PAT (same secret
+  # release-please uses); skips cleanly if it isn't configured.
   homebrew:
     name: Homebrew tap
     needs: [binaries]
@@ -249,10 +249,10 @@ jobs:
     steps:
       - name: Bump tap formula
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "HOMEBREW_TAP_TOKEN not set — skipping tap bump"
+            echo "PAT not set — skipping tap bump"
             exit 0
           fi
           set -euo pipefail
