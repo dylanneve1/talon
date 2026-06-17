@@ -9,7 +9,7 @@ import { pushMessage } from "../../storage/history.js";
 import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/background/pulse.js";
 import { log } from "../../util/log.js";
-import { getSenderName } from "./handlers.js";
+import { getSenderName } from "./handlers/index.js";
 import { newlyAddedEmojis, recordReactionToBot } from "../../core/soul/taps.js";
 import {
   handleTextMessage,
@@ -21,7 +21,7 @@ import {
   handleAnimationMessage,
   handleAudioMessage,
   handleVideoNoteMessage,
-} from "./handlers.js";
+} from "./handlers/index.js";
 
 export function registerMiddleware(bot: Bot, config: TalonConfig): void {
   // ── History capture (runs for ALL messages, before handlers) ─────────────

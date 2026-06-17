@@ -20,7 +20,7 @@ import {
   setAdminUserId,
   TELEGRAM_COMMANDS,
 } from "./commands.js";
-import { setAccessControl } from "./handlers.js";
+import { setAccessControl } from "./handlers/index.js";
 import { registerMiddleware } from "./middleware.js";
 import { registerCallbacks } from "./callbacks.js";
 import { log, logError } from "../../util/log.js";

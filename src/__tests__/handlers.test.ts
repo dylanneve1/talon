@@ -49,7 +49,7 @@ const {
   getForwardContext,
   extractUnauthorizedPreview,
   buildGroupGapContextNotice,
-} = await import("../frontend/telegram/handlers.js");
+} = await import("../frontend/telegram/handlers/index.js");
 
 describe("shouldHandleInGroup", () => {
   const makeCtx = (
@@ -553,7 +553,7 @@ const {
   handleAudioMessage,
   handleVideoNoteMessage,
   handleAnimationMessage,
-} = await import("../frontend/telegram/handlers.js");
+} = await import("../frontend/telegram/handlers/index.js");
 
 // Shared mock objects used across all handler integration tests
 const mockBot = {

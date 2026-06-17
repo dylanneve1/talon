@@ -129,7 +129,7 @@ describe("createStreamCallbacks — onStreamDelta streaming disabled path", () =
     delete process.env.TALON_DISABLE_LEGACY_IMPORT;
     vi.resetModules();
     // Fresh import gives us draftsSupported === null
-    const handlers = await import("../frontend/telegram/handlers.js");
+    const handlers = await import("../frontend/telegram/handlers/index.js");
     handleTextMessage = handlers.handleTextMessage as unknown as (
       ctx: unknown,
       bot: unknown,

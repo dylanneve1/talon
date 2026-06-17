@@ -28,7 +28,7 @@ import {
   isPulseEnabled,
   resetPulseCheckpoint,
 } from "../../core/background/pulse.js";
-import { handleCallbackQuery } from "./handlers.js";
+import { handleCallbackQuery } from "./handlers/index.js";
 import { escapeHtml } from "./formatting.js";
 import {
   renderSettingsText,
