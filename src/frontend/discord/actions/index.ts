@@ -29,11 +29,13 @@ import { mediaHandlers } from "./media.js";
 import { chatInfoHandlers } from "./chat-info.js";
 import type { DiscordActionContext, DiscordActionHandlers } from "./types.js";
 
-const handlers: DiscordActionHandlers = {
+// Null-prototype so a request `action` of "toString" / "constructor" / etc.
+// can't resolve an inherited Object.prototype method via `handlers[action]`.
+const handlers: DiscordActionHandlers = Object.assign(Object.create(null), {
   ...messagingHandlers,
   ...mediaHandlers,
   ...chatInfoHandlers,
-};
+});
 
 export function createDiscordActionHandler(client: Client, gateway: Gateway) {
   const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();

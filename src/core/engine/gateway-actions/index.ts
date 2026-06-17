@@ -31,7 +31,10 @@ import { skillHandlers } from "./skills.js";
 import { pluginHandlers } from "./plugins.js";
 import { modelHandlers } from "./models.js";
 
-const handlers: SharedActionHandlers = {
+// Null-prototype so a request `action` of "toString" / "constructor" / etc.
+// can't resolve an inherited Object.prototype method — `handlers[action]` only
+// ever finds an own handler key (the original switch had no such hazard).
+const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...historyHandlers,
   ...fetchUrlHandlers,
   ...cronHandlers,
@@ -41,7 +44,7 @@ const handlers: SharedActionHandlers = {
   ...skillHandlers,
   ...pluginHandlers,
   ...modelHandlers,
-};
+});
 
 export async function handleSharedAction(
   body: Record<string, unknown>,

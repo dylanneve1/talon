@@ -26,11 +26,13 @@ import type { TelegramActionContext, TelegramActionHandlers } from "./types.js";
 
 export { sendText } from "./shared.js";
 
-const handlers: TelegramActionHandlers = {
+// Null-prototype so a request `action` of "toString" / "constructor" / etc.
+// can't resolve an inherited Object.prototype method via `handlers[action]`.
+const handlers: TelegramActionHandlers = Object.assign(Object.create(null), {
   ...messagingHandlers,
   ...mediaHandlers,
   ...chatInfoHandlers,
-};
+});
 
 /**
  * Create a Telegram action handler bound to a specific bot instance.
