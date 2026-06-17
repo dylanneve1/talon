@@ -20,7 +20,7 @@ import type { TalonConfig } from "../../util/config.js";
 import { pushMessage } from "../../storage/history.js";
 import { registerChat } from "../../core/background/pulse.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
-import { handleMessage, getSenderName } from "./handlers.js";
+import { handleMessage, getSenderName } from "./handlers/index.js";
 
 export function registerMiddleware(client: Client, config: TalonConfig): void {
   client.on("messageCreate", (msg: Message) => {

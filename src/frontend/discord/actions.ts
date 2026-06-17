@@ -38,7 +38,7 @@ import {
 import { withRetry } from "../../core/engine/gateway.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import type { ActionResult } from "../../core/types.js";
-import { lookupDiscordChat, sendChunked } from "./handlers.js";
+import { lookupDiscordChat, sendChunked } from "./handlers/index.js";
 import { suppressMentions, safeSlice, DISCORD_MAX_TEXT } from "./formatting.js";
 import { logWarn, logError } from "../../util/log.js";
 import { mapDiscordError, maxAttachmentBytes } from "./errors.js";

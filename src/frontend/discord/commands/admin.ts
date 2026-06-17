@@ -14,7 +14,7 @@ import { forceDream } from "../../../core/background/dream.js";
 import { formatDuration, renderMetricsMessages } from "../helpers.js";
 import { getMetrics } from "../../../util/metrics.js";
 import { handleAdminSubcommand } from "../admin.js";
-import { isAdmin } from "../handlers.js";
+import { isAdmin } from "../handlers/index.js";
 import { suppressMentions, DISCORD_MAX_TEXT } from "../formatting.js";
 import { reply } from "./shared.js";
 

@@ -12,7 +12,7 @@ import {
 import type { TalonConfig } from "../../../util/config.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import { logError } from "../../../util/log.js";
-import { isInteractionAllowed, registerDiscordChat } from "../handlers.js";
+import { isInteractionAllowed, registerDiscordChat } from "../handlers/index.js";
 import { chatIdFromInteraction, reply, client } from "./shared.js";
 import {
   handleStart,

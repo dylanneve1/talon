@@ -35,8 +35,8 @@ import {
   setAccessControl,
   lookupDiscordChat,
   registerDiscordChat,
-} from "./handlers.js";
-import { sendChunked } from "./handlers.js";
+} from "./handlers/index.js";
+import { sendChunked } from "./handlers/index.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
 
 // ── Frontend type ───────────────────────────────────────────────────────────

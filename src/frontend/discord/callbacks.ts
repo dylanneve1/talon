@@ -49,7 +49,7 @@ import {
   enablePulse,
   isPulseEnabled,
 } from "../../core/background/pulse.js";
-import { isInteractionAllowed, registerDiscordChat } from "./handlers.js";
+import { isInteractionAllowed, registerDiscordChat } from "./handlers/index.js";
 import {
   renderSettingsText,
   parseInterval,
