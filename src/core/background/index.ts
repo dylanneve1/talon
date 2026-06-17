@@ -14,7 +14,7 @@
  * concrete backend directly.
  */
 
-export * from "./heartbeat.js";
+export * from "./heartbeat/index.js";
 export * from "./dream.js";
 export * from "./pulse.js";
 export * from "./cron.js";

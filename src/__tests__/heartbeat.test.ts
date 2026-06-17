@@ -106,7 +106,7 @@ const {
   getHeartbeatStatus,
   awaitCurrentRun,
   buildHeartbeatSystemPrompt,
-} = await import("../core/background/heartbeat.js");
+} = await import("../core/background/heartbeat/index.js");
 
 describe("initHeartbeat", () => {
   it("accepts a config object without throwing", () => {

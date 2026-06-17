@@ -20,7 +20,7 @@ import {
   startHeartbeatTimer,
   stopHeartbeatTimer,
   awaitCurrentRun as awaitHeartbeat,
-} from "./core/background/heartbeat.js";
+} from "./core/background/heartbeat/index.js";
 import { startCronTimer, stopCronTimer } from "./core/background/cron.js";
 import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";

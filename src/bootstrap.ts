@@ -29,7 +29,7 @@ import {
   resumeAfterRestart as resumeTriggersAfterRestart,
 } from "./core/background/triggers/index.js";
 import { initDream } from "./core/background/dream.js";
-import { initHeartbeat } from "./core/background/heartbeat.js";
+import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
 import type { ContextManager } from "./core/types.js";
