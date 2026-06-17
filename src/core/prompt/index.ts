@@ -24,7 +24,6 @@ export {
   loadSystemTemplate,
   renderTemplate,
   clearTemplateCache,
-  PACKAGE_PROMPTS_DIR,
   type TemplateVars,
 } from "./templates.js";
 

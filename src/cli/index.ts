@@ -16,9 +16,11 @@
  *   - `menu`        — interactive main menu (no-subcommand default)
  */
 
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import pc from "picocolors";
+// Imported (not read from disk) so `--version` works in a standalone
+// `bun build --compile` binary, which has no package.json on disk — bun
+// inlines the JSON at compile time; tsx/node resolve it from the package.
+import pkg from "../../package.json" with { type: "json" };
 import { PKG_ROOT } from "./context.js";
 import { printBanner } from "./config.js";
 import { runSetup } from "./setup.js";
@@ -96,12 +98,6 @@ export async function runCli(): Promise<void> {
       break;
     case "--version":
     case "-v": {
-      // Read at invocation (not import) so `--version` stays dependency-free
-      // and works before any config exists — the publish smoke test runs it
-      // against the freshly installed package.
-      const pkg = JSON.parse(
-        readFileSync(resolve(PKG_ROOT, "package.json"), "utf-8"),
-      ) as { version: string };
       console.log(pkg.version);
       break;
     }

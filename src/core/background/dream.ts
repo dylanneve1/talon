@@ -15,7 +15,7 @@ import { existsSync, readFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import writeFileAtomic from "write-file-atomic";
 import { files as pathFiles, dirs } from "../../util/paths.js";
-import { PACKAGE_PROMPTS_DIR } from "../prompt/templates.js";
+import { readPromptAsset } from "#prompt-assets";
 import { log, logError, logWarn } from "../../util/log.js";
 import { getDefaultModel } from "../models/catalog.js";
 import type { OneShotAgentParams } from "../types.js";
@@ -159,11 +159,9 @@ async function runDreamAgent(lastRunTimestamp: number): Promise<string> {
   const memoryFile = pathFiles.memory;
   const dreamStateFile = DREAM_STATE_FILE;
 
-  // Load prompt template from the package prompts/ dir and interpolate
-  // variables (PACKAGE_PROMPTS_DIR is the canonical resolver — no
-  // module-relative "../.." that breaks when this file moves).
-  const promptPath = resolve(PACKAGE_PROMPTS_DIR, "dream.md");
-
+  // Load the dream prompt template from the package prompts/ (via the
+  // #prompt-assets seam — disk under tsx, embedded under a compiled
+  // binary) and interpolate variables.
   let prompt: string;
   try {
     // Build optional mempalace mining section
@@ -192,7 +190,7 @@ Keep the diary authentic. Write in first person. Be honest. This is for you, not
 If commands fail, log the error and continue — this stage is optional.`
       : "MemPalace is not configured. Skip this stage.";
 
-    prompt = readFileSync(promptPath, "utf-8")
+    prompt = readPromptAsset("dream.md")
       .replace(/\{\{dreamStateFile\}\}/g, dreamStateFile)
       .replace(/\{\{logsDir\}\}/g, logsDir)
       .replace(/\{\{lastRunIso\}\}/g, lastRunIso)
@@ -200,7 +198,7 @@ If commands fail, log the error and continue — this stage is optional.`
       .replace(/\{\{dailyMemoryDir\}\}/g, dirs.dailyMemory)
       .replace(/\{\{mempalaceSection\}\}/g, mempalaceSection);
   } catch {
-    throw new Error(`Failed to read dream prompt from ${promptPath}`);
+    throw new Error("Failed to read dream prompt (dream.md)");
   }
 
   const model = configRef.dreamModel ?? configRef.model ?? getDefaultModel();

@@ -31,34 +31,52 @@
  * vars is pure in-memory work.
  */
 
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import type { FS } from "liquidjs";
 import { Liquid, type Template } from "liquidjs";
-
-// ── Package prompt directory ────────────────────────────────────────────────
-
-/** Absolute path to the package's `prompts/` directory. */
-export const PACKAGE_PROMPTS_DIR = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  "../../../prompts",
-);
-
-const SYSTEM_DIR = resolve(PACKAGE_PROMPTS_DIR, "system");
+import { promptAssetExists, readPromptAsset } from "#prompt-assets";
 
 // ── Renderer ────────────────────────────────────────────────────────────────
 
 export type TemplateVars = Record<string, string | undefined>;
 
 /**
- * One engine instance per process. `root` lets templates compose via
- * `{% render 'partial-name' %}` against `prompts/system/`. Variables
+ * Map a Liquid lookup (a bare partial name or `<name>.md`) to its rel path
+ * under the package `prompts/system/` directory. System templates live
+ * flat there and are referenced by bare name in `{% render %}`.
+ */
+const systemRel = (file: string): string => {
+  const base = file.split(/[\\/]/).pop() ?? file;
+  return `system/${base.endsWith(".md") ? base : `${base}.md`}`;
+};
+
+/**
+ * A Liquid filesystem backed by the `#prompt-assets` seam instead of the
+ * real disk, so `{% render 'partial' %}` includes resolve identically
+ * under tsx (reads `prompts/system/*.md` from disk) and a
+ * `bun build --compile` binary (reads the same files embedded in the
+ * binary). System templates are flat, so resolution is by basename.
+ */
+const liquidFs: FS = {
+  sep: "/",
+  dirname: () => ".",
+  resolve: (_dir, file, ext) => (file.endsWith(ext) ? file : `${file}${ext}`),
+  existsSync: (file) => promptAssetExists(systemRel(file)),
+  readFileSync: (file) => readPromptAsset(systemRel(file)),
+  exists: (file) => Promise.resolve(promptAssetExists(systemRel(file))),
+  readFile: (file) => Promise.resolve(readPromptAsset(systemRel(file))),
+  contains: () => Promise.resolve(true),
+  containsSync: () => true,
+};
+
+/**
+ * One engine instance per process. The custom `fs` lets templates compose
+ * via `{% render 'partial-name' %}` against `prompts/system/`. Variables
  * stay lenient (unknown → empty string) — a template must degrade to
  * readable prose when an optional var (e.g. a frontend without
  * reactions) is absent.
  */
 const liquid = new Liquid({
-  root: SYSTEM_DIR,
+  fs: liquidFs,
   extname: ".md",
   // JS truthiness, not Shopify's: `""` and `0` are falsy. The legacy
   // renderer treated empty-string vars as "absent", and callers rely
@@ -89,12 +107,13 @@ export function loadSystemTemplate(
   name: string,
   vars: TemplateVars = {},
 ): string {
-  const path = resolve(SYSTEM_DIR, `${name}.md`);
-  let parsed = parseCache.get(path);
+  const file = `${name}.md`;
+  let parsed = parseCache.get(file);
   if (parsed === undefined) {
-    // The filepath argument anchors relative {% render %} resolution.
-    parsed = liquid.parse(readFileSync(path, "utf-8").trim(), path);
-    parseCache.set(path, parsed);
+    // The filepath argument anchors relative {% render %} resolution
+    // (resolved against the prompt-asset seam, not the disk).
+    parsed = liquid.parse(readPromptAsset(`system/${file}`).trim(), file);
+    parseCache.set(file, parsed);
   }
   return liquid.renderSync(parsed, vars) as string;
 }

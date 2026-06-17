@@ -49,7 +49,33 @@ npx talon chat        # terminal chat mode
   - `kilo` backend: nothing extra — `@kilocode/sdk` spawns a local server. Free models are accessible without auth; routed models use Kilo's own credentials.
   - `opencode` backend: nothing extra — `@opencode-ai/sdk` spawns a local server.
   - `codex` backend: install the `codex` CLI (`npm i -g @openai/codex`) and authenticate with `codex login`, `CODEX_API_KEY`, `TALON_CODEX_KEY`, or `codexApiKey`. `OPENAI_API_KEY` is used only as a fallback when no Codex login exists.
-- Talon runs from a normal source or package install; standalone compiled binaries are not supported.
+
+### Standalone binary
+
+Each release also ships self-contained binaries (no Node.js required) for
+Linux and macOS (x64 + arm64) and Windows (x64). Prompts and all native
+modules are embedded in the binary.
+
+```bash
+# Homebrew (macOS / Linux)
+brew install dylanneve1/talon/talon
+
+# Debian / Ubuntu — download the .deb for your arch from the release, then:
+sudo apt install ./talon_<version>_amd64.deb     # or _arm64.deb
+
+# Direct download — grab talon-<os>-<arch> from the release, verify, run:
+chmod +x talon-linux-x64 && ./talon-linux-x64 --version
+# macOS, if Gatekeeper blocks an unsigned binary:
+xattr -d com.apple.quarantine ./talon-darwin-arm64
+```
+
+Verify a direct download against the release `SHA256SUMS`:
+`sha256sum -c SHA256SUMS --ignore-missing`.
+
+> The binary runs the full interactive/agent CLI (`setup`, `start`, `chat`,
+> `doctor`, …). Hosting Talon's _own_ MCP server (`talon` as an MCP stdio
+> server for another client) still needs the npm/Node install — it spawns a
+> `tsx` loader that isn't present in a compiled binary.
 
 ---
 

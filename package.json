@@ -25,6 +25,12 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "imports": {
+    "#prompt-assets": {
+      "bun": "./src/core/prompt/embedded-prompts.ts",
+      "default": "./src/core/prompt/disk-prompts.ts"
+    }
+  },
   "bin": {
     "talon": "./bin/talon.js"
   },
@@ -63,6 +69,7 @@
     "test:codex:backend": "vitest run --reporter=verbose --reporter=json --outputFile=codex-backend-results.json src/__tests__/integration/codex-live-discovery.test.ts",
     "test:openai-agents:backend": "vitest run --reporter=verbose --reporter=json --outputFile=openai-agents-backend-results.json src/__tests__/integration/openai-agents-live-discovery.test.ts",
     "build:sql": "tsx scripts/embed-sql.ts",
+    "build:prompts": "tsx scripts/embed-prompts.ts",
     "build:wasm": "node native/blake3-wasm/build.mjs",
     "tarball:check": "node .github/scripts/tarball-check.mjs",
     "build:stub-sea": "node src/__tests__/integration/stub-claude/build-sea.mjs",

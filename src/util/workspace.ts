@@ -20,7 +20,7 @@ import {
 import { join, resolve } from "node:path";
 import { log } from "./log.js";
 import { dirs, files as pathFiles } from "./paths.js";
-import { PACKAGE_PROMPTS_DIR } from "../core/prompt/templates.js";
+import { listSeedPrompts, readPromptAsset } from "#prompt-assets";
 
 const IDENTITY_SEED = `# Identity
 
@@ -151,22 +151,18 @@ export function initWorkspace(root: string): void {
   }
 
   // Seed user-editable prompt files from the package into
-  // ~/.talon/prompts/. Only copies files that don't already exist —
-  // user edits are preserved. Resolved relative to the package (NOT
-  // process.cwd(): a daemon launched from any other directory used to
-  // silently seed nothing). Skipped: the architecture README (docs,
-  // not a prompt) and the system/ subdirectory (package-owned
-  // templates read in place — a seeded copy would go stale; see
-  // prompts/README.md).
-  const packagePrompts = PACKAGE_PROMPTS_DIR;
-  if (existsSync(packagePrompts)) {
-    for (const file of readdirSync(packagePrompts)) {
-      if (!file.endsWith(".md") || file === "README.md") continue;
-      const dst = join(dirs.prompts, file);
-      if (!existsSync(dst)) {
-        copyFileSync(join(packagePrompts, file), dst);
-        log("workspace", `Seeded prompt: ${file}`);
-      }
+  // ~/.talon/prompts/. Only writes files that don't already exist —
+  // user edits are preserved. Sourced through the #prompt-assets seam
+  // (disk under tsx, embedded under a compiled binary), so seeding works
+  // even when there is no package source tree on disk. listSeedPrompts()
+  // already skips the architecture README and the system/ subdirectory
+  // (package-owned templates read in place — a seeded copy would go
+  // stale; see prompts/README.md).
+  for (const file of listSeedPrompts()) {
+    const dst = join(dirs.prompts, file);
+    if (!existsSync(dst)) {
+      writeFileSync(dst, readPromptAsset(file));
+      log("workspace", `Seeded prompt: ${file}`);
     }
   }
 }

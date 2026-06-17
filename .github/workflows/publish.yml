@@ -124,3 +124,200 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # ── Standalone binaries → release assets ───────────────────────
+  # Bun cross-compiles every target from one Linux host (verified: the
+  # `with { type: "file" }` prompt assets embed for cross targets too).
+  # The CLI entry is src/cli.ts — the dispatcher the npm `talon` bin runs,
+  # NOT src/index.ts (the daemon). Compile Smoke (ci.yml) already proved
+  # the artifact boots on all three OSes; this job ships it.
+  binaries:
+    name: Binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: npm ci
+
+      - name: Verify package version matches tag
+        run: |
+          PKG_VERSION=$(node -e "console.log(require('./package.json').version)")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::package.json version ($PKG_VERSION) does not match release tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Cross-compile all targets
+        run: |
+          mkdir -p dist
+          # bun target triple → published asset name (os-arch[.exe]).
+          declare -A TARGETS=(
+            [bun-linux-x64]=talon-linux-x64
+            [bun-linux-arm64]=talon-linux-arm64
+            [bun-darwin-x64]=talon-darwin-x64
+            [bun-darwin-arm64]=talon-darwin-arm64
+            [bun-windows-x64]=talon-windows-x64.exe
+          )
+          for triple in "${!TARGETS[@]}"; do
+            out="dist/${TARGETS[$triple]}"
+            echo "── $triple → $out"
+            bun build --compile --target="$triple" src/cli.ts --outfile "$out"
+          done
+          ls -la dist
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum talon-* > SHA256SUMS
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+
+  # ── Debian packages (.deb) → release assets ────────────────────
+  # Wraps the already-built linux binaries with nfpm (nfpm.yaml). Users
+  # install with `apt install ./talon_<ver>_<arch>.deb` (or `dpkg -i`).
+  deb:
+    name: Debian package
+    needs: [binaries]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download release binaries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p bin
+          gh release download "$GITHUB_REF_NAME" \
+            --pattern 'talon-linux-x64' --pattern 'talon-linux-arm64' --dir bin
+          chmod +x bin/talon-linux-*
+
+      - name: Install nfpm
+        run: |
+          VER=2.43.0
+          curl -fsSL "https://github.com/goreleaser/nfpm/releases/download/v${VER}/nfpm_${VER}_Linux_x86_64.tar.gz" -o /tmp/nfpm.tgz
+          mkdir -p "$HOME/.nfpm-bin"
+          tar -xzf /tmp/nfpm.tgz -C "$HOME/.nfpm-bin" nfpm
+          echo "$HOME/.nfpm-bin" >> "$GITHUB_PATH"
+
+      - name: Build .deb for each arch
+        run: |
+          export VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p dist
+          # nfpm arch (Debian naming) → the matching linux binary.
+          build_deb() {
+            export ARCH="$1" BIN="$2"
+            nfpm package -f nfpm.yaml -p deb -t "dist/talon_${VERSION}_${ARCH}.deb"
+          }
+          build_deb amd64 bin/talon-linux-x64
+          build_deb arm64 bin/talon-linux-arm64
+          ls -la dist
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.deb --clobber
+
+  # ── Homebrew tap bump ──────────────────────────────────────────
+  # Bumps Formula/talon.rb in dylanneve1/homebrew-talon to this version
+  # with fresh per-os/arch SHA256s, so `brew install dylanneve1/talon/talon`
+  # tracks the latest release. Needs a tap-write token (HOMEBREW_TAP_TOKEN);
+  # skips cleanly if the secret isn't configured.
+  homebrew:
+    name: Homebrew tap
+    needs: [binaries]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: ${{ !github.event.release.prerelease }}
+    steps:
+      - name: Bump tap formula
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping tap bump"
+            exit 0
+          fi
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          REPO="dylanneve1/talon"
+          TAP="dylanneve1/homebrew-talon"
+          BASE="https://github.com/${REPO}/releases/download/${TAG}"
+
+          # Fetch the checksums published by the `binaries` job and pull each
+          # per-asset sha256 (keyed by the asset filename).
+          gh release download "$TAG" --repo "$REPO" --pattern SHA256SUMS --dir /tmp --clobber
+          sha() { grep " $1\$" /tmp/SHA256SUMS | cut -d' ' -f1; }
+          SHA_LINUX_X64=$(sha talon-linux-x64)
+          SHA_LINUX_ARM64=$(sha talon-linux-arm64)
+          SHA_DARWIN_X64=$(sha talon-darwin-x64)
+          SHA_DARWIN_ARM64=$(sha talon-darwin-arm64)
+
+          cat > /tmp/talon.rb <<EOF
+          # typed: false
+          # frozen_string_literal: true
+
+          # Homebrew formula for Talon — auto-bumped by the talon publish workflow.
+          class Talon < Formula
+            desc "Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugins"
+            homepage "https://github.com/dylanneve1/talon"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "${BASE}/talon-darwin-arm64"
+                sha256 "${SHA_DARWIN_ARM64}"
+              else
+                url "${BASE}/talon-darwin-x64"
+                sha256 "${SHA_DARWIN_X64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "${BASE}/talon-linux-arm64"
+                sha256 "${SHA_LINUX_ARM64}"
+              else
+                url "${BASE}/talon-linux-x64"
+                sha256 "${SHA_LINUX_X64}"
+              end
+            end
+
+            def install
+              # Homebrew downloads the bare binary asset under its remote
+              # basename (talon-<os>-<arch>); install it as `talon`.
+              bin.install Dir["talon-*"].first => "talon"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/talon --version")
+            end
+          end
+          EOF
+
+          # Commit the regenerated formula to the tap via the contents API.
+          gh api "repos/${TAP}/contents/Formula/talon.rb" --jq '.sha' > /tmp/sha.txt 2>/dev/null || echo "" > /tmp/sha.txt
+          PREV_SHA=$(cat /tmp/sha.txt)
+          ARGS=(-f message="talon ${VERSION}" -f content="$(base64 -w0 /tmp/talon.rb)")
+          if [ -n "$PREV_SHA" ]; then ARGS+=(-f sha="$PREV_SHA"); fi
+          gh api --method PUT "repos/${TAP}/contents/Formula/talon.rb" "${ARGS[@]}"
+          echo "Bumped ${TAP} formula to ${VERSION}"

@@ -322,6 +322,37 @@ export async function collectDoctorReport(opts: {
     );
   }
 
+  // Package-owned prompt templates must be loadable. On a standalone
+  // `bun build --compile` binary these are embedded file assets (no
+  // source tree on disk); a failure here means the embed manifest is
+  // stale or the package is incomplete — caught at check time, not
+  // mid-message when a backend assembles its system prompt.
+  {
+    const { loadSystemTemplate } = await import("./prompt/index.js");
+    try {
+      const sample = loadSystemTemplate("workspace");
+      checks.push(
+        sample.trim().length > 0
+          ? {
+              label: "Prompt templates loaded",
+              status: "ok",
+            }
+          : {
+              label: "Prompt templates empty",
+              status: "fail",
+              issue: true,
+            },
+      );
+    } catch (err) {
+      checks.push({
+        label: "Prompt templates unavailable",
+        status: "fail",
+        detail: errorNote(err),
+        issue: true,
+      });
+    }
+  }
+
   const native = await checkNativeModules();
   checks.push(...(await checkBackend(opts.config)));
 
