@@ -49,19 +49,19 @@ export function registerInteractionRouter(
       }
       // Autocomplete for /model name:
       if (interaction.isAutocomplete()) {
-        const { handleAutocomplete } = await import("../callbacks.js");
+        const { handleAutocomplete } = await import("../callbacks/index.js");
         await handleAutocomplete(interaction, gateway);
         return;
       }
       // Buttons & select menus → callbacks.ts handler
       if (interaction.isButton() || interaction.isStringSelectMenu()) {
-        const { handleComponentInteraction } = await import("../callbacks.js");
+        const { handleComponentInteraction } = await import("../callbacks/index.js");
         await handleComponentInteraction(interaction, config, gateway);
         return;
       }
       // Modal submissions (pulse interval)
       if (interaction.isModalSubmit()) {
-        const { handleModalSubmit } = await import("../callbacks.js");
+        const { handleModalSubmit } = await import("../callbacks/index.js");
         await handleModalSubmit(interaction, config, gateway);
         return;
       }

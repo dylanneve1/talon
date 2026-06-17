@@ -1,8 +1,9 @@
 /**
- * Component (button + select menu) interaction handlers.
+ * Component (button + select menu) interaction handler.
  *
- * Mirrors src/frontend/telegram/callbacks.ts. Settings panel callbacks update
- * the original message in place (Discord supports update() on the interaction).
+ * Settings panel callbacks update the original message in place (Discord
+ * supports update() on the interaction). AI-generated buttons (`ai:` prefix)
+ * are forwarded to the agent verbatim.
  *
  * Custom-id namespace:
  *   settings:done
@@ -12,17 +13,11 @@
  *   pulse:on | pulse:off | pulse:interval (button → opens modal)
  *   effort:select               (select menu, standalone /effort)
  *   model:select                (select menu, standalone /model)
- *   ai:<id>                     (AI-generated buttons — forwarded to agent verbatim)
- *
- * Modal submissions:
- *   modal:pulse-interval        TextInput "interval"
+ *   ai:<id>                     (AI-generated buttons — forwarded to agent)
  */
 
 import {
   type ButtonInteraction,
-  type StringSelectMenuInteraction,
-  type ModalSubmitInteraction,
-  type AutocompleteInteraction,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -32,62 +27,47 @@ import {
   TextInputStyle,
   MessageFlags,
 } from "discord.js";
-import type { TalonConfig } from "../../util/config.js";
-import type { Gateway } from "../../core/engine/gateway.js";
+import type { TalonConfig } from "../../../util/config.js";
+import type { Gateway } from "../../../core/engine/gateway.js";
 import {
   getChatSettings,
   setChatModelForBackend,
   setChatBackend,
   setChatEffort,
-  setChatPulseInterval,
   resolveModelName,
   type EffortLevel,
-} from "../../storage/chat-settings.js";
+} from "../../../storage/chat-settings.js";
 import {
   registerChat,
   disablePulse,
   enablePulse,
   isPulseEnabled,
-} from "../../core/background/pulse.js";
-import { isInteractionAllowed, registerDiscordChat } from "./handlers/index.js";
+} from "../../../core/background/pulse.js";
+import { isInteractionAllowed, registerDiscordChat } from "../handlers/index.js";
 import {
   renderSettingsText,
-  parseInterval,
-  formatDuration,
   EFFORT_DESCRIPTIONS,
-} from "./helpers.js";
-import { execute } from "../../core/engine/dispatcher.js";
-import { deriveNumericChatId } from "../../util/chat-id.js";
+} from "../helpers.js";
+import { execute } from "../../../core/engine/dispatcher.js";
 import {
   getBackendIdForChat,
   resolveChatBackend,
-} from "../../core/engine/backend-controller/index.js";
-import { resolveActiveModelForChat } from "../../core/models/active-model.js";
+} from "../../../core/engine/backend-controller/index.js";
+import { resolveActiveModelForChat } from "../../../core/models/active-model.js";
 import {
   displayReasoningEffort,
   getActiveReasoningLevels,
   supportsReasoningLevel,
-} from "../shared/reasoning-levels.js";
-import { appendDailyLog } from "../../storage/daily-log.js";
-import { logError } from "../../util/log.js";
+} from "../../shared/reasoning-levels.js";
+import { appendDailyLog } from "../../../storage/daily-log.js";
+import { logError } from "../../../util/log.js";
 import {
   suppressMentions,
   splitMessage,
   safeSlice,
   DISCORD_MAX_TEXT,
-} from "./formatting.js";
-
-type ComponentInteraction = ButtonInteraction | StringSelectMenuInteraction;
-
-function chatIdFromInteraction(interaction: ComponentInteraction): {
-  chatId: string;
-  numericChatId: number;
-} {
-  const chatId = interaction.guildId
-    ? `discord_guild_${interaction.guildId}_${interaction.channelId}`
-    : `discord_dm_${interaction.user.id}`;
-  return { chatId, numericChatId: deriveNumericChatId(chatId) };
-}
+} from "../formatting.js";
+import { chatIdFromInteraction, type ComponentInteraction } from "./shared.js";
 
 export async function handleComponentInteraction(
   interaction: ComponentInteraction,
@@ -439,10 +419,7 @@ async function refreshSettingsPanel(
       .addOptions(
         modelButtons.slice(0, 25).map((b) => ({
           label: safeSlice(b.text.replace(/^✓ /, ""), 100),
-          value: safeSlice(
-            b.callback_data.replace(/^settings:model:/, ""),
-            100,
-          ),
+          value: safeSlice(b.callback_data.replace(/^settings:model:/, ""), 100),
           default: b.text.startsWith("✓"),
         })),
       );
@@ -565,120 +542,5 @@ async function forwardToAgent(
       "discord",
       `Component → agent forward failed: ${err instanceof Error ? err.message : err}`,
     );
-  }
-}
-
-// ── Modal submissions ──────────────────────────────────────────────────────
-
-export async function handleModalSubmit(
-  interaction: ModalSubmitInteraction,
-  config: TalonConfig,
-  gateway: Gateway,
-): Promise<void> {
-  // Access control (same gate as components).
-  const access = isInteractionAllowed(
-    interaction.inGuild(),
-    interaction.user.id,
-    interaction.guildId,
-    interaction.channelId,
-  );
-  if (!access.ok) {
-    await interaction.reply({
-      content: `⚠️ ${access.reason}`,
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  const chatId = interaction.guildId
-    ? `discord_guild_${interaction.guildId}_${interaction.channelId}`
-    : `discord_dm_${interaction.user.id}`;
-
-  // ── /pulse interval modal ────────────────────────────────────────────
-  if (interaction.customId === "modal:pulse-interval") {
-    const raw = interaction.fields.getTextInputValue("interval").trim();
-    const ms = parseInterval(raw);
-    if (!ms) {
-      await interaction.reply({
-        content: `Could not parse interval "${raw}". Try: 30m, 2h, 90m, 1d.`,
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-    if (ms < 5 * 60 * 1000) {
-      await interaction.reply({
-        content: "Minimum interval is 5 minutes.",
-        flags: MessageFlags.Ephemeral,
-      });
-      return;
-    }
-    setChatPulseInterval(chatId, ms);
-    enablePulse(chatId);
-    registerChat(chatId);
-    await interaction.reply({
-      content: `🔔 Pulse cooldown set to **${formatDuration(ms)}**`,
-      flags: MessageFlags.Ephemeral,
-    });
-    return;
-  }
-
-  // Unknown modal — log + ack so Discord doesn't show "Interaction failed".
-  logError("discord", `Unknown modal customId: ${interaction.customId}`);
-  try {
-    await interaction.reply({
-      content: "Unknown form.",
-      flags: MessageFlags.Ephemeral,
-    });
-  } catch {
-    /* ignore */
-  }
-}
-
-// ── Autocomplete (/model name:) ─────────────────────────────────────────────
-
-// Cache the model list so we don't hit getSettingsPresentation() on every
-// keystroke. The backend list rarely changes between user keystrokes; 30s is
-// a sweet spot between freshness and cost.
-const AUTOCOMPLETE_TTL_MS = 30_000;
-let modelListCache: { at: number; values: string[] } | null = null;
-
-async function loadModelList(gateway: Gateway): Promise<string[]> {
-  const now = Date.now();
-  if (modelListCache && now - modelListCache.at < AUTOCOMPLETE_TTL_MS) {
-    return modelListCache.values;
-  }
-  const be = gateway?.backend;
-  if (!be?.models?.getSettingsPresentation) return [];
-  const pres = await be.models?.getSettingsPresentation("", {
-    callbackPrefix: "model:",
-  });
-  const values = pres.modelButtons.map((b) =>
-    b.callback_data.replace(/^model:/, ""),
-  );
-  modelListCache = { at: now, values };
-  return values;
-}
-
-export async function handleAutocomplete(
-  interaction: AutocompleteInteraction,
-  gateway: Gateway,
-): Promise<void> {
-  if (
-    interaction.commandName !== "model" ||
-    interaction.options.getFocused(true).name !== "name"
-  ) {
-    await interaction.respond([]);
-    return;
-  }
-  const query = interaction.options.getFocused().toLowerCase();
-  try {
-    const values = await loadModelList(gateway);
-    const choices = values
-      .filter((v) => !query || v.toLowerCase().includes(query))
-      .slice(0, 25)
-      .map((v) => ({ name: safeSlice(v, 100), value: safeSlice(v, 100) }));
-    await interaction.respond(choices);
-  } catch {
-    await interaction.respond([]);
   }
 }
