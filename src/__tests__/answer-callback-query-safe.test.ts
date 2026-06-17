@@ -14,7 +14,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { Context } from "grammy";
-import { answerCallbackQuerySafe } from "../frontend/telegram/callbacks.js";
+import { answerCallbackQuerySafe } from "../frontend/telegram/callbacks/index.js";
 import * as logModule from "../util/log.js";
 
 function makeCtx(answerImpl: (other?: unknown) => Promise<void>): {
