@@ -147,7 +147,7 @@ const mockBackendNoMcp = stubBackend({
 
 // ── Import after mocks ────────────────────────────────────────────────────
 
-import { handleSharedAction } from "../core/engine/gateway-actions.js";
+import { handleSharedAction } from "../core/engine/gateway-actions/index.js";
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 

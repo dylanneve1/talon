@@ -85,7 +85,7 @@ vi.mock("node:fs", () => ({
 }));
 
 const { handleSharedAction } =
-  await import("../core/engine/gateway-actions.js");
+  await import("../core/engine/gateway-actions/index.js");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

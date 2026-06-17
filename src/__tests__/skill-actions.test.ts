@@ -38,7 +38,7 @@ vi.mock("../util/paths.js", async () => {
   };
 });
 
-import { handleSharedAction } from "../core/engine/gateway-actions.js";
+import { handleSharedAction } from "../core/engine/gateway-actions/index.js";
 import type { ActionResult } from "../core/types.js";
 
 const CHAT = 424242;

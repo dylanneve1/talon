@@ -19,7 +19,7 @@ vi.mock("write-file-atomic", () => ({
   default: { sync: vi.fn() },
 }));
 
-import { handleSharedAction } from "../core/engine/gateway-actions.js";
+import { handleSharedAction } from "../core/engine/gateway-actions/index.js";
 import {
   addGoal,
   generateGoalId,
