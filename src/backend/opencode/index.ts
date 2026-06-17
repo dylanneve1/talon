@@ -32,7 +32,7 @@ export {
 
 export { initOpenCodeAgent, stopOpenCodeServer } from "./server.js";
 
-export { handleMessage } from "./handler.js";
+export { handleMessage } from "./handler/index.js";
 
 export {
   resolveModel,

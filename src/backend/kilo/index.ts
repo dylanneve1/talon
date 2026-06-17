@@ -70,7 +70,7 @@ export {
 } from "./server.js";
 
 // ── Handler ────────────────────────────────────────────────────────────────
-export { handleMessage, getActiveSession } from "./handler.js";
+export { handleMessage, getActiveSession } from "./handler/index.js";
 
 // ── Model provider (Backend adapter) ──────────────────────────────────
 export {
