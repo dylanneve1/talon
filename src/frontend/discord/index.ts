@@ -29,7 +29,7 @@ import { createDiscordActionHandler } from "./actions.js";
 import {
   registerCommandsForGuilds,
   registerInteractionRouter,
-} from "./commands.js";
+} from "./commands/index.js";
 import { registerMiddleware } from "./middleware.js";
 import {
   setAccessControl,
