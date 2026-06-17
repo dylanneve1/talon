@@ -1,26 +1,31 @@
 /**
- * Cross-provider job one-shot runner.
+ * Decoupled-job one-shot orchestrator.
  *
  * When a trigger or cron `query` job carries a model override whose provider
  * differs from the chat's backend, the wake-up can't ride the chat session — a
- * session id is backend-specific. So instead of resuming, we run the job as an
- * isolated one-shot agent on the target backend, exactly like heartbeat/dream:
- * its own backend instance, its own context window, no chat history.
+ * session id is backend-specific. So it runs as an isolated one-shot on the
+ * target backend (heartbeat/dream pattern): own backend, own context window, no
+ * chat history. The agent still gets the outbound frontend tools (via the job
+ * context label) so it can deliver to the chat with an explicit `chat_id`.
  *
- * The isolated agent still gets the full frontend tool surface (it runs under
- * the "heartbeat" context label, which every backend wires for outbound
- * messaging), so it can act in the chat by calling the messaging tools with an
- * explicit `chat_id`. The Opus-authored `instructions` become its system prompt.
+ * This module is deliberately thin: it owns acquisition + log wiring, and
+ * delegates the prompt shape to {@link ./job-prompt} and the timeout/abort
+ * discipline to {@link ./isolated-agent}.
  */
 
-import { resolve } from "node:path";
 import { mkdir, appendFile } from "node:fs/promises";
 import { dirs } from "../../util/paths.js";
-import { log, logError } from "../../util/log.js";
+import { log } from "../../util/log.js";
 import { acquireBackendInstance } from "../engine/backend-controller.js";
 import type { OneShotAgentParams } from "../types.js";
-
-const JOB_LOGS_DIR = resolve(dirs.logs, "jobs");
+import { runIsolatedAgent } from "./isolated-agent.js";
+import {
+  buildJobSystemPrompt,
+  jobLogPath,
+  JOB_CONTEXT_LABEL,
+  JOB_LOGS_DIR,
+  type JobKind,
+} from "./job-prompt.js";
 
 /** Default hard timeout for an isolated job run (10 minutes). */
 const DEFAULT_JOB_TIMEOUT_MS = 10 * 60 * 1000;
@@ -39,33 +44,33 @@ export interface JobOneShotParams {
   /** Short label for the log file (the trigger/cron name). */
   readonly label: string;
   /** Job kind, for the log + system prompt copy. */
-  readonly kind: "trigger" | "cron";
+  readonly kind: JobKind;
   /** Optional override of the hard timeout. */
   readonly timeoutMs?: number;
 }
 
-function slug(s: string): string {
-  return s.replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 40) || "job";
-}
-
-function buildJobSystemPrompt(
-  chatId: string,
-  kind: "trigger" | "cron",
-  instructions?: string,
-): string {
-  const base =
-    `You are Talon running an isolated ${kind} job for chat ${chatId}. ` +
-    `You have NO conversation history — only the task below and your tools. ` +
-    `Investigate and act using your tools. If you need to message the user, ` +
-    `call the messaging tool with chat_id="${chatId}". Be concise and ` +
-    `action-oriented; if there is nothing to report, do nothing.`;
-  return instructions ? `${base}\n\n${instructions}` : base;
+/** Open a per-run log file and return an appender bound to it. */
+async function openJobLog(
+  kind: JobKind,
+  label: string,
+  backendId: string,
+  model: string,
+): Promise<(text: string) => Promise<void>> {
+  await mkdir(JOB_LOGS_DIR, { recursive: true }).catch(() => {});
+  const file = jobLogPath(kind, label);
+  const appendLog = async (text: string) => {
+    await appendFile(file, text).catch(() => {});
+  };
+  await appendLog(
+    `# ${kind} job "${label}" — ${new Date().toISOString()}\n` +
+      `**Backend:** ${backendId} **Model:** ${model}\n\n`,
+  );
+  return appendLog;
 }
 
 /**
  * Run a trigger/cron wake-up as an isolated one-shot on a different backend.
- * Acquires the target backend on demand, runs the agent under a hard timeout,
- * and always releases the backend instance afterwards.
+ * Acquires the target backend on demand and always releases it afterwards.
  */
 export async function runJobOneShot(params: JobOneShotParams): Promise<void> {
   const { backend, release } = await acquireBackendInstance(params.backendId);
@@ -78,29 +83,12 @@ export async function runJobOneShot(params: JobOneShotParams): Promise<void> {
       );
     }
 
-    await mkdir(JOB_LOGS_DIR, { recursive: true }).catch(() => {});
-    const logFile = resolve(
-      JOB_LOGS_DIR,
-      `${params.kind}-${slug(params.label)}-${Date.now()}.md`,
+    const appendLog = await openJobLog(
+      params.kind,
+      params.label,
+      params.backendId,
+      params.model,
     );
-    const appendLog = async (text: string) => {
-      await appendFile(logFile, text).catch(() => {});
-    };
-    await appendLog(
-      `# ${params.kind} job "${params.label}" — ${new Date().toISOString()}\n` +
-        `**Backend:** ${params.backendId} **Model:** ${params.model}\n\n`,
-    );
-
-    const abortController = new AbortController();
-    const timeoutMs = params.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS;
-    const timer = setTimeout(() => {
-      try {
-        abortController.abort();
-      } catch {
-        /* ignore */
-      }
-    }, timeoutMs);
-    timer.unref();
 
     const oneShot: OneShotAgentParams = {
       prompt: params.payload,
@@ -109,31 +97,25 @@ export async function runJobOneShot(params: JobOneShotParams): Promise<void> {
         params.kind,
         params.instructions,
       ),
-      // "heartbeat" is the one context label every backend wires for the full
-      // outbound frontend tool surface, so the isolated agent can deliver to the
-      // chat. (Minor: shares the heartbeat orphan-eviction namespace.)
-      contextLabel: "heartbeat",
+      contextLabel: JOB_CONTEXT_LABEL,
       workspace: dirs.workspace,
       model: params.model,
-      abortController,
+      abortController: new AbortController(),
       appendLog,
     };
 
-    try {
-      await background.runOneShotAgent(oneShot);
-      log(
-        params.kind === "cron" ? "cron" : "triggers",
-        `isolated job "${params.label}" ran on ${params.backendId}/${params.model}`,
-      );
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch (err) {
-    logError(
+    await runIsolatedAgent({
+      background,
+      params: oneShot,
+      timeoutMs: params.timeoutMs ?? DEFAULT_JOB_TIMEOUT_MS,
+      // No evictLabel: the job context label is shared with heartbeat, so a
+      // sweep here could kill a concurrent heartbeat's subprocess. Bounded
+      // abort-grace is enough.
+    });
+    log(
       params.kind === "cron" ? "cron" : "triggers",
-      `isolated job "${params.label}" failed: ${err instanceof Error ? err.message : String(err)}`,
+      `isolated job "${params.label}" ran on ${params.backendId}/${params.model}`,
     );
-    throw err;
   } finally {
     await release();
   }
