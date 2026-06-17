@@ -6,10 +6,11 @@
  * core gateway so MCP tool calls route to Telegram API.
  */
 
-import { Bot, InputFile } from "grammy";
+import { Bot, InputFile, API_CONSTANTS } from "grammy";
 import { autoRetry } from "@grammyjs/auto-retry";
 import { apiThrottler } from "@grammyjs/transformer-throttler";
 import type { TalonConfig } from "../../util/config.js";
+import { soulEnabled } from "../../core/soul/settings.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { createTelegramActionHandler, sendText } from "./actions.js";
@@ -115,7 +116,15 @@ export function createTelegramFrontend(
           process.exit(1);
         }
       });
+      // Reactions arrive only if we explicitly request `message_reaction`
+      // (it is absent from grammY's default allowed_updates). Subscribe only
+      // when the soul is enabled, so a soulless deployment keeps the default
+      // update set and behaves byte-identically.
+      const allowedUpdates = soulEnabled(config.soul)
+        ? [...API_CONSTANTS.DEFAULT_UPDATE_TYPES, "message_reaction" as const]
+        : undefined;
       await bot.start({
+        allowed_updates: allowedUpdates,
         onStart: (info) => log("bot", `Talon running as @${info.username}`),
       });
     },

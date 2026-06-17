@@ -10,6 +10,7 @@ import { allowChat, revokeChat } from "./userbot.js";
 import { registerChat } from "../../core/background/pulse.js";
 import { log } from "../../util/log.js";
 import { getSenderName } from "./handlers.js";
+import { newlyAddedEmojis, recordReactionToBot } from "../../core/soul/taps.js";
 import {
   handleTextMessage,
   handlePhotoMessage,
@@ -158,6 +159,18 @@ export function registerMiddleware(bot: Bot, config: TalonConfig): void {
     }
 
     return next();
+  });
+
+  // ── Reaction tap — feed reactions on Talon's own messages to the soul ────
+  // Telegram only delivers `message_reaction` updates when subscribed via
+  // allowed_updates (see index.ts) and, in groups, when the bot is an admin.
+  // The handler is inert unless the soul is enabled.
+  bot.on("message_reaction", (ctx) => {
+    const mr = ctx.messageReaction;
+    // Ignore the bot reacting to messages itself.
+    if (mr.user?.id === ctx.me.id) return;
+    const added = newlyAddedEmojis(mr.old_reaction, mr.new_reaction);
+    recordReactionToBot(mr.chat.id, mr.message_id, added);
   });
 
   // ── Bot removed from group — revoke userbot access ─────────────────────

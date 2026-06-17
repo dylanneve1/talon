@@ -22,6 +22,7 @@ import { log, logError, logDebug } from "../../util/log.js";
 import { handleSharedAction } from "./gateway-actions.js";
 import { handlePluginAction } from "../plugin.js";
 import type { FrontendActionHandler } from "../types.js";
+import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 
 // ── Per-chat context state ───────────────────────────────────────────────────
@@ -248,6 +249,11 @@ export class Gateway {
       if (this.frontendHandler) {
         const result = await this.frontendHandler(body, chatId);
         if (result) {
+          // Soul tap: remember our own outgoing message ids so a later
+          // reaction update can be attributed to one of Talon's messages.
+          // No-op unless the soul is enabled.
+          if (BOT_MESSAGE_ACTIONS.has(action) && result.ok && result.message_id)
+            noteBotMessage(chatId, Number(result.message_id));
           logDebug("gateway", `${action} chat=${chatId} ${Date.now() - t0}ms`);
           return result;
         }
