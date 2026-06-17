@@ -246,10 +246,13 @@ jobs:
           BIN="$RUNNER_TEMP/talon$ext"
           # Run from a directory with no prompts/ or package.json on disk:
           # anything the binary needs must be embedded.
+          # Read the expected version BEFORE leaving the workspace, via a
+          # relative path — a Windows $GITHUB_WORKSPACE (D:\a\talon\talon)
+          # interpolated into a JS string mangles its backslashes (\t, \a).
+          expected=$(node -p "require('./package.json').version")
           cd "$RUNNER_TEMP"
           ver=$("$BIN" --version)
-          echo "version: $ver"
-          expected=$(node -p "require('$GITHUB_WORKSPACE/package.json').version")
+          echo "version: $ver (expected $expected)"
           [[ "$ver" == "$expected" ]] || { echo "::error::--version printed '$ver', expected '$expected'"; exit 1; }
           "$BIN" --help | grep -q "Talon" || { echo "::error::--help missing banner"; exit 1; }
           # doctor exits non-zero without a config (no config file is a
