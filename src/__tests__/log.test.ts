@@ -6,14 +6,21 @@ const mockError = vi.fn();
 const mockWarn = vi.fn();
 const mockDebug = vi.fn();
 
+// log.ts builds the logger as `pino(opts, pino.multistream(streams))` with
+// a pino-pretty console stream, so the mock must expose both the callable
+// default and `multistream`, and pino-pretty must be stubbed.
 vi.mock("pino", () => ({
-  default: () => ({
-    info: mockInfo,
-    error: mockError,
-    warn: mockWarn,
-    debug: mockDebug,
-  }),
+  default: Object.assign(
+    () => ({
+      info: mockInfo,
+      error: mockError,
+      warn: mockWarn,
+      debug: mockDebug,
+    }),
+    { multistream: vi.fn(() => ({ write: vi.fn() })) },
+  ),
 }));
+vi.mock("pino-pretty", () => ({ default: () => ({ write: vi.fn() }) }));
 
 const { log, logError, logWarn, logDebug } = await import("../util/log.js");
 
