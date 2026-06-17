@@ -22,7 +22,7 @@ import {
   MAX_ACTIVE_PER_CHAT,
   type TriggerLanguage,
 } from "../../../storage/trigger-store.js";
-import { cancelTrigger, spawnTrigger } from "../../background/triggers.js";
+import { cancelTrigger, spawnTrigger } from "../../background/triggers/index.js";
 import { log } from "../../../util/log.js";
 import { validateJobModelOverride } from "./shared.js";
 import type { SharedActionHandlers } from "./types.js";

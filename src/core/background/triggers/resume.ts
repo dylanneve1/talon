@@ -1,0 +1,111 @@
+/**
+ * Post-restart resume — respawn persistent triggers, fire late wakes for
+ * recently-terminated ones, plus the /proc-based PID-starttime probe and the
+ * orphan-kill used to avoid duplicate spawns after an unclean crash.
+ */
+
+import { readFileSync } from "node:fs";
+import { getAllTriggers, updateTrigger, type Trigger } from "../../../storage/trigger-store.js";
+import { log, logError } from "../../../util/log.js";
+import { depsHolder } from "./state.js";
+import { fireWake } from "./output.js";
+import { spawnTrigger } from "./spawn.js";
+
+/**
+ * After the dispatcher is wired, walk the store and clean up leftover state
+ * from a previous run. Triggers in non-terminal states are already marked
+ * `terminated` by loadTriggers(); this fires their wake-up so the bot sees
+ * what happened the moment it comes back.
+ */
+export async function resumeAfterRestart(): Promise<void> {
+  if (!depsHolder.deps) return;
+  for (const t of getAllTriggers()) {
+    // Persistent triggers were parked in "pending" by loadTriggers (crash
+    // path) or shutdownTriggers (clean path) — respawn them silently. The
+    // script body re-runs from the top, so it must be safe to re-run. No wake
+    // fire so we don't spam the bot on every Talon restart.
+    if (t.persistent && t.status === "pending") {
+      if (t.pid !== undefined) {
+        killOrphan(t);
+        updateTrigger(t.id, { pid: undefined, pidStarttime: undefined });
+      }
+      try {
+        spawnTrigger(t);
+        log("triggers", `Respawned persistent trigger "${t.name}" [${t.id}]`);
+      } catch (err) {
+        logError(
+          "triggers",
+          `Failed to respawn persistent trigger [${t.id}]`,
+          err,
+        );
+      }
+      continue;
+    }
+    if (
+      t.status === "terminated" &&
+      t.lastFireAt === undefined &&
+      t.endedAt &&
+      Date.now() - t.endedAt < 5 * 60_000
+    ) {
+      await fireWake(t.id, "terminated", t.lastError, /* terminal */ true);
+    }
+  }
+}
+
+/**
+ * Read field 22 (start time in jiffies since boot) from /proc/<pid>/stat.
+ * Returns undefined if /proc isn't available (non-Linux) or the read fails.
+ *
+ * Parsing note: the `comm` field (2nd) is wrapped in parens and may itself
+ * contain ')' — the safe parse finds the LAST ')' and splits the rest on
+ * space. After that split, index 19 corresponds to field 22.
+ */
+export function readPidStarttimeSync(pid: number): number | undefined {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf-8");
+    const lastParen = stat.lastIndexOf(")");
+    if (lastParen < 0) return undefined;
+    const tail = stat.slice(lastParen + 2).split(" ");
+    const starttime = Number(tail[19]);
+    return Number.isFinite(starttime) ? starttime : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Probe a stored PID from a previous Talon run and SIGKILL it if it's still
+ * alive AND really is our former child (not a recycled PID). Used by
+ * resumeAfterRestart to avoid duplicate-spawn when Talon crashed outside a
+ * cgroup-managed environment.
+ *
+ * PID-reuse defence (Linux): compare /proc/<pid>/stat field 22 (start time in
+ * jiffies) against the value captured at spawn. Start time is monotonic per
+ * boot and unchanged by exec(), so a match means the PID still belongs to our
+ * process. On non-Linux (no /proc), pidStarttime is undefined and we fall
+ * through to SIGKILL.
+ */
+function killOrphan(t: Trigger): void {
+  if (t.pid === undefined) return;
+  try {
+    process.kill(t.pid, 0);
+  } catch {
+    return; // dead — nothing to do
+  }
+  if (t.pidStarttime !== undefined) {
+    const current = readPidStarttimeSync(t.pid);
+    if (current !== undefined && current !== t.pidStarttime) {
+      log(
+        "triggers",
+        `Orphan probe: pid=${t.pid} starttime ${current} ≠ stored ${t.pidStarttime} — PID reused, leaving alone`,
+      );
+      return;
+    }
+  }
+  try {
+    process.kill(t.pid, "SIGKILL");
+    log("triggers", `Killed orphan pid=${t.pid} from previous "${t.name}"`);
+  } catch {
+    /* raced — exited between probe and kill */
+  }
+}

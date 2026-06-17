@@ -30,7 +30,7 @@ vi.mock("../storage/daily-log.js", () => ({ appendDailyLog: vi.fn() }));
 import { LUA_RUN_SUBCOMMAND } from "../core/scripting/lua-runner.js";
 import { languageExtension } from "../storage/trigger-store.js";
 
-const { _internals } = await import("../core/background/triggers.js");
+const { _internals } = await import("../core/background/triggers/index.js");
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const CLI_ENTRY = resolve(REPO_ROOT, "src/cli.ts");

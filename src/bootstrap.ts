@@ -27,7 +27,7 @@ import { initCron } from "./core/background/cron.js";
 import {
   initTriggers,
   resumeAfterRestart as resumeTriggersAfterRestart,
-} from "./core/background/triggers.js";
+} from "./core/background/triggers/index.js";
 import { initDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat.js";
 import { log } from "./util/log.js";

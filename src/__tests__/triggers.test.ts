@@ -29,7 +29,7 @@ const {
   shutdownTriggers,
   getRunningCount,
   resumeAfterRestart,
-} = await import("../core/background/triggers.js");
+} = await import("../core/background/triggers/index.js");
 
 import type { Trigger } from "../storage/trigger-store.js";
 

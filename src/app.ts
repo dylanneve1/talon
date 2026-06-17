@@ -22,7 +22,7 @@ import {
   awaitCurrentRun as awaitHeartbeat,
 } from "./core/background/heartbeat.js";
 import { startCronTimer, stopCronTimer } from "./core/background/cron.js";
-import { shutdownTriggers } from "./core/background/triggers.js";
+import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
 import { bootstrap, initBackendAndDispatcher } from "./bootstrap.js";

@@ -18,4 +18,4 @@ export * from "./heartbeat.js";
 export * from "./dream.js";
 export * from "./pulse.js";
 export * from "./cron.js";
-export * from "./triggers.js";
+export * from "./triggers/index.js";

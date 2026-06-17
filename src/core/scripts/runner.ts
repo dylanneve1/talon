@@ -15,7 +15,7 @@
 import { spawn } from "node:child_process";
 import { dirs } from "../../util/paths.js";
 import { log } from "../../util/log.js";
-import { commandForLanguage } from "../background/triggers.js";
+import { commandForLanguage } from "../background/triggers/index.js";
 import type { Script } from "../../storage/script-store.js";
 
 export const DEFAULT_SCRIPT_TIMEOUT_SECONDS = 60;
