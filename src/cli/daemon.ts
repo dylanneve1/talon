@@ -1,0 +1,95 @@
+/**
+ * Daemon management — renders the outcomes of start/stop/restart.
+ *
+ * Lifecycle logic lives in core/daemon/ (pidfile, discovery, control);
+ * this module only renders the outcomes.
+ */
+
+import pc from "picocolors";
+import {
+  startDaemon,
+  stopDaemon,
+  restartDaemon,
+  type StartOutcome,
+  type StopOutcome,
+} from "../core/daemon/control.js";
+import { PKG_ROOT } from "./context.js";
+
+function renderStartOutcome(result: StartOutcome): void {
+  if (result.ok) {
+    const port = result.port ? `, gateway :${result.port}` : "";
+    console.log(`  ${pc.green("●")} Talon started (PID ${result.pid}${port})`);
+    console.log(`  ${pc.dim("Logs:")} talon logs`);
+    console.log(`  ${pc.dim("Stop:")} talon stop\n`);
+    return;
+  }
+  switch (result.reason) {
+    case "already-running": {
+      const inst = result.instance;
+      const port = inst.port ? `, gateway :${inst.port}` : "";
+      console.log(
+        `  ${pc.yellow("!")} Talon is already running (PID ${inst.pid}${port})`,
+      );
+      if (inst.pidfileStale) {
+        console.log(
+          `  ${pc.dim("The PID file was stale — repaired from the live instance.")}`,
+        );
+      }
+      console.log(
+        `  Use ${pc.cyan("talon restart")} to restart, or ${pc.cyan("talon stop")} to stop.\n`,
+      );
+      return;
+    }
+    case "spawn-failed":
+      console.log(
+        `  ${pc.red("✖")} Failed to start Talon${result.detail ? pc.dim(` — ${result.detail}`) : ""}\n`,
+      );
+      return;
+    case "exited-early":
+      console.log(`  ${pc.red("✖")} Talon ${result.detail} during startup`);
+      console.log(`  Check ${pc.cyan("talon logs")} for details.\n`);
+      return;
+    case "boot-timeout":
+      console.log(
+        `  ${pc.yellow("!")} Talon was spawned but has not reported healthy yet.`,
+      );
+      console.log(
+        `  It may still be starting — check ${pc.cyan("talon status")} and ${pc.cyan("talon logs")}.\n`,
+      );
+      return;
+  }
+}
+
+function renderStopOutcome(result: StopOutcome): void {
+  if (result.stopped) {
+    const how =
+      result.method === "http"
+        ? "graceful"
+        : result.method === "sigterm"
+          ? "SIGTERM"
+          : "SIGKILL";
+    console.log(`  ${pc.red("●")} Talon stopped (PID ${result.pid}, ${how})\n`);
+    return;
+  }
+  if (result.reason === "not-running") {
+    console.log(`  ${pc.dim("●")} Talon is not running\n`);
+    return;
+  }
+  console.log(
+    `  ${pc.red("✖")} Could not stop Talon (PID ${result.pid}) — the process did not exit\n`,
+  );
+}
+
+export async function daemonStart(): Promise<void> {
+  renderStartOutcome(await startDaemon({ pkgRoot: PKG_ROOT }));
+}
+
+export async function daemonStop(): Promise<void> {
+  renderStopOutcome(await stopDaemon());
+}
+
+export async function daemonRestart(): Promise<void> {
+  const { stop, start } = await restartDaemon({ pkgRoot: PKG_ROOT });
+  renderStopOutcome(stop);
+  renderStartOutcome(start);
+}
