@@ -21,7 +21,11 @@ import {
   stopHeartbeatTimer,
   awaitCurrentRun as awaitHeartbeat,
 } from "./core/background/heartbeat.js";
-import { startCronTimer, stopCronTimer } from "./core/background/cron.js";
+import {
+  startCronTimer,
+  stopCronTimer,
+  runStartupCatchup,
+} from "./core/background/cron.js";
 import { shutdownTriggers } from "./core/background/triggers.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
@@ -187,6 +191,13 @@ async function main(): Promise<void> {
   startUploadCleanup(config.workspace);
 
   await frontend.start();
+
+  // Replay any runs that came due while Talon was down. Honors each job's
+  // catch-up policy (default skip = no-op); fire-and-forget so a slow replay
+  // never blocks startup.
+  runStartupCatchup().catch((err) =>
+    logError("cron", "startup catch-up failed", err),
+  );
 }
 
 main().catch((err) => {

@@ -12,7 +12,8 @@ import { clearHistory } from "../../storage/history.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import {
   getAllCronJobs,
-  validateCronExpression,
+  describeSchedule,
+  nextRunAt,
 } from "../../storage/cron-store.js";
 import { getActiveCount } from "../../core/engine/dispatcher.js";
 import { getPulseStatus } from "../../core/background/pulse.js";
@@ -188,14 +189,14 @@ export async function handleAdminCommand(
         return;
       }
       const lines = jobs.map((j) => {
-        const v = validateCronExpression(j.schedule, j.timezone);
+        const nextMs = nextRunAt(j);
         const last = j.lastRunAt
           ? new Date(j.lastRunAt).toISOString().slice(0, 16).replace("T", " ")
           : "never";
-        const next = v.next
-          ? new Date(v.next).toISOString().slice(0, 16).replace("T", " ")
+        const next = nextMs
+          ? new Date(nextMs).toISOString().slice(0, 16).replace("T", " ")
           : "?";
-        return `${j.enabled ? "\u2713" : "\u2717"} <b>${escapeHtml(j.name)}</b>\n  <code>${j.schedule}</code> | ${j.type} | runs: ${j.runCount} | last: ${last} | next: ${next}`;
+        return `${j.enabled ? "\u2713" : "\u2717"} <b>${escapeHtml(j.name)}</b>\n  <code>${escapeHtml(describeSchedule(j))}</code> | ${j.type} | runs: ${j.runCount} | last: ${last} | next: ${next}`;
       });
       await ctx.reply(
         `<b>Cron Jobs (${jobs.length})</b>\n\n` + lines.join("\n\n"),

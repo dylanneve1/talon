@@ -17,25 +17,40 @@ export const schedulingTools: ToolDefinition[] = [
 
   {
     name: "create_cron_job",
-    description: `Create a persistent recurring scheduled job. Jobs survive restarts.
+    description: `Create a persistent scheduled job. Jobs survive restarts.
 
-Cron format: "minute hour day month weekday" (5 fields)
-Examples:
-  "0 9 * * *"     = every day at 9:00 AM
-  "30 14 * * 1-5" = weekdays at 2:30 PM
-  "*/15 * * * *"  = every 15 minutes
-  "0 0 1 * *"     = first day of every month at midnight
-  "0 8 * * 1"     = every Monday at 8:00 AM
+Cadence — give EXACTLY ONE of:
+  • schedule: a 5-field cron expression "minute hour day month weekday"
+      "0 9 * * *"     = every day at 9:00 AM
+      "30 14 * * 1-5" = weekdays at 2:30 PM
+      "*/15 * * * *"  = every 15 minutes
+      "0 8 * * 1"     = every Monday at 8:00 AM
+  • every_seconds: a fixed interval in seconds (≥ 60), e.g. 5400 = every 90 min.
 
 Type "message" sends the content as a text message.
 Type "query" runs the content as a Claude prompt with full tool access (can search, create files, send messages, etc).
 
-Model: leave "model" unset to run on this chat's model (preferred). Only set it for a "query" job that should run on a cheaper model from the SAME backend as this chat — e.g. a routine daily task that doesn't need the flagship model. The job still resumes this chat's session (same backend = session continuity preserved). The model must be a valid, selectable model id on this chat's backend; an invalid or cross-backend id is rejected — pick from the available models.`,
+Lifecycle (all optional):
+  • once: true        — run a single time, then auto-disable (a one-shot). For "run at 3pm tomorrow", pair a cron/interval that next fires then with once.
+  • max_runs: N       — auto-disable after N runs.
+  • start_at / end_at — ISO-8601 timestamp (or epoch ms). Don't fire before start_at; auto-disable after end_at.
+  • catchup           — what to do with runs missed while Talon was down: "skip" (default), "once" (one catch-up run), or "all" (replay each missed run, capped).
+
+Model: leave "model" unset to run on this chat's model (preferred). Only set it for a "query" job that should run on a cheaper model from the SAME backend as this chat. The job still resumes this chat's session. Must be a valid, selectable model id on this chat's backend; an invalid or cross-backend id is rejected.`,
     schema: {
       name: z.string().describe("Human-readable name for the job"),
       schedule: z
         .string()
-        .describe("Cron expression (5-field: minute hour day month weekday)"),
+        .optional()
+        .describe(
+          "Cron expression (5-field: minute hour day month weekday). Provide this OR every_seconds, not both.",
+        ),
+      every_seconds: z
+        .number()
+        .optional()
+        .describe(
+          "Fixed interval in seconds (≥ 60). Provide this OR schedule, not both.",
+        ),
       type: z
         .enum(["message", "query"])
         .describe(
@@ -46,13 +61,37 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
         .string()
         .optional()
         .describe(
-          "IANA timezone (e.g. 'America/New_York'). Defaults to system timezone.",
+          "IANA timezone (e.g. 'America/New_York') for cron schedules. Defaults to system timezone.",
+        ),
+      once: z
+        .boolean()
+        .optional()
+        .describe("Run only once, then auto-disable (sugar for max_runs: 1)."),
+      max_runs: z
+        .number()
+        .optional()
+        .describe("Auto-disable after this many runs."),
+      start_at: z
+        .string()
+        .optional()
+        .describe("Don't fire before this ISO-8601 timestamp (or epoch ms)."),
+      end_at: z
+        .string()
+        .optional()
+        .describe(
+          "Auto-disable after this ISO-8601 timestamp (or epoch ms). Must be in the future.",
+        ),
+      catchup: z
+        .enum(["skip", "once", "all"])
+        .optional()
+        .describe(
+          "Missed-run policy for downtime: skip (default), once, or all (capped).",
         ),
       model: z
         .string()
         .optional()
         .describe(
-          "Optional model override for 'query' jobs. Unset = this chat's model (preferred). Set only to run on a cheaper model from the SAME backend as this chat (session continuity is preserved). Must be a valid, selectable model id on this chat's backend — call list_models to see valid ids; an invalid or cross-backend id is rejected.",
+          "Optional model override for 'query' jobs. Unset = this chat's model (preferred). Set only to run on a cheaper model from the SAME backend as this chat. Must be a valid, selectable model id on this chat's backend — call list_models to see valid ids.",
         ),
     },
     execute: (params, bridge) => bridge("create_cron_job", params),
@@ -62,7 +101,7 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
   {
     name: "list_cron_jobs",
     description:
-      "List all cron jobs in the current chat with their status, schedule, run count, and next run time.",
+      "List all cron jobs in the current chat: status, schedule (cron or interval), run count, last-run outcome, next run time, and any bounds (run cap, start/end window, catch-up policy, model).",
     schema: {},
     execute: (_params, bridge) => bridge("list_cron_jobs", {}),
     tag: "scheduling",
@@ -71,17 +110,56 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
   {
     name: "edit_cron_job",
     description:
-      "Edit an existing cron job. Only provide the fields you want to change.",
+      "Edit an existing cron job. Only provide the fields you want to change. Setting schedule switches to cron mode; setting every_seconds switches to interval mode. Pass an empty string to start_at/end_at/max_runs/model to clear it.",
     schema: {
       job_id: z.string().describe("Job ID to edit"),
       name: z.string().optional().describe("New name"),
-      schedule: z.string().optional().describe("New cron expression"),
+      schedule: z
+        .string()
+        .optional()
+        .describe("New cron expression (switches to cron mode)"),
+      every_seconds: z
+        .number()
+        .optional()
+        .describe("New interval in seconds (≥ 60; switches to interval mode)"),
       type: z.enum(["message", "query"]).optional().describe("New job type"),
       content: z.string().optional().describe("New content"),
       enabled: z.boolean().optional().describe("Enable or disable the job"),
       timezone: z.string().optional().describe("New IANA timezone"),
+      once: z.boolean().optional().describe("Make it a one-shot (max_runs: 1)."),
+      max_runs: z
+        .number()
+        .optional()
+        .describe("New run cap (empty string clears it)."),
+      start_at: z
+        .string()
+        .optional()
+        .describe("New start time (ISO-8601/epoch ms; empty clears)."),
+      end_at: z
+        .string()
+        .optional()
+        .describe("New end time (ISO-8601/epoch ms; empty clears)."),
+      catchup: z
+        .enum(["skip", "once", "all"])
+        .optional()
+        .describe("New missed-run policy."),
+      model: z
+        .string()
+        .optional()
+        .describe("New model override (empty string clears it)."),
     },
     execute: (params, bridge) => bridge("edit_cron_job", params),
+    tag: "scheduling",
+  },
+
+  {
+    name: "run_cron_job",
+    description:
+      "Run a cron job right now, ignoring its schedule (for testing or an ad-hoc run). The run is recorded like a scheduled one, so a one-shot job will retire after it.",
+    schema: {
+      job_id: z.string().describe("Job ID to run now"),
+    },
+    execute: (params, bridge) => bridge("run_cron_job", params),
     tag: "scheduling",
   },
 

@@ -15,7 +15,8 @@ import { clearHistory } from "../../storage/history.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
 import {
   getAllCronJobs,
-  validateCronExpression,
+  describeSchedule,
+  nextRunAt,
 } from "../../storage/cron-store.js";
 import { getActiveCount } from "../../core/engine/dispatcher.js";
 import { getPulseStatus } from "../../core/background/pulse.js";
@@ -154,14 +155,14 @@ export async function handleAdminSubcommand(
       const jobs = getAllCronJobs();
       if (jobs.length === 0) return send("No cron jobs.");
       const lines = jobs.map((j) => {
-        const v = validateCronExpression(j.schedule, j.timezone);
+        const nextMs = nextRunAt(j);
         const last = j.lastRunAt
           ? new Date(j.lastRunAt).toISOString().slice(0, 16).replace("T", " ")
           : "never";
-        const next = v.next
-          ? new Date(v.next).toISOString().slice(0, 16).replace("T", " ")
+        const next = nextMs
+          ? new Date(nextMs).toISOString().slice(0, 16).replace("T", " ")
           : "?";
-        return `${j.enabled ? "✓" : "✗"} **${j.name}** — \`${j.schedule}\` | ${j.type} | runs: ${j.runCount} | last: ${last} | next: ${next}`;
+        return `${j.enabled ? "✓" : "✗"} **${j.name}** — \`${describeSchedule(j)}\` | ${j.type} | runs: ${j.runCount} | last: ${last} | next: ${next}`;
       });
       return send(`**Cron Jobs (${jobs.length})**\n\n` + lines.join("\n\n"));
     }
