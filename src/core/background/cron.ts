@@ -12,6 +12,7 @@ import { Cron } from "croner";
 import { execute, getActiveCount } from "../engine/dispatcher.js";
 import { getBackendIdForChat } from "../engine/backend-controller.js";
 import { runJobOneShot } from "./job-oneshot.js";
+import { decoupledJobsEnabled } from "./job-config.js";
 import {
   getAllCronJobs,
   recordCronRun,
@@ -221,19 +222,24 @@ async function executeJob(job: CronJob): Promise<void> {
     `[System: CRON JOB "${job.name}" (schedule: ${job.schedule}). ` +
     `Execute the task. Be concise and action-oriented.]`;
 
+  // Per-job overrides only apply when the feature is enabled; otherwise the
+  // job runs on the chat's model exactly as before.
+  const override = decoupledJobsEnabled() ? job.model : undefined;
+  const overrideProvider = decoupledJobsEnabled() ? job.provider : undefined;
+
   // Cross-provider override → isolated one-shot on the target backend. Same
   // provider (or no provider) → resume the chat session, optionally on a
   // cheaper model on the same backend. Only inspect the chat backend when a
   // provider override is actually set, so the common path stays untouched.
   if (
-    job.model &&
-    job.provider &&
-    job.provider !== safeChatBackendId(job.chatId)
+    override &&
+    overrideProvider &&
+    overrideProvider !== safeChatBackendId(job.chatId)
   ) {
     await runJobOneShot({
       chatId: job.chatId,
-      backendId: job.provider,
-      model: job.model,
+      backendId: overrideProvider,
+      model: override,
       ...(job.instructions ? { instructions: job.instructions } : {}),
       payload: `${header}\n\n${job.content}`,
       label: job.name,
@@ -244,7 +250,7 @@ async function executeJob(job: CronJob): Promise<void> {
   }
 
   const instructions =
-    job.model && job.instructions
+    override && job.instructions
       ? `[Instructions for this run: ${job.instructions}]\n\n`
       : "";
   const prompt = `${header}\n\n${instructions}${job.content}`;
@@ -257,7 +263,7 @@ async function executeJob(job: CronJob): Promise<void> {
       senderName: "Cron",
       isGroup: false,
       source: "cron",
-      ...(job.model ? { modelOverride: job.model } : {}),
+      ...(override ? { modelOverride: override } : {}),
     }),
     CRON_JOB_TIMEOUT_MS,
     `Cron job "${job.name}"`,

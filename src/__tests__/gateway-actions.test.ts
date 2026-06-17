@@ -815,6 +815,26 @@ describe("gateway shared actions", () => {
     // ── create_cron_job ─────────────────────────────────────────────────
 
     describe("create_cron_job", () => {
+      it("rejects a model override when decoupledJobs is disabled", async () => {
+        const { setDecoupledJobsEnabled } =
+          await import("../core/background/job-config.js");
+        setDecoupledJobsEnabled(false);
+        const result = await handleSharedAction(
+          {
+            action: "create_cron_job",
+            name: "Cheap job",
+            schedule: "0 9 * * *",
+            type: "query",
+            content: "do a thing",
+            model: "claude-haiku-4-5",
+          },
+          42,
+        );
+        expect(result?.ok).toBe(false);
+        expect(result?.error).toMatch(/decoupledJobs/i);
+        expect(mockAddCronJob).not.toHaveBeenCalled();
+      });
+
       it("creates a cron job with all fields", async () => {
         const result = await handleSharedAction(
           {

@@ -362,6 +362,12 @@ const configSchema = z.object({
     })
     .optional(),
 
+  // Decoupled jobs — allow per-trigger/per-cron model + provider overrides.
+  // Off by default. When enabled, a trigger/cron may run on a cheaper model
+  // (same backend) or, with a different provider, in an isolated one-shot
+  // session. The override fields are otherwise rejected/ignored.
+  decoupledJobs: z.boolean().optional(),
+
   // Discord — discord.js v14-based frontend
   discord: discordConfigSchema.optional(),
 

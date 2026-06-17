@@ -52,7 +52,7 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
         .string()
         .optional()
         .describe(
-          "Optional model override for 'query' jobs. Unset = this chat's model (preferred). Set only to run on a cheaper/different model; the run gets none of this chat's context.",
+          "Optional model override for 'query' jobs (requires `decoupledJobs` enabled in config). Unset = this chat's model (preferred). Set only to run on a cheaper/different model; the run gets none of this chat's context.",
         ),
       provider: z
         .string()

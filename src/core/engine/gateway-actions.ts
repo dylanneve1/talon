@@ -46,6 +46,7 @@ import {
   type TriggerLanguage,
 } from "../../storage/trigger-store.js";
 import { cancelTrigger, spawnTrigger } from "../background/triggers.js";
+import { decoupledJobsEnabled } from "../background/job-config.js";
 import {
   deleteScript,
   formatScript,
@@ -367,6 +368,12 @@ export async function handleSharedAction(
       if (!content) return { ok: false, error: "Missing content" };
       if (content.length > 10_000)
         return { ok: false, error: "Content too long (max 10,000 chars)" };
+      if ((model || provider || instructions) && !decoupledJobsEnabled())
+        return {
+          ok: false,
+          error:
+            "Per-job model/provider overrides are disabled. Enable `decoupledJobs` in config to use model/provider/instructions.",
+        };
       if (provider && !model)
         return {
           ok: false,
@@ -505,6 +512,12 @@ export async function handleSharedAction(
         ? String(body.instructions)
         : undefined;
 
+      if ((model || provider || instructions) && !decoupledJobsEnabled())
+        return {
+          ok: false,
+          error:
+            "Per-job model/provider overrides are disabled. Enable `decoupledJobs` in config to use model/provider/instructions.",
+        };
       if (provider && !model)
         return {
           ok: false,

@@ -277,6 +277,12 @@ export async function initBackendAndDispatcher(
     onActivity: () => resetPulseTimer(),
   });
 
+  // Decoupled-jobs feature gate (per-job model/provider overrides). Off unless
+  // explicitly enabled in config.
+  const { setDecoupledJobsEnabled } =
+    await import("./core/background/job-config.js");
+  setDecoupledJobsEnabled(config.decoupledJobs ?? false);
+
   initPulse();
   initCron({ sendMessage: frontend.sendMessage });
   initTriggers({ execute: dispatcherExecute });

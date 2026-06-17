@@ -45,6 +45,7 @@ import { createInterface } from "node:readline";
 import { execute as dispatcherExecute } from "../engine/dispatcher.js";
 import { getBackendIdForChat } from "../engine/backend-controller.js";
 import { runJobOneShot } from "./job-oneshot.js";
+import { decoupledJobsEnabled } from "./job-config.js";
 import {
   getAllTriggers,
   getTrigger,
@@ -733,16 +734,25 @@ async function fireWake(
     `This is a wake-up message from a long-running script you started earlier. ` +
     `Decide whether to message the user, take an action, or do nothing.]`;
 
+  // Per-job overrides only apply when the feature is enabled; otherwise the
+  // wake-up runs on the chat's model exactly as before.
+  const override = decoupledJobsEnabled() ? t.model : undefined;
+  const overrideProvider = decoupledJobsEnabled() ? t.provider : undefined;
+
   // Cross-provider override → isolated one-shot on the target backend. Same
   // provider (or none) → resume the chat session, optionally on a cheaper
   // model on the same backend. Only inspect the chat backend when a provider
   // override is actually set, so the common path stays untouched.
-  if (t.model && t.provider && t.provider !== safeChatBackendId(t.chatId)) {
+  if (
+    override &&
+    overrideProvider &&
+    overrideProvider !== safeChatBackendId(t.chatId)
+  ) {
     try {
       await runJobOneShot({
         chatId: t.chatId,
-        backendId: t.provider,
-        model: t.model,
+        backendId: overrideProvider,
+        model: override,
         ...(t.instructions ? { instructions: t.instructions } : {}),
         payload: `${wakeHeader}\n\n${body}`,
         label: t.name,
@@ -755,7 +765,7 @@ async function fireWake(
   }
 
   const instructions =
-    t.model && t.instructions
+    override && t.instructions
       ? `[Instructions for this run: ${t.instructions}]\n\n`
       : "";
   const prompt = `${wakeHeader}\n\n${instructions}${body}`;
@@ -768,7 +778,7 @@ async function fireWake(
       senderName: "Trigger",
       isGroup: false,
       source: "trigger",
-      ...(t.model ? { modelOverride: t.model } : {}),
+      ...(override ? { modelOverride: override } : {}),
     });
   } catch (err) {
     logError("triggers", `wake dispatch failed [${triggerId}]`, err);
