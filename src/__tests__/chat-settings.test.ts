@@ -43,7 +43,7 @@ const {
 
 // Register Claude models (static — no SDK subprocess in tests)
 const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =
-  await import("../backend/claude-sdk/models.js");
+  await import("../backend/claude-sdk/models/index.js");
 registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
 
 // convertSdkModels surfaces base and 1M variants separately, collapsing only

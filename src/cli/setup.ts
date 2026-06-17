@@ -232,7 +232,7 @@ export async function runSetup(): Promise<void> {
     registerClaudeModels,
     registerClaudeModelsStatic,
     CLAUDE_MODELS_STATIC,
-  } = await import("../backend/claude-sdk/models.js");
+  } = await import("../backend/claude-sdk/models/index.js");
   try {
     const { dirs } = await import("../util/paths.js");
     await registerClaudeModels({

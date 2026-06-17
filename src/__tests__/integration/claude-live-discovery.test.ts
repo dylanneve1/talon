@@ -18,7 +18,7 @@ import {
   getModels,
   resolveModelId,
 } from "../../core/models/catalog.js";
-import { registerClaudeModels } from "../../backend/claude-sdk/models.js";
+import { registerClaudeModels } from "../../backend/claude-sdk/models/index.js";
 import { cliAvailable, cliVersion } from "./live-backend-helpers.js";
 
 const CLAUDE_EXECUTABLE_ENV = "CLAUDE_CODE_EXECUTABLE";

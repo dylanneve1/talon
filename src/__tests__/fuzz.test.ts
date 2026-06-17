@@ -51,7 +51,7 @@ const { handleSharedAction } =
   await import("../core/engine/gateway-actions/index.js");
 const { resolveModelName } = await import("../storage/chat-settings.js");
 const { registerClaudeModelsStatic, CLAUDE_MODELS_STATIC } =
-  await import("../backend/claude-sdk/models.js");
+  await import("../backend/claude-sdk/models/index.js");
 registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
 const { Cron } = await import("croner");
 const { messagingTools } = await import("../core/tools/messaging.js");

@@ -6,7 +6,7 @@
  */
 
 import type { TalonConfig } from "../../util/config.js";
-import { registerClaudeModels } from "./models.js";
+import { registerClaudeModels } from "./models/index.js";
 
 // ── State ────────────────────────────────────────────────────────────────────
 
