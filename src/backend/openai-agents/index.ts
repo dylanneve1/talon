@@ -22,7 +22,7 @@ export {
   fetchEndpointModels,
   extractCapabilities,
 } from "./discovery.js";
-export { handleMessage, getActiveAbort } from "./handler.js";
+export { handleMessage, getActiveAbort } from "./handler/index.js";
 export { resetState, getState } from "./state.js";
 export {
   resolveModel,

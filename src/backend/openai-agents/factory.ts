@@ -21,7 +21,7 @@ import {
 } from "../../core/agent-runtime/capabilities.js";
 
 import { initOpenAIAgentsAgent, getOpenAIBaseUrl } from "./init.js";
-import { handleMessage as openAIAgentsHandleMessage } from "./handler.js";
+import { handleMessage as openAIAgentsHandleMessage } from "./handler/index.js";
 import { resetState, clearChatSession } from "./state.js";
 import { releaseAllBundles } from "./mcp-pool.js";
 import { OPENAI_AGENTS_DEFAULT_MODEL } from "./constants.js";

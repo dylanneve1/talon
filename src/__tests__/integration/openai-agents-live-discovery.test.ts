@@ -35,7 +35,7 @@ import type { TalonConfig } from "../../util/config.js";
 
 import { initOpenAIAgentsAgent } from "../../backend/openai-agents/init.js";
 import { fetchEndpointModels } from "../../backend/openai-agents/discovery.js";
-import { handleMessage } from "../../backend/openai-agents/handler.js";
+import { handleMessage } from "../../backend/openai-agents/handler/index.js";
 import {
   resetState,
   clearChatSession,
