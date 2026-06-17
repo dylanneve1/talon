@@ -600,6 +600,11 @@ export async function handleSharedAction(
           const e = parseInstant(body.end_at);
           if (e === undefined)
             return { ok: false, error: "Could not parse 'end_at'." };
+          if (e <= Date.now())
+            return {
+              ok: false,
+              error: "'end_at' is in the past — the job would never run.",
+            };
           updates.endAt = e;
         }
       }
@@ -631,6 +636,19 @@ export async function handleSharedAction(
         }
       }
 
+      // A model override only applies to 'query' jobs — mirror create. Reject
+      // setting a model on a (post-merge) non-query job, or flipping a job that
+      // carries a model over to 'message'.
+      const effType =
+        (updates.type as CronJobType | undefined) ?? job.type;
+      const effModel =
+        "model" in updates ? (updates.model as string | undefined) : job.model;
+      if (effType !== "query" && effModel)
+        return {
+          ok: false,
+          error: "A model override only applies to 'query' jobs.",
+        };
+
       // Reject a start/end window that can never fire, accounting for the merge.
       const effStart =
         "startAt" in updates
@@ -640,6 +658,19 @@ export async function handleSharedAction(
         "endAt" in updates ? (updates.endAt as number | undefined) : job.endAt;
       if (effStart !== undefined && effEnd !== undefined && effEnd <= effStart)
         return { ok: false, error: "'end_at' must be after 'start_at'." };
+
+      // If a lowered run cap already met/exceeds runCount, retire the job now so
+      // it can't sneak one more run before enforceRunCap catches it post-run.
+      const effMaxRuns =
+        "maxRuns" in updates
+          ? (updates.maxRuns as number | undefined)
+          : job.maxRuns;
+      if (
+        effMaxRuns !== undefined &&
+        job.runCount >= effMaxRuns &&
+        updates.enabled !== true
+      )
+        updates.enabled = false;
 
       const updated = updateCronJob(jobId, updates);
       return {

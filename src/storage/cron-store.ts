@@ -135,14 +135,16 @@ const store = new JsonStore<CronStoreShape>({
 function isCronJob(value: unknown): value is CronJob {
   if (!value || typeof value !== "object") return false;
   const j = value as Record<string, unknown>;
-  // A job is scheduled by EITHER a cron expression OR a fixed interval.
-  // Legacy jobs always have `schedule`; interval jobs have `everyMs > 0`.
+  // A job is scheduled by EITHER a cron expression OR a fixed interval, never
+  // both. Legacy jobs always have `schedule`; interval jobs have `everyMs > 0`.
+  // Enforce true XOR so a corrupt/hand-edited doc carrying both fields is
+  // rejected on load rather than silently running as an interval.
   const hasSchedule = typeof j.schedule === "string" && j.schedule.length > 0;
   const hasInterval = typeof j.everyMs === "number" && j.everyMs > 0;
   return (
     typeof j.id === "string" &&
     typeof j.chatId === "string" &&
-    (hasSchedule || hasInterval) &&
+    hasSchedule !== hasInterval &&
     (j.type === "message" || j.type === "query") &&
     typeof j.content === "string" &&
     typeof j.name === "string" &&
@@ -358,8 +360,7 @@ export function deleteCronJob(id: string): boolean {
 /**
  * Record an execution: bump lastRunAt + runCount and, when an outcome is
  * supplied, persist the last-run telemetry (status/error/duration) surfaced in
- * list_cron_jobs. `at` overrides the run timestamp (defaults to now) so
- * catch-up can anchor the interval clock to the fire time it's replaying.
+ * list_cron_jobs. `at` overrides the run timestamp (defaults to now).
  */
 export function recordCronRun(
   id: string,

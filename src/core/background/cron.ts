@@ -153,7 +153,12 @@ async function runScheduled(job: CronJob): Promise<void> {
     log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
     enforceRunCap(job.id);
   } catch (err) {
+    // Advance lastRunAt on failure too (without bumping runCount — failed runs
+    // don't count toward maxRuns). For interval jobs the anchor IS lastRunAt, so
+    // skipping this would make a flaky job re-fire every 60s tick until the
+    // breaker opens, instead of honoring its everyMs cadence between retries.
     updateCronJob(job.id, {
+      lastRunAt: Date.now(),
       lastStatus: "error",
       lastError: err instanceof Error ? err.message : String(err),
       lastDurationMs: Date.now() - startedAt,
@@ -220,6 +225,9 @@ export async function runStartupCatchup(): Promise<void> {
   if (!deps) return;
   const nowMs = Date.now();
   for (const job of getAllCronJobs()) {
+    // Same load back-pressure the tick honors — don't pile replays onto an
+    // already-busy startup.
+    if (getActiveCount() > 10) break;
     if (!job.enabled) continue;
     const policy = job.catchup ?? "skip";
     if (policy === "skip") continue;
@@ -229,6 +237,11 @@ export async function runStartupCatchup(): Promise<void> {
     const missed = countMissedRuns(job, nowMs);
     const toRun = catchupRunCount(missed, policy, CATCHUP_MAX);
     if (toRun <= 0) continue;
+
+    // Replays collapse to "now" by design: each runScheduled stamps lastRunAt =
+    // now, so after the (capped) replays the job resumes cleanly from the
+    // present rather than chasing every historical slot. The first replay takes
+    // the in-flight lock before yielding, so a concurrent tick can't double-fire.
 
     log(
       "cron",
@@ -262,7 +275,9 @@ function countMissedRuns(job: CronJob, nowMs: number): number {
     const cron = new Cron(job.schedule, { timezone: job.timezone ?? undefined });
     let count = 0;
     let cursor = cron.nextRun(new Date(anchor));
-    while (cursor && cursor.getTime() <= nowMs && count <= CATCHUP_MAX) {
+    // `< CATCHUP_MAX` so the walk stops at the cap exactly (a lower bound for a
+    // long outage); catchupRunCount applies the same cap to the replay count.
+    while (cursor && cursor.getTime() <= nowMs && count < CATCHUP_MAX) {
       count++;
       cursor = cron.nextRun(cursor);
     }
