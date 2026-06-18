@@ -81,7 +81,9 @@ describe("ID-shaped tool params accept stringified numbers", () => {
     it(`${tool}.${field} accepts a number`, () => {
       const s = getIdSchema(tool, field);
       const out = s.parse(2081);
-      expect(out).toBe(2081);
+      // snowflakeOrIdSchema coerces the number to a string; strict idSchema
+      // keeps it numeric. Both outcomes are valid — the bridge normalizes.
+      expect(out === 2081 || out === "2081").toBe(true);
     });
 
     it(`${tool}.${field} accepts a numeric string`, () => {
@@ -122,7 +124,9 @@ describe("Audit: every ID-shaped field uses idSchema or snowflakeOrIdSchema", ()
       it(`${tool.name}.${field}: accepts a positive integer number`, () => {
         const r = zSchema.safeParse(2081);
         expect(r.success).toBe(true);
-        if (r.success) expect(r.data).toBe(2081);
+        // snowflakeOrIdSchema coerces the number to a string; idSchema keeps it
+        // numeric. Both are valid — the bridge normalizes at the boundary.
+        if (r.success) expect(r.data === 2081 || r.data === "2081").toBe(true);
       });
 
       it(`${tool.name}.${field}: accepts a digit string`, () => {

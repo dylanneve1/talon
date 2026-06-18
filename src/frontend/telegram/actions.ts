@@ -38,13 +38,23 @@ const TELEGRAM_MAX_TEXT = 4096;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
+/**
+ * Telegram/GramJS APIs expect numeric IDs. `snowflakeOrIdSchema` normalizes IDs
+ * to digit-strings (so 17–19 digit Discord snowflakes survive validation), so a
+ * Telegram message/reply/offset ID can arrive here as a string. Coerce it back
+ * to a positive integer — Telegram IDs are well within 2^53, so this is lossless.
+ * Returns undefined for missing / non-positive / non-integer values.
+ */
+function toPositiveId(v: unknown): number | undefined {
+  const n = typeof v === "number" ? v : typeof v === "string" ? Number(v) : NaN;
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
 function replyParams(
   body: Record<string, unknown>,
 ): { message_id: number } | undefined {
-  const replyTo = body.reply_to ?? body.reply_to_message_id;
-  return typeof replyTo === "number" && replyTo > 0
-    ? { message_id: replyTo }
-    : undefined;
+  const replyTo = toPositiveId(body.reply_to ?? body.reply_to_message_id);
+  return replyTo !== undefined ? { message_id: replyTo } : undefined;
 }
 
 export async function sendText(
@@ -101,10 +111,7 @@ export function createTelegramActionHandler(
       // ── Messaging ─────────────────────────────────────────────────────
       case "send_message": {
         const text = String(body.text ?? "");
-        const replyTo =
-          typeof body.reply_to_message_id === "number"
-            ? body.reply_to_message_id
-            : undefined;
+        const replyTo = toPositiveId(body.reply_to_message_id);
         gateway.incrementMessages(chatId);
         const msgId = await withRetry(() =>
           sendText(bot, chatId, text, replyTo),
@@ -253,10 +260,7 @@ export function createTelegramActionHandler(
 
       case "schedule_message": {
         const text = String(body.text ?? "");
-        const replyTo =
-          typeof body.reply_to_message_id === "number"
-            ? body.reply_to_message_id
-            : undefined;
+        const replyTo = toPositiveId(body.reply_to_message_id);
         const rows = body.rows as
           | Array<Array<{ text: string; url?: string; callback_data?: string }>>
           | undefined;
@@ -522,7 +526,7 @@ export function createTelegramActionHandler(
             text: await userbotHistory({
               chatId,
               limit: Math.min(100, Number(body.limit ?? 30)),
-              offsetId: body.offset_id as number | undefined,
+              offsetId: toPositiveId(body.offset_id),
               before: body.before as string | undefined,
             }),
           };

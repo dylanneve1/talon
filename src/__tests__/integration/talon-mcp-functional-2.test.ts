@@ -421,7 +421,7 @@ describe.skipIf(!stubReady)("Additional messaging tool dispatch", () => {
 
     const unpins = recording.byAction("unpin_message");
     expect(unpins.length).toBe(1);
-    expect(unpins[0].body.message_id).toBe(8888);
+    expect(unpins[0].body.message_id).toBe("8888");
     cleanupTurn(turn);
   }, 45_000);
 
@@ -482,7 +482,7 @@ describe.skipIf(!stubReady)("Additional messaging tool dispatch", () => {
 
     const forwards = recording.byAction("forward_message");
     expect(forwards.length).toBe(1);
-    expect(forwards[0].body.message_id).toBe(222222);
+    expect(forwards[0].body.message_id).toBe("222222");
     cleanupTurn(turn);
   }, 45_000);
 
@@ -513,7 +513,7 @@ describe.skipIf(!stubReady)("Additional messaging tool dispatch", () => {
 
     const reads = recording.byAction("get_message_by_id");
     expect(reads.length).toBe(1);
-    expect(reads[0].body.message_id).toBe(88888);
+    expect(reads[0].body.message_id).toBe("88888");
     cleanupTurn(turn);
   }, 45_000);
 });
