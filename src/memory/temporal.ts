@@ -169,7 +169,11 @@ export async function updateKgFact(
       now,
     );
     const drawerLabel = `${subject}/${predicate}-history`;
-    await palaceClient.appendToHistoryDrawer(historyRoom, drawerLabel, historyEntry);
+    await palaceClient.appendToHistoryDrawer(
+      historyRoom,
+      drawerLabel,
+      historyEntry,
+    );
   }
 
   // 4. Invalidate old triple (if any)

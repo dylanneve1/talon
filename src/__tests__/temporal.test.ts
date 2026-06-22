@@ -5,7 +5,7 @@
  * MemPalace MCP server is required.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   updateKgFact,
   formatHistoryEntry,
@@ -19,11 +19,21 @@ import {
 function makeKgClient(currentTriple?: KgTriple): KgClient & {
   queries: string[];
   invalidations: string[];
-  additions: Array<{ subject: string; predicate: string; object: string; validFrom?: string }>;
+  additions: Array<{
+    subject: string;
+    predicate: string;
+    object: string;
+    validFrom?: string;
+  }>;
 } {
   const queries: string[] = [];
   const invalidations: string[] = [];
-  const additions: Array<{ subject: string; predicate: string; object: string; validFrom?: string }> = [];
+  const additions: Array<{
+    subject: string;
+    predicate: string;
+    object: string;
+    validFrom?: string;
+  }> = [];
 
   return {
     queries,
@@ -67,16 +77,30 @@ describe("formatHistoryEntry", () => {
       "2026-06-01T00:00:00.000Z",
       "2026-06-22T08:00:00.000Z",
     );
-    expect(entry).toBe("- [2026-06-01 → 2026-06-22] marrow/current_release: v1.6.0");
+    expect(entry).toBe(
+      "- [2026-06-01 → 2026-06-22] marrow/current_release: v1.6.0",
+    );
   });
 
   it("slices ISO dates to YYYY-MM-DD only", () => {
-    const entry = formatHistoryEntry("a", "b", "val", "2026-01-15T12:30:00Z", "2026-12-31T23:59:59Z");
+    const entry = formatHistoryEntry(
+      "a",
+      "b",
+      "val",
+      "2026-01-15T12:30:00Z",
+      "2026-12-31T23:59:59Z",
+    );
     expect(entry).toContain("[2026-01-15 → 2026-12-31]");
   });
 
   it("handles 'unknown' as the valid_from value", () => {
-    const entry = formatHistoryEntry("x", "y", "z", "unknown", "2026-06-22T00:00:00Z");
+    const entry = formatHistoryEntry(
+      "x",
+      "y",
+      "z",
+      "unknown",
+      "2026-06-22T00:00:00Z",
+    );
     expect(entry).toContain("[unknown → 2026-06-22]");
   });
 });
