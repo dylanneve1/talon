@@ -13,13 +13,12 @@
  *    leaveUnauthorizedGuilds flag, this guarantees commands aren't visible
  *    where they shouldn't be.
  *
- * Slash command surface mirrors Telegram: /start /help /settings /memory
+ * Slash command surface mirrors Telegram: /start /help /settings
  * /status /ping /model /effort /pulse /reset /restart /metrics /dream /plugins
  * /admin <subcommand>.
  */
 
 import { respawnSelf } from "../../util/respawn.js";
-import { readFileSync, existsSync } from "node:fs";
 import {
   type Client,
   type ChatInputCommandInteraction,
@@ -35,7 +34,6 @@ import {
 } from "discord.js";
 import type { TalonConfig } from "../../util/config.js";
 import type { Gateway } from "../../core/engine/gateway.js";
-import { files } from "../../util/paths.js";
 import {
   resetSession,
   getSessionInfo,
@@ -101,7 +99,6 @@ import {
   splitMessage,
   safeSlice,
   DISCORD_MAX_TEXT,
-  DISCORD_SAFE_RESERVE,
 } from "./formatting.js";
 
 // ── Slash command definitions ───────────────────────────────────────────────
@@ -119,10 +116,6 @@ function buildCommandDefinitions(): unknown[] {
     new SlashCommandBuilder()
       .setName("settings")
       .setDescription("View and change all chat settings")
-      .toJSON(),
-    new SlashCommandBuilder()
-      .setName("memory")
-      .setDescription("View what Talon remembers")
       .toJSON(),
     new SlashCommandBuilder()
       .setName("status")
@@ -421,8 +414,6 @@ async function routeSlashCommand(
       return handleHelp(interaction, client(interaction));
     case "settings":
       return handleSettings(interaction, config, gateway, chatId);
-    case "memory":
-      return handleMemory(interaction);
     case "status":
       return handleStatus(interaction, config, gateway, chatId);
     case "ping":
@@ -490,7 +481,6 @@ async function handleHelp(
       "**Session**",
       "  /status — session info, usage, and stats",
       "  /metrics — aggregate performance metrics (admin)",
-      "  /memory — view what Talon remembers",
       "  /dream — force memory consolidation now (admin)",
       "  /ping — health check with latency",
       "  /reset — clear session and start fresh",
@@ -509,33 +499,6 @@ async function handleHelp(
     ].join("\n"),
     true,
   );
-}
-
-async function handleMemory(i: ChatInputCommandInteraction): Promise<void> {
-  try {
-    const memoryPath = files.memory;
-    if (!existsSync(memoryPath)) {
-      await reply(
-        i,
-        "No memory file yet. I'll create one as I learn about you.",
-        true,
-      );
-      return;
-    }
-    const content = readFileSync(memoryPath, "utf-8").trim();
-    if (!content) {
-      await reply(i, "Memory file is empty. I'll update it as we chat.", true);
-      return;
-    }
-    const budget = DISCORD_MAX_TEXT - DISCORD_SAFE_RESERVE;
-    const display =
-      content.length > budget
-        ? content.slice(0, budget) + "\n\n... (truncated)"
-        : content;
-    await reply(i, display, true);
-  } catch {
-    await reply(i, "Could not read memory file.", true);
-  }
 }
 
 async function handlePing(i: ChatInputCommandInteraction): Promise<void> {
