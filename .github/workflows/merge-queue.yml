@@ -7,15 +7,25 @@
 #   1. Branch protection requires "CI Status" on an UP-TO-DATE branch
 #      (strict checks) — so merges serialize against main by definition.
 #   2. PRs opt into the queue with `gh pr merge --auto` (auto-merge).
-#   3. This workflow advances the queue: every time main moves, it
-#      updates each open auto-merge PR and re-dispatches CI on the new
-#      head. The explicit dispatch is required because branch updates
-#      made with GITHUB_TOKEN deliberately don't fire pull_request
-#      events (Actions' recursion guard) — workflow_dispatch is exempt.
+#   3. This workflow advances the queue: every time main moves, it merges
+#      main into each open auto-merge PR and pushes the update with a real
+#      user PAT. That push fires the PR's normal `pull_request` CI run, so
+#      the required "CI Status" check is produced on the new head and
+#      GitHub's auto-merge can complete once it's green.
 #
-# Green CI lets GitHub auto-merge complete the squash; that push to
-# main re-runs this workflow, which lines up the next PR. Conflicting
-# PRs are skipped with a warning and need a manual rebase.
+# Why a real PAT push, not `pulls.updateBranch` + `workflow_dispatch`:
+# branch updates made with the built-in GITHUB_TOKEN deliberately do NOT
+# fire `pull_request` events (Actions' recursion guard), which left a
+# freshly-updated branch up-to-date but with no required-check run — stuck
+# forever. Re-dispatching ci.yml via `workflow_dispatch` was a workaround,
+# but a `workflow_dispatch` run does not satisfy the branch-protection
+# required status check, so it stayed BLOCKED anyway. A real push from a
+# user token fires CI the normal way, exactly like a human pushing a
+# branch update — no recursion guard, no extra approval gate.
+#
+# Green CI lets GitHub auto-merge complete the squash; that push to main
+# re-runs this workflow, lining up the next PR. Conflicting PRs are
+# skipped with a warning and need a manual rebase.
 
 name: Merge Queue
 
@@ -25,8 +35,7 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
-  actions: write
+  pull-requests: read
 
 concurrency:
   group: merge-queue
@@ -36,69 +45,57 @@ jobs:
   advance:
     name: Advance queue
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Update auto-merge PRs and re-dispatch CI
-        uses: actions/github-script@v9
+      - uses: actions/checkout@v6
         with:
-          script: |
-            const { owner, repo } = context.repo;
-            const prs = await github.paginate(github.rest.pulls.list, {
-              owner,
-              repo,
-              state: "open",
-              base: "main",
-              sort: "created",
-              direction: "asc",
-            });
-            const queued = prs.filter((pr) => pr.auto_merge);
-            if (queued.length === 0) {
-              core.info("No auto-merge PRs queued.");
-              return;
-            }
-            for (const pr of queued) {
-              const before = pr.head.sha;
-              try {
-                await github.rest.pulls.updateBranch({
-                  owner,
-                  repo,
-                  pull_number: pr.number,
-                });
-              } catch (err) {
-                // 422: merge conflict, or already up to date. Conflicts
-                // need a human rebase; up-to-date PRs are already being
-                // tested by their own pull_request CI run.
-                core.warning(
-                  `PR #${pr.number}: update-branch skipped — ${err.message}`,
-                );
-                continue;
-              }
-              // updateBranch is asynchronous (202 Accepted): wait for the
-              // head to actually advance before dispatching CI, otherwise
-              // we'd test the stale SHA.
-              let head = before;
-              for (let i = 0; i < 20 && head === before; i++) {
-                await new Promise((r) => setTimeout(r, 3000));
-                const { data } = await github.rest.pulls.get({
-                  owner,
-                  repo,
-                  pull_number: pr.number,
-                });
-                head = data.head.sha;
-              }
-              if (head === before) {
-                core.warning(
-                  `PR #${pr.number}: head did not advance after update; not dispatching CI`,
-                );
-                continue;
-              }
-              await github.rest.actions.createWorkflowDispatch({
-                owner,
-                repo,
-                workflow_id: "ci.yml",
-                ref: pr.head.ref,
-              });
-              core.info(
-                `PR #${pr.number}: updated to ${head.slice(0, 7)}, CI dispatched on ${pr.head.ref}`,
-              );
-            }
+          # PAT (not GITHUB_TOKEN) so the branch-update push fires CI.
+          token: ${{ secrets.PAT }}
+          fetch-depth: 0
+
+      - name: Update auto-merge PR branches with a real push
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          git config user.name "claudiusthebot"
+          git config user.email "claudiusthebot@users.noreply.github.com"
+          git fetch origin main --quiet
+
+          # Oldest-first so the queue serialises against main deterministically.
+          mapfile -t entries < <(
+            gh pr list --repo "$REPO" --state open --base main \
+              --json number,headRefName,autoMergeRequest \
+              --jq 'sort_by(.number)[] | select(.autoMergeRequest != null) | "\(.number)\t\(.headRefName)"'
+          )
+          if [ "${#entries[@]}" -eq 0 ]; then
+            echo "No auto-merge PRs queued."
+            exit 0
+          fi
+
+          for entry in "${entries[@]}"; do
+            num="${entry%%$'\t'*}"
+            branch="${entry#*$'\t'}"
+            git fetch origin "$branch" --quiet \
+              || { echo "::warning::#${num}: fetch ${branch} failed"; continue; }
+
+            # Skip if the branch already contains every commit on main
+            # (it already has, or is running, its own pull_request CI).
+            if [ -z "$(git rev-list "origin/${branch}..origin/main")" ]; then
+              echo "#${num} (${branch}): already up to date with main"
+              continue
+            fi
+
+            git checkout -q -B _queue "origin/${branch}"
+            if git merge --no-edit origin/main >/dev/null 2>&1; then
+              if git push origin "HEAD:${branch}" --quiet; then
+                echo "#${num} (${branch}): merged main and pushed — pull_request CI will run"
+              else
+                echo "::warning::#${num} (${branch}): push failed"
+              fi
+            else
+              git merge --abort || true
+              echo "::warning::#${num} (${branch}): conflicts with main — needs a manual rebase; skipping"
+            fi
+          done
