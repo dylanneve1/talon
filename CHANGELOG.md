@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.0](https://github.com/dylanneve1/talon/compare/v1.20.0...v1.21.0) (2026-06-28)
+
+
+### Features
+
+* **scheduler:** native catch-up + interval/one-shot/bounded cron jobs ([#356](https://github.com/dylanneve1/talon/issues/356)) ([f660055](https://github.com/dylanneve1/talon/commit/f6600553c7a0d9e59f0d4cea274a6994e986844e))
+
 ## [1.20.0](https://github.com/dylanneve1/talon/compare/v1.19.0...v1.20.0) (2026-06-28)
 
 
