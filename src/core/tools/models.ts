@@ -15,7 +15,7 @@ export const modelTools: ToolDefinition[] = [
   {
     name: "list_models",
     description:
-      "List the selectable models on a backend. With no argument, lists the models on THIS chat's current backend — the only backend whose models a per-trigger/per-cron `model` override can use (overrides stay on the chat's backend so the session resumes with continuity). Use this to pick a valid model id before setting `model` on trigger_create or create_cron_job. Optionally pass `backend` to inspect another backend's models for awareness (only currently-active backends can be listed).",
+      "List the selectable models on a backend. With no argument, lists the models on THIS chat's current backend — the only backend whose models a per-trigger `model` override can use so the session resumes with continuity. For create_cron_job, use this with no backend to pick a same-provider model, or pass `backend` to inspect a provider you will also set via `provider`. Any registered backend can be listed: it is booted on-demand to read its catalog, so it need not be currently active.",
     schema: {
       backend: z
         .string()
