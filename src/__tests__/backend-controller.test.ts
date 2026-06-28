@@ -27,6 +27,7 @@ import {
   cleanupBackendController,
   resetBackendControllerForTest,
   clearBackendChangeListenersForTest,
+  acquireBackendInstance,
 } from "../core/engine/backend-controller.js";
 
 function makeStubBackend(label: string): Backend {
@@ -409,5 +410,47 @@ describe("backend-controller", () => {
     cleanupResolve();
     const result = await swapPromise;
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("acquireBackendInstance — transient catalog reads", () => {
+  it("boots a non-active backend on demand and cleans up on release", async () => {
+    const cleanupSpy = vi.fn();
+    registerBackend(makeFactory("alpha", "Alpha"));
+    registerBackend(makeFactory("beta", "Beta", { cleanupSpy }));
+    await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
+
+    const { backend, release } = await acquireBackendInstance("beta");
+    expect(backend).toBeDefined();
+    await release();
+    expect(cleanupSpy).toHaveBeenCalledWith("beta"); // refcount hit zero
+  });
+
+  it("leaves an already-active backend running after release", async () => {
+    const cleanupSpy = vi.fn();
+    registerBackend(makeFactory("alpha", "Alpha", { cleanupSpy }));
+    await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
+
+    const { release } = await acquireBackendInstance("alpha");
+    await release();
+    expect(cleanupSpy).not.toHaveBeenCalled(); // chat role still holds it
+  });
+
+  it("throws for an unknown backend id", async () => {
+    registerBackend(makeFactory("alpha", "Alpha"));
+    await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
+    await expect(acquireBackendInstance("ghost")).rejects.toThrow(/ghost/);
+  });
+
+  it("is idempotent on release", async () => {
+    const cleanupSpy = vi.fn();
+    registerBackend(makeFactory("alpha", "Alpha"));
+    registerBackend(makeFactory("beta", "Beta", { cleanupSpy }));
+    await initBackendController("alpha", STUB_CONFIG, STUB_CTX);
+
+    const { release } = await acquireBackendInstance("beta");
+    await release();
+    await release(); // second call is a no-op
+    expect(cleanupSpy).toHaveBeenCalledTimes(1);
   });
 });

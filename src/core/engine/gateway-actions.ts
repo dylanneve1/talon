@@ -52,6 +52,7 @@ import {
   getBackendIdForChat,
   getAvailableBackends,
   getPooledBackend,
+  acquireBackendInstance,
 } from "./backend-controller.js";
 import {
   deleteScript,
@@ -1094,68 +1095,84 @@ export async function handleSharedAction(
       const requested = body.backend ? String(body.backend).trim() : "";
       const targetId = requested || currentId;
 
-      // Only return a backend we already have a live instance for — never
-      // boot one just to read its catalog. The chat's own backend is always
-      // live; another backend is only listable while it's pooled.
-      const instance =
+      const avail = getAvailableBackends().map((b) => b.id);
+      if (!avail.includes(targetId))
+        return {
+          ok: false,
+          error: `Unknown backend "${targetId}". Available backends: ${avail.join(", ") || "(none)"}.`,
+        };
+
+      // Prefer a live instance (the chat's backend, or one already pooled).
+      // For any other registered backend, boot it transiently to read its
+      // catalog, then tear it back down so we never leak an instance.
+      let instance =
         targetId === currentId
           ? getBackendForChat(chatIdStr)
           : getPooledBackend(targetId);
-
+      let release: (() => Promise<void>) | null = null;
       if (!instance) {
-        const avail = getAvailableBackends().map((b) => b.id);
-        if (!avail.includes(targetId))
+        try {
+          const acquired = await acquireBackendInstance(targetId);
+          instance = acquired.backend;
+          release = acquired.release;
+        } catch (err) {
           return {
             ok: false,
-            error: `Unknown backend "${targetId}". Available backends: ${avail.join(", ") || "(none)"}.`,
+            error: `Could not load backend "${targetId}" to read its models: ${err instanceof Error ? err.message : String(err)}`,
           };
-        return {
-          ok: false,
-          error: `Backend "${targetId}" isn't currently active, so its model catalog isn't loaded. Switch this chat to it first, or call list_models with no argument to see this chat's backend ("${currentId}") models.`,
-        };
+        }
       }
 
-      const catalog = instance.models;
-      if (!catalog?.listModels)
-        return {
-          ok: true,
-          backend: targetId,
-          models: [],
-          text: `Backend "${targetId}" runs a fixed model (no selectable model catalog).`,
-        };
+      try {
+        const catalog = instance.models;
+        if (!catalog?.listModels)
+          return {
+            ok: true,
+            backend: targetId,
+            models: [],
+            text: `Backend "${targetId}" runs a fixed model (no selectable model catalog).`,
+          };
 
-      const { models } = await catalog.listModels("all");
-      const selectable = models.filter((m) => m.selectable);
-      const slim = selectable.map((m) => ({
-        id: m.id,
-        displayName: m.displayName,
-        reasoning: m.reasoning ?? false,
-        contextWindow: m.contextWindow,
-        free: m.free ?? false,
-      }));
-      if (slim.length === 0)
+        const { models } = await catalog.listModels("all");
+        const selectable = models.filter((m) => m.selectable);
+        const slim = selectable.map((m) => ({
+          id: m.id,
+          displayName: m.displayName,
+          reasoning: m.reasoning ?? false,
+          contextWindow: m.contextWindow,
+          free: m.free ?? false,
+        }));
+        if (slim.length === 0)
+          return {
+            ok: true,
+            backend: targetId,
+            models: [],
+            text: `Backend "${targetId}" exposes no selectable models.`,
+          };
+        const note = targetId === currentId ? "" : " (not this chat's backend)";
+        const lines = slim.map((m) => {
+          const bits = [
+            m.reasoning ? "reasoning" : null,
+            m.contextWindow
+              ? `${Math.round(m.contextWindow / 1000)}k ctx`
+              : null,
+            m.free ? "free" : null,
+          ].filter(Boolean);
+          const name =
+            m.displayName && m.displayName !== m.id
+              ? ` (${m.displayName})`
+              : "";
+          return `- ${m.id}${name}${bits.length ? ` — ${bits.join(", ")}` : ""}`;
+        });
         return {
           ok: true,
           backend: targetId,
-          models: [],
-          text: `Backend "${targetId}" exposes no selectable models.`,
+          models: slim,
+          text: `Selectable models on "${targetId}"${note} (${slim.length}):\n${lines.join("\n")}`,
         };
-      const lines = slim.map((m) => {
-        const bits = [
-          m.reasoning ? "reasoning" : null,
-          m.contextWindow ? `${Math.round(m.contextWindow / 1000)}k ctx` : null,
-          m.free ? "free" : null,
-        ].filter(Boolean);
-        const name =
-          m.displayName && m.displayName !== m.id ? ` (${m.displayName})` : "";
-        return `- ${m.id}${name}${bits.length ? ` — ${bits.join(", ")}` : ""}`;
-      });
-      return {
-        ok: true,
-        backend: targetId,
-        models: slim,
-        text: `Selectable models on "${targetId}" (${slim.length}):\n${lines.join("\n")}`,
-      };
+      } finally {
+        if (release) await release();
+      }
     }
 
     case "list_backends": {
