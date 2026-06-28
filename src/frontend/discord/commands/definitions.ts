@@ -31,10 +31,6 @@ export function buildCommandDefinitions(): unknown[] {
       .setDescription("View and change all chat settings")
       .toJSON(),
     new SlashCommandBuilder()
-      .setName("memory")
-      .setDescription("View what Talon remembers")
-      .toJSON(),
-    new SlashCommandBuilder()
       .setName("status")
       .setDescription("Session info, usage, and stats")
       .toJSON(),

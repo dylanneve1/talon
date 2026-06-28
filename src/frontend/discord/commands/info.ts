@@ -1,17 +1,14 @@
 /**
- * Informational commands — /start, /help, /memory, /ping, /plugins.
+ * Informational commands — /start, /help, /ping, /plugins.
  */
 
-import { readFileSync, existsSync } from "node:fs";
 import {
   type ChatInputCommandInteraction,
   type Client,
   MessageFlags,
 } from "discord.js";
-import { files } from "../../../util/paths.js";
 import { formatDuration } from "../helpers.js";
 import { getLoadedPlugins } from "../../../core/plugin/index.js";
-import { DISCORD_MAX_TEXT, DISCORD_SAFE_RESERVE } from "../formatting.js";
 import { reply } from "./shared.js";
 
 export async function handleStart(
@@ -50,7 +47,6 @@ export async function handleHelp(
       "**Session**",
       "  /status — session info, usage, and stats",
       "  /metrics — aggregate performance metrics (admin)",
-      "  /memory — view what Talon remembers",
       "  /dream — force memory consolidation now (admin)",
       "  /ping — health check with latency",
       "  /reset — clear session and start fresh",
@@ -69,35 +65,6 @@ export async function handleHelp(
     ].join("\n"),
     true,
   );
-}
-
-export async function handleMemory(
-  i: ChatInputCommandInteraction,
-): Promise<void> {
-  try {
-    const memoryPath = files.memory;
-    if (!existsSync(memoryPath)) {
-      await reply(
-        i,
-        "No memory file yet. I'll create one as I learn about you.",
-        true,
-      );
-      return;
-    }
-    const content = readFileSync(memoryPath, "utf-8").trim();
-    if (!content) {
-      await reply(i, "Memory file is empty. I'll update it as we chat.", true);
-      return;
-    }
-    const budget = DISCORD_MAX_TEXT - DISCORD_SAFE_RESERVE;
-    const display =
-      content.length > budget
-        ? content.slice(0, budget) + "\n\n... (truncated)"
-        : content;
-    await reply(i, display, true);
-  } catch {
-    await reply(i, "Could not read memory file.", true);
-  }
 }
 
 export async function handlePing(

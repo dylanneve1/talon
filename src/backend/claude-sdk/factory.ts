@@ -35,6 +35,7 @@ import {
   evictOrphanSubprocesses as claudeEvictOrphanSubprocesses,
 } from "./index.js";
 import { runChatTurn as claudeRunChatTurn } from "./handler.js";
+import { waitForMcpServersReady } from "./mcp-ready.js";
 
 import * as modelProvider from "./model-provider.js";
 
@@ -96,7 +97,16 @@ const claudeSdkFactory: BackendFactory = {
           ...buildMcpServers(chatId),
           ...getPluginMcpServers(bridgeUrl, chatId),
         };
-        return qi.setMcpServers(freshServers);
+        const result = await qi.setMcpServers(freshServers);
+        // setMcpServers resolves on REGISTER, not CONNECT — MCP startup is
+        // non-blocking. A stdio server that dials a slow remote (e.g. the
+        // playwright plugin connecting to the Camoufox websocket) is still
+        // 'pending' at this point and its tools are absent from the live
+        // registry, so the turn would proceed with mcp__playwright-tools__*
+        // stuck "connecting" until the next refresh. Wait (bounded) for the
+        // newly-added servers to finish connecting before returning.
+        await waitForMcpServersReady(qi, result.added);
+        return result;
       },
     };
 

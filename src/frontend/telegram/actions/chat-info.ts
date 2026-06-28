@@ -22,6 +22,7 @@ import {
   getOnlineCount as userbotOnlineCount,
   saveStickerPack as userbotSaveStickerPack,
 } from "../userbot.js";
+import { toPositiveId } from "./shared.js";
 import type { TelegramActionHandlers } from "./types.js";
 
 export const chatInfoHandlers: TelegramActionHandlers = {
@@ -88,7 +89,7 @@ export const chatInfoHandlers: TelegramActionHandlers = {
         text: await userbotHistory({
           chatId,
           limit: Math.min(100, Number(body.limit ?? 30)),
-          offsetId: body.offset_id as number | undefined,
+          offsetId: toPositiveId(body.offset_id),
           before: body.before as string | undefined,
         }),
       };

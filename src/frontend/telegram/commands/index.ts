@@ -4,7 +4,7 @@
  * Split by category:
  *   - `definitions` — the TELEGRAM_COMMANDS menu (single source of truth)
  *   - `state`       — shared admin-id holder + admin guard
- *   - `info`        — /start /help /ping /memory /plugins
+ *   - `info`        — /start /help /ping /plugins
  *   - `session`     — /reset /status
  *   - `settings`    — /model /effort /pulse /settings
  *   - `admin`       — /admin /metrics /doctor /dream /soul /restart /update

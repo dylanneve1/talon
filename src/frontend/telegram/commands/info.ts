@@ -1,10 +1,8 @@
 /**
- * Informational commands — /start, /help, /ping, /memory, /plugins.
+ * Informational commands — /start, /help, /ping, /plugins.
  */
 
 import type { Bot } from "grammy";
-import { readFileSync, existsSync } from "node:fs";
-import { files } from "../../../util/paths.js";
 import { isUserClientReady } from "../userbot.js";
 import { escapeHtml } from "../formatting.js";
 import { formatDuration } from "../helpers/index.js";
@@ -42,7 +40,6 @@ export function registerInfoCommands(bot: Bot): void {
         "  /status -- session info, usage, and stats",
         "  /metrics -- aggregate performance metrics (admin)",
         "  /doctor -- environment and native-module health (admin)",
-        "  /memory -- view what Talon remembers",
         "  /dream -- force memory consolidation now",
         "  /ping -- health check with latency",
         "  /reset -- clear session and start fresh",
@@ -100,31 +97,6 @@ export function registerInfoCommands(bot: Bot): void {
       );
     } catch {
       // ignore edit failure
-    }
-  });
-
-  bot.command("memory", async (ctx) => {
-    try {
-      const memoryPath = files.memory;
-      if (!existsSync(memoryPath)) {
-        await ctx.reply(
-          "No memory file yet. I'll create one as I learn about you.",
-        );
-        return;
-      }
-      const content = readFileSync(memoryPath, "utf-8").trim();
-      if (!content) {
-        await ctx.reply("Memory file is empty. I'll update it as we chat.");
-        return;
-      }
-      // Truncate for Telegram's 4096 char limit
-      const display =
-        content.length > 3500
-          ? content.slice(0, 3500) + "\n\n... (truncated)"
-          : content;
-      await ctx.reply(display);
-    } catch {
-      await ctx.reply("Could not read memory file.");
     }
   });
 

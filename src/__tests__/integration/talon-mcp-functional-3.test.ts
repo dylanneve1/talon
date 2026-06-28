@@ -217,7 +217,7 @@ describe.skipIf(!stubReady)("Member and chat info tool dispatch", () => {
 
     const memberInfos = recording.byAction("get_member_info");
     expect(memberInfos.length).toBe(1);
-    expect(memberInfos[0].body.user_id).toBe(99);
+    expect(memberInfos[0].body.user_id).toBe("99");
     cleanupTurn(turn);
   }, 45_000);
 

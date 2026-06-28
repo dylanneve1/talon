@@ -90,7 +90,19 @@ export const chatIdSchema = z.union([
  * `frontends:[]` list. The strict `idSchema` is still appropriate for
  * Telegram-only tools.
  */
-export const snowflakeOrIdSchema = z.union([
-  z.number().int().positive(),
-  z.string().regex(/^\d+$/, "must be a positive integer"),
-]);
+// STRING-typed on purpose. Discord snowflakes are 17–19 digits and exceed 2^53,
+// so an unquoted JSON number loses precision at parse time and Zod's `.int()`
+// rejects it as too_big. A `union([number, string])` generates an `anyOf` JSON
+// schema, so the model still passes a (corrupt) number — a description hint
+// isn't enough to stop it. `z.coerce.string()` generates a `{ type: "string" }`
+// schema, so the model quotes the ID (exact digits survive), while still
+// accepting a number at runtime by coercing it to a string. Everything is
+// normalized to a digit-string at the boundary; the bridge/handlers consume the
+// string directly (Discord) or `Number()` it (Telegram).
+export const snowflakeOrIdSchema = z.coerce
+  .string()
+  .regex(/^[1-9]\d*$/, "must be a positive integer")
+  .describe(
+    'ID as a string, e.g. "1497549923779084388". Discord IDs exceed the JS ' +
+      "safe-integer range, so pass them double-quoted to preserve precision.",
+  );

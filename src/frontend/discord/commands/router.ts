@@ -20,7 +20,6 @@ import { chatIdFromInteraction, reply, client } from "./shared.js";
 import {
   handleStart,
   handleHelp,
-  handleMemory,
   handlePing,
   handlePlugins,
 } from "./info.js";
@@ -126,8 +125,6 @@ async function routeSlashCommand(
       return handleHelp(interaction, client(interaction));
     case "settings":
       return handleSettings(interaction, config, gateway, chatId);
-    case "memory":
-      return handleMemory(interaction);
     case "status":
       return handleStatus(interaction, config, gateway, chatId);
     case "ping":

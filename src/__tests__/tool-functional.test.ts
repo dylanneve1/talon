@@ -67,19 +67,19 @@ describe("Tool → bridge round-trip", () => {
         tool: "react",
         params: { message_id: 2081, emoji: "❤️" },
         bridgeAction: "react",
-        expectedParams: { message_id: 2081, emoji: "❤️" },
+        expectedParams: { message_id: "2081", emoji: "❤️" },
       },
       {
         tool: "edit_message",
         params: { message_id: 2081, text: "edited" },
         bridgeAction: "edit_message",
-        expectedParams: { message_id: 2081, text: "edited" },
+        expectedParams: { message_id: "2081", text: "edited" },
       },
       {
         tool: "delete_message",
         params: { message_id: 2081 },
         bridgeAction: "delete_message",
-        expectedParams: { message_id: 2081 },
+        expectedParams: { message_id: "2081" },
       },
       {
         tool: "forward_message",
@@ -157,7 +157,7 @@ describe("Tool → bridge round-trip", () => {
         params: { type: "text", text: "ok", reply_to: 2081 },
         bridgeAction: "send_message",
         paramShape: (p) => {
-          expect(p.reply_to_message_id).toBe(2081);
+          expect(p.reply_to_message_id).toBe("2081");
         },
       },
       {
@@ -581,6 +581,24 @@ describe("createTelegramActionHandler", () => {
       parse_mode: "HTML",
     });
     expect(result).toEqual({ ok: true, message_id: 1001 });
+  });
+
+  it("send_message → coerced string reply_to becomes a numeric reply", async () => {
+    // snowflakeOrIdSchema normalizes IDs to digit-strings, so reply_to arrives
+    // here as "2081". The Telegram handler must coerce it back to a number or
+    // GramJS drops the reply/threading silently. Regression guard for that.
+    await handler(
+      {
+        action: "send_message",
+        text: "hi",
+        reply_to_message_id: "2081",
+      },
+      chatId,
+    );
+    const call = api.sendMessage.mock.calls[0]!;
+    expect(call[2]).toMatchObject({
+      reply_parameters: { message_id: 2081 },
+    });
   });
 
   it("schedule_message returns a schedule id and keeps a timer", async () => {

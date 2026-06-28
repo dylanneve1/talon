@@ -13,7 +13,6 @@ export const TELEGRAM_COMMANDS: ReadonlyArray<{
     command: "settings",
     description: "View and change all chat settings",
   },
-  { command: "memory", description: "View what Talon remembers" },
   { command: "status", description: "Session info, usage, and stats" },
   { command: "ping", description: "Health check with latency" },
   { command: "model", description: "Show or change model" },

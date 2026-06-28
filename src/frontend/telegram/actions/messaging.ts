@@ -6,16 +6,13 @@
 import { markdownToTelegramHtml } from "../formatting.js";
 import { withRetry } from "../../../core/engine/gateway.js";
 import { logError, logWarn } from "../../../util/log.js";
-import { sendText } from "./shared.js";
+import { sendText, toPositiveId } from "./shared.js";
 import { TELEGRAM_MAX_TEXT, type TelegramActionHandlers } from "./types.js";
 
 export const messagingHandlers: TelegramActionHandlers = {
   send_message: async (body, chatId, { bot, gateway }) => {
     const text = String(body.text ?? "");
-    const replyTo =
-      typeof body.reply_to_message_id === "number"
-        ? body.reply_to_message_id
-        : undefined;
+    const replyTo = toPositiveId(body.reply_to_message_id);
     gateway.incrementMessages(chatId);
     const msgId = await withRetry(() => sendText(bot, chatId, text, replyTo));
     return { ok: true, message_id: msgId };
@@ -159,10 +156,7 @@ export const messagingHandlers: TelegramActionHandlers = {
 
   schedule_message: (body, chatId, { bot, scheduledMessages }) => {
     const text = String(body.text ?? "");
-    const replyTo =
-      typeof body.reply_to_message_id === "number"
-        ? body.reply_to_message_id
-        : undefined;
+    const replyTo = toPositiveId(body.reply_to_message_id);
     const rows = body.rows as
       | Array<Array<{ text: string; url?: string; callback_data?: string }>>
       | undefined;
