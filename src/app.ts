@@ -21,7 +21,11 @@ import {
   stopHeartbeatTimer,
   awaitCurrentRun as awaitHeartbeat,
 } from "./core/background/heartbeat/index.js";
-import { startCronTimer, stopCronTimer } from "./core/background/cron.js";
+import {
+  startCronTimer,
+  stopCronTimer,
+  runStartupCatchup,
+} from "./core/background/cron.js";
 import { shutdownTriggers } from "./core/background/triggers/index.js";
 import { startWatchdog, stopWatchdog } from "./util/watchdog.js";
 import { log, logError, logWarn } from "./util/log.js";
@@ -182,11 +186,20 @@ async function main(): Promise<void> {
 
   if (config.pulse) startPulseTimer(config.pulseIntervalMs);
   if (config.heartbeat) startHeartbeatTimer(config.heartbeatIntervalMinutes);
-  startCronTimer();
   startWatchdog(config.workspace);
   startUploadCleanup(config.workspace);
 
   await frontend.start();
+
+  // Replay any runs that came due while Talon was down (per-job catch-up
+  // policy; default skip = fast no-op), THEN start the live cron tick. Kicking
+  // catch-up off first gives it the ~60s head start to take each replayed job's
+  // in-flight lock before the first scheduled tick, so a replay can't race a
+  // scheduled run. Fire-and-forget so a slow replay never blocks startup.
+  runStartupCatchup().catch((err) =>
+    logError("cron", "startup catch-up failed", err),
+  );
+  startCronTimer();
 }
 
 main().catch((err) => {

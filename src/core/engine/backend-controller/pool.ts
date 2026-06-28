@@ -155,11 +155,46 @@ export function getAvailableBackends(): { id: string; label: string }[] {
  * The live pooled `Backend` instance for an id, or `null` if it isn't currently
  * pooled. Unlike `getBackendForRole`/`getBackendForChat` this never initialises
  * on demand — it only returns backends already spun up (role backends + chat
- * overrides), so a read-only caller (e.g. `list_models` for a non-current
- * backend) can degrade gracefully instead of forcing a backend to boot.
+ * overrides).
  */
 export function getPooledBackend(id: string): Backend | null {
   return pool.get(id)?.backend ?? null;
+}
+
+/** Monotonic counter for synthetic transient holders. */
+let transientHolderSeq = 0;
+
+/**
+ * Acquire a backend instance transiently — boots it on demand if it isn't
+ * already pooled, pinned by a synthetic `read:N` holder so a concurrent rebind
+ * can't tear it down mid-use. The caller MUST call the returned `release()`,
+ * which drops the holder and cleans the instance up iff nothing else holds it
+ * (so an already-active backend is left running).
+ *
+ * Used by read-only callers that need a non-current backend's catalog (e.g.
+ * `list_models backend=<other>`) without permanently switching the chat to it.
+ */
+export async function acquireBackendInstance(
+  id: string,
+): Promise<{ backend: Backend; release: () => Promise<void> }> {
+  if (!ctx.poolConfig) {
+    throw new Error(
+      "Backend pool not initialised — call initBackendPool first",
+    );
+  }
+  const entry = await ensurePoolEntry(id, ctx.poolConfig);
+  const holder = `read:${++transientHolderSeq}` as BackendHolder;
+  entry.holders.add(holder);
+  let released = false;
+  return {
+    backend: entry.backend,
+    release: async () => {
+      if (released) return;
+      released = true;
+      const e = pool.get(id);
+      if (e) await releaseHolderFromEntry(e, holder);
+    },
+  };
 }
 
 /**

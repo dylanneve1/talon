@@ -571,4 +571,31 @@ describe("gateway port retry — EADDRINUSE", () => {
       }
     }
   });
+
+  it("runs the startup body exactly once after retrying past a busy port", async () => {
+    // Occupy the first port so start() retries onto the next one. The stale
+    // 'listening' callback from the failed bind must not also fire on the
+    // successful bind, or onStarted listeners (and the startup log) run twice.
+    const { createServer } = await import("node:http");
+    const blocker = createServer();
+    await new Promise<void>((resolve) =>
+      blocker.listen(19960, "127.0.0.1", resolve),
+    );
+
+    const gw = new Gateway();
+    gw.setFrontendHandler(async () => null);
+    let startedCount = 0;
+    gw.onStarted(() => {
+      startedCount++;
+    });
+
+    try {
+      const boundPort = await gw.start(19960);
+      expect(boundPort).toBe(19961); // retried past the blocked port
+      expect(startedCount).toBe(1); // startup body ran exactly once
+    } finally {
+      await gw.stop();
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+  });
 });

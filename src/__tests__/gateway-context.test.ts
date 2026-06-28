@@ -7,7 +7,7 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-vi.mock("../core/engine/gateway-actions.js", () => ({
+vi.mock("../core/engine/gateway-actions/index.js", () => ({
   handleSharedAction: vi.fn(async () => null),
 }));
 

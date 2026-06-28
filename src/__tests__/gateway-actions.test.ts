@@ -29,8 +29,11 @@ vi.mock("../storage/media-index.js", () => ({
   formatMediaIndex: mockFormatMediaIndex,
 }));
 
-const mockAddCronJob = vi.fn();
-const mockGetCronJob = vi.fn();
+const mockCronJobs = new Map<string, any>();
+const mockAddCronJob = vi.fn((job: any) => {
+  mockCronJobs.set(job.id, job);
+});
+const mockGetCronJob = vi.fn((id: string) => mockCronJobs.get(id));
 const mockGetCronJobsForChat = vi.fn((): any[] => []);
 const mockUpdateCronJob = vi.fn();
 const mockDeleteCronJob = vi.fn();
@@ -41,6 +44,10 @@ const mockValidateCronExpression = vi.fn(
   }),
 );
 const mockGenerateCronId = vi.fn(() => "test-id-123");
+const mockDescribeSchedule = vi.fn((job: any) =>
+  job.everyMs ? `every ${Math.round(job.everyMs / 1000)}s` : job.schedule,
+);
+const mockNextRunAt = vi.fn(() => Date.parse("2026-04-01T09:00:00.000Z"));
 
 vi.mock("../storage/cron-store.js", () => ({
   addCronJob: mockAddCronJob,
@@ -50,22 +57,36 @@ vi.mock("../storage/cron-store.js", () => ({
   deleteCronJob: mockDeleteCronJob,
   validateCronExpression: mockValidateCronExpression,
   generateCronId: mockGenerateCronId,
+  describeSchedule: mockDescribeSchedule,
+  nextRunAt: mockNextRunAt,
   loadCronJobs: vi.fn(),
 }));
 
 // Backend controller + model resolver — exercised by the per-job model
 // override validation and the list_models / list_backends discovery actions.
-const mockGetBackendForChat = vi.fn((): unknown => ({ models: undefined }));
+const mockGetBackendForChat = vi.fn((): unknown => ({
+  background: {},
+  models: undefined,
+}));
 const mockGetBackendIdForChat = vi.fn(() => "claude");
 const mockGetAvailableBackends = vi.fn((): { id: string; label: string }[] => [
   { id: "claude", label: "Claude" },
 ]);
 const mockGetPooledBackend = vi.fn((): unknown => null);
+const mockRelease = vi.fn(async () => {});
+const mockAcquireBackendInstance = vi.fn(
+  async (): Promise<{ backend: unknown; release: () => Promise<void> }> => {
+    throw new Error("not stubbed");
+  },
+);
+const mockIsModelValidForBackend = vi.fn(async () => true);
 vi.mock("../core/engine/backend-controller/index.js", () => ({
   getBackendForChat: mockGetBackendForChat,
   getBackendIdForChat: mockGetBackendIdForChat,
   getAvailableBackends: mockGetAvailableBackends,
   getPooledBackend: mockGetPooledBackend,
+  acquireBackendInstance: mockAcquireBackendInstance,
+  isModelValidForBackend: mockIsModelValidForBackend,
 }));
 
 const mockResolveExplicitModelRef = vi.fn(async (): Promise<unknown> => null);
@@ -146,6 +167,20 @@ describe("gateway shared actions", () => {
     originalFetch = globalThis.fetch;
     originalEnv = { ...process.env };
     vi.clearAllMocks();
+    mockCronJobs.clear();
+    mockValidateCronExpression.mockReset();
+    mockNextRunAt.mockReset();
+    mockDescribeSchedule.mockReset();
+    mockGetCronJob.mockImplementation((id: string) => mockCronJobs.get(id));
+    mockGetCronJobsForChat.mockReturnValue([]);
+    mockDescribeSchedule.mockImplementation((job: any) =>
+      job.everyMs ? `every ${Math.round(job.everyMs / 1000)}s` : job.schedule,
+    );
+    mockNextRunAt.mockReturnValue(Date.parse("2026-04-01T09:00:00.000Z"));
+    mockValidateCronExpression.mockReturnValue({
+      valid: true,
+      next: "2026-04-01T09:00:00.000Z",
+    });
   });
 
   afterEach(() => {
@@ -901,7 +936,7 @@ describe("gateway shared actions", () => {
         );
       });
 
-      it("rejects missing schedule", async () => {
+      it("rejects missing cadence", async () => {
         const result = await handleSharedAction(
           {
             action: "create_cron_job",
@@ -912,7 +947,8 @@ describe("gateway shared actions", () => {
         );
         expect(result).toEqual({
           ok: false,
-          error: "Missing schedule expression",
+          error:
+            "Provide either 'schedule' (a cron expression) or 'every_seconds' (a fixed interval).",
         });
       });
 
@@ -983,7 +1019,7 @@ describe("gateway shared actions", () => {
       });
 
       it("shows 'unknown' when next run time is not available", async () => {
-        mockValidateCronExpression.mockReturnValueOnce({ valid: true });
+        mockNextRunAt.mockReturnValueOnce(null as unknown as number);
 
         const result = await handleSharedAction(
           {
@@ -1137,7 +1173,7 @@ describe("gateway shared actions", () => {
         expect(result?.text).toContain("Lunch Alert (disabled)");
       });
 
-      it("shows 'unknown' for nextRun when validation returns no next", async () => {
+      it("shows em dash for nextRun when nextRunAt returns null", async () => {
         mockGetCronJobsForChat.mockReturnValue([
           {
             id: "job-4",
@@ -1151,14 +1187,14 @@ describe("gateway shared actions", () => {
             runCount: 0,
           },
         ]);
-        mockValidateCronExpression.mockReturnValueOnce({ valid: false });
+        mockNextRunAt.mockReturnValueOnce(null as unknown as number);
 
         const result = await handleSharedAction(
           { action: "list_cron_jobs" },
           42,
         );
 
-        expect(result?.text).toContain("Next: unknown");
+        expect(result?.text).toContain("Next: —");
       });
 
       it("truncates long content to 100 chars with ellipsis", async () => {
@@ -1797,8 +1833,21 @@ describe("gateway-actions — additional branch coverage", () => {
 describe("per-job model override + discovery actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCronJobs.clear();
+    mockValidateCronExpression.mockReset();
+    mockNextRunAt.mockReset();
+    mockDescribeSchedule.mockReset();
+    mockGetCronJob.mockImplementation((id: string) => mockCronJobs.get(id));
+    mockGetCronJobsForChat.mockReturnValue([]);
+    mockDescribeSchedule.mockImplementation((job: any) =>
+      job.everyMs ? `every ${Math.round(job.everyMs / 1000)}s` : job.schedule,
+    );
+    mockNextRunAt.mockReturnValue(Date.parse("2026-04-01T09:00:00.000Z"));
     mockGetBackendIdForChat.mockReturnValue("claude");
-    mockGetBackendForChat.mockReturnValue({ models: undefined });
+    mockGetBackendForChat.mockReturnValue({
+      background: {},
+      models: undefined,
+    });
     mockGetPooledBackend.mockReturnValue(null);
     mockGetAvailableBackends.mockReturnValue([
       { id: "claude", label: "Claude" },
@@ -1851,6 +1900,28 @@ describe("per-job model override + discovery actions", () => {
       );
     });
 
+    it("rejects a query job with no override when the chat backend cannot run isolated jobs", async () => {
+      mockGetBackendIdForChat.mockReturnValue("openai-agents");
+      mockGetBackendForChat.mockReturnValue({ models: undefined });
+
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "OpenAI Agents job",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "do a thing",
+        },
+        42,
+      );
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toBe(
+        `Provider "openai-agents" can't run isolated jobs (no background capability).`,
+      );
+      expect(mockAddCronJob).not.toHaveBeenCalled();
+    });
+
     it("rejects a model override on a non-query job before validating it", async () => {
       const result = await handleSharedAction(
         {
@@ -1864,8 +1935,85 @@ describe("per-job model override + discovery actions", () => {
         42,
       );
       expect(result?.ok).toBe(false);
-      expect(result?.error).toMatch(/only applies to 'query'/i);
+      expect(result?.error).toMatch(/only apply to 'query'/i);
       expect(mockResolveExplicitModelRef).not.toHaveBeenCalled();
+      expect(mockAddCronJob).not.toHaveBeenCalled();
+    });
+
+    it("rejects a provider override without a model", async () => {
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "X",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "do a thing",
+          provider: "codex",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/requires a 'model'/i);
+      expect(mockAddCronJob).not.toHaveBeenCalled();
+    });
+
+    it("persists a cross-provider override after validating it on that backend", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockAcquireBackendInstance.mockResolvedValue({
+        backend: { background: {} }, // supports isolated runs
+        release: mockRelease,
+      });
+      mockIsModelValidForBackend.mockResolvedValue(true);
+
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "Cheap codex job",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "check the thing",
+          model: "gpt-5.5",
+          provider: "codex",
+          instructions: "be terse",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(true);
+      expect(mockAcquireBackendInstance).toHaveBeenCalledWith("codex");
+      expect(mockRelease).toHaveBeenCalled();
+      expect(mockAddCronJob).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: "gpt-5.5",
+          provider: "codex",
+          instructions: "be terse",
+          type: "query",
+        }),
+      );
+    });
+
+    it("rejects a cross-provider model that isn't valid on that backend", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockAcquireBackendInstance.mockResolvedValue({
+        backend: { background: {} },
+        release: mockRelease,
+      });
+      mockIsModelValidForBackend.mockResolvedValue(false);
+
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "Bad codex job",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "x",
+          model: "nope",
+          provider: "codex",
+        },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/not a selectable model on provider/i);
+      expect(mockRelease).toHaveBeenCalled();
       expect(mockAddCronJob).not.toHaveBeenCalled();
     });
   });
@@ -1917,6 +2065,83 @@ describe("per-job model override + discovery actions", () => {
       );
       expect(result?.ok).toBe(false);
       expect(result?.error).toMatch(/unknown backend/i);
+    });
+
+    it("boots a non-active backend on demand, reads its catalog, and releases", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockGetAvailableBackends.mockReturnValue([
+        { id: "claude", label: "Claude" },
+        { id: "codex", label: "Codex" },
+      ]);
+      mockGetPooledBackend.mockReturnValue(null); // codex not pooled
+      mockAcquireBackendInstance.mockResolvedValue({
+        backend: {
+          models: {
+            listModels: async () => ({
+              models: [
+                { id: "gpt-5.5", displayName: "GPT-5.5", selectable: true },
+              ],
+              total: 1,
+            }),
+          },
+        },
+        release: mockRelease,
+      });
+
+      const result = await handleSharedAction(
+        { action: "list_models", backend: "codex" },
+        42,
+      );
+      expect(result?.ok).toBe(true);
+      expect(result?.backend).toBe("codex");
+      expect((result?.models as { id: string }[]).map((m) => m.id)).toEqual([
+        "gpt-5.5",
+      ]);
+      expect(result?.text).toContain("not this chat's backend");
+      expect(mockAcquireBackendInstance).toHaveBeenCalledWith("codex");
+      expect(mockRelease).toHaveBeenCalled(); // torn down after read
+    });
+
+    it("releases the transient instance even when the catalog read throws", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockGetAvailableBackends.mockReturnValue([
+        { id: "claude", label: "Claude" },
+        { id: "codex", label: "Codex" },
+      ]);
+      mockGetPooledBackend.mockReturnValue(null);
+      mockAcquireBackendInstance.mockResolvedValue({
+        backend: {
+          models: {
+            listModels: async () => {
+              throw new Error("catalog boom");
+            },
+          },
+        },
+        release: mockRelease,
+      });
+
+      await expect(
+        handleSharedAction({ action: "list_models", backend: "codex" }, 42),
+      ).rejects.toThrow("catalog boom");
+      expect(mockRelease).toHaveBeenCalled();
+    });
+
+    it("surfaces a boot failure as a clean error", async () => {
+      mockGetBackendIdForChat.mockReturnValue("claude");
+      mockGetAvailableBackends.mockReturnValue([
+        { id: "claude", label: "Claude" },
+        { id: "codex", label: "Codex" },
+      ]);
+      mockGetPooledBackend.mockReturnValue(null);
+      mockAcquireBackendInstance.mockRejectedValue(new Error("no api key"));
+
+      const result = await handleSharedAction(
+        { action: "list_models", backend: "codex" },
+        42,
+      );
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toMatch(/could not load backend "codex"/i);
+      expect(result?.error).toMatch(/no api key/i);
     });
   });
 

@@ -393,6 +393,12 @@ export class Gateway {
           if (err.code === "EADDRINUSE" && attempt < 5) {
             attempt++;
             httpServer.removeAllListeners("error");
+            // The failed listen() left its one-shot 'listening' success
+            // callback registered (Node attaches it via once('listening')).
+            // Drop it before retrying — otherwise every stale callback also
+            // fires when a later port finally binds, running the startup body
+            // (and logging "Action gateway on :…") once per attempted port.
+            httpServer.removeAllListeners("listening");
             tryPort(p + 1);
           } else {
             reject(err);

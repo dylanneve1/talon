@@ -1,9 +1,14 @@
 name: Release Please
 
-# Runs on every push to main, so the release PR is created and kept
-# up-to-date automatically, and merging the release PR cuts the release
-# in the same flow (that merge is itself a push) — no manual dispatching
-# at any step. workflow_dispatch stays as an escape hatch for re-runs.
+# Fully hands-off releases:
+#   1. Every push to main creates/updates the release PR (release-please).
+#   2. That PR is put straight into auto-merge (squash), so the Merge Queue
+#      workflow keeps its branch up to date and GitHub merges it the moment
+#      `CI Status` is green — without it the PR sits BEHIND main (strict
+#      branch protection) and has to be merged by hand, which re-triggers
+#      release-please and rewrites the PR (the old "merge then run again" loop).
+#   3. The merge is a push to main → cuts the tag + GitHub Release → publish.yml.
+# workflow_dispatch stays only as a manual escape hatch.
 on:
   push:
     branches: [main]
@@ -24,8 +29,28 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: googleapis/release-please-action@v5
+        id: release
         with:
           release-type: node
           token: ${{ secrets.PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # Enable auto-merge on the open release PR so it merges itself once
+      # CI is green (idempotent — a no-op if already enabled). PAT, not
+      # GITHUB_TOKEN, so the eventual merge push fires the events that cut
+      # the release and run publish.yml.
+      - name: Auto-merge the release PR
+        if: ${{ steps.release.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ secrets.PAT }}
+          PR_JSON: ${{ steps.release.outputs.pr }}
+        run: |
+          PR_NUMBER=$(echo "$PR_JSON" | jq -r '.number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "No open release PR to auto-merge."
+            exit 0
+          fi
+          echo "Enabling auto-merge on release PR #$PR_NUMBER"
+          gh pr merge "$PR_NUMBER" --auto --squash --repo "$GITHUB_REPOSITORY" || \
+            echo "::warning::could not enable auto-merge on PR #$PR_NUMBER (may already be enabled or immediately mergeable)"

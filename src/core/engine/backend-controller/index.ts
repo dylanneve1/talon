@@ -39,6 +39,7 @@ export {
   isBackendAvailable,
   getAvailableBackends,
   getPooledBackend,
+  acquireBackendInstance,
   isModelValidForBackend,
   getPoolSnapshot,
   onBackendChange,
