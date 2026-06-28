@@ -28,7 +28,7 @@ Cadence — give EXACTLY ONE of:
   • every_seconds: a fixed interval in seconds (≥ 60), e.g. 5400 = every 90 min.
 
 Type "message" sends the content as a text message.
-Type "query" runs the content as a Claude prompt with full tool access (can search, create files, send messages, etc).
+Type "query" runs the content as a Claude prompt with full tool access, as an ISOLATED one-shot — its own session, no chat history. So a "query" cron job never touches the chat session, and may run on a cheaper model or a different provider.
 
 Lifecycle (all optional):
   • once: true        — run a single time, then auto-disable (a one-shot). For "run at 3pm tomorrow", pair a cron/interval that next fires then with once.
@@ -36,7 +36,7 @@ Lifecycle (all optional):
   • start_at / end_at — ISO-8601 timestamp (or epoch ms). Don't fire before start_at; auto-disable after end_at.
   • catchup           — what to do with runs missed while Talon was down: "skip" (default), "once" (one catch-up run), or "all" (replay each missed run, capped).
 
-Model: leave "model" unset to run on this chat's model (preferred). Only set it for a "query" job that should run on a cheaper model from the SAME backend as this chat. The job still resumes this chat's session. Must be a valid, selectable model id on this chat's backend; an invalid or cross-backend id is rejected.`,
+Model: leave "model"/"provider" unset to use this chat's model. Set "model" for a valid model on this chat's backend, or set both "provider" and "model" for another backend that supports isolated jobs. "instructions" can provide a short system brief for query jobs.`,
     schema: {
       name: z.string().describe("Human-readable name for the job"),
       schedule: z
@@ -91,7 +91,19 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
         .string()
         .optional()
         .describe(
-          "Optional model override for 'query' jobs. Unset = this chat's model (preferred). Set only to run on a cheaper model from the SAME backend as this chat. Must be a valid, selectable model id on this chat's backend — call list_models to see valid ids.",
+          "Optional model override for 'query' jobs. Unset = this chat's model. Since cron runs isolated, this may be a cheaper model — on this chat's backend, or (with 'provider') a different one. Call list_models to see valid ids.",
+        ),
+      provider: z
+        .string()
+        .optional()
+        .describe(
+          "Optional backend/provider id for the 'query' override (e.g. a cheaper provider). Requires 'model'. Unset = this chat's backend. Call list_backends to see ids.",
+        ),
+      instructions: z
+        .string()
+        .optional()
+        .describe(
+          "Optional short brief for the isolated run — what the job is and how to do it. Becomes the run's system prompt; recommended when using a cheaper override model.",
         ),
     },
     execute: (params, bridge) => bridge("create_cron_job", params),
@@ -110,7 +122,7 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
   {
     name: "edit_cron_job",
     description:
-      "Edit an existing cron job. Only provide the fields you want to change. Setting schedule switches to cron mode; setting every_seconds switches to interval mode. Pass an empty string to start_at/end_at/max_runs/model to clear it.",
+      "Edit an existing cron job. Only provide the fields you want to change. Setting schedule switches to cron mode; setting every_seconds switches to interval mode. Pass an empty string to start_at/end_at/max_runs/model/provider/instructions to clear it.",
     schema: {
       job_id: z.string().describe("Job ID to edit"),
       name: z.string().optional().describe("New name"),
@@ -126,7 +138,10 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
       content: z.string().optional().describe("New content"),
       enabled: z.boolean().optional().describe("Enable or disable the job"),
       timezone: z.string().optional().describe("New IANA timezone"),
-      once: z.boolean().optional().describe("Make it a one-shot (max_runs: 1)."),
+      once: z
+        .boolean()
+        .optional()
+        .describe("Make it a one-shot (max_runs: 1)."),
       max_runs: z
         .number()
         .optional()
@@ -147,6 +162,14 @@ Model: leave "model" unset to run on this chat's model (preferred). Only set it 
         .string()
         .optional()
         .describe("New model override (empty string clears it)."),
+      provider: z
+        .string()
+        .optional()
+        .describe("New backend/provider override (empty string clears it)."),
+      instructions: z
+        .string()
+        .optional()
+        .describe("New isolated-run system brief (empty string clears it)."),
     },
     execute: (params, bridge) => bridge("edit_cron_job", params),
     tag: "scheduling",

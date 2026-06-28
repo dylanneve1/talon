@@ -80,16 +80,17 @@ vi.mock("../core/background/triggers.js", () => ({
 
 // Per-chat backend lookup — values are opaque to the model validator below.
 vi.mock("../core/engine/backend-controller.js", () => ({
-  getBackendForChat: vi.fn(() => ({ id: "test-backend" })),
+  getBackendForChat: vi.fn(() => ({ id: "test-backend", background: {} })),
   getBackendIdForChat: vi.fn(() => "test-backend"),
   getAvailableBackends: vi.fn(() => [{ id: "test-backend", label: "Test" }]),
   getPooledBackend: vi.fn(() => null),
+  acquireBackendInstance: vi.fn(),
+  isModelValidForBackend: vi.fn(),
 }));
 
 // Model-override validation: "good-model" resolves, anything else is unknown.
-const resolveExplicitModelRefMock = vi.fn(
-  async (modelId: string) =>
-    modelId === "good-model" ? ({ id: modelId } as unknown) : null,
+const resolveExplicitModelRefMock = vi.fn(async (modelId: string) =>
+  modelId === "good-model" ? ({ id: modelId } as unknown) : null,
 );
 vi.mock("../core/models/active-model.js", () => ({
   resolveExplicitModelRef: (modelId: string) =>
@@ -104,17 +105,22 @@ vi.mock("../core/models/active-model.js", () => ({
 import type { CronJob } from "../storage/cron-store.js";
 import type { ActionResult } from "../core/types.js";
 
-const { handleSharedAction } = await import("../core/engine/gateway-actions.js");
+const { handleSharedAction } =
+  await import("../core/engine/gateway-actions.js");
 const { getCronJob, addCronJob } = await import("../storage/cron-store.js");
 
 const CHAT_ID = 4242;
 
 /** Run a create_cron_job action and return its (non-null) result. */
-async function create(
-  body: Record<string, unknown>,
-): Promise<ActionResult> {
+async function create(body: Record<string, unknown>): Promise<ActionResult> {
   const res = await handleSharedAction(
-    { action: "create_cron_job", name: "Job", type: "message", content: "hi", ...body },
+    {
+      action: "create_cron_job",
+      name: "Job",
+      type: "message",
+      content: "hi",
+      ...body,
+    },
     CHAT_ID,
   );
   expect(res).not.toBeNull();
@@ -347,14 +353,11 @@ describe("create_cron_job — run cap", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("create_cron_job — catchup enum", () => {
-  it.each(["skip", "once", "all"])(
-    "accepts catchup=%s",
-    async (policy) => {
-      const res = await create({ schedule: "0 9 * * *", catchup: policy });
-      expect(res.ok).toBe(true);
-      expect(getCronJob(idFromCreate(res))!.catchup).toBe(policy);
-    },
-  );
+  it.each(["skip", "once", "all"])("accepts catchup=%s", async (policy) => {
+    const res = await create({ schedule: "0 9 * * *", catchup: policy });
+    expect(res.ok).toBe(true);
+    expect(getCronJob(idFromCreate(res))!.catchup).toBe(policy);
+  });
 
   it("rejects an unknown catchup policy", async () => {
     const res = await create({ schedule: "0 9 * * *", catchup: "sometimes" });
@@ -375,7 +378,7 @@ describe("create_cron_job — model override", () => {
       model: "good-model",
     });
     expect(res.ok).toBe(false);
-    expect(res.error).toMatch(/model override only applies to 'query'/i);
+    expect(res.error).toMatch(/only apply to 'query'/i);
   });
 
   it("rejects an unresolvable model on a 'query' job", async () => {
@@ -422,9 +425,7 @@ describe("create_cron_job — backward compat", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("edit_cron_job", () => {
-  async function edit(
-    body: Record<string, unknown>,
-  ): Promise<ActionResult> {
+  async function edit(body: Record<string, unknown>): Promise<ActionResult> {
     const res = await handleSharedAction(
       { action: "edit_cron_job", ...body },
       CHAT_ID,
@@ -542,9 +543,7 @@ describe("edit_cron_job", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("run_cron_job", () => {
-  async function run(
-    body: Record<string, unknown>,
-  ): Promise<ActionResult> {
+  async function run(body: Record<string, unknown>): Promise<ActionResult> {
     const res = await handleSharedAction(
       { action: "run_cron_job", ...body },
       CHAT_ID,

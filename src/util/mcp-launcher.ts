@@ -44,7 +44,31 @@
  */
 
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+/**
+ * Resolve tsx's ESM loader to an ABSOLUTE file URL.
+ *
+ * `process.execArgv` carries the bare specifier `tsx` (from the
+ * `node --import tsx src/index.ts` entry). Node resolves bare specifiers
+ * against the spawn CWD — and the Agent SDK spawns MCP servers from the
+ * agent's workspace dir, not the app root, so bare `tsx` raises
+ * `ERR_MODULE_NOT_FOUND: Cannot find package 'tsx'` and the supervisor
+ * crashes before the MCP child ever starts (the model then sees
+ * "No such tool available" for every frontend delivery tool). Substituting
+ * the absolute path makes the re-invocation CWD-independent.
+ */
+function absoluteTsxImport(): string | null {
+  try {
+    const req = createRequire(import.meta.url);
+    const pkg = req.resolve("tsx/package.json");
+    return pathToFileURL(resolve(dirname(pkg), "dist/esm/index.mjs")).href;
+  } catch {
+    return null;
+  }
+}
 
 /** Hidden CLI subcommand that turns a Talon process into the supervisor. */
 export const MCP_LAUNCH_SUBCOMMAND = "_mcp-launch";
@@ -105,11 +129,24 @@ export function selfInvocation(subcommand: string): LauncherInvocation {
     };
   }
 
+  // Rewrite a bare `tsx` loader spec in execArgv to an absolute path so the
+  // re-invocation resolves regardless of the spawn CWD (see absoluteTsxImport).
+  const tsxAbs = absoluteTsxImport();
+  const execArgv = tsxAbs
+    ? process.execArgv.map((a) =>
+        a === "tsx"
+          ? tsxAbs
+          : a.endsWith("=tsx")
+            ? `${a.slice(0, -3)}${tsxAbs}`
+            : a,
+      )
+    : process.execArgv;
+
   const entry = process.argv[1] ?? "";
   const entryArgs = entry && !isEmbeddedEntry(entry) ? [resolve(entry)] : [];
   return {
     command: process.execPath,
-    args: [...process.execArgv, ...entryArgs, subcommand],
+    args: [...execArgv, ...entryArgs, subcommand],
   };
 }
 

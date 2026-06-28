@@ -292,7 +292,7 @@ describe.skipIf(!stubReady)(
 
       const reacts = recording.byAction("react");
       expect(reacts.length).toBeGreaterThanOrEqual(1);
-      expect(reacts[0].body.message_id).toBe(12345);
+      expect(reacts[0].body.message_id).toBe("12345");
       expect(reacts[0].body.emoji).toBe("🔥");
 
       cleanupTurn(turn);
@@ -328,7 +328,7 @@ describe.skipIf(!stubReady)(
 
       const edits = recording.byAction("edit_message");
       expect(edits.length).toBeGreaterThanOrEqual(1);
-      expect(edits[0].body.message_id).toBe(999);
+      expect(edits[0].body.message_id).toBe("999");
       expect(edits[0].body.text).toBe(newText);
 
       cleanupTurn(turn);
@@ -363,7 +363,7 @@ describe.skipIf(!stubReady)(
 
       const deletes = recording.byAction("delete_message");
       expect(deletes.length).toBeGreaterThanOrEqual(1);
-      expect(deletes[0].body.message_id).toBe(7777);
+      expect(deletes[0].body.message_id).toBe("7777");
 
       cleanupTurn(turn);
     }, 45_000);
@@ -396,7 +396,7 @@ describe.skipIf(!stubReady)(
       });
 
       expect(recording.byAction("pin_message").length).toBe(1);
-      expect(recording.byAction("pin_message")[0].body.message_id).toBe(4242);
+      expect(recording.byAction("pin_message")[0].body.message_id).toBe("4242");
       cleanupTurn(turn);
     }, 45_000);
 

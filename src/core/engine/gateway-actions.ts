@@ -56,6 +56,8 @@ import {
   getBackendIdForChat,
   getAvailableBackends,
   getPooledBackend,
+  acquireBackendInstance,
+  isModelValidForBackend,
 } from "./backend-controller.js";
 import {
   deleteScript,
@@ -188,6 +190,63 @@ function parseInstant(v: unknown): number | undefined {
   if (/^\d+$/.test(s)) return Number(s); // bare epoch ms
   const d = Date.parse(s); // ISO-8601
   return Number.isFinite(d) ? d : undefined;
+}
+
+/**
+ * Validate a cron `query` job's model + optional provider override. Cron runs
+ * isolated, so unlike triggers it may target a different provider — the backend
+ * just has to exist, support isolated (background) runs, and have the model as a
+ * selectable id. Same backend (no provider) validates against the chat backend.
+ * Returns an error string, or null when valid.
+ */
+async function validateCronModelOverride(
+  chatId: number,
+  model?: string,
+  provider?: string,
+): Promise<string | null> {
+  const chatBackendId = getBackendIdForChat(String(chatId));
+  if (!provider || provider === chatBackendId) {
+    const capabilityErr = validateCronBackgroundCapability(
+      chatBackendId,
+      getBackendForChat(String(chatId)),
+    );
+    if (capabilityErr) return capabilityErr;
+    if (!model) return null;
+    return validateJobModelOverride(chatId, model);
+  }
+  let acquired: Awaited<ReturnType<typeof acquireBackendInstance>> | null =
+    null;
+  try {
+    acquired = await acquireBackendInstance(provider);
+  } catch {
+    return `Unknown or unavailable provider "${provider}".`;
+  }
+  try {
+    const capabilityErr = validateCronBackgroundCapability(
+      provider,
+      acquired.backend,
+    );
+    if (capabilityErr) return capabilityErr;
+    if (!model) {
+      return `A 'provider' override also requires a 'model'.`;
+    }
+    if (!(await isModelValidForBackend(acquired.backend, model))) {
+      return `Model "${model}" is not a selectable model on provider "${provider}".`;
+    }
+    return null;
+  } catch (err) {
+    return `Could not validate provider override: ${err instanceof Error ? err.message : String(err)}`;
+  } finally {
+    await acquired.release();
+  }
+}
+
+function validateCronBackgroundCapability(
+  provider: string,
+  backend: Backend,
+): string | null {
+  if (backend.background) return null;
+  return `Provider "${provider}" can't run isolated jobs (no background capability).`;
 }
 
 export async function handleSharedAction(
@@ -358,6 +417,10 @@ export async function handleSharedAction(
       const content = String(body.content ?? "");
       const timezone = body.timezone ? String(body.timezone) : undefined;
       const model = body.model ? String(body.model) : undefined;
+      const provider = body.provider ? String(body.provider) : undefined;
+      const instructions = body.instructions
+        ? String(body.instructions)
+        : undefined;
 
       if (!content) return { ok: false, error: "Missing content" };
       if (content.length > 10_000)
@@ -384,7 +447,10 @@ export async function handleSharedAction(
       let everyMs: number | undefined;
       if (hasEvery) {
         const everySeconds = Number(body.every_seconds);
-        if (!Number.isFinite(everySeconds) || everySeconds < MIN_INTERVAL_SECONDS)
+        if (
+          !Number.isFinite(everySeconds) ||
+          everySeconds < MIN_INTERVAL_SECONDS
+        )
           return {
             ok: false,
             error: `'every_seconds' must be a number ≥ ${MIN_INTERVAL_SECONDS} (the scheduler ticks once a minute).`,
@@ -406,13 +472,15 @@ export async function handleSharedAction(
       if (provided(body.start_at) && startAt === undefined)
         return {
           ok: false,
-          error: "Could not parse 'start_at' (use an ISO-8601 timestamp or epoch ms).",
+          error:
+            "Could not parse 'start_at' (use an ISO-8601 timestamp or epoch ms).",
         };
       const endAt = parseInstant(body.end_at);
       if (provided(body.end_at) && endAt === undefined)
         return {
           ok: false,
-          error: "Could not parse 'end_at' (use an ISO-8601 timestamp or epoch ms).",
+          error:
+            "Could not parse 'end_at' (use an ISO-8601 timestamp or epoch ms).",
         };
       if (startAt !== undefined && endAt !== undefined && endAt <= startAt)
         return { ok: false, error: "'end_at' must be after 'start_at'." };
@@ -437,20 +505,33 @@ export async function handleSharedAction(
       if (provided(body.catchup)) {
         catchup = String(body.catchup) as CatchupPolicy;
         if (!CATCHUP_POLICIES.has(catchup))
-          return { ok: false, error: "'catchup' must be one of: skip, once, all." };
+          return {
+            ok: false,
+            error: "'catchup' must be one of: skip, once, all.",
+          };
       }
 
-      // A model override only makes sense for "query" jobs (a "message" job
-      // just sends text — no model runs).
-      if (model && jobType !== "query")
+      // The overrides only make sense for "query" jobs (a "message" job just
+      // sends text — no model runs).
+      if ((model || provider || instructions) && jobType !== "query")
         return {
           ok: false,
-          error: "A model override only applies to 'query' jobs.",
+          error: "Model/provider/instructions only apply to 'query' jobs.",
         };
-      // Validate the model up front so a bad id is rejected here instead of
-      // silently failing at fire time.
-      if (model) {
-        const modelErr = await validateJobModelOverride(chatId, model);
+      if (provider && !model)
+        return {
+          ok: false,
+          error: "A 'provider' override also requires a 'model'.",
+        };
+
+      // Validate the target backend/model up front so a bad id or unsupported
+      // backend is rejected here instead of silently failing at fire time.
+      if (jobType === "query") {
+        const modelErr = await validateCronModelOverride(
+          chatId,
+          model,
+          provider,
+        );
         if (modelErr) return { ok: false, error: modelErr };
       }
 
@@ -472,14 +553,21 @@ export async function handleSharedAction(
         ...(maxRuns !== undefined ? { maxRuns } : {}),
         ...(catchup ? { catchup } : {}),
         ...(model ? { model } : {}),
+        ...(provider ? { provider } : {}),
+        ...(instructions ? { instructions } : {}),
       });
-      log("gateway", `create_cron_job: "${name}" [${schedule ?? `every ${everyMs}ms`}]`);
+      log(
+        "gateway",
+        `create_cron_job: "${name}" [${schedule ?? `every ${everyMs}ms`}]`,
+      );
 
       const created = getCronJob(id);
       const nextMs = created ? nextRunAt(created) : null;
       const bounds = [
         maxRuns !== undefined ? `max runs: ${maxRuns}` : null,
-        startAt !== undefined ? `starts: ${new Date(startAt).toISOString()}` : null,
+        startAt !== undefined
+          ? `starts: ${new Date(startAt).toISOString()}`
+          : null,
         endAt !== undefined ? `ends: ${new Date(endAt).toISOString()}` : null,
         catchup ? `catch-up: ${catchup}` : null,
       ]
@@ -575,7 +663,10 @@ export async function handleSharedAction(
       }
       if (editEvery) {
         const everySeconds = Number(body.every_seconds);
-        if (!Number.isFinite(everySeconds) || everySeconds < MIN_INTERVAL_SECONDS)
+        if (
+          !Number.isFinite(everySeconds) ||
+          everySeconds < MIN_INTERVAL_SECONDS
+        )
           return {
             ok: false,
             error: `'every_seconds' must be a number ≥ ${MIN_INTERVAL_SECONDS}.`,
@@ -614,40 +705,74 @@ export async function handleSharedAction(
         else {
           const m = Number(body.max_runs);
           if (!Number.isInteger(m) || m < 1)
-            return { ok: false, error: "'max_runs' must be a positive integer." };
+            return {
+              ok: false,
+              error: "'max_runs' must be a positive integer.",
+            };
           updates.maxRuns = m;
         }
       }
       if (body.catchup !== undefined) {
         const c = String(body.catchup) as CatchupPolicy;
         if (!CATCHUP_POLICIES.has(c))
-          return { ok: false, error: "'catchup' must be one of: skip, once, all." };
+          return {
+            ok: false,
+            error: "'catchup' must be one of: skip, once, all.",
+          };
         updates.catchup = c;
       }
       if (body.model !== undefined) {
         if (!provided(body.model)) updates.model = undefined;
         else {
-          const modelErr = await validateJobModelOverride(
-            chatId,
-            String(body.model),
-          );
-          if (modelErr) return { ok: false, error: modelErr };
           updates.model = String(body.model);
         }
       }
+      if (body.provider !== undefined) {
+        updates.provider = provided(body.provider)
+          ? String(body.provider)
+          : undefined;
+      }
+      if (body.instructions !== undefined) {
+        updates.instructions = provided(body.instructions)
+          ? String(body.instructions)
+          : undefined;
+      }
 
-      // A model override only applies to 'query' jobs — mirror create. Reject
-      // setting a model on a (post-merge) non-query job, or flipping a job that
-      // carries a model over to 'message'.
-      const effType =
-        (updates.type as CronJobType | undefined) ?? job.type;
+      // Query execution overrides only apply to 'query' jobs — mirror create.
+      // Validate the effective post-edit target so provider+model edits are
+      // checked together using cron's cross-provider rules.
+      const effType = (updates.type as CronJobType | undefined) ?? job.type;
       const effModel =
         "model" in updates ? (updates.model as string | undefined) : job.model;
-      if (effType !== "query" && effModel)
+      const effProvider =
+        "provider" in updates
+          ? (updates.provider as string | undefined)
+          : job.provider;
+      const effInstructions =
+        "instructions" in updates
+          ? (updates.instructions as string | undefined)
+          : job.instructions;
+      if (effType !== "query" && (effModel || effProvider || effInstructions))
         return {
           ok: false,
-          error: "A model override only applies to 'query' jobs.",
+          error: "Model/provider/instructions only apply to 'query' jobs.",
         };
+      if (effProvider && !effModel)
+        return {
+          ok: false,
+          error: "A 'provider' override also requires a 'model'.",
+        };
+      if (
+        effType === "query" &&
+        ("model" in updates || "provider" in updates || "type" in updates)
+      ) {
+        const modelErr = await validateCronModelOverride(
+          chatId,
+          effModel,
+          effProvider,
+        );
+        if (modelErr) return { ok: false, error: modelErr };
+      }
 
       // Reject a start/end window that can never fire, accounting for the merge.
       const effStart =
@@ -687,8 +812,7 @@ export async function handleSharedAction(
       if (job.chatId !== String(chatId))
         return { ok: false, error: "Job belongs to a different chat" };
       const result = await runJobNow(jobId);
-      if (!result.ok)
-        return { ok: false, error: result.error ?? "Run failed" };
+      if (!result.ok) return { ok: false, error: result.error ?? "Run failed" };
       log("gateway", `run_cron_job: "${job.name}" [${jobId}]`);
       return { ok: true, text: `Ran job "${job.name}" (${jobId}) now.` };
     }
@@ -1349,68 +1473,84 @@ export async function handleSharedAction(
       const requested = body.backend ? String(body.backend).trim() : "";
       const targetId = requested || currentId;
 
-      // Only return a backend we already have a live instance for — never
-      // boot one just to read its catalog. The chat's own backend is always
-      // live; another backend is only listable while it's pooled.
-      const instance =
+      const avail = getAvailableBackends().map((b) => b.id);
+      if (!avail.includes(targetId))
+        return {
+          ok: false,
+          error: `Unknown backend "${targetId}". Available backends: ${avail.join(", ") || "(none)"}.`,
+        };
+
+      // Prefer a live instance (the chat's backend, or one already pooled).
+      // For any other registered backend, boot it transiently to read its
+      // catalog, then tear it back down so we never leak an instance.
+      let instance =
         targetId === currentId
           ? getBackendForChat(chatIdStr)
           : getPooledBackend(targetId);
-
+      let release: (() => Promise<void>) | null = null;
       if (!instance) {
-        const avail = getAvailableBackends().map((b) => b.id);
-        if (!avail.includes(targetId))
+        try {
+          const acquired = await acquireBackendInstance(targetId);
+          instance = acquired.backend;
+          release = acquired.release;
+        } catch (err) {
           return {
             ok: false,
-            error: `Unknown backend "${targetId}". Available backends: ${avail.join(", ") || "(none)"}.`,
+            error: `Could not load backend "${targetId}" to read its models: ${err instanceof Error ? err.message : String(err)}`,
           };
-        return {
-          ok: false,
-          error: `Backend "${targetId}" isn't currently active, so its model catalog isn't loaded. Switch this chat to it first, or call list_models with no argument to see this chat's backend ("${currentId}") models.`,
-        };
+        }
       }
 
-      const catalog = instance.models;
-      if (!catalog?.listModels)
-        return {
-          ok: true,
-          backend: targetId,
-          models: [],
-          text: `Backend "${targetId}" runs a fixed model (no selectable model catalog).`,
-        };
+      try {
+        const catalog = instance.models;
+        if (!catalog?.listModels)
+          return {
+            ok: true,
+            backend: targetId,
+            models: [],
+            text: `Backend "${targetId}" runs a fixed model (no selectable model catalog).`,
+          };
 
-      const { models } = await catalog.listModels("all");
-      const selectable = models.filter((m) => m.selectable);
-      const slim = selectable.map((m) => ({
-        id: m.id,
-        displayName: m.displayName,
-        reasoning: m.reasoning ?? false,
-        contextWindow: m.contextWindow,
-        free: m.free ?? false,
-      }));
-      if (slim.length === 0)
+        const { models } = await catalog.listModels("all");
+        const selectable = models.filter((m) => m.selectable);
+        const slim = selectable.map((m) => ({
+          id: m.id,
+          displayName: m.displayName,
+          reasoning: m.reasoning ?? false,
+          contextWindow: m.contextWindow,
+          free: m.free ?? false,
+        }));
+        if (slim.length === 0)
+          return {
+            ok: true,
+            backend: targetId,
+            models: [],
+            text: `Backend "${targetId}" exposes no selectable models.`,
+          };
+        const note = targetId === currentId ? "" : " (not this chat's backend)";
+        const lines = slim.map((m) => {
+          const bits = [
+            m.reasoning ? "reasoning" : null,
+            m.contextWindow
+              ? `${Math.round(m.contextWindow / 1000)}k ctx`
+              : null,
+            m.free ? "free" : null,
+          ].filter(Boolean);
+          const name =
+            m.displayName && m.displayName !== m.id
+              ? ` (${m.displayName})`
+              : "";
+          return `- ${m.id}${name}${bits.length ? ` — ${bits.join(", ")}` : ""}`;
+        });
         return {
           ok: true,
           backend: targetId,
-          models: [],
-          text: `Backend "${targetId}" exposes no selectable models.`,
+          models: slim,
+          text: `Selectable models on "${targetId}"${note} (${slim.length}):\n${lines.join("\n")}`,
         };
-      const lines = slim.map((m) => {
-        const bits = [
-          m.reasoning ? "reasoning" : null,
-          m.contextWindow ? `${Math.round(m.contextWindow / 1000)}k ctx` : null,
-          m.free ? "free" : null,
-        ].filter(Boolean);
-        const name =
-          m.displayName && m.displayName !== m.id ? ` (${m.displayName})` : "";
-        return `- ${m.id}${name}${bits.length ? ` — ${bits.join(", ")}` : ""}`;
-      });
-      return {
-        ok: true,
-        backend: targetId,
-        models: slim,
-        text: `Selectable models on "${targetId}" (${slim.length}):\n${lines.join("\n")}`,
-      };
+      } finally {
+        if (release) await release();
+      }
     }
 
     case "list_backends": {

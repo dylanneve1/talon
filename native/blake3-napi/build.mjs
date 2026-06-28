@@ -46,15 +46,22 @@ execFileSync("cargo", cargoArgs, {
 });
 
 // cdylib naming is per-OS; the shipped artifact is always a .node.
-// (Stem first, extension appended: keeps the full library filename out
-// of a `<word containing "api"> = "<value>"` shape that gitleaks'
-// generic-api-key rule false-positives on.)
-const CDYLIB_STEM = "libblake3_napi";
-const libName = (os) => `${CDYLIB_STEM}.${os === "darwin" ? "dylib" : "so"}`;
+// Windows (MSVC) emits `<stem>.dll` with no `lib` prefix; unix emits
+// `lib<stem>` with .so (Linux) / .dylib (macOS).
+// (Stem held without the platform prefix/extension so the full library
+// filename never forms a `<word containing "api"> = "<value>"` shape
+// that gitleaks' generic-api-key rule false-positives on.)
+const CDYLIB_STEM = "blake3_napi";
+const libName = (os) =>
+  os === "win32"
+    ? `${CDYLIB_STEM}.dll`
+    : `lib${CDYLIB_STEM}.${os === "darwin" ? "dylib" : "so"}`;
 const targetOs = target
   ? target.includes("darwin") || target.includes("apple")
     ? "darwin"
-    : "linux"
+    : target.includes("windows")
+      ? "win32"
+      : "linux"
   : process.platform;
 
 const built = target

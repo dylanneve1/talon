@@ -57,12 +57,22 @@ export type CronJob = {
   /** IANA timezone (e.g. "America/New_York"). Defaults to system timezone. */
   timezone?: string;
   /**
-   * Optional model override for `query` jobs — a model id valid on the chat's
-   * own backend. Unset = inherit the chat's model (preferred). When set, the run
-   * uses this (typically cheaper) model instead, while still resuming the chat
-   * session (restricted to the same backend so continuity is preserved).
+   * Optional model override for `query` jobs. Unset = the chat's model. `query`
+   * cron jobs run as an isolated one-shot (no chat session), so unlike triggers
+   * the model may be on a different provider — see `provider`.
    */
   model?: string;
+  /**
+   * Optional provider/backend id for the override (e.g. a cheaper provider than
+   * the chat). Requires `model`. Unset = the chat's backend. Since cron runs
+   * isolated, a different provider is fine here.
+   */
+  provider?: string;
+  /**
+   * Optional short brief that becomes the isolated agent's system prompt — what
+   * the job is and how to do it. Useful to orient a cheaper override model.
+   */
+  instructions?: string;
   /**
    * Don't fire before this epoch-ms instant (a delayed start / "not before").
    * Unset = eligible immediately.
@@ -309,7 +319,8 @@ export function humanizeMs(ms: number): string {
   const m = Math.round(s / 60);
   if (m < 60) return `${m}m`;
   const h = m / 60;
-  if (h < 24) return Number.isInteger(h) ? `${h}h` : `${(ms / 3_600_000).toFixed(1)}h`;
+  if (h < 24)
+    return Number.isInteger(h) ? `${h}h` : `${(ms / 3_600_000).toFixed(1)}h`;
   const d = h / 24;
   return Number.isInteger(d) ? `${d}d` : `${(ms / 86_400_000).toFixed(1)}d`;
 }

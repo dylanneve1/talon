@@ -1,27 +1,29 @@
 /**
  * Runtime-wiring tests for src/core/background/cron.ts.
  *
- * These exercise the parts of cron.ts that actually *run* jobs, as opposed to
- * the pure store/schedule math covered by cron-store*.test.ts:
- *
- *   - runJobNow(): dependency routing (message → sendMessage, query →
- *     dispatcher.execute), success telemetry (lastStatus "ok" + duration +
- *     runCount bump), failure telemetry (lastStatus "error" + lastError +
- *     {ok:false}), one-shot retirement (maxRuns:1 disables after a run-now),
- *     missing-id and already-running guards.
- *   - runStartupCatchup(): policy honoring ("skip" no-op, "once" → 1 replay,
- *     "all" → min(missed, CATCHUP_MAX=5)), endAt expiry skip, maxRuns stopping
- *     replay mid-way, and missed-run counting for both interval and cron jobs.
- *
- * The dispatcher module is mocked so execute() is a spy and getActiveCount()
- * is controllable. The real cron-store runs in-memory (fs is mocked out, so
- * nothing touches disk). Real job-health and scheduler-core are used so the
- * native catch-up arithmetic is genuinely under test.
+ * These exercise the parts of cron.ts that actually run jobs: run-now,
+ * last-run telemetry, one-shot retirement, startup catch-up, and isolated
+ * query execution via runJobOneShot.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { CronJob } from "../storage/cron-store.js";
 
-// ── Mocks (must precede any dynamic import of the modules under test) ────────
+const mocks = vi.hoisted(() => ({
+  existsSync: vi.fn(() => false),
+  readFileSync: vi.fn(() => "{}"),
+  writeFileSync: vi.fn(),
+  atomicWrite: vi.fn(),
+  sendMessage: vi.fn(async (_chatId: number, _text: string) => {}),
+  resolveChatModel: vi.fn(async (_chatId: string) => ({
+    model: "chat-model",
+    backendId: "chat-backend",
+  })),
+  getActiveCount: vi.fn(() => 0),
+  runJobOneShot: vi.fn(async (_params: Record<string, unknown>) => ({
+    status: "ran" as const,
+  })),
+}));
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
@@ -30,22 +32,18 @@ vi.mock("../util/log.js", () => ({
   logDebug: vi.fn(),
 }));
 
-// Keep the real cron-store, but stub out everything it touches on disk.
-const existsSyncMock = vi.fn(() => false);
-const readFileSyncMock = vi.fn(() => "{}");
 vi.mock("node:fs", () => ({
-  existsSync: existsSyncMock,
-  readFileSync: readFileSyncMock,
+  existsSync: mocks.existsSync,
+  readFileSync: mocks.readFileSync,
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
   renameSync: vi.fn(),
   unlinkSync: vi.fn(),
 }));
 
-const writeFileSyncMock = vi.fn();
 vi.mock("write-file-atomic", () => ({
-  default: Object.assign((...args: unknown[]) => writeFileSyncMock(...args), {
-    sync: writeFileSyncMock,
+  default: Object.assign((...args: unknown[]) => mocks.atomicWrite(...args), {
+    sync: mocks.atomicWrite,
   }),
 }));
 
@@ -58,49 +56,28 @@ vi.mock("../util/paths.js", () => ({
   dirs: {},
 }));
 
-// Daily log writes to disk — stub it so catch-up/run logging is inert.
 vi.mock("../storage/daily-log.js", () => ({
   appendDailyLog: vi.fn(),
   appendDailyLogResponse: vi.fn(),
 }));
 
-// The dispatcher is the dependency we assert on. execute() is a spy whose
-// behavior each test controls; getActiveCount() defaults to 0 (idle).
-const executeMock = vi.fn(async (_params: Record<string, unknown>) => ({
-  text: "ok",
-  durationMs: 1,
-  inputTokens: 0,
-  outputTokens: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  bridgeMessageCount: 0,
-}));
-const getActiveCountMock = vi.fn(() => 0);
 vi.mock("../core/engine/dispatcher.js", () => ({
-  execute: executeMock,
-  getActiveCount: getActiveCountMock,
+  getActiveCount: mocks.getActiveCount,
 }));
 
-// ── Dynamic imports (after mocks are registered) ─────────────────────────────
+vi.mock("../core/background/job-oneshot.js", () => ({
+  runJobOneShot: mocks.runJobOneShot,
+}));
 
-import type { CronJob } from "../storage/cron-store.js";
-
-const { initCron, runJobNow, runStartupCatchup } = await import(
-  "../core/background/cron.js"
-);
-const {
-  addCronJob,
-  getCronJob,
-  getAllCronJobs,
-  deleteCronJob,
-} = await import("../storage/cron-store.js");
+const { executeJob, initCron, runJobNow, runStartupCatchup } =
+  await import("../core/background/cron.js");
+const { addCronJob, getCronJob, getAllCronJobs, deleteCronJob } =
+  await import("../storage/cron-store.js");
 const { resetJobHealth } = await import("../core/background/job-health.js");
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-let _seq = 0;
+let seq = 0;
 function uniqueId(): string {
-  return `rt-cron-${++_seq}-${Math.random().toString(36).slice(2, 6)}`;
+  return `rt-cron-${++seq}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 function makeJob(overrides: Partial<CronJob> = {}): CronJob {
@@ -118,88 +95,161 @@ function makeJob(overrides: Partial<CronJob> = {}): CronJob {
   };
 }
 
-/** Add a job and return it (so tests can reference its id). */
 function seed(overrides: Partial<CronJob> = {}): CronJob {
   const job = makeJob(overrides);
   addCronJob(job);
   return job;
 }
 
-const sendMessageMock = vi.fn(async (_chatId: number, _text: string) => {});
-
 beforeEach(() => {
-  // Wipe the in-memory store between tests so getAllCronJobs() is isolated.
   for (const j of getAllCronJobs()) deleteCronJob(j.id);
   resetJobHealth();
   vi.clearAllMocks();
-  executeMock.mockResolvedValue({
-    text: "ok",
-    durationMs: 1,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-    bridgeMessageCount: 0,
+  mocks.getActiveCount.mockReturnValue(0);
+  mocks.resolveChatModel.mockResolvedValue({
+    model: "chat-model",
+    backendId: "chat-backend",
   });
-  getActiveCountMock.mockReturnValue(0);
-  // Re-inject deps every test (cheap, and guards against ordering surprises).
-  initCron({ sendMessage: sendMessageMock });
+  mocks.runJobOneShot.mockResolvedValue({ status: "ran" });
+  initCron({
+    sendMessage: mocks.sendMessage,
+    resolveChatModel: mocks.resolveChatModel,
+  });
 });
 
-// ── runJobNow — dependency routing ───────────────────────────────────────────
+// ── isolated query execution ────────────────────────────────────────────────
+
+describe("executeJob — isolated query runtime", () => {
+  it("falls back to resolveChatModel when no provider/model override is stored", async () => {
+    const result = await executeJob(
+      makeJob({ type: "query", chatId: "42", content: "check status" }),
+    );
+
+    expect(result).toEqual({ status: "ran" });
+    expect(mocks.resolveChatModel).toHaveBeenCalledWith("42");
+    expect(mocks.runJobOneShot).toHaveBeenCalledOnce();
+    expect(mocks.runJobOneShot.mock.calls[0]?.[0]).toMatchObject({
+      chatId: "42",
+      backendId: "chat-backend",
+      model: "chat-model",
+      label: "Test job",
+      kind: "cron",
+      timeoutMs: 10 * 60_000,
+    });
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("uses stored provider/model/instructions for query overrides", async () => {
+    await executeJob(
+      makeJob({
+        type: "query",
+        provider: "cheap-provider",
+        model: "cheap-model",
+        instructions: "Be terse.",
+      }),
+    );
+
+    expect(mocks.resolveChatModel).not.toHaveBeenCalled();
+    expect(mocks.runJobOneShot.mock.calls[0]?.[0]).toMatchObject({
+      backendId: "cheap-provider",
+      model: "cheap-model",
+      instructions: "Be terse.",
+    });
+  });
+
+  it("includes interval schedules in the isolated payload description", async () => {
+    await executeJob(
+      makeJob({
+        type: "query",
+        schedule: undefined,
+        everyMs: 90 * 60_000,
+        content: "summarize",
+      }),
+    );
+
+    const params = mocks.runJobOneShot.mock.calls[0]?.[0] as {
+      payload?: string;
+    };
+    expect(params.payload).toContain("schedule: every 1.5h");
+    expect(params.payload).toContain("summarize");
+  });
+
+  it("throws clearly when the no-override path resolves no model", async () => {
+    (mocks.resolveChatModel as any).mockResolvedValueOnce({
+      model: null,
+      backendId: "chat-backend",
+    });
+
+    await expect(executeJob(makeJob({ type: "query" }))).rejects.toThrow(
+      /no model resolved for backend "chat-backend"/,
+    );
+    expect(mocks.runJobOneShot).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("skips and notifies the chat when runJobOneShot reports a stale target", async () => {
+    (mocks.runJobOneShot as any).mockResolvedValueOnce({
+      status: "skipped",
+      reason: 'model "stale-model" is not selectable on provider "codex".',
+    });
+
+    const result = await executeJob(
+      makeJob({
+        chatId: "42",
+        type: "query",
+        provider: "codex",
+        model: "stale-model",
+        name: "Status check",
+      }),
+    );
+
+    expect(result).toEqual({
+      status: "skipped",
+      reason: 'model "stale-model" is not selectable on provider "codex".',
+    });
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.stringContaining('Cron job "Status check" skipped: model'),
+    );
+  });
+});
+
+// ── runJobNow — routing ─────────────────────────────────────────────────────
 
 describe("runJobNow — routing", () => {
-  it("a 'message' job calls sendMessage with the numeric chatId and content, not execute", async () => {
+  it("a message job calls sendMessage with the numeric chatId and content", async () => {
     const job = seed({ type: "message", chatId: "777", content: "ping" });
 
     const res = await runJobNow(job.id);
 
     expect(res.ok).toBe(true);
-    expect(sendMessageMock).toHaveBeenCalledTimes(1);
-    expect(sendMessageMock).toHaveBeenCalledWith(777, "ping");
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
+    expect(mocks.sendMessage).toHaveBeenCalledWith(777, "ping");
+    expect(mocks.runJobOneShot).not.toHaveBeenCalled();
   });
 
-  it("a 'query' job calls the dispatcher execute(), not sendMessage", async () => {
+  it("a query job runs as an isolated one-shot, not a chat message", async () => {
     const job = seed({ type: "query", chatId: "42", content: "what is up" });
 
     const res = await runJobNow(job.id);
 
     expect(res.ok).toBe(true);
-    expect(executeMock).toHaveBeenCalledTimes(1);
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.runJobOneShot).toHaveBeenCalledTimes(1);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
 
-    const params = executeMock.mock.calls[0][0] as Record<string, unknown>;
-    expect(params.source).toBe("cron");
-    expect(params.numericChatId).toBe(42);
+    const params = mocks.runJobOneShot.mock.calls[0]?.[0] as {
+      chatId?: string;
+      payload?: string;
+    };
     expect(params.chatId).toBe("42");
-    // The user content is embedded into the dispatched prompt.
-    expect(String(params.prompt)).toContain("what is up");
-  });
-
-  it("forwards a per-job model override to the dispatcher for query jobs", async () => {
-    const job = seed({ type: "query", content: "go", model: "cheap-model" });
-
-    await runJobNow(job.id);
-
-    const params = executeMock.mock.calls[0][0] as Record<string, unknown>;
-    expect(params.modelOverride).toBe("cheap-model");
-  });
-
-  it("omits modelOverride when the job has no model set", async () => {
-    const job = seed({ type: "query", content: "go" });
-
-    await runJobNow(job.id);
-
-    const params = executeMock.mock.calls[0][0] as Record<string, unknown>;
-    expect("modelOverride" in params).toBe(false);
+    expect(params.payload).toContain("what is up");
   });
 });
 
 // ── runJobNow — success telemetry ────────────────────────────────────────────
 
 describe("runJobNow — success bookkeeping", () => {
-  it("records lastStatus 'ok', a numeric duration, and bumps runCount", async () => {
+  it("records lastStatus ok, a numeric duration, and bumps runCount", async () => {
     const job = seed({ type: "message", runCount: 2 });
 
     const res = await runJobNow(job.id);
@@ -231,23 +281,23 @@ describe("runJobNow — success bookkeeping", () => {
 // ── runJobNow — failure telemetry ────────────────────────────────────────────
 
 describe("runJobNow — failure bookkeeping", () => {
-  it("a throwing execute records 'error' + lastError and returns {ok:false}", async () => {
-    executeMock.mockRejectedValueOnce(new Error("boom from dispatcher"));
+  it("a throwing query run records error telemetry and returns ok:false", async () => {
+    mocks.runJobOneShot.mockRejectedValueOnce(new Error("boom from one-shot"));
     const job = seed({ type: "query", content: "explode" });
 
     const res = await runJobNow(job.id);
 
     expect(res.ok).toBe(false);
-    expect(res.error).toBe("boom from dispatcher");
+    expect(res.error).toBe("boom from one-shot");
 
     const after = getCronJob(job.id)!;
     expect(after.lastStatus).toBe("error");
-    expect(after.lastError).toBe("boom from dispatcher");
+    expect(after.lastError).toBe("boom from one-shot");
     expect(typeof after.lastDurationMs).toBe("number");
   });
 
-  it("a failure does NOT bump runCount (recordCronRun only runs on success)", async () => {
-    executeMock.mockRejectedValueOnce(new Error("nope"));
+  it("a failure does not bump runCount", async () => {
+    mocks.runJobOneShot.mockRejectedValueOnce(new Error("nope"));
     const job = seed({ type: "query", content: "x", runCount: 5 });
 
     await runJobNow(job.id);
@@ -256,7 +306,7 @@ describe("runJobNow — failure bookkeeping", () => {
   });
 
   it("a message job whose sendMessage throws is reported as an error", async () => {
-    sendMessageMock.mockRejectedValueOnce(new Error("send failed"));
+    mocks.sendMessage.mockRejectedValueOnce(new Error("send failed"));
     const job = seed({ type: "message", content: "hi" });
 
     const res = await runJobNow(job.id);
@@ -274,33 +324,23 @@ describe("runJobNow — guards", () => {
     const res = await runJobNow("does-not-exist-xyz");
     expect(res.ok).toBe(false);
     expect(res.error).toContain("not found");
-    expect(executeMock).not.toHaveBeenCalled();
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.runJobOneShot).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("returns an error when the job is already running", async () => {
-    // Make execute hang until we release it, so the job stays in-flight.
     let release!: () => void;
     const gate = new Promise<void>((r) => {
       release = r;
     });
-    executeMock.mockImplementationOnce(async () => {
+    mocks.runJobOneShot.mockImplementationOnce(async () => {
       await gate;
-      return {
-        text: "ok",
-        durationMs: 1,
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        bridgeMessageCount: 0,
-      };
+      return { status: "ran" };
     });
 
     const job = seed({ type: "query", content: "slow" });
 
-    const first = runJobNow(job.id); // starts, holds the in-flight lock
-    // Yield so the first call registers the job as running before we re-enter.
+    const first = runJobNow(job.id);
     await Promise.resolve();
     await Promise.resolve();
 
@@ -335,13 +375,13 @@ describe("runJobNow — maxRuns retirement", () => {
     await runJobNow(job.id);
     expect(getCronJob(job.id)!.enabled).toBe(true);
     await runJobNow(job.id);
-    // 3rd run hits the cap.
+
     expect(getCronJob(job.id)!.runCount).toBe(3);
     expect(getCronJob(job.id)!.enabled).toBe(false);
   });
 
-  it("a failed run does NOT retire a one-shot job (no run consumed)", async () => {
-    executeMock.mockRejectedValueOnce(new Error("fail"));
+  it("a failed run does not retire a one-shot job", async () => {
+    mocks.runJobOneShot.mockRejectedValueOnce(new Error("fail"));
     const job = seed({ type: "query", content: "x", maxRuns: 1, runCount: 0 });
 
     await runJobNow(job.id);
@@ -352,13 +392,12 @@ describe("runJobNow — maxRuns retirement", () => {
   });
 });
 
-// ── runStartupCatchup — policy honoring ──────────────────────────────────────
-
 const MINUTE = 60_000;
 
+// ── runStartupCatchup — policy honoring ──────────────────────────────────────
+
 describe("runStartupCatchup — policies", () => {
-  it("'skip' policy never replays, even with many missed runs", async () => {
-    // 10 intervals stale.
+  it("skip policy never replays, even with many missed runs", async () => {
     seed({
       schedule: undefined,
       everyMs: MINUTE,
@@ -369,29 +408,28 @@ describe("runStartupCatchup — policies", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).not.toHaveBeenCalled();
-    expect(executeMock).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
+    expect(mocks.runJobOneShot).not.toHaveBeenCalled();
   });
 
-  it("a job with no catchup field (legacy/backward-compat) defaults to skip", async () => {
+  it("a job with no catchup field defaults to skip", async () => {
     seed({
       schedule: undefined,
       everyMs: MINUTE,
       lastRunAt: Date.now() - 8 * MINUTE,
-      // no catchup
       type: "message",
     });
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("'once' with N missed runs replays exactly one run", async () => {
+  it("once with N missed runs replays exactly one run", async () => {
     const job = seed({
       schedule: undefined,
       everyMs: MINUTE,
-      lastRunAt: Date.now() - 7 * MINUTE, // 7 missed
+      lastRunAt: Date.now() - 7 * MINUTE,
       catchup: "once",
       type: "message",
       runCount: 0,
@@ -399,15 +437,15 @@ describe("runStartupCatchup — policies", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
     expect(getCronJob(job.id)!.runCount).toBe(1);
   });
 
-  it("'all' replays min(missed, CATCHUP_MAX=5) when missed exceeds the cap", async () => {
+  it("all replays min(missed, CATCHUP_MAX=5) when missed exceeds the cap", async () => {
     const job = seed({
       schedule: undefined,
       everyMs: MINUTE,
-      lastRunAt: Date.now() - 50 * MINUTE, // 50 missed → capped at 5
+      lastRunAt: Date.now() - 50 * MINUTE,
       catchup: "all",
       type: "message",
       runCount: 0,
@@ -415,15 +453,15 @@ describe("runStartupCatchup — policies", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).toHaveBeenCalledTimes(5);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(5);
     expect(getCronJob(job.id)!.runCount).toBe(5);
   });
 
-  it("'all' replays exactly the missed count when below the cap", async () => {
+  it("all replays exactly the missed count when below the cap", async () => {
     const job = seed({
       schedule: undefined,
       everyMs: MINUTE,
-      lastRunAt: Date.now() - 3 * MINUTE, // 3 missed, under cap
+      lastRunAt: Date.now() - 3 * MINUTE,
       catchup: "all",
       type: "message",
       runCount: 0,
@@ -431,15 +469,15 @@ describe("runStartupCatchup — policies", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).toHaveBeenCalledTimes(3);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(3);
     expect(getCronJob(job.id)!.runCount).toBe(3);
   });
 
-  it("'all' replays nothing when no intervals have elapsed", async () => {
+  it("all replays nothing when no intervals have elapsed", async () => {
     seed({
       schedule: undefined,
       everyMs: 10 * MINUTE,
-      lastRunAt: Date.now() - 1000, // far less than one interval
+      lastRunAt: Date.now() - 1000,
       catchup: "all",
       type: "message",
       runCount: 0,
@@ -447,7 +485,7 @@ describe("runStartupCatchup — policies", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
   it("a disabled job is never caught up", async () => {
@@ -462,26 +500,26 @@ describe("runStartupCatchup — policies", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 });
 
 // ── runStartupCatchup — lifecycle bounds ─────────────────────────────────────
 
 describe("runStartupCatchup — lifecycle bounds", () => {
-  it("a job whose endAt has passed is disabled and skipped (no replay)", async () => {
+  it("a job whose endAt has passed is disabled and skipped", async () => {
     const job = seed({
       schedule: undefined,
       everyMs: MINUTE,
       lastRunAt: Date.now() - 9 * MINUTE,
-      endAt: Date.now() - MINUTE, // already past
+      endAt: Date.now() - MINUTE,
       catchup: "all",
       type: "message",
     });
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
     expect(getCronJob(job.id)!.enabled).toBe(false);
   });
 
@@ -489,66 +527,61 @@ describe("runStartupCatchup — lifecycle bounds", () => {
     seed({
       schedule: undefined,
       everyMs: MINUTE,
-      startAt: Date.now() + 60 * MINUTE, // not yet eligible
+      startAt: Date.now() + 60 * MINUTE,
       catchup: "all",
       type: "message",
     });
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("maxRuns stops replay mid-way (cap reached before all missed runs replay)", async () => {
+  it("maxRuns stops replay mid-way", async () => {
     const job = seed({
       schedule: undefined,
       everyMs: MINUTE,
-      lastRunAt: Date.now() - 5 * MINUTE, // 5 missed under "all"
+      lastRunAt: Date.now() - 5 * MINUTE,
       catchup: "all",
-      maxRuns: 2, // but only 2 runs allowed total
+      maxRuns: 2,
       type: "message",
       runCount: 0,
     });
 
     await runStartupCatchup();
 
-    // Should replay only until the run cap retires the job.
-    expect(sendMessageMock).toHaveBeenCalledTimes(2);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(2);
     const after = getCronJob(job.id)!;
     expect(after.runCount).toBe(2);
     expect(after.enabled).toBe(false);
   });
 
-  it("maxRuns already consumed before catch-up replays nothing", async () => {
+  it("maxRuns already consumed gets one replay then disables", async () => {
     const job = seed({
       schedule: undefined,
       everyMs: MINUTE,
       lastRunAt: Date.now() - 5 * MINUTE,
       catchup: "all",
       maxRuns: 3,
-      runCount: 3, // already at cap
+      runCount: 3,
       type: "message",
     });
 
     await runStartupCatchup();
 
-    // enforceRunCap is only checked after a run; the loop re-reads `enabled`.
-    // A job at cap is still enabled going in (nothing disabled it yet), so the
-    // first replay runs, bumps to 4, then enforceRunCap disables it. So exactly
-    // one replay is expected here.
-    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
     expect(getCronJob(job.id)!.enabled).toBe(false);
   });
 });
 
-// ── runStartupCatchup — interval vs cron missed-run counting ──────────────────
+// ── runStartupCatchup — interval vs cron missed-run counting ─────────────────
 
 describe("runStartupCatchup — interval vs cron", () => {
   it("interval jobs compute missed runs from everyMs and a stale lastRunAt", async () => {
     const job = seed({
       schedule: undefined,
       everyMs: MINUTE,
-      lastRunAt: Date.now() - 4 * MINUTE, // exactly 4 missed
+      lastRunAt: Date.now() - 4 * MINUTE,
       catchup: "all",
       type: "message",
       runCount: 0,
@@ -556,13 +589,11 @@ describe("runStartupCatchup — interval vs cron", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).toHaveBeenCalledTimes(4);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(4);
     expect(getCronJob(job.id)!.runCount).toBe(4);
   });
 
   it("cron jobs compute missed runs by walking fire times since the anchor", async () => {
-    // Every-minute cron, last run 4 minutes ago → several missed fire times,
-    // but the walk is capped at CATCHUP_MAX so "all" replays at most 5.
     const job = seed({
       schedule: "* * * * *",
       lastRunAt: Date.now() - 10 * MINUTE,
@@ -573,14 +604,14 @@ describe("runStartupCatchup — interval vs cron", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock.mock.calls.length).toBeGreaterThan(0);
-    expect(sendMessageMock.mock.calls.length).toBeLessThanOrEqual(5);
+    expect(mocks.sendMessage.mock.calls.length).toBeGreaterThan(0);
+    expect(mocks.sendMessage.mock.calls.length).toBeLessThanOrEqual(5);
     expect(getCronJob(job.id)!.runCount).toBe(
-      sendMessageMock.mock.calls.length,
+      mocks.sendMessage.mock.calls.length,
     );
   });
 
-  it("a cron 'once' job with missed fire times replays exactly one", async () => {
+  it("a cron once job with missed fire times replays exactly one", async () => {
     const job = seed({
       schedule: "* * * * *",
       lastRunAt: Date.now() - 10 * MINUTE,
@@ -591,12 +622,11 @@ describe("runStartupCatchup — interval vs cron", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).toHaveBeenCalledTimes(1);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
     expect(getCronJob(job.id)!.runCount).toBe(1);
   });
 
   it("a cron job with no due fire times since its last run replays nothing", async () => {
-    // Daily 9am schedule, ran a minute ago → no missed daily fire times.
     seed({
       schedule: "0 9 * * *",
       lastRunAt: Date.now() - MINUTE,
@@ -607,14 +637,14 @@ describe("runStartupCatchup — interval vs cron", () => {
 
     await runStartupCatchup();
 
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 
-  it("an interval 'query' catch-up routes through the dispatcher", async () => {
+  it("an interval query catch-up routes through isolated one-shot", async () => {
     const job = seed({
       schedule: undefined,
       everyMs: MINUTE,
-      lastRunAt: Date.now() - 2 * MINUTE, // 2 missed
+      lastRunAt: Date.now() - 2 * MINUTE,
       catchup: "all",
       type: "query",
       content: "catch me up",
@@ -623,8 +653,8 @@ describe("runStartupCatchup — interval vs cron", () => {
 
     await runStartupCatchup();
 
-    expect(executeMock).toHaveBeenCalledTimes(2);
-    expect(sendMessageMock).not.toHaveBeenCalled();
+    expect(mocks.runJobOneShot).toHaveBeenCalledTimes(2);
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
     expect(getCronJob(job.id)!.runCount).toBe(2);
   });
 });
@@ -661,23 +691,22 @@ describe("runStartupCatchup — fleet behavior", () => {
 
     expect(getCronJob(skip.id)!.runCount).toBe(0);
     expect(getCronJob(once.id)!.runCount).toBe(1);
-    expect(getCronJob(all.id)!.runCount).toBe(5); // capped
-    expect(sendMessageMock).toHaveBeenCalledTimes(6); // 0 + 1 + 5
+    expect(getCronJob(all.id)!.runCount).toBe(5);
+    expect(mocks.sendMessage).toHaveBeenCalledTimes(6);
   });
 
-  it("does nothing when the scheduler was never initialized", async () => {
-    // initCron is called in beforeEach, so emulate the un-init path by
-    // confirming a skip-only fleet is a no-op (deps present but policy skip).
-    // The genuine !deps guard is implicitly covered: with deps set and only
-    // skip jobs, no execution happens.
+  it("stops catch-up when active work is high", async () => {
+    mocks.getActiveCount.mockReturnValue(11);
     seed({
       schedule: undefined,
       everyMs: MINUTE,
       lastRunAt: Date.now() - 6 * MINUTE,
-      catchup: "skip",
+      catchup: "all",
       type: "message",
     });
+
     await runStartupCatchup();
-    expect(sendMessageMock).not.toHaveBeenCalled();
+
+    expect(mocks.sendMessage).not.toHaveBeenCalled();
   });
 });

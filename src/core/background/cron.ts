@@ -3,7 +3,10 @@
  *
  * Every 60 seconds, checks all enabled jobs. If one is due, executes it.
  * "message" type sends text via injected sendMessage.
- * "query" type goes through the dispatcher with full tool access.
+ * "query" type runs as an ISOLATED one-shot agent (heartbeat/dream pattern) —
+ * its own session, no chat history — so a scheduled task never disturbs the
+ * chat session and may run on a different model/provider. The agent delivers
+ * to the chat via the messaging tools with an explicit chat_id.
  *
  * A job is scheduled by EITHER a 5-field cron expression (`schedule`) OR a
  * fixed interval (`everyMs`). On top of cadence it supports lifecycle bounds —
@@ -17,7 +20,7 @@
  */
 
 import { Cron } from "croner";
-import { execute, getActiveCount } from "../engine/dispatcher.js";
+import { getActiveCount } from "../engine/dispatcher.js";
 import {
   getAllCronJobs,
   getCronJob,
@@ -31,6 +34,7 @@ import {
 } from "../../storage/cron-store.js";
 import { appendDailyLog } from "../../storage/daily-log.js";
 import { log, logError, logWarn } from "../../util/log.js";
+import { runJobOneShot } from "./job-oneshot.js";
 import {
   jobAllowsRun,
   pruneJobHealth,
@@ -47,6 +51,13 @@ import {
 
 type CronDeps = {
   sendMessage: (chatId: number, text: string) => Promise<void>;
+  /**
+   * Resolve the chat's default model + backend, used when a cron query job has
+   * no model/provider override of its own.
+   */
+  resolveChatModel: (
+    chatId: string,
+  ) => Promise<{ model: string | null; backendId: string }>;
 };
 
 let deps: CronDeps | null = null;
@@ -81,6 +92,10 @@ export function stopCronTimer(): void {
 // dispatched a second time by the next 60-second tick before recordCronRun()
 // has had a chance to update lastRunAt.
 const runningJobs = new Set<string>();
+
+type ExecuteJobResult =
+  | { status: "ran" }
+  | { status: "skipped"; reason: string };
 
 // Per-job circuit breaker policy (Gleam scheduler core via job-health):
 // 3 consecutive failures open the breaker; cooldown starts at 5 minutes
@@ -139,7 +154,7 @@ async function runScheduled(job: CronJob): Promise<void> {
       "cron",
       `Executing "${job.name}" [${job.id}] (${job.type}) in chat ${job.chatId}`,
     );
-    await executeJob(job);
+    const result = await executeJob(job);
     const outcome: CronRunOutcome = {
       status: "ok",
       durationMs: Date.now() - startedAt,
@@ -148,9 +163,13 @@ async function runScheduled(job: CronJob): Promise<void> {
     recordCronRun(job.id, outcome);
     appendDailyLog(
       "Cron",
-      `Ran "${job.name}" (${job.type}) in chat ${job.chatId}`,
+      result.status === "skipped"
+        ? `Skipped "${job.name}" (${job.type}) in chat ${job.chatId}: ${result.reason}`
+        : `Ran "${job.name}" (${job.type}) in chat ${job.chatId}`,
     );
-    log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
+    if (result.status === "ran") {
+      log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
+    }
     enforceRunCap(job.id);
   } catch (err) {
     // Advance lastRunAt on failure too (without bumping runCount — failed runs
@@ -272,7 +291,9 @@ function countMissedRuns(job: CronJob, nowMs: number): number {
   }
   if (!job.schedule) return 0;
   try {
-    const cron = new Cron(job.schedule, { timezone: job.timezone ?? undefined });
+    const cron = new Cron(job.schedule, {
+      timezone: job.timezone ?? undefined,
+    });
     let count = 0;
     let cursor = cron.nextRun(new Date(anchor));
     // `< CATCHUP_MAX` so the walk stops at the cap exactly (a lower bound for a
@@ -301,7 +322,8 @@ export async function runJobNow(
   if (!deps) return { ok: false, error: "Scheduler not initialized" };
   const job = getCronJob(id);
   if (!job) return { ok: false, error: `Job ${id} not found` };
-  if (runningJobs.has(id)) return { ok: false, error: "Job is already running" };
+  if (runningJobs.has(id))
+    return { ok: false, error: "Job is already running" };
 
   await runScheduled(job);
 
@@ -384,27 +406,8 @@ function isCronDue(job: CronJob, now: Date): boolean {
 
 const CRON_JOB_TIMEOUT_MS = 10 * 60_000; // 10-minute max per job
 
-async function withTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  label: string,
-): Promise<T> {
-  let timer: ReturnType<typeof setTimeout>;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms}ms`)),
-      ms,
-    );
-  });
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    clearTimeout(timer!);
-  }
-}
-
-async function executeJob(job: CronJob): Promise<void> {
-  if (!deps) return;
+export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
+  if (!deps) return { status: "skipped", reason: "cron is not initialised" };
 
   const numericChatId = Number(job.chatId);
   if (!Number.isFinite(numericChatId)) {
@@ -413,29 +416,50 @@ async function executeJob(job: CronJob): Promise<void> {
 
   if (job.type === "message") {
     await deps.sendMessage(numericChatId, job.content);
-    return;
+    return { status: "ran" };
   }
 
-  // type === "query" — run through dispatcher with full tool access, timeout-protected
-  const prompt =
+  // type === "query" — run as an ISOLATED one-shot (no chat session). Resolve
+  // the target backend + model: a job-level override wins (and may name a
+  // different provider, since the run is isolated), otherwise fall back to the
+  // chat's backend + active model.
+  let backendId: string;
+  let model: string | null;
+  if (job.provider) {
+    backendId = job.provider;
+    model = job.model ?? null;
+  } else {
+    const chat = await deps.resolveChatModel(job.chatId);
+    backendId = chat.backendId;
+    model = job.model ?? chat.model;
+  }
+  if (!model) {
+    throw new Error(
+      `Cron job "${job.name}": no model resolved for backend "${backendId}" — set a model or pick a model for the chat's backend.`,
+    );
+  }
+
+  const payload =
     `[System: CRON JOB "${job.name}" (schedule: ${describeSchedule(job)}). ` +
     `Execute the task. Be concise and action-oriented.]\n\n${job.content}`;
 
-  await withTimeout(
-    execute({
-      chatId: job.chatId,
+  // runJobOneShot enforces its own hard timeout (with abort + grace), so no
+  // outer withTimeout wrapper is needed here.
+  const result = await runJobOneShot({
+    chatId: job.chatId,
+    backendId,
+    model,
+    ...(job.instructions ? { instructions: job.instructions } : {}),
+    payload,
+    label: job.name,
+    kind: "cron",
+    timeoutMs: CRON_JOB_TIMEOUT_MS,
+  });
+  if (result.status === "skipped") {
+    await deps.sendMessage(
       numericChatId,
-      prompt,
-      senderName: "Cron",
-      isGroup: false,
-      source: "cron",
-      // Per-job model override (same backend) — runs this query on a cheaper
-      // model while still resuming the chat session. Only "query" jobs reach
-      // here, so a stored model always applies. Falls back to the chat model
-      // if the id no longer resolves.
-      ...(job.model ? { modelOverride: job.model } : {}),
-    }),
-    CRON_JOB_TIMEOUT_MS,
-    `Cron job "${job.name}"`,
-  );
+      `Cron job "${job.name}" skipped: ${result.reason} Update or delete the job to stop this notice.`,
+    );
+  }
+  return result;
 }

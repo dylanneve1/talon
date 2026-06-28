@@ -349,15 +349,15 @@ describe("describeSchedule", () => {
   it("renders a sub-hour interval job as 'every <Nm>'", () => {
     // 45 min stays in the minute band (m < 60) -> "45m". (90 min would be
     // 1.5h, since humanizeMs promotes to hours once m >= 60.)
-    expect(
-      describeSchedule(makeIntervalJob({ everyMs: 45 * MINUTE })),
-    ).toBe("every 45m");
+    expect(describeSchedule(makeIntervalJob({ everyMs: 45 * MINUTE }))).toBe(
+      "every 45m",
+    );
   });
 
   it("renders a 90-minute interval as 'every 1.5h' (hour promotion)", () => {
-    expect(
-      describeSchedule(makeIntervalJob({ everyMs: 90 * MINUTE })),
-    ).toBe("every 1.5h");
+    expect(describeSchedule(makeIntervalJob({ everyMs: 90 * MINUTE }))).toBe(
+      "every 1.5h",
+    );
   });
 
   it("renders an hourly interval as 'every 1h'", () => {
@@ -451,7 +451,11 @@ describe("isCronJob (via loadCronJobs migration)", () => {
 
   it("accepts a schedule-only job (legacy/cron mode)", () => {
     loadRaw({
-      "valid-cron-only": { id: "valid-cron-only", schedule: "0 9 * * *", ...base },
+      "valid-cron-only": {
+        id: "valid-cron-only",
+        schedule: "0 9 * * *",
+        ...base,
+      },
     });
     expect(getCronJob("valid-cron-only")).toBeDefined();
   });
