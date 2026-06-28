@@ -427,16 +427,26 @@ export async function* runChatTurn(
 
   // ── Trailing-prose contract + flow-violation retry ──────────────────────
 
-  const violation = detectFlowViolation({
-    trailingText: state.lastTrailingText,
-    turnTerminated: state.turnTerminated,
-    deliveredTextNorms: state.deliveredTextNorms,
-    toolCalls: state.toolCalls,
-    retried: (_internal.flowRetries ?? 0) > 0,
-    retryCount: _internal.flowRetries ?? 0,
-    maxRetries: FLOW_VIOLATION_MAX_RETRIES,
-    ...(frontend ? { reminder: buildFlowViolationReminder(frontend) } : {}),
-  });
+  // Only messaging frontends have a tool-only delivery contract to enforce.
+  // In terminal mode (`frontend` undefined) there are no delivery tools and
+  // trailing prose IS the reply — the terminal renderer surfaces it via
+  // `result.text` when nothing came through the bridge (see
+  // frontend/terminal/index.ts). Running the check there would flag the
+  // model's natural prose as a violation and re-prompt it to call `end_turn`,
+  // a tool that mode doesn't even register. Mirrors the `frontend`-gated
+  // delivery-contract suffix above.
+  const violation = frontend
+    ? detectFlowViolation({
+        trailingText: state.lastTrailingText,
+        turnTerminated: state.turnTerminated,
+        deliveredTextNorms: state.deliveredTextNorms,
+        toolCalls: state.toolCalls,
+        retried: (_internal.flowRetries ?? 0) > 0,
+        retryCount: _internal.flowRetries ?? 0,
+        maxRetries: FLOW_VIOLATION_MAX_RETRIES,
+        reminder: buildFlowViolationReminder(frontend),
+      })
+    : ({ violated: false } as const);
 
   if (violation.violated) {
     recordFlowViolation(violation.shouldRetry ? "retried" : "cap_exhausted");
