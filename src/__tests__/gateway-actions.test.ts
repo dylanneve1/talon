@@ -55,9 +55,10 @@ vi.mock("../storage/cron-store.js", () => ({
 
 // Backend controller + model resolver — exercised by the per-job model
 // override validation and the list_models / list_backends discovery actions.
-const mockGetBackendForChat = vi.fn(
-  (): unknown => ({ background: {}, models: undefined }),
-);
+const mockGetBackendForChat = vi.fn((): unknown => ({
+  background: {},
+  models: undefined,
+}));
 const mockGetBackendIdForChat = vi.fn(() => "claude");
 const mockGetAvailableBackends = vi.fn((): { id: string; label: string }[] => [
   { id: "claude", label: "Claude" },

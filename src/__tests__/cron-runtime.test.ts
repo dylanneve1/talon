@@ -90,10 +90,7 @@ function backendFactory(
 
 async function initPoolWithBeta(backend: Backend): Promise<void> {
   registerBackend(
-    backendFactory(
-      "claude",
-      composeBackend({ id: "claude", label: "claude" }),
-    ),
+    backendFactory("claude", composeBackend({ id: "claude", label: "claude" })),
   );
   registerBackend(backendFactory("codex", backend));
   await initBackendPool(STUB_CONFIG, STUB_CTX);
