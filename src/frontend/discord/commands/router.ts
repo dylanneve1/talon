@@ -17,12 +17,7 @@ import {
   registerDiscordChat,
 } from "../handlers/index.js";
 import { chatIdFromInteraction, reply, client } from "./shared.js";
-import {
-  handleStart,
-  handleHelp,
-  handlePing,
-  handlePlugins,
-} from "./info.js";
+import { handleStart, handleHelp, handlePing, handlePlugins } from "./info.js";
 import { handleReset, handleStatus } from "./session.js";
 import {
   handleModel,
