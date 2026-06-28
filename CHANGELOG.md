@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.20.0](https://github.com/dylanneve1/talon/compare/v1.19.0...v1.20.0) (2026-06-28)
+
+
+### Features
+
+* **cron:** isolated one-shot cron query jobs + backend-capability guards ([#361](https://github.com/dylanneve1/talon/issues/361)) ([7064734](https://github.com/dylanneve1/talon/commit/706473461ee26061064e2314ec7564efe065161e))
+* **models:** list_models reads any registered backend, not just active ones ([#360](https://github.com/dylanneve1/talon/issues/360)) ([b2a9fd1](https://github.com/dylanneve1/talon/commit/b2a9fd16361a450be68e07640ac4950243ee6a41))
+
+
+### Bug Fixes
+
+* **ci:** merge-queue updates branches via PAT push so CI actually fires ([#384](https://github.com/dylanneve1/talon/issues/384)) ([5f3fc07](https://github.com/dylanneve1/talon/commit/5f3fc070505b9d513feee198bc49c75ed8ca6d50))
+* **claude-sdk:** wait for MCP servers to connect after refreshTools ([#380](https://github.com/dylanneve1/talon/issues/380)) ([8d07a9d](https://github.com/dylanneve1/talon/commit/8d07a9d62c55ed56c529f7aa471bac04094df190))
+* **mcp:** resolve tsx to an absolute path in the supervisor re-invocation ([c804fa5](https://github.com/dylanneve1/talon/commit/c804fa5ec50990eb446713db3b566e90fde9e40a))
+* **mcp:** resolve tsx to an absolute path in the supervisor re-invocation ([922d357](https://github.com/dylanneve1/talon/commit/922d357a3ae3c40afdf89181b05f1d053f1b61ee))
+* stop double startup on port retry and end_turn nag in terminal mode ([#381](https://github.com/dylanneve1/talon/issues/381)) ([b5353a2](https://github.com/dylanneve1/talon/commit/b5353a26f7e05c63c952ea387532b4b9957a7e44))
+* **tools:** make Discord snowflake IDs string-typed (coerce numbers to string) ([ff254b8](https://github.com/dylanneve1/talon/commit/ff254b88f10f2927866a91080a96106a618fa873))
+
 ## [1.19.0](https://github.com/dylanneve1/talon/compare/v1.18.0...v1.19.0) (2026-06-17)
 
 
