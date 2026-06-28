@@ -55,7 +55,9 @@ vi.mock("../storage/cron-store.js", () => ({
 
 // Backend controller + model resolver — exercised by the per-job model
 // override validation and the list_models / list_backends discovery actions.
-const mockGetBackendForChat = vi.fn((): unknown => ({ models: undefined }));
+const mockGetBackendForChat = vi.fn(
+  (): unknown => ({ background: {}, models: undefined }),
+);
 const mockGetBackendIdForChat = vi.fn(() => "claude");
 const mockGetAvailableBackends = vi.fn((): { id: string; label: string }[] => [
   { id: "claude", label: "Claude" },
@@ -1807,7 +1809,10 @@ describe("per-job model override + discovery actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetBackendIdForChat.mockReturnValue("claude");
-    mockGetBackendForChat.mockReturnValue({ models: undefined });
+    mockGetBackendForChat.mockReturnValue({
+      background: {},
+      models: undefined,
+    });
     mockGetPooledBackend.mockReturnValue(null);
     mockGetAvailableBackends.mockReturnValue([
       { id: "claude", label: "Claude" },
@@ -1858,6 +1863,28 @@ describe("per-job model override + discovery actions", () => {
       expect(mockAddCronJob).toHaveBeenCalledWith(
         expect.objectContaining({ model: "claude-haiku-4-5", type: "query" }),
       );
+    });
+
+    it("rejects a query job with no override when the chat backend cannot run isolated jobs", async () => {
+      mockGetBackendIdForChat.mockReturnValue("openai-agents");
+      mockGetBackendForChat.mockReturnValue({ models: undefined });
+
+      const result = await handleSharedAction(
+        {
+          action: "create_cron_job",
+          name: "OpenAI Agents job",
+          schedule: "0 9 * * *",
+          type: "query",
+          content: "do a thing",
+        },
+        42,
+      );
+
+      expect(result?.ok).toBe(false);
+      expect(result?.error).toBe(
+        `Provider "openai-agents" can't run isolated jobs (no background capability).`,
+      );
+      expect(mockAddCronJob).not.toHaveBeenCalled();
     });
 
     it("rejects a model override on a non-query job before validating it", async () => {

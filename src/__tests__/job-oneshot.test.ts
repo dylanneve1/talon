@@ -4,9 +4,18 @@
  * optional eviction).
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { basename } from "node:path";
-import type { BackgroundRunner } from "../core/agent-runtime/capabilities.js";
+import type {
+  Backend,
+  BackgroundRunner,
+} from "../core/agent-runtime/capabilities.js";
+import { composeBackend } from "../core/agent-runtime/capabilities.js";
+import {
+  clearBackends,
+  registerBackend,
+  type BackendFactory,
+} from "../core/agent-runtime/backend-registry.js";
 import type { OneShotAgentParams } from "../core/types.js";
 import {
   buildJobSystemPrompt,
@@ -15,6 +24,13 @@ import {
   JOB_CONTEXT_LABEL,
 } from "../core/background/job-prompt.js";
 import { runIsolatedAgent } from "../core/background/isolated-agent.js";
+import { runJobOneShot } from "../core/background/job-oneshot.js";
+import {
+  cleanupBackendPool,
+  initBackendPool,
+  resetBackendPoolForTest,
+} from "../core/engine/backend-controller.js";
+import type { TalonConfig } from "../util/config.js";
 
 // ── Pure helpers ─────────────────────────────────────────────────────────────
 
@@ -73,6 +89,38 @@ function fakeBackground(
 ): BackgroundRunner {
   return { runOneShotAgent: run, evictOrphanSubprocesses: evict };
 }
+
+function backendFactory(
+  id: string,
+  backend: Backend,
+  cleanup?: () => void,
+): BackendFactory {
+  return {
+    id,
+    label: id,
+    async init() {
+      return { backend, cleanup };
+    },
+  };
+}
+
+const STUB_CONFIG = { backend: "claude" } as unknown as TalonConfig;
+const STUB_CTX = {
+  getBridgePort: () => 0,
+  frontendName: "terminal" as const,
+};
+
+beforeEach(async () => {
+  await cleanupBackendPool();
+  resetBackendPoolForTest();
+  clearBackends();
+});
+
+afterEach(async () => {
+  await cleanupBackendPool();
+  resetBackendPoolForTest();
+  clearBackends();
+});
 
 describe("runIsolatedAgent", () => {
   it("resolves when the agent completes before the timeout", async () => {
@@ -142,5 +190,49 @@ describe("runIsolatedAgent", () => {
     ).rejects.toThrow(/timed out/);
     await new Promise((r) => setTimeout(r, 5));
     expect(evict).not.toHaveBeenCalled();
+  });
+});
+
+describe("runJobOneShot", () => {
+  it("acquires, runs, and releases a transient backend once", async () => {
+    const run = vi.fn(async (_params: OneShotAgentParams) => {});
+    const cleanup = vi.fn();
+    registerBackend(
+      backendFactory(
+        "claude",
+        composeBackend({ id: "claude", label: "claude" }),
+      ),
+    );
+    registerBackend(
+      backendFactory(
+        "codex",
+        composeBackend({
+          id: "codex",
+          label: "codex",
+          background: fakeBackground(run),
+        }),
+        cleanup,
+      ),
+    );
+    await initBackendPool(STUB_CONFIG, STUB_CTX);
+
+    const result = await runJobOneShot({
+      chatId: "42",
+      backendId: "codex",
+      model: "model-ok",
+      payload: "payload",
+      label: "nightly check",
+      kind: "cron",
+      timeoutMs: 1000,
+    });
+
+    expect(result).toEqual({ status: "ran" });
+    expect(run).toHaveBeenCalledOnce();
+    expect(run.mock.calls[0]?.[0]).toMatchObject({
+      prompt: "payload",
+      model: "model-ok",
+      contextLabel: JOB_CONTEXT_LABEL,
+    });
+    expect(cleanup).toHaveBeenCalledOnce();
   });
 });

@@ -15,8 +15,11 @@
 
 import { mkdir, appendFile } from "node:fs/promises";
 import { dirs } from "../../util/paths.js";
-import { log } from "../../util/log.js";
-import { acquireBackendInstance } from "../engine/backend-controller.js";
+import { log, logWarn } from "../../util/log.js";
+import {
+  acquireBackendInstance,
+  isModelValidForBackend,
+} from "../engine/backend-controller.js";
 import type { OneShotAgentParams } from "../types.js";
 import { runIsolatedAgent } from "./isolated-agent.js";
 import {
@@ -49,6 +52,10 @@ export interface JobOneShotParams {
   readonly timeoutMs?: number;
 }
 
+export type JobOneShotResult =
+  | { status: "ran" }
+  | { status: "skipped"; reason: string };
+
 /** Open a per-run log file and return an appender bound to it. */
 async function openJobLog(
   kind: JobKind,
@@ -68,18 +75,54 @@ async function openJobLog(
   return appendLog;
 }
 
+function skipJob(params: JobOneShotParams, reason: string): JobOneShotResult {
+  logWarn(
+    params.kind === "cron" ? "cron" : "triggers",
+    `isolated job "${params.label}" skipped: ${reason}`,
+  );
+  return { status: "skipped", reason };
+}
+
 /**
  * Run a trigger/cron wake-up as an isolated one-shot on a different backend.
  * Acquires the target backend on demand and always releases it afterwards.
  */
-export async function runJobOneShot(params: JobOneShotParams): Promise<void> {
-  const { backend, release } = await acquireBackendInstance(params.backendId);
+export async function runJobOneShot(
+  params: JobOneShotParams,
+): Promise<JobOneShotResult> {
+  let acquired: Awaited<ReturnType<typeof acquireBackendInstance>>;
+  try {
+    acquired = await acquireBackendInstance(params.backendId);
+  } catch (err) {
+    return skipJob(
+      params,
+      `provider "${params.backendId}" is unavailable: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const { backend, release } = acquired;
   try {
     const background = backend.background;
     if (!background) {
-      throw new Error(
-        `Backend "${params.backendId}" has no background capability — ` +
-          `cannot run an isolated job on it`,
+      return skipJob(
+        params,
+        `provider "${params.backendId}" can't run isolated jobs (no background capability).`,
+      );
+    }
+
+    let modelValid = false;
+    try {
+      modelValid = await isModelValidForBackend(backend, params.model);
+    } catch (err) {
+      return skipJob(
+        params,
+        `could not validate model "${params.model}" on provider "${params.backendId}": ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (!modelValid) {
+      return skipJob(
+        params,
+        `model "${params.model}" is not selectable on provider "${params.backendId}".`,
       );
     }
 
@@ -116,6 +159,7 @@ export async function runJobOneShot(params: JobOneShotParams): Promise<void> {
       params.kind === "cron" ? "cron" : "triggers",
       `isolated job "${params.label}" ran on ${params.backendId}/${params.model}`,
     );
+    return { status: "ran" };
   } finally {
     await release();
   }

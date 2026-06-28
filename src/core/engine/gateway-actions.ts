@@ -172,11 +172,17 @@ async function validateJobModelOverride(
  */
 async function validateCronModelOverride(
   chatId: number,
-  model: string,
+  model?: string,
   provider?: string,
 ): Promise<string | null> {
   const chatBackendId = getBackendIdForChat(String(chatId));
   if (!provider || provider === chatBackendId) {
+    const capabilityErr = validateCronBackgroundCapability(
+      chatBackendId,
+      getBackendForChat(String(chatId)),
+    );
+    if (capabilityErr) return capabilityErr;
+    if (!model) return null;
     return validateJobModelOverride(chatId, model);
   }
   let acquired: Awaited<ReturnType<typeof acquireBackendInstance>> | null =
@@ -187,8 +193,13 @@ async function validateCronModelOverride(
     return `Unknown or unavailable provider "${provider}".`;
   }
   try {
-    if (!acquired.backend.background) {
-      return `Provider "${provider}" can't run isolated jobs (no background capability).`;
+    const capabilityErr = validateCronBackgroundCapability(
+      provider,
+      acquired.backend,
+    );
+    if (capabilityErr) return capabilityErr;
+    if (!model) {
+      return `A 'provider' override also requires a 'model'.`;
     }
     if (!(await isModelValidForBackend(acquired.backend, model))) {
       return `Model "${model}" is not a selectable model on provider "${provider}".`;
@@ -199,6 +210,14 @@ async function validateCronModelOverride(
   } finally {
     await acquired.release();
   }
+}
+
+function validateCronBackgroundCapability(
+  provider: string,
+  backend: Backend,
+): string | null {
+  if (backend.background) return null;
+  return `Provider "${provider}" can't run isolated jobs (no background capability).`;
 }
 
 export async function handleSharedAction(
@@ -399,9 +418,9 @@ export async function handleSharedAction(
           error: `Invalid cron expression: ${validation.error}`,
         };
 
-      // Validate the model/provider up front so a bad id is rejected here
-      // instead of silently failing at fire time.
-      if (model) {
+      // Validate the target backend/model up front so a bad id or unsupported
+      // backend is rejected here instead of silently failing at fire time.
+      if (jobType === "query") {
         const modelErr = await validateCronModelOverride(
           chatId,
           model,

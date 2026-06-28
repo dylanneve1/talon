@@ -75,6 +75,10 @@ export function stopCronTimer(): void {
 // has had a chance to update lastRunAt.
 const runningJobs = new Set<string>();
 
+type ExecuteJobResult =
+  | { status: "ran" }
+  | { status: "skipped"; reason: string };
+
 // Per-job circuit breaker policy (Gleam scheduler core via job-health):
 // 3 consecutive failures open the breaker; cooldown starts at 5 minutes
 // and escalates per re-open up to 6 hours. Without this, a job whose
@@ -110,14 +114,18 @@ async function runCronTick(): Promise<void> {
         "cron",
         `Executing "${job.name}" [${job.id}] (${job.type}) in chat ${job.chatId}`,
       );
-      await executeJob(job);
+      const result = await executeJob(job);
       recordJobSuccess(job.id, Date.now(), JOB_HEALTH);
       recordCronRun(job.id);
       appendDailyLog(
         "Cron",
-        `Ran "${job.name}" (${job.type}) in chat ${job.chatId}`,
+        result.status === "skipped"
+          ? `Skipped "${job.name}" (${job.type}) in chat ${job.chatId}: ${result.reason}`
+          : `Ran "${job.name}" (${job.type}) in chat ${job.chatId}`,
       );
-      log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
+      if (result.status === "ran") {
+        log("cron", `Executed "${job.name}" [${job.id}] in chat ${job.chatId}`);
+      }
     } catch (err) {
       logError("cron", `Job "${job.name}" [${job.id}] failed`, err);
       const cooldown = recordJobFailure(job.id, Date.now(), JOB_HEALTH);
@@ -184,8 +192,8 @@ function isDue(job: CronJob, now: Date): boolean {
 
 const CRON_JOB_TIMEOUT_MS = 10 * 60_000; // 10-minute max per job
 
-async function executeJob(job: CronJob): Promise<void> {
-  if (!deps) return;
+export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
+  if (!deps) return { status: "skipped", reason: "cron is not initialised" };
 
   const numericChatId = Number(job.chatId);
   if (!Number.isFinite(numericChatId)) {
@@ -194,7 +202,7 @@ async function executeJob(job: CronJob): Promise<void> {
 
   if (job.type === "message") {
     await deps.sendMessage(numericChatId, job.content);
-    return;
+    return { status: "ran" };
   }
 
   // type === "query" — run as an ISOLATED one-shot (no chat session). Resolve
@@ -223,7 +231,7 @@ async function executeJob(job: CronJob): Promise<void> {
 
   // runJobOneShot enforces its own hard timeout (with abort + grace), so no
   // outer withTimeout wrapper is needed here.
-  await runJobOneShot({
+  const result = await runJobOneShot({
     chatId: job.chatId,
     backendId,
     model,
@@ -233,4 +241,11 @@ async function executeJob(job: CronJob): Promise<void> {
     kind: "cron",
     timeoutMs: CRON_JOB_TIMEOUT_MS,
   });
+  if (result.status === "skipped") {
+    await deps.sendMessage(
+      numericChatId,
+      `Cron job "${job.name}" skipped: ${result.reason} Update or delete the job to stop this notice.`,
+    );
+  }
+  return result;
 }
