@@ -29,6 +29,8 @@ export function createPlaywrightPlugin(config: {
   headless?: boolean;
   endpoint?: string;
   endpointFile?: string;
+  mcpCli?: string;
+  storageState?: string;
 }): TalonPlugin {
   const browser = config.browser ?? "chromium";
   const headless = config.headless !== false; // default true
@@ -46,17 +48,25 @@ export function createPlaywrightPlugin(config: {
     }
   }
 
-  // Resolve path from Talon's node_modules
-  const mcpBin = resolve(
-    import.meta.dirname ?? ".",
-    "../../../node_modules/@playwright/mcp/cli.js",
-  );
+  // Resolve path: explicit override (e.g. a version-matched @playwright/mcp
+  // install for Camoufox) or Talon's bundled node_modules.
+  const mcpBin = config.mcpCli
+    ? resolve(config.mcpCli)
+    : resolve(
+        import.meta.dirname ?? ".",
+        "../../../node_modules/@playwright/mcp/cli.js",
+      );
 
   const args: string[] = [];
 
   if (endpoint) {
-    // Connect to existing browser (e.g. Camoufox websocket server)
+    // Connect to existing browser (e.g. Camoufox websocket server).
+    // The browserType used for the connect is chosen by --browser, so it
+    // MUST match the remote server's browser (Camoufox = firefox).
     args.push("--endpoint", endpoint);
+    if (browser !== "chromium") {
+      args.push("--browser", browser);
+    }
   } else {
     args.push("--no-sandbox");
 
@@ -67,6 +77,13 @@ export function createPlaywrightPlugin(config: {
     if (browser !== "chromium") {
       args.push("--browser", browser);
     }
+  }
+
+  // Persistent session: load cookies/localStorage from a storage-state file so
+  // logins (e.g. the bot's Google account) survive Camoufox restarts. This is
+  // load-only — re-capture the file after a fresh login via the save helper.
+  if (config.storageState) {
+    args.push("--storage-state", config.storageState);
   }
 
   return {

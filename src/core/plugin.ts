@@ -561,6 +561,7 @@ export async function loadBuiltinPlugins(config: TalonConfig): Promise<void> {
         headless: playwright.headless,
         endpoint: playwright.endpoint,
         endpointFile: playwright.endpointFile,
+        storageState: (pwConfig.storageState as string | undefined) ?? undefined,
       });
       const loaded = registerPlugin(pw, pwConfig);
       if (loaded) {

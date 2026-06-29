@@ -158,6 +158,8 @@ const playwrightConfigSchema = z.object({
   endpoint: z.string().optional(),
   /** Read the browser websocket endpoint from a file. */
   endpointFile: z.string().optional(),
+  /** Load cookies/localStorage from a storage-state JSON file (persistent login). */
+  storageState: z.string().optional(),
 });
 
 const configSchema = z.object({
