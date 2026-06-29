@@ -35,7 +35,12 @@ import type { TalonConfig } from "../../util/config.js";
 // ── Types ───────────────────────────────────────────────────────────────────
 
 /** Frontend identifiers that can be passed to a backend's init step. */
-export type FrontendName = "telegram" | "terminal" | "teams" | "discord";
+export type FrontendName =
+  | "telegram"
+  | "terminal"
+  | "teams"
+  | "discord"
+  | "desktop";
 
 /** Per-init context — runtime dependencies the backend may need at startup. */
 export interface BackendInitContext {

@@ -267,7 +267,12 @@ describe("end_turn tool definition", () => {
   it("is registered in messagingTools", () => {
     expect(endTurn).toBeDefined();
     expect(endTurn?.tag).toBe("messaging");
-    expect(endTurn?.frontends).toEqual(["telegram", "teams", "discord"]);
+    expect(endTurn?.frontends).toEqual([
+      "telegram",
+      "teams",
+      "discord",
+      "desktop",
+    ]);
   });
 
   it("has text, reply_to, and buttons schema fields", () => {

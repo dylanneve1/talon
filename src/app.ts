@@ -71,6 +71,10 @@ if (selectedFrontend === "terminal") {
   const { createDiscordFrontend } = await import("./frontend/discord/index.js");
   frontend = createDiscordFrontend(config, gateway);
   log("bot", "Frontend: Discord");
+} else if (selectedFrontend === "desktop") {
+  const { createDesktopFrontend } = await import("./frontend/desktop/index.js");
+  frontend = createDesktopFrontend(config, gateway);
+  log("bot", "Frontend: Desktop");
 } else {
   const { createTelegramFrontend } =
     await import("./frontend/telegram/index.js");
