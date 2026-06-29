@@ -47,7 +47,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # PAT (not GITHUB_TOKEN) so the branch-update push fires CI.
           token: ${{ secrets.PAT }}
