@@ -15,6 +15,8 @@
  * evict only when fully idle.
  */
 
+import { ThreadSession, type SessionSummary } from "./thread-session.js";
+
 /**
  * The warp — the durable per-turn binding the Shuttle carries the weft
  * across. Recorded when a turn resolves its model so configured-vs-running
@@ -43,6 +45,8 @@ export type ThreadSnapshot = {
   messagesSent: number;
   /** The model/backend bound for the last turn, if one has run. */
   warp?: Warp;
+  /** Compact view of the chat's persisted session. */
+  session: SessionSummary;
 };
 
 export class Thread {
@@ -60,8 +64,19 @@ export class Thread {
   // ── Warp (resolved model/backend binding for the last turn) ─────────────────
   private warpState: Warp | undefined;
 
+  // ── Session (handle to storage/sessions.ts, the source of truth) ────────────
+  private sessionHandle: ThreadSession | undefined;
+
   constructor(chatId: string) {
     this.chatId = chatId;
+  }
+
+  /**
+   * The Thread's handle to its persisted session. Lazily created; the backing
+   * store (`storage/sessions.ts`) stays the source of truth.
+   */
+  get session(): ThreadSession {
+    return (this.sessionHandle ??= new ThreadSession(this.chatId));
   }
 
   // ── Serialization ───────────────────────────────────────────────────────────
@@ -175,6 +190,7 @@ export class Thread {
       contextActive: this.refCount > 0,
       messagesSent: this.messagesSent,
       warp: this.warpState,
+      session: this.session.summary(),
     };
   }
 }
