@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.22.0](https://github.com/dylanneve1/talon/compare/v1.21.1...v1.22.0) (2026-06-29)
+
+
+### Features
+
+* **desktop:** client-bridge frontend + Flutter companion app ([#389](https://github.com/dylanneve1/talon/issues/389)) ([44bcb73](https://github.com/dylanneve1/talon/commit/44bcb7312eebcf9cebe4db14fdd73a84ad80ca80))
+* **weaver:** unified thread/chat manager (scaffold + dispatcher rewire) ([#388](https://github.com/dylanneve1/talon/issues/388)) ([2e6b5ae](https://github.com/dylanneve1/talon/commit/2e6b5ae785fd3130bfe5ead23a29af439cafc9f5))
+
 ## [1.21.1](https://github.com/dylanneve1/talon/compare/v1.21.0...v1.21.1) (2026-06-29)
 
 
