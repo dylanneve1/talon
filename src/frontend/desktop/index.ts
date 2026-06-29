@@ -400,7 +400,7 @@ export function createDesktopFrontend(
 
   const context: ContextManager = {
     acquire: (chatId: number, stringId?: string) =>
-      gateway.setContext(chatId, stringId),
+      gateway.setContext(chatId, stringId, "desktop"),
     release: (chatId: number) => gateway.clearContext(chatId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
@@ -424,7 +424,8 @@ export function createDesktopFrontend(
     getBridgePort: () => gateway.getPort(),
 
     async init() {
-      gateway.setFrontendHandler(
+      gateway.registerFrontendHandler(
+        "desktop",
         createDesktopActionHandler({
           chats,
           gateway,

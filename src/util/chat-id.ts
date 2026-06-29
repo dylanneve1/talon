@@ -34,3 +34,18 @@ export function generateDesktopChatId(): string {
 export function isDesktopChatId(chatId: string): boolean {
   return chatId.startsWith("d_");
 }
+
+/** Check if a chat ID belongs to a Telegram session. */
+export function isTelegramChatId(chatId: string): boolean {
+  return /^-?\d+$/.test(chatId);
+}
+
+/** Check if a chat ID belongs to a Teams session. */
+export function isTeamsChatId(chatId: string): boolean {
+  return chatId.startsWith("teams_chat_");
+}
+
+/** Check if a chat ID belongs to a Discord session. */
+export function isDiscordChatId(chatId: string): boolean {
+  return chatId.startsWith("discord_");
+}

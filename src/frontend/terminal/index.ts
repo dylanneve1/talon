@@ -120,7 +120,8 @@ export function createTerminalFrontend(
   let toolCallCount = 0;
 
   const context: ContextManager = {
-    acquire: () => gateway.setContext(terminalNumericId, terminalChatId),
+    acquire: () =>
+      gateway.setContext(terminalNumericId, terminalChatId, "terminal"),
     release: () => gateway.clearContext(terminalNumericId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
@@ -140,7 +141,10 @@ export function createTerminalFrontend(
     getBridgePort: () => gateway.getPort(),
 
     async init() {
-      gateway.setFrontendHandler(createActionHandler(gateway, renderer));
+      gateway.registerFrontendHandler(
+        "terminal",
+        createActionHandler(gateway, renderer),
+      );
       const port = await gateway.start(19877);
       log("bot", `Terminal gateway on port ${port}`);
     },

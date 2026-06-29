@@ -158,9 +158,9 @@ export type CacheMetricsSupport = "none" | "read" | "readwrite";
  * can reach the messaging platform.
  */
 export interface ContextManager {
-  acquire(chatId: number, stringId?: string): void;
-  release(chatId: number): void;
-  getMessageCount(chatId: number): number;
+  acquire(chatId: number, stringId?: string, frontendName?: string): void;
+  release(chatId: number, stringId?: string): void;
+  getMessageCount(chatId: number, stringId?: string): number;
 }
 
 /**

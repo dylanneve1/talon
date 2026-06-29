@@ -61,7 +61,7 @@ export function createTeamsFrontend(
 
   const context: ContextManager = {
     acquire: (chatId: number, stringId?: string) =>
-      gateway.setContext(chatId, stringId),
+      gateway.setContext(chatId, stringId, "teams"),
     release: (chatId: number) => gateway.clearContext(chatId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
@@ -98,7 +98,10 @@ export function createTeamsFrontend(
 
     async init() {
       // Register action handler with the gateway
-      gateway.setFrontendHandler(createTeamsActionHandler(webhookUrl, gateway));
+      gateway.registerFrontendHandler(
+        "teams",
+        createTeamsActionHandler(webhookUrl, gateway),
+      );
       const port = await gateway.start(19876);
       log("teams", `Gateway on port ${port}`);
 
