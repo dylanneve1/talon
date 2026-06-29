@@ -6,6 +6,7 @@ import { maybeStartDream } from "../background/dream.js";
 import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
 import { Loom } from "./loom.js";
+import type { Thread, ThreadSnapshot } from "./thread.js";
 
 export type WeaverDeps = {
   getBackend: (chatId?: string) => Backend;
@@ -33,25 +34,44 @@ export class Weaver {
   }
 
   runTurn(params: ExecuteParams): Promise<ExecuteResult> {
-    return this.loom.thread(params.chatId).enqueue(() => this.run(params));
+    const thread = this.loom.thread(params.chatId);
+    return thread.enqueue(() => this.run(thread, params));
   }
 
   getActiveCount(): number {
     return this.activeCount;
   }
 
+  /**
+   * A live view of every Thread the Loom is holding — the hub's
+   * observability surface for `/status`, drift detection, and remote
+   * frontends. Reading is side-effect free.
+   */
+  snapshot(): ThreadSnapshot[] {
+    return this.loom
+      .chatIds()
+      .map((id) => this.loom.get(id)?.describe())
+      .filter((s): s is ThreadSnapshot => s !== undefined);
+  }
+
   private activeCount = 0;
 
-  private async run(params: ExecuteParams): Promise<ExecuteResult> {
+  private async run(
+    thread: Thread,
+    params: ExecuteParams,
+  ): Promise<ExecuteResult> {
     this.activeCount++;
     try {
-      return await this.executeInner(params);
+      return await this.executeInner(thread, params);
     } finally {
       this.activeCount--;
     }
   }
 
-  private async executeInner(params: ExecuteParams): Promise<ExecuteResult> {
+  private async executeInner(
+    thread: Thread,
+    params: ExecuteParams,
+  ): Promise<ExecuteResult> {
     const {
       getBackend,
       resolveActiveModel,
@@ -137,6 +157,23 @@ export class Weaver {
           `[${reqId}] model override resolution threw: ${err instanceof Error ? err.message : String(err)}; using chat model`,
         );
       }
+    }
+
+    // Bind the warp — record the model/backend actually resolved for this turn
+    // on the Thread. `weaver.snapshot()` reports it, and a change since the
+    // last turn (per-chat rebind, per-run override, or config drift) is logged
+    // rather than passing silently.
+    const { drifted, previous } = thread.bindWarp({
+      model: runRef.id,
+      backendId,
+      overridden: runRef !== resolvedRef,
+      boundAt: Date.now(),
+    });
+    if (drifted && previous) {
+      logDebug(
+        "dispatcher",
+        `[${reqId}] warp drift chat=${params.chatId}: ${previous.backendId}/${previous.model} → ${backendId}/${runRef.id}`,
+      );
     }
 
     // Dream check — fire-and-forget background memory consolidation if due

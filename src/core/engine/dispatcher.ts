@@ -10,7 +10,12 @@
 
 import type { ExecuteParams, ExecuteResult } from "../types.js";
 import { log } from "../../util/log.js";
-import { initWeaver, type Weaver, type WeaverDeps } from "../weaver/index.js";
+import {
+  initWeaver,
+  type Weaver,
+  type WeaverDeps,
+  type ThreadSnapshot,
+} from "../weaver/index.js";
 
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
@@ -41,6 +46,15 @@ export function initDispatcher(d: DispatcherDeps): void {
 /** Number of queries currently running. */
 export function getActiveCount(): number {
   return weaver?.getActiveCount() ?? 0;
+}
+
+/**
+ * A live view of every Thread the Loom holds — model/backend warp, in-flight
+ * count, and context state per chat. The hub's observability surface for
+ * `/status`, drift detection, and remote frontends. Empty before init.
+ */
+export function snapshot(): ThreadSnapshot[] {
+  return weaver?.snapshot() ?? [];
 }
 
 /**

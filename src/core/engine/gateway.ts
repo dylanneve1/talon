@@ -287,7 +287,10 @@ export class Gateway {
               ok: w.healthy,
               uptime: Math.round(process.uptime()),
               memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-              bridge: { activeChats: this.loom.activeContextCount() },
+              bridge: {
+                activeChats: this.loom.activeContextCount(),
+                threads: this.loom.size(),
+              },
               queue: getActiveCount(),
               sessions: getActiveSessionCount(),
               messages: w.totalMessagesProcessed,

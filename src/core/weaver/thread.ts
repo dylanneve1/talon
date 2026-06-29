@@ -15,6 +15,36 @@
  * evict only when fully idle.
  */
 
+/**
+ * The warp — the durable per-turn binding the Shuttle carries the weft
+ * across. Recorded when a turn resolves its model so configured-vs-running
+ * divergence is explicit state a snapshot can surface, not a silent fallback.
+ */
+export type Warp = {
+  /** Model id actually bound for the last turn (after any per-run override). */
+  model: string;
+  /** Backend id serving the chat. */
+  backendId: string;
+  /** A per-run model override (trigger/cron) was applied for this turn. */
+  overridden: boolean;
+  /** When the warp was last bound (ms since epoch). */
+  boundAt: number;
+};
+
+/** Immutable view of a Thread's live state, for `weaver.snapshot()`. */
+export type ThreadSnapshot = {
+  chatId: string;
+  numericChatId?: number;
+  /** Turns queued or running on this Thread. */
+  inFlightCount: number;
+  /** Whether a turn is currently holding the execution context. */
+  contextActive: boolean;
+  /** Bridge messages sent during the current turn. */
+  messagesSent: number;
+  /** The model/backend bound for the last turn, if one has run. */
+  warp?: Warp;
+};
+
 export class Thread {
   readonly chatId: string;
 
@@ -26,6 +56,9 @@ export class Thread {
   private refCount = 0;
   private messagesSent = 0;
   private numeric: number | undefined;
+
+  // ── Warp (resolved model/backend binding for the last turn) ─────────────────
+  private warpState: Warp | undefined;
 
   constructor(chatId: string) {
     this.chatId = chatId;
@@ -107,5 +140,41 @@ export class Thread {
   /** Count one outbound message sent by the bridge during the current turn. */
   noteMessageSent(): void {
     this.messagesSent++;
+  }
+
+  // ── Warp ────────────────────────────────────────────────────────────────────
+
+  /** The model/backend bound for the last turn, if one has run. */
+  get warp(): Warp | undefined {
+    return this.warpState;
+  }
+
+  /**
+   * Record the warp resolved for a turn. Returns whether the model or backend
+   * changed since the last turn (drift) along with the previous warp, so the
+   * Weaver can surface a configured-vs-running divergence instead of letting
+   * it pass silently.
+   */
+  bindWarp(warp: Warp): { drifted: boolean; previous?: Warp } {
+    const previous = this.warpState;
+    const drifted =
+      previous !== undefined &&
+      (previous.model !== warp.model || previous.backendId !== warp.backendId);
+    this.warpState = warp;
+    return { drifted, previous };
+  }
+
+  // ── Observability ─────────────────────────────────────────────────────────────
+
+  /** An immutable view of this Thread's live state. */
+  describe(): ThreadSnapshot {
+    return {
+      chatId: this.chatId,
+      numericChatId: this.numeric,
+      inFlightCount: this.queuedCount,
+      contextActive: this.refCount > 0,
+      messagesSent: this.messagesSent,
+      warp: this.warpState,
+    };
   }
 }

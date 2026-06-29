@@ -1,4 +1,4 @@
-export { Thread } from "./thread.js";
+export { Thread, type Warp, type ThreadSnapshot } from "./thread.js";
 export { Loom } from "./loom.js";
 export {
   Weaver,
