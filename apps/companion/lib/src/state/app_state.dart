@@ -314,11 +314,27 @@ class AppState extends ChangeNotifier {
     final list = _messages.putIfAbsent(chatId, () => []);
     if (list.any((x) => x.id == m.id)) return; // dedupe re-delivery
     list.add(m);
-    // The canonical reply supersedes the streaming draft.
-    if (m.role == Role.assistant) turnFor(chatId).draft = '';
+    // Canonical reply supersedes the live turn. End it now so we don't flash
+    // typing dots / orphan tool chips while waiting for the trailing turn_end.
+    if (m.role == Role.assistant) {
+      final t = turnFor(chatId);
+      // Hand the live tools to the message so the bubble can show a history.
+      m.tools.addAll(t.tools);
+      t.active = false;
+      t.typing = false;
+      t.draft = '';
+      t.reasoning.clear();
+      t.tools.clear();
+    }
   }
 
   void _onTool(Map<String, dynamic> e) {
+    final name = (e['name'] ?? 'tool') as String;
+    // `end_turn` is the canonical delivery tool — its "result" is the assistant
+    // message that arrives separately, so no tool_result event ever lands for
+    // it. Showing it as a chip means an eternally-spinning row of noise.
+    if (_isInternalTool(name)) return;
+
     final t = turnFor(e['chatId'] as String);
     final id = e['id'].toString();
     final phase = e['phase'] as String?;
@@ -326,6 +342,7 @@ class AppState extends ChangeNotifier {
     if (phase == 'result') {
       if (existing.isNotEmpty) {
         existing.first.done = true;
+        existing.first.finishedAt = DateTime.now();
         existing.first.error = e['error'] as String?;
       }
       return;
@@ -333,11 +350,13 @@ class AppState extends ChangeNotifier {
     if (existing.isEmpty) {
       t.tools.add(ToolActivity(
         id: id,
-        name: (e['name'] ?? 'tool') as String,
+        name: name,
         input: ((e['input'] as Map?) ?? const {}).cast<String, dynamic>(),
       ));
     }
   }
+
+  static bool _isInternalTool(String name) => name == 'end_turn';
 
   // ── Store helpers ────────────────────────────────────────────────────────--
 

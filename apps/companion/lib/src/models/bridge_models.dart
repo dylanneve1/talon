@@ -42,6 +42,11 @@ class ClientMessage {
   final List<List<ClientButton>> buttons;
   final List<String> reactions;
 
+  /// Tools that ran during this assistant turn (client-only — snapshot from
+  /// the live turn when the canonical message arrives, so the history pane
+  /// can show what the model did).
+  final List<ToolActivity> tools;
+
   /// True while assistant text is still streaming into this bubble (client-only).
   bool streaming;
 
@@ -53,8 +58,10 @@ class ClientMessage {
     required this.ts,
     this.buttons = const [],
     List<String>? reactions,
+    List<ToolActivity>? tools,
     this.streaming = false,
-  }) : reactions = reactions ?? <String>[];
+  })  : reactions = reactions ?? <String>[],
+        tools = tools ?? <ToolActivity>[];
 
   factory ClientMessage.fromJson(Map<String, dynamic> j) {
     final rawButtons = (j['buttons'] as List?) ?? const [];
@@ -243,6 +250,8 @@ class ToolActivity {
   bool done;
   String? error;
   Map<String, dynamic> input;
+  final DateTime startedAt;
+  DateTime? finishedAt;
 
   ToolActivity({
     required this.id,
@@ -250,5 +259,10 @@ class ToolActivity {
     this.done = false,
     this.error,
     Map<String, dynamic>? input,
-  }) : input = input ?? <String, dynamic>{};
+    DateTime? startedAt,
+    this.finishedAt,
+  })  : input = input ?? <String, dynamic>{},
+        startedAt = startedAt ?? DateTime.now();
+
+  Duration get elapsed => (finishedAt ?? DateTime.now()).difference(startedAt);
 }

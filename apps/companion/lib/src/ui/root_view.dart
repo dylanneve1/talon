@@ -16,21 +16,24 @@ class RootView extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: const BoxDecoration(gradient: TalonColors.backdrop),
-      child: Stack(
-        children: [
-          const Positioned.fill(child: AmbientGlow()),
-          Positioned.fill(
-            child: ListenableBuilder(
-              listenable: state,
-              builder: (context, _) {
-                if (!state.prefs.onboarded) {
-                  return ConnectScreen(state: state, firstRun: true);
-                }
-                return AppShell(state: state);
-              },
+      child: Material(
+        type: MaterialType.transparency,
+        child: Stack(
+          children: [
+            const Positioned.fill(child: AmbientGlow()),
+            Positioned.fill(
+              child: ListenableBuilder(
+                listenable: state,
+                builder: (context, _) {
+                  if (!state.prefs.onboarded) {
+                    return ConnectScreen(state: state, firstRun: true);
+                  }
+                  return AppShell(state: state);
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

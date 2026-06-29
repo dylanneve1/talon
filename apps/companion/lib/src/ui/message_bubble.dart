@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 
 import '../models/bridge_models.dart';
 import '../theme.dart';
+import 'activity_card.dart';
 import 'brand.dart';
 import 'markdown.dart';
 
@@ -111,6 +112,11 @@ class MessageBubble extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 4),
+                  if (message.tools.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _ToolHistory(tools: message.tools),
+                    ),
                   MarkdownBody(
                     data: message.text.isEmpty ? '…' : message.text,
                     selectable: true,
@@ -182,6 +188,103 @@ class MessageBubble extends StatelessWidget {
           ],
         ),
       );
+}
+
+/// Collapsed summary of the tools the model ran for an assistant message.
+/// Tap to expand and see the chip for each call.
+class _ToolHistory extends StatefulWidget {
+  final List<ToolActivity> tools;
+  const _ToolHistory({required this.tools});
+
+  @override
+  State<_ToolHistory> createState() => _ToolHistoryState();
+}
+
+class _ToolHistoryState extends State<_ToolHistory> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tools = widget.tools;
+    final failed = tools.where((t) => t.error != null).length;
+    final total = Duration(
+      milliseconds:
+          tools.fold<int>(0, (a, t) => a + t.elapsed.inMilliseconds),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedRotation(
+                  duration: const Duration(milliseconds: 160),
+                  turns: _open ? 0.25 : 0,
+                  child: const Icon(
+                    Icons.chevron_right,
+                    size: 16,
+                    color: TalonColors.textFaint,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(
+                  failed > 0 ? Icons.error_outline : Icons.handyman_outlined,
+                  size: 13,
+                  color: failed > 0 ? TalonColors.bad : TalonColors.textFaint,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _summary(tools.length, failed, total),
+                  style: const TextStyle(
+                    color: TalonColors.textFaint,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          alignment: Alignment.topLeft,
+          child: _open
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final t in tools) ToolChip(key: ValueKey(t.id), tool: t),
+                    ],
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+
+  String _summary(int n, int failed, Duration total) {
+    final base = '$n ${n == 1 ? 'tool' : 'tools'} · ${_fmt(total)}';
+    if (failed == 0) return base;
+    return '$base · $failed failed';
+  }
+
+  String _fmt(Duration d) {
+    final ms = d.inMilliseconds;
+    if (ms < 1000) return '${ms}ms';
+    final s = ms / 1000;
+    if (s < 10) return '${s.toStringAsFixed(1)}s';
+    if (s < 60) return '${s.toStringAsFixed(0)}s';
+    final m = (s / 60).floor();
+    return '${m}m${(s - m * 60).toStringAsFixed(0)}s';
+  }
 }
 
 class _CopyButton extends StatefulWidget {

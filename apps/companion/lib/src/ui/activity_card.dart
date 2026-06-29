@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
@@ -38,11 +40,35 @@ class LiveTurn extends StatelessWidget {
                 const SizedBox(height: 6),
                 if (turn.reasoning.isNotEmpty)
                   _ReasoningStrip(text: turn.reasoning.join('')),
-                for (final t in turn.tools) _ToolChip(tool: t),
-                if (turn.draft.isNotEmpty)
-                  MarkdownBody(data: turn.draft, styleSheet: talonMarkdownStyle())
-                else if (turn.typing)
-                  const _TypingDots(),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOut,
+                  alignment: Alignment.topLeft,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final t in turn.tools)
+                        ToolChip(key: ValueKey(t.id), tool: t),
+                    ],
+                  ),
+                ),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 140),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: turn.draft.isNotEmpty
+                      ? MarkdownBody(
+                          key: const ValueKey('draft'),
+                          data: turn.draft,
+                          styleSheet: talonMarkdownStyle())
+                      : turn.typing
+                          ? const Padding(
+                              key: ValueKey('typing'),
+                              padding: EdgeInsets.only(top: 2),
+                              child: _TypingDots(),
+                            )
+                          : const SizedBox.shrink(key: ValueKey('idle')),
+                ),
               ],
             ),
           ),
@@ -52,41 +78,107 @@ class LiveTurn extends StatelessWidget {
   }
 }
 
-class _ToolChip extends StatelessWidget {
+/// One row per tool call. Pulses while running, animates to a calm "done"
+/// state when finished, shows live elapsed time.
+class ToolChip extends StatefulWidget {
   final ToolActivity tool;
-  const _ToolChip({required this.tool});
+  const ToolChip({super.key, required this.tool});
+
+  @override
+  State<ToolChip> createState() => _ToolChipState();
+}
+
+class _ToolChipState extends State<ToolChip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1400),
+  )..repeat(reverse: true);
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (!mounted) return;
+      if (!widget.tool.done) setState(() {});
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ToolChip old) {
+    super.didUpdateWidget(old);
+    if (widget.tool.done && _pulse.isAnimating) _pulse.stop();
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _pulse.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final tool = widget.tool;
     final failed = tool.error != null;
     final color = failed
         ? TalonColors.bad
         : (tool.done ? TalonColors.ok : TalonColors.accent2);
+    final running = !tool.done && !failed;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          color: TalonColors.glassFill,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.30)),
-        ),
+      child: AnimatedBuilder(
+        animation: _pulse,
+        builder: (context, child) {
+          final glow = running
+              ? 0.18 + 0.18 * _pulse.value
+              : 0.0;
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: TalonColors.glassFill,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: color.withValues(alpha: running ? 0.55 : 0.30),
+              ),
+              boxShadow: running
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: glow),
+                        blurRadius: 14,
+                        spreadRadius: 0.5,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: child,
+          );
+        },
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
               width: 14,
               height: 14,
-              child: tool.done || failed
-                  ? Icon(
-                      failed ? Icons.error_outline : Icons.check_circle_outline,
-                      size: 14,
-                      color: color,
-                    )
-                  : CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(color),
-                    ),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                transitionBuilder: (c, a) =>
+                    ScaleTransition(scale: a, child: FadeTransition(opacity: a, child: c)),
+                child: running
+                    ? CircularProgressIndicator(
+                        key: const ValueKey('run'),
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation(color),
+                      )
+                    : Icon(
+                        failed ? Icons.error_outline : Icons.check_circle,
+                        key: ValueKey(failed ? 'err' : 'ok'),
+                        size: 14,
+                        color: color,
+                      ),
+              ),
             ),
             const SizedBox(width: 9),
             Text(
@@ -113,6 +205,15 @@ class _ToolChip extends StatelessWidget {
                 ),
               ),
             ],
+            const SizedBox(width: 10),
+            Text(
+              _fmt(tool.elapsed),
+              style: const TextStyle(
+                color: TalonColors.textFaint,
+                fontSize: 11.5,
+                fontFeatures: [FontFeature.tabularFigures()],
+              ),
+            ),
           ],
         ),
       ),
@@ -128,6 +229,16 @@ class _ToolChip extends StatelessWidget {
       }
     }
     return null;
+  }
+
+  String _fmt(Duration d) {
+    final ms = d.inMilliseconds;
+    if (ms < 1000) return '${ms}ms';
+    final s = ms / 1000;
+    if (s < 10) return '${s.toStringAsFixed(1)}s';
+    if (s < 60) return '${s.toStringAsFixed(0)}s';
+    final m = (s / 60).floor();
+    return '${m}m${(s - m * 60).toStringAsFixed(0)}s';
   }
 }
 
@@ -155,15 +266,20 @@ class _ReasoningStrip extends StatelessWidget {
                 size: 15, color: TalonColors.textFaint),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                text.trim(),
-                maxLines: 5,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: TalonColors.textDim,
-                  fontSize: 12.5,
-                  height: 1.45,
-                  fontStyle: FontStyle.italic,
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                alignment: Alignment.topLeft,
+                child: Text(
+                  text.trim(),
+                  maxLines: 5,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: TalonColors.textDim,
+                    fontSize: 12.5,
+                    height: 1.45,
+                    fontStyle: FontStyle.italic,
+                  ),
                 ),
               ),
             ),

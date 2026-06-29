@@ -5,6 +5,8 @@
 .pub/
 build/
 pubspec.lock
+.flutter-plugins
+.flutter-plugins-dependencies
 
 # Generated platform runners (regenerate with `flutter create .`)
 # Tracked lib/ + pubspec.yaml are the source of record; the per-OS
