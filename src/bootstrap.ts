@@ -38,7 +38,7 @@ import type { Backend } from "./core/agent-runtime/capabilities.js";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type Frontend = {
-  name: "telegram" | "terminal" | "teams" | "discord";
+  name: "telegram" | "terminal" | "teams" | "discord" | "desktop";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;

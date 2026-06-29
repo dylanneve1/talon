@@ -1,0 +1,32 @@
+name: talon_companion
+description: >
+  Talon Companion — a beautiful cross-platform client for the Talon agent.
+  One Flutter codebase for Windows, macOS, Linux, and Android. On desktop it
+  launches/attaches a local Talon daemon; on mobile it connects to a remote
+  bridge over the network.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  # Uses the Color.withValues / WidgetStateProperty APIs (Flutter 3.27+).
+  sdk: ">=3.6.0 <4.0.0"
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # REST + Server-Sent Events transport to the Talon bridge.
+  http: ^1.2.2
+  # Persist the connection profile (host/port/token, local vs remote).
+  shared_preferences: ^2.3.2
+  # Markdown rendering for assistant replies (code blocks, tables, lists).
+  flutter_markdown: ^0.7.4
+  # Open links from assistant messages / buttons in the OS browser.
+  url_launcher: ^6.3.0
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

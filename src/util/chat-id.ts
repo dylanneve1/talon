@@ -19,3 +19,18 @@ export function generateTerminalChatId(): string {
 export function isTerminalChatId(chatId: string): boolean {
   return chatId.startsWith("t_") || chatId === "1";
 }
+
+/**
+ * Generate a unique desktop chat ID. A short random suffix is appended so
+ * two chats created within the same millisecond don't collide (the desktop
+ * UI lets you spin up several conversations quickly).
+ */
+export function generateDesktopChatId(): string {
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `d_${Date.now()}_${rand}`;
+}
+
+/** Check if a chat ID belongs to a desktop session. */
+export function isDesktopChatId(chatId: string): boolean {
+  return chatId.startsWith("d_");
+}

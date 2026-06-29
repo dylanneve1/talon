@@ -65,6 +65,7 @@ const FRONTEND_TOOLS: Record<string, DeliveryToolNames> = {
   telegram: { endTurn: "end_turn", send: "send", react: "react" },
   discord: { endTurn: "end_turn", send: "send", react: "react" },
   teams: { endTurn: "end_turn", send: "send_message" },
+  desktop: { endTurn: "end_turn", send: "send_message", react: "react" },
 };
 
 const DEFAULT_TOOLS: DeliveryToolNames = {

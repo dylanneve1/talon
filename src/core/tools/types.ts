@@ -13,6 +13,7 @@ export type ToolFrontend =
   | "teams"
   | "terminal"
   | "discord"
+  | "desktop"
   | "all";
 
 /** Domain tags for runtime filtering and grouping. */
