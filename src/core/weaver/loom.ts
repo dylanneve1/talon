@@ -49,11 +49,23 @@ export class Loom {
   /**
    * Acquire the execution context for a turn. Keyed by the frontend's numeric
    * chat id alongside the string id used everywhere else — for every frontend
-   * `stringId ?? String(numericChatId)` equals the dispatcher's `chatId`, so
-   * this resolves to the very Thread the Weaver serializes the turn on. The
-   * numeric id is indexed so the gateway can answer numeric-keyed queries.
+   * `stringId ?? String(numericChatId)` equals the dispatcher's `chatId`, so a
+   * first acquisition resolves to the very Thread the Weaver serializes the
+   * turn on. The numeric id is indexed so the gateway can answer numeric-keyed
+   * queries.
+   *
+   * The numeric id is the refcount identity (matching the gateway's old
+   * `ChatContext`): a re-entrant acquire for a numeric that already holds a
+   * context refs that same Thread, even if a later call omits or changes the
+   * string id. In practice a chat's numeric↔string pairing is stable, so this
+   * only matters for the re-entrant refcount.
    */
   acquireContext(numericChatId: number, stringId?: string): Thread {
+    const active = this.byNumeric.get(numericChatId);
+    if (active) {
+      active.acquireContext(numericChatId);
+      return active;
+    }
     const key = stringId ?? String(numericChatId);
     const thread = this.thread(key);
     thread.acquireContext(numericChatId);

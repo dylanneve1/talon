@@ -234,6 +234,20 @@ describe("loom context registry", () => {
     loom.releaseContext("19:abc");
     expect(loom.hasActiveContext(99)).toBe(false);
   });
+
+  it("keeps the numeric id as the refcount identity across calls", () => {
+    const loom = new Loom();
+    // A re-entrant acquire for a numeric that already holds a context refs the
+    // same Thread even if the second call omits the string id.
+    const first = loom.acquireContext(7003, "teams-thread-xyz");
+    const second = loom.acquireContext(7003);
+    expect(second).toBe(first);
+
+    loom.releaseContext("teams-thread-xyz");
+    expect(loom.hasActiveContext(7003)).toBe(true); // refCount 1
+    loom.releaseContext(7003);
+    expect(loom.hasActiveContext(7003)).toBe(false); // refCount 0
+  });
 });
 
 describe("warp + snapshot", () => {
