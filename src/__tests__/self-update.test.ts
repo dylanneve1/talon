@@ -46,7 +46,7 @@ describe("runSelfUpdate", () => {
     expect(calls.some((c) => c[0] === "npm")).toBe(false);
   });
 
-  it("pulls, installs, runs setup, and reports change on fast-forward", async () => {
+  it("resets, installs, runs setup, and reports change on update", async () => {
     const calls: string[][] = [];
     const res = await runSelfUpdate({
       repoRoot: ROOT,
@@ -59,15 +59,10 @@ describe("runSelfUpdate", () => {
     expect(res.changed).toBe(true);
     expect(res.before).toBe("aaa111aaa111");
     expect(res.after).toBe("bbb222bbb222");
-    // Custom remote/branch threaded into fetch + pull.
+    // Custom remote/branch threaded into fetch + reset.
     expect(calls).toContainEqual(["git", "fetch", "upstream", "dev"]);
-    expect(calls).toContainEqual([
-      "git",
-      "pull",
-      "--ff-only",
-      "upstream",
-      "dev",
-    ]);
+    expect(calls).toContainEqual(["git", "reset", "--hard", "upstream/dev"]);
+    expect(calls).toContainEqual(["git", "clean", "-fd"]);
     expect(calls).toContainEqual(["npm", "install"]);
     expect(calls).toContainEqual(["sh", "-c", "npm run build"]);
   });
@@ -79,16 +74,10 @@ describe("runSelfUpdate", () => {
       runner: makeRunner({ headSeq: ["a1", "b2"], calls }),
     });
     expect(calls).toContainEqual(["git", "fetch", "origin", "main"]);
-    expect(calls).toContainEqual([
-      "git",
-      "pull",
-      "--ff-only",
-      "origin",
-      "main",
-    ]);
+    expect(calls).toContainEqual(["git", "reset", "--hard", "origin/main"]);
   });
 
-  it("stops before install when the pull fails", async () => {
+  it("stops before install when the reset fails", async () => {
     const calls: string[][] = [];
     const res = await runSelfUpdate({
       repoRoot: ROOT,
@@ -96,11 +85,11 @@ describe("runSelfUpdate", () => {
         headSeq: ["a1", "b2"],
         calls,
         fail: (cmd, args) =>
-          cmd === "git" && args[0] === "pull" ? "not a fast-forward" : null,
+          cmd === "git" && args[0] === "reset" ? "fatal: reset failed" : null,
       }),
     });
     expect(res.ok).toBe(false);
-    expect(res.error).toMatch(/ff-only/i);
+    expect(res.error).toMatch(/reset --hard/i);
     expect(calls.some((c) => c[0] === "npm")).toBe(false);
   });
 

@@ -8,11 +8,14 @@
  * source tree on disk, so {@link getRepoRoot} returns `null` and the
  * `/update` command is never registered.
  *
- * The pull is `--ff-only` on purpose: a fast-forward can never create
- * a merge commit or leave the tree in a conflicted half-merged state.
- * If the local checkout has diverged or is dirty, the pull fails
- * loudly and nothing is installed or restarted — far safer than
- * silently merging on a production host.
+ * The update force-syncs the checkout to the remote branch with
+ * `git reset --hard` (plus `git clean -fd`), discarding any local edits
+ * or diverged commits. A bot host is meant to mirror the remote exactly,
+ * so "become whatever upstream says" is the right model — and it means a
+ * stray local change (a touched lockfile, an experiment left in the tree)
+ * can never leave the deployment un-updatable, which is what the old
+ * `pull --ff-only` did (it aborts on any dirty/diverged tree). `.gitignore`
+ * is respected (no `-x`), so node_modules, secrets and local config survive.
  */
 
 import { execFile } from "node:child_process";
@@ -120,9 +123,10 @@ function shortSha(sha: string): string {
 }
 
 /**
- * Pull latest code, reinstall deps, run setup commands. Stops at the
- * first failing step and never restarts on its own — the caller
- * decides (typically: respawn only when `changed` is true).
+ * Force-sync the checkout to the remote branch (`git reset --hard` +
+ * `git clean -fd`), reinstall deps, run setup commands. Stops at the
+ * first failing step and never restarts on its own — the caller decides
+ * (typically: respawn only when `changed` is true).
  */
 export async function runSelfUpdate(
   opts: UpdateOptions = {},
@@ -164,7 +168,7 @@ export async function runSelfUpdate(
     error,
   });
 
-  // Snapshot current HEAD so we can tell whether the pull moved it.
+  // Snapshot current HEAD so we can tell whether the update moved it.
   const head = await record(
     "rev-parse HEAD",
     "git",
@@ -182,21 +186,32 @@ export async function runSelfUpdate(
   );
   if (!fetch.ok) return fail(`git fetch failed: ${fetch.output}`, before);
 
-  const pull = await record(
-    `pull --ff-only ${remote} ${branch}`,
+  // Force the checkout to exactly match the freshly-fetched remote
+  // branch, discarding ANY local edits or diverged commits. The old
+  // `pull --ff-only` aborted here whenever the tree was dirty, leaving the
+  // deployment stuck; a bot host is meant to mirror the remote, so resetting
+  // to it is both correct and reliable.
+  const reset = await record(
+    `reset --hard ${remote}/${branch}`,
     "git",
-    ["pull", "--ff-only", remote, branch],
+    ["reset", "--hard", `${remote}/${branch}`],
     GIT_TIMEOUT_MS,
   );
-  if (!pull.ok) {
+  if (!reset.ok) {
     return fail(
-      `git pull --ff-only failed (local checkout diverged or dirty?): ${pull.output}`,
+      `git reset --hard ${remote}/${branch} failed: ${reset.output}`,
       before,
     );
   }
 
+  // Drop untracked files too so the tree is pristine and a future update
+  // can't collide with a leftover untracked path. `.gitignore` is respected
+  // (no `-x`), so node_modules / secrets / local config are preserved.
+  // Best-effort: a clean failure must not abort an otherwise-good update.
+  await record("clean -fd", "git", ["clean", "-fd"], GIT_TIMEOUT_MS);
+
   const headAfter = await record(
-    "rev-parse HEAD (post-pull)",
+    "rev-parse HEAD (post-reset)",
     "git",
     ["rev-parse", "HEAD"],
     GIT_TIMEOUT_MS,
