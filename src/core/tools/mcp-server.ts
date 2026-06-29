@@ -42,6 +42,7 @@ const VALID_FRONTENDS = new Set<ToolFrontend>([
   "teams",
   "terminal",
   "discord",
+  "desktop",
 ]);
 const BRIDGE_URL = process.env.TALON_BRIDGE_URL || "http://127.0.0.1:19876";
 const CHAT_ID = process.env.TALON_CHAT_ID || "";

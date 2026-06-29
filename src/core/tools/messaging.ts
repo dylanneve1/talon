@@ -110,7 +110,7 @@ Notes:
       // src/backend/claude-sdk/options.ts:turnTerminatorHook.
       return throwIfFailed(result, "end_turn");
     },
-    frontends: ["telegram", "teams", "discord"],
+    frontends: ["telegram", "teams", "discord", "desktop"],
     tag: "messaging",
     endsTurn: true,
   },
@@ -332,7 +332,7 @@ Examples:
       text: z.string().describe("Message text. Supports Markdown."),
     },
     execute: (params, bridge) => bridge("send_message", params),
-    frontends: ["teams"],
+    frontends: ["teams", "desktop"],
     tag: "messaging",
   },
 
@@ -356,7 +356,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
         .describe("Button rows"),
     },
     execute: (params, bridge) => bridge("send_message_with_buttons", params),
-    frontends: ["teams"],
+    frontends: ["teams", "desktop"],
     tag: "messaging",
   },
 
@@ -412,7 +412,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
       const result = await bridge("react", rest);
       return throwIfFailed(result, "react");
     },
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "desktop"],
     tag: "messaging",
     endsTurn: true,
   },
@@ -423,7 +423,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Edit a previously sent message.",
     schema: { message_id: snowflakeOrIdSchema, text: z.string() },
     execute: (params, bridge) => bridge("edit_message", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "desktop"],
     tag: "messaging",
   },
 
@@ -433,7 +433,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Delete a message.",
     schema: { message_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("delete_message", params),
-    frontends: ["telegram", "discord"],
+    frontends: ["telegram", "discord", "desktop"],
     tag: "messaging",
   },
 

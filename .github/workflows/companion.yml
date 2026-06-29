@@ -1,0 +1,108 @@
+name: Companion Apps
+
+# Builds the Flutter companion for Windows, macOS, Linux, and Android.
+# On a published Release, the artifacts are attached to it. On PRs touching
+# the app (or manual dispatch) it just builds + uploads workflow artifacts so
+# the pipeline can be verified before a real release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/companion/**"
+      - ".github/workflows/companion.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: companion-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FLUTTER_VERSION: "3.32.0"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/companion
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            platform: windows
+            build: flutter build windows --release
+          - name: macOS
+            os: macos-latest
+            platform: macos
+            build: flutter build macos --release
+          - name: Linux
+            os: ubuntu-latest
+            platform: linux
+            build: flutter build linux --release
+          - name: Android
+            os: ubuntu-latest
+            platform: android
+            build: flutter build apk --release
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux desktop deps
+        if: matrix.platform == 'linux'
+        working-directory: .
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgtk-3-dev
+
+      - name: Set up Java
+        if: matrix.platform == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Regenerate platform scaffolding
+        run: flutter create --platforms=${{ matrix.platform }} --project-name=talon_companion .
+
+      - name: Build
+        run: ${{ matrix.build }}
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          DEST="$GITHUB_WORKSPACE/apps/companion/dist"
+          case "${{ matrix.platform }}" in
+            windows) ( cd build/windows/x64/runner/Release && 7z a "$DEST/talon-companion-windows.zip" ./* ) ;;
+            macos)   ( cd build/macos/Build/Products/Release && zip -r -y "$DEST/talon-companion-macos.zip" talon_companion.app ) ;;
+            linux)   ( cd build/linux/x64/release/bundle && tar czf "$DEST/talon-companion-linux.tar.gz" . ) ;;
+            android) cp build/app/outputs/flutter-apk/app-release.apk "$DEST/talon-companion-android.apk" ;;
+          esac
+          ls -la "$DEST"
+
+      - name: Upload workflow artifact
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: talon-companion-${{ matrix.platform }}
+          path: apps/companion/dist/*
+
+      - name: Attach to Release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/* --clobber

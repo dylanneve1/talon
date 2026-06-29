@@ -45,6 +45,7 @@ export type LogComponent =
   | "plugin"
   | "teams"
   | "discord"
+  | "desktop"
   | "config"
   | "access"
   | "github"

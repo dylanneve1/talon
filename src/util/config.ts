@@ -113,7 +113,42 @@ const pluginEntrySchema = z
   })
   .pipe(z.union([pluginPathSchema, pluginMcpSchema]));
 
-const frontendEnum = z.enum(["telegram", "terminal", "teams", "discord"]);
+const frontendEnum = z.enum([
+  "telegram",
+  "terminal",
+  "teams",
+  "discord",
+  "desktop",
+]);
+
+/**
+ * Desktop frontend — a client-agnostic bridge (HTTP + Server-Sent Events,
+ * JSON) that GUI clients connect to: the bundled Electron companion app
+ * (apps/desktop), and any future client (Android, web, …) speaking the
+ * same versioned protocol against `host:port`.
+ *
+ * Defaults are loopback-only and unauthenticated (single-machine use). To
+ * reach Talon remotely, set `host: "0.0.0.0"` and a `token` — the bridge
+ * then requires `Authorization: Bearer <token>` (or `?token=` for SSE).
+ */
+const desktopConfigSchema = z
+  .object({
+    /** Port the bridge binds. Falls back +1..+5 on EADDRINUSE. */
+    port: z.number().int().min(1024).max(65535).default(19880),
+    /**
+     * Interface to bind. `127.0.0.1` (default) is local-only; `0.0.0.0`
+     * exposes the bridge on the LAN for remote clients — only do this with
+     * a `token` set.
+     */
+    host: z.string().default("127.0.0.1"),
+    /**
+     * Optional shared secret. When set, every request must present it as a
+     * bearer token (header) or `?token=` query param (SSE). Required in
+     * practice whenever `host` is not loopback.
+     */
+    token: z.string().optional(),
+  })
+  .strict();
 
 const discordConfigSchema = z
   .object({
@@ -365,6 +400,9 @@ const configSchema = z.object({
   // Discord — discord.js v14-based frontend
   discord: discordConfigSchema.optional(),
 
+  // Desktop — local bridge for the Electron companion app (apps/desktop)
+  desktop: desktopConfigSchema.optional(),
+
   // Display name shown in terminal UI (defaults to "Talon")
   botDisplayName: z.string().default("Talon"),
 
@@ -454,6 +492,15 @@ function ensureConfigFile(): boolean {
 export function loadConfig(): TalonConfig {
   ensureConfigFile();
   const fileConfig = loadConfigFile();
+
+  // Runtime frontend override (TALON_FRONTEND_OVERRIDE). Lets the desktop
+  // companion app spawn a daemon on the `desktop` frontend without rewriting
+  // the user's saved config (which may target Telegram/Discord). Validated
+  // against the same enum, so a bogus value fails fast like any other.
+  const frontendOverride = process.env.TALON_FRONTEND_OVERRIDE?.trim();
+  if (frontendOverride) {
+    fileConfig.frontend = frontendOverride;
+  }
 
   const parsed = configSchema.parse(fileConfig);
 
