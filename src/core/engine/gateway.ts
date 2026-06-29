@@ -16,6 +16,7 @@ import {
 import pRetry, { AbortError } from "p-retry";
 import { classify } from "../errors.js";
 import { getActiveCount } from "./dispatcher.js";
+import { Loom, getActiveLoom } from "../weaver/index.js";
 import { getHealthStatus } from "../../util/watchdog.js";
 import { getActiveSessionCount } from "../../storage/sessions.js";
 import { log, logError, logDebug } from "../../util/log.js";
@@ -24,14 +25,6 @@ import { handlePluginAction } from "../plugin/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
-
-// ── Per-chat context state ───────────────────────────────────────────────────
-
-type ChatContext = {
-  refCount: number;
-  messagesSent: number;
-  stringId?: string;
-};
 
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
@@ -82,7 +75,18 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 // ── Gateway class ────────────────────────────────────────────────────────────
 
 export class Gateway {
-  private chatContexts = new Map<number, ChatContext>();
+  /**
+   * Per-chat live state is owned by the Weaver's Loom. The gateway holds no
+   * registry of its own — it delegates here. `getActiveLoom()` returns the
+   * Weaver's Loom once the dispatcher is wired; the standalone fallback covers
+   * unit tests and the brief startup window before init (when no turn — and so
+   * no context — can exist anyway).
+   */
+  private readonly ownLoom = new Loom();
+  private get loom(): Loom {
+    return getActiveLoom() ?? this.ownLoom;
+  }
+
   private frontendHandler: FrontendActionHandler | null = null;
   private server: ReturnType<typeof createServer> | null = null;
   private port = 0;
@@ -134,59 +138,32 @@ export class Gateway {
   // ── Per-chat context management ──────────────────────────────────────────
 
   setContext(chatId: number, stringId?: string): void {
-    const ctx = this.chatContexts.get(chatId);
-    if (ctx) {
-      ctx.refCount++;
-      log(
-        "gateway",
-        `Context ref++ for chat ${chatId} (refCount=${ctx.refCount})`,
-      );
-    } else {
-      this.chatContexts.set(chatId, { refCount: 1, messagesSent: 0, stringId });
-      log(
-        "gateway",
-        `Context acquired for chat ${chatId}${stringId ? ` (${stringId})` : ""}`,
-      );
-    }
+    this.loom.acquireContext(chatId, stringId);
   }
 
   /** Find a numeric chatId by its string ID (used for Teams-style non-numeric chat IDs). */
   private findContextByStringId(stringId: string): number | null {
     if (!stringId) return null;
-    for (const [numId, ctx] of this.chatContexts) {
-      if (ctx.stringId === stringId) return numId;
-    }
-    return null;
+    return this.loom.numericForStringId(stringId);
   }
 
   clearContext(chatId?: number | string): void {
     if (chatId === undefined) return;
-    const parsed = typeof chatId === "number" ? chatId : Number(chatId);
-    // For non-numeric IDs (e.g. Teams "19:abc..."), Number() returns NaN — look up by string
-    const numId = !isNaN(parsed)
-      ? parsed
-      : this.findContextByStringId(String(chatId));
-    if (numId === null) return;
-    const ctx = this.chatContexts.get(numId);
-    if (!ctx) return;
-    ctx.refCount = Math.max(0, ctx.refCount - 1);
-    if (ctx.refCount <= 0) {
-      this.chatContexts.delete(numId);
-      log("gateway", `Context released for chat ${numId}`);
-    }
+    // The Loom resolves numeric ids, numeric-looking strings, and Teams-style
+    // non-numeric ids (e.g. "19:abc...") to the right Thread itself.
+    this.loom.releaseContext(chatId);
   }
 
   isChatBusy(chatId: number): boolean {
-    return this.chatContexts.has(chatId);
+    return this.loom.hasActiveContext(chatId);
   }
 
   getMessageCount(chatId: number): number {
-    return this.chatContexts.get(chatId)?.messagesSent ?? 0;
+    return this.loom.messageCount(chatId);
   }
 
   incrementMessages(chatId: number): void {
-    const ctx = this.chatContexts.get(chatId);
-    if (ctx) ctx.messagesSent++;
+    this.loom.noteMessageSent(chatId);
   }
 
   getPort(): number {
@@ -194,7 +171,7 @@ export class Gateway {
   }
 
   getActiveChats(): number {
-    return this.chatContexts.size;
+    return this.loom.activeContextCount();
   }
 
   // ── Action dispatch ────────────────────────────────────────────────────────
@@ -227,7 +204,7 @@ export class Gateway {
     } else if (
       rawChatId !== "" &&
       !isNaN(numericId) &&
-      this.chatContexts.has(numericId)
+      this.loom.hasActiveContext(numericId)
     ) {
       // Chat-mode branch: ambient _chatId must match an active context.
       chatId = numericId;
@@ -310,7 +287,7 @@ export class Gateway {
               ok: w.healthy,
               uptime: Math.round(process.uptime()),
               memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-              bridge: { activeChats: this.chatContexts.size },
+              bridge: { activeChats: this.loom.activeContextCount() },
               queue: getActiveCount(),
               sessions: getActiveSessionCount(),
               messages: w.totalMessagesProcessed,

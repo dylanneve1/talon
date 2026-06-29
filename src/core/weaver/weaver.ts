@@ -253,3 +253,13 @@ export function getWeaver(): Weaver {
   if (!weaver) throw new Error("Weaver not initialized");
   return weaver;
 }
+
+/**
+ * The active Weaver's Loom, or `null` before the dispatcher is wired. The
+ * gateway delegates its per-chat context bookkeeping here so the Loom is the
+ * single registry; a standalone gateway (e.g. in unit tests, or during the
+ * pre-init startup window) falls back to its own Loom.
+ */
+export function getActiveLoom(): Loom | null {
+  return weaver?.loom ?? null;
+}
