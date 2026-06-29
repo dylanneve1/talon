@@ -33,7 +33,7 @@ import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
 import {
-  isDesktopChatId,
+  isNativeChatId,
   isDiscordChatId,
   isTelegramChatId,
   isTerminalChatId,
@@ -45,7 +45,7 @@ import type { Backend } from "./core/agent-runtime/capabilities.js";
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type Frontend = {
-  name: "telegram" | "terminal" | "teams" | "discord" | "desktop";
+  name: "telegram" | "terminal" | "teams" | "discord" | "native";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -72,8 +72,8 @@ function resolveFrontendName(
   if (chatId) {
     if (isTerminalChatId(chatId) && frontends.some((f) => f.name === "terminal"))
       return "terminal";
-    if (isDesktopChatId(chatId) && frontends.some((f) => f.name === "desktop"))
-      return "desktop";
+    if (isNativeChatId(chatId) && frontends.some((f) => f.name === "native"))
+      return "native";
     if (isTeamsChatId(chatId) && frontends.some((f) => f.name === "teams"))
       return "teams";
     if (isDiscordChatId(chatId) && frontends.some((f) => f.name === "discord"))

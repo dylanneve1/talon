@@ -26,7 +26,7 @@ import type { FrontendActionHandler } from "../types.js";
 import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
 import {
-  isDesktopChatId,
+  isNativeChatId,
   isDiscordChatId,
   isTelegramChatId,
   isTerminalChatId,
@@ -159,7 +159,7 @@ export class Gateway {
     const owned = this.chatFrontendOwners.get(chatId);
     if (owned) return owned;
     if (isTerminalChatId(rawChatId)) return "terminal";
-    if (isDesktopChatId(rawChatId)) return "desktop";
+    if (isNativeChatId(rawChatId)) return "native";
     if (isTeamsChatId(rawChatId)) return "teams";
     if (isDiscordChatId(rawChatId)) return "discord";
     if (isTelegramChatId(rawChatId)) return "telegram";

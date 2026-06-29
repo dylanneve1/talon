@@ -110,7 +110,7 @@ Notes:
       // src/backend/claude-sdk/options.ts:turnTerminatorHook.
       return throwIfFailed(result, "end_turn");
     },
-    frontends: ["telegram", "teams", "discord", "desktop"],
+    frontends: ["telegram", "teams", "discord", "native"],
     tag: "messaging",
     endsTurn: true,
   },
@@ -320,10 +320,10 @@ Examples:
     tag: "messaging",
   },
 
-  // ── Teams send_message ────────────────────────────────────────────────
+  // ── Native send_message ────────────────────────────────────────────────
   {
     name: "send_message",
-    description: `Send a message to the Teams chat. Supports Markdown formatting.
+    description: `Send a message to the native chat bridge. Supports Markdown formatting.
 
 Examples:
   send_message(text="Hello!")
@@ -332,14 +332,14 @@ Examples:
       text: z.string().describe("Message text. Supports Markdown."),
     },
     execute: (params, bridge) => bridge("send_message", params),
-    frontends: ["teams", "desktop"],
+    frontends: ["teams", "native"],
     tag: "messaging",
   },
 
-  // ── Teams send_message_with_buttons ───────────────────────────────────
+  // ── Native send_message_with_buttons ──────────────────────────────────
   {
     name: "send_message_with_buttons",
-    description: `Send a message with clickable link buttons. Buttons appear below the message as Adaptive Card actions.
+    description: `Send a message with clickable link buttons. Buttons appear below the message in the native client.
 
 Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"https://..."}]])`,
     schema: {
@@ -356,7 +356,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
         .describe("Button rows"),
     },
     execute: (params, bridge) => bridge("send_message_with_buttons", params),
-    frontends: ["teams", "desktop"],
+    frontends: ["teams", "native"],
     tag: "messaging",
   },
 
@@ -412,7 +412,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
       const result = await bridge("react", rest);
       return throwIfFailed(result, "react");
     },
-    frontends: ["telegram", "discord", "desktop"],
+    frontends: ["telegram", "discord", "native"],
     tag: "messaging",
     endsTurn: true,
   },
@@ -423,7 +423,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Edit a previously sent message.",
     schema: { message_id: snowflakeOrIdSchema, text: z.string() },
     execute: (params, bridge) => bridge("edit_message", params),
-    frontends: ["telegram", "discord", "desktop"],
+    frontends: ["telegram", "discord", "native"],
     tag: "messaging",
   },
 
@@ -433,7 +433,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     description: "Delete a message.",
     schema: { message_id: snowflakeOrIdSchema },
     execute: (params, bridge) => bridge("delete_message", params),
-    frontends: ["telegram", "discord", "desktop"],
+    frontends: ["telegram", "discord", "native"],
     tag: "messaging",
   },
 

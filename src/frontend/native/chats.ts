@@ -1,5 +1,5 @@
 /**
- * Desktop chat registry — the set of conversations the bridge exposes.
+ * Native chat registry — the set of conversations the bridge exposes.
  *
  * Each chat maps a string id (`d_…`) to the stable 32-bit numeric id the
  * engine routes on. Chats with a persisted session survive a daemon restart
@@ -8,9 +8,9 @@
  */
 
 import {
-  generateDesktopChatId,
+  generateNativeChatId,
   deriveNumericChatId,
-  isDesktopChatId,
+  isNativeChatId,
 } from "../../util/chat-id.js";
 import {
   getAllSessions,
@@ -33,7 +33,7 @@ function defaultTitle(): string {
   return "New chat";
 }
 
-export class DesktopChats {
+export class NativeChats {
   private byId = new Map<string, ChatEntry>();
   private byNum = new Map<number, ChatEntry>();
 
@@ -43,7 +43,7 @@ export class DesktopChats {
    */
   restore(): void {
     for (const { chatId, info } of getAllSessions()) {
-      if (!isDesktopChatId(chatId)) continue;
+      if (!isNativeChatId(chatId)) continue;
       const recent = getRecentHistory(chatId, 1);
       const entry: ChatEntry = {
         id: chatId,
@@ -58,7 +58,7 @@ export class DesktopChats {
   }
 
   create(title?: string): ChatEntry {
-    const id = generateDesktopChatId();
+    const id = generateNativeChatId();
     const trimmed = title?.trim();
     const entry: ChatEntry = {
       id,

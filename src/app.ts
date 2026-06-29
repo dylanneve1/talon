@@ -75,10 +75,11 @@ async function createFrontend(name: Frontend["name"]): Promise<Frontend> {
         await import("./frontend/discord/index.js");
       return createDiscordFrontend(config, gateway);
     }
-    case "desktop": {
-      const { createDesktopFrontend } =
-        await import("./frontend/desktop/index.js");
-      return createDesktopFrontend(config, gateway);
+    case "native": {
+      const { createNativeFrontend } = await import(
+        "./frontend/native/index.js"
+      );
+      return createNativeFrontend(config, gateway);
     }
     case "telegram":
     default: {

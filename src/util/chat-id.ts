@@ -21,17 +21,17 @@ export function isTerminalChatId(chatId: string): boolean {
 }
 
 /**
- * Generate a unique desktop chat ID. A short random suffix is appended so
- * two chats created within the same millisecond don't collide (the desktop
+ * Generate a unique native chat ID. A short random suffix is appended so
+ * two chats created within the same millisecond don't collide (the native
  * UI lets you spin up several conversations quickly).
  */
-export function generateDesktopChatId(): string {
+export function generateNativeChatId(): string {
   const rand = Math.random().toString(36).slice(2, 8);
   return `d_${Date.now()}_${rand}`;
 }
 
-/** Check if a chat ID belongs to a desktop session. */
-export function isDesktopChatId(chatId: string): boolean {
+/** Check if a chat ID belongs to a native session. */
+export function isNativeChatId(chatId: string): boolean {
   return chatId.startsWith("d_");
 }
 

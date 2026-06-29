@@ -92,7 +92,7 @@ export class BridgeServer {
     if (this.server) return this.port;
     const server = createServer((req, res) => {
       this.handle(req, res).catch((err) => {
-        logError("desktop", "Bridge request handler threw", err);
+        logError("native", "Bridge request handler threw", err);
         if (!res.headersSent) {
           res.writeHead(500, this.jsonHeaders());
           res.end(JSON.stringify({ ok: false, error: "Internal error" }));
@@ -133,10 +133,10 @@ export class BridgeServer {
               : p;
           server.removeAllListeners("error");
           server.on("error", (err) =>
-            logError("desktop", "Bridge server error", err),
+            logError("native", "Bridge server error", err),
           );
           log(
-            "desktop",
+            "native",
             `Bridge listening on ${this.opts.host}:${this.port}` +
               (this.opts.token ? " (token required)" : ""),
           );
@@ -327,10 +327,10 @@ export class BridgeServer {
       })}\n\n`,
     );
     this.clients.add(res);
-    logDebug("desktop", `SSE client connected (${this.clients.size} total)`);
+    logDebug("native", `SSE client connected (${this.clients.size} total)`);
     res.on("close", () => {
       this.clients.delete(res);
-      logDebug("desktop", `SSE client left (${this.clients.size} total)`);
+      logDebug("native", `SSE client left (${this.clients.size} total)`);
     });
   }
 

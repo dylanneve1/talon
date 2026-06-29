@@ -1,5 +1,5 @@
 /**
- * Desktop action handler — the gateway-side bridge for the agent's delivery
+ * Native action handler — the gateway-side bridge for the agent's delivery
  * tools. When the model calls `end_turn` / `send_message` / `react` / edit /
  * delete, the MCP tool POSTs an action to the gateway, which routes it here
  * by the active chat's numeric id. We translate each action into a Bridge
@@ -10,11 +10,11 @@
 
 import type { FrontendActionHandler, ActionResult } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
-import type { DesktopChats, ChatEntry } from "./chats.js";
+import type { NativeChats, ChatEntry } from "./chats.js";
 import type { BridgeEvent, ClientButton } from "./protocol.js";
 
-export type DesktopActionDeps = {
-  chats: DesktopChats;
+export type NativeActionDeps = {
+  chats: NativeChats;
   gateway: Gateway;
   /** Persist + broadcast an assistant message; returns its numeric id. */
   emitAssistant: (
@@ -50,15 +50,15 @@ function toButtons(rows: unknown): ClientButton[][] | undefined {
   return mapped.length ? mapped : undefined;
 }
 
-export function createDesktopActionHandler(
-  deps: DesktopActionDeps,
+export function createNativeActionHandler(
+  deps: NativeActionDeps,
 ): FrontendActionHandler {
   const { chats, gateway, emitAssistant, broadcast } = deps;
 
   return async (body, chatId): Promise<ActionResult | null> => {
     const action = typeof body.action === "string" ? body.action : "";
     const entry = chats.byNumeric(chatId);
-    if (!entry) return { ok: false, error: "No active desktop chat" };
+    if (!entry) return { ok: false, error: "No active native chat" };
 
     switch (action) {
       case "send_message": {

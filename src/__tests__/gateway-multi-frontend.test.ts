@@ -44,16 +44,16 @@ const telegramHandler: FrontendActionHandler = async () => ({
   text: "telegram",
 });
 
-const desktopHandler: FrontendActionHandler = async () => ({
+const nativeHandler: FrontendActionHandler = async () => ({
   ok: true,
   message_id: 202,
-  text: "desktop",
+  text: "native",
 });
 
 beforeAll(async () => {
   gateway = new Gateway();
   gateway.registerFrontendHandler("telegram", telegramHandler);
-  gateway.registerFrontendHandler("desktop", desktopHandler);
+  gateway.registerFrontendHandler("native", nativeHandler);
   port = await gateway.start(0);
 });
 
@@ -64,7 +64,7 @@ afterAll(async () => {
 describe("gateway multi-frontend registry", () => {
   it("routes each chat to its owning frontend handler", async () => {
     gateway.setContext(111, "111", "telegram");
-    gateway.setContext(222, "d_222", "desktop");
+    gateway.setContext(222, "d_222", "native");
 
     const telegramResp = await fetch(`http://127.0.0.1:${port}/action`, {
       method: "POST",
@@ -75,21 +75,21 @@ describe("gateway multi-frontend registry", () => {
         text: "hello telegram",
       }),
     });
-    const desktopResp = await fetch(`http://127.0.0.1:${port}/action`, {
+    const nativeResp = await fetch(`http://127.0.0.1:${port}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         action: "send_message",
         _chatId: "222",
-        text: "hello desktop",
+        text: "hello native",
       }),
     });
 
     const telegramBody = (await telegramResp.json()) as Record<string, unknown>;
-    const desktopBody = (await desktopResp.json()) as Record<string, unknown>;
+    const nativeBody = (await nativeResp.json()) as Record<string, unknown>;
 
     expect(telegramBody.message_id).toBe(101);
-    expect(desktopBody.message_id).toBe(202);
+    expect(nativeBody.message_id).toBe(202);
 
     gateway.clearContext(111);
     gateway.clearContext(222);

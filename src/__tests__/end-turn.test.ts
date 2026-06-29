@@ -271,7 +271,7 @@ describe("end_turn tool definition", () => {
       "telegram",
       "teams",
       "discord",
-      "desktop",
+      "native",
     ]);
   });
 

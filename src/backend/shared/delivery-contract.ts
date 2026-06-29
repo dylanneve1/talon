@@ -6,7 +6,8 @@
  * and openai-agents enforce strict tool-only delivery; codex / kilo /
  * opencode accept plain assistant text), while the delivery TOOL NAMES
  * are a property of the FRONTEND (telegram/discord ship `end_turn` /
- * `send` / `react`; teams ships `end_turn` / `send_message`). Before
+ * `send` / `react`; native ships `end_turn` / `send_message` /
+ * `react`; teams ships `end_turn` / `send_message`). Before
  * this module, the strict contract was hardcoded into the frontend
  * prompt files (prompts/telegram.md etc.) — buried mid-prompt where
  * models routinely missed it on the first turn of a session, and
@@ -65,7 +66,7 @@ const FRONTEND_TOOLS: Record<string, DeliveryToolNames> = {
   telegram: { endTurn: "end_turn", send: "send", react: "react" },
   discord: { endTurn: "end_turn", send: "send", react: "react" },
   teams: { endTurn: "end_turn", send: "send_message" },
-  desktop: { endTurn: "end_turn", send: "send_message", react: "react" },
+  native: { endTurn: "end_turn", send: "send_message", react: "react" },
 };
 
 const DEFAULT_TOOLS: DeliveryToolNames = {

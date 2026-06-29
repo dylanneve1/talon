@@ -176,7 +176,7 @@ export function applyConfigUpdate(
 
   if (Object.keys(persist).length > 0) {
     persistToFile(persist);
-    log("desktop", `Config updated: ${Object.keys(persist).join(", ")}`);
+    log("native", `Config updated: ${Object.keys(persist).join(", ")}`);
   }
 
   return configSnapshot(config);
