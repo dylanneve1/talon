@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.21.1](https://github.com/dylanneve1/talon/compare/v1.21.0...v1.21.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **update:** /update force-syncs to remote instead of failing on a dirty tree ([#386](https://github.com/dylanneve1/talon/issues/386)) ([d7a4757](https://github.com/dylanneve1/talon/commit/d7a4757f74c3d8a987d3af614985859fbd2716e8))
+
 ## [1.21.0](https://github.com/dylanneve1/talon/compare/v1.20.0...v1.21.0) (2026-06-28)
 
 
