@@ -51,7 +51,7 @@ jobs:
         run: flutter test --coverage
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: companion-coverage
           path: apps/companion/coverage/lcov.info
@@ -126,7 +126,7 @@ jobs:
 
       - name: Upload workflow artifact
         if: github.event_name != 'release'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: talon-companion-${{ matrix.platform }}
           path: apps/companion/dist/*
