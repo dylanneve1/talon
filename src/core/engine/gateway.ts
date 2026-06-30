@@ -155,7 +155,10 @@ export class Gateway {
     this.frontendHandlers.set(name, handler);
   }
 
-  private resolveOwnedFrontendName(rawChatId: string, chatId: number): string | null {
+  private resolveOwnedFrontendName(
+    rawChatId: string,
+    chatId: number,
+  ): string | null {
     const owned = this.chatFrontendOwners.get(chatId);
     if (owned) return owned;
     if (isTerminalChatId(rawChatId)) return "terminal";
@@ -184,11 +187,7 @@ export class Gateway {
 
   // ── Per-chat context management ──────────────────────────────────────────
 
-  setContext(
-    chatId: number,
-    stringId?: string,
-    frontendName?: string,
-  ): void {
+  setContext(chatId: number, stringId?: string, frontendName?: string): void {
     this.loom.acquireContext(chatId, stringId);
     if (frontendName) this.chatFrontendOwners.set(chatId, frontendName);
     else if (stringId !== undefined && !this.chatFrontendOwners.has(chatId)) {

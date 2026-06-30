@@ -116,19 +116,19 @@ export class Weaver {
           `onEvent(no-model) threw: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
-        return {
-          text: message,
-          durationMs: 0,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheRead: 0,
-          cacheWrite: 0,
-          bridgeMessageCount: context.getMessageCount(
-            params.numericChatId,
-            params.chatId,
-          ),
-        };
-      }
+      return {
+        text: message,
+        durationMs: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        bridgeMessageCount: context.getMessageCount(
+          params.numericChatId,
+          params.chatId,
+        ),
+      };
+    }
 
     // Per-run model override (triggers/cron). Resolve against the chat's
     // backend; on success swap the ref for this turn only, on failure fall
@@ -190,19 +190,23 @@ export class Weaver {
 
     let typingTimer: ReturnType<typeof setInterval> | undefined;
     try {
-      await sendTyping(params.numericChatId, params.chatId).catch((err: unknown) => {
-        logWarn(
-          "dispatcher",
-          `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
-      typingTimer = setInterval(() => {
-        sendTyping(params.numericChatId, params.chatId).catch((err: unknown) => {
+      await sendTyping(params.numericChatId, params.chatId).catch(
+        (err: unknown) => {
           logWarn(
             "dispatcher",
-            `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`,
+            `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`,
           );
-        });
+        },
+      );
+      typingTimer = setInterval(() => {
+        sendTyping(params.numericChatId, params.chatId).catch(
+          (err: unknown) => {
+            logWarn(
+              "dispatcher",
+              `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          },
+        );
       }, 4000);
 
       // Consume the backend's native `AgentEvent` stream and forward

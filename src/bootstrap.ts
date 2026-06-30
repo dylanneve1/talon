@@ -70,7 +70,10 @@ function resolveFrontendName(
 ): Frontend["name"] {
   if (frontends.length === 1) return frontends[0].name;
   if (chatId) {
-    if (isTerminalChatId(chatId) && frontends.some((f) => f.name === "terminal"))
+    if (
+      isTerminalChatId(chatId) &&
+      frontends.some((f) => f.name === "terminal")
+    )
       return "terminal";
     if (isNativeChatId(chatId) && frontends.some((f) => f.name === "native"))
       return "native";
@@ -78,7 +81,10 @@ function resolveFrontendName(
       return "teams";
     if (isDiscordChatId(chatId) && frontends.some((f) => f.name === "discord"))
       return "discord";
-    if (isTelegramChatId(chatId) && frontends.some((f) => f.name === "telegram"))
+    if (
+      isTelegramChatId(chatId) &&
+      frontends.some((f) => f.name === "telegram")
+    )
       return "telegram";
   }
   const firstNonTerminal = frontends.find((f) => f.name !== "terminal");
@@ -226,10 +232,11 @@ export async function initBackendAndDispatcher(
       );
     },
     getMessageCount(chatId: number, stringId?: string): number {
-      return resolveFrontendByNumericId(chatId, stringId, frontends).context.getMessageCount(
+      return resolveFrontendByNumericId(
         chatId,
         stringId,
-      );
+        frontends,
+      ).context.getMessageCount(chatId, stringId);
     },
   };
 
@@ -355,7 +362,9 @@ export async function initBackendAndDispatcher(
     },
     context,
     sendTyping: async (chatId: number, stringId?: string) =>
-      resolveFrontendByNumericId(chatId, stringId, frontends).sendTyping(chatId),
+      resolveFrontendByNumericId(chatId, stringId, frontends).sendTyping(
+        chatId,
+      ),
     onActivity: () => resetPulseTimer(),
   });
 

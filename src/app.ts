@@ -76,9 +76,8 @@ async function createFrontend(name: Frontend["name"]): Promise<Frontend> {
       return createDiscordFrontend(config, gateway);
     }
     case "native": {
-      const { createNativeFrontend } = await import(
-        "./frontend/native/index.js"
-      );
+      const { createNativeFrontend } =
+        await import("./frontend/native/index.js");
       return createNativeFrontend(config, gateway);
     }
     case "telegram":
@@ -222,9 +221,11 @@ async function main(): Promise<void> {
   }
   await Promise.all(blockingFrontends.map((frontend) => frontend.start()));
   for (const frontend of terminalFrontends) {
-    void frontend.start().catch((err) =>
-      logError("bot", `Terminal frontend start failed: ${String(err)}`),
-    );
+    void frontend
+      .start()
+      .catch((err) =>
+        logError("bot", `Terminal frontend start failed: ${String(err)}`),
+      );
   }
 
   // Replay any runs that came due while Talon was down (per-job catch-up

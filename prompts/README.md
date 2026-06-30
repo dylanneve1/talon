@@ -14,7 +14,7 @@ placed after the cache boundary):
 | --- | --------------------- | ---------------------------------------------------------------------- | ------------- |
 | 1   | Identity              | `identity.md` + `~/.talon/workspace/identity.md`                       | static        |
 | 2   | Core behaviour        | `custom.md` (replaces `base.md` when present)                          | static        |
-| 3   | Frontend capabilities | `<frontend>.md` (telegram / discord / teams / terminal / native)      | static        |
+| 3   | Frontend capabilities | `<frontend>.md` (telegram / discord / teams / terminal / native)       | static        |
 | 4   | Persistent memory     | `system/persistent-memory.md` wrapping `memory/memory.md`, size-capped | static        |
 | 5   | Capability docs       | `system/workspace.md`, `system/cron.md`, `system/triggers.md`          | static        |
 | 6   | Plugin additions      | each plugin's `systemPrompt()` contribution                            | static        |
