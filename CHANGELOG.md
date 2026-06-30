@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.1](https://github.com/dylanneve1/talon/compare/v1.24.0...v1.24.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* **companion:** Windows build, source-build auto-start, UI fixes + npuw plugin ([#397](https://github.com/dylanneve1/talon/issues/397)) ([1977720](https://github.com/dylanneve1/talon/commit/1977720f60d560f28ee5919e628802a637038714))
+
 ## [1.24.0](https://github.com/dylanneve1/talon/compare/v1.23.0...v1.24.0) (2026-06-30)
 
 
