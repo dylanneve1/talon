@@ -220,6 +220,7 @@ export function runSupervisor(argvTail: string[]): Promise<never> {
   const child = spawn(cmd, args, {
     stdio: ["pipe", "pipe", "pipe"],
     env: process.env,
+    shell: process.platform === "win32",
   });
 
   // Any pipe end-point can throw EPIPE if the other side closes mid-write.
