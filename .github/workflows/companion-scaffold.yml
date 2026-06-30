@@ -69,7 +69,7 @@ jobs:
         run: |
           git config user.name "claudiusthebot"
           git config user.email "claudiusthebot@gmail.com"
-          git add -A apps/companion
+          git add -A .
           if git diff --cached --quiet; then
             echo "No changes to commit"
             exit 0
