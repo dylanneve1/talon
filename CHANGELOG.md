@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.0](https://github.com/dylanneve1/talon/compare/v1.22.0...v1.23.0) (2026-06-30)
+
+
+### Features
+
+* **companion:** harden bridge pairing, add functional tests + CI + instrumentation ([#394](https://github.com/dylanneve1/talon/issues/394)) ([cd07a26](https://github.com/dylanneve1/talon/commit/cd07a2685be0a5307758b19a11bd100739d8495d))
+
 ## [1.22.0](https://github.com/dylanneve1/talon/compare/v1.21.1...v1.22.0) (2026-06-29)
 
 
