@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.4](https://github.com/dylanneve1/talon/compare/v1.24.3...v1.24.4) (2026-06-30)
+
+
+### Bug Fixes
+
+* **companion:** missing INTERNET permission broke Android release builds ([#411](https://github.com/dylanneve1/talon/issues/411)) ([1b6df67](https://github.com/dylanneve1/talon/commit/1b6df67ba6b1ad2d6176915a1d9f901e5a323848))
+
 ## [1.24.3](https://github.com/dylanneve1/talon/compare/v1.24.2...v1.24.3) (2026-06-30)
 
 
