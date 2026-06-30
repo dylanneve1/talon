@@ -30,6 +30,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
   late final TextEditingController _token;
   late final TextEditingController _launch;
   bool _manage = true;
+  bool _tls = false;
 
   bool get _isDesktop {
     try {
@@ -45,6 +46,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     final c = widget.state.config;
     _remote = !c.isLoopback || !_isDesktop;
     _manage = c.manageLocalDaemon;
+    _tls = c.tls;
     _host = TextEditingController(text: c.isLoopback ? '' : c.host);
     _port = TextEditingController(text: c.port.toString());
     _token = TextEditingController(text: c.token ?? '');
@@ -61,14 +63,37 @@ class _ConnectScreenState extends State<ConnectScreen> {
   }
 
   Future<void> _connect() async {
-    final port = int.tryParse(_port.text.trim()) ?? 19880;
+    var port = int.tryParse(_port.text.trim()) ?? 19880;
     final token = _token.text.trim();
+
+    // Normalize whatever the user typed into the host box: strip a scheme,
+    // path, or stray whitespace, and pull out an embedded `:port` or TLS hint.
+    // This is what lets a reachable endpoint actually connect even when the
+    // value was pasted as a full URL like https://host:19880/.
+    var host = _remote ? _host.text.trim() : '127.0.0.1';
+    var tls = _remote && _tls;
+    if (_remote) {
+      final parsed = ConnectionConfig.parseHostInput(_host.text);
+      host = parsed.host;
+      if (parsed.port != null) {
+        port = parsed.port!;
+        _port.text = port.toString();
+      }
+      if (parsed.tls != null) {
+        tls = parsed.tls!;
+        if (_tls != tls) setState(() => _tls = tls);
+      }
+      if (host != _host.text.trim()) _host.text = host;
+    }
+
     final config = ConnectionConfig(
-      host: _remote ? _host.text.trim() : '127.0.0.1',
+      host: host,
       port: port,
       token: token.isEmpty ? null : token,
+      tls: tls,
       manageLocalDaemon: !_remote && _isDesktop && _manage,
-      launchCommand: _launch.text.trim().isEmpty ? 'talon' : _launch.text.trim(),
+      launchCommand:
+          _launch.text.trim().isEmpty ? 'talon' : _launch.text.trim(),
     );
     await widget.state.prefs.setOnboarded(true);
     await widget.state.applyConfig(config);
@@ -122,8 +147,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
                   const SizedBox(height: 14),
                   Text(
                     widget.state.connError!,
-                    style: const TextStyle(
-                        color: TalonColors.bad, fontSize: 12.5),
+                    style:
+                        const TextStyle(color: TalonColors.bad, fontSize: 12.5),
                   ),
                 ],
               ],
@@ -225,7 +250,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
           contentPadding: EdgeInsets.zero,
           value: _manage,
           onChanged: (v) => setState(() => _manage = v),
-          activeColor: TalonColors.accent,
+          activeThumbColor: TalonColors.accent,
           title: const Text('Launch Talon automatically',
               style: TextStyle(fontSize: 14)),
           subtitle: const Text('Start the daemon if it isn\'t already running',
@@ -233,8 +258,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
         ),
         if (_manage) ...[
           const SizedBox(height: 6),
-          _field(_launch, 'Launch command', hint: 'talon',
-              mono: true),
+          _field(_launch, 'Launch command', hint: 'talon', mono: true),
         ],
         const SizedBox(height: 12),
         _field(_port, 'Port', hint: '19880', number: true),
@@ -251,6 +275,18 @@ class _ConnectScreenState extends State<ConnectScreen> {
         _field(_port, 'Port', hint: '19880', number: true),
         const SizedBox(height: 12),
         _field(_token, 'Token', hint: 'shared secret', obscure: true),
+        const SizedBox(height: 6),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          value: _tls,
+          onChanged: (v) => setState(() => _tls = v),
+          activeThumbColor: TalonColors.accent,
+          title: const Text('Use HTTPS / TLS', style: TextStyle(fontSize: 14)),
+          subtitle: const Text(
+              'Turn on if the bridge is behind a TLS reverse proxy (Caddy, '
+              'nginx, Tailscale Serve). Auto-detected from an https:// host.',
+              style: TextStyle(fontSize: 12, color: TalonColors.textFaint)),
+        ),
       ];
 
   Widget _field(
@@ -266,7 +302,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
       children: [
         Text(label,
             style: const TextStyle(
-                fontSize: 12, color: TalonColors.textDim, fontWeight: FontWeight.w600)),
+                fontSize: 12,
+                color: TalonColors.textDim,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 6),
         TextField(
           controller: c,
@@ -274,9 +312,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
           keyboardType: number ? TextInputType.number : null,
           inputFormatters:
               number ? [FilteringTextInputFormatter.digitsOnly] : null,
-          style: TextStyle(
-              fontSize: 14,
-              fontFamily: mono ? 'monospace' : null),
+          style: TextStyle(fontSize: 14, fontFamily: mono ? 'monospace' : null),
           decoration: InputDecoration(
             hintText: hint,
             filled: true,

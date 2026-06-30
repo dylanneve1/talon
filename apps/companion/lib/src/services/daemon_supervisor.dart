@@ -21,6 +21,7 @@ class DaemonState {
 /// without their saved config being rewritten.
 class DaemonSupervisor {
   final ConnectionConfig config;
+  // ignore: unused_field
   Process? _process;
 
   DaemonSupervisor(this.config);
@@ -92,7 +93,10 @@ class DaemonSupervisor {
   /// changes that need a fresh boot take effect.
   Future<({bool ok, String? detail})> restart() async {
     if (!config.canManageDaemon) {
-      return (ok: false, detail: 'Restart is only available for a local daemon');
+      return (
+        ok: false,
+        detail: 'Restart is only available for a local daemon'
+      );
     }
     try {
       await Process.start(

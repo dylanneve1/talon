@@ -20,6 +20,24 @@ Role _roleFrom(String? s) {
   }
 }
 
+String _string(Object? value, [String fallback = '']) =>
+    value is String ? value : value?.toString() ?? fallback;
+
+int _int(Object? value, [int fallback = 0]) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? fallback;
+  return fallback;
+}
+
+bool _bool(Object? value, [bool fallback = false]) =>
+    value is bool ? value : fallback;
+
+List<dynamic> _list(Object? value) => value is List ? value : const <dynamic>[];
+
+Map<String, dynamic> _map(Object? value) =>
+    value is Map ? value.cast<String, dynamic>() : const {};
+
 class ClientButton {
   final String text;
   final String? url;
@@ -27,10 +45,10 @@ class ClientButton {
   const ClientButton({required this.text, this.url, this.data});
 
   factory ClientButton.fromJson(Map<String, dynamic> j) => ClientButton(
-        text: (j['text'] ?? '') as String,
-        url: j['url'] as String?,
-        data: j['data'] as String?,
-      );
+    text: _string(j['text']),
+    url: j['url'] is String ? j['url'] as String : null,
+    data: j['data'] is String ? j['data'] as String : null,
+  );
 }
 
 class ClientMessage {
@@ -60,24 +78,24 @@ class ClientMessage {
     List<String>? reactions,
     List<ToolActivity>? tools,
     this.streaming = false,
-  })  : reactions = reactions ?? <String>[],
-        tools = tools ?? <ToolActivity>[];
+  }) : reactions = reactions ?? <String>[],
+       tools = tools ?? <ToolActivity>[];
 
   factory ClientMessage.fromJson(Map<String, dynamic> j) {
-    final rawButtons = (j['buttons'] as List?) ?? const [];
+    final rawButtons = _list(j['buttons']);
     return ClientMessage(
-      id: j['id'].toString(),
-      chatId: (j['chatId'] ?? '') as String,
-      role: _roleFrom(j['role'] as String?),
-      text: (j['text'] ?? '') as String,
-      ts: (j['ts'] ?? 0) as int,
+      id: _string(j['id']),
+      chatId: _string(j['chatId']),
+      role: _roleFrom(j['role'] is String ? j['role'] as String : null),
+      text: _string(j['text']),
+      ts: _int(j['ts']),
       buttons: rawButtons
-          .map<List<ClientButton>>((row) => ((row as List?) ?? const [])
-              .map((c) => ClientButton.fromJson((c as Map).cast<String, dynamic>()))
-              .toList())
+          .map<List<ClientButton>>(
+            (row) =>
+                _list(row).map((c) => ClientButton.fromJson(_map(c))).toList(),
+          )
           .toList(),
-      reactions:
-          ((j['reactions'] as List?) ?? const []).map((e) => e.toString()).toList(),
+      reactions: _list(j['reactions']).map((e) => e.toString()).toList(),
     );
   }
 
@@ -106,15 +124,15 @@ class ClientChat {
   });
 
   factory ClientChat.fromJson(Map<String, dynamic> j) => ClientChat(
-        id: (j['id'] ?? '') as String,
-        title: (j['title'] ?? 'New chat') as String,
-        createdAt: (j['createdAt'] ?? 0) as int,
-        lastActive: (j['lastActive'] ?? 0) as int,
-        preview: (j['preview'] ?? '') as String,
-        model: j['model'] as String?,
-        effort: j['effort'] as String?,
-        pulse: j['pulse'] as bool?,
-      );
+    id: _string(j['id']),
+    title: _string(j['title'], 'New chat'),
+    createdAt: _int(j['createdAt']),
+    lastActive: _int(j['lastActive']),
+    preview: _string(j['preview']),
+    model: j['model'] is String ? j['model'] as String : null,
+    effort: j['effort'] is String ? j['effort'] as String : null,
+    pulse: j['pulse'] is bool ? j['pulse'] as bool : null,
+  );
 
   DateTime get lastActiveTime =>
       DateTime.fromMillisecondsSinceEpoch(lastActive);
@@ -162,26 +180,25 @@ class ConfigSnapshot {
   });
 
   factory ConfigSnapshot.fromJson(Map<String, dynamic> j) {
-    final health = ((j['health'] as Map?) ?? const {}).cast<String, dynamic>();
+    final health = _map(j['health']);
     return ConfigSnapshot(
-      backend: (j['backend'] ?? '') as String,
-      frontend: (j['frontend'] ?? '') as String,
-      model: (j['model'] ?? '') as String,
-      modelDisplay: (j['modelDisplay'] ?? '') as String,
-      botDisplayName: (j['botDisplayName'] ?? 'Talon') as String,
-      timezone: (j['timezone'] ?? '') as String,
-      pulse: (j['pulse'] ?? false) as bool,
-      pulseIntervalMs: (j['pulseIntervalMs'] ?? 300000) as int,
-      heartbeat: (j['heartbeat'] ?? false) as bool,
-      heartbeatIntervalMinutes: (j['heartbeatIntervalMinutes'] ?? 60) as int,
-      dream: (j['dream'] ?? false) as bool,
-      editable:
-          ((j['editable'] as List?) ?? const []).map((e) => e.toString()).toList(),
-      healthy: (health['healthy'] ?? false) as bool,
-      uptimeMs: (health['uptimeMs'] ?? 0) as int,
-      sessions: (health['sessions'] ?? 0) as int,
-      messages: (health['messages'] ?? 0) as int,
-      memoryMb: (health['memoryMb'] ?? 0) as int,
+      backend: _string(j['backend']),
+      frontend: _string(j['frontend']),
+      model: _string(j['model']),
+      modelDisplay: _string(j['modelDisplay']),
+      botDisplayName: _string(j['botDisplayName'], 'Talon'),
+      timezone: _string(j['timezone']),
+      pulse: _bool(j['pulse']),
+      pulseIntervalMs: _int(j['pulseIntervalMs'], 300000),
+      heartbeat: _bool(j['heartbeat']),
+      heartbeatIntervalMinutes: _int(j['heartbeatIntervalMinutes'], 60),
+      dream: _bool(j['dream']),
+      editable: _list(j['editable']).map((e) => e.toString()).toList(),
+      healthy: _bool(health['healthy']),
+      uptimeMs: _int(health['uptimeMs']),
+      sessions: _int(health['sessions']),
+      messages: _int(health['messages']),
+      memoryMb: _int(health['memoryMb']),
     );
   }
 }
@@ -204,13 +221,13 @@ class BridgeStatus {
   });
 
   factory BridgeStatus.fromJson(Map<String, dynamic> j) => BridgeStatus(
-        protocol: (j['protocol'] ?? 1) as int,
-        botName: (j['botName'] ?? 'Talon') as String,
-        backend: (j['backend'] ?? '') as String,
-        model: (j['model'] ?? '') as String,
-        activeChats: (j['activeChats'] ?? 0) as int,
-        startedAt: (j['startedAt'] ?? '') as String,
-      );
+    protocol: _int(j['protocol'], 1),
+    botName: _string(j['botName'], 'Talon'),
+    backend: _string(j['backend']),
+    model: _string(j['model']),
+    activeChats: _int(j['activeChats']),
+    startedAt: _string(j['startedAt']),
+  );
 
   static const empty = BridgeStatus(
     protocol: kBridgeProtocolVersion,
@@ -236,11 +253,11 @@ class ModelOption {
   });
 
   factory ModelOption.fromJson(Map<String, dynamic> j) => ModelOption(
-        id: (j['id'] ?? '') as String,
-        displayName: (j['displayName'] ?? '') as String,
-        provider: (j['provider'] ?? '') as String,
-        reasoning: (j['reasoning'] ?? false) as bool,
-      );
+    id: _string(j['id']),
+    displayName: _string(j['displayName']),
+    provider: _string(j['provider']),
+    reasoning: _bool(j['reasoning']),
+  );
 }
 
 /// A live tool invocation surfaced under the streaming reply.
@@ -261,8 +278,8 @@ class ToolActivity {
     Map<String, dynamic>? input,
     DateTime? startedAt,
     this.finishedAt,
-  })  : input = input ?? <String, dynamic>{},
-        startedAt = startedAt ?? DateTime.now();
+  }) : input = input ?? <String, dynamic>{},
+       startedAt = startedAt ?? DateTime.now();
 
   Duration get elapsed => (finishedAt ?? DateTime.now()).difference(startedAt);
 }
