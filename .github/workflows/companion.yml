@@ -104,7 +104,11 @@ jobs:
           channel: stable
           cache: true
 
+      # macos/ and android/ are committed real source (see
+      # companion-scaffold.yml for why) — only windows/ and linux/ are still
+      # gitignored scaffolding regenerated fresh per build.
       - name: Regenerate platform scaffolding
+        if: matrix.platform == 'windows' || matrix.platform == 'linux'
         run: flutter create --platforms=${{ matrix.platform }} --project-name=talon_companion .
 
       - name: Build

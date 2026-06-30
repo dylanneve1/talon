@@ -8,9 +8,11 @@ pubspec.lock
 .flutter-plugins
 .flutter-plugins-dependencies
 
-# Generated platform runners (regenerate with `flutter create .`)
-# Tracked lib/ + pubspec.yaml are the source of record; the per-OS
-# runner folders are scaffolding and rebuilt on demand.
+# Generated platform runners not yet committed (regenerate with
+# `flutter create --platforms=<platform> .`). macos/ and android/ ARE
+# committed real source now (see ../../.github/workflows/companion-scaffold.yml)
+# because they need build-time entitlement/manifest patches that a fresh
+# `flutter create` silently drops -- see scripts/fix-*.sh.
 /ios/
 /linux/
 /windows/

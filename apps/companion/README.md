@@ -28,33 +28,32 @@ that speaks the protocol works.
 ## Running it
 
 Requires the [Flutter SDK](https://docs.flutter.dev/get-started/install)
-(3.27+). The per-OS runner folders are generated, not committed:
+(3.27+). `macos/` and `android/` are committed real source (with the
+required entitlement/manifest patches already applied — see below), so
+there's no scaffold step for those. `windows/`, `linux/`, `ios/`, and
+`web/` are still generated on demand:
 
 ```bash
 cd apps/companion
-flutter create --platforms=windows,macos,linux,android .   # one-time scaffold
-./scripts/fix-macos-entitlements.sh                        # macOS only, see below
-./scripts/fix-android-cleartext.sh                          # Android only, see below
+flutter create --platforms=windows,linux .   # one-time scaffold for the rest
 flutter pub get
-flutter run -d windows     # or macos / linux
+flutter run -d macos       # or android / windows / linux
 flutter run -d <android-device>
 ```
 
-**macOS gotcha:** Flutter's default macOS scaffold enables App Sandbox but
-omits the outbound-network entitlement, so any remote-bridge connection fails
-instantly with `SocketException ... Operation not permitted, errno = 1` —
-even when the host/port/token are all correct. `flutter create` regenerates
-`macos/` from scratch (it isn't committed), so re-run
-`./scripts/fix-macos-entitlements.sh` after every fresh scaffold, then
-`flutter clean && flutter run -d macos`.
-
-**Android gotcha:** since API 28, Android blocks plain HTTP (cleartext) by
-default, and the bridge protocol is HTTP-only — no TLS on the daemon side.
-Without the fix, remote-bridge connections fail (typically a
-`SocketException` / cleartext-blocked error) even with a correct
-host/port/token. `flutter create` regenerates `android/` from scratch
-(also not committed), so re-run `./scripts/fix-android-cleartext.sh` after
-every fresh scaffold, then `flutter clean && flutter run -d <device>`.
+**Why `macos/`/`android/` are committed instead of scaffolded:** Flutter's
+default macOS template enables App Sandbox but omits the outbound-network
+entitlement (`com.apple.security.network.client`), and Android blocks plain
+HTTP by default since API 28 — and this bridge is HTTP-only, no TLS. Both
+silently break remote-bridge connections (`SocketException ... Operation
+not permitted, errno = 1` on macOS; a cleartext-blocked error on Android)
+even with a correct host/port/token, and a fresh `flutter create` would
+re-drop the fix every time. So instead of a script someone has to remember
+to re-run, those two platforms are tracked as normal source, just like any
+other Flutter app ships. If you ever need to re-scaffold either from
+scratch, use `scripts/fix-macos-entitlements.sh` /
+`scripts/fix-android-cleartext.sh` (idempotent) or dispatch
+`.github/workflows/companion-scaffold.yml`.
 
 On first launch, pick **This computer** (desktop) or **Remote bridge** (enter a
 host/IP + token). For remote access, run the daemon with a reachable bridge:
