@@ -367,6 +367,23 @@ class AppState extends ChangeNotifier {
         final chatId = _string(e['chatId']);
         if (chatId == null) return false;
         final t = turnFor(chatId);
+        // Guarantee all tools in the most recent assistant message are done.
+        // Tool result events can race against the message snapshot — this is
+        // the definitive point where the turn is finished.
+        final msgs = _messages[chatId];
+        if (msgs != null) {
+          for (final msg in msgs.reversed) {
+            if (msg.role == Role.assistant) {
+              for (final tool in msg.tools) {
+                if (!tool.done) {
+                  tool.done = true;
+                  tool.finishedAt ??= DateTime.now();
+                }
+              }
+              break;
+            }
+          }
+        }
         t.active = false;
         t.typing = false;
         t.draft = '';
@@ -443,7 +460,9 @@ class AppState extends ChangeNotifier {
   }
 
   static bool _isInternalTool(String name) =>
-      name == 'end_turn' || name.endsWith('__end_turn');
+      name.contains('desktop-tools') ||
+      name == 'end_turn' ||
+      name.endsWith('__end_turn');
 
   // ── Store helpers ────────────────────────────────────────────────────────--
 
