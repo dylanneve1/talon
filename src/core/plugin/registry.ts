@@ -7,6 +7,7 @@
  * `reloadState` / `_deps` holders from here so state stays coherent.
  */
 
+import { pathToFileURL } from "node:url";
 import { logError, logWarn } from "../../util/log.js";
 import type { LoadedPlugin, PluginMcpEntry } from "./types.js";
 
@@ -114,5 +115,5 @@ export const reloadState: { lastReloadAt: string } = {
  *  Direct function exports can't be mocked for internal callers in ESM. */
 export const _deps = {
   importModule: async (path: string): Promise<Record<string, unknown>> =>
-    import(path),
+    import(pathToFileURL(path).href),
 };
