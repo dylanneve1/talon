@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:developer' as developer;
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 
@@ -72,14 +73,41 @@ class AppLog {
   /// actionable hint, or null if nothing recognized. Surfaced under raw
   /// error text in the UI so a connection failure doesn't require pulling
   /// a screenshot + reading source to diagnose.
+  ///
+  /// Platform-aware where it matters: Android produces the exact same
+  /// `errno = 1, "Operation not permitted"` text for at least three
+  /// distinct causes (missing INTERNET permission, cleartext-traffic
+  /// block, and -- in principle -- an actual sandboxed socket denial), and
+  /// that text is also macOS's sandbox-entitlement signature. Blindly
+  /// pointing everyone at the macOS fix was actively wrong on Android.
   static String? diagnose(String rawError) {
     final e = rawError.toLowerCase();
-    if (e.contains('operation not permitted') && e.contains('errno = 1')) {
+    final isPermissionDenial =
+        e.contains('operation not permitted') && e.contains('errno = 1');
+
+    if (isPermissionDenial && _isAndroid) {
+      return 'Android refused the socket outright (not a timeout or '
+          'refused connection) — almost always either (a) the release '
+          'build is missing the INTERNET permission in '
+          'AndroidManifest.xml, or (b) the cleartext-traffic block, since '
+          'this bridge has no TLS. Check '
+          'android/app/src/main/AndroidManifest.xml has both '
+          '<uses-permission android:name="android.permission.INTERNET"/> '
+          'and android:usesCleartextTraffic="true" on <application>, or '
+          're-run scripts/fix-android-cleartext.sh and rebuild. Not a bad '
+          'host/port/token.';
+    }
+    if (isPermissionDenial && _isMacOS) {
       return 'This usually means the desktop build is sandboxed without '
           'outbound network access (macOS: missing '
           'com.apple.security.network.client entitlement — run '
           'scripts/fix-macos-entitlements.sh and rebuild). Not a bad '
           'host/port/token.';
+    }
+    if (isPermissionDenial) {
+      return 'OS-level permission denial on the socket — not a timeout or '
+          'refused connection. Check the app has network permission on '
+          'this platform. Not a bad host/port/token.';
     }
     if (e.contains('cleartextnotpermitted') ||
         (e.contains('cleartext') && e.contains('not permitted'))) {
@@ -104,4 +132,18 @@ class AppLog {
 
   /// Dump of recent log lines for a "copy diagnostics" action.
   static String dump() => recent.join('\n');
+
+  // Platform.operatingSystem throws on web; this app doesn't ship a web
+  // build (see pubspec.yaml / README), but guard anyway rather than crash
+  // the diagnosis path itself.
+  static bool get _isAndroid => _safePlatformCheck(() => Platform.isAndroid);
+  static bool get _isMacOS => _safePlatformCheck(() => Platform.isMacOS);
+
+  static bool _safePlatformCheck(bool Function() check) {
+    try {
+      return check();
+    } catch (_) {
+      return false;
+    }
+  }
 }

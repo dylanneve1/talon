@@ -1,4 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required at runtime, not just for dev tooling: this app talks to the
+         Talon bridge over HTTP+SSE. Flutter's debug/profile manifests merge
+         this in automatically for hot reload/VM service, but the release
+         manifest (what actually ships) needs its own explicit grant, or
+         every socket connect fails at the OS level with errno=1
+         "Operation not permitted": easy to mistake for the unrelated
+         cleartext traffic or macOS sandbox errno=1 failures, since Android
+         produces the identical error text for "no INTERNET permission" as
+         it does for those. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application android:usesCleartextTraffic="true"
         android:label="talon_companion"
         android:name="${applicationName}"
