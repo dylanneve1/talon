@@ -350,7 +350,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           Switch.adaptive(
             value: value,
-            activeThumbColor: TalonColors.accent,
+            thumbColor: WidgetStateProperty.resolveWith((s) =>
+                s.contains(WidgetState.selected) ? TalonColors.accent : null),
             onChanged: onChanged,
           ),
         ],

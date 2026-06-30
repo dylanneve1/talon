@@ -250,7 +250,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
           contentPadding: EdgeInsets.zero,
           value: _manage,
           onChanged: (v) => setState(() => _manage = v),
-          activeThumbColor: TalonColors.accent,
+          thumbColor: WidgetStateProperty.resolveWith((s) =>
+              s.contains(WidgetState.selected) ? TalonColors.accent : null),
           title: const Text('Launch Talon automatically',
               style: TextStyle(fontSize: 14)),
           subtitle: const Text('Start the daemon if it isn\'t already running',
@@ -280,7 +281,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
           contentPadding: EdgeInsets.zero,
           value: _tls,
           onChanged: (v) => setState(() => _tls = v),
-          activeThumbColor: TalonColors.accent,
+          thumbColor: WidgetStateProperty.resolveWith((s) =>
+              s.contains(WidgetState.selected) ? TalonColors.accent : null),
           title: const Text('Use HTTPS / TLS', style: TextStyle(fontSize: 14)),
           subtitle: const Text(
               'Turn on if the bridge is behind a TLS reverse proxy (Caddy, '

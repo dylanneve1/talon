@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import '../models/connection.dart';
@@ -68,10 +69,11 @@ class DaemonSupervisor {
   }
 
   Future<({bool ok, String? detail})> _launch() async {
+    final resolved = _resolvedLaunch(config.launchCommand, config.launchArgs);
     try {
       _process = await Process.start(
-        config.launchCommand,
-        config.launchArgs,
+        resolved.command,
+        resolved.args,
         environment: {'TALON_FRONTEND_OVERRIDE': 'desktop'},
         mode: ProcessStartMode.detachedWithStdio,
         runInShell: true,
@@ -80,7 +82,7 @@ class DaemonSupervisor {
     } on ProcessException catch (e) {
       return (
         ok: false,
-        detail: 'Could not run "${config.launchCommand}": ${e.message}. '
+        detail: 'Could not run "${resolved.command}": ${e.message}. '
             'Install the Talon CLI or set a launch command in Settings.'
       );
     } catch (e) {
@@ -98,10 +100,11 @@ class DaemonSupervisor {
         detail: 'Restart is only available for a local daemon'
       );
     }
+    final resolved = _resolvedLaunch(config.launchCommand, const ['restart']);
     try {
       await Process.start(
-        config.launchCommand,
-        const ['restart'],
+        resolved.command,
+        resolved.args,
         environment: {'TALON_FRONTEND_OVERRIDE': 'desktop'},
         mode: ProcessStartMode.detachedWithStdio,
         runInShell: true,
@@ -110,6 +113,41 @@ class DaemonSupervisor {
     } catch (e) {
       return (ok: false, detail: e.toString());
     }
+  }
+
+  /// Walk up from the running executable's directory looking for a Node.js
+  /// package that exposes `bin.talon`. When found in a source-build layout
+  /// (e.g. running from apps/companion/build/.../Release/), use
+  /// `node <bin/talon.js>` directly so no global install is needed.
+  /// Falls back to [launchCommand] / [launchArgs] unchanged.
+  static ({String command, List<String> args}) _resolvedLaunch(
+    String launchCommand,
+    List<String> launchArgs,
+  ) {
+    try {
+      var dir = File(Platform.resolvedExecutable).parent;
+      for (var i = 0; i < 12; i++) {
+        final pkgFile = File('${dir.path}${Platform.pathSeparator}package.json');
+        if (pkgFile.existsSync()) {
+          final pkg = jsonDecode(pkgFile.readAsStringSync()) as Map?;
+          final bin = pkg?['bin'];
+          final relPath = bin is Map ? bin['talon'] as String? : null;
+          if (relPath != null) {
+            final absPath = '${dir.path}${Platform.pathSeparator}'
+                '${relPath.replaceAll('/', Platform.pathSeparator)}';
+            if (File(absPath).existsSync()) {
+              return (command: 'node', args: [absPath, ...launchArgs.skip(0)]);
+            }
+          }
+        }
+        final parent = dir.parent;
+        if (parent.path == dir.path) break; // filesystem root
+        dir = parent;
+      }
+    } catch (_) {
+      // Any I/O or parse failure — fall through to configured command.
+    }
+    return (command: launchCommand, args: launchArgs);
   }
 
   /// Best-effort: lets go of any child we spawned (we don't own an attached

@@ -50,3 +50,4 @@ native/talon-warden/dist/
 bin/talon-blake3.node
 native/blake3-napi/target/
 native/blake3-napi/dist/
+src/plugins/npuw/

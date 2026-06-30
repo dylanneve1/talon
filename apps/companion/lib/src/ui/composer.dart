@@ -67,7 +67,7 @@ class _ComposerState extends State<Composer> {
         ),
         padding: const EdgeInsets.fromLTRB(16, 4, 6, 4),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Focus(

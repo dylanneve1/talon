@@ -418,6 +418,19 @@ class AppState extends ChangeNotifier {
         existing.first.done = true;
         existing.first.finishedAt = DateTime.now();
         existing.first.error = _string(e['error']);
+      } else {
+        // The assistant message already arrived and tools were snapshotted into
+        // it before this result event landed — update the historical copy too so
+        // the chip doesn't spin forever in the message history.
+        for (final msg in _messages[chatId] ?? <ClientMessage>[]) {
+          for (final tool in msg.tools) {
+            if (tool.id == id) {
+              tool.done = true;
+              tool.finishedAt ??= DateTime.now();
+              tool.error = _string(e['error']);
+            }
+          }
+        }
       }
       return true;
     }
@@ -429,7 +442,8 @@ class AppState extends ChangeNotifier {
     return true;
   }
 
-  static bool _isInternalTool(String name) => name == 'end_turn';
+  static bool _isInternalTool(String name) =>
+      name == 'end_turn' || name.endsWith('__end_turn');
 
   // ── Store helpers ────────────────────────────────────────────────────────--
 
