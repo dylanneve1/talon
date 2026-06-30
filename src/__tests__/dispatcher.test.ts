@@ -179,7 +179,7 @@ describe("dispatcher", () => {
     });
 
     expect(deps.context.acquire).toHaveBeenCalledWith(456, "456");
-    expect(deps.context.release).toHaveBeenCalledWith(456);
+    expect(deps.context.release).toHaveBeenCalledWith(456, "456");
   });
 
   it("releases context even on error", async () => {
@@ -200,7 +200,7 @@ describe("dispatcher", () => {
       }),
     ).rejects.toThrow("boom");
 
-    expect(deps.context.release).toHaveBeenCalledWith(789);
+    expect(deps.context.release).toHaveBeenCalledWith(789, "789");
   });
 
   it("sends typing on execution", async () => {
@@ -216,7 +216,7 @@ describe("dispatcher", () => {
       source: "message",
     });
 
-    expect(deps.sendTyping).toHaveBeenCalledWith(111);
+    expect(deps.sendTyping).toHaveBeenCalledWith(111, "111");
   });
 
   it("calls onActivity after successful query", async () => {
@@ -547,7 +547,7 @@ describe("dispatcher", () => {
 
     // Wait for the initial sendTyping call
     await new Promise((r) => setTimeout(r, 50));
-    expect(deps.sendTyping).toHaveBeenCalledWith(777);
+    expect(deps.sendTyping).toHaveBeenCalledWith(777, "typing-test");
     expect(deps.sendTyping.mock.calls.length).toBeGreaterThanOrEqual(1);
 
     resolveQuery();
