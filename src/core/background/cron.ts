@@ -50,7 +50,11 @@ import {
 // ── Dependencies (injected at startup) ──────────────────────────────────────
 
 type CronDeps = {
-  sendMessage: (chatId: number, text: string) => Promise<void>;
+  sendMessage: (
+    chatId: number,
+    text: string,
+    stringId?: string,
+  ) => Promise<void>;
   /**
    * Resolve the chat's default model + backend, used when a cron query job has
    * no model/provider override of its own.
@@ -415,7 +419,7 @@ export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
   }
 
   if (job.type === "message") {
-    await deps.sendMessage(numericChatId, job.content);
+    await deps.sendMessage(numericChatId, job.content, job.chatId);
     return { status: "ran" };
   }
 
@@ -459,6 +463,7 @@ export async function executeJob(job: CronJob): Promise<ExecuteJobResult> {
     await deps.sendMessage(
       numericChatId,
       `Cron job "${job.name}" skipped: ${result.reason} Update or delete the job to stop this notice.`,
+      job.chatId,
     );
   }
   return result;

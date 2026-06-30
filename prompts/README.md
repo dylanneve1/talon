@@ -14,7 +14,7 @@ placed after the cache boundary):
 | --- | --------------------- | ---------------------------------------------------------------------- | ------------- |
 | 1   | Identity              | `identity.md` + `~/.talon/workspace/identity.md`                       | static        |
 | 2   | Core behaviour        | `custom.md` (replaces `base.md` when present)                          | static        |
-| 3   | Frontend capabilities | `<frontend>.md` (telegram / discord / teams / terminal)                | static        |
+| 3   | Frontend capabilities | `<frontend>.md` (telegram / discord / teams / terminal / native)       | static        |
 | 4   | Persistent memory     | `system/persistent-memory.md` wrapping `memory/memory.md`, size-capped | static        |
 | 5   | Capability docs       | `system/workspace.md`, `system/cron.md`, `system/triggers.md`          | static        |
 | 6   | Plugin additions      | each plugin's `systemPrompt()` contribution                            | static        |
@@ -41,7 +41,8 @@ when a backend has no native "skills" feature.
 
 **User-editable prompts** (everything at the top level of this directory:
 `identity.md`, `base.md`, `custom.md`, `telegram.md`, `discord.md`,
-`teams.md`, `terminal.md`, `heartbeat.md`, `dream.md`, `mempalace.md`) are
+`teams.md`, `terminal.md`, `native.md`, `heartbeat.md`, `dream.md`,
+`mempalace.md`) are
 seeded once into `~/.talon/prompts/` on first run and read from there.
 User edits always win; package updates never overwrite them.
 
@@ -79,10 +80,11 @@ frontend, so it never belongs in the frontend `.md` files:
   normal route; tools only for genuine side effects.
 
 The delivery TOOL NAMES are per-frontend (`end_turn`/`send`/`react` on
-telegram & discord, `end_turn`/`send_message` on teams) and are injected
-into the templates by `src/backend/shared/delivery-contract.ts`, which is
-also where the frontend-aware `[FLOW VIOLATION]` reminder and the
-first-turn nudge (appended to the turn-0 user message) are built.
+telegram & discord, `end_turn`/`send_message`/`react` on native,
+`end_turn`/`send_message` on teams) and are injected into the templates
+by `src/backend/shared/delivery-contract.ts`, which is also where the
+frontend-aware `[FLOW VIOLATION]` reminder and the first-turn nudge
+(appended to the turn-0 user message) are built.
 
 When editing frontend `.md` files, describe what the frontend can DO
 (tools, formatting, culture); never re-state how replies are delivered —

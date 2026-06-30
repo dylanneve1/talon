@@ -210,6 +210,7 @@ describe("executeJob — isolated query runtime", () => {
     expect(mocks.sendMessage).toHaveBeenCalledWith(
       42,
       expect.stringContaining('Cron job "Status check" skipped: model'),
+      "42",
     );
   });
 });
@@ -224,7 +225,7 @@ describe("runJobNow — routing", () => {
 
     expect(res.ok).toBe(true);
     expect(mocks.sendMessage).toHaveBeenCalledTimes(1);
-    expect(mocks.sendMessage).toHaveBeenCalledWith(777, "ping");
+    expect(mocks.sendMessage).toHaveBeenCalledWith(777, "ping", "777");
     expect(mocks.runJobOneShot).not.toHaveBeenCalled();
   });
 

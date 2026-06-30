@@ -25,6 +25,13 @@ import { handlePluginAction } from "../plugin/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
 import type { Backend } from "../agent-runtime/capabilities.js";
+import {
+  isNativeChatId,
+  isDiscordChatId,
+  isTelegramChatId,
+  isTerminalChatId,
+  isTeamsChatId,
+} from "../../util/chat-id.js";
 
 // ── Retry helper (stateless — standalone export) ─────────────────────────────
 
@@ -88,6 +95,8 @@ export class Gateway {
   }
 
   private frontendHandler: FrontendActionHandler | null = null;
+  private readonly frontendHandlers = new Map<string, FrontendActionHandler>();
+  private readonly chatFrontendOwners = new Map<number, string>();
   private server: ReturnType<typeof createServer> | null = null;
   private port = 0;
   private readonly startedAt = new Date().toISOString();
@@ -135,10 +144,56 @@ export class Gateway {
     this.frontendHandler = handler;
   }
 
+  registerFrontendHandler(
+    name: string,
+    handler: FrontendActionHandler | null,
+  ): void {
+    if (handler === null) {
+      this.frontendHandlers.delete(name);
+      return;
+    }
+    this.frontendHandlers.set(name, handler);
+  }
+
+  private resolveOwnedFrontendName(
+    rawChatId: string,
+    chatId: number,
+  ): string | null {
+    const owned = this.chatFrontendOwners.get(chatId);
+    if (owned) return owned;
+    if (isTerminalChatId(rawChatId)) return "terminal";
+    if (isNativeChatId(rawChatId)) return "native";
+    if (isTeamsChatId(rawChatId)) return "teams";
+    if (isDiscordChatId(rawChatId)) return "discord";
+    if (isTelegramChatId(rawChatId)) return "telegram";
+    return null;
+  }
+
+  private resolveFrontendHandler(
+    rawChatId: string,
+    chatId: number,
+  ): FrontendActionHandler | null {
+    const ownedName = this.resolveOwnedFrontendName(rawChatId, chatId);
+    if (ownedName) {
+      const ownedHandler = this.frontendHandlers.get(ownedName);
+      if (ownedHandler) return ownedHandler;
+    }
+    if (this.frontendHandler) return this.frontendHandler;
+    if (this.frontendHandlers.size === 1) {
+      return this.frontendHandlers.values().next().value ?? null;
+    }
+    return null;
+  }
+
   // ── Per-chat context management ──────────────────────────────────────────
 
-  setContext(chatId: number, stringId?: string): void {
+  setContext(chatId: number, stringId?: string, frontendName?: string): void {
     this.loom.acquireContext(chatId, stringId);
+    if (frontendName) this.chatFrontendOwners.set(chatId, frontendName);
+    else if (stringId !== undefined && !this.chatFrontendOwners.has(chatId)) {
+      const inferred = this.resolveOwnedFrontendName(stringId, chatId);
+      if (inferred) this.chatFrontendOwners.set(chatId, inferred);
+    }
   }
 
   /** Find a numeric chatId by its string ID (used for Teams-style non-numeric chat IDs). */
@@ -152,6 +207,12 @@ export class Gateway {
     // The Loom resolves numeric ids, numeric-looking strings, and Teams-style
     // non-numeric ids (e.g. "19:abc...") to the right Thread itself.
     this.loom.releaseContext(chatId);
+    if (typeof chatId === "number") {
+      this.chatFrontendOwners.delete(chatId);
+    } else {
+      const numericId = Number(chatId);
+      if (!Number.isNaN(numericId)) this.chatFrontendOwners.delete(numericId);
+    }
   }
 
   isChatBusy(chatId: number): boolean {
@@ -223,8 +284,9 @@ export class Gateway {
     try {
       // Try frontend first — it has richer implementations (e.g. userbot history)
       // and falls back to null when it can't handle the action.
-      if (this.frontendHandler) {
-        const result = await this.frontendHandler(body, chatId);
+      const frontendHandler = this.resolveFrontendHandler(rawChatId, chatId);
+      if (frontendHandler) {
+        const result = await frontendHandler(body, chatId);
         if (result) {
           // Soul tap: remember our own outgoing message ids so a later
           // reaction update can be attributed to one of Talon's messages.

@@ -1,5 +1,5 @@
 /**
- * Unit tests for the `desktop` frontend's pure pieces — the bits that don't
+ * Unit tests for the `native` frontend's pure pieces — the bits that don't
  * need a live daemon or DB:
  *   - protocol mappers (previewOf, historyToClientMessage)
  *   - the in-memory chat registry (ensure/get/byNumeric/list ordering)
@@ -13,18 +13,18 @@ import {
   historyToClientMessage,
   BOT_SENDER_ID,
   USER_SENDER_ID,
-} from "../frontend/desktop/protocol.js";
-import { DesktopChats } from "../frontend/desktop/chats.js";
-import { createDesktopActionHandler } from "../frontend/desktop/actions.js";
+} from "../frontend/native/protocol.js";
+import { NativeChats } from "../frontend/native/chats.js";
+import { createNativeActionHandler } from "../frontend/native/actions.js";
 import {
   configSnapshot,
   applyConfigUpdate,
   EDITABLE,
-} from "../frontend/desktop/settings.js";
+} from "../frontend/native/settings.js";
 import type { Gateway } from "../core/engine/gateway.js";
 import type { TalonConfig } from "../util/config.js";
 
-describe("desktop protocol mappers", () => {
+describe("native protocol mappers", () => {
   it("previewOf collapses whitespace and clips long text", () => {
     expect(previewOf("  hello   world \n there ")).toBe("hello world there");
     const long = "x".repeat(200);
@@ -65,9 +65,9 @@ describe("desktop protocol mappers", () => {
   });
 });
 
-describe("DesktopChats registry", () => {
+describe("NativeChats registry", () => {
   it("creates, indexes by string + numeric id, and lists newest-first", () => {
-    const chats = new DesktopChats();
+    const chats = new NativeChats();
     const a = chats.create();
     const b = chats.create();
     expect(chats.get(a.id)).toBe(a);
@@ -83,7 +83,7 @@ describe("DesktopChats registry", () => {
   });
 
   it("ensure() adopts a client-supplied id without duplicating", () => {
-    const chats = new DesktopChats();
+    const chats = new NativeChats();
     const first = chats.ensure("d_supplied");
     const again = chats.ensure("d_supplied");
     expect(first).toBe(again);
@@ -91,15 +91,15 @@ describe("DesktopChats registry", () => {
   });
 });
 
-describe("desktop action handler", () => {
+describe("native action handler", () => {
   function setup() {
-    const chats = new DesktopChats();
+    const chats = new NativeChats();
     const entry = chats.ensure("d_action");
     const incrementMessages = vi.fn();
     const gateway = { incrementMessages } as unknown as Gateway;
     const emitAssistant = vi.fn().mockReturnValue(4242);
     const broadcast = vi.fn();
-    const handler = createDesktopActionHandler({
+    const handler = createNativeActionHandler({
       chats,
       gateway,
       emitAssistant,
@@ -172,11 +172,11 @@ describe("desktop action handler", () => {
   });
 });
 
-describe("desktop settings", () => {
+describe("native settings", () => {
   function fakeConfig(): TalonConfig {
     return {
       backend: "claude",
-      frontend: "desktop",
+      frontend: "native",
       model: "default",
       botDisplayName: "Talon",
       timezone: "UTC",

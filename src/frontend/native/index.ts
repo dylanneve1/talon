@@ -1,5 +1,5 @@
 /**
- * Desktop frontend factory.
+ * Native frontend factory.
  *
  * A client-agnostic bridge: it runs the same gateway every messaging frontend
  * uses (so the agent's tools work) PLUS a Bridge server (server.ts) that GUI
@@ -39,9 +39,9 @@ import {
   getBackendIdForChat,
 } from "../../core/engine/backend-controller/index.js";
 import { getActiveReasoningLevels } from "../shared/reasoning-levels.js";
-import { DesktopChats, type ChatEntry } from "./chats.js";
+import { NativeChats, type ChatEntry } from "./chats.js";
 import { BridgeServer, type BridgeServerHandlers } from "./server.js";
-import { createDesktopActionHandler } from "./actions.js";
+import { createNativeActionHandler } from "./actions.js";
 import {
   BRIDGE_PROTOCOL_VERSION,
   BOT_SENDER_ID,
@@ -55,8 +55,8 @@ import {
   type ModelOption,
 } from "./protocol.js";
 
-export type DesktopFrontend = {
-  name: "desktop";
+export type NativeFrontend = {
+  name: "native";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -66,13 +66,13 @@ export type DesktopFrontend = {
   stop: () => Promise<void>;
 };
 
-export function createDesktopFrontend(
+export function createNativeFrontend(
   config: TalonConfig,
   gateway: Gateway,
-): DesktopFrontend {
+): NativeFrontend {
   const startedAt = new Date().toISOString();
   const botName = config.botDisplayName || "Talon";
-  const chats = new DesktopChats();
+  const chats = new NativeChats();
 
   // Monotonic message-id minter. Seeded from the wall clock so ids stay
   // unique and ascending across restarts (history rows persist their ids).
@@ -385,12 +385,12 @@ export function createDesktopFrontend(
     },
   };
 
-  const desktopCfg = config.desktop ?? { port: 19880, host: "127.0.0.1" };
+  const nativeCfg = config.native ?? { port: 19880, host: "127.0.0.1" };
   const server = new BridgeServer(
     {
-      host: desktopCfg.host ?? "127.0.0.1",
-      port: desktopCfg.port ?? 19880,
-      token: desktopCfg.token,
+      host: nativeCfg.host ?? "127.0.0.1",
+      port: nativeCfg.port ?? 19880,
+      token: nativeCfg.token,
       startedAt,
     },
     handlers,
@@ -400,13 +400,13 @@ export function createDesktopFrontend(
 
   const context: ContextManager = {
     acquire: (chatId: number, stringId?: string) =>
-      gateway.setContext(chatId, stringId),
+      gateway.setContext(chatId, stringId, "native"),
     release: (chatId: number) => gateway.clearContext(chatId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
 
   return {
-    name: "desktop",
+    name: "native",
     context,
 
     sendTyping: async (chatId: number) => {
@@ -424,8 +424,9 @@ export function createDesktopFrontend(
     getBridgePort: () => gateway.getPort(),
 
     async init() {
-      gateway.setFrontendHandler(
-        createDesktopActionHandler({
+      gateway.registerFrontendHandler(
+        "native",
+        createNativeActionHandler({
           chats,
           gateway,
           emitAssistant,
@@ -433,15 +434,15 @@ export function createDesktopFrontend(
         }),
       );
       const gatewayPort = await gateway.start(19876);
-      log("desktop", `Gateway on :${gatewayPort}`);
+      log("native", `Gateway on :${gatewayPort}`);
       chats.restore();
       await server.start();
     },
 
     async start() {
       log(
-        "desktop",
-        `Desktop bridge ready (${chats.count()} chat(s)) — connect a client to :${server.getPort()}`,
+        "native",
+        `Native bridge ready (${chats.count()} chat(s)) — connect a client to :${server.getPort()}`,
       );
     },
 

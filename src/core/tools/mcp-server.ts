@@ -8,7 +8,7 @@
  * Environment:
  *   TALON_BRIDGE_URL  — HTTP bridge URL (default: http://127.0.0.1:19876)
  *   TALON_CHAT_ID     — Current chat ID
- *   TALON_FRONTEND    — Frontend type: "telegram" | "teams" | "terminal" | "discord" (default: "telegram")
+ *   TALON_FRONTEND    — Frontend type: "telegram" | "teams" | "terminal" | "discord" | "native" (default: "telegram")
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -42,7 +42,7 @@ const VALID_FRONTENDS = new Set<ToolFrontend>([
   "teams",
   "terminal",
   "discord",
-  "desktop",
+  "native",
 ]);
 const BRIDGE_URL = process.env.TALON_BRIDGE_URL || "http://127.0.0.1:19876";
 const CHAT_ID = process.env.TALON_CHAT_ID || "";
