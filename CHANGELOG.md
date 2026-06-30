@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.5](https://github.com/dylanneve1/talon/compare/v1.24.4...v1.24.5) (2026-06-30)
+
+
+### Bug Fixes
+
+* **companion:** switch styling collapses to a solid blob; composer hidden by keyboard ([#413](https://github.com/dylanneve1/talon/issues/413)) ([68df2c6](https://github.com/dylanneve1/talon/commit/68df2c6504f71c9df0f455e18573f0712f53251d))
+
 ## [1.24.4](https://github.com/dylanneve1/talon/compare/v1.24.3...v1.24.4) (2026-06-30)
 
 
