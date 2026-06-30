@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.24.0](https://github.com/dylanneve1/talon/compare/v1.23.0...v1.24.0) (2026-06-30)
+
+
+### Features
+
+* **dist:** self-contained standalone binary + multi-platform release ([#358](https://github.com/dylanneve1/talon/issues/358)) ([9d2789f](https://github.com/dylanneve1/talon/commit/9d2789fb301a937d05eddcdcaab0906d5581abe7))
+* run multiple frontends concurrently + rename desktop frontend to native ([#396](https://github.com/dylanneve1/talon/issues/396)) ([7d9676a](https://github.com/dylanneve1/talon/commit/7d9676ae020b48f2f3d28ca7c7bd2cba3cb56b6b))
+
 ## [1.23.0](https://github.com/dylanneve1/talon/compare/v1.22.0...v1.23.0) (2026-06-30)
 
 
