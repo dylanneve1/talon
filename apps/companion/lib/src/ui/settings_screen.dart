@@ -399,10 +399,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-          Switch.adaptive(
+          // Plain Switch, not .adaptive: this app uses fully custom Material
+          // theming everywhere (not platform-native widgets), and .adaptive
+          // renders a CupertinoSwitch on macOS/iOS that ignores
+          // SwitchThemeData entirely, bypassing the border/contrast fix in
+          // theme.dart. Colors come from SwitchThemeData now, not a local
+          // override here -- the previous override set the thumb to the
+          // same accent color as the selected track, making the switch
+          // look like one solid pill with no visible thumb.
+          Switch(
             value: value,
-            thumbColor: WidgetStateProperty.resolveWith((s) =>
-                s.contains(WidgetState.selected) ? TalonColors.accent : null),
             onChanged: onChanged,
           ),
         ],

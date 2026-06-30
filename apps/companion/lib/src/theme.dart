@@ -89,6 +89,26 @@ ThemeData buildTalonTheme() {
       thickness: const WidgetStatePropertyAll(6),
       radius: const Radius.circular(8),
     ),
+    // Material 3's default selected-track has no outline and a thumb that
+    // can end up the same color as the track (see settings_screen.dart's
+    // _switchRow), reading as a solid undifferentiated pill against this
+    // theme's dark glass surfaces. Give both states an explicit border and
+    // a thumb that always contrasts against its track.
+    switchTheme: SwitchThemeData(
+      trackColor: WidgetStateProperty.resolveWith((states) =>
+          states.contains(WidgetState.selected)
+              ? TalonColors.accent
+              : TalonColors.surfaceHi),
+      trackOutlineColor: WidgetStateProperty.resolveWith((states) =>
+          states.contains(WidgetState.selected)
+              ? TalonColors.accentDeep
+              : TalonColors.glassStroke),
+      trackOutlineWidth: const WidgetStatePropertyAll(1.4),
+      thumbColor: WidgetStateProperty.resolveWith((states) =>
+          states.contains(WidgetState.selected)
+              ? Colors.white
+              : TalonColors.textDim),
+    ),
   );
 }
 
