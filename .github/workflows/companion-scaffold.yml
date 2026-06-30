@@ -74,11 +74,8 @@ jobs:
             echo "No changes to commit"
             exit 0
           fi
-          git commit -m "chore(companion): commit generated platform sources (${{ github.event.inputs.platforms }})
-
-Scaffolded via flutter create + our fix scripts, then tracked as real
-source instead of being regenerated from scratch on every build. See
-companion-scaffold.yml for why.
-
-Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
+          git commit \
+            -m "chore(companion): commit generated platform sources (${{ github.event.inputs.platforms }})" \
+            -m "Scaffolded via flutter create + our fix scripts, then tracked as real source instead of being regenerated from scratch on every build. See companion-scaffold.yml for why." \
+            -m "Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
           git push origin HEAD:"${{ github.ref_name }}"
