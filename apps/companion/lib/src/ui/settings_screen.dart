@@ -57,10 +57,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       });
     } catch (e) {
-      if (mounted) setState(() {
-        _loading = false;
-        _error = e.toString();
-      });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.toString();
+        });
+      }
     }
   }
 
@@ -121,8 +123,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             title: 'General',
             child: Column(
               children: [
-                _ModelRow(state: widget.state, cfg: cfg, onPick: (id) =>
-                    _apply({'model': id})),
+                _ModelRow(
+                    state: widget.state,
+                    cfg: cfg,
+                    onPick: (id) => _apply({'model': id})),
                 const SizedBox(height: 14),
                 _textRow('Display name', _name,
                     onSubmit: (v) => _apply({'botDisplayName': v})),
@@ -208,7 +212,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const SizedBox(width: 8),
               Text(
                 connected ? 'Connected' : 'Disconnected',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                style:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
               ),
               const Spacer(),
               if (s.config.canManageDaemon)
@@ -216,8 +221,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   onPressed: () async {
                     final r = await s.restartDaemon();
                     if (mounted && !r.ok && r.detail != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(r.detail!)));
+                      ScaffoldMessenger.of(context)
+                          .showSnackBar(SnackBar(content: Text(r.detail!)));
                     }
                   },
                   icon: const Icon(Icons.restart_alt, size: 18),
@@ -255,7 +260,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.lan_outlined, size: 18, color: TalonColors.textDim),
+              const Icon(Icons.lan_outlined,
+                  size: 18, color: TalonColors.textDim),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(where, style: const TextStyle(fontSize: 14)),
@@ -344,7 +350,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           Switch.adaptive(
             value: value,
-            activeColor: TalonColors.accent,
+            activeThumbColor: TalonColors.accent,
             onChanged: onChanged,
           ),
         ],
@@ -360,8 +366,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Expanded(
             child: Text(label,
-                style: const TextStyle(
-                    fontSize: 13, color: TalonColors.textDim)),
+                style:
+                    const TextStyle(fontSize: 13, color: TalonColors.textDim)),
           ),
           IconButton(
             iconSize: 18,

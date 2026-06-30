@@ -6,6 +6,7 @@ import '../models/bridge_models.dart';
 import '../models/connection.dart';
 import '../services/bridge_client.dart';
 import '../services/daemon_supervisor.dart';
+import '../services/log.dart';
 import '../services/prefs.dart';
 
 enum ConnState { idle, connecting, connected, error }
@@ -78,6 +79,7 @@ class AppState extends ChangeNotifier {
   /// first; everywhere, open the event stream and load chats.
   Future<void> start() async {
     _reconnect?.cancel();
+    AppLog.info('app_state', 'connect attempt ${config.host}:${config.port}');
     _setConn(ConnState.connecting, null);
 
     if (config.canManageDaemon) {
@@ -87,8 +89,11 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       });
       if (!ok) {
-        _setConn(ConnState.error,
-            daemon.detail ?? 'Could not reach or start Talon');
+        _setConn(
+          ConnState.error,
+          daemon.detail ?? 'Could not reach or start Talon',
+        );
+        AppLog.warn('app_state', 'daemon unavailable');
         _scheduleReconnect();
         return;
       }
@@ -109,19 +114,36 @@ class AppState extends ChangeNotifier {
       // Verify identity before committing to the stream — gives a crisp error
       // when the host/token is wrong rather than a silent dead stream.
       final h = await client.health();
-      if (h == null) throw BridgeException('No Talon bridge at ${config.host}:${config.port}');
+      AppLog.info('app_state', 'health ${h == null ? 'failed' : 'ok'}');
+      if (h == null) {
+        throw BridgeException(
+          'No Talon bridge at ${config.host}:${config.port}',
+        );
+      }
 
-      _sub = client.events.listen(_onEvent, onError: (Object e) {
-        _setConn(ConnState.error, e.toString());
-        _scheduleReconnect();
-      });
+      _sub = client.events.listen(
+        _onEvent,
+        onError: (Object e) {
+          if (_isUnauthorized(e)) {
+            _stopUnauthorized();
+            return;
+          }
+          _setConn(ConnState.error, e.toString());
+          _scheduleReconnect();
+        },
+      );
       await client.connect();
 
+      AppLog.info('app_state', 'connected');
       _setConn(ConnState.connected, null);
       _backoffMs = 800;
       await _refreshChats();
       unawaited(_refreshModels());
     } catch (e) {
+      if (_isUnauthorized(e)) {
+        _stopUnauthorized();
+        return;
+      }
       _setConn(ConnState.error, e.toString());
       _scheduleReconnect();
     }
@@ -130,11 +152,23 @@ class AppState extends ChangeNotifier {
   void _scheduleReconnect() {
     if (_disposed) return;
     _reconnect?.cancel();
+    AppLog.info('app_state', 'reconnect in ${_backoffMs}ms');
     _reconnect = Timer(Duration(milliseconds: _backoffMs), () {
       _backoffMs = (_backoffMs * 1.7).clamp(800, 15000).toInt();
       start();
     });
   }
+
+  void _stopUnauthorized() {
+    AppLog.warn('app_state', 'auth-fatal stop');
+    _reconnect?.cancel();
+    _setConn(ConnState.error, 'Unauthorized — check your token');
+  }
+
+  static bool _isUnauthorized(Object e) =>
+      e is BridgeException && e.unauthorized ||
+      e.toString().contains('Unauthorized') ||
+      e.toString().contains('(401)');
 
   /// Apply a new connection profile and reconnect from scratch.
   Future<void> applyConfig(ConnectionConfig next) async {
@@ -145,6 +179,7 @@ class AppState extends ChangeNotifier {
     _turns.clear();
     _loadedHistory.clear();
     selectedChatId = null;
+    AppLog.info('app_state', 'connection config applied; stores reset');
     await start();
   }
 
@@ -248,66 +283,103 @@ class AppState extends ChangeNotifier {
   // ── Event handling ───────────────────────────────────────────────────────--
 
   void _onEvent(Map<String, dynamic> e) {
+    try {
+      if (_applyEvent(e)) notifyListeners();
+    } catch (err) {
+      AppLog.warn('app_state', 'ignored malformed event', err);
+    }
+  }
+
+  bool _applyEvent(Map<String, dynamic> e) {
     switch (e['kind'] as String?) {
       case 'hello':
-        status = BridgeStatus.fromJson((e['status'] as Map).cast());
-        _setChats((e['chats'] as List?) ?? const []);
-        break;
+        final rawStatus = _map(e['status']);
+        if (rawStatus == null) return false;
+        status = BridgeStatus.fromJson(rawStatus);
+        _setChats(_list(e['chats']));
+        return true;
       case 'status':
-        status = BridgeStatus.fromJson((e['status'] as Map).cast());
-        break;
+        final rawStatus = _map(e['status']);
+        if (rawStatus == null) return false;
+        status = BridgeStatus.fromJson(rawStatus);
+        return true;
       case 'chat_created':
       case 'chat_updated':
-        _upsertChat(ClientChat.fromJson((e['chat'] as Map).cast()));
-        break;
+        final rawChat = _map(e['chat']);
+        if (rawChat == null) return false;
+        _upsertChat(ClientChat.fromJson(rawChat));
+        return true;
       case 'chat_deleted':
-        _removeChat(e['chatId'] as String);
-        break;
+        final chatId = _string(e['chatId']);
+        if (chatId == null) return false;
+        _removeChat(chatId);
+        return true;
       case 'message':
-        _onMessage(e['chatId'] as String,
-            ClientMessage.fromJson((e['message'] as Map).cast()));
-        break;
+        final chatId = _string(e['chatId']);
+        final rawMessage = _map(e['message']);
+        if (chatId == null || rawMessage == null) return false;
+        _onMessage(chatId, ClientMessage.fromJson(rawMessage));
+        return true;
       case 'message_edited':
-        _editMessage(e['chatId'] as String, e['messageId'].toString(),
-            (e['text'] ?? '') as String);
-        break;
+        final chatId = _string(e['chatId']);
+        final messageId = _string(e['messageId']);
+        if (chatId == null || messageId == null) return false;
+        _editMessage(chatId, messageId, _string(e['text']) ?? '');
+        return true;
       case 'message_deleted':
-        _deleteMessage(e['chatId'] as String, e['messageId'].toString());
-        break;
+        final chatId = _string(e['chatId']);
+        final messageId = _string(e['messageId']);
+        if (chatId == null || messageId == null) return false;
+        _deleteMessage(chatId, messageId);
+        return true;
       case 'reaction':
-        _addReaction(e['chatId'] as String, e['messageId'].toString(),
-            (e['emoji'] ?? '') as String);
-        break;
+        final chatId = _string(e['chatId']);
+        final messageId = _string(e['messageId']);
+        final emoji = _string(e['emoji']);
+        if (chatId == null || messageId == null || emoji == null) {
+          return false;
+        }
+        _addReaction(chatId, messageId, emoji);
+        return true;
       case 'turn_start':
-        turnFor(e['chatId'] as String).reset();
-        break;
+        final chatId = _string(e['chatId']);
+        if (chatId == null) return false;
+        turnFor(chatId).reset();
+        return true;
       case 'reasoning':
-        final t = turnFor(e['chatId'] as String);
-        t.reasoning.add((e['text'] ?? '') as String);
-        break;
+        final chatId = _string(e['chatId']);
+        if (chatId == null) return false;
+        turnFor(chatId).reasoning.add(_string(e['text']) ?? '');
+        return true;
       case 'delta':
-        turnFor(e['chatId'] as String).draft += (e['text'] ?? '') as String;
-        break;
+        final chatId = _string(e['chatId']);
+        if (chatId == null) return false;
+        turnFor(chatId).draft += _string(e['text']) ?? '';
+        return true;
       case 'tool':
-        _onTool(e);
-        break;
+        return _onTool(e);
       case 'typing':
-        turnFor(e['chatId'] as String).typing = (e['on'] ?? false) as bool;
-        break;
+        final chatId = _string(e['chatId']);
+        if (chatId == null) return false;
+        turnFor(chatId).typing = e['on'] == true;
+        return true;
       case 'turn_end':
-        final t = turnFor(e['chatId'] as String);
+        final chatId = _string(e['chatId']);
+        if (chatId == null) return false;
+        final t = turnFor(chatId);
         t.active = false;
         t.typing = false;
         t.draft = '';
         t.reasoning.clear();
         t.tools.clear();
-        break;
+        return true;
       case 'error':
-        final chatId = e['chatId'] as String?;
-        if (chatId != null) _appendSystem(chatId, (e['message'] ?? '') as String);
-        break;
+        final chatId = _string(e['chatId']);
+        if (chatId == null) return false;
+        _appendSystem(chatId, _string(e['message']) ?? '');
+        return true;
     }
-    notifyListeners();
+    return false;
   }
 
   void _onMessage(String chatId, ClientMessage m) {
@@ -328,32 +400,33 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _onTool(Map<String, dynamic> e) {
-    final name = (e['name'] ?? 'tool') as String;
+  bool _onTool(Map<String, dynamic> e) {
+    final chatId = _string(e['chatId']);
+    final id = _string(e['id']);
+    if (chatId == null || id == null) return false;
+    final name = _string(e['name']) ?? 'tool';
     // `end_turn` is the canonical delivery tool — its "result" is the assistant
     // message that arrives separately, so no tool_result event ever lands for
     // it. Showing it as a chip means an eternally-spinning row of noise.
-    if (_isInternalTool(name)) return;
+    if (_isInternalTool(name)) return true;
 
-    final t = turnFor(e['chatId'] as String);
-    final id = e['id'].toString();
-    final phase = e['phase'] as String?;
+    final t = turnFor(chatId);
+    final phase = _string(e['phase']);
     final existing = t.tools.where((x) => x.id == id);
     if (phase == 'result') {
       if (existing.isNotEmpty) {
         existing.first.done = true;
         existing.first.finishedAt = DateTime.now();
-        existing.first.error = e['error'] as String?;
+        existing.first.error = _string(e['error']);
       }
-      return;
+      return true;
     }
     if (existing.isEmpty) {
-      t.tools.add(ToolActivity(
-        id: id,
-        name: name,
-        input: ((e['input'] as Map?) ?? const {}).cast<String, dynamic>(),
-      ));
+      t.tools.add(
+        ToolActivity(id: id, name: name, input: _map(e['input']) ?? const {}),
+      );
     }
+    return true;
   }
 
   static bool _isInternalTool(String name) => name == 'end_turn';
@@ -374,10 +447,14 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _refreshModels() async {
-    final r = await _client?.models();
-    if (r != null) {
-      models = r.$2;
-      notifyListeners();
+    try {
+      final r = await _client?.models();
+      if (r != null && !_disposed) {
+        models = r.$2;
+        notifyListeners();
+      }
+    } catch (e) {
+      AppLog.warn('app_state', 'model refresh failed', e);
     }
   }
 
@@ -395,7 +472,12 @@ class AppState extends ChangeNotifier {
   void _setChats(List<dynamic> raw) {
     chats
       ..clear()
-      ..addAll(raw.map((c) => ClientChat.fromJson((c as Map).cast())));
+      ..addAll(
+        raw
+            .map(_map)
+            .whereType<Map<String, dynamic>>()
+            .map(ClientChat.fromJson),
+      );
     _sortChats();
     selectedChatId ??= chats.isNotEmpty ? chats.first.id : null;
   }
@@ -420,7 +502,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  void _sortChats() => chats.sort((a, b) => b.lastActive.compareTo(a.lastActive));
+  void _sortChats() =>
+      chats.sort((a, b) => b.lastActive.compareTo(a.lastActive));
 
   void _editMessage(String chatId, String messageId, String text) {
     for (final m in _messages[chatId] ?? const <ClientMessage>[]) {
@@ -441,13 +524,15 @@ class AppState extends ChangeNotifier {
   }
 
   void _appendSystem(String chatId, String text) {
-    _messages.putIfAbsent(chatId, () => []).add(ClientMessage(
-          id: 'sys-${DateTime.now().microsecondsSinceEpoch}',
-          chatId: chatId,
-          role: Role.system,
-          text: text,
-          ts: DateTime.now().millisecondsSinceEpoch,
-        ));
+    _messages.putIfAbsent(chatId, () => []).add(
+          ClientMessage(
+            id: 'sys-${DateTime.now().microsecondsSinceEpoch}',
+            chatId: chatId,
+            role: Role.system,
+            text: text,
+            ts: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
   }
 
   void _setConn(ConnState s, String? err) {
@@ -455,6 +540,18 @@ class AppState extends ChangeNotifier {
     connError = err;
     notifyListeners();
   }
+
+  static String? _string(Object? value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    return value.toString();
+  }
+
+  static Map<String, dynamic>? _map(Object? value) =>
+      value is Map ? value.cast<String, dynamic>() : null;
+
+  static List<dynamic> _list(Object? value) =>
+      value is List ? value : const <dynamic>[];
 
   @override
   void dispose() {

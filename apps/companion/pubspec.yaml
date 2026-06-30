@@ -27,6 +27,10 @@ dependencies:
 
 dev_dependencies:
   flutter_lints: ^4.0.0
+  # Required by test/ (bridge_models_test.dart imports package:flutter_test).
+  # Without this declared, `flutter test` refuses to run the suite.
+  flutter_test:
+    sdk: flutter
 
 flutter:
   uses-material-design: true

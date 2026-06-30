@@ -8,8 +8,9 @@ void main() {
       const c = ConnectionConfig(host: '10.0.0.5', port: 1234, token: 'sk e/t');
       expect(c.baseUrl, 'http://10.0.0.5:1234');
       expect(c.eventsUrl(), startsWith('http://10.0.0.5:1234/events?token='));
-      // token is URL-encoded
-      expect(c.eventsUrl(), contains('sk%20e%2Ft'));
+      // token is URL-encoded; Uri.encodeQueryComponent uses form-encoding,
+      // so a space becomes '+' (the server's URLSearchParams decodes it back).
+      expect(c.eventsUrl(), contains('sk+e%2Ft'));
       expect(c.authHeaders()['Authorization'], 'Bearer sk e/t');
     });
 
@@ -25,6 +26,7 @@ void main() {
         host: 'host',
         port: 42,
         token: 't',
+        tls: true,
         manageLocalDaemon: false,
         launchCommand: 'talon',
         launchArgs: ['start'],
@@ -33,7 +35,74 @@ void main() {
       expect(back.host, 'host');
       expect(back.port, 42);
       expect(back.token, 't');
+      expect(back.tls, isTrue);
       expect(back.manageLocalDaemon, isFalse);
+    });
+
+    test('tls flips scheme on base + events URLs', () {
+      const c = ConnectionConfig(host: 'h', port: 8443, tls: true);
+      expect(c.baseUrl, 'https://h:8443');
+      expect(c.eventsUrl(), 'https://h:8443/events');
+    });
+
+    test('legacy json without tls defaults to plaintext', () {
+      final c = ConnectionConfig.fromJson({'host': 'h', 'port': 5});
+      expect(c.tls, isFalse);
+      expect(c.baseUrl, 'http://h:5');
+    });
+  });
+
+  group('ConnectionConfig.parseHostInput', () {
+    test('bare host is untouched', () {
+      final r = ConnectionConfig.parseHostInput('192.168.1.20');
+      expect(r.host, '192.168.1.20');
+      expect(r.port, isNull);
+      expect(r.tls, isNull);
+    });
+
+    test('strips https:// scheme and infers tls + path', () {
+      final r = ConnectionConfig.parseHostInput('https://talon.example.com/');
+      expect(r.host, 'talon.example.com');
+      expect(r.tls, isTrue);
+      expect(r.port, isNull);
+    });
+
+    test('http:// scheme infers plaintext', () {
+      final r = ConnectionConfig.parseHostInput('http://host');
+      expect(r.host, 'host');
+      expect(r.tls, isFalse);
+    });
+
+    test('extracts embedded port', () {
+      final r = ConnectionConfig.parseHostInput('host:19880');
+      expect(r.host, 'host');
+      expect(r.port, 19880);
+    });
+
+    test('full URL with scheme, port and path', () {
+      final r = ConnectionConfig.parseHostInput(
+        'https://gw.ts.net:19880/x?y=1',
+      );
+      expect(r.host, 'gw.ts.net');
+      expect(r.port, 19880);
+      expect(r.tls, isTrue);
+    });
+
+    test('IPv6 literal in brackets with port', () {
+      final r = ConnectionConfig.parseHostInput('[::1]:1234');
+      expect(r.host, '::1');
+      expect(r.port, 1234);
+    });
+
+    test('bare IPv6 is not mistaken for host:port', () {
+      final r = ConnectionConfig.parseHostInput('fe80::1');
+      expect(r.host, 'fe80::1');
+      expect(r.port, isNull);
+    });
+
+    test('trims surrounding whitespace', () {
+      final r = ConnectionConfig.parseHostInput('  host  ');
+      expect(r.host, 'host');
     });
   });
 
@@ -63,6 +132,56 @@ void main() {
       expect(m.role, Role.user);
       expect(m.text, '');
       expect(m.buttons, isEmpty);
+    });
+
+    test('defaults are tolerant of wrong-typed fields', () {
+      final m = ClientMessage.fromJson({
+        'id': null,
+        'chatId': 123,
+        'role': ['assistant'],
+        'text': {'bad': true},
+        'ts': '42',
+        'buttons': [
+          [
+            {'text': 99, 'url': false},
+            'bad button',
+          ],
+          'bad row',
+        ],
+        'reactions': 'bad',
+      });
+      expect(m.id, '');
+      expect(m.chatId, '123');
+      expect(m.role, Role.user);
+      expect(m.text, '{bad: true}');
+      expect(m.ts, 42);
+      expect(m.buttons.first.first.text, '99');
+      expect(m.reactions, isEmpty);
+
+      final chat = ClientChat.fromJson({
+        'id': 1,
+        'title': 2,
+        'createdAt': '3',
+        'lastActive': 4.8,
+        'preview': {'x': true},
+        'pulse': 'yes',
+      });
+      expect(chat.id, '1');
+      expect(chat.title, '2');
+      expect(chat.createdAt, 3);
+      expect(chat.lastActive, 4);
+      expect(chat.preview, '{x: true}');
+      expect(chat.pulse, isNull);
+
+      final cfg = ConfigSnapshot.fromJson({
+        'pulse': 'bad',
+        'pulseIntervalMs': '100',
+        'health': {'healthy': 'bad', 'sessions': '2'},
+      });
+      expect(cfg.pulse, isFalse);
+      expect(cfg.pulseIntervalMs, 100);
+      expect(cfg.healthy, isFalse);
+      expect(cfg.sessions, 2);
     });
 
     test('ClientChat + ConfigSnapshot', () {
