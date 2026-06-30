@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.3](https://github.com/dylanneve1/talon/compare/v1.24.2...v1.24.3) (2026-06-30)
+
+
+### Bug Fixes
+
+* **companion:** macOS network-client entitlement + connection diagnostics ([#405](https://github.com/dylanneve1/talon/issues/405)) ([6a899d3](https://github.com/dylanneve1/talon/commit/6a899d3d527d4b22e2b1a5d7dc5f7fca8305f865))
+
 ## [1.24.2](https://github.com/dylanneve1/talon/compare/v1.24.1...v1.24.2) (2026-06-30)
 
 
