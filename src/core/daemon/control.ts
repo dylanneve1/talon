@@ -13,7 +13,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
   readPidRecord,
   writePidRecord,
@@ -70,28 +70,42 @@ export async function startDaemon(opts: {
   }
 
   const before = readPidRecord(opts.pidfilePath);
-  const entryScript = resolve(opts.pkgRoot, "src", "index.ts");
+
+  // Bun-compiled binaries embed the source tree inside the binary itself —
+  // `import.meta.dirname` and process.argv[1] point into the virtual FS
+  // (prefix `~BUN` on Windows, `$bunfs` on POSIX) which doesn't exist on
+  // disk. Re-invoke the binary itself rather than tsx + a source entry.
+  const isBunBinary =
+    (process.argv[1] ?? "").includes("~BUN") ||
+    (process.argv[1] ?? "").includes("$bunfs");
 
   // Spawn detached with stdio ignored.
   //
-  // Invoke tsx's CLI entry directly via `node <tsx-cli.mjs> <entry>` rather
-  // than `node --import tsx/dist/esm/index.mjs <entry>`. The --import loader
-  // path triggered a tsx resolver bug where CJS `require('../../')` from
-  // gramjs resolved to `index.jsx` instead of `index.js`, killing startup
-  // silently in detached mode (stderr is /dev/null). Running tsx as a CLI
-  // avoids the broken loader path while still working on Windows — `node
-  // foo.mjs` bypasses the .cmd wrapper that motivated the loader approach.
-  const tsxCli = resolve(
-    opts.pkgRoot,
-    "node_modules",
-    "tsx",
-    "dist",
-    "cli.mjs",
-  );
+  // Source runs: invoke tsx's CLI entry directly via `node <tsx-cli.mjs>
+  // <entry>` rather than `node --import tsx/dist/esm/index.mjs <entry>`.
+  // The --import loader path triggered a tsx resolver bug where CJS
+  // `require('../../')` from gramjs resolved to `index.jsx` instead of
+  // `index.js`, killing startup silently in detached mode (stderr is
+  // /dev/null). Running tsx as a CLI avoids the broken loader path while
+  // still working on Windows — `node foo.mjs` bypasses the .cmd wrapper
+  // that motivated the loader approach.
+  //
+  // Compiled binaries: re-invoke `process.execPath` with no extra args.
+  // The binary's own entrypoint (src/index.ts, embedded) handles the
+  // server startup the same way a tsx run would.
+  const spawnCmd = process.execPath;
+  const spawnArgs = isBunBinary
+    ? []
+    : [
+        resolve(opts.pkgRoot, "node_modules", "tsx", "dist", "cli.mjs"),
+        resolve(opts.pkgRoot, "src", "index.ts"),
+      ];
+  const spawnCwd = isBunBinary ? dirname(process.execPath) : opts.pkgRoot;
+
   let child;
   try {
-    child = spawn(process.execPath, [tsxCli, entryScript], {
-      cwd: opts.pkgRoot,
+    child = spawn(spawnCmd, spawnArgs, {
+      cwd: spawnCwd,
       detached: true,
       stdio: "ignore",
       env: { ...process.env },
