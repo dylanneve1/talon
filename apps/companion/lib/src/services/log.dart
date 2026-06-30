@@ -67,4 +67,41 @@ class AppLog {
         return 1000;
     }
   }
+
+  /// Pattern-matches well-known transport failures and returns an
+  /// actionable hint, or null if nothing recognized. Surfaced under raw
+  /// error text in the UI so a connection failure doesn't require pulling
+  /// a screenshot + reading source to diagnose.
+  static String? diagnose(String rawError) {
+    final e = rawError.toLowerCase();
+    if (e.contains('operation not permitted') && e.contains('errno = 1')) {
+      return 'This usually means the desktop build is sandboxed without '
+          'outbound network access (macOS: missing '
+          'com.apple.security.network.client entitlement — run '
+          'scripts/fix-macos-entitlements.sh and rebuild). Not a bad '
+          'host/port/token.';
+    }
+    if (e.contains('cleartextnotpermitted') ||
+        (e.contains('cleartext') && e.contains('not permitted'))) {
+      return 'Android blocks plain HTTP by default. Either enable the '
+          '"Use HTTPS / TLS" toggle for this host, or add a network '
+          'security config allowing cleartext to this host.';
+    }
+    if (e.contains('connection refused')) {
+      return 'Nothing is listening on that host/port — check the daemon is '
+          'running and the native frontend is configured with that port.';
+    }
+    if (e.contains('timed out') || e.contains('timeout')) {
+      return 'No response within the timeout — likely a firewall or '
+          'network path issue rather than the daemon itself.';
+    }
+    if (e.contains('401') || e.contains('unauthorized')) {
+      return 'Auth rejected — the bearer token doesn\'t match the '
+          'daemon\'s configured token.';
+    }
+    return null;
+  }
+
+  /// Dump of recent log lines for a "copy diagnostics" action.
+  static String dump() => recent.join('\n');
 }

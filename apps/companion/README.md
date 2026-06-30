@@ -4,7 +4,7 @@ A beautiful, cross-platform client for [Talon](../../README.md) — one Flutter
 codebase for **Windows, macOS, Linux, and Android** (iOS/web build too).
 
 It speaks the **Talon Client Bridge Protocol** (HTTP + Server-Sent Events) to a
-Talon daemon running the `desktop` frontend:
+Talon daemon running the `native` frontend:
 
 - **Desktop** — connects to a Talon on the same machine and, if one isn't
   running, launches it for you (`TALON_FRONTEND_OVERRIDE=desktop`).
@@ -33,10 +33,19 @@ Requires the [Flutter SDK](https://docs.flutter.dev/get-started/install)
 ```bash
 cd apps/companion
 flutter create --platforms=windows,macos,linux,android .   # one-time scaffold
+./scripts/fix-macos-entitlements.sh                        # macOS only, see below
 flutter pub get
 flutter run -d windows     # or macos / linux
 flutter run -d <android-device>
 ```
+
+**macOS gotcha:** Flutter's default macOS scaffold enables App Sandbox but
+omits the outbound-network entitlement, so any remote-bridge connection fails
+instantly with `SocketException ... Operation not permitted, errno = 1` —
+even when the host/port/token are all correct. `flutter create` regenerates
+`macos/` from scratch (it isn't committed), so re-run
+`./scripts/fix-macos-entitlements.sh` after every fresh scaffold, then
+`flutter clean && flutter run -d macos`.
 
 On first launch, pick **This computer** (desktop) or **Remote bridge** (enter a
 host/IP + token). For remote access, run the daemon with a reachable bridge:
@@ -44,15 +53,15 @@ host/IP + token). For remote access, run the daemon with a reachable bridge:
 ```jsonc
 // ~/.talon/config.json
 {
-  "frontend": "desktop",
-  "desktop": { "host": "0.0.0.0", "port": 19880, "token": "your-secret" }
+  "frontend": "native",
+  "native": { "host": "0.0.0.0", "port": 19880, "token": "your-secret" }
 }
 ```
 
 ## Protocol
 
 The wire contract lives on the daemon side in
-[`src/frontend/desktop/protocol.ts`](../../src/frontend/desktop/protocol.ts)
+[`src/frontend/native/protocol.ts`](../../src/frontend/native/protocol.ts)
 and is mirrored in Dart under [`lib/src/models/`](lib/src/models). Endpoints:
 
 | Method | Path | Purpose |

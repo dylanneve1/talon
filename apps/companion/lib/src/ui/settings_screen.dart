@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/bridge_models.dart';
+import '../services/log.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'connect_screen.dart';
@@ -57,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       });
     } catch (e) {
+      AppLog.error('settings', 'config load failed', e);
       if (mounted) {
         setState(() {
           _loading = false;
@@ -113,9 +115,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
         if (cfg == null)
           _Section(
             title: 'Settings unavailable',
-            child: Text(
-              _error ?? 'Could not read settings from the daemon.',
-              style: const TextStyle(color: TalonColors.textFaint),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _error ?? 'Could not read settings from the daemon.',
+                  style: const TextStyle(color: TalonColors.textFaint),
+                ),
+                if (_error != null && AppLog.diagnose(_error!) != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: TalonColors.accent.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.lightbulb_outline,
+                            size: 16, color: TalonColors.accent),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            AppLog.diagnose(_error!)!,
+                            style: const TextStyle(
+                                fontSize: 12.5, color: TalonColors.textDim),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      final dump =
+                          '${_error ?? ''}\n\n--- recent log ---\n${AppLog.dump()}';
+                      await Clipboard.setData(ClipboardData(text: dump));
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Diagnostics copied to clipboard')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.copy_all_outlined, size: 16),
+                    label: const Text('Copy diagnostics'),
+                  ),
+                ),
+              ],
             ),
           )
         else ...[
