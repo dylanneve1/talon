@@ -1,0 +1,14 @@
+name: talon
+version: ${VERSION}
+arch: ${ARCH}
+platform: linux
+maintainer: Dylan Neve <dylanneve1@gmail.com>
+description: Multi-frontend AI agent with full tool access, streaming, cron jobs, and plugin system
+homepage: https://github.com/dylanneve1/talon
+license: MIT
+
+contents:
+  - src: ${BIN}
+    dst: /usr/local/bin/talon
+    file_info:
+      mode: 0755
