@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.24.2](https://github.com/dylanneve1/talon/compare/v1.24.1...v1.24.2) (2026-06-30)
+
+
+### Bug Fixes
+
+* **ci:** broken YAML in companion-scaffold.yml blocked workflow_dispatch ([#407](https://github.com/dylanneve1/talon/issues/407)) ([423e45f](https://github.com/dylanneve1/talon/commit/423e45fa3a4b4f04aa62d462391be7973ca39e43))
+
 ## [1.24.1](https://github.com/dylanneve1/talon/compare/v1.24.0...v1.24.1) (2026-06-30)
 
 
