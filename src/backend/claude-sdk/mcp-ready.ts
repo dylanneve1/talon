@@ -26,7 +26,7 @@ import type { Query } from "@anthropic-ai/claude-agent-sdk";
 export async function waitForMcpServersReady(
   qi: Pick<Query, "mcpServerStatus">,
   names: string[],
-  timeoutMs = 15_000,
+  timeoutMs = 60_000,
   pollMs = 250,
 ): Promise<void> {
   if (names.length === 0) return;
