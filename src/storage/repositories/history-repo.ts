@@ -116,8 +116,7 @@ export function byMsgId(
   msgId: number,
 ): HistoryMessage | undefined {
   const row = getDatabase().prepare(historySql.byMsgId).get(chatId, msgId) as
-    | Row
-    | undefined;
+    Row | undefined;
   return row ? rowToMessage(row) : undefined;
 }
 
@@ -134,8 +133,7 @@ export function bySenderId(
 
 export function latestMsgId(chatId: string): number | undefined {
   const row = getDatabase().prepare(historySql.latestMsgId).get(chatId) as
-    | { msg_id: number }
-    | undefined;
+    { msg_id: number } | undefined;
   return row?.msg_id;
 }
 

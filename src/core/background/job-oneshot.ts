@@ -53,8 +53,7 @@ export interface JobOneShotParams {
 }
 
 export type JobOneShotResult =
-  | { status: "ran" }
-  | { status: "skipped"; reason: string };
+  { status: "ran" } | { status: "skipped"; reason: string };
 
 /** Open a per-run log file and return an appender bound to it. */
 async function openJobLog(

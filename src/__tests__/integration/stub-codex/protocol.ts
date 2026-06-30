@@ -47,10 +47,7 @@ export interface CodexUsage {
 }
 
 export type CodexEmit =
-  | CodexAgentMessage
-  | CodexMcpToolCall
-  | CodexReasoning
-  | CodexRawItem;
+  CodexAgentMessage | CodexMcpToolCall | CodexReasoning | CodexRawItem;
 
 /** The model's final reply text (Codex coalesces deltas into one block). */
 export interface CodexAgentMessage {

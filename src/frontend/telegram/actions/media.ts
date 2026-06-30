@@ -120,8 +120,7 @@ export const mediaHandlers: TelegramActionHandlers = {
       {
         is_anonymous: body.is_anonymous as boolean | undefined,
         allows_multiple_answers: body.allows_multiple_answers as
-          | boolean
-          | undefined,
+          boolean | undefined,
         type: body.type as "regular" | "quiz" | undefined,
         correct_option_ids:
           body.correct_option_id != null

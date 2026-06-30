@@ -77,8 +77,7 @@ describe.skipIf(!stubReady)("SDK integration (stub binary)", () => {
     const assistant = result.messages.find(
       (m) => (m as { type: string }).type === "assistant",
     ) as
-      | { message: { content: { type: string; text?: string }[] } }
-      | undefined;
+      { message: { content: { type: string; text?: string }[] } } | undefined;
 
     expect(assistant).toBeDefined();
     const text = assistant?.message.content.find((b) => b.type === "text");
@@ -134,8 +133,7 @@ describe.skipIf(!stubReady)("SDK integration (stub binary)", () => {
 
     const calls = result.hookInputs.PostToolBatch ?? [];
     const firstInput = calls[0] as
-      | { tool_calls: { tool_name: string }[] }
-      | undefined;
+      { tool_calls: { tool_name: string }[] } | undefined;
     expect(firstInput?.tool_calls.map((tc) => tc.tool_name)).toContain(
       "mcp__telegram-tools__end_turn",
     );
@@ -270,8 +268,7 @@ describe.skipIf(!stubReady)("SDK integration (stub binary)", () => {
     expect(result.hookFires.PostToolBatch).toBe(1);
     const calls = result.hookInputs.PostToolBatch ?? [];
     const firstInput = calls[0] as
-      | { tool_calls: { tool_name: string }[] }
-      | undefined;
+      { tool_calls: { tool_name: string }[] } | undefined;
     expect(firstInput?.tool_calls.map((tc) => tc.tool_name)).toContain(
       "mcp__telegram-tools__react",
     );

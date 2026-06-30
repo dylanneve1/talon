@@ -99,10 +99,7 @@ function missingResolution(): UnifiedModelResolution {
 function fakeBackend(opts: {
   resolveModel?: (q: string) => Promise<UnifiedModelResolution>;
   getDefaultModel?: () =>
-    | Promise<string | null | undefined>
-    | string
-    | null
-    | undefined;
+    Promise<string | null | undefined> | string | null | undefined;
   backendLabel?: string;
 }): Backend {
   const models: Partial<ModelCatalog> = {};

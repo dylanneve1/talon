@@ -79,10 +79,7 @@ export interface StubBackendInput {
   // slot directly to opt out of the adapter wiring.
   resolveModel?: (q: string) => Promise<UnifiedModelResolution>;
   getDefaultModel?: () =>
-    | Promise<string | null | undefined>
-    | string
-    | null
-    | undefined;
+    Promise<string | null | undefined> | string | null | undefined;
   getModelInfo?: (id: string) => Promise<UnifiedModelInfo | undefined>;
   getSettingsPresentation?: (
     activeModel: string,
@@ -135,16 +132,14 @@ export interface StubBackendInput {
   control?: SystemControl;
 }
 
-const defaultQuery = vi.fn(
-  async (): Promise<QueryResult> => ({
-    text: "stub response",
-    durationMs: 1,
-    inputTokens: 0,
-    outputTokens: 0,
-    cacheRead: 0,
-    cacheWrite: 0,
-  }),
-);
+const defaultQuery = vi.fn(async (): Promise<QueryResult> => ({
+  text: "stub response",
+  durationMs: 1,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+}));
 
 function buildModels(input: StubBackendInput): ModelCatalog | undefined {
   if (input.models) return input.models;

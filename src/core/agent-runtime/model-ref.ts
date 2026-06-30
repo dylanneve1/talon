@@ -64,12 +64,7 @@ export type CacheSupport = "none" | "read" | "readwrite";
  * toast wording.
  */
 export type ModelSource =
-  | "config"
-  | "chat"
-  | "backend-default"
-  | "discovered"
-  | "fallback"
-  | "unknown";
+  "config" | "chat" | "backend-default" | "discovered" | "fallback" | "unknown";
 
 /**
  * One canonical model identity for an active run.

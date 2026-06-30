@@ -30,13 +30,7 @@ export type UnifiedModelInfo = {
 };
 
 export type ReasoningEffortLevel =
-  | "off"
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "max"
-  | "xhigh";
+  "off" | "minimal" | "low" | "medium" | "high" | "max" | "xhigh";
 
 /** Result of resolving a user's model query. */
 export type UnifiedModelResolution =

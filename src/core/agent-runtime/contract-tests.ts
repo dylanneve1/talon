@@ -45,8 +45,7 @@ function firstOf<K extends AgentEvent["type"]>(
   kind: K,
 ): Extract<AgentEvent, { type: K }> | undefined {
   return events.find((e) => e.type === kind) as
-    | Extract<AgentEvent, { type: K }>
-    | undefined;
+    Extract<AgentEvent, { type: K }> | undefined;
 }
 
 /**

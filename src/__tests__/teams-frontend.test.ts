@@ -199,8 +199,7 @@ describe("teams formatting", () => {
       ).content as Record<string, unknown>;
       const body = content.body as Array<Record<string, unknown>>;
       const codeBlock = body.find((b) => b.type === "Container") as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       expect(codeBlock).toBeDefined();
       const items = codeBlock!.items as Array<Record<string, unknown>>;
       // The empty line should become " " (non-breaking space placeholder)

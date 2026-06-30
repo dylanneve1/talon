@@ -9,8 +9,7 @@ import type {
 import { deriveNumericChatId } from "../../../util/chat-id.js";
 
 export type ComponentInteraction =
-  | ButtonInteraction
-  | StringSelectMenuInteraction;
+  ButtonInteraction | StringSelectMenuInteraction;
 
 export function chatIdFromInteraction(interaction: ComponentInteraction): {
   chatId: string;

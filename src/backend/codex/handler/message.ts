@@ -279,11 +279,7 @@ export async function handleMessage(
     ...(modelReasoningEffort
       ? {
           modelReasoningEffort: modelReasoningEffort as
-            | "minimal"
-            | "low"
-            | "medium"
-            | "high"
-            | "xhigh",
+            "minimal" | "low" | "medium" | "high" | "xhigh",
         }
       : {}),
     ...CODEX_THREAD_PERMISSIONS,

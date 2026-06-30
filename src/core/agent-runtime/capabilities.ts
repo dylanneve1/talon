@@ -114,10 +114,7 @@ export interface ModelCatalog {
    * `undefined` for catalog-driven backends with no canonical).
    */
   getDefaultModelId():
-    | Promise<string | null | undefined>
-    | string
-    | null
-    | undefined;
+    Promise<string | null | undefined> | string | null | undefined;
   /** Backend-native model lookup by id. */
   getRawModelInfo(id: string): Promise<UnifiedModelInfo | undefined>;
 

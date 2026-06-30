@@ -121,8 +121,7 @@ export function isResult(msg: SDKMessage): msg is SDKResultMessage {
 
 /** Output of `processStreamDelta` when the throttle interval has elapsed. */
 export type StreamDeltaEmit =
-  | { phase: "text"; text: string }
-  | { phase: "thinking"; text: string };
+  { phase: "text"; text: string } | { phase: "thinking"; text: string };
 
 /**
  * Process a streaming delta event — accumulates per-token chunks

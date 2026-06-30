@@ -33,12 +33,7 @@ export type HistoryMessage = {
   replyToMsgId?: number;
   timestamp: number;
   mediaType?:
-    | "photo"
-    | "document"
-    | "voice"
-    | "sticker"
-    | "video"
-    | "animation";
+    "photo" | "document" | "voice" | "sticker" | "video" | "animation";
   stickerFileId?: string;
   /** Saved file path for downloaded media. */
   filePath?: string;

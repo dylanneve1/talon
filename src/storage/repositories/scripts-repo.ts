@@ -54,8 +54,7 @@ export function upsert(script: Script): void {
 
 export function getByName(name: string): Script | undefined {
   const row = getDatabase().prepare(scriptsSql.getByName).get(name) as
-    | Row
-    | undefined;
+    Row | undefined;
   return row ? rowToScript(row) : undefined;
 }
 

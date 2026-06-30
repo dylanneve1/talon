@@ -343,8 +343,7 @@ export async function listSessionMessages(
 
   for (const message of page) {
     const messageInfo = (message as Record<string, unknown>)?.info as
-      | { id?: string }
-      | undefined;
+      { id?: string } | undefined;
     const id = messageInfo?.id;
     if (id && seenMessageIds.has(id)) continue;
     if (id) seenMessageIds.add(id);

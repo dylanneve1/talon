@@ -160,8 +160,7 @@ function processMessageUpdate(
   ctx: EventProcessingContext,
 ): ProcessEventOutcome {
   const info = props.info as
-    | (RemoteAssistantInfo & { sessionID?: string })
-    | undefined;
+    (RemoteAssistantInfo & { sessionID?: string }) | undefined;
   if (!info || typeof info !== "object" || info.role !== "assistant") {
     return { kind: "continue" };
   }
@@ -243,8 +242,7 @@ async function processPartUpdate(
   const callID = typeof part.callID === "string" ? part.callID : "";
   const toolName = typeof part.tool === "string" ? part.tool : "tool";
   const stateObj = part.state as
-    | { status?: string; input?: Record<string, unknown> }
-    | undefined;
+    { status?: string; input?: Record<string, unknown> } | undefined;
 
   // Fire onToolUse ONCE when the tool transitions to running or completed
   // with input available. Subsequent state changes don't re-fire.
@@ -432,8 +430,7 @@ export function finalizePartsIntoState(inputs: FinalizePartsInputs): {
   for (const part of parts) {
     if (part.type !== "tool") continue;
     const stateObj = part.state as
-      | { status?: string; input?: Record<string, unknown> }
-      | undefined;
+      { status?: string; input?: Record<string, unknown> } | undefined;
     const callID = typeof part.callID === "string" ? part.callID : "";
     const toolName = typeof part.tool === "string" ? part.tool : "tool";
     if (callID && seenToolCallIds.has(callID)) continue;

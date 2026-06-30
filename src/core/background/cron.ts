@@ -98,8 +98,7 @@ export function stopCronTimer(): void {
 const runningJobs = new Set<string>();
 
 type ExecuteJobResult =
-  | { status: "ran" }
-  | { status: "skipped"; reason: string };
+  { status: "ran" } | { status: "skipped"; reason: string };
 
 // Per-job circuit breaker policy (Gleam scheduler core via job-health):
 // 3 consecutive failures open the breaker; cooldown starts at 5 minutes
