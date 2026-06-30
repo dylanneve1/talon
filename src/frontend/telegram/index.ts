@@ -49,7 +49,8 @@ export function createTelegramFrontend(
   bot.api.config.use(autoRetry({ maxRetryAttempts: 3, maxDelaySeconds: 60 }));
 
   const context: ContextManager = {
-    acquire: (chatId: number) => gateway.setContext(chatId),
+    acquire: (chatId: number, stringId?: string) =>
+      gateway.setContext(chatId, stringId, "telegram"),
     release: (chatId: number) => gateway.clearContext(chatId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
@@ -69,7 +70,8 @@ export function createTelegramFrontend(
 
     async init() {
       // Register Telegram action handler with the core gateway
-      gateway.setFrontendHandler(
+      gateway.registerFrontendHandler(
+        "telegram",
         createTelegramActionHandler(bot, InputFile, config.botToken!, gateway),
       );
 

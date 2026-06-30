@@ -118,11 +118,11 @@ const frontendEnum = z.enum([
   "terminal",
   "teams",
   "discord",
-  "desktop",
+  "native",
 ]);
 
 /**
- * Desktop frontend — a client-agnostic bridge (HTTP + Server-Sent Events,
+ * Native frontend — a client-agnostic bridge (HTTP + Server-Sent Events,
  * JSON) that GUI clients connect to: the bundled Electron companion app
  * (apps/desktop), and any future client (Android, web, …) speaking the
  * same versioned protocol against `host:port`.
@@ -131,7 +131,7 @@ const frontendEnum = z.enum([
  * reach Talon remotely, set `host: "0.0.0.0"` and a `token` — the bridge
  * then requires `Authorization: Bearer <token>` (or `?token=` for SSE).
  */
-const desktopConfigSchema = z
+const nativeConfigSchema = z
   .object({
     /** Port the bridge binds. Falls back +1..+5 on EADDRINUSE. */
     port: z.number().int().min(1024).max(65535).default(19880),
@@ -400,8 +400,8 @@ const configSchema = z.object({
   // Discord — discord.js v14-based frontend
   discord: discordConfigSchema.optional(),
 
-  // Desktop — local bridge for the Electron companion app (apps/desktop)
-  desktop: desktopConfigSchema.optional(),
+  // Native — local bridge for the Electron companion app (apps/desktop)
+  native: nativeConfigSchema.optional(),
 
   // Display name shown in terminal UI (defaults to "Talon")
   botDisplayName: z.string().default("Talon"),
@@ -466,6 +466,44 @@ function loadConfigFile(): Record<string, unknown> {
   return {};
 }
 
+function normalizeDeprecatedFrontendConfig(
+  fileConfig: Record<string, unknown>,
+): Record<string, unknown> {
+  const normalized = { ...fileConfig };
+  let usedAlias = false;
+
+  const normalizeFrontendValue = (value: unknown): unknown => {
+    if (value === "desktop") {
+      usedAlias = true;
+      return "native";
+    }
+    if (Array.isArray(value) && value.some((item) => item === "desktop")) {
+      usedAlias = true;
+      return value.map((item) => (item === "desktop" ? "native" : item));
+    }
+    return value;
+  };
+
+  if ("frontend" in normalized) {
+    normalized.frontend = normalizeFrontendValue(normalized.frontend);
+  }
+  if ("desktop" in normalized) {
+    usedAlias = true;
+    if (!("native" in normalized)) {
+      normalized.native = normalized.desktop;
+    }
+    delete normalized.desktop;
+  }
+
+  if (usedAlias) {
+    console.warn(
+      'Deprecated "desktop" frontend config detected; use "native" instead.',
+    );
+  }
+
+  return normalized;
+}
+
 /**
  * First-run onboarding: creates workspace/talon.json with defaults.
  * Returns true if this is a fresh install.
@@ -491,15 +529,21 @@ function ensureConfigFile(): boolean {
 
 export function loadConfig(): TalonConfig {
   ensureConfigFile();
-  const fileConfig = loadConfigFile();
+  const fileConfig = normalizeDeprecatedFrontendConfig(loadConfigFile());
 
-  // Runtime frontend override (TALON_FRONTEND_OVERRIDE). Lets the desktop
-  // companion app spawn a daemon on the `desktop` frontend without rewriting
+  // Runtime frontend override (TALON_FRONTEND_OVERRIDE). Lets the native
+  // companion app spawn a daemon on the `native` frontend without rewriting
   // the user's saved config (which may target Telegram/Discord). Validated
   // against the same enum, so a bogus value fails fast like any other.
   const frontendOverride = process.env.TALON_FRONTEND_OVERRIDE?.trim();
   if (frontendOverride) {
-    fileConfig.frontend = frontendOverride;
+    fileConfig.frontend =
+      frontendOverride === "desktop" ? "native" : frontendOverride;
+    if (frontendOverride === "desktop") {
+      console.warn(
+        'Deprecated TALON_FRONTEND_OVERRIDE="desktop"; use "native" instead.',
+      );
+    }
   }
 
   const parsed = configSchema.parse(fileConfig);

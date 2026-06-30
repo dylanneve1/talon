@@ -109,6 +109,27 @@ describe("config", () => {
       expect(config.model).toBe("default");
     });
 
+    it("normalizes deprecated desktop frontend aliases to native", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      mockFs({
+        frontend: "desktop",
+        desktop: { host: "0.0.0.0", port: 19999, token: "bridge-token" },
+      });
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.frontend).toBe("native");
+      expect(config.native).toEqual({
+        host: "0.0.0.0",
+        port: 19999,
+        token: "bridge-token",
+      });
+      expect(warn).toHaveBeenCalledWith(
+        'Deprecated "desktop" frontend config detected; use "native" instead.',
+      );
+      warn.mockRestore();
+    });
+
     it("throws when telegram frontend has no botToken", async () => {
       mockFs({ frontend: "telegram" });
 
@@ -442,6 +463,17 @@ describe("config", () => {
       expect(config.systemPrompt).toContain(
         "You are running in terminal mode.",
       );
+    });
+
+    it("loads native.md prompt for native frontend", async () => {
+      mockFs(
+        { frontend: "native" },
+        { "native.md": "You are running in native mode." },
+      );
+
+      const { loadConfig } = await import("../util/config.js");
+      const config = loadConfig();
+      expect(config.systemPrompt).toContain("You are running in native mode.");
     });
 
     it("loads telegram.md prompt for telegram frontend", async () => {

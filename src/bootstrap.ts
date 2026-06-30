@@ -32,13 +32,20 @@ import { initDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
+import {
+  isNativeChatId,
+  isDiscordChatId,
+  isTelegramChatId,
+  isTerminalChatId,
+  isTeamsChatId,
+} from "./util/chat-id.js";
 import type { ContextManager } from "./core/types.js";
 import type { Backend } from "./core/agent-runtime/capabilities.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type Frontend = {
-  name: "telegram" | "terminal" | "teams" | "discord" | "desktop";
+  name: "telegram" | "terminal" | "teams" | "discord" | "native";
   context: ContextManager;
   sendTyping: (chatId: number) => Promise<void>;
   sendMessage: (chatId: number, text: string) => Promise<void>;
@@ -47,6 +54,62 @@ export type Frontend = {
   start: () => Promise<void>;
   stop: () => Promise<void>;
 };
+
+type FrontendSelection = Frontend | Frontend[];
+
+function normalizeFrontends(frontend: FrontendSelection): Frontend[] {
+  const list = Array.isArray(frontend) ? frontend : [frontend];
+  const byName = new Map<Frontend["name"], Frontend>();
+  for (const item of list) byName.set(item.name, item);
+  return [...byName.values()];
+}
+
+function resolveFrontendName(
+  chatId: string | undefined,
+  frontends: Frontend[],
+): Frontend["name"] {
+  if (frontends.length === 1) return frontends[0].name;
+  if (chatId) {
+    if (
+      isTerminalChatId(chatId) &&
+      frontends.some((f) => f.name === "terminal")
+    )
+      return "terminal";
+    if (isNativeChatId(chatId) && frontends.some((f) => f.name === "native"))
+      return "native";
+    if (isTeamsChatId(chatId) && frontends.some((f) => f.name === "teams"))
+      return "teams";
+    if (isDiscordChatId(chatId) && frontends.some((f) => f.name === "discord"))
+      return "discord";
+    if (
+      isTelegramChatId(chatId) &&
+      frontends.some((f) => f.name === "telegram")
+    )
+      return "telegram";
+  }
+  const firstNonTerminal = frontends.find((f) => f.name !== "terminal");
+  return firstNonTerminal?.name ?? frontends[0].name;
+}
+
+function resolveFrontend(
+  chatId: string | undefined,
+  frontends: Frontend[],
+): Frontend {
+  const name = resolveFrontendName(chatId, frontends);
+  const resolved = frontends.find((frontend) => frontend.name === name);
+  if (!resolved) {
+    throw new Error(`No frontend available for ${chatId ?? "unknown chat"}`);
+  }
+  return resolved;
+}
+
+function resolveFrontendByNumericId(
+  chatId: number,
+  stringId: string | undefined,
+  frontends: Frontend[],
+): Frontend {
+  return resolveFrontend(stringId ?? String(chatId), frontends);
+}
 
 export type BootstrapOptions = {
   /** Override frontend names for plugin loading (e.g. ["terminal"]). */
@@ -121,8 +184,10 @@ export async function bootstrap(
  */
 export async function initBackendAndDispatcher(
   config: TalonConfig,
-  frontend: Frontend,
+  frontend: FrontendSelection,
 ): Promise<BackendAndDispatcherResult> {
+  const frontends = normalizeFrontends(frontend);
+
   // Register all built-in backends via side-effect import. Adding a new
   // backend is now strictly additive: drop a `factory.ts` under the new
   // backend dir and import it here. No conditionals here change.
@@ -148,10 +213,32 @@ export async function initBackendAndDispatcher(
   // pool reuses one instance (refcounted) — a single-backend setup
   // still spins up exactly one instance.
   await initBackendPool(config, {
-    getBridgePort: frontend.getBridgePort,
-    frontendName: frontend.name,
+    getBridgePort: () => resolveFrontend(undefined, frontends).getBridgePort(),
+    frontendName: resolveFrontend(undefined, frontends).name,
   });
   const backend = getBackendForRole("chat");
+
+  const context: ContextManager = {
+    acquire(chatId: number, stringId?: string, frontendName?: string): void {
+      const frontendToUse =
+        frontends.find((item) => item.name === frontendName) ??
+        resolveFrontendByNumericId(chatId, stringId, frontends);
+      frontendToUse.context.acquire(chatId, stringId, frontendToUse.name);
+    },
+    release(chatId: number, stringId?: string): void {
+      resolveFrontendByNumericId(chatId, stringId, frontends).context.release(
+        chatId,
+        stringId,
+      );
+    },
+    getMessageCount(chatId: number, stringId?: string): number {
+      return resolveFrontendByNumericId(
+        chatId,
+        stringId,
+        frontends,
+      ).context.getMessageCount(chatId, stringId);
+    },
+  };
 
   // One-shot legacy migration: any chat-settings entry still holding
   // the old single-slot `model` field gets moved into
@@ -273,14 +360,21 @@ export async function initBackendAndDispatcher(
         getBackendIdForChat(chatId),
       );
     },
-    context: frontend.context,
-    sendTyping: frontend.sendTyping,
+    context,
+    sendTyping: async (chatId: number, stringId?: string) =>
+      resolveFrontendByNumericId(chatId, stringId, frontends).sendTyping(
+        chatId,
+      ),
     onActivity: () => resetPulseTimer(),
   });
 
   initPulse();
   initCron({
-    sendMessage: frontend.sendMessage,
+    sendMessage: async (chatId: number, text: string, stringId?: string) =>
+      resolveFrontendByNumericId(chatId, stringId, frontends).sendMessage(
+        chatId,
+        text,
+      ),
     // Isolated cron query jobs with no model override fall back to the chat's
     // active model + backend.
     resolveChatModel: async (chatId: string) => {
@@ -358,9 +452,9 @@ export async function initBackendAndDispatcher(
   // tell the agent it has outbound `${frontend}-tools` MCP servers available.
   // Terminal-only deployments get a stripped-down system prompt with no
   // outbound section.
-  const frontendNames = (
-    Array.isArray(config.frontend) ? config.frontend : [config.frontend]
-  ).filter((f) => f !== "terminal");
+  const frontendNames = frontends
+    .filter((f) => f.name !== "terminal")
+    .map((f) => f.name);
 
   initHeartbeat({
     model: config.model,

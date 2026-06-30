@@ -55,36 +55,50 @@ gateway.onStarted((port) =>
 );
 gateway.onShutdownRequest((reason) => void gracefulShutdown(reason));
 
-const selectedFrontend = getFrontends(config)[0]; // use first configured frontend
-let frontend: Frontend;
+const configuredFrontends = [
+  ...new Set(getFrontends(config)),
+] as Frontend["name"][];
 
-if (selectedFrontend === "terminal") {
-  const { createTerminalFrontend } =
-    await import("./frontend/terminal/index.js");
-  frontend = createTerminalFrontend(config, gateway);
-  log("bot", "Frontend: Terminal");
-} else if (selectedFrontend === "teams") {
-  const { createTeamsFrontend } = await import("./frontend/teams/index.js");
-  frontend = createTeamsFrontend(config, gateway);
-  log("bot", "Frontend: Teams");
-} else if (selectedFrontend === "discord") {
-  const { createDiscordFrontend } = await import("./frontend/discord/index.js");
-  frontend = createDiscordFrontend(config, gateway);
-  log("bot", "Frontend: Discord");
-} else if (selectedFrontend === "desktop") {
-  const { createDesktopFrontend } = await import("./frontend/desktop/index.js");
-  frontend = createDesktopFrontend(config, gateway);
-  log("bot", "Frontend: Desktop");
-} else {
-  const { createTelegramFrontend } =
-    await import("./frontend/telegram/index.js");
-  frontend = createTelegramFrontend(config, gateway);
-  log("bot", "Frontend: Telegram");
+async function createFrontend(name: Frontend["name"]): Promise<Frontend> {
+  switch (name) {
+    case "terminal": {
+      const { createTerminalFrontend } =
+        await import("./frontend/terminal/index.js");
+      return createTerminalFrontend(config, gateway);
+    }
+    case "teams": {
+      const { createTeamsFrontend } = await import("./frontend/teams/index.js");
+      return createTeamsFrontend(config, gateway);
+    }
+    case "discord": {
+      const { createDiscordFrontend } =
+        await import("./frontend/discord/index.js");
+      return createDiscordFrontend(config, gateway);
+    }
+    case "native": {
+      const { createNativeFrontend } =
+        await import("./frontend/native/index.js");
+      return createNativeFrontend(config, gateway);
+    }
+    case "telegram":
+    default: {
+      const { createTelegramFrontend } =
+        await import("./frontend/telegram/index.js");
+      return createTelegramFrontend(config, gateway);
+    }
+  }
+}
+
+const frontends: Frontend[] = [];
+for (const name of configuredFrontends) {
+  const frontend = await createFrontend(name);
+  frontends.push(frontend);
+  log("bot", `Frontend: ${name[0].toUpperCase()}${name.slice(1)}`);
 }
 
 // ── Create backend + wire dispatcher ─────────────────────────────────────────
 
-const { backend } = await initBackendAndDispatcher(config, frontend);
+const { backend } = await initBackendAndDispatcher(config, frontends);
 gateway.backend = backend;
 
 // Subscribe the gateway to chat-role rebinds so `/model`, `/settings`,
@@ -124,7 +138,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
     await new Promise((r) => setTimeout(r, 5000));
   }
 
-  await frontend.stop();
+  await Promise.allSettled(frontends.map((frontend) => frontend.stop()));
   if (config.backend === "opencode") {
     const { stopOpenCodeServer } = await import("./backend/opencode/index.js");
     stopOpenCodeServer();
@@ -185,7 +199,7 @@ process.on("unhandledRejection", (reason) => {
 // ── Start ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  await frontend.init();
+  await Promise.all(frontends.map((frontend) => frontend.init()));
   log("bot", "Starting Talon...");
 
   if (config.pulse) startPulseTimer(config.pulseIntervalMs);
@@ -193,7 +207,26 @@ async function main(): Promise<void> {
   startWatchdog(config.workspace);
   startUploadCleanup(config.workspace);
 
-  await frontend.start();
+  const terminalFrontends = frontends.filter(
+    (frontend) => frontend.name === "terminal",
+  );
+  const blockingFrontends = frontends.filter(
+    (frontend) => frontend.name !== "terminal",
+  );
+  if (terminalFrontends.length > 0 && frontends.length > 1) {
+    log(
+      "bot",
+      "Terminal frontend shares stdin with the other frontends; it will run alongside them without blocking startup.",
+    );
+  }
+  await Promise.all(blockingFrontends.map((frontend) => frontend.start()));
+  for (const frontend of terminalFrontends) {
+    void frontend
+      .start()
+      .catch((err) =>
+        logError("bot", `Terminal frontend start failed: ${String(err)}`),
+      );
+  }
 
   // Replay any runs that came due while Talon was down (per-job catch-up
   // policy; default skip = fast no-op), THEN start the live cron tick. Kicking

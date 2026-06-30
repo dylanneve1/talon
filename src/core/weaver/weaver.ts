@@ -20,7 +20,7 @@ export type WeaverDeps = {
     modelId: string,
   ) => Promise<ModelRef | null>;
   context: ContextManager;
-  sendTyping: (chatId: number) => Promise<void>;
+  sendTyping: (chatId: number, stringId?: string) => Promise<void>;
   onActivity: () => void;
 };
 
@@ -123,7 +123,10 @@ export class Weaver {
         outputTokens: 0,
         cacheRead: 0,
         cacheWrite: 0,
-        bridgeMessageCount: context.getMessageCount(params.numericChatId),
+        bridgeMessageCount: context.getMessageCount(
+          params.numericChatId,
+          params.chatId,
+        ),
       };
     }
 
@@ -187,19 +190,23 @@ export class Weaver {
 
     let typingTimer: ReturnType<typeof setInterval> | undefined;
     try {
-      await sendTyping(params.numericChatId).catch((err: unknown) => {
-        logWarn(
-          "dispatcher",
-          `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
-      typingTimer = setInterval(() => {
-        sendTyping(params.numericChatId).catch((err: unknown) => {
+      await sendTyping(params.numericChatId, params.chatId).catch(
+        (err: unknown) => {
           logWarn(
             "dispatcher",
-            `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`,
+            `sendTyping failed: ${err instanceof Error ? err.message : String(err)}`,
           );
-        });
+        },
+      );
+      typingTimer = setInterval(() => {
+        sendTyping(params.numericChatId, params.chatId).catch(
+          (err: unknown) => {
+            logWarn(
+              "dispatcher",
+              `sendTyping interval failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          },
+        );
       }, 4000);
 
       // Consume the backend's native `AgentEvent` stream and forward
@@ -269,11 +276,14 @@ export class Weaver {
 
       return {
         ...result,
-        bridgeMessageCount: context.getMessageCount(params.numericChatId),
+        bridgeMessageCount: context.getMessageCount(
+          params.numericChatId,
+          params.chatId,
+        ),
       };
     } finally {
       clearInterval(typingTimer);
-      context.release(params.numericChatId);
+      context.release(params.numericChatId, params.chatId);
     }
   }
 }

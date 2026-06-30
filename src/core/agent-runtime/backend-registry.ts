@@ -40,7 +40,7 @@ export type FrontendName =
   | "terminal"
   | "teams"
   | "discord"
-  | "desktop";
+  | "native";
 
 /** Per-init context — runtime dependencies the backend may need at startup. */
 export interface BackendInitContext {

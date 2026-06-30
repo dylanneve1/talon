@@ -89,7 +89,7 @@ export function createDiscordFrontend(
 
   const context: ContextManager = {
     acquire: (chatId: number, stringId?: string) =>
-      gateway.setContext(chatId, stringId),
+      gateway.setContext(chatId, stringId, "discord"),
     release: (chatId: number) => gateway.clearContext(chatId),
     getMessageCount: (chatId: number) => gateway.getMessageCount(chatId),
   };
@@ -147,7 +147,10 @@ export function createDiscordFrontend(
 
     async init() {
       // Register Discord action handler with the gateway
-      gateway.setFrontendHandler(createDiscordActionHandler(client, gateway));
+      gateway.registerFrontendHandler(
+        "discord",
+        createDiscordActionHandler(client, gateway),
+      );
 
       const port = await gateway.start(19876);
       log("discord", `Gateway started on port ${port}`);

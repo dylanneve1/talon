@@ -2,7 +2,7 @@
  * Talon Client Bridge Protocol (v1).
  *
  * The stable, client-agnostic contract between a Talon daemon running the
- * `desktop` frontend and ANY GUI client: the bundled Electron companion app
+ * `native` frontend and ANY GUI client: the bundled Electron companion app
  * (apps/desktop), and future clients (Android, iOS, web). Transport is plain
  * HTTP + Server-Sent Events with JSON bodies, so a client written in any
  * language can speak it against `http://<host>:<port>` (plus a bearer token
@@ -23,7 +23,7 @@ export const BRIDGE_PROTOCOL_VERSION = 1;
 
 /** History sender id reserved for Talon's own (assistant) messages. */
 export const BOT_SENDER_ID = 0;
-/** History sender id used for the human on the other end of a desktop chat. */
+/** History sender id used for the human on the other end of a native chat. */
 export const USER_SENDER_ID = 1;
 
 export type ClientRole = "user" | "assistant" | "system";
