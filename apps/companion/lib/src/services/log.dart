@@ -83,9 +83,9 @@ class AppLog {
     }
     if (e.contains('cleartextnotpermitted') ||
         (e.contains('cleartext') && e.contains('not permitted'))) {
-      return 'Android blocks plain HTTP by default. Either enable the '
-          '"Use HTTPS / TLS" toggle for this host, or add a network '
-          'security config allowing cleartext to this host.';
+      return 'Android blocks plain HTTP by default and this bridge has no '
+          'TLS support, so the HTTPS toggle won\'t help here — run '
+          'scripts/fix-android-cleartext.sh and rebuild instead.';
     }
     if (e.contains('connection refused')) {
       return 'Nothing is listening on that host/port — check the daemon is '

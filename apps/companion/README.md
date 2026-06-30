@@ -34,6 +34,7 @@ Requires the [Flutter SDK](https://docs.flutter.dev/get-started/install)
 cd apps/companion
 flutter create --platforms=windows,macos,linux,android .   # one-time scaffold
 ./scripts/fix-macos-entitlements.sh                        # macOS only, see below
+./scripts/fix-android-cleartext.sh                          # Android only, see below
 flutter pub get
 flutter run -d windows     # or macos / linux
 flutter run -d <android-device>
@@ -46,6 +47,14 @@ even when the host/port/token are all correct. `flutter create` regenerates
 `macos/` from scratch (it isn't committed), so re-run
 `./scripts/fix-macos-entitlements.sh` after every fresh scaffold, then
 `flutter clean && flutter run -d macos`.
+
+**Android gotcha:** since API 28, Android blocks plain HTTP (cleartext) by
+default, and the bridge protocol is HTTP-only — no TLS on the daemon side.
+Without the fix, remote-bridge connections fail (typically a
+`SocketException` / cleartext-blocked error) even with a correct
+host/port/token. `flutter create` regenerates `android/` from scratch
+(also not committed), so re-run `./scripts/fix-android-cleartext.sh` after
+every fresh scaffold, then `flutter clean && flutter run -d <device>`.
 
 On first launch, pick **This computer** (desktop) or **Remote bridge** (enter a
 host/IP + token). For remote access, run the daemon with a reachable bridge:
