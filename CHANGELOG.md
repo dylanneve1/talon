@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.0](https://github.com/dylanneve1/talon/compare/v1.28.0...v1.29.0) (2026-07-01)
+
+
+### Features
+
+* **companion,native:** bug fixes, protocol v1 extensions, offline-first app, UI system upgrade ([#438](https://github.com/dylanneve1/talon/issues/438)) ([4224ee4](https://github.com/dylanneve1/talon/commit/4224ee4a11b641f42eaf49e5d3ac630ee1a4108b))
+
 ## [1.28.0](https://github.com/dylanneve1/talon/compare/v1.27.1...v1.28.0) (2026-07-01)
 
 
