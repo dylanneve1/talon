@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.27.0](https://github.com/dylanneve1/talon/compare/v1.26.0...v1.27.0) (2026-07-01)
+
+
+### Features
+
+* **companion:** minimal Talon bird app icon + finish Windows "Talon" naming ([41e1b54](https://github.com/dylanneve1/talon/commit/41e1b549368e30cb74b00f2556f03d3a60cd3536))
+* **companion:** minimal Talon bird app icon + finish Windows "Talon" naming ([b70f08f](https://github.com/dylanneve1/talon/commit/b70f08fe1ad93aaeb93c9a28d8d3e256c57b5af6))
+* **companion:** minimal Talon bird app icon + finish Windows Talon naming ([#429](https://github.com/dylanneve1/talon/issues/429)) ([41e1b54](https://github.com/dylanneve1/talon/commit/41e1b549368e30cb74b00f2556f03d3a60cd3536))
+* **companion:** zero-config local mode via ~/.talon/native-bridge.json discovery ([fd1d2e9](https://github.com/dylanneve1/talon/commit/fd1d2e95980e73dcdf8cafb605de2b4dd36d0bdf))
+* **companion:** zero-config local mode via ~/.talon/native-bridge.json discovery ([a434967](https://github.com/dylanneve1/talon/commit/a4349676ef2982f08099a69c3a1cfb7726368534))
+* **companion:** zero-config local mode via ~/.talon/native-bridge.json discovery ([#427](https://github.com/dylanneve1/talon/issues/427)) ([fd1d2e9](https://github.com/dylanneve1/talon/commit/fd1d2e95980e73dcdf8cafb605de2b4dd36d0bdf))
+
+
+### Bug Fixes
+
+* **companion:** per-backend model list + persist attached images in history ([ed5eab6](https://github.com/dylanneve1/talon/commit/ed5eab6a6fc155b734d821518827a05b158c31f1))
+* **companion:** per-backend model list + persist attached images in history ([5c24566](https://github.com/dylanneve1/talon/commit/5c2456662188f73736ee3ca6b1bea3c7f0e9f162))
+* **companion:** per-backend model list + persist attached images in history ([#428](https://github.com/dylanneve1/talon/issues/428)) ([ed5eab6](https://github.com/dylanneve1/talon/commit/ed5eab6a6fc155b734d821518827a05b158c31f1))
+* **companion:** re-fetch history on reconnect so messages aren't missed ([47158bc](https://github.com/dylanneve1/talon/commit/47158bc78554be95f4a27c9554ee19bd2345b647))
+* **companion:** re-fetch history on reconnect so messages aren't missed ([55ea859](https://github.com/dylanneve1/talon/commit/55ea859b8954b7db62ea75f29e77aafaf8ae1a59))
+* **companion:** re-fetch history on reconnect so messages aren't missed ([#430](https://github.com/dylanneve1/talon/issues/430)) ([47158bc](https://github.com/dylanneve1/talon/commit/47158bc78554be95f4a27c9554ee19bd2345b647))
+
 ## [1.26.0](https://github.com/dylanneve1/talon/compare/v1.25.0...v1.26.0) (2026-07-01)
 
 
