@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
@@ -35,6 +37,16 @@ class _ModelSheetState extends State<_ModelSheet> {
   String _activeBackend = '';
   bool _switchingBackend = false;
 
+  /// The live chat from AppState, so `chat_updated` events (model, effort or
+  /// backend changed here or from another client) are reflected while the
+  /// sheet is open. [widget.chat] is only a fallback if the chat vanished.
+  ClientChat get _chat {
+    for (final c in widget.state.chats) {
+      if (c.id == widget.chat.id) return c;
+    }
+    return widget.chat;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -46,8 +58,10 @@ class _ModelSheetState extends State<_ModelSheet> {
     final (active, levels) = await widget.state.effortLevels(widget.chat.id);
     if (mounted) {
       setState(() {
-        _effortLevels = levels;
-        _activeEffort = widget.chat.effort ?? active;
+        // 'adaptive' is rendered as a fixed first chip; some daemons also
+        // include it in the level list, which would draw it twice.
+        _effortLevels = levels.where((l) => l != 'adaptive').toList();
+        _activeEffort = _chat.effort ?? active;
       });
     }
   }
@@ -57,7 +71,7 @@ class _ModelSheetState extends State<_ModelSheet> {
     if (mounted) {
       setState(() {
         _backends = backends;
-        _activeBackend = widget.chat.backend ?? active;
+        _activeBackend = _chat.backend ?? active;
       });
     }
   }
@@ -68,13 +82,14 @@ class _ModelSheetState extends State<_ModelSheet> {
     final result = await widget.state.setBackend(widget.chat.id, id);
     if (!mounted) return;
     if (result.ok) {
+      // setBackend already re-pulled the new backend's model catalog; the
+      // ListenableBuilder in build picks it up. Effort levels are per-backend
+      // too, so re-fetch them for the new backend.
       setState(() {
         _activeBackend = id;
         _switchingBackend = false;
       });
-      // The new backend exposes its own models — refresh the daemon's list.
-      await widget.state.refreshModels(widget.chat.id);
-      if (mounted) setState(() {});
+      unawaited(_loadEffort());
     } else {
       setState(() => _switchingBackend = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -85,13 +100,22 @@ class _ModelSheetState extends State<_ModelSheet> {
 
   @override
   Widget build(BuildContext context) {
+    // Listen to AppState so the list repopulates when the catalog lands after
+    // the sheet opened (first open, or the refresh after a backend switch).
+    return ListenableBuilder(
+      listenable: widget.state,
+      builder: (context, _) => _sheet(context),
+    );
+  }
+
+  Widget _sheet(BuildContext context) {
     final models = widget.state.models
         .where((m) =>
             _query.isEmpty ||
             m.displayName.toLowerCase().contains(_query.toLowerCase()) ||
             m.provider.toLowerCase().contains(_query.toLowerCase()))
         .toList();
-    final activeModel = widget.chat.model ?? widget.state.status.model;
+    final activeModel = _chat.model ?? widget.state.status.model;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.7,
@@ -122,7 +146,7 @@ class _ModelSheetState extends State<_ModelSheet> {
                     const Icon(Icons.tune, size: 18, color: TalonColors.accent),
                     const SizedBox(width: 8),
                     Text(
-                      widget.chat.title,
+                      _chat.title,
                       style: const TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w700),
                     ),

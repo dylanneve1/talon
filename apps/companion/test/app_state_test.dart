@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:talon_companion/src/models/bridge_models.dart';
 import 'package:talon_companion/src/models/connection.dart';
 import 'package:talon_companion/src/state/app_state.dart';
 import 'package:talon_companion/src/services/prefs.dart';
@@ -219,6 +220,91 @@ void main() {
         expect(bridge.streamCount, 0);
       },
     );
+
+    test('reconnect drops selection of a chat deleted while away', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      expect(state.selectedChatId, 'c1');
+
+      // The chat is deleted server-side while the client is away.
+      bridge.chats
+        ..clear()
+        ..add({
+          'id': 'c2',
+          'title': 'Fresh',
+          'createdAt': 3,
+          'lastActive': 4,
+          'preview': '',
+        });
+      bridge.messages
+        ..clear()
+        ..['c2'] = [];
+
+      await state.start();
+      await _waitFor(() => state.selectedChatId == 'c2');
+      expect(state.selectedChat, isNotNull);
+    });
+
+    test('setModel/setEffort/renameChat apply optimistically', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      final modelDone = state.setModel('c1', 'm2');
+      expect(state.chats.single.model, 'm2');
+      await modelDone;
+
+      final effortDone = state.setEffort('c1', 'high');
+      expect(state.chats.single.effort, 'high');
+      await effortDone;
+
+      final renameDone = state.renameChat('c1', 'Renamed locally');
+      expect(state.chats.single.title, 'Renamed locally');
+      await renameDone;
+    });
+
+    test('failed chat command surfaces a system note, not a throw', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      // The mock bridge has no /chats/rename endpoint → the POST 404s. That
+      // must land as a visible system note in the chat, not an unhandled
+      // async exception out of a UI callback.
+      await state.renameChat('c1', 'nope');
+      final note = state.messagesFor('c1').last;
+      expect(note.role, Role.system);
+      expect(note.text, contains('Rename failed'));
+    });
+
+    test('missing backend/effort endpoints degrade gracefully', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      // No /backends or /backend on the mock bridge: fetch returns empty and
+      // a switch reports failure instead of throwing.
+      final (active, backends) = await state.backends('c1');
+      expect(active, '');
+      expect(backends, isEmpty);
+      final r = await state.setBackend('c1', 'other');
+      expect(r.ok, isFalse);
+      expect(r.error, isNotNull);
+    });
 
     test('applyConfig resets stores before loading the new bridge', () async {
       final first = await MockBridge.start();

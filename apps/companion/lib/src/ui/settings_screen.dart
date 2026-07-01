@@ -247,7 +247,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _diagnosticsCard(ConfigSnapshot? cfg) {
     final s = widget.state;
-    final c = s.config;
+    // The effective connection (with any auto-discovered port/token), not the
+    // saved profile — diagnostics should describe what's actually in use.
+    final c = s.activeConfig;
     final protoOk = s.status.protocol == kBridgeProtocolVersion;
     final connected = s.conn == ConnState.connected;
 
@@ -337,7 +339,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final buf = StringBuffer()
       ..writeln('Talon diagnostics')
       ..writeln('connection: ${s.conn.name}')
-      ..writeln('endpoint: ${s.config.baseUrl}')
+      ..writeln('endpoint: ${s.activeConfig.baseUrl}')
       ..writeln(
           'protocol: app v$kBridgeProtocolVersion / daemon v${s.status.protocol}')
       ..writeln('backend: ${s.status.backend}')

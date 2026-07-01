@@ -45,6 +45,18 @@ class AppState extends ChangeNotifier {
   int _backoffMs = 800;
   bool _disposed = false;
 
+  /// Monotonic connection-attempt counter. Each [start] bumps it; awaited
+  /// continuations from an older attempt compare against it and bail instead
+  /// of disposing the newer attempt's client or stomping its state (e.g. the
+  /// user taps Reconnect while a backoff-timer attempt is mid-flight).
+  int _epoch = 0;
+
+  /// The connection actually in use. In local auto-discover mode this carries
+  /// the discovered port/token, which the saved [config] doesn't — anything
+  /// that builds URLs (media, diagnostics) must use this, not [config].
+  ConnectionConfig? _activeConfig;
+  ConnectionConfig get activeConfig => _activeConfig ?? config;
+
   // Connection
   ConnState conn = ConnState.idle;
   String? connError;
@@ -81,12 +93,14 @@ class AppState extends ChangeNotifier {
   /// explicitly configured; everywhere, open the event stream and load chats.
   Future<void> start() async {
     _reconnect?.cancel();
+    final epoch = ++_epoch;
     AppLog.info('app_state', 'connect attempt ${config.host}:${config.port}');
     _setConn(ConnState.connecting, null);
 
     if (config.canAutoDiscoverLocal) {
       daemon = const DaemonState(DaemonPhase.unknown);
       final bridge = await readLocalBridge();
+      if (epoch != _epoch) return; // superseded by a newer attempt
       if (bridge == null) {
         _setConn(
           ConnState.error,
@@ -107,13 +121,15 @@ class AppState extends ChangeNotifier {
         'app_state',
         'local discovery ${effective.host}:${effective.port}',
       );
-      await _openStream(effective);
+      await _openStream(effective, epoch);
     } else if (config.canManageDaemon) {
       _supervisor = DaemonSupervisor(config);
       final ok = await _supervisor!.ensureRunning((d) {
+        if (epoch != _epoch) return;
         daemon = d;
         notifyListeners();
       });
+      if (epoch != _epoch) return;
       if (!ok) {
         _setConn(
           ConnState.error,
@@ -123,34 +139,41 @@ class AppState extends ChangeNotifier {
         _scheduleReconnect();
         return;
       }
-      await _openStream();
+      await _openStream(null, epoch);
     } else {
       daemon = const DaemonState(DaemonPhase.unknown);
-      await _openStream();
+      await _openStream(null, epoch);
     }
   }
 
-  Future<void> _openStream([ConnectionConfig? effectiveConfig]) async {
+  Future<void> _openStream(ConnectionConfig? effectiveConfig, int epoch) async {
     await _sub?.cancel();
+    if (epoch != _epoch) return;
     _client?.dispose();
-    final activeConfig = effectiveConfig ?? config;
-    final client = BridgeClient(activeConfig);
+    final cfg = effectiveConfig ?? config;
+    final client = BridgeClient(cfg);
     _client = client;
+    _activeConfig = cfg;
 
     try {
       // Verify identity before committing to the stream — gives a crisp error
       // when the host/token is wrong rather than a silent dead stream.
       final h = await client.health();
+      if (epoch != _epoch) {
+        _disposeStale(client);
+        return;
+      }
       AppLog.info('app_state', 'health ${h == null ? 'failed' : 'ok'}');
       if (h == null) {
         throw BridgeException(
-          'No Talon bridge at ${activeConfig.host}:${activeConfig.port}',
+          'No Talon bridge at ${cfg.host}:${cfg.port}',
         );
       }
 
       _sub = client.events.listen(
         _onEvent,
         onError: (Object e) {
+          if (!identical(_client, client)) return; // stale stream
           if (_isUnauthorized(e)) {
             _stopUnauthorized();
             return;
@@ -160,6 +183,10 @@ class AppState extends ChangeNotifier {
         },
       );
       await client.connect();
+      if (epoch != _epoch) {
+        _disposeStale(client);
+        return;
+      }
 
       AppLog.info('app_state', 'connected');
       _setConn(ConnState.connected, null);
@@ -167,6 +194,10 @@ class AppState extends ChangeNotifier {
       await _refreshChats();
       unawaited(_refreshModels());
     } catch (e) {
+      if (epoch != _epoch) {
+        _disposeStale(client);
+        return;
+      }
       if (_isUnauthorized(e)) {
         _stopUnauthorized();
         return;
@@ -174,6 +205,12 @@ class AppState extends ChangeNotifier {
       _setConn(ConnState.error, e.toString());
       _scheduleReconnect();
     }
+  }
+
+  /// Tear down a client from a superseded connection attempt without touching
+  /// the current one (a newer attempt may already own [_client]).
+  void _disposeStale(BridgeClient client) {
+    if (!identical(_client, client)) client.dispose();
   }
 
   void _scheduleReconnect() {
@@ -200,11 +237,13 @@ class AppState extends ChangeNotifier {
   /// Apply a new connection profile and reconnect from scratch.
   Future<void> applyConfig(ConnectionConfig next) async {
     config = next;
+    _activeConfig = null;
     await prefs.setConnection(next);
     chats.clear();
     _messages.clear();
     _turns.clear();
     _loadedHistory.clear();
+    models = [];
     selectedChatId = null;
     AppLog.info('app_state', 'connection config applied; stores reset');
     await start();
@@ -234,12 +273,41 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> renameChat(String chatId, String title) =>
-      _client?.renameChat(chatId, title) ?? Future.value();
+  ClientChat? _chatById(String chatId) {
+    for (final c in chats) {
+      if (c.id == chatId) return c;
+    }
+    return null;
+  }
+
+  /// Run a chat-scoped daemon command, surfacing failure as a system note in
+  /// that chat instead of an unhandled async exception in a UI callback.
+  Future<void> _command(String chatId, String what, Future<void> future) async {
+    try {
+      await future;
+    } catch (e) {
+      AppLog.warn('app_state', '$what failed', e);
+      _appendSystem(chatId, '$what failed: $e');
+    }
+  }
+
+  Future<void> renameChat(String chatId, String title) async {
+    // Optimistic: reflect immediately; the chat_updated event reconciles.
+    final chat = _chatById(chatId);
+    if (chat != null && chat.title != title) {
+      chat.title = title;
+      notifyListeners();
+    }
+    final client = _client;
+    if (client == null) return;
+    await _command(chatId, 'Rename', client.renameChat(chatId, title));
+  }
 
   Future<void> deleteChat(String chatId) async {
-    await _client?.deleteChat(chatId);
+    final client = _client;
+    if (client == null) return;
     // chat_deleted event reconciles state.
+    await _command(chatId, 'Delete', client.deleteChat(chatId));
   }
 
   Future<void> sendMessage(
@@ -283,12 +351,29 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setModel(String chatId, String model) async {
-    await _client?.setModel(chatId, model);
+    // Optimistic: the header chip and sheet update instantly instead of
+    // waiting a round-trip for chat_updated.
+    final chat = _chatById(chatId);
+    if (chat != null && chat.model != model) {
+      chat.model = model;
+      notifyListeners();
+    }
+    final client = _client;
+    if (client == null) return;
+    await _command(chatId, 'Model change', client.setModel(chatId, model));
   }
 
-  /// Backends selectable for a chat + the chat's active backend id.
-  Future<(String, List<BackendOption>)> backends(String chatId) async =>
-      await _client?.backends(chatId) ?? ('', const <BackendOption>[]);
+  /// Backends selectable for a chat + the chat's active backend id. Returns
+  /// empty on any failure (e.g. an older daemon without the endpoint) so the
+  /// sheet simply hides the backend row.
+  Future<(String, List<BackendOption>)> backends(String chatId) async {
+    try {
+      return await _client?.backends(chatId) ?? ('', const <BackendOption>[]);
+    } catch (e) {
+      AppLog.warn('app_state', 'backends fetch failed', e);
+      return ('', const <BackendOption>[]);
+    }
+  }
 
   /// Switch a chat's backend. Returns the daemon result so the UI can toast a
   /// failure (e.g. "Backend not available") instead of silently no-op'ing.
@@ -296,27 +381,63 @@ class AppState extends ChangeNotifier {
     String chatId,
     String backend,
   ) async {
-    final r = await _client?.setBackend(chatId, backend);
-    // The new backend exposes a different model catalog, so re-pull the models
-    // for this chat from the gateway. Without this the picker keeps showing the
-    // previous backend's models until the next manual refresh.
-    if (r?.ok == true) await _refreshModels(chatId);
-    return r ?? (ok: false, error: 'Not connected');
+    try {
+      final r = await _client?.setBackend(chatId, backend);
+      if (r?.ok == true) {
+        final chat = _chatById(chatId);
+        if (chat != null && chat.backend != backend) {
+          chat.backend = backend;
+          notifyListeners();
+        }
+        // The new backend exposes a different model catalog, so re-pull the
+        // models for this chat from the gateway. Without this the picker keeps
+        // showing the previous backend's models until the next manual refresh.
+        await _refreshModels(chatId);
+      }
+      return r ?? (ok: false, error: 'Not connected');
+    } catch (e) {
+      AppLog.warn('app_state', 'backend switch failed', e);
+      return (ok: false, error: e.toString());
+    }
   }
 
   Future<void> setEffort(String chatId, String effort) async {
-    await _client?.setEffort(chatId, effort);
+    final chat = _chatById(chatId);
+    if (chat != null && chat.effort != effort) {
+      chat.effort = effort;
+      notifyListeners();
+    }
+    final client = _client;
+    if (client == null) return;
+    await _command(chatId, 'Effort change', client.setEffort(chatId, effort));
   }
 
-  Future<(String, List<String>)> effortLevels(String chatId) async =>
-      await _client?.effortLevels(chatId) ?? ('adaptive', const <String>[]);
+  /// Effort levels for a chat; empty on failure so the row hides.
+  Future<(String, List<String>)> effortLevels(String chatId) async {
+    try {
+      return await _client?.effortLevels(chatId) ??
+          ('adaptive', const <String>[]);
+    } catch (e) {
+      AppLog.warn('app_state', 'effort fetch failed', e);
+      return ('adaptive', const <String>[]);
+    }
+  }
 
   Future<void> resetChat(String chatId) async {
-    await _client?.resetChat(chatId);
+    final client = _client;
+    if (client == null) return;
+    await _command(chatId, 'Reset', client.resetChat(chatId));
   }
 
   Future<void> setPulse(String chatId, bool on) async {
-    await _client?.setPulse(chatId, on);
+    final chat = _chatById(chatId);
+    if (chat != null && chat.pulse != on) {
+      chat.pulse = on;
+      notifyListeners();
+    }
+    final client = _client;
+    if (client == null) return;
+    await _command(chatId, 'Pulse toggle', client.setPulse(chatId, on));
   }
 
   Future<ConfigSnapshot?> loadConfig() async {
@@ -329,12 +450,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<ConfigSnapshot?> updateConfig(Map<String, dynamic> update) async {
-    final c = await _client?.setConfig(update);
-    if (c != null) {
-      appConfig = c;
-      notifyListeners();
+    try {
+      final c = await _client?.setConfig(update);
+      if (c != null) {
+        appConfig = c;
+        notifyListeners();
+      }
+      return c;
+    } catch (e) {
+      AppLog.warn('app_state', 'config update failed', e);
+      return null;
     }
-    return c;
   }
 
   /// Desktop only: restart the managed daemon, then reconnect.
@@ -557,7 +683,7 @@ class AppState extends ChangeNotifier {
       ..clear()
       ..addAll(list);
     _sortChats();
-    selectedChatId ??= chats.isNotEmpty ? chats.first.id : null;
+    _reconcileSelection();
     // This runs on every (re)connect. History may have advanced while we were
     // disconnected (a heartbeat/cron reply, another client, a network blip or
     // laptop sleep), so drop the "already loaded" marks — otherwise a chat we'd
@@ -580,6 +706,13 @@ class AppState extends ChangeNotifier {
       final r = await _client?.models(chatId);
       if (r != null && !_disposed) {
         models = r.$2;
+        // The gateway also reports the chat's active model — sync it so the
+        // header chip is right immediately after a backend switch, even if
+        // the daemon's chat_updated event is late or missing.
+        if (chatId != null && r.$1.isNotEmpty) {
+          final chat = _chatById(chatId);
+          if (chat != null) chat.model = r.$1;
+        }
         notifyListeners();
       }
     } catch (e) {
@@ -615,6 +748,18 @@ class AppState extends ChangeNotifier {
             .map(ClientChat.fromJson),
       );
     _sortChats();
+    _reconcileSelection();
+  }
+
+  /// Keep the selection valid against the freshly-set chat list: a chat
+  /// deleted while we were away must not stay selected (it would render an
+  /// empty conversation and fetch history for a dead id), and with nothing
+  /// selected we default to the most recent chat.
+  void _reconcileSelection() {
+    if (selectedChatId != null &&
+        !chats.any((c) => c.id == selectedChatId)) {
+      selectedChatId = null;
+    }
     selectedChatId ??= chats.isNotEmpty ? chats.first.id : null;
   }
 
@@ -669,6 +814,9 @@ class AppState extends ChangeNotifier {
             ts: DateTime.now().millisecondsSinceEpoch,
           ),
         );
+    // Callers outside the event loop (send/upload/command failures) rely on
+    // this notify — without it the note only appears on the next repaint.
+    notifyListeners();
   }
 
   void _setConn(ConnState s, String? err) {

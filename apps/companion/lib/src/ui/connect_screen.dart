@@ -137,16 +137,30 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 const SizedBox(height: 18),
                 if (_remote) ..._remoteFields() else ..._localFields(),
                 const SizedBox(height: 22),
-                _ConnectButton(onTap: _connect),
-                if (widget.state.conn == ConnState.error &&
-                    widget.state.connError != null) ...[
-                  const SizedBox(height: 14),
-                  Text(
-                    widget.state.connError!,
-                    style:
-                        const TextStyle(color: TalonColors.bad, fontSize: 12.5),
+                // Listen to AppState here: when pushed from Settings this
+                // screen sits outside RootView's ListenableBuilder, so without
+                // its own listener the error text and busy state never update.
+                ListenableBuilder(
+                  listenable: widget.state,
+                  builder: (context, _) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _ConnectButton(
+                        onTap: _connect,
+                        busy: widget.state.conn == ConnState.connecting,
+                      ),
+                      if (widget.state.conn == ConnState.error &&
+                          widget.state.connError != null) ...[
+                        const SizedBox(height: 14),
+                        Text(
+                          widget.state.connError!,
+                          style: const TextStyle(
+                              color: TalonColors.bad, fontSize: 12.5),
+                        ),
+                      ],
+                    ],
                   ),
-                ],
+                ),
               ],
             ),
           ),
@@ -332,12 +346,13 @@ class _Hint extends StatelessWidget {
 
 class _ConnectButton extends StatelessWidget {
   final VoidCallback onTap;
-  const _ConnectButton({required this.onTap});
+  final bool busy;
+  const _ConnectButton({required this.onTap, this.busy = false});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onTap,
+      onTap: busy ? null : onTap,
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -345,14 +360,24 @@ class _ConnectButton extends StatelessWidget {
           borderRadius: TalonRadius.rMd,
           gradient: TalonColors.accentGradient,
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.bolt, color: Colors.white, size: 19),
-            SizedBox(width: 8),
+            if (busy)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Colors.white),
+                ),
+              )
+            else
+              const Icon(Icons.bolt, color: Colors.white, size: 19),
+            const SizedBox(width: 8),
             Text(
-              'Connect',
-              style: TextStyle(
+              busy ? 'Connecting…' : 'Connect',
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,
                 fontSize: 15,

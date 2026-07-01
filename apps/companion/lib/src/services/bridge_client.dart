@@ -108,7 +108,9 @@ class BridgeClient {
       },
       onError: (Object e) {
         AppLog.warn('bridge', 'event stream error', e);
-        _events.addError(e);
+        // dispose() closes the controller before the socket subscription is
+        // fully torn down — a late transport error must not throw into it.
+        if (!_closed) _events.addError(e);
       },
       onDone: () {
         if (!_closed) {
@@ -123,7 +125,7 @@ class BridgeClient {
   void _flush(StringBuffer buffer) {
     final raw = buffer.toString().trim();
     buffer.clear();
-    if (raw.isEmpty) return;
+    if (raw.isEmpty || _closed) return;
     try {
       final obj = _decodeObject(raw);
       _events.add(obj);

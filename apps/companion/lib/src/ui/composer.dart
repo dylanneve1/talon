@@ -112,7 +112,20 @@ class _ComposerState extends State<Composer> {
       setState(() => _uploading = true);
       final up = await widget.onUpload(bytes, name, _contentTypeFor(name));
       if (mounted) setState(() => _uploading = false);
-      if (up == null) return; // failure already surfaced as a system note
+      if (up == null) {
+        // Upload failed (a system note explains why). Hand the draft back so
+        // the user's message and attachment aren't silently thrown away —
+        // unless they already started typing a new one.
+        if (mounted) {
+          setState(() {
+            _pendingBytes = bytes;
+            _pendingName = name;
+          });
+          if (_controller.text.trim().isEmpty) _controller.text = text;
+          _recomputeCanSend();
+        }
+        return;
+      }
       imagePath = up.imagePath;
       attachmentPath = up.path;
     }
@@ -125,7 +138,8 @@ class _ComposerState extends State<Composer> {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.enter &&
+        (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
         !HardwareKeyboard.instance.isShiftPressed) {
       _send();
       return KeyEventResult.handled;

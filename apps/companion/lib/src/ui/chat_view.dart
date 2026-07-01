@@ -41,10 +41,36 @@ class _ChatViewState extends State<ChatView> {
   String? _anchoredChatId;
   bool _pendingJumpToBottom = false;
 
+  /// Whether the user has scrolled up into history far enough that a
+  /// jump-to-latest affordance is useful.
+  bool _awayFromBottom = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scroll.addListener(_onScrolled);
+  }
+
   @override
   void dispose() {
     _scroll.dispose();
     super.dispose();
+  }
+
+  void _onScrolled() {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    final away = pos.maxScrollExtent - pos.pixels > 420;
+    if (away != _awayFromBottom) setState(() => _awayFromBottom = away);
+  }
+
+  void _jumpToLatest() {
+    if (!_scroll.hasClients) return;
+    _scroll.animateTo(
+      _scroll.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   /// A row animates in only the first time we see it AND when it's genuinely
@@ -106,6 +132,8 @@ class _ChatViewState extends State<ChatView> {
                   showBack: widget.showBack,
                   onBack: widget.onBack,
                 ),
+                if (widget.state.conn != ConnState.connected)
+                  _ConnBanner(state: widget.state),
                 Expanded(child: _messages(chat.id)),
                 Center(
                   child: ConstrainedBox(
@@ -143,29 +171,139 @@ class _ChatViewState extends State<ChatView> {
     }
 
     final itemCount = msgs.length + (showActivity ? 1 : 0);
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: _columnMax),
-        child: ListView.builder(
-          controller: _scroll,
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
-          itemCount: itemCount,
-          itemBuilder: (context, i) {
-            if (i < msgs.length) {
-              final m = msgs[i];
-              return MessageBubble(
-                message: m,
-                botName: widget.state.status.botName,
-                animateIn: _shouldAnimate(m),
-                imageUrl: m.imagePath == null
-                    ? null
-                    : widget.state.config.mediaUrl(m.imagePath!),
-              );
-            }
-            return LiveTurn(turn: turn, botName: widget.state.status.botName);
-          },
+    return Stack(
+      children: [
+        Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: _columnMax),
+            child: ListView.builder(
+              controller: _scroll,
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
+              itemCount: itemCount,
+              itemBuilder: (context, i) {
+                if (i < msgs.length) {
+                  final m = msgs[i];
+                  return MessageBubble(
+                    message: m,
+                    botName: widget.state.status.botName,
+                    animateIn: _shouldAnimate(m),
+                    // activeConfig, not config: in local auto-discover mode the
+                    // saved config lacks the bridge's real port/token, and media
+                    // fetched through it 404s or gets rejected.
+                    imageUrl: m.imagePath == null
+                        ? null
+                        : widget.state.activeConfig.mediaUrl(m.imagePath!),
+                  );
+                }
+                return LiveTurn(
+                    turn: turn, botName: widget.state.status.botName);
+              },
+            ),
+          ),
         ),
+        Positioned(
+          right: 18,
+          bottom: 12,
+          child: AnimatedSlide(
+            duration: TalonMotion.base,
+            curve: TalonMotion.emphasized,
+            offset: _awayFromBottom ? Offset.zero : const Offset(0, 0.4),
+            child: AnimatedOpacity(
+              duration: TalonMotion.fast,
+              opacity: _awayFromBottom ? 1 : 0,
+              child: IgnorePointer(
+                ignoring: !_awayFromBottom,
+                child: _JumpToLatest(onTap: _jumpToLatest),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Round "back to the newest message" button shown once the user scrolls up
+/// into history.
+class _JumpToLatest extends StatelessWidget {
+  final VoidCallback onTap;
+  const _JumpToLatest({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: TalonColors.surfaceHi,
+      shape: const CircleBorder(
+        side: BorderSide(color: TalonColors.glassStroke),
+      ),
+      elevation: 3,
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: const Padding(
+          padding: EdgeInsets.all(9),
+          child: Icon(Icons.arrow_downward_rounded,
+              size: 18, color: TalonColors.textDim),
+        ),
+      ),
+    );
+  }
+}
+
+/// Slim status strip under the header while the app is reconnecting or the
+/// bridge is unreachable, so a dead connection is visible from the chat
+/// itself (not just the sidebar pill) and recoverable in place.
+class _ConnBanner extends StatelessWidget {
+  final AppState state;
+  const _ConnBanner({required this.state});
+
+  @override
+  Widget build(BuildContext context) {
+    final error = state.conn == ConnState.error;
+    final color = error ? TalonColors.bad : TalonColors.warn;
+    final text = error
+        ? (state.connError ?? 'Connection lost')
+        : 'Connecting to Talon…';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      color: color.withValues(alpha: 0.10),
+      child: Row(
+        children: [
+          if (error)
+            Icon(Icons.cloud_off_rounded, size: 15, color: color)
+          else
+            SizedBox(
+              width: 13,
+              height: 13,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.8,
+                valueColor: AlwaysStoppedAnimation(color),
+              ),
+            ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12.5, color: color),
+            ),
+          ),
+          if (error)
+            TextButton(
+              onPressed: state.start,
+              style: TextButton.styleFrom(
+                foregroundColor: color,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                minimumSize: const Size(0, 30),
+                textStyle: const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w700),
+              ),
+              child: const Text('Retry'),
+            ),
+        ],
       ),
     );
   }
