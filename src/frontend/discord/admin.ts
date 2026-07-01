@@ -8,6 +8,7 @@
 
 import { readFileSync } from "node:fs";
 import { files, dirs } from "../../util/paths.js";
+import { tailFile } from "../../util/tail-file.js";
 import type { TalonConfig } from "../../util/config.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { resetSession, getAllSessions } from "../../storage/sessions.js";
@@ -93,20 +94,7 @@ export async function handleAdminSubcommand(
     case "logs": {
       const logPath = files.log;
       try {
-        const { statSync, openSync, readSync, closeSync } =
-          await import("node:fs");
-        const stat = statSync(logPath);
-        const size = Math.min(8192, stat.size);
-        const buf = Buffer.alloc(size);
-        const fd = openSync(logPath, "r");
-        readSync(fd, buf, 0, size, Math.max(0, stat.size - size));
-        closeSync(fd);
-        const lines = buf
-          .toString("utf-8")
-          .trim()
-          .split("\n")
-          .slice(-20)
-          .join("\n");
+        const lines = tailFile(logPath);
         return send(
           "```\n" +
             escapeForCodeBlock(lines).slice(0, CODE_BLOCK_BUDGET) +

@@ -6,6 +6,7 @@ import type { Bot, Context } from "grammy";
 import { readFileSync } from "node:fs";
 import type { TalonConfig } from "../../util/config.js";
 import { files, dirs } from "../../util/paths.js";
+import { tailFile } from "../../util/tail-file.js";
 import { escapeHtml } from "./formatting.js";
 import { resetSession, getAllSessions } from "../../storage/sessions.js";
 import { clearHistory } from "../../storage/history.js";
@@ -118,20 +119,7 @@ export async function handleAdminCommand(
     case "logs": {
       const logPath = files.log;
       try {
-        const { statSync, openSync, readSync, closeSync } =
-          await import("node:fs");
-        const stat = statSync(logPath);
-        const size = Math.min(8192, stat.size);
-        const buf = Buffer.alloc(size);
-        const fd = openSync(logPath, "r");
-        readSync(fd, buf, 0, size, Math.max(0, stat.size - size));
-        closeSync(fd);
-        const lines = buf
-          .toString("utf-8")
-          .trim()
-          .split("\n")
-          .slice(-20)
-          .join("\n");
+        const lines = tailFile(logPath);
         await ctx.reply(`<pre>${escapeHtml(lines.slice(0, 3800))}</pre>`, {
           parse_mode: "HTML",
         });

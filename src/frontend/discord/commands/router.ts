@@ -16,6 +16,11 @@ import {
   isInteractionAllowed,
   registerDiscordChat,
 } from "../handlers/index.js";
+import {
+  handleAutocomplete,
+  handleComponentInteraction,
+  handleModalSubmit,
+} from "../callbacks/index.js";
 import { chatIdFromInteraction, reply, client } from "./shared.js";
 import { handleStart, handleHelp, handlePing, handlePlugins } from "./info.js";
 import { handleReset, handleStatus } from "./session.js";
@@ -46,20 +51,16 @@ export function registerInteractionRouter(
       }
       // Autocomplete for /model name:
       if (interaction.isAutocomplete()) {
-        const { handleAutocomplete } = await import("../callbacks/index.js");
         await handleAutocomplete(interaction, gateway);
         return;
       }
       // Buttons & select menus → callbacks.ts handler
       if (interaction.isButton() || interaction.isStringSelectMenu()) {
-        const { handleComponentInteraction } =
-          await import("../callbacks/index.js");
         await handleComponentInteraction(interaction, config, gateway);
         return;
       }
       // Modal submissions (pulse interval)
       if (interaction.isModalSubmit()) {
-        const { handleModalSubmit } = await import("../callbacks/index.js");
         await handleModalSubmit(interaction, config, gateway);
         return;
       }

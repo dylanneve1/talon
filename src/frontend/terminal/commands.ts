@@ -11,8 +11,24 @@ import type { Backend } from "../../core/agent-runtime/capabilities.js";
 import type { Renderer } from "./renderer.js";
 import { formatTimeAgo } from "./renderer.js";
 import { isTerminalChatId } from "../../util/chat-id.js";
-import { resolveModel as coreResolveModel } from "../../core/models/catalog.js";
+import {
+  resolveModel as coreResolveModel,
+  getModels,
+} from "../../core/models/catalog.js";
 import { buildCacheDisplay } from "../shared/status-context.js";
+import {
+  getChatSettings,
+  setChatModel,
+  setChatEffort,
+  resolveModelName,
+} from "../../storage/chat-settings.js";
+import {
+  getAllSessions,
+  getSession,
+  getSessionInfo,
+  setSessionName,
+} from "../../storage/sessions.js";
+import { getLoadedPlugins } from "../../core/plugin/index.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,8 +113,6 @@ export function registerBuiltinCommands(): void {
     argHint: "[name]",
     description: "Switch model",
     async handler(args, ctx) {
-      const { getChatSettings, setChatModel, resolveModelName } =
-        await import("../../storage/chat-settings.js");
       const currentModel =
         getChatSettings(ctx.chatId()).model ?? ctx.config.model;
       const be = ctx.backend;
@@ -166,7 +180,6 @@ export function registerBuiltinCommands(): void {
             ctx.renderer.writeln(`  …and ${total - list.length} more`);
           }
         } else {
-          const { getModels } = await import("../../core/models/catalog.js");
           const names = getModels()
             .map((m) => m.aliases[0] ?? m.id)
             .join(", ");
@@ -238,8 +251,6 @@ export function registerBuiltinCommands(): void {
     argHint: "[lvl]",
     description: "Thinking effort (off/low/medium/high/max)",
     async handler(args, ctx) {
-      const { getChatSettings, setChatEffort } =
-        await import("../../storage/chat-settings.js");
       if (!args) {
         ctx.renderer.writeSystem(
           `Effort: ${getChatSettings(ctx.chatId()).effort ?? "adaptive"}`,
@@ -261,10 +272,6 @@ export function registerBuiltinCommands(): void {
     name: "status",
     description: "Session stats",
     async handler(_args, ctx) {
-      const { getSessionInfo } = await import("../../storage/sessions.js");
-      const { getChatSettings } =
-        await import("../../storage/chat-settings.js");
-      const { getLoadedPlugins } = await import("../../core/plugin/index.js");
       const info = getSessionInfo(ctx.chatId());
       const u = info.usage;
       const be = ctx.backend;
@@ -362,7 +369,6 @@ export function registerBuiltinCommands(): void {
     name: "resume",
     description: "List & resume a past session",
     async handler(_args, ctx) {
-      const { getAllSessions } = await import("../../storage/sessions.js");
       const sessions = getAllSessions()
         .filter(
           (s) =>
@@ -422,8 +428,6 @@ export function registerBuiltinCommands(): void {
     argHint: "[name]",
     description: "Name the current session",
     async handler(args, ctx) {
-      const { getSession, setSessionName } =
-        await import("../../storage/sessions.js");
       // Ensure session exists in store (auto-creates if needed)
       getSession(ctx.chatId());
       if (!args) {

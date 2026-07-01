@@ -15,6 +15,11 @@ import { log, logError } from "../../util/log.js";
 import { deriveNumericChatId } from "../../util/chat-id.js";
 import { resolveModel } from "../../core/models/catalog.js";
 import { toolInputToRecord } from "../../core/agent-runtime/events.js";
+import { execute } from "../../core/engine/dispatcher.js";
+import { resolveChatBackend } from "../../core/engine/backend-controller/index.js";
+import { getSessionInfo } from "../../storage/sessions.js";
+import { getChatSettings } from "../../storage/chat-settings.js";
+import { performSessionReset } from "../shared/session-status.js";
 import { createTeamsActionHandler, postToTeams } from "./actions.js";
 import { splitTeamsMessage, buildAdaptiveCard } from "./formatting.js";
 import { buildCacheDisplay } from "../shared/status-context.js";
@@ -168,7 +173,6 @@ export function createTeamsFrontend(
       if (!graphClient) throw new Error("Graph client not initialized");
 
       const chatId = graphClient.getStoredChatId()!;
-      const { execute } = await import("../../core/engine/dispatcher.js");
 
       log("teams", "Teams frontend running");
       log("teams", `Send: Power Automate webhook`);
@@ -219,10 +223,6 @@ export function createTeamsFrontend(
             // ── Slash commands ──
             const trimmed = msg.text.trim().toLowerCase();
             if (trimmed === "/reset") {
-              const { performSessionReset } =
-                await import("../shared/session-status.js");
-              const { resolveChatBackend } =
-                await import("../../core/engine/backend-controller/index.js");
               await performSessionReset(
                 talonChatId,
                 resolveChatBackend(talonChatId, gateway.backend),
@@ -238,8 +238,6 @@ export function createTeamsFrontend(
               continue;
             }
             if (trimmed === "/status") {
-              const { getSessionInfo } =
-                await import("../../storage/sessions.js");
               const info = getSessionInfo(talonChatId);
               const u = info.usage;
               const cache = buildCacheDisplay({
@@ -248,8 +246,6 @@ export function createTeamsFrontend(
                 cacheRead: u.totalCacheRead,
                 cacheWrite: u.totalCacheWrite,
               });
-              const { getChatSettings } =
-                await import("../../storage/chat-settings.js");
               const rawModel =
                 getChatSettings(talonChatId).model ?? (config.model as string);
               const model = resolveModel(rawModel)?.displayName ?? rawModel;
