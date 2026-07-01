@@ -45,10 +45,10 @@ class ClientButton {
   const ClientButton({required this.text, this.url, this.data});
 
   factory ClientButton.fromJson(Map<String, dynamic> j) => ClientButton(
-    text: _string(j['text']),
-    url: j['url'] is String ? j['url'] as String : null,
-    data: j['data'] is String ? j['data'] as String : null,
-  );
+        text: _string(j['text']),
+        url: j['url'] is String ? j['url'] as String : null,
+        data: j['data'] is String ? j['data'] as String : null,
+      );
 }
 
 class ClientMessage {
@@ -78,8 +78,8 @@ class ClientMessage {
     List<String>? reactions,
     List<ToolActivity>? tools,
     this.streaming = false,
-  }) : reactions = reactions ?? <String>[],
-       tools = tools ?? <ToolActivity>[];
+  })  : reactions = reactions ?? <String>[],
+        tools = tools ?? <ToolActivity>[];
 
   factory ClientMessage.fromJson(Map<String, dynamic> j) {
     final rawButtons = _list(j['buttons']);
@@ -109,6 +109,7 @@ class ClientChat {
   int lastActive;
   String preview;
   String? model;
+  String? backend;
   String? effort;
   bool? pulse;
 
@@ -119,20 +120,22 @@ class ClientChat {
     required this.lastActive,
     required this.preview,
     this.model,
+    this.backend,
     this.effort,
     this.pulse,
   });
 
   factory ClientChat.fromJson(Map<String, dynamic> j) => ClientChat(
-    id: _string(j['id']),
-    title: _string(j['title'], 'New chat'),
-    createdAt: _int(j['createdAt']),
-    lastActive: _int(j['lastActive']),
-    preview: _string(j['preview']),
-    model: j['model'] is String ? j['model'] as String : null,
-    effort: j['effort'] is String ? j['effort'] as String : null,
-    pulse: j['pulse'] is bool ? j['pulse'] as bool : null,
-  );
+        id: _string(j['id']),
+        title: _string(j['title'], 'New chat'),
+        createdAt: _int(j['createdAt']),
+        lastActive: _int(j['lastActive']),
+        preview: _string(j['preview']),
+        model: j['model'] is String ? j['model'] as String : null,
+        backend: j['backend'] is String ? j['backend'] as String : null,
+        effort: j['effort'] is String ? j['effort'] as String : null,
+        pulse: j['pulse'] is bool ? j['pulse'] as bool : null,
+      );
 
   DateTime get lastActiveTime =>
       DateTime.fromMillisecondsSinceEpoch(lastActive);
@@ -221,13 +224,13 @@ class BridgeStatus {
   });
 
   factory BridgeStatus.fromJson(Map<String, dynamic> j) => BridgeStatus(
-    protocol: _int(j['protocol'], 1),
-    botName: _string(j['botName'], 'Talon'),
-    backend: _string(j['backend']),
-    model: _string(j['model']),
-    activeChats: _int(j['activeChats']),
-    startedAt: _string(j['startedAt']),
-  );
+        protocol: _int(j['protocol'], 1),
+        botName: _string(j['botName'], 'Talon'),
+        backend: _string(j['backend']),
+        model: _string(j['model']),
+        activeChats: _int(j['activeChats']),
+        startedAt: _string(j['startedAt']),
+      );
 
   static const empty = BridgeStatus(
     protocol: kBridgeProtocolVersion,
@@ -253,11 +256,25 @@ class ModelOption {
   });
 
   factory ModelOption.fromJson(Map<String, dynamic> j) => ModelOption(
-    id: _string(j['id']),
-    displayName: _string(j['displayName']),
-    provider: _string(j['provider']),
-    reasoning: _bool(j['reasoning']),
-  );
+        id: _string(j['id']),
+        displayName: _string(j['displayName']),
+        provider: _string(j['provider']),
+        reasoning: _bool(j['reasoning']),
+      );
+}
+
+/// A selectable backend (e.g. Claude SDK, Codex) — the payload of
+/// `GET /backends`.
+class BackendOption {
+  final String id;
+  final String label;
+
+  const BackendOption({required this.id, required this.label});
+
+  factory BackendOption.fromJson(Map<String, dynamic> j) => BackendOption(
+        id: _string(j['id']),
+        label: _string(j['label']),
+      );
 }
 
 /// A live tool invocation surfaced under the streaming reply.
@@ -278,8 +295,8 @@ class ToolActivity {
     Map<String, dynamic>? input,
     DateTime? startedAt,
     this.finishedAt,
-  }) : input = input ?? <String, dynamic>{},
-       startedAt = startedAt ?? DateTime.now();
+  })  : input = input ?? <String, dynamic>{},
+        startedAt = startedAt ?? DateTime.now();
 
   Duration get elapsed => (finishedAt ?? DateTime.now()).difference(startedAt);
 }

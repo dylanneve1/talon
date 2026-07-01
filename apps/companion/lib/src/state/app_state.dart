@@ -230,6 +230,20 @@ class AppState extends ChangeNotifier {
     await _client?.setModel(chatId, model);
   }
 
+  /// Backends selectable for a chat + the chat's active backend id.
+  Future<(String, List<BackendOption>)> backends(String chatId) async =>
+      await _client?.backends(chatId) ?? ('', const <BackendOption>[]);
+
+  /// Switch a chat's backend. Returns the daemon result so the UI can toast a
+  /// failure (e.g. "Backend not available") instead of silently no-op'ing.
+  Future<({bool ok, String? error})> setBackend(
+    String chatId,
+    String backend,
+  ) async {
+    final r = await _client?.setBackend(chatId, backend);
+    return r ?? (ok: false, error: 'Not connected');
+  }
+
   Future<void> setEffort(String chatId, String effort) async {
     await _client?.setEffort(chatId, effort);
   }
@@ -479,9 +493,14 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _refreshModels() async {
+  /// Public: re-fetch the model catalog (optionally for a specific chat, so the
+  /// active-model hint reflects that chat's backend). Used after a backend
+  /// switch, where the newly-selected backend exposes a different model set.
+  Future<void> refreshModels([String? chatId]) => _refreshModels(chatId);
+
+  Future<void> _refreshModels([String? chatId]) async {
     try {
-      final r = await _client?.models();
+      final r = await _client?.models(chatId);
       if (r != null && !_disposed) {
         models = r.$2;
         notifyListeners();

@@ -30,11 +30,15 @@ class _ModelSheetState extends State<_ModelSheet> {
   String _query = '';
   List<String> _effortLevels = const [];
   String _activeEffort = 'adaptive';
+  List<BackendOption> _backends = const [];
+  String _activeBackend = '';
+  bool _switchingBackend = false;
 
   @override
   void initState() {
     super.initState();
     _loadEffort();
+    _loadBackends();
   }
 
   Future<void> _loadEffort() async {
@@ -44,6 +48,37 @@ class _ModelSheetState extends State<_ModelSheet> {
         _effortLevels = levels;
         _activeEffort = widget.chat.effort ?? active;
       });
+    }
+  }
+
+  Future<void> _loadBackends() async {
+    final (active, backends) = await widget.state.backends(widget.chat.id);
+    if (mounted) {
+      setState(() {
+        _backends = backends;
+        _activeBackend = widget.chat.backend ?? active;
+      });
+    }
+  }
+
+  Future<void> _selectBackend(String id) async {
+    if (id == _activeBackend || _switchingBackend) return;
+    setState(() => _switchingBackend = true);
+    final result = await widget.state.setBackend(widget.chat.id, id);
+    if (!mounted) return;
+    if (result.ok) {
+      setState(() {
+        _activeBackend = id;
+        _switchingBackend = false;
+      });
+      // The new backend exposes its own models — refresh the daemon's list.
+      await widget.state.refreshModels(widget.chat.id);
+      if (mounted) setState(() {});
+    } else {
+      setState(() => _switchingBackend = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.error ?? 'Could not switch backend')),
+      );
     }
   }
 
@@ -93,6 +128,7 @@ class _ModelSheetState extends State<_ModelSheet> {
                   ],
                 ),
               ),
+              if (_backends.length > 1) _backendRow(),
               if (_effortLevels.isNotEmpty) _effortRow(),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -138,6 +174,71 @@ class _ModelSheetState extends State<_ModelSheet> {
           ),
         );
       },
+    );
+  }
+
+  Widget _backendRow() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Text(
+                'BACKEND',
+                style: TextStyle(
+                  color: TalonColors.textFaint,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                ),
+              ),
+              if (_switchingBackend) ...[
+                const SizedBox(width: 8),
+                const SizedBox(
+                  width: 11,
+                  height: 11,
+                  child: CircularProgressIndicator(strokeWidth: 1.6),
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              for (final b in _backends)
+                ChoiceChip(
+                  label: Text(b.label),
+                  selected: _activeBackend == b.id,
+                  showCheckmark: false,
+                  backgroundColor: TalonColors.surface,
+                  selectedColor: TalonColors.accent.withValues(alpha: 0.3),
+                  side: BorderSide(
+                    color: _activeBackend == b.id
+                        ? TalonColors.accent
+                        : TalonColors.glassStroke,
+                  ),
+                  labelStyle: TextStyle(
+                    color: _activeBackend == b.id
+                        ? TalonColors.text
+                        : TalonColors.textDim,
+                    fontSize: 12.5,
+                  ),
+                  onSelected:
+                      _switchingBackend ? null : (_) => _selectBackend(b.id),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Switching backend starts a fresh conversation.',
+            style: TextStyle(color: TalonColors.textFaint, fontSize: 11),
+          ),
+        ],
+      ),
     );
   }
 
@@ -231,7 +332,8 @@ class _ModelRow extends StatelessWidget {
                     size: 16, color: TalonColors.textFaint),
               ),
             if (selected)
-              const Icon(Icons.check_circle, color: TalonColors.accent, size: 18),
+              const Icon(Icons.check_circle,
+                  color: TalonColors.accent, size: 18),
           ],
         ),
       ),

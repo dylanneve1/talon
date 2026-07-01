@@ -21,6 +21,7 @@ import {
 import { log, logError, logDebug } from "../../util/log.js";
 import {
   BRIDGE_PROTOCOL_VERSION,
+  type BackendOption,
   type BridgeEvent,
   type BridgeStatus,
   type ClientChat,
@@ -39,8 +40,15 @@ export type BridgeServerHandlers = {
   history(id: string): ClientMessage[];
   /** Fire-and-forget: streams its results back through `broadcast`. */
   send(id: string, text: string): void;
-  listModels(): { active: string; models: ModelOption[] };
+  listModels(id?: string): { active: string; models: ModelOption[] };
   setModel(id: string, model: string): void;
+  /** Backends selectable for a chat + the chat's active backend id. */
+  listBackends(id: string): { active: string; backends: BackendOption[] };
+  /** Switch a chat to another backend; returns ok + an optional error. */
+  setBackend(
+    id: string,
+    backend: string,
+  ): Promise<{ ok: boolean; error?: string }>;
   setEffort(id: string, effort: string): void;
   effortLevels(id: string): Promise<{ active: string; levels: string[] }>;
   resetChat(id: string): boolean;
@@ -268,8 +276,10 @@ export class BridgeServer {
         return this.json(res, 202, { ok: true });
       }
 
-      if (method === "GET" && path === "/models")
-        return this.json(res, 200, this.handlers.listModels());
+      if (method === "GET" && path === "/models") {
+        const id = url.searchParams.get("chatId") ?? undefined;
+        return this.json(res, 200, this.handlers.listModels(id));
+      }
 
       if (method === "POST" && path === "/model") {
         const body = await this.readJson(req);
@@ -278,6 +288,22 @@ export class BridgeServer {
           asString(body.model) ?? "",
         );
         return this.json(res, 200, { ok: true });
+      }
+
+      if (method === "GET" && path === "/backends") {
+        const id = url.searchParams.get("chatId") ?? "";
+        return this.json(res, 200, this.handlers.listBackends(id));
+      }
+
+      if (method === "POST" && path === "/backend") {
+        const body = await this.readJson(req);
+        // Always 200: ok/error is an application result the client renders,
+        // not an HTTP-level failure (the client's decoder drops >=400 bodies).
+        const result = await this.handlers.setBackend(
+          asString(body.chatId) ?? "",
+          asString(body.backend) ?? "",
+        );
+        return this.json(res, 200, result);
       }
 
       if (method === "GET" && path === "/effort") {
