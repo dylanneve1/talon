@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.26.0](https://github.com/dylanneve1/talon/compare/v1.25.0...v1.26.0) (2026-07-01)
+
+
+### Features
+
+* **companion:** show the app as "Talon" instead of "talon_companion" ([276b76b](https://github.com/dylanneve1/talon/commit/276b76b827d30c960dfd307d9740dadcd341f9e3))
+* **companion:** show the app as "Talon" instead of "talon_companion" ([5b52ab6](https://github.com/dylanneve1/talon/commit/5b52ab6211aa6db31d923063c5f06a0e0416072b))
+* **companion:** show the app as "Talon" instead of "talon_companion" ([#425](https://github.com/dylanneve1/talon/issues/425)) ([276b76b](https://github.com/dylanneve1/talon/commit/276b76b827d30c960dfd307d9740dadcd341f9e3))
+
 ## [1.25.0](https://github.com/dylanneve1/talon/compare/v1.24.5...v1.25.0) (2026-07-01)
 
 
