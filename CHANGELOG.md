@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.1](https://github.com/dylanneve1/talon/compare/v1.29.0...v1.29.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **companion,native:** image rendering, phantom backend reset, light/dark/auto theming ([#440](https://github.com/dylanneve1/talon/issues/440)) ([c14e385](https://github.com/dylanneve1/talon/commit/c14e38505126a58b6802ce1ed7d9dbb11a61f3e6))
+
 ## [1.29.0](https://github.com/dylanneve1/talon/compare/v1.28.0...v1.29.0) (2026-07-01)
 
 
