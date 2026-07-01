@@ -6,9 +6,17 @@ import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 import '../models/bridge_models.dart';
 import '../theme.dart';
 import 'brand.dart';
+import 'code_block.dart';
 import 'markdown.dart';
 import 'motion.dart';
 import 'tool_timeline.dart';
+
+/// Compact clock stamp for message rows ("14:32").
+String _clock(DateTime t) {
+  final local = t.toLocal();
+  String two(int n) => n < 10 ? '0$n' : '$n';
+  return '${two(local.hour)}:${two(local.minute)}';
+}
 
 /// A single conversation row, ChatGPT-style:
 ///   - user: a compact rounded bubble aligned right
@@ -89,22 +97,26 @@ class MessageBubble extends StatelessWidget {
               flex: 9,
               child: Align(
                 alignment: Alignment.centerRight,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: TalonSpace.lg, vertical: 11),
-                  decoration: BoxDecoration(
-                    color: TalonColors.surfaceHi,
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(18),
-                      topRight: Radius.circular(18),
-                      bottomLeft: Radius.circular(18),
-                      bottomRight: Radius.circular(6),
+                child: Tooltip(
+                  message: message.time.toLocal().toString().split('.').first,
+                  waitDuration: const Duration(milliseconds: 600),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: TalonSpace.lg, vertical: 11),
+                    decoration: BoxDecoration(
+                      color: TalonColors.surfaceHi,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(18),
+                        topRight: Radius.circular(18),
+                        bottomLeft: Radius.circular(18),
+                        bottomRight: Radius.circular(6),
+                      ),
+                      border: Border.all(color: TalonColors.glassStroke),
                     ),
-                    border: Border.all(color: TalonColors.glassStroke),
-                  ),
-                  child: SelectableText(
-                    message.text,
-                    style: TalonType.body,
+                    child: SelectableText(
+                      message.text,
+                      style: TalonType.body,
+                    ),
                   ),
                 ),
               ),
@@ -127,7 +139,18 @@ class MessageBubble extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(botName, style: TalonType.subtitle),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(botName, style: TalonType.subtitle),
+                      const SizedBox(width: TalonSpace.sm),
+                      Text(
+                        _clock(message.time),
+                        style: TalonType.caption.copyWith(fontSize: 10.5),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: TalonSpace.xs),
                   if (message.tools.isNotEmpty)
                     Padding(
@@ -145,6 +168,7 @@ class MessageBubble extends StatelessWidget {
                     MarkdownBody(
                       data: message.text.isEmpty ? '…' : message.text,
                       selectable: true,
+                      builders: {'code': CodeElementBuilder()},
                       onTapLink: (_, href, __) {
                         if (href != null) {
                           launchUrl(Uri.parse(href),

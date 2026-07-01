@@ -165,11 +165,30 @@ class BridgeClient {
   Future<ConfigSnapshot> setConfig(Map<String, dynamic> update) async =>
       ConfigSnapshot.fromJson(await _postJson('/config', update));
 
-  Future<List<ClientMessage>> history(String chatId) async {
-    final j = await _getJson('/history', {'chatId': chatId});
+  /// A page of history: the newest window by default, or — when [before] is
+  /// given — the window of messages strictly older than that message id.
+  Future<List<ClientMessage>> history(
+    String chatId, {
+    int? before,
+    int? limit,
+  }) async {
+    final j = await _getJson('/history', {
+      'chatId': chatId,
+      if (before != null) 'before': '$before',
+      if (limit != null) 'limit': '$limit',
+    });
     return _list(
       j['messages'],
     ).map((m) => ClientMessage.fromJson(_map(m))).toList();
+  }
+
+  /// Full-text search across chats (or one chat when [chatId] is given).
+  Future<List<SearchHit>> search(String query, {String? chatId}) async {
+    final j = await _getJson('/search', {
+      'q': query,
+      if (chatId != null) 'chatId': chatId,
+    });
+    return _list(j['results']).map((r) => SearchHit.fromJson(_map(r))).toList();
   }
 
   Future<void> send(

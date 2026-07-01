@@ -1,0 +1,63 @@
+{
+  "_comment": "Canonical Bridge Protocol v1 wire samples. Asserted byte-for-byte-compatible by BOTH sides: src/__tests__/native-protocol-fixture.test.ts (daemon) and test/protocol_fixture_test.dart (companion). If a field changes shape or name, one of those suites fails — that is the point. Keep additive.",
+  "protocol": 1,
+  "message": {
+    "id": "1024",
+    "chatId": "d_abc123",
+    "role": "assistant",
+    "text": "Here is **markdown** with `code`.",
+    "ts": 1767225600000,
+    "buttons": [[{ "text": "Open", "url": "https://example.com" }]],
+    "reactions": ["👍"],
+    "imagePath": "/media?id=m42",
+    "durationMs": 4200,
+    "tokensIn": 1200,
+    "tokensOut": 340,
+    "tools": [
+      {
+        "id": "toolu_01",
+        "name": "mcp__search__web",
+        "input": { "query": "talon agent" },
+        "durationMs": 800
+      },
+      {
+        "id": "toolu_02",
+        "name": "Bash",
+        "input": { "command": "ls" },
+        "error": "exit 1",
+        "durationMs": 120
+      }
+    ]
+  },
+  "chat": {
+    "id": "d_abc123",
+    "title": "Protocol design",
+    "createdAt": 1767225500000,
+    "lastActive": 1767225600000,
+    "preview": "Here is markdown with code.",
+    "model": "claude-sonnet-5",
+    "backend": "claude",
+    "effort": "high",
+    "pulse": true
+  },
+  "status": {
+    "app": "talon-bridge",
+    "protocol": 1,
+    "botName": "Talon",
+    "backend": "claude",
+    "model": "Claude Sonnet 5",
+    "activeChats": 3,
+    "startedAt": "2026-01-01T00:00:00.000Z"
+  },
+  "searchResult": {
+    "chatId": "d_abc123",
+    "chatTitle": "Protocol design",
+    "message": {
+      "id": "900",
+      "chatId": "d_abc123",
+      "role": "user",
+      "text": "find the fox",
+      "ts": 1767225000000
+    }
+  }
+}

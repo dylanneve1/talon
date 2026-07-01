@@ -21,6 +21,11 @@ dependencies:
   shared_preferences: ^2.3.2
   # Markdown rendering for assistant replies (code blocks, tables, lists).
   flutter_markdown: ^0.7.4
+  # AST access for the custom fenced-code-block builder (copy button +
+  # syntax highlighting). Same package flutter_markdown parses with.
+  markdown: ^7.2.2
+  # Syntax highlighting inside fenced code blocks.
+  flutter_highlight: ^0.7.0
   # Declarative animation layer (gskinner, a Flutter Favorite). Replaces the
   # hand-rolled AnimationControllers with a chainable .animate() API and powers
   # the staggered list entrances, shimmer skeletons, and streaming caret.

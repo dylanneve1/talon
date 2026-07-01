@@ -35,7 +35,12 @@ class LiveTurn extends StatelessWidget {
                 Text(botName, style: TalonType.subtitle),
                 const SizedBox(height: 6),
                 if (turn.reasoning.isNotEmpty)
-                  _ReasoningStrip(text: turn.reasoning.join('')),
+                  _ReasoningStrip(
+                    text: turn.reasoning.join(''),
+                    // Once the reply starts streaming, the thinking is done —
+                    // fold the strip into a quiet pill (tap re-expands).
+                    condensed: turn.draft.isNotEmpty,
+                  ),
                 if (turn.tools.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: TalonSpace.sm),
@@ -104,13 +109,62 @@ class _StreamingText extends StatelessWidget {
 }
 
 /// The model's live reasoning, in a quiet accent-edged strip. Fades/blurs in
-/// so it doesn't pop when the model starts thinking.
-class _ReasoningStrip extends StatelessWidget {
+/// so it doesn't pop when the model starts thinking, and folds into a
+/// one-line pill once the reply starts streaming (tap to re-expand) — the
+/// pattern users know from the Claude/ChatGPT apps.
+class _ReasoningStrip extends StatefulWidget {
   final String text;
-  const _ReasoningStrip({required this.text});
+  final bool condensed;
+  const _ReasoningStrip({required this.text, this.condensed = false});
+
+  @override
+  State<_ReasoningStrip> createState() => _ReasoningStripState();
+}
+
+class _ReasoningStripState extends State<_ReasoningStrip> {
+  /// The user's explicit choice, overriding the automatic fold. Null = auto.
+  bool? _userExpanded;
+
+  bool get _expanded => _userExpanded ?? !widget.condensed;
 
   @override
   Widget build(BuildContext context) {
+    if (!_expanded) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: TalonSpace.sm),
+        child: InkWell(
+          onTap: () => setState(() => _userExpanded = true),
+          borderRadius: TalonRadius.rPill,
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: TalonSpace.md, vertical: 5),
+            decoration: BoxDecoration(
+              color: TalonColors.glassFill,
+              borderRadius: TalonRadius.rPill,
+              border: Border.all(color: TalonColors.glassStroke),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.bubble_chart_outlined,
+                    size: 13, color: TalonColors.textFaint),
+                SizedBox(width: 6),
+                Text(
+                  'Thought — tap to expand',
+                  style:
+                      TextStyle(fontSize: 11.5, color: TalonColors.textFaint),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return _strip(context);
+  }
+
+  Widget _strip(BuildContext context) {
+    final text = widget.text;
     final strip = Padding(
       padding: const EdgeInsets.only(bottom: TalonSpace.sm),
       child: Container(
@@ -151,8 +205,16 @@ class _ReasoningStrip extends StatelessWidget {
         ),
       ),
     );
-    if (MediaQuery.of(context).disableAnimations) return strip;
-    return strip.animate().fadeIn(duration: TalonMotion.base).blurX(
+    // While the reply streams, the expanded strip stays tappable to fold
+    // back down (the pill re-expands it).
+    final Widget body = widget.condensed
+        ? GestureDetector(
+            onTap: () => setState(() => _userExpanded = false),
+            child: strip,
+          )
+        : strip;
+    if (MediaQuery.of(context).disableAnimations) return body;
+    return body.animate().fadeIn(duration: TalonMotion.base).blurX(
           begin: 3,
           end: 0,
           duration: TalonMotion.base,

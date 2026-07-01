@@ -149,10 +149,38 @@ class MockBridge {
     }
     if (req.method == 'GET' && path == '/history') {
       final chatId = req.uri.queryParameters['chatId'] ?? '';
+      final before = int.tryParse(req.uri.queryParameters['before'] ?? '');
+      final limit = int.tryParse(req.uri.queryParameters['limit'] ?? '') ?? 200;
+      var list = messages[chatId] ?? const <Map<String, dynamic>>[];
+      if (before != null) {
+        list = list
+            .where((m) => (int.tryParse('${m['id']}') ?? 0) < before)
+            .toList();
+      }
+      if (list.length > limit) list = list.sublist(list.length - limit);
       return _json(req.response, 200, {
         'chatId': chatId,
-        'messages': messages[chatId] ?? const [],
+        'messages': list,
       });
+    }
+    if (req.method == 'GET' && path == '/search') {
+      final q = (req.uri.queryParameters['q'] ?? '').toLowerCase();
+      final results = <Map<String, dynamic>>[];
+      messages.forEach((chatId, list) {
+        for (final m in list) {
+          if ('${m['text']}'.toLowerCase().contains(q)) {
+            results.add({
+              'chatId': chatId,
+              'chatTitle': chats.firstWhere(
+                (c) => c['id'] == chatId,
+                orElse: () => {'title': ''},
+              )['title'],
+              'message': m,
+            });
+          }
+        }
+      });
+      return _json(req.response, 200, {'results': results});
     }
     if (req.method == 'POST' && path == '/send') {
       final body = await _readJson(req);

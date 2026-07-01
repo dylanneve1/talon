@@ -104,6 +104,14 @@ class ClientMessage {
 
   factory ClientMessage.fromJson(Map<String, dynamic> j) {
     final rawButtons = _list(j['buttons']);
+    // Turn meta hydrated by the daemon (protocol-additive): the tool timeline
+    // and stats footer for this assistant turn, surviving reload/restart.
+    final tools = _list(j['tools'])
+        .map((t) => ToolActivity.fromHistoryJson(_map(t)))
+        .toList();
+    final durationMs = _int(j['durationMs']);
+    final tokensIn = _int(j['tokensIn']);
+    final tokensOut = _int(j['tokensOut']);
     return ClientMessage(
       id: _string(j['id']),
       chatId: _string(j['chatId']),
@@ -118,10 +126,28 @@ class ClientMessage {
           .toList(),
       reactions: _list(j['reactions']).map((e) => e.toString()).toList(),
       imagePath: j['imagePath'] is String ? j['imagePath'] as String : null,
+      tools: tools.isEmpty ? null : tools,
+      durationMs: durationMs > 0 ? durationMs : null,
+      tokensIn: tokensIn > 0 ? tokensIn : null,
+      tokensOut: tokensOut > 0 ? tokensOut : null,
     );
   }
 
   DateTime get time => DateTime.fromMillisecondsSinceEpoch(ts);
+
+  /// Minimal wire-shape encoding for the local offline snapshot (buttons,
+  /// reactions and tool traces are re-fetched from the daemon on connect).
+  Map<String, dynamic> toSnapshotJson() => {
+        'id': id,
+        'chatId': chatId,
+        'role': role.name,
+        'text': text,
+        'ts': ts,
+        if (imagePath != null) 'imagePath': imagePath,
+        if (durationMs != null) 'durationMs': durationMs,
+        if (tokensIn != null) 'tokensIn': tokensIn,
+        if (tokensOut != null) 'tokensOut': tokensOut,
+      };
 }
 
 class ClientChat {
@@ -161,6 +187,18 @@ class ClientChat {
 
   DateTime get lastActiveTime =>
       DateTime.fromMillisecondsSinceEpoch(lastActive);
+
+  Map<String, dynamic> toSnapshotJson() => {
+        'id': id,
+        'title': title,
+        'createdAt': createdAt,
+        'lastActive': lastActive,
+        'preview': preview,
+        if (model != null) 'model': model,
+        if (backend != null) 'backend': backend,
+        if (effort != null) 'effort': effort,
+        if (pulse != null) 'pulse': pulse,
+      };
 }
 
 /// Snapshot of the daemon's own (editable) settings + health — the payload of
@@ -320,5 +358,40 @@ class ToolActivity {
   })  : input = input ?? <String, dynamic>{},
         startedAt = startedAt ?? DateTime.now();
 
+  /// A finished call re-hydrated from persisted history: anchor the window at
+  /// parse time so [elapsed] reproduces the recorded duration.
+  factory ToolActivity.fromHistoryJson(Map<String, dynamic> j) {
+    final started = DateTime.now();
+    final duration = _int(j['durationMs']);
+    return ToolActivity(
+      id: _string(j['id']),
+      name: _string(j['name'], 'tool'),
+      done: true,
+      error: j['error'] is String ? j['error'] as String : null,
+      input: _map(j['input']),
+      startedAt: started,
+      finishedAt: started.add(Duration(milliseconds: duration)),
+    );
+  }
+
   Duration get elapsed => (finishedAt ?? DateTime.now()).difference(startedAt);
+}
+
+/// One full-text search hit from `GET /search`.
+class SearchHit {
+  final String chatId;
+  final String chatTitle;
+  final ClientMessage message;
+
+  const SearchHit({
+    required this.chatId,
+    required this.chatTitle,
+    required this.message,
+  });
+
+  factory SearchHit.fromJson(Map<String, dynamic> j) => SearchHit(
+        chatId: _string(j['chatId']),
+        chatTitle: _string(j['chatTitle']),
+        message: ClientMessage.fromJson(_map(j['message'])),
+      );
 }

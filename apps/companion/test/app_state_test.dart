@@ -306,6 +306,159 @@ void main() {
       expect(r.error, isNotNull);
     });
 
+    test('loadOlderMessages pages scrollback and reports exhaustion',
+        () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      // 250 messages: initial load caps at 200, one older page remains.
+      bridge.messages['c1'] = [
+        for (var i = 1; i <= 250; i++)
+          {
+            'id': '$i',
+            'chatId': 'c1',
+            'role': i.isEven ? 'assistant' : 'user',
+            'text': 'msg $i',
+            'ts': i,
+          },
+      ];
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      await _waitFor(() => state.messagesFor('c1').length == 200);
+      expect(state.messagesFor('c1').first.text, 'msg 51');
+      expect(state.hasMoreHistory('c1'), isTrue);
+
+      final added = await state.loadOlderMessages('c1');
+      expect(added, 50);
+      expect(state.messagesFor('c1').length, 250);
+      expect(state.messagesFor('c1').first.text, 'msg 1');
+      // A 50-row page (< page size) marks the scrollback exhausted.
+      expect(state.hasMoreHistory('c1'), isFalse);
+      expect(await state.loadOlderMessages('c1'), 0);
+    });
+
+    test('searchMessages returns daemon hits', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      final hits = await state.searchMessages('Hello');
+      expect(hits, hasLength(1));
+      expect(hits.single.chatId, 'c1');
+      expect(hits.single.chatTitle, 'General');
+      expect(hits.single.message.text, 'Hello');
+      expect(await state.searchMessages('zzz-no-match'), isEmpty);
+    });
+
+    test('history hydrates persisted tool traces and turn stats', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      bridge.messages['c1']!.add({
+        'id': 'm2',
+        'chatId': 'c1',
+        'role': 'assistant',
+        'text': 'done',
+        'ts': 20,
+        'durationMs': 4200,
+        'tokensIn': 1200,
+        'tokensOut': 340,
+        'tools': [
+          {
+            'id': 't1',
+            'name': 'search',
+            'input': {'q': 'talon'},
+            'durationMs': 800,
+          },
+          {'id': 't2', 'name': 'bash', 'error': 'exit 1', 'durationMs': 100},
+        ],
+      });
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.messagesFor('c1').length == 2);
+
+      final m = state.messagesFor('c1').last;
+      expect(m.durationMs, 4200);
+      expect(m.tokensIn, 1200);
+      expect(m.tokensOut, 340);
+      expect(m.tools, hasLength(2));
+      expect(m.tools.first.done, isTrue);
+      expect(m.tools.first.elapsed.inMilliseconds, 800);
+      expect(m.tools.last.error, 'exit 1');
+      expect(m.hasStats, isTrue);
+    });
+
+    test('unread tracks lastActive vs local read marker', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      // c1 is auto-selected on connect → read.
+      expect(state.selectedChatId, 'c1');
+      await state.selectChat('c1');
+      expect(state.hasUnread(state.chats.single), isFalse);
+
+      // A second chat sees newer activity the user hasn't looked at.
+      await bridge.emit({
+        'kind': 'chat_created',
+        'chat': {
+          'id': 'c2',
+          'title': 'Other',
+          'createdAt': 5,
+          'lastActive': DateTime.now().millisecondsSinceEpoch,
+          'preview': 'ping',
+        },
+      });
+      await _waitFor(() => state.chats.length == 2);
+      final other = state.chats.firstWhere((c) => c.id == 'c2');
+      expect(state.hasUnread(other), isTrue);
+
+      await state.selectChat('c2');
+      expect(state.hasUnread(other), isFalse);
+    });
+
+    test('offline snapshot hydrates chats and messages at construction',
+        () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      await state.start();
+      await _waitFor(() => state.messagesFor('c1').isNotEmpty);
+      // Let the debounced snapshot land.
+      await Future<void>.delayed(const Duration(milliseconds: 2300));
+      final prefs = state.prefs;
+      state.dispose();
+
+      // A brand-new AppState (fresh launch) renders from the snapshot
+      // without any connection.
+      final cold = AppState(prefs);
+      addTearDown(cold.dispose);
+      expect(cold.chats.single.id, 'c1');
+      expect(cold.messagesFor('c1').single.text, 'Hello');
+      expect(cold.selectedChatId, 'c1');
+    });
+
+    test('exportMarkdown renders the conversation', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge));
+      addTearDown(state.dispose);
+      await state.start();
+      await _waitFor(() => state.messagesFor('c1').isNotEmpty);
+
+      final md = state.exportMarkdown('c1');
+      expect(md, contains('# General'));
+      expect(md, contains('**User**'));
+      expect(md, contains('Hello'));
+    });
+
     test('applyConfig resets stores before loading the new bridge', () async {
       final first = await MockBridge.start();
       final second = await MockBridge.start();

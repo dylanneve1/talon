@@ -121,6 +121,40 @@ export function getRecentHistory(chatId: string, limit = 50): HistoryMessage[] {
   return repo.recent(chatId, limit);
 }
 
+/**
+ * Scroll-back pagination: the `limit` messages strictly older than
+ * `beforeMsgId`, chronological. Used by the bridge's /history endpoint so
+ * clients can walk long histories page by page instead of one giant fetch.
+ */
+export function getHistoryBefore(
+  chatId: string,
+  beforeMsgId: number,
+  limit = 50,
+): HistoryMessage[] {
+  return repo.recentBefore(chatId, beforeMsgId, limit);
+}
+
+/**
+ * Raw (wire-friendly) full-text search over a chat's history. Unlike
+ * [searchHistory] — which formats a string for the agent's tool — this
+ * returns the matching rows for the bridge's /search endpoint to map into
+ * protocol messages. Empty on FTS failure rather than throwing.
+ */
+export function searchHistoryMessages(
+  chatId: string,
+  query: string,
+  limit = 20,
+): HistoryMessage[] {
+  const match = ftsQuery(query);
+  if (!match) return [];
+  try {
+    return repo.searchFts(chatId, match, limit);
+  } catch (err) {
+    logError("history", `FTS search failed for ${JSON.stringify(query)}`, err);
+    return [];
+  }
+}
+
 /** Update a message's file path after media download. */
 export function setMessageFilePath(
   chatId: string,

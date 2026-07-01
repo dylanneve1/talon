@@ -31,6 +31,20 @@ export type ClientRole = "user" | "assistant" | "system";
 /** An inline button. `url` opens a link; `data` is an opaque callback token. */
 export type ClientButton = { text: string; url?: string; data?: string };
 
+/**
+ * A tool invocation that ran during an assistant turn, persisted so history
+ * shows what the model did even after a reload/restart (additive in v1 —
+ * older clients simply ignore the field).
+ */
+export type ClientToolCall = {
+  id: string;
+  name: string;
+  input?: Record<string, unknown>;
+  error?: string;
+  /** Wall-clock duration of this call, when known. */
+  durationMs?: number;
+};
+
 /** A single rendered message in a conversation. */
 export type ClientMessage = {
   id: string;
@@ -47,6 +61,19 @@ export type ClientMessage = {
    * Present on photo messages the bot sends; `text` carries any caption.
    */
   imagePath?: string;
+  /** Tools that ran during this assistant turn (history hydration). */
+  tools?: ClientToolCall[];
+  /** Turn stats attached once the turn ended (history hydration). */
+  durationMs?: number;
+  tokensIn?: number;
+  tokensOut?: number;
+};
+
+/** One full-text search hit: the message plus the chat it lives in. */
+export type SearchResult = {
+  chatId: string;
+  chatTitle: string;
+  message: ClientMessage;
 };
 
 /** A conversation in the sidebar. */

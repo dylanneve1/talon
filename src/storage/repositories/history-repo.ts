@@ -71,6 +71,21 @@ export function recent(chatId: string, limit: number): HistoryMessage[] {
   return rows.reverse().map(rowToMessage);
 }
 
+/**
+ * Scroll-back pagination: the `limit` messages strictly older than
+ * `beforeMsgId`, in chronological order.
+ */
+export function recentBefore(
+  chatId: string,
+  beforeMsgId: number,
+  limit: number,
+): HistoryMessage[] {
+  const rows = getDatabase()
+    .prepare(historySql.recentBefore)
+    .all(chatId, beforeMsgId, limit) as Row[];
+  return rows.reverse().map(rowToMessage);
+}
+
 export function setFilePath(
   chatId: string,
   msgId: number,

@@ -30,6 +30,7 @@ import {
   type ClientChat,
   type ClientMessage,
   type ModelOption,
+  type SearchResult,
 } from "./protocol.js";
 import type { ConfigSnapshot } from "./settings.js";
 
@@ -48,7 +49,13 @@ export type BridgeServerHandlers = {
   createChat(title?: string): ClientChat;
   renameChat(id: string, title: string): ClientChat | null;
   deleteChat(id: string): boolean;
-  history(id: string): ClientMessage[];
+  /** A page of history: newest window, or the window before `before`. */
+  history(
+    id: string,
+    opts?: { before?: number; limit?: number },
+  ): ClientMessage[];
+  /** Full-text search across chats (or one chat when `chatId` is given). */
+  search(query: string, chatId?: string): SearchResult[];
   /** Fire-and-forget: streams its results back through `broadcast`. */
   send(id: string, text: string, opts?: SendOptions): void;
   /** Persist an uploaded image and return its render path + on-disk path. */
@@ -281,9 +288,20 @@ export class BridgeServer {
 
       if (method === "GET" && path === "/history") {
         const id = url.searchParams.get("chatId") ?? "";
+        const before = asPositiveInt(url.searchParams.get("before"));
+        const limit = asPositiveInt(url.searchParams.get("limit"));
         return this.json(res, 200, {
           chatId: id,
-          messages: this.handlers.history(id),
+          messages: this.handlers.history(id, { before, limit }),
+        });
+      }
+
+      if (method === "GET" && path === "/search") {
+        const q = (url.searchParams.get("q") ?? "").trim();
+        if (!q) return this.json(res, 400, { ok: false, error: "q required" });
+        const chatId = url.searchParams.get("chatId") ?? undefined;
+        return this.json(res, 200, {
+          results: this.handlers.search(q, chatId),
         });
       }
 
@@ -494,6 +512,13 @@ export class BridgeServer {
 
 function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
+}
+
+/** Parse a positive-integer query param; undefined when absent/invalid. */
+function asPositiveInt(v: string | null): number | undefined {
+  if (!v) return undefined;
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
 /** Minimal image content-type map for the media endpoint. */

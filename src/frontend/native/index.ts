@@ -27,8 +27,16 @@ import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import {
   pushMessage,
   getRecentHistory,
+  getHistoryBefore,
+  searchHistoryMessages,
   clearHistory,
 } from "../../storage/history.js";
+import {
+  recordTurnMeta,
+  getTurnMeta,
+  clearTurnMeta,
+  flushTurnMeta,
+} from "./turn-meta.js";
 import {
   getChatSettings,
   setChatEffort,
@@ -69,7 +77,9 @@ import {
   type ClientButton,
   type ClientChat,
   type ClientMessage,
+  type ClientToolCall,
   type ModelOption,
+  type SearchResult,
 } from "./protocol.js";
 
 export type NativeFrontend = {
@@ -150,6 +160,11 @@ export function createNativeFrontend(
 
   const broadcast = (event: BridgeEvent): void => server.broadcast(event);
 
+  // The most recent assistant message id per chat — turn_end attaches the
+  // turn's meta (tools/stats) to this message so history hydration can show
+  // what the model did after a reload.
+  const lastAssistantId = new Map<string, string>();
+
   const broadcastChatUpdated = (entry: ChatEntry): void =>
     broadcast({ kind: "chat_updated", chat: toClientChat(entry) });
 
@@ -194,6 +209,7 @@ export function createNativeFrontend(
       timestamp: ts,
     });
     chats.touch(entry.id, text);
+    lastAssistantId.set(entry.id, String(id));
     broadcast({ kind: "message", chatId: entry.id, message });
     broadcastChatUpdated(entry);
     return id;
@@ -230,6 +246,7 @@ export function createNativeFrontend(
       filePath,
     });
     chats.touch(entry.id, text || "[photo]");
+    lastAssistantId.set(entry.id, String(id));
     broadcast({ kind: "message", chatId: entry.id, message });
     broadcastChatUpdated(entry);
     return id;
@@ -301,6 +318,12 @@ export function createNativeFrontend(
     attachmentPath?: string,
   ): Promise<void> {
     const start = Date.now();
+    // Tool calls observed during this turn, in call order — recorded into the
+    // turn-meta sidecar at turn_end so history can replay the timeline.
+    const turnTools = new Map<
+      string,
+      { call: ClientToolCall; startedAt: number }
+    >();
     // Point the model at an attached image so it can read the file itself.
     const prompt = attachmentPath
       ? `${text ? `${text}\n\n` : ""}[Attached image: ${attachmentPath}]`
@@ -329,17 +352,28 @@ export function createNativeFrontend(
             case "text_delta":
               broadcast({ kind: "delta", chatId: entry.id, text: event.text });
               break;
-            case "tool_call":
+            case "tool_call": {
+              const input = toolInputToRecord(event.name, event.input);
+              turnTools.set(event.id, {
+                call: { id: event.id, name: event.name, input },
+                startedAt: Date.now(),
+              });
               broadcast({
                 kind: "tool",
                 chatId: entry.id,
                 id: event.id,
                 name: event.name,
                 phase: "call",
-                input: toolInputToRecord(event.name, event.input),
+                input,
               });
               break;
-            case "tool_result":
+            }
+            case "tool_result": {
+              const live = turnTools.get(event.id);
+              if (live) {
+                live.call.durationMs = Date.now() - live.startedAt;
+                if (event.error) live.call.error = event.error;
+              }
               broadcast({
                 kind: "tool",
                 chatId: entry.id,
@@ -349,6 +383,7 @@ export function createNativeFrontend(
                 ...(event.error ? { error: event.error } : {}),
               });
               break;
+            }
             case "error":
               broadcast({
                 kind: "error",
@@ -368,6 +403,23 @@ export function createNativeFrontend(
       if (delivered === 0 && result.text.trim()) {
         emitAssistant(entry, result.text.trim());
         delivered = 1;
+      }
+
+      // Persist what this turn did against its final assistant message, so
+      // reloaded history keeps the tool timeline + stats footer. Only when
+      // the turn actually delivered — otherwise the "last assistant id"
+      // belongs to a previous turn and the meta would land on the wrong row.
+      if (delivered > 0) {
+        const msgId = lastAssistantId.get(entry.id);
+        if (msgId) {
+          const tools = [...turnTools.values()].map((t) => t.call);
+          recordTurnMeta(entry.id, msgId, {
+            durationMs: result.durationMs,
+            tokensIn: result.inputTokens,
+            tokensOut: result.outputTokens,
+            ...(tools.length ? { tools } : {}),
+          });
+        }
       }
 
       broadcast({ kind: "typing", chatId: entry.id, on: false });
@@ -523,6 +575,7 @@ export function createNativeFrontend(
     setChatBackend(chatId, target);
     resetSession(chatId);
     clearHistory(chatId);
+    clearTurnMeta(chatId);
     resetPulseCheckpoint(chatId);
     emitSystem(entry, `Switched to ${target} — starting a fresh conversation.`);
     broadcastChatUpdated(entry);
@@ -579,11 +632,19 @@ export function createNativeFrontend(
     },
     deleteChat: (id) => {
       const ok = chats.remove(id);
-      if (ok) broadcast({ kind: "chat_deleted", chatId: id });
+      if (ok) {
+        clearTurnMeta(id);
+        broadcast({ kind: "chat_deleted", chatId: id });
+      }
       return ok;
     },
-    history: (id) =>
-      getRecentHistory(id, 200)
+    history: (id, opts) => {
+      const limit = Math.min(Math.max(opts?.limit ?? 200, 1), 500);
+      const rows =
+        opts?.before !== undefined
+          ? getHistoryBefore(id, opts.before, limit)
+          : getRecentHistory(id, limit);
+      return rows
         .map((m) => {
           const msg = historyToClientMessage(m, id);
           // Re-hydrate an attached image: re-register its on-disk path into
@@ -593,9 +654,38 @@ export function createNativeFrontend(
             const mediaId = registerMedia(m.filePath);
             msg.imagePath = `/media?id=${encodeURIComponent(mediaId)}`;
           }
+          // Re-hydrate turn meta (tool timeline + stats) for assistant rows.
+          if (msg.role === "assistant") {
+            const meta = getTurnMeta(id, msg.id);
+            if (meta) {
+              if (meta.tools?.length) msg.tools = meta.tools;
+              if (meta.durationMs) msg.durationMs = meta.durationMs;
+              if (meta.tokensIn) msg.tokensIn = meta.tokensIn;
+              if (meta.tokensOut) msg.tokensOut = meta.tokensOut;
+            }
+          }
           return msg;
         })
-        .sort((a, b) => Number(a.id) - Number(b.id)),
+        .sort((a, b) => Number(a.id) - Number(b.id));
+    },
+    search: (query, chatId) => {
+      const targets = chatId
+        ? [chats.get(chatId)].filter((e): e is ChatEntry => e != null)
+        : chats.list();
+      const results: SearchResult[] = [];
+      for (const entry of targets) {
+        for (const m of searchHistoryMessages(entry.id, query, 10)) {
+          results.push({
+            chatId: entry.id,
+            chatTitle: entry.title,
+            message: historyToClientMessage(m, entry.id),
+          });
+        }
+      }
+      // Newest hits first, bounded across all chats.
+      results.sort((a, b) => b.message.ts - a.message.ts);
+      return results.slice(0, 50);
+    },
     send: (id, text, opts) => {
       const entry = chats.get(id) ?? chats.ensure(id);
       const messageId = emitUser(
@@ -710,6 +800,7 @@ export function createNativeFrontend(
     },
 
     async stop() {
+      flushTurnMeta();
       await removeBridgeDiscovery();
       await server.stop();
       await gateway.stop();

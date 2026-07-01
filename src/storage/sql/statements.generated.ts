@@ -201,6 +201,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
        timestamp, media_type, sticker_file_id, file_path
 FROM history_messages
 WHERE chat_id = ? ORDER BY id DESC LIMIT ?`,
+  recentBefore: `-- Scroll-back pagination: the window of messages strictly older than a
+-- given msg_id, newest-first (the repository reverses to chronological).
+SELECT msg_id, sender_id, sender_name, text, reply_to_msg_id,
+       timestamp, media_type, sticker_file_id, file_path
+FROM history_messages
+WHERE chat_id = ? AND msg_id < ? ORDER BY id DESC LIMIT ?`,
   setFilePath: `UPDATE history_messages SET file_path = ? WHERE chat_id = ? AND msg_id = ?`,
   deleteChat: `DELETE FROM history_messages WHERE chat_id = ?`,
   searchFts: `-- The match param must already be a valid FTS5 expression

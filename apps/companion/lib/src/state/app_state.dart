@@ -36,7 +36,9 @@ class AppState extends ChangeNotifier {
   final Prefs prefs;
   ConnectionConfig config;
 
-  AppState(this.prefs) : config = prefs.connection;
+  AppState(this.prefs) : config = prefs.connection {
+    _hydrateFromSnapshot();
+  }
 
   BridgeClient? _client;
   DaemonSupervisor? _supervisor;
@@ -69,6 +71,23 @@ class AppState extends ChangeNotifier {
   final Map<String, List<ClientMessage>> _messages = {};
   final Map<String, TurnState> _turns = {};
   final Set<String> _loadedHistory = {};
+
+  // History pagination: chats whose scrollback is fully loaded, and chats
+  // with an older-page fetch in flight.
+  static const int _historyPageSize = 100;
+  static const int _historyInitialSize = 200;
+  final Set<String> _historyExhausted = {};
+  final Set<String> _loadingOlder = {};
+  final Set<String> _loadingHistory = {};
+
+  // Offline snapshot: debounce handle for persisted cold-start state.
+  Timer? _snapshotTimer;
+
+  bool isLoadingOlder(String chatId) => _loadingOlder.contains(chatId);
+  bool hasMoreHistory(String chatId) => !_historyExhausted.contains(chatId);
+
+  /// True while a chat's first history page is being fetched (skeleton UI).
+  bool isHistoryLoading(String chatId) => _loadingHistory.contains(chatId);
 
   // Models
   List<ModelOption> models = [];
@@ -253,8 +272,81 @@ class AppState extends ChangeNotifier {
 
   Future<void> selectChat(String chatId) async {
     selectedChatId = chatId;
+    markRead(chatId);
     notifyListeners();
     if (!_loadedHistory.contains(chatId)) await _loadHistory(chatId);
+  }
+
+  // ── Unread tracking ────────────────────────────────────────────────────────
+
+  /// A chat is unread when it saw activity newer than the user's last look
+  /// and it isn't the one currently on screen.
+  bool hasUnread(ClientChat chat) =>
+      chat.id != selectedChatId &&
+      chat.lastActive > prefs.lastReadOf(chat.id);
+
+  void markRead(String chatId) {
+    final chat = _chatById(chatId);
+    final ts = chat?.lastActive ?? DateTime.now().millisecondsSinceEpoch;
+    unawaited(prefs.setLastRead(chatId, ts));
+  }
+
+  // ── History pagination + search ───────────────────────────────────────────
+
+  /// Fetch the page of messages older than the oldest one currently loaded.
+  /// Returns how many new messages were prepended (0 when exhausted/offline).
+  Future<int> loadOlderMessages(String chatId) async {
+    if (_loadingOlder.contains(chatId) ||
+        _historyExhausted.contains(chatId) ||
+        conn != ConnState.connected) {
+      return 0;
+    }
+    final msgs = _messages[chatId];
+    if (msgs == null || msgs.isEmpty) return 0;
+    // Oldest server-assigned id (local system notes have non-numeric ids).
+    int? oldest;
+    for (final m in msgs) {
+      final n = int.tryParse(m.id);
+      if (n != null) {
+        oldest = n;
+        break;
+      }
+    }
+    if (oldest == null) return 0;
+
+    _loadingOlder.add(chatId);
+    notifyListeners();
+    try {
+      final page = await _client?.history(
+            chatId,
+            before: oldest,
+            limit: _historyPageSize,
+          ) ??
+          const <ClientMessage>[];
+      if (page.length < _historyPageSize) _historyExhausted.add(chatId);
+      final existing = msgs.map((m) => m.id).toSet();
+      final fresh = page.where((m) => !existing.contains(m.id)).toList();
+      msgs.insertAll(0, fresh);
+      return fresh.length;
+    } catch (e) {
+      AppLog.warn('app_state', 'older-history fetch failed', e);
+      return 0;
+    } finally {
+      _loadingOlder.remove(chatId);
+      notifyListeners();
+    }
+  }
+
+  /// Daemon-side full-text search across all chats. Empty on failure so the
+  /// quick switcher can fall back to local title matches silently.
+  Future<List<SearchHit>> searchMessages(String query) async {
+    if (conn != ConnState.connected || query.trim().isEmpty) return const [];
+    try {
+      return await _client?.search(query.trim()) ?? const [];
+    } catch (e) {
+      AppLog.warn('app_state', 'search failed', e);
+      return const [];
+    }
   }
 
   /// Narrow layout: return to the chat list.
@@ -614,6 +706,8 @@ class AppState extends ChangeNotifier {
     final list = _messages.putIfAbsent(chatId, () => []);
     if (list.any((x) => x.id == m.id)) return; // dedupe re-delivery
     list.add(m);
+    // The visible chat is by definition read up to now.
+    if (chatId == selectedChatId) markRead(chatId);
     // Canonical reply supersedes the live turn. End it now so we don't flash
     // typing dots / orphan tool chips while waiting for the trailing turn_end.
     if (m.role == Role.assistant) {
@@ -690,6 +784,7 @@ class AppState extends ChangeNotifier {
     // viewed before would keep its stale message list forever. Re-fetch the
     // visible chat now; the rest reload lazily when next opened.
     _loadedHistory.clear();
+    _historyExhausted.clear();
     if (selectedChatId != null) {
       await _loadHistory(selectedChatId!);
     }
@@ -721,8 +816,17 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _loadHistory(String chatId) async {
+    _loadingHistory.add(chatId);
+    notifyListeners();
     try {
-      final hist = await _client?.history(chatId) ?? const [];
+      final hist =
+          await _client?.history(chatId, limit: _historyInitialSize) ??
+              const <ClientMessage>[];
+      if (hist.length < _historyInitialSize) {
+        _historyExhausted.add(chatId);
+      } else {
+        _historyExhausted.remove(chatId);
+      }
       // Merge rather than overwrite: a live `message` event can land while this
       // fetch is in flight, and a blind assignment would drop it (it isn't in
       // the server snapshot yet). History is authoritative for order; append
@@ -732,9 +836,11 @@ class AppState extends ChangeNotifier {
           .where((m) => !histIds.contains(m.id));
       _messages[chatId] = [...hist, ...extras];
       _loadedHistory.add(chatId);
-      notifyListeners();
     } catch (_) {
       /* leave existing messages; stream will fill in */
+    } finally {
+      _loadingHistory.remove(chatId);
+      notifyListeners();
     }
   }
 
@@ -778,6 +884,8 @@ class AppState extends ChangeNotifier {
     _messages.remove(chatId);
     _turns.remove(chatId);
     _loadedHistory.remove(chatId);
+    _historyExhausted.remove(chatId);
+    unawaited(prefs.clearLastRead(chatId));
     if (selectedChatId == chatId) {
       selectedChatId = chats.isNotEmpty ? chats.first.id : null;
     }
@@ -825,6 +933,95 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ── Offline snapshot (instant cold-start) ─────────────────────────────────
+
+  /// Restore last-known chats + recent messages so the app renders content
+  /// immediately on launch, before (or without) a bridge connection. The
+  /// live connect replaces everything with authoritative server state.
+  void _hydrateFromSnapshot() {
+    final snap = prefs.snapshot;
+    if (snap == null) return;
+    try {
+      final rawChats = snap['chats'];
+      if (rawChats is List) {
+        chats.addAll(rawChats
+            .map(_map)
+            .whereType<Map<String, dynamic>>()
+            .map(ClientChat.fromJson));
+      }
+      final rawMessages = snap['messages'];
+      if (rawMessages is Map) {
+        rawMessages.forEach((chatId, list) {
+          if (list is List) {
+            _messages['$chatId'] = list
+                .map(_map)
+                .whereType<Map<String, dynamic>>()
+                .map(ClientMessage.fromJson)
+                .toList();
+          }
+        });
+      }
+      _sortChats();
+      _reconcileSelection();
+      AppLog.info('app_state', 'hydrated ${chats.length} chats from snapshot');
+    } catch (e) {
+      AppLog.warn('app_state', 'snapshot hydration failed', e);
+    }
+  }
+
+  /// Debounced persist of a bounded snapshot (all chats, last 30 messages
+  /// each, system notes excluded — they're transient).
+  void _scheduleSnapshotSave() {
+    if (_disposed || _snapshotTimer != null) return;
+    _snapshotTimer = Timer(const Duration(seconds: 2), () {
+      _snapshotTimer = null;
+      if (_disposed) return;
+      final snapshot = <String, dynamic>{
+        'chats': chats.map((c) => c.toSnapshotJson()).toList(),
+        'messages': {
+          for (final entry in _messages.entries)
+            entry.key: entry.value
+                .where((m) => m.role != Role.system)
+                .toList()
+                .reversed
+                .take(30)
+                .toList()
+                .reversed
+                .map((m) => m.toSnapshotJson())
+                .toList(),
+        },
+      };
+      unawaited(prefs.saveSnapshot(snapshot));
+    });
+  }
+
+  @override
+  void notifyListeners() {
+    super.notifyListeners();
+    // Every state change is a candidate for the offline snapshot; the
+    // 2s debounce keeps this from thrashing during streaming.
+    _scheduleSnapshotSave();
+  }
+
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  /// Render a conversation as portable markdown (for copy/share).
+  String exportMarkdown(String chatId) {
+    final chat = _chatById(chatId);
+    final buf = StringBuffer('# ${chat?.title ?? 'Talon chat'}\n\n');
+    for (final m in messagesFor(chatId)) {
+      if (m.role == Role.system) continue;
+      final who = m.role == Role.user ? 'User' : status.botName;
+      final when = m.time.toLocal().toString().split('.').first;
+      buf
+        ..writeln('**$who** — $when')
+        ..writeln()
+        ..writeln(m.text.trim())
+        ..writeln();
+    }
+    return buf.toString();
+  }
+
   static String? _string(Object? value) {
     if (value == null) return null;
     if (value is String) return value;
@@ -841,6 +1038,7 @@ class AppState extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _reconnect?.cancel();
+    _snapshotTimer?.cancel();
     _sub?.cancel();
     _client?.dispose();
     super.dispose();

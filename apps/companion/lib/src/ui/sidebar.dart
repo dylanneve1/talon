@@ -140,6 +140,7 @@ class _SidebarState extends State<Sidebar> {
                 child: _ChatTile(
                   chat: chat,
                   selected: chat.id == widget.state.selectedChatId,
+                  unread: widget.state.hasUnread(chat),
                   onTap: () =>
                       (widget.onSelect ?? widget.state.selectChat)(chat.id),
                   onDelete: () => _confirmDelete(context, chat),
@@ -232,12 +233,14 @@ String _relTime(DateTime t) {
 class _ChatTile extends StatefulWidget {
   final ClientChat chat;
   final bool selected;
+  final bool unread;
   final VoidCallback onTap;
   final VoidCallback onDelete;
 
   const _ChatTile({
     required this.chat,
     required this.selected,
+    required this.unread,
     required this.onTap,
     required this.onDelete,
   });
@@ -304,10 +307,10 @@ class _ChatTileState extends State<_ChatTile> {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontSize: 13.5,
-                                fontWeight: selected
+                                fontWeight: selected || widget.unread
                                     ? FontWeight.w600
                                     : FontWeight.w500,
-                                color: selected
+                                color: selected || widget.unread
                                     ? TalonColors.text
                                     : TalonColors.textDim,
                               ),
@@ -325,6 +328,17 @@ class _ChatTileState extends State<_ChatTile> {
                             style: const TextStyle(
                                 fontSize: 10.5, color: TalonColors.textFaint),
                           ),
+                          // Unread: activity newer than the user's last look.
+                          if (widget.unread)
+                            Container(
+                              width: 7,
+                              height: 7,
+                              margin: const EdgeInsets.only(left: 6),
+                              decoration: const BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: TalonColors.accentGradient,
+                              ),
+                            ),
                         ],
                       ),
                       if (widget.chat.preview.isNotEmpty)
