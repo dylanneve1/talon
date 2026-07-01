@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.27.1](https://github.com/dylanneve1/talon/compare/v1.27.0...v1.27.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **companion:** open a chat on the newest message, not the top ([ea5a220](https://github.com/dylanneve1/talon/commit/ea5a22017e25348ce10134235320a88d2ec2a5f8))
+* **companion:** open a chat on the newest message, not the top ([#432](https://github.com/dylanneve1/talon/issues/432)) ([ea5a220](https://github.com/dylanneve1/talon/commit/ea5a22017e25348ce10134235320a88d2ec2a5f8))
+
 ## [1.27.0](https://github.com/dylanneve1/talon/compare/v1.26.0...v1.27.0) (2026-07-01)
 
 
