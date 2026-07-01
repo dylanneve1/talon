@@ -219,13 +219,15 @@ export function createTeamsFrontend(
             // ── Slash commands ──
             const trimmed = msg.text.trim().toLowerCase();
             if (trimmed === "/reset") {
-              const { resetSession } =
-                await import("../../storage/sessions.js");
-              const { clearHistory } = await import("../../storage/history.js");
-              resetSession(talonChatId);
-              clearHistory(talonChatId);
+              const { performSessionReset } =
+                await import("../shared/session-status.js");
+              const { resolveChatBackend } =
+                await import("../../core/engine/backend-controller/index.js");
+              await performSessionReset(
+                talonChatId,
+                resolveChatBackend(talonChatId, gateway.backend),
+              );
               log("teams", `Session reset by ${msg.senderName}`);
-              await gateway.backend?.sessions?.warmSession?.(talonChatId);
               const card = buildAdaptiveCard("Session cleared.");
               await proxyFetch(webhookUrl, {
                 method: "POST",

@@ -1,51 +1,20 @@
 /**
- * Generic formatters and model-option helpers shared across commands,
- * callbacks, and the settings panel.
+ * Model-option helpers shared across commands, callbacks, and the settings
+ * panel. Generic formatters live in frontend/shared/format.ts and are
+ * re-exported here so existing import sites keep working.
  */
 
 import type { ModelInfo } from "../../../core/models/catalog.js";
-import { getModels, resolveModel } from "../../../core/models/catalog.js";
+import { getModels } from "../../../core/models/catalog.js";
 
-export const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
-
-/** Parse a duration string like "30m", "2h", "1h30m" into milliseconds. */
-export function parseInterval(input: string): number | null {
-  const match = input.match(/^(?:(\d+)h)?(?:(\d+)m)?$/);
-  if (!match || (!match[1] && !match[2])) return null;
-  const hours = parseInt(match[1] || "0", 10);
-  const minutes = parseInt(match[2] || "0", 10);
-  const ms = (hours * 60 + minutes) * 60 * 1000;
-  return ms > 0 ? ms : null;
-}
-
-export function formatDuration(ms: number): string {
-  const safeMs = Math.max(0, Math.round(ms));
-  if (safeMs < 1000) return `${safeMs}ms`;
-  const s = Math.floor(safeMs / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
-
-export function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
-
-/** Resolve a model ID to its backend-registered display name. */
-export function formatModelLabel(modelId: string): string {
-  return resolveModel(modelId)?.displayName ?? modelId;
-}
+export {
+  DEFAULT_PULSE_INTERVAL_MS,
+  parseInterval,
+  formatDuration,
+  formatTokenCount,
+  formatBytes,
+  formatModelLabel,
+} from "../../shared/format.js";
 
 /** Display name for a known ModelInfo. */
 export function formatModelOptionLabel(model: ModelInfo): string {

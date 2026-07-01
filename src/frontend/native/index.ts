@@ -58,7 +58,6 @@ import {
   acquireBackendInstance,
   listAvailableBackends,
   rebindChat,
-  releaseChat,
 } from "../../core/engine/backend-controller/index.js";
 import { getActiveReasoningLevels } from "../shared/reasoning-levels.js";
 import { NativeChats, DEFAULT_CHAT_TITLE, type ChatEntry } from "./chats.js";
@@ -124,7 +123,7 @@ export function createNativeFrontend(
     bytes: Buffer,
   ): Promise<string> => {
     await mkdir(dirs.uploads, { recursive: true });
-    const safe = basename(filename).replace(/[^\w.\-]+/g, "_") || "upload";
+    const safe = basename(filename).replace(/[^\w.-]+/g, "_") || "upload";
     const dest = join(
       dirs.uploads,
       `${Date.now()}-${nextId().toString(36)}-${safe}`,
@@ -712,7 +711,22 @@ export function createNativeFrontend(
     resetChat: (id) => {
       const entry = chats.get(id);
       if (!entry) return false;
+      // Full reset, matching /reset on the other frontends: session,
+      // history (the app re-fetches its transcript from us), pulse
+      // checkpoint, and any in-process backend memory. Warm the fresh
+      // session in the background — the bridge handler is sync.
       resetSession(id);
+      clearHistory(id);
+      clearTurnMeta(id);
+      resetPulseCheckpoint(id);
+      let backend = null;
+      try {
+        backend = getBackendForChat(id);
+      } catch {
+        // No pool binding — nothing to wipe or warm.
+      }
+      backend?.sessions?.resetChat?.(id);
+      void backend?.sessions?.warmSession?.(id)?.catch(() => {});
       emitSystem(entry, "Session reset — starting a fresh conversation.");
       broadcastChatUpdated(entry);
       return true;

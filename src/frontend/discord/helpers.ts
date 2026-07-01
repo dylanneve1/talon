@@ -7,11 +7,19 @@
  *  - chat IDs are Discord snowflakes (strings), not numbers.
  */
 
-import { resolveModel } from "../../core/models/catalog.js";
 import { REASONING_LEVEL_DESCRIPTIONS } from "../../core/models/reasoning-levels.js";
 import { DISCORD_MAX_TEXT, DISCORD_SAFE_RESERVE } from "./formatting.js";
+import { formatDuration, formatModelLabel } from "../shared/format.js";
 
-const DEFAULT_PULSE_INTERVAL_MS = 5 * 60 * 1000;
+export {
+  parseInterval,
+  formatDuration,
+  formatTokenCount,
+  formatBytes,
+  formatModelLabel,
+} from "../shared/format.js";
+
+import { DEFAULT_PULSE_INTERVAL_MS } from "../shared/format.js";
 /** Per-message length budget for metrics output. */
 const DEFAULT_METRICS_MESSAGE_MAX = DISCORD_MAX_TEXT - DISCORD_SAFE_RESERVE;
 
@@ -27,45 +35,6 @@ type MetricsSnapshot = {
     { count: number; p50: number; p95: number; p99: number; avg: number }
   >;
 };
-
-/** Parse a duration string like "30m", "2h", "1d", "1h30m", "1d6h" into ms. */
-export function parseInterval(input: string): number | null {
-  const match = input.match(/^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?$/);
-  if (!match || (!match[1] && !match[2] && !match[3])) return null;
-  const days = parseInt(match[1] || "0", 10);
-  const hours = parseInt(match[2] || "0", 10);
-  const minutes = parseInt(match[3] || "0", 10);
-  const ms = (days * 24 * 60 + hours * 60 + minutes) * 60 * 1000;
-  return ms > 0 ? ms : null;
-}
-
-export function formatDuration(ms: number): string {
-  const safeMs = Math.max(0, Math.round(ms));
-  if (safeMs < 1000) return `${safeMs}ms`;
-  const s = Math.floor(safeMs / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m ${s % 60}s`;
-  const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
-}
-
-export function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
-}
-
-export function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
-  if (bytes >= 1_048_576) return `${(bytes / 1_048_576).toFixed(1)} MB`;
-  if (bytes >= 1_024) return `${(bytes / 1_024).toFixed(1)} KB`;
-  return `${bytes} B`;
-}
-
-export function formatModelLabel(modelId: string): string {
-  return resolveModel(modelId)?.displayName ?? modelId;
-}
 
 function truncateMetricLabel(label: string, max = 60): string {
   return label.length <= max ? label : `${label.slice(0, max - 3)}...`;

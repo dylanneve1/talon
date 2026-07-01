@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // system templates (prompts/system/*.md) are part of the code under
 // test, so the mock delegates those reads to the real filesystem.
 import { readFileSync as realReadFileSync } from "node:fs";
+// The prompt embeds the date in the configured timezone (util/time.ts),
+// not UTC — computing "today" via toISOString() makes these tests fail
+// around midnight in any non-UTC timezone.
+import { toYMD } from "../util/time.js";
 
 vi.mock("write-file-atomic", () => ({
   default: { sync: vi.fn() },
@@ -392,7 +396,7 @@ describe("config", () => {
 
       const { loadConfig } = await import("../util/config.js");
       const config = loadConfig();
-      const today = new Date().toISOString().slice(0, 10);
+      const today = toYMD(new Date());
       expect(config.systemPrompt).toContain(today);
     });
 
@@ -424,7 +428,7 @@ describe("config", () => {
       expect(parts.staticText).not.toContain("Current Workspace Contents");
 
       // Dynamic part: daily-memory pointer (carries today's date).
-      const today = new Date().toISOString().slice(0, 10);
+      const today = toYMD(new Date());
       expect(parts.dynamicText).toContain("Daily Memory");
       expect(parts.dynamicText).toContain(today);
 

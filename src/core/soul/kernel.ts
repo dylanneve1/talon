@@ -16,12 +16,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { SoulDag, type DagSnapshot } from "./dag.js";
 import { hashContent } from "./hash.js";
-import {
-  ingest,
-  ingestAll,
-  appendSpine,
-  type IngestResult,
-} from "./compiler.js";
+import { ingest, appendSpine, type IngestResult } from "./compiler.js";
 import { Adwin } from "./drift.js";
 import { diffSnapshots, renderDelta, type SoulDelta } from "./delta.js";
 import {
