@@ -58,8 +58,8 @@ async function flushQueue(chatId: string): Promise<void> {
     username: last.senderUsername,
   });
 
-  try {
-    await processAndReply({
+  const runTurn = () =>
+    processAndReply({
       config,
       chatId,
       numericChatId,
@@ -74,6 +74,9 @@ async function flushQueue(chatId: string): Promise<void> {
       channel: last.channel,
       chatTitle: last.chatTitle,
     });
+
+  try {
+    await runTurn();
     recordMessageProcessed();
   } catch (err) {
     const classified = classify(err);
@@ -92,21 +95,8 @@ async function flushQueue(chatId: string): Promise<void> {
       );
       try {
         await new Promise((r) => setTimeout(r, delayMs));
-        await processAndReply({
-          config,
-          chatId,
-          numericChatId,
-          replyToId: last.replyToId,
-          messageId: last.messageId,
-          numericMessageId: last.numericMessageId,
-          prompt: combinedPrompt,
-          senderName: last.senderName,
-          isGroup: last.isGroup,
-          senderUsername: last.senderUsername,
-          senderId: last.senderId,
-          channel: last.channel,
-          chatTitle: last.chatTitle,
-        });
+        await runTurn();
+        recordMessageProcessed();
         return;
       } catch (retryErr) {
         const retryClassified = classify(retryErr);

@@ -147,8 +147,8 @@ async function flushQueue(chatId: string): Promise<void> {
   };
   appendDailyLog(last.senderName, promptWithContext, chatContext);
 
-  try {
-    await processAndReply({
+  const runTurn = () =>
+    processAndReply({
       bot,
       config,
       chatId,
@@ -162,6 +162,9 @@ async function flushQueue(chatId: string): Promise<void> {
       senderId: last.senderId,
       chatTitle: last.chatTitle,
     });
+
+  try {
+    await runTurn();
     lastHandledMessageIdByChat.set(chatId, last.messageId);
     recordMessageProcessed();
   } catch (err) {
@@ -183,21 +186,9 @@ async function flushQueue(chatId: string): Promise<void> {
       );
       try {
         await new Promise((r) => setTimeout(r, delayMs));
-        await processAndReply({
-          bot,
-          config,
-          chatId,
-          numericChatId,
-          replyToId: last.replyToId,
-          messageId: last.messageId,
-          prompt: promptWithContext,
-          senderName: last.senderName,
-          isGroup: last.isGroup,
-          senderUsername: last.senderUsername,
-          senderId: last.senderId,
-          chatTitle: last.chatTitle,
-        });
+        await runTurn();
         lastHandledMessageIdByChat.set(chatId, last.messageId);
+        recordMessageProcessed();
         return;
       } catch (retryErr) {
         const retryClassified = classify(retryErr);

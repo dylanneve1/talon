@@ -34,7 +34,10 @@ export async function handleReset(
   await i.deferReply({ flags: MessageFlags.Ephemeral });
   // Must be the actual chat backend, not the global default, when this
   // chat has an override pinned.
-  await performSessionReset(chatId, resolveChatBackend(chatId, gateway?.backend));
+  await performSessionReset(
+    chatId,
+    resolveChatBackend(chatId, gateway?.backend),
+  );
   await reply(i, "Session cleared.", true);
 }
 

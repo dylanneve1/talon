@@ -9,7 +9,11 @@
 
 import { REASONING_LEVEL_DESCRIPTIONS } from "../../core/models/reasoning-levels.js";
 import { DISCORD_MAX_TEXT, DISCORD_SAFE_RESERVE } from "./formatting.js";
-import { formatDuration, formatModelLabel } from "../shared/format.js";
+import {
+  DEFAULT_PULSE_INTERVAL_MS,
+  formatDuration,
+  formatModelLabel,
+} from "../shared/format.js";
 
 export {
   parseInterval,
@@ -19,7 +23,6 @@ export {
   formatModelLabel,
 } from "../shared/format.js";
 
-import { DEFAULT_PULSE_INTERVAL_MS } from "../shared/format.js";
 /** Per-message length budget for metrics output. */
 const DEFAULT_METRICS_MESSAGE_MAX = DISCORD_MAX_TEXT - DISCORD_SAFE_RESERVE;
 
