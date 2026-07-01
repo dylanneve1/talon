@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../state/app_state.dart';
 import '../theme.dart';
@@ -21,7 +22,7 @@ class StatusPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: TalonRadius.rPill,
         border: Border.all(color: color.withValues(alpha: 0.32)),
       ),
       child: Row(
@@ -49,48 +50,44 @@ class StatusPill extends StatelessWidget {
   }
 }
 
-class _Dot extends StatefulWidget {
+/// A live status dot. While connecting it emits a soft expanding ring; once
+/// connected it rests solid. The ripple is a flutter_animate loop, gated on the
+/// platform reduce-motion setting.
+class _Dot extends StatelessWidget {
   final Color color;
   final bool pulse;
   const _Dot({required this.color, required this.pulse});
 
   @override
-  State<_Dot> createState() => _DotState();
-}
-
-class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
-        ..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _c,
-      builder: (context, _) {
-        final t = widget.pulse ? _c.value : 1.0;
-        return Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: widget.color,
-            boxShadow: [
-              BoxShadow(
-                color: widget.color.withValues(alpha: 0.55 * t),
-                blurRadius: 8 * t,
-                spreadRadius: 1.5 * t,
-              ),
-            ],
-          ),
-        );
-      },
+    final dot = Container(
+      width: 8,
+      height: 8,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    );
+
+    if (!pulse || MediaQuery.of(context).disableAnimations) return dot;
+    return SizedBox(
+      width: 8,
+      height: 8,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.6),
+            ),
+          )
+              .animate(onPlay: (c) => c.repeat())
+              .fadeOut(duration: 1200.ms, curve: Curves.easeOut)
+              .scaleXY(end: 2.6, curve: Curves.easeOut),
+          dot,
+        ],
+      ),
     );
   }
 }

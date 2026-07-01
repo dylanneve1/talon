@@ -18,9 +18,9 @@ class BrandMark extends StatelessWidget {
         gradient: TalonColors.accentGradient,
         boxShadow: [
           BoxShadow(
-            color: TalonColors.accent.withValues(alpha: 0.45),
-            blurRadius: size * 0.5,
-            offset: Offset(0, size * 0.14),
+            color: TalonColors.accent.withValues(alpha: 0.22),
+            blurRadius: size * 0.28,
+            offset: Offset(0, size * 0.1),
           ),
         ],
       ),

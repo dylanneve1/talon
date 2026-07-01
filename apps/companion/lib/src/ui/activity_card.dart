@@ -1,16 +1,16 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
-import '../models/bridge_models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'brand.dart';
 import 'markdown.dart';
+import 'tool_timeline.dart';
 
 /// The in-progress turn, rendered in the assistant-row layout: the Talon
-/// avatar, the model's reasoning, live tool calls, and the streaming reply.
+/// avatar, the model's reasoning, the live tool timeline, and the streaming
+/// reply (with a blinking caret while text is still arriving).
 class LiveTurn extends StatelessWidget {
   final TurnState turn;
   final String botName;
@@ -19,7 +19,7 @@ class LiveTurn extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: TalonSpace.md),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -27,40 +27,26 @@ class LiveTurn extends StatelessWidget {
             padding: EdgeInsets.only(top: 2),
             child: BrandMark(size: 28),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: TalonSpace.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  botName,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700, fontSize: 13.5),
-                ),
+                Text(botName, style: TalonType.subtitle),
                 const SizedBox(height: 6),
                 if (turn.reasoning.isNotEmpty)
                   _ReasoningStrip(text: turn.reasoning.join('')),
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 160),
-                  curve: Curves.easeOut,
-                  alignment: Alignment.topLeft,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final t in turn.tools)
-                        ToolChip(key: ValueKey(t.id), tool: t),
-                    ],
+                if (turn.tools.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: TalonSpace.sm),
+                    child: ToolTimeline(tools: turn.tools),
                   ),
-                ),
                 AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 140),
-                  switchInCurve: Curves.easeOut,
+                  duration: TalonMotion.fast,
+                  switchInCurve: TalonMotion.emphasized,
                   switchOutCurve: Curves.easeIn,
                   child: turn.draft.isNotEmpty
-                      ? MarkdownBody(
-                          key: const ValueKey('draft'),
-                          data: turn.draft,
-                          styleSheet: talonMarkdownStyle())
+                      ? _StreamingText(text: turn.draft)
                       : turn.typing
                           ? const Padding(
                               key: ValueKey('typing'),
@@ -78,214 +64,61 @@ class LiveTurn extends StatelessWidget {
   }
 }
 
-/// One row per tool call. Pulses while running, animates to a calm "done"
-/// state when finished, shows live elapsed time.
-class ToolChip extends StatefulWidget {
-  final ToolActivity tool;
-  const ToolChip({super.key, required this.tool});
-
-  @override
-  State<ToolChip> createState() => _ToolChipState();
-}
-
-class _ToolChipState extends State<ToolChip>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  )..repeat(reverse: true);
-  Timer? _ticker;
-
-  @override
-  void initState() {
-    super.initState();
-    _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
-      if (!mounted) return;
-      if (!widget.tool.done) setState(() {});
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant ToolChip old) {
-    super.didUpdateWidget(old);
-    if (widget.tool.done && _pulse.isAnimating) _pulse.stop();
-  }
-
-  @override
-  void dispose() {
-    _ticker?.cancel();
-    _pulse.dispose();
-    super.dispose();
-  }
+/// The streaming draft with a blinking caret pinned to its end — the expected
+/// "still generating" signal. The caret sits inline after the markdown so it
+/// tracks the last line of text.
+class _StreamingText extends StatelessWidget {
+  final String text;
+  const _StreamingText({required this.text});
 
   @override
   Widget build(BuildContext context) {
-    final tool = widget.tool;
-    final failed = tool.error != null;
-    final color = failed
-        ? TalonColors.bad
-        : (tool.done ? TalonColors.ok : TalonColors.accent2);
-    final running = !tool.done && !failed;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: AnimatedBuilder(
-        animation: _pulse,
-        builder: (context, child) {
-          final glow = running
-              ? 0.18 + 0.18 * _pulse.value
-              : 0.0;
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-            decoration: BoxDecoration(
-              color: TalonColors.glassFill,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: color.withValues(alpha: running ? 0.55 : 0.30),
-              ),
-              boxShadow: running
-                  ? [
-                      BoxShadow(
-                        color: color.withValues(alpha: glow),
-                        blurRadius: 14,
-                        spreadRadius: 0.5,
-                      ),
-                    ]
-                  : null,
-            ),
-            child: child,
-          );
-        },
-        // The name + arg share the flexible middle and ellipsize when long,
-        // so the elapsed-time readout on the right is pinned and never clips.
-        child: Row(
-          children: [
-            SizedBox(
-              width: 14,
-              height: 14,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                transitionBuilder: (c, a) =>
-                    ScaleTransition(scale: a, child: FadeTransition(opacity: a, child: c)),
-                child: running
-                    ? CircularProgressIndicator(
-                        key: const ValueKey('run'),
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(color),
-                      )
-                    : Icon(
-                        failed ? Icons.error_outline : Icons.check_circle,
-                        key: ValueKey(failed ? 'err' : 'ok'),
-                        size: 14,
-                        color: color,
-                      ),
-              ),
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      _displayName(tool.name),
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: TalonColors.text,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'monospace',
-                      ),
-                    ),
-                  ),
-                  if (_arg(tool) != null) ...[
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(
-                        _arg(tool)!,
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: TalonColors.textFaint,
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Text(
-              _fmt(tool.elapsed),
-              maxLines: 1,
-              softWrap: false,
-              style: const TextStyle(
-                color: TalonColors.textFaint,
-                fontSize: 11.5,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
-            ),
-          ],
-        ),
+    final caret = Container(
+      width: 8,
+      height: 15,
+      margin: const EdgeInsets.only(left: 3, bottom: 1),
+      decoration: BoxDecoration(
+        color: TalonColors.accent2,
+        borderRadius: BorderRadius.circular(2),
       ),
     );
-  }
-
-  /// De-noise MCP tool names for display:
-  /// `mcp__email-tools__search_emails` → `email · search_emails`.
-  /// Non-MCP names (e.g. `Bash`, `Read`) are shown as-is.
-  String _displayName(String raw) {
-    if (!raw.startsWith('mcp__')) return raw;
-    final parts = raw.substring(5).split('__');
-    if (parts.length < 2) return raw;
-    var server = parts.first;
-    if (server.endsWith('-tools')) {
-      server = server.substring(0, server.length - '-tools'.length);
-    }
-    final tool = parts.sublist(1).join('__');
-    return '$server · $tool';
-  }
-
-  String? _arg(ToolActivity t) {
-    if (t.input.isEmpty) return null;
-    for (final key in const ['query', 'url', 'path', 'text', 'name', 'command']) {
-      final v = t.input[key];
-      if (v is String && v.isNotEmpty) {
-        return v.length > 64 ? '${v.substring(0, 63)}…' : v;
-      }
-    }
-    return null;
-  }
-
-  String _fmt(Duration d) {
-    final ms = d.inMilliseconds;
-    if (ms < 1000) return '${ms}ms';
-    final s = ms / 1000;
-    if (s < 10) return '${s.toStringAsFixed(1)}s';
-    if (s < 60) return '${s.toStringAsFixed(0)}s';
-    final m = (s / 60).floor();
-    return '${m}m${(s - m * 60).toStringAsFixed(0)}s';
+    return Row(
+      key: const ValueKey('draft'),
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Flexible(
+          child: MarkdownBody(
+            data: text,
+            styleSheet: talonMarkdownStyle(),
+          ),
+        ),
+        if (MediaQuery.of(context).disableAnimations)
+          caret
+        else
+          caret
+              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .fadeOut(duration: 650.ms, curve: Curves.easeInOut),
+      ],
+    );
   }
 }
 
+/// The model's live reasoning, in a quiet accent-edged strip. Fades/blurs in
+/// so it doesn't pop when the model starts thinking.
 class _ReasoningStrip extends StatelessWidget {
   final String text;
   const _ReasoningStrip({required this.text});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+    final strip = Padding(
+      padding: const EdgeInsets.only(bottom: TalonSpace.sm),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          border: const Border(
+        padding:
+            const EdgeInsets.symmetric(horizontal: TalonSpace.md, vertical: 9),
+        decoration: const BoxDecoration(
+          borderRadius: TalonRadius.rMd,
+          border: Border(
             left: BorderSide(color: TalonColors.accent, width: 2.5),
           ),
           color: TalonColors.glassFill,
@@ -295,11 +128,11 @@ class _ReasoningStrip extends StatelessWidget {
           children: [
             const Icon(Icons.bubble_chart_outlined,
                 size: 15, color: TalonColors.textFaint),
-            const SizedBox(width: 8),
+            const SizedBox(width: TalonSpace.sm),
             Expanded(
               child: AnimatedSize(
-                duration: const Duration(milliseconds: 180),
-                curve: Curves.easeOut,
+                duration: TalonMotion.base,
+                curve: TalonMotion.emphasized,
                 alignment: Alignment.topLeft,
                 child: Text(
                   text.trim(),
@@ -318,54 +151,45 @@ class _ReasoningStrip extends StatelessWidget {
         ),
       ),
     );
+    if (MediaQuery.of(context).disableAnimations) return strip;
+    return strip.animate().fadeIn(duration: TalonMotion.base).blurX(
+          begin: 3,
+          end: 0,
+          duration: TalonMotion.base,
+          curve: TalonMotion.emphasized,
+        );
   }
 }
 
-class _TypingDots extends StatefulWidget {
+/// Three dots that ripple while the model is thinking but hasn't produced text
+/// yet. A staggered fade/scale loop via flutter_animate — no manual controller.
+class _TypingDots extends StatelessWidget {
   const _TypingDots();
 
   @override
-  State<_TypingDots> createState() => _TypingDotsState();
-}
-
-class _TypingDotsState extends State<_TypingDots>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 1100))
-        ..repeat();
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    Widget dot(int i) {
+      final base = Container(
+        width: 7,
+        height: 7,
+        margin: const EdgeInsets.symmetric(horizontal: 3),
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: TalonColors.textDim,
+        ),
+      );
+      if (MediaQuery.of(context).disableAnimations) return base;
+      return base
+          .animate(onPlay: (c) => c.repeat(reverse: true))
+          .fadeIn(delay: (i * 160).ms, duration: 500.ms, begin: 0.3)
+          .scaleXY(begin: 0.7, end: 1, curve: Curves.easeOut);
+    }
+
     return SizedBox(
       height: 20,
-      child: AnimatedBuilder(
-        animation: _c,
-        builder: (context, _) {
-          return Row(
-            mainAxisSize: MainAxisSize.min,
-            children: List.generate(3, (i) {
-              final phase = (_c.value + i * 0.2) % 1.0;
-              final o = 0.3 + 0.7 * (0.5 - (phase - 0.5).abs()) * 2;
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: Container(
-                  width: 7,
-                  height: 7,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: TalonColors.textDim.withValues(alpha: o.clamp(0, 1)),
-                  ),
-                ),
-              );
-            }),
-          );
-        },
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [dot(0), dot(1), dot(2)],
       ),
     );
   }

@@ -443,7 +443,11 @@ class AppState extends ChangeNotifier {
         final t = turnFor(chatId);
         // Guarantee all tools in the most recent assistant message are done.
         // Tool result events can race against the message snapshot — this is
-        // the definitive point where the turn is finished.
+        // the definitive point where the turn is finished. Also attach the
+        // turn's stats (duration + token usage) to that message so the bubble
+        // can show a quiet footer.
+        final usage = _map(e['usage']);
+        final durationMs = e['durationMs'];
         final msgs = _messages[chatId];
         if (msgs != null) {
           for (final msg in msgs.reversed) {
@@ -453,6 +457,13 @@ class AppState extends ChangeNotifier {
                   tool.done = true;
                   tool.finishedAt ??= DateTime.now();
                 }
+              }
+              if (durationMs is num) msg.durationMs = durationMs.toInt();
+              if (usage != null) {
+                final inTok = usage['input'];
+                final outTok = usage['output'];
+                if (inTok is num) msg.tokensIn = inTok.toInt();
+                if (outTok is num) msg.tokensOut = outTok.toInt();
               }
               break;
             }

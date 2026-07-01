@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../models/bridge_models.dart';
 import '../services/log.dart';
@@ -96,12 +97,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           padding: const EdgeInsets.all(20),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
-            child: _loading
-                ? const Padding(
-                    padding: EdgeInsets.all(40),
-                    child: CircularProgressIndicator(),
-                  )
-                : _body(),
+            child: _loading ? const _SettingsSkeleton() : _body(),
           ),
         ),
       ),
@@ -655,6 +651,58 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final h = m ~/ 60;
     if (h < 24) return '${h}h ${m % 60}m';
     return '${h ~/ 24}d ${h % 24}h';
+  }
+}
+
+/// Shimmering placeholder cards shown while the daemon config loads — reads as
+/// "loading this specific layout" rather than a lonely spinner.
+class _SettingsSkeleton extends StatelessWidget {
+  const _SettingsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    Widget bar(double w, double h) {
+      final box = Container(
+        width: w,
+        height: h,
+        decoration: BoxDecoration(
+          color: TalonColors.surfaceHi,
+          borderRadius: BorderRadius.circular(6),
+        ),
+      );
+      if (reduceMotion) return box;
+      return box.animate(onPlay: (c) => c.repeat()).shimmer(
+            duration: 1200.ms,
+            color: Colors.white.withValues(alpha: 0.08),
+          );
+    }
+
+    Widget card(int rows) => Glass(
+          radius: TalonRadius.md,
+          padding: const EdgeInsets.all(TalonSpace.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              bar(120, 12),
+              const SizedBox(height: TalonSpace.lg),
+              for (var i = 0; i < rows; i++) ...[
+                if (i > 0) const SizedBox(height: TalonSpace.md),
+                bar(double.infinity, 16),
+              ],
+            ],
+          ),
+        );
+
+    return Column(
+      children: [
+        card(3),
+        const SizedBox(height: TalonSpace.lg),
+        card(2),
+        const SizedBox(height: TalonSpace.lg),
+        card(4),
+      ],
+    );
   }
 }
 

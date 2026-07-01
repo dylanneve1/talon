@@ -72,6 +72,13 @@ class ClientMessage {
   /// True while assistant text is still streaming into this bubble (client-only).
   bool streaming;
 
+  /// Turn metadata attached when the turn ends (client-only): wall-clock
+  /// duration and token usage, surfaced as a quiet footer under the reply.
+  /// Null until the matching `turn_end` lands (and always null for user rows).
+  int? durationMs;
+  int? tokensIn;
+  int? tokensOut;
+
   ClientMessage({
     required this.id,
     required this.chatId,
@@ -83,8 +90,17 @@ class ClientMessage {
     this.imagePath,
     List<ToolActivity>? tools,
     this.streaming = false,
+    this.durationMs,
+    this.tokensIn,
+    this.tokensOut,
   })  : reactions = reactions ?? <String>[],
         tools = tools ?? <ToolActivity>[];
+
+  /// Whether this row has any turn stats worth showing.
+  bool get hasStats =>
+      (durationMs != null && durationMs! > 0) ||
+      (tokensIn != null && tokensIn! > 0) ||
+      (tokensOut != null && tokensOut! > 0);
 
   factory ClientMessage.fromJson(Map<String, dynamic> j) {
     final rawButtons = _list(j['buttons']);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../models/bridge_models.dart';
 import '../state/app_state.dart';
@@ -159,7 +160,7 @@ class _ModelSheetState extends State<_ModelSheet> {
                         itemBuilder: (context, i) {
                           final m = models[i];
                           final selected = m.id == activeModel;
-                          return _ModelRow(
+                          final row = _ModelRow(
                             model: m,
                             selected: selected,
                             onTap: () {
@@ -167,6 +168,20 @@ class _ModelSheetState extends State<_ModelSheet> {
                               Navigator.pop(context);
                             },
                           );
+                          if (MediaQuery.of(context).disableAnimations) {
+                            return row;
+                          }
+                          // Cascade the first screenful in; later rows (revealed
+                          // by scrolling) shouldn't wait on a growing delay.
+                          final delay = (i.clamp(0, 8) * 35).ms;
+                          return row
+                              .animate()
+                              .fadeIn(delay: delay, duration: TalonMotion.base)
+                              .slideY(
+                                  begin: 0.15,
+                                  end: 0,
+                                  delay: delay,
+                                  curve: TalonMotion.emphasized);
                         },
                       ),
               ),

@@ -304,19 +304,8 @@ class _SendButtonState extends State<_SendButton> {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            gradient: colored ? TalonColors.accentGradient : null,
-            color: colored ? null : TalonColors.surfaceHi,
+            color: colored ? TalonColors.accent : TalonColors.surfaceHi,
             borderRadius: BorderRadius.circular(13),
-            boxShadow: colored
-                ? [
-                    BoxShadow(
-                      color: TalonColors.accent.withValues(alpha: 0.35),
-                      blurRadius: 14,
-                      spreadRadius: -2,
-                      offset: const Offset(0, 3),
-                    ),
-                  ]
-                : null,
           ),
           child: busy
               ? const Padding(

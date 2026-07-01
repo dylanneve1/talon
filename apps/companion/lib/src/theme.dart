@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
-/// The Talon visual language: a deep, near-black canvas under a soft indigo→cyan
-/// glow, frosted glass panels, and a single vivid accent. Tuned for the "modern
-/// dark, glassy" look — gradients, translucency, rounded geometry.
+/// The Talon visual language: a deep, near-black canvas with restrained, mostly
+/// monochrome surfaces and a single vivid accent used sparingly. The old build
+/// leaned on gradients + colored glows on nearly every control, which read as
+/// "consumer / flashy"; the design now favours calm, flat surfaces and lets
+/// motion (see [TalonMotion] + flutter_animate) carry the delight instead.
 class TalonColors {
   TalonColors._();
 
@@ -16,7 +18,8 @@ class TalonColors {
   static const Color glassFill = Color(0x14FFFFFF);
   static const Color glassStroke = Color(0x1FFFFFFF);
 
-  // Accent — electric indigo with a cyan partner for gradients/glow
+  // Accent — electric indigo with a cyan partner reserved for the gradient
+  // brand mark and the rare hero moment (never every button).
   static const Color accent = Color(0xFF7C8CFF);
   static const Color accent2 = Color(0xFF54E6FF);
   static const Color accentDeep = Color(0xFF5B6BF0);
@@ -50,6 +53,99 @@ class TalonColors {
   );
 }
 
+/// Spacing scale — an 8pt grid (with a 2/4 half-step for tight insets). Snap
+/// every padding/gap to one of these so the layout reads as a system rather
+/// than a pile of hand-tuned magic numbers.
+class TalonSpace {
+  TalonSpace._();
+
+  static const double xxs = 2;
+  static const double xs = 4;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 24;
+  static const double xxl = 32;
+}
+
+/// Corner-radius tokens. Three steps + a full pill; everything rounds to one of
+/// these so panels, cards, and controls feel related.
+class TalonRadius {
+  TalonRadius._();
+
+  static const double sm = 8; // chips, small controls
+  static const double md = 14; // cards, inputs, buttons
+  static const double lg = 22; // panels, sheets
+  static const double pill = 999;
+
+  static const BorderRadius rSm = BorderRadius.all(Radius.circular(sm));
+  static const BorderRadius rMd = BorderRadius.all(Radius.circular(md));
+  static const BorderRadius rLg = BorderRadius.all(Radius.circular(lg));
+  static const BorderRadius rPill = BorderRadius.all(Radius.circular(pill));
+}
+
+/// Type scale. Named, deliberate sizes replace the scattered 15.5/14.5/13.5/…
+/// literals so the whole app can be re-tuned in one place and stays consistent.
+class TalonType {
+  TalonType._();
+
+  static const TextStyle display = TextStyle(
+    fontSize: 22,
+    height: 1.2,
+    fontWeight: FontWeight.w700,
+    color: TalonColors.text,
+  );
+
+  static const TextStyle title = TextStyle(
+    fontSize: 16,
+    height: 1.3,
+    fontWeight: FontWeight.w700,
+    color: TalonColors.text,
+  );
+
+  static const TextStyle subtitle = TextStyle(
+    fontSize: 14,
+    height: 1.3,
+    fontWeight: FontWeight.w600,
+    color: TalonColors.text,
+  );
+
+  static const TextStyle body = TextStyle(
+    fontSize: 14,
+    height: 1.5,
+    color: TalonColors.text,
+  );
+
+  static const TextStyle label = TextStyle(
+    fontSize: 13,
+    height: 1.3,
+    color: TalonColors.textDim,
+  );
+
+  static const TextStyle caption = TextStyle(
+    fontSize: 12,
+    height: 1.4,
+    color: TalonColors.textFaint,
+  );
+
+  /// All-caps section eyebrow (sidebar groups, settings section headers).
+  static const TextStyle eyebrow = TextStyle(
+    fontSize: 11,
+    height: 1.2,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.1,
+    color: TalonColors.textFaint,
+  );
+
+  /// Monospace for tool names, code, tabular readouts.
+  static const TextStyle mono = TextStyle(
+    fontFamily: 'monospace',
+    fontSize: 13,
+    height: 1.4,
+    color: TalonColors.text,
+  );
+}
+
 /// Shared motion vocabulary so every surface animates with the same rhythm.
 /// Durations climb in a consistent scale; curves favour a soft, "emphasized"
 /// deceleration (fast out, gentle settle) that reads as calm rather than
@@ -65,6 +161,9 @@ class TalonMotion {
 
   /// Larger, more deliberate moves (expanding panels, first paint).
   static const Duration slow = Duration(milliseconds: 360);
+
+  /// Per-item offset for staggered list entrances (sidebar, model list).
+  static const Duration stagger = Duration(milliseconds: 45);
 
   /// Standard deceleration — fast to start, easing gently into place.
   static const Curve emphasized = Curves.easeOutCubic;
@@ -94,7 +193,7 @@ ThemeData buildTalonTheme() {
           fontFamily: _fontFamily,
         )
         .copyWith(
-          bodyMedium: const TextStyle(fontSize: 14.5, height: 1.5),
+          bodyMedium: TalonType.body,
           titleMedium: const TextStyle(fontWeight: FontWeight.w600),
         ),
     splashFactory: InkSparkle.splashFactory,
@@ -103,7 +202,7 @@ ThemeData buildTalonTheme() {
     tooltipTheme: const TooltipThemeData(
       decoration: BoxDecoration(
         color: TalonColors.surfaceHi,
-        borderRadius: BorderRadius.all(Radius.circular(8)),
+        borderRadius: TalonRadius.rSm,
       ),
       textStyle: TextStyle(color: TalonColors.text, fontSize: 12),
     ),

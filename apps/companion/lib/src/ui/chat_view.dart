@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../models/bridge_models.dart';
 import '../state/app_state.dart';
@@ -133,7 +134,13 @@ class _ChatViewState extends State<ChatView> {
             turn.tools.isNotEmpty ||
             turn.typing);
 
-    if (msgs.isEmpty && !showActivity) return const _ConversationEmpty();
+    if (msgs.isEmpty && !showActivity) {
+      return _ConversationEmpty(
+        onPrompt: widget.state.conn == ConnState.connected
+            ? (p) => widget.state.sendMessage(p)
+            : null,
+      );
+    }
 
     final itemCount = msgs.length + (showActivity ? 1 : 0);
     return Align(
@@ -389,16 +396,22 @@ class _EmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    const mark = BrandMark(size: 64);
+    return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          BrandMark(size: 64),
-          SizedBox(height: 18),
-          Text('Talon',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-          SizedBox(height: 6),
-          Text('Select a chat, or start a new one.',
+          reduceMotion
+              ? mark
+              : mark
+                  .animate()
+                  .fadeIn(duration: TalonMotion.slow)
+                  .scaleXY(begin: 0.85, end: 1, curve: TalonMotion.emphasized),
+          const SizedBox(height: TalonSpace.lg),
+          const Text('Talon', style: TalonType.display),
+          const SizedBox(height: 6),
+          const Text('Select a chat, or start a new one.',
               style: TextStyle(color: TalonColors.textFaint)),
         ],
       ),
@@ -406,35 +419,130 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+/// Suggested prompts shown in a fresh conversation, à la ChatGPT/Claude — a few
+/// tappable starters so an empty chat feels intentional rather than blank.
+const List<({IconData icon, String label, String prompt})> _starters = [
+  (
+    icon: Icons.summarize_outlined,
+    label: 'Summarize my day',
+    prompt: 'Summarize what happened today and what needs my attention.',
+  ),
+  (
+    icon: Icons.checklist_rounded,
+    label: 'Plan a task',
+    prompt: 'Help me break down a task into clear, actionable steps.',
+  ),
+  (
+    icon: Icons.lightbulb_outline,
+    label: 'Brainstorm ideas',
+    prompt: 'Brainstorm a few creative ideas with me.',
+  ),
+];
+
 class _ConversationEmpty extends StatelessWidget {
-  const _ConversationEmpty();
+  /// Sends a suggested prompt; null while disconnected (chips disabled).
+  final void Function(String prompt)? onPrompt;
+  const _ConversationEmpty({required this.onPrompt});
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final header = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const BrandMark(size: 52),
+        const SizedBox(height: TalonSpace.lg),
+        Text(
+          'How can I help?',
+          style: TalonType.title.copyWith(fontSize: 19),
+        ),
+        const SizedBox(height: 6),
+        const Text('Send a message to begin.',
+            style: TextStyle(color: TalonColors.textFaint)),
+      ],
+    );
+
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(28),
+        padding: const EdgeInsets.all(TalonSpace.xl),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const BrandMark(size: 52),
-            const SizedBox(height: 18),
-            Text(
-              'How can I help?',
-              style: TextStyle(
-                fontSize: 19,
-                fontWeight: FontWeight.w600,
-                color: TalonColors.text.withValues(alpha: 0.92),
-              ),
-            ),
-            const SizedBox(height: 6),
-            const Text(
-              'Send a message to begin.',
-              style: TextStyle(color: TalonColors.textFaint),
+            reduceMotion
+                ? header
+                : header
+                    .animate()
+                    .fadeIn(duration: TalonMotion.slow)
+                    .slideY(begin: 0.1, end: 0, curve: TalonMotion.emphasized),
+            const SizedBox(height: TalonSpace.xl),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: TalonSpace.sm,
+              runSpacing: TalonSpace.sm,
+              children: [
+                for (var i = 0; i < _starters.length; i++)
+                  _StarterChip(
+                    starter: _starters[i],
+                    index: i,
+                    reduceMotion: reduceMotion,
+                    onTap: onPrompt == null
+                        ? null
+                        : () => onPrompt!(_starters[i].prompt),
+                  ),
+              ],
             ),
           ],
         ),
       ),
     );
+  }
+}
+
+class _StarterChip extends StatelessWidget {
+  final ({IconData icon, String label, String prompt}) starter;
+  final int index;
+  final bool reduceMotion;
+  final VoidCallback? onTap;
+
+  const _StarterChip({
+    required this.starter,
+    required this.index,
+    required this.reduceMotion,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final chip = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: TalonRadius.rMd,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: TalonSpace.md, vertical: TalonSpace.sm),
+          decoration: BoxDecoration(
+            color: TalonColors.glassFill,
+            borderRadius: TalonRadius.rMd,
+            border: Border.all(color: TalonColors.glassStroke),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(starter.icon, size: 15, color: TalonColors.accent),
+              const SizedBox(width: 7),
+              Text(starter.label, style: TalonType.label),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (reduceMotion) return chip;
+    final delay = (120 + index * 70).ms;
+    return chip
+        .animate()
+        .fadeIn(delay: delay, duration: TalonMotion.base)
+        .slideY(
+            begin: 0.3, end: 0, delay: delay, curve: TalonMotion.emphasized);
   }
 }

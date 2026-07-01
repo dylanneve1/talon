@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../theme.dart';
 
@@ -51,28 +52,52 @@ class Glass extends StatelessWidget {
   }
 }
 
-/// A soft radial glow used behind the backdrop to give the dark canvas depth.
+/// A whisper of radial colour behind the backdrop, giving the near-black canvas
+/// depth without tinting the whole surface. The two blobs drift on a slow,
+/// offset loop so the background feels alive rather than static — the effect is
+/// deliberately barely-perceptible, and it holds still under reduce-motion.
 class AmbientGlow extends StatelessWidget {
   const AmbientGlow({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
     return IgnorePointer(
       child: Stack(
         children: [
           Positioned(
-            top: -160,
-            left: -120,
-            child: _blob(TalonColors.accent.withValues(alpha: 0.20), 420),
+            top: -180,
+            left: -140,
+            child: _drift(
+              _blob(TalonColors.accent.withValues(alpha: 0.10), 440),
+              reduceMotion,
+              const Offset(24, 18),
+              18000,
+            ),
           ),
           Positioned(
-            bottom: -180,
-            right: -120,
-            child: _blob(TalonColors.accent2.withValues(alpha: 0.12), 460),
+            bottom: -200,
+            right: -140,
+            child: _drift(
+              _blob(TalonColors.accent2.withValues(alpha: 0.07), 480),
+              reduceMotion,
+              const Offset(-20, -22),
+              24000,
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _drift(Widget child, bool reduceMotion, Offset to, int ms) {
+    if (reduceMotion) return child;
+    return child.animate(onPlay: (c) => c.repeat(reverse: true)).move(
+          begin: Offset.zero,
+          end: to,
+          duration: ms.ms,
+          curve: Curves.easeInOut,
+        );
   }
 
   Widget _blob(Color color, double size) => Container(

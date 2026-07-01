@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import 'brand.dart';
 import 'glass.dart';
+import 'motion.dart';
 import 'settings_screen.dart';
 import 'status_pill.dart';
 
@@ -25,12 +26,17 @@ class Sidebar extends StatefulWidget {
 class _SidebarState extends State<Sidebar> {
   String _query = '';
 
+  /// Chat ids we've already shown, so the entrance cascade plays once per tile
+  /// and never re-fires on the frequent rebuilds driven by live streaming.
+  final Set<String> _seen = <String>{};
+
   @override
   Widget build(BuildContext context) {
     return Glass(
-      radius: 22,
+      radius: TalonRadius.lg,
       blur: 24,
-      padding: const EdgeInsets.fromLTRB(12, 14, 12, 10),
+      padding: const EdgeInsets.fromLTRB(
+          TalonSpace.md, TalonSpace.lg, TalonSpace.md, TalonSpace.sm),
       child: ListenableBuilder(
         listenable: widget.state,
         builder: (context, _) {
@@ -40,23 +46,22 @@ class _SidebarState extends State<Sidebar> {
               Row(
                 children: [
                   const BrandMark(size: 30),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: TalonSpace.sm),
                   Expanded(
                     child: Text(
                       widget.state.status.botName,
-                      style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w700),
+                      style: TalonType.title,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: TalonSpace.md),
               _NewChatButton(onTap: widget.state.newChat),
-              const SizedBox(height: 10),
+              const SizedBox(height: TalonSpace.sm),
               _SearchBox(onChanged: (v) => setState(() => _query = v)),
-              const SizedBox(height: 8),
+              const SizedBox(height: TalonSpace.sm),
               Expanded(child: _groupedList(context)),
-              const Divider(height: 14),
+              const Divider(height: TalonSpace.md),
               Row(
                 children: [
                   Expanded(child: StatusPill(state: widget.state)),
@@ -90,7 +95,7 @@ class _SidebarState extends State<Sidebar> {
     if (chats.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(TalonSpace.lg),
           child: Text(
             widget.state.conn == ConnState.connected
                 ? (_query.isEmpty ? 'No chats yet.' : 'No matches.')
@@ -103,30 +108,44 @@ class _SidebarState extends State<Sidebar> {
     }
 
     final groups = _groupByTime(chats);
+    // Stagger only tiles the sidebar hasn't shown before, cascading by their
+    // ordinal among the fresh ones so the first paint ripples in without
+    // re-animating on every streaming-driven rebuild.
+    var freshOrdinal = 0;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+
     return ListView(
       padding: EdgeInsets.zero,
       children: [
         for (final group in groups) ...[
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 10, 8, 6),
-            child: Text(
-              group.label.toUpperCase(),
-              style: const TextStyle(
-                color: TalonColors.textFaint,
-                fontSize: 10.5,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.1,
-              ),
-            ),
+            padding: const EdgeInsets.fromLTRB(
+                TalonSpace.sm, TalonSpace.sm, TalonSpace.sm, 6),
+            child: Text(group.label.toUpperCase(), style: TalonType.eyebrow),
           ),
           for (final chat in group.chats)
-            _ChatTile(
-              chat: chat,
-              selected: chat.id == widget.state.selectedChatId,
-              onTap: () =>
-                  (widget.onSelect ?? widget.state.selectChat)(chat.id),
-              onDelete: () => _confirmDelete(context, chat),
-            ),
+            Builder(builder: (context) {
+              final isFresh = _seen.add(chat.id);
+              // Stagger only the fresh tiles; the delay is fixed at the tile's
+              // first appearance and latched inside EntranceFx, so later
+              // streaming rebuilds never restart or truncate the cascade.
+              final delay = isFresh
+                  ? TalonMotion.stagger * (freshOrdinal++).clamp(0, 12)
+                  : Duration.zero;
+              return EntranceFx(
+                key: ValueKey('tile-${chat.id}'),
+                enabled: isFresh && !reduceMotion,
+                from: const Offset(-0.12, 0),
+                delay: delay,
+                child: _ChatTile(
+                  chat: chat,
+                  selected: chat.id == widget.state.selectedChatId,
+                  onTap: () =>
+                      (widget.onSelect ?? widget.state.selectChat)(chat.id),
+                  onDelete: () => _confirmDelete(context, chat),
+                ),
+              );
+            }),
         ],
       ],
     );
@@ -234,9 +253,10 @@ class _ChatTileState extends State<_ChatTile> {
           child: AnimatedContainer(
             duration: TalonMotion.fast,
             curve: TalonMotion.standard,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            padding: const EdgeInsets.symmetric(
+                horizontal: TalonSpace.sm, vertical: 9),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: TalonRadius.rSm,
               color: selected
                   ? TalonColors.surfaceHi
                   : (_hover ? TalonColors.surface : Colors.transparent),
@@ -250,9 +270,9 @@ class _ChatTileState extends State<_ChatTile> {
                   width: selected ? 3 : 0,
                   height: 15,
                   margin: EdgeInsets.only(right: selected ? 9 : 0),
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     gradient: TalonColors.accentGradient,
-                    borderRadius: BorderRadius.circular(2),
+                    borderRadius: BorderRadius.all(Radius.circular(2)),
                   ),
                 ),
                 Expanded(
@@ -292,40 +312,54 @@ class _ChatTileState extends State<_ChatTile> {
   }
 }
 
-class _NewChatButton extends StatelessWidget {
+class _NewChatButton extends StatefulWidget {
   final VoidCallback onTap;
   const _NewChatButton({required this.onTap});
 
   @override
+  State<_NewChatButton> createState() => _NewChatButtonState();
+}
+
+class _NewChatButtonState extends State<_NewChatButton> {
+  bool _hover = false;
+
+  @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 12),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: TalonColors.accentGradient,
-          boxShadow: [
-            BoxShadow(
-              color: TalonColors.accent.withValues(alpha: 0.30),
-              blurRadius: 16,
-              offset: const Offset(0, 5),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: TalonMotion.fast,
+          curve: TalonMotion.standard,
+          padding: const EdgeInsets.symmetric(
+              vertical: 11, horizontal: TalonSpace.md),
+          decoration: BoxDecoration(
+            borderRadius: TalonRadius.rMd,
+            color: _hover
+                ? TalonColors.accent.withValues(alpha: 0.18)
+                : TalonColors.glassFill,
+            border: Border.all(
+              color: _hover
+                  ? TalonColors.accent.withValues(alpha: 0.6)
+                  : TalonColors.glassStroke,
             ),
-          ],
-        ),
-        child: const Row(
-          children: [
-            Icon(Icons.add_rounded, color: Colors.white, size: 19),
-            SizedBox(width: 8),
-            Text(
-              'New chat',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13.5),
-            ),
-          ],
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.add_rounded, color: TalonColors.text, size: 19),
+              SizedBox(width: TalonSpace.sm),
+              Text(
+                'New chat',
+                style: TextStyle(
+                    color: TalonColors.text,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13.5),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -350,7 +384,7 @@ class _SearchBox extends StatelessWidget {
         hintStyle: const TextStyle(color: TalonColors.textFaint, fontSize: 13),
         filled: true,
         fillColor: TalonColors.void0.withValues(alpha: 0.5),
-        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        contentPadding: const EdgeInsets.symmetric(vertical: TalonSpace.sm),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(11),
           borderSide: const BorderSide(color: TalonColors.glassStroke),

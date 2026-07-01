@@ -341,16 +341,9 @@ class _ConnectButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
+        decoration: const BoxDecoration(
+          borderRadius: TalonRadius.rMd,
           gradient: TalonColors.accentGradient,
-          boxShadow: [
-            BoxShadow(
-              color: TalonColors.accent.withValues(alpha: 0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
         ),
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,

@@ -5,9 +5,10 @@ import 'package:url_launcher/url_launcher.dart' show launchUrl, LaunchMode;
 
 import '../models/bridge_models.dart';
 import '../theme.dart';
-import 'activity_card.dart';
 import 'brand.dart';
 import 'markdown.dart';
+import 'motion.dart';
+import 'tool_timeline.dart';
 
 /// A single conversation row, ChatGPT-style:
 ///   - user: a compact rounded bubble aligned right
@@ -44,39 +45,42 @@ class MessageBubble extends StatelessWidget {
       case Role.assistant:
         row = _assistantRow();
     }
-    // Respect the platform "reduce motion" setting.
-    if (!animateIn || MediaQuery.of(context).disableAnimations) return row;
-    return _MessageEntrance(
-      // A user message rises from its side; the assistant fades in place.
-      fromRight: message.role == Role.user,
+    // A user message rises from its side; the assistant fades in place with a
+    // whisper of upward drift so it settles rather than snaps. EntranceFx
+    // latches the play decision at mount so the frequent streaming rebuilds
+    // (which flip `animateIn` back to false) can't tear the entrance down
+    // mid-flight. Reduce-motion is honoured inside EntranceFx via `enabled`.
+    final fromRight = message.role == Role.user;
+    return EntranceFx(
+      enabled: animateIn && !reduceMotion(context),
+      from: Offset(fromRight ? 0.04 : -0.01, 0.12),
       child: row,
     );
   }
 
   Widget _system() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+        padding: const EdgeInsets.symmetric(
+            vertical: TalonSpace.sm, horizontal: TalonSpace.md),
         child: Center(
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(
+                horizontal: TalonSpace.md, vertical: 6),
             decoration: BoxDecoration(
               color: TalonColors.glassFill,
-              borderRadius: BorderRadius.circular(999),
+              borderRadius: TalonRadius.rPill,
               border: Border.all(color: TalonColors.glassStroke),
             ),
             child: Text(
               message.text,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: TalonColors.textFaint,
-                fontSize: 12,
-              ),
+              style: TalonType.caption,
             ),
           ),
         ),
       );
 
   Widget _userRow() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: TalonSpace.sm),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -86,8 +90,8 @@ class MessageBubble extends StatelessWidget {
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: TalonSpace.lg, vertical: 11),
                   decoration: BoxDecoration(
                     color: TalonColors.surfaceHi,
                     borderRadius: const BorderRadius.only(
@@ -100,11 +104,7 @@ class MessageBubble extends StatelessWidget {
                   ),
                   child: SelectableText(
                     message.text,
-                    style: const TextStyle(
-                      color: TalonColors.text,
-                      fontSize: 14.5,
-                      height: 1.5,
-                    ),
+                    style: TalonType.body,
                   ),
                 ),
               ),
@@ -114,7 +114,7 @@ class MessageBubble extends StatelessWidget {
       );
 
   Widget _assistantRow() => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: TalonSpace.md),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -122,28 +122,22 @@ class MessageBubble extends StatelessWidget {
               padding: EdgeInsets.only(top: 2),
               child: BrandMark(size: 28),
             ),
-            const SizedBox(width: 14),
+            const SizedBox(width: TalonSpace.md),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    botName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13.5,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
+                  Text(botName, style: TalonType.subtitle),
+                  const SizedBox(height: TalonSpace.xs),
                   if (message.tools.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: _ToolHistory(tools: message.tools),
+                      padding: const EdgeInsets.only(bottom: TalonSpace.sm),
+                      child: ToolTrace(tools: message.tools),
                     ),
                   if (imageUrl != null)
                     Padding(
-                      padding:
-                          EdgeInsets.only(bottom: message.text.isEmpty ? 0 : 8),
+                      padding: EdgeInsets.only(
+                          bottom: message.text.isEmpty ? 0 : TalonSpace.sm),
                       child: _InlineImage(url: imageUrl!),
                     ),
                   // Suppress the "…" placeholder for an image-only message.
@@ -161,7 +155,7 @@ class MessageBubble extends StatelessWidget {
                     ),
                   if (message.buttons.isNotEmpty) _buttons(),
                   if (message.reactions.isNotEmpty) _reactions(),
-                  _actions(),
+                  _MessageActions(message: message),
                 ],
               ),
             ),
@@ -169,16 +163,11 @@ class MessageBubble extends StatelessWidget {
         ),
       );
 
-  Widget _actions() => Padding(
-        padding: const EdgeInsets.only(top: 6),
-        child: _CopyButton(text: message.text),
-      );
-
   Widget _buttons() => Padding(
-        padding: const EdgeInsets.only(top: 10),
+        padding: const EdgeInsets.only(top: TalonSpace.sm),
         child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
+          spacing: TalonSpace.sm,
+          runSpacing: TalonSpace.sm,
           children: [
             for (final row in message.buttons)
               for (final b in row)
@@ -191,8 +180,8 @@ class MessageBubble extends StatelessWidget {
                     foregroundColor: TalonColors.accent,
                     side: BorderSide(
                         color: TalonColors.accent.withValues(alpha: 0.5)),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                    shape: const RoundedRectangleBorder(
+                        borderRadius: TalonRadius.rSm),
                   ),
                   child: Text(b.text),
                 ),
@@ -201,16 +190,17 @@ class MessageBubble extends StatelessWidget {
       );
 
   Widget _reactions() => Padding(
-        padding: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.only(top: TalonSpace.sm),
         child: Wrap(
-          spacing: 4,
+          spacing: TalonSpace.xs,
           children: [
             for (final r in message.reactions)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: TalonSpace.sm, vertical: 3),
                 decoration: BoxDecoration(
                   color: TalonColors.glassFill,
-                  borderRadius: BorderRadius.circular(999),
+                  borderRadius: TalonRadius.rPill,
                   border: Border.all(color: TalonColors.glassStroke),
                 ),
                 child: Text(r, style: const TextStyle(fontSize: 13)),
@@ -218,62 +208,6 @@ class MessageBubble extends StatelessWidget {
           ],
         ),
       );
-}
-
-/// One-shot entrance for a freshly-arrived message row: a gentle rise + fade,
-/// with a whisper of scale so it settles rather than snaps. Plays exactly once
-/// (on first mount); recycled rows never wrap this, so scrolling stays still.
-class _MessageEntrance extends StatefulWidget {
-  final Widget child;
-  final bool fromRight;
-  const _MessageEntrance({required this.child, required this.fromRight});
-
-  @override
-  State<_MessageEntrance> createState() => _MessageEntranceState();
-}
-
-class _MessageEntranceState extends State<_MessageEntrance>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: TalonMotion.base,
-  )..forward();
-
-  late final Animation<double> _eased = CurvedAnimation(
-    parent: _c,
-    curve: TalonMotion.emphasized,
-  );
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final dx = widget.fromRight ? 0.06 : -0.02;
-    return FadeTransition(
-      opacity: _eased,
-      child: AnimatedBuilder(
-        animation: _eased,
-        builder: (context, child) {
-          final t = _eased.value;
-          return Transform.translate(
-            offset: Offset(dx * 40 * (1 - t), 10 * (1 - t)),
-            child: Transform.scale(
-              scale: 0.985 + 0.015 * t,
-              alignment: widget.fromRight
-                  ? Alignment.centerRight
-                  : Alignment.centerLeft,
-              child: child,
-            ),
-          );
-        },
-        child: widget.child,
-      ),
-    );
-  }
 }
 
 /// An inline attached image: rounded, width-capped, tap to open full-screen,
@@ -288,7 +222,7 @@ class _InlineImage extends StatelessWidget {
     return GestureDetector(
       onTap: () => _openFull(context),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: TalonRadius.rMd,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 320, maxHeight: 320),
           child: Image.network(
@@ -318,7 +252,7 @@ class _InlineImage extends StatelessWidget {
                 children: [
                   Icon(Icons.broken_image_outlined,
                       size: 18, color: TalonColors.textFaint),
-                  SizedBox(width: 8),
+                  SizedBox(width: TalonSpace.sm),
                   Text('Image unavailable',
                       style: TextStyle(
                           color: TalonColors.textFaint, fontSize: 12.5)),
@@ -348,7 +282,7 @@ class _InlineImage extends StatelessWidget {
               ),
               Positioned(
                 top: 40,
-                right: 16,
+                right: TalonSpace.lg,
                 child: IconButton(
                   onPressed: () => Navigator.of(context).pop(),
                   icon: const Icon(Icons.close, color: Colors.white),
@@ -362,142 +296,86 @@ class _InlineImage extends StatelessWidget {
   }
 }
 
-/// Collapsed summary of the tools the model ran for an assistant message.
-/// Tap to expand and see the chip for each call.
-class _ToolHistory extends StatefulWidget {
-  final List<ToolActivity> tools;
-  const _ToolHistory({required this.tools});
+/// The assistant row's footer: a Copy button plus a quiet stats readout
+/// (duration + token usage) once the turn has ended.
+class _MessageActions extends StatefulWidget {
+  final ClientMessage message;
+  const _MessageActions({required this.message});
 
   @override
-  State<_ToolHistory> createState() => _ToolHistoryState();
+  State<_MessageActions> createState() => _MessageActionsState();
 }
 
-class _ToolHistoryState extends State<_ToolHistory> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final tools = widget.tools;
-    final failed = tools.where((t) => t.error != null).length;
-    final total = Duration(
-      milliseconds: tools.fold<int>(0, (a, t) => a + t.elapsed.inMilliseconds),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        InkWell(
-          onTap: () => setState(() => _open = !_open),
-          borderRadius: BorderRadius.circular(10),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedRotation(
-                  duration: const Duration(milliseconds: 160),
-                  turns: _open ? 0.25 : 0,
-                  child: const Icon(
-                    Icons.chevron_right,
-                    size: 16,
-                    color: TalonColors.textFaint,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  failed > 0 ? Icons.error_outline : Icons.handyman_outlined,
-                  size: 13,
-                  color: failed > 0 ? TalonColors.bad : TalonColors.textFaint,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  _summary(tools.length, failed, total),
-                  style: const TextStyle(
-                    color: TalonColors.textFaint,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        AnimatedSize(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
-          alignment: Alignment.topLeft,
-          child: _open
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final t in tools)
-                        ToolChip(key: ValueKey(t.id), tool: t),
-                    ],
-                  ),
-                )
-              : const SizedBox(width: double.infinity),
-        ),
-      ],
-    );
-  }
-
-  String _summary(int n, int failed, Duration total) {
-    final base = '$n ${n == 1 ? 'tool' : 'tools'} · ${_fmt(total)}';
-    if (failed == 0) return base;
-    return '$base · $failed failed';
-  }
-
-  String _fmt(Duration d) {
-    final ms = d.inMilliseconds;
-    if (ms < 1000) return '${ms}ms';
-    final s = ms / 1000;
-    if (s < 10) return '${s.toStringAsFixed(1)}s';
-    if (s < 60) return '${s.toStringAsFixed(0)}s';
-    final m = (s / 60).floor();
-    return '${m}m${(s - m * 60).toStringAsFixed(0)}s';
-  }
-}
-
-class _CopyButton extends StatefulWidget {
-  final String text;
-  const _CopyButton({required this.text});
-
-  @override
-  State<_CopyButton> createState() => _CopyButtonState();
-}
-
-class _CopyButtonState extends State<_CopyButton> {
+class _MessageActionsState extends State<_MessageActions> {
   bool _copied = false;
 
+  Future<void> _copy() async {
+    await Clipboard.setData(ClipboardData(text: widget.message.text));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    Future.delayed(const Duration(milliseconds: 1400), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () async {
-        await Clipboard.setData(ClipboardData(text: widget.text));
-        if (!mounted) return;
-        setState(() => _copied = true);
-        Future.delayed(const Duration(milliseconds: 1400), () {
-          if (mounted) setState(() => _copied = false);
-        });
-      },
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(_copied ? Icons.check : Icons.copy_rounded,
-                size: 14, color: TalonColors.textFaint),
-            const SizedBox(width: 5),
-            Text(
-              _copied ? 'Copied' : 'Copy',
-              style:
-                  const TextStyle(fontSize: 11.5, color: TalonColors.textFaint),
+    final m = widget.message;
+    if (m.text.isEmpty && !m.hasStats) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          if (m.text.isNotEmpty)
+            InkWell(
+              onTap: _copy,
+              borderRadius: TalonRadius.rSm,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_copied ? Icons.check : Icons.copy_rounded,
+                        size: 14, color: TalonColors.textFaint),
+                    const SizedBox(width: 5),
+                    Text(
+                      _copied ? 'Copied' : 'Copy',
+                      style: const TextStyle(
+                          fontSize: 11.5, color: TalonColors.textFaint),
+                    ),
+                  ],
+                ),
+              ),
             ),
+          if (m.hasStats) ...[
+            const SizedBox(width: TalonSpace.sm),
+            Text(_stats(m), style: TalonType.caption.copyWith(fontSize: 11)),
           ],
-        ),
+        ],
       ),
     );
+  }
+
+  String _stats(ClientMessage m) {
+    final parts = <String>[];
+    if (m.tokensIn != null && m.tokensIn! > 0) {
+      parts.add('${_compact(m.tokensIn!)} in');
+    }
+    if (m.tokensOut != null && m.tokensOut! > 0) {
+      parts.add('${_compact(m.tokensOut!)} out');
+    }
+    if (m.durationMs != null && m.durationMs! > 0) {
+      // Reuse the same formatter the tool trace uses, so the duration here and
+      // in the ToolTrace summary on the same row read identically.
+      parts.add(fmtToolDuration(Duration(milliseconds: m.durationMs!)));
+    }
+    return parts.join(' · ');
+  }
+
+  static String _compact(int n) {
+    if (n < 1000) return '$n';
+    final k = n / 1000;
+    // Round first so 9950 → "10k", not "10.0k".
+    return k < 9.95 ? '${k.toStringAsFixed(1)}k' : '${k.round()}k';
   }
 }

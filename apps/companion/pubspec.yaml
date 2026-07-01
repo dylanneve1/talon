@@ -21,6 +21,10 @@ dependencies:
   shared_preferences: ^2.3.2
   # Markdown rendering for assistant replies (code blocks, tables, lists).
   flutter_markdown: ^0.7.4
+  # Declarative animation layer (gskinner, a Flutter Favorite). Replaces the
+  # hand-rolled AnimationControllers with a chainable .animate() API and powers
+  # the staggered list entrances, shimmer skeletons, and streaming caret.
+  flutter_animate: ^4.5.0
   # Open links from assistant messages / buttons in the OS browser.
   url_launcher: ^6.3.0
   # Pick an image to attach to a message. Chosen over image_picker because it
