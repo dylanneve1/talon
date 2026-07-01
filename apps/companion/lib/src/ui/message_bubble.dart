@@ -101,8 +101,13 @@ class MessageBubble extends StatelessWidget {
                   message: message.time.toLocal().toString().split('.').first,
                   waitDuration: const Duration(milliseconds: 600),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: TalonSpace.lg, vertical: 11),
+                    padding: EdgeInsets.symmetric(
+                        horizontal: imageUrl != null && message.text.isEmpty
+                            ? TalonSpace.sm
+                            : TalonSpace.lg,
+                        vertical: imageUrl != null && message.text.isEmpty
+                            ? TalonSpace.sm
+                            : 11),
                     decoration: BoxDecoration(
                       color: TalonColors.surfaceHi,
                       borderRadius: const BorderRadius.only(
@@ -113,9 +118,26 @@ class MessageBubble extends StatelessWidget {
                       ),
                       border: Border.all(color: TalonColors.glassStroke),
                     ),
-                    child: SelectableText(
-                      message.text,
-                      style: TalonType.body,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Attached image — user rows previously dropped it
+                        // entirely, so an uploaded photo vanished from the
+                        // conversation and its history.
+                        if (imageUrl != null)
+                          Padding(
+                            padding: EdgeInsets.only(
+                                bottom:
+                                    message.text.isEmpty ? 0 : TalonSpace.sm),
+                            child: _InlineImage(url: imageUrl!),
+                          ),
+                        if (message.text.isNotEmpty)
+                          SelectableText(
+                            message.text,
+                            style: TalonType.body,
+                          ),
+                      ],
                     ),
                   ),
                 ),
@@ -248,15 +270,18 @@ class _InlineImage extends StatelessWidget {
       child: ClipRRect(
         borderRadius: TalonRadius.rMd,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 320, maxHeight: 320),
+          constraints: const BoxConstraints(maxWidth: 340, maxHeight: 420),
           child: Image.network(
             url,
-            fit: BoxFit.cover,
+            // contain, not cover: cover cropped anything non-square into an
+            // arbitrary window, which is what made history images look wrong.
+            // contain keeps the full frame at its natural aspect ratio.
+            fit: BoxFit.contain,
             loadingBuilder: (context, child, progress) {
               if (progress == null) return child;
               return Container(
-                width: 200,
-                height: 150,
+                width: 220,
+                height: 160,
                 alignment: Alignment.center,
                 color: TalonColors.surface,
                 child: const SizedBox(
@@ -271,12 +296,12 @@ class _InlineImage extends StatelessWidget {
               height: 110,
               alignment: Alignment.center,
               color: TalonColors.surface,
-              child: const Row(
+              child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(Icons.broken_image_outlined,
                       size: 18, color: TalonColors.textFaint),
-                  SizedBox(width: TalonSpace.sm),
+                  const SizedBox(width: TalonSpace.sm),
                   Text('Image unavailable',
                       style: TextStyle(
                           color: TalonColors.textFaint, fontSize: 12.5)),
@@ -364,7 +389,7 @@ class _MessageActionsState extends State<_MessageActions> {
                     const SizedBox(width: 5),
                     Text(
                       _copied ? 'Copied' : 'Copy',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 11.5, color: TalonColors.textFaint),
                     ),
                   ],

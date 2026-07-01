@@ -228,24 +228,24 @@ class _ToolStepState extends State<ToolStep> {
           ),
         ],
         const SizedBox(width: TalonSpace.sm),
-        if (_running) const _StatusBadge('Running', TalonColors.accent2),
-        if (_failed) const _StatusBadge('Failed', TalonColors.bad),
+        if (_running) _StatusBadge('Running', TalonColors.accent2),
+        if (_failed) _StatusBadge('Failed', TalonColors.bad),
         const SizedBox(width: TalonSpace.sm),
         Text(
           fmtToolDuration(tool.elapsed),
           maxLines: 1,
           softWrap: false,
-          style: const TextStyle(
+          style: TextStyle(
             color: TalonColors.textFaint,
             fontSize: 11.5,
-            fontFeatures: [FontFeature.tabularFigures()],
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
         if (_expandable)
           AnimatedRotation(
             duration: TalonMotion.fast,
             turns: _expanded ? 0.25 : 0,
-            child: const Icon(Icons.chevron_right,
+            child: Icon(Icons.chevron_right,
                 size: 16, color: TalonColors.textFaint),
           )
         else
@@ -399,7 +399,7 @@ class _ToolTraceState extends State<ToolTrace> {
                 AnimatedRotation(
                   duration: TalonMotion.fast,
                   turns: _open ? 0.25 : 0,
-                  child: const Icon(Icons.chevron_right,
+                  child: Icon(Icons.chevron_right,
                       size: 16, color: TalonColors.textFaint),
                 ),
                 const SizedBox(width: TalonSpace.xs),
@@ -413,7 +413,7 @@ class _ToolTraceState extends State<ToolTrace> {
                 const SizedBox(width: 6),
                 Text(
                   _summary(tools.length, failed, total),
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: TalonColors.textFaint,
                     fontSize: 12,
                   ),

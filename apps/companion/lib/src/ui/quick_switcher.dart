@@ -187,7 +187,7 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
                               ? 'No matches.'
                               : 'Type to search chats and messages.',
                           style:
-                              const TextStyle(color: TalonColors.textFaint),
+                              TextStyle(color: TalonColors.textFaint),
                         ),
                       )
                     : ListView.builder(
@@ -235,7 +235,7 @@ class _QuickSwitcherState extends State<_QuickSwitcher> {
                                             e.subtitle!,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                                 fontSize: 12,
                                                 color: TalonColors.textFaint),
                                           ),

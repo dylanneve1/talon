@@ -140,10 +140,16 @@ export function createNativeFrontend(
     let model: string | undefined;
     let backend: string | undefined;
     try {
-      backend = getBackendIdForChat(entry.id);
+      // The persisted per-chat setting is the source of truth for what the
+      // user picked; the in-memory binding can lag it (boot-time rebind
+      // still pending or transiently failed). Reporting the binding here
+      // made clients show a chat "reset" to the default backend after a
+      // daemon restart even though the user's choice was intact.
+      backend = settings.backend ?? getBackendIdForChat(entry.id);
       model = getChatModelForBackend(entry.id, backend);
     } catch {
-      /* backend pool not ready (early boot) — omit model/backend */
+      backend = settings.backend;
+      /* backend pool not ready (early boot) — omit model */
     }
     return {
       id: entry.id,
@@ -472,7 +478,9 @@ export function createNativeFrontend(
     let active = config.model;
     if (chatId) {
       try {
-        backendId = getBackendIdForChat(chatId);
+        // Persisted setting first — see toClientChat.
+        backendId =
+          getChatSettings(chatId).backend ?? getBackendIdForChat(chatId);
         active = getChatModelForBackend(chatId, backendId) ?? config.model;
       } catch {
         /* pool not ready — keep global defaults */
@@ -541,7 +549,10 @@ export function createNativeFrontend(
     const backends = listAvailableBackends(config);
     let active: string = config.backend;
     try {
-      if (chatId) active = getBackendIdForChat(chatId);
+      if (chatId) {
+        // Persisted setting first — see toClientChat.
+        active = getChatSettings(chatId).backend ?? getBackendIdForChat(chatId);
+      }
     } catch {
       /* pool not ready — report the global default backend */
     }
@@ -566,12 +577,32 @@ export function createNativeFrontend(
     if (!available.some((b) => b.id === target)) {
       return { ok: false, error: "Backend not available" };
     }
-    if (getBackendIdForChat(chatId) === target) return { ok: true };
+    const persisted = getChatSettings(chatId).backend;
+    if (getBackendIdForChat(chatId) === target) {
+      // Already live on the target — just make sure the choice is persisted.
+      if (persisted !== target && target !== config.backend) {
+        setChatBackend(chatId, target);
+        broadcastChatUpdated(entry);
+      }
+      return { ok: true };
+    }
 
     const result = await rebindChat(chatId, target, config);
     if (!result.ok) {
       return { ok: false, error: result.error ?? "Rebind failed" };
     }
+
+    // Re-selecting the backend this chat is already persisted to is a
+    // RE-ATTACH (e.g. the boot-time rebind failed transiently and the user —
+    // or a client retry — picks it again). The conversation belongs to that
+    // backend; resetting the session and wiping history here destroyed real
+    // conversations and surfaced as a phantom "backend reset" in clients.
+    if (persisted === target) {
+      broadcastChatUpdated(entry);
+      broadcast({ kind: "status", status: status() });
+      return { ok: true };
+    }
+
     setChatBackend(chatId, target);
     resetSession(chatId);
     clearHistory(chatId);

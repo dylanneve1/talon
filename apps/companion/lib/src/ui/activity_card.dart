@@ -143,12 +143,12 @@ class _ReasoningStripState extends State<_ReasoningStrip> {
               borderRadius: TalonRadius.rPill,
               border: Border.all(color: TalonColors.glassStroke),
             ),
-            child: const Row(
+            child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.bubble_chart_outlined,
                     size: 13, color: TalonColors.textFaint),
-                SizedBox(width: 6),
+                const SizedBox(width: 6),
                 Text(
                   'Thought — tap to expand',
                   style:
@@ -170,7 +170,7 @@ class _ReasoningStripState extends State<_ReasoningStrip> {
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: TalonSpace.md, vertical: 9),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           borderRadius: TalonRadius.rMd,
           border: Border(
             left: BorderSide(color: TalonColors.accent, width: 2.5),
@@ -180,7 +180,7 @@ class _ReasoningStripState extends State<_ReasoningStrip> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Icon(Icons.bubble_chart_outlined,
+            Icon(Icons.bubble_chart_outlined,
                 size: 15, color: TalonColors.textFaint),
             const SizedBox(width: TalonSpace.sm),
             Expanded(
@@ -192,7 +192,7 @@ class _ReasoningStripState extends State<_ReasoningStrip> {
                   text.trim(),
                   maxLines: 5,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: TalonColors.textDim,
                     fontSize: 12.5,
                     height: 1.45,
@@ -235,7 +235,7 @@ class _TypingDots extends StatelessWidget {
         width: 7,
         height: 7,
         margin: const EdgeInsets.symmetric(horizontal: 3),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: TalonColors.textDim,
         ),

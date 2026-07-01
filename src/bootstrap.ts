@@ -201,6 +201,7 @@ export async function initBackendAndDispatcher(
     initBackendPool,
     getBackendForRole,
     getBackendForChat,
+    getBackendIdForChat,
     rebindChat,
     releaseChat,
     isBackendAvailable,
@@ -274,22 +275,35 @@ export async function initBackendAndDispatcher(
         setChatModel(cid, undefined);
         resetVolatileState = true;
       } else {
-        const result = await rebindChat(cid, settings.backend, config);
+        // A boot-time rebind failure is usually TRANSIENT (backend slow to
+        // spawn, auth endpoint briefly unreachable) — it must not destroy
+        // the user's persisted choice, session, and history. Retry once,
+        // then keep the setting and move on: the chat runs on the default
+        // backend until a later switch succeeds, and clients keep showing
+        // the user's chosen backend from settings (the source of truth).
+        let result = await rebindChat(cid, settings.backend, config);
+        if (!result.ok) {
+          await new Promise((r) => setTimeout(r, 1500));
+          result = await rebindChat(cid, settings.backend, config);
+        }
         if (!result.ok) {
           log(
             "bot",
-            `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error} — resetting chat to default backend`,
+            `Per-chat backend rebind failed for ${cid} → ${settings.backend}: ${result.error} — keeping the setting; will serve on the default backend until re-selected`,
           );
-          await releaseChat(cid);
-          setChatBackend(cid, undefined);
-          setChatModel(cid, undefined);
-          resetVolatileState = true;
         }
       }
     }
 
+    // Only validate the stored model against the backend that will really
+    // serve this chat. After a kept-but-unbound override (transient rebind
+    // failure above) the chat temporarily runs on the default backend — the
+    // stored model belongs to the chosen backend, so validating it against
+    // the default would wrongly clear it.
+    const bindingMatchesSetting =
+      !settings.backend || getBackendIdForChat(cid) === settings.backend;
     const currentModel = getAllChatSettings()[cid]?.model;
-    if (currentModel) {
+    if (currentModel && bindingMatchesSetting) {
       const be = getBackendForChat(cid);
       try {
         const valid = await isModelValidForBackend(be, currentModel);

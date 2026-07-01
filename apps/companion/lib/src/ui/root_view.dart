@@ -15,7 +15,7 @@ class RootView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
-      decoration: const BoxDecoration(gradient: TalonColors.backdrop),
+      decoration: BoxDecoration(gradient: TalonColors.backdrop),
       child: Material(
         type: MaterialType.transparency,
         child: Stack(

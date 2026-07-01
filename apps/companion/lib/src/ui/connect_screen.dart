@@ -123,7 +123,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                           style: const TextStyle(
                               fontSize: 20, fontWeight: FontWeight.w700),
                         ),
-                        const Text(
+                        Text(
                           'Connect your companion',
                           style: TextStyle(
                               color: TalonColors.textFaint, fontSize: 12.5),
@@ -154,7 +154,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
                         const SizedBox(height: 14),
                         Text(
                           widget.state.connError!,
-                          style: const TextStyle(
+                          style: TextStyle(
                               color: TalonColors.bad, fontSize: 12.5),
                         ),
                       ],
@@ -169,13 +169,18 @@ class _ConnectScreenState extends State<ConnectScreen> {
     );
 
     if (widget.firstRun) return body;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
+    // Pushed route — repaint in place when the palette changes (see
+    // SettingsScreen for the same pattern).
+    return ValueListenableBuilder<int>(
+      valueListenable: TalonTheme.revision,
+      builder: (context, _, __) => Scaffold(
         backgroundColor: Colors.transparent,
-        title: const Text('Settings'),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          title: const Text('Settings'),
+        ),
+        body: body,
       ),
-      body: body,
     );
   }
 
@@ -276,7 +281,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
           thumbColor: WidgetStateProperty.resolveWith((s) =>
               s.contains(WidgetState.selected) ? TalonColors.accent : null),
           title: const Text('Use HTTPS / TLS', style: TextStyle(fontSize: 14)),
-          subtitle: const Text(
+          subtitle: Text(
               'Turn on if the bridge is behind a TLS reverse proxy (Caddy, '
               'nginx, Tailscale Serve). Auto-detected from an https:// host.',
               style: TextStyle(fontSize: 12, color: TalonColors.textFaint)),
@@ -295,7 +300,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label,
-            style: const TextStyle(
+            style: TextStyle(
                 fontSize: 12,
                 color: TalonColors.textDim,
                 fontWeight: FontWeight.w600)),
@@ -315,15 +320,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
                 const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: TalonColors.glassStroke),
+              borderSide: BorderSide(color: TalonColors.glassStroke),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: TalonColors.glassStroke),
+              borderSide: BorderSide(color: TalonColors.glassStroke),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: TalonColors.accent),
+              borderSide: BorderSide(color: TalonColors.accent),
             ),
           ),
         ),
@@ -339,7 +344,7 @@ class _Hint extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
             fontSize: 12.5, color: TalonColors.textFaint, height: 1.5),
       );
 }
@@ -356,7 +361,7 @@ class _ConnectButton extends StatelessWidget {
       borderRadius: BorderRadius.circular(14),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           borderRadius: TalonRadius.rMd,
           gradient: TalonColors.accentGradient,
         ),

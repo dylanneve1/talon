@@ -190,7 +190,7 @@ class _ComposerState extends State<Composer> {
                         hintText:
                             widget.enabled ? 'Message Talon…' : 'Connecting…',
                         hintStyle:
-                            const TextStyle(color: TalonColors.textFaint),
+                            TextStyle(color: TalonColors.textFaint),
                       ),
                     ),
                   ),
@@ -232,7 +232,7 @@ class _ComposerState extends State<Composer> {
               child: GestureDetector(
                 onTap: _clearAttachment,
                 child: Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     color: TalonColors.surfaceHi,
                     shape: BoxShape.circle,
                   ),

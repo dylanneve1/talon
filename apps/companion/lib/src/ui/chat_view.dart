@@ -276,15 +276,15 @@ class _JumpToLatest extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: TalonColors.surfaceHi,
-      shape: const CircleBorder(
+      shape: CircleBorder(
         side: BorderSide(color: TalonColors.glassStroke),
       ),
       elevation: 3,
       child: InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
-        child: const Padding(
-          padding: EdgeInsets.all(9),
+        child: Padding(
+          padding: const EdgeInsets.all(9),
           child: Icon(Icons.arrow_downward_rounded,
               size: 18, color: TalonColors.textDim),
         ),
@@ -370,7 +370,7 @@ class _Header extends StatelessWidget {
     final effort = chat.effort ?? 'adaptive';
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         border: Border(bottom: BorderSide(color: TalonColors.glassStroke)),
       ),
       child: Row(
@@ -416,7 +416,7 @@ class _ChatMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final pulseOn = chat.pulse ?? false;
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, size: 20, color: TalonColors.textDim),
+      icon: Icon(Icons.more_vert, size: 20, color: TalonColors.textDim),
       color: TalonColors.surfaceHi,
       onSelected: (v) async {
         switch (v) {
@@ -575,7 +575,7 @@ class _Chip extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style:
-                    const TextStyle(fontSize: 12, color: TalonColors.textDim),
+                    TextStyle(fontSize: 12, color: TalonColors.textDim),
               ),
             ),
           ],
@@ -650,9 +650,9 @@ class _EmptyState extends StatelessWidget {
                   .fadeIn(duration: TalonMotion.slow)
                   .scaleXY(begin: 0.85, end: 1, curve: TalonMotion.emphasized),
           const SizedBox(height: TalonSpace.lg),
-          const Text('Talon', style: TalonType.display),
+          Text('Talon', style: TalonType.display),
           const SizedBox(height: 6),
-          const Text('Select a chat, or start a new one.',
+          Text('Select a chat, or start a new one.',
               style: TextStyle(color: TalonColors.textFaint)),
         ],
       ),
@@ -698,7 +698,7 @@ class _ConversationEmpty extends StatelessWidget {
           style: TalonType.title.copyWith(fontSize: 19),
         ),
         const SizedBox(height: 6),
-        const Text('Send a message to begin.',
+        Text('Send a message to begin.',
             style: TextStyle(color: TalonColors.textFaint)),
       ],
     );

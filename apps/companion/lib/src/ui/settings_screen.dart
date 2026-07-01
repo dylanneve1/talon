@@ -79,25 +79,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      appBar: AppBar(
+    // This screen is a pushed route, outside the root's theme rebuild chain —
+    // subscribe to palette changes so toggling Appearance repaints in place.
+    return ValueListenableBuilder<int>(
+      valueListenable: TalonTheme.revision,
+      builder: (context, _, __) => Scaffold(
         backgroundColor: Colors.transparent,
-        title: const Text('Talon settings'),
-        actions: [
-          IconButton(
-            onPressed: _load,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
-          ),
-        ],
-      ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 560),
-            child: _loading ? const _SettingsSkeleton() : _body(),
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          title: const Text('Talon settings'),
+          actions: [
+            IconButton(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Refresh',
+            ),
+          ],
+        ),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: _loading ? const _SettingsSkeleton() : _body(),
+            ),
           ),
         ),
       ),
@@ -111,6 +116,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       children: [
         _statusCard(cfg),
         const SizedBox(height: 16),
+        _appearanceCard(),
+        const SizedBox(height: 16),
         if (cfg == null)
           _Section(
             title: 'Settings unavailable',
@@ -119,7 +126,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Text(
                   _error ?? 'Could not read settings from the daemon.',
-                  style: const TextStyle(color: TalonColors.textFaint),
+                  style: TextStyle(color: TalonColors.textFaint),
                 ),
                 if (_error != null && AppLog.diagnose(_error!) != null) ...[
                   const SizedBox(height: 10),
@@ -132,13 +139,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(Icons.lightbulb_outline,
+                        Icon(Icons.lightbulb_outline,
                             size: 16, color: TalonColors.accent),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             AppLog.diagnose(_error!)!,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 12.5, color: TalonColors.textDim),
                           ),
                         ),
@@ -240,6 +247,59 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _connectionCard(),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  // ── Appearance ────────────────────────────────────────────────────────────
+
+  Widget _appearanceCard() {
+    final current = TalonTheme.mode.value;
+    const options = [
+      (ThemeMode.system, 'Auto', Icons.brightness_auto_outlined),
+      (ThemeMode.light, 'Light', Icons.light_mode_outlined),
+      (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
+    ];
+    return _Section(
+      title: 'Appearance',
+      child: Wrap(
+        spacing: 8,
+        children: [
+          for (final (mode, label, icon) in options)
+            ChoiceChip(
+              avatar: Icon(
+                icon,
+                size: 15,
+                color: current == mode
+                    ? TalonColors.accent
+                    : TalonColors.textFaint,
+              ),
+              label: Text(label),
+              selected: current == mode,
+              showCheckmark: false,
+              backgroundColor: TalonColors.surface,
+              selectedColor: TalonColors.accent.withValues(alpha: 0.22),
+              side: BorderSide(
+                color: current == mode
+                    ? TalonColors.accent
+                    : TalonColors.glassStroke,
+              ),
+              labelStyle: TextStyle(
+                color: current == mode
+                    ? TalonColors.text
+                    : TalonColors.textDim,
+                fontSize: 13,
+              ),
+              onSelected: (_) {
+                TalonTheme.mode.value = mode;
+                widget.state.prefs.setThemeMode(switch (mode) {
+                  ThemeMode.light => 'light',
+                  ThemeMode.dark => 'dark',
+                  ThemeMode.system => 'system',
+                });
+              },
+            ),
+        ],
+      ),
     );
   }
 
@@ -413,7 +473,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Text(
               detail,
               style:
-                  const TextStyle(fontSize: 12.5, color: TalonColors.textDim),
+                  TextStyle(fontSize: 12.5, color: TalonColors.textDim),
             ),
           ),
         ],
@@ -429,7 +489,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             SizedBox(
               width: 128,
               child: Text(label,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 13, color: TalonColors.textDim)),
             ),
             Expanded(
@@ -513,7 +573,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.lan_outlined,
+              Icon(Icons.lan_outlined,
                   size: 18, color: TalonColors.textDim),
               const SizedBox(width: 10),
               Expanded(
@@ -541,7 +601,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(label.toUpperCase(),
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 10,
                   color: TalonColors.textFaint,
                   fontWeight: FontWeight.w700,
@@ -573,7 +633,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: TalonColors.glassStroke),
+                borderSide: BorderSide(color: TalonColors.glassStroke),
               ),
             ),
           ),
@@ -596,7 +656,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     style: const TextStyle(
                         fontSize: 14, fontWeight: FontWeight.w600)),
                 Text(subtitle,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12, color: TalonColors.textFaint)),
               ],
             ),
@@ -627,7 +687,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Expanded(
             child: Text(label,
                 style:
-                    const TextStyle(fontSize: 13, color: TalonColors.textDim)),
+                    TextStyle(fontSize: 13, color: TalonColors.textDim)),
           ),
           IconButton(
             iconSize: 18,
@@ -722,7 +782,7 @@ class _Section extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(title.toUpperCase(),
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.1,
@@ -770,7 +830,7 @@ class _ModelRow extends StatelessWidget {
                       style: const TextStyle(fontSize: 14),
                     ),
                   ),
-                  const Icon(Icons.unfold_more,
+                  Icon(Icons.unfold_more,
                       size: 16, color: TalonColors.textFaint),
                 ],
               ),
@@ -799,9 +859,9 @@ class _ModelRow extends StatelessWidget {
               ListTile(
                 title: Text(m.displayName),
                 subtitle: Text(m.provider,
-                    style: const TextStyle(color: TalonColors.textFaint)),
+                    style: TextStyle(color: TalonColors.textFaint)),
                 trailing: m.id == cfg.model
-                    ? const Icon(Icons.check, color: TalonColors.accent)
+                    ? Icon(Icons.check, color: TalonColors.accent)
                     : null,
                 onTap: () => Navigator.pop(ctx, m.id),
               ),

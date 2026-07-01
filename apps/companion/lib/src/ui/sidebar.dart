@@ -72,7 +72,7 @@ class _SidebarState extends State<Sidebar> {
                         builder: (_) => SettingsScreen(state: widget.state),
                       ),
                     ),
-                    icon: const Icon(Icons.settings_outlined,
+                    icon: Icon(Icons.settings_outlined,
                         size: 20, color: TalonColors.textDim),
                   ),
                 ],
@@ -101,7 +101,7 @@ class _SidebarState extends State<Sidebar> {
                 ? (_query.isEmpty ? 'No chats yet.' : 'No matches.')
                 : 'Connecting…',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: TalonColors.textFaint, height: 1.5),
+            style: TextStyle(color: TalonColors.textFaint, height: 1.5),
           ),
         ),
       );
@@ -289,9 +289,9 @@ class _ChatTileState extends State<_ChatTile> {
                   width: selected ? 3 : 0,
                   height: 28,
                   margin: EdgeInsets.only(right: selected ? 9 : 0),
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     gradient: TalonColors.accentGradient,
-                    borderRadius: BorderRadius.all(Radius.circular(2)),
+                    borderRadius: const BorderRadius.all(Radius.circular(2)),
                   ),
                 ),
                 Expanded(
@@ -317,15 +317,15 @@ class _ChatTileState extends State<_ChatTile> {
                             ),
                           ),
                           if (widget.chat.pulse == true)
-                            const Padding(
-                              padding: EdgeInsets.only(left: 4),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4),
                               child: Icon(Icons.notifications_active_outlined,
                                   size: 11, color: TalonColors.textFaint),
                             ),
                           const SizedBox(width: 6),
                           Text(
                             _relTime(widget.chat.lastActiveTime),
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 10.5, color: TalonColors.textFaint),
                           ),
                           // Unread: activity newer than the user's last look.
@@ -334,7 +334,7 @@ class _ChatTileState extends State<_ChatTile> {
                               width: 7,
                               height: 7,
                               margin: const EdgeInsets.only(left: 6),
-                              decoration: const BoxDecoration(
+                              decoration: BoxDecoration(
                                 shape: BoxShape.circle,
                                 gradient: TalonColors.accentGradient,
                               ),
@@ -348,7 +348,7 @@ class _ChatTileState extends State<_ChatTile> {
                             widget.chat.preview.replaceAll('\n', ' '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 11.5,
                                 color: TalonColors.textFaint,
                                 height: 1.3),
@@ -365,8 +365,8 @@ class _ChatTileState extends State<_ChatTile> {
                     child: InkWell(
                       onTap: widget.onDelete,
                       borderRadius: BorderRadius.circular(6),
-                      child: const Padding(
-                        padding: EdgeInsets.all(2),
+                      child: Padding(
+                        padding: const EdgeInsets.all(2),
                         child: Icon(Icons.close,
                             size: 15, color: TalonColors.textFaint),
                       ),
@@ -417,10 +417,10 @@ class _NewChatButtonState extends State<_NewChatButton> {
                   : TalonColors.glassStroke,
             ),
           ),
-          child: const Row(
+          child: Row(
             children: [
               Icon(Icons.add_rounded, color: TalonColors.text, size: 19),
-              SizedBox(width: TalonSpace.sm),
+              const SizedBox(width: TalonSpace.sm),
               Text(
                 'New chat',
                 style: TextStyle(
@@ -451,21 +451,21 @@ class _SearchBox extends StatelessWidget {
         prefixIconConstraints:
             const BoxConstraints(minWidth: 36, minHeight: 36),
         hintText: 'Search chats',
-        hintStyle: const TextStyle(color: TalonColors.textFaint, fontSize: 13),
+        hintStyle: TextStyle(color: TalonColors.textFaint, fontSize: 13),
         filled: true,
         fillColor: TalonColors.void0.withValues(alpha: 0.5),
         contentPadding: const EdgeInsets.symmetric(vertical: TalonSpace.sm),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: TalonColors.glassStroke),
+          borderSide: BorderSide(color: TalonColors.glassStroke),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: TalonColors.glassStroke),
+          borderSide: BorderSide(color: TalonColors.glassStroke),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(11),
-          borderSide: const BorderSide(color: TalonColors.accent),
+          borderSide: BorderSide(color: TalonColors.accent),
         ),
       ),
     );

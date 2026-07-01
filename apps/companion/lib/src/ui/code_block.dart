@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_highlight/flutter_highlight.dart';
 import 'package:flutter_highlight/themes/atom-one-dark.dart';
+import 'package:flutter_highlight/themes/atom-one-light.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
@@ -64,7 +65,7 @@ class _CodeBlockState extends State<CodeBlock> {
           // Header strip: language tag + copy affordance.
           Container(
             padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               border: Border(
                 bottom: BorderSide(color: TalonColors.glassStroke),
               ),
@@ -121,17 +122,22 @@ class _CodeBlockState extends State<CodeBlock> {
                     widget.code,
                     style: TalonType.mono.copyWith(fontSize: 12.5, height: 1.5),
                   )
-                : HighlightView(
-                    widget.code,
-                    language: widget.language,
-                    theme: {
-                      ...atomOneDarkTheme,
-                      'root': (atomOneDarkTheme['root'] ?? const TextStyle())
-                          .copyWith(backgroundColor: Colors.transparent),
-                    },
-                    textStyle:
-                        TalonType.mono.copyWith(fontSize: 12.5, height: 1.5),
-                  ),
+                : Builder(builder: (context) {
+                    final base = TalonTheme.isDark
+                        ? atomOneDarkTheme
+                        : atomOneLightTheme;
+                    return HighlightView(
+                      widget.code,
+                      language: widget.language,
+                      theme: {
+                        ...base,
+                        'root': (base['root'] ?? const TextStyle())
+                            .copyWith(backgroundColor: Colors.transparent),
+                      },
+                      textStyle:
+                          TalonType.mono.copyWith(fontSize: 12.5, height: 1.5),
+                    );
+                  }),
           ),
         ],
       ),

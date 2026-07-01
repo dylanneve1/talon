@@ -36,6 +36,14 @@ class Prefs {
   bool get onboarded => _sp.getBool(_kOnboarded) ?? false;
   Future<void> setOnboarded(bool v) => _sp.setBool(_kOnboarded, v);
 
+  // ── Appearance ────────────────────────────────────────────────────────────
+
+  static const _kThemeMode = 'themeMode.v1';
+
+  /// Persisted theme selection: 'system' (default), 'light', or 'dark'.
+  String get themeMode => _sp.getString(_kThemeMode) ?? 'system';
+  Future<void> setThemeMode(String v) => _sp.setString(_kThemeMode, v);
+
   // ── Read markers ──────────────────────────────────────────────────────────
 
   Map<String, int> _decodeLastRead() {

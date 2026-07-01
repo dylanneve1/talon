@@ -123,9 +123,9 @@ class _ModelSheetState extends State<_ModelSheet> {
       maxChildSize: 0.92,
       builder: (context, scroll) {
         return Container(
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             color: TalonColors.void1,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
             border: Border(top: BorderSide(color: TalonColors.glassStroke)),
           ),
           child: Column(
@@ -143,7 +143,7 @@ class _ModelSheetState extends State<_ModelSheet> {
                 padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.tune, size: 18, color: TalonColors.accent),
+                    Icon(Icons.tune, size: 18, color: TalonColors.accent),
                     const SizedBox(width: 8),
                     Text(
                       _chat.title,
@@ -174,7 +174,7 @@ class _ModelSheetState extends State<_ModelSheet> {
               ),
               Expanded(
                 child: models.isEmpty
-                    ? const Center(
+                    ? Center(
                         child: Text('No models reported',
                             style: TextStyle(color: TalonColors.textFaint)))
                     : ListView.builder(
@@ -224,7 +224,7 @@ class _ModelSheetState extends State<_ModelSheet> {
         children: [
           Row(
             children: [
-              const Text(
+              Text(
                 'BACKEND',
                 style: TextStyle(
                   color: TalonColors.textFaint,
@@ -272,7 +272,7 @@ class _ModelSheetState extends State<_ModelSheet> {
             ],
           ),
           const SizedBox(height: 4),
-          const Text(
+          Text(
             'Switching backend starts a fresh conversation.',
             style: TextStyle(color: TalonColors.textFaint, fontSize: 11),
           ),
@@ -358,20 +358,20 @@ class _ModelRow extends StatelessWidget {
                   const SizedBox(height: 2),
                   Text(
                     model.provider,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 11.5, color: TalonColors.textFaint),
                   ),
                 ],
               ),
             ),
             if (model.reasoning)
-              const Padding(
-                padding: EdgeInsets.only(right: 8),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
                 child: Icon(Icons.psychology_outlined,
                     size: 16, color: TalonColors.textFaint),
               ),
             if (selected)
-              const Icon(Icons.check_circle,
+              Icon(Icons.check_circle,
                   color: TalonColors.accent, size: 18),
           ],
         ),
