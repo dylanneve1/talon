@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.2](https://github.com/dylanneve1/talon/compare/v1.29.1...v1.29.2) (2026-07-01)
+
+
+### Bug Fixes
+
+* stability sweep — flaky tests, frontend drift bugs, consolidation ([#442](https://github.com/dylanneve1/talon/issues/442)) ([9700b49](https://github.com/dylanneve1/talon/commit/9700b49612e216aa4ff4f1f0acfe41a7a45e2ccb))
+
 ## [1.29.1](https://github.com/dylanneve1/talon/compare/v1.29.0...v1.29.1) (2026-07-01)
 
 
