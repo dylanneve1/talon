@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.25.0](https://github.com/dylanneve1/talon/compare/v1.24.5...v1.25.0) (2026-07-01)
+
+
+### Features
+
+* **companion:** expand settings with a Diagnostics "doctor" + About ([3cce179](https://github.com/dylanneve1/talon/commit/3cce179ac347808455f4afa27f05dd34ac03dfc2))
+* **companion:** let the user attach and send images to the bot ([34bfd8a](https://github.com/dylanneve1/talon/commit/34bfd8a11da9962bb0918f6fca109ee7e8cb7467))
+* **companion:** make all enabled backends selectable, not just Claude ([4a3f6c6](https://github.com/dylanneve1/talon/commit/4a3f6c6d3d834671c7db79dce8a47afc5424ac30))
+* **companion:** render images the bot sends (send_photo → inline image) ([69cbb75](https://github.com/dylanneve1/talon/commit/69cbb759a7b3ae06edaaa2e4ca16dbd9bb79e88e))
+* **companion:** tasteful motion pass — entrances, send button, tiles ([8692953](https://github.com/dylanneve1/talon/commit/8692953c34a1db15eb8ad3c82eead6688fed3f9d))
+
+
+### Bug Fixes
+
+* **companion:** force compileSdk 36 on all Android plugin subprojects ([7860a3c](https://github.com/dylanneve1/talon/commit/7860a3c759902172353ea256a4962b031f4814eb))
+* **companion:** pin Android compileSdk to 36 for file_picker ([196e538](https://github.com/dylanneve1/talon/commit/196e538833fa6bd5dc2df5c414ba3c0970354da2))
+* **companion:** pin flutter_plugin_android_lifecycle to 2.0.24 ([c767c11](https://github.com/dylanneve1/talon/commit/c767c11cd6ee36529dcaae10c54684ad58d11a17))
+* **companion:** set plugin compileSdk via plugins.withId, not afterEvaluate ([44ffa8f](https://github.com/dylanneve1/talon/commit/44ffa8f6da690dd9bd7fbc075a6016340a79e786))
+* **companion:** stop tool-chip elapsed time from clipping + de-noise names ([31f5f4c](https://github.com/dylanneve1/talon/commit/31f5f4c845f908abbcd9f8158147c752d0447b54))
+* **native:** give the model the user message id so reactions target it ([3cd9ac8](https://github.com/dylanneve1/talon/commit/3cd9ac8f3eaceaedc0358fb2200652c288d8a0b9))
+* **native:** name new chats instantly from the first message ([1004e4c](https://github.com/dylanneve1/talon/commit/1004e4c43dcf0156046ecebdbad8c291213dbbf5))
+
 ## [1.24.5](https://github.com/dylanneve1/talon/compare/v1.24.4...v1.24.5) (2026-06-30)
 
 
