@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.0](https://github.com/dylanneve1/talon/compare/v1.27.1...v1.28.0) (2026-07-01)
+
+
+### Features
+
+* **companion:** minimal, modern UI polish with flutter_animate ([#434](https://github.com/dylanneve1/talon/issues/434)) ([9b9e376](https://github.com/dylanneve1/talon/commit/9b9e3763e2a482d42db38d0b638b3f2b83928a99))
+
 ## [1.27.1](https://github.com/dylanneve1/talon/compare/v1.27.0...v1.27.1) (2026-07-01)
 
 
