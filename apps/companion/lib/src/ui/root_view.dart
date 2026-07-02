@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../state/app_state.dart';
-import '../theme.dart';
 import 'app_shell.dart';
 import 'connect_screen.dart';
 import 'glass.dart';
@@ -14,25 +13,17 @@ class RootView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(gradient: TalonColors.backdrop),
+    return TalonBackdrop(
       child: Material(
         type: MaterialType.transparency,
-        child: Stack(
-          children: [
-            const Positioned.fill(child: AmbientGlow()),
-            Positioned.fill(
-              child: ListenableBuilder(
-                listenable: state,
-                builder: (context, _) {
-                  if (!state.prefs.onboarded) {
-                    return ConnectScreen(state: state, firstRun: true);
-                  }
-                  return AppShell(state: state);
-                },
-              ),
-            ),
-          ],
+        child: ListenableBuilder(
+          listenable: state,
+          builder: (context, _) {
+            if (!state.prefs.onboarded) {
+              return ConnectScreen(state: state, firstRun: true);
+            }
+            return AppShell(state: state);
+          },
         ),
       ),
     );

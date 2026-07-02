@@ -16,6 +16,7 @@ Future<void> main() async {
   TalonTheme.apply(
     WidgetsBinding.instance.platformDispatcher.platformBrightness,
   );
+  TalonTheme.syncSystemChrome();
   final state = AppState(prefs);
   runApp(TalonApp(state: state));
 }
@@ -51,6 +52,7 @@ class _TalonAppState extends State<TalonApp> with WidgetsBindingObserver {
         WidgetsBinding.instance.platformDispatcher.platformBrightness,
       );
     });
+    TalonTheme.syncSystemChrome();
   }
 
   @override

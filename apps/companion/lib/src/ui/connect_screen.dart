@@ -173,13 +173,15 @@ class _ConnectScreenState extends State<ConnectScreen> {
     // SettingsScreen for the same pattern).
     return ValueListenableBuilder<int>(
       valueListenable: TalonTheme.revision,
-      builder: (context, _, __) => Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
+      builder: (context, _, __) => TalonBackdrop(
+        child: Scaffold(
           backgroundColor: Colors.transparent,
-          title: const Text('Settings'),
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            title: const Text('Settings'),
+          ),
+          body: body,
         ),
-        body: body,
       ),
     );
   }

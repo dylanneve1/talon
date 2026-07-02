@@ -52,6 +52,29 @@ class Glass extends StatelessWidget {
   }
 }
 
+/// The themed canvas behind every screen: the palette's backdrop gradient with
+/// the ambient glow on top. RootView paints it once for the main shell; pushed
+/// routes (Settings, Connect) are opaque and render outside that tree, so they
+/// must wrap their transparent Scaffolds in this too — otherwise nothing
+/// paints behind them and the route shows as pitch black in light mode.
+class TalonBackdrop extends StatelessWidget {
+  final Widget child;
+  const TalonBackdrop({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(gradient: TalonColors.backdrop),
+      child: Stack(
+        children: [
+          const Positioned.fill(child: AmbientGlow()),
+          Positioned.fill(child: child),
+        ],
+      ),
+    );
+  }
+}
+
 /// A whisper of radial colour behind the backdrop, giving the near-black canvas
 /// depth without tinting the whole surface. The two blobs drift on a slow,
 /// offset loop so the background feels alive rather than static — the effect is

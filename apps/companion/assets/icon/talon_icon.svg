@@ -1,8 +1,5 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#12132200"/>
-    </linearGradient>
     <linearGradient id="bgFill" x1="160" y1="120" x2="880" y2="920" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#171A2B"/>
       <stop offset="1" stop-color="#0A0B12"/>
@@ -12,32 +9,31 @@
       <stop offset="0.55" stop-color="#6E7EFF"/>
       <stop offset="1" stop-color="#54E6FF"/>
     </linearGradient>
-    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur in="SourceGraphic" stdDeviation="0"/>
-    </filter>
   </defs>
 
   <!-- rounded-square backdrop -->
   <rect x="0" y="0" width="1024" height="1024" rx="230" fill="url(#bgFill)"/>
   <rect x="0.5" y="0.5" width="1023" height="1023" rx="229.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="2"/>
 
-  <!-- minimal falcon in flight: two swept wings + a slim body -->
+  <!-- minimal falcon in flight: broad swept wings, compact head, short tail.
+       This exact path is mirrored in lib/src/ui/brand.dart (BrandMark) so the
+       in-app mark and the launcher icons stay identical — change both together. -->
   <g fill="url(#bird)">
     <path d="
-      M512 300
-      C 505 300 499 305 496 313
-      L 470 470
-      C 372 452 268 452 176 512
-      C 268 520 352 548 420 596
-      L 452 618
-      C 470 630 490 650 500 690
-      C 505 712 508 736 512 764
-      C 516 736 519 712 524 690
-      C 534 650 554 630 572 618
-      L 604 596
-      C 672 548 756 520 848 512
-      C 756 452 652 452 554 470
-      L 528 313
-      C 525 305 519 300 512 300 Z"/>
+      M512 306
+      C 500 306 492 313 489 325
+      L 460 462
+      C 358 438 240 442 142 494
+      C 246 512 340 548 412 602
+      L 446 626
+      C 464 640 484 658 494 690
+      C 500 712 506 732 512 752
+      C 518 732 524 712 530 690
+      C 540 658 560 640 578 626
+      L 612 602
+      C 684 548 778 512 882 494
+      C 784 442 666 438 564 462
+      L 535 325
+      C 532 313 524 306 512 306 Z"/>
   </g>
 </svg>

@@ -6,23 +6,24 @@
       <stop offset="1" stop-color="#54E6FF"/>
     </linearGradient>
   </defs>
-  <!-- transparent background; bird scaled into the adaptive safe zone -->
-  <g fill="url(#bird)" transform="translate(512,512) scale(1.12) translate(-512,-532)">
+  <!-- transparent background; the bird (visual center y=529) recentred and
+       scaled into the adaptive-icon safe zone. Same path as talon_icon.svg. -->
+  <g fill="url(#bird)" transform="translate(512,512) scale(1.10) translate(-512,-529)">
     <path d="
-      M512 300
-      C 505 300 499 305 496 313
-      L 470 470
-      C 372 452 268 452 176 512
-      C 268 520 352 548 420 596
-      L 452 618
-      C 470 630 490 650 500 690
-      C 505 712 508 736 512 764
-      C 516 736 519 712 524 690
-      C 534 650 554 630 572 618
-      L 604 596
-      C 672 548 756 520 848 512
-      C 756 452 652 452 554 470
-      L 528 313
-      C 525 305 519 300 512 300 Z"/>
+      M512 306
+      C 500 306 492 313 489 325
+      L 460 462
+      C 358 438 240 442 142 494
+      C 246 512 340 548 412 602
+      L 446 626
+      C 464 640 484 658 494 690
+      C 500 712 506 732 512 752
+      C 518 732 524 712 530 690
+      C 540 658 560 640 578 626
+      L 612 602
+      C 684 548 778 512 882 494
+      C 784 442 666 438 564 462
+      L 535 325
+      C 532 313 524 306 512 306 Z"/>
   </g>
 </svg>

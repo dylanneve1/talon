@@ -58,9 +58,13 @@ dev_dependencies:
   # with icons-windows.yaml (see .github/workflows/companion.yml).
   flutter_launcher_icons: ^0.14.1
 
-# Minimal Talon bird mark → all launcher icons (no text). Source art lives in
-# assets/icon/ (SVG + rendered 1024px PNGs). Android uses an adaptive icon: the
-# bird foreground on a dark brand background; other platforms use the full mark.
+# Minimal Talon falcon mark → all launcher icons (no text). Source of truth is
+# the SVGs in assets/icon/; scripts/render-icons.py re-renders every committed
+# platform PNG from them (no Flutter needed — run it after icon edits), and
+# lib/src/ui/brand.dart (BrandMark) draws the same geometry in-app. This block
+# stays for parity: `dart run flutter_launcher_icons` produces the same icons
+# from the rendered 1024px PNGs. Android uses an adaptive icon: the bird
+# foreground on a dark brand background; other platforms use the full mark.
 flutter_launcher_icons:
   image_path: "assets/icon/talon_icon.png"
   android: true

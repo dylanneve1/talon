@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// The Talon visual language: a calm canvas with restrained, mostly
 /// monochrome surfaces and a single vivid accent used sparingly. Ships in two
@@ -141,6 +142,27 @@ class TalonTheme {
       _palette = next;
       revision.value++;
     }
+  }
+
+  /// Restyle the OS chrome (Android status/navigation bars, iOS status bar)
+  /// to match the active palette. Without this the bars keep their launch
+  /// style, so switching themes visibly changes nothing outside the Flutter
+  /// viewport — in light mode that means invisible white status icons.
+  /// Separate from [apply] (and called from main.dart after it) because it
+  /// needs a live binding, which pure palette resolution — and its tests —
+  /// shouldn't require.
+  static void syncSystemChrome() {
+    final dark = isDark;
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarBrightness: _palette.brightness, // iOS
+      statusBarIconBrightness:
+          dark ? Brightness.light : Brightness.dark, // Android
+      systemNavigationBarColor: _palette.void0,
+      systemNavigationBarDividerColor: Colors.transparent,
+      systemNavigationBarIconBrightness:
+          dark ? Brightness.light : Brightness.dark,
+    ));
   }
 }
 
@@ -318,6 +340,26 @@ ThemeData buildTalonTheme() {
           titleMedium: const TextStyle(fontWeight: FontWeight.w600),
         ),
     splashFactory: InkSparkle.splashFactory,
+    // Pushed routes (Settings, Connect) use transparent AppBars over the
+    // backdrop gradient. M3's defaults tint them on scroll and let the bar
+    // impose its own system-chrome style — pin both so the bars stay part of
+    // the canvas and the status bar keeps the palette's icon brightness.
+    appBarTheme: base.appBarTheme.copyWith(
+      backgroundColor: Colors.transparent,
+      foregroundColor: TalonColors.text,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      surfaceTintColor: Colors.transparent,
+      titleTextStyle: TalonType.title.copyWith(fontSize: 18),
+      systemOverlayStyle: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarBrightness: dark ? Brightness.dark : Brightness.light,
+        statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: TalonColors.void0,
+        systemNavigationBarIconBrightness:
+            dark ? Brightness.light : Brightness.dark,
+      ),
+    ),
     dividerColor: TalonColors.glassStroke,
     iconTheme: IconThemeData(color: TalonColors.textDim, size: 20),
     tooltipTheme: TooltipThemeData(

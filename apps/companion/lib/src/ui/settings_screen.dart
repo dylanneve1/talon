@@ -83,25 +83,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
     // subscribe to palette changes so toggling Appearance repaints in place.
     return ValueListenableBuilder<int>(
       valueListenable: TalonTheme.revision,
-      builder: (context, _, __) => Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
+      builder: (context, _, __) => TalonBackdrop(
+        child: Scaffold(
           backgroundColor: Colors.transparent,
-          title: const Text('Talon settings'),
-          actions: [
-            IconButton(
-              onPressed: _load,
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Refresh',
-            ),
-          ],
-        ),
-        body: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: _loading ? const _SettingsSkeleton() : _body(),
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            title: const Text('Talon settings'),
+            actions: [
+              IconButton(
+                onPressed: _load,
+                icon: const Icon(Icons.refresh),
+                tooltip: 'Refresh',
+              ),
+            ],
+          ),
+          body: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: _loading ? const _SettingsSkeleton() : _body(),
+              ),
             ),
           ),
         ),
