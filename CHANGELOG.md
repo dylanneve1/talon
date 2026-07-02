@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.3](https://github.com/dylanneve1/talon/compare/v1.29.2...v1.29.3) (2026-07-02)
+
+
+### Bug Fixes
+
+* **publish:** fix nfpm .deb build — ${BIN} not expanded in contents[].src ([#444](https://github.com/dylanneve1/talon/issues/444)) ([12559d8](https://github.com/dylanneve1/talon/commit/12559d8108fd43a5738e3b25fe0432b7d2af4173))
+
 ## [1.29.2](https://github.com/dylanneve1/talon/compare/v1.29.1...v1.29.2) (2026-07-01)
 
 
