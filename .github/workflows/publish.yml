@@ -222,8 +222,14 @@ jobs:
           export VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           # nfpm arch (Debian naming) → the matching linux binary.
+          # nfpm does NOT expand ${VAR} inside contents[].src (only in
+          # top-level scalar fields like arch/version), so copy each
+          # arch's binary to the fixed path nfpm.yaml references instead
+          # of templating src per-arch.
           build_deb() {
-            export ARCH="$1" BIN="$2"
+            export ARCH="$1"
+            cp "$2" dist/talon-bin
+            chmod +x dist/talon-bin
             nfpm package -f nfpm.yaml -p deb -t "dist/talon_${VERSION}_${ARCH}.deb"
           }
           build_deb amd64 bin/talon-linux-x64

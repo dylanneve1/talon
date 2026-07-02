@@ -1,6 +1,11 @@
 # nfpm packaging manifest for the standalone Talon binary (.deb).
-# Built per-arch in the `deb` job of publish.yml; VERSION / ARCH / BIN are
-# supplied via the environment (nfpm expands ${VAR} natively).
+# Built per-arch in the `deb` job of publish.yml; VERSION / ARCH are
+# supplied via the environment (nfpm expands ${VAR} in top-level scalar
+# fields like `arch`/`version` natively). NOTE: nfpm does NOT expand
+# ${VAR} inside `contents[].src` — that field is a literal glob pattern,
+# not a templated string. So the workflow copies each arch's binary to
+# the fixed path below (dist/talon-bin) before invoking nfpm, rather than
+# templating `src` per-arch.
 #
 # Talon is a self-contained `bun build --compile` binary — no Node runtime
 # dependency — so there are no Debian `depends`. Backends (claude, codex,
@@ -18,7 +23,7 @@ vendor: Dylan Neve
 homepage: https://github.com/dylanneve1/talon
 license: MIT
 contents:
-  - src: ${BIN}
+  - src: dist/talon-bin
     dst: /usr/bin/talon
     file_info:
       mode: 0755
