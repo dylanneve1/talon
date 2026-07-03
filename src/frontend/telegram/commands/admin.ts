@@ -25,7 +25,7 @@ import { collectDoctorReport } from "../../../core/doctor.js";
 import { handleAdminCommand } from "../admin.js";
 import { getMetrics } from "../../../util/metrics.js";
 import { isAuthorizedAdmin, type RegisterDeps } from "./state.js";
-import { TELEGRAM_COMMANDS } from "./definitions.js";
+import { telegramCommandMenu } from "./definitions.js";
 
 export function registerAdminCommands(
   bot: Bot,
@@ -207,7 +207,7 @@ export function registerAdminCommands(
   // only reaches this when nothing above matched. Only bare commands
   // are intercepted — a close miss gets a suggestion, anything else
   // keeps flowing to the agent as a normal message.
-  const commandNames = TELEGRAM_COMMANDS.map((c) => c.command);
+  const commandNames = telegramCommandMenu(config).map((c) => c.command);
   bot.on("message::bot_command", async (ctx, next) => {
     const typed = /^\/([a-zA-Z0-9_]+)(?:@(\w+))?\s*$/.exec(ctx.msg.text ?? "");
     if (!typed) return next();

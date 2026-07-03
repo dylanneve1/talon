@@ -23,7 +23,7 @@ import { registerSessionCommands } from "./session.js";
 import { registerSettingsCommands } from "./settings.js";
 import { registerAdminCommands } from "./admin.js";
 
-export { TELEGRAM_COMMANDS } from "./definitions.js";
+export { TELEGRAM_COMMANDS, telegramCommandMenu } from "./definitions.js";
 export { setAdminUserId } from "./state.js";
 
 export function registerCommands(

@@ -18,7 +18,7 @@ import { initUserClient, disconnectUserClient } from "./userbot.js";
 import {
   registerCommands,
   setAdminUserId,
-  TELEGRAM_COMMANDS,
+  telegramCommandMenu,
 } from "./commands/index.js";
 import { setAccessControl } from "./handlers/index.js";
 import { registerMiddleware } from "./middleware.js";
@@ -89,7 +89,7 @@ export function createTelegramFrontend(
       registerCallbacks(bot, config, gateway);
 
       await bot.api.deleteMyCommands();
-      await bot.api.setMyCommands([...TELEGRAM_COMMANDS]);
+      await bot.api.setMyCommands(telegramCommandMenu(config));
       log("commands", "Registered bot commands with Telegram");
 
       const apiId = config.apiId ?? 0;
