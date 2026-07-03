@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
+    # 0.3.198–0.3.200 ship a broken sdk.d.ts: SDKMessage references
+    # undeclared union members, collapsing the type to `any` and failing
+    # `tsc --noEmit`. Drop this once a fixed release is out.
+    ignore:
+      - dependency-name: "@anthropic-ai/claude-agent-sdk"
+        versions: ["0.3.198 - 0.3.200"]
     reviewers:
       - "dylanneve1"
     labels:
