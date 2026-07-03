@@ -1,20 +1,24 @@
 /**
  * Centralized path resolution for all Talon directories and files.
  *
- * Location: ~/.talon/ (cross-platform: Linux, macOS, Windows)
+ * Location: ~/.talon/ (cross-platform: Linux, macOS, Windows),
+ * relocatable via TALON_HOME.
  *
  * Layout:
  *   ~/.talon/
  *     config.json              Main configuration
- *     data/                    Internal state (sessions, history, settings, cron, media)
- *       sessions.json
- *       history.json
- *       chat-settings.json
- *       cron.json
- *       media-index.json
+ *     data/                    Internal state
+ *       talon.db               SQLite — all structured state (sessions,
+ *                              history, settings, media, goals, scripts,
+ *                              cron, triggers, turn meta, kv)
+ *       *.json[.imported]      Legacy JSON stores, renamed after import
+ *       traces/                Per-chat message traces (JSONL)
+ *       trigger-runs/          Trigger script bodies + run logs
  *     workspace/               User-facing workspace (memory, uploads, logs)
  *       memory/
  *         daily/               Per-day memory notes (YYYY-MM-DD.md)
+ *       scripts/               Agent script bodies
+ *       skills/                Skill folders (SKILL.md + resources)
  *       uploads/
  *       stickers/
  *       logs/
@@ -25,8 +29,14 @@
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 
-/** Root of the Talon data directory: ~/.talon/ */
-const TALON_ROOT = resolve(homedir(), ".talon");
+/**
+ * Root of the Talon data directory: ~/.talon/, relocatable via the
+ * TALON_HOME environment variable (containers, systemd units, tests).
+ * Resolved once at import time — a mid-process override does nothing.
+ */
+const TALON_ROOT = resolve(
+  process.env.TALON_HOME || resolve(homedir(), ".talon"),
+);
 
 // ── Directories ────────────────────────────────────────────────────────────
 
@@ -55,6 +65,10 @@ export const dirs = {
   palace: resolve(TALON_ROOT, "workspace", "palace"),
   /** Trigger scripts and run logs: ~/.talon/data/trigger-runs/ */
   triggerRuns: resolve(TALON_ROOT, "data", "trigger-runs"),
+  /** Agent script bodies: ~/.talon/workspace/scripts/ */
+  scripts: resolve(TALON_ROOT, "workspace", "scripts"),
+  /** Skill folders: ~/.talon/workspace/skills/ */
+  skills: resolve(TALON_ROOT, "workspace", "skills"),
 } as const;
 
 // ── Files ──────────────────────────────────────────────────────────────────
@@ -72,10 +86,14 @@ export const files = {
   history: resolve(TALON_ROOT, "data", "history.json"),
   /** Legacy JSON per-chat settings (imported into talon.db on first boot) */
   chatSettings: resolve(TALON_ROOT, "data", "chat-settings.json"),
-  /** Cron jobs: ~/.talon/data/cron.json */
+  /** Legacy JSON cron jobs (imported into talon.db on first boot) */
   cron: resolve(TALON_ROOT, "data", "cron.json"),
-  /** Triggers metadata: ~/.talon/data/triggers.json */
+  /** Legacy JSON triggers metadata (imported into talon.db on first boot) */
   triggers: resolve(TALON_ROOT, "data", "triggers.json"),
+  /** Legacy JSON native turn meta (imported into talon.db on first boot) */
+  nativeTurnMeta: resolve(TALON_ROOT, "data", "native-turn-meta.json"),
+  /** Soul kernel state: ~/.talon/data/soul.json (overridable via config.soul.path) */
+  soul: resolve(TALON_ROOT, "data", "soul.json"),
   /** Legacy JSON media index (imported into talon.db on first boot) */
   mediaIndex: resolve(TALON_ROOT, "data", "media-index.json"),
   /** Persistent memory: ~/.talon/workspace/memory/memory.md */
@@ -95,9 +113,9 @@ export const files = {
     process.platform === "win32" ? "Scripts" : "bin",
     process.platform === "win32" ? "python.exe" : "python",
   ),
-  /** Dream mode state: ~/.talon/workspace/memory/dream_state.json */
+  /** Legacy dream state JSON (imported into the talon.db kv store on first read) */
   dreamState: resolve(TALON_ROOT, "workspace", "memory", "dream_state.json"),
-  /** Heartbeat state: ~/.talon/workspace/memory/heartbeat_state.json */
+  /** Legacy heartbeat state JSON (imported into the talon.db kv store on first read) */
   heartbeatState: resolve(
     TALON_ROOT,
     "workspace",
@@ -105,17 +123,9 @@ export const files = {
     "heartbeat_state.json",
   ),
   /**
-   * Runtime-learned Codex OAuth-incompat model store:
-   *   ~/.talon/data/codex-oauth-incompat.json
-   *
-   * Persists model ids that have been observed failing on the current
-   * Codex ChatGPT-OAuth credential. Codex's `~/.codex/models_cache.json`
-   * advertises `supported_in_api: true` for models the CLI actually
-   * rejects on OAuth (e.g. `gpt-5.4-mini`, `gpt-5.4`, `gpt-5.3-codex`,
-   * `gpt-5.2`), so we maintain our own corrective list keyed by auth
-   * fingerprint. Used by the pre-emptive swap, the recovery ladder, and
-   * the picker filter. Reset automatically when the auth fingerprint
-   * changes (different OAuth account / switched to api-key).
+   * Legacy Codex OAuth-incompat model store (imported into the
+   * talon.db kv store on first read) — see backend/codex/oauth-incompat.ts
+   * for what the data means.
    */
   codexOauthIncompat: resolve(TALON_ROOT, "data", "codex-oauth-incompat.json"),
 } as const;

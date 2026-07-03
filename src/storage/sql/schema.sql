@@ -145,3 +145,89 @@ CREATE TABLE IF NOT EXISTS scripts (
   use_count    INTEGER NOT NULL DEFAULT 0,
   last_used_at INTEGER
 );
+
+-- Cron jobs: scheduled messages/queries per chat. Typed columns for
+-- every field — the scheduler scans all jobs each tick and the
+-- frontends list per chat, so rows must be cheap to read whole. A job
+-- carries EITHER schedule (cron expression) OR every_ms (fixed
+-- interval), never both — enforced by the store validator, not DDL,
+-- so a legacy import can surface the row for repair instead of
+-- silently dropping it.
+CREATE TABLE IF NOT EXISTS cron_jobs (
+  id               TEXT    PRIMARY KEY,
+  chat_id          TEXT    NOT NULL,
+  name             TEXT    NOT NULL,
+  type             TEXT    NOT NULL,
+  content          TEXT    NOT NULL,
+  enabled          INTEGER NOT NULL DEFAULT 1,
+  schedule         TEXT,
+  every_ms         INTEGER,
+  timezone         TEXT,
+  model            TEXT,
+  provider         TEXT,
+  instructions     TEXT,
+  start_at         INTEGER,
+  end_at           INTEGER,
+  max_runs         INTEGER,
+  catchup          TEXT,
+  created_at       INTEGER NOT NULL,
+  last_run_at      INTEGER,
+  run_count        INTEGER NOT NULL DEFAULT 0,
+  last_status      TEXT,
+  last_error       TEXT,
+  last_duration_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_cron_chat ON cron_jobs(chat_id);
+
+-- Triggers: bot-authored watch scripts running as supervised
+-- subprocesses. Script bodies + run logs stay on disk under
+-- data/trigger-runs/ (same metadata/body split as scripts); this table
+-- is the supervision state. Restart recovery flips interrupted rows in
+-- place (see triggers-repo.ts), so status is a hot filter per chat.
+CREATE TABLE IF NOT EXISTS triggers (
+  id                TEXT    PRIMARY KEY,
+  chat_id           TEXT    NOT NULL,
+  numeric_chat_id   INTEGER NOT NULL,
+  name              TEXT    NOT NULL,
+  language          TEXT    NOT NULL,
+  script_path       TEXT    NOT NULL,
+  log_path          TEXT    NOT NULL,
+  description       TEXT,
+  status            TEXT    NOT NULL,
+  created_at        INTEGER NOT NULL,
+  started_at        INTEGER,
+  ended_at          INTEGER,
+  pid               INTEGER,
+  pid_starttime     INTEGER,
+  timeout_seconds   INTEGER NOT NULL,
+  exit_code         INTEGER,
+  fire_count        INTEGER NOT NULL DEFAULT 0,
+  last_fire_at      INTEGER,
+  last_fire_payload TEXT,
+  last_error        TEXT,
+  persistent        INTEGER NOT NULL DEFAULT 0,
+  model             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_triggers_chat ON triggers(chat_id, status);
+
+-- Small singleton state (heartbeat/dream run state, learned model
+-- incompatibilities): namespaced key → JSON document. The shapes are
+-- tiny, unqueried, and owned by their modules — a typed table per
+-- blob would be schema churn for nothing. See storage/kv.ts.
+CREATE TABLE IF NOT EXISTS kv (
+  key        TEXT    PRIMARY KEY,
+  value      TEXT    NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Native-frontend turn metadata (tool calls, duration, token usage)
+-- keyed by chat + message id, so the companion app's tool timeline
+-- survives a history reload or daemon restart. Presentation metadata
+-- with a per-chat retention window — one JSON document per turn, same
+-- rationale as chat_settings.
+CREATE TABLE IF NOT EXISTS turn_meta (
+  chat_id TEXT NOT NULL,
+  msg_id  TEXT NOT NULL,
+  meta    TEXT NOT NULL,
+  PRIMARY KEY (chat_id, msg_id)
+);

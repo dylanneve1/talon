@@ -155,6 +155,21 @@ export function inTransaction<T>(fn: () => T): T {
   }
 }
 
+/**
+ * Compact the WAL into the main database file. SQLite commits on
+ * every write, so there is no dirty buffer to flush — the shutdown
+ * and fatal-error paths call this once for the whole database
+ * (replacing the per-store flush functions of the JSON era).
+ */
+export function flushDatabase(): void {
+  if (!db) return;
+  try {
+    db.prepare(dbSql.walCheckpoint).run();
+  } catch {
+    /* shutting down — best effort */
+  }
+}
+
 export function closeDatabase(): void {
   if (!db) return;
   try {

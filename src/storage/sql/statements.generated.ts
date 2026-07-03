@@ -149,12 +149,124 @@ CREATE TABLE IF NOT EXISTS scripts (
   updated_at   INTEGER NOT NULL,
   use_count    INTEGER NOT NULL DEFAULT 0,
   last_used_at INTEGER
+);
+
+-- Cron jobs: scheduled messages/queries per chat. Typed columns for
+-- every field — the scheduler scans all jobs each tick and the
+-- frontends list per chat, so rows must be cheap to read whole. A job
+-- carries EITHER schedule (cron expression) OR every_ms (fixed
+-- interval), never both — enforced by the store validator, not DDL,
+-- so a legacy import can surface the row for repair instead of
+-- silently dropping it.
+CREATE TABLE IF NOT EXISTS cron_jobs (
+  id               TEXT    PRIMARY KEY,
+  chat_id          TEXT    NOT NULL,
+  name             TEXT    NOT NULL,
+  type             TEXT    NOT NULL,
+  content          TEXT    NOT NULL,
+  enabled          INTEGER NOT NULL DEFAULT 1,
+  schedule         TEXT,
+  every_ms         INTEGER,
+  timezone         TEXT,
+  model            TEXT,
+  provider         TEXT,
+  instructions     TEXT,
+  start_at         INTEGER,
+  end_at           INTEGER,
+  max_runs         INTEGER,
+  catchup          TEXT,
+  created_at       INTEGER NOT NULL,
+  last_run_at      INTEGER,
+  run_count        INTEGER NOT NULL DEFAULT 0,
+  last_status      TEXT,
+  last_error       TEXT,
+  last_duration_ms INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_cron_chat ON cron_jobs(chat_id);
+
+-- Triggers: bot-authored watch scripts running as supervised
+-- subprocesses. Script bodies + run logs stay on disk under
+-- data/trigger-runs/ (same metadata/body split as scripts); this table
+-- is the supervision state. Restart recovery flips interrupted rows in
+-- place (see triggers-repo.ts), so status is a hot filter per chat.
+CREATE TABLE IF NOT EXISTS triggers (
+  id                TEXT    PRIMARY KEY,
+  chat_id           TEXT    NOT NULL,
+  numeric_chat_id   INTEGER NOT NULL,
+  name              TEXT    NOT NULL,
+  language          TEXT    NOT NULL,
+  script_path       TEXT    NOT NULL,
+  log_path          TEXT    NOT NULL,
+  description       TEXT,
+  status            TEXT    NOT NULL,
+  created_at        INTEGER NOT NULL,
+  started_at        INTEGER,
+  ended_at          INTEGER,
+  pid               INTEGER,
+  pid_starttime     INTEGER,
+  timeout_seconds   INTEGER NOT NULL,
+  exit_code         INTEGER,
+  fire_count        INTEGER NOT NULL DEFAULT 0,
+  last_fire_at      INTEGER,
+  last_fire_payload TEXT,
+  last_error        TEXT,
+  persistent        INTEGER NOT NULL DEFAULT 0,
+  model             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_triggers_chat ON triggers(chat_id, status);
+
+-- Small singleton state (heartbeat/dream run state, learned model
+-- incompatibilities): namespaced key → JSON document. The shapes are
+-- tiny, unqueried, and owned by their modules — a typed table per
+-- blob would be schema churn for nothing. See storage/kv.ts.
+CREATE TABLE IF NOT EXISTS kv (
+  key        TEXT    PRIMARY KEY,
+  value      TEXT    NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- Native-frontend turn metadata (tool calls, duration, token usage)
+-- keyed by chat + message id, so the companion app's tool timeline
+-- survives a history reload or daemon restart. Presentation metadata
+-- with a per-chat retention window — one JSON document per turn, same
+-- rationale as chat_settings.
+CREATE TABLE IF NOT EXISTS turn_meta (
+  chat_id TEXT NOT NULL,
+  msg_id  TEXT NOT NULL,
+  meta    TEXT NOT NULL,
+  PRIMARY KEY (chat_id, msg_id)
 );`;
 
 export const chatSettingsSql = {
   upsert: `INSERT OR REPLACE INTO chat_settings (chat_id, settings) VALUES (?, ?)`,
   all: `SELECT chat_id, settings FROM chat_settings`,
   remove: `DELETE FROM chat_settings WHERE chat_id = ?`,
+} as const;
+
+export const cronSql = {
+  upsert: `INSERT OR REPLACE INTO cron_jobs
+  (id, chat_id, name, type, content, enabled, schedule, every_ms,
+   timezone, model, provider, instructions, start_at, end_at, max_runs,
+   catchup, created_at, last_run_at, run_count, last_status, last_error,
+   last_duration_ms)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  get: `SELECT id, chat_id, name, type, content, enabled, schedule, every_ms,
+       timezone, model, provider, instructions, start_at, end_at, max_runs,
+       catchup, created_at, last_run_at, run_count, last_status, last_error,
+       last_duration_ms
+FROM cron_jobs WHERE id = ?`,
+  listByChat: `SELECT id, chat_id, name, type, content, enabled, schedule, every_ms,
+       timezone, model, provider, instructions, start_at, end_at, max_runs,
+       catchup, created_at, last_run_at, run_count, last_status, last_error,
+       last_duration_ms
+FROM cron_jobs WHERE chat_id = ? ORDER BY created_at`,
+  listAll: `SELECT id, chat_id, name, type, content, enabled, schedule, every_ms,
+       timezone, model, provider, instructions, start_at, end_at, max_runs,
+       catchup, created_at, last_run_at, run_count, last_status, last_error,
+       last_duration_ms
+FROM cron_jobs ORDER BY created_at`,
+  remove: `DELETE FROM cron_jobs WHERE id = ?`,
+  count: `SELECT COUNT(*) AS n FROM cron_jobs`,
 } as const;
 
 export const dbSql = {
@@ -250,6 +362,13 @@ FROM history_messages WHERE chat_id = ?`,
   distinctChatCount: `SELECT COUNT(DISTINCT chat_id) AS chats FROM history_messages`,
 } as const;
 
+export const kvSql = {
+  get: `SELECT value FROM kv WHERE key = ?`,
+  set: `INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+  remove: `DELETE FROM kv WHERE key = ?`,
+} as const;
+
 export const mediaIndexSql = {
   upsert: `INSERT OR REPLACE INTO media_index
   (chat_id, msg_id, sender_name, type, file_path, caption, timestamp, content_hash)
@@ -309,4 +428,69 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
        last_response_ms, fastest_response_ms
 FROM sessions`,
   remove: `DELETE FROM sessions WHERE chat_id = ?`,
+} as const;
+
+export const triggersSql = {
+  upsert: `INSERT OR REPLACE INTO triggers
+  (id, chat_id, numeric_chat_id, name, language, script_path, log_path,
+   description, status, created_at, started_at, ended_at, pid,
+   pid_starttime, timeout_seconds, exit_code, fire_count, last_fire_at,
+   last_fire_payload, last_error, persistent, model)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  get: `SELECT id, chat_id, numeric_chat_id, name, language, script_path, log_path,
+       description, status, created_at, started_at, ended_at, pid,
+       pid_starttime, timeout_seconds, exit_code, fire_count, last_fire_at,
+       last_fire_payload, last_error, persistent, model
+FROM triggers WHERE id = ?`,
+  getByName: `SELECT id, chat_id, numeric_chat_id, name, language, script_path, log_path,
+       description, status, created_at, started_at, ended_at, pid,
+       pid_starttime, timeout_seconds, exit_code, fire_count, last_fire_at,
+       last_fire_payload, last_error, persistent, model
+FROM triggers WHERE chat_id = ? AND name = ? LIMIT 1`,
+  listByChat: `SELECT id, chat_id, numeric_chat_id, name, language, script_path, log_path,
+       description, status, created_at, started_at, ended_at, pid,
+       pid_starttime, timeout_seconds, exit_code, fire_count, last_fire_at,
+       last_fire_payload, last_error, persistent, model
+FROM triggers WHERE chat_id = ? ORDER BY created_at`,
+  listAll: `SELECT id, chat_id, numeric_chat_id, name, language, script_path, log_path,
+       description, status, created_at, started_at, ended_at, pid,
+       pid_starttime, timeout_seconds, exit_code, fire_count, last_fire_at,
+       last_fire_payload, last_error, persistent, model
+FROM triggers ORDER BY created_at`,
+  remove: `DELETE FROM triggers WHERE id = ?
+
+-- Restart recovery (see loadTriggers): a non-persistent trigger that was
+-- alive when the previous process died is dead now — mark it terminated
+-- so the bot gets a wake fire about what happened. COALESCE keeps any
+-- endedAt/lastError a clean shutdown already recorded.`,
+  terminateInterrupted: `UPDATE triggers
+SET status = 'terminated',
+    pid = NULL,
+    ended_at = COALESCE(ended_at, ?),
+    last_error = COALESCE(last_error, 'Talon restarted while trigger was running')
+WHERE status IN ('running', 'pending') AND persistent = 0
+
+-- Persistent triggers park in 'pending' with their pid preserved so
+-- resumeAfterRestart can probe for a surviving orphan before respawning.`,
+  parkInterruptedPersistent: `UPDATE triggers
+SET status = 'pending'
+WHERE status IN ('running', 'pending') AND persistent = 1`,
+} as const;
+
+export const turnMetaSql = {
+  get: `SELECT meta FROM turn_meta WHERE chat_id = ? AND msg_id = ?`,
+  upsert: `INSERT OR REPLACE INTO turn_meta (chat_id, msg_id, meta) VALUES (?, ?, ?)`,
+  removeChat: `DELETE FROM turn_meta WHERE chat_id = ?
+
+-- Retention: keep only the newest N turns per chat, matching the
+-- /history page ceiling. Message ids are numeric-ascending per chat,
+-- compared as integers.`,
+  prune: `DELETE FROM turn_meta
+WHERE chat_id = ?1
+  AND msg_id NOT IN (
+    SELECT msg_id FROM turn_meta
+    WHERE chat_id = ?1
+    ORDER BY CAST(msg_id AS INTEGER) DESC
+    LIMIT ?2
+  )`,
 } as const;
