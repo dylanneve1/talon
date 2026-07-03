@@ -170,7 +170,9 @@ describe("cron-store", () => {
     it("clears a field when an update sets it to undefined", () => {
       // Merge semantics: a key present with value undefined drops the column
       // (callers rely on this to clear e.g. a timezone).
-      addCronJob(makeCronJob({ id: "update-clear", timezone: "Europe/London" }));
+      addCronJob(
+        makeCronJob({ id: "update-clear", timezone: "Europe/London" }),
+      );
       const updated = updateCronJob("update-clear", { timezone: undefined });
       expect(updated!.timezone).toBeUndefined();
       expect(getCronJob("update-clear")!.timezone).toBeUndefined();

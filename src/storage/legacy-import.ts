@@ -11,7 +11,6 @@
  */
 
 import { existsSync, readFileSync, renameSync } from "node:fs";
-import { basename } from "node:path";
 import { log, logError, type LogComponent } from "../util/log.js";
 
 export function importLegacyJson(options: {
@@ -38,10 +37,10 @@ export function importLegacyJson(options: {
         : raw;
     const imported = ingest(data);
     renameSync(path, `${path}.imported`);
-    log(
-      category,
-      `Imported ${imported} ${what} from legacy ${basename(path)} into SQLite`,
-    );
+    // The store is named via `category`/`what` only — interpolating the
+    // path here trips CodeQL's clear-text-logging heuristics for stores
+    // whose filename resembles a credential (codex-oauth-incompat.json).
+    log(category, `Imported ${imported} ${what} from legacy JSON into SQLite`);
   } catch (err) {
     logError(category, `Legacy ${what} import failed`, err);
   }

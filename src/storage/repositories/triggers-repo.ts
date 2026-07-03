@@ -96,16 +96,13 @@ export function upsert(t: Trigger): void {
 }
 
 export function get(id: string): Trigger | undefined {
-  const row = getDatabase().prepare(triggersSql.get).get(id) as
-    | Row
-    | undefined;
+  const row = getDatabase().prepare(triggersSql.get).get(id) as Row | undefined;
   return row ? rowToTrigger(row) : undefined;
 }
 
 export function getByName(chatId: string, name: string): Trigger | undefined {
   const row = getDatabase().prepare(triggersSql.getByName).get(chatId, name) as
-    | Row
-    | undefined;
+    Row | undefined;
   return row ? rowToTrigger(row) : undefined;
 }
 

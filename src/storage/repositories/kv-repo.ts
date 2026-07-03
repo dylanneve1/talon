@@ -9,8 +9,7 @@ import { kvSql } from "../sql/statements.generated.js";
 
 export function get(key: string): string | undefined {
   const row = getDatabase().prepare(kvSql.get).get(key) as
-    | { value: string }
-    | undefined;
+    { value: string } | undefined;
   return row?.value;
 }
 

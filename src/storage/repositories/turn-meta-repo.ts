@@ -12,8 +12,7 @@ import { turnMetaSql } from "../sql/statements.generated.js";
 /** Raw meta JSON for one message, or undefined if none is stored. */
 export function get(chatId: string, msgId: string): string | undefined {
   const row = getDatabase().prepare(turnMetaSql.get).get(chatId, msgId) as
-    | { meta: string }
-    | undefined;
+    { meta: string } | undefined;
   return row?.meta;
 }
 

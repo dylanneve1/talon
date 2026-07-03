@@ -97,7 +97,8 @@ afterEach(() => {
   closeDatabase();
   if (envBackup === undefined) delete process.env.TALON_DB_PATH;
   else process.env.TALON_DB_PATH = envBackup;
-  if (importBackup === undefined) delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+  if (importBackup === undefined)
+    delete process.env.TALON_DISABLE_LEGACY_IMPORT;
   else process.env.TALON_DISABLE_LEGACY_IMPORT = importBackup;
   rmSync(workDir, { recursive: true, force: true });
 });
