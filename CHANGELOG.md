@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.29.4](https://github.com/dylanneve1/talon/compare/v1.29.3...v1.29.4) (2026-07-03)
+
+
+### Bug Fixes
+
+* **companion:** one falcon mark everywhere, rework icon proportions, fix light-mode + Android theming ([#446](https://github.com/dylanneve1/talon/issues/446)) ([a6b49c5](https://github.com/dylanneve1/talon/commit/a6b49c5b7ec6191718b07293f677d600e4237f68))
+
 ## [1.29.3](https://github.com/dylanneve1/talon/compare/v1.29.2...v1.29.3) (2026-07-02)
 
 
