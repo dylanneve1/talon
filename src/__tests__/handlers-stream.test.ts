@@ -66,7 +66,6 @@ vi.mock("../storage/sessions.js", () => ({
   setSessionName: vi.fn(),
   getAllSessions: vi.fn(() => []),
   loadSessions: vi.fn(),
-  flushSessions: vi.fn(),
 }));
 
 vi.mock("../util/watchdog.js", () => ({

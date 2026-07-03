@@ -13,7 +13,7 @@
  */
 
 import { getDatabase, inTransaction } from "../db.js";
-import { dbSql, mediaIndexSql } from "../sql/statements.generated.js";
+import { mediaIndexSql } from "../sql/statements.generated.js";
 import type { MediaEntry } from "../media-index.js";
 
 type Row = {
@@ -144,9 +144,4 @@ export function deleteOlderThan(cutoff: number): number {
     changes: number | bigint;
   };
   return Number(result.changes);
-}
-
-/** WAL → main-file compaction; used on shutdown. */
-export function checkpoint(): void {
-  getDatabase().exec(dbSql.walCheckpoint);
 }

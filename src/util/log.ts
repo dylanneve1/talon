@@ -25,6 +25,7 @@ export type LogComponent =
   | "bridge"
   | "db"
   | "kv"
+  | "media"
   | "agent"
   | "pulse"
   | "userbot"

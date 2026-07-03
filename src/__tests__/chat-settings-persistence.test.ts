@@ -43,7 +43,6 @@ vi.mock("../util/paths.js", async () => {
 import { getDatabase, closeDatabase } from "../storage/db.js";
 import {
   loadChatSettings,
-  flushChatSettings,
   getChatSettings,
   getAllChatSettings,
   setChatModel,
@@ -84,7 +83,6 @@ describe("chat-settings persistence", () => {
     setChatModelForBackend("persist-chat", "codex", "gpt-5.5");
     setChatEffort("persist-chat", "high");
     setChatPulse("persist-chat", true);
-    flushChatSettings();
 
     reopen();
 

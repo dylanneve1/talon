@@ -42,7 +42,6 @@ vi.mock("../util/paths.js", async () => {
 import { getDatabase, closeDatabase } from "../storage/db.js";
 import {
   loadHistory,
-  flushHistory,
   pushMessage,
   getRecentHistory,
   searchHistory,
@@ -79,7 +78,6 @@ describe("history persistence", () => {
   it("messages survive a close/reopen cycle", () => {
     pushMessage("persist-chat", makeMsg(1));
     pushMessage("persist-chat", makeMsg(2));
-    flushHistory();
 
     closeDatabase();
     getDatabase(join(workDir, "talon.db"));

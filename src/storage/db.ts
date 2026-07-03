@@ -164,7 +164,7 @@ export function inTransaction<T>(fn: () => T): T {
 export function flushDatabase(): void {
   if (!db) return;
   try {
-    db.prepare(dbSql.walCheckpoint).run();
+    db.exec(dbSql.walCheckpoint);
   } catch {
     /* shutting down — best effort */
   }

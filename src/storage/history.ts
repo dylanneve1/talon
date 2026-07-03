@@ -18,11 +18,12 @@
  * history.json.imported.
  */
 
-import { existsSync, readFileSync, renameSync } from "node:fs";
 import { ftsQuote } from "../native/sqlguard.js";
 import { log, logError } from "../util/log.js";
+import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
 import { formatSmartTimestamp, formatRelativeAge } from "../util/time.js";
+import { importLegacyJson } from "./legacy-import.js";
 import * as repo from "./repositories/history-repo.js";
 
 export type HistoryMessage = {
@@ -47,7 +48,7 @@ export type HistoryMessage = {
  */
 export function loadHistory(): void {
   try {
-    importLegacyJson();
+    importLegacyHistory();
     const chats = repo.distinctChatCount();
     if (chats > 0) log("history", `History ready (${chats} chat(s))`);
   } catch (err) {
@@ -55,56 +56,27 @@ export function loadHistory(): void {
   }
 }
 
-/**
- * Legacy JsonStore envelope ({schemaVersion, savedAt, data}) or the
- * even older bare Record<chatId, HistoryMessage[]> shape.
- */
-function importLegacyJson(): void {
-  // Test isolation: suites that don't mock HOME would otherwise rename
-  // the user's REAL legacy JSON during import (observed live). The
-  // vitest setup sets this; import-testing suites unset it locally.
-  if (process.env.TALON_DISABLE_LEGACY_IMPORT === "1") return;
-  const legacyPath = files.history;
-  if (!existsSync(legacyPath)) return;
-  try {
-    const raw = JSON.parse(readFileSync(legacyPath, "utf-8")) as Record<
-      string,
-      unknown
-    >;
-    const data = (
-      raw && typeof raw === "object" && "data" in raw ? raw.data : raw
-    ) as Record<string, HistoryMessage[]>;
-
-    const entries: Array<{ chatId: string; msg: HistoryMessage }> = [];
-    for (const [chatId, messages] of Object.entries(data ?? {})) {
-      if (!Array.isArray(messages)) continue;
-      for (const msg of messages) {
-        if (typeof msg?.msgId !== "number" || typeof msg?.text !== "string")
-          continue;
-        entries.push({ chatId, msg });
+/** Legacy shape: Record<chatId, HistoryMessage[]>. */
+function importLegacyHistory(): void {
+  importLegacyJson({
+    path: files.history,
+    category: "history",
+    what: "message(s)",
+    ingest: (data) => {
+      const entries: Array<{ chatId: string; msg: HistoryMessage }> = [];
+      for (const [chatId, messages] of Object.entries(
+        (data ?? {}) as Record<string, HistoryMessage[]>,
+      )) {
+        if (!Array.isArray(messages)) continue;
+        for (const msg of messages) {
+          if (typeof msg?.msgId !== "number" || typeof msg?.text !== "string")
+            continue;
+          entries.push({ chatId, msg });
+        }
       }
-    }
-    const imported = repo.insertMany(entries);
-    renameSync(legacyPath, `${legacyPath}.imported`);
-    log(
-      "history",
-      `Imported ${imported} message(s) from legacy history.json into SQLite`,
-    );
-  } catch (err) {
-    logError("history", "Legacy history import failed", err);
-  }
-}
-
-/**
- * SQLite commits on every write — there is no dirty buffer to flush.
- * Kept for the shutdown path: compacts the WAL into the main file.
- */
-export function flushHistory(): void {
-  try {
-    repo.checkpoint();
-  } catch {
-    /* shutting down — best effort */
-  }
+      return repo.insertMany(entries);
+    },
+  });
 }
 
 // ── Core operations ─────────────────────────────────────────────────────────
@@ -114,6 +86,9 @@ export function pushMessage(chatId: string, msg: HistoryMessage): void {
     repo.insert(chatId, msg);
   } catch (err) {
     logError("history", "Failed to persist message", err);
+    recordError(
+      `History write failed: ${err instanceof Error ? err.message : err}`,
+    );
   }
 }
 

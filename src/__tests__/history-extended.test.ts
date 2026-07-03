@@ -68,7 +68,6 @@ const {
   setMessageFilePath,
   getLatestMessageId,
   loadHistory,
-  flushHistory,
 } = await import("../storage/history.js");
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -115,18 +114,6 @@ describe("pushMessage — retention across many chats", () => {
     }
     // 1001 row commits: Windows CI disks need more than the 15s default.
   }, 60_000);
-
-  it("flushHistory checkpoints without touching the legacy JSON writer", () => {
-    const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 1 }));
-
-    writeFileAtomicSyncMock.mockClear();
-    existsSyncMock.mockReturnValue(false);
-    expect(() => flushHistory()).not.toThrow();
-    expect(writeFileAtomicSyncMock).not.toHaveBeenCalled();
-    // Data survives the checkpoint.
-    expect(getRecentHistory(id)).toHaveLength(1);
-  });
 });
 
 // ── getHistoryStats ────────────────────────────────────────────────────────
@@ -449,12 +436,11 @@ describe("clearHistory", () => {
     expect(getRecentHistory(id)).toEqual([]);
   });
 
-  it("removal is durable across a flush", () => {
+  it("removal is durable (SQLite commits per write, no flush needed)", () => {
     const id = uniqueChat();
     pushMessage(id, makeMsg({ msgId: 1 }));
     clearHistory(id);
 
-    flushHistory();
     expect(getRecentHistory(id)).toEqual([]);
   });
 
@@ -602,23 +588,6 @@ describe("loadHistory — persistence", () => {
   });
 });
 
-// ── flushHistory ──────────────────────────────────────────────────────────
-
-describe("flushHistory", () => {
-  it("checkpoints without throwing and keeps data readable", () => {
-    const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 1 }));
-
-    expect(() => flushHistory()).not.toThrow();
-    expect(getRecentHistory(id)).toHaveLength(1);
-  });
-
-  it("never goes through the legacy JSON writer", () => {
-    const id = uniqueChat();
-    pushMessage(id, makeMsg({ msgId: 1 }));
-
-    writeFileAtomicSyncMock.mockClear();
-    flushHistory();
-    expect(writeFileAtomicSyncMock).not.toHaveBeenCalled();
-  });
-});
+// flushHistory was removed with the per-store JSON flush timers — SQLite
+// commits on every write now, and the single WAL checkpoint lives in
+// storage/db.ts's flushDatabase().

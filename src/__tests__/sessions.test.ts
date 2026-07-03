@@ -20,7 +20,7 @@ vi.mock("node:fs", () => ({
   unlinkSync: vi.fn(),
 }));
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 // We need to import these functions after mocks are set up
 const {
@@ -36,7 +36,6 @@ const {
   setSessionName,
   getAllSessions,
   loadSessions,
-  flushSessions,
 } = await import("../storage/sessions.js");
 
 describe("sessions", () => {
@@ -524,15 +523,9 @@ describe("sessions", () => {
     });
   });
 
-  describe("flushSessions", () => {
-    it("checkpoints without any JSON writes", () => {
-      // SQLite commits per write — flush is a best-effort WAL
-      // checkpoint, never a JSON file rewrite.
-      vi.mocked(writeFileSync).mockClear();
-      expect(() => flushSessions()).not.toThrow();
-      expect(vi.mocked(writeFileSync)).not.toHaveBeenCalled();
-    });
-  });
+  // flushSessions was removed with the per-store JSON flush timers —
+  // SQLite commits on every write now, and the single WAL checkpoint
+  // lives in storage/db.ts's flushDatabase().
 
   describe("cache hit rate tracking", () => {
     it("tracks cache read tokens across multiple turns", () => {

@@ -7,7 +7,7 @@
 
 import { escapeLike } from "../../native/sqlguard.js";
 import { getDatabase, inTransaction } from "../db.js";
-import { dbSql, historySql } from "../sql/statements.generated.js";
+import { historySql } from "../sql/statements.generated.js";
 import type { HistoryMessage } from "../history.js";
 
 type Row = {
@@ -204,9 +204,4 @@ export function distinctChatCount(): number {
     chats: number;
   };
   return row.chats;
-}
-
-/** WAL → main-file compaction; used on shutdown. */
-export function checkpoint(): void {
-  getDatabase().exec(dbSql.walCheckpoint);
 }

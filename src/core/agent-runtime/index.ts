@@ -6,7 +6,6 @@
  *   - `AgentEvent`     + helpers   (events.ts)
  *   - `ModelRef`       + helpers   (model-ref.ts)
  *   - `Backend` + capability interfaces + `composeBackend` (capabilities.ts)
- *   - `JsonStore<T>`                                       (store.ts)
  *   - Backend contract assertions                          (contract-tests.ts)
  */
 
@@ -49,8 +48,6 @@ export {
   type UsageTelemetry,
   composeBackend,
 } from "./capabilities.js";
-
-export { type JsonStoreFs, type JsonStoreOptions, JsonStore } from "./store.js";
 
 export {
   assertBackendContract,

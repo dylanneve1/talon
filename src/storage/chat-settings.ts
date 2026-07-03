@@ -17,10 +17,10 @@
  * `migrateLegacyModelField` and remain idempotent.
  */
 
-import { existsSync, readFileSync, renameSync } from "node:fs";
 import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
+import { importLegacyJson } from "./legacy-import.js";
 import * as repo from "./repositories/chat-settings-repo.js";
 import type { ReasoningEffortLevel } from "../core/types.js";
 
@@ -95,7 +95,7 @@ const cache = new Map<string, ChatSettings>();
 export function loadChatSettings(): void {
   cache.clear();
   try {
-    importLegacyJson();
+    importLegacyChatSettings();
     for (const { chatId, settings } of repo.all()) {
       cache.set(chatId, settings);
     }
@@ -144,42 +144,31 @@ export function loadChatSettings(): void {
 }
 
 /**
- * Legacy JsonStore envelope ({schemaVersion, savedAt, data}) or the
- * even older bare Record<chatId, ChatSettings> shape. Settings objects
- * are imported verbatim — the intra-data migrations above run against
- * the cache afterwards.
+ * Legacy shape: Record<chatId, ChatSettings>. Settings objects are
+ * imported verbatim — the intra-data migrations above run against the
+ * cache afterwards.
  */
-function importLegacyJson(): void {
-  // Test isolation: suites that don't mock HOME would otherwise rename
-  // the user's REAL legacy JSON during import (observed live). The
-  // vitest setup sets this; import-testing suites unset it locally.
-  if (process.env.TALON_DISABLE_LEGACY_IMPORT === "1") return;
-  const legacyPath = files.chatSettings;
-  if (!existsSync(legacyPath)) return;
-  try {
-    const raw = JSON.parse(readFileSync(legacyPath, "utf-8")) as Record<
-      string,
-      unknown
-    >;
-    const data = (
-      raw && typeof raw === "object" && "data" in raw ? raw.data : raw
-    ) as Record<string, ChatSettings>;
-
-    const entries: Array<{ chatId: string; settings: ChatSettings }> = [];
-    for (const [chatId, settings] of Object.entries(data ?? {})) {
-      if (!settings || typeof settings !== "object" || Array.isArray(settings))
-        continue;
-      entries.push({ chatId, settings });
-    }
-    const imported = repo.upsertMany(entries);
-    renameSync(legacyPath, `${legacyPath}.imported`);
-    log(
-      "settings",
-      `Imported ${imported} chat setting(s) from legacy chat-settings.json into SQLite`,
-    );
-  } catch (err) {
-    logError("settings", "Legacy chat-settings import failed", err);
-  }
+function importLegacyChatSettings(): void {
+  importLegacyJson({
+    path: files.chatSettings,
+    category: "settings",
+    what: "chat setting(s)",
+    ingest: (data) => {
+      const entries: Array<{ chatId: string; settings: ChatSettings }> = [];
+      for (const [chatId, settings] of Object.entries(
+        (data ?? {}) as Record<string, ChatSettings>,
+      )) {
+        if (
+          !settings ||
+          typeof settings !== "object" ||
+          Array.isArray(settings)
+        )
+          continue;
+        entries.push({ chatId, settings });
+      }
+      return repo.upsertMany(entries);
+    },
+  });
 }
 
 /**
@@ -240,18 +229,6 @@ function persist(chatId: string): void {
     recordError(
       `Settings save failed: ${err instanceof Error ? err.message : err}`,
     );
-  }
-}
-
-/**
- * SQLite commits on every write — there is no dirty buffer to flush.
- * Kept for the shutdown path: compacts the WAL into the main file.
- */
-export function flushChatSettings(): void {
-  try {
-    repo.checkpoint();
-  } catch {
-    /* shutting down — best effort */
   }
 }
 

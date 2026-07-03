@@ -13,7 +13,7 @@
  */
 
 import { getDatabase, inTransaction } from "../db.js";
-import { dbSql, sessionsSql } from "../sql/statements.generated.js";
+import { sessionsSql } from "../sql/statements.generated.js";
 import type { SessionState } from "../sessions.js";
 
 type Row = {
@@ -126,9 +126,4 @@ export function all(): Array<{ chatId: string; session: SessionState }> {
 
 export function remove(chatId: string): void {
   getDatabase().prepare(sessionsSql.remove).run(chatId);
-}
-
-/** WAL → main-file compaction; used on shutdown. */
-export function checkpoint(): void {
-  getDatabase().exec(dbSql.walCheckpoint);
 }

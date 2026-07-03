@@ -428,15 +428,9 @@ describe("chat-settings — migration of has-effort + maxThinkingTokens", () => 
   });
 });
 
-describe("chat-settings — flushChatSettings", () => {
-  it("does not throw when called", async () => {
-    const { flushChatSettings, setChatModel } =
-      await import("../storage/chat-settings.js");
-    // Make dirty first so save() runs
-    setChatModel("flush-test", "claude-opus-4-6");
-    expect(() => flushChatSettings()).not.toThrow();
-  });
-});
+// flushChatSettings was removed with the per-store JSON flush timers —
+// SQLite commits on every write now, and the single WAL checkpoint lives
+// in storage/db.ts's flushDatabase().
 
 describe("chat-settings — cleanupEmpty keeps entry when other fields remain (line 115 FALSE branch)", () => {
   it("does not delete entry when effort is still set after clearing model", () => {

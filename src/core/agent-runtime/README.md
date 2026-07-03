@@ -11,7 +11,7 @@ plan landed in seven phases; every phase ships:
 | 3     | Native `AgentEvent` emission per backend      | **done** |
 | 4     | `AgentEventLogRenderer` consumers             | descoped |
 | 5     | Centralised tool surface via `ToolRegistry`   | descoped |
-| 6     | `JsonStore<T>` over every JSON-backed store   | **done** |
+| 6     | `JsonStore<T>` over every JSON-backed store   | retired  |
 | 7     | Per-backend contract tests                    | **done** |
 
 Phases 4 and 5 are descoped: the `AgentEventLogRenderer` and
@@ -61,17 +61,13 @@ absent / `undefined` slot is the single source of truth for "this
 backend doesn't support that" — there's no mirrored flag record to
 drift out of sync.
 
-### `store.ts`
+### `store.ts` (retired)
 
-`JsonStore<T>` — unified persistence with envelope shape
-(`{ schemaVersion, savedAt, data }`), `.bak` fallback on corrupt
-primary, `migrate` hook on version mismatch, `validate` hook on
-malformed data, and `JsonStoreFs` injection for test isolation.
-
-Synchronous twin pair (`loadSync` / `saveSync`) covers stores wired
-into bootstrap and cleanup-registry where the event loop hasn't
-drained yet. Every JSON-backed store under `src/storage/` uses this
-primitive.
+`JsonStore<T>` served as the unified JSON-file persistence primitive
+until every consumer (cron, triggers, codex oauth-incompat) migrated
+onto the SQLite layer in `src/storage/` (typed tables or the `kv`
+singleton store). Legacy files import once at boot via
+`storage/legacy-import.ts` and are renamed `*.imported`.
 
 ### `contract-tests.ts`
 
@@ -158,15 +154,11 @@ Convenience wrappers:
 - `getActiveModelForChat(...)` → `model`
 - `getActiveModelRefForChat(...)` → `ref`
 
-### Adding a new JSON-backed store
+### Adding a new store
 
-1. Define the persisted shape `interface MyStoreData { ... }`.
-2. Construct `new JsonStore<MyStoreData>({ path, defaultValue,
-schemaVersion, validate, migrate })` at module scope.
-3. Use `store.loadSync()` from the bootstrap loader (sync init), and
-   `store.saveSync()` from the autosave + flush paths.
-4. Reach for `store.update(fn)` for mutations and `store.get()` for
-   reads.
+New structured state goes in the SQLite layer — see the layering doc
+in `src/storage/db.ts` (sql/<store>.sql → repositories/<store>-repo.ts
+→ storage/<store>.ts). Tiny singleton blobs can use `storage/kv.ts`.
 
 ## Invariants
 

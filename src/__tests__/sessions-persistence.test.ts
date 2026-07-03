@@ -42,7 +42,6 @@ vi.mock("../util/paths.js", async () => {
 import { getDatabase, closeDatabase } from "../storage/db.js";
 import {
   loadSessions,
-  flushSessions,
   getSession,
   setSessionId,
   setSessionName,
@@ -95,7 +94,6 @@ describe("sessions persistence", () => {
       numApiCalls: 3,
       costUsd: 0.25,
     });
-    flushSessions();
 
     reopen();
 

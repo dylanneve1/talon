@@ -15,10 +15,12 @@
  * renamed to media-index.json.imported.
  */
 
-import { existsSync, readFileSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, unlinkSync } from "node:fs";
 import { blake3HexFile } from "../native/blake3.js";
 import { log, logError } from "../util/log.js";
+import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
+import { importLegacyJson } from "./legacy-import.js";
 import { setMessageFilePath } from "./history.js";
 import * as repo from "./repositories/media-index-repo.js";
 
@@ -69,52 +71,22 @@ function isMediaEntry(value: unknown): value is MediaEntry {
  */
 export function loadMediaIndex(): void {
   try {
-    importLegacyJson();
+    importLegacyMediaIndex();
   } catch (err) {
-    logError("workspace", "Media index load failed", err);
+    logError("media", "Media index load failed", err);
   }
   purgeExpired();
 }
 
-/**
- * Legacy JsonStore envelope ({schemaVersion, savedAt, data}) or the
- * even older bare MediaEntry[] shape.
- */
-function importLegacyJson(): void {
-  // Test isolation: suites that don't mock HOME would otherwise rename
-  // the user's REAL legacy JSON during import (observed live). The
-  // vitest setup sets this; import-testing suites unset it locally.
-  if (process.env.TALON_DISABLE_LEGACY_IMPORT === "1") return;
-  const legacyPath = files.mediaIndex;
-  if (!existsSync(legacyPath)) return;
-  try {
-    const raw = JSON.parse(readFileSync(legacyPath, "utf-8")) as unknown;
-    const data =
-      raw && typeof raw === "object" && !Array.isArray(raw) && "data" in raw
-        ? (raw as { data: unknown }).data
-        : raw;
-    const entries = Array.isArray(data) ? data.filter(isMediaEntry) : [];
-    const imported = repo.upsertMany(entries);
-    renameSync(legacyPath, `${legacyPath}.imported`);
-    log(
-      "workspace",
-      `Imported ${imported} media entr(ies) from legacy media-index.json into SQLite`,
-    );
-  } catch (err) {
-    logError("workspace", "Legacy media-index import failed", err);
-  }
-}
-
-/**
- * SQLite commits on every write — there is no dirty buffer to flush.
- * Kept for the shutdown path: compacts the WAL into the main file.
- */
-export function flushMediaIndex(): void {
-  try {
-    repo.checkpoint();
-  } catch {
-    /* shutting down — best effort */
-  }
+/** Legacy shape: bare MediaEntry[]. */
+function importLegacyMediaIndex(): void {
+  importLegacyJson({
+    path: files.mediaIndex,
+    category: "media",
+    what: "media entr(ies)",
+    ingest: (data) =>
+      repo.upsertMany(Array.isArray(data) ? data.filter(isMediaEntry) : []),
+  });
 }
 
 // ── CRUD ────────────────────────────────────────────────────────────────────
@@ -123,17 +95,16 @@ export function addMedia(entry: Omit<MediaEntry, "id">): void {
   try {
     repo.upsert(entry);
   } catch (err) {
-    logError("workspace", "Media index save failed", err);
+    logError("media", "Media index save failed", err);
+    recordError(
+      `Media index write failed: ${err instanceof Error ? err.message : err}`,
+    );
     return;
   }
   // Hash + dedupe off the hot path — the caller is mid-message-handling
   // and the row is already queryable without the hash.
   void hashAndDedupe(entry).catch((err) =>
-    logError(
-      "workspace",
-      `Media content hash failed for ${entry.filePath}`,
-      err,
-    ),
+    logError("media", `Media content hash failed for ${entry.filePath}`, err),
   );
 }
 
@@ -162,7 +133,7 @@ async function hashAndDedupe(entry: Omit<MediaEntry, "id">): Promise<void> {
     try {
       unlinkSync(entry.filePath);
       log(
-        "workspace",
+        "media",
         `Deduped ${entry.filePath} -> ${canonical.filePath} (blake3 ${hash.slice(0, 12)}…)`,
       );
     } catch {
@@ -219,9 +190,9 @@ function purgeExpired(): void {
       }
     }
     if (removed > 0) {
-      log("workspace", `Purged ${removed} expired media entries`);
+      log("media", `Purged ${removed} expired media entries`);
     }
   } catch (err) {
-    logError("workspace", "Media index purge failed", err);
+    logError("media", "Media index purge failed", err);
   }
 }

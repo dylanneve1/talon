@@ -8,12 +8,7 @@ export async function startChat(): Promise<void> {
 
   const { bootstrap, initBackendAndDispatcher } =
     await import("../bootstrap.js");
-  const { flushSessions } = await import("../storage/sessions.js");
-  const { flushChatSettings } = await import("../storage/chat-settings.js");
-  const { flushCronJobs } = await import("../storage/cron-store.js");
-  const { flushHistory } = await import("../storage/history.js");
-  const { flushMediaIndex } = await import("../storage/media-index.js");
-  const { flushTriggers } = await import("../storage/trigger-store.js");
+  const { flushDatabase } = await import("../storage/db.js");
   const { createTerminalFrontend } =
     await import("../frontend/terminal/index.js");
   const { Gateway } = await import("../core/engine/gateway.js");
@@ -46,12 +41,7 @@ export async function startChat(): Promise<void> {
   });
 
   process.on("SIGINT", () => {
-    flushSessions();
-    flushChatSettings();
-    flushCronJobs();
-    flushHistory();
-    flushMediaIndex();
-    flushTriggers();
+    flushDatabase();
     frontend.stop();
     process.exit(0);
   });

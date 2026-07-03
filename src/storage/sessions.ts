@@ -18,10 +18,10 @@
  * sessions.json.imported.
  */
 
-import { existsSync, readFileSync, renameSync } from "node:fs";
 import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
+import { importLegacyJson } from "./legacy-import.js";
 import * as repo from "./repositories/sessions-repo.js";
 
 export type SessionUsage = {
@@ -187,7 +187,7 @@ function withLiveTurn(chatId: string, usage: SessionUsage): SessionUsage {
 export function loadSessions(): void {
   cache.clear();
   try {
-    importLegacyJson();
+    importLegacySessions();
     for (const { chatId, session } of repo.all()) {
       cache.set(chatId, session);
     }
@@ -197,42 +197,27 @@ export function loadSessions(): void {
 }
 
 /**
- * Legacy JsonStore envelope ({schemaVersion, savedAt, data}) or the
- * even older bare Record<chatId, SessionState> shape. Partially-shaped
- * legacy records are tolerated — normaliseSession() backfills missing
- * fields on read, exactly as it did against the JSON store.
+ * Legacy shape: Record<chatId, SessionState>. Partially-shaped legacy
+ * records are tolerated — normaliseSession() backfills missing fields
+ * on read, exactly as it did against the JSON store.
  */
-function importLegacyJson(): void {
-  // Test isolation: suites that don't mock HOME would otherwise rename
-  // the user's REAL legacy JSON during import (observed live). The
-  // vitest setup sets this; import-testing suites unset it locally.
-  if (process.env.TALON_DISABLE_LEGACY_IMPORT === "1") return;
-  const legacyPath = files.sessions;
-  if (!existsSync(legacyPath)) return;
-  try {
-    const raw = JSON.parse(readFileSync(legacyPath, "utf-8")) as Record<
-      string,
-      unknown
-    >;
-    const data = (
-      raw && typeof raw === "object" && "data" in raw ? raw.data : raw
-    ) as Record<string, SessionState>;
-
-    const entries: Array<{ chatId: string; session: SessionState }> = [];
-    for (const [chatId, session] of Object.entries(data ?? {})) {
-      if (!session || typeof session !== "object" || Array.isArray(session))
-        continue;
-      entries.push({ chatId, session });
-    }
-    const imported = repo.upsertMany(entries);
-    renameSync(legacyPath, `${legacyPath}.imported`);
-    log(
-      "sessions",
-      `Imported ${imported} session(s) from legacy sessions.json into SQLite`,
-    );
-  } catch (err) {
-    logError("sessions", "Legacy sessions import failed", err);
-  }
+function importLegacySessions(): void {
+  importLegacyJson({
+    path: files.sessions,
+    category: "sessions",
+    what: "session(s)",
+    ingest: (data) => {
+      const entries: Array<{ chatId: string; session: SessionState }> = [];
+      for (const [chatId, session] of Object.entries(
+        (data ?? {}) as Record<string, SessionState>,
+      )) {
+        if (!session || typeof session !== "object" || Array.isArray(session))
+          continue;
+        entries.push({ chatId, session });
+      }
+      return repo.upsertMany(entries);
+    },
+  });
 }
 
 /** Commit one chat's row; storage failure must never break a turn. */
@@ -244,18 +229,6 @@ function persist(chatId: string, session: SessionState): void {
     recordError(
       `Session save failed: ${err instanceof Error ? err.message : err}`,
     );
-  }
-}
-
-/**
- * SQLite commits on every write — there is no dirty buffer to flush.
- * Kept for the shutdown path: compacts the WAL into the main file.
- */
-export function flushSessions(): void {
-  try {
-    repo.checkpoint();
-  } catch {
-    /* shutting down — best effort */
   }
 }
 
@@ -411,9 +384,9 @@ export function resetSession(chatId: string): void {
   try {
     repo.remove(chatId);
   } catch (err) {
-    logError("sessions", "Failed to persist sessions", err);
+    logError("sessions", "Failed to delete session row", err);
     recordError(
-      `Session save failed: ${err instanceof Error ? err.message : err}`,
+      `Session delete failed: ${err instanceof Error ? err.message : err}`,
     );
   }
   log(

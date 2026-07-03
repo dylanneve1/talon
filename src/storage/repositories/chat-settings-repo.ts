@@ -12,7 +12,7 @@
  */
 
 import { getDatabase, inTransaction } from "../db.js";
-import { chatSettingsSql, dbSql } from "../sql/statements.generated.js";
+import { chatSettingsSql } from "../sql/statements.generated.js";
 import type { ChatSettings } from "../chat-settings.js";
 
 export function upsert(chatId: string, settings: ChatSettings): void {
@@ -57,9 +57,4 @@ export function all(): Array<{ chatId: string; settings: ChatSettings }> {
 
 export function remove(chatId: string): void {
   getDatabase().prepare(chatSettingsSql.remove).run(chatId);
-}
-
-/** WAL → main-file compaction; used on shutdown. */
-export function checkpoint(): void {
-  getDatabase().exec(dbSql.walCheckpoint);
 }

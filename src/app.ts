@@ -8,12 +8,7 @@
 
 import { getFrontends } from "./util/config.js";
 import { startUploadCleanup, stopUploadCleanup } from "./util/workspace.js";
-import { flushSessions } from "./storage/sessions.js";
-import { flushChatSettings } from "./storage/chat-settings.js";
-import { flushCronJobs } from "./storage/cron-store.js";
-import { flushTriggers } from "./storage/trigger-store.js";
-import { flushHistory } from "./storage/history.js";
-import { flushMediaIndex } from "./storage/media-index.js";
+import { flushDatabase } from "./storage/db.js";
 import { getActiveCount } from "./core/engine/dispatcher.js";
 import { startPulseTimer, stopPulseTimer } from "./core/background/pulse.js";
 import {
@@ -155,12 +150,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   await shutdownTriggers();
   stopWatchdog();
   stopUploadCleanup();
-  flushSessions();
-  flushChatSettings();
-  flushCronJobs();
-  flushTriggers();
-  flushHistory();
-  flushMediaIndex();
+  flushDatabase();
   // Guarded removal: after a /restart handoff the successor has already
   // written its own pid here — deleting unconditionally would orphan it
   // (the bug that made `talon restart` spawn duplicate daemons).
@@ -180,12 +170,7 @@ process.on("uncaughtException", (err) => {
     return;
   }
   logError("bot", "Uncaught exception", err);
-  flushSessions();
-  flushChatSettings();
-  flushCronJobs();
-  flushTriggers();
-  flushHistory();
-  flushMediaIndex();
+  flushDatabase();
   process.exit(1);
 });
 

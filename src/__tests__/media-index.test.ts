@@ -545,9 +545,13 @@ describe("media-index", () => {
     });
   });
 
-  describe("flushMediaIndex", () => {
-    it("entries survive flush + close/reopen, with no JSON file written", async () => {
-      const { addMedia, flushMediaIndex, loadMediaIndex } = await freshImport();
+  // flushMediaIndex was removed with the per-store JSON flush timers —
+  // SQLite commits on every write now, and the single WAL checkpoint
+  // lives in storage/db.ts's flushDatabase(). Durability across
+  // close/reopen no longer needs an explicit flush first.
+  describe("close/reopen durability", () => {
+    it("entries survive close/reopen, with no JSON file written", async () => {
+      const { addMedia, loadMediaIndex } = await freshImport();
       loadMediaIndex();
       addMedia({
         chatId: "flush-1",
@@ -557,9 +561,6 @@ describe("media-index", () => {
         filePath: "/a.jpg",
         timestamp: Date.now(),
       });
-      // SQLite commits per write — flush is a best-effort WAL
-      // checkpoint, never a JSON rewrite.
-      flushMediaIndex();
       expect(existsSync(storePath())).toBe(false);
 
       // Close the database and re-import against the same path: the
@@ -570,12 +571,6 @@ describe("media-index", () => {
       const media = reopened.getRecentMedia("flush-1");
       expect(media).toHaveLength(1);
       expect(media[0].filePath).toBe("/a.jpg");
-    });
-
-    it("does not throw when nothing was ever written", async () => {
-      const { flushMediaIndex, loadMediaIndex } = await freshImport();
-      loadMediaIndex();
-      expect(() => flushMediaIndex()).not.toThrow();
     });
   });
 

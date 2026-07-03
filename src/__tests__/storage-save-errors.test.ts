@@ -1,24 +1,30 @@
 /**
  * Tests that cover the logError + recordError paths triggered when a
- * persistence write throws: write-file-atomic for the JSON-backed
- * cron-store, the SQLite repository for chat-settings and sessions
- * (injected as a failing mock).
+ * persistence write throws. In the SQLite era every write commits
+ * transactionally, so there is no flush-to-disk failure to catch. The
+ * remaining swallow-and-record paths are:
+ *   - cron-store.recordCronRun — runs inside the scheduler tick, so a DB
+ *     failure must be logged + recorded, never thrown (CRUD, by contrast,
+ *     lets DB errors propagate).
+ *   - sessions.persist / chat-settings.persist — catch repo errors and
+ *     recordError while keeping the in-memory cache authoritative.
  *
- * Each module must be re-imported in isolation (vi.resetModules) so the
- * mocks apply to the fresh module instance.
+ * Each module is re-imported in isolation (vi.resetModules) so the mocks
+ * apply to the fresh module instance. The failing repository is injected
+ * as a mock; the real db.ts transaction wrapper runs against the worker's
+ * throwaway database.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ── cron-store save failure ───────────────────────────────────────────────
+// ── cron-store recordCronRun swallows a repository failure ────────────────
 
-describe("cron-store — save failure logs error", () => {
+describe("cron-store — recordCronRun swallows a repository error", () => {
   beforeEach(() => {
-    delete process.env.TALON_DISABLE_LEGACY_IMPORT;
     vi.resetModules();
   });
 
-  it("calls logError and recordError when writeFileAtomic throws", async () => {
+  it("logs + records (does not throw) when the repo write throws in the tick", async () => {
     const logErrorMock = vi.fn();
     const recordErrorMock = vi.fn();
 
@@ -30,60 +36,43 @@ describe("cron-store — save failure logs error", () => {
     vi.doMock("../util/watchdog.js", () => ({
       recordError: recordErrorMock,
     }));
-    vi.doMock("node:fs", () => ({
-      existsSync: vi.fn(() => true),
-      readFileSync: vi.fn(() => "{}"),
-      mkdirSync: vi.fn(),
-      readdirSync: vi.fn(() => []),
-      renameSync: vi.fn(),
-      unlinkSync: vi.fn(),
-    }));
-    {
-      const failingWrite = vi.fn((..._args: unknown[]) => {
-        throw new Error("disk full");
-      });
-      vi.doMock("write-file-atomic", () => ({
-        default: Object.assign((...args: unknown[]) => failingWrite(...args), {
-          sync: failingWrite,
-        }),
-      }));
-    }
-    vi.doMock("../util/paths.js", () => ({
-      files: { cron: "/fake/cron.json" },
-      dirs: { root: "/fake/.talon" },
-    }));
-    vi.doMock("../util/cleanup-registry.js", () => ({
-      registerCleanup: vi.fn(),
+    // A repo whose read finds the job but whose write blows up mid-tick.
+    vi.doMock("../storage/repositories/cron-repo.js", () => ({
+      get: vi.fn(() => ({
+        id: "cron-fail",
+        chatId: "chat1",
+        schedule: "0 * * * *",
+        type: "message" as const,
+        content: "hello",
+        name: "test",
+        enabled: true,
+        createdAt: Date.now(),
+        runCount: 0,
+      })),
+      upsert: vi.fn(() => {
+        throw new Error("database is locked");
+      }),
+      listAll: vi.fn(() => []),
+      count: vi.fn(() => 0),
+      removeAll: vi.fn(),
     }));
 
-    const { addCronJob, generateCronId } =
-      await import("../storage/cron-store.js");
+    const { recordCronRun } = await import("../storage/cron-store.js");
 
-    const job = {
-      id: generateCronId(),
-      chatId: "chat1",
-      schedule: "0 * * * *",
-      type: "message" as const,
-      content: "hello",
-      name: "test",
-      enabled: true,
-      createdAt: Date.now(),
-      runCount: 0,
-    };
-
-    // addCronJob marks dirty and calls save() which will throw
-    addCronJob(job);
+    // recordCronRun wraps the read+write in a transaction; the write throws,
+    // the transaction rolls back, and recordCronRun swallows + records it.
+    expect(() =>
+      recordCronRun("cron-fail", { status: "ok", durationMs: 5 }),
+    ).not.toThrow();
 
     expect(logErrorMock).toHaveBeenCalledWith(
       "cron",
-      expect.stringContaining("Failed to persist"),
+      expect.stringContaining("Failed to record cron run"),
       expect.any(Error),
     );
     expect(recordErrorMock).toHaveBeenCalledWith(
-      expect.stringContaining("Cron save failed"),
+      expect.stringContaining("Cron run record failed"),
     );
-
-    clearInterval(((await import("../storage/cron-store.js")) as any)._timer);
   });
 });
 
@@ -196,13 +185,11 @@ describe("sessions — save failure logs error", () => {
       checkpoint: vi.fn(),
     }));
 
-    const { getSession, flushSessions } =
-      await import("../storage/sessions.js");
+    const { getSession } = await import("../storage/sessions.js");
 
     // getSession creates a new session and commits the row, which throws;
-    // flushSessions (checkpoint) must stay best-effort and not throw.
-    getSession("chat-save-fail");
-    expect(() => flushSessions()).not.toThrow();
+    // the persist path must swallow it (logError + recordError), not crash.
+    expect(() => getSession("chat-save-fail")).not.toThrow();
 
     expect(logErrorMock).toHaveBeenCalledWith(
       "sessions",
