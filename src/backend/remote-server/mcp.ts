@@ -35,12 +35,11 @@
  */
 
 import { log, logWarn } from "../../util/log.js";
-import { wrapMcpCommand } from "../../util/mcp-launcher.js";
-import { getPluginMcpServers } from "../../core/plugin/index.js";
 import {
-  buildTalonMcpEnv,
-  talonMcpServerCommand,
-} from "../../core/tools/mcp-env.js";
+  talonHubUrl,
+  pluginHubUrl,
+  hubPluginServerNames,
+} from "../../core/mcp-hub/index.js";
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerState } from "./state.js";
 import { errMsg } from "./state.js";
@@ -142,20 +141,16 @@ export async function ensureChatMcpServer<TClient extends RemoteAgentClient>(
     await client.mcp.add({
       name: serverName,
       config: {
-        type: "local",
-        // Wrap under Talon's launcher supervisor so the child dies cleanly
-        // when the SDK pipe closes OR Talon's bridge URL stops responding
-        // (catches the "agent-server-outlives-Talon" failure mode).
-        // Spawn spec shared with every other backend — see
-        // talonMcpServerCommand (and unlike the previous bare "tsx"
-        // specifier, it doesn't depend on the spawn cwd resolving tsx).
-        command: wrapMcpCommand(talonMcpServerCommand()),
-        environment: buildTalonMcpEnv({
-          bridgeUrl: `http://127.0.0.1:${state.gatewayPortFn()}`,
+        type: "remote",
+        // Talon's MCP hub serves the chat's tool set in-process over
+        // streamable HTTP — no subprocess on the agent-server side, and
+        // the (frontend, chatId) binding travels in the URL instead of
+        // env. Tool-surface trimming is applied hub-side (initHub).
+        url: talonHubUrl(
+          `http://127.0.0.1:${state.gatewayPortFn()}`,
+          state.frontendName,
           chatId,
-          frontend: state.frontendName,
-          config: state.config,
-        }),
+        ),
       },
     });
     state.registeredMcpServers.add(serverName);
@@ -193,10 +188,10 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
   chatId: string,
 ): Promise<string[]> {
   const bridgeUrl = `http://127.0.0.1:${state.gatewayPortFn()}`;
-  const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
+  const names = hubPluginServerNames();
   const registered: string[] = [];
 
-  for (const [name, cfg] of Object.entries(pluginServers)) {
+  for (const name of names) {
     if (state.registeredMcpServers.has(name)) {
       registered.push(name);
       continue;
@@ -206,12 +201,10 @@ export async function ensurePluginMcpServers<TClient extends RemoteAgentClient>(
       await client.mcp.add({
         name,
         config: {
-          type: "local",
-          // `getPluginMcpServers` already applied the supervisor wrap
-          // (`wrapMcpServer`), so the command/args are launcher-ready —
-          // do NOT wrap a second time.
-          command: [cfg.command, ...cfg.args],
-          environment: cfg.env ?? {},
+          type: "remote",
+          // Hub-managed child, shared across sessions and idle-reaped —
+          // the agent server holds an HTTP connection, not a subprocess.
+          url: pluginHubUrl(bridgeUrl, name, chatId),
         },
       });
       registered.push(name);

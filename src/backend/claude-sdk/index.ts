@@ -8,7 +8,11 @@
 export { initAgent, updateSystemPrompt } from "./state.js";
 export { warmSession } from "./warm.js";
 export { getActiveQuery } from "./handler.js";
-export { buildMcpServers, getActiveFrontends } from "./options.js";
+export {
+  buildMcpServers,
+  buildPluginMcpServers,
+  getActiveFrontends,
+} from "./options.js";
 export { getBridgePort } from "./state.js";
 export {
   runOneShotAgent,

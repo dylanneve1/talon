@@ -159,6 +159,16 @@ export async function bootstrap(
     rebuildSystemPrompt(config, getPluginPromptAdditions());
   }
 
+  // MCP hub — daemon-hosted MCP-over-HTTP for every backend (tool
+  // trimming + brave key come from config; endpoints mount on the
+  // gateway HTTP server).
+  const { initHub } = await import("./core/mcp-hub/index.js");
+  initHub({
+    disabledTools: config.disabledTools,
+    disabledToolTags: config.disabledToolTags,
+    braveApiKey: config.braveApiKey,
+  });
+
   initWorkspace(config.workspace);
   loadSessions();
   loadChatSettings();

@@ -39,6 +39,7 @@ import { randomUUID } from "node:crypto";
 // directly so it doesn't matter there, but keeping it consistent.
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const LOG_FILE = process.env.STUB_CLAUDE_LOG;
 const log = (msg) => {
@@ -82,12 +83,18 @@ const getMcpClient = async (serverName) => {
     return null;
   }
   try {
-    const transport = new StdioClientTransport({
-      command: cfg.command,
-      args: cfg.args ?? [],
-      env: cfg.env ? { ...process.env, ...cfg.env } : { ...process.env },
-      stderr: "pipe",
-    });
+    // Mirror the real binary's transport selection: `type: "http"` (the
+    // shape Talon's MCP hub emits) connects over streamable HTTP; the
+    // command/args shape spawns a stdio subprocess.
+    const transport =
+      cfg.type === "http" || cfg.url
+        ? new StreamableHTTPClientTransport(new URL(cfg.url))
+        : new StdioClientTransport({
+            command: cfg.command,
+            args: cfg.args ?? [],
+            env: cfg.env ? { ...process.env, ...cfg.env } : { ...process.env },
+            stderr: "pipe",
+          });
     const client = new McpClient(
       { name: "stub-claude", version: "0.0.0" },
       { capabilities: {} },

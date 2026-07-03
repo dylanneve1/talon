@@ -94,7 +94,7 @@ describe("kilo server helpers", () => {
     ).resolves.toBeUndefined();
   });
 
-  it("ensureChatMcpServer registers the chat server with the right env", async () => {
+  it("ensureChatMcpServer registers the chat server with the hub URL", async () => {
     const oc = makeClient();
 
     const serverName = await ensureChatMcpServer(oc as never, "chat/1");
@@ -104,11 +104,8 @@ describe("kilo server helpers", () => {
     expect(oc.mcp.add.mock.calls[0][0]).toMatchObject({
       name: "talon-tools-chat_1",
       config: {
-        environment: {
-          TALON_BRIDGE_URL: "http://127.0.0.1:17777",
-          TALON_CHAT_ID: "chat/1",
-          TALON_FRONTEND: "discord",
-        },
+        type: "remote",
+        url: "http://127.0.0.1:17777/mcp/talon/discord/chat%2F1",
       },
     });
   });

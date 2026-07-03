@@ -188,6 +188,10 @@ async function gracefulShutdown(signal: string): Promise<void> {
   await shutdownStep("triggers", shutdownTriggers);
   await shutdownStep("watchdog", stopWatchdog);
   await shutdownStep("upload cleanup", stopUploadCleanup);
+  await shutdownStep("mcp hub", async () => {
+    const { shutdownHub } = await import("./core/mcp-hub/index.js");
+    await shutdownHub();
+  });
   flushDatabase();
   // Guarded removal: after a /restart handoff the successor has already
   // written its own pid here — deleting unconditionally would orphan it

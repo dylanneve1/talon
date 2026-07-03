@@ -85,11 +85,9 @@ describe("codex / buildCodexMcpServers", () => {
       frontends: ["telegram"],
     });
     expect(servers["telegram-tools"]).toBeDefined();
-    expect(servers["telegram-tools"].env).toMatchObject({
-      TALON_CHAT_ID: "352042062",
-      TALON_FRONTEND: "telegram",
-      TALON_BRIDGE_URL: "http://127.0.0.1:19876",
-    });
+    expect(servers["telegram-tools"].url).toBe(
+      "http://127.0.0.1:19876/mcp/talon/telegram/352042062",
+    );
   });
 
   it("emits one server per frontend when multiple are configured", () => {
@@ -100,20 +98,20 @@ describe("codex / buildCodexMcpServers", () => {
     });
     expect(servers["telegram-tools"]).toBeDefined();
     expect(servers["discord-tools"]).toBeDefined();
-    expect(servers["telegram-tools"].env?.TALON_FRONTEND).toBe("telegram");
-    expect(servers["discord-tools"].env?.TALON_FRONTEND).toBe("discord");
+    expect(servers["telegram-tools"].url).toContain("/mcp/talon/telegram/");
+    expect(servers["discord-tools"].url).toContain("/mcp/talon/discord/");
   });
 
-  it("includes the plugin MCP servers from getPluginMcpServers", () => {
+  it("includes the plugin MCP servers from the registry as hub URLs", () => {
     const servers = buildCodexMcpServers({
       chatId: "c1",
       bridgeUrl: "http://127.0.0.1:19876",
       frontends: ["telegram"],
     });
     expect(servers["mempalace-tools"]).toBeDefined();
-    expect(servers["mempalace-tools"].env).toMatchObject({
-      MEMPALACE_PATH: "/palace",
-    });
+    expect(servers["mempalace-tools"].url).toBe(
+      "http://127.0.0.1:19876/mcp/plugin/mempalace-tools/c1",
+    );
   });
 
   it("includes brave-search when braveApiKey is provided", () => {
@@ -124,9 +122,9 @@ describe("codex / buildCodexMcpServers", () => {
       braveApiKey: "BSA-test-key",
     });
     expect(servers["brave-search"]).toBeDefined();
-    expect(servers["brave-search"].env).toMatchObject({
-      BRAVE_API_KEY: "BSA-test-key",
-    });
+    expect(servers["brave-search"].url).toContain(
+      "/mcp/plugin/brave-search/c1",
+    );
   });
 
   it("omits brave-search when no API key is provided", () => {
@@ -150,18 +148,18 @@ describe("codex / buildCodexMcpServers", () => {
     expect(servers["mempalace-tools"]).toBeDefined();
   });
 
-  it("each server has a command + args + env shape", () => {
+  it("each server is a hub URL entry (no local spawn fields)", () => {
     const servers = buildCodexMcpServers({
       chatId: "c1",
       bridgeUrl: "http://127.0.0.1:19876",
       frontends: ["telegram"],
     });
     for (const [name, server] of Object.entries(servers)) {
-      expect(typeof server.command, `${name}.command`).toBe("string");
-      expect(Array.isArray(server.args), `${name}.args`).toBe(true);
-      expect(server.env === undefined || typeof server.env === "object").toBe(
-        true,
+      expect(typeof server.url, `${name}.url`).toBe("string");
+      expect(server.url, `${name}.url`).toMatch(
+        /^http:\/\/127\.0\.0\.1:19876\/mcp\//,
       );
+      expect(server, name).not.toHaveProperty("command");
     }
   });
 

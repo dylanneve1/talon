@@ -14,7 +14,6 @@
 import { registerBackend } from "../../core/agent-runtime/backend-registry.js";
 import type { BackendFactory } from "../../core/agent-runtime/backend-registry.js";
 import { log } from "../../util/log.js";
-import { getPluginMcpServers } from "../../core/plugin/index.js";
 import {
   composeBackend,
   type ChatBackend,
@@ -31,6 +30,7 @@ import {
   warmSession as claudeWarmSession,
   getActiveQuery,
   buildMcpServers,
+  buildPluginMcpServers,
   runOneShotAgent as claudeRunOneShotAgent,
   evictOrphanSubprocesses as claudeEvictOrphanSubprocesses,
 } from "./index.js";
@@ -92,10 +92,9 @@ const claudeSdkFactory: BackendFactory = {
         // subprocess receives an OS-agnostic shutdown via stdio, then
         // install the fresh set.
         await qi.setMcpServers({});
-        const bridgeUrl = `http://127.0.0.1:${ctx.getBridgePort()}`;
         const freshServers = {
           ...buildMcpServers(chatId),
-          ...getPluginMcpServers(bridgeUrl, chatId),
+          ...buildPluginMcpServers(chatId),
         };
         const result = await qi.setMcpServers(freshServers);
         // setMcpServers resolves on REGISTER, not CONNECT — MCP startup is

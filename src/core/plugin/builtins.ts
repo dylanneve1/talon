@@ -145,6 +145,13 @@ export async function reloadPlugins(
   // Re-load built-in plugins using shared helper
   await loadBuiltinPlugins(config);
 
+  // Retire the hub's MCP children: the next tool call (any chat) spawns
+  // fresh processes from the reloaded registry, while in-flight calls
+  // drain on the old ones (stdio-era behaviour was per-turn respawn via
+  // the TALON_RELOAD_AT env bump; the hub owns lifecycles directly).
+  const { reloadHubChildren } = await import("../mcp-hub/index.js");
+  reloadHubChildren();
+
   const names = registry.all.map((p) => p.plugin.name);
   log(
     "plugin",

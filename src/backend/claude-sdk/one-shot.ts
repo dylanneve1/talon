@@ -16,9 +16,8 @@ import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { OneShotAgentParams } from "../../core/types.js";
 import { log } from "../../util/log.js";
-import { getPluginMcpServers } from "../../core/plugin/index.js";
 import { ALLOWED_TOOLS_BACKGROUND } from "../../core/constants.js";
-import { buildMcpServers } from "./options.js";
+import { buildMcpServers, buildPluginMcpServers } from "./options.js";
 
 const DEFAULT_SUBPROCESS_KILL_GRACE_MS = 5 * 1000;
 
@@ -113,17 +112,21 @@ function assembleMcpServers(contextLabel: string): Record<string, unknown> {
     } catch {
       frontendServers = {};
     }
-    return {
-      ...frontendServers,
-      ...(getPluginMcpServers("", "heartbeat") as Record<string, unknown>),
-    };
+    let pluginServers: Record<string, unknown> = {};
+    try {
+      pluginServers = buildPluginMcpServers("heartbeat");
+    } catch {
+      pluginServers = {};
+    }
+    return { ...frontendServers, ...pluginServers };
   }
   if (contextLabel === "dream") {
     if (!oneShotConfig.mempalace) return {};
-    return getPluginMcpServers("", "dream", ["mempalace"]) as Record<
-      string,
-      unknown
-    >;
+    try {
+      return buildPluginMcpServers("dream", ["mempalace"]);
+    } catch {
+      return {};
+    }
   }
   return {};
 }

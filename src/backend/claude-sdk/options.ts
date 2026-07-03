@@ -5,7 +5,6 @@
  * MCP servers, system prompt) into the Options shape expected by the SDK.
  */
 
-import { resolve } from "node:path";
 import { SYSTEM_PROMPT_DYNAMIC_BOUNDARY } from "@anthropic-ai/claude-agent-sdk";
 import type {
   Options,
@@ -19,14 +18,13 @@ import type {
 import type { PreparedSystemPrompt } from "../shared/system-prompt.js";
 import { getSession } from "../../storage/sessions.js";
 import { getChatSettings } from "../../storage/chat-settings.js";
-import { getPluginMcpServers } from "../../core/plugin/index.js";
 import { resolveModelId } from "../../core/models/catalog.js";
-import { wrapMcpServer } from "../../util/mcp-launcher.js";
 import { isTurnTerminator } from "../../core/tools/index.js";
 import {
-  buildTalonMcpEnv,
-  talonMcpServerCommand,
-} from "../../core/tools/mcp-env.js";
+  talonHubUrl,
+  pluginHubUrl,
+  hubPluginServerNames,
+} from "../../core/mcp-hub/index.js";
 import { nonTerminalFrontends } from "../shared/frontends.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
@@ -58,45 +56,32 @@ export function getActiveFrontends(): readonly string[] {
   return nonTerminalFrontends(getConfig().frontend);
 }
 
+/** Hub-backed MCP server entry — the SDK's `type: "http"` config. */
+export type HubMcpEntry = {
+  type: "http";
+  url: string;
+  alwaysLoad?: boolean;
+};
+
 /**
  * Build the MCP servers map for a chat query.
  * Includes frontend-specific tool servers and Brave Search, if configured.
+ *
+ * Every entry points at the daemon's MCP hub (`core/mcp-hub`) over
+ * streamable HTTP: the Talon tool servers run in-process there (zero
+ * subprocesses per chat — chat binding travels in the URL, not env),
+ * and brave-search is a single hub-managed child shared by all chats.
  */
-export function buildMcpServers(chatId: string): Record<
-  string,
-  {
-    command: string;
-    args: string[];
-    env: Record<string, string>;
-    alwaysLoad?: boolean;
-  }
-> {
+export function buildMcpServers(chatId: string): Record<string, HubMcpEntry> {
   const config = getConfig();
   const bridgeUrl = `http://127.0.0.1:${getBridgePort()}`;
 
-  // Shared spawn spec — see talonMcpServerCommand for the tsx-loader
-  // and Windows rationale.
-  const [mcpCommand, ...mcpArgs] = talonMcpServerCommand();
+  const servers: Record<string, HubMcpEntry> = {};
 
-  // Frontend-specific MCP tool servers (one per non-terminal frontend)
-  const frontends = getActiveFrontends();
-
-  const servers: Record<
-    string,
-    {
-      command: string;
-      args: string[];
-      env: Record<string, string>;
-      alwaysLoad?: boolean;
-    }
-  > = {};
-
-  for (const frontend of frontends) {
-    const serverName = `${frontend}-tools`;
-    servers[serverName] = wrapMcpServer({
-      command: mcpCommand,
-      args: mcpArgs,
-      env: buildTalonMcpEnv({ bridgeUrl, chatId, frontend, config }),
+  for (const frontend of getActiveFrontends()) {
+    servers[`${frontend}-tools`] = {
+      type: "http",
+      url: talonHubUrl(bridgeUrl, frontend, chatId),
       // Always include the frontend's tools in the turn-1 prompt instead of
       // deferring them behind the SDK's tool search. These are the bot's
       // primary surface — it needs `end_turn`/`send`/`react` on EVERY turn to
@@ -112,21 +97,37 @@ export function buildMcpServers(chatId: string): Record<
       // lever here. Cost: ~50 frontend tool schemas loaded every turn (~10k
       // tokens, cached, negligible on the 1M-context models Talon runs).
       alwaysLoad: true,
-    });
+    };
   }
 
   // Brave Search MCP server (if configured)
   if (config.braveApiKey) {
-    servers["brave-search"] = wrapMcpServer({
-      command: resolve(
-        import.meta.dirname ?? ".",
-        "../../../node_modules/.bin/brave-search-mcp-server",
-      ),
-      args: [],
-      env: { BRAVE_API_KEY: config.braveApiKey },
-    });
+    servers["brave-search"] = {
+      type: "http",
+      url: pluginHubUrl(bridgeUrl, "brave-search", chatId),
+    };
   }
 
+  return servers;
+}
+
+/**
+ * Build the plugin MCP server map for a chat query — hub URLs for every
+ * registry-provided plugin server, optionally filtered to `only` plugin
+ * names (heartbeat/dream tiers restrict their tool surface this way).
+ */
+export function buildPluginMcpServers(
+  chatId: string,
+  only?: string[],
+): Record<string, HubMcpEntry> {
+  const bridgeUrl = `http://127.0.0.1:${getBridgePort()}`;
+  const servers: Record<string, HubMcpEntry> = {};
+  for (const name of hubPluginServerNames(only)) {
+    servers[name] = {
+      type: "http",
+      url: pluginHubUrl(bridgeUrl, name, chatId),
+    };
+  }
   return servers;
 }
 
@@ -386,7 +387,7 @@ export function buildSdkOptions(
     ...thinkingConfig,
     mcpServers: {
       ...buildMcpServers(chatId),
-      ...getPluginMcpServers(`http://127.0.0.1:${getBridgePort()}`, chatId),
+      ...buildPluginMcpServers(chatId),
     },
     hooks: {
       PostToolUseFailure: [{ hooks: [postToolUseFailureHook] }],

@@ -19,12 +19,19 @@
  * doesn't.
  */
 
-/** Minimal MCP server config shape both SDKs accept on `mcp.add`. */
-export interface RemoteMcpServerConfig {
-  type: "local";
-  command: string[];
-  environment?: Record<string, string>;
-}
+/** Minimal MCP server config shapes both SDKs accept on `mcp.add`. */
+export type RemoteMcpServerConfig =
+  | {
+      type: "local";
+      command: string[];
+      environment?: Record<string, string>;
+    }
+  | {
+      type: "remote";
+      /** Streamable-HTTP MCP endpoint (Talon's hub). */
+      url: string;
+      headers?: Record<string, string>;
+    };
 
 /** Permission-rule shape both SDKs share. */
 export interface RemotePermissionRule {

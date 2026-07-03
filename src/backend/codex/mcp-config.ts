@@ -1,5 +1,5 @@
 /**
- * Convert Talon's MCP plugin map into Codex CLI's `--config` TOML
+ * Convert Talon's MCP server set into Codex CLI's `--config` TOML
  * overrides.
  *
  * Codex's MCP support is configured at startup via `~/.codex/config.toml`
@@ -8,30 +8,28 @@
  * `CodexOptions.config` — a JSON object the SDK flattens into dotted
  * paths and serialises as TOML literals.
  *
- * Talon supplies MCP servers via `getPluginMcpServers(bridgeUrl, chatId)`
- * — a record of name → `{command, args, env}`. This module flattens
- * them into the shape Codex's CLI expects:
+ * Every server is a streamable-HTTP entry pointing at the daemon's MCP
+ * hub (`core/mcp-hub`) — Codex connects with `mcp_servers.<name>.url`
+ * (the same transport `codex mcp add --url` configures). The hub hosts
+ * Talon's tools in-process and shares plugin/brave children across
+ * chats, so Codex no longer spawns a subprocess pair per server per
+ * turn:
  *
  *   {
  *     mcp_servers: {
- *       <name>: { command: "node", args: [...], env: { ... } },
+ *       <name>: { url: "http://127.0.0.1:<port>/mcp/..." },
  *       ...
  *     }
  *   }
- *
- * The chat-specific Talon MCP server (`telegram-tools` etc.) and the
- * Brave Search server are added alongside the plugin servers.
  */
 
-import { resolve } from "node:path";
 import type { CodexOptions } from "@openai/codex-sdk";
-import { wrapMcpCommand } from "../../util/mcp-launcher.js";
-import { getPluginMcpServers } from "../../core/plugin/index.js";
 import {
-  buildTalonMcpEnv,
-  talonMcpServerCommand,
-  type ToolExclusionConfig,
-} from "../../core/tools/mcp-env.js";
+  talonHubUrl,
+  pluginHubUrl,
+  hubPluginServerNames,
+} from "../../core/mcp-hub/index.js";
+import type { ToolExclusionConfig } from "../../core/tools/mcp-env.js";
 
 /**
  * AppToolApproval values accepted by Codex's `mcp_servers.<name>` table.
@@ -52,11 +50,10 @@ import {
  */
 export type CodexToolApprovalMode = "auto" | "prompt" | "approve";
 
-/** TOML-compatible record shape Codex's CLI accepts. */
+/** TOML-compatible record shape Codex's CLI accepts (HTTP transport). */
 export interface CodexMcpServer {
-  command: string;
-  args: string[];
-  env?: Record<string, string>;
+  /** Streamable-HTTP MCP endpoint (Talon's hub). */
+  url: string;
   /**
    * Per-server default approval mode applied to every tool the server
    * exposes (unless a `tools.<tool>.approval_mode` override is set).
@@ -134,47 +131,29 @@ export function buildCodexMcpServers(args: {
 
   const servers: Record<string, CodexMcpServer> = {};
 
-  // Frontend MCP tool servers (one per non-terminal frontend). Spawn
-  // spec is shared — see talonMcpServerCommand for the tsx-loader and
-  // Windows rationale.
+  // Frontend MCP tool servers (one per non-terminal frontend) — served
+  // in-process by the hub; the (frontend, chatId) binding travels in
+  // the URL. Tool-surface trimming is applied hub-side (initHub).
   for (const frontend of frontends) {
-    const serverName = `${frontend}-tools`;
-    const wrapped = wrapMcpCommand(talonMcpServerCommand());
-    servers[serverName] = {
-      command: wrapped[0],
-      args: wrapped.slice(1),
-      env: buildTalonMcpEnv({
-        bridgeUrl,
-        chatId,
-        frontend,
-        config: args.toolExclusions,
-      }),
+    servers[`${frontend}-tools`] = {
+      url: talonHubUrl(bridgeUrl, frontend, chatId),
       default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
     };
   }
 
-  // Brave Search MCP server (if configured).
+  // Brave Search MCP server (if configured) — one hub child shared by
+  // every chat.
   if (braveApiKey) {
     servers["brave-search"] = {
-      command: resolve(
-        import.meta.dirname ?? ".",
-        "../../../node_modules/.bin/brave-search-mcp-server",
-      ),
-      args: [],
-      env: { BRAVE_API_KEY: braveApiKey },
+      url: pluginHubUrl(bridgeUrl, "brave-search", chatId),
       default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
     };
   }
 
-  // Plugin MCP servers. `getPluginMcpServers` already runs each command
-  // through the supervisor wrap (`wrapMcpServer`), so the returned
-  // command/args are launcher-ready — do NOT wrap a second time.
-  const pluginServers = getPluginMcpServers(bridgeUrl, chatId);
-  for (const [name, cfg] of Object.entries(pluginServers)) {
+  // Plugin MCP servers — hub-managed children (chat-scoped, idle-reaped).
+  for (const name of hubPluginServerNames()) {
     servers[name] = {
-      command: cfg.command,
-      args: cfg.args,
-      env: cfg.env ?? {},
+      url: pluginHubUrl(bridgeUrl, name, chatId),
       default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,
     };
   }

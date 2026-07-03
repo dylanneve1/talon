@@ -21,6 +21,11 @@ import { getHealthStatus } from "../../util/watchdog.js";
 import { getActiveSessionCount } from "../../storage/sessions.js";
 import { log, logError, logDebug } from "../../util/log.js";
 import { handleSharedAction } from "./gateway-actions/index.js";
+import {
+  handleHubRequest,
+  getHubSessionCount,
+  HUB_PATH_PREFIX,
+} from "../mcp-hub/index.js";
 import { handlePluginAction } from "../plugin/index.js";
 import type { FrontendActionHandler } from "../types.js";
 import { BOT_MESSAGE_ACTIONS, noteBotMessage } from "../soul/taps.js";
@@ -352,6 +357,7 @@ export class Gateway {
               bridge: {
                 activeChats: this.loom.activeContextCount(),
                 threads: this.loom.size(),
+                hubSessions: getHubSessionCount(),
               },
               queue: getActiveCount(),
               sessions: getActiveSessionCount(),
@@ -385,6 +391,14 @@ export class Gateway {
           res.end(JSON.stringify({ ok: true }));
           const handler = this.shutdownHandler;
           setImmediate(() => handler("gateway /shutdown"));
+          return;
+        }
+
+        if (req.url?.startsWith(HUB_PATH_PREFIX)) {
+          // MCP hub — daemon-hosted MCP-over-HTTP endpoints for every
+          // backend (see core/mcp-hub). Same 127.0.0.1 trust boundary
+          // as /action.
+          await handleHubRequest(req, res, `http://127.0.0.1:${this.port}`);
           return;
         }
 
@@ -490,6 +504,11 @@ export class Gateway {
         this.port = 0;
         resolve();
       });
+      // `close()` only stops NEW connections; MCP hub sessions hold
+      // long-lived SSE streams that would keep the close callback from
+      // ever firing. Terminate them — everything on this server is
+      // localhost request/response or SSE, safe to drop at stop time.
+      this.server.closeAllConnections();
     });
   }
 }

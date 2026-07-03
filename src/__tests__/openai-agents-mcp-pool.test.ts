@@ -23,13 +23,15 @@ let activeBundleCount = 0;
 let closeCount = 0;
 
 vi.mock("@openai/agents", () => {
-  // Stub MCPServerStdio so the constructor doesn't try to spawn a
-  // real subprocess. Records the options for later inspection.
-  class FakeMCPServerStdio {
+  // Stub MCPServerStreamableHttp so the constructor doesn't open a
+  // real HTTP connection. Records the options for later inspection.
+  class FakeMCPServerStreamableHttp {
     name: string;
+    url: string;
     cacheToolsList: boolean | undefined;
-    constructor(opts: { name: string; cacheToolsList?: boolean }) {
+    constructor(opts: { name: string; url: string; cacheToolsList?: boolean }) {
       this.name = opts.name;
+      this.url = opts.url;
       this.cacheToolsList = opts.cacheToolsList;
     }
     async connect(): Promise<void> {
@@ -63,7 +65,7 @@ vi.mock("@openai/agents", () => {
   }
 
   return {
-    MCPServerStdio: FakeMCPServerStdio,
+    MCPServerStreamableHttp: FakeMCPServerStreamableHttp,
     connectMcpServers,
   };
 });
@@ -211,7 +213,7 @@ describe("openai-agents / mcp-pool", () => {
     expect(getActiveBundleIds()).toEqual([]);
   });
 
-  it("each MCPServerStdio is constructed with cacheToolsList=true", async () => {
+  it("each MCPServerStreamableHttp is constructed with cacheToolsList=true", async () => {
     await getOrCreateBundle(inputs("chat-A"));
     expect(connectCalls.length).toBe(1);
 

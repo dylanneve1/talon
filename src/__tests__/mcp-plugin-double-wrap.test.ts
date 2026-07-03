@@ -1,23 +1,19 @@
 /**
- * Regression: plugin MCP servers must not be double-wrapped.
+ * Regression: plugin MCP server commands must reach the hub launcher
+ * exactly as `getPluginMcpServers()` built them.
  *
- * `getPluginMcpServers()` (core/plugin.ts) already runs every plugin
- * command through the supervisor wrap (`wrapMcpServer`), so the
- * command/args it returns are launcher-ready. The per-backend MCP config
- * builders must therefore pass those through UNCHANGED.
+ * History: before the MCP hub, every backend flattened plugin specs
+ * into its own spawn config, and codex / openai-agents / remote-server
+ * once re-applied `wrapMcpCommand(...)` on top of the already-wrapped
+ * spec — a `[supervisor, …, supervisor, …, realCmd]` double-wrap that
+ * broke plugin MCP servers.
  *
- * Previously codex / openai-agents / remote-server re-applied
- * `wrapMcpCommand(...)` on top, producing a
- * `[supervisor, …, supervisor, …, realCmd]` double-wrap that broke plugin
- * MCP servers (the inner supervisor was launched as if it were the server).
- * claude-sdk already consumed the map raw, which is the correct contract.
- *
- * kilo and opencode are covered transitively: both route plugin servers
- * through the shared `remote-server` `ensurePluginMcpServers` path.
- *
- * This test pins the contract on the codex builder (a pure, synchronous
- * function): a plugin entry that is already launcher-shaped must come out
- * byte-identical — no second wrapper prepended.
+ * With the hub, backends never see commands at all — they emit hub
+ * URLs (pinned by codex-backend.test.ts). The pass-through contract
+ * now lives in ONE place: the hub's child spawner must consume the
+ * launcher-ready spec unchanged. This test pins that: the spec the
+ * hub would spawn for a plugin server is byte-identical to what
+ * `getPluginMcpServers()` returned.
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -43,28 +39,26 @@ vi.mock("../core/plugin/index.js", () => ({
   getPluginMcpServers: vi.fn(() => structuredClone(LAUNCHER_READY)),
 }));
 
-import { buildCodexMcpServers } from "../backend/codex/mcp-config.js";
+import { _pluginSpecForTesting } from "../core/mcp-hub/index.js";
 
 describe("plugin MCP servers are not double-wrapped", () => {
-  it("codex passes the launcher-ready command/args through unchanged", () => {
-    const servers = buildCodexMcpServers({
-      chatId: "c1",
-      bridgeUrl: "http://127.0.0.1:19876",
-      frontends: ["telegram"],
-    });
-
-    const plugin = servers["mempalace-tools"];
-    expect(plugin).toBeDefined();
+  it("the hub spawns the launcher-ready command/args unchanged", () => {
+    const spec = _pluginSpecForTesting(
+      "mempalace-tools",
+      "c1",
+      "http://127.0.0.1:19876",
+    );
 
     const expected = LAUNCHER_READY["mempalace-tools"];
     // Exact pass-through: re-wrapping would replace `command` with the
     // supervisor binary and push the original command down into `args`.
-    expect(plugin.command).toBe(expected.command);
-    expect(plugin.args).toEqual(expected.args);
+    expect(spec.command).toBe(expected.command);
+    expect(spec.args).toEqual(expected.args);
+    expect(spec.env).toEqual(expected.env);
 
     // Belt-and-braces: the launcher entrypoint token must appear exactly
     // once across the final argv — a second wrap would duplicate it.
-    const launcherHits = plugin.args.filter((a) =>
+    const launcherHits = spec.args.filter((a) =>
       a.includes("mcp-launch.js"),
     ).length;
     expect(launcherHits).toBe(1);

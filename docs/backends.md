@@ -99,13 +99,34 @@ interface Backend {
 across all backends — each backend's `one-shot.ts` translates the
 runtime events into Markdown-flavoured run-log entries.
 
+### `core/mcp-hub/` — MCP over HTTP for every backend
+
+All MCP servers are served by the daemon's MCP hub on the gateway
+HTTP server (streamable HTTP), and every backend connects with its
+SDK's HTTP/remote transport instead of spawning stdio subprocesses:
+
+- `/mcp/talon/<frontend>/<chatId>` — Talon's own tool set, composed
+  **in-process** (`talon-server.ts`); the per-chat binding travels in
+  the URL rather than `TALON_CHAT_ID` env. Zero subprocesses.
+- `/mcp/plugin/<serverName>/<chatId>` — external plugin / brave
+  servers, proxied (`proxy-server.ts`) to hub-owned stdio children
+  (`children.ts`) that are shared across sessions, reaped after an
+  idle TTL (`TALON_MCP_HUB_IDLE_MS`, default 10 min), and *retired*
+  on plugin reload — in-flight tool calls drain on the old process
+  while new calls spawn fresh from the reloaded registry.
+
+Before the hub, each backend spawned its own copy of every MCP server
+per chat (claude-sdk/codex per turn; openai-agents and kilo/opencode
+per chat, held indefinitely) and daemon memory grew linearly with the
+number of chats.
+
 ## Backend-specific notes
 
 ### Claude SDK
 
 Spawns the `claude` CLI as a subprocess per turn via
 `@anthropic-ai/claude-agent-sdk`. MCP servers are passed in
-`Options.mcpServers`; the SDK spawns them inside its subprocess.
+`Options.mcpServers` as `type: "http"` hub URLs.
 Turn termination via `PostToolBatch` hook + `continue: false` returns.
 
 Requires the `claude` CLI on `PATH` and ChatGPT auth (or

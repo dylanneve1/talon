@@ -41,11 +41,9 @@ import {
 
 interface RecordedMcpAdd {
   name: string;
-  config: {
-    type: string;
-    command: string[];
-    environment?: Record<string, string>;
-  };
+  config:
+    | { type: "local"; command: string[]; environment?: Record<string, string> }
+    | { type: "remote"; url: string };
 }
 
 /**
@@ -164,11 +162,10 @@ describe("remote-server / mcp helpers", () => {
       expect(name).toBe("talon-tools-chatA");
       expect(mcpAddCalls).toHaveLength(1);
       expect(mcpAddCalls[0].name).toBe("talon-tools-chatA");
-      expect(mcpAddCalls[0].config.type).toBe("local");
-      expect(mcpAddCalls[0].config.environment).toMatchObject({
-        TALON_CHAT_ID: "chatA",
-        TALON_FRONTEND: "telegram",
-      });
+      expect(mcpAddCalls[0].config.type).toBe("remote");
+      expect(
+        (mcpAddCalls[0].config as { type: "remote"; url: string }).url,
+      ).toContain("/mcp/talon/telegram/chatA");
       expect(getRegisteredMcpServerNames(state)).toContain("talon-tools-chatA");
     });
 

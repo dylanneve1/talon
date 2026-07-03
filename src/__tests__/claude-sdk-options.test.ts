@@ -767,29 +767,27 @@ describe("buildMcpServers (heartbeat-tier paths)", () => {
     expect(servers).not.toHaveProperty("telegram-tools");
   });
 
-  it("env includes TALON_CHAT_ID, TALON_FRONTEND, TALON_BRIDGE_URL", async () => {
+  it("hub URL carries chatId + frontend and targets the bridge port", async () => {
     mockGetConfig.mockReturnValue({ frontend: "telegram" });
     mockGetBridgePort.mockReturnValue(31337);
     const { buildMcpServers } =
       await import("../backend/claude-sdk/options.js");
     const servers = buildMcpServers("352042062");
-    const env = (servers["telegram-tools"] as { env: Record<string, string> })
-      .env;
-    expect(env).toMatchObject({
-      TALON_CHAT_ID: "352042062",
-      TALON_FRONTEND: "telegram",
-      TALON_BRIDGE_URL: "http://127.0.0.1:31337",
+    expect(servers["telegram-tools"]).toEqual({
+      type: "http",
+      url: "http://127.0.0.1:31337/mcp/talon/telegram/352042062",
+      alwaysLoad: true,
     });
   });
 
-  it("heartbeat sentinel: TALON_CHAT_ID is 'heartbeat' when chatId='heartbeat'", async () => {
+  it("heartbeat sentinel: hub URL carries 'heartbeat' when chatId='heartbeat'", async () => {
     mockGetConfig.mockReturnValue({ frontend: "telegram" });
     const { buildMcpServers } =
       await import("../backend/claude-sdk/options.js");
     const servers = buildMcpServers("heartbeat");
-    const env = (servers["telegram-tools"] as { env: Record<string, string> })
-      .env;
-    expect(env.TALON_CHAT_ID).toBe("heartbeat");
+    expect(servers["telegram-tools"].url).toMatch(
+      /\/mcp\/talon\/telegram\/heartbeat$/,
+    );
   });
 
   it("multi-frontend + brave produces 3 servers", async () => {
@@ -806,29 +804,17 @@ describe("buildMcpServers (heartbeat-tier paths)", () => {
       "telegram-tools",
     ]);
     // Both frontend servers get the heartbeat sentinel.
-    expect(
-      (servers["telegram-tools"] as { env: Record<string, string> }).env
-        .TALON_CHAT_ID,
-    ).toBe("heartbeat");
-    expect(
-      (servers["teams-tools"] as { env: Record<string, string> }).env
-        .TALON_CHAT_ID,
-    ).toBe("heartbeat");
+    expect(servers["telegram-tools"].url).toMatch(/\/heartbeat$/);
+    expect(servers["teams-tools"].url).toMatch(/\/heartbeat$/);
   });
 
-  it("each frontend gets its own TALON_FRONTEND env (no cross-pollination)", async () => {
+  it("each frontend gets its own hub URL (no cross-pollination)", async () => {
     mockGetConfig.mockReturnValue({ frontend: ["telegram", "teams"] });
     const { buildMcpServers } =
       await import("../backend/claude-sdk/options.js");
     const servers = buildMcpServers("heartbeat");
-    expect(
-      (servers["telegram-tools"] as { env: Record<string, string> }).env
-        .TALON_FRONTEND,
-    ).toBe("telegram");
-    expect(
-      (servers["teams-tools"] as { env: Record<string, string> }).env
-        .TALON_FRONTEND,
-    ).toBe("teams");
+    expect(servers["telegram-tools"].url).toContain("/mcp/talon/telegram/");
+    expect(servers["teams-tools"].url).toContain("/mcp/talon/teams/");
   });
 
   it("includes brave-search when braveApiKey set, even for terminal-only", async () => {

@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 
 import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 export interface RemoteTurnItem {
   type: "text" | "tool";
@@ -37,9 +38,12 @@ export interface RemoteTurn {
 
 interface McpRegistration {
   name: string;
-  command: string;
-  args: string[];
-  env: Record<string, string>;
+  /** Stdio shape (`type: "local"`). */
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  /** Remote shape (`type: "remote"`) — Talon's MCP hub URL. */
+  url?: string;
 }
 
 export interface FakeRemoteServer {
@@ -74,7 +78,10 @@ export async function startFakeRemoteServer(
   const mcpServers = new Map<string, McpRegistration>();
   const mcpClients = new Map<
     string,
-    { client: McpClient; transport: StdioClientTransport }
+    {
+      client: McpClient;
+      transport: StdioClientTransport | StreamableHTTPClientTransport;
+    }
   >();
   let currentTurn: RemoteTurn = { emit: [] };
   let lastAssistant: Record<string, unknown> | null = null;
@@ -118,17 +125,23 @@ export async function startFakeRemoteServer(
     if (mcpClients.has(name)) return mcpClients.get(name)!;
     const cfg = mcpServers.get(name);
     if (!cfg) return null;
-    const mergedEnv: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) {
-      if (typeof v === "string") mergedEnv[k] = v;
+    let transport: StdioClientTransport | StreamableHTTPClientTransport;
+    if (cfg.url) {
+      // Remote registration — Talon's MCP hub over streamable HTTP.
+      transport = new StreamableHTTPClientTransport(new URL(cfg.url));
+    } else {
+      const mergedEnv: Record<string, string> = {};
+      for (const [k, v] of Object.entries(process.env)) {
+        if (typeof v === "string") mergedEnv[k] = v;
+      }
+      Object.assign(mergedEnv, cfg.env ?? {});
+      transport = new StdioClientTransport({
+        command: cfg.command ?? "",
+        args: cfg.args ?? [],
+        env: mergedEnv,
+        stderr: "pipe",
+      });
     }
-    Object.assign(mergedEnv, cfg.env);
-    const transport = new StdioClientTransport({
-      command: cfg.command,
-      args: cfg.args,
-      env: mergedEnv,
-      stderr: "pipe",
-    });
     const client = new McpClient(
       { name: "fake-remote", version: "0.0.0" },
       { capabilities: {} },
@@ -286,7 +299,12 @@ export async function startFakeRemoteServer(
               : cfg.env && typeof cfg.env === "object"
                 ? cfg.env
                 : {};
-          if (name && cmdArr.length > 0) {
+          const remoteUrl =
+            typeof cfg.url === "string" && cfg.url ? cfg.url : undefined;
+          if (name && remoteUrl) {
+            // `type: "remote"` — Talon's MCP hub endpoint.
+            mcpServers.set(name, { name, url: remoteUrl });
+          } else if (name && cmdArr.length > 0) {
             mcpServers.set(name, {
               name,
               command: cmdArr[0],
