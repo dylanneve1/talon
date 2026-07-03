@@ -35,3 +35,6 @@ DELETE FROM cron_jobs WHERE id = ?
 
 -- name: count
 SELECT COUNT(*) AS n FROM cron_jobs
+
+-- name: removeAll
+DELETE FROM cron_jobs

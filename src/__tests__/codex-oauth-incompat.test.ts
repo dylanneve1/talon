@@ -1,17 +1,46 @@
 /**
  * Codex OAuth-incompat runtime learning store tests.
  *
- * Covers `oauth-incompat.ts` (persistence round-trip, fingerprint
- * matching, malformed-file tolerance), `models.isCodexOAuthIncompat`
- * (combined curated + dynamic check), `models.chatGptFallbackFor`
- * (broadened fallback selection), and `auth.isSilentOAuthExitError`
- * (the 2026-05-20 Pandario regression pattern).
+ * Covers `oauth-incompat.ts` (kv persistence round-trip, fingerprint
+ * matching, malformed-payload tolerance, one-shot legacy-file import),
+ * `models.isCodexOAuthIncompat` (combined curated + dynamic check),
+ * `models.chatGptFallbackFor` (broadened fallback selection), and
+ * `auth.isSilentOAuthExitError` (the 2026-05-20 Pandario regression
+ * pattern).
+ *
+ * The store now rides the shared kv table (test-isolated per worker via
+ * TALON_DB_PATH), so scenarios isolate by deleting the kv key in
+ * `beforeEach` rather than overriding HOME. The one legacy-import test
+ * redirects `files.codexOauthIncompat` into a tmp dir (paths mock) and
+ * unsets TALON_DISABLE_LEGACY_IMPORT so the import actually runs.
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { afterEach, beforeEach, describe, it, expect } from "vitest";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+
+// Redirect only the legacy-import source path into a per-test tmp dir;
+// everything else in `paths` stays real. The getter reads `legacyDir`
+// lazily so each test's fresh mkdtemp is picked up.
+let legacyDir: string;
+vi.mock("../util/paths.js", async () => {
+  const real =
+    await vi.importActual<typeof import("../util/paths.js")>(
+      "../util/paths.js",
+    );
+  return {
+    ...real,
+    files: new Proxy(real.files, {
+      get(target, prop: string) {
+        if (prop === "codexOauthIncompat") {
+          return join(legacyDir, "codex-oauth-incompat.json");
+        }
+        return target[prop as keyof typeof target];
+      },
+    }),
+  };
+});
 
 import {
   computeAuthFingerprint,
@@ -31,48 +60,44 @@ import {
   isChatGptModelMismatchError,
   type CodexAuthInfo,
 } from "../backend/codex/auth.js";
-// `oauth-incompat.ts` resolves the store path lazily against
-// `homedir()` at every call, so overriding HOME in `beforeEach`
-// fully isolates each test under a temp directory. No need to touch
-// the production `~/.talon/data/codex-oauth-incompat.json` path —
-// nothing in this file should ever resolve to it.
+import { kvDelete } from "../storage/kv.js";
 
-let originalHome: string | undefined;
-let originalUserProfile: string | undefined;
-let tempHome: string;
+const STORE_KEY = "codex.oauth-incompat";
+
+/** Absolute path of the redirected legacy JSON file for the current test. */
+function legacyFilePath(): string {
+  return join(legacyDir, "codex-oauth-incompat.json");
+}
 
 /**
- * Compute the per-test store path the same way `oauth-incompat.ts`
- * does — `<tempHome>/.talon/data/codex-oauth-incompat.json`. Used by
- * tests that need to seed the store before calling
- * `loadOAuthIncompatStore`.
+ * Run `fn` with the legacy-JSON import un-gated (the vitest setup pins
+ * TALON_DISABLE_LEGACY_IMPORT=1 for every other suite). Restores the
+ * prior value so sibling suites in the same worker stay gated.
  */
-function testStorePath(): string {
-  return join(tempHome, ".talon", "data", "codex-oauth-incompat.json");
+async function withLegacyImportEnabled(fn: () => Promise<void>): Promise<void> {
+  const prev = process.env.TALON_DISABLE_LEGACY_IMPORT;
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+  try {
+    await fn();
+  } finally {
+    if (prev === undefined) delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+    else process.env.TALON_DISABLE_LEGACY_IMPORT = prev;
+  }
 }
 
 beforeEach(() => {
-  originalHome = process.env.HOME;
-  originalUserProfile = process.env.USERPROFILE;
-  tempHome = mkdtempSync(join(tmpdir(), "talon-codex-incompat-"));
-  process.env.HOME = tempHome;
-  process.env.USERPROFILE = tempHome;
+  legacyDir = mkdtempSync(join(tmpdir(), "talon-codex-incompat-"));
+  kvDelete(STORE_KEY);
   resetOAuthIncompatForTests();
 });
 
 afterEach(() => {
-  if (originalHome !== undefined) process.env.HOME = originalHome;
-  else delete process.env.HOME;
-  if (originalUserProfile !== undefined) {
-    process.env.USERPROFILE = originalUserProfile;
-  } else {
-    delete process.env.USERPROFILE;
-  }
   try {
-    rmSync(tempHome, { recursive: true, force: true });
+    rmSync(legacyDir, { recursive: true, force: true });
   } catch {
     /* ignore */
   }
+  kvDelete(STORE_KEY);
   resetOAuthIncompatForTests();
 });
 
@@ -124,13 +149,13 @@ describe("computeAuthFingerprint", () => {
 // ── Load + mark round-trip ────────────────────────────────────────────────
 
 describe("oauth-incompat / persistence", () => {
-  it("returns empty when no store file exists", async () => {
+  it("returns empty when nothing is persisted", async () => {
     await loadOAuthIncompatStore("chatgpt:file:~/.codex/auth.json");
     expect(isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
     expect(listKnownOAuthIncompat()).toEqual([]);
   });
 
-  it("mark + reload round-trips the set", async () => {
+  it("mark + reload round-trips the set through kv", async () => {
     const fingerprint = "chatgpt:file:~/.codex/auth.json";
     await loadOAuthIncompatStore(fingerprint);
 
@@ -144,7 +169,7 @@ describe("oauth-incompat / persistence", () => {
     expect(isKnownOAuthIncompat("gpt-5.5")).toBe(false);
     expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
 
-    // Simulate restart: blow away in-memory state and reload.
+    // Simulate restart: blow away in-memory state and reload from kv.
     resetOAuthIncompatForTests();
     await loadOAuthIncompatStore(fingerprint);
     expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
@@ -161,57 +186,16 @@ describe("oauth-incompat / persistence", () => {
     expect(listKnownOAuthIncompat()).toEqual([]);
   });
 
-  it("tolerates a malformed JSON store gracefully", async () => {
-    mkdirSync(join(testStorePath(), ".."), { recursive: true });
-    writeFileSync(testStorePath(), "not json at all { } {");
-    await loadOAuthIncompatStore("chatgpt:test");
-    expect(listKnownOAuthIncompat()).toEqual([]);
-  });
-
-  it("tolerates a schema-version mismatch", async () => {
-    // The store path resolves against `tempHome` (see beforeEach).
-    mkdirSync(join(testStorePath(), ".."), { recursive: true });
-    writeFileSync(
-      testStorePath(),
-      JSON.stringify({
-        version: 999,
-        fingerprint: "chatgpt:test",
-        updatedAt: new Date().toISOString(),
-        models: ["gpt-5.4-mini"],
-      }),
-    );
-    await loadOAuthIncompatStore("chatgpt:test");
-    expect(listKnownOAuthIncompat()).toEqual([]);
-  });
-
-  it("filters non-string entries on load (defensive)", async () => {
-    // The store path resolves against `tempHome` (see beforeEach).
-    mkdirSync(join(testStorePath(), ".."), { recursive: true });
-    writeFileSync(
-      testStorePath(),
-      JSON.stringify({
-        version: 1,
-        fingerprint: "chatgpt:test",
-        updatedAt: new Date().toISOString(),
-        models: ["gpt-5.4-mini", null, 42, "", "gpt-5.2"],
-      }),
-    );
-    await loadOAuthIncompatStore("chatgpt:test");
-    expect(listKnownOAuthIncompat()).toEqual(["gpt-5.2", "gpt-5.4-mini"]);
-  });
-
   it("markOAuthIncompat is a safe no-op when no store is loaded", async () => {
     resetOAuthIncompatForTests();
     expect(await markOAuthIncompat("gpt-5.4-mini")).toBe(false);
     expect(isKnownOAuthIncompat("gpt-5.4-mini")).toBe(false);
   });
 
-  it("migrates legacy bare-document format to the new envelope shape", async () => {
-    // Write data in the pre-Phase-6.x shape and verify the migrate
-    // hook lifts it into the envelope on load.
-    mkdirSync(join(testStorePath(), ".."), { recursive: true });
+  it("imports the legacy bare document into kv and renames the file", async () => {
+    // Pre-SQLite on-disk shape: { version, fingerprint, updatedAt, models }.
     writeFileSync(
-      testStorePath(),
+      legacyFilePath(),
       JSON.stringify({
         version: 1,
         fingerprint: "chatgpt:test",
@@ -219,8 +203,84 @@ describe("oauth-incompat / persistence", () => {
         models: ["gpt-5.4-mini", "gpt-5.4"],
       }),
     );
-    await loadOAuthIncompatStore("chatgpt:test");
+
+    await withLegacyImportEnabled(async () => {
+      await loadOAuthIncompatStore("chatgpt:test");
+    });
+
     expect(listKnownOAuthIncompat()).toEqual(["gpt-5.4", "gpt-5.4-mini"]);
+    // The value now lives in kv and the legacy file was renamed so the
+    // import never re-runs.
+    expect(existsSync(legacyFilePath())).toBe(false);
+    expect(existsSync(`${legacyFilePath()}.imported`)).toBe(true);
+  });
+
+  it("imports the JsonStore envelope shape into kv", async () => {
+    writeFileSync(
+      legacyFilePath(),
+      JSON.stringify({
+        schemaVersion: 1,
+        savedAt: Date.now(),
+        data: {
+          fingerprint: "chatgpt:test",
+          updatedAt: new Date().toISOString(),
+          models: ["gpt-5.4-mini", "gpt-5.2"],
+        },
+      }),
+    );
+
+    await withLegacyImportEnabled(async () => {
+      await loadOAuthIncompatStore("chatgpt:test");
+    });
+
+    expect(listKnownOAuthIncompat()).toEqual(["gpt-5.2", "gpt-5.4-mini"]);
+    expect(existsSync(`${legacyFilePath()}.imported`)).toBe(true);
+  });
+
+  it("filters non-string entries when importing (defensive)", async () => {
+    writeFileSync(
+      legacyFilePath(),
+      JSON.stringify({
+        version: 1,
+        fingerprint: "chatgpt:test",
+        updatedAt: new Date().toISOString(),
+        models: ["gpt-5.4-mini", null, 42, "", "gpt-5.2"],
+      }),
+    );
+
+    await withLegacyImportEnabled(async () => {
+      await loadOAuthIncompatStore("chatgpt:test");
+    });
+
+    expect(listKnownOAuthIncompat()).toEqual(["gpt-5.2", "gpt-5.4-mini"]);
+  });
+
+  it("starts empty on an unknown legacy schema version", async () => {
+    writeFileSync(
+      legacyFilePath(),
+      JSON.stringify({
+        version: 999,
+        fingerprint: "chatgpt:test",
+        updatedAt: new Date().toISOString(),
+        models: ["gpt-5.4-mini"],
+      }),
+    );
+
+    await withLegacyImportEnabled(async () => {
+      await loadOAuthIncompatStore("chatgpt:test");
+    });
+
+    expect(listKnownOAuthIncompat()).toEqual([]);
+  });
+
+  it("tolerates a malformed legacy file gracefully", async () => {
+    writeFileSync(legacyFilePath(), "not json at all { } {");
+
+    await withLegacyImportEnabled(async () => {
+      await loadOAuthIncompatStore("chatgpt:test");
+    });
+
+    expect(listKnownOAuthIncompat()).toEqual([]);
   });
 });
 

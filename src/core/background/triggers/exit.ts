@@ -7,7 +7,6 @@
 import type { ChildProcess } from "node:child_process";
 import {
   getTrigger,
-  persistNow,
   updateTrigger,
   type Trigger,
   type TriggerStatus,
@@ -37,9 +36,6 @@ export function handleTimeout(trigger: Trigger): void {
     status: "timed_out",
     lastError: `Timed out after ${trigger.timeoutSeconds}s`,
   });
-  // Terminal status — persist now so a crash before the 10s autosave doesn't
-  // leave us thinking this trigger is still "running" on next load.
-  persistNow();
   killChild(trigger.id, c);
 }
 
@@ -51,8 +47,6 @@ export function cancelTrigger(id: string): boolean {
     status: "cancelled",
     lastError: "Cancelled by user",
   });
-  // Terminal status — persist now so cancel survives a crash before autosave.
-  persistNow();
   killChild(id, child);
   return true;
 }
@@ -147,7 +141,6 @@ export async function finalizeExit(
   // status-rewrite and the endedAt stamp; just clear the PID and persist.
   if (t.persistent && t.status === "pending") {
     updateTrigger(id, { pid: undefined, pidStarttime: undefined });
-    persistNow();
     log(
       "triggers",
       `Exited (persistent) "${t.name}" [${id}] code=${code} signal=${signal} — will respawn on next start`,
@@ -174,9 +167,6 @@ export async function finalizeExit(
     pidStarttime: undefined,
     exitCode: code ?? undefined,
   });
-  // Terminal status reached — persist immediately so a crash between here and
-  // the next autosave tick doesn't lose the exit transition.
-  persistNow();
 
   log(
     "triggers",
@@ -209,8 +199,4 @@ export function failTrigger(t: Trigger, message: string): void {
     lastError: message,
     endedAt: Date.now(),
   });
-  // Terminal status — persist immediately. Callers like trigger_create re-read
-  // the store right after spawnTrigger() returns and must see "errored", not a
-  // stale snapshot from before the dirty flag is flushed.
-  persistNow();
 }

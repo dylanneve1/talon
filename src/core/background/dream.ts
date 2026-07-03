@@ -11,10 +11,11 @@
  * It does NOT use the main dispatcher (no chat session, no typing indicator).
  */
 
-import { existsSync, readFileSync, mkdirSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync } from "node:fs";
 import { resolve } from "node:path";
-import writeFileAtomic from "write-file-atomic";
 import { files as pathFiles, dirs } from "../../util/paths.js";
+import { kvGet, kvSet } from "../../storage/kv.js";
+import { importLegacyJson } from "../../storage/legacy-import.js";
 import { readPromptAsset } from "#prompt-assets";
 import { log, logError, logWarn } from "../../util/log.js";
 import { getDefaultModel } from "../models/catalog.js";
@@ -37,6 +38,14 @@ export type DreamState = {
 
 const DREAM_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
 const DREAM_STATE_FILE = pathFiles.dreamState;
+/**
+ * kv key owning the persisted dream run state. Migrated off the
+ * hand-rolled `dream_state.json` onto the shared `kv` table for
+ * transactional writes and TALON_DB_PATH test isolation. Note the file
+ * path (DREAM_STATE_FILE) is still handed to the dream agent's prompt —
+ * only Talon's own read/write of the state moved to kv.
+ */
+const DREAM_STATE_KEY = "dream.state";
 const DREAM_TIMEOUT_MS = 10 * 60 * 1000; // 10-minute max
 const DREAM_ABORT_GRACE_MS = 30 * 1000; // max wait for backend to honour abort
 const DREAM_LOGS_DIR = resolve(dirs.logs, "dreams");
@@ -334,31 +343,41 @@ function appendDreamLog(logFile: string, text: string): void {
 
 // ── State helpers ────────────────────────────────────────────────────────────
 
+/**
+ * Fold the pre-SQLite `dream_state.json` into the kv store exactly once
+ * per process, lazily on first read. Idempotent via `imported`; the
+ * rename to `<file>.imported` inside importLegacyJson stops it re-running
+ * across restarts. A payload without a numeric last_run imports nothing.
+ */
+let imported = false;
+function importLegacyStateOnce(): void {
+  if (imported) return;
+  imported = true;
+  importLegacyJson({
+    path: DREAM_STATE_FILE,
+    category: "dream",
+    what: "dream state",
+    ingest: (data) => {
+      if (!data || typeof data !== "object") return 0;
+      const { last_run } = data as Record<string, unknown>;
+      if (typeof last_run !== "number") return 0;
+      kvSet(DREAM_STATE_KEY, data);
+      return 1;
+    },
+  });
+}
+
 function readDreamState(): DreamState | null {
-  try {
-    if (!existsSync(DREAM_STATE_FILE)) return null;
-    const raw = readFileSync(DREAM_STATE_FILE, "utf-8");
-    const parsed = JSON.parse(raw) as DreamState;
-    if (typeof parsed.last_run !== "number") return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  importLegacyStateOnce();
+  const parsed = kvGet<DreamState>(DREAM_STATE_KEY);
+  if (!parsed || typeof parsed.last_run !== "number") return null;
+  return parsed;
 }
 
 function writeDreamState(state: DreamState): void {
-  try {
-    const dir = resolve(DREAM_STATE_FILE, "..");
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const enriched: DreamState = {
-      ...state,
-      last_run_at: new Date(state.last_run).toISOString(),
-    };
-    writeFileAtomic.sync(
-      DREAM_STATE_FILE,
-      JSON.stringify(enriched, null, 2) + "\n",
-    );
-  } catch (err) {
-    logError("dream", "Failed to write dream state", err);
-  }
+  const enriched: DreamState = {
+    ...state,
+    last_run_at: new Date(state.last_run).toISOString(),
+  };
+  kvSet(DREAM_STATE_KEY, enriched);
 }

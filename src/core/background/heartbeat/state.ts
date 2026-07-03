@@ -6,11 +6,9 @@
  * mutable fields live on a single `hb` holder object imported by both.
  */
 
-import { existsSync, readFileSync, mkdirSync } from "node:fs";
-import { resolve } from "node:path";
-import writeFileAtomic from "write-file-atomic";
 import { files as pathFiles } from "../../../util/paths.js";
-import { logError } from "../../../util/log.js";
+import { kvGet, kvSet } from "../../../storage/kv.js";
+import { importLegacyJson } from "../../../storage/legacy-import.js";
 import type { Backend } from "../../agent-runtime/capabilities.js";
 
 export type HeartbeatState = {
@@ -49,7 +47,13 @@ export type HeartbeatConfig = {
   mempalace?: boolean;
 };
 
-const HEARTBEAT_STATE_FILE = pathFiles.heartbeatState;
+/**
+ * kv key owning the persisted heartbeat state. The blob used to live at
+ * `pathFiles.heartbeatState` as hand-rolled JSON; it now rides the shared
+ * `kv` table so it inherits transactional writes and TALON_DB_PATH test
+ * isolation like the rest of the unified storage layer.
+ */
+const HEARTBEAT_STATE_KEY = "heartbeat.state";
 
 /**
  * Mutable heartbeat runtime state, shared across submodules:
@@ -105,32 +109,45 @@ function normalizeHeartbeatState(parsed: unknown): HeartbeatState | null {
   };
 }
 
+/**
+ * Fold the pre-SQLite JSON file into the kv store exactly once per
+ * process. Runs lazily on the first read rather than at boot so a
+ * heartbeat-free deployment never pays for it. Gated + idempotent via
+ * the module-level `imported` flag; the rename to `<file>.imported`
+ * inside importLegacyJson stops it re-running across restarts.
+ */
+let imported = false;
+function importLegacyStateOnce(): void {
+  if (imported) return;
+  imported = true;
+  importLegacyJson({
+    path: pathFiles.heartbeatState,
+    category: "heartbeat",
+    what: "heartbeat state",
+    ingest: (data) => {
+      const normalized = normalizeHeartbeatState(data);
+      if (!normalized) return 0;
+      kvSet(HEARTBEAT_STATE_KEY, normalized);
+      return 1;
+    },
+  });
+}
+
 export function readHeartbeatState(): HeartbeatState | null {
-  try {
-    if (!existsSync(HEARTBEAT_STATE_FILE)) return null;
-    const raw = readFileSync(HEARTBEAT_STATE_FILE, "utf-8");
-    return normalizeHeartbeatState(JSON.parse(raw));
-  } catch {
-    return null;
-  }
+  importLegacyStateOnce();
+  return normalizeHeartbeatState(kvGet(HEARTBEAT_STATE_KEY));
 }
 
 export function writeHeartbeatState(state: HeartbeatState): void {
-  try {
-    const dir = resolve(HEARTBEAT_STATE_FILE, "..");
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const { last_run_at: _lastRunAt, ...rest } = state;
-    const enriched: HeartbeatState = {
-      ...rest,
-      ...(state.last_run !== 0
-        ? { last_run_at: new Date(state.last_run).toISOString() }
-        : {}),
-    };
-    writeFileAtomic.sync(
-      HEARTBEAT_STATE_FILE,
-      JSON.stringify(enriched, null, 2) + "\n",
-    );
-  } catch (err) {
-    logError("heartbeat", "Failed to write heartbeat state", err);
-  }
+  // Re-derive last_run_at from last_run so the persisted ISO stamp can
+  // never drift from the millisecond field; omit it on the sentinel
+  // last_run === 0 (never-run) to match the pre-SQLite file format.
+  const { last_run_at: _lastRunAt, ...rest } = state;
+  const enriched: HeartbeatState = {
+    ...rest,
+    ...(state.last_run !== 0
+      ? { last_run_at: new Date(state.last_run).toISOString() }
+      : {}),
+  };
+  kvSet(HEARTBEAT_STATE_KEY, enriched);
 }

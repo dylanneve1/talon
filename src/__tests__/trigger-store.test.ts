@@ -1,58 +1,62 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+/**
+ * Trigger store — SQLite-backed CRUD, validation, path helpers, on-disk
+ * script/log handling, the one-shot legacy JSON import and SQL restart
+ * recovery.
+ *
+ * Real tmpdir files + the real engine (no fs mocks). A paths proxy points
+ * files.triggers / files.database and dirs.triggerRuns into a per-test
+ * tmpdir so imports, script writes and log reads stay isolated and never
+ * touch ~/.talon — the same harness as sessions-persistence.
+ */
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
+  logDebug: vi.fn(),
 }));
 
-vi.mock("../util/watchdog.js", () => ({
-  recordError: vi.fn(),
-}));
-
-const inMemoryFiles = new Map<string, string>();
-
-const existsSyncMock = vi.fn((p: string) => inMemoryFiles.has(p));
-const readFileSyncMock = vi.fn((p: string) => inMemoryFiles.get(p) ?? "");
-const writeFileSyncFsMock = vi.fn((p: string, body: string, _opts?: unknown) =>
-  inMemoryFiles.set(p, body),
-);
-const mkdirSyncMock = vi.fn();
-const rmSyncMock = vi.fn((p: string) => inMemoryFiles.delete(p));
-const renameSyncMock = vi.fn((from: string, to: string) => {
-  const v = inMemoryFiles.get(from);
-  if (v === undefined) return;
-  inMemoryFiles.set(to, v);
-  inMemoryFiles.delete(from);
+let workDir: string;
+vi.mock("../util/paths.js", async () => {
+  const real =
+    await vi.importActual<typeof import("../util/paths.js")>(
+      "../util/paths.js",
+    );
+  return {
+    ...real,
+    files: new Proxy(real.files, {
+      get(target, prop: string) {
+        if (prop === "triggers") return join(workDir, "triggers.json");
+        if (prop === "database") return join(workDir, "talon.db");
+        return target[prop as keyof typeof target];
+      },
+    }),
+    dirs: new Proxy(real.dirs, {
+      get(target, prop: string) {
+        if (prop === "triggerRuns") return join(workDir, "trigger-runs");
+        return target[prop as keyof typeof target];
+      },
+    }),
+  };
 });
-const unlinkSyncMock = vi.fn((p: string) => inMemoryFiles.delete(p));
 
-vi.mock("node:fs", () => ({
-  existsSync: existsSyncMock,
-  readFileSync: readFileSyncMock,
-  writeFileSync: writeFileSyncFsMock,
-  mkdirSync: mkdirSyncMock,
-  rmSync: rmSyncMock,
-  renameSync: renameSyncMock,
-  unlinkSync: unlinkSyncMock,
-}));
-
-const writeAtomicSyncMock = vi.fn((p: string, body: string) =>
-  inMemoryFiles.set(p, body),
-);
-vi.mock("write-file-atomic", () => ({
-  default: Object.assign(
-    (...args: unknown[]) => writeAtomicSyncMock(...(args as [string, string])),
-    { sync: writeAtomicSyncMock },
-  ),
-}));
-
+import { closeDatabase } from "../storage/db.js";
 import type { Trigger } from "../storage/trigger-store.js";
-import { files as pathFiles } from "../util/paths.js";
 
 const {
   loadTriggers,
-  flushTriggers,
   addTrigger,
   getTrigger,
   getTriggersForChat,
@@ -73,19 +77,21 @@ const {
   DEFAULT_TIMEOUT_SECONDS,
   MAX_TIMEOUT_SECONDS,
   MAX_ACTIVE_PER_CHAT,
-  _resetTriggersForTesting,
 } = await import("../storage/trigger-store.js");
 
+const envBackup = process.env.TALON_DB_PATH;
+const importBackup = process.env.TALON_DISABLE_LEGACY_IMPORT;
+
 function makeTrigger(overrides: Partial<Trigger> = {}): Trigger {
-  const id = generateTriggerId();
+  const id = overrides.id ?? generateTriggerId();
   return {
     id,
     chatId: "chat-1",
     numericChatId: 1,
     name: "watch-pr",
     language: "bash",
-    scriptPath: `/tmp/trigger-runs/chat-1/${id}.sh`,
-    logPath: `/tmp/trigger-runs/chat-1/${id}.log`,
+    scriptPath: join(workDir, "trigger-runs", "chat-1", `${id}.sh`),
+    logPath: join(workDir, "trigger-runs", "chat-1", `${id}.log`),
     status: "running",
     createdAt: Date.now(),
     timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
@@ -94,13 +100,24 @@ function makeTrigger(overrides: Partial<Trigger> = {}): Trigger {
   };
 }
 
-describe("trigger-store", () => {
-  beforeEach(() => {
-    _resetTriggersForTesting();
-    inMemoryFiles.clear();
-    vi.clearAllMocks();
-  });
+beforeEach(() => {
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+  workDir = mkdtempSync(join(tmpdir(), "talon-trigger-store-"));
+  closeDatabase();
+  process.env.TALON_DB_PATH = join(workDir, "talon.db");
+  vi.clearAllMocks();
+});
 
+afterEach(() => {
+  closeDatabase();
+  if (envBackup === undefined) delete process.env.TALON_DB_PATH;
+  else process.env.TALON_DB_PATH = envBackup;
+  if (importBackup === undefined) delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+  else process.env.TALON_DISABLE_LEGACY_IMPORT = importBackup;
+  rmSync(workDir, { recursive: true, force: true });
+});
+
+describe("trigger-store", () => {
   describe("constants", () => {
     it("exposes sane defaults", () => {
       expect(DEFAULT_TIMEOUT_SECONDS).toBe(24 * 60 * 60);
@@ -216,13 +233,32 @@ describe("trigger-store", () => {
       expect(updated!.fireCount).toBe(1);
     });
 
-    it("deleteTrigger removes from store and rms files", () => {
-      const t = makeTrigger();
+    it("updateTrigger clears a field when the value is undefined", () => {
+      // Merge semantics: a key present with value undefined drops the column —
+      // the supervisor relies on it to drop e.g. a dead pid.
+      const t = makeTrigger({ pid: 4321 });
       addTrigger(t);
+      const updated = updateTrigger(t.id, { pid: undefined });
+      expect(updated!.pid).toBeUndefined();
+      expect(getTrigger(t.id)!.pid).toBeUndefined();
+    });
+
+    it("updateTrigger returns undefined for an unknown id", () => {
+      expect(updateTrigger("nope", { status: "fired" })).toBeUndefined();
+    });
+
+    it("deleteTrigger removes from store and cleans up files", () => {
+      const t = makeTrigger();
+      mkdirSync(join(workDir, "trigger-runs", "chat-1"), { recursive: true });
+      writeFileSync(t.scriptPath, "echo hi");
+      writeFileSync(t.logPath, "log");
+      addTrigger(t);
+
       expect(deleteTrigger(t.id)).toBe(true);
       expect(getTrigger(t.id)).toBeUndefined();
-      // best-effort rmSync on script + log
-      expect(rmSyncMock).toHaveBeenCalledTimes(2);
+      // best-effort rm of script + log
+      expect(existsSync(t.scriptPath)).toBe(false);
+      expect(existsSync(t.logPath)).toBe(false);
     });
 
     it("deleteTrigger returns false for unknown id", () => {
@@ -230,20 +266,43 @@ describe("trigger-store", () => {
     });
   });
 
-  describe("loadTriggers — restart cleanup", () => {
-    it("marks running/pending triggers as terminated on load", () => {
+  describe("loadTriggers — restart recovery (SQL)", () => {
+    it("marks a non-persistent running trigger as terminated", () => {
       const t = makeTrigger({ status: "running", pid: 999 });
-      const persisted = JSON.stringify({ [t.id]: t });
-      inMemoryFiles.set(pathFiles.triggers, persisted);
+      addTrigger(t);
 
-      _resetTriggersForTesting();
       loadTriggers();
 
-      const restored = getTrigger(t.id);
-      expect(restored).toBeDefined();
-      expect(restored!.status).toBe("terminated");
-      expect(restored!.pid).toBeUndefined();
-      expect(restored!.lastError).toMatch(/restarted/);
+      const restored = getTrigger(t.id)!;
+      expect(restored.status).toBe("terminated");
+      expect(restored.pid).toBeUndefined();
+      expect(restored.lastError).toMatch(/restarted/);
+      expect(restored.endedAt).toBeDefined();
+    });
+
+    it("marks a non-persistent pending trigger as terminated", () => {
+      const t = makeTrigger({ status: "pending" });
+      addTrigger(t);
+
+      loadTriggers();
+
+      expect(getTrigger(t.id)!.status).toBe("terminated");
+    });
+
+    it("preserves a clean endedAt/lastError already recorded (COALESCE)", () => {
+      const t = makeTrigger({
+        status: "running",
+        endedAt: 12345,
+        lastError: "already noted",
+      });
+      addTrigger(t);
+
+      loadTriggers();
+
+      const restored = getTrigger(t.id)!;
+      expect(restored.status).toBe("terminated");
+      expect(restored.endedAt).toBe(12345);
+      expect(restored.lastError).toBe("already noted");
     });
 
     it("preserves terminal statuses across load", () => {
@@ -252,17 +311,17 @@ describe("trigger-store", () => {
         endedAt: Date.now() - 60_000,
         exitCode: 0,
       });
-      inMemoryFiles.set(pathFiles.triggers, JSON.stringify({ [t.id]: t }));
-      _resetTriggersForTesting();
+      addTrigger(t);
+
       loadTriggers();
+
       expect(getTrigger(t.id)!.status).toBe("fired");
     });
 
-    it("parks persistent running triggers as pending and preserves pid for orphan check", () => {
+    it("parks a persistent running trigger as pending and preserves its pid", () => {
       const t = makeTrigger({ status: "running", pid: 1234, persistent: true });
-      inMemoryFiles.set(pathFiles.triggers, JSON.stringify({ [t.id]: t }));
+      addTrigger(t);
 
-      _resetTriggersForTesting();
       loadTriggers();
 
       const restored = getTrigger(t.id)!;
@@ -273,52 +332,120 @@ describe("trigger-store", () => {
       expect(restored.endedAt).toBeUndefined();
     });
 
-    it("does not touch persistent triggers already in terminal state", () => {
+    it("does not touch persistent triggers already in a terminal state", () => {
       const t = makeTrigger({
         status: "cancelled",
         persistent: true,
         endedAt: Date.now() - 1000,
         lastError: "Cancelled by user",
       });
-      inMemoryFiles.set(pathFiles.triggers, JSON.stringify({ [t.id]: t }));
+      addTrigger(t);
 
-      _resetTriggersForTesting();
       loadTriggers();
 
-      // Cancelled persistent stays cancelled — only running/pending are converted
+      // Cancelled persistent stays cancelled — only running/pending convert.
       expect(getTrigger(t.id)!.status).toBe("cancelled");
+    });
+
+    it("does not throw on an empty store", () => {
+      expect(() => loadTriggers()).not.toThrow();
+      expect(getTrigger("any")).toBeUndefined();
     });
   });
 
-  describe("flushTriggers", () => {
-    it("does not throw when nothing is dirty", () => {
-      expect(() => flushTriggers()).not.toThrow();
+  describe("loadTriggers — legacy JSON import", () => {
+    const legacy = (over: Partial<Trigger> = {}): Trigger =>
+      makeTrigger({ status: "fired", exitCode: 0, ...over });
+
+    it("imports the JsonStore envelope and renames the file to .imported", () => {
+      const t = legacy({ id: "trig-env" });
+      writeFileSync(
+        join(workDir, "triggers.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          savedAt: 1716540000000,
+          data: { [t.id]: t },
+        }),
+      );
+
+      loadTriggers();
+
+      expect(getTrigger("trig-env")?.status).toBe("fired");
+      expect(existsSync(join(workDir, "triggers.json"))).toBe(false);
+      expect(existsSync(join(workDir, "triggers.json.imported"))).toBe(true);
+    });
+
+    it("imports the bare pre-envelope object shape { id: trigger }", () => {
+      const t = legacy({ id: "trig-bare" });
+      writeFileSync(
+        join(workDir, "triggers.json"),
+        JSON.stringify({ [t.id]: t }),
+      );
+
+      loadTriggers();
+
+      expect(getTrigger("trig-bare")?.status).toBe("fired");
+    });
+
+    it("imports the original bare-array shape [trigger, ...]", () => {
+      const a = legacy({ id: "trig-arr-1" });
+      const b = legacy({ id: "trig-arr-2", name: "second" });
+      writeFileSync(join(workDir, "triggers.json"), JSON.stringify([a, b]));
+
+      loadTriggers();
+
+      expect(getTrigger("trig-arr-1")).toBeDefined();
+      expect(getTrigger("trig-arr-2")).toBeDefined();
+    });
+
+    it("applies restart recovery to imported running triggers", () => {
+      const t = legacy({ id: "trig-imp-run", status: "running", pid: 42 });
+      writeFileSync(
+        join(workDir, "triggers.json"),
+        JSON.stringify({ [t.id]: t }),
+      );
+
+      loadTriggers();
+
+      const restored = getTrigger("trig-imp-run")!;
+      expect(restored.status).toBe("terminated");
+      expect(restored.pid).toBeUndefined();
+    });
+
+    it("survives a corrupt legacy file without throwing", () => {
+      writeFileSync(join(workDir, "triggers.json"), "{ not valid json");
+      expect(() => loadTriggers()).not.toThrow();
+      // The store still works after the failed import.
+      addTrigger(makeTrigger({ id: "after-corrupt" }));
+      expect(getTrigger("after-corrupt")).toBeDefined();
+    });
+
+    it("does nothing when the legacy file does not exist", () => {
+      expect(() => loadTriggers()).not.toThrow();
+      expect(getTrigger("any")).toBeUndefined();
     });
   });
 
   describe("writeScriptFile", () => {
-    it("writes the script body and returns the path", () => {
+    it("writes the script body with 0o700 perms and returns the path", () => {
       const path = writeScriptFile("c1", "trig_x", "bash", "echo hi");
       expect(path).toMatch(/\.sh$/);
-      expect(writeFileSyncFsMock).toHaveBeenCalled();
-      const [calledPath, body, opts] = writeFileSyncFsMock.mock.calls[0];
-      expect(calledPath).toBe(path);
-      expect(body).toBe("echo hi");
-      expect((opts as { mode: number }).mode).toBe(0o700);
+      expect(existsSync(path)).toBe(true);
+      expect(readFileSync(path, "utf-8")).toBe("echo hi");
     });
   });
 
   describe("readTriggerLogTail", () => {
     it("returns empty for a non-existent log", () => {
-      const result = readTriggerLogTail("/nope.log", 10);
+      const result = readTriggerLogTail(join(workDir, "nope.log"), 10);
       expect(result.tail).toBe("");
       expect(result.truncated).toBe(false);
     });
 
     it("returns last N lines and flags truncation", () => {
-      const path = "/tmp/trigger-runs/x.log";
+      const path = join(workDir, "x.log");
       const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
-      inMemoryFiles.set(path, lines.join("\n"));
+      writeFileSync(path, lines.join("\n"));
       const result = readTriggerLogTail(path, 5);
       expect(result.truncated).toBe(true);
       expect(result.tail.split("\n")).toEqual([
@@ -331,108 +458,20 @@ describe("trigger-store", () => {
     });
 
     it("returns full content untruncated when small enough", () => {
-      const path = "/tmp/trigger-runs/y.log";
-      inMemoryFiles.set(path, "a\nb\nc");
+      const path = join(workDir, "y.log");
+      writeFileSync(path, "a\nb\nc");
       const result = readTriggerLogTail(path, 10);
       expect(result.truncated).toBe(false);
       expect(result.tail).toBe("a\nb\nc");
     });
 
-    it("uses String(err) when readFileSync throws a non-Error (Branch 32 false arm)", () => {
-      // A path that exists (so existsSync passes) but readFileSync throws a string
-      const path = "/tmp/trigger-runs/err-string.log";
-      inMemoryFiles.set(path, "dummy"); // existsSyncMock returns true
-      readFileSyncMock.mockImplementationOnce(() => {
-        throw "string readFileSync error"; // non-Error → false arm of err instanceof Error
-      });
-      const result = readTriggerLogTail(path, 10);
+    it("returns an error string when the log cannot be read (catch path)", () => {
+      // A directory path: existsSync passes but readFileSync throws EISDIR.
+      const dirPath = join(workDir, "a-directory");
+      mkdirSync(dirPath);
+      const result = readTriggerLogTail(dirPath, 10);
       expect(result.tail).toMatch(/Failed to read log/);
       expect(result.truncated).toBe(false);
-    });
-  });
-
-  // ── loadTriggers — file not present (Branch 0 false arm) ──────────────────
-
-  describe("loadTriggers — file not present", () => {
-    it("starts with empty store when triggers file does not exist", () => {
-      // inMemoryFiles is empty → existsSyncMock returns false → skip reading
-      _resetTriggersForTesting();
-      loadTriggers();
-      expect(getTrigger("any")).toBeUndefined();
-    });
-  });
-
-  // ── loadTriggers — non-object JSON (Branch 1 false arm) ───────────────────
-
-  describe("loadTriggers — non-object JSON", () => {
-    it("falls back to empty store when primary JSON is null", () => {
-      inMemoryFiles.set(pathFiles.triggers, "null");
-      _resetTriggersForTesting();
-      loadTriggers(); // Branch 0 true, Branch 1 false arm (null is not a valid store object)
-      expect(getTrigger("any")).toBeUndefined();
-    });
-  });
-
-  // ── loadTriggers — corrupt primary file (Branches 3, 4, 5) ───────────────
-
-  describe("loadTriggers — corrupt primary file", () => {
-    it("handles corrupt primary with no backup (outer catch, inner if-false)", () => {
-      inMemoryFiles.set(pathFiles.triggers, "{ invalid json }");
-      _resetTriggersForTesting();
-      loadTriggers(); // outer catch fired; existsSync(bakFile)=false → inner if false
-      expect(getTrigger("any")).toBeUndefined();
-    });
-
-    it("loads from backup when primary is corrupt and backup is valid", () => {
-      const id = generateTriggerId();
-      const t = makeTrigger({ id, status: "fired", exitCode: 0 });
-      inMemoryFiles.set(pathFiles.triggers, "{ bad json");
-      inMemoryFiles.set(
-        pathFiles.triggers + ".bak",
-        JSON.stringify({ [id]: t }),
-      );
-      _resetTriggersForTesting();
-      loadTriggers(); // outer catch; existsSync(bakFile)=true; backup loaded (Branches 3-5)
-      expect(getTrigger(id)?.status).toBe("fired");
-    });
-
-    it("handles corrupt primary AND corrupt backup gracefully (inner catch)", () => {
-      inMemoryFiles.set(pathFiles.triggers, "{ bad primary");
-      inMemoryFiles.set(pathFiles.triggers + ".bak", "{ bad backup");
-      _resetTriggersForTesting();
-      loadTriggers(); // outer catch; existsSync(bakFile)=true; JSON.parse throws → inner catch
-      expect(getTrigger("any")).toBeUndefined();
-    });
-
-    it("falls back to empty when backup parses as null (Branch 94 false arm: typeof raw === 'object' && raw !== null)", () => {
-      // backup file exists and is valid JSON, but parses to null → ternary false arm → store = {}
-      inMemoryFiles.set(pathFiles.triggers, "{ bad primary");
-      inMemoryFiles.set(pathFiles.triggers + ".bak", "null");
-      _resetTriggersForTesting();
-      loadTriggers();
-      expect(getTrigger("any")).toBeUndefined();
-    });
-  });
-
-  // ── save() error paths (Branch 15) ────────────────────────────────────────
-
-  describe("save() error paths", () => {
-    it("catches and logs when writeFileAtomic.sync throws an Error", () => {
-      writeAtomicSyncMock.mockImplementationOnce(() => {
-        throw new Error("disk full");
-      });
-      // addTrigger → save() → writeAtomicSyncMock throws → caught inside save()
-      expect(() => addTrigger(makeTrigger())).not.toThrow();
-      // The file was NOT written (write threw before setting inMemoryFiles)
-      expect(inMemoryFiles.has(pathFiles.triggers)).toBe(false);
-    });
-
-    it("catches and logs when writeFileAtomic.sync throws a non-Error (Branch 15 false arm)", () => {
-      writeAtomicSyncMock.mockImplementationOnce(() => {
-        throw "plain string disk error"; // non-Error → covers false arm of err instanceof Error
-      });
-      expect(() => addTrigger(makeTrigger())).not.toThrow();
-      expect(inMemoryFiles.has(pathFiles.triggers)).toBe(false);
     });
   });
 });

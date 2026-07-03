@@ -37,6 +37,7 @@ const {
   addTrigger,
   generateTriggerId,
   getTrigger,
+  updateTrigger,
   _resetTriggersForTesting,
   DEFAULT_TIMEOUT_SECONDS,
 } = await import("../storage/trigger-store.js");
@@ -273,8 +274,11 @@ describeBash("trigger supervisor", () => {
   describe("persistent triggers", () => {
     it("shutdownTriggers parks persistent triggers as 'pending' and does not fire wake", async () => {
       const t = makeTrigger({ body: "sleep 30\n" });
-      const stored = getTrigger(t.id)!;
-      stored.persistent = true;
+      // getTrigger now returns a fresh copy from SQLite (not a live ref), so
+      // mark persistent both on the object spawnTrigger reads and in the DB
+      // that finalizeExit/shutdown consult.
+      t.persistent = true;
+      updateTrigger(t.id, { persistent: true });
 
       spawnTrigger(t);
       await waitForStatus(t.id, (s) => s === "running");
@@ -299,9 +303,7 @@ describeBash("trigger supervisor", () => {
       const t = makeTrigger({
         body: 'echo "back up"\nsleep 30\n',
       });
-      const stored = getTrigger(t.id)!;
-      stored.persistent = true;
-      stored.status = "pending";
+      updateTrigger(t.id, { persistent: true, status: "pending" });
 
       const baseline = getRunningCount();
       await resumeAfterRestart();
@@ -315,10 +317,11 @@ describeBash("trigger supervisor", () => {
 
     it("resumeAfterRestart does NOT respawn non-persistent terminated triggers (only fires wake)", async () => {
       const t = makeTrigger({ body: "echo done\nexit 0\n" });
-      const stored = getTrigger(t.id)!;
-      stored.status = "terminated";
-      stored.endedAt = Date.now();
-      stored.lastError = "Talon restarted while trigger was running";
+      updateTrigger(t.id, {
+        status: "terminated",
+        endedAt: Date.now(),
+        lastError: "Talon restarted while trigger was running",
+      });
 
       const baseline = getRunningCount();
       await resumeAfterRestart();
@@ -356,11 +359,12 @@ describeBash("trigger supervisor", () => {
         expect(orphanPid).toBeDefined();
 
         const t = makeTrigger({ body: "sleep 30\n" });
-        const stored = getTrigger(t.id)!;
-        stored.persistent = true;
-        stored.status = "pending";
-        stored.pid = orphanPid;
-        stored.pidStarttime = readStarttime(orphanPid);
+        updateTrigger(t.id, {
+          persistent: true,
+          status: "pending",
+          pid: orphanPid,
+          pidStarttime: readStarttime(orphanPid),
+        });
 
         await resumeAfterRestart();
         await waitForStatus(t.id, (s) => s === "running");
@@ -397,11 +401,12 @@ describeBash("trigger supervisor", () => {
         const innocentPid = innocent.pid!;
 
         const t = makeTrigger({ body: "sleep 30\n" });
-        const stored = getTrigger(t.id)!;
-        stored.persistent = true;
-        stored.status = "pending";
-        stored.pid = innocentPid;
-        stored.pidStarttime = 1; // bogus — guaranteed not to match real starttime
+        updateTrigger(t.id, {
+          persistent: true,
+          status: "pending",
+          pid: innocentPid,
+          pidStarttime: 1, // bogus — guaranteed not to match real starttime
+        });
 
         await resumeAfterRestart();
         await waitForStatus(t.id, (s) => s === "running");
@@ -429,8 +434,10 @@ describeBash("trigger supervisor", () => {
     it("persistent triggers ignore timeout_seconds (no hard kill)", async () => {
       // 1s timeout — non-persistent would die; persistent must keep running.
       const t = makeTrigger({ body: "sleep 5\n", timeoutSeconds: 1 });
-      const stored = getTrigger(t.id)!;
-      stored.persistent = true;
+      // spawnTrigger reads persistent off the passed object to skip the hard
+      // timeout; the store copy must carry it too for exit-path checks.
+      t.persistent = true;
+      updateTrigger(t.id, { persistent: true });
 
       spawnTrigger(t);
       await waitForStatus(t.id, (s) => s === "running");

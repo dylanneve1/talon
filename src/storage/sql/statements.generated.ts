@@ -267,6 +267,7 @@ FROM cron_jobs WHERE chat_id = ? ORDER BY created_at`,
 FROM cron_jobs ORDER BY created_at`,
   remove: `DELETE FROM cron_jobs WHERE id = ?`,
   count: `SELECT COUNT(*) AS n FROM cron_jobs`,
+  removeAll: `DELETE FROM cron_jobs`,
 } as const;
 
 export const dbSql = {
@@ -457,7 +458,9 @@ FROM triggers WHERE chat_id = ? ORDER BY created_at`,
        pid_starttime, timeout_seconds, exit_code, fire_count, last_fire_at,
        last_fire_payload, last_error, persistent, model
 FROM triggers ORDER BY created_at`,
-  remove: `DELETE FROM triggers WHERE id = ?
+  remove: `DELETE FROM triggers WHERE id = ?`,
+  count: `SELECT COUNT(*) AS n FROM triggers`,
+  removeAll: `DELETE FROM triggers
 
 -- Restart recovery (see loadTriggers): a non-persistent trigger that was
 -- alive when the previous process died is dead now — mark it terminated

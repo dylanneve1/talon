@@ -58,7 +58,6 @@ const {
   DEFAULT_TIMEOUT_SECONDS,
   FIRE_PAYLOAD_MAX_BYTES,
   readTriggerLogTail,
-  persistNow,
   validateLanguage,
   sanitizeChatId,
   languageExtension,
@@ -378,15 +377,6 @@ describeBash("triggers — finalizeExit status branch", () => {
     expect(call.prompt).toMatch(/Status: errored/);
     // exit-code header should be in the payload
     expect(call.prompt).toMatch(/exit 3/);
-  });
-});
-
-// ── persistNow ────────────────────────────────────────────────────────────
-
-describe("trigger-store — persistNow", () => {
-  it("marks the store dirty and flushes to disk without throwing", () => {
-    // Covers lines 159-160: dirty = true; save()
-    expect(() => persistNow()).not.toThrow();
   });
 });
 

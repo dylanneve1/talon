@@ -1,25 +1,23 @@
 /**
- * Persistent cron job store.
+ * Persistent cron job store, backed by the `cron_jobs` table.
  *
- * Backed by the unified `JsonStore<T>` primitive: the on-disk
- * format is `{ schemaVersion, savedAt, data: Record<id, CronJob> }`.
- * A migrate hook accepts two legacy shapes:
- *
- *   1. Bare object `{ id1: job1, id2: job2 }` — pre-envelope, the
- *      original storage layout.
- *   2. Bare array `[job1, job2]` — very early storage layout, kept
- *      working since 1.x.
+ * Low-frequency data: the scheduler scans jobs once a minute and the
+ * frontends list per chat, so reads go straight to the DB — no cache,
+ * no flush timer (writes commit transactionally, replacing the JSON
+ * era's rewrite-the-whole-file autosave). The one-shot legacy import
+ * accepts three historical cron.json shapes: the JsonStore envelope,
+ * the pre-envelope bare object `{ id: job }`, and the original bare
+ * array `[job, ...]`.
  */
 
-import { existsSync, mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { dirname } from "node:path";
 import { Cron } from "croner";
 import { log, logError } from "../util/log.js";
 import { recordError } from "../util/watchdog.js";
 import { files } from "../util/paths.js";
-import { registerCleanup } from "../util/cleanup-registry.js";
-import { JsonStore } from "../core/agent-runtime/store.js";
+import { importLegacyJson } from "./legacy-import.js";
+import { inTransaction } from "./db.js";
+import * as repo from "./repositories/cron-repo.js";
 import { nextDueMs, type CatchupPolicy } from "../native/scheduler-core.js";
 
 export type CronJobType = "message" | "query";
@@ -111,44 +109,13 @@ export type CronRunOutcome = {
   durationMs?: number;
 };
 
-type CronStoreShape = Record<string, CronJob>;
-
-const STORE_FILE = files.cron;
-const SCHEMA_VERSION = 1 as const;
-
-const store = new JsonStore<CronStoreShape>({
-  path: STORE_FILE,
-  defaultValue: {},
-  schemaVersion: SCHEMA_VERSION,
-  migrate: (raw, fromVersion) => {
-    if (fromVersion !== 0) return null;
-    // Legacy array shape.
-    if (Array.isArray(raw)) {
-      const out: CronStoreShape = {};
-      for (const j of raw) {
-        if (isCronJob(j)) out[j.id] = j;
-      }
-      return { value: out, schemaVersion: SCHEMA_VERSION };
-    }
-    // Legacy bare-object shape.
-    if (raw && typeof raw === "object") {
-      const out: CronStoreShape = {};
-      for (const [id, job] of Object.entries(raw)) {
-        if (isCronJob(job)) out[id] = job;
-      }
-      return { value: out, schemaVersion: SCHEMA_VERSION };
-    }
-    return { value: {}, schemaVersion: SCHEMA_VERSION };
-  },
-});
-
 function isCronJob(value: unknown): value is CronJob {
   if (!value || typeof value !== "object") return false;
   const j = value as Record<string, unknown>;
   // A job is scheduled by EITHER a cron expression OR a fixed interval, never
   // both. Legacy jobs always have `schedule`; interval jobs have `everyMs > 0`.
   // Enforce true XOR so a corrupt/hand-edited doc carrying both fields is
-  // rejected on load rather than silently running as an interval.
+  // rejected on import rather than silently running as an interval.
   const hasSchedule = typeof j.schedule === "string" && j.schedule.length > 0;
   const hasInterval = typeof j.everyMs === "number" && j.everyMs > 0;
   return (
@@ -168,39 +135,57 @@ export function isIntervalJob(job: CronJob): boolean {
   return typeof job.everyMs === "number" && job.everyMs > 0;
 }
 
+/**
+ * One-shot legacy import + startup hygiene. Invalid IANA timezones are
+ * cleared (legacy files could carry hand-edited values that would make
+ * Cron() throw at runtime); the sweep also covers rows already in the
+ * DB so a bad value never survives a boot.
+ */
 export function loadCronJobs(): void {
-  store.reset();
   try {
-    store.loadSync();
-  } catch (err) {
-    logError("cron", "Failed to load cron jobs", err);
-  }
+    importLegacyJson({
+      path: files.cron,
+      category: "cron",
+      what: "cron job(s)",
+      ingest: (data) => {
+        const jobs = Array.isArray(data)
+          ? data
+          : data && typeof data === "object"
+            ? Object.values(data)
+            : [];
+        let imported = 0;
+        inTransaction(() => {
+          for (const job of jobs) {
+            if (!isCronJob(job)) continue;
+            repo.upsert(job);
+            imported++;
+          }
+        });
+        return imported;
+      },
+    });
 
-  // Strip invalid IANA timezone strings so Cron() doesn't throw at runtime.
-  let invalidTz = 0;
-  const data = store.get();
-  for (const job of Object.values(data)) {
-    if (job.timezone && !isValidTimezone(job.timezone)) {
+    let invalidTz = 0;
+    for (const job of repo.listAll()) {
+      if (job.timezone && !isValidTimezone(job.timezone)) {
+        log(
+          "cron",
+          `Job "${job.name}" has invalid timezone "${job.timezone}" — clearing`,
+        );
+        repo.upsert({ ...job, timezone: undefined });
+        invalidTz++;
+      }
+    }
+
+    const count = repo.count();
+    if (count > 0) {
       log(
         "cron",
-        `Job "${job.name}" has invalid timezone "${job.timezone}" — clearing`,
+        `Loaded ${count} cron job(s)${invalidTz > 0 ? ` (cleared ${invalidTz} invalid timezone(s))` : ""}`,
       );
-      job.timezone = undefined;
-      invalidTz++;
     }
-  }
-  // Only mark dirty when something actually changed — avoids a
-  // needless save tick on every startup.
-  if (invalidTz > 0) {
-    store.update(() => undefined);
-  }
-
-  const count = Object.keys(data).length;
-  if (count > 0) {
-    log(
-      "cron",
-      `Loaded ${count} cron job(s)${invalidTz > 0 ? ` (cleared ${invalidTz} invalid timezone(s))` : ""}`,
-    );
+  } catch (err) {
+    logError("cron", "Failed to load cron jobs", err);
   }
 }
 
@@ -212,31 +197,6 @@ export function isValidTimezone(tz: string): boolean {
   } catch {
     return false;
   }
-}
-
-function save(): void {
-  if (!store.isDirty()) return;
-  try {
-    const dir = dirname(STORE_FILE);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    store.saveSync();
-  } catch (err) {
-    logError("cron", "Failed to persist cron jobs", err);
-    recordError(
-      `Cron save failed: ${err instanceof Error ? err.message : err}`,
-    );
-  }
-}
-
-const autoSaveTimer = setInterval(save, 10_000);
-registerCleanup(save);
-
-/** Flush cron jobs to disk and stop the auto-save timer. */
-export function flushCronJobs(): void {
-  clearInterval(autoSaveTimer);
-  // Force a save by marking the store dirty.
-  store.update(() => undefined);
-  save();
 }
 
 // ── ID generation ───────────────────────────────────────────────────────────
@@ -328,69 +288,78 @@ export function humanizeMs(ms: number): string {
 // ── CRUD ────────────────────────────────────────────────────────────────────
 
 export function addCronJob(job: CronJob): void {
-  store.update((data) => {
-    data[job.id] = job;
-  });
-  save();
+  repo.upsert(job);
 }
 
 export function getCronJob(id: string): CronJob | undefined {
-  return store.get()[id];
+  return repo.get(id);
 }
 
 export function getCronJobsForChat(chatId: string): CronJob[] {
-  return Object.values(store.get()).filter((j) => j.chatId === chatId);
+  return repo.listByChat(chatId);
 }
 
 export function getAllCronJobs(): CronJob[] {
-  return Object.values(store.get());
+  return repo.listAll();
 }
 
+/**
+ * Merge `updates` into the stored job. A key present with value
+ * `undefined` clears that field (Object.assign semantics, matching the
+ * in-memory era — callers rely on it to drop e.g. a timezone).
+ */
 export function updateCronJob(
   id: string,
   updates: Partial<Omit<CronJob, "id" | "chatId" | "createdAt">>,
 ): CronJob | undefined {
-  const existing = store.get()[id];
-  if (!existing) return undefined;
-  store.update((data) => {
-    Object.assign(data[id], updates);
+  return inTransaction(() => {
+    const existing = repo.get(id);
+    if (!existing) return undefined;
+    const merged = { ...existing, ...updates };
+    repo.upsert(merged);
+    return merged;
   });
-  save();
-  return store.get()[id];
 }
 
 export function deleteCronJob(id: string): boolean {
-  if (!store.get()[id]) return false;
-  store.update((data) => {
-    delete data[id];
-  });
-  save();
-  return true;
+  return repo.remove(id);
 }
 
 /**
  * Record an execution: bump lastRunAt + runCount and, when an outcome is
  * supplied, persist the last-run telemetry (status/error/duration) surfaced in
  * list_cron_jobs. `at` overrides the run timestamp (defaults to now).
+ * Runs inside the scheduler tick — a storage failure must not kill it.
  */
 export function recordCronRun(
   id: string,
   outcome?: CronRunOutcome,
   at?: number,
 ): void {
-  if (!store.get()[id]) return;
-  store.update((data) => {
-    const job = data[id];
-    if (!job) return;
-    job.lastRunAt = at ?? Date.now();
-    job.runCount = (job.runCount || 0) + 1;
-    if (outcome) {
-      job.lastStatus = outcome.status;
-      job.lastDurationMs = outcome.durationMs;
-      // Keep the failing message visible; clear it on the next success so a
-      // stale error doesn't linger after the job recovers.
-      job.lastError = outcome.status === "error" ? outcome.error : undefined;
-    }
-  });
-  // Don't force-save on every run; let the interval handle it
+  try {
+    inTransaction(() => {
+      const job = repo.get(id);
+      if (!job) return;
+      job.lastRunAt = at ?? Date.now();
+      job.runCount = (job.runCount || 0) + 1;
+      if (outcome) {
+        job.lastStatus = outcome.status;
+        job.lastDurationMs = outcome.durationMs;
+        // Keep the failing message visible; clear it on the next success so a
+        // stale error doesn't linger after the job recovers.
+        job.lastError = outcome.status === "error" ? outcome.error : undefined;
+      }
+      repo.upsert(job);
+    });
+  } catch (err) {
+    logError("cron", "Failed to record cron run", err);
+    recordError(
+      `Cron run record failed: ${err instanceof Error ? err.message : err}`,
+    );
+  }
+}
+
+/** Test-only: wipe the table between suites sharing a worker DB. */
+export function _resetCronJobsForTesting(): void {
+  repo.removeAll();
 }

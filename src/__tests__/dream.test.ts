@@ -34,10 +34,39 @@ vi.mock("node:fs", () => ({
   appendFileSync: appendFileSyncMock,
 }));
 
-const writeAtomicSyncMock = vi.fn();
-vi.mock("write-file-atomic", () => ({
-  default: { sync: writeAtomicSyncMock },
+// Dream state now rides the kv store (storage/kv.js) instead of a JSON
+// file. Mock the seam with an in-memory map so a test can both seed
+// prior state AND observe the running→idle write sequence — the real kv
+// keeps only the latest value, so it can't show the pair.
+const kvStore = new Map<string, unknown>();
+const kvSetMock = vi.fn((key: string, value: unknown) => {
+  kvStore.set(key, JSON.parse(JSON.stringify(value)));
+});
+const kvGetMock = vi.fn((key: string) => kvStore.get(key));
+const kvDeleteMock = vi.fn((key: string) => kvStore.delete(key));
+vi.mock("../storage/kv.js", () => ({
+  kvGet: (k: string) => kvGetMock(k),
+  kvSet: (k: string, v: unknown) => kvSetMock(k, v),
+  kvDelete: (k: string) => kvDeleteMock(k),
 }));
+
+const DREAM_STATE_KEY = "dream.state";
+/** Persisted-state payloads written under the dream key, in order. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function stateWrites(): any[] {
+  return kvSetMock.mock.calls
+    .filter((c) => c[0] === DREAM_STATE_KEY)
+    .map((c) => c[1]);
+}
+/** Seed a prior persisted state verbatim (no normalization). */
+function seedState(value: unknown): void {
+  kvStore.set(DREAM_STATE_KEY, value);
+}
+/** Wipe persisted state and clear the recorded write log. */
+function clearState(): void {
+  kvStore.delete(DREAM_STATE_KEY);
+  kvSetMock.mockClear();
+}
 
 vi.mock("../util/paths.js", () => ({
   files: {
@@ -75,6 +104,7 @@ const { initDream, maybeStartDream, forceDream } =
 beforeEach(() => {
   runOneShotAgentMock.mockReset();
   runOneShotAgentMock.mockImplementation(async () => {});
+  clearState();
 });
 
 describe("initDream", () => {
@@ -110,10 +140,7 @@ describe("maybeStartDream", () => {
 
   it("does nothing when dream was recently run (within 12 hours)", () => {
     const recentRun = Date.now() - 1_000;
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({ last_run: recentRun, status: "idle" }),
-    );
+    seedState({ last_run: recentRun, status: "idle" });
     expect(() => maybeStartDream()).not.toThrow();
   });
 
@@ -134,22 +161,16 @@ describe("forceDream", () => {
     });
     existsSyncMock.mockReturnValue(false);
     readFileSyncMock.mockReturnValue("dream prompt template");
-    writeAtomicSyncMock.mockClear();
+    clearState();
   });
 
   it("writes dream state twice (running then idle)", async () => {
     await forceDream();
-    expect(writeAtomicSyncMock).toHaveBeenCalledTimes(2);
 
-    const firstCall = JSON.parse(
-      writeAtomicSyncMock.mock.calls[0][1] as string,
-    );
-    expect(firstCall.status).toBe("running");
-
-    const secondCall = JSON.parse(
-      writeAtomicSyncMock.mock.calls[1][1] as string,
-    );
-    expect(secondCall.status).toBe("idle");
+    const writes = stateWrites();
+    expect(writes).toHaveLength(2);
+    expect(writes[0].status).toBe("running");
+    expect(writes[1].status).toBe("idle");
   });
 
   it("resolves successfully when backend returns without error", async () => {
@@ -200,24 +221,18 @@ describe("readDreamState — edge cases", () => {
     readFileSyncMock.mockReturnValue("dream prompt template");
   });
 
-  it("treats corrupt JSON as no state (maybeStartDream still safe)", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue("{ invalid json ");
+  it("treats a corrupt (non-object) value as no state (maybeStartDream still safe)", () => {
+    seedState("{ invalid json ");
     expect(() => maybeStartDream()).not.toThrow();
   });
 
   it("treats non-numeric last_run as stale", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({ last_run: "not-a-number", status: "idle" }),
-    );
+    seedState({ last_run: "not-a-number", status: "idle" });
     expect(() => maybeStartDream()).not.toThrow();
   });
 
   it("skips when state has last_run within interval", () => {
-    const recent = { last_run: Date.now() - 60_000, status: "idle" };
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(JSON.stringify(recent));
+    seedState({ last_run: Date.now() - 60_000, status: "idle" });
     maybeStartDream();
     expect(runOneShotAgentMock).not.toHaveBeenCalled();
   });
@@ -242,7 +257,6 @@ describe("dream timeout", () => {
       mkdirSync: vi.fn(),
       appendFileSync: vi.fn(),
     }));
-    vi.doMock("write-file-atomic", () => ({ default: { sync: vi.fn() } }));
     vi.doMock("../util/paths.js", () => ({
       files: {
         dreamState: "/fake/.talon/workspace/memory/dream_state.json",
@@ -274,7 +288,6 @@ describe("dream timeout", () => {
     delete process.env.TALON_DREAM_TIMEOUT_MS_OVERRIDE;
     vi.doUnmock("../util/log.js");
     vi.doUnmock("node:fs");
-    vi.doUnmock("write-file-atomic");
     vi.doUnmock("../util/paths.js");
   });
 

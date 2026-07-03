@@ -9,7 +9,6 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { createInterface } from "node:readline";
 import {
   getTrigger,
-  persistNow,
   updateTrigger,
   type Trigger,
 } from "../../../storage/trigger-store.js";
@@ -117,9 +116,6 @@ function spawnViaWarden(
         pid: event.pid,
         pidStarttime: event.pidStarttime ?? undefined,
       });
-      // Same crash-window rationale as the direct path: flush the pid so the
-      // next boot's orphan probe can see it.
-      if (trigger.persistent) persistNow();
       log(
         "triggers",
         `Spawned "${trigger.name}" [${trigger.id}] pid=${event.pid} (${trigger.language}, warden)`,
@@ -170,7 +166,6 @@ function spawnViaWarden(
   wardened.add(trigger.id);
   lineBuffers.set(trigger.id, []);
   updateTrigger(trigger.id, { status: "running", startedAt: Date.now() });
-  if (trigger.persistent) persistNow();
   openLogStream(trigger);
   armTimeout(trigger);
   return true;
@@ -186,7 +181,6 @@ function handleWardenExit(trigger: Trigger, event: WardenExitEvent): void {
         status: "timed_out",
         lastError: `Timed out after ${trigger.timeoutSeconds}s`,
       });
-      persistNow();
     }
   }
   finalizeExit(
@@ -252,11 +246,6 @@ function spawnDirect(
     startedAt,
     pidStarttime: readPidStarttimeSync(child.pid),
   });
-  // For persistent triggers, flush pid + pidStarttime synchronously. Without
-  // this, a crash within the ~10s autosave window would leave the stored pid
-  // undefined and resumeAfterRestart() couldn't orphan-check on the next boot.
-  if (trigger.persistent) persistNow();
-
   log(
     "triggers",
     `Spawned "${trigger.name}" [${trigger.id}] pid=${child.pid} (${trigger.language})`,

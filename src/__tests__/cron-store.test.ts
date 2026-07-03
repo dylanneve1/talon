@@ -1,43 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the log module before importing cron-store
+// Mock the log module so loadCronJobs' log lines are assertable and silent.
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
 }));
 
-const existsSyncMock = vi.fn(() => false);
-const readFileSyncMock = vi.fn(() => "{}");
-const mkdirSyncMock = vi.fn();
-const renameSyncMock = vi.fn();
-const unlinkSyncMock = vi.fn();
-
-// Mock fs to avoid real filesystem side effects. Includes the
-// `renameSync`/`unlinkSync` surface JsonStore reaches through after
-// the Phase 6.x storage migration.
-vi.mock("node:fs", () => ({
-  existsSync: existsSyncMock,
-  readFileSync: readFileSyncMock,
-  writeFileSync: vi.fn(),
-  mkdirSync: mkdirSyncMock,
-  renameSync: renameSyncMock,
-  unlinkSync: unlinkSyncMock,
-}));
-
-const writeFileSyncMock = vi.fn();
-
-vi.mock("write-file-atomic", () => ({
-  default: Object.assign((...args: unknown[]) => writeFileSyncMock(...args), {
-    sync: writeFileSyncMock,
-  }),
-}));
-
 import type { CronJob } from "../storage/cron-store.js";
 
 const {
   loadCronJobs,
-  flushCronJobs,
   addCronJob,
   getCronJob,
   getCronJobsForChat,
@@ -47,6 +20,7 @@ const {
   recordCronRun,
   generateCronId,
   validateCronExpression,
+  _resetCronJobsForTesting,
 } = await import("../storage/cron-store.js");
 
 function makeCronJob(overrides: Partial<CronJob> = {}): CronJob {
@@ -66,6 +40,9 @@ function makeCronJob(overrides: Partial<CronJob> = {}): CronJob {
 
 describe("cron-store", () => {
   beforeEach(() => {
+    // Suites in one file share the worker's throwaway SQLite DB; wipe the
+    // table so counts and lookups start clean.
+    _resetCronJobsForTesting();
     vi.clearAllMocks();
   });
 
@@ -188,6 +165,15 @@ describe("cron-store", () => {
       });
       expect(updated!.lastRunAt).toBe(ts);
       expect(updated!.runCount).toBe(10);
+    });
+
+    it("clears a field when an update sets it to undefined", () => {
+      // Merge semantics: a key present with value undefined drops the column
+      // (callers rely on this to clear e.g. a timezone).
+      addCronJob(makeCronJob({ id: "update-clear", timezone: "Europe/London" }));
+      const updated = updateCronJob("update-clear", { timezone: undefined });
+      expect(updated!.timezone).toBeUndefined();
+      expect(getCronJob("update-clear")!.timezone).toBeUndefined();
     });
   });
 
@@ -321,261 +307,43 @@ describe("cron-store", () => {
   });
 
   describe("loadCronJobs", () => {
-    it("loads jobs from object format file", () => {
-      const stored = {
-        "job-1": {
-          id: "job-1",
-          chatId: "chat-1",
-          schedule: "0 9 * * *",
-          type: "message",
-          content: "Hello",
-          name: "Greeting",
-          enabled: true,
-          createdAt: 1000,
-          runCount: 5,
-        },
-        "job-2": {
-          id: "job-2",
-          chatId: "chat-2",
-          schedule: "0 12 * * *",
-          type: "query",
-          content: "Status?",
-          name: "Status check",
-          enabled: false,
-          createdAt: 2000,
-          runCount: 0,
-        },
-      };
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue(JSON.stringify(stored));
-
-      loadCronJobs();
-
-      expect(getCronJob("job-1")).toBeDefined();
-      expect(getCronJob("job-1")!.name).toBe("Greeting");
-      expect(getCronJob("job-2")).toBeDefined();
-      expect(getCronJob("job-2")!.type).toBe("query");
-    });
-
-    it("loads jobs from legacy array format", () => {
-      const stored = [
-        {
-          id: "legacy-1",
-          chatId: "chat-1",
-          schedule: "0 9 * * *",
-          type: "message",
-          content: "Hello",
-          name: "Greeting",
-          enabled: true,
-          createdAt: 1000,
-          runCount: 0,
-        },
-        {
-          id: "legacy-2",
-          chatId: "chat-2",
-          schedule: "0 12 * * *",
-          type: "query",
-          content: "Status?",
-          name: "Status check",
-          enabled: true,
-          createdAt: 2000,
-          runCount: 3,
-        },
-      ];
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue(JSON.stringify(stored));
-
-      loadCronJobs();
-
-      expect(getCronJob("legacy-1")).toBeDefined();
-      expect(getCronJob("legacy-1")!.name).toBe("Greeting");
-      expect(getCronJob("legacy-2")).toBeDefined();
-    });
-
-    it("does nothing when store file does not exist", () => {
-      existsSyncMock.mockReturnValue(false);
+    it("does not throw and is idempotent on an empty store", () => {
       expect(() => loadCronJobs()).not.toThrow();
-    });
-
-    it("handles JSON parse errors gracefully (resets to empty)", () => {
-      existsSyncMock.mockReturnValue(true);
-      readFileSyncMock.mockReturnValue("not valid json{{{");
-
       expect(() => loadCronJobs()).not.toThrow();
-    });
-  });
-
-  describe("flushCronJobs", () => {
-    it("writes jobs to disk when dirty", () => {
-      addCronJob(makeCronJob({ id: "flush-1" }));
-
-      existsSyncMock.mockReturnValue(true);
-      flushCronJobs();
-
-      expect(writeFileSyncMock).toHaveBeenCalled();
-      // Last write call is the actual data (earlier calls may be .bak backups)
-      const lastCall =
-        writeFileSyncMock.mock.calls[writeFileSyncMock.mock.calls.length - 1];
-      const writtenData = lastCall[1] as string;
-      const parsed = JSON.parse(writtenData.trim());
-      // JsonStore envelope: { schemaVersion, savedAt, data }
-      expect(parsed.schemaVersion).toBe(1);
-      expect(parsed.data["flush-1"]).toBeDefined();
+      expect(getAllCronJobs()).toEqual([]);
     });
 
-    it("creates workspace directory if it does not exist during addCronJob save", () => {
-      // addCronJob calls save() internally, so we need to set up the mock
-      // before calling addCronJob to catch the mkdir call
-      existsSyncMock.mockReturnValue(false);
-      mkdirSyncMock.mockClear();
+    it("clears an invalid IANA timezone already present on a stored row", async () => {
+      // Startup hygiene: the sweep runs over rows already in the DB (not just
+      // freshly-imported legacy jobs) so a bad hand-edited value never survives
+      // a boot.
+      const { log } = await import("../util/log.js");
+      addCronJob(
+        makeCronJob({ id: "bad-tz", timezone: "Not/A/Real/Timezone" }),
+      );
 
-      addCronJob(makeCronJob({ id: "flush-mkdir-1" }));
-
-      expect(mkdirSyncMock).toHaveBeenCalledWith(expect.any(String), {
-        recursive: true,
-      });
-    });
-
-    it("always writes on flush, even when nothing changed (defensive flush pattern)", () => {
-      // flushCronJobs forces dirty=true before save() to guarantee the final
-      // write happens even if the auto-save timer ran just before shutdown
-      // and reset dirty to false. This matches the pattern in flushSessions /
-      // flushHistory and protects against silently dropping the last
-      // recordCronRun update on a SIGTERM that races the autosave window.
-      writeFileSyncMock.mockClear();
-      existsSyncMock.mockReturnValue(false);
       loadCronJobs();
-      writeFileSyncMock.mockClear();
-      flushCronJobs();
 
-      // After loadCronJobs + no changes, dirty would be false, but
-      // flushCronJobs forces it to true so save() must still write.
-      expect(writeFileSyncMock).toHaveBeenCalled();
-    });
-  });
-});
-
-describe("cron-store — additional branch coverage", () => {
-  it("loadCronJobs with count=0 (empty store) does not log", async () => {
-    const { log } = await import("../util/log.js");
-    vi.mocked(log).mockClear();
-
-    // File exists but has no jobs — count = 0, no log call
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue("{}");
-    loadCronJobs();
-
-    // log should not be called for empty store (count > 0 check is false)
-    expect(vi.mocked(log)).not.toHaveBeenCalledWith(
-      "cron",
-      expect.stringContaining("Loaded"),
-    );
-  });
-
-  it("save() logs error when writeFileAtomic throws", async () => {
-    const { logError } = await import("../util/log.js");
-    vi.mocked(logError).mockClear();
-
-    existsSyncMock.mockReturnValue(false);
-    writeFileSyncMock.mockImplementationOnce(() => {
-      throw new Error("io error");
+      expect(getCronJob("bad-tz")!.timezone).toBeUndefined();
+      expect(vi.mocked(log)).toHaveBeenCalledWith(
+        "cron",
+        expect.stringContaining("invalid timezone"),
+      );
     });
 
-    // addCronJob sets dirty=true and calls save()
-    expect(() => addCronJob(makeCronJob({ id: "save-fail-1" }))).not.toThrow();
-    expect(vi.mocked(logError)).toHaveBeenCalled();
-  });
+    it("preserves a valid timezone across a load", () => {
+      addCronJob(makeCronJob({ id: "good-tz", timezone: "Europe/Warsaw" }));
+      loadCronJobs();
+      expect(getCronJob("good-tz")!.timezone).toBe("Europe/Warsaw");
+    });
 
-  it("loadCronJobs loads from backup when primary file is corrupt", async () => {
-    const backupJob = {
-      "backup-job-1": {
-        id: "backup-job-1",
-        chatId: "chat-bak",
-        schedule: "0 9 * * *",
-        type: "message",
-        content: "From backup",
-        name: "Backup Job",
-        enabled: true,
-        createdAt: 1000,
-        runCount: 0,
-      },
-    };
-
-    // First existsSync call: primary file exists
-    // Second existsSync call (inside catch): backup file exists
-    existsSyncMock
-      .mockReturnValueOnce(true) // STORE_FILE exists
-      .mockReturnValueOnce(true); // bakFile exists
-
-    readFileSyncMock
-      .mockReturnValueOnce("not valid json{{{") // primary is corrupt
-      .mockReturnValueOnce(JSON.stringify(backupJob)); // backup is valid
-
-    loadCronJobs();
-
-    expect(getCronJob("backup-job-1")).toBeDefined();
-    expect(getCronJob("backup-job-1")!.content).toBe("From backup");
-  });
-
-  it("loadCronJobs with invalid timezone clears it and logs", async () => {
-    const { log } = await import("../util/log.js");
-    const stored = {
-      "tz-invalid-1": {
-        id: "tz-invalid-1",
-        chatId: "chat-tz",
-        schedule: "0 9 * * *",
-        type: "message",
-        content: "Hello",
-        name: "TZ test",
-        enabled: true,
-        createdAt: 1000,
-        runCount: 0,
-        timezone: "Not/A/Real/Timezone",
-      },
-    };
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(JSON.stringify(stored));
-
-    loadCronJobs();
-
-    const job = getCronJob("tz-invalid-1");
-    expect(job).toBeDefined();
-    // timezone was invalid — should be cleared
-    expect(job!.timezone).toBeUndefined();
-    // log should mention invalid timezone
-    expect(vi.mocked(log)).toHaveBeenCalledWith(
-      "cron",
-      expect.stringContaining("invalid timezone"),
-    );
-  });
-
-  it("save() logs error with String(err) when writeFileAtomic throws a non-Error", async () => {
-    const { logError } = await import("../util/log.js");
-    vi.mocked(logError).mockClear();
-
-    // Reset existsSyncMock to false so no backup is attempted (avoids consuming mockImplementationOnce early)
-    existsSyncMock.mockReturnValue(false);
-
-    // Throw a plain string (non-Error) to cover the `err instanceof Error ? ... : err` false branch on line 103
-    writeFileSyncMock.mockImplementation(() => {
-      throw "disk quota exceeded";
-    }); // eslint-disable-line @typescript-eslint/no-throw-literal
-
-    expect(() =>
-      addCronJob(makeCronJob({ id: "save-non-error-string" })),
-    ).not.toThrow();
-    expect(vi.mocked(logError)).toHaveBeenCalled();
-
-    writeFileSyncMock.mockReset(); // restore default behavior
-  });
-
-  it("validateCronExpression returns error with String(err) for non-Error throw", () => {
-    // croner throws an Error for invalid expressions, but we test the fallback branch
-    // by passing an expression that may cause a non-Error to be thrown indirectly.
-    // Actually croner always throws Error, so the String(err) branch on line 139 is a safety net.
-    // We can cover it by calling validateCronExpression with a badly malformed expression.
-    const result = validateCronExpression("not a cron expression at all !!!");
-    expect(result.valid).toBe(false);
-    expect(result.error).toBeDefined();
+    it("does not log a count when the store is empty", async () => {
+      const { log } = await import("../util/log.js");
+      loadCronJobs();
+      expect(vi.mocked(log)).not.toHaveBeenCalledWith(
+        "cron",
+        expect.stringContaining("Loaded"),
+      );
+    });
   });
 });

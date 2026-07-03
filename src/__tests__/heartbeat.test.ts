@@ -53,10 +53,39 @@ vi.mock("node:fs/promises", () => ({
   mkdir: mkdirAsyncMock,
 }));
 
-const writeAtomicSyncMock = vi.fn();
-vi.mock("write-file-atomic", () => ({
-  default: { sync: writeAtomicSyncMock },
+// Heartbeat state now rides the kv store (storage/kv.js) instead of a
+// JSON file. Mock the seam with an in-memory map so a test can both
+// seed prior state AND observe the running→idle write sequence — the
+// real kv keeps only the latest value, so it can't show the pair.
+const kvStore = new Map<string, unknown>();
+const kvSetMock = vi.fn((key: string, value: unknown) => {
+  kvStore.set(key, JSON.parse(JSON.stringify(value)));
+});
+const kvGetMock = vi.fn((key: string) => kvStore.get(key));
+const kvDeleteMock = vi.fn((key: string) => kvStore.delete(key));
+vi.mock("../storage/kv.js", () => ({
+  kvGet: (k: string) => kvGetMock(k),
+  kvSet: (k: string, v: unknown) => kvSetMock(k, v),
+  kvDelete: (k: string) => kvDeleteMock(k),
 }));
+
+const HEARTBEAT_STATE_KEY = "heartbeat.state";
+/** Persisted-state payloads written under the heartbeat key, in order. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function stateWrites(): any[] {
+  return kvSetMock.mock.calls
+    .filter((c) => c[0] === HEARTBEAT_STATE_KEY)
+    .map((c) => c[1]);
+}
+/** Seed a prior persisted state verbatim (no normalization). */
+function seedState(value: unknown): void {
+  kvStore.set(HEARTBEAT_STATE_KEY, value);
+}
+/** Wipe persisted state and clear the recorded write log. */
+function clearState(): void {
+  kvStore.delete(HEARTBEAT_STATE_KEY);
+  kvSetMock.mockClear();
+}
 
 // Fake backend the heartbeat module dispatches to. Tests override
 // `runOneShotAgentMock` per-case to simulate clean runs, hangs, errors, etc.
@@ -185,7 +214,7 @@ describe("startHeartbeatTimer — due-driven cadence (Gleam scheduler core)", ()
     readFileSyncMock.mockReset();
     runOneShotAgentMock.mockReset();
     runOneShotAgentMock.mockImplementation(async () => {});
-    writeAtomicSyncMock.mockClear();
+    clearState();
   });
 
   afterEach(() => {
@@ -195,16 +224,15 @@ describe("startHeartbeatTimer — due-driven cadence (Gleam scheduler core)", ()
 
   /** Persisted state whose last_run is always `agoMs` before "now". */
   function mockState(agoMs: number): void {
+    seedState({
+      last_run: Date.now() - agoMs,
+      status: "idle",
+      run_count: 3,
+    });
     existsSyncMock.mockReturnValue(true);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     readFileSyncMock.mockImplementation(((filePath: string) => {
       const p = String(filePath).replace(/\\/g, "/");
-      if (p.endsWith("heartbeat_state.json"))
-        return JSON.stringify({
-          last_run: Date.now() - agoMs,
-          status: "idle",
-          run_count: 3,
-        });
       if (p.endsWith("/heartbeat.md")) return "heartbeat prompt";
       return "null";
     }) as any);
@@ -254,7 +282,7 @@ describe("forceHeartbeat", () => {
         return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
       return "null";
     }) as any);
-    writeAtomicSyncMock.mockClear();
+    clearState();
     runOneShotAgentMock.mockReset();
     runOneShotAgentMock.mockImplementation(async () => {});
     evictOrphanSubprocessesMock.mockClear();
@@ -263,27 +291,17 @@ describe("forceHeartbeat", () => {
   it("writes heartbeat state twice (running then idle) on success", async () => {
     await forceHeartbeat();
 
-    expect(writeAtomicSyncMock).toHaveBeenCalledTimes(2);
-
-    const firstCall = JSON.parse(
-      writeAtomicSyncMock.mock.calls[0][1] as string,
-    );
-    expect(firstCall.status).toBe("running");
-
-    const secondCall = JSON.parse(
-      writeAtomicSyncMock.mock.calls[1][1] as string,
-    );
-    expect(secondCall.status).toBe("idle");
+    const writes = stateWrites();
+    expect(writes).toHaveLength(2);
+    expect(writes[0].status).toBe("running");
+    expect(writes[1].status).toBe("idle");
   });
 
   it("increments run_count only on success", async () => {
     await forceHeartbeat();
 
-    const finalState = JSON.parse(
-      writeAtomicSyncMock.mock.calls[
-        writeAtomicSyncMock.mock.calls.length - 1
-      ][1] as string,
-    );
+    const writes = stateWrites();
+    const finalState = writes[writes.length - 1];
     expect(finalState.run_count).toBe(1);
     expect(finalState.status).toBe("idle");
   });
@@ -300,14 +318,7 @@ describe("forceHeartbeat", () => {
 
   it("preserves previous last_run on failure", async () => {
     const previousLastRun = Date.now() - 3600_000;
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
-        last_run: previousLastRun,
-        status: "idle",
-        run_count: 5,
-      }),
-    );
+    seedState({ last_run: previousLastRun, status: "idle", run_count: 5 });
 
     // Make backend throw
     runOneShotAgentMock.mockImplementationOnce(async () => {
@@ -317,30 +328,22 @@ describe("forceHeartbeat", () => {
     await expect(forceHeartbeat()).rejects.toThrow("Agent exploded");
 
     // The last write should preserve previous last_run and run_count
-    const finalState = JSON.parse(
-      writeAtomicSyncMock.mock.calls[
-        writeAtomicSyncMock.mock.calls.length - 1
-      ][1] as string,
-    );
+    const writes = stateWrites();
+    const finalState = writes[writes.length - 1];
     expect(finalState.last_run).toBe(previousLastRun);
     expect(finalState.run_count).toBe(5);
     expect(finalState.status).toBe("idle");
   });
 
   it("sets last_started even on failure", async () => {
-    existsSyncMock.mockReturnValue(false);
-
     runOneShotAgentMock.mockImplementationOnce(async () => {
       throw new Error("Boom");
     });
 
     await expect(forceHeartbeat()).rejects.toThrow("Boom");
 
-    const finalState = JSON.parse(
-      writeAtomicSyncMock.mock.calls[
-        writeAtomicSyncMock.mock.calls.length - 1
-      ][1] as string,
-    );
+    const writes = stateWrites();
+    const finalState = writes[writes.length - 1];
     expect(finalState.last_started).toBeGreaterThan(0);
   });
 
@@ -367,72 +370,44 @@ describe("forceHeartbeat", () => {
 });
 
 describe("getHeartbeatStatus", () => {
-  it("returns null when no state file exists", () => {
-    existsSyncMock.mockReturnValue(false);
+  beforeEach(() => {
+    clearState();
+  });
+
+  it("returns null when no state is persisted", () => {
     expect(getHeartbeatStatus()).toBeNull();
   });
 
-  it("returns parsed state when file exists", () => {
-    const state = {
-      last_run: Date.now(),
-      status: "idle",
-      run_count: 3,
-    };
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(JSON.stringify(state));
+  it("returns parsed state when present", () => {
+    seedState({ last_run: Date.now(), status: "idle", run_count: 3 });
     const result = getHeartbeatStatus();
     expect(result?.run_count).toBe(3);
     expect(result?.status).toBe("idle");
   });
 
-  it("returns null for corrupt JSON", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue("{ invalid json ");
+  it("returns null for a corrupt (non-object) value", () => {
+    seedState("{ invalid json ");
     expect(getHeartbeatStatus()).toBeNull();
   });
 
   it("returns null when last_run is not a number", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
-        last_run: "not-a-number",
-        status: "idle",
-        run_count: 0,
-      }),
-    );
+    seedState({ last_run: "not-a-number", status: "idle", run_count: 0 });
     expect(getHeartbeatStatus()).toBeNull();
   });
 
   it("returns null when run_count is not a number", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
-        last_run: Date.now(),
-        status: "idle",
-        run_count: "five",
-      }),
-    );
+    seedState({ last_run: Date.now(), status: "idle", run_count: "five" });
     expect(getHeartbeatStatus()).toBeNull();
   });
 
   it("returns null when status is invalid", () => {
-    existsSyncMock.mockReturnValue(true);
-    readFileSyncMock.mockReturnValue(
-      JSON.stringify({
-        last_run: Date.now(),
-        status: "broken",
-        run_count: 1,
-      }),
-    );
+    seedState({ last_run: Date.now(), status: "broken", run_count: 1 });
     expect(getHeartbeatStatus()).toBeNull();
   });
 
   it("returns null when last_run is non-finite", () => {
-    existsSyncMock.mockReturnValue(true);
-    // 1e309 parses to Infinity, which is typeof number but not finite
-    readFileSyncMock.mockReturnValue(
-      '{"last_run":1e309,"status":"idle","run_count":0}',
-    );
+    // Infinity is typeof number but not finite — normalize must reject it.
+    seedState({ last_run: Infinity, status: "idle", run_count: 0 });
     expect(getHeartbeatStatus()).toBeNull();
   });
 });
@@ -515,7 +490,7 @@ describe("awaitCurrentRun", () => {
         return "heartbeat prompt {{workspace}} {{logsDir}} {{lastRunIso}} {{memoryFile}} {{instructionsFile}} {{runCount}} {{intervalMinutes}}";
       return "null";
     }) as any);
-    writeAtomicSyncMock.mockClear();
+    clearState();
     runOneShotAgentMock.mockReset();
     runOneShotAgentMock.mockImplementation(async () => {});
   });
@@ -579,7 +554,6 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
   // per run, so no re-import is needed.
   const evictionRunOneShotMock = runOneShotAgentMock;
   const evictionEvictMock = evictOrphanSubprocessesMock;
-  const evictionWriteAtomicMock = writeAtomicSyncMock;
   const evictionMod = { forceHeartbeat, initHeartbeat };
 
   beforeEach(() => {
@@ -594,7 +568,7 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
       return "null";
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }) as any);
-    evictionWriteAtomicMock.mockClear();
+    clearState();
     evictionRunOneShotMock.mockReset();
     evictionEvictMock.mockReset();
     evictionEvictMock.mockImplementation(async () => ({
@@ -728,9 +702,9 @@ describe("heartbeat eviction (timeout + abort + delegation)", () => {
 
     // Find the final state write (status: "idle" — the one written in the
     // catch path; the initial "running" write happens before the timeout).
-    const idleWrites = evictionWriteAtomicMock.mock.calls
-      .map((c) => JSON.parse(String(c[1])))
-      .filter((s: { status: string }) => s.status === "idle");
+    const idleWrites = stateWrites().filter(
+      (s: { status: string }) => s.status === "idle",
+    );
     expect(idleWrites.length).toBeGreaterThan(0);
     const finalState = idleWrites[idleWrites.length - 1];
 

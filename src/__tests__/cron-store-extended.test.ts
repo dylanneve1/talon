@@ -1,63 +1,51 @@
 /**
- * Extended tests for src/storage/cron-store.ts
+ * Extended tests for src/storage/cron-store.ts (SQLite-backed).
  *
- * Covers edge cases not exercised by cron-store.test.ts:
- * - validateCronExpression edge cases (special expressions, bad timezone,
- *   next-run ISO string correctness)
- * - generateCronId uniqueness and format
- * - addCronJob / getCronJob roundtrip with all fields
- * - getCronJobsForChat isolation
- * - updateCronJob happy path and missing-ID guard
- * - deleteCronJob missing-ID guard
- * - recordCronRun increment semantics and missing-ID no-op
+ * Covers:
+ * - validateCronExpression edge cases and generateCronId format/uniqueness
+ * - addCronJob / getCronJob roundtrip, getCronJobsForChat isolation
+ * - updateCronJob (merge + undefined-clears), deleteCronJob, recordCronRun
  * - getAllCronJobs
- * - loadCronJobs array (legacy) → object conversion
- * - loadCronJobs corrupt primary → backup fallback
+ * - loadCronJobs: the one-shot legacy JSON import (envelope, bare object,
+ *   bare array) and startup timezone hygiene, exercised against real tmpdir
+ *   files + the real engine (no fs mocks) — the same pattern as
+ *   sessions-persistence / history-persistence.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-// ── Mocks (before any dynamic import) ─────────────────────────────────────
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
+  logDebug: vi.fn(),
 }));
 
-const existsSyncMock = vi.fn(() => false);
-const readFileSyncMock = vi.fn(() => "{}");
-const mkdirSyncMock = vi.fn();
-const renameSyncMock = vi.fn();
-const unlinkSyncMock = vi.fn();
+// The legacy-import path reads files.cron — point the whole Talon root into a
+// per-test tmpdir via a paths proxy so each test gets an isolated cron.json +
+// database and the import's rename-to-.imported is observable.
+let workDir: string;
+vi.mock("../util/paths.js", async () => {
+  const real =
+    await vi.importActual<typeof import("../util/paths.js")>(
+      "../util/paths.js",
+    );
+  return {
+    ...real,
+    files: new Proxy(real.files, {
+      get(target, prop: string) {
+        if (prop === "cron") return join(workDir, "cron.json");
+        if (prop === "database") return join(workDir, "talon.db");
+        return target[prop as keyof typeof target];
+      },
+    }),
+  };
+});
 
-vi.mock("node:fs", () => ({
-  existsSync: existsSyncMock,
-  readFileSync: readFileSyncMock,
-  writeFileSync: vi.fn(),
-  mkdirSync: mkdirSyncMock,
-  renameSync: renameSyncMock,
-  unlinkSync: unlinkSyncMock,
-}));
-
-const writeFileSyncMock = vi.fn();
-vi.mock("write-file-atomic", () => ({
-  default: Object.assign((...args: unknown[]) => writeFileSyncMock(...args), {
-    sync: writeFileSyncMock,
-  }),
-}));
-
-vi.mock("../util/cleanup-registry.js", () => ({
-  registerCleanup: vi.fn(),
-}));
-
-vi.mock("../util/paths.js", () => ({
-  files: { cron: "/mock/data/cron.json" },
-  dirs: {},
-}));
-
-// ── Dynamic import ─────────────────────────────────────────────────────────
-
+import { closeDatabase } from "../storage/db.js";
 import type { CronJob } from "../storage/cron-store.js";
 
 const {
@@ -71,9 +59,11 @@ const {
   recordCronRun,
   generateCronId,
   validateCronExpression,
+  isValidTimezone,
 } = await import("../storage/cron-store.js");
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+const envBackup = process.env.TALON_DB_PATH;
+const importBackup = process.env.TALON_DISABLE_LEGACY_IMPORT;
 
 let _seq = 0;
 function uniqueId(): string {
@@ -96,7 +86,20 @@ function makeJob(overrides: Partial<CronJob> = {}): CronJob {
 }
 
 beforeEach(() => {
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+  workDir = mkdtempSync(join(tmpdir(), "talon-cron-ext-"));
+  closeDatabase();
+  process.env.TALON_DB_PATH = join(workDir, "talon.db");
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  closeDatabase();
+  if (envBackup === undefined) delete process.env.TALON_DB_PATH;
+  else process.env.TALON_DB_PATH = envBackup;
+  if (importBackup === undefined) delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+  else process.env.TALON_DISABLE_LEGACY_IMPORT = importBackup;
+  rmSync(workDir, { recursive: true, force: true });
 });
 
 // ── validateCronExpression ─────────────────────────────────────────────────
@@ -117,23 +120,19 @@ describe("validateCronExpression", () => {
   });
 
   it("every-minute expression '* * * * *' is valid", () => {
-    const r = validateCronExpression("* * * * *");
-    expect(r.valid).toBe(true);
+    expect(validateCronExpression("* * * * *").valid).toBe(true);
   });
 
   it("every-5-minutes expression '*/5 * * * *' is valid", () => {
-    const r = validateCronExpression("*/5 * * * *");
-    expect(r.valid).toBe(true);
+    expect(validateCronExpression("*/5 * * * *").valid).toBe(true);
   });
 
   it("weekday-only expression '0 12 * * 1-5' is valid", () => {
-    const r = validateCronExpression("0 12 * * 1-5");
-    expect(r.valid).toBe(true);
+    expect(validateCronExpression("0 12 * * 1-5").valid).toBe(true);
   });
 
   it("first-of-month expression '0 0 1 * *' is valid", () => {
-    const r = validateCronExpression("0 0 1 * *");
-    expect(r.valid).toBe(true);
+    expect(validateCronExpression("0 0 1 * *").valid).toBe(true);
   });
 
   it("random string is invalid and returns error message", () => {
@@ -150,8 +149,7 @@ describe("validateCronExpression", () => {
   });
 
   it("expression with too few fields is invalid", () => {
-    const r = validateCronExpression("* * *");
-    expect(r.valid).toBe(false);
+    expect(validateCronExpression("* * *").valid).toBe(false);
   });
 
   it("valid expression with valid timezone is accepted", () => {
@@ -177,8 +175,7 @@ describe("validateCronExpression", () => {
   });
 
   it("invalid expression returns no 'next' field", () => {
-    const r = validateCronExpression("garbage");
-    expect(r.next).toBeUndefined();
+    expect(validateCronExpression("garbage").next).toBeUndefined();
   });
 
   it("valid expression without timezone still returns next", () => {
@@ -261,13 +258,6 @@ describe("addCronJob and getCronJob roundtrip", () => {
     addCronJob(makeJob({ id, name: "Second version" }));
     expect(getCronJob(id)!.name).toBe("Second version");
   });
-
-  it("addCronJob triggers a sync write (dirty flag is set)", () => {
-    writeFileSyncMock.mockClear();
-    existsSyncMock.mockReturnValue(false);
-    addCronJob(makeJob());
-    expect(writeFileSyncMock).toHaveBeenCalled();
-  });
 });
 
 // ── getCronJobsForChat ─────────────────────────────────────────────────────
@@ -325,13 +315,6 @@ describe("updateCronJob", () => {
     expect(result!.schedule).toBe("0 9 * * *");
   });
 
-  it("returned job reference is the same object stored in getCronJob", () => {
-    const id = uniqueId();
-    addCronJob(makeJob({ id }));
-    const updated = updateCronJob(id, { name: "Check ref" });
-    expect(updated).toBe(getCronJob(id));
-  });
-
   it("returns undefined for a non-existent ID", () => {
     expect(
       updateCronJob("no-such-id-ext", { name: "irrelevant" }),
@@ -356,13 +339,12 @@ describe("updateCronJob", () => {
     expect(result!.timezone).toBe("Pacific/Auckland");
   });
 
-  it("triggers a sync write after updating", () => {
+  it("clears a field when the update value is undefined", () => {
     const id = uniqueId();
-    addCronJob(makeJob({ id }));
-    writeFileSyncMock.mockClear();
-    existsSyncMock.mockReturnValue(false);
-    updateCronJob(id, { name: "write test" });
-    expect(writeFileSyncMock).toHaveBeenCalled();
+    addCronJob(makeJob({ id, timezone: "Europe/London" }));
+    const result = updateCronJob(id, { timezone: undefined });
+    expect(result!.timezone).toBeUndefined();
+    expect(getCronJob(id)!.timezone).toBeUndefined();
   });
 });
 
@@ -385,15 +367,6 @@ describe("deleteCronJob", () => {
     addCronJob(makeJob({ id }));
     expect(deleteCronJob(id)).toBe(true);
     expect(deleteCronJob(id)).toBe(false);
-  });
-
-  it("triggers a sync write", () => {
-    const id = uniqueId();
-    addCronJob(makeJob({ id }));
-    writeFileSyncMock.mockClear();
-    existsSyncMock.mockReturnValue(false);
-    deleteCronJob(id);
-    expect(writeFileSyncMock).toHaveBeenCalled();
   });
 });
 
@@ -449,8 +422,7 @@ describe("getAllCronJobs", () => {
     addCronJob(makeJob({ id: id1 }));
     addCronJob(makeJob({ id: id2 }));
 
-    const all = getAllCronJobs();
-    const ids = all.map((j) => j.id);
+    const ids = getAllCronJobs().map((j) => j.id);
     expect(ids).toContain(id1);
     expect(ids).toContain(id2);
   });
@@ -459,8 +431,7 @@ describe("getAllCronJobs", () => {
     const id = uniqueId();
     addCronJob(makeJob({ id }));
     deleteCronJob(id);
-    const all = getAllCronJobs();
-    expect(all.map((j) => j.id)).not.toContain(id);
+    expect(getAllCronJobs().map((j) => j.id)).not.toContain(id);
   });
 
   it("returns an array (not an object)", () => {
@@ -468,198 +439,159 @@ describe("getAllCronJobs", () => {
   });
 });
 
-// ── loadCronJobs — legacy array format ────────────────────────────────────
+// ── loadCronJobs — one-shot legacy JSON import ─────────────────────────────
 
-describe("loadCronJobs — array (legacy) format", () => {
-  it("converts array to object and makes jobs retrievable", () => {
-    const legacy = [
-      {
-        id: "legacy-ext-1",
-        chatId: "chat-legacy",
-        schedule: "0 8 * * *",
-        type: "message" as const,
-        content: "Good morning",
-        name: "Morning",
-        enabled: true,
-        createdAt: 1000,
-        runCount: 2,
-      },
-      {
-        id: "legacy-ext-2",
-        chatId: "chat-legacy",
-        schedule: "0 20 * * *",
-        type: "query" as const,
-        content: "Evening report",
-        name: "Evening",
-        enabled: false,
-        createdAt: 2000,
-        runCount: 0,
-      },
-    ];
+describe("loadCronJobs — legacy import", () => {
+  const legacyJob = (over: Record<string, unknown> = {}) => ({
+    id: "legacy-1",
+    chatId: "chat-legacy",
+    schedule: "0 8 * * *",
+    type: "message",
+    content: "Good morning",
+    name: "Morning",
+    enabled: true,
+    createdAt: 1000,
+    runCount: 2,
+    ...over,
+  });
 
-    existsSyncMock.mockReturnValueOnce(true);
-    readFileSyncMock.mockReturnValueOnce(JSON.stringify(legacy));
+  it("imports the JsonStore envelope and renames the file to .imported", () => {
+    writeFileSync(
+      join(workDir, "cron.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        savedAt: 1716540000000,
+        data: { "legacy-1": legacyJob() },
+      }),
+    );
 
     loadCronJobs();
 
-    expect(getCronJob("legacy-ext-1")).toBeDefined();
-    expect(getCronJob("legacy-ext-1")!.name).toBe("Morning");
-    expect(getCronJob("legacy-ext-2")).toBeDefined();
-    expect(getCronJob("legacy-ext-2")!.type).toBe("query");
+    expect(getCronJob("legacy-1")).toBeDefined();
+    expect(getCronJob("legacy-1")!.name).toBe("Morning");
+    expect(existsSync(join(workDir, "cron.json"))).toBe(false);
+    expect(existsSync(join(workDir, "cron.json.imported"))).toBe(true);
+  });
+
+  it("imports the bare pre-envelope object shape { id: job }", () => {
+    writeFileSync(
+      join(workDir, "cron.json"),
+      JSON.stringify({
+        "legacy-1": legacyJob(),
+        "legacy-2": legacyJob({
+          id: "legacy-2",
+          chatId: "chat-2",
+          type: "query",
+          name: "Status check",
+        }),
+      }),
+    );
+
+    loadCronJobs();
+
+    expect(getCronJob("legacy-1")!.name).toBe("Morning");
+    expect(getCronJob("legacy-2")!.type).toBe("query");
+  });
+
+  it("imports the original bare-array shape [job, ...]", () => {
+    writeFileSync(
+      join(workDir, "cron.json"),
+      JSON.stringify([
+        legacyJob({ id: "arr-1", name: "One" }),
+        legacyJob({ id: "arr-2", name: "Two", type: "query" }),
+      ]),
+    );
+
+    loadCronJobs();
+
+    expect(getCronJob("arr-1")!.name).toBe("One");
+    expect(getCronJob("arr-2")!.type).toBe("query");
+  });
+
+  it("skips malformed legacy entries but keeps valid ones", () => {
+    writeFileSync(
+      join(workDir, "cron.json"),
+      JSON.stringify({
+        good: legacyJob({ id: "good" }),
+        // neither schedule nor everyMs → rejected by isCronJob
+        bad: legacyJob({ id: "bad", schedule: undefined }),
+        alsoBad: { id: "alsoBad" },
+      }),
+    );
+
+    loadCronJobs();
+
+    expect(getCronJob("good")).toBeDefined();
+    expect(getCronJob("bad")).toBeUndefined();
+    expect(getCronJob("alsoBad")).toBeUndefined();
+  });
+
+  it("strips an invalid timezone from an imported job", () => {
+    writeFileSync(
+      join(workDir, "cron.json"),
+      JSON.stringify({
+        "tz-bad": legacyJob({ id: "tz-bad", timezone: "Not/A_Real_Zone" }),
+      }),
+    );
+
+    loadCronJobs();
+
+    expect(getCronJob("tz-bad")).toBeDefined();
+    expect(getCronJob("tz-bad")!.timezone).toBeUndefined();
+  });
+
+  it("preserves a valid timezone on an imported job", () => {
+    writeFileSync(
+      join(workDir, "cron.json"),
+      JSON.stringify({
+        "tz-good": legacyJob({ id: "tz-good", timezone: "Europe/Warsaw" }),
+      }),
+    );
+
+    loadCronJobs();
+
+    expect(getCronJob("tz-good")!.timezone).toBe("Europe/Warsaw");
+  });
+
+  it("does not re-import on a subsequent load", () => {
+    writeFileSync(
+      join(workDir, "cron.json"),
+      JSON.stringify({ "once-1": legacyJob({ id: "once-1", runCount: 0 }) }),
+    );
+
+    loadCronJobs();
+    recordCronRun("once-1");
+    loadCronJobs();
+
+    // A re-import would clobber runCount back to the file's 0.
+    expect(getCronJob("once-1")!.runCount).toBe(1);
+  });
+
+  it("survives a corrupt legacy file without throwing", () => {
+    writeFileSync(join(workDir, "cron.json"), "not json at all!!!");
+    expect(() => loadCronJobs()).not.toThrow();
+    // The store still works after the failed import.
+    addCronJob(makeJob({ id: "after-corrupt" }));
+    expect(getCronJob("after-corrupt")).toBeDefined();
+  });
+
+  it("does nothing when the legacy file does not exist", () => {
+    expect(() => loadCronJobs()).not.toThrow();
+    expect(getAllCronJobs()).toEqual([]);
   });
 });
 
-// ── loadCronJobs — corrupt primary → backup fallback ──────────────────────
-
-describe("loadCronJobs — corrupt primary tries backup", () => {
-  it("falls back to backup when primary JSON is corrupt", () => {
-    const backup = {
-      "bak-ext-job": {
-        id: "bak-ext-job",
-        chatId: "bak-chat",
-        schedule: "0 7 * * *",
-        type: "message" as const,
-        content: "From backup",
-        name: "Backup job",
-        enabled: true,
-        createdAt: 3000,
-        runCount: 0,
-      },
-    };
-
-    // primary exists but is corrupt; backup exists and is valid
-    existsSyncMock
-      .mockReturnValueOnce(true) // primary existsSync
-      .mockReturnValueOnce(true); // backup existsSync
-    readFileSyncMock
-      .mockReturnValueOnce("{{{ not json }}}") // primary read
-      .mockReturnValueOnce(JSON.stringify(backup)); // backup read
-
-    expect(() => loadCronJobs()).not.toThrow();
-    expect(getCronJob("bak-ext-job")).toBeDefined();
-    expect(getCronJob("bak-ext-job")!.name).toBe("Backup job");
-  });
-
-  it("does not throw when primary corrupt and backup does not exist (line 56 FALSE branch)", () => {
-    // primary exists but corrupt; backup file does not exist → existsSync(bakFile) = false
-    existsSyncMock
-      .mockReturnValueOnce(true) // primary existsSync
-      .mockReturnValueOnce(false); // backup existsSync → FALSE branch
-    readFileSyncMock.mockReturnValueOnce("{{{ not json }}}");
-
-    expect(() => loadCronJobs()).not.toThrow();
-  });
-
-  it("loads backup in array format when primary is corrupt (line 58 TRUE branch)", () => {
-    const legacyArray = [
-      {
-        id: "bak-arr-1",
-        chatId: "bak-chat",
-        schedule: "0 6 * * *",
-        type: "message" as const,
-        content: "From array backup",
-        name: "Array backup job",
-        enabled: true,
-        createdAt: 1000,
-        runCount: 0,
-      },
-    ];
-
-    // primary exists but corrupt; backup exists with array (legacy) format
-    existsSyncMock
-      .mockReturnValueOnce(true) // primary existsSync
-      .mockReturnValueOnce(true); // backup existsSync
-    readFileSyncMock
-      .mockReturnValueOnce("{{{ not json }}}") // primary read
-      .mockReturnValueOnce(JSON.stringify(legacyArray)); // backup read (array)
-
-    loadCronJobs();
-
-    expect(getCronJob("bak-arr-1")).toBeDefined();
-    expect(getCronJob("bak-arr-1")!.name).toBe("Array backup job");
-  });
-
-  it("does not throw when both primary and backup are corrupt", () => {
-    existsSyncMock
-      .mockReturnValueOnce(true) // primary exists
-      .mockReturnValueOnce(true); // backup exists
-    readFileSyncMock
-      .mockReturnValueOnce("BAD JSON PRIMARY")
-      .mockReturnValueOnce("BAD JSON BACKUP");
-
-    expect(() => loadCronJobs()).not.toThrow();
-  });
-
-  it("handles missing store file gracefully (does not throw)", () => {
-    existsSyncMock.mockReturnValue(false);
-    expect(() => loadCronJobs()).not.toThrow();
-  });
-});
-
-// ── loadCronJobs — timezone validation ────────────────────────────────────
-
-describe("loadCronJobs — invalid timezone stripping", () => {
-  beforeEach(() => existsSyncMock.mockReset().mockReturnValue(false));
-
-  it("strips invalid timezone from loaded job", async () => {
-    await import("../storage/cron-store.js");
-    const jobWithBadTz: Record<string, unknown> = {
-      "tz-bad-id": {
-        id: "tz-bad-id",
-        chatId: "99",
-        schedule: "0 * * * *",
-        type: "message",
-        content: "hi",
-        name: "TZ Test",
-        enabled: true,
-        createdAt: Date.now(),
-        runCount: 0,
-        timezone: "Not/A_Real_Zone",
-      },
-    };
-    existsSyncMock.mockReturnValueOnce(true).mockReturnValue(false);
-    readFileSyncMock.mockReturnValueOnce(JSON.stringify(jobWithBadTz));
-    loadCronJobs();
-    const job = getCronJob("tz-bad-id");
-    expect(job).toBeDefined();
-    expect(job!.timezone).toBeUndefined();
-  });
-
-  it("preserves valid timezone on load", async () => {
-    const jobWithGoodTz: Record<string, unknown> = {
-      "tz-good-id": {
-        id: "tz-good-id",
-        chatId: "99",
-        schedule: "0 * * * *",
-        type: "message",
-        content: "hi",
-        name: "TZ Good",
-        enabled: true,
-        createdAt: Date.now(),
-        runCount: 0,
-        timezone: "Europe/Warsaw",
-      },
-    };
-    existsSyncMock.mockReturnValueOnce(true).mockReturnValue(false);
-    readFileSyncMock.mockReturnValueOnce(JSON.stringify(jobWithGoodTz));
-    loadCronJobs();
-    const job = getCronJob("tz-good-id");
-    expect(job).toBeDefined();
-    expect(job!.timezone).toBe("Europe/Warsaw");
-  });
-});
+// ── isValidTimezone ────────────────────────────────────────────────────────
 
 describe("isValidTimezone", () => {
-  it("returns true for valid IANA timezones", async () => {
-    const { isValidTimezone } = await import("../storage/cron-store.js");
+  it("returns true for valid IANA timezones", () => {
     expect(isValidTimezone("UTC")).toBe(true);
     expect(isValidTimezone("America/New_York")).toBe(true);
     expect(isValidTimezone("Europe/Warsaw")).toBe(true);
     expect(isValidTimezone("Asia/Tokyo")).toBe(true);
   });
 
-  it("returns false for invalid timezone strings", async () => {
-    const { isValidTimezone } = await import("../storage/cron-store.js");
+  it("returns false for invalid timezone strings", () => {
     expect(isValidTimezone("Not/Real")).toBe(false);
     expect(isValidTimezone("")).toBe(false);
     expect(isValidTimezone("BadString")).toBe(false);

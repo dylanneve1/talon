@@ -1,14 +1,13 @@
 /**
- * Persistent trigger store.
+ * Persistent trigger store, backed by the `triggers` table.
  *
  * Triggers are bot-authored scripts that run as supervised long-running
  * subprocesses and signal back to fire wake-up messages into a chat.
- *
- * Backed by the unified `JsonStore<T>` primitive: on-disk shape is
- * `{ schemaVersion, savedAt, data: Record<id, Trigger> }`. A migrate
- * hook accepts the pre-envelope object and the legacy bare-array
- * shapes. Script bodies still live next to the metadata under
- * `~/.talon/data/trigger-runs/`.
+ * Supervision metadata lives in SQLite (transactional, so a crash
+ * can't tear the store mid-status-flip); script bodies and run logs
+ * stay next to each other on disk under `~/.talon/data/trigger-runs/`.
+ * The one-shot legacy import accepts the JsonStore envelope, the
+ * pre-envelope bare object, and the original bare-array triggers.json.
  */
 
 import {
@@ -21,10 +20,10 @@ import {
 import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { log, logError } from "../util/log.js";
-import { recordError } from "../util/watchdog.js";
 import { dirs, files } from "../util/paths.js";
-import { registerCleanup } from "../util/cleanup-registry.js";
-import { JsonStore } from "../core/agent-runtime/store.js";
+import { importLegacyJson } from "./legacy-import.js";
+import { inTransaction } from "./db.js";
+import * as repo from "./repositories/triggers-repo.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,125 +97,67 @@ export const MAX_ACTIVE_PER_CHAT = 5;
 /** Truncate fire payloads at this many bytes to keep wake prompts sane. */
 export const FIRE_PAYLOAD_MAX_BYTES = 4_096;
 
-type TriggerStoreShape = Record<string, Trigger>;
-
-const STORE_FILE = files.triggers;
-const SCHEMA_VERSION = 1 as const;
-
-const store = new JsonStore<TriggerStoreShape>({
-  path: STORE_FILE,
-  defaultValue: {},
-  schemaVersion: SCHEMA_VERSION,
-  migrate: (raw, fromVersion) => {
-    if (fromVersion !== 0) return null;
-    return {
-      value: normalizeTriggerStore(raw),
-      schemaVersion: SCHEMA_VERSION,
-    };
-  },
-});
-
-function normalizeTriggerStore(raw: unknown): TriggerStoreShape {
-  if (Array.isArray(raw)) {
-    return Object.fromEntries(
-      raw
-        .filter(
-          (t): t is Trigger =>
-            typeof t === "object" &&
-            t !== null &&
-            typeof (t as { id?: unknown }).id === "string",
-        )
-        .map((t) => [t.id, t]),
-    );
-  }
-  return typeof raw === "object" && raw !== null
-    ? (raw as TriggerStoreShape)
-    : {};
+function isTrigger(value: unknown): value is Trigger {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string"
+  );
 }
 
-// ── Persistence ──────────────────────────────────────────────────────────────
+// ── Startup ──────────────────────────────────────────────────────────────────
 
+/**
+ * One-shot legacy import + restart recovery. Any trigger that was
+ * "running"/"pending" when the previous process died needs handling:
+ * non-persistent ones are marked "terminated" so the bot gets a wake
+ * fire about what happened — the child was either killed on clean
+ * shutdown, or torn down with a Docker/systemd cgroup on crash.
+ * (Outside a cgroup, a crash could leave the child orphaned and alive,
+ * but we don't try to recover non-persistent triggers — that's what
+ * persistent is for.) Persistent triggers are parked in "pending" with
+ * their pid preserved so resumeAfterRestart can probe the stored pid,
+ * SIGKILL any surviving orphan, and re-spawn.
+ */
 export function loadTriggers(): void {
-  store.reset();
   try {
-    store.loadSync();
+    importLegacyJson({
+      path: files.triggers,
+      category: "triggers",
+      what: "trigger(s)",
+      ingest: (data) => {
+        const triggers = Array.isArray(data)
+          ? data
+          : data && typeof data === "object"
+            ? Object.values(data)
+            : [];
+        let imported = 0;
+        inTransaction(() => {
+          for (const t of triggers) {
+            if (!isTrigger(t)) continue;
+            repo.upsert(t);
+            imported++;
+          }
+        });
+        return imported;
+      },
+    });
+
+    const { terminated, parked } = repo.recoverInterrupted(Date.now());
+
+    const count = repo.count();
+    if (count > 0) {
+      const notes: string[] = [];
+      if (terminated > 0) notes.push(`${terminated} terminated by restart`);
+      if (parked > 0) notes.push(`${parked} persistent → will respawn`);
+      log(
+        "triggers",
+        `Loaded ${count} trigger(s)${notes.length ? ` (${notes.join(", ")})` : ""}`,
+      );
+    }
   } catch (err) {
     logError("triggers", "Failed to load triggers", err);
   }
-
-  // On startup any "running" trigger from a previous process needs handling.
-  // For non-persistent we treat it as dead and mark "terminated" so the bot
-  // gets a wake fire about what happened — its child was either killed on
-  // clean shutdown, or torn down with a Docker/systemd cgroup on crash.
-  // (Outside a cgroup, a crash could leave the child orphaned and alive, but
-  // we don't try to recover non-persistent triggers — that's what persistent
-  // is for.) Persistent triggers are parked in "pending" so resumeAfterRestart
-  // can probe the stored pid, SIGKILL any surviving orphan, and re-spawn.
-  let resurrected = 0;
-  let respawnable = 0;
-  const data = store.get();
-  for (const t of Object.values(data)) {
-    if (t.status === "running" || t.status === "pending") {
-      if (t.persistent) {
-        // Keep the stored pid — resumeAfterRestart() probes it to detect an
-        // orphaned previous child (possible outside cgroup-managed setups,
-        // where a Talon crash leaves the child reparented to init still alive)
-        // and SIGKILLs it before respawning, to avoid duplicates.
-        t.status = "pending";
-        respawnable++;
-      } else {
-        t.pid = undefined;
-        t.status = "terminated";
-        t.endedAt = t.endedAt ?? Date.now();
-        t.lastError =
-          t.lastError ?? "Talon restarted while trigger was running";
-        resurrected++;
-      }
-    }
-  }
-  if (resurrected > 0 || respawnable > 0) {
-    store.update(() => undefined);
-  }
-
-  const count = Object.keys(data).length;
-  if (count > 0) {
-    const notes: string[] = [];
-    if (resurrected > 0) notes.push(`${resurrected} terminated by restart`);
-    if (respawnable > 0) notes.push(`${respawnable} persistent → will respawn`);
-    log(
-      "triggers",
-      `Loaded ${count} trigger(s)${notes.length ? ` (${notes.join(", ")})` : ""}`,
-    );
-  }
-}
-
-function save(): void {
-  if (!store.isDirty()) return;
-  try {
-    const dir = dirname(STORE_FILE);
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    store.saveSync();
-  } catch (err) {
-    logError("triggers", "Failed to persist triggers", err);
-    recordError(
-      `Trigger save failed: ${err instanceof Error ? err.message : err}`,
-    );
-  }
-}
-
-const autoSaveTimer = setInterval(save, 10_000);
-registerCleanup(save);
-
-export function flushTriggers(): void {
-  clearInterval(autoSaveTimer);
-  store.update(() => undefined);
-  save();
-}
-
-/** Mark store as dirty and save synchronously. */
-export function persistNow(): void {
-  store.update(() => undefined);
-  save();
 }
 
 // ── ID + path helpers ────────────────────────────────────────────────────────
@@ -302,27 +243,22 @@ export function validateTimeout(seconds: number): string | null {
 // ── CRUD ─────────────────────────────────────────────────────────────────────
 
 export function addTrigger(t: Trigger): void {
-  store.update((data) => {
-    data[t.id] = t;
-  });
-  save();
+  repo.upsert(t);
 }
 
 export function getTrigger(id: string): Trigger | undefined {
-  return store.get()[id];
+  return repo.get(id);
 }
 
 export function getTriggerByName(
   chatId: string,
   name: string,
 ): Trigger | undefined {
-  return Object.values(store.get()).find(
-    (t) => t.chatId === chatId && t.name === name,
-  );
+  return repo.getByName(chatId, name);
 }
 
 export function getTriggersForChat(chatId: string): Trigger[] {
-  return Object.values(store.get()).filter((t) => t.chatId === chatId);
+  return repo.listByChat(chatId);
 }
 
 export function getActiveTriggersForChat(chatId: string): Trigger[] {
@@ -332,29 +268,32 @@ export function getActiveTriggersForChat(chatId: string): Trigger[] {
 }
 
 export function getAllTriggers(): Trigger[] {
-  return Object.values(store.get());
+  return repo.listAll();
 }
 
+/**
+ * Merge `updates` into the stored trigger. A key present with value
+ * `undefined` clears that field (Object.assign semantics, matching the
+ * in-memory era — the supervisor relies on it to drop e.g. a dead pid).
+ */
 export function updateTrigger(
   id: string,
   updates: Partial<Trigger>,
 ): Trigger | undefined {
-  const existing = store.get()[id];
-  if (!existing) return undefined;
-  store.update((data) => {
-    Object.assign(data[id], updates);
+  return inTransaction(() => {
+    const existing = repo.get(id);
+    if (!existing) return undefined;
+    const merged = { ...existing, ...updates };
+    repo.upsert(merged);
+    return merged;
   });
-  return store.get()[id];
 }
 
 /** Delete a trigger and best-effort clean up its on-disk script + log. */
 export function deleteTrigger(id: string): boolean {
-  const t = store.get()[id];
+  const t = repo.get(id);
   if (!t) return false;
-  store.update((data) => {
-    delete data[id];
-  });
-  save();
+  repo.remove(id);
   for (const path of [t.scriptPath, t.logPath]) {
     try {
       rmSync(path, { force: true });
@@ -398,7 +337,7 @@ export function readTriggerLogTail(
   }
 }
 
-/** Reset the in-memory store. Test helper only. */
+/** Test-only: wipe the table between suites sharing a worker DB. */
 export function _resetTriggersForTesting(): void {
-  store.reset();
+  repo.removeAll();
 }

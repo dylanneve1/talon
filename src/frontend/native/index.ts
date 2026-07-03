@@ -35,7 +35,6 @@ import {
   recordTurnMeta,
   getTurnMeta,
   clearTurnMeta,
-  flushTurnMeta,
 } from "./turn-meta.js";
 import {
   getChatSettings,
@@ -845,7 +844,6 @@ export function createNativeFrontend(
     },
 
     async stop() {
-      flushTurnMeta();
       await removeBridgeDiscovery();
       await server.stop();
       await gateway.stop();

@@ -84,9 +84,9 @@ export function initCodexAgent(
   // credential fingerprint has changed since last load). The store is
   // a no-op for non-OAuth credentials but the loader is cheap, so we
   // call it for all modes uniformly.
-  // Fire-and-forget: the loader is async (JsonStore reads return a
-  // Promise) but `initCodexAgent` is sync and changing it to async
-  // would ripple through every caller in bootstrap.ts.
+  // Fire-and-forget: the loader keeps its async signature (historical;
+  // kv reads are sync now) but `initCodexAgent` is sync and changing it
+  // to async would ripple through every caller in bootstrap.ts.
   // The store is best-effort anyway — if a turn races with the
   // first load, `isKnownOAuthIncompat` defaults to false and the
   // turn proceeds without the runtime-learned filter (the curated

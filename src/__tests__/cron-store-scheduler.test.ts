@@ -8,59 +8,47 @@
  *                            past-endAt => null, unparseable cron => null
  *   - describeSchedule     — cron expression vs "every 90m" style
  *   - humanizeMs           — s / m / h / d boundaries and fractional rendering
- *   - isCronJob (indirect, via the store migrate path) — accepts schedule-only
- *                            and everyMs-only, rejects neither
+ *   - isCronJob (indirect, via the legacy-import path) — accepts schedule-only
+ *                            and everyMs-only, rejects neither / both
  *   - recordCronRun        — ok clears lastError, error sets it, durationMs,
  *                            and the optional `at` override of lastRunAt/runCount
  *
- * Mirrors the harness in cron-store-extended.test.ts: node:fs is fully mocked so
- * the store never touches disk, paths are stubbed, and every job gets a unique
- * id so module-level store state never bleeds between cases.
+ * The pure helpers need no store. The isCronJob-via-import and recordCronRun
+ * cases run against a real per-test SQLite database in a tmpdir (paths proxy),
+ * matching the sessions-persistence / history-persistence harness.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
-
-// ── Mocks (must precede the dynamic import) ────────────────────────────────
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("../util/log.js", () => ({
   log: vi.fn(),
   logError: vi.fn(),
   logWarn: vi.fn(),
+  logDebug: vi.fn(),
 }));
 
-const existsSyncMock = vi.fn(() => false);
-const readFileSyncMock = vi.fn(() => "{}");
-const mkdirSyncMock = vi.fn();
-const renameSyncMock = vi.fn();
-const unlinkSyncMock = vi.fn();
+let workDir: string;
+vi.mock("../util/paths.js", async () => {
+  const real =
+    await vi.importActual<typeof import("../util/paths.js")>(
+      "../util/paths.js",
+    );
+  return {
+    ...real,
+    files: new Proxy(real.files, {
+      get(target, prop: string) {
+        if (prop === "cron") return join(workDir, "cron.json");
+        if (prop === "database") return join(workDir, "talon.db");
+        return target[prop as keyof typeof target];
+      },
+    }),
+  };
+});
 
-vi.mock("node:fs", () => ({
-  existsSync: existsSyncMock,
-  readFileSync: readFileSyncMock,
-  writeFileSync: vi.fn(),
-  mkdirSync: mkdirSyncMock,
-  renameSync: renameSyncMock,
-  unlinkSync: unlinkSyncMock,
-}));
-
-const writeFileSyncMock = vi.fn();
-vi.mock("write-file-atomic", () => ({
-  default: Object.assign((...args: unknown[]) => writeFileSyncMock(...args), {
-    sync: writeFileSyncMock,
-  }),
-}));
-
-vi.mock("../util/cleanup-registry.js", () => ({
-  registerCleanup: vi.fn(),
-}));
-
-vi.mock("../util/paths.js", () => ({
-  files: { cron: "/mock/data/cron.json" },
-  dirs: {},
-}));
-
-// ── Dynamic import ─────────────────────────────────────────────────────────
-
+import { closeDatabase } from "../storage/db.js";
 import type { CronJob } from "../storage/cron-store.js";
 
 const {
@@ -75,7 +63,8 @@ const {
   loadCronJobs,
 } = await import("../storage/cron-store.js");
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+const envBackup = process.env.TALON_DB_PATH;
+const importBackup = process.env.TALON_DISABLE_LEGACY_IMPORT;
 
 let _seq = 0;
 function uniqueId(): string {
@@ -107,7 +96,20 @@ const HOUR = 3_600_000;
 const DAY = 86_400_000;
 
 beforeEach(() => {
+  delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+  workDir = mkdtempSync(join(tmpdir(), "talon-cron-sched-"));
+  closeDatabase();
+  process.env.TALON_DB_PATH = join(workDir, "talon.db");
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  closeDatabase();
+  if (envBackup === undefined) delete process.env.TALON_DB_PATH;
+  else process.env.TALON_DB_PATH = envBackup;
+  if (importBackup === undefined) delete process.env.TALON_DISABLE_LEGACY_IMPORT;
+  else process.env.TALON_DISABLE_LEGACY_IMPORT = importBackup;
+  rmSync(workDir, { recursive: true, force: true });
 });
 
 // ── isIntervalJob ────────────────────────────────────────────────────────────
@@ -430,12 +432,11 @@ describe("humanizeMs", () => {
   });
 });
 
-// ── isCronJob (validated indirectly via the migrate/load path) ───────────────
+// ── isCronJob (validated indirectly via the legacy-import path) ──────────────
 
-describe("isCronJob (via loadCronJobs migration)", () => {
+describe("isCronJob (via loadCronJobs import)", () => {
   function loadRaw(raw: unknown): void {
-    existsSyncMock.mockReturnValueOnce(true).mockReturnValue(false);
-    readFileSyncMock.mockReturnValueOnce(JSON.stringify(raw));
+    writeFileSync(join(workDir, "cron.json"), JSON.stringify(raw));
     loadCronJobs();
   }
 

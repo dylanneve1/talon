@@ -2283,6 +2283,11 @@ describe("codex / handleMessage — silent OAuth exit-1 recovery", () => {
     // Reset the OAuth-incompat learning store so tests don't leak.
     const oauthIncompat = await import("../backend/codex/oauth-incompat.js");
     oauthIncompat.resetOAuthIncompatForTests();
+    // The store now persists in the shared per-worker kv table (not a
+    // per-fakeHome file), so a learned model outlives resetModules —
+    // clear the row so each test starts from an empty set.
+    const kv = await import("../storage/kv.js");
+    kv.kvDelete("codex.oauth-incompat");
   });
 
   afterEach(async () => {

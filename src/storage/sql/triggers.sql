@@ -40,6 +40,12 @@ FROM triggers ORDER BY created_at
 -- name: remove
 DELETE FROM triggers WHERE id = ?
 
+-- name: count
+SELECT COUNT(*) AS n FROM triggers
+
+-- name: removeAll
+DELETE FROM triggers
+
 -- Restart recovery (see loadTriggers): a non-persistent trigger that was
 -- alive when the previous process died is dead now — mark it terminated
 -- so the bot gets a wake fire about what happened. COALESCE keeps any
