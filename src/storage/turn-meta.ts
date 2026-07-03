@@ -90,7 +90,15 @@ export function recordTurnMeta(
 /** Look up the meta for one message, typed by the caller, or null. */
 export function getTurnMeta<T>(chatId: string, msgId: string): T | null {
   ensureLoaded();
-  const raw = repo.get(chatId, msgId);
+  let raw: string | undefined;
+  try {
+    raw = repo.get(chatId, msgId);
+  } catch (err) {
+    // Reads are hydration-only — a storage fault must degrade to
+    // "no meta", not break the caller (matching recordTurnMeta).
+    logError("db", "Failed to read turn meta", err);
+    return null;
+  }
   if (raw === undefined) return null;
   try {
     return JSON.parse(raw) as T;

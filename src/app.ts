@@ -115,6 +115,21 @@ onBackendChange((holder, newBackend, info) => {
 let shuttingDown = false;
 
 const SHUTDOWN_TIMEOUT_MS = 15_000;
+const DRAIN_TIMEOUT_MS = 5_000;
+
+/**
+ * One best-effort teardown step. A failing subsystem (a frontend that
+ * won't stop, a plugin that throws in destroy, a dynamic import that
+ * fails mid-shutdown) must not abort the rest of the sequence — the
+ * WAL checkpoint and pidfile removal below have to run regardless.
+ */
+async function shutdownStep(name: string, fn: () => unknown): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    logError("shutdown", `${name} failed`, err);
+  }
+}
 
 async function gracefulShutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
@@ -127,29 +142,52 @@ async function gracefulShutdown(signal: string): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
   forceTimer.unref();
 
-  const pending = getActiveCount();
-  if (pending > 0) {
-    log("shutdown", `Waiting for ${pending} in-flight queries to drain...`);
-    await new Promise((r) => setTimeout(r, 5000));
+  // Drain in-flight queries: poll instead of a fixed sleep, so an idle
+  // daemon exits immediately and a busy one gets the full budget.
+  if (getActiveCount() > 0) {
+    log(
+      "shutdown",
+      `Waiting for ${getActiveCount()} in-flight queries to drain...`,
+    );
+    const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+    while (getActiveCount() > 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const remaining = getActiveCount();
+    if (remaining > 0) {
+      logWarn(
+        "shutdown",
+        `Drain timed out with ${remaining} queries still in flight`,
+      );
+    }
   }
 
-  await Promise.allSettled(frontends.map((frontend) => frontend.stop()));
+  await shutdownStep("frontends", () =>
+    Promise.allSettled(frontends.map((frontend) => frontend.stop())),
+  );
   if (config.backend === "opencode") {
-    const { stopOpenCodeServer } = await import("./backend/opencode/index.js");
-    stopOpenCodeServer();
+    await shutdownStep("opencode server", async () => {
+      const { stopOpenCodeServer } =
+        await import("./backend/opencode/index.js");
+      stopOpenCodeServer();
+    });
   }
   // Destroy plugins (cleanup resources)
   if (config.plugins.length > 0) {
-    const { destroyPlugins } = await import("./core/plugin/index.js");
-    await destroyPlugins();
+    await shutdownStep("plugins", async () => {
+      const { destroyPlugins } = await import("./core/plugin/index.js");
+      await destroyPlugins();
+    });
   }
-  stopPulseTimer();
-  stopHeartbeatTimer();
-  await awaitHeartbeat();
-  stopCronTimer();
-  await shutdownTriggers();
-  stopWatchdog();
-  stopUploadCleanup();
+  await shutdownStep("pulse timer", stopPulseTimer);
+  await shutdownStep("heartbeat", async () => {
+    stopHeartbeatTimer();
+    await awaitHeartbeat();
+  });
+  await shutdownStep("cron timer", stopCronTimer);
+  await shutdownStep("triggers", shutdownTriggers);
+  await shutdownStep("watchdog", stopWatchdog);
+  await shutdownStep("upload cleanup", stopUploadCleanup);
   flushDatabase();
   // Guarded removal: after a /restart handoff the successor has already
   // written its own pid here — deleting unconditionally would orphan it
@@ -171,6 +209,10 @@ process.on("uncaughtException", (err) => {
   }
   logError("bot", "Uncaught exception", err);
   flushDatabase();
+  // Same pid-guarded removal as the graceful path — a crashed daemon
+  // must not leave a record that makes `talon status` chase a dead or
+  // recycled pid.
+  removePidRecordIfOwnedBy(process.pid);
   process.exit(1);
 });
 
@@ -226,5 +268,7 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   logError("bot", "Fatal startup error", err);
+  flushDatabase();
+  removePidRecordIfOwnedBy(process.pid);
   process.exit(1);
 });

@@ -27,7 +27,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { files } from "../util/paths.js";
-import { log } from "../util/log.js";
+import { log, logError } from "../util/log.js";
 import { SCHEMA, dbSql } from "./sql/statements.generated.js";
 
 /**
@@ -110,17 +110,42 @@ export function getDatabase(path: string = defaultPath()): SqlDatabase {
   if (db) return db;
   mkdirSync(dirname(path), { recursive: true });
   const database = new Database(path);
-  // WAL: readers don't block the writer, and crash recovery is
-  // journal-based instead of "hope the rename was atomic".
-  database.exec("PRAGMA journal_mode = WAL");
-  database.exec("PRAGMA synchronous = NORMAL");
-  database.exec("PRAGMA foreign_keys = ON");
-  ensureSchema(database);
+  try {
+    // WAL: readers don't block the writer, and crash recovery is
+    // journal-based instead of "hope the rename was atomic".
+    database.exec("PRAGMA journal_mode = WAL");
+    database.exec("PRAGMA synchronous = NORMAL");
+    database.exec("PRAGMA foreign_keys = ON");
+    ensureSchema(database);
+  } catch (err) {
+    // Setup failed — close the handle so a retry doesn't leak one
+    // open file descriptor (and WAL sidecar) per attempt.
+    try {
+      database.close();
+    } catch {
+      /* already closed */
+    }
+    throw err;
+  }
   db = database;
   return database;
 }
 
 let transactionDepth = 0;
+
+/**
+ * Best-effort rollback: a ROLLBACK that itself throws (database closed,
+ * I/O error) must not mask the original error from `fn`, and must not
+ * skip the depth bookkeeping — a stuck depth would silently turn every
+ * later top-level transaction into a savepoint.
+ */
+function tryExec(database: SqlDatabase, sql: string): void {
+  try {
+    database.exec(sql);
+  } catch (err) {
+    logError("db", `Transaction cleanup failed (${sql})`, err);
+  }
+}
 
 /** Run `fn` inside a transaction; rolls back on throw. Nested calls use SAVEPOINTs. */
 export function inTransaction<T>(fn: () => T): T {
@@ -132,13 +157,13 @@ export function inTransaction<T>(fn: () => T): T {
     try {
       const result = fn();
       database.exec(`RELEASE "${sp}"`);
-      transactionDepth--;
       return result;
     } catch (err) {
-      database.exec(`ROLLBACK TO "${sp}"`);
-      database.exec(`RELEASE "${sp}"`);
-      transactionDepth--;
+      tryExec(database, `ROLLBACK TO "${sp}"`);
+      tryExec(database, `RELEASE "${sp}"`);
       throw err;
+    } finally {
+      transactionDepth--;
     }
   }
   database.exec("BEGIN");
@@ -146,12 +171,12 @@ export function inTransaction<T>(fn: () => T): T {
   try {
     const result = fn();
     database.exec("COMMIT");
-    transactionDepth--;
     return result;
   } catch (err) {
-    database.exec("ROLLBACK");
-    transactionDepth--;
+    tryExec(database, "ROLLBACK");
     throw err;
+  } finally {
+    transactionDepth--;
   }
 }
 
