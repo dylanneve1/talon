@@ -84,9 +84,8 @@ describe("sticker-store", () => {
   });
 
   it("renders a prompt index with emoji inventory, empty when no packs", async () => {
-    const { renderStickerLibraryPrompt } = await import(
-      "../storage/sticker-store.js"
-    );
+    const { renderStickerLibraryPrompt } =
+      await import("../storage/sticker-store.js");
     expect(renderStickerLibraryPrompt()).toBe("");
 
     writePack("cats", [
@@ -106,9 +105,8 @@ describe("resolveStickerByEmoji", () => {
   it("resolves across all saved packs, normalizing variation selectors", async () => {
     // Pack stores "❤" (no U+FE0F); the model sends "❤️" (with U+FE0F).
     writePack("hearts", [{ emoji: "❤", fileId: "HEART_ID" }]);
-    const { resolveStickerByEmoji } = await import(
-      "../frontend/telegram/sticker-library.js"
-    );
+    const { resolveStickerByEmoji } =
+      await import("../frontend/telegram/sticker-library.js");
     const hit = await resolveStickerByEmoji(fakeBot({}), "❤️");
     expect(hit).toEqual({ fileId: "HEART_ID", pack: "hearts" });
   });
@@ -117,9 +115,8 @@ describe("resolveStickerByEmoji", () => {
     const bot = fakeBot({
       doge: [{ emoji: "🐶", file_id: "DOGE_ID" }],
     });
-    const { resolveStickerByEmoji } = await import(
-      "../frontend/telegram/sticker-library.js"
-    );
+    const { resolveStickerByEmoji } =
+      await import("../frontend/telegram/sticker-library.js");
     const hit = await resolveStickerByEmoji(bot, "🐶", "doge");
     expect(hit).toEqual({ fileId: "DOGE_ID", pack: "doge" });
     // The fetched pack landed in the library for next time.
@@ -128,20 +125,20 @@ describe("resolveStickerByEmoji", () => {
 
   it("returns null when nothing matches or the pack fetch fails", async () => {
     writePack("cats", [{ emoji: "😀", fileId: "A" }]);
-    const { resolveStickerByEmoji } = await import(
-      "../frontend/telegram/sticker-library.js"
-    );
+    const { resolveStickerByEmoji } =
+      await import("../frontend/telegram/sticker-library.js");
     expect(await resolveStickerByEmoji(fakeBot({}), "🚀")).toBeNull();
-    expect(await resolveStickerByEmoji(fakeBot({}), "😀", "no_such")).toBeNull();
+    expect(
+      await resolveStickerByEmoji(fakeBot({}), "😀", "no_such"),
+    ).toBeNull();
   });
 });
 
 describe("ensurePackSaved", () => {
   it("saves unseen packs and skips (no fetch) already-saved ones", async () => {
     const bot = fakeBot({ pepe: [{ emoji: "🐸", file_id: "P1" }] });
-    const { ensurePackSaved } = await import(
-      "../frontend/telegram/sticker-library.js"
-    );
+    const { ensurePackSaved } =
+      await import("../frontend/telegram/sticker-library.js");
 
     await ensurePackSaved(bot, "pepe");
     const saved = JSON.parse(
@@ -154,9 +151,10 @@ describe("ensurePackSaved", () => {
   });
 
   it("never throws when the fetch fails (fire-and-forget safe)", async () => {
-    const { ensurePackSaved } = await import(
-      "../frontend/telegram/sticker-library.js"
-    );
-    await expect(ensurePackSaved(fakeBot({}), "ghost")).resolves.toBeUndefined();
+    const { ensurePackSaved } =
+      await import("../frontend/telegram/sticker-library.js");
+    await expect(
+      ensurePackSaved(fakeBot({}), "ghost"),
+    ).resolves.toBeUndefined();
   });
 });
