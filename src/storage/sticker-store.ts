@@ -104,9 +104,16 @@ export function renderStickerLibraryPrompt(): string {
     const distinct = [...new Set(p.stickers.map((s) => s.emoji))].filter(
       Boolean,
     );
-    let inventory = distinct.join("");
-    if (inventory.length > PROMPT_INVENTORY_MAX_CHARS) {
-      inventory = `${inventory.slice(0, PROMPT_INVENTORY_MAX_CHARS)}…`;
+    // Truncate on whole-emoji boundaries: a naive string slice counts
+    // UTF-16 units and can cut a surrogate pair (or a ZWJ sequence)
+    // in half, leaving a mojibake char at the edge of the prompt line.
+    let inventory = "";
+    for (const e of distinct) {
+      if (inventory.length + e.length > PROMPT_INVENTORY_MAX_CHARS) {
+        inventory += "…";
+        break;
+      }
+      inventory += e;
     }
     return `- ${p.title} (${p.name}, ${p.count} stickers): ${inventory}`;
   });

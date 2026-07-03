@@ -99,6 +99,32 @@ describe("sticker-store", () => {
     // Distinct inventory: 😀 deduped, 😭 present.
     expect(section).toContain("😀😭");
   });
+
+  it("truncates the emoji inventory on whole-emoji boundaries", async () => {
+    // 40 distinct surrogate-pair emoji (2 UTF-16 units each) = 80 units,
+    // over the 60-unit budget. A naive slice(0, 60) would cut the 31st
+    // emoji in half; whole-emoji truncation must never emit a lone
+    // surrogate.
+    const emojis = Array.from({ length: 40 }, (_, i) =>
+      String.fromCodePoint(0x1f600 + i),
+    );
+    writePack(
+      "big",
+      emojis.map((emoji, i) => ({ emoji, fileId: `F${i}` })),
+    );
+    const { renderStickerLibraryPrompt } =
+      await import("../storage/sticker-store.js");
+    const line = renderStickerLibraryPrompt()
+      .split("\n")
+      .find((l) => l.includes("(big,"))!;
+    expect(line).toContain("…");
+    // Well-formed: no unpaired surrogates anywhere in the line
+    // (encodeURIComponent throws URIError on a lone surrogate).
+    expect(() => encodeURIComponent(line)).not.toThrow();
+    // 30 whole emoji fit the 60-unit budget, then the ellipsis.
+    const inventory = line.slice(line.indexOf("): ") + 3);
+    expect([...inventory].length).toBe(31); // 30 emoji + "…"
+  });
 });
 
 describe("resolveStickerByEmoji", () => {

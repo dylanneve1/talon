@@ -315,4 +315,25 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
       "# edited\n",
     );
   });
+
+  it("re-adopts a file that matches the current package despite a stale manifest entry", async () => {
+    // A user edit that lands byte-identical to the current package copy
+    // (e.g. hand-applying an upstream change) must not strand the file
+    // as user-owned-forever: content matching the package re-adopts it.
+    const { initWorkspace } = await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
+    const pkgContent = readFileSync(
+      join(talonPromptsDir(), "base.md"),
+      "utf-8",
+    );
+    writeFileSync(
+      manifestPath(),
+      JSON.stringify({ "base.md": await sha256("some stale seeded hash") }),
+    );
+
+    initWorkspace(join(TEST_ROOT, "ws"));
+
+    const manifest = JSON.parse(readFileSync(manifestPath(), "utf-8"));
+    expect(manifest["base.md"]).toBe(await sha256(pkgContent));
+  });
 });

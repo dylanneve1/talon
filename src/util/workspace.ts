@@ -225,20 +225,24 @@ function seedPrompts(): void {
     }
     const seededHash = manifest[file];
 
-    if (seededHash === undefined) {
-      // Pre-manifest deployment: adopt only a byte-identical copy.
-      if (curHash === pkgHash) {
+    if (curHash === pkgHash) {
+      // Already the current package copy, whatever its provenance
+      // (pre-manifest adoption, or a user edit that happens to match).
+      // Record it so the file tracks upgrades from here on.
+      if (seededHash !== pkgHash) {
         manifest[file] = pkgHash;
         manifestDirty = true;
       }
-    } else if (curHash === seededHash && pkgHash !== curHash) {
+    } else if (seededHash !== undefined && curHash === seededHash) {
       // Pristine seeded copy + package changed → refresh on upgrade.
       writeFileSync(dst, pkg);
       manifest[file] = pkgHash;
       manifestDirty = true;
       log("workspace", `Updated prompt (unedited since seeding): ${file}`);
     }
-    // curHash !== seededHash → user-edited: leave it alone, forever.
+    // Remaining cases — no manifest entry and content differs from the
+    // package (unknown provenance), or an entry exists and the file was
+    // edited since seeding → user-owned: leave it alone, forever.
   }
 
   if (manifestDirty) {

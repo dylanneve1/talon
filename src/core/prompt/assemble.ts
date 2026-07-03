@@ -246,9 +246,12 @@ export function assembleSystemPrompt(
   if (skills) dynamicParts.push(skills);
 
   // Dynamic 2.5: sticker library index (Telegram only — the one
-  // frontend with a sticker send surface). Dynamic because packs are
+  // frontend with a sticker send surface). Strict check on purpose:
+  // config always resolves a concrete frontend, so an absent value
+  // means a caller outside the normal chat path (no sticker tools) —
+  // don't inject the index there. Dynamic because packs are
   // auto-saved mid-session as users send stickers.
-  if ((inputs.frontend ?? "telegram") === "telegram") {
+  if (inputs.frontend === "telegram") {
     const stickerLibrary = renderStickerLibraryPrompt();
     if (stickerLibrary) dynamicParts.push(stickerLibrary);
   }
