@@ -12,8 +12,9 @@
  * never model-written.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import writeFileAtomic from "write-file-atomic";
 import { SoulDag, type DagSnapshot } from "./dag.js";
 import { hashContent } from "./hash.js";
 import { ingest, appendSpine, type IngestResult } from "./compiler.js";
@@ -509,7 +510,7 @@ export class SoulKernel {
 
   save(path: string): void {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify(this.toJSON()), "utf8");
+    writeFileAtomic.sync(path, JSON.stringify(this.toJSON()));
   }
 
   static fromJSON(data: PersistShape): SoulKernel {

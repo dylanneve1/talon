@@ -58,7 +58,7 @@ describe("daily-log", () => {
       const files = readdirSync(logsDir);
       expect(files.length).toBeGreaterThanOrEqual(1);
 
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = toYMD(new Date());
       const todayFile = files.find((f) => f.startsWith(todayStr));
       expect(todayFile).toBeDefined();
     });
@@ -71,7 +71,7 @@ describe("daily-log", () => {
       appendDailyLog("Chat2", "Second entry");
 
       const logsDir = getLogsDir();
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = toYMD(new Date());
       const logFile = join(logsDir, `${todayStr}.md`);
 
       const content = readFileSync(logFile, "utf-8");
@@ -88,7 +88,7 @@ describe("daily-log", () => {
       appendDailyLog("MyChat", "Did some testing");
 
       const logsDir = getLogsDir();
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = toYMD(new Date());
       const logFile = join(logsDir, `${todayStr}.md`);
 
       const content = readFileSync(logFile, "utf-8");
@@ -119,13 +119,13 @@ describe("daily-log", () => {
       // Create an old log file (40 days ago)
       const oldDate = new Date();
       oldDate.setDate(oldDate.getDate() - 40);
-      const oldName = oldDate.toISOString().slice(0, 10) + ".md";
+      const oldName = toYMD(oldDate) + ".md";
       writeFileSync(join(LOGS_DIR, oldName), "old log content");
 
       // Create a recent log file (5 days ago)
       const recentDate = new Date();
       recentDate.setDate(recentDate.getDate() - 5);
-      const recentName = recentDate.toISOString().slice(0, 10) + ".md";
+      const recentName = toYMD(recentDate) + ".md";
       writeFileSync(join(LOGS_DIR, recentName), "recent log content");
 
       cleanupOldLogs();
@@ -147,7 +147,7 @@ describe("daily-log", () => {
       // Only a recent file — not old enough to be deleted
       const recentDate = new Date();
       recentDate.setDate(recentDate.getDate() - 5);
-      const recentName = recentDate.toISOString().slice(0, 10) + ".md";
+      const recentName = toYMD(recentDate) + ".md";
       writeFileSync(join(LOGS_DIR, recentName), "recent content");
 
       cleanupOldLogs();
@@ -248,7 +248,7 @@ describe("daily-log", () => {
         chatTitle: "MyGroup",
       });
       const logsDir = getLogsDir();
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = toYMD(new Date());
       const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
       expect(content).toContain("Talon in MyGroup");
       expect(content).toContain("Here is the weather.");
@@ -259,7 +259,7 @@ describe("daily-log", () => {
         await import("../storage/daily-log.js");
       appendDailyLogResponse("Talon", "Standalone response");
       const logsDir = getLogsDir();
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = toYMD(new Date());
       const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
       expect(content).toContain("[Talon]");
       expect(content).toContain("Standalone response");
@@ -270,7 +270,7 @@ describe("daily-log", () => {
         await import("../storage/daily-log.js");
       appendDailyLogResponse("BotName", "response text");
       const logsDir = getLogsDir();
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = toYMD(new Date());
       const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
       expect(content).toMatch(/## \d{2}:\d{2} -- \[BotName\]/);
     });
@@ -282,7 +282,7 @@ describe("daily-log", () => {
         await import("../storage/daily-log.js");
       appendDailyLog("Alice", "hello", { username: "alice_tg" });
       const logsDir = getLogsDir();
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = toYMD(new Date());
       const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
       expect(content).toContain("Alice (@alice_tg)");
     });
@@ -295,7 +295,7 @@ describe("daily-log", () => {
         username: "bob_dev",
       });
       const logsDir = getLogsDir();
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = toYMD(new Date());
       const content = readFileSync(join(logsDir, `${todayStr}.md`), "utf-8");
       expect(content).toContain("Bob (@bob_dev) in DevGroup");
     });

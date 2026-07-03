@@ -19,8 +19,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
-import { dirs } from "../../util/paths.js";
+import { files } from "../../util/paths.js";
 import { log, logError } from "../../util/log.js";
 import { SoulKernel } from "./kernel.js";
 import { TalonEmbedder } from "./talon-embedder.js";
@@ -34,8 +33,6 @@ import {
 import { explainDelta } from "./delta.js";
 import type { Embedder } from "./embedder.js";
 import type { Hash, ReflexPayload } from "./types.js";
-
-const DEFAULT_SOUL_PATH = resolve(dirs.data, "soul.json");
 
 export class SoulService {
   readonly enabled: boolean;
@@ -56,7 +53,7 @@ export class SoulService {
    */
   static create(override?: Partial<SoulSettings>): SoulService {
     const settings = resolveSoulSettings(override);
-    const path = settings.path ?? DEFAULT_SOUL_PATH;
+    const path = settings.path ?? files.soul;
     if (!settings.enabled) return new SoulService(null, path);
 
     let kernel: SoulKernel;

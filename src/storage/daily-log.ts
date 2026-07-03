@@ -25,6 +25,18 @@ function ensureLogsDir(): void {
 }
 
 /**
+ * Local calendar date (YYYY-MM-DD) from a Date's local components — not
+ * `toISOString`, which is UTC and disagrees with the local HH:MM entry time
+ * near midnight.
+ */
+function localDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Append a user message entry to today's daily log.
  * Format: ## HH:MM -- [chatTitle/userName]\nmessage text\n
  * @param chatName - Display name of the sender (or "System")
@@ -39,7 +51,7 @@ export function appendDailyLog(
   try {
     ensureLogsDir();
     const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    const dateStr = localDateKey(now);
     const timeStr = now.toTimeString().slice(0, 5); // HH:MM
     const logFile = resolve(LOGS_DIR, `${dateStr}.md`);
 
@@ -63,7 +75,7 @@ export function appendDailyLogResponse(
   try {
     ensureLogsDir();
     const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+    const dateStr = localDateKey(now);
     const timeStr = now.toTimeString().slice(0, 5); // HH:MM
     const logFile = resolve(LOGS_DIR, `${dateStr}.md`);
 
@@ -101,7 +113,7 @@ export function cleanupOldLogs(): void {
     if (existsSync(LOGS_DIR)) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - MAX_LOG_DAYS);
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const cutoffStr = localDateKey(cutoff);
 
       let deleted = 0;
       for (const file of readdirSync(LOGS_DIR)) {

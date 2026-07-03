@@ -10,9 +10,10 @@
 
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { createInterface } from "node:readline";
+import writeFileAtomic from "write-file-atomic";
 import { files } from "./util/paths.js";
 
 // Load .env
@@ -76,7 +77,7 @@ async function main() {
   const newSession = client.session.save() as unknown as string;
   const dir = dirname(SESSION_FILE);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(SESSION_FILE, newSession);
+  writeFileAtomic.sync(SESSION_FILE, newSession);
   console.log(`Session saved to ${SESSION_FILE}`);
 
   await client.disconnect();

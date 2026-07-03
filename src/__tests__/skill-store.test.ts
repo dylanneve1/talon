@@ -33,6 +33,7 @@ vi.mock("../util/paths.js", async () => {
     dirs: new Proxy(real.dirs, {
       get(target, prop: string) {
         if (prop === "workspace") return workspaceDir;
+        if (prop === "skills") return join(workspaceDir, "skills");
         return target[prop as keyof typeof target];
       },
     }),

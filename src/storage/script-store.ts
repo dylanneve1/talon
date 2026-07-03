@@ -95,7 +95,7 @@ export function validateScriptDescription(description: string): string | null {
 // ── Script files ────────────────────────────────────────────────────────────
 
 export function scriptsDir(): string {
-  return resolve(dirs.workspace, "scripts");
+  return dirs.scripts;
 }
 
 export function scriptFilePath(name: string, lang: ScriptLanguage): string {

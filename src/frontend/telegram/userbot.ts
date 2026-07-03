@@ -12,6 +12,7 @@ import { TelegramClient, Api } from "telegram";
 import { StringSession } from "telegram/sessions/index.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
+import writeFileAtomic from "write-file-atomic";
 import { log, logError, logWarn } from "../../util/log.js";
 import { dirs, files } from "../../util/paths.js";
 import { formatSmartTimestamp } from "../../util/time.js";
@@ -94,7 +95,7 @@ export async function initUserClient(params: {
     const newSession = client.session.save() as unknown as string;
     const dir = dirname(SESSION_FILE);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(SESSION_FILE, newSession);
+    writeFileAtomic.sync(SESSION_FILE, newSession);
 
     log("userbot", "Connected and authorized.");
 

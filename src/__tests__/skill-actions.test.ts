@@ -32,6 +32,11 @@ vi.mock("../util/paths.js", async () => {
     dirs: new Proxy(real.dirs, {
       get(target, prop: string) {
         if (prop === "workspace") return workspaceDir;
+        // skills/scripts no longer derive from dirs.workspace at call
+        // time — a workspace-only override would silently hit the real
+        // ~/.talon/workspace/{skills,scripts}.
+        if (prop === "skills") return join(workspaceDir, "skills");
+        if (prop === "scripts") return join(workspaceDir, "scripts");
         return target[prop as keyof typeof target];
       },
     }),

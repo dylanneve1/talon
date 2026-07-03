@@ -53,7 +53,7 @@ const PROMPT_LIST_LIMIT = 25;
 const SEARCH_RESULT_LIMIT = 10;
 
 export function skillsDir(): string {
-  return resolve(dirs.workspace, "skills");
+  return dirs.skills;
 }
 
 export function skillDir(name: string): string {
