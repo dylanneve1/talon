@@ -162,6 +162,10 @@ jobs:
 
       - name: Cross-compile all targets
         run: |
+          # Regenerate the embedded-prompts manifest so the binaries always
+          # embed exactly what's in prompts/, independent of the committed
+          # (drift-guarded) copy.
+          npm run build:prompts
           mkdir -p dist
           # bun target triple → published asset name (os-arch[.exe]).
           declare -A TARGETS=(

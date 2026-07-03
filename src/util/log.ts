@@ -56,6 +56,7 @@ export type LogComponent =
   | "mempalace"
   | "playwright"
   | "soul"
+  | "stickers"
   | "backend-controller";
 
 const LOG_FILE = files.log;

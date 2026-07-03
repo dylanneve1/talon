@@ -118,19 +118,23 @@ Notes:
   // ── Telegram unified send ─────────────────────────────────────────────
   {
     name: "send",
-    description: `Send content to the current Telegram chat. Supports text, photos, videos, files, audio, voice, stickers, polls, locations, contacts, dice, and GIFs.
+    description: `Send content to the current chat. Supports text, photos, videos, files, audio, voice, stickers, polls, locations, contacts, dice, and GIFs.
+
+Media (photo/video/animation/file/audio/voice) can come from a workspace file_path, a public URL (fetched by the platform — ideal for images/GIFs found online), or a file_id seen earlier in chat.
 
 Examples:
   Text: send(type="text", text="Hello!")
   Reply: send(type="text", text="Yes!", reply_to=12345)
   With buttons: send(type="text", text="Pick one", buttons=[[{"text":"A","callback_data":"a"}]])
   Photo: send(type="photo", file_path="/path/to/img.jpg", caption="Look!")
+  GIF: send(type="animation", url="https://example.com/funny.gif")
   File: send(type="file", file_path="/path/to/report.pdf")
   Audio: send(type="audio", file_path="/path/to/song.mp3", title="Song Name", performer="Artist")
   Poll: send(type="poll", question="Best language?", options=["Rust","Go","TS"])
   Dice: send(type="dice")
   Location: send(type="location", latitude=37.7749, longitude=-122.4194)
-  Sticker: send(type="sticker", file_id="CAACAgI...")`,
+  Sticker by feeling: send(type="sticker", emoji="😂") — picks a matching sticker from your saved packs (add set_name to pin one pack)
+  Sticker by id: send(type="sticker", file_id="CAACAgI...")`,
     schema: {
       type: z
         .enum([
@@ -159,7 +163,24 @@ Examples:
         .string()
         .optional()
         .describe("Workspace file path (for photo/file/video/voice/animation)"),
-      file_id: z.string().optional().describe("Telegram file_id (for sticker)"),
+      url: z
+        .string()
+        .optional()
+        .describe(
+          "Public URL of media to send (photo/video/animation/file/audio/voice) — fetched by the platform, no download needed. Great for GIFs.",
+        ),
+      file_id: z
+        .string()
+        .optional()
+        .describe(
+          "Platform file_id to send media already seen in chat (stickers, GIFs, photos, ...)",
+        ),
+      set_name: z
+        .string()
+        .optional()
+        .describe(
+          "Sticker pack to pick from when sending a sticker by emoji (default: all saved packs)",
+        ),
       caption: z.string().optional().describe("Caption for media"),
       buttons: z
         .array(
@@ -191,7 +212,12 @@ Examples:
         .string()
         .optional()
         .describe("Audio performer/artist (for type=audio)"),
-      emoji: z.string().optional().describe("Dice emoji (🎲🎯🏀⚽🎳🎰)"),
+      emoji: z
+        .string()
+        .optional()
+        .describe(
+          "For type=sticker: pick a saved sticker matching this emoji. For type=dice: the dice style (🎲🎯🏀⚽🎳🎰).",
+        ),
       delay_seconds: z
         .number()
         .optional()
@@ -240,6 +266,8 @@ Examples:
         case "photo":
           return bridge("send_photo", {
             file_path: params.file_path,
+            url: params.url,
+            file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
             chat_id,
@@ -247,6 +275,8 @@ Examples:
         case "file":
           return bridge("send_file", {
             file_path: params.file_path,
+            url: params.url,
+            file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
             chat_id,
@@ -254,6 +284,8 @@ Examples:
         case "video":
           return bridge("send_video", {
             file_path: params.file_path,
+            url: params.url,
+            file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
             chat_id,
@@ -261,6 +293,8 @@ Examples:
         case "voice":
           return bridge("send_voice", {
             file_path: params.file_path,
+            url: params.url,
+            file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
             chat_id,
@@ -268,6 +302,8 @@ Examples:
         case "audio":
           return bridge("send_audio", {
             file_path: params.file_path,
+            url: params.url,
+            file_id: params.file_id,
             caption: params.caption,
             title: params.title,
             performer: params.performer,
@@ -277,6 +313,8 @@ Examples:
         case "animation":
           return bridge("send_animation", {
             file_path: params.file_path,
+            url: params.url,
+            file_id: params.file_id,
             caption: params.caption,
             reply_to: params.reply_to,
             chat_id,
@@ -284,6 +322,8 @@ Examples:
         case "sticker":
           return bridge("send_sticker", {
             file_id: params.file_id,
+            emoji: params.emoji,
+            set_name: params.set_name,
             reply_to: params.reply_to,
             chat_id,
           });

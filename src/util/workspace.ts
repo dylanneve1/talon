@@ -8,6 +8,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmdirSync,
   renameSync,
   statSync,
@@ -17,6 +18,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { log } from "./log.js";
 import { dirs, files as pathFiles } from "./paths.js";
@@ -151,18 +153,99 @@ export function initWorkspace(root: string): void {
   }
 
   // Seed user-editable prompt files from the package into
-  // ~/.talon/prompts/. Only writes files that don't already exist —
-  // user edits are preserved. Sourced through the #prompt-assets seam
-  // (disk under tsx, embedded under a compiled binary), so seeding works
-  // even when there is no package source tree on disk. listSeedPrompts()
+  // ~/.talon/prompts/. Sourced through the #prompt-assets seam (disk
+  // under tsx, embedded under a compiled binary), so seeding works even
+  // when there is no package source tree on disk. listSeedPrompts()
   // already skips the architecture README and the system/ subdirectory
   // (package-owned templates read in place — a seeded copy would go
   // stale; see prompts/README.md).
+  seedPrompts();
+}
+
+// ── Prompt seeding ──────────────────────────────────────────────────────────
+
+/**
+ * Manifest of what was last seeded, `file → sha256(content)`, stored
+ * next to the seeded prompts. This is what lets upgrades tell "still
+ * the pristine seeded copy" apart from "the user edited this": a file
+ * whose on-disk hash matches its seeded hash is safe to refresh when
+ * the packaged version changes; anything else is user-owned and never
+ * touched. (dpkg conffile semantics.)
+ */
+const SEED_MANIFEST = ".seeded.json";
+
+/**
+ * Seed prompts with upgrade-aware refresh:
+ *
+ *   - missing file        → write it, record its hash
+ *   - pristine seeded copy → refresh when the package version changed
+ *   - user-edited copy    → never touched
+ *
+ * Deployments that predate the manifest have unknown provenance (old
+ * package version vs. user edit is indistinguishable), so their
+ * existing files are adopted as user-owned unless byte-identical to
+ * the current package copy — from then on they track upgrades again.
+ */
+function seedPrompts(): void {
+  const manifestPath = join(dirs.prompts, SEED_MANIFEST);
+  let manifest: Record<string, string> = {};
+  try {
+    if (existsSync(manifestPath)) {
+      manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<
+        string,
+        string
+      >;
+    }
+  } catch {
+    manifest = {};
+  }
+
+  const sha256 = (text: string): string =>
+    createHash("sha256").update(text).digest("hex");
+
+  let manifestDirty = false;
   for (const file of listSeedPrompts()) {
     const dst = join(dirs.prompts, file);
+    const pkg = readPromptAsset(file);
+    const pkgHash = sha256(pkg);
+
     if (!existsSync(dst)) {
-      writeFileSync(dst, readPromptAsset(file));
+      writeFileSync(dst, pkg);
+      manifest[file] = pkgHash;
+      manifestDirty = true;
       log("workspace", `Seeded prompt: ${file}`);
+      continue;
+    }
+
+    let curHash: string;
+    try {
+      curHash = sha256(readFileSync(dst, "utf-8"));
+    } catch {
+      continue;
+    }
+    const seededHash = manifest[file];
+
+    if (seededHash === undefined) {
+      // Pre-manifest deployment: adopt only a byte-identical copy.
+      if (curHash === pkgHash) {
+        manifest[file] = pkgHash;
+        manifestDirty = true;
+      }
+    } else if (curHash === seededHash && pkgHash !== curHash) {
+      // Pristine seeded copy + package changed → refresh on upgrade.
+      writeFileSync(dst, pkg);
+      manifest[file] = pkgHash;
+      manifestDirty = true;
+      log("workspace", `Updated prompt (unedited since seeding): ${file}`);
+    }
+    // curHash !== seededHash → user-edited: leave it alone, forever.
+  }
+
+  if (manifestDirty) {
+    try {
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    } catch {
+      /* non-fatal — worst case we re-derive next boot */
     }
   }
 }

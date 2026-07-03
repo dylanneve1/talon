@@ -236,8 +236,13 @@ jobs:
         # The user-facing CLI entry (src/cli.ts) — same dispatcher the npm
         # `talon` bin runs — not src/index.ts (the daemon that eagerly
         # boots the agent). bun appends `.exe` on Windows.
+        # build:prompts first: the embedded-prompts manifest is committed
+        # and drift-guarded, but regenerating right before compile makes
+        # the binary immune to a stale manifest regardless.
         shell: bash
-        run: bun build --compile src/cli.ts --outfile "$RUNNER_TEMP/talon"
+        run: |
+          npm run build:prompts
+          bun build --compile src/cli.ts --outfile "$RUNNER_TEMP/talon"
 
       - name: CLI smoke (version / help / doctor) from an isolated cwd
         shell: bash

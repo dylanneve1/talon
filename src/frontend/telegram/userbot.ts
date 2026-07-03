@@ -444,49 +444,6 @@ export async function downloadMessageMedia(params: {
   }
 }
 
-// ── Sticker pack utilities ────────────────────────────────────────────────────
-
-/** Save a sticker pack's file_ids to workspace for quick reuse. */
-export async function saveStickerPack(params: {
-  setName: string;
-  bot: unknown;
-}): Promise<string> {
-  try {
-    const bot = params.bot as {
-      api: {
-        getStickerSet: (name: string) => Promise<{
-          title: string;
-          name: string;
-          stickers: Array<{ emoji?: string; file_id: string }>;
-        }>;
-      };
-    };
-    const stickerSet = await bot.api.getStickerSet(params.setName);
-
-    const stickers = stickerSet.stickers.map((s) => ({
-      emoji: s.emoji ?? "",
-      fileId: s.file_id,
-    }));
-
-    const packData = {
-      name: stickerSet.name,
-      title: stickerSet.title,
-      count: stickers.length,
-      stickers,
-      savedAt: new Date().toISOString(),
-    };
-
-    const dir = dirs.stickers;
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const filePath = resolve(dir, `${stickerSet.name}.json`);
-    writeFileSync(filePath, JSON.stringify(packData, null, 2));
-
-    return `Saved "${stickerSet.title}" (${stickers.length} stickers) to .talon/workspace/stickers/${stickerSet.name}.json`;
-  } catch (err) {
-    return `Failed to save sticker pack: ${err instanceof Error ? err.message : err}`;
-  }
-}
-
 // ── Chat statistics & utility ────────────────────────────────────────────────
 
 /** Get detailed chat/group statistics — message counts, top posters, activity. */

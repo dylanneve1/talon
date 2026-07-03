@@ -23,6 +23,7 @@ import {
 } from "./context.js";
 import { shouldHandleInGroup, isAccessAllowed } from "./access.js";
 import { enqueueMessage, isUserRateLimited } from "./queue.js";
+import { ensurePackSaved } from "../sticker-library.js";
 import { processAndReply, sendHtml } from "./delivery.js";
 
 // ── Shared media handler ──────────────────────────────────────────────────────
@@ -292,16 +293,21 @@ export async function handleStickerMessage(
   const emoji = sticker.emoji || "";
   const setName = sticker.set_name || "";
 
+  // Grow the sticker library organically: any pack a user sends from
+  // gets saved in the background (skipped if already saved), so the
+  // model can later send from it by emoji without any browsing.
+  if (setName) void ensurePackSaved(bot, setName);
+
   const prompt = [
     `User sent a sticker: ${emoji}`,
     `Sticker file_id: ${sticker.file_id}`,
-    setName ? `Sticker set: ${setName}` : "",
+    setName ? `Sticker set: ${setName} (saved to your sticker library)` : "",
     sticker.is_animated
       ? "(animated)"
       : sticker.is_video
         ? "(video sticker)"
         : "",
-    "You can send this sticker back using the send_sticker tool with the file_id above.",
+    'You can send it back via send(type="sticker", file_id=...) — or send any sticker from your library by emoji.',
   ]
     .filter(Boolean)
     .join("\n");
@@ -365,6 +371,7 @@ export async function handleAnimationMessage(
     promptLines: [
       `User sent a GIF/animation: "${fileName}" (${anim.duration}s).`,
       "Saved to: ${savedPath}",
+      `file_id: ${anim.file_id} — re-send it anytime with send(type="animation", file_id=...).`,
     ],
     caption,
   });

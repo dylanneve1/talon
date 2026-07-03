@@ -8,6 +8,7 @@ import { basename } from "node:path";
 import { expandFsPath } from "../../../util/fs-path.js";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { withRetry } from "../../../core/engine/gateway.js";
+import { resolveStickerByEmoji } from "../sticker-library.js";
 import { replyParams } from "./shared.js";
 import type { TelegramActionHandlers } from "./types.js";
 
@@ -19,19 +20,27 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
   // Routed for send_file / send_photo / send_video / send_animation /
   // send_voice / send_audio — branch on the action name in the body.
   const action = String(body.action);
-  const filePath = expandFsPath(String(body.file_path ?? ""));
   const caption = body.caption
     ? markdownToTelegramHtml(String(body.caption))
     : undefined;
   const captionParseMode = caption ? ("HTML" as const) : undefined;
   gateway.incrementMessages(chatId);
-  {
+  // Three media sources, in priority order: a public URL or a Telegram
+  // file_id (both passed to the Bot API as a plain string — Telegram
+  // fetches/reuses server-side, no local bytes involved), else a
+  // workspace file path uploaded as multipart.
+  const remote = body.url ?? body.file_id;
+  let file: string | import("grammy").InputFile;
+  if (remote) {
+    file = String(remote);
+  } else {
+    const filePath = expandFsPath(String(body.file_path ?? ""));
     const stat = statSync(filePath);
     if (stat.size > 49 * 1024 * 1024)
       return { ok: false, error: "File too large (max 49MB)" };
+    const data = readFileSync(filePath);
+    file = new InputFileClass(data, basename(filePath));
   }
-  const data = readFileSync(filePath);
-  const file = new InputFileClass(data, basename(filePath));
   const rp = replyParams(body);
   let sent;
   switch (action) {
@@ -104,8 +113,27 @@ export const mediaHandlers: TelegramActionHandlers = {
   send_audio: sendMediaFile,
 
   send_sticker: async (body, chatId, { bot, gateway }) => {
+    // Two addressing modes: a concrete file_id, or an emoji resolved
+    // against the saved sticker library (optionally pinned to one pack
+    // via set_name) — the low-friction path the prompt teaches.
+    let fileId = body.file_id ? String(body.file_id) : "";
+    if (!fileId && body.emoji) {
+      const resolved = await resolveStickerByEmoji(
+        bot,
+        String(body.emoji),
+        body.set_name ? String(body.set_name) : undefined,
+      );
+      if (!resolved) {
+        return {
+          ok: false,
+          error: `No saved sticker matches ${String(body.emoji)}${body.set_name ? ` in pack "${String(body.set_name)}"` : ""} — check the sticker library, or save a pack with save_sticker_pack.`,
+        };
+      }
+      fileId = resolved.fileId;
+    }
+    if (!fileId) return { ok: false, error: "Required: file_id or emoji" };
     gateway.incrementMessages(chatId);
-    const sent = await bot.api.sendSticker(chatId, String(body.file_id ?? ""), {
+    const sent = await bot.api.sendSticker(chatId, fileId, {
       reply_parameters: replyParams(body),
     });
     return { ok: true, message_id: sent.message_id };

@@ -20,22 +20,28 @@ const sendAttachment: DiscordActionHandlers[string] = (
   { channel, gateway },
 ) => {
   const action = String(body.action);
-  const filePath = expandFsPath(String(body.file_path ?? ""));
   const caption = body.caption ? String(body.caption) : "";
-  const stat = statSync(filePath);
-  // Per-guild attachment cap based on boost tier. DMs use Tier-0 (10 MB).
-  const guild = (channel as { guild?: import("discord.js").Guild })?.guild;
-  const maxBytes = maxAttachmentBytes(guild);
-  if (stat.size > maxBytes) {
-    const mb = (n: number) => Math.round(n / 1024 / 1024);
-    const tierNote = guild ? `boost tier ${guild.premiumTier ?? 0}` : "DM";
-    return {
-      ok: false,
-      error: `File too large (${mb(stat.size)}MB) — this ${tierNote} accepts max ${mb(maxBytes)}MB`,
-    };
+  let file: string | AttachmentBuilder;
+  if (body.url) {
+    // Public URL — Discord fetches it when attaching; no local bytes.
+    file = String(body.url);
+  } else {
+    const filePath = expandFsPath(String(body.file_path ?? ""));
+    const stat = statSync(filePath);
+    // Per-guild attachment cap based on boost tier. DMs use Tier-0 (10 MB).
+    const guild = (channel as { guild?: import("discord.js").Guild })?.guild;
+    const maxBytes = maxAttachmentBytes(guild);
+    if (stat.size > maxBytes) {
+      const mb = (n: number) => Math.round(n / 1024 / 1024);
+      const tierNote = guild ? `boost tier ${guild.premiumTier ?? 0}` : "DM";
+      return {
+        ok: false,
+        error: `File too large (${mb(stat.size)}MB) — this ${tierNote} accepts max ${mb(maxBytes)}MB`,
+      };
+    }
+    const data = readFileSync(filePath);
+    file = new AttachmentBuilder(data, { name: basename(filePath) });
   }
-  const data = readFileSync(filePath);
-  const file = new AttachmentBuilder(data, { name: basename(filePath) });
 
   gateway.incrementMessages(chatId);
   if (!channel!.isSendable())
