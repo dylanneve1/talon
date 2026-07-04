@@ -175,6 +175,7 @@ export const mediaHandlers: TelegramActionHandlers = {
             ? [body.correct_option_id as number]
             : undefined,
         explanation: body.explanation as string | undefined,
+        reply_parameters: replyParams(body),
       },
     );
     return { ok: true, message_id: sent.message_id };
@@ -186,6 +187,7 @@ export const mediaHandlers: TelegramActionHandlers = {
       chatId,
       Number(body.latitude),
       Number(body.longitude),
+      { reply_parameters: replyParams(body) },
     );
     return { ok: true, message_id: sent.message_id };
   },
@@ -196,14 +198,23 @@ export const mediaHandlers: TelegramActionHandlers = {
       chatId,
       String(body.phone_number),
       String(body.first_name),
-      { last_name: body.last_name as string | undefined },
+      {
+        last_name: body.last_name as string | undefined,
+        reply_parameters: replyParams(body),
+      },
     );
     return { ok: true, message_id: sent.message_id };
   },
 
   send_dice: async (body, chatId, { bot, gateway }) => {
     gateway.incrementMessages(chatId);
-    const sent = await bot.api.sendDice(chatId, (body.emoji as string) || "🎲");
+    const sent = await bot.api.sendDice(
+      chatId,
+      (body.emoji as string) || "🎲",
+      {
+        reply_parameters: replyParams(body),
+      },
+    );
     return {
       ok: true,
       message_id: sent.message_id,

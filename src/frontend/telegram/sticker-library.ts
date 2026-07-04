@@ -120,10 +120,11 @@ function normalizeEmoji(emoji: string): string {
  * Resolve an emoji to a concrete sticker file_id.
  *
  * Search order: the named pack when `setName` is given (fetching and
- * saving it if it isn't in the library yet), otherwise every saved
- * pack. Among matches, one is picked at random so repeated sends don't
- * always produce the identical sticker. Returns null when nothing
- * matches.
+ * saving it if it isn't in the library yet, and refreshing a stale
+ * library copy once when the emoji misses — packs gain stickers
+ * upstream), otherwise every saved pack. Among matches, one is picked
+ * at random so repeated sends don't always produce the identical
+ * sticker. Returns null when nothing matches.
  */
 export async function resolveStickerByEmoji(
   bot: StickerSetFetcher,
@@ -134,24 +135,44 @@ export async function resolveStickerByEmoji(
   // A blank query must never match stickers whose emoji metadata is
   // empty — that would resolve " " to a random unrelated sticker.
   if (!want) return null;
-  let packs = listSavedPacks();
-  if (setName) {
-    let pack = packs.find((p) => p.name === setName);
-    if (!pack) {
-      try {
-        await savePackToLibrary(bot, setName);
-        pack = listSavedPacks().find((p) => p.name === setName);
-      } catch {
-        return null;
-      }
+
+  const findMatches = (packs: SavedPack[]) =>
+    packs.flatMap((p) =>
+      p.stickers
+        .filter((s) => normalizeEmoji(s.emoji) === want)
+        .map((s) => ({ fileId: s.fileId, pack: p.name })),
+    );
+  const pick = (matches: Array<{ fileId: string; pack: string }>) =>
+    matches.length === 0
+      ? null
+      : matches[Math.floor(Math.random() * matches.length)];
+
+  if (!setName) return pick(findMatches(listSavedPacks()));
+
+  // Named pack: fetch on miss, and refresh a stale library copy once
+  // when the emoji doesn't match — bounded to this explicit-pack path
+  // so the every-pack search never triggers network calls.
+  let pack = listSavedPacks().find((p) => p.name === setName);
+  let justFetched = false;
+  if (!pack) {
+    try {
+      await savePackToLibrary(bot, setName);
+      justFetched = true;
+      pack = listSavedPacks().find((p) => p.name === setName);
+    } catch {
+      return null;
     }
-    packs = pack ? [pack] : [];
   }
-  const matches = packs.flatMap((p) =>
-    p.stickers
-      .filter((s) => normalizeEmoji(s.emoji) === want)
-      .map((s) => ({ fileId: s.fileId, pack: p.name })),
-  );
-  if (matches.length === 0) return null;
-  return matches[Math.floor(Math.random() * matches.length)];
+  if (!pack) return null;
+  let matches = findMatches([pack]);
+  if (matches.length === 0 && !justFetched) {
+    try {
+      await savePackToLibrary(bot, setName);
+      const refreshed = listSavedPacks().find((p) => p.name === setName);
+      if (refreshed) matches = findMatches([refreshed]);
+    } catch {
+      /* keep the miss — the stale copy already said no */
+    }
+  }
+  return pick(matches);
 }

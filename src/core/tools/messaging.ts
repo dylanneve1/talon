@@ -336,12 +336,14 @@ Examples:
             correct_option_id: params.correct_option_id,
             explanation: params.explanation,
             type: params.correct_option_id !== undefined ? "quiz" : "regular",
+            reply_to: params.reply_to,
             chat_id,
           });
         case "location":
           return bridge("send_location", {
             latitude: params.latitude,
             longitude: params.longitude,
+            reply_to: params.reply_to,
             chat_id,
           });
         case "contact":
@@ -349,10 +351,15 @@ Examples:
             phone_number: params.phone_number,
             first_name: params.first_name,
             last_name: params.last_name,
+            reply_to: params.reply_to,
             chat_id,
           });
         case "dice":
-          return bridge("send_dice", { emoji: params.emoji, chat_id });
+          return bridge("send_dice", {
+            emoji: params.emoji,
+            reply_to: params.reply_to,
+            chat_id,
+          });
         default:
           return { ok: false, error: `Unknown type: ${type}` };
       }

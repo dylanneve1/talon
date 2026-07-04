@@ -208,6 +208,38 @@ describe("resolveStickerByEmoji", () => {
     expect(existsSync(join(STICKERS_DIR, "doge.json"))).toBe(true);
   });
 
+  it("refreshes a stale named pack once when the emoji misses", async () => {
+    // Library has an old copy of the pack; upstream it gained a 🚀
+    // sticker. An explicit set_name miss must refetch and find it.
+    writePack("doge", [{ emoji: "🐶", fileId: "OLD" }]);
+    const bot = fakeBot({
+      doge: [
+        { emoji: "🐶", file_id: "OLD" },
+        { emoji: "🚀", file_id: "NEW" },
+      ],
+    });
+    const { resolveStickerByEmoji } =
+      await import("../frontend/telegram/sticker-library.js");
+    expect(await resolveStickerByEmoji(bot, "🚀", "doge")).toEqual({
+      fileId: "NEW",
+      pack: "doge",
+    });
+    expect(bot.getStickerSet).toHaveBeenCalledTimes(1);
+    // A genuine miss refreshes once and stays a miss (never retries
+    // within one resolution).
+    expect(await resolveStickerByEmoji(bot, "🍕", "doge")).toBeNull();
+    expect(bot.getStickerSet).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not refresh from the network on all-pack searches", async () => {
+    writePack("cats", [{ emoji: "😀", fileId: "A" }]);
+    const bot = fakeBot({});
+    const { resolveStickerByEmoji } =
+      await import("../frontend/telegram/sticker-library.js");
+    expect(await resolveStickerByEmoji(bot, "🚀")).toBeNull();
+    expect(bot.getStickerSet).not.toHaveBeenCalled();
+  });
+
   it("returns null when nothing matches or the pack fetch fails", async () => {
     writePack("cats", [{ emoji: "😀", fileId: "A" }]);
     const { resolveStickerByEmoji } =
