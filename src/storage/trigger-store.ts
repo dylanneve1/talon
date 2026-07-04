@@ -119,6 +119,14 @@ function isTrigger(value: unknown): value is Trigger {
  * their pid preserved so resumeAfterRestart can probe the stored pid,
  * SIGKILL any surviving orphan, and re-spawn.
  */
+/**
+ * The lastError recoverInterrupted stamps on non-persistent triggers
+ * that were alive when the previous process died. MUST match the
+ * literal in sql/triggers.sql (terminateInterrupted) — resume.ts keys
+ * its late-wake decision on it.
+ */
+export const RESTART_KILL_ERROR = "Talon restarted while trigger was running";
+
 export function loadTriggers(): void {
   try {
     importLegacyJson({

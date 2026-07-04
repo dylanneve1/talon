@@ -49,6 +49,7 @@ const {
 import type { Trigger } from "../storage/trigger-store.js";
 const {
   addTrigger,
+  RESTART_KILL_ERROR,
   generateTriggerId,
   getTrigger,
   updateTrigger,
@@ -292,6 +293,39 @@ describe("triggers — resumeAfterRestart", () => {
 
     await resumeAfterRestart();
     expect(executeSpy).not.toHaveBeenCalled();
+  });
+
+  it("fires a death notice for a multi-fire watcher killed by restart", async () => {
+    // The regression this pins: a watcher that signalled mid-run
+    // (lastFireAt set) and was then killed by a restart was silently
+    // dropped — the chat never learned its watcher died. The
+    // RESTART_KILL_ERROR marker (stamped by recoverInterrupted)
+    // re-qualifies it for the late wake.
+    const id = generateTriggerId();
+    const t: Trigger = {
+      id,
+      chatId: "chat-resume3",
+      numericChatId: 6,
+      name: "resume-multifire",
+      language: "bash",
+      scriptPath: "/tmp/nonexistent3.sh",
+      logPath: "/tmp/nonexistent3.log",
+      status: "terminated",
+      createdAt: Date.now() - 100_000,
+      endedAt: Date.now() - 5_000,
+      timeoutSeconds: DEFAULT_TIMEOUT_SECONDS,
+      fireCount: 3,
+      lastFireAt: Date.now() - 60_000, // fired mid-run…
+      lastError: RESTART_KILL_ERROR, // …then killed by the restart
+    };
+    addTrigger(t);
+
+    await resumeAfterRestart();
+
+    expect(executeSpy).toHaveBeenCalledTimes(1);
+    const call = executeSpy.mock.calls[0][0];
+    expect(call.chatId).toBe("chat-resume3");
+    expect(call.prompt).toContain(RESTART_KILL_ERROR);
   });
 
   it("does NOT fire for an old terminated trigger (>5 min ago)", async () => {

@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import {
   getAllTriggers,
   updateTrigger,
+  RESTART_KILL_ERROR,
   type Trigger,
 } from "../../../storage/trigger-store.js";
 import { log, logError } from "../../../util/log.js";
@@ -45,11 +46,22 @@ export async function resumeAfterRestart(): Promise<void> {
       }
       continue;
     }
+    // Late death notice. Two cases earn one:
+    //   - never fired at all (the old rule) — the chat heard nothing
+    //     from this trigger, so its termination is news; and
+    //   - killed by THIS restart (recoverInterrupted stamped the
+    //     marker error) — even a multi-fire watcher that signalled
+    //     mid-run was still an active promise when the process died,
+    //     and without this wake the chat never learns its watcher is
+    //     gone. (Previously gated on lastFireAt === undefined alone,
+    //     which silently dropped exactly those watchers.)
+    // Triggers that exited on their own already fired their terminal
+    // wake (lastFireAt set, no marker) — they stay silent here.
     if (
       t.status === "terminated" &&
-      t.lastFireAt === undefined &&
       t.endedAt &&
-      Date.now() - t.endedAt < 5 * 60_000
+      Date.now() - t.endedAt < 5 * 60_000 &&
+      (t.lastFireAt === undefined || t.lastError === RESTART_KILL_ERROR)
     ) {
       await fireWake(t.id, "terminated", t.lastError, /* terminal */ true);
     }
