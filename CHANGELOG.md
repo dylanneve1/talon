@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.30.0](https://github.com/dylanneve1/talon/compare/v1.29.4...v1.30.0) (2026-07-04)
+
+
+### Features
+
+* model-drift detection — audit config pins, warn on substitution ([#455](https://github.com/dylanneve1/talon/issues/455)) ([b0bf519](https://github.com/dylanneve1/talon/commit/b0bf519017e784a609e3b2282c7c6b89e1433d91))
+
+
+### Bug Fixes
+
+* emit tool_result events — companion-app tool spinners resolve ([#456](https://github.com/dylanneve1/talon/issues/456)) ([3e2a665](https://github.com/dylanneve1/talon/commit/3e2a665f595b2b2ccacb427065f915d46b20a338))
+
 ## [1.29.4](https://github.com/dylanneve1/talon/compare/v1.29.3...v1.29.4) (2026-07-03)
 
 
