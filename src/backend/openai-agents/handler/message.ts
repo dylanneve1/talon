@@ -52,6 +52,7 @@ import {
 } from "../constants.js";
 import { getState, getOrCreateSession } from "../state.js";
 import { getActiveFrontends } from "../init.js";
+import { frontendsForChat } from "../../shared/frontends.js";
 import { getOrCreateBundle } from "../mcp-pool.js";
 import { OPENAI_AGENTS_BUILTIN_TOOLS } from "../builtins.js";
 import { activeAborts } from "./state.js";
@@ -121,11 +122,13 @@ export async function handleMessage(
     OPENAI_AGENTS_DEFAULT_MODEL;
   log("agent", `[${chatId}] OpenAI Agents model resolved: ${activeModel}`);
 
-  // Primary messaging frontend drives the delivery-contract suffix and
-  // the frontend-aware flow-violation/first-turn text. Empty in terminal
-  // mode (no delivery tools — contract enforcement is skipped below anyway).
+  // The chat's OWNING messaging frontend (falling back to the primary
+  // for cross-surface chats) drives the delivery-contract suffix and
+  // the frontend-aware flow-violation/first-turn text — tool names
+  // differ per frontend. Empty in terminal mode (no delivery tools —
+  // contract enforcement is skipped below anyway).
   const frontends = getActiveFrontends();
-  const frontend: string | undefined = frontends[0];
+  const frontend: string | undefined = frontendsForChat(chatId, frontends)[0];
 
   // Per-session frozen prompt + Agents-specific delivery suffix.
   const { text: systemPrompt } = prepareSystemPrompt({

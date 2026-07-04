@@ -26,8 +26,12 @@ import {
   resolveProviderID,
   parseStoredKiloModelSelection,
   getConfig,
-  KILO_SYSTEM_PROMPT_SUFFIX,
+  kiloSystemPromptSuffix,
 } from "../server.js";
+import {
+  frontendsForChat,
+  nonTerminalFrontends,
+} from "../../shared/frontends.js";
 import { getKiloTurnSummary } from "../sessions.js";
 import {
   createStreamState,
@@ -99,7 +103,10 @@ export async function handleMessage(
   const { text: systemPrompt } = prepareSystemPrompt({
     config,
     previousTurns,
-    backendSuffix: KILO_SYSTEM_PROMPT_SUFFIX,
+    backendSuffix: kiloSystemPromptSuffix(
+      frontendsForChat(chatId, nonTerminalFrontends(config.frontend))[0] ??
+        "telegram",
+    ),
     chatId,
     sessionEpoch: session.createdAt,
   });

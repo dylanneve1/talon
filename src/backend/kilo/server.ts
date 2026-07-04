@@ -81,10 +81,12 @@ export const TALON_MCP_SERVER_NAME = SHARED_TALON_MCP_SERVER_NAME;
  * Telegram-shaped tool names: this constant is static and the prior
  * hand-written text hardcoded the same names.
  */
-export const KILO_SYSTEM_PROMPT_SUFFIX = `\n\n${buildDeliveryContract(
-  "text-or-tools",
-  "telegram",
-)}\n`;
+export function kiloSystemPromptSuffix(frontend: string): string {
+  return `\n\n${buildDeliveryContract("text-or-tools", frontend)}\n`;
+}
+
+/** Telegram-shaped default, kept for one-shot (cross-surface) paths. */
+export const KILO_SYSTEM_PROMPT_SUFFIX = kiloSystemPromptSuffix("telegram");
 
 // ── State ───────────────────────────────────────────────────────────────────
 

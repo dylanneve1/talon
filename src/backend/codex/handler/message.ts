@@ -42,12 +42,16 @@ import {
 } from "../../shared/index.js";
 
 import {
-  CODEX_SYSTEM_PROMPT_SUFFIX,
+  codexSystemPromptSuffix,
   CODEX_DEFAULT_MODEL,
   CODEX_CHATGPT_DEFAULT_MODEL,
   CODEX_THREAD_PERMISSIONS,
   CODEX_LIVE_POLL_INTERVAL_MS,
 } from "../constants.js";
+import {
+  frontendsForChat,
+  nonTerminalFrontends,
+} from "../../shared/frontends.js";
 import { getState } from "../state.js";
 import { ensureCodex, getCodexAuthInfo } from "../init.js";
 import {
@@ -242,7 +246,10 @@ export async function handleMessage(
   const { text: systemPrompt } = prepareSystemPrompt({
     config,
     previousTurns,
-    backendSuffix: CODEX_SYSTEM_PROMPT_SUFFIX,
+    backendSuffix: codexSystemPromptSuffix(
+      frontendsForChat(chatId, nonTerminalFrontends(config.frontend))[0] ??
+        "telegram",
+    ),
     chatId,
     sessionEpoch: session.createdAt,
   });

@@ -43,6 +43,12 @@ import {
 import type { RemoteAgentClient } from "./client.js";
 import type { RemoteServerState } from "./state.js";
 import { errMsg } from "./state.js";
+import type { TalonConfig } from "../../util/config.js";
+import type { FrontendName } from "../../core/agent-runtime/backend-registry.js";
+import {
+  frontendForChatId,
+  nonTerminalFrontends,
+} from "../shared/frontends.js";
 
 // ── Constants ───────────────────────────────────────────────────────────────
 
@@ -75,6 +81,27 @@ export function isTalonToolID(toolID: string): boolean {
     toolID.startsWith(`${TALON_MCP_SERVER_NAME}_`) ||
     toolID.startsWith(`${TALON_MCP_SERVER_NAME}-`)
   );
+}
+
+/**
+ * The frontend whose tool surface a chat should get: its owning
+ * frontend (by chat-id shape) when that frontend is configured, else
+ * the process-primary frontend — which also covers the heartbeat
+ * sentinel and other cross-surface contexts.
+ */
+function resolveChatToolFrontend(
+  state: { frontendName: FrontendName; config: TalonConfig | null },
+  chatId: string,
+): FrontendName {
+  const owner = frontendForChatId(chatId);
+  if (
+    owner &&
+    owner !== state.frontendName &&
+    nonTerminalFrontends(state.config?.frontend).includes(owner)
+  ) {
+    return owner as FrontendName;
+  }
+  return state.frontendName;
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -146,9 +173,13 @@ export async function ensureChatMcpServer<TClient extends RemoteAgentClient>(
         // streamable HTTP — no subprocess on the agent-server side, and
         // the (frontend, chatId) binding travels in the URL instead of
         // env. Tool-surface trimming is applied hub-side (initHub).
+        // Bind the chat's OWNING frontend, not the process-primary one:
+        // in multi-frontend deployments a native chat served by this
+        // backend must get native-tools (send_message/end_turn), not
+        // the primary frontend's tool surface.
         url: talonHubUrl(
           `http://127.0.0.1:${state.gatewayPortFn()}`,
-          state.frontendName,
+          resolveChatToolFrontend(state, chatId),
           chatId,
         ),
       },

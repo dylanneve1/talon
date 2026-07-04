@@ -15,13 +15,16 @@ import { buildDeliveryContract } from "../shared/delivery-contract.js";
  *
  * Both routes are valid — the shared text-or-tools contract
  * (prompts/system/contract-text-or-tools.md) documents the choice.
- * Telegram-shaped tool names: this constant is static and the prior
- * hand-written text hardcoded the same names.
+ * Tool names are frontend-specific (native's send tool is
+ * send_message, telegram's is send), so the suffix is built per chat
+ * from the chat's owning frontend.
  */
-export const CODEX_SYSTEM_PROMPT_SUFFIX = `\n\n${buildDeliveryContract(
-  "text-or-tools",
-  "telegram",
-)}\n`;
+export function codexSystemPromptSuffix(frontend: string): string {
+  return `\n\n${buildDeliveryContract("text-or-tools", frontend)}\n`;
+}
+
+/** Telegram-shaped default, kept for tests and legacy callers. */
+export const CODEX_SYSTEM_PROMPT_SUFFIX = codexSystemPromptSuffix("telegram");
 
 /**
  * Default model used by the Codex backend when none is configured AND

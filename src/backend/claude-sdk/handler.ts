@@ -35,6 +35,7 @@ import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 import { applyRetryDecisionStream } from "../shared/handle-retry.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions, getActiveFrontends } from "./options.js";
+import { frontendsForChat } from "../shared/frontends.js";
 import {
   createStreamState,
   isSystemInit,
@@ -127,11 +128,18 @@ export async function* runChatTurn(
   const session = getSession(chatId);
   const t0 = Date.now();
 
-  // Primary messaging frontend, if any. Drives the delivery-contract
-  // suffix and the frontend-aware flow-violation text. Empty in
-  // terminal mode, where no delivery tools exist and the strict
-  // tool-only contract must not be asserted.
-  const frontend: string | undefined = getActiveFrontends()[0];
+  // The chat's OWNING messaging frontend (falling back to the primary
+  // for cross-surface chats). Drives the delivery-contract suffix and
+  // the frontend-aware flow-violation text — the tool NAMES differ per
+  // frontend (native's send tool is send_message, telegram's is send),
+  // and with tool servers scoped per chat the wrong contract would
+  // instruct a tool that doesn't exist. Empty in terminal mode, where
+  // no delivery tools exist and the strict tool-only contract must not
+  // be asserted.
+  const frontend: string | undefined = frontendsForChat(
+    chatId,
+    getActiveFrontends(),
+  )[0];
 
   // Frozen per-session prompt (keyed by session epoch) — stable across
   // turns so the provider's prompt-cache prefix survives other chats'

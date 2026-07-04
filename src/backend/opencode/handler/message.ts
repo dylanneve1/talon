@@ -27,8 +27,12 @@ import {
   resolveProviderID,
   parseStoredOpenCodeModelSelection,
   getConfig,
-  OPENCODE_SYSTEM_PROMPT_SUFFIX,
+  opencodeSystemPromptSuffix,
 } from "../server.js";
+import {
+  frontendsForChat,
+  nonTerminalFrontends,
+} from "../../shared/frontends.js";
 import { getOpenCodeTurnSummary } from "../sessions.js";
 import {
   createStreamState,
@@ -96,7 +100,10 @@ export async function handleMessage(
   const { text: systemPrompt } = prepareSystemPrompt({
     config,
     previousTurns,
-    backendSuffix: OPENCODE_SYSTEM_PROMPT_SUFFIX,
+    backendSuffix: opencodeSystemPromptSuffix(
+      frontendsForChat(chatId, nonTerminalFrontends(config.frontend))[0] ??
+        "telegram",
+    ),
     chatId,
     sessionEpoch: session.createdAt,
   });

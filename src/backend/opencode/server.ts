@@ -59,10 +59,12 @@ const TALON_MCP_SERVER_NAME = SHARED_TALON_MCP_SERVER_NAME;
 // Text-preferred delivery: plain assistant text is the reply; tools
 // only for genuine side effects. Single-sourced from the shared
 // contract templates (prompts/system/contract-text-preferred.md).
-const OPENCODE_SYSTEM_PROMPT_SUFFIX = `\n\n${buildDeliveryContract(
-  "text-preferred",
-  "telegram",
-)}\n`;
+export function opencodeSystemPromptSuffix(frontend: string): string {
+  return `\n\n${buildDeliveryContract("text-preferred", frontend)}\n`;
+}
+
+/** Telegram-shaped default, kept for one-shot (cross-surface) paths. */
+const OPENCODE_SYSTEM_PROMPT_SUFFIX = opencodeSystemPromptSuffix("telegram");
 
 // ── State ───────────────────────────────────────────────────────────────────
 
