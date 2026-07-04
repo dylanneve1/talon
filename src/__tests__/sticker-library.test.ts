@@ -115,6 +115,24 @@ describe("sticker-store", () => {
     expect(section).not.toContain("(bare,");
   });
 
+  it("lists the newest 12 packs and summarizes the overflow", async () => {
+    for (let i = 0; i < 14; i++) {
+      writePack(
+        `pack_${String(i).padStart(2, "0")}`,
+        [{ emoji: "😀", fileId: `F${i}` }],
+        `2026-01-${String(i + 1).padStart(2, "0")}`,
+      );
+    }
+    const { renderStickerLibraryPrompt } =
+      await import("../storage/sticker-store.js");
+    const section = renderStickerLibraryPrompt();
+    // Newest 12 listed; the 2 oldest summarized, not silently invisible.
+    expect(section).toContain("(pack_13,");
+    expect(section).toContain("(pack_02,");
+    expect(section).not.toContain("(pack_01,");
+    expect(section).toContain("plus 2 more saved packs");
+  });
+
   it("truncates the emoji inventory on whole-emoji boundaries", async () => {
     // 40 distinct surrogate-pair emoji (2 UTF-16 units each) = 80 units,
     // over the 60-unit budget. A naive slice(0, 60) would cut the 31st
@@ -215,6 +233,34 @@ describe("ensurePackSaved", () => {
 
     await ensurePackSaved(bot, "pepe");
     expect(bot.getStickerSet).toHaveBeenCalledTimes(1);
+  });
+
+  it("collapses concurrent saves of the same pack into one fetch", async () => {
+    // A user posting a burst of stickers from one unseen pack fires
+    // several ensurePackSaved calls before the first write lands.
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const getStickerSet = vi.fn(async (name: string) => {
+      await gate;
+      return {
+        name,
+        title: `${name} title`,
+        stickers: [{ emoji: "🐸", file_id: "P1" }],
+      };
+    });
+    const bot = { api: { getStickerSet } };
+    const { ensurePackSaved } =
+      await import("../frontend/telegram/sticker-library.js");
+
+    const calls = Promise.all([
+      ensurePackSaved(bot, "pepe"),
+      ensurePackSaved(bot, "pepe"),
+      ensurePackSaved(bot, "pepe"),
+    ]);
+    release();
+    await calls;
+    expect(getStickerSet).toHaveBeenCalledTimes(1);
+    expect(existsSync(join(STICKERS_DIR, "pepe.json"))).toBe(true);
   });
 
   it("never throws when the fetch fails (fire-and-forget safe)", async () => {

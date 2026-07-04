@@ -71,10 +71,15 @@ export async function savePackToLibrary(
   return `Saved "${stickerSet.title}" (${stickers.length} stickers) to .talon/workspace/stickers/${stickerSet.name}.json`;
 }
 
+/** Packs currently being auto-fetched — dedupes concurrent saves. */
+const inFlightSaves = new Set<string>();
+
 /**
  * Save a pack only if it isn't in the library yet. Fire-and-forget
  * safe: failures are logged, never thrown. Used by the incoming
  * sticker handler so the library grows organically from conversation.
+ * Concurrent calls for the same pack (a user posting several stickers
+ * in a burst) collapse into one fetch.
  */
 export async function ensurePackSaved(
   bot: StickerSetFetcher,
@@ -82,6 +87,8 @@ export async function ensurePackSaved(
 ): Promise<void> {
   if (!setName) return;
   if (existsSync(resolve(dirs.stickers, `${setName}.json`))) return;
+  if (inFlightSaves.has(setName)) return;
+  inFlightSaves.add(setName);
   try {
     const summary = await savePackToLibrary(bot, setName);
     log("stickers", `Auto-saved pack: ${summary}`);
@@ -90,6 +97,8 @@ export async function ensurePackSaved(
       "stickers",
       `Auto-save of pack "${setName}" failed: ${err instanceof Error ? err.message : err}`,
     );
+  } finally {
+    inFlightSaves.delete(setName);
   }
 }
 

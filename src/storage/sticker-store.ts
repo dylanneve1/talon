@@ -101,10 +101,12 @@ export function renderStickerLibraryPrompt(): string {
   // Packs whose stickers carry no emoji metadata can't be sent by
   // emoji, which is what this section teaches — listing them would be
   // a dangling "(N stickers): " line pointing at nothing.
-  const packs = listSavedPacks()
-    .filter((p) => p.stickers.some((s) => s.emoji))
-    .slice(0, PROMPT_PACK_LIMIT);
+  const usable = listSavedPacks().filter((p) =>
+    p.stickers.some((s) => s.emoji),
+  );
+  const packs = usable.slice(0, PROMPT_PACK_LIMIT);
   if (packs.length === 0) return "";
+  const overflow = usable.length - packs.length;
   const lines = packs.map((p) => {
     const distinct = [...new Set(p.stickers.map((s) => s.emoji))].filter(
       Boolean,
@@ -122,6 +124,13 @@ export function renderStickerLibraryPrompt(): string {
     }
     return `- ${p.title} (${p.name}, ${p.count} stickers): ${inventory}`;
   });
+  if (overflow > 0) {
+    // The index shows the newest packs; make the rest discoverable
+    // instead of silently invisible.
+    lines.push(
+      `- …plus ${overflow} more saved pack${overflow === 1 ? "" : "s"} in workspace/stickers/ (all searched when sending by emoji).`,
+    );
+  }
   return [
     "## Sticker library",
     "",

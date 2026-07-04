@@ -206,11 +206,30 @@ function seedPrompts(): void {
   let manifestDirty = false;
   for (const file of listSeedPrompts()) {
     const dst = join(dirs.prompts, file);
-    const pkg = readPromptAsset(file);
+    // Seeding must never break boot: an unreadable package asset (or
+    // an unwritable destination) skips that one file, not the rest.
+    let pkg: string;
+    try {
+      pkg = readPromptAsset(file);
+    } catch (err) {
+      log(
+        "workspace",
+        `Skipping prompt seed for ${file}: ${err instanceof Error ? err.message : err}`,
+      );
+      continue;
+    }
     const pkgHash = sha256(pkg);
 
     if (!existsSync(dst)) {
-      writeFileSync(dst, pkg);
+      try {
+        writeFileSync(dst, pkg);
+      } catch (err) {
+        log(
+          "workspace",
+          `Skipping prompt seed for ${file}: ${err instanceof Error ? err.message : err}`,
+        );
+        continue;
+      }
       manifest[file] = pkgHash;
       manifestDirty = true;
       log("workspace", `Seeded prompt: ${file}`);
@@ -235,7 +254,11 @@ function seedPrompts(): void {
       }
     } else if (seededHash !== undefined && curHash === seededHash) {
       // Pristine seeded copy + package changed → refresh on upgrade.
-      writeFileSync(dst, pkg);
+      try {
+        writeFileSync(dst, pkg);
+      } catch {
+        continue; // manifest keeps the old hash — retried next boot
+      }
       manifest[file] = pkgHash;
       manifestDirty = true;
       log("workspace", `Updated prompt (unedited since seeding): ${file}`);

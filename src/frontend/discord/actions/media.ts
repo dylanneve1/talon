@@ -3,7 +3,7 @@
  * stickers, polls, locations, contacts, dice.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { expandFsPath } from "../../../util/fs-path.js";
 import { AttachmentBuilder } from "discord.js";
@@ -34,7 +34,17 @@ const sendAttachment: DiscordActionHandlers[string] = (
         "Discord has no file_id concept — re-send media by its CDN url or a workspace file_path.",
     };
   } else {
-    const filePath = expandFsPath(String(body.file_path ?? ""));
+    if (!body.file_path)
+      return {
+        ok: false,
+        error: `${action}: provide file_path (workspace file) or url (public)`,
+      };
+    const filePath = expandFsPath(String(body.file_path));
+    if (!existsSync(filePath))
+      return {
+        ok: false,
+        error: `File not found: ${filePath} — check the workspace path, or send by url instead`,
+      };
     const stat = statSync(filePath);
     // Per-guild attachment cap based on boost tier. DMs use Tier-0 (10 MB).
     const guild = (channel as { guild?: import("discord.js").Guild })?.guild;
@@ -83,7 +93,12 @@ export const mediaHandlers: DiscordActionHandlers = {
 
   send_sticker: (body, chatId, { channel, gateway }) => {
     const stickerId = String(body.file_id ?? body.sticker_id ?? "");
-    if (!stickerId) return { ok: false, error: "Required: file_id" };
+    if (!stickerId)
+      return {
+        ok: false,
+        error:
+          "Required: file_id (a Discord sticker id) — sending stickers by emoji from saved packs is Telegram-only.",
+      };
     if (!channel!.isSendable())
       return { ok: false, error: "Channel not sendable" };
     return tryAction("send_sticker", async () => {

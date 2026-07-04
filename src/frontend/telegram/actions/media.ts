@@ -3,7 +3,7 @@
  * stickers, polls, locations, contacts, and dice.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { expandFsPath } from "../../../util/fs-path.js";
 import { markdownToTelegramHtml } from "../formatting.js";
@@ -34,7 +34,20 @@ const sendMediaFile: TelegramActionHandlers[string] = async (
   if (remote) {
     file = String(remote);
   } else {
-    const filePath = expandFsPath(String(body.file_path ?? ""));
+    // Fail with guidance the model can act on, not a raw ENOENT: a
+    // mistyped path is the most common media-send error, and naming
+    // the alternatives (url / file_id) teaches the recovery path.
+    if (!body.file_path)
+      return {
+        ok: false,
+        error: `${action}: provide file_path (workspace file), url (public), or file_id (seen in chat)`,
+      };
+    const filePath = expandFsPath(String(body.file_path));
+    if (!existsSync(filePath))
+      return {
+        ok: false,
+        error: `File not found: ${filePath} — check the workspace path, or send by url/file_id instead`,
+      };
     const stat = statSync(filePath);
     if (stat.size > 49 * 1024 * 1024)
       return { ok: false, error: "File too large (max 49MB)" };
