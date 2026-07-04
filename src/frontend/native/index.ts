@@ -322,8 +322,26 @@ export function createNativeFrontend(
     // turn-meta sidecar at turn_end so history can replay the timeline.
     const turnTools = new Map<
       string,
-      { call: ClientToolCall; startedAt: number }
+      { call: ClientToolCall; startedAt: number; done?: boolean }
     >();
+    // Safety net: any tool the backend announced but never resolved
+    // (text-mode backends don't emit tool_result; crashes can eat one)
+    // gets a synthetic result at turn end — a spinner the app opened
+    // on phase:"call" must always see a phase:"result".
+    const flushOpenTools = () => {
+      for (const [id, live] of turnTools) {
+        if (live.done) continue;
+        live.done = true;
+        live.call.durationMs = Date.now() - live.startedAt;
+        broadcast({
+          kind: "tool",
+          chatId: entry.id,
+          id,
+          name: live.call.name,
+          phase: "result",
+        });
+      }
+    };
     // Point the model at an attached image so it can read the file itself.
     const prompt = attachmentPath
       ? `${text ? `${text}\n\n` : ""}[Attached image: ${attachmentPath}]`
@@ -371,6 +389,7 @@ export function createNativeFrontend(
             case "tool_result": {
               const live = turnTools.get(event.id);
               if (live) {
+                live.done = true;
                 live.call.durationMs = Date.now() - live.startedAt;
                 if (event.error) live.call.error = event.error;
               }
@@ -405,6 +424,10 @@ export function createNativeFrontend(
         delivered = 1;
       }
 
+      // Resolve open tool spinners BEFORE persisting turn meta, so the
+      // synthetic durations land in the recorded timeline too.
+      flushOpenTools();
+
       // Persist what this turn did against its final assistant message, so
       // reloaded history keeps the tool timeline + stats footer. Only when
       // the turn actually delivered — otherwise the "last assistant id"
@@ -431,6 +454,7 @@ export function createNativeFrontend(
         usage: { input: result.inputTokens, output: result.outputTokens },
       });
     } catch (err) {
+      flushOpenTools();
       broadcast({ kind: "typing", chatId: entry.id, on: false });
       broadcast({
         kind: "error",

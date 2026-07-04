@@ -12,6 +12,7 @@ import type {
   SDKPartialAssistantMessage,
   SDKAssistantMessage,
   SDKResultMessage,
+  SDKUserMessage,
   ModelUsage,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { BetaRawContentBlockDeltaEvent } from "@anthropic-ai/sdk/resources/beta/messages/messages.mjs";
@@ -113,6 +114,10 @@ export function isAssistant(msg: SDKMessage): msg is SDKAssistantMessage {
   return msg.type === "assistant";
 }
 
+export function isUserMessage(msg: SDKMessage): msg is SDKUserMessage {
+  return msg.type === "user" && "message" in msg;
+}
+
 export function isResult(msg: SDKMessage): msg is SDKResultMessage {
   return msg.type === "result";
 }
@@ -176,6 +181,8 @@ export function processStreamDelta(
 
 /** A tool call extracted from an assistant message. */
 export type ToolCall = {
+  /** The SDK's tool_use block id — matches the later tool_result. */
+  id: string;
   name: string;
   input: Record<string, unknown>;
 };
@@ -217,7 +224,7 @@ export function processAssistantMessage(
         typeof block.input === "object" && block.input !== null
           ? (block.input as Record<string, unknown>)
           : {};
-      tools.push({ name: block.name, input });
+      tools.push({ id: block.id, name: block.name, input });
       // Text before this tool call is a progress message
       if (blockText.trim()) {
         progressTexts.push(blockText.trim());
@@ -235,6 +242,62 @@ export function processAssistantMessage(
   }
 
   return { progressTexts, tools, trailingText };
+}
+
+/** One completed tool execution, extracted from an SDK user message. */
+export type ToolResultInfo = {
+  toolUseId: string;
+  /** Present when the tool failed — first ~500 chars of the error text. */
+  error?: string;
+};
+
+/**
+ * Extract tool results from an SDK user message. Tool executions come
+ * back as `tool_result` content blocks (keyed by `tool_use_id`) on
+ * synthetic user messages — the missing half of the tool lifecycle:
+ * without these, a UI that shows a spinner on `tool_call` never gets
+ * the event that stops it.
+ */
+export function extractToolResults(msg: SDKUserMessage): ToolResultInfo[] {
+  const content = msg.message?.content;
+  if (!Array.isArray(content)) return [];
+  const results: ToolResultInfo[] = [];
+  for (const block of content) {
+    if (
+      !block ||
+      typeof block !== "object" ||
+      (block as { type?: string }).type !== "tool_result"
+    ) {
+      continue;
+    }
+    const b = block as {
+      tool_use_id?: string;
+      is_error?: boolean;
+      content?: unknown;
+    };
+    if (typeof b.tool_use_id !== "string") continue;
+    let error: string | undefined;
+    if (b.is_error) {
+      const text =
+        typeof b.content === "string"
+          ? b.content
+          : Array.isArray(b.content)
+            ? b.content
+                .filter(
+                  (c): c is { type: "text"; text: string } =>
+                    !!c &&
+                    typeof c === "object" &&
+                    (c as { type?: string }).type === "text" &&
+                    typeof (c as { text?: unknown }).text === "string",
+                )
+                .map((c) => c.text)
+                .join("\n")
+            : "";
+      error = (text || "tool failed").slice(0, 500);
+    }
+    results.push({ toolUseId: b.tool_use_id, error });
+  }
+  return results;
 }
 
 /**

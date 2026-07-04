@@ -41,6 +41,8 @@ import {
   isStreamEvent,
   isAssistant,
   isResult,
+  isUserMessage,
+  extractToolResults,
   processStreamDelta,
   processAssistantMessage,
   processResultMessage,
@@ -180,6 +182,9 @@ export async function* runChatTurn(
   const qi = query({ prompt, options });
   activeQueries.set(chatId, qi);
   const state = createStreamState();
+  // tool_use id → tool name for calls we've announced this turn; lets
+  // the tool_result emission name the tool without re-parsing blocks.
+  const pendingTools = new Map<string, string>();
 
   // Per-API-call usage accumulator for live mid-turn stats. Each
   // assistant message carries its API call's usage as it lands; the
@@ -286,13 +291,39 @@ export async function* runChatTurn(
           if (isTurnTerminator(tool.name, tool.input)) {
             state.turnTerminated = true;
           }
+          // Use the SDK's tool_use block id so the later tool_result
+          // (same id) correlates — a UI spinner opened on this event
+          // can only be closed by an event carrying the same id.
+          const toolId =
+            tool.id ||
+            `${tool.name}-${Date.now()}-${Math.random()
+              .toString(36)
+              .slice(2, 8)}`;
+          pendingTools.set(toolId, tool.name);
           yield {
             type: "tool_call",
-            id: `${tool.name}-${Date.now()}-${Math.random()
-              .toString(36)
-              .slice(2, 8)}`,
+            id: toolId,
             name: tool.name,
             input: tool.input,
+          };
+        }
+        continue;
+      }
+
+      // Tool executions come back as tool_result blocks on synthetic
+      // user messages. Emit the matching tool_result event — the other
+      // half of the lifecycle a tool_call opens (frontends show a
+      // spinner until it arrives).
+      if (isUserMessage(message)) {
+        for (const tr of extractToolResults(message)) {
+          const name = pendingTools.get(tr.toolUseId);
+          if (!name) continue; // not a tool we announced (subagent, replay)
+          pendingTools.delete(tr.toolUseId);
+          yield {
+            type: "tool_result",
+            id: tr.toolUseId,
+            name,
+            ...(tr.error ? { error: tr.error } : {}),
           };
         }
         continue;
