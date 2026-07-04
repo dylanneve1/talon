@@ -316,6 +316,24 @@ describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => 
     );
   });
 
+  it("promptSeedReport classifies tracking vs user-edited prompts", async () => {
+    const { initWorkspace, promptSeedReport } =
+      await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
+
+    // Fresh seed: everything tracks the package.
+    let report = promptSeedReport();
+    expect(report.tracking).toContain("base.md");
+    expect(report.edited).toEqual([]);
+
+    // Edit one file → it flips to user-edited; the rest keep tracking.
+    writeFileSync(join(talonPromptsDir(), "base.md"), "# my custom base\n");
+    report = promptSeedReport();
+    expect(report.edited).toEqual(["base.md"]);
+    expect(report.tracking).not.toContain("base.md");
+    expect(report.tracking.length).toBeGreaterThan(0);
+  });
+
   it("re-adopts a file that matches the current package despite a stale manifest entry", async () => {
     // A user edit that lands byte-identical to the current package copy
     // (e.g. hand-applying an upstream change) must not strand the file

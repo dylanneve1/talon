@@ -101,11 +101,16 @@ export const mediaHandlers: DiscordActionHandlers = {
       };
     if (!channel!.isSendable())
       return { ok: false, error: "Channel not sendable" };
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_sticker", async () => {
       gateway.incrementMessages(chatId);
-      const sent = (await channel!.send({ stickers: [stickerId] })) as {
-        id: string;
-      };
+      const sent = (await channel!.send({
+        stickers: [stickerId],
+        reply: replyTo
+          ? { messageReference: replyTo, failIfNotExists: false }
+          : undefined,
+      })) as { id: string };
       return { ok: true, message_id: sent.id };
     });
   },
@@ -118,6 +123,8 @@ export const mediaHandlers: DiscordActionHandlers = {
     gateway.incrementMessages(chatId);
     if (!channel!.isSendable())
       return { ok: false, error: "Channel not sendable" };
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_poll", async () => {
       const sent = (await channel!.send({
         poll: {
@@ -127,6 +134,9 @@ export const mediaHandlers: DiscordActionHandlers = {
           duration: 24,
         },
         allowedMentions: { parse: [] },
+        reply: replyTo
+          ? { messageReference: replyTo, failIfNotExists: false }
+          : undefined,
       })) as { id: string };
       return { ok: true, message_id: sent.id };
     });
@@ -137,9 +147,11 @@ export const mediaHandlers: DiscordActionHandlers = {
     const lng = Number(body.longitude);
     gateway.incrementMessages(chatId);
     const url = `https://maps.google.com/?q=${lat},${lng}`;
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_location", async () => {
       const ids = await withRetry(() =>
-        sendChunked(channel!, `📍 Location: ${lat}, ${lng}\n${url}`),
+        sendChunked(channel!, `📍 Location: ${lat}, ${lng}\n${url}`, replyTo),
       );
       return { ok: true, message_id: ids[0] };
     });
@@ -152,9 +164,11 @@ export const mediaHandlers: DiscordActionHandlers = {
       .join(" ");
     const phone = String(body.phone_number ?? "");
     gateway.incrementMessages(chatId);
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_contact", async () => {
       const ids = await withRetry(() =>
-        sendChunked(channel!, `📇 Contact: ${name}\n${phone}`),
+        sendChunked(channel!, `📇 Contact: ${name}\n${phone}`, replyTo),
       );
       return { ok: true, message_id: ids[0] };
     });
@@ -164,9 +178,11 @@ export const mediaHandlers: DiscordActionHandlers = {
     const emoji = String(body.emoji ?? "🎲");
     const value = Math.floor(Math.random() * 6) + 1;
     gateway.incrementMessages(chatId);
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_dice", async () => {
       const ids = await withRetry(() =>
-        sendChunked(channel!, `${emoji} You rolled: **${value}**`),
+        sendChunked(channel!, `${emoji} You rolled: **${value}**`, replyTo),
       );
       return { ok: true, message_id: ids[0], value };
     });

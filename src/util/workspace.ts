@@ -174,6 +174,57 @@ export function initWorkspace(root: string): void {
  */
 const SEED_MANIFEST = ".seeded.json";
 
+function seedManifestPath(): string {
+  return join(dirs.prompts, SEED_MANIFEST);
+}
+
+function readSeedManifest(): Record<string, string> {
+  try {
+    const path = seedManifestPath();
+    if (!existsSync(path)) return {};
+    return JSON.parse(readFileSync(path, "utf-8")) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+/**
+ * Provenance of the seeded prompts, for diagnostics (`talon doctor`):
+ * which files still track the package (pristine seeded copy or already
+ * the current package content) and which the user has edited (never
+ * touched by upgrades again). Files that can't be read are skipped.
+ */
+export function promptSeedReport(): { tracking: string[]; edited: string[] } {
+  const manifest = readSeedManifest();
+  const tracking: string[] = [];
+  const edited: string[] = [];
+  for (const file of listSeedPrompts()) {
+    const dst = join(dirs.prompts, file);
+    let curHash: string;
+    try {
+      curHash = sha256(readFileSync(dst, "utf-8"));
+    } catch {
+      continue;
+    }
+    let pkgHash: string | undefined;
+    try {
+      pkgHash = sha256(readPromptAsset(file));
+    } catch {
+      pkgHash = undefined;
+    }
+    if (curHash === pkgHash || curHash === manifest[file]) {
+      tracking.push(file);
+    } else {
+      edited.push(file);
+    }
+  }
+  return { tracking, edited };
+}
+
 /**
  * Seed prompts with upgrade-aware refresh:
  *
@@ -187,21 +238,8 @@ const SEED_MANIFEST = ".seeded.json";
  * the current package copy — from then on they track upgrades again.
  */
 function seedPrompts(): void {
-  const manifestPath = join(dirs.prompts, SEED_MANIFEST);
-  let manifest: Record<string, string> = {};
-  try {
-    if (existsSync(manifestPath)) {
-      manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as Record<
-        string,
-        string
-      >;
-    }
-  } catch {
-    manifest = {};
-  }
-
-  const sha256 = (text: string): string =>
-    createHash("sha256").update(text).digest("hex");
+  const manifestPath = seedManifestPath();
+  const manifest = readSeedManifest();
 
   let manifestDirty = false;
   for (const file of listSeedPrompts()) {
