@@ -587,14 +587,39 @@ export function rebuildSystemPrompt(
   config: TalonConfig,
   pluginAdditions: string[],
 ): void {
+  const promptParts = buildSystemPromptPartsFor(
+    config,
+    pluginAdditions,
+    primaryFrontend(config),
+  );
+  config.systemPromptParts = promptParts;
+  config.systemPrompt = joinSystemPromptParts(promptParts);
+}
+
+/** The first configured frontend — the default prompt flavour. */
+export function primaryFrontend(config: TalonConfig): string {
   const frontends = Array.isArray(config.frontend)
     ? config.frontend
     : [config.frontend];
-  const promptParts = assembleSystemPrompt({
-    frontend: frontends[0],
+  return frontends[0];
+}
+
+/**
+ * Build system-prompt parts for a specific frontend WITHOUT mutating
+ * the config. Multi-frontend deployments need per-chat prompt
+ * flavours (a native-app chat must get native.md guidance, not the
+ * telegram.md that `frontends[0]` happens to be) — the per-session
+ * snapshot layer (backend/shared/system-prompt.ts) calls this with the
+ * chat's owning frontend and freezes the result per session.
+ */
+export function buildSystemPromptPartsFor(
+  config: TalonConfig,
+  pluginAdditions: string[],
+  frontend: string,
+): SystemPromptParts {
+  return assembleSystemPrompt({
+    frontend,
     pluginPromptAdditions:
       pluginAdditions.length > 0 ? pluginAdditions : undefined,
   });
-  config.systemPromptParts = promptParts;
-  config.systemPrompt = joinSystemPromptParts(promptParts);
 }

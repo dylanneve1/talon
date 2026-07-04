@@ -34,11 +34,14 @@
 
 import {
   rebuildSystemPrompt,
+  buildSystemPromptPartsFor,
+  primaryFrontend,
   joinSystemPromptParts,
   type SystemPromptParts,
   type TalonConfig,
 } from "../../util/config.js";
 import { getPluginPromptAdditions } from "../../core/plugin/index.js";
+import { frontendForChatId, nonTerminalFrontends } from "./frontends.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -135,9 +138,26 @@ export function prepareSystemPrompt(
     }
 
     // New session (or first touch after restart / backend switch):
-    // rebuild the global template once, then freeze it for this session.
-    rebuildSystemPrompt(inputs.config, getPluginPromptAdditions());
-    const prepared = buildPrepared(inputs.config, suffix);
+    // build the prompt once for the chat's OWNING frontend, then
+    // freeze it for this session. In multi-frontend deployments the
+    // flavours differ (native.md vs telegram.md guidance); building
+    // for `frontends[0]` gave every chat the primary frontend's
+    // platform prompt. The primary frontend keeps the historical
+    // behaviour of also refreshing the global config prompt (warm-up
+    // and legacy readers consume it).
+    const chatFrontend = resolveChatFrontend(inputs.config, inputs.chatId);
+    let prepared: PreparedSystemPrompt;
+    if (chatFrontend === primaryFrontend(inputs.config)) {
+      rebuildSystemPrompt(inputs.config, getPluginPromptAdditions());
+      prepared = buildPrepared(inputs.config, suffix);
+    } else {
+      const parts = buildSystemPromptPartsFor(
+        inputs.config,
+        getPluginPromptAdditions(),
+        chatFrontend,
+      );
+      prepared = buildPreparedFromParts(parts, suffix);
+    }
 
     if (snapshots.size >= MAX_SNAPSHOTS && !snapshots.has(inputs.chatId)) {
       const oldest = snapshots.keys().next().value;
@@ -196,6 +216,14 @@ function buildPrepared(
     staticText: config.systemPrompt ?? "",
     dynamicText: "",
   };
+  return buildPreparedFromParts(parts, suffix);
+}
+
+/** Assemble a PreparedSystemPrompt from explicit parts (pure). */
+function buildPreparedFromParts(
+  parts: SystemPromptParts,
+  suffix: string,
+): PreparedSystemPrompt {
   const staticText = appendBackendSuffix(parts.staticText, suffix);
   const dynamicText = parts.dynamicText.trim();
   return {
@@ -203,4 +231,18 @@ function buildPrepared(
     staticText,
     dynamicText,
   };
+}
+
+/**
+ * The frontend whose prompt flavour a chat should get: its owning
+ * frontend when the chat-id shape names a configured one, else the
+ * primary (first configured) frontend — which also covers heartbeat /
+ * one-shot / terminal contexts.
+ */
+function resolveChatFrontend(config: TalonConfig, chatId: string): string {
+  const owner = frontendForChatId(chatId);
+  if (owner && nonTerminalFrontends(config.frontend).includes(owner)) {
+    return owner;
+  }
+  return primaryFrontend(config);
 }

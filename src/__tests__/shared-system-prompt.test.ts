@@ -15,7 +15,11 @@ import {
   clearSystemPromptSnapshots,
   prepareSystemPrompt,
 } from "../backend/shared/system-prompt.js";
-import { rebuildSystemPrompt, type TalonConfig } from "../util/config.js";
+import {
+  rebuildSystemPrompt,
+  buildSystemPromptPartsFor,
+  type TalonConfig,
+} from "../util/config.js";
 
 // Each rebuild stamps a fresh version into the config — simulating the
 // real volatility (workspace listing sizes, daily-memory pointer) that
@@ -34,6 +38,12 @@ vi.mock("../util/config.js", async (importOriginal) => {
       };
       config.systemPrompt = `static v${rebuildCount}\n\n---\n\ndynamic v${rebuildCount}`;
     }),
+    buildSystemPromptPartsFor: vi.fn(
+      (_config: unknown, _additions: unknown, frontend: string) => ({
+        staticText: `static for ${frontend}`,
+        dynamicText: `dynamic for ${frontend}`,
+      }),
+    ),
   };
 });
 
@@ -241,5 +251,94 @@ describe("appendBackendSuffix", () => {
     expect(appendBackendSuffix(null, "x")).toBe("x");
     // @ts-expect-error - testing defensive null handling
     expect(appendBackendSuffix(undefined, "x")).toBe("x");
+  });
+});
+
+describe("per-chat frontend prompt flavour (multi-frontend)", () => {
+  beforeEach(() => {
+    clearSystemPromptSnapshots();
+    rebuildCount = 0;
+    vi.mocked(rebuildSystemPrompt).mockClear();
+    vi.mocked(buildSystemPromptPartsFor).mockClear();
+  });
+
+  function multiConfig(): TalonConfig {
+    return {
+      frontend: ["telegram", "native"],
+      systemPrompt: "initial",
+      systemPromptParts: { staticText: "initial", dynamicText: "" },
+    } as unknown as TalonConfig;
+  }
+
+  it("builds a native chat's prompt for the native frontend, not frontends[0]", () => {
+    const config = multiConfig();
+    const prepared = prepareSystemPrompt({
+      config,
+      previousTurns: 0,
+      chatId: "d_1751640000000_ab12cd",
+      sessionEpoch: 1000,
+    });
+
+    expect(prepared.staticText).toBe("static for native");
+    expect(buildSystemPromptPartsFor).toHaveBeenCalledWith(
+      config,
+      [],
+      "native",
+    );
+    // Non-primary flavour must NOT clobber the global config prompt.
+    expect(rebuildSystemPrompt).not.toHaveBeenCalled();
+    expect(config.systemPrompt).toBe("initial");
+  });
+
+  it("keeps the primary-frontend path (global rebuild) for telegram chats", () => {
+    const config = multiConfig();
+    const prepared = prepareSystemPrompt({
+      config,
+      previousTurns: 0,
+      chatId: "-1001426819337",
+      sessionEpoch: 1000,
+    });
+
+    expect(rebuildSystemPrompt).toHaveBeenCalledTimes(1);
+    expect(prepared.staticText).toBe("static v1");
+  });
+
+  it("falls back to the primary frontend for cross-surface chat ids", () => {
+    const config = multiConfig();
+    prepareSystemPrompt({
+      config,
+      previousTurns: 0,
+      chatId: "heartbeat",
+      sessionEpoch: 1000,
+    });
+    expect(rebuildSystemPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it("freezes each chat's flavour independently per session", () => {
+    const config = multiConfig();
+    const native1 = prepareSystemPrompt({
+      config,
+      previousTurns: 0,
+      chatId: "d_1751640000000_ab12cd",
+      sessionEpoch: 1000,
+    });
+    const tg1 = prepareSystemPrompt({
+      config,
+      previousTurns: 0,
+      chatId: "-100123",
+      sessionEpoch: 1000,
+    });
+    // Second turns return the frozen snapshots, no extra builds.
+    const native2 = prepareSystemPrompt({
+      config,
+      previousTurns: 1,
+      chatId: "d_1751640000000_ab12cd",
+      sessionEpoch: 1000,
+    });
+    expect(native2).toBe(native1);
+    expect(native1.staticText).toBe("static for native");
+    expect(tg1.staticText).toBe("static v1");
+    expect(buildSystemPromptPartsFor).toHaveBeenCalledTimes(1);
+    expect(rebuildSystemPrompt).toHaveBeenCalledTimes(1);
   });
 });
