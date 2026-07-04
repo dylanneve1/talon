@@ -96,11 +96,15 @@ export async function ensurePackSaved(
 // ── Emoji resolution ────────────────────────────────────────────────────────
 
 /**
- * Normalize an emoji for matching: trim and strip variation selectors
- * (U+FE00–U+FE0F) so "❤️" (with U+FE0F) matches a pack's "❤".
+ * Normalize an emoji for matching: trim, strip variation selectors
+ * (U+FE00–U+FE0F) so "❤️" (with U+FE0F) matches a pack's "❤", and strip
+ * skin-tone modifiers (U+1F3FB–U+1F3FF) so "👍🏻" matches a pack's "👍".
  */
 function normalizeEmoji(emoji: string): string {
-  return emoji.trim().replace(/[\uFE00-\uFE0F]/g, "");
+  return emoji
+    .trim()
+    .replace(/[\uFE00-\uFE0F]/g, "")
+    .replace(/[\u{1F3FB}-\u{1F3FF}]/gu, "");
 }
 
 /**
@@ -117,6 +121,10 @@ export async function resolveStickerByEmoji(
   emoji: string,
   setName?: string,
 ): Promise<{ fileId: string; pack: string } | null> {
+  const want = normalizeEmoji(emoji);
+  // A blank query must never match stickers whose emoji metadata is
+  // empty — that would resolve " " to a random unrelated sticker.
+  if (!want) return null;
   let packs = listSavedPacks();
   if (setName) {
     let pack = packs.find((p) => p.name === setName);
@@ -130,7 +138,6 @@ export async function resolveStickerByEmoji(
     }
     packs = pack ? [pack] : [];
   }
-  const want = normalizeEmoji(emoji);
   const matches = packs.flatMap((p) =>
     p.stickers
       .filter((s) => normalizeEmoji(s.emoji) === want)

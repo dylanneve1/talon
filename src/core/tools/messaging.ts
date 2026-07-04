@@ -167,7 +167,7 @@ Examples:
         .string()
         .optional()
         .describe(
-          "Public URL of media to send (photo/video/animation/file/audio/voice) — fetched by the platform, no download needed. Great for GIFs.",
+          "Public URL of media to send (photo/video/animation/file/audio/voice; .webp for sticker) — fetched by the platform, no download needed. Great for GIFs.",
         ),
       file_id: z
         .string()
@@ -322,6 +322,7 @@ Examples:
         case "sticker":
           return bridge("send_sticker", {
             file_id: params.file_id,
+            url: params.url,
             emoji: params.emoji,
             set_name: params.set_name,
             reply_to: params.reply_to,

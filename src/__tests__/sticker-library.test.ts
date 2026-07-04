@@ -100,6 +100,21 @@ describe("sticker-store", () => {
     expect(section).toContain("😀😭");
   });
 
+  it("skips packs with no emoji metadata (not sendable by emoji)", async () => {
+    // Some packs carry no per-sticker emoji; a library line for them
+    // would dangle ("(2 stickers): ") and teach an unusable path.
+    writePack("bare", [
+      { emoji: "", fileId: "A" },
+      { emoji: "", fileId: "B" },
+    ]);
+    writePack("cats", [{ emoji: "😀", fileId: "C" }]);
+    const { renderStickerLibraryPrompt } =
+      await import("../storage/sticker-store.js");
+    const section = renderStickerLibraryPrompt();
+    expect(section).toContain("(cats,");
+    expect(section).not.toContain("(bare,");
+  });
+
   it("truncates the emoji inventory on whole-emoji boundaries", async () => {
     // 40 distinct surrogate-pair emoji (2 UTF-16 units each) = 80 units,
     // over the 60-unit budget. A naive slice(0, 60) would cut the 31st
@@ -135,6 +150,32 @@ describe("resolveStickerByEmoji", () => {
       await import("../frontend/telegram/sticker-library.js");
     const hit = await resolveStickerByEmoji(fakeBot({}), "❤️");
     expect(hit).toEqual({ fileId: "HEART_ID", pack: "hearts" });
+  });
+
+  it("normalizes skin-tone modifiers in both directions", async () => {
+    // Pack stores a toned thumbs-up; the model sends the base emoji —
+    // and vice versa. Both must land on the same sticker.
+    writePack("hands", [{ emoji: "👍🏽", fileId: "THUMB_ID" }]);
+    const { resolveStickerByEmoji } =
+      await import("../frontend/telegram/sticker-library.js");
+    expect(await resolveStickerByEmoji(fakeBot({}), "👍")).toEqual({
+      fileId: "THUMB_ID",
+      pack: "hands",
+    });
+    expect(await resolveStickerByEmoji(fakeBot({}), "👍🏻")).toEqual({
+      fileId: "THUMB_ID",
+      pack: "hands",
+    });
+  });
+
+  it("never matches a blank query against emoji-less stickers", async () => {
+    // Stickers without emoji metadata normalize to "" — a whitespace
+    // query must not resolve to one of them at random.
+    writePack("bare", [{ emoji: "", fileId: "A" }]);
+    const { resolveStickerByEmoji } =
+      await import("../frontend/telegram/sticker-library.js");
+    expect(await resolveStickerByEmoji(fakeBot({}), " ")).toBeNull();
+    expect(await resolveStickerByEmoji(fakeBot({}), "")).toBeNull();
   });
 
   it("fetches and saves an unsaved pack when set_name is given", async () => {

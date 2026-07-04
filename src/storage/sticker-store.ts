@@ -98,7 +98,12 @@ export function listSavedPacks(): SavedPack[] {
  * as packs are auto-saved mid-session.
  */
 export function renderStickerLibraryPrompt(): string {
-  const packs = listSavedPacks().slice(0, PROMPT_PACK_LIMIT);
+  // Packs whose stickers carry no emoji metadata can't be sent by
+  // emoji, which is what this section teaches — listing them would be
+  // a dangling "(N stickers): " line pointing at nothing.
+  const packs = listSavedPacks()
+    .filter((p) => p.stickers.some((s) => s.emoji))
+    .slice(0, PROMPT_PACK_LIMIT);
   if (packs.length === 0) return "";
   const lines = packs.map((p) => {
     const distinct = [...new Set(p.stickers.map((s) => s.emoji))].filter(

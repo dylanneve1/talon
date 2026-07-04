@@ -25,6 +25,14 @@ const sendAttachment: DiscordActionHandlers[string] = (
   if (body.url) {
     // Public URL — Discord fetches it when attaching; no local bytes.
     file = String(body.url);
+  } else if (body.file_id && !body.file_path) {
+    // The shared `send` tool advertises file_id for Telegram; Discord has
+    // no equivalent. Fail with guidance instead of a stat("") ENOENT.
+    return {
+      ok: false,
+      error:
+        "Discord has no file_id concept — re-send media by its CDN url or a workspace file_path.",
+    };
   } else {
     const filePath = expandFsPath(String(body.file_path ?? ""));
     const stat = statSync(filePath);

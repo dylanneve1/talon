@@ -113,10 +113,16 @@ export const mediaHandlers: TelegramActionHandlers = {
   send_audio: sendMediaFile,
 
   send_sticker: async (body, chatId, { bot, gateway }) => {
-    // Two addressing modes: a concrete file_id, or an emoji resolved
-    // against the saved sticker library (optionally pinned to one pack
-    // via set_name) — the low-friction path the prompt teaches.
-    let fileId = body.file_id ? String(body.file_id) : "";
+    // Three addressing modes: a concrete file_id, a public URL of a
+    // .webp (Telegram fetches it server-side, like other media), or an
+    // emoji resolved against the saved sticker library (optionally
+    // pinned to one pack via set_name) — the low-friction path the
+    // prompt teaches.
+    let fileId = body.file_id
+      ? String(body.file_id)
+      : body.url
+        ? String(body.url)
+        : "";
     if (!fileId && body.emoji) {
       const resolved = await resolveStickerByEmoji(
         bot,
@@ -131,7 +137,8 @@ export const mediaHandlers: TelegramActionHandlers = {
       }
       fileId = resolved.fileId;
     }
-    if (!fileId) return { ok: false, error: "Required: file_id or emoji" };
+    if (!fileId)
+      return { ok: false, error: "Required: file_id, url, or emoji" };
     gateway.incrementMessages(chatId);
     const sent = await bot.api.sendSticker(chatId, fileId, {
       reply_parameters: replyParams(body),
