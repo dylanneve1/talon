@@ -30,6 +30,7 @@ import {
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
 import type { ToolExclusionConfig } from "../../core/tools/mcp-env.js";
+import { frontendsForChat } from "../shared/frontends.js";
 
 /**
  * AppToolApproval values accepted by Codex's `mcp_servers.<name>` table.
@@ -131,10 +132,11 @@ export function buildCodexMcpServers(args: {
 
   const servers: Record<string, CodexMcpServer> = {};
 
-  // Frontend MCP tool servers (one per non-terminal frontend) — served
-  // in-process by the hub; the (frontend, chatId) binding travels in
-  // the URL. Tool-surface trimming is applied hub-side (initHub).
-  for (const frontend of frontends) {
+  // Frontend MCP tool servers — served in-process by the hub; the
+  // (frontend, chatId) binding travels in the URL. Tool-surface
+  // trimming is applied hub-side (initHub). Scoped to the chat's
+  // owning frontend; cross-surface contexts keep the full set.
+  for (const frontend of frontendsForChat(chatId, frontends)) {
     servers[`${frontend}-tools`] = {
       url: talonHubUrl(bridgeUrl, frontend, chatId),
       default_tools_approval_mode: TALON_MCP_DEFAULT_APPROVAL,

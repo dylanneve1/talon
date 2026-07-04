@@ -31,6 +31,7 @@ import {
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
 import type { ToolExclusionConfig } from "../../core/tools/mcp-env.js";
+import { frontendsForChat } from "../shared/frontends.js";
 import { log, logWarn } from "../../util/log.js";
 
 /**
@@ -173,11 +174,12 @@ async function buildBundle(args: BundleInputs): Promise<OpenAIAgentsMcpBundle> {
 
   const built: MCPServerStreamableHttp[] = [];
 
-  // Frontend MCP tool servers (one per non-terminal frontend). Each
-  // exposes the Talon-native delivery surface (send, react, end_turn,
-  // …) for that frontend, scoped to `chatId` via the hub URL — the
-  // server itself runs in-process inside the daemon.
-  for (const frontend of frontends) {
+  // Frontend MCP tool servers. Each exposes the Talon-native delivery
+  // surface (send, react, end_turn, …) for that frontend, scoped to
+  // `chatId` via the hub URL — the server itself runs in-process
+  // inside the daemon. Scoped to the chat's owning frontend;
+  // cross-surface contexts keep the full set.
+  for (const frontend of frontendsForChat(chatId, frontends)) {
     built.push(
       new MCPServerStreamableHttp({
         name: `${frontend}-tools`,

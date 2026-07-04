@@ -25,7 +25,7 @@ import {
   pluginHubUrl,
   hubPluginServerNames,
 } from "../../core/mcp-hub/index.js";
-import { nonTerminalFrontends } from "../shared/frontends.js";
+import { nonTerminalFrontends, frontendsForChat } from "../shared/frontends.js";
 import { log, logError } from "../../util/log.js";
 import { getConfig, getBridgePort } from "./state.js";
 import { ALLOWED_TOOLS_CHAT, EFFORT_MAP } from "./constants.js";
@@ -78,7 +78,12 @@ export function buildMcpServers(chatId: string): Record<string, HubMcpEntry> {
 
   const servers: Record<string, HubMcpEntry> = {};
 
-  for (const frontend of getActiveFrontends()) {
+  // Scope to the chat's owning frontend: a native-app chat gets
+  // native-tools only, not every configured frontend's server (stray
+  // mcp__telegram-tools__* in a native chat is confusing UI and a
+  // wrong-surface delivery hazard). Cross-surface contexts (heartbeat,
+  // one-shots) keep the full set.
+  for (const frontend of frontendsForChat(chatId, getActiveFrontends())) {
     servers[`${frontend}-tools`] = {
       type: "http",
       url: talonHubUrl(bridgeUrl, frontend, chatId),

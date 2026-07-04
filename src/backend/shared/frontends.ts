@@ -6,6 +6,13 @@
  * each carried their own copy of the same normalise-and-filter logic.
  */
 
+import {
+  isNativeChatId,
+  isTeamsChatId,
+  isDiscordChatId,
+  isTelegramChatId,
+} from "../../util/chat-id.js";
+
 /**
  * Normalise a config `frontend` value (string or array, possibly
  * undefined) to the list of messaging frontends — i.e. those that
@@ -18,4 +25,42 @@ export function nonTerminalFrontends(
   if (!frontend) return [];
   const all = Array.isArray(frontend) ? frontend : [frontend as string];
   return all.filter((f) => f !== "terminal");
+}
+
+/**
+ * The messaging frontend that owns a chat, inferred from the chat-id
+ * shape (the same convention the gateway uses to route actions):
+ * native `d_*`, teams `teams_chat_*`, discord `discord_*`, telegram
+ * numeric. Returns null for cross-surface contexts — the heartbeat
+ * sentinel, isolated one-shots, terminal sessions.
+ */
+export function frontendForChatId(chatId: string): string | null {
+  if (isNativeChatId(chatId)) return "native";
+  if (isTeamsChatId(chatId)) return "teams";
+  if (isDiscordChatId(chatId)) return "discord";
+  if (isTelegramChatId(chatId)) return "telegram";
+  return null;
+}
+
+/**
+ * Which frontends' tool servers a chat's turn should register.
+ *
+ * A chat owned by one messaging frontend gets exactly that frontend's
+ * tools: a native-app conversation must see `native-tools`, not a
+ * `telegram-tools` server that happens to share the daemon — the
+ * model reads surface identity out of tool names, and stray
+ * `mcp__telegram-tools__*` entries in a native chat are both confusing
+ * UI and an invitation to deliver the reply to the wrong surface.
+ *
+ * Chats with no owning frontend (heartbeat sentinel, one-shot cron,
+ * terminal sessions) keep every configured messaging frontend: those
+ * contexts legitimately reach across surfaces via explicit chat_id.
+ */
+export function frontendsForChat(
+  chatId: string,
+  configured: readonly string[],
+): readonly string[] {
+  const owner = frontendForChatId(chatId);
+  if (owner && configured.includes(owner)) return [owner];
+  return configured;
 }
