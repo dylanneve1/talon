@@ -32,13 +32,16 @@ export function decayFactor(elapsedMs: number, halfLifeMs: number): number {
 /**
  * Salience as it stands *now*, after lazy time-decay from its last activation.
  * When the node carries an FSRS stability, decay follows the power-law
- * retrievability curve; otherwise it is the fixed-half-life exponential.
+ * retrievability curve; otherwise it is the fixed-half-life exponential. An
+ * infinite half-life (a no-decay node kind, e.g. reflexes) short-circuits both
+ * paths: the stored salience is returned untouched.
  */
 export function effectiveSalience(
   state: ActivationState,
   now: number,
   halfLifeMs: number,
 ): number {
+  if (!Number.isFinite(halfLifeMs)) return state.salience;
   if (state.stability !== undefined) {
     return (
       state.salience *

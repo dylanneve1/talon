@@ -23,6 +23,7 @@ import { reinforceFsrs } from "./forgetting.js";
 import { emojiValence } from "./signals.js";
 import type { CorrectionSignal, DirectiveSignal, Signal } from "./signals.js";
 import type { EvidencePayload, Hash, SoulConfig } from "./types.js";
+import { halfLifeForKind } from "./types.js";
 
 export interface IngestResult {
   /** Evidence node created from a correction/directive, if any. */
@@ -86,14 +87,21 @@ function reinforceNode(
   valence: number,
   at: number,
 ): void {
+  const kind = dag.getNode(hash)?.payload.kind;
   if (cfg.adaptiveForgetting) {
-    reinforceFsrs(dag.stateOf(hash), { now: at, cfg, amount, valence });
+    reinforceFsrs(dag.stateOf(hash), {
+      now: at,
+      cfg,
+      amount,
+      valence,
+      ...(kind !== undefined ? { kind } : {}),
+    });
     dag.touch(hash);
     return;
   }
   reinforce(dag, hash, {
     now: at,
-    halfLifeMs: cfg.decayHalfLifeMs,
+    halfLifeMs: halfLifeForKind(cfg, kind),
     amount,
     valence,
   });

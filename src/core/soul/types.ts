@@ -245,6 +245,16 @@ export interface SoulConfig {
   readonly decay: number;
   /** Half-life of the decay clock in ms (informational; see salience.ts). */
   readonly decayHalfLifeMs: number;
+  /**
+   * Per-kind decay half-life overrides (ms). Kinds without an entry fall back
+   * to `decayHalfLifeMs`. `Number.POSITIVE_INFINITY` disables decay for a kind
+   * entirely. The three node families have different temporal properties:
+   * reflexes are deliberately seeded behavioral blockers — correct by
+   * definition, they must never soften with disuse; evidence (corrections)
+   * should fade naturally; spine causal links are context-specific and should
+   * go stale faster than traits. See `halfLifeForKind`.
+   */
+  readonly decayHalfLifeByKindMs?: Partial<Record<NodeKind, number>>;
   /** Hebbian edge increment per co-activation. */
   readonly hebbIncrement: number;
   /** Cosine distance above which two embeddings are "different". */
@@ -265,8 +275,24 @@ export const DEFAULT_SOUL_CONFIG: SoulConfig = {
   reinforce: 1,
   decay: 0.98,
   decayHalfLifeMs: 1000 * 60 * 60 * 24 * 7, // one week
+  decayHalfLifeByKindMs: {
+    reflex: Number.POSITIVE_INFINITY, // behavioral blockers never soften
+    spine: 1000 * 60 * 60 * 24 * 3.5, // causal links go stale faster than traits
+  },
   hebbIncrement: 1,
   clusterDistance: 0.35,
   driftThreshold: 0.55,
   runtimeBudgetTokens: 1200,
 };
+
+/**
+ * Effective decay half-life for a node kind: the per-kind override when one is
+ * configured, otherwise the base `decayHalfLifeMs`. `Number.POSITIVE_INFINITY`
+ * means the kind never decays. Callers that don't know the kind (or operate on
+ * mixed sets) may omit it and get the base rate.
+ */
+export function halfLifeForKind(cfg: SoulConfig, kind?: NodeKind): number {
+  const override =
+    kind === undefined ? undefined : cfg.decayHalfLifeByKindMs?.[kind];
+  return override ?? cfg.decayHalfLifeMs;
+}

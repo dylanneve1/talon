@@ -24,6 +24,7 @@ import { isSuperseded } from "./consolidate.js";
 import { cosineSimilarity, type Embedder } from "./embedder.js";
 import { confidence, effectiveSalience } from "./salience.js";
 import type { Hash, SoulConfig, ValuePayload } from "./types.js";
+import { halfLifeForKind } from "./types.js";
 
 export interface RetrievalWeights {
   readonly recency: number;
@@ -102,7 +103,7 @@ export async function retrieveValues(
     effectiveSalience(
       dag.stateOf(r.hash),
       opts.now,
-      opts.config.decayHalfLifeMs,
+      halfLifeForKind(opts.config, "value"),
     ),
   );
   const rawImportance = rows.map((r) => {

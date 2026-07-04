@@ -25,6 +25,7 @@ import type { SoulDag } from "./dag.js";
 import { cosineDistance, medoidIndex, type Embedder } from "./embedder.js";
 import { effectiveSalience } from "./salience.js";
 import type { Hash, SoulConfig, ValuePayload } from "./types.js";
+import { halfLifeForKind } from "./types.js";
 
 /** A value is dead once something supersedes it. */
 export function isSuperseded(dag: SoulDag, value: Hash): boolean {
@@ -158,7 +159,11 @@ export async function consolidate(
     const target = dag.stateOf(merged);
     for (const v of oldValues) {
       const s = dag.stateOf(v);
-      target.salience += effectiveSalience(s, opts.now, cfg.decayHalfLifeMs);
+      target.salience += effectiveSalience(
+        s,
+        opts.now,
+        halfLifeForKind(cfg, "value"),
+      );
       target.evidence += s.evidence;
       target.activations += s.activations;
       const e = dag.edge(merged, "supersedes", v, opts.now);

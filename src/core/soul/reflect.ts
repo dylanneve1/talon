@@ -23,6 +23,7 @@ import type { SoulDag } from "./dag.js";
 import { cosineSimilarity, medoidIndex, type Embedder } from "./embedder.js";
 import { effectiveSalience } from "./salience.js";
 import type { Hash, SoulConfig, ValuePayload } from "./types.js";
+import { halfLifeForKind } from "./types.js";
 
 export interface ReflectOptions {
   readonly now: number;
@@ -153,7 +154,12 @@ export async function reflect(
     const st = dag.stateOf(theme);
     st.salience = members.reduce(
       (s, v) =>
-        s + effectiveSalience(dag.stateOf(v), opts.now, cfg.decayHalfLifeMs),
+        s +
+        effectiveSalience(
+          dag.stateOf(v),
+          opts.now,
+          halfLifeForKind(cfg, "value"),
+        ),
       0,
     );
     st.lastActivatedAt = opts.now;

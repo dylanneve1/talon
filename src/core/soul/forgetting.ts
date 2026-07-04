@@ -20,7 +20,8 @@
  * timing and outcome of activations, not a hand-set constant.
  */
 
-import type { ActivationState, SoulConfig } from "./types.js";
+import type { ActivationState, NodeKind, SoulConfig } from "./types.js";
+import { halfLifeForKind } from "./types.js";
 
 // FSRS power-law constants: R = (1 + FACTOR·t/S)^DECAY, with R(S) ≈ 0.9.
 const DECAY = -0.5;
@@ -37,9 +38,15 @@ export function retrievability(elapsedMs: number, stability: number): number {
   return Math.pow(1 + (FACTOR * elapsedMs) / s, DECAY);
 }
 
-/** Initial stability for a node's first exposure. */
-export function initialStability(cfg: SoulConfig): number {
-  return cfg.decayHalfLifeMs;
+/**
+ * Initial stability for a node's first exposure, honoring the per-kind
+ * half-life when the kind is known. No-decay kinds (infinite half-life) never
+ * reach the FSRS path, but fall back to the base rate defensively so an
+ * Infinity is never stored into state (it would not survive JSON persistence).
+ */
+export function initialStability(cfg: SoulConfig, kind?: NodeKind): number {
+  const hl = halfLifeForKind(cfg, kind);
+  return Number.isFinite(hl) ? hl : cfg.decayHalfLifeMs;
 }
 
 /**
@@ -61,17 +68,22 @@ export function nextStability(
 /**
  * Salience after lazy power-law decay to `now`, using the node's stability when
  * present. Falls back to the caller's exponential decay when stability is unset.
+ * A no-decay kind (infinite half-life, e.g. reflexes) returns the stored
+ * salience untouched regardless of stability.
  */
 export function effectiveStrength(
   state: ActivationState,
   now: number,
   cfg: SoulConfig,
+  kind?: NodeKind,
 ): number {
+  const halfLifeMs = halfLifeForKind(cfg, kind);
+  if (!Number.isFinite(halfLifeMs)) return state.salience;
   if (state.stability === undefined) {
     // exponential fallback (mirrors salience.effectiveSalience)
     const f = Math.pow(
       0.5,
-      Math.max(0, now - state.lastActivatedAt) / cfg.decayHalfLifeMs,
+      Math.max(0, now - state.lastActivatedAt) / halfLifeMs,
     );
     return state.salience * f;
   }
@@ -86,18 +98,29 @@ export interface FsrsReinforceOpts {
   readonly cfg: SoulConfig;
   readonly amount: number;
   readonly valence: number;
+  /** Node kind, when known — selects the per-kind decay half-life. */
+  readonly kind?: NodeKind;
 }
 
 /**
  * Reinforcement under adaptive forgetting: decays salience by retrievability,
  * adds the increment, accumulates evidence, and updates stability per the
- * spacing/lapse rule. Mutates and returns the state.
+ * spacing/lapse rule. Mutates and returns the state. No-decay kinds (infinite
+ * half-life) accumulate undecayed and skip stability bookkeeping entirely —
+ * their strength is time-invariant by construction.
  */
 export function reinforceFsrs(
   state: ActivationState,
   opts: FsrsReinforceOpts,
 ): ActivationState {
-  const stability = state.stability ?? initialStability(opts.cfg);
+  if (!Number.isFinite(halfLifeForKind(opts.cfg, opts.kind))) {
+    state.salience += opts.amount;
+    state.evidence += opts.valence;
+    state.activations += 1;
+    state.lastActivatedAt = opts.now;
+    return state;
+  }
+  const stability = state.stability ?? initialStability(opts.cfg, opts.kind);
   const r = retrievability(opts.now - state.lastActivatedAt, stability);
   state.salience = state.salience * r + opts.amount;
   state.evidence += opts.valence;

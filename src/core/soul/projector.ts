@@ -19,6 +19,7 @@ import { isSuperseded } from "./consolidate.js";
 import { tensionPairs } from "./lattice.js";
 import { confidence, effectiveSalience } from "./salience.js";
 import type { Hash, LensPayload, SoulConfig, ValuePayload } from "./types.js";
+import { halfLifeForKind } from "./types.js";
 
 export interface ProjectionOptions {
   readonly now: number;
@@ -95,7 +96,7 @@ function rankValues(dag: SoulDag, opts: ProjectionOptions): RankedValue[] {
     const base = effectiveSalience(
       state,
       opts.now,
-      opts.config.decayHalfLifeMs,
+      halfLifeForKind(opts.config, "value"),
     );
     const factor = factors.get(node.hash) ?? 1;
     ranked.push({
