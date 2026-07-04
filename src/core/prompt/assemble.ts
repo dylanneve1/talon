@@ -60,6 +60,7 @@ import { loadSystemTemplate } from "./templates.js";
 import { renderWorkspaceListing } from "./workspace-listing.js";
 import { MAX_OPEN_GOALS_PER_CHAT } from "../../storage/goal-store.js";
 import { renderSkillsPrompt } from "../../storage/skill-store.js";
+import { renderStickerLibraryPrompt } from "../../storage/sticker-store.js";
 import { getSoul } from "../soul/service.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -243,6 +244,17 @@ export function assembleSystemPrompt(
   // discovery; full markdown bodies stay on disk until loaded.
   const skills = renderSkillsPrompt();
   if (skills) dynamicParts.push(skills);
+
+  // Dynamic 2.5: sticker library index (Telegram only — the one
+  // frontend with a sticker send surface). Strict check on purpose:
+  // config always resolves a concrete frontend, so an absent value
+  // means a caller outside the normal chat path (no sticker tools) —
+  // don't inject the index there. Dynamic because packs are
+  // auto-saved mid-session as users send stickers.
+  if (inputs.frontend === "telegram") {
+    const stickerLibrary = renderStickerLibraryPrompt();
+    if (stickerLibrary) dynamicParts.push(stickerLibrary);
+  }
 
   // Dynamic 3: workspace file listing (sizes change as logs grow).
   const workspaceFiles = renderWorkspaceListing(dirs.workspace);

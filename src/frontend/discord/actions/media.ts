@@ -3,7 +3,7 @@
  * stickers, polls, locations, contacts, dice.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { basename } from "node:path";
 import { expandFsPath } from "../../../util/fs-path.js";
 import { AttachmentBuilder } from "discord.js";
@@ -20,22 +20,46 @@ const sendAttachment: DiscordActionHandlers[string] = (
   { channel, gateway },
 ) => {
   const action = String(body.action);
-  const filePath = expandFsPath(String(body.file_path ?? ""));
   const caption = body.caption ? String(body.caption) : "";
-  const stat = statSync(filePath);
-  // Per-guild attachment cap based on boost tier. DMs use Tier-0 (10 MB).
-  const guild = (channel as { guild?: import("discord.js").Guild })?.guild;
-  const maxBytes = maxAttachmentBytes(guild);
-  if (stat.size > maxBytes) {
-    const mb = (n: number) => Math.round(n / 1024 / 1024);
-    const tierNote = guild ? `boost tier ${guild.premiumTier ?? 0}` : "DM";
+  let file: string | AttachmentBuilder;
+  if (body.url) {
+    // Public URL — Discord fetches it when attaching; no local bytes.
+    file = String(body.url);
+  } else if (body.file_id && !body.file_path) {
+    // The shared `send` tool advertises file_id for Telegram; Discord has
+    // no equivalent. Fail with guidance instead of a stat("") ENOENT.
     return {
       ok: false,
-      error: `File too large (${mb(stat.size)}MB) — this ${tierNote} accepts max ${mb(maxBytes)}MB`,
+      error:
+        "Discord has no file_id concept — re-send media by its CDN url or a workspace file_path.",
     };
+  } else {
+    if (!body.file_path)
+      return {
+        ok: false,
+        error: `${action}: provide file_path (workspace file) or url (public)`,
+      };
+    const filePath = expandFsPath(String(body.file_path));
+    if (!existsSync(filePath))
+      return {
+        ok: false,
+        error: `File not found: ${filePath} — check the workspace path, or send by url instead`,
+      };
+    const stat = statSync(filePath);
+    // Per-guild attachment cap based on boost tier. DMs use Tier-0 (10 MB).
+    const guild = (channel as { guild?: import("discord.js").Guild })?.guild;
+    const maxBytes = maxAttachmentBytes(guild);
+    if (stat.size > maxBytes) {
+      const mb = (n: number) => Math.round(n / 1024 / 1024);
+      const tierNote = guild ? `boost tier ${guild.premiumTier ?? 0}` : "DM";
+      return {
+        ok: false,
+        error: `File too large (${mb(stat.size)}MB) — this ${tierNote} accepts max ${mb(maxBytes)}MB`,
+      };
+    }
+    const data = readFileSync(filePath);
+    file = new AttachmentBuilder(data, { name: basename(filePath) });
   }
-  const data = readFileSync(filePath);
-  const file = new AttachmentBuilder(data, { name: basename(filePath) });
 
   gateway.incrementMessages(chatId);
   if (!channel!.isSendable())
@@ -69,14 +93,24 @@ export const mediaHandlers: DiscordActionHandlers = {
 
   send_sticker: (body, chatId, { channel, gateway }) => {
     const stickerId = String(body.file_id ?? body.sticker_id ?? "");
-    if (!stickerId) return { ok: false, error: "Required: file_id" };
+    if (!stickerId)
+      return {
+        ok: false,
+        error:
+          "Required: file_id (a Discord sticker id) — sending stickers by emoji from saved packs is Telegram-only.",
+      };
     if (!channel!.isSendable())
       return { ok: false, error: "Channel not sendable" };
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_sticker", async () => {
       gateway.incrementMessages(chatId);
-      const sent = (await channel!.send({ stickers: [stickerId] })) as {
-        id: string;
-      };
+      const sent = (await channel!.send({
+        stickers: [stickerId],
+        reply: replyTo
+          ? { messageReference: replyTo, failIfNotExists: false }
+          : undefined,
+      })) as { id: string };
       return { ok: true, message_id: sent.id };
     });
   },
@@ -89,6 +123,8 @@ export const mediaHandlers: DiscordActionHandlers = {
     gateway.incrementMessages(chatId);
     if (!channel!.isSendable())
       return { ok: false, error: "Channel not sendable" };
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_poll", async () => {
       const sent = (await channel!.send({
         poll: {
@@ -98,6 +134,9 @@ export const mediaHandlers: DiscordActionHandlers = {
           duration: 24,
         },
         allowedMentions: { parse: [] },
+        reply: replyTo
+          ? { messageReference: replyTo, failIfNotExists: false }
+          : undefined,
       })) as { id: string };
       return { ok: true, message_id: sent.id };
     });
@@ -108,9 +147,11 @@ export const mediaHandlers: DiscordActionHandlers = {
     const lng = Number(body.longitude);
     gateway.incrementMessages(chatId);
     const url = `https://maps.google.com/?q=${lat},${lng}`;
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_location", async () => {
       const ids = await withRetry(() =>
-        sendChunked(channel!, `📍 Location: ${lat}, ${lng}\n${url}`),
+        sendChunked(channel!, `📍 Location: ${lat}, ${lng}\n${url}`, replyTo),
       );
       return { ok: true, message_id: ids[0] };
     });
@@ -123,9 +164,11 @@ export const mediaHandlers: DiscordActionHandlers = {
       .join(" ");
     const phone = String(body.phone_number ?? "");
     gateway.incrementMessages(chatId);
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_contact", async () => {
       const ids = await withRetry(() =>
-        sendChunked(channel!, `📇 Contact: ${name}\n${phone}`),
+        sendChunked(channel!, `📇 Contact: ${name}\n${phone}`, replyTo),
       );
       return { ok: true, message_id: ids[0] };
     });
@@ -135,9 +178,11 @@ export const mediaHandlers: DiscordActionHandlers = {
     const emoji = String(body.emoji ?? "🎲");
     const value = Math.floor(Math.random() * 6) + 1;
     gateway.incrementMessages(chatId);
+    const replyTo =
+      typeof body.reply_to === "string" ? body.reply_to : undefined;
     return tryAction("send_dice", async () => {
       const ids = await withRetry(() =>
-        sendChunked(channel!, `${emoji} You rolled: **${value}**`),
+        sendChunked(channel!, `${emoji} You rolled: **${value}**`, replyTo),
       );
       return { ok: true, message_id: ids[0], value };
     });

@@ -20,8 +20,8 @@ import {
   getMessage as userbotGetMessage,
   getPinnedMessages as userbotPinnedMessages,
   getOnlineCount as userbotOnlineCount,
-  saveStickerPack as userbotSaveStickerPack,
 } from "../userbot.js";
+import { savePackToLibrary } from "../sticker-library.js";
 import { toPositiveId } from "./shared.js";
 import type { TelegramActionHandlers } from "./types.js";
 
@@ -177,13 +177,15 @@ export const chatInfoHandlers: TelegramActionHandlers = {
   },
 
   save_sticker_pack: async (body, _chatId, { bot }) => {
-    if (!isUserClientReady())
-      return { ok: false, error: "User client not connected." };
-    const text = await userbotSaveStickerPack({
-      setName: String(body.set_name ?? ""),
-      bot,
-    });
-    return { ok: true, text };
+    try {
+      const text = await savePackToLibrary(bot, String(body.set_name ?? ""));
+      return { ok: true, text };
+    } catch (err) {
+      return {
+        ok: false,
+        error: `Failed to save sticker pack: ${err instanceof Error ? err.message : err}`,
+      };
+    }
   },
 
   get_sticker_pack: async (body, _chatId, { bot }) => {

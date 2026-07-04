@@ -353,6 +353,28 @@ export async function collectDoctorReport(opts: {
     }
   }
 
+  // Seeded prompt provenance — surfaces the upgrade-aware seeding
+  // state (.seeded.json): files still tracking the package refresh on
+  // upgrade; user-edited files are never touched again. Knowing which
+  // is which is the difference between "why didn't my prompt update?"
+  // and a one-line answer.
+  {
+    const { promptSeedReport } = await import("../util/workspace.js");
+    try {
+      const { tracking, edited } = promptSeedReport();
+      if (tracking.length + edited.length > 0) {
+        checks.push({
+          label: `Prompts: ${tracking.length} tracking package upgrades, ${edited.length} user-edited`,
+          status: "ok",
+          detail:
+            edited.length > 0 ? `edited: ${edited.join(", ")}` : undefined,
+        });
+      }
+    } catch {
+      /* diagnostics only — never block the report */
+    }
+  }
+
   const native = await checkNativeModules();
   checks.push(...(await checkBackend(opts.config)));
 

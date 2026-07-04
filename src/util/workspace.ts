@@ -8,6 +8,7 @@ import {
   existsSync,
   mkdirSync,
   readdirSync,
+  readFileSync,
   rmdirSync,
   renameSync,
   statSync,
@@ -17,6 +18,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { log } from "./log.js";
 import { dirs, files as pathFiles } from "./paths.js";
@@ -151,18 +153,164 @@ export function initWorkspace(root: string): void {
   }
 
   // Seed user-editable prompt files from the package into
-  // ~/.talon/prompts/. Only writes files that don't already exist —
-  // user edits are preserved. Sourced through the #prompt-assets seam
-  // (disk under tsx, embedded under a compiled binary), so seeding works
-  // even when there is no package source tree on disk. listSeedPrompts()
+  // ~/.talon/prompts/. Sourced through the #prompt-assets seam (disk
+  // under tsx, embedded under a compiled binary), so seeding works even
+  // when there is no package source tree on disk. listSeedPrompts()
   // already skips the architecture README and the system/ subdirectory
   // (package-owned templates read in place — a seeded copy would go
   // stale; see prompts/README.md).
+  seedPrompts();
+}
+
+// ── Prompt seeding ──────────────────────────────────────────────────────────
+
+/**
+ * Manifest of what was last seeded, `file → sha256(content)`, stored
+ * next to the seeded prompts. This is what lets upgrades tell "still
+ * the pristine seeded copy" apart from "the user edited this": a file
+ * whose on-disk hash matches its seeded hash is safe to refresh when
+ * the packaged version changes; anything else is user-owned and never
+ * touched. (dpkg conffile semantics.)
+ */
+const SEED_MANIFEST = ".seeded.json";
+
+function seedManifestPath(): string {
+  return join(dirs.prompts, SEED_MANIFEST);
+}
+
+function readSeedManifest(): Record<string, string> {
+  try {
+    const path = seedManifestPath();
+    if (!existsSync(path)) return {};
+    return JSON.parse(readFileSync(path, "utf-8")) as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+/**
+ * Provenance of the seeded prompts, for diagnostics (`talon doctor`):
+ * which files still track the package (pristine seeded copy or already
+ * the current package content) and which the user has edited (never
+ * touched by upgrades again). Files that can't be read are skipped.
+ */
+export function promptSeedReport(): { tracking: string[]; edited: string[] } {
+  const manifest = readSeedManifest();
+  const tracking: string[] = [];
+  const edited: string[] = [];
   for (const file of listSeedPrompts()) {
     const dst = join(dirs.prompts, file);
+    let curHash: string;
+    try {
+      curHash = sha256(readFileSync(dst, "utf-8"));
+    } catch {
+      continue;
+    }
+    let pkgHash: string | undefined;
+    try {
+      pkgHash = sha256(readPromptAsset(file));
+    } catch {
+      pkgHash = undefined;
+    }
+    if (curHash === pkgHash || curHash === manifest[file]) {
+      tracking.push(file);
+    } else {
+      edited.push(file);
+    }
+  }
+  return { tracking, edited };
+}
+
+/**
+ * Seed prompts with upgrade-aware refresh:
+ *
+ *   - missing file        → write it, record its hash
+ *   - pristine seeded copy → refresh when the package version changed
+ *   - user-edited copy    → never touched
+ *
+ * Deployments that predate the manifest have unknown provenance (old
+ * package version vs. user edit is indistinguishable), so their
+ * existing files are adopted as user-owned unless byte-identical to
+ * the current package copy — from then on they track upgrades again.
+ */
+function seedPrompts(): void {
+  const manifestPath = seedManifestPath();
+  const manifest = readSeedManifest();
+
+  let manifestDirty = false;
+  for (const file of listSeedPrompts()) {
+    const dst = join(dirs.prompts, file);
+    // Seeding must never break boot: an unreadable package asset (or
+    // an unwritable destination) skips that one file, not the rest.
+    let pkg: string;
+    try {
+      pkg = readPromptAsset(file);
+    } catch (err) {
+      log(
+        "workspace",
+        `Skipping prompt seed for ${file}: ${err instanceof Error ? err.message : err}`,
+      );
+      continue;
+    }
+    const pkgHash = sha256(pkg);
+
     if (!existsSync(dst)) {
-      writeFileSync(dst, readPromptAsset(file));
+      try {
+        writeFileSync(dst, pkg);
+      } catch (err) {
+        log(
+          "workspace",
+          `Skipping prompt seed for ${file}: ${err instanceof Error ? err.message : err}`,
+        );
+        continue;
+      }
+      manifest[file] = pkgHash;
+      manifestDirty = true;
       log("workspace", `Seeded prompt: ${file}`);
+      continue;
+    }
+
+    let curHash: string;
+    try {
+      curHash = sha256(readFileSync(dst, "utf-8"));
+    } catch {
+      continue;
+    }
+    const seededHash = manifest[file];
+
+    if (curHash === pkgHash) {
+      // Already the current package copy, whatever its provenance
+      // (pre-manifest adoption, or a user edit that happens to match).
+      // Record it so the file tracks upgrades from here on.
+      if (seededHash !== pkgHash) {
+        manifest[file] = pkgHash;
+        manifestDirty = true;
+      }
+    } else if (seededHash !== undefined && curHash === seededHash) {
+      // Pristine seeded copy + package changed → refresh on upgrade.
+      try {
+        writeFileSync(dst, pkg);
+      } catch {
+        continue; // manifest keeps the old hash — retried next boot
+      }
+      manifest[file] = pkgHash;
+      manifestDirty = true;
+      log("workspace", `Updated prompt (unedited since seeding): ${file}`);
+    }
+    // Remaining cases — no manifest entry and content differs from the
+    // package (unknown provenance), or an entry exists and the file was
+    // edited since seeding → user-owned: leave it alone, forever.
+  }
+
+  if (manifestDirty) {
+    try {
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    } catch {
+      /* non-fatal — worst case we re-derive next boot */
     }
   }
 }

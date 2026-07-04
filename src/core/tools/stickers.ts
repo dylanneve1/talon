@@ -40,7 +40,7 @@ export const stickerTools: ToolDefinition[] = [
   {
     name: "save_sticker_pack",
     description:
-      "Save a sticker pack's file_ids to workspace for quick reuse. Once saved, you can read the JSON file to find stickers by emoji and send them instantly.",
+      'Add a sticker pack to your library (workspace/stickers/). Saved packs appear in your prompt\'s sticker-library index and are sendable by emoji via send(type="sticker", emoji=...). Packs from stickers users send are saved automatically; use this for any other pack you know by name (also refreshes an already-saved pack).',
     schema: {
       set_name: z.string().describe("Sticker set name"),
     },

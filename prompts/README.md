@@ -43,8 +43,13 @@ when a backend has no native "skills" feature.
 `identity.md`, `base.md`, `custom.md`, `telegram.md`, `discord.md`,
 `teams.md`, `terminal.md`, `native.md`, `heartbeat.md`, `dream.md`,
 `mempalace.md`) are
-seeded once into `~/.talon/prompts/` on first run and read from there.
-User edits always win; package updates never overwrite them.
+seeded into `~/.talon/prompts/` on first run and read from there.
+Seeding is upgrade-aware (dpkg-conffile semantics, tracked via a
+`.seeded.json` hash manifest next to the seeded files): a file the user
+has never edited is refreshed when a package update changes it, while a
+file the user has touched is never overwritten again. Deployments that
+predate the manifest keep their existing files as user-owned unless
+byte-identical to the current package copy.
 
 **System templates** (`system/*.md`) are read directly from the package and
 are NOT seeded. They document runtime behaviour that is versioned with the

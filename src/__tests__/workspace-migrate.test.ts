@@ -238,3 +238,120 @@ describe("initWorkspace — identity and prompt seeding", () => {
     expect(content).toBe("# User customized version");
   });
 });
+
+describe("initWorkspace — upgrade-aware prompt seeding (.seeded.json)", () => {
+  const talonPromptsDir = () => join(NEW_ROOT, "prompts");
+  const manifestPath = () => join(talonPromptsDir(), ".seeded.json");
+  const sha256 = async (text: string) => {
+    const { createHash } = await import("node:crypto");
+    return createHash("sha256").update(text).digest("hex");
+  };
+
+  it("records seeded hashes in the manifest on first run", async () => {
+    const { initWorkspace } = await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
+
+    const manifest = JSON.parse(readFileSync(manifestPath(), "utf-8"));
+    const seeded = readFileSync(join(talonPromptsDir(), "base.md"), "utf-8");
+    expect(manifest["base.md"]).toBe(await sha256(seeded));
+  });
+
+  it("refreshes a pristine seeded copy when the package version changes", async () => {
+    // Simulate a pre-upgrade state: the on-disk file is an older package
+    // version and the manifest records exactly that content as seeded.
+    mkdirSync(talonPromptsDir(), { recursive: true });
+    const oldVersion = "# Old package version of base.md\n";
+    writeFileSync(join(talonPromptsDir(), "base.md"), oldVersion);
+    writeFileSync(
+      manifestPath(),
+      JSON.stringify({ "base.md": await sha256(oldVersion) }),
+    );
+
+    const { initWorkspace } = await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
+
+    const content = readFileSync(join(talonPromptsDir(), "base.md"), "utf-8");
+    expect(content).not.toBe(oldVersion);
+    expect(content).toContain("## Tools"); // current package content
+    const manifest = JSON.parse(readFileSync(manifestPath(), "utf-8"));
+    expect(manifest["base.md"]).toBe(await sha256(content));
+  });
+
+  it("never touches a user-edited copy, even across upgrades", async () => {
+    // Manifest says one thing was seeded; the on-disk file differs from
+    // it (user edit) AND from the current package → must stay put.
+    mkdirSync(talonPromptsDir(), { recursive: true });
+    const edited = "# My hand-tuned base prompt\n";
+    writeFileSync(join(talonPromptsDir(), "base.md"), edited);
+    writeFileSync(
+      manifestPath(),
+      JSON.stringify({ "base.md": await sha256("whatever was seeded") }),
+    );
+
+    const { initWorkspace } = await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
+
+    expect(readFileSync(join(talonPromptsDir(), "base.md"), "utf-8")).toBe(
+      edited,
+    );
+  });
+
+  it("adopts a pre-manifest file only when byte-identical to the package", async () => {
+    // First run seeds everything; drop the manifest to simulate a
+    // deployment that predates it, and edit one file.
+    const { initWorkspace } = await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
+    rmSync(manifestPath());
+    writeFileSync(join(talonPromptsDir(), "dream.md"), "# edited\n");
+
+    initWorkspace(join(TEST_ROOT, "ws"));
+
+    const manifest = JSON.parse(readFileSync(manifestPath(), "utf-8"));
+    // Pristine file (matches package) → adopted, tracks upgrades again.
+    expect(manifest["base.md"]).toBeDefined();
+    // Unknown-provenance file that differs → user-owned, not adopted.
+    expect(manifest["dream.md"]).toBeUndefined();
+    expect(readFileSync(join(talonPromptsDir(), "dream.md"), "utf-8")).toBe(
+      "# edited\n",
+    );
+  });
+
+  it("promptSeedReport classifies tracking vs user-edited prompts", async () => {
+    const { initWorkspace, promptSeedReport } =
+      await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
+
+    // Fresh seed: everything tracks the package.
+    let report = promptSeedReport();
+    expect(report.tracking).toContain("base.md");
+    expect(report.edited).toEqual([]);
+
+    // Edit one file → it flips to user-edited; the rest keep tracking.
+    writeFileSync(join(talonPromptsDir(), "base.md"), "# my custom base\n");
+    report = promptSeedReport();
+    expect(report.edited).toEqual(["base.md"]);
+    expect(report.tracking).not.toContain("base.md");
+    expect(report.tracking.length).toBeGreaterThan(0);
+  });
+
+  it("re-adopts a file that matches the current package despite a stale manifest entry", async () => {
+    // A user edit that lands byte-identical to the current package copy
+    // (e.g. hand-applying an upstream change) must not strand the file
+    // as user-owned-forever: content matching the package re-adopts it.
+    const { initWorkspace } = await import("../util/workspace.js");
+    initWorkspace(join(TEST_ROOT, "ws"));
+    const pkgContent = readFileSync(
+      join(talonPromptsDir(), "base.md"),
+      "utf-8",
+    );
+    writeFileSync(
+      manifestPath(),
+      JSON.stringify({ "base.md": await sha256("some stale seeded hash") }),
+    );
+
+    initWorkspace(join(TEST_ROOT, "ws"));
+
+    const manifest = JSON.parse(readFileSync(manifestPath(), "utf-8"));
+    expect(manifest["base.md"]).toBe(await sha256(pkgContent));
+  });
+});
