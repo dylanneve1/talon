@@ -58,6 +58,9 @@ export interface DoctorReport {
 export interface DoctorConfigSlice {
   frontend: string | string[];
   backend?: string;
+  model?: string;
+  heartbeatModel?: string;
+  heartbeatBackend?: string;
   botToken?: string;
   teamsWebhookUrl?: string;
   discord?: { botToken?: string };
@@ -124,6 +127,75 @@ function binaryOnPath(name: string): boolean {
   }
 }
 
+/**
+ * Validate models pinned in config against the Claude backend's static
+ * catalog. A model that has been withdrawn from the catalog (it
+ * happens: deprecations, policy pulls) makes every turn silently run
+ * the backend default while the config keeps naming the dead id —
+ * this check is where that finally becomes visible. Claude-only: this
+ * catalog is a static import; other backends need a live server and
+ * are audited at boot instead (core/engine/model-audit.ts).
+ */
+async function checkClaudeConfiguredModels(
+  config: DoctorConfigSlice | undefined,
+): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  const targets: Array<{ key: string; model?: string; backendId?: string }> = [
+    { key: "model", model: config?.model, backendId: config?.backend },
+    {
+      key: "heartbeatModel",
+      model: config?.heartbeatModel,
+      backendId: config?.heartbeatBackend ?? config?.backend,
+    },
+  ];
+  try {
+    const { resolveModel } =
+      await import("../backend/claude-sdk/model-provider.js");
+    // Doctor runs standalone — live SDK model discovery hasn't happened,
+    // so the registry may be empty. Seed the static catalog (the same
+    // list the setup wizard offers) so alias pins like "opus" resolve.
+    // The static list is a snapshot: a model can exist upstream and not
+    // here, which is why findings are warn-level, never fail.
+    const { getModels } = await import("./models/catalog.js");
+    if (getModels("anthropic").length === 0) {
+      const [{ registerClaudeModelsStatic }, { CLAUDE_MODELS_STATIC }] =
+        await Promise.all([
+          import("../backend/claude-sdk/models/discovery.js"),
+          import("../backend/claude-sdk/models/static.js"),
+        ]);
+      registerClaudeModelsStatic(CLAUDE_MODELS_STATIC);
+    }
+    for (const { key, model, backendId } of targets) {
+      if (!model || model === "default") continue;
+      if ((backendId ?? "claude") !== "claude") continue;
+      const res = await resolveModel(model);
+      if (res.kind === "exact") {
+        checks.push({
+          label: `Model (${key}): ${model} → ${res.model.displayName}`,
+          status: "ok",
+        });
+      } else if (res.kind === "ambiguous") {
+        checks.push({
+          label: `Model (${key}): "${model}" is ambiguous`,
+          status: "warn",
+          detail: res.matches.map((m) => m.displayName).join(", "),
+          issue: true,
+        });
+      } else {
+        checks.push({
+          label: `Model (${key}): "${model}" not selectable on claude`,
+          status: "warn",
+          detail: "turns silently run the backend default — update config.json",
+          issue: true,
+        });
+      }
+    }
+  } catch {
+    /* catalog unavailable — skip, never break doctor */
+  }
+  return checks;
+}
+
 /** Binary / auth checks for the active backend only. */
 async function checkBackend(
   config: DoctorConfigSlice | undefined,
@@ -153,6 +225,7 @@ async function checkBackend(
           : { label: "Claude Code not found", status: "fail" },
       );
     }
+    checks.push(...(await checkClaudeConfiguredModels(config)));
   } else if (backend === "codex") {
     if (!binaryOnPath("codex")) {
       checks.push({

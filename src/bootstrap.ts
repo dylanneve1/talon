@@ -30,7 +30,7 @@ import {
 } from "./core/background/triggers/index.js";
 import { initDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
-import { log } from "./util/log.js";
+import { log, logWarn, logDebug } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
 import {
   isNativeChatId,
@@ -228,6 +228,25 @@ export async function initBackendAndDispatcher(
     frontendName: resolveFrontend(undefined, frontends).name,
   });
   const backend = getBackendForRole("chat");
+
+  // Model audit — verify the models pinned in config still exist on
+  // their backends. A withdrawn model silently runs the backend
+  // default; this is the one loud signal that the config is stale.
+  // Fire-and-forget: never blocks or fails boot.
+  void (async () => {
+    try {
+      const { auditConfiguredModels } =
+        await import("./core/engine/model-audit.js");
+      const findings = await auditConfiguredModels(config, (role) =>
+        getBackendForRole(role),
+      );
+      for (const finding of findings) {
+        logWarn("config", `[MODEL AUDIT] ${finding.message}`);
+      }
+    } catch (err) {
+      logDebug("config", `Model audit skipped: ${String(err)}`);
+    }
+  })();
 
   const context: ContextManager = {
     acquire(chatId: number, stringId?: string, frontendName?: string): void {

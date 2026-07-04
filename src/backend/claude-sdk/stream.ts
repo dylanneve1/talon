@@ -17,6 +17,7 @@ import type {
 import type { BetaRawContentBlockDeltaEvent } from "@anthropic-ai/sdk/resources/beta/messages/messages.mjs";
 import { STREAM_INTERVAL } from "./constants.js";
 import { log } from "../../util/log.js";
+import { checkModelDrift } from "./model-drift.js";
 
 // ── Stream state accumulator ────────────────────────────────────────────────
 
@@ -263,6 +264,11 @@ export function processResultMessage(
   // and contains cumulative session totals per model — summing all entries
   // double-counts when switching models mid-session.
   const modelUsage: Record<string, ModelUsage> = msg.modelUsage;
+  // Drift check: modelUsage is keyed by the model that ACTUALLY served
+  // the turn. If none of the keys is (an alias of) the model we asked
+  // for, the API substituted — warn instead of burying it in the
+  // accounting line.
+  checkModelDrift(sdkModel, Object.keys(modelUsage ?? {}));
   const mu = modelUsage[sdkModel] ?? Object.values(modelUsage).at(-1);
   if (mu) {
     state.sdkInputTokens = mu.inputTokens ?? 0;
