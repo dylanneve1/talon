@@ -3,11 +3,96 @@
  * inline-button messages, chat actions, and scheduled messages.
  */
 
+import type { Bot } from "grammy";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { withRetry } from "../../../core/engine/gateway.js";
-import { logError, logWarn } from "../../../util/log.js";
+import { log, logError, logWarn } from "../../../util/log.js";
+import {
+  saveScheduled,
+  deleteScheduled,
+  listScheduled,
+  listScheduledForChat,
+  MAX_OVERDUE_MS,
+  type ScheduledMessage,
+} from "../../../storage/scheduled-store.js";
 import { sendText, toPositiveId } from "./shared.js";
 import { TELEGRAM_MAX_TEXT, type TelegramActionHandlers } from "./types.js";
+
+// ── Scheduled sends (persistent) ─────────────────────────────────────────────
+
+/** Longest schedulable delay: 24h. Timers re-arm from the store on boot. */
+const MAX_DELAY_SEC = 24 * 60 * 60;
+
+/** Deliver one scheduled entry (shared by the live timer and restore). */
+async function fireScheduled(bot: Bot, entry: ScheduledMessage): Promise<void> {
+  const chatId = Number(entry.chatId);
+  if (entry.rows) {
+    const keyboard = entry.rows.map((row) =>
+      row.map((btn) =>
+        btn.url
+          ? { text: btn.text, url: btn.url }
+          : { text: btn.text, callback_data: btn.callback_data ?? btn.text },
+      ),
+    );
+    await bot.api.sendMessage(chatId, markdownToTelegramHtml(entry.text), {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: keyboard },
+      reply_parameters: entry.replyTo
+        ? { message_id: entry.replyTo }
+        : undefined,
+    });
+  } else {
+    await sendText(bot, chatId, entry.text, entry.replyTo);
+  }
+}
+
+/** Arm a timer for a stored entry; fires, then cleans up store + map. */
+function armScheduled(
+  bot: Bot,
+  entry: ScheduledMessage,
+  timers: Map<string, ReturnType<typeof setTimeout>>,
+): void {
+  const delayMs = Math.max(0, entry.fireAt - Date.now());
+  const timer = setTimeout(async () => {
+    try {
+      await fireScheduled(bot, entry);
+    } catch (err) {
+      logError("bot", `Scheduled message failed (chat=${entry.chatId})`, err);
+    }
+    deleteScheduled(entry.id);
+    timers.delete(entry.id);
+  }, delayMs);
+  timers.set(entry.id, timer);
+}
+
+/**
+ * Re-arm persisted scheduled sends after a restart. Called once when
+ * the action handler is created. Overdue entries fire immediately —
+ * late beats never — unless they are stale past MAX_OVERDUE_MS, which
+ * drops them (a day-late reminder is noise, not delivery).
+ */
+export function restoreScheduledMessages(
+  bot: Bot,
+  timers: Map<string, ReturnType<typeof setTimeout>>,
+): void {
+  const entries = listScheduled("telegram");
+  if (entries.length === 0) return;
+  let restored = 0;
+  let dropped = 0;
+  for (const entry of entries) {
+    if (Date.now() - entry.fireAt > MAX_OVERDUE_MS) {
+      deleteScheduled(entry.id);
+      dropped++;
+      continue;
+    }
+    armScheduled(bot, entry, timers);
+    restored++;
+  }
+  log(
+    "bot",
+    `Restored ${restored} scheduled message(s) from store${dropped > 0 ? `, dropped ${dropped} stale` : ""}`,
+  );
+}
 
 export const messagingHandlers: TelegramActionHandlers = {
   send_message: async (body, chatId, { bot, gateway }) => {
@@ -157,51 +242,54 @@ export const messagingHandlers: TelegramActionHandlers = {
   schedule_message: (body, chatId, { bot, scheduledMessages }) => {
     const text = String(body.text ?? "");
     const replyTo = toPositiveId(body.reply_to_message_id);
-    const rows = body.rows as
-      | Array<Array<{ text: string; url?: string; callback_data?: string }>>
-      | undefined;
+    const rows = body.rows as ScheduledMessage["rows"];
     const delaySec = Math.max(
       1,
-      Math.min(3600, Number(body.delay_seconds ?? 60)),
+      Math.min(MAX_DELAY_SEC, Number(body.delay_seconds ?? 60)),
     );
-    const scheduleId = `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const timer = setTimeout(async () => {
-      try {
-        if (rows) {
-          const keyboard = rows.map((row) =>
-            row.map((btn) =>
-              btn.url
-                ? { text: btn.text, url: btn.url }
-                : {
-                    text: btn.text,
-                    callback_data: btn.callback_data ?? btn.text,
-                  },
-            ),
-          );
-          await bot.api.sendMessage(chatId, markdownToTelegramHtml(text), {
-            parse_mode: "HTML",
-            reply_markup: { inline_keyboard: keyboard },
-            reply_parameters: replyTo ? { message_id: replyTo } : undefined,
-          });
-        } else {
-          await sendText(bot, chatId, text, replyTo);
-        }
-      } catch (err) {
-        logError("bot", `Scheduled message failed (chat=${chatId})`, err);
-      }
-      scheduledMessages.delete(scheduleId);
-    }, delaySec * 1000);
-    scheduledMessages.set(scheduleId, timer);
-    return { ok: true, schedule_id: scheduleId, delay_seconds: delaySec };
+    const entry: ScheduledMessage = {
+      id: `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      frontend: "telegram",
+      chatId: String(chatId),
+      text,
+      fireAt: Date.now() + delaySec * 1000,
+      createdAt: Date.now(),
+      replyTo,
+      rows,
+    };
+    // Persist before arming: if we crash between the two, the restore
+    // path delivers it; the reverse order could lose it forever.
+    saveScheduled(entry);
+    armScheduled(bot, entry, scheduledMessages);
+    return { ok: true, schedule_id: entry.id, delay_seconds: delaySec };
   },
 
   cancel_scheduled: (body, _chatId, { scheduledMessages }) => {
-    const timer = scheduledMessages.get(String(body.schedule_id ?? ""));
+    const id = String(body.schedule_id ?? "");
+    const timer = scheduledMessages.get(id);
     if (timer) {
       clearTimeout(timer);
-      scheduledMessages.delete(String(body.schedule_id));
-      return { ok: true, cancelled: true };
+      scheduledMessages.delete(id);
     }
-    return { ok: false, error: "Schedule not found" };
+    // The store is the source of truth — an entry can exist without a
+    // live timer (scheduled before a restart, not yet re-armed here).
+    const existed = deleteScheduled(id) || Boolean(timer);
+    return existed
+      ? { ok: true, cancelled: true }
+      : { ok: false, error: "Schedule not found" };
+  },
+
+  list_scheduled: (body, chatId) => {
+    const pending = listScheduledForChat("telegram", String(chatId)).map(
+      (e) => ({
+        schedule_id: e.id,
+        fires_in_seconds: Math.max(
+          0,
+          Math.round((e.fireAt - Date.now()) / 1000),
+        ),
+        text: e.text.length > 200 ? `${e.text.slice(0, 200)}…` : e.text,
+      }),
+    );
+    return { ok: true, scheduled: pending, count: pending.length };
   },
 };

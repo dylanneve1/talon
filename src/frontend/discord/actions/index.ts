@@ -24,7 +24,7 @@ import type { Client } from "discord.js";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import type { ActionResult } from "../../../core/types.js";
 import { resolveChannel } from "./shared.js";
-import { messagingHandlers } from "./messaging.js";
+import { messagingHandlers, restoreScheduledMessages } from "./messaging.js";
 import { mediaHandlers } from "./media.js";
 import { chatInfoHandlers } from "./chat-info.js";
 import type { DiscordActionContext, DiscordActionHandlers } from "./types.js";
@@ -40,6 +40,10 @@ const handlers: DiscordActionHandlers = Object.assign(Object.create(null), {
 export function createDiscordActionHandler(client: Client, gateway: Gateway) {
   const scheduledMessages = new Map<string, ReturnType<typeof setTimeout>>();
 
+  // Re-arm scheduled sends that were persisted before the last
+  // shutdown — the timers died with the process, the store didn't.
+  restoreScheduledMessages(client, scheduledMessages);
+
   return async (
     body: Record<string, unknown>,
     chatId: number,
@@ -53,7 +57,8 @@ export function createDiscordActionHandler(client: Client, gateway: Gateway) {
     // For non-channel actions (e.g. cancel_scheduled) that don't need a
     // resolved channel, fall through. Most Discord actions need it — return
     // error if missing.
-    const needsChannel = action !== "cancel_scheduled";
+    const needsChannel =
+      action !== "cancel_scheduled" && action !== "list_scheduled";
     if (needsChannel && !channel) {
       return {
         ok: false,

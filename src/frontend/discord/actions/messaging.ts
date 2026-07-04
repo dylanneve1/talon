@@ -3,12 +3,78 @@
  * inline-button messages, typing indicator, and scheduled messages.
  */
 
+import type { Client } from "discord.js";
 import { withRetry } from "../../../core/engine/gateway.js";
 import { sendChunked } from "../handlers/index.js";
 import { suppressMentions, DISCORD_MAX_TEXT } from "../formatting.js";
-import { logError } from "../../../util/log.js";
+import { log, logError } from "../../../util/log.js";
+import {
+  saveScheduled,
+  deleteScheduled,
+  listScheduled,
+  listScheduledForChat,
+  MAX_OVERDUE_MS,
+  type ScheduledMessage,
+} from "../../../storage/scheduled-store.js";
 import { tryAction, resolveChannel, buildButtonRows } from "./shared.js";
 import type { DiscordActionHandlers } from "./types.js";
+
+// ── Scheduled sends (persistent) ─────────────────────────────────────────────
+
+/** Longest schedulable delay: 24h. Timers re-arm from the store on boot. */
+const MAX_DELAY_SEC = 24 * 60 * 60;
+
+/** Arm a timer for a stored entry; fires, then cleans up store + map. */
+function armScheduled(
+  client: Client,
+  entry: ScheduledMessage,
+  timers: Map<string, ReturnType<typeof setTimeout>>,
+): void {
+  const delayMs = Math.max(0, entry.fireAt - Date.now());
+  const timer = setTimeout(async () => {
+    try {
+      const c = await resolveChannel(client, Number(entry.chatId));
+      if (c) await sendChunked(c, entry.text);
+    } catch (err) {
+      logError(
+        "discord",
+        `Scheduled message failed (chat=${entry.chatId})`,
+        err,
+      );
+    }
+    deleteScheduled(entry.id);
+    timers.delete(entry.id);
+  }, delayMs);
+  timers.set(entry.id, timer);
+}
+
+/**
+ * Re-arm persisted scheduled sends after a restart. Overdue entries
+ * fire immediately — late beats never — unless stale past
+ * MAX_OVERDUE_MS, which drops them.
+ */
+export function restoreScheduledMessages(
+  client: Client,
+  timers: Map<string, ReturnType<typeof setTimeout>>,
+): void {
+  const entries = listScheduled("discord");
+  if (entries.length === 0) return;
+  let restored = 0;
+  let dropped = 0;
+  for (const entry of entries) {
+    if (Date.now() - entry.fireAt > MAX_OVERDUE_MS) {
+      deleteScheduled(entry.id);
+      dropped++;
+      continue;
+    }
+    armScheduled(client, entry, timers);
+    restored++;
+  }
+  log(
+    "discord",
+    `Restored ${restored} scheduled message(s) from store${dropped > 0 ? `, dropped ${dropped} stale` : ""}`,
+  );
+}
 
 export const messagingHandlers: DiscordActionHandlers = {
   send_message: (body, chatId, { channel, gateway }) => {
@@ -144,20 +210,21 @@ export const messagingHandlers: DiscordActionHandlers = {
     const text = String(body.text ?? "");
     const delaySec = Math.max(
       1,
-      Math.min(3600, Number(body.delay_seconds ?? 60)),
+      Math.min(MAX_DELAY_SEC, Number(body.delay_seconds ?? 60)),
     );
-    const scheduleId = `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const timer = setTimeout(async () => {
-      try {
-        const c = await resolveChannel(client, chatId);
-        if (c) await sendChunked(c, text);
-      } catch (err) {
-        logError("discord", `Scheduled message failed (chat=${chatId})`, err);
-      }
-      scheduledMessages.delete(scheduleId);
-    }, delaySec * 1000);
-    scheduledMessages.set(scheduleId, timer);
-    return { ok: true, schedule_id: scheduleId, delay_seconds: delaySec };
+    const entry: ScheduledMessage = {
+      id: `sched_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      frontend: "discord",
+      chatId: String(chatId),
+      text,
+      fireAt: Date.now() + delaySec * 1000,
+      createdAt: Date.now(),
+    };
+    // Persist before arming: if we crash between the two, the restore
+    // path delivers it; the reverse order could lose it forever.
+    saveScheduled(entry);
+    armScheduled(client, entry, scheduledMessages);
+    return { ok: true, schedule_id: entry.id, delay_seconds: delaySec };
   },
 
   cancel_scheduled: (body, _chatId, { scheduledMessages }) => {
@@ -166,9 +233,27 @@ export const messagingHandlers: DiscordActionHandlers = {
     if (timer) {
       clearTimeout(timer);
       scheduledMessages.delete(id);
-      return { ok: true, cancelled: true };
     }
-    return { ok: false, error: "Schedule not found" };
+    // The store is the source of truth — an entry can exist without a
+    // live timer (scheduled before a restart, not yet re-armed here).
+    const existed = deleteScheduled(id) || Boolean(timer);
+    return existed
+      ? { ok: true, cancelled: true }
+      : { ok: false, error: "Schedule not found" };
+  },
+
+  list_scheduled: (body, chatId) => {
+    const pending = listScheduledForChat("discord", String(chatId)).map(
+      (e) => ({
+        schedule_id: e.id,
+        fires_in_seconds: Math.max(
+          0,
+          Math.round((e.fireAt - Date.now()) / 1000),
+        ),
+        text: e.text.length > 200 ? `${e.text.slice(0, 200)}…` : e.text,
+      }),
+    );
+    return { ok: true, scheduled: pending, count: pending.length };
   },
 };
 

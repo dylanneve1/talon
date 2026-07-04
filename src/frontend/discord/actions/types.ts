@@ -6,9 +6,9 @@
  * `DiscordActionContext` carrying the client, gateway, per-handler scheduled
  * timers, and the channel pre-resolved by the dispatcher.
  *
- * `channel` is non-null for every action except `cancel_scheduled` (the only
- * action that doesn't need a resolved channel) — the dispatcher guarantees
- * this, so handlers can safely use `ctx.channel!`.
+ * `channel` is non-null for every action except `cancel_scheduled` and
+ * `list_scheduled` (store-only actions that don't need a resolved channel) —
+ * the dispatcher guarantees this, so handlers can safely use `ctx.channel!`.
  */
 
 import type { Client, TextBasedChannel } from "discord.js";
@@ -20,7 +20,7 @@ export interface DiscordActionContext {
   gateway: Gateway;
   /** Active scheduled-message timers, keyed by schedule id (for cancellation). */
   scheduledMessages: Map<string, ReturnType<typeof setTimeout>>;
-  /** Channel resolved from the chat id; null only for cancel_scheduled. */
+  /** Channel resolved from the chat id; null only for cancel_scheduled / list_scheduled. */
   channel: TextBasedChannel | null;
 }
 

@@ -19,7 +19,7 @@
 import type { Bot, InputFile as GrammyInputFile } from "grammy";
 import type { Gateway } from "../../../core/engine/gateway.js";
 import type { ActionResult } from "../../../core/types.js";
-import { messagingHandlers } from "./messaging.js";
+import { messagingHandlers, restoreScheduledMessages } from "./messaging.js";
 import { mediaHandlers } from "./media.js";
 import { chatInfoHandlers } from "./chat-info.js";
 import type { TelegramActionContext, TelegramActionHandlers } from "./types.js";
@@ -51,6 +51,10 @@ export function createTelegramActionHandler(
     gateway,
     scheduledMessages: new Map<string, ReturnType<typeof setTimeout>>(),
   };
+
+  // Re-arm scheduled sends that were persisted before the last
+  // shutdown — the timers died with the process, the store didn't.
+  restoreScheduledMessages(bot, ctx.scheduledMessages);
 
   return async (
     body: Record<string, unknown>,

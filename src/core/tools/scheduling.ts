@@ -16,6 +16,16 @@ export const schedulingTools: ToolDefinition[] = [
   },
 
   {
+    name: "list_scheduled",
+    description:
+      "List pending scheduled messages in this chat (id, seconds until send, text). Scheduled messages persist across restarts.",
+    schema: {},
+    execute: (_params, bridge) => bridge("list_scheduled", {}),
+    frontends: ["telegram", "discord"],
+    tag: "scheduling",
+  },
+
+  {
     name: "create_cron_job",
     description: `Create a persistent scheduled job. Jobs survive restarts.
 
