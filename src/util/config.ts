@@ -195,6 +195,23 @@ const playwrightConfigSchema = z.object({
   endpointFile: z.string().optional(),
 });
 
+/**
+ * Memory pre-retrieval (Phase B) — automatic per-turn palace retrieval.
+ * Ships INERT: the flag gates wiring a real retriever into the dispatcher.
+ * With `enabled: false` (default) prompts are byte-identical to previous
+ * behavior. See docs in core/memory/retrieval.ts for the trust policy.
+ */
+const memoryPreRetrievalSchema = z.object({
+  /** Master switch. Default off — plumbing merges disabled. */
+  enabled: z.boolean().default(false),
+  /** Maximum retrieved items injected per turn. */
+  maxResults: z.number().int().min(1).max(10).default(3),
+  /** Hard cap on injected characters, provenance labels included. */
+  maxChars: z.number().int().min(200).max(20000).default(3000),
+  /** In groups, filter private-user drawers before injection. */
+  groupPrivateUserFiltering: z.boolean().default(true),
+});
+
 const configSchema = z.object({
   frontend: z.union([frontendEnum, z.array(frontendEnum)]).default("telegram"),
   botToken: z.string().optional(),
@@ -264,6 +281,8 @@ const configSchema = z.object({
   pulseIntervalMs: z.number().int().min(60000).default(300000),
   /** Background memory-consolidation (dream) runs. Mirrors `pulse`/`heartbeat`. */
   dream: z.boolean().default(true),
+  /** Memory pre-retrieval (Phase B). Optional; absent = disabled. */
+  memoryPreRetrieval: memoryPreRetrievalSchema.optional(),
   /**
    * Periodic background agent (default: on, hourly). Advances open
    * goals, runs user-defined maintenance, and proactively messages

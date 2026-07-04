@@ -17,6 +17,8 @@
 
 // ── Query lifecycle (backend-internal) ──────────────────────────────────────
 
+import type { RetrievedMemory } from "../../core/agent-runtime/capabilities.js";
+
 /** Parameters for a backend AI query. */
 export type QueryParams = {
   chatId: string;
@@ -33,6 +35,12 @@ export type QueryParams = {
    * Provider message ID. Telegram is numeric; Discord snowflakes are strings.
    */
   messageId?: number | string;
+  /**
+   * Optional pre-retrieved memory slice for this turn (Phase B). Handlers
+   * fold it into the live user prompt via `formatPromptWithRetrievedMemory`;
+   * it must never reach `prepareSystemPrompt()` or a backend `system` field.
+   */
+  retrievedMemory?: RetrievedMemory;
   onStreamDelta?: (accumulated: string, phase?: "thinking" | "text") => void;
   onTextBlock?: (text: string) => Promise<void>;
   onToolUse?: (toolName: string, input: Record<string, unknown>) => void;

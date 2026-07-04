@@ -8,7 +8,11 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { formatUserPrompt } from "../backend/shared/prompt-format.js";
+import type { RetrievedMemory } from "../core/agent-runtime/capabilities.js";
+import {
+  formatPromptWithRetrievedMemory,
+  formatUserPrompt,
+} from "../backend/shared/prompt-format.js";
 
 // We can't easily mock `formatFullDatetime` without setting up a vitest
 // spy; instead we accept the dynamic time tag and just assert the SHAPE.
@@ -85,5 +89,98 @@ describe("formatUserPrompt", () => {
       messageId: "1234567890123456789",
     });
     expect(out).toContain("[msg_id:1234567890123456789]");
+  });
+});
+
+// ── Retrieved-memory wrapper (Phase B) ──────────────────────────────────────
+
+function memory(
+  items: RetrievedMemory["items"],
+  query = "test query",
+): RetrievedMemory {
+  return { source: "mempalace", query, items };
+}
+
+describe("formatPromptWithRetrievedMemory", () => {
+  const prompt = "[2026-07-04 20:00 Sat (UTC)] [msg_id:5] hello there";
+
+  it("undefined memory returns the prompt byte-identical", () => {
+    expect(formatPromptWithRetrievedMemory(prompt, undefined)).toBe(prompt);
+  });
+
+  it("empty item list returns the prompt byte-identical", () => {
+    expect(formatPromptWithRetrievedMemory(prompt, memory([]))).toBe(prompt);
+  });
+
+  it("wraps with provenance labels and a User message section", () => {
+    const out = formatPromptWithRetrievedMemory(
+      prompt,
+      memory([
+        {
+          wing: "technical",
+          room: "phase-b",
+          sourceFile: "notes.md",
+          text: "Phase B ships inert.",
+          trustLevel: "bot_inferred",
+        },
+        { wing: "projects", text: "Talon is the harness." },
+      ]),
+    );
+    const lines = out.split("\n");
+    expect(lines[0]).toBe("Relevant memory:");
+    expect(lines[1]).toBe(
+      "- [technical/phase-b notes.md] Phase B ships inert.",
+    );
+    expect(lines[2]).toBe("- [projects] Talon is the harness.");
+    expect(lines[3]).toBe("");
+    expect(lines[4]).toBe("User message:");
+    // The original formatted prompt survives byte-identical inside the wrapper.
+    expect(out.endsWith(`User message:\n${prompt}`)).toBe(true);
+  });
+
+  it("collapses item newlines so one item stays one line", () => {
+    const out = formatPromptWithRetrievedMemory(
+      prompt,
+      memory([{ wing: "w", text: "line one\nline two\n\tline three" }]),
+    );
+    expect(out).toContain("- [w] line one line two line three");
+  });
+
+  it("caps the memory block without ever touching the user message", () => {
+    const long = "x".repeat(10_000);
+    const out = formatPromptWithRetrievedMemory(
+      prompt,
+      memory([
+        { wing: "a", text: long },
+        { wing: "b", text: long },
+      ]),
+      500,
+    );
+    // Block obeys the cap: everything before the user message ≤ 500 chars
+    // (+ the structural blank line / User message header).
+    const memoryBlock = out.slice(0, out.indexOf("\n\nUser message:"));
+    expect(memoryBlock.length).toBeLessThanOrEqual(500);
+    expect(memoryBlock).toContain("…");
+    // The user message is intact and complete.
+    expect(out.endsWith(`User message:\n${prompt}`)).toBe(true);
+  });
+
+  it("is deterministic for the same inputs", () => {
+    const m = memory([
+      { wing: "a", room: "r", text: "t".repeat(5000) },
+      { wing: "b", text: "u".repeat(5000) },
+    ]);
+    const first = formatPromptWithRetrievedMemory(prompt, m, 800);
+    const second = formatPromptWithRetrievedMemory(prompt, m, 800);
+    expect(first).toBe(second);
+  });
+
+  it("returns the prompt unchanged when the cap leaves no room for any item", () => {
+    const out = formatPromptWithRetrievedMemory(
+      prompt,
+      memory([{ wing: "wing-name", text: "some text" }]),
+      10,
+    );
+    expect(out).toBe(prompt);
   });
 });

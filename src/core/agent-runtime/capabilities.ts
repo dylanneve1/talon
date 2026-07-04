@@ -35,6 +35,49 @@ import type {
 // ── Run parameters ──────────────────────────────────────────────────────────
 
 /**
+ * Provenance trust level of a retrieved memory item, per the memory-poisoning
+ * threat model (#373). Only the first three levels are ever eligible for
+ * automatic injection; `user_claim` and `group_chat` content must stay
+ * pull-only (explicit search), never auto-injected.
+ */
+export type RetrievedMemoryTrustLevel =
+  | "dylan_direct" // stated by the operator in a verified DM
+  | "bot_inferred" // inferred by the bot from code/docs/verified primary source
+  | "heartbeat_synthesis" // synthesized in a background run, no external input
+  | "user_claim" // claimed by a non-operator user, unverified
+  | "group_chat"; // sourced from group chat content
+
+/** One retrieved memory fragment with its provenance. */
+export interface RetrievedMemoryItem {
+  /** Palace wing (top-level category), e.g. "technical". */
+  wing: string;
+  /** Palace room within the wing, when known. */
+  room?: string;
+  /** Source file locator, when known (e.g. "memory-phase-b.md"). */
+  sourceFile?: string;
+  /** The retrieved text fragment. */
+  text: string;
+  /** Retrieval relevance score, when the retriever provides one. */
+  score?: number;
+  /** Provenance trust level; absent means unknown (treat as untrusted). */
+  trustLevel?: RetrievedMemoryTrustLevel;
+}
+
+/**
+ * A bounded, sanitized slice of long-term memory retrieved for one turn.
+ * This is DYNAMIC turn context: it is injected into the live user prompt by
+ * the backend prompt formatter and must never enter `prepareSystemPrompt()`
+ * output, frozen prompt snapshots, plugin prompt additions, or backend
+ * `system` fields — that would break the prompt-cache contract.
+ */
+export interface RetrievedMemory {
+  source: "mempalace";
+  /** The (possibly trimmed) query the retriever ran. */
+  query: string;
+  items: RetrievedMemoryItem[];
+}
+
+/**
  * Parameters for a chat turn. `model` is a resolved `ModelRef`,
  * carrying everything the backend needs to identify the model and
  * render the resulting reply. Streaming callbacks aren't part of
@@ -48,6 +91,12 @@ export interface ChatRunParams {
   isGroup?: boolean;
   /** Provider message ID. Telegram is numeric; Discord snowflakes are strings. */
   messageId?: number | string;
+  /**
+   * Optional pre-retrieved memory slice for this turn. Backends fold it into
+   * the live user prompt (after the cached system prompt), never into
+   * `system` — see `formatPromptWithRetrievedMemory`.
+   */
+  retrievedMemory?: RetrievedMemory;
 }
 
 // ── Catalog types ───────────────────────────────────────────────────────────

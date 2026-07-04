@@ -78,6 +78,7 @@ export async function* handlerToEvents(
     senderName: params.senderName,
     isGroup: params.isGroup,
     messageId: params.messageId,
+    retrievedMemory: params.retrievedMemory,
     onStreamDelta: (accumulated) => {
       if (typeof accumulated !== "string" || accumulated.length === 0) {
         return;

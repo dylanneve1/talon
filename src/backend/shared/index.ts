@@ -43,7 +43,12 @@ export {
   type FlowViolationResult,
 } from "./flow-violation.js";
 
-export { formatUserPrompt, type PromptFormatInputs } from "./prompt-format.js";
+export {
+  formatUserPrompt,
+  formatPromptWithRetrievedMemory,
+  RETRIEVED_MEMORY_DEFAULT_MAX_CHARS,
+  type PromptFormatInputs,
+} from "./prompt-format.js";
 
 export {
   buildDeliveryContract,

@@ -1,8 +1,12 @@
 import { randomBytes } from "node:crypto";
-import type { Backend } from "../agent-runtime/capabilities.js";
+import type {
+  Backend,
+  RetrievedMemory,
+} from "../agent-runtime/capabilities.js";
 import { AgentRunError, type AgentResult } from "../agent-runtime/events.js";
 import type { ModelRef } from "../agent-runtime/model-ref.js";
 import { maybeStartDream } from "../background/dream.js";
+import type { MemoryRetriever } from "../memory/retrieval.js";
 import type { ContextManager, ExecuteParams, ExecuteResult } from "../types.js";
 import { log, logDebug, logWarn } from "../../util/log.js";
 import { Loom } from "./loom.js";
@@ -22,6 +26,13 @@ export type WeaverDeps = {
   context: ContextManager;
   sendTyping: (chatId: number, stringId?: string) => Promise<void>;
   onActivity: () => void;
+  /**
+   * Optional memory pre-retrieval (Phase B). Called for `source: "message"`
+   * turns after model/backend resolution and context acquisition, before
+   * `runChatTurn(...)`. Fail-closed: errors are logged and the turn runs
+   * without injected memory. Absent dep ⇒ prompts byte-identical to before.
+   */
+  retrieveMemory?: MemoryRetriever;
 };
 
 export class Weaver {
@@ -79,6 +90,7 @@ export class Weaver {
       context,
       sendTyping,
       onActivity,
+      retrieveMemory,
     } = this.deps;
     // Read the backend fresh per call so backend swaps (chat-role
     // rebinds or per-chat overrides via the controller) take effect on
@@ -221,6 +233,38 @@ export class Weaver {
           `Backend "${backend.id}" has no chat capability — cannot run a turn.`,
         );
       }
+
+      // Phase B memory pre-retrieval: only for live user messages, only when
+      // a retriever dep is wired, and strictly fail-closed — a broken palace
+      // must never block chat delivery. The result is dynamic turn context
+      // passed through ChatRunParams; it never touches the frozen prompt.
+      let retrievedMemory: RetrievedMemory | undefined;
+      if (retrieveMemory && params.source === "message") {
+        try {
+          retrievedMemory = await retrieveMemory({
+            runKind: "chat",
+            chatId: params.chatId,
+            text: params.prompt,
+            senderName: params.senderName,
+            isGroup: params.isGroup,
+          });
+          if (retrievedMemory) {
+            logDebug(
+              "dispatcher",
+              `[${reqId}] memory pre-retrieval: ${retrievedMemory.items.length} item(s), ` +
+                `${retrievedMemory.items.reduce((n, i) => n + i.text.length, 0)} chars`,
+            );
+          }
+        } catch (err) {
+          logWarn(
+            "dispatcher",
+            `[${reqId}] memory pre-retrieval failed (running turn without it): ` +
+              (err instanceof Error ? err.message : String(err)),
+          );
+          retrievedMemory = undefined;
+        }
+      }
+
       const stream = backend.chat.runChatTurn({
         chatId: params.chatId,
         model: runRef,
@@ -228,6 +272,7 @@ export class Weaver {
         senderName: params.senderName,
         isGroup: params.isGroup,
         messageId: params.messageId,
+        retrievedMemory,
       });
       let agentResult: AgentResult | undefined;
       for await (const event of stream) {
