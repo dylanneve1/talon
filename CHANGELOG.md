@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.30.1](https://github.com/dylanneve1/talon/compare/v1.30.0...v1.30.1) (2026-07-04)
+
+
+### Bug Fixes
+
+* multi-fire watchers killed by restart now deliver a death notice ([#458](https://github.com/dylanneve1/talon/issues/458)) ([9a3b078](https://github.com/dylanneve1/talon/commit/9a3b078c93df94b07d8fa1f6e9d3e77bc26ad982))
+
 ## [1.30.0](https://github.com/dylanneve1/talon/compare/v1.29.4...v1.30.0) (2026-07-04)
 
 
