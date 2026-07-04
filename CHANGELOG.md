@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.31.0](https://github.com/dylanneve1/talon/compare/v1.30.1...v1.31.0) (2026-07-04)
+
+
+### Features
+
+* **soul:** per-node-kind decay stratification — reflexes never soften, spine fades faster ([#460](https://github.com/dylanneve1/talon/issues/460)) ([e214ee1](https://github.com/dylanneve1/talon/commit/e214ee16e0763c9e4419d121685f360f7e6c1e44))
+
 ## [1.30.1](https://github.com/dylanneve1/talon/compare/v1.30.0...v1.30.1) (2026-07-04)
 
 
