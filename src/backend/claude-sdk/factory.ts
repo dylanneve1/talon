@@ -34,7 +34,10 @@ import {
   runOneShotAgent as claudeRunOneShotAgent,
   evictOrphanSubprocesses as claudeEvictOrphanSubprocesses,
 } from "./index.js";
-import { runChatTurn as claudeRunChatTurn } from "./handler.js";
+import {
+  runChatTurn as claudeRunChatTurn,
+  interruptChatTurn as claudeInterruptChatTurn,
+} from "./handler.js";
 import { waitForMcpServersReady } from "./mcp-ready.js";
 
 import * as modelProvider from "./model-provider.js";
@@ -52,6 +55,7 @@ const claudeSdkFactory: BackendFactory = {
 
     const chat: ChatBackend = {
       runChatTurn: (params) => claudeRunChatTurn(params),
+      interruptChatTurn: (chatId) => claudeInterruptChatTurn(chatId),
     };
 
     const background: BackgroundRunner = {

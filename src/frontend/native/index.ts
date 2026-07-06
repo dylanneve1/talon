@@ -1087,6 +1087,25 @@ export function createNativeFrontend(
     setBackend,
     setEffort,
     effortLevels,
+    interruptTurn: async (id) => {
+      const entry = chats.get(id);
+      if (!entry) return false;
+      // Only meaningful while a turn is actually running.
+      if (!isBusy(id)) return false;
+      let backend = null;
+      try {
+        backend = getBackendForChat(id);
+      } catch {
+        return false;
+      }
+      const interrupt = backend?.chat?.interruptChatTurn;
+      if (!interrupt) return false;
+      try {
+        return await interrupt(id);
+      } catch {
+        return false;
+      }
+    },
     resetChat: (id) => {
       const entry = chats.get(id);
       if (!entry) return false;

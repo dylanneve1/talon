@@ -52,13 +52,15 @@ class LiveTurn extends StatelessWidget {
                   switchOutCurve: Curves.easeIn,
                   child: turn.draft.isNotEmpty
                       ? _StreamingText(text: turn.draft)
-                      : turn.typing
-                          ? const Padding(
-                              key: ValueKey('typing'),
-                              padding: EdgeInsets.only(top: 2),
-                              child: _TypingDots(),
-                            )
-                          : const SizedBox.shrink(key: ValueKey('idle')),
+                      : turn.continuing
+                          ? const _WorkingPill(key: ValueKey('working'))
+                          : turn.typing
+                              ? const Padding(
+                                  key: ValueKey('typing'),
+                                  padding: EdgeInsets.only(top: 2),
+                                  child: _TypingDots(),
+                                )
+                              : const SizedBox.shrink(key: ValueKey('idle')),
                 ),
               ],
             ),
@@ -220,6 +222,62 @@ class _ReasoningStripState extends State<_ReasoningStrip> {
           duration: TalonMotion.base,
           curve: TalonMotion.emphasized,
         );
+  }
+}
+
+/// Quiet "still working" chip shown when the model has delivered a message
+/// mid-turn (via send_message) but hasn't ended the turn — signalling that more
+/// is likely coming. Deliberately calmer than the typing dots: a soft breathing
+/// accent dot beside a label, so a delivered bubble followed by continued work
+/// reads as intentional rather than finished.
+class _WorkingPill extends StatelessWidget {
+  const _WorkingPill({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final dot = Container(
+      width: 7,
+      height: 7,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: TalonColors.accent2,
+      ),
+    );
+    final pill = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: TalonColors.glassFill,
+        borderRadius: TalonRadius.rPill,
+        border: Border.all(color: TalonColors.glassStroke),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          reduceMotion
+              ? dot
+              : dot
+                  .animate(onPlay: (c) => c.repeat(reverse: true))
+                  .fadeIn(begin: 0.35, duration: 900.ms, curve: Curves.easeInOut)
+                  .scaleXY(begin: 0.85, end: 1.15, curve: Curves.easeInOut),
+          const SizedBox(width: 7),
+          Text(
+            'Still working…',
+            style: TextStyle(fontSize: 11.5, color: TalonColors.textDim),
+          ),
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: reduceMotion
+          ? pill
+          : pill.animate().fadeIn(duration: TalonMotion.base).slideY(
+                begin: 0.25,
+                end: 0,
+                curve: TalonMotion.emphasized,
+              ),
+    );
   }
 }
 

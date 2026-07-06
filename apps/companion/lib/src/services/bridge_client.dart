@@ -156,6 +156,13 @@ class BridgeClient {
   Future<void> resetChat(String chatId) =>
       _postJson('/chats/reset', {'chatId': chatId});
 
+  /// Best-effort interrupt of the chat's in-flight turn. Returns whether the
+  /// daemon found a running turn to signal.
+  Future<bool> interruptTurn(String chatId) async {
+    final j = await _postJson('/chats/interrupt', {'chatId': chatId});
+    return j['ok'] == true;
+  }
+
   Future<void> setPulse(String chatId, bool on) =>
       _postJson('/chats/pulse', {'chatId': chatId, 'on': on});
 

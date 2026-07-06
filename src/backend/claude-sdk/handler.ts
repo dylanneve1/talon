@@ -101,6 +101,30 @@ const SDK_POST_RESULT_GRACE_MS = envMs(
 const activeQueries = new Map<string, Query>();
 
 /** Get the active Query for a chat, if one is in flight. */
+/**
+ * Best-effort graceful interrupt of a chat's in-flight turn. Uses the SDK's
+ * native `Query.interrupt()`, which stops the agent loop and closes the stream
+ * with a `result` (subtype `interrupt`) — so the turn ends as a normal
+ * completion (turn_end + usage), NOT an error, and never trips the
+ * model-fallback retry path. No-op (returns false) when no turn is running.
+ */
+export async function interruptChatTurn(chatId: string): Promise<boolean> {
+  const qi = activeQueries.get(chatId);
+  if (!qi) return false;
+  try {
+    await qi.interrupt();
+    log("agent", `[${chatId}] turn interrupted by user`);
+    incrementCounter("sdk.turn_interrupted");
+    return true;
+  } catch (err) {
+    logWarn(
+      "agent",
+      `[${chatId}] interrupt failed: ${err instanceof Error ? err.message : err}`,
+    );
+    return false;
+  }
+}
+
 export function getActiveQuery(chatId: string): Query | undefined {
   return activeQueries.get(chatId);
 }

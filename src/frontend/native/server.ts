@@ -80,6 +80,9 @@ export type BridgeServerHandlers = {
   setEffort(id: string, effort: string): void;
   effortLevels(id: string): Promise<{ active: string; levels: string[] }>;
   resetChat(id: string): boolean;
+  /** Best-effort interrupt of a chat's in-flight turn. `true` if one was
+   *  running and got signalled. */
+  interruptTurn(id: string): Promise<boolean>;
   setPulse(id: string, on: boolean): void;
   /** Set/replace/clear the chat's queued follow-up (empty text clears). */
   queueMessage(id: string, text: string): void;
@@ -283,6 +286,14 @@ export class BridgeServer {
       if (method === "POST" && path === "/chats/reset") {
         const body = await this.readJson(req);
         const ok = this.handlers.resetChat(asString(body.chatId) ?? "");
+        return this.json(res, 200, { ok });
+      }
+
+      if (method === "POST" && path === "/chats/interrupt") {
+        const body = await this.readJson(req);
+        const ok = await this.handlers.interruptTurn(
+          asString(body.chatId) ?? "",
+        );
         return this.json(res, 200, { ok });
       }
 

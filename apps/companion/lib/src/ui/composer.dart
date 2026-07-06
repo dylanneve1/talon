@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../theme.dart';
 
@@ -23,11 +24,21 @@ class Composer extends StatefulWidget {
   ) onUpload;
   final bool enabled;
 
+  /// True while a turn is running for this chat. When set (and the input is
+  /// empty) the send button morphs into a stop button — the ChatGPT/Claude
+  /// pattern. Typing still turns it back into send so a follow-up can queue.
+  final bool running;
+
+  /// Interrupt the running turn. Null when the backend can't interrupt.
+  final Future<void> Function()? onStop;
+
   const Composer({
     super.key,
     required this.onSend,
     required this.onUpload,
     required this.enabled,
+    this.running = false,
+    this.onStop,
   });
 
   @override
@@ -196,11 +207,17 @@ class _ComposerState extends State<Composer> {
                   ),
                 ),
                 const SizedBox(width: 6),
-                _SendButton(
-                  enabled: canSend,
-                  busy: _uploading,
-                  onTap: _send,
-                ),
+                // Stop while a turn runs and there's nothing staged to send;
+                // as soon as the user types, it flips back to send-to-queue.
+                if (widget.running && !canSend && !_uploading &&
+                    widget.onStop != null)
+                  _StopButton(onTap: widget.onStop!)
+                else
+                  _SendButton(
+                    enabled: canSend,
+                    busy: _uploading,
+                    onTap: _send,
+                  ),
               ],
             ),
           ],
@@ -269,6 +286,40 @@ class _AttachButton extends StatelessWidget {
       icon: const Icon(Icons.add_photo_alternate_outlined, size: 22),
       color: TalonColors.textDim,
       tooltip: 'Attach image',
+    );
+  }
+}
+
+/// Shown in the send slot while a turn is generating and the input is empty.
+/// A calm square "stop" that pulses gently so it reads as live, and fires the
+/// interrupt on tap.
+class _StopButton extends StatelessWidget {
+  final Future<void> Function() onTap;
+  const _StopButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final button = GestureDetector(
+      onTap: () => onTap(),
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: TalonColors.surfaceHi,
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(color: TalonColors.glassStroke),
+        ),
+        child: Icon(Icons.stop_rounded, color: TalonColors.text, size: 22),
+      ),
+    );
+    return Tooltip(
+      message: 'Stop generating',
+      child: reduceMotion
+          ? button
+          : button
+              .animate(onPlay: (c) => c.repeat(reverse: true))
+              .fadeIn(begin: 0.75, duration: 850.ms, curve: Curves.easeInOut),
     );
   }
 }

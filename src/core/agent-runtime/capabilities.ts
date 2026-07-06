@@ -113,6 +113,15 @@ export interface ChatRunParams {
  */
 export interface ChatBackend {
   runChatTurn(params: ChatRunParams): AsyncIterable<AgentEvent>;
+  /**
+   * Best-effort interrupt of the chat's in-flight turn, if one is running.
+   * Optional: backends that can't gracefully stop a running turn simply omit
+   * it (the frontend then hides the stop affordance). Resolves `true` when a
+   * running turn was found and signalled, `false` otherwise. Implementations
+   * must stop the turn *cleanly* — the stream should terminate as a normal
+   * completion, not surface as an error or trigger a model-fallback retry.
+   */
+  interruptChatTurn?(chatId: string): Promise<boolean>;
 }
 
 /**

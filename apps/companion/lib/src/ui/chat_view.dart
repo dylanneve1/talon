@@ -170,6 +170,8 @@ class _ChatViewState extends State<ChatView> {
                           onSend: widget.state.sendMessage,
                           onUpload: widget.state.uploadImage,
                           enabled: widget.state.conn == ConnState.connected,
+                          running: widget.state.isTurnRunning(chat.id),
+                          onStop: () => widget.state.interruptTurn(chat.id),
                         ),
                       ],
                     ),
@@ -190,7 +192,8 @@ class _ChatViewState extends State<ChatView> {
         (turn.draft.isNotEmpty ||
             turn.reasoning.isNotEmpty ||
             turn.tools.isNotEmpty ||
-            turn.typing);
+            turn.typing ||
+            turn.continuing);
 
     if (msgs.isEmpty && widget.state.isHistoryLoading(chatId)) {
       return const _HistorySkeleton();

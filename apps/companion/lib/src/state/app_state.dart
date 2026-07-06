@@ -21,12 +21,21 @@ class TurnState {
   bool active = false;
   bool typing = false;
 
+  /// True when the model delivered a message mid-turn but hasn't ended the
+  /// turn — i.e. it's still working and more is likely coming. Set on a short
+  /// grace delay after a delivered assistant message (so a normal single-reply
+  /// turn, where `turn_end` lands right after, never flashes it), cleared the
+  /// moment fresh content streams or the turn actually ends. Drives the quiet
+  /// "still working" indicator under the delivered bubble.
+  bool continuing = false;
+
   void reset() {
     draft = '';
     reasoning.clear();
     tools.clear();
     active = true;
     typing = true;
+    continuing = false;
   }
 }
 
@@ -46,6 +55,16 @@ class AppState extends ChangeNotifier {
   Timer? _reconnect;
   int _backoffMs = 800;
   bool _disposed = false;
+
+  /// Per-chat grace timers that promote a delivered-but-not-ended turn into the
+  /// "still working" state. Keyed by chatId; cancelled on `turn_end`, fresh
+  /// content, or a newer delivery.
+  final Map<String, Timer> _continuingTimers = {};
+
+  /// How long after a mid-turn assistant message we wait before showing the
+  /// "still working" indicator. Long enough that a normal single-reply turn
+  /// (whose `turn_end` lands right behind the message) never flashes it.
+  static const Duration _continuingGrace = Duration(milliseconds: 600);
 
   /// Monotonic connection-attempt counter. Each [start] bumps it; awaited
   /// continuations from an older attempt compare against it and bail instead
@@ -542,6 +561,22 @@ class AppState extends ChangeNotifier {
     await _command(chatId, 'Reset', client.resetChat(chatId));
   }
 
+  /// Whether a turn is currently running for [chatId] — drives the composer's
+  /// send↔stop affordance.
+  bool isTurnRunning(String chatId) => turnFor(chatId).active;
+
+  /// Ask the daemon to interrupt the chat's in-flight turn. Best-effort: does
+  /// nothing when the backend can't interrupt or no turn is running.
+  Future<void> interruptTurn(String chatId) async {
+    final client = _client;
+    if (client == null) return;
+    try {
+      await client.interruptTurn(chatId);
+    } catch (e) {
+      AppLog.warn('app_state', 'interrupt failed', e);
+    }
+  }
+
   Future<void> setPulse(String chatId, bool on) async {
     final chat = _chatById(chatId);
     if (chat != null && chat.pulse != on) {
@@ -672,17 +707,22 @@ class AppState extends ChangeNotifier {
       case 'turn_start':
         final chatId = _string(e['chatId']);
         if (chatId == null) return false;
+        _continuingTimers.remove(chatId)?.cancel();
         turnFor(chatId).reset();
         return true;
       case 'reasoning':
         final chatId = _string(e['chatId']);
         if (chatId == null) return false;
-        turnFor(chatId).reasoning.add(_string(e['text']) ?? '');
+        final t = turnFor(chatId);
+        _clearContinuing(t, chatId);
+        t.reasoning.add(_string(e['text']) ?? '');
         return true;
       case 'delta':
         final chatId = _string(e['chatId']);
         if (chatId == null) return false;
-        turnFor(chatId).draft += _string(e['text']) ?? '';
+        final t = turnFor(chatId);
+        _clearContinuing(t, chatId);
+        t.draft += _string(e['text']) ?? '';
         return true;
       case 'tool':
         return _onTool(e);
@@ -728,6 +768,7 @@ class AppState extends ChangeNotifier {
         t.draft = '';
         t.reasoning.clear();
         t.tools.clear();
+        _clearContinuing(t, chatId);
         return true;
       case 'error':
         final chatId = _string(e['chatId']);
@@ -744,18 +785,43 @@ class AppState extends ChangeNotifier {
     list.add(m);
     // The visible chat is by definition read up to now.
     if (chatId == selectedChatId) markRead(chatId);
-    // Canonical reply supersedes the live turn. End it now so we don't flash
-    // typing dots / orphan tool chips while waiting for the trailing turn_end.
+    // A delivered assistant message supersedes the live streaming state, but
+    // NOT necessarily the turn: the model may have called send_message and
+    // kept working (no end_turn yet). So fold the streamed draft/tools into
+    // this bubble and clear the transient state, but leave the turn `active`
+    // and let the definitive `turn_end` end it. To avoid flashing a "working"
+    // indicator on a normal single-reply turn (where turn_end lands right
+    // behind the message), arm a short grace timer: only if the turn is still
+    // active when it fires do we promote to the `continuing` state.
     if (m.role == Role.assistant) {
       final t = turnFor(chatId);
       // Hand the live tools to the message so the bubble can show a history.
       m.tools.addAll(t.tools);
-      t.active = false;
       t.typing = false;
       t.draft = '';
       t.reasoning.clear();
       t.tools.clear();
+      t.continuing = false;
+      _continuingTimers.remove(chatId)?.cancel();
+      if (t.active) {
+        _continuingTimers[chatId] = Timer(_continuingGrace, () {
+          _continuingTimers.remove(chatId);
+          final cur = turnFor(chatId);
+          // Still mid-turn with nothing newer streaming → show "still working".
+          if (cur.active && cur.draft.isEmpty && cur.tools.isEmpty) {
+            cur.continuing = true;
+            notifyListeners();
+          }
+        });
+      }
     }
+  }
+
+  /// Drop any pending "still working" promotion for a chat and clear the flag.
+  /// Called whenever fresh content streams or the turn ends.
+  void _clearContinuing(TurnState t, String chatId) {
+    _continuingTimers.remove(chatId)?.cancel();
+    t.continuing = false;
   }
 
   bool _onTool(Map<String, dynamic> e) {
@@ -796,6 +862,7 @@ class AppState extends ChangeNotifier {
       return true;
     }
     if (existing.isEmpty) {
+      _clearContinuing(t, chatId);
       t.tools.add(
         ToolActivity(id: id, name: name, input: _map(e['input']) ?? const {}),
       );
@@ -1078,6 +1145,10 @@ class AppState extends ChangeNotifier {
     _disposed = true;
     _reconnect?.cancel();
     _snapshotTimer?.cancel();
+    for (final t in _continuingTimers.values) {
+      t.cancel();
+    }
+    _continuingTimers.clear();
     _sub?.cancel();
     _client?.dispose();
     super.dispose();
