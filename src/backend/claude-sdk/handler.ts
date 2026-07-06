@@ -35,6 +35,7 @@ import { makeBareModelRef } from "../../core/agent-runtime/model-ref.js";
 import { applyRetryDecisionStream } from "../shared/handle-retry.js";
 import { getConfig } from "./state.js";
 import { buildSdkOptions, getActiveFrontends } from "./options.js";
+import { waitForMcpServersReady } from "./mcp-ready.js";
 import { frontendsForChat } from "../shared/frontends.js";
 import {
   createStreamState,
@@ -189,6 +190,23 @@ export async function* runChatTurn(
 
   const qi = query({ prompt, options });
   activeQueries.set(chatId, qi);
+
+  // Cold-start delivery-tool race. The Claude SDK spawns a fresh subprocess
+  // per turn, and each reconnects to the hub's `${frontend}-tools` server.
+  // `alwaysLoad` is meant to block startup until that server connects, but on
+  // the FIRST turn of a freshly-opened chat the hub binding is created cold and
+  // can still be `pending` when the model builds its turn-1 tool list — so
+  // `end_turn`/`send` are absent and the reply silently fails (or the model
+  // burns a `tool_search` round-trip to recover it). After a close+reconnect
+  // the hub binding is warm, connects instantly, and the tools are present —
+  // which is exactly why the bug "heals" on reconnect. Explicitly wait (bounded,
+  // non-throwing) for the delivery server to leave `pending` before consuming
+  // the stream. This mirrors the proven `refreshTools` gate and returns
+  // immediately on warm turns, so it adds no steady-state latency.
+  if (frontend) {
+    await waitForMcpServersReady(qi, [`${frontend}-tools`], 5_000, 100);
+  }
+
   const state = createStreamState();
   // tool_use id → tool name for calls we've announced this turn; lets
   // the tool_result emission name the tool without re-parsing blocks.
