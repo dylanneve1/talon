@@ -81,6 +81,8 @@ export type BridgeServerHandlers = {
   effortLevels(id: string): Promise<{ active: string; levels: string[] }>;
   resetChat(id: string): boolean;
   setPulse(id: string, on: boolean): void;
+  /** Set/replace/clear the chat's queued follow-up (empty text clears). */
+  queueMessage(id: string, text: string): void;
   /** Read the daemon's own (allowlisted) settings + health. */
   getConfig(): ConfigSnapshot;
   /** Change daemon settings; returns the fresh snapshot. */
@@ -287,6 +289,15 @@ export class BridgeServer {
       if (method === "POST" && path === "/chats/pulse") {
         const body = await this.readJson(req);
         this.handlers.setPulse(asString(body.chatId) ?? "", body.on === true);
+        return this.json(res, 200, { ok: true });
+      }
+
+      if (method === "POST" && path === "/queue") {
+        const body = await this.readJson(req);
+        this.handlers.queueMessage(
+          asString(body.chatId) ?? "",
+          asString(body.text) ?? "",
+        );
         return this.json(res, 200, { ok: true });
       }
 

@@ -159,6 +159,11 @@ class BridgeClient {
   Future<void> setPulse(String chatId, bool on) =>
       _postJson('/chats/pulse', {'chatId': chatId, 'on': on});
 
+  /// Set/replace/clear the chat's queued follow-up (empty text clears). The
+  /// daemon broadcasts the change to every client via chat_updated.
+  Future<void> queue(String chatId, String text) =>
+      _postJson('/queue', {'chatId': chatId, 'text': text});
+
   Future<ConfigSnapshot> getConfig() async =>
       ConfigSnapshot.fromJson(await _getJson('/config'));
 

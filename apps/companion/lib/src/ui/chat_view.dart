@@ -643,7 +643,7 @@ class _QueuedBarState extends State<_QueuedBar> {
   }
 
   void _saveEdit() {
-    widget.state.setQueued(widget.chatId, _controller.text);
+    widget.state.editQueued(widget.chatId, _controller.text);
     setState(() => _editing = false);
   }
 
@@ -657,6 +657,7 @@ class _QueuedBarState extends State<_QueuedBar> {
           if (_editing) _editing = false;
           return const SizedBox.shrink();
         }
+        final hasAttachment = queued.hasAttachment;
         return Container(
           margin: const EdgeInsets.fromLTRB(14, 0, 14, 6),
           padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
@@ -699,11 +700,24 @@ class _QueuedBarState extends State<_QueuedBar> {
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            queued,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13.5),
+                          Row(
+                            children: [
+                              if (hasAttachment) ...[
+                                Icon(Icons.attach_file,
+                                    size: 13, color: TalonColors.textDim),
+                                const SizedBox(width: 4),
+                              ],
+                              Expanded(
+                                child: Text(
+                                  queued.text.isEmpty && hasAttachment
+                                      ? '(attachment)'
+                                      : queued.text,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 13.5),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
@@ -715,29 +729,18 @@ class _QueuedBarState extends State<_QueuedBar> {
                   color: TalonColors.ok,
                   onTap: _saveEdit,
                 )
-              else ...[
+              else
                 _QueuedAction(
                   icon: Icons.edit_outlined,
                   tooltip: 'Edit',
-                  onTap: () => _startEdit(queued),
+                  onTap: () => _startEdit(queued.text),
                 ),
-                // Manual send only when nothing is actually running (e.g. the
-                // busy flag was lost across a reconnect) — otherwise it would
-                // interrupt the very turn it's queued behind.
-                if (!widget.state.isChatBusy(widget.chatId))
-                  _QueuedAction(
-                    icon: Icons.arrow_upward,
-                    tooltip: 'Send now',
-                    color: TalonColors.accent,
-                    onTap: () => widget.state.sendQueuedNow(widget.chatId),
-                  ),
-              ],
               _QueuedAction(
                 icon: Icons.close,
                 tooltip: 'Discard',
                 onTap: () {
                   setState(() => _editing = false);
-                  widget.state.clearQueued(widget.chatId);
+                  widget.state.editQueued(widget.chatId, '');
                 },
               ),
             ],

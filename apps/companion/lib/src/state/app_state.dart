@@ -72,11 +72,6 @@ class AppState extends ChangeNotifier {
   final Map<String, TurnState> _turns = {};
   final Set<String> _loadedHistory = {};
 
-  // Queued follow-up (one editable message per chat) while a turn is running,
-  // plus the chats we've dispatched a send for but not yet seen finish.
-  final Map<String, String> _queued = {};
-  final Set<String> _awaitingTurn = {};
-
   // History pagination: chats whose scrollback is fully loaded, and chats
   // with an older-page fetch in flight.
   static const int _historyPageSize = 100;
@@ -417,91 +412,36 @@ class AppState extends ChangeNotifier {
     if (chatId == null || client == null) return;
     // Text may be empty when an image is attached.
     if (text.trim().isEmpty && attachmentPath == null) return;
-    // A turn is already running for this chat — don't interrupt it. Park the
-    // message as the (single) queued follow-up; it auto-sends at turn end. A
-    // plain-text follow-up is queued (editable); an attachment sends now so we
-    // don't have to persist upload state on the queue.
-    if (isChatBusy(chatId) && attachmentPath == null) {
-      setQueued(chatId, text);
-      return;
-    }
-    await _dispatchSend(
-      chatId,
-      text.trim(),
-      imagePath: imagePath,
-      attachmentPath: attachmentPath,
-    );
-  }
-
-  /// Actually hand a message to the daemon and optimistically mark the chat
-  /// busy until its turn_end lands (closing the window before turn_start).
-  Future<void> _dispatchSend(
-    String chatId,
-    String text, {
-    String? imagePath,
-    String? attachmentPath,
-  }) async {
-    final client = _client;
-    if (client == null) return;
-    _awaitingTurn.add(chatId);
+    // Always hand it to the daemon: if a turn is already running for this chat
+    // the daemon parks it as the queued follow-up (synced to every client) and
+    // auto-sends it at turn end, rather than interrupting. So the app doesn't
+    // need to decide — it just sends.
     try {
       await client.send(
         chatId,
-        text,
+        text.trim(),
         imagePath: imagePath,
         attachmentPath: attachmentPath,
       );
     } catch (e) {
-      _awaitingTurn.remove(chatId);
       _appendSystem(chatId, 'Failed to send: $e');
     }
   }
 
-  // ── Queued follow-up (one slot per chat) ─────────────────────────────────--
+  // ── Queued follow-up (server-authoritative, one slot per chat) ────────────--
 
-  /// The queued follow-up text for a chat, or null when nothing is queued.
-  String? queuedFor(String chatId) => _queued[chatId];
+  /// The queued follow-up for a chat, or null when nothing is queued. Sourced
+  /// from the chat's synced state so it's identical on every device.
+  QueuedMessage? queuedFor(String chatId) => _chatById(chatId)?.queued;
 
-  /// True while a turn is in flight for [chatId] — either we've dispatched a
-  /// send and are awaiting its turn_end, or the live turn is active.
-  bool isChatBusy(String chatId) =>
-      _awaitingTurn.contains(chatId) || turnFor(chatId).active;
-
-  /// Set (or replace) the queued follow-up. Empty text clears it.
-  void setQueued(String chatId, String text) {
-    final t = text.trim();
-    if (t.isEmpty) {
-      clearQueued(chatId);
-      return;
-    }
-    _queued[chatId] = t;
-    notifyListeners();
-  }
-
-  /// Discard the queued follow-up without sending.
-  void clearQueued(String chatId) {
-    if (_queued.remove(chatId) != null) notifyListeners();
-  }
-
-  /// Send the queued follow-up immediately (manual override) — but never while
-  /// a turn is still running, so this can't interrupt the reply it was queued
-  /// behind. Used for the orphan case (busy flag lost across a reconnect).
-  Future<void> sendQueuedNow(String chatId) async {
-    if (isChatBusy(chatId)) return;
-    final q = _queued.remove(chatId);
-    notifyListeners();
-    if (q != null && q.trim().isNotEmpty) {
-      await _dispatchSend(chatId, q.trim());
-    }
-  }
-
-  /// A turn finished for [chatId]: clear the busy flag and flush any queued
-  /// follow-up as a fresh turn ("once it's done it will send").
-  void _onTurnEnded(String chatId) {
-    _awaitingTurn.remove(chatId);
-    final q = _queued.remove(chatId);
-    if (q != null && q.trim().isNotEmpty) {
-      unawaited(_dispatchSend(chatId, q.trim()));
+  /// Set / replace / clear (empty text) the chat's queued follow-up. The daemon
+  /// broadcasts the change back, so every client — including this one — updates
+  /// from the authoritative chat_updated rather than a local guess.
+  Future<void> editQueued(String chatId, String text) async {
+    try {
+      await _client?.queue(chatId, text);
+    } catch (e) {
+      AppLog.warn('app_state', 'queue edit failed', e);
     }
   }
 
@@ -685,10 +625,6 @@ class AppState extends ChangeNotifier {
         if (rawStatus == null) return false;
         status = BridgeStatus.fromJson(rawStatus);
         _setChats(_list(e['chats']));
-        // Fresh connection: drop optimistic busy flags. The daemon replays any
-        // genuinely in-progress turn (turn_start) right after this, so busy
-        // state re-derives from the live turn rather than a stale send guard.
-        _awaitingTurn.clear();
         return true;
       case 'status':
         final rawStatus = _map(e['status']);
@@ -792,8 +728,6 @@ class AppState extends ChangeNotifier {
         t.draft = '';
         t.reasoning.clear();
         t.tools.clear();
-        // Turn's over — release the busy flag and flush any queued follow-up.
-        _onTurnEnded(chatId);
         return true;
       case 'error':
         final chatId = _string(e['chatId']);

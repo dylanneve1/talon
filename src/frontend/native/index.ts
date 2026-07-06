@@ -80,6 +80,7 @@ import {
   type ClientToolCall,
   type ContextInfo,
   type ModelOption,
+  type QueuedMessage,
   type SearchResult,
 } from "./protocol.js";
 
@@ -193,6 +194,46 @@ export function createNativeFrontend(
   };
   const liveTurns = new Map<string, Map<string, LiveToolEntry>>();
 
+  /** True when a turn is currently running for a chat (used to decide queue). */
+  const isBusy = (chatId: string): boolean => liveTurns.has(chatId);
+
+  // The single queued follow-up per chat, held server-side so every connected
+  // client shares (and can edit/cancel) the same queue. Keeps the attachment
+  // paths so a queued image sends intact when the turn ends.
+  type QueuedEntry = {
+    text: string;
+    imagePath?: string;
+    attachmentPath?: string;
+  };
+  const queuedByChat = new Map<string, QueuedEntry>();
+
+  /** Project the stored queue entry to its wire shape (text + attachment flag). */
+  function toQueued(chatId: string): QueuedMessage | undefined {
+    const q = queuedByChat.get(chatId);
+    if (!q) return undefined;
+    return { text: q.text, hasAttachment: Boolean(q.attachmentPath) };
+  }
+
+  /**
+   * Set (or replace) a chat's queued follow-up and sync it to every client via
+   * chat_updated. Empty text with no attachment clears the queue.
+   */
+  function setQueued(chatId: string, next: QueuedEntry): void {
+    const entry = chats.get(chatId);
+    if (!entry) return;
+    const text = next.text.trim();
+    if (!text && !next.attachmentPath) {
+      if (!queuedByChat.delete(chatId)) return;
+    } else {
+      queuedByChat.set(chatId, {
+        text,
+        imagePath: next.imagePath,
+        attachmentPath: next.attachmentPath,
+      });
+    }
+    broadcastChatUpdated(entry);
+  }
+
   /**
    * Events that reconstruct every in-progress turn for a freshly-connected
    * client: a turn_start (so the live turn renders), a typing indicator, and
@@ -259,6 +300,7 @@ export function createNativeFrontend(
       effort: settings.effort,
       pulse: settings.pulse,
       context: contextByChat.get(entry.id),
+      queued: toQueued(entry.id),
     };
   }
 
@@ -641,7 +683,33 @@ export function createNativeFrontend(
       // The turn is over (delivered or errored) — stop replaying it to new
       // clients. Any late tool spinner has already been flushed above.
       liveTurns.delete(entry.id);
+      // Flush a queued follow-up as a fresh turn: "once it's done it will
+      // send". Deferred so we don't re-enter runTurn inside its own finally.
+      const queued = queuedByChat.get(entry.id);
+      if (queued) {
+        queuedByChat.delete(entry.id);
+        broadcastChatUpdated(entry);
+        setImmediate(() =>
+          startTurn(entry, queued.text, {
+            imagePath: queued.imagePath,
+            attachmentPath: queued.attachmentPath,
+          }),
+        );
+      }
     }
+  }
+
+  /** Emit the user message, open the turn, and drive it. Shared by the /send
+   *  handler and the queued-follow-up flush. */
+  function startTurn(
+    entry: ChatEntry,
+    text: string,
+    opts?: { imagePath?: string; attachmentPath?: string },
+  ): void {
+    const messageId = emitUser(entry, text, opts?.imagePath, opts?.attachmentPath);
+    broadcast({ kind: "turn_start", chatId: entry.id });
+    broadcast({ kind: "typing", chatId: entry.id, on: true });
+    void runTurn(entry, text, messageId, opts?.attachmentPath);
   }
 
   // ── Status + model helpers ───────────────────────────────────────────────
@@ -800,6 +868,7 @@ export function createNativeFrontend(
     clearHistory(chatId);
     clearTurnMeta(chatId);
     contextByChat.delete(chatId);
+    queuedByChat.delete(chatId);
     resetPulseCheckpoint(chatId);
     emitSystem(entry, `Switched to ${target} — starting a fresh conversation.`);
     broadcastChatUpdated(entry);
@@ -927,6 +996,7 @@ export function createNativeFrontend(
       if (ok) {
         clearTurnMeta(id);
         contextByChat.delete(id);
+        queuedByChat.delete(id);
         broadcast({ kind: "chat_deleted", chatId: id });
       }
       return ok;
@@ -981,15 +1051,25 @@ export function createNativeFrontend(
     },
     send: (id, text, opts) => {
       const entry = chats.get(id) ?? chats.ensure(id);
-      const messageId = emitUser(
-        entry,
-        text,
-        opts?.imagePath,
-        opts?.attachmentPath,
-      );
-      broadcast({ kind: "turn_start", chatId: entry.id });
-      broadcast({ kind: "typing", chatId: entry.id, on: true });
-      void runTurn(entry, text, messageId, opts?.attachmentPath);
+      // A turn is already running for this chat — don't interrupt it. Park the
+      // message as the single queued follow-up (synced to every client); it
+      // auto-sends when the running turn ends. `isBusy` reads `liveTurns`,
+      // which `runTurn` sets synchronously, so even a rapid second /send from
+      // any client is caught here rather than starting a concurrent turn.
+      if (isBusy(entry.id)) {
+        setQueued(entry.id, {
+          text,
+          imagePath: opts?.imagePath,
+          attachmentPath: opts?.attachmentPath,
+        });
+        return;
+      }
+      startTurn(entry, text, opts);
+    },
+    queueMessage: (id, text) => {
+      // Edit/replace the queued follow-up (text-only). Empty clears it.
+      const entry = chats.get(id);
+      if (entry) setQueued(entry.id, { text });
     },
     upload: async (filename, _contentType, bytes) => {
       const path = await saveUpload(filename, bytes);
@@ -1013,6 +1093,7 @@ export function createNativeFrontend(
       clearHistory(id);
       clearTurnMeta(id);
       contextByChat.delete(id);
+      queuedByChat.delete(id);
       resetPulseCheckpoint(id);
       let backend = null;
       try {

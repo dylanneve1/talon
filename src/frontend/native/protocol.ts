@@ -96,6 +96,18 @@ export type ContextInfo = {
   warn: boolean;
 };
 
+/**
+ * A follow-up message queued while a turn is running. The daemon holds one
+ * per chat and auto-sends it when the current turn ends. Broadcast on the
+ * owning `ClientChat` so every connected client sees (and can edit/cancel)
+ * the same queued message.
+ */
+export type QueuedMessage = {
+  text: string;
+  /** True when an image/file is attached to the queued send. */
+  hasAttachment: boolean;
+};
+
 /** A conversation in the sidebar. */
 export type ClientChat = {
   id: string;
@@ -114,6 +126,8 @@ export type ClientChat = {
   pulse?: boolean;
   /** Live context-window fill, refreshed after each turn (when known). */
   context?: ContextInfo;
+  /** The queued follow-up for this chat, when one is parked. */
+  queued?: QueuedMessage;
 };
 
 /** Daemon-level status shown in the client's header / status pill. */

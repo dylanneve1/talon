@@ -185,6 +185,26 @@ class ContextInfo {
       };
 }
 
+/// A follow-up parked while a turn runs — mirrors the daemon's `QueuedMessage`.
+/// Held server-side and synced to every client, so it appears (and can be
+/// edited/cancelled) on any device.
+class QueuedMessage {
+  final String text;
+  final bool hasAttachment;
+
+  const QueuedMessage({required this.text, this.hasAttachment = false});
+
+  factory QueuedMessage.fromJson(Map<String, dynamic> j) => QueuedMessage(
+        text: _string(j['text']),
+        hasAttachment: _bool(j['hasAttachment']),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'hasAttachment': hasAttachment,
+      };
+}
+
 class ClientChat {
   final String id;
   String title;
@@ -196,6 +216,7 @@ class ClientChat {
   String? effort;
   bool? pulse;
   ContextInfo? context;
+  QueuedMessage? queued;
 
   ClientChat({
     required this.id,
@@ -208,6 +229,7 @@ class ClientChat {
     this.effort,
     this.pulse,
     this.context,
+    this.queued,
   });
 
   factory ClientChat.fromJson(Map<String, dynamic> j) => ClientChat(
@@ -222,6 +244,9 @@ class ClientChat {
         pulse: j['pulse'] is bool ? j['pulse'] as bool : null,
         context: j['context'] is Map
             ? ContextInfo.fromJson((j['context'] as Map).cast<String, dynamic>())
+            : null,
+        queued: j['queued'] is Map
+            ? QueuedMessage.fromJson((j['queued'] as Map).cast<String, dynamic>())
             : null,
       );
 
