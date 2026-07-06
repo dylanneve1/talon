@@ -85,6 +85,8 @@ export type BridgeServerHandlers = {
   getConfig(): ConfigSnapshot;
   /** Change daemon settings; returns the fresh snapshot. */
   setConfig(update: Record<string, unknown>): ConfigSnapshot;
+  /** Fire a daemon-level control action (e.g. "restart", "dream"). */
+  control(action: string): Promise<{ ok: boolean; message: string }>;
   /** Resolve a media id to an absolute file path (or null if unknown). */
   mediaPath(id: string): string | null;
 };
@@ -387,6 +389,14 @@ export class BridgeServer {
       if (method === "POST" && path === "/config") {
         const body = await this.readJson(req);
         return this.json(res, 200, this.handlers.setConfig(body));
+      }
+
+      if (method === "POST" && path === "/control") {
+        const body = await this.readJson(req);
+        // Always 200: ok/message is an application result the client renders,
+        // not an HTTP-level failure (mirrors /backend).
+        const result = await this.handlers.control(asString(body.action) ?? "");
+        return this.json(res, 200, result);
       }
 
       return this.json(res, 404, { ok: false, error: "Not found" });

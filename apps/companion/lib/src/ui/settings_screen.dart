@@ -28,6 +28,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ConfigSnapshot? _cfg;
   bool _loading = true;
   String? _error;
+  bool _restarting = false;
+  bool _dreaming = false;
 
   final _name = TextEditingController();
   final _tz = TextEditingController();
@@ -75,6 +77,79 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _apply(Map<String, dynamic> update) async {
     final c = await widget.state.updateConfig(update);
     if (mounted && c != null) setState(() => _cfg = c);
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _runControl(String action) async {
+    final result = await widget.state.daemonControl(action);
+    _toast(result.message.isEmpty
+        ? (result.ok ? 'Done' : 'Failed')
+        : result.message);
+  }
+
+  Future<void> _confirmRestart() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: TalonColors.surface,
+        title: const Text('Restart Talon?'),
+        content: const Text(
+          'The daemon goes offline for a few seconds while it restarts. '
+          'This client will reconnect automatically.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            child: const Text('Restart'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() => _restarting = true);
+    await _runControl('restart');
+    if (mounted) setState(() => _restarting = false);
+  }
+
+  Future<void> _triggerDream() async {
+    setState(() => _dreaming = true);
+    await _runControl('dream');
+    if (mounted) setState(() => _dreaming = false);
+  }
+
+  Widget _controlsCard() {
+    return _Section(
+      title: 'Controls',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ControlButton(
+            icon: Icons.restart_alt,
+            label: 'Restart Talon',
+            subtitle: 'Bounce the daemon — applies pending config changes',
+            pending: _restarting,
+            onTap: _restarting ? null : _confirmRestart,
+          ),
+          const SizedBox(height: 10),
+          _ControlButton(
+            icon: Icons.auto_awesome_outlined,
+            label: 'Run dream now',
+            subtitle: 'Consolidate memory + write the diary immediately',
+            pending: _dreaming,
+            onTap: _dreaming ? null : _triggerDream,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -240,6 +315,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
+          const SizedBox(height: 16),
+          _controlsCard(),
         ],
         const SizedBox(height: 16),
         _diagnosticsCard(cfg),
@@ -792,6 +869,66 @@ class _Section extends StatelessWidget {
           const SizedBox(height: 14),
           child,
         ],
+      ),
+    );
+  }
+}
+
+/// A full-width action row for daemon controls (restart / dream): icon,
+/// label + subtitle, and a trailing spinner while the action is in flight.
+class _ControlButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final bool pending;
+  final VoidCallback? onTap;
+  const _ControlButton({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.pending,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: TalonRadius.rMd,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: TalonRadius.rMd,
+          border: Border.all(color: TalonColors.glassStroke),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: TalonColors.textDim),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w600)),
+                  Text(subtitle,
+                      style: TextStyle(
+                          fontSize: 12, color: TalonColors.textFaint)),
+                ],
+              ),
+            ),
+            if (pending)
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              Icon(Icons.chevron_right,
+                  size: 18, color: TalonColors.textFaint),
+          ],
+        ),
       ),
     );
   }

@@ -19,9 +19,15 @@ import type { TalonConfig } from "../../util/config.js";
 import type { ContextManager } from "../../core/types.js";
 import type { Gateway } from "../../core/engine/gateway.js";
 import { mkdir, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
-import { log } from "../../util/log.js";
+import { basename, dirname, join, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { log, logError } from "../../util/log.js";
 import { dirs } from "../../util/paths.js";
+import { PKG_ROOT } from "../../cli/context.js";
+import { getSessionInfo } from "../../storage/sessions.js";
+import { buildContextDisplay } from "../shared/status-context.js";
+import { resolveActiveModelForChat } from "../../core/models/active-model.js";
+import { forceDream } from "../../core/background/dream.js";
 import { execute } from "../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../core/agent-runtime/events.js";
 import {
@@ -72,6 +78,7 @@ import {
   type ClientChat,
   type ClientMessage,
   type ClientToolCall,
+  type ContextInfo,
   type ModelOption,
   type SearchResult,
 } from "./protocol.js";
@@ -127,6 +134,11 @@ export function createNativeFrontend(
     return dest;
   };
 
+  // Live context-window fill per chat, refreshed at the end of each turn.
+  // Cached (not computed inline) so the sync `toClientChat` projection stays
+  // sync — it just reads the last computed value.
+  const contextByChat = new Map<string, ContextInfo>();
+
   // ── Per-chat wire projection ─────────────────────────────────────────────
 
   function toClientChat(entry: ChatEntry): ClientChat {
@@ -155,7 +167,66 @@ export function createNativeFrontend(
       backend,
       effort: settings.effort,
       pulse: settings.pulse,
+      context: contextByChat.get(entry.id),
     };
+  }
+
+  /**
+   * Compute the current context-window fill for a chat from its session
+   * usage, reusing the same `buildContextDisplay` the terminal/Discord
+   * `/status` line uses. When the session's usage doesn't carry a window
+   * size yet (fresh session), fall back to the resolved model's window so
+   * the readout still lands. Returns undefined when nothing is known — the
+   * clients hide the indicator rather than render a bogus 0%.
+   */
+  async function computeContext(
+    chatId: string,
+  ): Promise<ContextInfo | undefined> {
+    try {
+      const info = getSessionInfo(chatId);
+      const u = info.usage;
+      let ctxMax = u.contextWindow;
+      if (!ctxMax) {
+        try {
+          const backend = getBackendForChat(chatId);
+          const backendId = getBackendIdForChat(chatId);
+          const { ref } = await resolveActiveModelForChat(
+            chatId,
+            backend,
+            backendId,
+            config,
+          );
+          if (ref?.contextWindow) ctxMax = ref.contextWindow;
+        } catch {
+          /* backend pool not ready — leave max unknown */
+        }
+      }
+      const ctx = buildContextDisplay({
+        contextTokens: u.contextTokens,
+        lastPromptTokens: u.lastPromptTokens,
+        contextWindow: ctxMax,
+      });
+      if (!ctx.known && ctx.max === 0) return undefined;
+      return {
+        known: ctx.known,
+        used: ctx.used,
+        max: ctx.max,
+        pct: ctx.pct,
+        warn: ctx.warn,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Recompute a chat's context fill and, if it changed, push it to clients. */
+  async function refreshContext(entry: ChatEntry): Promise<void> {
+    const next = await computeContext(entry.id);
+    if (!next) return;
+    const prev = contextByChat.get(entry.id);
+    if (prev && prev.used === next.used && prev.max === next.max) return;
+    contextByChat.set(entry.id, next);
+    broadcastChatUpdated(entry);
   }
 
   const broadcast = (event: BridgeEvent): void => server.broadcast(event);
@@ -453,6 +524,11 @@ export function createNativeFrontend(
         durationMs: result.durationMs,
         usage: { input: result.inputTokens, output: result.outputTokens },
       });
+
+      // Refresh the live context-window readout now the turn's usage has
+      // settled, and push it to clients via chat_updated. Best-effort — a
+      // failure here must never surface as a turn error.
+      void refreshContext(entry).catch(() => {});
     } catch (err) {
       flushOpenTools();
       broadcast({ kind: "typing", chatId: entry.id, on: false });
@@ -625,6 +701,7 @@ export function createNativeFrontend(
     resetSession(chatId);
     clearHistory(chatId);
     clearTurnMeta(chatId);
+    contextByChat.delete(chatId);
     resetPulseCheckpoint(chatId);
     emitSystem(entry, `Switched to ${target} — starting a fresh conversation.`);
     broadcastChatUpdated(entry);
@@ -661,6 +738,74 @@ export function createNativeFrontend(
     }
   }
 
+  // ── Daemon control (restart / dream) ─────────────────────────────────────
+
+  /**
+   * Restart the daemon by spawning a detached `talon restart` — the same
+   * command a human runs. It must be an independent, detached process: the
+   * restart stops *this* process, so doing it in-process would kill us before
+   * the successor is spawned. The child outlives us, tears the daemon down,
+   * and brings a fresh one up. Mirrors `core/daemon/control.ts`'s own
+   * source-vs-compiled-binary spawn recipe.
+   */
+  function spawnDaemonRestart(): void {
+    const isBunBinary =
+      (process.argv[1] ?? "").includes("~BUN") ||
+      (process.argv[1] ?? "").includes("$bunfs");
+    const cmd = process.execPath;
+    const args = isBunBinary
+      ? ["restart"]
+      : [
+          resolve(PKG_ROOT, "node_modules", "tsx", "dist", "cli.mjs"),
+          resolve(PKG_ROOT, "src", "cli.ts"),
+          "restart",
+        ];
+    const cwd = isBunBinary ? dirname(process.execPath) : PKG_ROOT;
+    const child = spawn(cmd, args, {
+      cwd,
+      detached: true,
+      stdio: "ignore",
+      env: { ...process.env },
+      windowsHide: true,
+    });
+    child.unref();
+  }
+
+  /**
+   * Daemon-level control actions the app fires from Settings. Kept minimal and
+   * explicit — each maps to a well-understood operation the CLI already
+   * exposes, so there's no new privileged surface beyond "what a local admin
+   * could already do".
+   */
+  async function control(
+    action: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    switch (action) {
+      case "restart":
+        spawnDaemonRestart();
+        return {
+          ok: true,
+          message: "Restarting Talon — back online in a few seconds.",
+        };
+      case "dream":
+        // Fire-and-forget: a dream run can take a while; the app just needs
+        // to know it started. forceDream throws if one is already running.
+        try {
+          void forceDream().catch((err) =>
+            logError("native", "Manual dream run failed", err),
+          );
+          return { ok: true, message: "Dream started — consolidating memory." };
+        } catch (err) {
+          return {
+            ok: false,
+            message: err instanceof Error ? err.message : String(err),
+          };
+        }
+      default:
+        return { ok: false, message: `Unknown control action: ${action}` };
+    }
+  }
+
   // ── Bridge server wiring ─────────────────────────────────────────────────
 
   const handlers: BridgeServerHandlers = {
@@ -683,6 +828,7 @@ export function createNativeFrontend(
       const ok = chats.remove(id);
       if (ok) {
         clearTurnMeta(id);
+        contextByChat.delete(id);
         broadcast({ kind: "chat_deleted", chatId: id });
       }
       return ok;
@@ -768,6 +914,7 @@ export function createNativeFrontend(
       resetSession(id);
       clearHistory(id);
       clearTurnMeta(id);
+      contextByChat.delete(id);
       resetPulseCheckpoint(id);
       let backend = null;
       try {
@@ -793,6 +940,7 @@ export function createNativeFrontend(
       broadcast({ kind: "status", status: status() });
       return snap;
     },
+    control,
     mediaPath: (id) => media.get(id) ?? null,
   };
 

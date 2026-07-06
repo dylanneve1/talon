@@ -389,6 +389,10 @@ class _Header extends StatelessWidget {
                   const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w700),
             ),
           ),
+          if (chat.context?.known == true) ...[
+            _ContextChip(context: chat.context!),
+            const SizedBox(width: 6),
+          ],
           _Chip(
             icon: Icons.memory,
             label: model.isEmpty ? 'model' : model,
@@ -541,6 +545,61 @@ class _MenuRow extends StatelessWidget {
         const SizedBox(width: 10),
         Text(label, style: TextStyle(color: color, fontSize: 13.5)),
       ],
+    );
+  }
+}
+
+/// Compact context-window readout: a tiny fill ring + percentage. Turns the
+/// warn color once the window is ≥80% full. Tooltip shows the raw token
+/// figures. Purely informational — no tap action.
+class _ContextChip extends StatelessWidget {
+  final ContextInfo context;
+  const _ContextChip({required this.context});
+
+  static String _fmt(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(n >= 10000 ? 0 : 1)}k';
+    return '$n';
+  }
+
+  @override
+  Widget build(BuildContext ctx) {
+    final color = context.warn ? TalonColors.warn : TalonColors.textDim;
+    final tip = context.max > 0
+        ? 'Context: ${_fmt(context.used)} / ${_fmt(context.max)} tokens (${context.pct}%)'
+        : 'Context: ${_fmt(context.used)} tokens';
+    return Tooltip(
+      message: tip,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: TalonColors.glassFill,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: context.warn ? TalonColors.warn : TalonColors.glassStroke,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 13,
+              height: 13,
+              child: CircularProgressIndicator(
+                value: (context.pct.clamp(0, 100)) / 100,
+                strokeWidth: 2.4,
+                backgroundColor: TalonColors.glassStroke,
+                valueColor: AlwaysStoppedAnimation(color),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '${context.pct}%',
+              style: TextStyle(fontSize: 12, color: color),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -76,6 +76,24 @@ export type SearchResult = {
   message: ClientMessage;
 };
 
+/**
+ * Live context-window fill for a chat's session — how much of the model's
+ * context the running conversation currently occupies. `known` is false when
+ * the backend doesn't report a current-window figure (the client then hides
+ * the readout rather than showing a fake 0%).
+ */
+export type ContextInfo = {
+  known: boolean;
+  /** Current tokens in the context window. */
+  used: number;
+  /** The model's context window size, or 0 when unknown. */
+  max: number;
+  /** used/max as a 0–100 integer (0 when not `known`). */
+  pct: number;
+  /** True once the window is ≥80% full — a hint to warn in the UI. */
+  warn: boolean;
+};
+
 /** A conversation in the sidebar. */
 export type ClientChat = {
   id: string;
@@ -92,6 +110,8 @@ export type ClientChat = {
   effort?: string;
   /** Whether proactive pulse check-ins are enabled for this chat. */
   pulse?: boolean;
+  /** Live context-window fill, refreshed after each turn (when known). */
+  context?: ContextInfo;
 };
 
 /** Daemon-level status shown in the client's header / status pill. */

@@ -91,6 +91,7 @@ and is mirrored in Dart under [`lib/src/models/`](lib/src/models). Endpoints:
 | POST | `/send` | Send a user message |
 | GET/POST | `/models` `/model` `/effort` | Model + effort |
 | GET/POST | `/config` | Read / change daemon settings |
+| POST | `/control` | Daemon-level actions (`restart`, `dream`) |
 
 All non-`/health` routes accept a bearer token (`Authorization: Bearer …`, or
 `?token=` for the SSE stream) when the daemon is configured with one.

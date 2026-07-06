@@ -572,6 +572,21 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
+  /// Fire a daemon-level control action over the bridge ("restart", "dream").
+  /// Unlike [restartDaemon] (which drives a locally-managed process), this asks
+  /// the *running* daemon to act on itself, so it works over a remote bridge
+  /// too — the app can restart a Talon running on another machine.
+  Future<({bool ok, String message})> daemonControl(String action) async {
+    final client = _client;
+    if (client == null) return (ok: false, message: 'Not connected');
+    try {
+      return await client.control(action);
+    } catch (e) {
+      AppLog.warn('app_state', 'control "$action" failed', e);
+      return (ok: false, message: '$e');
+    }
+  }
+
   // ── Event handling ───────────────────────────────────────────────────────--
 
   void _onEvent(Map<String, dynamic> e) {

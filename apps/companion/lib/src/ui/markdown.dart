@@ -20,14 +20,23 @@ MarkdownStyleSheet talonMarkdownStyle() {
         color: TalonColors.text, fontSize: 18, fontWeight: FontWeight.w700),
     h3: TextStyle(
         color: TalonColors.text, fontSize: 16, fontWeight: FontWeight.w700),
+    // Inline `code`: on the dark theme a faint ink wash sets it apart; on the
+    // light (paper) theme that same wash reads as a muddy grey box, so drop it
+    // — the accent color + monospace font already distinguish inline code.
     code: TextStyle(
       color: TalonColors.accent2,
-      backgroundColor: const Color(0x22000000),
+      backgroundColor:
+          TalonTheme.isDark ? const Color(0x22000000) : Colors.transparent,
       fontFamily: 'monospace',
       fontSize: 13.2,
     ),
+    // Fenced blocks are rendered by CodeElementBuilder (its own framed panel);
+    // this decoration only backs the rare block that falls through. Keep it
+    // frameless on light so it doesn't paint a grey slab behind the code.
     codeblockDecoration: BoxDecoration(
-      color: TalonColors.void0.withValues(alpha: 0.72),
+      color: TalonTheme.isDark
+          ? TalonColors.void0.withValues(alpha: 0.72)
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(12),
       border: Border.all(color: TalonColors.glassStroke),
     ),

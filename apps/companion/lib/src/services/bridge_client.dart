@@ -165,6 +165,17 @@ class BridgeClient {
   Future<ConfigSnapshot> setConfig(Map<String, dynamic> update) async =>
       ConfigSnapshot.fromJson(await _postJson('/config', update));
 
+  /// Fire a daemon-level control action ("restart", "dream"). Returns the
+  /// daemon's ok/message result (never throws on an application-level failure —
+  /// the server answers 200 with `ok:false`).
+  Future<({bool ok, String message})> control(String action) async {
+    final j = await _postJson('/control', {'action': action});
+    return (
+      ok: j['ok'] == true,
+      message: j['message'] is String ? j['message'] as String : '',
+    );
+  }
+
   /// A page of history: the newest window by default, or — when [before] is
   /// given — the window of messages strictly older than that message id.
   Future<List<ClientMessage>> history(

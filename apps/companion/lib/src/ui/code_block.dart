@@ -55,7 +55,13 @@ class _CodeBlockState extends State<CodeBlock> {
       width: double.infinity,
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: TalonColors.void0.withValues(alpha: 0.65),
+        // On light mode the tinted fill reads as a weird grey slab; the
+        // syntax colors + monospace font carry the "this is code" signal on
+        // their own, so keep the panel frameless there (border alone delimits
+        // it). Dark mode keeps the subtle inky panel.
+        color: TalonTheme.isDark
+            ? TalonColors.void0.withValues(alpha: 0.65)
+            : Colors.transparent,
         borderRadius: TalonRadius.rMd,
         border: Border.all(color: TalonColors.glassStroke),
       ),
