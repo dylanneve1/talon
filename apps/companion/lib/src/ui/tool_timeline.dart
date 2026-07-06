@@ -61,17 +61,15 @@ class _ToolStepState extends State<ToolStep> {
   bool _userToggled = false;
   Timer? _ticker;
 
-  /// The tool's input as pretty JSON, computed once. The input map is set when
-  /// the call is created and never mutated (see AppState._onTool), and this
-  /// State is keyed by tool.id — so caching avoids re-encoding on every 200ms
-  /// ticker rebuild while an expanded step is running.
-  late final String _inputJson =
-      widget.tool.input.isEmpty ? '' : _prettyJson(widget.tool.input);
-
   bool get _failed => widget.tool.error != null;
   bool get _running => !widget.tool.done && !_failed;
-  bool get _expandable =>
-      widget.tool.input.isNotEmpty || widget.tool.error != null;
+  bool get _hasDetail =>
+      widget.tool.input.isNotEmpty ||
+      (widget.tool.output?.isNotEmpty ?? false) ||
+      widget.tool.error != null;
+  // Only offer the disclosure once the call has finished — a running tool's
+  // detail is incomplete (no result yet), so expanding it mid-flight is noise.
+  bool get _expandable => widget.tool.done && _hasDetail;
 
   @override
   void initState() {
@@ -286,18 +284,69 @@ class _ToolStepState extends State<ToolStep> {
 
   Widget _details(BuildContext context) {
     final tool = widget.tool;
+    // A labeled section per meaningful field — `command: …`, `output: …` —
+    // instead of one raw JSON dump. The `description` is skipped (it's already
+    // the inline header), and empty values are dropped.
+    final rows = <Widget>[];
+    tool.input.forEach((key, value) {
+      if (key == 'description') return;
+      final text = _stringifyValue(value);
+      if (text.isEmpty) return;
+      rows.add(_LabeledBlock(label: key, text: text));
+    });
+    final output = tool.output;
+    if (output != null && output.isNotEmpty) {
+      rows.add(_LabeledBlock(label: 'output', text: output));
+    }
+    if (tool.error != null) {
+      rows.add(
+        _LabeledBlock(label: 'error', text: tool.error!, tone: TalonColors.bad),
+      );
+    }
+    if (rows.isEmpty) return const SizedBox(width: double.infinity);
+
     return Padding(
       padding: const EdgeInsets.only(top: TalonSpace.sm),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (_inputJson.isNotEmpty) _CodeBlock(text: _inputJson),
-          if (tool.error != null) ...[
-            if (_inputJson.isNotEmpty) const SizedBox(height: TalonSpace.sm),
-            _CodeBlock(text: tool.error!, tone: TalonColors.bad),
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) const SizedBox(height: TalonSpace.sm),
+            rows[i],
           ],
         ],
       ),
+    );
+  }
+}
+
+/// One labeled detail row in an expanded tool step: a small caption
+/// (`COMMAND`, `OUTPUT`, `ERROR`) above a framed monospace value.
+class _LabeledBlock extends StatelessWidget {
+  final String label;
+  final String text;
+  final Color? tone;
+  const _LabeledBlock({required this.label, required this.text, this.tone});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4, left: 2),
+          child: Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: tone ?? TalonColors.textFaint,
+            ),
+          ),
+        ),
+        _CodeBlock(text: text, tone: tone),
+      ],
     );
   }
 }
@@ -462,9 +511,19 @@ String toolDisplayName(String raw) {
 }
 
 /// Pick the most telling argument to preview inline next to the tool name.
+/// `description` leads: Bash carries a human summary there, which reads far
+/// better inline than the raw shell command (shown in the expansion instead).
 String? toolArg(ToolActivity t) {
   if (t.input.isEmpty) return null;
-  for (final key in const ['query', 'url', 'path', 'text', 'name', 'command']) {
+  for (final key in const [
+    'description',
+    'query',
+    'url',
+    'path',
+    'text',
+    'name',
+    'command',
+  ]) {
     final v = t.input[key];
     if (v is String && v.isNotEmpty) {
       final flat = v.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -485,11 +544,20 @@ String fmtToolDuration(Duration d) {
   return '${m}m${(s - m * 60).toStringAsFixed(0)}s';
 }
 
-String _prettyJson(Map<String, dynamic> input) {
-  try {
-    final text = const JsonEncoder.withIndent('  ').convert(input);
-    return text.length > 1400 ? '${text.substring(0, 1399)}…' : text;
-  } catch (_) {
-    return input.toString();
+/// Render a single input value for the expanded view: strings verbatim,
+/// everything else as compact indented JSON. Bounded so a big blob can't run
+/// away.
+String _stringifyValue(Object? value) {
+  if (value == null) return '';
+  String text;
+  if (value is String) {
+    text = value.trim();
+  } else {
+    try {
+      text = const JsonEncoder.withIndent('  ').convert(value);
+    } catch (_) {
+      text = value.toString();
+    }
   }
+  return text.length > 1400 ? '${text.substring(0, 1399)}…' : text;
 }

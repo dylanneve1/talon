@@ -29,6 +29,7 @@ import {
   removeBridgeDiscovery,
   writeBridgeDiscovery,
 } from "../frontend/native/discovery.js";
+import { summarizeToolResult } from "../frontend/native/index.js";
 import { files } from "../util/paths.js";
 import type { Gateway } from "../core/engine/gateway.js";
 import type { TalonConfig } from "../util/config.js";
@@ -308,5 +309,40 @@ describe("native settings", () => {
     const snap = applyConfigUpdate(config, { backend: "codex" });
     expect(config.backend).toBe("claude");
     expect(snap.backend).toBe("claude");
+  });
+});
+
+describe("summarizeToolResult", () => {
+  it("passes a plain string through, trimmed", () => {
+    expect(summarizeToolResult("  hello  ")).toBe("hello");
+  });
+
+  it("extracts MCP text content parts", () => {
+    const result = {
+      content: [
+        { type: "text", text: "line one" },
+        { type: "text", text: "line two" },
+        { type: "image", data: "…" },
+      ],
+    };
+    expect(summarizeToolResult(result)).toBe("line one\nline two");
+  });
+
+  it("falls back to pretty JSON for other shapes", () => {
+    const out = summarizeToolResult({ ok: true, count: 2 });
+    expect(out).toContain('"ok": true');
+    expect(out).toContain('"count": 2');
+  });
+
+  it("returns undefined for empty / nullish results", () => {
+    expect(summarizeToolResult(null)).toBeUndefined();
+    expect(summarizeToolResult(undefined)).toBeUndefined();
+    expect(summarizeToolResult("   ")).toBeUndefined();
+  });
+
+  it("truncates very long output", () => {
+    const out = summarizeToolResult("x".repeat(5000));
+    expect(out!.length).toBeLessThan(5000);
+    expect(out!.endsWith("… (truncated)")).toBe(true);
   });
 });

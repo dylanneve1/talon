@@ -87,6 +87,8 @@ export type BridgeServerHandlers = {
   setConfig(update: Record<string, unknown>): ConfigSnapshot;
   /** Fire a daemon-level control action (e.g. "restart", "dream"). */
   control(action: string): Promise<{ ok: boolean; message: string }>;
+  /** Events reconstructing any in-progress turns, for a just-connected client. */
+  liveTurnEvents(): BridgeEvent[];
   /** Resolve a media id to an absolute file path (or null if unknown). */
   mediaPath(id: string): string | null;
 };
@@ -451,6 +453,16 @@ export class BridgeServer {
         chats: this.handlers.listChats(),
       })}\n\n`,
     );
+    // Replay any in-progress turn so a client that connected mid-turn (or
+    // reconnected after a blip) sees the tool timeline immediately, not just
+    // the tools that fire after it joined.
+    try {
+      for (const event of this.handlers.liveTurnEvents()) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    } catch (err) {
+      logError("native", "Failed to replay live turn to new client", err);
+    }
     this.clients.add(res);
     logDebug("native", `SSE client connected (${this.clients.size} total)`);
     res.on("close", () => {

@@ -749,12 +749,14 @@ class AppState extends ChangeNotifier {
 
     final t = turnFor(chatId);
     final phase = _string(e['phase']);
+    final output = _string(e['output']);
     final existing = t.tools.where((x) => x.id == id);
     if (phase == 'result') {
       if (existing.isNotEmpty) {
         existing.first.done = true;
         existing.first.finishedAt = DateTime.now();
         existing.first.error = _string(e['error']);
+        if (output != null) existing.first.output = output;
       } else {
         // The assistant message already arrived and tools were snapshotted into
         // it before this result event landed — update the historical copy too so
@@ -765,6 +767,7 @@ class AppState extends ChangeNotifier {
               tool.done = true;
               tool.finishedAt ??= DateTime.now();
               tool.error = _string(e['error']);
+              if (output != null) tool.output = output;
             }
           }
         }

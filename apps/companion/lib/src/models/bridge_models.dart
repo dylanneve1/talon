@@ -385,6 +385,9 @@ class ToolActivity {
   bool done;
   String? error;
   Map<String, dynamic> input;
+  /// Truncated string form of the tool's result, shown in the expanded view.
+  /// Arrives on the `result` phase (or re-hydrated from history).
+  String? output;
   final DateTime startedAt;
   DateTime? finishedAt;
 
@@ -394,6 +397,7 @@ class ToolActivity {
     this.done = false,
     this.error,
     Map<String, dynamic>? input,
+    this.output,
     DateTime? startedAt,
     this.finishedAt,
   })  : input = input ?? <String, dynamic>{},
@@ -410,6 +414,7 @@ class ToolActivity {
       done: true,
       error: j['error'] is String ? j['error'] as String : null,
       input: _map(j['input']),
+      output: j['output'] is String ? j['output'] as String : null,
       startedAt: started,
       finishedAt: started.add(Duration(milliseconds: duration)),
     );

@@ -43,6 +43,8 @@ export type ClientToolCall = {
   error?: string;
   /** Wall-clock duration of this call, when known. */
   durationMs?: number;
+  /** Truncated string form of the tool's result, for the expanded view. */
+  output?: string;
 };
 
 /** A single rendered message in a conversation. */
@@ -167,6 +169,8 @@ export type BridgeEvent =
       phase: "call" | "result";
       input?: Record<string, unknown>;
       error?: string;
+      /** Truncated string form of the result, on the `result` phase. */
+      output?: string;
     }
   | { kind: "typing"; chatId: string; on: boolean }
   | {

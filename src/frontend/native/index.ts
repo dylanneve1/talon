@@ -83,6 +83,50 @@ import {
   type SearchResult,
 } from "./protocol.js";
 
+/** Best-effort JSON stringify that never throws (circular refs → String()). */
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
+ * Reduce a tool's raw result to a readable, bounded string for the app's
+ * expanded tool view. MCP results are typically
+ * `{ content: [{ type: "text", text }] }`, so pull the text parts out; fall
+ * back to pretty JSON for anything else. Truncated so a huge file read or
+ * search dump can't bloat the wire payload or the history sidecar.
+ */
+export function summarizeToolResult(result: unknown): string | undefined {
+  if (result == null) return undefined;
+  let text: string;
+  if (typeof result === "string") {
+    text = result;
+  } else {
+    const content = (result as { content?: unknown }).content;
+    if (Array.isArray(content)) {
+      const parts = content
+        .map((c) =>
+          c &&
+          typeof c === "object" &&
+          typeof (c as { text?: unknown }).text === "string"
+            ? (c as { text: string }).text
+            : "",
+        )
+        .filter((s) => s.length > 0);
+      text = parts.length > 0 ? parts.join("\n") : safeJson(result);
+    } else {
+      text = safeJson(result);
+    }
+  }
+  text = text.trim();
+  if (!text) return undefined;
+  const MAX = 4000;
+  return text.length > MAX ? `${text.slice(0, MAX)}\n… (truncated)` : text;
+}
+
 export type NativeFrontend = {
   name: "native";
   context: ContextManager;
@@ -138,6 +182,53 @@ export function createNativeFrontend(
   // Cached (not computed inline) so the sync `toClientChat` projection stays
   // sync — it just reads the last computed value.
   const contextByChat = new Map<string, ContextInfo>();
+
+  // In-progress turns, keyed by chat id, so a client that (re)connects mid-turn
+  // can be replayed the turn's tool activity instead of waiting for the turn to
+  // finish. Holds the same live tool map `runTurn` mutates; cleared at turn end.
+  type LiveToolEntry = {
+    call: ClientToolCall;
+    startedAt: number;
+    done?: boolean;
+  };
+  const liveTurns = new Map<string, Map<string, LiveToolEntry>>();
+
+  /**
+   * Events that reconstruct every in-progress turn for a freshly-connected
+   * client: a turn_start (so the live turn renders), a typing indicator, and
+   * each tool's call — plus its result when it has already finished. Replayed
+   * right after `hello` so a reconnect mid-turn shows the full tool timeline
+   * immediately rather than only the tools that happen to fire afterwards.
+   */
+  function liveTurnEvents(): BridgeEvent[] {
+    const events: BridgeEvent[] = [];
+    for (const [chatId, tools] of liveTurns) {
+      events.push({ kind: "turn_start", chatId });
+      events.push({ kind: "typing", chatId, on: true });
+      for (const { call, done } of tools.values()) {
+        events.push({
+          kind: "tool",
+          chatId,
+          id: call.id,
+          name: call.name,
+          phase: "call",
+          ...(call.input ? { input: call.input } : {}),
+        });
+        if (done) {
+          events.push({
+            kind: "tool",
+            chatId,
+            id: call.id,
+            name: call.name,
+            phase: "result",
+            ...(call.error ? { error: call.error } : {}),
+            ...(call.output ? { output: call.output } : {}),
+          });
+        }
+      }
+    }
+    return events;
+  }
 
   // ── Per-chat wire projection ─────────────────────────────────────────────
 
@@ -390,11 +481,11 @@ export function createNativeFrontend(
   ): Promise<void> {
     const start = Date.now();
     // Tool calls observed during this turn, in call order — recorded into the
-    // turn-meta sidecar at turn_end so history can replay the timeline.
-    const turnTools = new Map<
-      string,
-      { call: ClientToolCall; startedAt: number; done?: boolean }
-    >();
+    // turn-meta sidecar at turn_end so history can replay the timeline. Also
+    // registered in `liveTurns` so a client connecting mid-turn can be replayed
+    // the activity so far (cleared in the `finally`).
+    const turnTools = new Map<string, LiveToolEntry>();
+    liveTurns.set(entry.id, turnTools);
     // Safety net: any tool the backend announced but never resolved
     // (text-mode backends don't emit tool_result; crashes can eat one)
     // gets a synthetic result at turn end — a spinner the app opened
@@ -458,11 +549,13 @@ export function createNativeFrontend(
               break;
             }
             case "tool_result": {
+              const output = summarizeToolResult(event.result);
               const live = turnTools.get(event.id);
               if (live) {
                 live.done = true;
                 live.call.durationMs = Date.now() - live.startedAt;
                 if (event.error) live.call.error = event.error;
+                if (output) live.call.output = output;
               }
               broadcast({
                 kind: "tool",
@@ -471,6 +564,7 @@ export function createNativeFrontend(
                 name: event.name,
                 phase: "result",
                 ...(event.error ? { error: event.error } : {}),
+                ...(output ? { output } : {}),
               });
               break;
             }
@@ -543,6 +637,10 @@ export function createNativeFrontend(
         delivered: 0,
         durationMs: Date.now() - start,
       });
+    } finally {
+      // The turn is over (delivered or errored) — stop replaying it to new
+      // clients. Any late tool spinner has already been flushed above.
+      liveTurns.delete(entry.id);
     }
   }
 
@@ -941,6 +1039,7 @@ export function createNativeFrontend(
       return snap;
     },
     control,
+    liveTurnEvents,
     mediaPath: (id) => media.get(id) ?? null,
   };
 
