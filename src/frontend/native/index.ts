@@ -706,7 +706,12 @@ export function createNativeFrontend(
     text: string,
     opts?: { imagePath?: string; attachmentPath?: string },
   ): void {
-    const messageId = emitUser(entry, text, opts?.imagePath, opts?.attachmentPath);
+    const messageId = emitUser(
+      entry,
+      text,
+      opts?.imagePath,
+      opts?.attachmentPath,
+    );
     broadcast({ kind: "turn_start", chatId: entry.id });
     broadcast({ kind: "typing", chatId: entry.id, on: true });
     void runTurn(entry, text, messageId, opts?.attachmentPath);
