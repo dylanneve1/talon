@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.32.0](https://github.com/dylanneve1/talon/compare/v1.31.0...v1.32.0) (2026-07-06)
+
+
+### Features
+
+* **companion:** context usage, controls, tool-timeline, synced message queue, light-mode code blocks ([#464](https://github.com/dylanneve1/talon/issues/464)) ([c445970](https://github.com/dylanneve1/talon/commit/c4459706c7e9ef9366676f7de4c2736fede8495c))
+* **memory:** Phase B pre-retrieval plumbing — types, formatter, weaver hook, trust policy (inert) ([#462](https://github.com/dylanneve1/talon/issues/462)) ([8b46ff2](https://github.com/dylanneve1/talon/commit/8b46ff2636803f96300b22518f14977cb6b73079))
+
 ## [1.31.0](https://github.com/dylanneve1/talon/compare/v1.30.1...v1.31.0) (2026-07-04)
 
 
