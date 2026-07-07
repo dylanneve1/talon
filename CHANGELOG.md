@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.1](https://github.com/dylanneve1/talon/compare/v1.32.0...v1.32.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* **companion:** gate turn on delivery-tool readiness + responsive header ([#467](https://github.com/dylanneve1/talon/issues/467)) ([4bfe5d8](https://github.com/dylanneve1/talon/commit/4bfe5d849c6788d39f596a9f9759ab891dcf944d))
+
 ## [1.32.0](https://github.com/dylanneve1/talon/compare/v1.31.0...v1.32.0) (2026-07-06)
 
 
