@@ -39,6 +39,10 @@ export async function waitForMcpServersReady(
     } catch {
       return; // status query unsupported/failed — don't block the turn
     }
+    // Best-effort: a backend (or stub) may report status in an unexpected
+    // shape (undefined / non-array). Treat anything non-iterable as
+    // "unsupported" and return rather than throwing into the turn.
+    if (!Array.isArray(statuses)) return;
     for (const s of statuses) {
       if (pending.has(s.name) && s.status !== "pending") {
         pending.delete(s.name);

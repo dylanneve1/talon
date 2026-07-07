@@ -60,6 +60,16 @@ describe("waitForMcpServersReady", () => {
     expect(Date.now() - start).toBeLessThan(2_000);
   });
 
+  it("does not throw when mcpServerStatus returns a non-array (unsupported shape)", async () => {
+    const qi = {
+      mcpServerStatus: vi.fn(async () => undefined as never),
+    };
+    await expect(
+      waitForMcpServersReady(qi as never, ["x"], 5_000, 1),
+    ).resolves.toBeUndefined();
+    expect(qi.mcpServerStatus).toHaveBeenCalledTimes(1);
+  });
+
   it("does not throw when mcpServerStatus rejects", async () => {
     const qi = {
       mcpServerStatus: vi.fn(async () => {
