@@ -103,6 +103,6 @@ describe("formatOpenCodeSelectionError (Kilo)", () => {
       emptyCatalog as any,
     );
     expect(text).toContain("nonexistent");
-    expect(text).toContain("No OpenCode model matched");
+    expect(text).toContain("No Kilo model matched");
   });
 });

@@ -48,5 +48,4 @@ export const getOpenCodeSettingsPresentation =
   opencodeModels.getSettingsPresentation;
 export const renderOpenCodeModelSummary = opencodeModels.renderModelSummary;
 export const renderOpenCodeModelList = opencodeModels.renderModelList;
-export const formatOpenCodeSelectionError =
-  opencodeModels.formatSelectionError;
+export const formatOpenCodeSelectionError = opencodeModels.formatSelectionError;

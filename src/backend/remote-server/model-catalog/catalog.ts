@@ -257,8 +257,7 @@ export function createRemoteModelCatalogStore(options: {
         (providersResp.data as RemoteRawProvidersData | undefined) ?? {};
       const authMap =
         (authResp.data as
-          | Record<string, Array<RemoteAuthMethod>>
-          | undefined) ?? {};
+          Record<string, Array<RemoteAuthMethod>> | undefined) ?? {};
 
       const catalog = buildModelCatalog(providersData, authMap);
       cache = { expiresAt: now + ttlMs, value: catalog };

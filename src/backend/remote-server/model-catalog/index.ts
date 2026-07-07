@@ -68,8 +68,7 @@ export interface RemoteModelCatalogModuleOptions {
 }
 
 export interface RemoteModelCatalogModule
-  extends RemoteModelCatalogStore,
-    RemoteModelPresentation {
+  extends RemoteModelCatalogStore, RemoteModelPresentation {
   /** Catalog-backed model lookup (fetches through the TTL store). */
   getModelInfo(id: string): Promise<RemoteModelCatalogEntry | undefined>;
 }
