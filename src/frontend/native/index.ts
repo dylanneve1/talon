@@ -752,21 +752,17 @@ export function createNativeFrontend(
       }
     }
 
-    // Pull the models dynamically from the gateway for that backend. Prefer a
-    // live instance (the chat's backend, or one already pooled); otherwise
-    // boot the backend transiently to read its catalog, then release it so we
-    // never leak an instance — mirroring the shared `list_models` action.
+    // Pull the models dynamically from the gateway for that backend. Prefer
+    // an already-pooled instance of the *resolved* backend (the persisted
+    // choice — the chat's live binding can lag it after a failed boot-time
+    // rebind, and listing the live binding's catalog here showed the wrong
+    // backend's models); otherwise boot the backend transiently to read its
+    // catalog, then release it so we never leak an instance — mirroring the
+    // shared `list_models` action.
     let instance:
       | Awaited<ReturnType<typeof acquireBackendInstance>>["backend"]
       | null
-      | undefined;
-    try {
-      instance = chatId
-        ? getBackendForChat(chatId)
-        : getPooledBackend(backendId);
-    } catch {
-      instance = undefined;
-    }
+      | undefined = getPooledBackend(backendId);
     let release: (() => Promise<void>) | null = null;
     if (!instance) {
       try {
@@ -802,7 +798,11 @@ export function createNativeFrontend(
   function setModel(chatId: string, model: string): void {
     const entry = chats.get(chatId);
     if (!entry) return;
-    const backendId = getBackendIdForChat(chatId);
+    // Persisted setting first — see toClientChat. Writing the pick under the
+    // live binding's key would attach it to the wrong backend whenever the
+    // boot-time rebind to the persisted backend is still pending.
+    const backendId =
+      getChatSettings(chatId).backend ?? getBackendIdForChat(chatId);
     setChatModelForBackend(chatId, backendId, model.trim() || undefined);
     broadcastChatUpdated(entry);
   }

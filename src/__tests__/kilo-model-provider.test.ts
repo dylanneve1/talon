@@ -4,11 +4,11 @@
  * resolution / provider shapes the `Backend.models` slot exposes
  * to the dispatcher and frontend pickers.
  *
- * Kilo is the only backend with this thin adapter layer; opencode
- * talks to the dispatcher through the same internal types directly.
- * So these tests have no opencode equivalent — they exist because
- * this glue is the easiest place for a model-shape regression to
- * slip past tsc.
+ * The adapter is the shared `createRemoteModelProvider` factory
+ * (backend/remote-server/model-catalog/provider.ts) bound to Kilo's
+ * catalog module — OpenCode binds the same factory, so these tests
+ * cover both. They exist because this glue is the easiest place for
+ * a model-shape regression to slip past tsc.
  */
 import { describe, expect, it, vi } from "vitest";
 
