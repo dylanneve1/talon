@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.0](https://github.com/dylanneve1/talon/compare/v1.32.1...v1.33.0) (2026-07-07)
+
+
+### Features
+
+* **companion:** Android navigation + touch overhaul ([#471](https://github.com/dylanneve1/talon/issues/471)) ([d8943d9](https://github.com/dylanneve1/talon/commit/d8943d9283cf45bb37488c74d88189f673275028))
+
 ## [1.32.1](https://github.com/dylanneve1/talon/compare/v1.32.0...v1.32.1) (2026-07-07)
 
 
