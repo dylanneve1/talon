@@ -93,7 +93,15 @@ void main() {
       await _waitFor(() => state.messagesFor('c1').length == 2);
       expect(state.messagesFor('c1').last.text, 'done');
       expect(state.messagesFor('c1').last.tools.single.name, 'search');
-      expect(state.turnFor('c1').active, isFalse);
+      // A delivered assistant message folds the streamed state into the
+      // bubble but no longer ends the turn — the model may keep working
+      // after a mid-turn send. The definitive `turn_end` ends it.
+      expect(state.turnFor('c1').active, isTrue);
+      expect(state.turnFor('c1').draft, isEmpty);
+      expect(state.turnFor('c1').tools, isEmpty);
+      await bridge.emit({'kind': 'turn_end', 'chatId': 'c1', 'delivered': 1});
+      await _waitFor(() => !state.turnFor('c1').active);
+      expect(state.turnFor('c1').continuing, isFalse);
 
       await bridge.emit({'kind': 'turn_start', 'chatId': 'c1'});
       await bridge.emit({'kind': 'typing', 'chatId': 'c1', 'on': true});
