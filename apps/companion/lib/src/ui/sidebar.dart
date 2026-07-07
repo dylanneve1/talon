@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/bridge_models.dart';
 import '../state/app_state.dart';
 import '../theme.dart';
 import 'brand.dart';
+import 'chat_actions.dart';
 import 'glass.dart';
 import 'motion.dart';
 import 'settings_screen.dart';
@@ -114,7 +116,7 @@ class _SidebarState extends State<Sidebar> {
     var freshOrdinal = 0;
     final reduceMotion = MediaQuery.of(context).disableAnimations;
 
-    return ListView(
+    final list = ListView(
       padding: EdgeInsets.zero,
       children: [
         for (final group in groups) ...[
@@ -143,12 +145,27 @@ class _SidebarState extends State<Sidebar> {
                   unread: widget.state.hasUnread(chat),
                   onTap: () =>
                       (widget.onSelect ?? widget.state.selectChat)(chat.id),
-                  onDelete: () => _confirmDelete(context, chat),
+                  // Touch path to every chat action (rename/pulse/export/
+                  // reset/delete) — the hover-only delete affordance doesn't
+                  // exist on a phone.
+                  onLongPress: () =>
+                      showChatActionsSheet(context, widget.state, chat),
+                  onDelete: () =>
+                      confirmDeleteChat(context, widget.state, chat),
                 ),
               );
             }),
         ],
       ],
+    );
+
+    // Pull-to-refresh: re-sync chats/models (or retry the connection when
+    // it's down). Mostly a touch gesture; harmless on desktop.
+    return RefreshIndicator(
+      onRefresh: widget.state.refresh,
+      color: TalonColors.accent,
+      backgroundColor: TalonColors.surfaceHi,
+      child: list,
     );
   }
 
@@ -186,27 +203,6 @@ class _SidebarState extends State<Sidebar> {
     ];
   }
 
-  Future<void> _confirmDelete(BuildContext context, ClientChat chat) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TalonColors.surface,
-        title: const Text('Delete chat?'),
-        content: Text('"${chat.title}" and its history will be removed.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: TalonColors.bad),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await widget.state.deleteChat(chat.id);
-  }
 }
 
 class _Group {
@@ -235,6 +231,7 @@ class _ChatTile extends StatefulWidget {
   final bool selected;
   final bool unread;
   final VoidCallback onTap;
+  final VoidCallback onLongPress;
   final VoidCallback onDelete;
 
   const _ChatTile({
@@ -242,6 +239,7 @@ class _ChatTile extends StatefulWidget {
     required this.selected,
     required this.unread,
     required this.onTap,
+    required this.onLongPress,
     required this.onDelete,
   });
 
@@ -261,6 +259,10 @@ class _ChatTileState extends State<_ChatTile> {
       onExit: (_) => setState(() => _hover = false),
       child: GestureDetector(
         onTap: widget.onTap,
+        onLongPress: () {
+          HapticFeedback.mediumImpact();
+          widget.onLongPress();
+        },
         onTapDown: (_) => setState(() => _pressed = true),
         onTapUp: (_) => setState(() => _pressed = false),
         onTapCancel: () => setState(() => _pressed = false),

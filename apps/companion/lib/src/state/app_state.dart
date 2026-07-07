@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart'
+    show ChangeNotifier, defaultTargetPlatform, TargetPlatform, visibleForTesting;
 
 import '../models/bridge_models.dart';
 import '../models/connection.dart';
@@ -45,8 +46,44 @@ class AppState extends ChangeNotifier {
   final Prefs prefs;
   ConnectionConfig config;
 
-  AppState(this.prefs) : config = prefs.connection {
+  AppState(this.prefs, {bool? narrowLayout})
+      : _narrowLayout = narrowLayout ?? _defaultNarrow,
+        config = prefs.connection {
     _hydrateFromSnapshot();
+  }
+
+  /// Phones start in the single-pane layout: the chat list comes first and
+  /// nothing is auto-selected on their behalf. Desktop keeps the two-pane
+  /// behavior where a conversation is always in view.
+  static bool get _defaultNarrow =>
+      defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS;
+
+  /// Whether the app is currently laid out as a single pane (phone / skinny
+  /// window). Kept in sync by AppShell's LayoutBuilder. In narrow layout the
+  /// chat list is a real screen of its own, so we never auto-select a chat —
+  /// selection is a navigation act that only the user performs.
+  bool _narrowLayout;
+  bool get narrowLayout => _narrowLayout;
+
+  /// Called from AppShell whenever the layout breakpoint flips. Growing into
+  /// the wide two-pane layout with nothing selected picks the most recent chat
+  /// (an empty conversation pane is dead weight on desktop); shrinking to
+  /// narrow leaves selection untouched — whatever was open stays open.
+  void setNarrowLayout(bool narrow) {
+    if (_narrowLayout == narrow) return;
+    _narrowLayout = narrow;
+    if (!narrow && selectedChatId == null && chats.isNotEmpty) {
+      selectedChatId = chats.first.id;
+      final id = selectedChatId!;
+      // Defer: this runs from build (LayoutBuilder), where notifying is illegal.
+      scheduleMicrotask(() {
+        if (_disposed || selectedChatId != id) return;
+        markRead(id);
+        notifyListeners();
+        if (!_loadedHistory.contains(id)) unawaited(_loadHistory(id));
+      });
+    }
   }
 
   BridgeClient? _client;
@@ -372,6 +409,18 @@ class AppState extends ChangeNotifier {
   void clearSelection() {
     selectedChatId = null;
     notifyListeners();
+  }
+
+  /// Pull-to-refresh: re-sync chats + models from the daemon when connected,
+  /// or restart the connection attempt when it isn't. Completes when the
+  /// refresh is done so a RefreshIndicator can spin honestly.
+  Future<void> refresh() async {
+    if (conn == ConnState.connected) {
+      await _refreshChats();
+      await _refreshModels(selectedChatId);
+    } else {
+      await start();
+    }
   }
 
   Future<void> newChat() async {
@@ -875,6 +924,35 @@ class AppState extends ChangeNotifier {
       name == 'end_turn' ||
       name.endsWith('__end_turn');
 
+  /// Seed the stores directly — for widget tests and the screenshot gallery,
+  /// where rendering real content matters but a live bridge doesn't exist.
+  @visibleForTesting
+  void debugSeed({
+    List<ClientChat>? chats,
+    Map<String, List<ClientMessage>>? messages,
+    String? select,
+    ConnState? connState,
+    BridgeStatus? bridgeStatus,
+  }) {
+    if (chats != null) {
+      this.chats
+        ..clear()
+        ..addAll(chats);
+      _sortChats();
+    }
+    if (messages != null) {
+      _messages
+        ..clear()
+        ..addAll(messages);
+      _loadedHistory.addAll(messages.keys);
+      _historyExhausted.addAll(messages.keys);
+    }
+    if (select != null) selectedChatId = select;
+    if (connState != null) conn = connState;
+    if (bridgeStatus != null) status = bridgeStatus;
+    notifyListeners();
+  }
+
   // ── Store helpers ────────────────────────────────────────────────────────--
 
   Future<void> _refreshChats() async {
@@ -972,7 +1050,13 @@ class AppState extends ChangeNotifier {
         !chats.any((c) => c.id == selectedChatId)) {
       selectedChatId = null;
     }
-    selectedChatId ??= chats.isNotEmpty ? chats.first.id : null;
+    // Auto-selecting is a two-pane (desktop) convenience only. In the narrow
+    // layout "nothing selected" IS the chat-list screen — defaulting here
+    // would silently navigate the user into a conversation (and un-do a
+    // back-gesture return to the list on the next reconnect).
+    if (!_narrowLayout) {
+      selectedChatId ??= chats.isNotEmpty ? chats.first.id : null;
+    }
   }
 
   void _upsertChat(ClientChat c) {
@@ -1103,6 +1187,9 @@ class AppState extends ChangeNotifier {
 
   @override
   void notifyListeners() {
+    // In-flight async work (history fetches, reconnects) can complete after
+    // dispose; notifying then is an assertion error, so drop it quietly.
+    if (_disposed) return;
     super.notifyListeners();
     // Every state change is a candidate for the offline snapshot; the
     // 2s debounce keeps this from thrashing during streaming.

@@ -17,11 +17,18 @@ void main() {
         localAutoDiscover: false,
       );
 
-  Future<AppState> stateFor(ConnectionConfig config) async {
+  Future<AppState> stateFor(
+    ConnectionConfig config, {
+    // These tests document the desktop two-pane semantics (auto-select the
+    // most recent chat) unless a test opts into the phone layout — the test
+    // binding reports TargetPlatform.android, so the constructor default
+    // would otherwise flip them to phone behavior.
+    bool narrowLayout = false,
+  }) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await Prefs.load();
     await prefs.setConnection(config);
-    return AppState(prefs);
+    return AppState(prefs, narrowLayout: narrowLayout);
   }
 
   group('AppState bridge integration', () {
@@ -446,7 +453,7 @@ void main() {
 
       // A brand-new AppState (fresh launch) renders from the snapshot
       // without any connection.
-      final cold = AppState(prefs);
+      final cold = AppState(prefs, narrowLayout: false);
       addTearDown(cold.dispose);
       expect(cold.chats.single.id, 'c1');
       expect(cold.messagesFor('c1').single.text, 'Hello');
@@ -499,6 +506,65 @@ void main() {
       expect(state.selectedChatId, 'c2');
       expect(state.messagesFor('c1'), isEmpty);
       expect(state.turnFor('c1').draft, '');
+    });
+  });
+
+  group('narrow (phone) layout selection', () {
+    test('connect does not auto-select a chat — the list is the first screen',
+        () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge), narrowLayout: true);
+      addTearDown(state.dispose);
+
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+
+      expect(state.chats, isNotEmpty);
+      expect(state.selectedChatId, isNull);
+    });
+
+    test('back-to-list survives a reconnect (no re-auto-selection)', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge), narrowLayout: true);
+      addTearDown(state.dispose);
+
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      await state.selectChat('c1');
+      expect(state.selectedChatId, 'c1');
+
+      // System back → chat list.
+      state.clearSelection();
+      expect(state.selectedChatId, isNull);
+
+      // A reconnect (network blip, resume) re-syncs chats; it must not
+      // navigate the user back into a conversation they left.
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      expect(state.selectedChatId, isNull);
+    });
+
+    test('growing into the wide layout adopts the most recent chat', () async {
+      final bridge = await MockBridge.start();
+      addTearDown(bridge.close);
+      final state = await stateFor(configFor(bridge), narrowLayout: true);
+      addTearDown(state.dispose);
+
+      await state.start();
+      await _waitFor(() => state.conn == ConnState.connected);
+      expect(state.selectedChatId, isNull);
+
+      // Rotate / resize into the two-pane layout: an empty conversation pane
+      // is dead weight, so the most recent chat is adopted.
+      state.setNarrowLayout(false);
+      // Selection applies immediately; the notify is deferred a microtask.
+      expect(state.selectedChatId, 'c1');
+
+      // Shrinking back leaves whatever was open alone.
+      state.setNarrowLayout(true);
+      expect(state.selectedChatId, 'c1');
     });
   });
 }

@@ -460,11 +460,18 @@ class _ToolTraceState extends State<ToolTrace> {
                   color: failed > 0 ? TalonColors.bad : TalonColors.textFaint,
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  _summary(tools.length, failed, total),
-                  style: TextStyle(
-                    color: TalonColors.textFaint,
-                    fontSize: 12,
+                // Flexible + ellipsis: on a phone-width bubble the summary
+                // ("Worked for 4.2s · 3 steps") can exceed the row and an
+                // unconstrained Text overflows the RenderFlex.
+                Flexible(
+                  child: Text(
+                    _summary(tools.length, failed, total),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: TalonColors.textFaint,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
               ],

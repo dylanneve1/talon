@@ -44,6 +44,9 @@ class AppShell extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= _wideBreakpoint;
+            // Let selection logic know which layout it's driving: narrow
+            // treats the chat list as its own screen (no auto-selection).
+            state.setNarrowLayout(!wide);
             if (wide) {
               return Padding(
                 padding: const EdgeInsets.all(10),
@@ -65,7 +68,16 @@ class AppShell extends StatelessWidget {
               listenable: state,
               builder: (context, _) {
                 final showChat = state.selectedChatId != null;
-                return CallbackShortcuts(
+                // System back (button or predictive gesture) while a
+                // conversation is open returns to the chat list — it must
+                // never fall through and quit the app. From the list, back
+                // pops for real and the app backgrounds as expected.
+                return PopScope(
+                  canPop: !showChat,
+                  onPopInvokedWithResult: (didPop, _) {
+                    if (!didPop) state.clearSelection();
+                  },
+                  child: CallbackShortcuts(
                   bindings: {
                     const SingleActivator(LogicalKeyboardKey.escape): () {
                       if (state.selectedChatId != null) state.clearSelection();
@@ -109,6 +121,7 @@ class AppShell extends StatelessWidget {
                               onSelect: (id) => state.selectChat(id),
                             ),
                           ),
+                  ),
                   ),
                 );
               },

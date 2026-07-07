@@ -9,10 +9,14 @@
          produces the identical error text for "no INTERNET permission" as
          it does for those. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Opt in to Android 13+ predictive back so the system back gesture
+         animates properly and Flutter's PopScope (chat → chat list) can
+         participate instead of the gesture killing the activity. -->
     <application android:usesCleartextTraffic="true"
         android:label="Talon"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"

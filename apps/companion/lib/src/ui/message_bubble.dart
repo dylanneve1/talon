@@ -100,7 +100,25 @@ class MessageBubble extends StatelessWidget {
                 child: Tooltip(
                   message: message.time.toLocal().toString().split('.').first,
                   waitDuration: const Duration(milliseconds: 600),
-                  child: Container(
+                  child: Builder(
+                    builder: (context) => GestureDetector(
+                      // Touch path to copy your own message: assistant rows
+                      // have a Copy button, user bubbles previously had
+                      // nothing reachable without a mouse (SelectableText
+                      // still handles precise selection on the text itself).
+                      onLongPress: message.text.isEmpty
+                          ? null
+                          : () async {
+                              HapticFeedback.mediumImpact();
+                              final messenger =
+                                  ScaffoldMessenger.maybeOf(context);
+                              await Clipboard.setData(
+                                  ClipboardData(text: message.text));
+                              messenger?.hideCurrentSnackBar();
+                              messenger?.showSnackBar(const SnackBar(
+                                  content: Text('Message copied')));
+                            },
+                      child: Container(
                     padding: EdgeInsets.symmetric(
                         horizontal: imageUrl != null && message.text.isEmpty
                             ? TalonSpace.sm
@@ -132,12 +150,14 @@ class MessageBubble extends StatelessWidget {
                                     message.text.isEmpty ? 0 : TalonSpace.sm),
                             child: _InlineImage(url: imageUrl!),
                           ),
-                        if (message.text.isNotEmpty)
-                          SelectableText(
-                            message.text,
-                            style: TalonType.body,
-                          ),
-                      ],
+                            if (message.text.isNotEmpty)
+                              SelectableText(
+                                message.text,
+                                style: TalonType.body,
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),

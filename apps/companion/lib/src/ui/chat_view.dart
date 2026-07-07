@@ -7,6 +7,7 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import 'activity_card.dart';
 import 'brand.dart';
+import 'chat_actions.dart';
 import 'composer.dart';
 import 'message_bubble.dart';
 import 'model_sheet.dart';
@@ -397,7 +398,10 @@ class _Header extends StatelessWidget {
               if (showBack)
                 IconButton(
                   onPressed: onBack,
-                  icon: const Icon(Icons.arrow_back_ios_new, size: 18),
+                  tooltip: 'Back to chats',
+                  // Platform-adaptive: Material arrow on Android, iOS chevron
+                  // on Apple platforms.
+                  icon: Icon(Icons.adaptive.arrow_back, size: 20),
                 ),
               Expanded(
                 child: Text(
@@ -413,11 +417,13 @@ class _Header extends StatelessWidget {
                 const SizedBox(width: 6),
               ],
               if (compact)
-                // One pill: "model · effort". Taps into the same model sheet,
-                // which carries both controls anyway.
+                // One pill with just the model. Effort still lives a tap away
+                // in the model sheet; spelling it out here starved the chat
+                // title of width on phones ("Trip to…" next to
+                // "opus · adaptive").
                 _Chip(
                   icon: Icons.memory,
-                  label: '$modelLabel · $effort',
+                  label: modelLabel,
                   onTap: () => openModelSheet(context, state, chat),
                 )
               else ...[
@@ -471,10 +477,10 @@ class _ChatMenu extends StatelessWidget {
             );
             break;
           case 'rename':
-            await _rename(context);
+            await promptRenameChat(context, state, chat);
             break;
           case 'delete':
-            await _delete(context);
+            await confirmDeleteChat(context, state, chat);
             break;
         }
       },
@@ -509,55 +515,6 @@ class _ChatMenu extends StatelessWidget {
     );
   }
 
-  Future<void> _rename(BuildContext context) async {
-    final controller = TextEditingController(text: chat.title);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TalonColors.surface,
-        title: const Text('Rename chat'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          onSubmitted: (v) => Navigator.pop(ctx, v),
-          decoration: const InputDecoration(hintText: 'Chat name'),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (name != null && name.trim().isNotEmpty) {
-      await state.renameChat(chat.id, name.trim());
-    }
-  }
-
-  Future<void> _delete(BuildContext context) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: TalonColors.surface,
-        title: const Text('Delete chat?'),
-        content: Text('"${chat.title}" and its history will be removed.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: TalonColors.bad),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok == true) await state.deleteChat(chat.id);
-  }
 }
 
 class _MenuRow extends StatelessWidget {
