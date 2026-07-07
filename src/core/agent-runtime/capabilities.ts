@@ -187,7 +187,7 @@ export interface ModelCatalog {
   ): Promise<ModelPickerResult>;
   /** List of providers exposed by the backend's catalog. */
   getProviders?(): Promise<UnifiedProviderInfo[]>;
-  /** Paginated model list scoped to one provider. */
+  /** Paginated model list scoped to one provider. `page` is 1-based. */
   getProviderModels?(
     providerId: string,
     page?: number,

@@ -1,15 +1,18 @@
 /**
- * OpenCode model resolution — query parsing, fuzzy matching, provider-id guessing,
- * collision-aware selection values, and the `resolveOpenCodeModelInput`
- * resolver that classifies a query as exact / ambiguous / missing.
+ * Remote model resolution — query parsing, fuzzy matching, provider-id
+ * guessing, collision-aware selection values, and the resolver that
+ * classifies a query as exact / ambiguous / missing.
+ *
+ * Everything here is a pure function over a `RemoteModelCatalog` — no SDK,
+ * no cache — so both OpenCode and Kilo share it verbatim.
  */
 
 import type {
-  OpenCodeModelCatalog,
-  OpenCodeModelCatalogEntry,
-  OpenCodeModelResolution,
+  RemoteModelCatalog,
+  RemoteModelCatalogEntry,
+  RemoteModelResolution,
 } from "./types.js";
-import { getOpenCodeModelCatalog, sortCatalogModels } from "./catalog.js";
+import { sortCatalogModels } from "./catalog.js";
 
 const PROVIDER_PATTERNS: Array<[RegExp, string]> = [
   [/gpt|^o[134]/, "openai"],
@@ -37,7 +40,7 @@ export function normalizeModelLookup(value: string): string {
   return value.trim().toLowerCase().replace(/[`"']/g, "").replace(/\s+/g, "-");
 }
 
-export function parseOpenCodeModelQuery(value: string): {
+export function parseRemoteModelQuery(value: string): {
   providerQuery?: string;
   modelQuery: string;
 } {
@@ -71,7 +74,7 @@ function matchesLookupQuery(value: string, normalizedQuery: string): boolean {
 }
 
 function matchesProviderQuery(
-  model: OpenCodeModelCatalogEntry,
+  model: RemoteModelCatalogEntry,
   normalizedProviderQuery: string,
 ): boolean {
   const providerId = normalizeModelLookup(model.providerID);
@@ -83,7 +86,7 @@ function matchesProviderQuery(
 }
 
 function hasProviderExactMatch(
-  model: OpenCodeModelCatalogEntry,
+  model: RemoteModelCatalogEntry,
   normalizedProviderQuery: string,
 ): boolean {
   return (
@@ -93,8 +96,8 @@ function hasProviderExactMatch(
 }
 
 function hasModelIDCollision(
-  catalog: OpenCodeModelCatalog,
-  model: OpenCodeModelCatalogEntry,
+  catalog: RemoteModelCatalog,
+  model: RemoteModelCatalogEntry,
 ): boolean {
   return catalog.models.some(
     (candidate) =>
@@ -102,9 +105,9 @@ function hasModelIDCollision(
   );
 }
 
-export function getOpenCodeModelSelectionValue(
-  model: OpenCodeModelCatalogEntry,
-  catalog: OpenCodeModelCatalog,
+export function getRemoteModelSelectionValue(
+  model: RemoteModelCatalogEntry,
+  catalog: RemoteModelCatalog,
 ): string {
   return hasModelIDCollision(catalog, model)
     ? `${model.providerID}/${model.id}`
@@ -113,9 +116,9 @@ export function getOpenCodeModelSelectionValue(
 
 function getSearchCandidates(
   query: string,
-  catalog: OpenCodeModelCatalog,
-): Array<OpenCodeModelCatalogEntry> {
-  const { providerQuery, modelQuery } = parseOpenCodeModelQuery(query);
+  catalog: RemoteModelCatalog,
+): Array<RemoteModelCatalogEntry> {
+  const { providerQuery, modelQuery } = parseRemoteModelQuery(query);
   const normalizedModel = normalizeModelLookup(modelQuery);
   const normalizedProvider = providerQuery
     ? normalizeModelLookup(providerQuery)
@@ -153,15 +156,27 @@ function getSearchCandidates(
   });
 }
 
-export function resolveOpenCodeModelInput(
+export function resolveRemoteModelInput(
   query: string,
-  catalog: OpenCodeModelCatalog,
-): OpenCodeModelResolution {
+  catalog: RemoteModelCatalog,
+): RemoteModelResolution {
+  // Fast path: try the full query as an exact model.id match first.
+  // Catalog IDs frequently contain "/" and ":" (e.g.
+  // "inclusionai/ling-2.6-1t:free"), and the provider/model splitter would
+  // otherwise mis-parse them as a "<provider>/<model>" query and fail.
+  // `catalog.models` is sorted selectable-first, so a cross-provider id
+  // collision resolves to the usable entry.
+  const trimmedQuery = query.trim();
+  const fullIdMatch = catalog.models.find((m) => m.id === trimmedQuery);
+  if (fullIdMatch) {
+    return { kind: "exact", model: fullIdMatch };
+  }
+
   const matches = getSearchCandidates(query, catalog);
   if (matches.length === 0) return { kind: "missing", matches: [] };
 
   const bestMatch = matches[0];
-  const { providerQuery, modelQuery } = parseOpenCodeModelQuery(query);
+  const { providerQuery, modelQuery } = parseRemoteModelQuery(query);
   const normalizedModel = normalizeModelLookup(modelQuery);
   const normalizedProvider = providerQuery
     ? normalizeModelLookup(providerQuery)
@@ -195,11 +210,16 @@ export function resolveOpenCodeModelInput(
   return { kind: "ambiguous", matches: matches.slice(0, 8) };
 }
 
-export async function getOpenCodeModelInfo(
+/**
+ * Resolve a model id/query against a catalog and return the best entry, or
+ * `undefined` when nothing matches. The catalog-fetching wrapper lives on the
+ * per-backend module instance.
+ */
+export function getRemoteModelInfo(
+  catalog: RemoteModelCatalog,
   modelID: string,
-): Promise<OpenCodeModelCatalogEntry | undefined> {
-  const catalog = await getOpenCodeModelCatalog();
-  const resolution = resolveOpenCodeModelInput(modelID, catalog);
+): RemoteModelCatalogEntry | undefined {
+  const resolution = resolveRemoteModelInput(modelID, catalog);
   if (resolution.kind === "missing") return undefined;
   return resolution.kind === "exact" ? resolution.model : resolution.matches[0];
 }

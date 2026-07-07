@@ -162,7 +162,7 @@ export async function getProviders(): Promise<UnifiedProviderInfo[]> {
 
 export async function getProviderModels(
   providerId: string,
-  page = 0,
+  page = 1,
   pageSize = 20,
 ): Promise<{ models: UnifiedModelInfo[]; total: number }> {
   if (providerId !== PROVIDER_ID) {
@@ -170,7 +170,7 @@ export async function getProviderModels(
   }
 
   const all = getModels(PROVIDER_ID).map(toUnified);
-  const start = page * pageSize;
+  const start = (page - 1) * pageSize;
   return {
     models: all.slice(start, start + pageSize),
     total: all.length,

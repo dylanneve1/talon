@@ -1,34 +1,33 @@
 /**
- * OpenCode model catalog — TTL cache, raw→catalog parsing, and the fetch entry
- * point that hits OpenCode's `/provider/list` + `/provider/auth` endpoints.
+ * Remote model catalog — raw→catalog parsing, sorting, and the TTL-cached
+ * fetch store that hits the backend's `/provider/list` + `/provider/auth`
+ * endpoints.
+ *
+ * Pure parsing/sorting lives at module level; the fetch + cache is a factory
+ * (`createRemoteModelCatalogStore`) so each backend binds its own SDK client
+ * and keeps its own cache.
  */
 
-import { ensureServer } from "../server.js";
 import { normalizeReasoningLevels } from "../../../core/models/reasoning-levels.js";
 import type {
-  OpenCodeAuthMethod,
-  OpenCodeModelCatalog,
-  OpenCodeModelCatalogEntry,
-  OpenCodeProviderCatalogEntry,
-  OpenCodeRawModel,
-  OpenCodeRawProvider,
+  RemoteAuthMethod,
+  RemoteModelCatalog,
+  RemoteModelCatalogEntry,
+  RemoteProviderCatalogEntry,
+  RemoteProviderClient,
+  RemoteRawModel,
+  RemoteRawProvider,
+  RemoteRawProvidersData,
 } from "./types.js";
 
-// ── Cache ────────────────────────────────────────────────────────────────────
-
-let modelCatalogCache: {
-  expiresAt: number;
-  value: OpenCodeModelCatalog;
-} | null = null;
-
-export function clearModelCatalogCache(): void {
-  modelCatalogCache = null;
-}
-
-const OPENCODE_MODEL_CATALOG_TTL_MS = 60_000;
+const DEFAULT_CATALOG_TTL_MS = 60_000;
 
 // ── Parsing helpers ──────────────────────────────────────────────────────────
 
+/**
+ * A model is free only when BOTH directions cost 0 (a $0-input/$5-output
+ * model is not free) or it is explicitly badged "free" in its id/name.
+ */
 function isFreeModel(model: {
   id: string;
   name: string;
@@ -38,16 +37,15 @@ function isFreeModel(model: {
   const id = model.id.toLowerCase();
   const name = model.name.toLowerCase();
   return (
-    model.costInput === 0 ||
-    model.costOutput === 0 ||
+    (model.costInput === 0 && model.costOutput === 0) ||
     id.includes("free") ||
     name.includes("free")
   );
 }
 
 export function sortCatalogModels(
-  left: OpenCodeModelCatalogEntry,
-  right: OpenCodeModelCatalogEntry,
+  left: RemoteModelCatalogEntry,
+  right: RemoteModelCatalogEntry,
 ): number {
   if (left.selectable !== right.selectable) return left.selectable ? -1 : 1;
   if (left.free !== right.free) return left.free ? -1 : 1;
@@ -63,11 +61,11 @@ export function sortCatalogModels(
 }
 
 function parseCatalogProvider(
-  rawProvider: OpenCodeRawProvider,
+  rawProvider: RemoteRawProvider,
   connectedProviders: Set<string>,
   defaultModels: Record<string, string>,
-  authMap: Record<string, Array<OpenCodeAuthMethod>>,
-): OpenCodeProviderCatalogEntry | null {
+  authMap: Record<string, Array<RemoteAuthMethod>>,
+): RemoteProviderCatalogEntry | null {
   const id = rawProvider.id;
   if (!id) return null;
 
@@ -93,9 +91,9 @@ function parseCatalogProvider(
 }
 
 function parseCatalogModel(
-  rawModel: OpenCodeRawModel,
-  provider: OpenCodeProviderCatalogEntry,
-): OpenCodeModelCatalogEntry | null {
+  rawModel: RemoteRawModel,
+  provider: RemoteProviderCatalogEntry,
+): RemoteModelCatalogEntry | null {
   const id = rawModel.id;
   if (!id) return null;
 
@@ -113,7 +111,7 @@ function parseCatalogModel(
     ].filter((level): level is string => typeof level === "string"),
   )[0];
 
-  const model: OpenCodeModelCatalogEntry = {
+  const model: RemoteModelCatalogEntry = {
     id,
     name: rawModel.name ?? id,
     family: rawModel.family,
@@ -155,7 +153,7 @@ function readStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
-function extractReasoningLevels(rawModel: OpenCodeRawModel) {
+function extractReasoningLevels(rawModel: RemoteRawModel) {
   return normalizeReasoningLevels([
     ...(rawModel.supportedReasoningLevels ?? []),
     ...(rawModel.supported_reasoning_levels ?? []),
@@ -166,14 +164,10 @@ function extractReasoningLevels(rawModel: OpenCodeRawModel) {
   ]);
 }
 
-function buildModelCatalog(
-  providersData: {
-    all?: Array<OpenCodeRawProvider>;
-    connected?: Array<string>;
-    default?: Record<string, string>;
-  },
-  authMap: Record<string, Array<OpenCodeAuthMethod>>,
-): OpenCodeModelCatalog {
+export function buildModelCatalog(
+  providersData: RemoteRawProvidersData,
+  authMap: Record<string, Array<RemoteAuthMethod>>,
+): RemoteModelCatalog {
   const connectedProviders = new Set(
     Array.isArray(providersData.connected) ? providersData.connected : [],
   );
@@ -187,7 +181,7 @@ function buildModelCatalog(
         authMap,
       ),
     )
-    .filter((provider): provider is OpenCodeProviderCatalogEntry =>
+    .filter((provider): provider is RemoteProviderCatalogEntry =>
       Boolean(provider),
     )
     .sort((left, right) => {
@@ -198,7 +192,7 @@ function buildModelCatalog(
   const providerById = new Map(
     providers.map((provider) => [provider.id, provider]),
   );
-  const models: Array<OpenCodeModelCatalogEntry> = [];
+  const models: Array<RemoteModelCatalogEntry> = [];
 
   for (const rawProvider of providersData.all ?? []) {
     const provider = rawProvider.id
@@ -227,38 +221,51 @@ function buildModelCatalog(
   };
 }
 
-// ── Fetch entry point ────────────────────────────────────────────────────────
+// ── Fetch store factory ──────────────────────────────────────────────────────
 
-export async function getOpenCodeModelCatalog(
-  forceRefresh = false,
-): Promise<OpenCodeModelCatalog> {
-  const now = Date.now();
-  if (!forceRefresh && modelCatalogCache && modelCatalogCache.expiresAt > now) {
-    return modelCatalogCache.value;
-  }
+export interface RemoteModelCatalogStore {
+  getCatalog(forceRefresh?: boolean): Promise<RemoteModelCatalog>;
+  clearCache(): void;
+}
 
-  const oc = await ensureServer();
-  const [providersResp, authResp] = await Promise.all([
-    oc.provider.list(),
-    oc.provider.auth(),
-  ]);
+/**
+ * Build a TTL-cached catalog store bound to one backend's SDK client.
+ * `getClient` is typically the backend's `ensureServer` — invoked lazily so
+ * the server only boots when the catalog is actually needed.
+ */
+export function createRemoteModelCatalogStore(options: {
+  getClient: () => Promise<RemoteProviderClient>;
+  ttlMs?: number;
+}): RemoteModelCatalogStore {
+  const ttlMs = options.ttlMs ?? DEFAULT_CATALOG_TTL_MS;
+  let cache: { expiresAt: number; value: RemoteModelCatalog } | null = null;
 
-  const providersData =
-    (providersResp.data as
-      | {
-          all?: Array<OpenCodeRawProvider>;
-          connected?: Array<string>;
-          default?: Record<string, string>;
-        }
-      | undefined) ?? {};
-  const authMap =
-    (authResp.data as Record<string, Array<OpenCodeAuthMethod>> | undefined) ??
-    {};
+  return {
+    async getCatalog(forceRefresh = false): Promise<RemoteModelCatalog> {
+      const now = Date.now();
+      if (!forceRefresh && cache && cache.expiresAt > now) {
+        return cache.value;
+      }
 
-  const catalog = buildModelCatalog(providersData, authMap);
-  modelCatalogCache = {
-    expiresAt: now + OPENCODE_MODEL_CATALOG_TTL_MS,
-    value: catalog,
+      const client = await options.getClient();
+      const [providersResp, authResp] = await Promise.all([
+        client.provider.list(),
+        client.provider.auth(),
+      ]);
+
+      const providersData =
+        (providersResp.data as RemoteRawProvidersData | undefined) ?? {};
+      const authMap =
+        (authResp.data as
+          | Record<string, Array<RemoteAuthMethod>>
+          | undefined) ?? {};
+
+      const catalog = buildModelCatalog(providersData, authMap);
+      cache = { expiresAt: now + ttlMs, value: catalog };
+      return catalog;
+    },
+    clearCache(): void {
+      cache = null;
+    },
   };
-  return catalog;
 }

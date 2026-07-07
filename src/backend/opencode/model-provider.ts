@@ -1,17 +1,10 @@
 /**
- * OpenCode model provider — adapts the internal catalog to the Backend model interface.
- *
- * Each export matches a method on Backend (resolveModel, getModelInfo, etc.).
- * Delegates to the existing catalog functions in models.ts.
+ * OpenCode model provider — adapts the internal catalog to the Backend model
+ * interface via the shared remote-server factory. Each export matches a
+ * method on `Backend.models`.
  */
 
-import type {
-  UnifiedModelInfo,
-  UnifiedModelResolution,
-  UnifiedProviderInfo,
-  ModelButton,
-} from "../../core/types.js";
-
+import { createRemoteModelProvider } from "../remote-server/model-catalog/index.js";
 import {
   getOpenCodeModelCatalog,
   getOpenCodeModelInfo,
@@ -19,162 +12,25 @@ import {
   resolveOpenCodeModelInput,
   getOpenCodeSettingsPresentation,
   formatOpenCodeUnavailableModel,
-  type OpenCodeModelCatalogEntry,
-  type OpenCodeModelCatalog,
-  type OpenCodeModelResolution as InternalResolution,
 } from "./models/index.js";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+const provider = createRemoteModelProvider({
+  label: "OpenCode",
+  getCatalog: (forceRefresh) => getOpenCodeModelCatalog(forceRefresh),
+  getModelInfo: (id) => getOpenCodeModelInfo(id),
+  resolveModelInput: (query, catalog) =>
+    resolveOpenCodeModelInput(query, catalog),
+  getSelectionValue: (model, catalog) =>
+    getOpenCodeModelSelectionValue(model, catalog),
+  formatUnavailableModel: (model) => formatOpenCodeUnavailableModel(model),
+  getSettingsPresentation: (activeModel, callbackPrefix) =>
+    getOpenCodeSettingsPresentation(activeModel, callbackPrefix),
+});
 
-function toUnifiedModelInfo(
-  model: OpenCodeModelCatalogEntry,
-): UnifiedModelInfo {
-  const info: UnifiedModelInfo = {
-    id: model.id,
-    displayName: model.name,
-    provider: model.providerID,
-    providerName: model.providerName,
-    selectable: model.selectable,
-    free: model.free,
-    contextWindow: model.contextWindow,
-    reasoning: model.reasoning,
-    supportedReasoningLevels: model.supportedReasoningLevels,
-    defaultReasoningLevel: model.defaultReasoningLevel,
-  };
-
-  if (!model.selectable) {
-    info.unavailableReason = formatOpenCodeUnavailableModel(model);
-  }
-
-  return info;
-}
-
-function toUnifiedResolution(
-  internal: InternalResolution,
-  catalog: OpenCodeModelCatalog,
-): UnifiedModelResolution {
-  switch (internal.kind) {
-    case "exact":
-      return {
-        kind: "exact",
-        model: toUnifiedModelInfo(internal.model),
-        storedValue: getOpenCodeModelSelectionValue(internal.model, catalog),
-      };
-    case "ambiguous":
-      return {
-        kind: "ambiguous",
-        matches: internal.matches.map(toUnifiedModelInfo),
-      };
-    case "missing":
-      return { kind: "missing" };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Backend model methods
-// ---------------------------------------------------------------------------
-
-export async function resolveModel(
-  query: string,
-): Promise<UnifiedModelResolution> {
-  const catalog = await getOpenCodeModelCatalog();
-  const internal = resolveOpenCodeModelInput(query, catalog);
-  return toUnifiedResolution(internal, catalog);
-}
-
-export async function getModelInfo(
-  id: string,
-): Promise<UnifiedModelInfo | undefined> {
-  const entry = await getOpenCodeModelInfo(id);
-  return entry ? toUnifiedModelInfo(entry) : undefined;
-}
-
-export async function getSettingsPresentation(
-  activeModel: string,
-  callbackPrefix = "settings:model:",
-): Promise<{ modelButtons: ModelButton[]; modelDetails: string[] }> {
-  return getOpenCodeSettingsPresentation(activeModel, callbackPrefix);
-}
-
-export async function getProviders(): Promise<UnifiedProviderInfo[]> {
-  const catalog = await getOpenCodeModelCatalog();
-  const seen = new Set<string>();
-  const result: UnifiedProviderInfo[] = [];
-
-  for (const p of catalog.connectedProviders) {
-    seen.add(p.id);
-    result.push({
-      id: p.id,
-      name: p.name,
-      connected: true,
-      modelCount: p.modelCount,
-    });
-  }
-
-  for (const p of catalog.loginProviders) {
-    if (seen.has(p.id)) continue;
-    seen.add(p.id);
-    result.push({
-      id: p.id,
-      name: p.name,
-      connected: false,
-      modelCount: p.modelCount,
-    });
-  }
-
-  return result;
-}
-
-export async function getProviderModels(
-  providerId: string,
-  page = 1,
-  pageSize = 8,
-): Promise<{ models: UnifiedModelInfo[]; total: number }> {
-  const catalog = await getOpenCodeModelCatalog();
-  const filtered = catalog.models.filter((m) => m.providerID === providerId);
-  const start = (page - 1) * pageSize;
-  const slice = filtered.slice(start, start + pageSize);
-  return {
-    models: slice.map(toUnifiedModelInfo),
-    total: filtered.length,
-  };
-}
-
-export async function listModels(
-  filter?: "free" | "all",
-): Promise<{ models: UnifiedModelInfo[]; total: number }> {
-  const catalog = await getOpenCodeModelCatalog();
-  const source =
-    filter === "free" ? catalog.connectedFreeModels : catalog.connectedModels;
-  return {
-    models: source.map(toUnifiedModelInfo),
-    total: source.length,
-  };
-}
-
-export function formatModelError(
-  query: string,
-  resolution: UnifiedModelResolution,
-): string {
-  if (resolution.kind === "exact") return "";
-
-  // For "missing", delegate to the catalog error formatter with an empty matches array
-  // For "ambiguous", we need to re-resolve against the internal catalog to get the
-  // OpenCode-specific formatting (provider labels, selection values, etc.)
-  //
-  // We can't call async getOpenCodeModelCatalog here (sync function), so we build
-  // a lightweight message for ambiguous and delegate missing to the existing formatter.
-
-  if (resolution.kind === "missing") {
-    return `No OpenCode model matched "${query}".`;
-  }
-
-  // ambiguous — list the matches with their provider info
-  const preview = resolution.matches
-    .slice(0, 6)
-    .map((m) => `${m.id} (${m.providerName})`)
-    .join(", ");
-  return `Model query "${query}" is ambiguous. Try one of: ${preview}`;
-}
+export const resolveModel = provider.resolveModel;
+export const getModelInfo = provider.getModelInfo;
+export const getSettingsPresentation = provider.getSettingsPresentation;
+export const getProviders = provider.getProviders;
+export const getProviderModels = provider.getProviderModels;
+export const listModels = provider.listModels;
+export const formatModelError = provider.formatModelError;

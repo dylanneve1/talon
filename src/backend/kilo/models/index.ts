@@ -1,41 +1,52 @@
 /**
- * Kilo model catalog — types, resolution, formatting, and cache.
+ * Kilo model catalog — binder over the shared remote-server model-catalog
+ * module (see `backend/remote-server/model-catalog/`).
  *
- * Kilo's underlying provider-bucket API is forked from OpenCode's, so the
- * internal type names retain the `OpenCode*` prefix. Split by responsibility:
- *   - `types`        — raw + public catalog shapes
- *   - `catalog`      — TTL cache, raw→catalog parsing, fetch entry point
- *   - `resolve`      — query parse/match, provider-id guess, model resolver
- *   - `presentation` — quick-pick, settings buttons, summary/list, errors
+ * Kilo's provider-bucket API is forked from OpenCode's, so the catalog,
+ * resolution, and presentation logic is the shared implementation; this file
+ * only binds the Kilo SDK client + presentation knobs and re-exports the
+ * result under the historical `OpenCode*`-prefixed names (retained on
+ * purpose — the names match the wire shape the upstream actually emits).
  *
- * Re-exports the same public surface the old single-file module exposed.
+ * Knobs: Kilo's model picker renders through Discord StringSelectMenus,
+ * which allow 25 options and values up to 100 chars with any characters —
+ * Kilo ids routinely contain "/" and ":" (e.g. "inclusionai/ling-2.6-1t:free").
  */
 
+import { ensureServer } from "../server.js";
+import { createRemoteModelCatalogModule } from "../../remote-server/model-catalog/index.js";
+
 export type {
-  OpenCodeModelCatalogEntry,
-  OpenCodeModelCatalog,
-  OpenCodeModelResolution,
+  RemoteModelCatalogEntry as OpenCodeModelCatalogEntry,
+  RemoteModelCatalog as OpenCodeModelCatalog,
+  RemoteModelResolution as OpenCodeModelResolution,
   ModelButton,
-} from "./types.js";
+} from "../../remote-server/model-catalog/index.js";
 export {
-  getOpenCodeModelCatalog,
-  clearModelCatalogCache,
   sortCatalogModels,
-} from "./catalog.js";
-export {
-  getOpenCodeModelInfo,
-  getOpenCodeModelSelectionValue,
-  resolveOpenCodeModelInput,
+  getRemoteModelSelectionValue as getOpenCodeModelSelectionValue,
+  resolveRemoteModelInput as resolveOpenCodeModelInput,
   guessProviderID,
   getBucketPriority,
   normalizeModelLookup,
-  parseOpenCodeModelQuery,
-} from "./resolve.js";
-export {
-  getOpenCodeQuickPickModels,
-  getOpenCodeSettingsPresentation,
-  renderOpenCodeModelSummary,
-  renderOpenCodeModelList,
-  formatOpenCodeSelectionError,
-  formatOpenCodeUnavailableModel,
-} from "./presentation.js";
+  parseRemoteModelQuery as parseOpenCodeModelQuery,
+  formatRemoteUnavailableModel as formatOpenCodeUnavailableModel,
+} from "../../remote-server/model-catalog/index.js";
+
+const kiloModels = createRemoteModelCatalogModule({
+  label: "Kilo",
+  getClient: () => ensureServer(),
+  maxCallbackIdLength: 90,
+  allowCallbackSeparators: true,
+  quickPickLimit: 24,
+});
+
+export const getOpenCodeModelCatalog = kiloModels.getCatalog;
+export const clearModelCatalogCache = kiloModels.clearCache;
+export const getOpenCodeModelInfo = kiloModels.getModelInfo;
+export const getOpenCodeQuickPickModels = kiloModels.getQuickPickModels;
+export const getOpenCodeSettingsPresentation =
+  kiloModels.getSettingsPresentation;
+export const renderOpenCodeModelSummary = kiloModels.renderModelSummary;
+export const renderOpenCodeModelList = kiloModels.renderModelList;
+export const formatOpenCodeSelectionError = kiloModels.formatSelectionError;

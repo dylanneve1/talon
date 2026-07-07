@@ -1,17 +1,21 @@
 /**
- * OpenCode model-catalog types.
+ * Remote-server model-catalog types.
+ *
+ * OpenCode and Kilo (a fork of OpenCode) expose the same `/provider/list` +
+ * `/provider/auth` wire shapes, so the raw and parsed catalog types live here
+ * once and each backend re-exports them under its own prefix for back-compat.
  */
 
 import type { ReasoningEffortLevel } from "../../../core/types.js";
 
 // ── Raw wire shapes (private) ────────────────────────────────────────────────
 
-export type OpenCodeAuthMethod = {
+export type RemoteAuthMethod = {
   type?: string;
   label?: string;
 };
 
-export type OpenCodeRawModel = {
+export type RemoteRawModel = {
   id?: string;
   providerID?: string;
   name?: string;
@@ -44,16 +48,23 @@ export type OpenCodeRawModel = {
   default_reasoning_level?: string;
 };
 
-export type OpenCodeRawProvider = {
+export type RemoteRawProvider = {
   id?: string;
   name?: string;
   source?: string;
   env?: Array<string>;
   key?: string;
-  models?: Record<string, OpenCodeRawModel>;
+  models?: Record<string, RemoteRawModel>;
 };
 
-export type OpenCodeProviderCatalogEntry = {
+/** The `/provider/list` response body both backends return. */
+export type RemoteRawProvidersData = {
+  all?: Array<RemoteRawProvider>;
+  connected?: Array<string>;
+  default?: Record<string, string>;
+};
+
+export type RemoteProviderCatalogEntry = {
   id: string;
   name: string;
   source: string;
@@ -68,7 +79,7 @@ export type OpenCodeProviderCatalogEntry = {
 
 // ── Public catalog shapes ────────────────────────────────────────────────────
 
-export type OpenCodeModelCatalogEntry = {
+export type RemoteModelCatalogEntry = {
   id: string;
   name: string;
   family?: string;
@@ -96,19 +107,30 @@ export type OpenCodeModelCatalogEntry = {
   costCacheWrite: number;
 };
 
-export type OpenCodeModelCatalog = {
+export type RemoteModelCatalog = {
   generatedAt: number;
-  providers: Array<OpenCodeProviderCatalogEntry>;
-  models: Array<OpenCodeModelCatalogEntry>;
-  connectedProviders: Array<OpenCodeProviderCatalogEntry>;
-  loginProviders: Array<OpenCodeProviderCatalogEntry>;
-  connectedModels: Array<OpenCodeModelCatalogEntry>;
-  connectedFreeModels: Array<OpenCodeModelCatalogEntry>;
+  providers: Array<RemoteProviderCatalogEntry>;
+  models: Array<RemoteModelCatalogEntry>;
+  connectedProviders: Array<RemoteProviderCatalogEntry>;
+  loginProviders: Array<RemoteProviderCatalogEntry>;
+  connectedModels: Array<RemoteModelCatalogEntry>;
+  connectedFreeModels: Array<RemoteModelCatalogEntry>;
 };
 
-export type OpenCodeModelResolution =
-  | { kind: "exact"; model: OpenCodeModelCatalogEntry }
-  | { kind: "ambiguous"; matches: Array<OpenCodeModelCatalogEntry> }
-  | { kind: "missing"; matches: Array<OpenCodeModelCatalogEntry> };
+export type RemoteModelResolution =
+  | { kind: "exact"; model: RemoteModelCatalogEntry }
+  | { kind: "ambiguous"; matches: Array<RemoteModelCatalogEntry> }
+  | { kind: "missing"; matches: Array<RemoteModelCatalogEntry> };
 
 export type ModelButton = { text: string; callback_data: string };
+
+/**
+ * Structural slice of the OpenCode/Kilo SDK client the catalog fetch needs.
+ * Both `OpencodeClient` and `KiloClient` satisfy it.
+ */
+export interface RemoteProviderClient {
+  provider: {
+    list(): Promise<{ data?: unknown }>;
+    auth(): Promise<{ data?: unknown }>;
+  };
+}

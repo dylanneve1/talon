@@ -1,40 +1,52 @@
 /**
- * OpenCode model catalog — types, resolution, formatting, and cache.
+ * OpenCode model catalog — binder over the shared remote-server model-catalog
+ * module (see `backend/remote-server/model-catalog/`).
  *
- * Split by responsibility:
- *   - `types`        — raw + public catalog shapes
- *   - `catalog`      — TTL cache, raw→catalog parsing, fetch entry point
- *   - `resolve`      — query parse/match, provider-id guess, model resolver
- *   - `presentation` — quick-pick, settings buttons, summary/list, errors
+ * The catalog, resolution, and presentation logic is shared with Kilo (a fork
+ * of OpenCode with the same wire format); this file only binds the OpenCode
+ * SDK client + presentation knobs and re-exports the result under the
+ * historical `OpenCode*`-prefixed names.
  *
- * Re-exports the same public surface the old single-file module exposed.
+ * Knobs: OpenCode's model picker renders through Telegram inline keyboards —
+ * callback_data caps at 64 bytes and the keyboard is tight, so quick picks
+ * stay at 4 and only short separator-free ids are embedded raw.
  */
 
+import { ensureServer } from "../server.js";
+import { createRemoteModelCatalogModule } from "../../remote-server/model-catalog/index.js";
+
 export type {
-  OpenCodeModelCatalogEntry,
-  OpenCodeModelCatalog,
-  OpenCodeModelResolution,
+  RemoteModelCatalogEntry as OpenCodeModelCatalogEntry,
+  RemoteModelCatalog as OpenCodeModelCatalog,
+  RemoteModelResolution as OpenCodeModelResolution,
   ModelButton,
-} from "./types.js";
+} from "../../remote-server/model-catalog/index.js";
 export {
-  getOpenCodeModelCatalog,
-  clearModelCatalogCache,
   sortCatalogModels,
-} from "./catalog.js";
-export {
-  getOpenCodeModelInfo,
-  getOpenCodeModelSelectionValue,
-  resolveOpenCodeModelInput,
+  getRemoteModelSelectionValue as getOpenCodeModelSelectionValue,
+  resolveRemoteModelInput as resolveOpenCodeModelInput,
   guessProviderID,
   getBucketPriority,
   normalizeModelLookup,
-  parseOpenCodeModelQuery,
-} from "./resolve.js";
-export {
-  getOpenCodeQuickPickModels,
-  getOpenCodeSettingsPresentation,
-  renderOpenCodeModelSummary,
-  renderOpenCodeModelList,
-  formatOpenCodeSelectionError,
-  formatOpenCodeUnavailableModel,
-} from "./presentation.js";
+  parseRemoteModelQuery as parseOpenCodeModelQuery,
+  formatRemoteUnavailableModel as formatOpenCodeUnavailableModel,
+} from "../../remote-server/model-catalog/index.js";
+
+const opencodeModels = createRemoteModelCatalogModule({
+  label: "OpenCode",
+  getClient: () => ensureServer(),
+  maxCallbackIdLength: 48,
+  allowCallbackSeparators: false,
+  quickPickLimit: 4,
+});
+
+export const getOpenCodeModelCatalog = opencodeModels.getCatalog;
+export const clearModelCatalogCache = opencodeModels.clearCache;
+export const getOpenCodeModelInfo = opencodeModels.getModelInfo;
+export const getOpenCodeQuickPickModels = opencodeModels.getQuickPickModels;
+export const getOpenCodeSettingsPresentation =
+  opencodeModels.getSettingsPresentation;
+export const renderOpenCodeModelSummary = opencodeModels.renderModelSummary;
+export const renderOpenCodeModelList = opencodeModels.renderModelList;
+export const formatOpenCodeSelectionError =
+  opencodeModels.formatSelectionError;
