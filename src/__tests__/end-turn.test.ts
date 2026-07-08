@@ -19,6 +19,7 @@ import {
 import type { SDKAssistantMessage } from "@anthropic-ai/claude-agent-sdk";
 import { messagingTools } from "../core/tools/messaging.js";
 import {
+  isDeliveryTool,
   isTurnTerminator,
   stripMcpPrefix,
   ALL_TOOLS,
@@ -525,5 +526,46 @@ describe("turn-terminator integration with SDK production tool name shapes", () 
     }
     // Soft-opt-out wins: state stays open for follow-up tool calls.
     expect(state.turnTerminated).toBe(false);
+  });
+});
+
+describe("delivery-tool classification (isDeliveryTool)", () => {
+  it("the registry flags exactly the reply-delivery family", () => {
+    const flagged = ALL_TOOLS.filter((t) => t.delivery).map((t) => t.name);
+    expect(flagged.sort()).toEqual([
+      "end_turn",
+      "react",
+      "send",
+      "send_message",
+      "send_message_with_buttons",
+    ]);
+  });
+
+  it("matches bare names", () => {
+    expect(isDeliveryTool("end_turn")).toBe(true);
+    expect(isDeliveryTool("send_message")).toBe(true);
+    expect(isDeliveryTool("react")).toBe(true);
+  });
+
+  it("matches every prefixed shape backends emit", () => {
+    // Claude SDK / MCP canonical.
+    expect(isDeliveryTool("mcp__desktop-tools__end_turn")).toBe(true);
+    expect(isDeliveryTool("mcp__telegram-tools__send")).toBe(true);
+    // Kilo / OpenCode `<server>_<bare>` form.
+    expect(isDeliveryTool("desktop-tools_end_turn")).toBe(true);
+    expect(isDeliveryTool("talon-tools-352042062_send_message")).toBe(true);
+  });
+
+  it("leaves visible work alone — bridge tools, backend-native tools", () => {
+    // Bridge tools whose activity IS worth showing in a timeline.
+    expect(isDeliveryTool("edit_message")).toBe(false);
+    expect(isDeliveryTool("fetch_url")).toBe(false);
+    expect(isDeliveryTool("mcp__desktop-tools__edit_message")).toBe(false);
+    // Backend-native tools (Claude Code's own).
+    expect(isDeliveryTool("Bash")).toBe(false);
+    expect(isDeliveryTool("Read")).toBe(false);
+    // Names that merely resemble a delivery tool.
+    expect(isDeliveryTool("resend")).toBe(false);
+    expect(isDeliveryTool("end_turn_report")).toBe(false);
   });
 });

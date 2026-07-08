@@ -890,11 +890,9 @@ class AppState extends ChangeNotifier {
     final id = _string(e['id']);
     if (chatId == null || id == null) return false;
     final name = _string(e['name']) ?? 'tool';
-    // `end_turn` is the canonical delivery tool — its "result" is the assistant
-    // message that arrives separately, so no tool_result event ever lands for
-    // it. Showing it as a chip means an eternally-spinning row of noise.
-    if (_isInternalTool(name)) return true;
-
+    // No name-based filtering here: the daemon owns tool classification and
+    // never emits reply-delivery tools (end_turn / send_message / react) in
+    // `tool` events or history — their effect arrives as the message itself.
     final t = turnFor(chatId);
     final phase = _string(e['phase']);
     final output = _string(e['output']);
@@ -930,11 +928,6 @@ class AppState extends ChangeNotifier {
     }
     return true;
   }
-
-  static bool _isInternalTool(String name) =>
-      name.contains('desktop-tools') ||
-      name == 'end_turn' ||
-      name.endsWith('__end_turn');
 
   /// Seed the stores directly — for widget tests and the screenshot gallery,
   /// where rendering real content matters but a live bridge doesn't exist.

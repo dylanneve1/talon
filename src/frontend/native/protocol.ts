@@ -35,6 +35,11 @@ export type ClientButton = { text: string; url?: string; data?: string };
  * A tool invocation that ran during an assistant turn, persisted so history
  * shows what the model did even after a reload/restart (additive in v1 —
  * older clients simply ignore the field).
+ *
+ * Reply-delivery tools (`end_turn` / `send_message` / `react`) never appear
+ * here or in `tool` events — the daemon classifies and excludes them at the
+ * source, because their effect already reaches clients as the `message` /
+ * `reaction` itself. Clients render tool timelines as-is, no name filtering.
  */
 export type ClientToolCall = {
   id: string;

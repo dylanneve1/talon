@@ -113,6 +113,7 @@ Notes:
     frontends: ["telegram", "teams", "discord", "native"],
     tag: "messaging",
     endsTurn: true,
+    delivery: true,
   },
 
   // ── Telegram unified send ─────────────────────────────────────────────
@@ -372,6 +373,7 @@ Examples:
     },
     frontends: ["telegram", "discord"],
     tag: "messaging",
+    delivery: true,
   },
 
   // ── Native send_message ────────────────────────────────────────────────
@@ -388,6 +390,7 @@ Examples:
     execute: (params, bridge) => bridge("send_message", params),
     frontends: ["teams", "native"],
     tag: "messaging",
+    delivery: true,
   },
 
   // ── Native send_message_with_buttons ──────────────────────────────────
@@ -412,6 +415,7 @@ Example: send_message_with_buttons(text="Choose:", rows=[[{"text":"Docs","url":"
     execute: (params, bridge) => bridge("send_message_with_buttons", params),
     frontends: ["teams", "native"],
     tag: "messaging",
+    delivery: true,
   },
 
   // ── react ─────────────────────────────────────────────────────────────
@@ -469,6 +473,7 @@ Valid emoji: 👍 👎 ❤ 🔥 🥰 👏 😁 🤔 🤯 😱 🤬 😢 🎉 �
     frontends: ["telegram", "discord", "native"],
     tag: "messaging",
     endsTurn: true,
+    delivery: true,
   },
 
   // ── edit_message ──────────────────────────────────────────────────────

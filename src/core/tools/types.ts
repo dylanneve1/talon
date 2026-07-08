@@ -78,4 +78,15 @@ export interface ToolDefinition {
    * is the shared declarative signal, not the implementation.
    */
   readonly endsTurn?: boolean;
+
+  /**
+   * Reply-delivery plumbing: the tool's observable effect IS the
+   * message/reaction the user receives, which every frontend already
+   * surfaces as first-class output (a chat message, a reaction). Tools
+   * flagged here are excluded from activity timelines — the tool
+   * events a frontend shows or persists as "what the model did" —
+   * because reporting them there double-counts the reply as work.
+   * Declared on the definition so consumers never classify by name.
+   */
+  readonly delivery?: boolean;
 }

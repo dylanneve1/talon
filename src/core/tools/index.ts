@@ -56,6 +56,17 @@ const TURN_TERMINATOR_NAMES: ReadonlySet<string> = new Set(
 );
 
 /**
+ * Names of reply-delivery tools (`delivery: true` on the definition):
+ * their observable effect is the message/reaction itself, which
+ * frontends already surface as first-class output. Kept separate from
+ * `TURN_TERMINATOR_NAMES` — `send_message` delivers without ending the
+ * turn, and a future terminator need not be a delivery tool.
+ */
+const DELIVERY_TOOL_NAMES: ReadonlySet<string> = new Set(
+  ALL_TOOLS.filter((t) => t.delivery).map((t) => t.name),
+);
+
+/**
  * All tool names registered in Talon's tool catalog. Used by
  * `stripMcpPrefix` to recognise the bare name when a backend prefixes
  * the tool with its MCP server identifier in a non-standard way (e.g.
@@ -137,6 +148,24 @@ export function isTurnTerminator(
     if (flag === false) return false;
   }
   return true;
+}
+
+/**
+ * Whether a tool call by this name is reply-delivery plumbing
+ * (`delivery: true` on its definition) — `end_turn`, `send`,
+ * `send_message`, `react`, … Its effect reaches the user as a chat
+ * message or reaction, so activity timelines ("what the model did")
+ * must exclude it or the reply gets double-reported as work.
+ *
+ * Accepts bare names (`end_turn`) and every prefixed form
+ * `stripMcpPrefix` understands (`mcp__desktop-tools__end_turn`,
+ * Kilo's `desktop-tools_end_turn`).
+ */
+export function isDeliveryTool(toolName: string): boolean {
+  return (
+    DELIVERY_TOOL_NAMES.has(toolName) ||
+    DELIVERY_TOOL_NAMES.has(stripMcpPrefix(toolName))
+  );
 }
 
 /** Filter options for composing a tool set. */

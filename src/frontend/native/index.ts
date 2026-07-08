@@ -30,6 +30,7 @@ import { resolveActiveModelForChat } from "../../core/models/active-model.js";
 import { forceDream } from "../../core/background/dream.js";
 import { execute } from "../../core/engine/dispatcher.js";
 import { toolInputToRecord } from "../../core/agent-runtime/events.js";
+import { isDeliveryTool } from "../../core/tools/index.js";
 import {
   pushMessage,
   getRecentHistory,
@@ -576,6 +577,12 @@ export function createNativeFrontend(
               broadcast({ kind: "delta", chatId: entry.id, text: event.text });
               break;
             case "tool_call": {
+              // Delivery plumbing (end_turn / send_message / react) never
+              // enters the tool timeline — its effect arrives as the
+              // `message`/reaction itself. Skipping here keeps the live
+              // stream, the mid-turn replay to late joiners, and the
+              // persisted turn meta consistent from one choke point.
+              if (isDeliveryTool(event.name)) break;
               const input = toolInputToRecord(event.name, event.input);
               turnTools.set(event.id, {
                 call: { id: event.id, name: event.name, input },
@@ -592,6 +599,7 @@ export function createNativeFrontend(
               break;
             }
             case "tool_result": {
+              if (isDeliveryTool(event.name)) break;
               const output = summarizeToolResult(event.result);
               const live = turnTools.get(event.id);
               if (live) {
@@ -1027,7 +1035,11 @@ export function createNativeFrontend(
           if (msg.role === "assistant") {
             const meta = getTurnMeta(id, msg.id);
             if (meta) {
-              if (meta.tools?.length) msg.tools = meta.tools;
+              // Delivery tools are excluded at record time, but metas
+              // persisted by older daemons still carry them — filter on
+              // the way out so upgraded installs get clean history too.
+              const tools = meta.tools?.filter((t) => !isDeliveryTool(t.name));
+              if (tools?.length) msg.tools = tools;
               if (meta.durationMs) msg.durationMs = meta.durationMs;
               if (meta.tokensIn) msg.tokensIn = meta.tokensIn;
               if (meta.tokensOut) msg.tokensOut = meta.tokensOut;
