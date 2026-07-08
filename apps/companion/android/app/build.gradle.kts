@@ -29,11 +29,33 @@ android {
         versionName = flutter.versionName
     }
 
+    // Stable release signing so an APK from one release installs OVER the
+    // previous one. CI decodes the ANDROID_KEYSTORE_BASE64 secret and points
+    // these env vars at it; without them (local dev, forks without the
+    // secret) the build falls back to debug signing, where every machine's
+    // throwaway key makes upgrades require an uninstall.
+    val releaseKeystore = System.getenv("TALON_ANDROID_KEYSTORE_FILE")
+        ?.let { file(it) }
+        ?.takeIf { it.exists() }
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = releaseKeystore
+                storeType = "PKCS12"
+                storePassword = System.getenv("TALON_ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("TALON_ANDROID_KEY_ALIAS") ?: "talon"
+                keyPassword = System.getenv("TALON_ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (releaseKeystore != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

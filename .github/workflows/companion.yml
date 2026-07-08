@@ -139,8 +139,47 @@ jobs:
           flutter pub get
           dart run flutter_launcher_icons -f icons-windows.yaml || true
 
+      # The app version tracks Talon's own (release-please bumps
+      # package.json every release) — nothing is hand-bumped. versionCode
+      # must be a monotonically increasing int for Android upgrades:
+      # MAJOR*100000 + MINOR*1000 + PATCH (1.33.0 → 133000).
+      - name: Derive app version from Talon release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('$GITHUB_WORKSPACE/package.json').version")
+          IFS=. read -r MAJOR MINOR PATCH <<< "${VERSION%%-*}"
+          BUILD_NUMBER=$((MAJOR * 100000 + MINOR * 1000 + PATCH))
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "APP_BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "Companion version: $VERSION ($BUILD_NUMBER)"
+
+      # Stable release signing (see android/app/build.gradle.kts): decode
+      # the keystore secret so every release APK carries the same signature
+      # and installs over the previous one. Skipped (falls back to debug
+      # signing) when the secret isn't configured, e.g. on forks.
+      - name: Set up Android release keystore
+        if: matrix.platform == 'android'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No ANDROID_KEYSTORE_BASE64 secret — falling back to debug signing."
+            exit 0
+          fi
+          KEYSTORE_FILE="$RUNNER_TEMP/talon-release.p12"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_FILE"
+          {
+            echo "TALON_ANDROID_KEYSTORE_FILE=$KEYSTORE_FILE"
+            echo "TALON_ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+          } >> "$GITHUB_ENV"
+
       - name: Build
-        run: ${{ matrix.build }}
+        shell: bash
+        run: ${{ matrix.build }} --build-name="$APP_VERSION" --build-number="$APP_BUILD_NUMBER"
 
       - name: Package
         shell: bash

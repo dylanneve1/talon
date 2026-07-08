@@ -278,9 +278,9 @@ describe("classify", () => {
     expect(classify(new Error("429 Too Many Requests")).reason).toBe(
       "rate_limit",
     );
-    expect(
-      classify(new Error("You've hit your weekly limit")).reason,
-    ).toBe("usage_limit");
+    expect(classify(new Error("You've hit your weekly limit")).reason).toBe(
+      "usage_limit",
+    );
   });
 });
 

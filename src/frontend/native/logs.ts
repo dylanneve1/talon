@@ -79,7 +79,10 @@ export function parseLogTail(raw: string, query: LogQuery): LogEntry[] {
  * can't make the daemon slurp the whole file.
  */
 export function readLogEntries(path: string, query: LogQuery): LogEntry[] {
-  const maxBytes = Math.min(2 * 1024 * 1024, Math.max(64 * 1024, query.limit * 2048));
+  const maxBytes = Math.min(
+    2 * 1024 * 1024,
+    Math.max(64 * 1024, query.limit * 2048),
+  );
   let raw: string;
   try {
     // Line budget is generous vs `limit` so level-filtered queries can
