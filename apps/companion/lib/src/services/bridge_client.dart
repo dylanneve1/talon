@@ -166,6 +166,27 @@ class BridgeClient {
   Future<void> setPulse(String chatId, bool on) =>
       _postJson('/chats/pulse', {'chatId': chatId, 'on': on});
 
+  Future<void> registerDevice(Map<String, dynamic> device) =>
+      _postJson('/devices/register', device);
+
+  Future<void> postLocation(Map<String, dynamic> location) =>
+      _postJson('/location', location);
+
+  Future<(List<DeviceInfo> devices, List<DeviceLocation> locations)>
+      devices() async {
+    final j = await _getJson('/devices');
+    return (
+      _list(j['devices'])
+          .map((d) => DeviceInfo.fromJson(_map(d)))
+          .where((d) => d.id.isNotEmpty)
+          .toList(),
+      _list(j['locations'])
+          .map((l) => DeviceLocation.fromJson(_map(l)))
+          .where((l) => l.deviceId.isNotEmpty)
+          .toList(),
+    );
+  }
+
   /// Set/replace/clear the chat's queued follow-up (empty text clears). The
   /// daemon broadcasts the change to every client via chat_updated.
   Future<void> queue(String chatId, String text) =>

@@ -139,6 +139,8 @@ export type ClientChat = {
 export type BridgeStatus = {
   app: "talon-bridge";
   protocol: number;
+  /** Additive bridge features supported by this daemon. */
+  capabilities?: string[];
   botName: string;
   backend: string;
   /** Display name of the global default model. */
@@ -195,6 +197,40 @@ export type BackendOption = {
   label: string;
 };
 
+export type DevicePlatform =
+  | "android"
+  | "macos"
+  | "windows"
+  | "linux"
+  | "ios";
+
+export type DeviceInfo = {
+  id: string;
+  name: string;
+  platform: DevicePlatform;
+  appVersion: string;
+  online: boolean;
+  /** Epoch milliseconds. */
+  lastSeen: number;
+  /** Battery percent, 0-100. */
+  battery?: number;
+  charging?: boolean;
+};
+
+export type DeviceLocation = {
+  deviceId: string;
+  lat: number;
+  lon: number;
+  accuracyM?: number;
+  altitudeM?: number;
+  speedMps?: number;
+  headingDeg?: number;
+  /** Epoch milliseconds. */
+  ts: number;
+  provider?: string;
+  batteryPct?: number;
+};
+
 /**
  * Server → client events, delivered as SSE `data:` lines (one JSON object
  * each). The client switches on `kind`. Streaming text arrives as ephemeral
@@ -233,6 +269,7 @@ export type BridgeEvent =
       durationMs?: number;
       usage?: { input: number; output: number };
     }
+  | { kind: "locate"; deviceId?: string }
   | { kind: "error"; chatId?: string; message: string };
 
 // ── Mappers (Talon internals → wire types) ───────────────────────────────────
@@ -254,5 +291,47 @@ export function historyToClientMessage(
     role: m.senderId === BOT_SENDER_ID ? "assistant" : "user",
     text: m.text,
     ts: m.timestamp,
+  };
+}
+
+export function toDeviceInfo(
+  value: DeviceInfo,
+  now = Date.now(),
+  offlineAfterMs = 90_000,
+): DeviceInfo {
+  const battery =
+    typeof value.battery === "number"
+      ? Math.max(0, Math.min(100, Math.round(value.battery)))
+      : undefined;
+  return {
+    id: value.id,
+    name: value.name,
+    platform: value.platform,
+    appVersion: value.appVersion,
+    online: now - value.lastSeen <= offlineAfterMs && value.online,
+    lastSeen: value.lastSeen,
+    ...(battery !== undefined ? { battery } : {}),
+    ...(typeof value.charging === "boolean" ? { charging: value.charging } : {}),
+  };
+}
+
+export function toDeviceLocation(value: DeviceLocation): DeviceLocation {
+  return {
+    deviceId: value.deviceId,
+    lat: value.lat,
+    lon: value.lon,
+    ...(typeof value.accuracyM === "number"
+      ? { accuracyM: value.accuracyM }
+      : {}),
+    ...(typeof value.altitudeM === "number" ? { altitudeM: value.altitudeM } : {}),
+    ...(typeof value.speedMps === "number" ? { speedMps: value.speedMps } : {}),
+    ...(typeof value.headingDeg === "number"
+      ? { headingDeg: value.headingDeg }
+      : {}),
+    ts: value.ts,
+    ...(value.provider ? { provider: value.provider } : {}),
+    ...(typeof value.batteryPct === "number"
+      ? { batteryPct: Math.max(0, Math.min(100, Math.round(value.batteryPct))) }
+      : {}),
   };
 }

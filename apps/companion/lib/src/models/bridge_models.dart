@@ -205,6 +205,88 @@ class QueuedMessage {
       };
 }
 
+class DeviceInfo {
+  final String id;
+  final String name;
+  final String platform;
+  final String appVersion;
+  final bool online;
+  final int lastSeen;
+  final int? battery;
+  final bool? charging;
+
+  const DeviceInfo({
+    required this.id,
+    required this.name,
+    required this.platform,
+    required this.appVersion,
+    required this.online,
+    required this.lastSeen,
+    this.battery,
+    this.charging,
+  });
+
+  factory DeviceInfo.fromJson(Map<String, dynamic> j) => DeviceInfo(
+        id: _string(j['id']),
+        name: _string(j['name']),
+        platform: _string(j['platform']),
+        appVersion: _string(j['appVersion']),
+        online: _bool(j['online']),
+        lastSeen: _int(j['lastSeen']),
+        battery: j['battery'] is num ? (j['battery'] as num).round() : null,
+        charging: j['charging'] is bool ? j['charging'] as bool : null,
+      );
+}
+
+class DeviceLocation {
+  final String deviceId;
+  final double lat;
+  final double lon;
+  final double? accuracyM;
+  final double? altitudeM;
+  final double? speedMps;
+  final double? headingDeg;
+  final int ts;
+  final String? provider;
+  final int? batteryPct;
+
+  const DeviceLocation({
+    required this.deviceId,
+    required this.lat,
+    required this.lon,
+    required this.ts,
+    this.accuracyM,
+    this.altitudeM,
+    this.speedMps,
+    this.headingDeg,
+    this.provider,
+    this.batteryPct,
+  });
+
+  factory DeviceLocation.fromJson(Map<String, dynamic> j) => DeviceLocation(
+        deviceId: _string(j['deviceId']),
+        lat: _double(j['lat']),
+        lon: _double(j['lon']),
+        accuracyM: _nullableDouble(j['accuracyM']),
+        altitudeM: _nullableDouble(j['altitudeM']),
+        speedMps: _nullableDouble(j['speedMps']),
+        headingDeg: _nullableDouble(j['headingDeg']),
+        ts: _int(j['ts']),
+        provider: j['provider'] is String ? j['provider'] as String : null,
+        batteryPct:
+            j['batteryPct'] is num ? (j['batteryPct'] as num).round() : null,
+      );
+}
+
+double _double(Object? value, [double fallback = 0]) {
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? fallback;
+  return fallback;
+}
+
+double? _nullableDouble(Object? value) =>
+    value is num ? value.toDouble() : null;
+
 class ClientChat {
   final String id;
   String title;

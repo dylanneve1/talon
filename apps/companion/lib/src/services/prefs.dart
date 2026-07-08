@@ -12,6 +12,10 @@ class Prefs {
   static const _kOnboarded = 'onboarded.v1';
   static const _kLastRead = 'lastRead.v1';
   static const _kSnapshot = 'snapshot.v1';
+  static const _kMeshDeviceId = 'mesh.deviceId.v1';
+  static const _kMeshSharing = 'mesh.sharing.v1';
+  static const _kMeshPeriodic = 'mesh.periodic.v1';
+  static const _kMeshInterval = 'mesh.intervalSeconds.v1';
 
   final SharedPreferences _sp;
   late final Map<String, int> _lastRead = _decodeLastRead();
@@ -43,6 +47,21 @@ class Prefs {
   /// Persisted theme selection: 'system' (default), 'light', or 'dark'.
   String get themeMode => _sp.getString(_kThemeMode) ?? 'system';
   Future<void> setThemeMode(String v) => _sp.setString(_kThemeMode, v);
+
+  // ── Device mesh ──────────────────────────────────────────────────────────
+
+  String? get meshDeviceId => _sp.getString(_kMeshDeviceId);
+  Future<void> setMeshDeviceId(String id) => _sp.setString(_kMeshDeviceId, id);
+
+  bool get meshSharing => _sp.getBool(_kMeshSharing) ?? true;
+  Future<void> setMeshSharing(bool v) => _sp.setBool(_kMeshSharing, v);
+
+  bool get meshPeriodic => _sp.getBool(_kMeshPeriodic) ?? false;
+  Future<void> setMeshPeriodic(bool v) => _sp.setBool(_kMeshPeriodic, v);
+
+  int get meshIntervalSeconds => _sp.getInt(_kMeshInterval) ?? 300;
+  Future<void> setMeshIntervalSeconds(int v) =>
+      _sp.setInt(_kMeshInterval, v.clamp(60, 3600));
 
   // ── Read markers ──────────────────────────────────────────────────────────
 

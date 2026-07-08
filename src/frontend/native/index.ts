@@ -66,6 +66,7 @@ import { NativeChats, DEFAULT_CHAT_TITLE, type ChatEntry } from "./chats.js";
 import { extractSessionName } from "../../backend/shared/session-name.js";
 import { BridgeServer, type BridgeServerHandlers } from "./server.js";
 import { createNativeActionHandler } from "./actions.js";
+import { MeshRegistry } from "./mesh.js";
 import { removeBridgeDiscovery, writeBridgeDiscovery } from "./discovery.js";
 import { readLogEntries } from "./logs.js";
 import {
@@ -81,6 +82,8 @@ import {
   type ClientMessage,
   type ClientToolCall,
   type ContextInfo,
+  type DeviceInfo,
+  type DeviceLocation,
   type ModelOption,
   type QueuedMessage,
   type SearchResult,
@@ -148,6 +151,7 @@ export function createNativeFrontend(
   const startedAt = new Date().toISOString();
   const botName = config.botDisplayName || "Talon";
   const chats = new NativeChats();
+  const mesh = new MeshRegistry();
 
   // Monotonic message-id minter. Seeded from the wall clock so ids stay
   // unique and ascending across restarts (history rows persist their ids).
@@ -365,6 +369,7 @@ export function createNativeFrontend(
   }
 
   const broadcast = (event: BridgeEvent): void => server.broadcast(event);
+  const locateWaiters = new Set<() => void>();
 
   // The most recent assistant message id per chat — turn_end attaches the
   // turn's meta (tools/stats) to this message so history hydration can show
@@ -732,6 +737,7 @@ export function createNativeFrontend(
     return {
       app: "talon-bridge",
       protocol: BRIDGE_PROTOCOL_VERSION,
+      capabilities: ["mesh"],
       botName,
       backend: config.backend,
       model: resolveModel(config.model)?.displayName ?? config.model,
@@ -987,6 +993,111 @@ export function createNativeFrontend(
     }
   }
 
+  // ── Device mesh tools ────────────────────────────────────────────────────
+
+  function age(ms: number): string {
+    const sec = Math.max(0, Math.round(ms / 1000));
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.round(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hrs = Math.round(min / 60);
+    return `${hrs}h ago`;
+  }
+
+  function deviceLine(device: DeviceInfo): string {
+    const parts = [
+      `${device.name} (${device.platform})`,
+      device.online ? "online" : "offline",
+      `last seen ${age(Date.now() - device.lastSeen)}`,
+    ];
+    if (typeof device.battery === "number") {
+      parts.push(`${device.battery}%${device.charging ? " charging" : ""}`);
+    }
+    return `- ${parts.join(" · ")}`;
+  }
+
+  function chooseDevice(name?: unknown): DeviceInfo | undefined {
+    const devices = mesh.list().devices;
+    if (typeof name === "string" && name.trim()) {
+      const q = name.trim().toLowerCase();
+      return devices.find(
+        (d) => d.id.toLowerCase() === q || d.name.toLowerCase().includes(q),
+      );
+    }
+    return (
+      devices.find((d) => ["android", "ios"].includes(d.platform)) ??
+      devices[0]
+    );
+  }
+
+  function locationSummary(device: DeviceInfo, loc: DeviceLocation): string {
+    const ageText = age(Date.now() - loc.ts);
+    const accuracy =
+      typeof loc.accuracyM === "number"
+        ? ` Accuracy ${Math.round(loc.accuracyM)}m.`
+        : "";
+    return [
+      `${device.name} is at ${loc.lat.toFixed(6)}, ${loc.lon.toFixed(6)}.`,
+      `${accuracy} Fix age ${ageText}.`,
+      `Reverse-geocode pair: ${loc.lat},${loc.lon}`,
+    ]
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  async function waitForFreshLocation(
+    deviceId: string,
+    requestedAt: number,
+  ): Promise<DeviceLocation | undefined> {
+    const existing = mesh.getLocation(deviceId);
+    if (existing && existing.ts >= requestedAt) return existing;
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline) {
+      const remaining = deadline - Date.now();
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer);
+          locateWaiters.delete(done);
+          resolve();
+        };
+        const timer = setTimeout(done, Math.min(remaining, 1000));
+        locateWaiters.add(done);
+      });
+      const loc = mesh.getLocation(deviceId);
+      if (loc && loc.ts >= requestedAt) return loc;
+    }
+    return undefined;
+  }
+
+  async function listDevicesTool(): Promise<{ ok: boolean; text: string }> {
+    const { devices } = mesh.list();
+    return {
+      ok: true,
+      text: devices.length
+        ? devices.map(deviceLine).join("\n")
+        : "No mesh devices have registered yet.",
+    };
+  }
+
+  async function getDeviceLocationTool(
+    device?: unknown,
+  ): Promise<{ ok: boolean; text: string }> {
+    const target = chooseDevice(device);
+    if (!target) return { ok: false, text: "No mesh devices are registered." };
+    const requestedAt = Date.now();
+    broadcast({ kind: "locate", deviceId: target.id });
+    const fresh = await waitForFreshLocation(target.id, requestedAt);
+    const loc = fresh ?? mesh.getLocation(target.id);
+    if (!loc) {
+      return {
+        ok: false,
+        text: `No location is known for ${target.name}. A locate request was sent, but no fix arrived within 8s.`,
+      };
+    }
+    return { ok: true, text: locationSummary(target, loc) };
+  }
+
   // ── Bridge server wiring ─────────────────────────────────────────────────
 
   const handlers: BridgeServerHandlers = {
@@ -1161,6 +1272,13 @@ export function createNativeFrontend(
       readLogEntries(files.log, { limit: lines, minLevel, component }),
     liveTurnEvents,
     mediaPath: (id) => media.get(id) ?? null,
+    registerDevice: (body) => mesh.register(body),
+    storeLocation: async (body) => {
+      const loc = await mesh.storeLocation(body);
+      for (const notify of [...locateWaiters]) notify();
+      return loc;
+    },
+    listDevices: () => mesh.list(),
   };
 
   const nativeCfg = config.native ?? { port: 19880, host: "127.0.0.1" };
@@ -1202,15 +1320,28 @@ export function createNativeFrontend(
     getBridgePort: () => gateway.getPort(),
 
     async init() {
+      await mesh.load();
+      const baseNativeHandler = createNativeActionHandler({
+        chats,
+        gateway,
+        emitAssistant,
+        emitPhoto,
+        broadcast,
+      });
       gateway.registerFrontendHandler(
         "native",
-        createNativeActionHandler({
-          chats,
-          gateway,
-          emitAssistant,
-          emitPhoto,
-          broadcast,
-        }),
+        async (body, chatId) => {
+          const base = await baseNativeHandler(body, chatId);
+          if (base) return base;
+          switch (body.action) {
+            case "list_devices":
+              return listDevicesTool();
+            case "get_device_location":
+              return getDeviceLocationTool(body.device);
+            default:
+              return null;
+          }
+        },
       );
       const gatewayPort = await gateway.start(19876);
       log("native", `Gateway on :${gatewayPort}`);

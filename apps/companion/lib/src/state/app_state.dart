@@ -9,6 +9,7 @@ import '../services/bridge_client.dart';
 import '../services/daemon_supervisor.dart';
 import '../services/local_discovery.dart';
 import '../services/log.dart';
+import '../services/mesh_service.dart';
 import '../services/prefs.dart';
 
 enum ConnState { idle, connecting, connected, error }
@@ -89,6 +90,7 @@ class AppState extends ChangeNotifier {
   BridgeClient? _client;
   DaemonSupervisor? _supervisor;
   StreamSubscription<Map<String, dynamic>>? _sub;
+  MeshService? _mesh;
   Timer? _reconnect;
   int _backoffMs = 800;
   bool _disposed = false;
@@ -150,6 +152,8 @@ class AppState extends ChangeNotifier {
 
   // Daemon settings (synced from the bridge)
   ConfigSnapshot? appConfig;
+  List<DeviceInfo> meshDevices = [];
+  List<DeviceLocation> meshLocations = [];
 
   List<ClientMessage> messagesFor(String chatId) =>
       _messages[chatId] ?? const [];
@@ -266,8 +270,10 @@ class AppState extends ChangeNotifier {
       AppLog.info('app_state', 'connected');
       _setConn(ConnState.connected, null);
       _backoffMs = 800;
+      await _startMesh(client);
       await _refreshChats();
       unawaited(_refreshModels());
+      unawaited(refreshMeshDevices());
     } catch (e) {
       if (epoch != _epoch) {
         _disposeStale(client);
@@ -637,6 +643,37 @@ class AppState extends ChangeNotifier {
     await _command(chatId, 'Pulse toggle', client.setPulse(chatId, on));
   }
 
+  Future<void> setMeshSharing(bool on) async {
+    await prefs.setMeshSharing(on);
+    _mesh?.reconfigure();
+    notifyListeners();
+  }
+
+  Future<void> setMeshPeriodic(bool on) async {
+    await prefs.setMeshPeriodic(on);
+    _mesh?.reconfigure();
+    notifyListeners();
+  }
+
+  Future<void> setMeshIntervalSeconds(int seconds) async {
+    await prefs.setMeshIntervalSeconds(seconds);
+    _mesh?.reconfigure();
+    notifyListeners();
+  }
+
+  Future<void> refreshMeshDevices() async {
+    final client = _client;
+    if (client == null || conn != ConnState.connected) return;
+    try {
+      final r = await client.devices();
+      meshDevices = r.$1;
+      meshLocations = r.$2;
+      notifyListeners();
+    } catch (e) {
+      AppLog.warn('app_state', 'mesh refresh failed', e);
+    }
+  }
+
   Future<ConfigSnapshot?> loadConfig() async {
     final c = await _client?.getConfig();
     if (c != null) {
@@ -701,6 +738,17 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       AppLog.warn('app_state', 'control "$action" failed', e);
       return (ok: false, message: '$e');
+    }
+  }
+
+  Future<void> _startMesh(BridgeClient client) async {
+    await _mesh?.stop();
+    final mesh = MeshService(prefs, client);
+    _mesh = mesh;
+    try {
+      await mesh.start();
+    } catch (e) {
+      AppLog.warn('app_state', 'mesh start failed', e);
     }
   }
 
@@ -1242,6 +1290,7 @@ class AppState extends ChangeNotifier {
     }
     _continuingTimers.clear();
     _sub?.cancel();
+    _mesh?.stop();
     _client?.dispose();
     super.dispose();
   }

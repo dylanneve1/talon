@@ -30,12 +30,15 @@ import {
   type BridgeStatus,
   type ClientChat,
   type ClientMessage,
+  type DeviceInfo,
+  type DeviceLocation,
   type LogEntry,
   type LogLevel,
   type ModelOption,
   type SearchResult,
 } from "./protocol.js";
 import type { ConfigSnapshot } from "./settings.js";
+import type { MeshRegistry } from "./mesh.js";
 
 /** Optional attachment references carried alongside a sent message. */
 export type SendOptions = {
@@ -105,6 +108,13 @@ export type BridgeServerHandlers = {
   liveTurnEvents(): BridgeEvent[];
   /** Resolve a media id to an absolute file path (or null if unknown). */
   mediaPath(id: string): string | null;
+  /** Register/update one mesh device. */
+  registerDevice(body: Record<string, unknown>): Promise<DeviceInfo>;
+  /** Store the last-known location for one mesh device. */
+  storeLocation(body: Record<string, unknown>): Promise<DeviceLocation>;
+  /** List mesh devices and their last-known locations. */
+  listDevices(): { devices: DeviceInfo[]; locations: DeviceLocation[] };
+  meshRegistry?: MeshRegistry;
 };
 
 const SSE_PING_MS = 25_000;
@@ -256,6 +266,7 @@ export class BridgeServer {
         backend: s.backend,
         model: s.model,
         activeChats: s.activeChats,
+        capabilities: ["mesh"],
       });
     }
 
@@ -354,6 +365,22 @@ export class BridgeServer {
           });
         this.handlers.send(id, text, { imagePath, attachmentPath });
         return this.json(res, 202, { ok: true });
+      }
+
+      if (method === "POST" && path === "/devices/register") {
+        const body = await this.readJson(req);
+        const device = await this.handlers.registerDevice(body);
+        return this.json(res, 200, { ok: true, deviceId: device.id });
+      }
+
+      if (method === "POST" && path === "/location") {
+        const body = await this.readJson(req);
+        await this.handlers.storeLocation(body);
+        return this.json(res, 200, { ok: true });
+      }
+
+      if (method === "GET" && path === "/devices") {
+        return this.json(res, 200, this.handlers.listDevices());
       }
 
       if (method === "POST" && path === "/upload") {

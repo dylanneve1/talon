@@ -16,8 +16,11 @@ import {
   historyToClientMessage,
   BOT_SENDER_ID,
   USER_SENDER_ID,
+  type BridgeStatus,
 } from "../frontend/native/protocol.js";
 import { NativeChats, DEFAULT_CHAT_TITLE } from "../frontend/native/chats.js";
+import { MeshRegistry } from "../frontend/native/mesh.js";
+import { BridgeServer, type BridgeServerHandlers } from "../frontend/native/server.js";
 import { extractSessionName } from "../backend/shared/session-name.js";
 import { createNativeActionHandler } from "../frontend/native/actions.js";
 import {
@@ -309,6 +312,168 @@ describe("native settings", () => {
     const snap = applyConfigUpdate(config, { backend: "codex" });
     expect(config.backend).toBe("claude");
     expect(snap.backend).toBe("claude");
+  });
+});
+
+describe("native mesh registry", () => {
+  it("upserts devices, applies presence timeout, and persists last-known locations", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "talon-mesh-"));
+    const registry = new MeshRegistry({
+      devices: join(dir, "mesh-devices.json"),
+      locations: join(dir, "mesh-locations.json"),
+    });
+
+    await registry.register({
+      id: "phone",
+      name: "Pixel",
+      platform: "android",
+      appVersion: "1.0.0",
+      battery: 88,
+      charging: true,
+    }, 1_000);
+    await registry.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.1",
+      battery: 77,
+    }, 2_000);
+    await registry.storeLocation({
+      deviceId: "phone",
+      lat: 53.1,
+      lon: -6.2,
+      accuracyM: 12,
+      ts: 2_100,
+      provider: "gps",
+    }, 2_100);
+
+    expect(registry.list(2_500).devices).toMatchObject([
+      { id: "phone", name: "Pixel 9", online: true, battery: 77 },
+    ]);
+    expect(registry.list(93_001).devices[0].online).toBe(false);
+
+    const reloaded = new MeshRegistry({
+      devices: join(dir, "mesh-devices.json"),
+      locations: join(dir, "mesh-locations.json"),
+    });
+    await reloaded.load();
+    expect(reloaded.getLocation("phone")).toMatchObject({
+      deviceId: "phone",
+      lat: 53.1,
+      lon: -6.2,
+    });
+    if (process.platform !== "win32") {
+      expect((await stat(join(dir, "mesh-devices.json"))).mode & 0o777).toBe(0o600);
+      expect((await stat(join(dir, "mesh-locations.json"))).mode & 0o777).toBe(0o600);
+    }
+  });
+});
+
+describe("native mesh bridge routes", () => {
+  function status(): BridgeStatus {
+    return {
+      app: "talon-bridge",
+      protocol: 1,
+      capabilities: ["mesh"],
+      botName: "Talon",
+      backend: "test",
+      model: "m1",
+      activeChats: 0,
+      startedAt: "now",
+    };
+  }
+
+  async function startMeshServer(token = "secret") {
+    const registry = new MeshRegistry({
+      devices: join(await mkdtemp(join(tmpdir(), "talon-mesh-routes-")), "devices.json"),
+      locations: join(await mkdtemp(join(tmpdir(), "talon-mesh-routes-")), "locations.json"),
+    });
+    const handlers: BridgeServerHandlers = {
+      status,
+      listChats: () => [],
+      createChat: () => {
+        throw new Error("unused");
+      },
+      renameChat: () => null,
+      deleteChat: () => false,
+      history: () => [],
+      search: () => [],
+      send: () => {},
+      upload: async () => ({ imagePath: "", path: "" }),
+      listModels: () => ({ active: "", models: [] }),
+      setModel: () => {},
+      listBackends: () => ({ active: "", backends: [] }),
+      setBackend: async () => ({ ok: true }),
+      setEffort: () => {},
+      effortLevels: async () => ({ active: "", levels: [] }),
+      resetChat: () => false,
+      interruptTurn: async () => false,
+      setPulse: () => {},
+      queueMessage: () => {},
+      getConfig: () => ({}) as never,
+      setConfig: () => ({}) as never,
+      control: async () => ({ ok: true, message: "" }),
+      liveTurnEvents: () => [],
+      mediaPath: () => null,
+      registerDevice: (body) => registry.register(body),
+      storeLocation: (body) => registry.storeLocation(body),
+      listDevices: () => registry.list(),
+    };
+    const server = new BridgeServer(
+      { host: "127.0.0.1", port: 0, token, startedAt: "now" },
+      handlers,
+    );
+    const port = await server.start();
+    return { server, port };
+  }
+
+  it("advertises mesh in health and auth-protects mesh routes", async () => {
+    const { server, port } = await startMeshServer();
+    try {
+      const health = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(await health.json()).toMatchObject({ capabilities: ["mesh"] });
+
+      const denied = await fetch(`http://127.0.0.1:${port}/devices`);
+      expect(denied.status).toBe(401);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("registers devices, stores last-known location, and returns route shapes", async () => {
+    const { server, port } = await startMeshServer();
+    const headers = {
+      Authorization: "Bearer secret",
+      "Content-Type": "application/json",
+    };
+    try {
+      const reg = await fetch(`http://127.0.0.1:${port}/devices/register`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          id: "phone",
+          name: "Pixel",
+          platform: "android",
+          appVersion: "1.0.0",
+        }),
+      });
+      expect(await reg.json()).toEqual({ ok: true, deviceId: "phone" });
+
+      const loc = await fetch(`http://127.0.0.1:${port}/location`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ deviceId: "phone", lat: 1, lon: 2, ts: 3 }),
+      });
+      expect(await loc.json()).toEqual({ ok: true });
+
+      const list = await fetch(`http://127.0.0.1:${port}/devices`, { headers });
+      expect(await list.json()).toMatchObject({
+        devices: [{ id: "phone", online: true }],
+        locations: [{ deviceId: "phone", lat: 1, lon: 2, ts: 3 }],
+      });
+    } finally {
+      await server.stop();
+    }
   });
 });
 

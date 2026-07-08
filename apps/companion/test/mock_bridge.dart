@@ -58,6 +58,8 @@ class MockBridge {
   };
   String activeModel = 'm1';
   String activeEffort = 'adaptive';
+  final List<Map<String, dynamic>> devices = [];
+  final List<Map<String, dynamic>> locations = [];
 
   int get port => _port;
   String get host => '127.0.0.1';
@@ -197,6 +199,31 @@ class MockBridge {
         'ts': 20,
       });
       return _json(req.response, 202, {'ok': true});
+    }
+    if (req.method == 'POST' && path == '/devices/register') {
+      final body = await _readJson(req);
+      devices.removeWhere((d) => d['id'] == body['id']);
+      devices.add({
+        ...body,
+        'online': true,
+        'lastSeen': DateTime.now().millisecondsSinceEpoch,
+      });
+      return _json(req.response, 200, {
+        'ok': true,
+        'deviceId': body['id'],
+      });
+    }
+    if (req.method == 'POST' && path == '/location') {
+      final body = await _readJson(req);
+      locations.removeWhere((l) => l['deviceId'] == body['deviceId']);
+      locations.add(body);
+      return _json(req.response, 200, {'ok': true});
+    }
+    if (req.method == 'GET' && path == '/devices') {
+      return _json(req.response, 200, {
+        'devices': devices,
+        'locations': locations,
+      });
     }
     if (req.method == 'GET' && path == '/config') {
       return _json(req.response, 200, config);

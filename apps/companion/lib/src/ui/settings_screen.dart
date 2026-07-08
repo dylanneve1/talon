@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/bridge_models.dart';
 import '../services/log.dart';
@@ -55,6 +56,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
     try {
       final c = await widget.state.loadConfig();
+      await widget.state.refreshMeshDevices();
       if (!mounted) return;
       setState(() {
         _cfg = c;
@@ -329,6 +331,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
+          _meshCard(),
+          const SizedBox(height: 16),
           _controlsCard(),
         ],
         const SizedBox(height: 16),
@@ -339,6 +343,109 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _connectionCard(),
         const SizedBox(height: 24),
       ],
+    );
+  }
+
+  Widget _meshCard() {
+    final prefs = widget.state.prefs;
+    final locByDevice = {
+      for (final loc in widget.state.meshLocations) loc.deviceId: loc,
+    };
+    return _Section(
+      title: 'Mesh',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _switchRow(
+            'Location sharing',
+            'Register this device and answer on-demand locate requests',
+            prefs.meshSharing,
+            (v) => widget.state.setMeshSharing(v),
+          ),
+          const Divider(height: 22),
+          _switchRow(
+            'Periodic reporting',
+            'Send a live location fix on an interval',
+            prefs.meshPeriodic,
+            prefs.meshSharing ? (v) => widget.state.setMeshPeriodic(v) : (_) {},
+          ),
+          if (prefs.meshSharing && prefs.meshPeriodic)
+            _intervalRow(
+              'Mesh interval',
+              '${(prefs.meshIntervalSeconds / 60).round()} min',
+              (prefs.meshIntervalSeconds / 60).round(),
+              min: 1,
+              onChange: (m) => widget.state.setMeshIntervalSeconds(m * 60),
+            ),
+          const Divider(height: 22),
+          Row(
+            children: [
+              Icon(Icons.hub_outlined, size: 18, color: TalonColors.textDim),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  widget.state.meshDevices.isEmpty
+                      ? 'No mesh devices yet'
+                      : '${widget.state.meshDevices.length} device${widget.state.meshDevices.length == 1 ? '' : 's'}',
+                  style: const TextStyle(fontSize: 14),
+                ),
+              ),
+              IconButton(
+                onPressed: widget.state.refreshMeshDevices,
+                icon: const Icon(Icons.refresh, size: 18),
+                tooltip: 'Refresh mesh',
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          for (final device in widget.state.meshDevices)
+            _meshDeviceRow(device, locByDevice[device.id]),
+        ],
+      ),
+    );
+  }
+
+  Widget _meshDeviceRow(DeviceInfo device, DeviceLocation? loc) {
+    final battery = device.battery == null
+        ? ''
+        : ' · ${device.battery}%${device.charging == true ? ' charging' : ''}';
+    final last = _fmtAge(DateTime.now().millisecondsSinceEpoch - device.lastSeen);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            device.online ? Icons.radio_button_checked : Icons.radio_button_off,
+            size: 16,
+            color: device.online ? TalonColors.ok : TalonColors.textFaint,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(device.name,
+                    style: const TextStyle(
+                        fontSize: 13.5, fontWeight: FontWeight.w600)),
+                Text(
+                  '${device.platform} · $last$battery',
+                  style: TextStyle(fontSize: 12, color: TalonColors.textFaint),
+                ),
+              ],
+            ),
+          ),
+          if (loc != null)
+            IconButton(
+              onPressed: () => launchUrl(
+                Uri.parse('https://maps.google.com/?q=${loc.lat},${loc.lon}'),
+                mode: LaunchMode.externalApplication,
+              ),
+              icon: const Icon(Icons.map_outlined, size: 18),
+              tooltip: 'Open map',
+            ),
+        ],
+      ),
     );
   }
 
@@ -805,6 +912,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final h = m ~/ 60;
     if (h < 24) return '${h}h ${m % 60}m';
     return '${h ~/ 24}d ${h % 24}h';
+  }
+
+  String _fmtAge(int ms) {
+    final s = (ms ~/ 1000).clamp(0, 1 << 31);
+    if (s < 60) return '${s}s ago';
+    final m = s ~/ 60;
+    if (m < 60) return '${m}m ago';
+    final h = m ~/ 60;
+    return '${h}h ago';
   }
 }
 

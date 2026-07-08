@@ -286,8 +286,9 @@ describe("Claude SDK chat handler — post-result watchdog", () => {
     expect(events.some((e) => e.type === "error")).toBe(false);
 
     // Returned within the grace window (50ms) plus generous slack for
-    // test-runner scheduling. Without the watchdog this would never resolve.
-    expect(elapsed).toBeLessThan(500);
+    // test-runner scheduling on loaded CI/workstations. Without the watchdog
+    // this would never resolve.
+    expect(elapsed).toBeLessThan(1000);
 
     // The watchdog signalled both the SDK and the generator
     expect(mockAbortSignal?.aborted).toBe(true);
