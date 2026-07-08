@@ -1,11 +1,12 @@
 /**
- * Device mesh — `list_devices` and `get_device_location`.
+ * Device mesh — read tools (list_devices, get_device_location) and command
+ * tools (ring, open URL, clipboard, live status).
  *
  * Shared actions, so the model has full mesh access from every frontend
  * (Telegram, Discord, Teams, terminal, native) — not just chats running
  * through the native bridge. The mesh itself is daemon-wide state
  * (core/mesh); the native bridge is merely the transport companions
- * register through.
+ * register through and commands travel over.
  */
 
 import { getMeshService } from "../../mesh/index.js";
@@ -14,4 +15,13 @@ import type { SharedActionHandlers } from "./types.js";
 export const meshHandlers: SharedActionHandlers = {
   list_devices: () => getMeshService().describeDevices(),
   get_device_location: (body) => getMeshService().locateDevice(body.device),
+  ring_device: (body) =>
+    getMeshService().ringDevice(body.device, body.message),
+  open_device_url: (body) =>
+    getMeshService().openDeviceUrl(body.device, body.url),
+  set_device_clipboard: (body) =>
+    getMeshService().setDeviceClipboard(body.device, body.text),
+  get_device_clipboard: (body) =>
+    getMeshService().getDeviceClipboard(body.device),
+  get_device_status: (body) => getMeshService().getDeviceStatus(body.device),
 };

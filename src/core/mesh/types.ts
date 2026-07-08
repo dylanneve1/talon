@@ -27,6 +27,38 @@ export type DeviceInfo = {
   /** Battery percent, 0-100. */
   battery?: number;
   charging?: boolean;
+  /**
+   * Command names this device can execute (e.g. "locate", "ring",
+   * "open_url"). Reported by the device at registration; absent for app
+   * versions that predate the command channel — treat as unknown, not
+   * empty.
+   */
+  capabilities?: string[];
+};
+
+/**
+ * An on-demand command pushed to one companion device over the mesh
+ * transport. The device executes it and answers with a DeviceCommandResult
+ * carrying the same `id`.
+ */
+export type DeviceCommand = {
+  /** Correlation id — echoed back as the result's `commandId`. */
+  id: string;
+  deviceId: string;
+  /** Command name (e.g. "ring", "open_url", "clipboard_get", "status"). */
+  name: string;
+  params: Record<string, unknown>;
+};
+
+/** A device's answer to a DeviceCommand. */
+export type DeviceCommandResult = {
+  commandId: string;
+  deviceId: string;
+  ok: boolean;
+  /** Human-readable outcome (shown to the model). */
+  message?: string;
+  /** Structured payload (e.g. clipboard text, status fields). */
+  data?: Record<string, unknown>;
 };
 
 export type DeviceLocation = {
@@ -61,7 +93,27 @@ export function toDeviceInfo(
     lastSeen: value.lastSeen,
     ...(battery !== undefined ? { battery } : {}),
     ...(typeof value.charging === "boolean" ? { charging: value.charging } : {}),
+    ...(value.capabilities?.length
+      ? { capabilities: [...value.capabilities] }
+      : {}),
   };
+}
+
+/**
+ * Normalize a device's advertised capability list: strings only, trimmed,
+ * lowercased, deduped, and bounded so a misbehaving client can't bloat the
+ * persisted registry. Undefined when nothing valid remains.
+ */
+export function sanitizeCapabilities(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const cap = item.trim().toLowerCase().slice(0, 32);
+    if (cap) seen.add(cap);
+    if (seen.size >= 16) break;
+  }
+  return seen.size ? [...seen] : undefined;
 }
 
 export function toDeviceLocation(value: DeviceLocation): DeviceLocation {

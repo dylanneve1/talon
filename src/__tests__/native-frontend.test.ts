@@ -374,7 +374,7 @@ describe("native mesh bridge routes", () => {
     return {
       app: "talon-bridge",
       protocol: 1,
-      capabilities: ["mesh"],
+      capabilities: ["mesh", "mesh-commands"],
       botName: "Talon",
       backend: "test",
       model: "m1",
@@ -419,6 +419,7 @@ describe("native mesh bridge routes", () => {
       registerDevice: (body) => registry.register(body),
       storeLocation: (body) => registry.storeLocation(body),
       listDevices: () => registry.list(),
+      completeCommand: () => false,
     };
     const server = new BridgeServer(
       { host: "127.0.0.1", port: 0, token, startedAt: "now" },
@@ -432,7 +433,9 @@ describe("native mesh bridge routes", () => {
     const { server, port } = await startMeshServer();
     try {
       const health = await fetch(`http://127.0.0.1:${port}/health`);
-      expect(await health.json()).toMatchObject({ capabilities: ["mesh"] });
+      expect(await health.json()).toMatchObject({
+        capabilities: ["mesh", "mesh-commands"],
+      });
 
       const denied = await fetch(`http://127.0.0.1:${port}/devices`);
       expect(denied.status).toBe(401);

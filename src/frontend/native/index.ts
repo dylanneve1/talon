@@ -150,11 +150,12 @@ export function createNativeFrontend(
   const botName = config.botDisplayName || "Talon";
   const chats = new NativeChats();
   // Daemon-wide mesh service (core/mesh). This frontend is its transport:
-  // companions register/report through the bridge routes below, and the SSE
-  // locate dispatcher (wired in init) pushes on-demand locate requests out.
-  // The model's mesh tools are served by the shared gateway actions.
+  // companions register/report/answer through the bridge routes below, and
+  // the SSE transport (wired in init) pushes locate requests and device
+  // commands out. The model's mesh tools are served by the shared gateway
+  // actions, so they work from every frontend.
   const mesh = getMeshService();
-  let unregisterLocateDispatcher: (() => void) | null = null;
+  let unregisterMeshTransport: (() => void) | null = null;
 
   // Monotonic message-id minter. Seeded from the wall clock so ids stay
   // unique and ascending across restarts (history rows persist their ids).
@@ -739,7 +740,7 @@ export function createNativeFrontend(
     return {
       app: "talon-bridge",
       protocol: BRIDGE_PROTOCOL_VERSION,
-      capabilities: ["mesh"],
+      capabilities: ["mesh", "mesh-commands"],
       botName,
       backend: config.backend,
       model: resolveModel(config.model)?.displayName ?? config.model,
@@ -1174,6 +1175,7 @@ export function createNativeFrontend(
     registerDevice: (body) => mesh.register(body),
     storeLocation: (body) => mesh.storeLocation(body),
     listDevices: () => mesh.list(),
+    completeCommand: (body) => mesh.completeCommand(body),
   };
 
   const nativeCfg = config.native ?? { port: 19880, host: "127.0.0.1" };
@@ -1216,12 +1218,21 @@ export function createNativeFrontend(
 
     async init() {
       await mesh.load();
-      // Plug this bridge in as the mesh's locate transport: an on-demand
-      // locate (from ANY frontend's get_device_location call) fans out to
-      // every connected companion client as an SSE `locate` event.
-      unregisterLocateDispatcher = mesh.registerLocateDispatcher((deviceId) =>
-        broadcast({ kind: "locate", deviceId }),
-      );
+      // Plug this bridge in as the mesh's transport: locates and device
+      // commands (from ANY frontend's mesh tool calls) fan out to every
+      // connected companion client as SSE events; each client filters by
+      // its own device id.
+      unregisterMeshTransport = mesh.registerTransport({
+        locate: (deviceId) => broadcast({ kind: "locate", deviceId }),
+        command: (command) =>
+          broadcast({
+            kind: "device_command",
+            id: command.id,
+            deviceId: command.deviceId,
+            name: command.name,
+            params: command.params,
+          }),
+      });
       // Mesh tool actions (list_devices / get_device_location) are shared
       // gateway actions now — no native-only cases here.
       gateway.registerFrontendHandler(
@@ -1253,8 +1264,8 @@ export function createNativeFrontend(
     },
 
     async stop() {
-      unregisterLocateDispatcher?.();
-      unregisterLocateDispatcher = null;
+      unregisterMeshTransport?.();
+      unregisterMeshTransport = null;
       await removeBridgeDiscovery();
       await server.stop();
       await gateway.stop();

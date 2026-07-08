@@ -11,13 +11,16 @@ export {
   MeshService,
   getMeshService,
   setMeshService,
-  type LocateDispatcher,
+  type MeshTransport,
   type MeshServiceOptions,
   type MeshToolResult,
 } from "./service.js";
 export {
+  sanitizeCapabilities,
   toDeviceInfo,
   toDeviceLocation,
+  type DeviceCommand,
+  type DeviceCommandResult,
   type DeviceInfo,
   type DeviceLocation,
   type DevicePlatform,

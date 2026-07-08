@@ -115,6 +115,8 @@ export type BridgeServerHandlers = {
   listDevices():
     | { devices: DeviceInfo[]; locations: DeviceLocation[] }
     | Promise<{ devices: DeviceInfo[]; locations: DeviceLocation[] }>;
+  /** A device answered a device_command; true when a call was waiting. */
+  completeCommand(body: Record<string, unknown>): boolean;
 };
 
 const SSE_PING_MS = 25_000;
@@ -266,7 +268,7 @@ export class BridgeServer {
         backend: s.backend,
         model: s.model,
         activeChats: s.activeChats,
-        capabilities: ["mesh"],
+        capabilities: ["mesh", "mesh-commands"],
       });
     }
 
@@ -381,6 +383,15 @@ export class BridgeServer {
 
       if (method === "GET" && path === "/devices") {
         return this.json(res, 200, await this.handlers.listDevices());
+      }
+
+      if (method === "POST" && path === "/devices/command-result") {
+        const body = await this.readJson(req);
+        // ok:false for a late/unknown correlation id — not an HTTP error,
+        // the device's POST was well-formed; nothing was waiting anymore.
+        return this.json(res, 200, {
+          ok: this.handlers.completeCommand(body),
+        });
       }
 
       if (method === "POST" && path === "/upload") {

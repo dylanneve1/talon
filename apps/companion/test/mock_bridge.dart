@@ -60,6 +60,7 @@ class MockBridge {
   String activeEffort = 'adaptive';
   final List<Map<String, dynamic>> devices = [];
   final List<Map<String, dynamic>> locations = [];
+  final List<Map<String, dynamic>> commandResults = [];
 
   int get port => _port;
   String get host => '127.0.0.1';
@@ -224,6 +225,10 @@ class MockBridge {
         'devices': devices,
         'locations': locations,
       });
+    }
+    if (req.method == 'POST' && path == '/devices/command-result') {
+      commandResults.add(await _readJson(req));
+      return _json(req.response, 200, {'ok': true});
     }
     if (req.method == 'GET' && path == '/config') {
       return _json(req.response, 200, config);

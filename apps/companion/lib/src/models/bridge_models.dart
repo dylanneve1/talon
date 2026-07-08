@@ -215,6 +215,9 @@ class DeviceInfo {
   final int? battery;
   final bool? charging;
 
+  /// Command names the device advertised at registration (e.g. "ring").
+  final List<String> capabilities;
+
   const DeviceInfo({
     required this.id,
     required this.name,
@@ -224,6 +227,7 @@ class DeviceInfo {
     required this.lastSeen,
     this.battery,
     this.charging,
+    this.capabilities = const [],
   });
 
   factory DeviceInfo.fromJson(Map<String, dynamic> j) => DeviceInfo(
@@ -235,6 +239,11 @@ class DeviceInfo {
         lastSeen: _int(j['lastSeen']),
         battery: j['battery'] is num ? (j['battery'] as num).round() : null,
         charging: j['charging'] is bool ? j['charging'] as bool : null,
+        capabilities: j['capabilities'] is List
+            ? (j['capabilities'] as List)
+                .whereType<String>()
+                .toList(growable: false)
+            : const [],
       );
 }
 

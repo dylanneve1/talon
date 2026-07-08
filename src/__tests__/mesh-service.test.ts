@@ -46,11 +46,20 @@ afterEach(() => setMeshService(null));
 
 describe("mesh tool availability", () => {
   it.each(["telegram", "discord", "teams", "terminal", "native"] as const)(
-    "exposes list_devices and get_device_location on the %s frontend",
+    "exposes every mesh tool on the %s frontend",
     (frontend) => {
       const names = composeTools({ frontend }).map((t) => t.name);
-      expect(names).toContain("list_devices");
-      expect(names).toContain("get_device_location");
+      for (const tool of [
+        "list_devices",
+        "get_device_location",
+        "ring_device",
+        "open_device_url",
+        "set_device_clipboard",
+        "get_device_clipboard",
+        "get_device_status",
+      ]) {
+        expect(names).toContain(tool);
+      }
     },
   );
 });
@@ -115,15 +124,18 @@ describe("MeshService locate flow", () => {
     });
     await registerPhone(service);
     const locates: Array<string | undefined> = [];
-    service.registerLocateDispatcher((deviceId) => {
-      locates.push(deviceId);
-      // Simulate the companion answering the locate with a fresh fix.
-      void service.storeLocation({
-        deviceId: "phone",
-        lat: 53.5,
-        lon: -6.5,
-        ts: Date.now(),
-      });
+    service.registerTransport({
+      locate: (deviceId) => {
+        locates.push(deviceId);
+        // Simulate the companion answering the locate with a fresh fix.
+        void service.storeLocation({
+          deviceId: "phone",
+          lat: 53.5,
+          lon: -6.5,
+          ts: Date.now(),
+        });
+      },
+      command: () => {},
     });
 
     const result = await service.locateDevice("phone");
@@ -144,8 +156,11 @@ describe("MeshService locate flow", () => {
       lon: 8,
       ts: Date.now() - 120_000,
     });
-    service.registerLocateDispatcher(() => {
-      /* transport attached, but the device never answers */
+    service.registerTransport({
+      locate: () => {
+        /* transport attached, but the device never answers */
+      },
+      command: () => {},
     });
 
     const result = await service.locateDevice("phone");
@@ -157,10 +172,16 @@ describe("MeshService locate flow", () => {
     const service = await tempService({ freshFixTimeoutMs: 40, pollIntervalMs: 10 });
     await registerPhone(service);
     const seen: Array<string | undefined> = [];
-    service.registerLocateDispatcher(() => {
-      throw new Error("broken transport");
+    service.registerTransport({
+      locate: () => {
+        throw new Error("broken transport");
+      },
+      command: () => {},
     });
-    const unsubscribe = service.registerLocateDispatcher((id) => seen.push(id));
+    const unsubscribe = service.registerTransport({
+      locate: (id) => seen.push(id),
+      command: () => {},
+    });
 
     expect(service.requestLocate("phone")).toBe(true);
     expect(seen).toEqual(["phone"]);
@@ -194,5 +215,130 @@ describe("MeshService locate flow", () => {
     expect(service.chooseDevice()?.id).toBe("phone");
     expect(service.chooseDevice("mac")?.id).toBe("mac");
     expect(service.chooseDevice("macbook")?.id).toBe("mac");
+  });
+
+  it("dispatches a command and resolves on the device's answer", async () => {
+    const service = await tempService({ commandTimeoutMs: 2_000 });
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["locate", "ring", "clipboard_get"],
+    });
+    const sent: Array<{ name: string; params: Record<string, unknown> }> = [];
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) => {
+        sent.push({ name: cmd.name, params: cmd.params });
+        // Simulate the companion answering over POST /devices/command-result.
+        queueMicrotask(() =>
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            ...(cmd.name === "clipboard_get"
+              ? { data: { text: "hello from the phone" } }
+              : {}),
+          }),
+        );
+      },
+    });
+
+    const ring = await service.ringDevice("phone", "where are you");
+    expect(ring.ok).toBe(true);
+    expect(ring.text).toContain("Pixel 9 is ringing");
+    expect(sent[0]).toEqual({
+      name: "ring",
+      params: { message: "where are you" },
+    });
+
+    const clip = await service.getDeviceClipboard("phone");
+    expect(clip.ok).toBe(true);
+    expect(clip.text).toContain("hello from the phone");
+  });
+
+  it("times out a command the device never answers", async () => {
+    const service = await tempService({ commandTimeoutMs: 60 });
+    await registerPhone(service);
+    service.registerTransport({ locate: () => {}, command: () => {} });
+    const result = await service.ringDevice("phone");
+    expect(result.ok).toBe(false);
+    expect(result.text).toContain("did not answer");
+  });
+
+  it("refuses commands a device declares it cannot run", async () => {
+    const service = await tempService({ commandTimeoutMs: 60 });
+    await service.register({
+      id: "mac",
+      name: "MacBook",
+      platform: "macos",
+      appVersion: "1.0.0",
+      capabilities: ["locate", "status"],
+    });
+    service.registerTransport({ locate: () => {}, command: () => {} });
+    const result = await service.ringDevice("mac");
+    expect(result.ok).toBe(false);
+    expect(result.text).toContain('does not support "ring"');
+    expect(result.text).toContain("locate, status");
+  });
+
+  it("fails fast with no transport, validates command params, and ignores stale results", async () => {
+    const service = await tempService({ commandTimeoutMs: 60 });
+    await registerPhone(service);
+
+    const noTransport = await service.ringDevice("phone");
+    expect(noTransport.ok).toBe(false);
+    expect(noTransport.text).toContain("No companion transport is connected");
+
+    expect((await service.openDeviceUrl("phone", "ftp://x")).ok).toBe(false);
+    expect((await service.openDeviceUrl("phone", "")).ok).toBe(false);
+    expect((await service.setDeviceClipboard("phone", "")).ok).toBe(false);
+
+    // A result for an unknown/expired correlation id is ignored, not fatal.
+    expect(
+      service.completeCommand({ commandId: "nope", deviceId: "phone", ok: true }),
+    ).toBe(false);
+  });
+
+  it("routes command tools through the shared gateway actions", async () => {
+    const service = await tempService({ commandTimeoutMs: 2_000 });
+    setMeshService(service);
+    await service.register({
+      id: "mac",
+      name: "MacBook",
+      platform: "macos",
+      appVersion: "1.0.0",
+      capabilities: ["open_url", "status"],
+    });
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() =>
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            ...(cmd.name === "status"
+              ? { data: { battery: "93%", os: "macOS 15" } }
+              : {}),
+          }),
+        ),
+    });
+
+    const open = await meshHandlers.open_device_url(
+      { action: "open_device_url", device: "mac", url: "https://example.com" },
+      1,
+    );
+    expect(open.ok).toBe(true);
+    expect(open.text).toContain("Opened the URL on MacBook");
+
+    const status = await meshHandlers.get_device_status(
+      { action: "get_device_status", device: "mac" },
+      1,
+    );
+    expect(status.ok).toBe(true);
+    expect(status.text).toContain("battery: 93%");
+    expect(status.text).toContain("os: macOS 15");
   });
 });

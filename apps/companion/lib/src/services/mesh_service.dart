@@ -4,9 +4,11 @@ import 'dart:io' show Platform;
 import 'package:battery_plus/battery_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import 'bridge_client.dart';
@@ -46,6 +48,10 @@ typedef MeshBatteryProvider = Future<MeshBattery> Function();
 typedef MeshNameProvider = Future<String> Function();
 typedef MeshVersionProvider = Future<String> Function();
 typedef ForegroundStarter = Future<void> Function();
+typedef MeshRingHandler = Future<void> Function(String? message);
+typedef MeshUrlOpener = Future<bool> Function(Uri url);
+typedef MeshClipboardReader = Future<String?> Function();
+typedef MeshClipboardWriter = Future<void> Function(String text);
 
 @pragma('vm:entry-point')
 void startMeshForegroundCallback() {
@@ -64,6 +70,18 @@ class _MeshForegroundTaskHandler extends TaskHandler {
 }
 
 class MeshService {
+  /// Commands this build can execute, advertised at registration so the
+  /// daemon can refuse unsupported commands with a clear message instead of
+  /// timing out.
+  static const List<String> capabilities = [
+    'locate',
+    'ring',
+    'open_url',
+    'clipboard_set',
+    'clipboard_get',
+    'status',
+  ];
+
   final Prefs prefs;
   final BridgeClient client;
   final MeshLocationProvider _locationProvider;
@@ -71,6 +89,10 @@ class MeshService {
   final MeshNameProvider _nameProvider;
   final MeshVersionProvider _versionProvider;
   final ForegroundStarter _foregroundStarter;
+  final MeshRingHandler _ringHandler;
+  final MeshUrlOpener _urlOpener;
+  final MeshClipboardReader _clipboardReader;
+  final MeshClipboardWriter _clipboardWriter;
 
   StreamSubscription<Map<String, dynamic>>? _events;
   Timer? _heartbeat;
@@ -85,11 +107,19 @@ class MeshService {
     MeshNameProvider? nameProvider,
     MeshVersionProvider? versionProvider,
     ForegroundStarter? foregroundStarter,
+    MeshRingHandler? ringHandler,
+    MeshUrlOpener? urlOpener,
+    MeshClipboardReader? clipboardReader,
+    MeshClipboardWriter? clipboardWriter,
   })  : _locationProvider = locationProvider ?? _defaultLocation,
         _batteryProvider = batteryProvider ?? _defaultBattery,
         _nameProvider = nameProvider ?? _defaultName,
         _versionProvider = versionProvider ?? _defaultVersion,
-        _foregroundStarter = foregroundStarter ?? _startForeground;
+        _foregroundStarter = foregroundStarter ?? _startForeground,
+        _ringHandler = ringHandler ?? _defaultRing,
+        _urlOpener = urlOpener ?? _defaultOpenUrl,
+        _clipboardReader = clipboardReader ?? _defaultClipboardRead,
+        _clipboardWriter = clipboardWriter ?? _defaultClipboardWrite;
 
   bool get running => _running;
 
@@ -109,6 +139,7 @@ class MeshService {
     await register();
     _events = client.events.listen((event) {
       if (event['kind'] == 'locate') unawaited(_handleLocate(event));
+      if (event['kind'] == 'device_command') unawaited(_handleCommand(event));
     });
     _heartbeat = Timer.periodic(const Duration(seconds: 60), (_) {
       if (prefs.meshSharing) unawaited(register());
@@ -143,6 +174,7 @@ class MeshService {
       'appVersion': await _versionProvider(),
       if (battery.percent != null) 'battery': battery.percent,
       if (battery.charging != null) 'charging': battery.charging,
+      'capabilities': capabilities,
     });
   }
 
@@ -175,6 +207,102 @@ class MeshService {
     } catch (e) {
       AppLog.warn('mesh', 'locate handling failed', e);
     }
+  }
+
+  /// Execute a `device_command` addressed to this device and answer over
+  /// POST /devices/command-result with the command's correlation id. Every
+  /// path answers — success, failure, or unsupported — so the daemon's
+  /// pending tool call resolves instead of timing out.
+  Future<void> _handleCommand(Map<String, dynamic> event) async {
+    final id = event['id'];
+    final target = event['deviceId'];
+    if (id is! String || id.isEmpty) return;
+    final myId = await deviceId();
+    if (target is! String || target.isEmpty || target != myId) return;
+    final name = event['name'] is String ? event['name'] as String : '';
+    final params = event['params'] is Map
+        ? (event['params'] as Map).cast<String, dynamic>()
+        : <String, dynamic>{};
+
+    var ok = false;
+    String? message;
+    Map<String, dynamic>? data;
+    try {
+      switch (name) {
+        case 'locate':
+          await sendOneFix();
+          ok = true;
+          message = 'Fresh fix reported.';
+          break;
+        case 'ring':
+          final note = params['message'];
+          await _ringHandler(note is String && note.isNotEmpty ? note : null);
+          ok = true;
+          break;
+        case 'open_url':
+          final uri = Uri.tryParse('${params['url'] ?? ''}');
+          if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
+            message = 'open_url needs an http(s) URL.';
+          } else {
+            ok = await _urlOpener(uri);
+            if (!ok) message = 'The device could not open the URL.';
+          }
+          break;
+        case 'clipboard_set':
+          final text = params['text'];
+          if (text is! String || text.isEmpty) {
+            message = 'clipboard_set needs non-empty text.';
+          } else {
+            await _clipboardWriter(text);
+            ok = true;
+          }
+          break;
+        case 'clipboard_get':
+          data = {'text': await _clipboardReader() ?? ''};
+          ok = true;
+          break;
+        case 'status':
+          data = await _statusPayload();
+          ok = true;
+          break;
+        default:
+          message = 'This app version does not support "$name".';
+      }
+    } catch (e) {
+      ok = false;
+      message = 'Command failed on device: $e';
+      AppLog.warn('mesh', 'device_command "$name" failed', e);
+    }
+
+    try {
+      await client.postCommandResult({
+        'commandId': id,
+        'deviceId': myId,
+        'ok': ok,
+        if (message != null) 'message': message,
+        if (data != null) 'data': data,
+      });
+    } catch (e) {
+      AppLog.warn('mesh', 'command result post failed', e);
+    }
+  }
+
+  Future<Map<String, dynamic>> _statusPayload() async {
+    final battery = await _batteryProvider();
+    return {
+      'name': await _nameProvider(),
+      'platform': _platform,
+      'appVersion': await _versionProvider(),
+      if (battery.percent != null) 'battery': '${battery.percent}%',
+      if (battery.charging != null)
+        'charging': battery.charging! ? 'yes' : 'no',
+      if (!kIsWeb)
+        'os': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      'meshSharing': prefs.meshSharing ? 'on' : 'off',
+      'periodicReporting': prefs.meshPeriodic
+          ? 'every ${prefs.meshIntervalSeconds}s'
+          : 'off',
+    };
   }
 
   void _configurePeriodic() {
@@ -282,6 +410,30 @@ class MeshService {
       return 'unknown';
     }
   }
+
+  /// Best-effort find-my-device with no extra plugins: a burst of system
+  /// alert sounds + vibration. Injectable so platforms can swap in a real
+  /// ringtone implementation later.
+  static Future<void> _defaultRing(String? message) async {
+    for (var i = 0; i < 8; i++) {
+      try {
+        await SystemSound.play(SystemSoundType.alert);
+        await HapticFeedback.vibrate();
+      } catch (_) {
+        /* headless/desktop platforms may lack one of the channels */
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+    }
+  }
+
+  static Future<bool> _defaultOpenUrl(Uri url) =>
+      launchUrl(url, mode: LaunchMode.externalApplication);
+
+  static Future<String?> _defaultClipboardRead() async =>
+      (await Clipboard.getData(Clipboard.kTextPlain))?.text;
+
+  static Future<void> _defaultClipboardWrite(String text) =>
+      Clipboard.setData(ClipboardData(text: text));
 
   static Future<void> _startForeground() async {
     if (kIsWeb || !Platform.isAndroid) return;

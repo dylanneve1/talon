@@ -201,10 +201,13 @@ export type BackendOption = {
 // readable from every frontend); re-exported here so bridge clients keep
 // depending on the protocol module alone.
 export type {
+  DeviceCommand,
+  DeviceCommandResult,
   DeviceInfo,
   DeviceLocation,
   DevicePlatform,
 } from "../../core/mesh/types.js";
+import type { DeviceCommand as MeshDeviceCommand } from "../../core/mesh/types.js";
 
 /**
  * Server → client events, delivered as SSE `data:` lines (one JSON object
@@ -245,6 +248,19 @@ export type BridgeEvent =
       usage?: { input: number; output: number };
     }
   | { kind: "locate"; deviceId?: string }
+  /**
+   * On-demand device command (ring, open_url, clipboard_*, status, …). The
+   * target device executes it and answers via POST /devices/command-result
+   * with the same `id` as `commandId`. Additive in v1 — app builds that
+   * predate the command channel simply ignore the event.
+   */
+  | {
+      kind: "device_command";
+      id: string;
+      deviceId: string;
+      name: string;
+      params: MeshDeviceCommand["params"];
+    }
   | { kind: "error"; chatId?: string; message: string };
 
 // ── Mappers (Talon internals → wire types) ───────────────────────────────────

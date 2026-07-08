@@ -11,6 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { dirs } from "../../util/paths.js";
 import {
+  sanitizeCapabilities,
   toDeviceInfo,
   toDeviceLocation,
   type DeviceInfo,
@@ -160,6 +161,9 @@ function sanitizeDevice(
       ? { battery: numberField(body.battery) }
       : {}),
     ...(typeof body.charging === "boolean" ? { charging: body.charging } : {}),
+    ...(sanitizeCapabilities(body.capabilities)
+      ? { capabilities: sanitizeCapabilities(body.capabilities) }
+      : {}),
   };
 }
 

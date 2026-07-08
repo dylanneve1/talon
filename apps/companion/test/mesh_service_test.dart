@@ -55,6 +55,143 @@ void main() {
     expect(bridge.locations.single, containsPair('lat', 53.35));
     expect(bridge.locations.single, containsPair('batteryPct', 82));
   });
+
+  test('advertises capabilities and answers device commands', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await Prefs.load();
+    final bridge = await MockBridge.start();
+    addTearDown(bridge.close);
+    final client = BridgeClient(configFor(bridge));
+    addTearDown(client.dispose);
+
+    await client.connect();
+    final rings = <String?>[];
+    final openedUrls = <Uri>[];
+    var clipboard = 'initial clipboard';
+    final service = MeshService(
+      prefs,
+      client,
+      locationProvider: () async =>
+          const MeshFix(lat: 1, lon: 2, ts: 99),
+      batteryProvider: () async =>
+          const MeshBattery(percent: 55, charging: false),
+      nameProvider: () async => 'Test phone',
+      versionProvider: () async => '1.0.0+1',
+      foregroundStarter: () async {},
+      ringHandler: (message) async => rings.add(message),
+      urlOpener: (url) async {
+        openedUrls.add(url);
+        return true;
+      },
+      clipboardReader: () async => clipboard,
+      clipboardWriter: (text) async => clipboard = text,
+    );
+    addTearDown(service.stop);
+
+    await service.start();
+    await _waitFor(() => bridge.devices.length == 1);
+    final id = bridge.devices.single['id'] as String;
+    expect(
+      bridge.devices.single['capabilities'],
+      containsAll(['locate', 'ring', 'open_url', 'clipboard_get', 'status']),
+    );
+
+    // Commands addressed to another device are ignored.
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-other',
+      'deviceId': 'someone-else',
+      'name': 'ring',
+      'params': <String, dynamic>{},
+    });
+
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-ring',
+      'deviceId': id,
+      'name': 'ring',
+      'params': {'message': 'over here'},
+    });
+    await _waitFor(() => bridge.commandResults.length == 1);
+    expect(rings, ['over here']);
+    expect(bridge.commandResults.last, containsPair('commandId', 'cmd-ring'));
+    expect(bridge.commandResults.last, containsPair('ok', true));
+
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-url',
+      'deviceId': id,
+      'name': 'open_url',
+      'params': {'url': 'https://example.com/doc'},
+    });
+    await _waitFor(() => bridge.commandResults.length == 2);
+    expect(openedUrls.single.toString(), 'https://example.com/doc');
+    expect(bridge.commandResults.last, containsPair('ok', true));
+
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-clip-set',
+      'deviceId': id,
+      'name': 'clipboard_set',
+      'params': {'text': 'from the model'},
+    });
+    await _waitFor(() => bridge.commandResults.length == 3);
+    expect(clipboard, 'from the model');
+
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-clip-get',
+      'deviceId': id,
+      'name': 'clipboard_get',
+      'params': <String, dynamic>{},
+    });
+    await _waitFor(() => bridge.commandResults.length == 4);
+    final clipResult = bridge.commandResults.last;
+    expect(clipResult, containsPair('ok', true));
+    expect(clipResult['data'], containsPair('text', 'from the model'));
+
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-status',
+      'deviceId': id,
+      'name': 'status',
+      'params': <String, dynamic>{},
+    });
+    await _waitFor(() => bridge.commandResults.length == 5);
+    final statusResult = bridge.commandResults.last;
+    expect(statusResult, containsPair('ok', true));
+    expect(statusResult['data'], containsPair('battery', '55%'));
+    expect(statusResult['data'], containsPair('name', 'Test phone'));
+
+    // Unknown commands answer ok:false instead of leaving the daemon waiting.
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-unknown',
+      'deviceId': id,
+      'name': 'teleport',
+      'params': <String, dynamic>{},
+    });
+    await _waitFor(() => bridge.commandResults.length == 6);
+    expect(bridge.commandResults.last, containsPair('ok', false));
+
+    // The command addressed elsewhere never produced a result.
+    expect(
+      bridge.commandResults.where((r) => r['commandId'] == 'cmd-other'),
+      isEmpty,
+    );
+
+    // Rejected URL schemes fail cleanly without invoking the opener.
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-bad-url',
+      'deviceId': id,
+      'name': 'open_url',
+      'params': {'url': 'file:///etc/passwd'},
+    });
+    await _waitFor(() => bridge.commandResults.length == 7);
+    expect(bridge.commandResults.last, containsPair('ok', false));
+    expect(openedUrls.length, 1);
+  });
 }
 
 Future<void> _waitFor(

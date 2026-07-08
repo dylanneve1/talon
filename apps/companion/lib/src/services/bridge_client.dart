@@ -172,6 +172,10 @@ class BridgeClient {
   Future<void> postLocation(Map<String, dynamic> location) =>
       _postJson('/location', location);
 
+  /// Answer a `device_command` SSE event (ring, open_url, clipboard, …).
+  Future<void> postCommandResult(Map<String, dynamic> result) =>
+      _postJson('/devices/command-result', result);
+
   Future<(List<DeviceInfo> devices, List<DeviceLocation> locations)>
       devices() async {
     final j = await _getJson('/devices');
