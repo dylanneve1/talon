@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.0](https://github.com/dylanneve1/talon/compare/v1.33.0...v1.34.0) (2026-07-08)
+
+
+### Features
+
+* verbose error passthrough + daemon log viewer in companion ([#474](https://github.com/dylanneve1/talon/issues/474)) ([e50019b](https://github.com/dylanneve1/talon/commit/e50019b903fa9c5e8330e17774248e4a01e28bf1))
+
 ## [1.33.0](https://github.com/dylanneve1/talon/compare/v1.32.1...v1.33.0) (2026-07-07)
 
 
