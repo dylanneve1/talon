@@ -16,6 +16,7 @@
  *   - `skills`    — markdown workflows
  *   - `plugins`   — plugin hot-reload
  *   - `models`    — model / backend discovery
+ *   - `mesh`      — companion device mesh (presence + location)
  */
 
 import type { ActionResult } from "../../types.js";
@@ -30,6 +31,7 @@ import { scriptHandlers } from "./scripts.js";
 import { skillHandlers } from "./skills.js";
 import { pluginHandlers } from "./plugins.js";
 import { modelHandlers } from "./models.js";
+import { meshHandlers } from "./mesh.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
 // can't resolve an inherited Object.prototype method — `handlers[action]` only
@@ -44,6 +46,7 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...skillHandlers,
   ...pluginHandlers,
   ...modelHandlers,
+  ...meshHandlers,
 });
 
 export async function handleSharedAction(

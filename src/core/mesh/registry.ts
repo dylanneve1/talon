@@ -1,3 +1,12 @@
+/**
+ * MeshRegistry — persistent storage for companion devices + last-known
+ * locations.
+ *
+ * Pure state: validate, upsert, persist (0600 JSON sidecars under the Talon
+ * root). No transport and no waiting logic — that policy lives in
+ * MeshService, so the registry stays trivially testable.
+ */
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { dirs } from "../../util/paths.js";
@@ -7,7 +16,7 @@ import {
   type DeviceInfo,
   type DeviceLocation,
   type DevicePlatform,
-} from "./protocol.js";
+} from "./types.js";
 
 const PRESENCE_TIMEOUT_MS = 90_000;
 const DEVICE_FILE = resolve(dirs.root, "mesh-devices.json");

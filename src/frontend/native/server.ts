@@ -38,7 +38,6 @@ import {
   type SearchResult,
 } from "./protocol.js";
 import type { ConfigSnapshot } from "./settings.js";
-import type { MeshRegistry } from "./mesh.js";
 
 /** Optional attachment references carried alongside a sent message. */
 export type SendOptions = {
@@ -113,8 +112,9 @@ export type BridgeServerHandlers = {
   /** Store the last-known location for one mesh device. */
   storeLocation(body: Record<string, unknown>): Promise<DeviceLocation>;
   /** List mesh devices and their last-known locations. */
-  listDevices(): { devices: DeviceInfo[]; locations: DeviceLocation[] };
-  meshRegistry?: MeshRegistry;
+  listDevices():
+    | { devices: DeviceInfo[]; locations: DeviceLocation[] }
+    | Promise<{ devices: DeviceInfo[]; locations: DeviceLocation[] }>;
 };
 
 const SSE_PING_MS = 25_000;
@@ -380,7 +380,7 @@ export class BridgeServer {
       }
 
       if (method === "GET" && path === "/devices") {
-        return this.json(res, 200, this.handlers.listDevices());
+        return this.json(res, 200, await this.handlers.listDevices());
       }
 
       if (method === "POST" && path === "/upload") {

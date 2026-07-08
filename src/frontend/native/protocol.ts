@@ -197,39 +197,14 @@ export type BackendOption = {
   label: string;
 };
 
-export type DevicePlatform =
-  | "android"
-  | "macos"
-  | "windows"
-  | "linux"
-  | "ios";
-
-export type DeviceInfo = {
-  id: string;
-  name: string;
-  platform: DevicePlatform;
-  appVersion: string;
-  online: boolean;
-  /** Epoch milliseconds. */
-  lastSeen: number;
-  /** Battery percent, 0-100. */
-  battery?: number;
-  charging?: boolean;
-};
-
-export type DeviceLocation = {
-  deviceId: string;
-  lat: number;
-  lon: number;
-  accuracyM?: number;
-  altitudeM?: number;
-  speedMps?: number;
-  headingDeg?: number;
-  /** Epoch milliseconds. */
-  ts: number;
-  provider?: string;
-  batteryPct?: number;
-};
+// Mesh device shapes are canonical in core (the mesh is daemon-wide state,
+// readable from every frontend); re-exported here so bridge clients keep
+// depending on the protocol module alone.
+export type {
+  DeviceInfo,
+  DeviceLocation,
+  DevicePlatform,
+} from "../../core/mesh/types.js";
 
 /**
  * Server → client events, delivered as SSE `data:` lines (one JSON object
@@ -294,44 +269,4 @@ export function historyToClientMessage(
   };
 }
 
-export function toDeviceInfo(
-  value: DeviceInfo,
-  now = Date.now(),
-  offlineAfterMs = 90_000,
-): DeviceInfo {
-  const battery =
-    typeof value.battery === "number"
-      ? Math.max(0, Math.min(100, Math.round(value.battery)))
-      : undefined;
-  return {
-    id: value.id,
-    name: value.name,
-    platform: value.platform,
-    appVersion: value.appVersion,
-    online: now - value.lastSeen <= offlineAfterMs && value.online,
-    lastSeen: value.lastSeen,
-    ...(battery !== undefined ? { battery } : {}),
-    ...(typeof value.charging === "boolean" ? { charging: value.charging } : {}),
-  };
-}
-
-export function toDeviceLocation(value: DeviceLocation): DeviceLocation {
-  return {
-    deviceId: value.deviceId,
-    lat: value.lat,
-    lon: value.lon,
-    ...(typeof value.accuracyM === "number"
-      ? { accuracyM: value.accuracyM }
-      : {}),
-    ...(typeof value.altitudeM === "number" ? { altitudeM: value.altitudeM } : {}),
-    ...(typeof value.speedMps === "number" ? { speedMps: value.speedMps } : {}),
-    ...(typeof value.headingDeg === "number"
-      ? { headingDeg: value.headingDeg }
-      : {}),
-    ts: value.ts,
-    ...(value.provider ? { provider: value.provider } : {}),
-    ...(typeof value.batteryPct === "number"
-      ? { batteryPct: Math.max(0, Math.min(100, Math.round(value.batteryPct))) }
-      : {}),
-  };
-}
+export { toDeviceInfo, toDeviceLocation } from "../../core/mesh/types.js";

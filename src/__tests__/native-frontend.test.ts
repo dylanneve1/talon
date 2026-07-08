@@ -19,7 +19,7 @@ import {
   type BridgeStatus,
 } from "../frontend/native/protocol.js";
 import { NativeChats, DEFAULT_CHAT_TITLE } from "../frontend/native/chats.js";
-import { MeshRegistry } from "../frontend/native/mesh.js";
+import { MeshRegistry } from "../core/mesh/index.js";
 import { BridgeServer, type BridgeServerHandlers } from "../frontend/native/server.js";
 import { extractSessionName } from "../backend/shared/session-name.js";
 import { createNativeActionHandler } from "../frontend/native/actions.js";
@@ -413,6 +413,7 @@ describe("native mesh bridge routes", () => {
       getConfig: () => ({}) as never,
       setConfig: () => ({}) as never,
       control: async () => ({ ok: true, message: "" }),
+      logs: () => [],
       liveTurnEvents: () => [],
       mediaPath: () => null,
       registerDevice: (body) => registry.register(body),

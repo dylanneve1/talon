@@ -52,6 +52,20 @@ function toButtons(rows: unknown): ClientButton[][] | undefined {
   return mapped.length ? mapped : undefined;
 }
 
+/** Actions this handler owns. Everything else must return null so the
+ *  gateway can try plugin + shared actions (history, web, cron, mesh…) —
+ *  failing early here would swallow actions that aren't native's to answer. */
+const NATIVE_ACTIONS = new Set([
+  "send_message",
+  "send_message_with_buttons",
+  "send_photo",
+  "react",
+  "edit_message",
+  "delete_message",
+  "get_chat_info",
+  "send_chat_action",
+]);
+
 export function createNativeActionHandler(
   deps: NativeActionDeps,
 ): FrontendActionHandler {
@@ -59,6 +73,7 @@ export function createNativeActionHandler(
 
   return async (body, chatId): Promise<ActionResult | null> => {
     const action = typeof body.action === "string" ? body.action : "";
+    if (!NATIVE_ACTIONS.has(action)) return null;
     const entry = chats.byNumeric(chatId);
     if (!entry) return { ok: false, error: "No active native chat" };
 
@@ -126,7 +141,8 @@ export function createNativeActionHandler(
         return { ok: true };
 
       default:
-        // Let the gateway try plugin + shared actions (history, web, cron…).
+        // Unreachable — NATIVE_ACTIONS gates the switch — but keeps the
+        // contract explicit if the set and the cases ever drift.
         return null;
     }
   };
