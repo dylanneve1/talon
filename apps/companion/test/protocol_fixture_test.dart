@@ -73,4 +73,16 @@ void main() {
     expect(r.message.role, Role.user);
     expect(r.message.text, 'find the fox');
   });
+
+  test('canonical log entry parses', () {
+    final e = DaemonLogEntry.fromJson(
+        (fixture['logEntry'] as Map).cast<String, dynamic>());
+    expect(e.ts, 1767225600000);
+    expect(e.level, 'error');
+    expect(e.component, 'agent');
+    expect(e.msg, contains('SDK error'));
+    expect(e.err, contains('weekly limit'));
+    expect(e.stack, contains('runChatTurn'));
+    expect(e.time.millisecondsSinceEpoch, 1767225600000);
+  });
 }

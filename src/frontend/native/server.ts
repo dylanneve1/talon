@@ -24,11 +24,14 @@ import { extname } from "node:path";
 import { log, logError, logDebug } from "../../util/log.js";
 import {
   BRIDGE_PROTOCOL_VERSION,
+  isLogLevel,
   type BackendOption,
   type BridgeEvent,
   type BridgeStatus,
   type ClientChat,
   type ClientMessage,
+  type LogEntry,
+  type LogLevel,
   type ModelOption,
   type SearchResult,
 } from "./protocol.js";
@@ -92,6 +95,12 @@ export type BridgeServerHandlers = {
   setConfig(update: Record<string, unknown>): ConfigSnapshot;
   /** Fire a daemon-level control action (e.g. "restart", "dream"). */
   control(action: string): Promise<{ ok: boolean; message: string }>;
+  /** Newest daemon log entries (for the client's log viewer). */
+  logs(opts: {
+    lines: number;
+    minLevel?: LogLevel;
+    component?: string;
+  }): LogEntry[];
   /** Events reconstructing any in-progress turns, for a just-connected client. */
   liveTurnEvents(): BridgeEvent[];
   /** Resolve a media id to an absolute file path (or null if unknown). */
@@ -405,6 +414,22 @@ export class BridgeServer {
       if (method === "GET" && path === "/media") {
         const id = url.searchParams.get("id") ?? "";
         return await this.serveMedia(res, id);
+      }
+
+      if (method === "GET" && path === "/logs") {
+        const lines = Math.min(
+          asPositiveInt(url.searchParams.get("lines")) ?? 200,
+          1000,
+        );
+        const level = url.searchParams.get("level") ?? "";
+        const component = url.searchParams.get("component") ?? undefined;
+        return this.json(res, 200, {
+          entries: this.handlers.logs({
+            lines,
+            minLevel: isLogLevel(level) ? level : undefined,
+            component,
+          }),
+        });
       }
 
       if (method === "GET" && path === "/config")

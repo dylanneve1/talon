@@ -259,6 +259,10 @@ export function addUsage(a: UsageSnapshot, b: UsageSnapshot): UsageSnapshot {
  */
 const REASON_TO_KIND: Partial<Record<TalonError["reason"], AgentErrorKind>> = {
   rate_limit: "rate_limit",
+  // Subscription usage limits share the rate_limit kind — same family for
+  // event consumers; `retryable: false` (carried through) is what
+  // distinguishes them from a transient 429.
+  usage_limit: "rate_limit",
   overloaded: "overload",
   context_length: "context_overflow",
   session_expired: "session_expired",

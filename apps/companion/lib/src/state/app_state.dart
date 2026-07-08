@@ -677,6 +677,18 @@ class AppState extends ChangeNotifier {
     return result;
   }
 
+  /// Newest daemon log entries for the log viewer. Throws on transport
+  /// failure — the screen owns the error presentation.
+  Future<List<DaemonLogEntry>> daemonLogs({
+    int lines = 300,
+    String? level,
+    String? component,
+  }) async {
+    final client = _client;
+    if (client == null) throw BridgeException('Not connected');
+    return client.logs(lines: lines, level: level, component: component);
+  }
+
   /// Fire a daemon-level control action over the bridge ("restart", "dream").
   /// Unlike [restartDaemon] (which drives a locally-managed process), this asks
   /// the *running* daemon to act on itself, so it works over a remote bridge

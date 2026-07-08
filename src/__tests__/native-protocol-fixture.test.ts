@@ -16,6 +16,7 @@ import {
   type BridgeStatus,
   type ClientChat,
   type ClientMessage,
+  type LogEntry,
   type SearchResult,
 } from "../frontend/native/protocol.js";
 
@@ -30,6 +31,7 @@ const fixture = JSON.parse(
   chat: ClientChat;
   status: BridgeStatus;
   searchResult: SearchResult;
+  logEntry: LogEntry;
 };
 
 describe("bridge protocol fixture (shared with the companion app)", () => {
@@ -72,5 +74,15 @@ describe("bridge protocol fixture (shared with the companion app)", () => {
     const r: SearchResult = fixture.searchResult;
     expect(r.chatTitle).toBe("Protocol design");
     expect(r.message.role).toBe("user");
+  });
+
+  it("log entry shape matches LogEntry", () => {
+    const e: LogEntry = fixture.logEntry;
+    expect(e.ts).toBe(1767225600000);
+    expect(e.level).toBe("error");
+    expect(e.component).toBe("agent");
+    expect(e.msg).toContain("SDK error");
+    expect(e.err).toContain("weekly limit");
+    expect(e.stack).toContain("runChatTurn");
   });
 });

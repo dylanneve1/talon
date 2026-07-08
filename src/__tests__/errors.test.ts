@@ -257,6 +257,31 @@ describe("classify", () => {
     const err = classify(new Error("context_length_exceeded"));
     expect(err.reason).toBe("context_length");
   });
+
+  // Claude subscription usage limits — the SDK surfaces these as user-facing
+  // text (rateLimitMessages.ts upstream), not as a 429-marked error.
+  it("classifies Claude Code limit messages as usage_limit (not retryable)", () => {
+    for (const msg of [
+      "You've hit your weekly limit · resets Jul 10, 9am",
+      "You’ve hit your Opus limit · resets 3am", // curly apostrophe variant
+      "You've hit your session limit",
+      "You're out of extra usage · resets Jul 12, 1pm",
+      "Claude AI usage limit reached|1751234567",
+    ]) {
+      const err = classify(new Error(msg));
+      expect(err.reason, msg).toBe("usage_limit");
+      expect(err.retryable, msg).toBe(false);
+    }
+  });
+
+  it("does not confuse usage limits with generic rate limits", () => {
+    expect(classify(new Error("429 Too Many Requests")).reason).toBe(
+      "rate_limit",
+    );
+    expect(
+      classify(new Error("You've hit your weekly limit")).reason,
+    ).toBe("usage_limit");
+  });
 });
 
 describe("friendlyMessage", () => {
@@ -317,6 +342,41 @@ describe("friendlyMessage", () => {
   it("returns telegram_api message", () => {
     const err = new TalonError("Telegram failed", { reason: "telegram_api" });
     expect(friendlyMessage(err)).toContain("Telegram API");
+  });
+
+  it("passes usage-limit messages through verbatim", () => {
+    const msg = "You've hit your weekly limit · resets Jul 10, 9am";
+    expect(friendlyMessage(new Error(msg))).toBe(msg);
+  });
+
+  it("falls back to the usage_limit template when the message is empty", () => {
+    const err = new TalonError("", { reason: "usage_limit" });
+    expect(friendlyMessage(err)).toContain("Usage limit reached");
+  });
+
+  it("appends the underlying detail for unknown errors", () => {
+    const msg = friendlyMessage(new Error("spawn ENOENT /usr/bin/rg"));
+    expect(msg).toContain("Something went wrong");
+    expect(msg).toContain("spawn ENOENT /usr/bin/rg");
+  });
+
+  it("appends the underlying detail for auth errors", () => {
+    const msg = friendlyMessage(new Error("401 invalid x-api-key header"));
+    expect(msg).toContain("API key");
+    expect(msg).toContain("invalid x-api-key");
+  });
+
+  it("clips long details and collapses whitespace", () => {
+    const long = `boom ${"x".repeat(500)}\n\nnext   line`;
+    const msg = friendlyMessage(new Error(long));
+    expect(msg.length).toBeLessThan(400);
+    expect(msg).not.toContain("\n\nnext");
+  });
+
+  it("keeps transient reasons terse (no detail appended)", () => {
+    expect(friendlyMessage(new Error("ECONNREFUSED 1.2.3.4"))).not.toContain(
+      "1.2.3.4",
+    );
   });
 });
 

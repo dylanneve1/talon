@@ -142,6 +142,40 @@ export type BridgeStatus = {
   startedAt: string;
 };
 
+/** Wire severity for a daemon log entry (mirrors pino's level names). */
+export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
+
+const LOG_LEVELS: readonly LogLevel[] = [
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "fatal",
+];
+
+/** Narrow an untrusted query-param string to a wire log level. */
+export function isLogLevel(v: string): v is LogLevel {
+  return (LOG_LEVELS as readonly string[]).includes(v);
+}
+
+/**
+ * One daemon log line, served by `GET /logs` for the client's log viewer
+ * (additive in v1 — older clients simply never call the endpoint).
+ */
+export type LogEntry = {
+  /** Epoch milliseconds. */
+  ts: number;
+  level: LogLevel;
+  /** Subsystem tag (e.g. "agent", "native", "gateway"), when present. */
+  component?: string;
+  msg: string;
+  /** Concise error message, when the line logged one. */
+  err?: string;
+  /** Full stack trace, when the line logged one. */
+  stack?: string;
+};
+
 /** A selectable model for the picker. */
 export type ModelOption = {
   id: string;

@@ -177,6 +177,23 @@ class BridgeClient {
   Future<ConfigSnapshot> setConfig(Map<String, dynamic> update) async =>
       ConfigSnapshot.fromJson(await _postJson('/config', update));
 
+  /// Newest daemon log entries (oldest first). [level] is a minimum severity
+  /// (e.g. "warn" returns warn+error+fatal); [component] an exact subsystem tag.
+  Future<List<DaemonLogEntry>> logs({
+    int lines = 300,
+    String? level,
+    String? component,
+  }) async {
+    final j = await _getJson('/logs', {
+      'lines': '$lines',
+      if (level != null) 'level': level,
+      if (component != null) 'component': component,
+    });
+    return _list(j['entries'])
+        .map((e) => DaemonLogEntry.fromJson(_map(e)))
+        .toList();
+  }
+
   /// Fire a daemon-level control action ("restart", "dream"). Returns the
   /// daemon's ok/message result (never throws on an application-level failure —
   /// the server answers 200 with `ok:false`).

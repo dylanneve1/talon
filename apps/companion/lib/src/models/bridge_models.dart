@@ -448,6 +448,45 @@ class ToolActivity {
   Duration get elapsed => (finishedAt ?? DateTime.now()).difference(startedAt);
 }
 
+/// One daemon log line from `GET /logs` — the log viewer's row model.
+class DaemonLogEntry {
+  /// Epoch milliseconds (0 when the line carried no timestamp).
+  final int ts;
+
+  /// pino level name: trace/debug/info/warn/error/fatal.
+  final String level;
+
+  /// Subsystem tag (e.g. "agent", "native"), empty when absent.
+  final String component;
+  final String msg;
+
+  /// Concise error message, when the line logged one.
+  final String? err;
+
+  /// Full stack trace, when the line logged one.
+  final String? stack;
+
+  const DaemonLogEntry({
+    required this.ts,
+    required this.level,
+    required this.component,
+    required this.msg,
+    this.err,
+    this.stack,
+  });
+
+  factory DaemonLogEntry.fromJson(Map<String, dynamic> j) => DaemonLogEntry(
+        ts: _int(j['ts']),
+        level: _string(j['level'], 'info'),
+        component: _string(j['component']),
+        msg: _string(j['msg']),
+        err: j['err'] is String ? j['err'] as String : null,
+        stack: j['stack'] is String ? j['stack'] as String : null,
+      );
+
+  DateTime get time => DateTime.fromMillisecondsSinceEpoch(ts);
+}
+
 /// One full-text search hit from `GET /search`.
 class SearchHit {
   final String chatId;

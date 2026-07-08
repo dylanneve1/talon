@@ -59,5 +59,13 @@
       "text": "find the fox",
       "ts": 1767225000000
     }
+  },
+  "logEntry": {
+    "ts": 1767225600000,
+    "level": "error",
+    "component": "agent",
+    "msg": "[d_abc123] SDK error: You've hit your weekly limit",
+    "err": "You've hit your weekly limit · resets Jul 10, 9am",
+    "stack": "Error: limit\n  at runChatTurn"
   }
 }

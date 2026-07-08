@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../theme.dart';
 import 'connect_screen.dart';
 import 'glass.dart';
+import 'logs_screen.dart';
 
 /// Severity for a diagnostics check row.
 enum _Health { ok, warn, bad, info }
@@ -146,6 +147,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: 'Consolidate memory + write the diary immediately',
             pending: _dreaming,
             onTap: _dreaming ? null : _triggerDream,
+          ),
+          const SizedBox(height: 10),
+          _ControlButton(
+            icon: Icons.receipt_long_outlined,
+            label: 'View logs',
+            subtitle: 'Live daemon log — filter by severity or subsystem',
+            pending: false,
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => LogsScreen(state: widget.state),
+              ),
+            ),
           ),
         ],
       ),

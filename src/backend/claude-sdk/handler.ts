@@ -384,6 +384,19 @@ export async function* runChatTurn(
         armPostResultWatchdog();
       }
     }
+
+    // The SDK doesn't throw on API errors — it converts them into a
+    // synthetic assistant message and finishes the turn with an error-
+    // flagged result (usage limits, 429s, auth failures all land here).
+    // Rethrow the captured error text so this turn takes the SAME path
+    // as a thrown SDK error: retry decision, failed-turn accounting, and
+    // an `error` event carrying the real message — instead of being
+    // treated as a normal reply (which, with no delivery tool call,
+    // would trip the flow-violation re-prompt loop and burn more turns
+    // against an already-exhausted limit).
+    if (state.resultErrorText) {
+      throw new Error(state.resultErrorText);
+    }
   } catch (err) {
     if (!postResultForceClosed) {
       const buildRetryStream = (

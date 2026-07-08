@@ -22,7 +22,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { log, logError } from "../../util/log.js";
-import { dirs } from "../../util/paths.js";
+import { dirs, files } from "../../util/paths.js";
 import { PKG_ROOT } from "../../cli/context.js";
 import { getSessionInfo } from "../../storage/sessions.js";
 import { buildContextDisplay } from "../shared/status-context.js";
@@ -66,6 +66,7 @@ import { extractSessionName } from "../../backend/shared/session-name.js";
 import { BridgeServer, type BridgeServerHandlers } from "./server.js";
 import { createNativeActionHandler } from "./actions.js";
 import { removeBridgeDiscovery, writeBridgeDiscovery } from "./discovery.js";
+import { readLogEntries } from "./logs.js";
 import {
   BRIDGE_PROTOCOL_VERSION,
   BOT_SENDER_ID,
@@ -1144,6 +1145,8 @@ export function createNativeFrontend(
       return snap;
     },
     control,
+    logs: ({ lines, minLevel, component }) =>
+      readLogEntries(files.log, { limit: lines, minLevel, component }),
     liveTurnEvents,
     mediaPath: (id) => media.get(id) ?? null,
   };

@@ -75,6 +75,17 @@ export type StreamState = {
    * doesn't poison the visible-text delta buffer.
    */
   unflushedThinkingDelta: string;
+  /**
+   * Set when the SDK's final result message reported a failed turn —
+   * either an error subtype (`error_during_execution`, `error_max_turns`,
+   * …) or `is_error: true` on a `success` result. The latter is how API
+   * errors surface: the SDK converts them (usage limits, 429s, auth
+   * failures) into a synthetic assistant message and finishes the turn
+   * "successfully" with the error text in `result` — it never throws.
+   * Carries the best error text available so the handler can fail the
+   * turn with the REAL message instead of treating it as a normal reply.
+   */
+  resultErrorText: string | undefined;
 };
 
 export function createStreamState(): StreamState {
@@ -96,6 +107,7 @@ export function createStreamState(): StreamState {
     turnTerminated: false,
     unflushedTextDelta: "",
     unflushedThinkingDelta: "",
+    resultErrorText: undefined,
   };
 }
 
@@ -357,6 +369,27 @@ export function processResultMessage(
     typeof msg.result === "string"
   ) {
     state.currentBlockText = msg.result;
+  }
+
+  // Failed turn. Two shapes (see StreamState.resultErrorText):
+  //  - error subtype: no `result` field, but `errors[]` carries diagnostics.
+  //  - success subtype with is_error: `result` (and the trailing assistant
+  //    text) IS the API error message, e.g. "You've hit your weekly limit
+  //    · resets Jul 10, 9am". Prefer that text — it's the user-facing one.
+  if (msg.subtype !== "success") {
+    const diagnostics = (msg.errors ?? [])
+      .filter((e) => typeof e === "string" && !e.startsWith("[ede_diagnostic]"))
+      .join("; ")
+      .slice(0, 500);
+    state.resultErrorText =
+      state.lastTrailingText.trim() ||
+      diagnostics ||
+      `Claude SDK turn failed (${msg.subtype})`;
+  } else if (msg.is_error) {
+    state.resultErrorText =
+      (typeof msg.result === "string" && msg.result.trim()) ||
+      state.lastTrailingText.trim() ||
+      "Claude SDK turn failed (API error)";
   }
 }
 

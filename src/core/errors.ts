@@ -9,6 +9,7 @@
 
 type ErrorReason =
   | "rate_limit"
+  | "usage_limit"
   | "overloaded"
   | "network"
   | "auth"
@@ -18,6 +19,19 @@ type ErrorReason =
   | "forbidden"
   | "telegram_api"
   | "unknown";
+
+/**
+ * Claude subscription usage-limit messages, as produced by Claude Code /
+ * the Agent SDK (see rateLimitMessages.ts upstream: "You've hit your
+ * weekly limit · resets Jul 10, 9am", "You're out of extra usage", …)
+ * plus the legacy "Claude AI usage limit reached|<ts>" format. These are
+ * already user-facing text — classification marks them `usage_limit` so
+ * `friendlyMessage` passes them through instead of collapsing them to a
+ * generic template. Unlike `rate_limit` (a transient 429), a usage limit
+ * doesn't clear on a short retry, so `retryable` stays false.
+ */
+const USAGE_LIMIT_RE =
+  /you['’]ve hit your .{0,40}limit|you['’]re out of extra usage|claude ai usage limit reached|usage limit reached/i;
 
 // ── TalonError class ────────────────────────────────────────────────────────
 
@@ -73,6 +87,18 @@ export function classify(err: unknown): TalonError {
   // would produce a spurious status on the returned TalonError)
   const statusMatch = msg.match(/\b([45]\d{2})\b/);
   const status = statusMatch ? parseInt(statusMatch[1], 10) : undefined;
+
+  // Subscription usage limit — checked before the generic rate-limit
+  // branch ("usage limit reached" would otherwise never be reached, and
+  // "You've hit your…" carries no 429/rate-limit marker at all).
+  if (USAGE_LIMIT_RE.test(msg)) {
+    return new TalonError(msg, {
+      reason: "usage_limit",
+      retryable: false,
+      status: status ?? 429,
+      cause,
+    });
+  }
 
   // Rate limit
   if (/rate.?limit|429|too many requests/i.test(msg)) {
@@ -190,6 +216,7 @@ export function classify(err: unknown): TalonError {
 
 const FRIENDLY_MESSAGES: Record<ErrorReason, string> = {
   rate_limit: "Rate limited. Try again in a moment.",
+  usage_limit: "Usage limit reached. Try again after it resets.",
   overloaded:
     "Upstream model is busy right now. Retrying with a faster fallback...",
   network: "Connection issue. Retrying shortly.",
@@ -204,7 +231,29 @@ const FRIENDLY_MESSAGES: Record<ErrorReason, string> = {
 };
 
 /**
+ * Reasons whose template alone tells the user nothing actionable — the
+ * underlying error detail is appended so "Something went wrong" always
+ * says WHAT went wrong. Templated reasons like `network`/`overloaded`
+ * stay terse: they're transient and the detail is just transport noise.
+ */
+const DETAIL_REASONS: ReadonlySet<ErrorReason> = new Set([
+  "auth",
+  "bad_request",
+  "forbidden",
+  "unknown",
+]);
+
+/** Collapse whitespace and clip the raw error for inline display. */
+function clipDetail(msg: string, max = 300): string {
+  const flat = msg.replace(/\s+/g, " ").trim();
+  if (!flat || flat === "[non-stringifiable error]") return "";
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/**
  * Get a user-friendly error message. For rate limits, includes retry timing.
+ * Usage-limit and session-expired messages pass through verbatim (they're
+ * already user-facing); generic reasons carry the underlying detail.
  */
 export function friendlyMessage(err: unknown): string {
   const classified = err instanceof TalonError ? err : classify(err);
@@ -214,10 +263,19 @@ export function friendlyMessage(err: unknown): string {
     return `Rate limited. Try again in ${seconds} seconds.`;
   }
 
-  // Session expired messages are already user-friendly from the backend
-  if (classified.reason === "session_expired") {
-    return classified.message;
+  // Already user-friendly from the backend — pass through as-is.
+  if (
+    classified.reason === "session_expired" ||
+    classified.reason === "usage_limit"
+  ) {
+    return classified.message || FRIENDLY_MESSAGES[classified.reason];
   }
 
-  return FRIENDLY_MESSAGES[classified.reason];
+  const base = FRIENDLY_MESSAGES[classified.reason];
+  if (DETAIL_REASONS.has(classified.reason)) {
+    const detail = clipDetail(classified.message);
+    // Skip when the detail adds nothing over the template itself.
+    if (detail && detail !== base) return `${base}\n\nDetail: ${detail}`;
+  }
+  return base;
 }
