@@ -9,12 +9,7 @@
  * these types so the wire contract is unchanged.
  */
 
-export type DevicePlatform =
-  | "android"
-  | "macos"
-  | "windows"
-  | "linux"
-  | "ios";
+export type DevicePlatform = "android" | "macos" | "windows" | "linux" | "ios";
 
 export type DeviceInfo = {
   id: string;
@@ -92,7 +87,9 @@ export function toDeviceInfo(
     online: now - value.lastSeen <= offlineAfterMs && value.online,
     lastSeen: value.lastSeen,
     ...(battery !== undefined ? { battery } : {}),
-    ...(typeof value.charging === "boolean" ? { charging: value.charging } : {}),
+    ...(typeof value.charging === "boolean"
+      ? { charging: value.charging }
+      : {}),
     ...(value.capabilities?.length
       ? { capabilities: [...value.capabilities] }
       : {}),
@@ -124,7 +121,9 @@ export function toDeviceLocation(value: DeviceLocation): DeviceLocation {
     ...(typeof value.accuracyM === "number"
       ? { accuracyM: value.accuracyM }
       : {}),
-    ...(typeof value.altitudeM === "number" ? { altitudeM: value.altitudeM } : {}),
+    ...(typeof value.altitudeM === "number"
+      ? { altitudeM: value.altitudeM }
+      : {}),
     ...(typeof value.speedMps === "number" ? { speedMps: value.speedMps } : {}),
     ...(typeof value.headingDeg === "number"
       ? { headingDeg: value.headingDeg }

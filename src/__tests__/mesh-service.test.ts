@@ -66,7 +66,10 @@ describe("mesh tool availability", () => {
 
 describe("mesh shared gateway actions", () => {
   it("serves list_devices and get_device_location through the shared registry", async () => {
-    const service = await tempService({ freshFixTimeoutMs: 50, pollIntervalMs: 10 });
+    const service = await tempService({
+      freshFixTimeoutMs: 50,
+      pollIntervalMs: 10,
+    });
     setMeshService(service);
     await registerPhone(service);
     await service.storeLocation({
@@ -169,7 +172,10 @@ describe("MeshService locate flow", () => {
   });
 
   it("survives a throwing dispatcher and honours unsubscribe", async () => {
-    const service = await tempService({ freshFixTimeoutMs: 40, pollIntervalMs: 10 });
+    const service = await tempService({
+      freshFixTimeoutMs: 40,
+      pollIntervalMs: 10,
+    });
     await registerPhone(service);
     const seen: Array<string | undefined> = [];
     service.registerTransport({
@@ -194,7 +200,10 @@ describe("MeshService locate flow", () => {
   it("lists known devices when the query matches nothing, and reports the empty mesh", async () => {
     const service = await tempService({ freshFixTimeoutMs: 40 });
     const empty = await service.locateDevice("phone");
-    expect(empty).toMatchObject({ ok: false, text: "No mesh devices are registered." });
+    expect(empty).toMatchObject({
+      ok: false,
+      text: "No mesh devices are registered.",
+    });
 
     await registerPhone(service);
     const miss = await service.locateDevice("watch");
@@ -297,7 +306,11 @@ describe("MeshService locate flow", () => {
 
     // A result for an unknown/expired correlation id is ignored, not fatal.
     expect(
-      service.completeCommand({ commandId: "nope", deviceId: "phone", ok: true }),
+      service.completeCommand({
+        commandId: "nope",
+        deviceId: "phone",
+        ok: true,
+      }),
     ).toBe(false);
   });
 

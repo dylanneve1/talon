@@ -15,8 +15,7 @@ import type { SharedActionHandlers } from "./types.js";
 export const meshHandlers: SharedActionHandlers = {
   list_devices: () => getMeshService().describeDevices(),
   get_device_location: (body) => getMeshService().locateDevice(body.device),
-  ring_device: (body) =>
-    getMeshService().ringDevice(body.device, body.message),
+  ring_device: (body) => getMeshService().ringDevice(body.device, body.message),
   open_device_url: (body) =>
     getMeshService().openDeviceUrl(body.device, body.url),
   set_device_clipboard: (body) =>

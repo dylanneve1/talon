@@ -20,7 +20,10 @@ import {
 } from "../frontend/native/protocol.js";
 import { NativeChats, DEFAULT_CHAT_TITLE } from "../frontend/native/chats.js";
 import { MeshRegistry } from "../core/mesh/index.js";
-import { BridgeServer, type BridgeServerHandlers } from "../frontend/native/server.js";
+import {
+  BridgeServer,
+  type BridgeServerHandlers,
+} from "../frontend/native/server.js";
 import { extractSessionName } from "../backend/shared/session-name.js";
 import { createNativeActionHandler } from "../frontend/native/actions.js";
 import {
@@ -323,29 +326,38 @@ describe("native mesh registry", () => {
       locations: join(dir, "mesh-locations.json"),
     });
 
-    await registry.register({
-      id: "phone",
-      name: "Pixel",
-      platform: "android",
-      appVersion: "1.0.0",
-      battery: 88,
-      charging: true,
-    }, 1_000);
-    await registry.register({
-      id: "phone",
-      name: "Pixel 9",
-      platform: "android",
-      appVersion: "1.0.1",
-      battery: 77,
-    }, 2_000);
-    await registry.storeLocation({
-      deviceId: "phone",
-      lat: 53.1,
-      lon: -6.2,
-      accuracyM: 12,
-      ts: 2_100,
-      provider: "gps",
-    }, 2_100);
+    await registry.register(
+      {
+        id: "phone",
+        name: "Pixel",
+        platform: "android",
+        appVersion: "1.0.0",
+        battery: 88,
+        charging: true,
+      },
+      1_000,
+    );
+    await registry.register(
+      {
+        id: "phone",
+        name: "Pixel 9",
+        platform: "android",
+        appVersion: "1.0.1",
+        battery: 77,
+      },
+      2_000,
+    );
+    await registry.storeLocation(
+      {
+        deviceId: "phone",
+        lat: 53.1,
+        lon: -6.2,
+        accuracyM: 12,
+        ts: 2_100,
+        provider: "gps",
+      },
+      2_100,
+    );
 
     expect(registry.list(2_500).devices).toMatchObject([
       { id: "phone", name: "Pixel 9", online: true, battery: 77 },
@@ -363,8 +375,12 @@ describe("native mesh registry", () => {
       lon: -6.2,
     });
     if (process.platform !== "win32") {
-      expect((await stat(join(dir, "mesh-devices.json"))).mode & 0o777).toBe(0o600);
-      expect((await stat(join(dir, "mesh-locations.json"))).mode & 0o777).toBe(0o600);
+      expect((await stat(join(dir, "mesh-devices.json"))).mode & 0o777).toBe(
+        0o600,
+      );
+      expect((await stat(join(dir, "mesh-locations.json"))).mode & 0o777).toBe(
+        0o600,
+      );
     }
   });
 });
@@ -385,8 +401,14 @@ describe("native mesh bridge routes", () => {
 
   async function startMeshServer(token = "secret") {
     const registry = new MeshRegistry({
-      devices: join(await mkdtemp(join(tmpdir(), "talon-mesh-routes-")), "devices.json"),
-      locations: join(await mkdtemp(join(tmpdir(), "talon-mesh-routes-")), "locations.json"),
+      devices: join(
+        await mkdtemp(join(tmpdir(), "talon-mesh-routes-")),
+        "devices.json",
+      ),
+      locations: join(
+        await mkdtemp(join(tmpdir(), "talon-mesh-routes-")),
+        "locations.json",
+      ),
     });
     const handlers: BridgeServerHandlers = {
       status,

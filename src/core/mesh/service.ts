@@ -125,7 +125,10 @@ export class MeshService {
     return loc;
   }
 
-  async list(): Promise<{ devices: DeviceInfo[]; locations: DeviceLocation[] }> {
+  async list(): Promise<{
+    devices: DeviceInfo[];
+    locations: DeviceLocation[];
+  }> {
     await this.load();
     return this.registry.list();
   }
@@ -143,8 +146,7 @@ export class MeshService {
    * or unknown correlation id — harmless, just ignored).
    */
   completeCommand(body: Record<string, unknown>): boolean {
-    const commandId =
-      typeof body.commandId === "string" ? body.commandId : "";
+    const commandId = typeof body.commandId === "string" ? body.commandId : "";
     const resolve = this.pendingCommands.get(commandId);
     if (!resolve) return false;
     this.pendingCommands.delete(commandId);
@@ -155,7 +157,9 @@ export class MeshService {
       ...(typeof body.message === "string" && body.message.trim()
         ? { message: body.message.trim().slice(0, 2_000) }
         : {}),
-      ...(body.data && typeof body.data === "object" && !Array.isArray(body.data)
+      ...(body.data &&
+      typeof body.data === "object" &&
+      !Array.isArray(body.data)
         ? { data: body.data as Record<string, unknown> }
         : {}),
     });

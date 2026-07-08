@@ -56,16 +56,22 @@ export class MeshRegistry {
     );
   }
 
-  async register(body: Record<string, unknown>, now = Date.now()): Promise<DeviceInfo> {
+  async register(
+    body: Record<string, unknown>,
+    now = Date.now(),
+  ): Promise<DeviceInfo> {
     const next = sanitizeDevice(body, now, true);
     if (!next) throw new Error("Invalid device registration");
     const prev = this.devices.get(next.id);
-    const device = toDeviceInfo({
-      ...prev,
-      ...next,
-      online: true,
-      lastSeen: now,
-    }, now);
+    const device = toDeviceInfo(
+      {
+        ...prev,
+        ...next,
+        online: true,
+        lastSeen: now,
+      },
+      now,
+    );
     this.devices.set(device.id, device);
     await this.persistDevices();
     return device;
@@ -80,12 +86,20 @@ export class MeshRegistry {
     this.locations.set(loc.deviceId, loc);
     const device = this.devices.get(loc.deviceId);
     if (device) {
-      this.devices.set(loc.deviceId, toDeviceInfo({
-        ...device,
-        online: true,
-        lastSeen: now,
-        ...(typeof loc.batteryPct === "number" ? { battery: loc.batteryPct } : {}),
-      }, now));
+      this.devices.set(
+        loc.deviceId,
+        toDeviceInfo(
+          {
+            ...device,
+            online: true,
+            lastSeen: now,
+            ...(typeof loc.batteryPct === "number"
+              ? { battery: loc.batteryPct }
+              : {}),
+          },
+          now,
+        ),
+      );
       await this.persistDevices();
     }
     await this.persistLocations();
@@ -147,7 +161,10 @@ function sanitizeDevice(
   if ((requireCore || id !== undefined) && !id) return null;
   if ((requireCore || name !== undefined) && !name) return null;
   if ((requireCore || appVersion !== undefined) && !appVersion) return null;
-  if ((requireCore || platform !== undefined) && (!platform || !PLATFORMS.has(platform))) {
+  if (
+    (requireCore || platform !== undefined) &&
+    (!platform || !PLATFORMS.has(platform))
+  ) {
     return null;
   }
   return {
@@ -167,7 +184,9 @@ function sanitizeDevice(
   };
 }
 
-function sanitizeLocation(body: Record<string, unknown>): DeviceLocation | null {
+function sanitizeLocation(
+  body: Record<string, unknown>,
+): DeviceLocation | null {
   const deviceId = stringField(body.deviceId);
   const lat = numberField(body.lat);
   const lon = numberField(body.lon);
@@ -193,7 +212,9 @@ function sanitizeLocation(body: Record<string, unknown>): DeviceLocation | null 
       ? { headingDeg: numberField(body.headingDeg) }
       : {}),
     ts,
-    ...(stringField(body.provider) ? { provider: stringField(body.provider) } : {}),
+    ...(stringField(body.provider)
+      ? { provider: stringField(body.provider) }
+      : {}),
     ...(numberField(body.batteryPct) !== undefined
       ? { batteryPct: numberField(body.batteryPct) }
       : {}),
@@ -205,5 +226,7 @@ function stringField(value: unknown): string | undefined {
 }
 
 function numberField(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
