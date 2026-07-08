@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.34.1](https://github.com/dylanneve1/talon/compare/v1.34.0...v1.34.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* **native:** classify delivery tools at the source instead of client name-matching ([#478](https://github.com/dylanneve1/talon/issues/478)) ([cd411cf](https://github.com/dylanneve1/talon/commit/cd411cf22562c236689f8e44a71a705ba07b8450))
+
 ## [1.34.0](https://github.com/dylanneve1/talon/compare/v1.33.0...v1.34.0) (2026-07-08)
 
 
