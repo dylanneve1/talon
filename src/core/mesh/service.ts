@@ -8,10 +8,10 @@
  *     requests and device commands reach connected companion apps. The
  *     service never imports a transport — dependencies point inward.
  *   - The model reads and drives it through the shared mesh gateway actions
- *     (list_devices, get_device_location, ring_device, open_device_url,
- *     set/get_device_clipboard, get_device_status), so full mesh access
- *     works identically from Telegram, Discord, Teams, terminal, and native
- *     chats — the mesh is daemon state, not a native-frontend feature.
+ *     (list_devices, get_device_location, get_device_history, ring_device,
+ *     get_device_status), so full mesh access works identically from
+ *     Telegram, Discord, Teams, terminal, and native chats — the mesh is
+ *     daemon state, not a native-frontend feature.
  *
  * Two request/response flows ride the same SSE-out / HTTP-POST-back loop:
  *
@@ -58,7 +58,8 @@ const DEFAULT_FRESH_FIX_TIMEOUT_MS = 8_000;
 const DEFAULT_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_COMMAND_TIMEOUT_MS = 12_000;
 const MOBILE_PLATFORMS = new Set(["android", "ios"]);
-const MAX_CLIPBOARD_TEXT = 16_384;
+const DEFAULT_HISTORY_HOURS = 24;
+const MAX_HISTORY_LINES = 24;
 
 export class MeshService {
   private readonly waiters = new Set<() => void>();
@@ -259,34 +260,28 @@ export class MeshService {
     });
   }
 
-  /** `open_device_url`: open an http(s) link on the device. */
-  async openDeviceUrl(query: unknown, url: unknown): Promise<MeshToolResult> {
-    const target = typeof url === "string" ? url.trim() : "";
-    if (!/^https?:\/\//i.test(target)) {
+  /**
+   * `get_device_history`: the device's movement + battery over a window,
+   * computed from the fixes the daemon has been receiving all along —
+   * timeline, distance traveled, and battery trend.
+   */
+  async deviceHistory(
+    query?: unknown,
+    hours?: unknown,
+  ): Promise<MeshToolResult> {
+    await this.load();
+    const target = this.chooseDevice(query);
+    if (!target) return this.noSuchDevice(query);
+    const windowHours = clampHours(hours);
+    const sinceTs = Date.now() - windowHours * 3_600_000;
+    const fixes = this.registry.getHistory(target.id, sinceTs);
+    if (fixes.length === 0) {
       return {
-        ok: false,
-        text: "open_device_url needs an http:// or https:// URL.",
+        ok: true,
+        text: `No location reports from ${target.name} in the last ${windowHours}h. Enable periodic reporting in the companion app for a movement history.`,
       };
     }
-    return this.commandTool(query, "open_url", { url: target });
-  }
-
-  /** `set_device_clipboard`: place text on the device's clipboard. */
-  async setDeviceClipboard(
-    query: unknown,
-    text: unknown,
-  ): Promise<MeshToolResult> {
-    if (typeof text !== "string" || !text.length) {
-      return { ok: false, text: "set_device_clipboard needs non-empty text." };
-    }
-    return this.commandTool(query, "clipboard_set", {
-      text: text.slice(0, MAX_CLIPBOARD_TEXT),
-    });
-  }
-
-  /** `get_device_clipboard`: read the device's clipboard text. */
-  getDeviceClipboard(query?: unknown): Promise<MeshToolResult> {
-    return this.commandTool(query, "clipboard_get", {});
+    return { ok: true, text: this.historySummary(target, fixes, windowHours) };
   }
 
   /** `get_device_status`: live telemetry straight from the device. */
@@ -403,17 +398,6 @@ export class MeshService {
     switch (name) {
       case "ring":
         return `${device.name} is ringing.${detail}`;
-      case "open_url":
-        return `Opened the URL on ${device.name}.${detail}`;
-      case "clipboard_set":
-        return `Clipboard set on ${device.name}.${detail}`;
-      case "clipboard_get": {
-        const text =
-          typeof result.data?.text === "string" ? result.data.text : "";
-        return text
-          ? `Clipboard on ${device.name}:\n${text.slice(0, MAX_CLIPBOARD_TEXT)}`
-          : `${device.name}'s clipboard has no text.${detail}`;
-      }
       case "status": {
         const fields = Object.entries(result.data ?? {})
           .filter(([, v]) => v !== null && v !== undefined && v !== "")
@@ -430,6 +414,46 @@ export class MeshService {
             : `${device.name} completed "${name}".`)
         );
     }
+  }
+
+  /** Render a window of fixes: headline (count, span, distance, battery
+   *  trend) plus a bounded, evenly-sampled timeline oldest-first. */
+  private historySummary(
+    device: DeviceInfo,
+    fixes: DeviceLocation[],
+    windowHours: number,
+  ): string {
+    let distanceM = 0;
+    for (let i = 1; i < fixes.length; i++) {
+      distanceM += haversineM(fixes[i - 1], fixes[i]);
+    }
+    const batteries = fixes
+      .map((f) => f.batteryPct)
+      .filter((b): b is number => typeof b === "number");
+    const headline = [
+      `${device.name}: ${fixes.length} fix${fixes.length === 1 ? "" : "es"} in the last ${windowHours}h`,
+      `moved ~${formatDistance(distanceM)}`,
+      ...(batteries.length >= 2
+        ? [`battery ${batteries[0]}% → ${batteries[batteries.length - 1]}%`]
+        : []),
+    ].join(" · ");
+    const lines = sampleEvenly(fixes, MAX_HISTORY_LINES).map((f) => {
+      const parts = [
+        `${formatWhen(f.ts)} — ${f.lat.toFixed(5)},${f.lon.toFixed(5)}`,
+      ];
+      if (typeof f.accuracyM === "number")
+        parts.push(`±${Math.round(f.accuracyM)}m`);
+      if (typeof f.batteryPct === "number") parts.push(`${f.batteryPct}%`);
+      return `- ${parts.join(" · ")}`;
+    });
+    const omitted = fixes.length - Math.min(fixes.length, MAX_HISTORY_LINES);
+    return [
+      headline,
+      ...lines,
+      ...(omitted > 0
+        ? [`(${omitted} more fixes omitted; timeline sampled evenly)`]
+        : []),
+    ].join("\n");
   }
 
   private async waitForFreshLocation(
@@ -458,6 +482,47 @@ export class MeshService {
     }
     return undefined;
   }
+}
+
+/** Clamp the requested history window to 1..168 hours (default 24). */
+function clampHours(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_HISTORY_HOURS;
+  return Math.min(168, Math.max(1, Math.round(n)));
+}
+
+/** Great-circle distance between two fixes in meters. */
+function haversineM(a: DeviceLocation, b: DeviceLocation): number {
+  const R = 6_371_000;
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function formatDistance(meters: number): string {
+  if (meters < 1_000) return `${Math.round(meters)}m`;
+  return `${(meters / 1_000).toFixed(1)}km`;
+}
+
+/** Local wall-clock stamp for history lines (date + HH:MM). */
+function formatWhen(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Up to `max` items spread evenly across the list, endpoints included. */
+function sampleEvenly<T>(items: T[], max: number): T[] {
+  if (items.length <= max) return items;
+  const out: T[] = [];
+  for (let i = 0; i < max; i++) {
+    out.push(items[Math.round((i * (items.length - 1)) / (max - 1))]);
+  }
+  return out;
 }
 
 function age(ms: number): string {

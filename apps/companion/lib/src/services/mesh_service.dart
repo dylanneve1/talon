@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:battery_plus/battery_plus.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import 'bridge_client.dart';
@@ -49,9 +49,10 @@ typedef MeshNameProvider = Future<String> Function();
 typedef MeshVersionProvider = Future<String> Function();
 typedef ForegroundStarter = Future<void> Function();
 typedef MeshRingHandler = Future<void> Function(String? message);
-typedef MeshUrlOpener = Future<bool> Function(Uri url);
-typedef MeshClipboardReader = Future<String?> Function();
-typedef MeshClipboardWriter = Future<void> Function(String text);
+
+/// Extra device intelligence merged into the `status` command's payload
+/// (hardware model, OS, locale, timezone, network, …).
+typedef MeshSystemInfoProvider = Future<Map<String, String>> Function();
 
 @pragma('vm:entry-point')
 void startMeshForegroundCallback() {
@@ -73,14 +74,7 @@ class MeshService {
   /// Commands this build can execute, advertised at registration so the
   /// daemon can refuse unsupported commands with a clear message instead of
   /// timing out.
-  static const List<String> capabilities = [
-    'locate',
-    'ring',
-    'open_url',
-    'clipboard_set',
-    'clipboard_get',
-    'status',
-  ];
+  static const List<String> capabilities = ['locate', 'ring', 'status'];
 
   final Prefs prefs;
   final BridgeClient client;
@@ -90,9 +84,7 @@ class MeshService {
   final MeshVersionProvider _versionProvider;
   final ForegroundStarter _foregroundStarter;
   final MeshRingHandler _ringHandler;
-  final MeshUrlOpener _urlOpener;
-  final MeshClipboardReader _clipboardReader;
-  final MeshClipboardWriter _clipboardWriter;
+  final MeshSystemInfoProvider _systemInfoProvider;
 
   StreamSubscription<Map<String, dynamic>>? _events;
   Timer? _heartbeat;
@@ -108,18 +100,14 @@ class MeshService {
     MeshVersionProvider? versionProvider,
     ForegroundStarter? foregroundStarter,
     MeshRingHandler? ringHandler,
-    MeshUrlOpener? urlOpener,
-    MeshClipboardReader? clipboardReader,
-    MeshClipboardWriter? clipboardWriter,
+    MeshSystemInfoProvider? systemInfoProvider,
   })  : _locationProvider = locationProvider ?? _defaultLocation,
         _batteryProvider = batteryProvider ?? _defaultBattery,
         _nameProvider = nameProvider ?? _defaultName,
         _versionProvider = versionProvider ?? _defaultVersion,
         _foregroundStarter = foregroundStarter ?? _startForeground,
         _ringHandler = ringHandler ?? _defaultRing,
-        _urlOpener = urlOpener ?? _defaultOpenUrl,
-        _clipboardReader = clipboardReader ?? _defaultClipboardRead,
-        _clipboardWriter = clipboardWriter ?? _defaultClipboardWrite;
+        _systemInfoProvider = systemInfoProvider ?? _defaultSystemInfo;
 
   bool get running => _running;
 
@@ -239,28 +227,6 @@ class MeshService {
           await _ringHandler(note is String && note.isNotEmpty ? note : null);
           ok = true;
           break;
-        case 'open_url':
-          final uri = Uri.tryParse('${params['url'] ?? ''}');
-          if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https')) {
-            message = 'open_url needs an http(s) URL.';
-          } else {
-            ok = await _urlOpener(uri);
-            if (!ok) message = 'The device could not open the URL.';
-          }
-          break;
-        case 'clipboard_set':
-          final text = params['text'];
-          if (text is! String || text.isEmpty) {
-            message = 'clipboard_set needs non-empty text.';
-          } else {
-            await _clipboardWriter(text);
-            ok = true;
-          }
-          break;
-        case 'clipboard_get':
-          data = {'text': await _clipboardReader() ?? ''};
-          ok = true;
-          break;
         case 'status':
           data = await _statusPayload();
           ok = true;
@@ -289,6 +255,12 @@ class MeshService {
 
   Future<Map<String, dynamic>> _statusPayload() async {
     final battery = await _batteryProvider();
+    Map<String, String> extras;
+    try {
+      extras = await _systemInfoProvider();
+    } catch (_) {
+      extras = const {};
+    }
     return {
       'name': await _nameProvider(),
       'platform': _platform,
@@ -296,8 +268,7 @@ class MeshService {
       if (battery.percent != null) 'battery': '${battery.percent}%',
       if (battery.charging != null)
         'charging': battery.charging! ? 'yes' : 'no',
-      if (!kIsWeb)
-        'os': '${Platform.operatingSystem} ${Platform.operatingSystemVersion}',
+      ...extras,
       'meshSharing': prefs.meshSharing ? 'on' : 'off',
       'periodicReporting': prefs.meshPeriodic
           ? 'every ${prefs.meshIntervalSeconds}s'
@@ -426,14 +397,58 @@ class MeshService {
     }
   }
 
-  static Future<bool> _defaultOpenUrl(Uri url) =>
-      launchUrl(url, mode: LaunchMode.externalApplication);
-
-  static Future<String?> _defaultClipboardRead() async =>
-      (await Clipboard.getData(Clipboard.kTextPlain))?.text;
-
-  static Future<void> _defaultClipboardWrite(String text) =>
-      Clipboard.setData(ClipboardData(text: text));
+  /// Device intelligence for the `status` command: hardware identity, OS
+  /// version, locale, timezone, and network connectivity. Every field is
+  /// best-effort — one unavailable platform channel must not empty the rest.
+  static Future<Map<String, String>> _defaultSystemInfo() async {
+    final info = <String, String>{};
+    if (!kIsWeb) {
+      info['os'] =
+          '${Platform.operatingSystem} ${Platform.operatingSystemVersion}';
+      info['locale'] = Platform.localeName;
+    }
+    final now = DateTime.now();
+    final offset = now.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final hh = offset.inHours.abs().toString().padLeft(2, '0');
+    final mm = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    info['timezone'] = '${now.timeZoneName} (UTC$sign$hh:$mm)';
+    try {
+      final device = DeviceInfoPlugin();
+      if (!kIsWeb && Platform.isAndroid) {
+        final d = await device.androidInfo;
+        info['hardware'] = '${d.manufacturer} ${d.model}';
+        info['osDetail'] = 'Android ${d.version.release} (SDK ${d.version.sdkInt})';
+      } else if (!kIsWeb && Platform.isIOS) {
+        final d = await device.iosInfo;
+        info['hardware'] = d.utsname.machine;
+        info['osDetail'] = '${d.systemName} ${d.systemVersion}';
+      } else if (!kIsWeb && Platform.isMacOS) {
+        final d = await device.macOsInfo;
+        info['hardware'] = d.model;
+        info['osDetail'] = 'macOS ${d.osRelease}';
+      } else if (!kIsWeb && Platform.isWindows) {
+        final d = await device.windowsInfo;
+        info['osDetail'] = d.displayVersion;
+      } else if (!kIsWeb && Platform.isLinux) {
+        final d = await device.linuxInfo;
+        info['osDetail'] = d.prettyName;
+      }
+    } catch (_) {
+      /* device_info channel unavailable — keep what we have */
+    }
+    try {
+      final links = await Connectivity().checkConnectivity();
+      final named = links
+          .where((c) => c != ConnectivityResult.none)
+          .map((c) => c.name)
+          .toList();
+      info['network'] = named.isEmpty ? 'offline' : named.join('+');
+    } catch (_) {
+      /* connectivity channel unavailable */
+    }
+    return info;
+  }
 
   static Future<void> _startForeground() async {
     if (kIsWeb || !Platform.isAndroid) return;

@@ -36,9 +36,11 @@ dependencies:
   # supports every target this app ships to (Windows/macOS/Linux + Android),
   # whereas image_picker has no desktop-Linux/Windows implementation.
   file_picker: ^8.1.2
-  # Device mesh: one-shot/periodic position fixes and battery/charging state.
+  # Device mesh: one-shot/periodic position fixes, battery/charging state,
+  # and network connectivity for the status command.
   geolocator: ^14.0.2
   battery_plus: ^6.2.3
+  connectivity_plus: ^6.1.0
   device_info_plus: ^11.5.0
   package_info_plus: ^8.3.0
   uuid: ^4.5.1

@@ -28,6 +28,7 @@ async function tempService(
   const registry = new MeshRegistry({
     devices: join(dir, "devices.json"),
     locations: join(dir, "locations.json"),
+    history: join(dir, "history.json"),
   });
   return new MeshService(registry, options);
 }
@@ -52,10 +53,8 @@ describe("mesh tool availability", () => {
       for (const tool of [
         "list_devices",
         "get_device_location",
+        "get_device_history",
         "ring_device",
-        "open_device_url",
-        "set_device_clipboard",
-        "get_device_clipboard",
         "get_device_status",
       ]) {
         expect(names).toContain(tool);
@@ -212,6 +211,53 @@ describe("MeshService locate flow", () => {
     expect(miss.text).toContain("Pixel 9");
   });
 
+  it("builds a movement + battery history from stored fixes", async () => {
+    const service = await tempService();
+    await registerPhone(service);
+    const now = Date.now();
+    // A morning of fixes: home -> across town, battery draining.
+    const fixes = [
+      { lat: 53.3, lon: -6.25, batteryPct: 90, ts: now - 3 * 3_600_000 },
+      { lat: 53.31, lon: -6.24, batteryPct: 84, ts: now - 2 * 3_600_000 },
+      { lat: 53.32, lon: -6.23, batteryPct: 79, ts: now - 1 * 3_600_000 },
+      { lat: 53.33, lon: -6.22, batteryPct: 71, ts: now - 10 * 60_000 },
+    ];
+    for (const f of fixes) {
+      await service.storeLocation({ deviceId: "phone", ...f });
+    }
+
+    const result = await service.deviceHistory("phone", 6);
+    expect(result.ok).toBe(true);
+    expect(result.text).toContain("4 fixes in the last 6h");
+    expect(result.text).toContain("battery 90% → 71%");
+    expect(result.text).toMatch(/moved ~\d/);
+    expect(result.text).toContain("53.33000,-6.22000");
+
+    // Window filtering: only the recent fix lands in a 1h window.
+    const short = await service.deviceHistory("phone", 1);
+    expect(short.text).toContain("1 fix in the last 1h");
+
+    // Empty window is a clean answer, not an error.
+    const other = await service.register({
+      id: "tab",
+      name: "Tablet",
+      platform: "android",
+      appVersion: "1.0.0",
+    });
+    expect(other.id).toBe("tab");
+    const empty = await service.deviceHistory("tablet", 24);
+    expect(empty.ok).toBe(true);
+    expect(empty.text).toContain("No location reports");
+
+    // Shared action path + history survives a reload from disk.
+    setMeshService(service);
+    const viaAction = await meshHandlers.get_device_history(
+      { action: "get_device_history", device: "phone", hours: 6 },
+      1,
+    );
+    expect(viaAction.text).toContain("4 fixes");
+  });
+
   it("prefers mobile devices as the default target", async () => {
     const service = await tempService();
     await service.register({
@@ -233,7 +279,7 @@ describe("MeshService locate flow", () => {
       name: "Pixel 9",
       platform: "android",
       appVersion: "1.0.0",
-      capabilities: ["locate", "ring", "clipboard_get"],
+      capabilities: ["locate", "ring", "status"],
     });
     const sent: Array<{ name: string; params: Record<string, unknown> }> = [];
     service.registerTransport({
@@ -246,8 +292,8 @@ describe("MeshService locate flow", () => {
             commandId: cmd.id,
             deviceId: cmd.deviceId,
             ok: true,
-            ...(cmd.name === "clipboard_get"
-              ? { data: { text: "hello from the phone" } }
+            ...(cmd.name === "status"
+              ? { data: { battery: "77%", network: "wifi" } }
               : {}),
           }),
         );
@@ -262,9 +308,10 @@ describe("MeshService locate flow", () => {
       params: { message: "where are you" },
     });
 
-    const clip = await service.getDeviceClipboard("phone");
-    expect(clip.ok).toBe(true);
-    expect(clip.text).toContain("hello from the phone");
+    const status = await service.getDeviceStatus("phone");
+    expect(status.ok).toBe(true);
+    expect(status.text).toContain("battery: 77%");
+    expect(status.text).toContain("network: wifi");
   });
 
   it("times out a command the device never answers", async () => {
@@ -292,17 +339,13 @@ describe("MeshService locate flow", () => {
     expect(result.text).toContain("locate, status");
   });
 
-  it("fails fast with no transport, validates command params, and ignores stale results", async () => {
+  it("fails fast with no transport and ignores stale results", async () => {
     const service = await tempService({ commandTimeoutMs: 60 });
     await registerPhone(service);
 
     const noTransport = await service.ringDevice("phone");
     expect(noTransport.ok).toBe(false);
     expect(noTransport.text).toContain("No companion transport is connected");
-
-    expect((await service.openDeviceUrl("phone", "ftp://x")).ok).toBe(false);
-    expect((await service.openDeviceUrl("phone", "")).ok).toBe(false);
-    expect((await service.setDeviceClipboard("phone", "")).ok).toBe(false);
 
     // A result for an unknown/expired correlation id is ignored, not fatal.
     expect(
@@ -322,7 +365,7 @@ describe("MeshService locate flow", () => {
       name: "MacBook",
       platform: "macos",
       appVersion: "1.0.0",
-      capabilities: ["open_url", "status"],
+      capabilities: ["ring", "status"],
     });
     service.registerTransport({
       locate: () => {},
@@ -339,12 +382,12 @@ describe("MeshService locate flow", () => {
         ),
     });
 
-    const open = await meshHandlers.open_device_url(
-      { action: "open_device_url", device: "mac", url: "https://example.com" },
+    const ring = await meshHandlers.ring_device(
+      { action: "ring_device", device: "mac" },
       1,
     );
-    expect(open.ok).toBe(true);
-    expect(open.text).toContain("Opened the URL on MacBook");
+    expect(ring.ok).toBe(true);
+    expect(ring.text).toContain("MacBook is ringing");
 
     const status = await meshHandlers.get_device_status(
       { action: "get_device_status", device: "mac" },

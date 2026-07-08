@@ -324,6 +324,7 @@ describe("native mesh registry", () => {
     const registry = new MeshRegistry({
       devices: join(dir, "mesh-devices.json"),
       locations: join(dir, "mesh-locations.json"),
+      history: join(dir, "mesh-history.json"),
     });
 
     await registry.register(
@@ -367,6 +368,7 @@ describe("native mesh registry", () => {
     const reloaded = new MeshRegistry({
       devices: join(dir, "mesh-devices.json"),
       locations: join(dir, "mesh-locations.json"),
+      history: join(dir, "mesh-history.json"),
     });
     await reloaded.load();
     expect(reloaded.getLocation("phone")).toMatchObject({
@@ -400,15 +402,11 @@ describe("native mesh bridge routes", () => {
   }
 
   async function startMeshServer(token = "secret") {
+    const dir = await mkdtemp(join(tmpdir(), "talon-mesh-routes-"));
     const registry = new MeshRegistry({
-      devices: join(
-        await mkdtemp(join(tmpdir(), "talon-mesh-routes-")),
-        "devices.json",
-      ),
-      locations: join(
-        await mkdtemp(join(tmpdir(), "talon-mesh-routes-")),
-        "locations.json",
-      ),
+      devices: join(dir, "devices.json"),
+      locations: join(dir, "locations.json"),
+      history: join(dir, "history.json"),
     });
     const handlers: BridgeServerHandlers = {
       status,

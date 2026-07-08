@@ -1,6 +1,6 @@
 /**
- * MeshRegistry — persistent storage for companion devices + last-known
- * locations.
+ * MeshRegistry — persistent storage for companion devices, last-known
+ * locations, and a bounded per-device location/battery history.
  *
  * Pure state: validate, upsert, persist (0600 JSON sidecars under the Talon
  * root). No transport and no waiting logic — that policy lives in
@@ -22,6 +22,9 @@ import {
 const PRESENCE_TIMEOUT_MS = 90_000;
 const DEVICE_FILE = resolve(dirs.root, "mesh-devices.json");
 const LOCATION_FILE = resolve(dirs.root, "mesh-locations.json");
+const HISTORY_FILE = resolve(dirs.root, "mesh-history.json");
+/** Newest fixes kept per device (~a day of 5-minute periodic reports). */
+const MAX_HISTORY_PER_DEVICE = 500;
 const PLATFORMS = new Set<DevicePlatform>([
   "android",
   "macos",
@@ -33,11 +36,13 @@ const PLATFORMS = new Set<DevicePlatform>([
 export class MeshRegistry {
   private devices = new Map<string, DeviceInfo>();
   private locations = new Map<string, DeviceLocation>();
+  private history = new Map<string, DeviceLocation[]>();
 
   constructor(
     private readonly files = {
       devices: DEVICE_FILE,
       locations: LOCATION_FILE,
+      history: HISTORY_FILE,
     },
   ) {}
 
@@ -54,6 +59,12 @@ export class MeshRegistry {
         .filter((l): l is DeviceLocation => l !== null)
         .map((l) => [l.deviceId, l]),
     );
+    this.history = new Map();
+    for (const fix of (await readArray<DeviceLocation>(this.files.history))
+      .map(sanitizeLocation)
+      .filter((l): l is DeviceLocation => l !== null)) {
+      this.appendHistory(fix);
+    }
   }
 
   async register(
@@ -102,8 +113,30 @@ export class MeshRegistry {
       );
       await this.persistDevices();
     }
+    this.appendHistory(loc);
     await this.persistLocations();
+    await this.persistHistory();
     return loc;
+  }
+
+  /** Fixes for one device since `sinceTs`, oldest first. */
+  getHistory(deviceId: string, sinceTs = 0): DeviceLocation[] {
+    return (this.history.get(deviceId) ?? [])
+      .filter((l) => l.ts >= sinceTs)
+      .map(toDeviceLocation);
+  }
+
+  /** Append one fix to the device's rolling history (dedup on timestamp,
+   *  chronological order, bounded to MAX_HISTORY_PER_DEVICE). */
+  private appendHistory(fix: DeviceLocation): void {
+    const list = this.history.get(fix.deviceId) ?? [];
+    if (list.some((l) => l.ts === fix.ts)) return;
+    list.push(toDeviceLocation(fix));
+    list.sort((a, b) => a.ts - b.ts);
+    if (list.length > MAX_HISTORY_PER_DEVICE) {
+      list.splice(0, list.length - MAX_HISTORY_PER_DEVICE);
+    }
+    this.history.set(fix.deviceId, list);
   }
 
   list(now = Date.now()): {
@@ -131,6 +164,13 @@ export class MeshRegistry {
 
   private async persistLocations(): Promise<void> {
     await writePrivateJson(this.files.locations, [...this.locations.values()]);
+  }
+
+  private async persistHistory(): Promise<void> {
+    await writePrivateJson(
+      this.files.history,
+      [...this.history.values()].flat(),
+    );
   }
 }
 

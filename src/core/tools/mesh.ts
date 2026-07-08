@@ -33,6 +33,20 @@ export const meshTools: ToolDefinition[] = [
     tag: "mesh",
   },
   {
+    name: "get_device_history",
+    description:
+      "Movement and battery history for a Talon companion device: a timeline of its reported locations over a window (default 24h, max 168h), with distance traveled and battery trend. Answers questions like where a device was earlier or how fast its battery is draining.",
+    schema: {
+      device: deviceParam,
+      hours: z
+        .number()
+        .optional()
+        .describe("History window in hours (1-168, default 24)."),
+    },
+    execute: (params, bridge) => bridge("get_device_history", params),
+    tag: "mesh",
+  },
+  {
     name: "ring_device",
     description:
       "Make a Talon companion device ring/vibrate so it can be found (find-my-phone). Optionally include a short message the device may display.",
@@ -44,36 +58,6 @@ export const meshTools: ToolDefinition[] = [
         .describe("Optional short note to show on the device."),
     },
     execute: (params, bridge) => bridge("ring_device", params),
-    tag: "mesh",
-  },
-  {
-    name: "open_device_url",
-    description:
-      "Open an http(s) URL on a Talon companion device (in its default browser). Useful for handing a page, doc, or map to another device.",
-    schema: {
-      url: z.string().describe("The http:// or https:// URL to open."),
-      device: deviceParam,
-    },
-    execute: (params, bridge) => bridge("open_device_url", params),
-    tag: "mesh",
-  },
-  {
-    name: "set_device_clipboard",
-    description:
-      "Place text on a Talon companion device's clipboard — hand a snippet, code, or link to another device for pasting.",
-    schema: {
-      text: z.string().describe("The text to put on the device's clipboard."),
-      device: deviceParam,
-    },
-    execute: (params, bridge) => bridge("set_device_clipboard", params),
-    tag: "mesh",
-  },
-  {
-    name: "get_device_clipboard",
-    description:
-      "Read the current clipboard text from a Talon companion device (may be empty if the platform restricts background clipboard access).",
-    schema: { device: deviceParam },
-    execute: (params, bridge) => bridge("get_device_clipboard", params),
     tag: "mesh",
   },
   {
