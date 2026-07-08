@@ -147,7 +147,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          VERSION=$(node -p "require('$GITHUB_WORKSPACE/package.json').version")
+          # Relative require: $GITHUB_WORKSPACE is a backslash path on
+          # Windows and turns into escape sequences inside the JS string.
+          VERSION=$(node -p "require('../../package.json').version")
           IFS=. read -r MAJOR MINOR PATCH <<< "${VERSION%%-*}"
           BUILD_NUMBER=$((MAJOR * 100000 + MINOR * 1000 + PATCH))
           echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
