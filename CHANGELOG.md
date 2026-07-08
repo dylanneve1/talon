@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.35.0](https://github.com/dylanneve1/talon/compare/v1.34.1...v1.35.0) (2026-07-08)
+
+
+### Features
+
+* **companion:** device mesh — locate, ring, history & telemetry from every frontend ([#483](https://github.com/dylanneve1/talon/issues/483)) ([c3fb60e](https://github.com/dylanneve1/talon/commit/c3fb60ed25dd876263455468ad5dd0f397d620df))
+
 ## [1.34.1](https://github.com/dylanneve1/talon/compare/v1.34.0...v1.34.1) (2026-07-08)
 
 
