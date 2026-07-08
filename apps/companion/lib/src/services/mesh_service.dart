@@ -302,7 +302,7 @@ class MeshService {
         priority: NotificationPriority.LOW,
       ),
       iosNotificationOptions: const IOSNotificationOptions(),
-      foregroundTaskOptions: const ForegroundTaskOptions(
+      foregroundTaskOptions: ForegroundTaskOptions(
         eventAction: ForegroundTaskEventAction.repeat(60000),
         autoRunOnBoot: true,
         autoRunOnMyPackageReplaced: true,
