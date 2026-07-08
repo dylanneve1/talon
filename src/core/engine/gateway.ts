@@ -16,7 +16,7 @@ import {
 import pRetry, { AbortError } from "p-retry";
 import { classify } from "../errors.js";
 import { getActiveCount } from "./dispatcher.js";
-import { Loom, getActiveLoom } from "../weaver/index.js";
+import { Loom, getActiveLoom, type ContextRegistry } from "../weaver/index.js";
 import { getHealthStatus } from "../../util/watchdog.js";
 import { getActiveSessionCount } from "../../storage/sessions.js";
 import { log, logError, logDebug } from "../../util/log.js";
@@ -89,13 +89,14 @@ export async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
 export class Gateway {
   /**
    * Per-chat live state is owned by the Weaver's Loom. The gateway holds no
-   * registry of its own — it delegates here. `getActiveLoom()` returns the
-   * Weaver's Loom once the dispatcher is wired; the standalone fallback covers
-   * unit tests and the brief startup window before init (when no turn — and so
-   * no context — can exist anyway).
+   * registry of its own — it delegates here, and only through the
+   * `ContextRegistry` face (the gateway never creates or evicts Threads).
+   * `getActiveLoom()` returns the Weaver's Loom once the dispatcher is wired;
+   * the standalone fallback covers unit tests and the brief startup window
+   * before init (when no turn — and so no context — can exist anyway).
    */
   private readonly ownLoom = new Loom();
-  private get loom(): Loom {
+  private get loom(): ContextRegistry {
     return getActiveLoom() ?? this.ownLoom;
   }
 

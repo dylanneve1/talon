@@ -157,6 +157,32 @@ describe("weaver", () => {
   });
 });
 
+describe("weaver turn-start hook", () => {
+  it("fires once per executed turn, but not on a no-model refusal", async () => {
+    const onTurnStart = vi.fn();
+    const backend = stubBackend();
+    let model: ReturnType<typeof stubResolveActiveModel> | null =
+      stubResolveActiveModel();
+    const weaver = new Weaver({
+      getBackend: () => backend,
+      resolveActiveModel: async () =>
+        model ? model() : { model: null, ref: null, backendId: "claude" },
+      context: { acquire: vi.fn(), release: vi.fn(), getMessageCount: () => 0 },
+      sendTyping: vi.fn(async () => {}),
+      onActivity: vi.fn(),
+      onTurnStart,
+    });
+
+    await weaver.runTurn(params({ chatId: "hooked" }));
+    expect(onTurnStart).toHaveBeenCalledTimes(1);
+
+    model = null; // next resolution refuses the turn
+    const refused = await weaver.runTurn(params({ chatId: "hooked" }));
+    expect(refused.text).toContain("No model selected");
+    expect(onTurnStart).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("thread execution context", () => {
   it("brackets a turn: acquire resets the per-turn counter, release clears", () => {
     const thread = new Thread("c");

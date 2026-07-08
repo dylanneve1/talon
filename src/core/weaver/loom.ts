@@ -1,4 +1,30 @@
-import { Thread } from "./thread.js";
+import { Thread, type ThreadSnapshot } from "./thread.js";
+
+/**
+ * The context-tracking face of the Loom — everything the gateway needs
+ * to bracket turns and answer numeric-keyed queries, and nothing else.
+ * The gateway depends on this interface (not the concrete Loom), so its
+ * contract with the registry is explicit and a test can substitute a
+ * stub without dragging in Thread creation or eviction.
+ */
+export interface ContextRegistry {
+  /** Acquire the execution context for a turn. See `Loom.acquireContext`. */
+  acquireContext(numericChatId: number, stringId?: string): Thread;
+  /** Release one context hold, addressed by numeric or string id. */
+  releaseContext(id: number | string): void;
+  /** Count one bridge-sent message against the chat's current turn. */
+  noteMessageSent(numericChatId: number): void;
+  /** Messages the bridge has sent during the chat's current turn. */
+  messageCount(numericChatId: number): number;
+  /** Whether a turn is currently holding the chat's execution context. */
+  hasActiveContext(numericChatId: number): boolean;
+  /** Number of chats currently holding an execution context. */
+  activeContextCount(): number;
+  /** Resolve a string chat id to the numeric id of its active context. */
+  numericForStringId(stringId: string): number | null;
+  /** Number of live Threads in the registry. */
+  size(): number;
+}
 
 /**
  * Loom — the single registry of live chat Threads.
@@ -9,7 +35,7 @@ import { Thread } from "./thread.js";
  * route inbound tool calls and report active chats without owning any
  * per-chat state of its own.
  */
-export class Loom {
+export class Loom implements ContextRegistry {
   private readonly threads = new Map<string, Thread>();
   private readonly byNumeric = new Map<number, Thread>();
 
@@ -42,6 +68,11 @@ export class Loom {
 
   chatIds(): string[] {
     return [...this.threads.keys()];
+  }
+
+  /** An immutable view of every live Thread. Reading is side-effect free. */
+  snapshot(): ThreadSnapshot[] {
+    return [...this.threads.values()].map((thread) => thread.describe());
   }
 
   // ── Execution context (gateway-facing; absorbed ChatContext) ────────────────

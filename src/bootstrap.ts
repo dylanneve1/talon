@@ -28,7 +28,7 @@ import {
   initTriggers,
   resumeAfterRestart as resumeTriggersAfterRestart,
 } from "./core/background/triggers/index.js";
-import { initDream } from "./core/background/dream.js";
+import { initDream, maybeStartDream } from "./core/background/dream.js";
 import { initHeartbeat } from "./core/background/heartbeat/index.js";
 import { log, logWarn, logDebug } from "./util/log.js";
 import type { TalonConfig } from "./util/config.js";
@@ -409,6 +409,10 @@ export async function initBackendAndDispatcher(
         chatId,
       ),
     onActivity: () => resetPulseTimer(),
+    // Turn-start hook: fire-and-forget dream (background memory
+    // consolidation) check. Wired here so the Weaver stays ignorant of
+    // the dream subsystem.
+    onTurnStart: maybeStartDream,
   });
 
   initPulse();
