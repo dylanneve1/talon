@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.36.0](https://github.com/dylanneve1/talon/compare/v1.35.0...v1.36.0) (2026-07-09)
+
+
+### Features
+
+* native tools + teleport + mesh exec/fs + Shizuku ([#487](https://github.com/dylanneve1/talon/issues/487)) ([c68a186](https://github.com/dylanneve1/talon/commit/c68a1867112ba158d11d428d8f71613213cc1183))
+
 ## [1.35.0](https://github.com/dylanneve1/talon/compare/v1.34.1...v1.35.0) (2026-07-08)
 
 
