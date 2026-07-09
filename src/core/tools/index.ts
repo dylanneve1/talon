@@ -22,6 +22,7 @@ import { webTools } from "./web.js";
 import { adminTools } from "./admin.js";
 import { modelTools } from "./models.js";
 import { meshTools } from "./mesh.js";
+import { nativeTools } from "./native.js";
 
 /** All built-in tool definitions. */
 export const ALL_TOOLS: readonly ToolDefinition[] = [
@@ -41,6 +42,15 @@ export const ALL_TOOLS: readonly ToolDefinition[] = [
   ...modelTools,
   ...meshTools,
 ];
+
+/**
+ * Native tools (bash/read/write/edit/glob/search + teleport) are kept OUT of
+ * ALL_TOOLS on purpose: they are an opt-in replacement for the SDK built-ins,
+ * surfaced only when `composeTools({ includeNativeTools: true })` is asked
+ * (driven by `config.nativeTools`). Keeping them separate preserves the
+ * "no options → the full built-in set" invariant every other caller relies on.
+ */
+export { nativeTools };
 
 /**
  * Names of tools that explicitly terminate the model's turn.
@@ -75,7 +85,7 @@ const DELIVERY_TOOL_NAMES: ReadonlySet<string> = new Set(
  * Kilo's `<server>_<bare>` instead of MCP's canonical `mcp__<server>__<bare>`).
  */
 const ALL_TOOL_NAMES: ReadonlySet<string> = new Set(
-  ALL_TOOLS.map((t) => t.name),
+  [...ALL_TOOLS, ...nativeTools].map((t) => t.name),
 );
 
 /**
@@ -180,6 +190,13 @@ export interface ComposeOptions {
   excludeTags?: ToolTag[];
   /** Exclude specific tools by name. */
   excludeNames?: string[];
+  /**
+   * Include the `native` tool set (bash/read/write/edit/glob/search +
+   * teleport). Off unless explicitly requested — these are only meant to be
+   * live when `config.nativeTools` replaces the SDK built-ins, so every other
+   * caller (and tests) gets the built-in surface by default.
+   */
+  includeNativeTools?: boolean;
 }
 
 /**
@@ -189,7 +206,11 @@ export interface ComposeOptions {
  * Callers describe what they need and get back matching definitions.
  */
 export function composeTools(options: ComposeOptions = {}): ToolDefinition[] {
-  let tools = [...ALL_TOOLS];
+  // Native tools are opt-in — appended only when replacing the SDK built-ins,
+  // so every default caller (and tests) gets exactly the built-in set.
+  let tools = options.includeNativeTools
+    ? [...ALL_TOOLS, ...nativeTools]
+    : [...ALL_TOOLS];
 
   if (options.frontend) {
     tools = tools.filter(

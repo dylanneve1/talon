@@ -7,10 +7,9 @@
  * MeshService, so the registry stays trivially testable.
  */
 
-import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { dirs } from "../../util/paths.js";
+import { readArray, writePrivateJson } from "./persist.js";
 import {
   sanitizeCapabilities,
   toDeviceInfo,
@@ -180,51 +179,6 @@ export class MeshRegistry {
       [...this.history.values()].flat(),
     );
   }
-}
-
-async function readArray<T>(path: string): Promise<T[]> {
-  try {
-    const raw = await readFile(path, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Serialize writes per path so concurrent reports (multiple devices posting
- * at once) never interleave, and never race the tmp file. Each path keeps a
- * tail promise; new writes chain onto it.
- */
-const writeQueues = new Map<string, Promise<void>>();
-
-/**
- * Persist JSON atomically with 0600 perms. Writes to a unique temp file, then
- * renames over the target — a rename on the same filesystem is atomic, so a
- * crash mid-write can never leave a truncated file that `readArray` would
- * silently drop as `[]`. Serialized per path via `writeQueues`.
- */
-async function writePrivateJson(path: string, value: unknown): Promise<void> {
-  const prior = writeQueues.get(path) ?? Promise.resolve();
-  const next = prior
-    .catch(() => {})
-    .then(() => atomicWriteJson(path, value));
-  // Keep the chain alive but self-prune when this is the tail.
-  writeQueues.set(
-    path,
-    next.finally(() => {
-      if (writeQueues.get(path) === next) writeQueues.delete(path);
-    }),
-  );
-  return next;
-}
-
-async function atomicWriteJson(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
-  await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  await rename(tmp, path);
 }
 
 function sanitizeDevice(

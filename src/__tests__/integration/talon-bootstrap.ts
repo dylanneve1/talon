@@ -183,6 +183,7 @@ export async function ensureBooted(args: EnsureBootedArgs = {}): Promise<void> {
     heartbeatIntervalMinutes: 60,
     plugins: [],
     botDisplayName: "Talon (stub)",
+    nativeTools: false,
     teamsWebhookPort: 19878,
     teamsGraphPollMs: 10_000,
     systemPrompt: "Test system prompt.",

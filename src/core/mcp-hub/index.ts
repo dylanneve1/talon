@@ -60,6 +60,8 @@ export type HubConfig = {
   disabledTools?: readonly string[];
   disabledToolTags?: readonly string[];
   braveApiKey?: string;
+  /** Surface the native tool set (bash/read/write/… + teleport). */
+  nativeTools?: boolean;
 };
 
 let hubConfig: HubConfig = {};
@@ -164,6 +166,7 @@ function buildServerFor(target: HubTarget, bridgeUrl: string) {
       bridgeUrl,
       disabledTools: hubConfig.disabledTools,
       disabledToolTags: hubConfig.disabledToolTags,
+      includeNativeTools: hubConfig.nativeTools,
     });
   }
   // brave-search is chat-agnostic (one shared child); plugins read

@@ -50,6 +50,7 @@ describe("plugin system", () => {
       heartbeatIntervalMinutes: 60,
       plugins: [],
       botDisplayName: "Talon",
+      nativeTools: false,
       teamsWebhookPort: 19878,
       teamsGraphPollMs: 10000,
       systemPrompt: "test prompt",

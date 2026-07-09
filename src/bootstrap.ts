@@ -167,6 +167,7 @@ export async function bootstrap(
     disabledTools: config.disabledTools,
     disabledToolTags: config.disabledToolTags,
     braveApiKey: config.braveApiKey,
+    nativeTools: config.nativeTools,
   });
 
   initWorkspace(config.workspace);

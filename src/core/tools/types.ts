@@ -27,7 +27,8 @@ export type ToolTag =
   | "web"
   | "admin"
   | "models"
-  | "mesh";
+  | "mesh"
+  | "native";
 
 /** The bridge caller signature — injected into execute(). */
 export type BridgeFunction = (

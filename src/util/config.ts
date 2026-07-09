@@ -422,6 +422,16 @@ const configSchema = z.object({
   // Native — local bridge for the Electron companion app (apps/desktop)
   native: nativeConfigSchema.optional(),
 
+  // Native tools — replace the SDK's built-in Read/Write/Edit/Bash/Glob/Grep
+  // with Talon's own MCP equivalents (bash/read/write/edit/glob/search). The
+  // native tools additionally route to the active `teleport` node, so file
+  // and shell operations can transparently run on a companion device. When
+  // true, the built-ins are dropped from the model's tool whitelist and the
+  // native tools take their place. Off by default: enabling swaps the model's
+  // own hands, so the cutover should be deliberate and observed (flip to true
+  // and restart), with an instant rollback by flipping back to false.
+  nativeTools: z.boolean().default(false),
+
   // Display name shown in terminal UI (defaults to "Talon")
   botDisplayName: z.string().default("Talon"),
 

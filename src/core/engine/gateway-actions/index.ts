@@ -32,6 +32,7 @@ import { skillHandlers } from "./skills.js";
 import { pluginHandlers } from "./plugins.js";
 import { modelHandlers } from "./models.js";
 import { meshHandlers } from "./mesh.js";
+import { nativeHandlers } from "./native.js";
 
 // Null-prototype so a request `action` of "toString" / "constructor" / etc.
 // can't resolve an inherited Object.prototype method — `handlers[action]` only
@@ -47,6 +48,7 @@ const handlers: SharedActionHandlers = Object.assign(Object.create(null), {
   ...pluginHandlers,
   ...modelHandlers,
   ...meshHandlers,
+  ...nativeHandlers,
 });
 
 export async function handleSharedAction(

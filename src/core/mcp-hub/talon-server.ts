@@ -34,6 +34,8 @@ export type TalonServerOptions = {
   bridgeUrl: string;
   disabledTools?: readonly string[];
   disabledToolTags?: readonly string[];
+  /** Expose the native tool set (replaces the SDK built-ins). */
+  includeNativeTools?: boolean;
 };
 
 /** Build a Talon tool MCP server bound to one (frontend, chatId) pair. */
@@ -53,6 +55,7 @@ export function buildTalonToolServer(options: TalonServerOptions): McpServer {
     frontend: options.frontend,
     excludeTags,
     excludeNames,
+    includeNativeTools: options.includeNativeTools,
   });
   if (excludeTags.length > 0 && !tools.some((t) => t.name === "end_turn")) {
     const endTurn = composeTools({ frontend: options.frontend }).find(

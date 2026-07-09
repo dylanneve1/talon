@@ -75,8 +75,14 @@ const FS_COMMAND_TIMEOUT_MS = 30_000;
 const FILE_CHUNK_BYTES = 256 * 1024;
 /** Refuse whole-file transfers larger than this (both directions). */
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
-/** Where pulled device files land on the daemon host when no dest is given. */
-const PULL_DIR = resolve(dirs.workspace, "mesh-pull");
+/**
+ * Where pulled device files land on the daemon host when no dest is given.
+ * Resolved lazily (not at module load) so a test that mocks `util/paths`
+ * doesn't hit its workspace binding before initialization.
+ */
+function pullDir(): string {
+  return resolve(dirs.workspace, "mesh-pull");
+}
 
 export class MeshService {
   private readonly waiters = new Set<() => void>();
@@ -463,7 +469,7 @@ export class MeshService {
     const dest =
       typeof localPath === "string" && localPath.trim()
         ? resolve(dirs.workspace, localPath.trim())
-        : resolve(PULL_DIR, `${buf.deviceName.replace(/\W+/g, "_")}-${basename(remote)}`);
+        : resolve(pullDir(), `${buf.deviceName.replace(/\W+/g, "_")}-${basename(remote)}`);
     await mkdir(dirname(dest), { recursive: true });
     await writeFile(dest, buf.data);
     return {
