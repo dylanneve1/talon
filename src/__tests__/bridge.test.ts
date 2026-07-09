@@ -10,6 +10,17 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Long-haul actions (>300s budgets) use undici's own fetch in production
+// (the built-in fetch's dispatcher can't wait that long, and brand-checks
+// foreign Agents). In tests, route undici's fetch through the same global
+// fetch stub so every bridge call is observable via vi.stubGlobal below.
+vi.mock("undici", () => ({
+  Agent: class MockAgent {},
+  fetch: (...args: unknown[]) =>
+    (globalThis.fetch as (...a: unknown[]) => unknown)(...args),
+}));
+
 import { createBridge } from "../core/tools/bridge.js";
 
 describe("createBridge", () => {

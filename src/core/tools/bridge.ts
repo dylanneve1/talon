@@ -5,7 +5,7 @@
  * exactly one copy of callBridge / textResult.
  */
 
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 import type { BridgeFunction } from "./types.js";
 
 /** Default wall-clock budget for a bridge action. */
@@ -33,17 +33,22 @@ const LONG_ACTION_TIMEOUTS_MS: Record<string, number> = {
 };
 
 /**
- * Dispatcher with undici's header/body watchdogs disabled. The default
- * dispatcher fails any request whose response headers take >300s — which
- * would kill a long chunked transfer regardless of our AbortSignal. The
- * deadline is governed ONLY by the per-action AbortSignal below, so a slow
- * action can run its full budget and still deliver its error/result.
+ * Long-haul actions (>300s budgets) can't ride Node's built-in fetch: its
+ * default dispatcher fails any request whose response headers take >300s,
+ * which would kill a long transfer regardless of our AbortSignal — and the
+ * built-in fetch brand-checks `dispatcher`, rejecting an Agent from the npm
+ * undici package ("fetch failed"). So long-haul calls use the npm undici's
+ * OWN fetch with its own Agent (watchdogs off); the deadline is then
+ * governed solely by the per-action AbortSignal. Everything else keeps the
+ * plain global fetch (fast path, easily stubbed in tests).
  */
 let longHaulAgent: Agent | undefined;
 function dispatcher(): Agent {
   longHaulAgent ??= new Agent({ headersTimeout: 0, bodyTimeout: 0 });
   return longHaulAgent;
 }
+/** Built-in fetch's default dispatcher fails headers slower than this. */
+const BUILTIN_FETCH_HEADERS_CEILING_MS = 300_000;
 
 /**
  * Create a bridge caller bound to a default URL and chat.
@@ -74,19 +79,29 @@ export function createBridge(
         : null;
     const effectiveChatId = explicitChatId ?? chatId;
     const timeoutMs = LONG_ACTION_TIMEOUTS_MS[action] ?? DEFAULT_TIMEOUT_MS;
-    let resp: Response;
+    const init = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // chat_id stays in body when set — gateway uses its presence as the
+      // "explicit routing" signal. _chatId is the routing key either way.
+      body: JSON.stringify({ action, ...params, _chatId: effectiveChatId }),
+      signal: AbortSignal.timeout(timeoutMs),
+    };
+    // Minimal common surface of DOM Response and undici's Response.
+    let resp: {
+      ok: boolean;
+      status: number;
+      text(): Promise<string>;
+      json(): Promise<unknown>;
+    };
     try {
-      resp = await fetch(`${bridgeUrl}/action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // chat_id stays in body when set — gateway uses its presence as the
-        // "explicit routing" signal. _chatId is the routing key either way.
-        body: JSON.stringify({ action, ...params, _chatId: effectiveChatId }),
-        signal: AbortSignal.timeout(timeoutMs),
-        // Node's fetch is undici underneath and accepts its dispatcher
-        // extension; the DOM RequestInit type just doesn't know about it.
-        dispatcher: dispatcher(),
-      } as RequestInit & { dispatcher: Agent });
+      resp =
+        timeoutMs > BUILTIN_FETCH_HEADERS_CEILING_MS
+          ? await undiciFetch(`${bridgeUrl}/action`, {
+              ...init,
+              dispatcher: dispatcher(),
+            })
+          : await fetch(`${bridgeUrl}/action`, init);
     } catch (err) {
       const cause = err as Error & { name?: string };
       if (cause.name === "TimeoutError" || cause.name === "AbortError") {
