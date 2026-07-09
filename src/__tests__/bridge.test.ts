@@ -100,6 +100,30 @@ describe("createBridge", () => {
     );
   });
 
+  it("timeout abort throws a message naming the action and the budget", async () => {
+    const timeoutErr = new Error("The operation was aborted due to timeout");
+    timeoutErr.name = "TimeoutError";
+    fetchMock.mockImplementationOnce(async () => {
+      throw timeoutErr;
+    });
+
+    const bridge = createBridge("http://test/", "123");
+    await expect(bridge("device_pull_file", { path: "/x" })).rejects.toThrow(
+      /"device_pull_file" did not complete within 3600s/,
+    );
+  });
+
+  it("network failure throws a message naming the action", async () => {
+    fetchMock.mockImplementationOnce(async () => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:19876");
+    });
+
+    const bridge = createBridge("http://test/", "123");
+    await expect(bridge("native_read", { path: "/x" })).rejects.toThrow(
+      /"native_read" could not reach the Talon gateway.*ECONNREFUSED/,
+    );
+  });
+
   it("call with no params works (default chatId, no body extras)", async () => {
     const bridge = createBridge("http://test/", "456");
     await bridge("list_active_markets", {});
@@ -204,5 +228,21 @@ describe("createBridge", () => {
       (fetchMock.mock.calls[0][1] as { body: string }).body,
     );
     expect(body._chatId).toBe("000123");
+  });
+});
+
+describe("textResult", () => {
+  it("marks ok:false gateway results as tool errors", async () => {
+    const { textResult } = await import("../core/tools/bridge.js");
+    const fail = textResult({ ok: false, text: "device offline" });
+    expect(fail.isError).toBe(true);
+    expect(fail.content[0].text).toBe("device offline");
+
+    const good = textResult({ ok: true, text: "done" });
+    expect(good.isError).toBeUndefined();
+
+    // Results without an ok field (raw payloads) are never marked as errors.
+    const raw = textResult({ text: "plain" });
+    expect(raw.isError).toBeUndefined();
   });
 });

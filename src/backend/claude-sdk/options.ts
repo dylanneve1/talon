@@ -78,7 +78,18 @@ export type HubMcpEntry = {
   type: "http";
   url: string;
   alwaysLoad?: boolean;
+  /** Per-server tool-call timeout in ms (overrides MCP_TOOL_TIMEOUT). */
+  timeout?: number;
 };
+
+/**
+ * Tool-call timeout for the Talon frontend tool servers. Must sit ABOVE the
+ * bridge's largest per-action budget (1h for uncapped device file transfers)
+ * so the layer that times out is the bridge — whose error names the action,
+ * the budget, and warns the operation may still be running — rather than the
+ * SDK's generic MCP timeout, which tells the model nothing actionable.
+ */
+const FRONTEND_TOOL_CALL_TIMEOUT_MS = 3_900_000; // 65 min
 
 /**
  * Build the MCP servers map for a chat query.
@@ -119,6 +130,8 @@ export function buildMcpServers(chatId: string): Record<string, HubMcpEntry> {
       // lever here. Cost: ~50 frontend tool schemas loaded every turn (~10k
       // tokens, cached, negligible on the 1M-context models Talon runs).
       alwaysLoad: true,
+      // Outlast the bridge's 1h transfer budget — see the constant's doc.
+      timeout: FRONTEND_TOOL_CALL_TIMEOUT_MS,
     };
   }
 
