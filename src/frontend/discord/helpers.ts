@@ -35,7 +35,7 @@ type MetricsSnapshot = {
   counters: Record<string, number>;
   histograms: Record<
     string,
-    { count: number; p50: number; p95: number; p99: number; avg: number }
+    { count: number; avg: number; min: number; max: number }
   >;
 };
 
@@ -57,7 +57,7 @@ export function renderMetricsMessages(
 
   // Histograms come in two flavours: durations (keys ending in `_ms`,
   // rendered as human times) and plain counts like `tool_calls_per_turn`
-  // (rendered as bare numbers — "p50=1ms" for a count is nonsense).
+  // (rendered as bare numbers — "min=1ms" for a count is nonsense).
   const histKeys = Object.keys(metrics.histograms).sort();
   const durationKeys = histKeys.filter((key) => key.endsWith("_ms"));
   const countKeys = histKeys.filter((key) => !key.endsWith("_ms"));
@@ -65,8 +65,8 @@ export function renderMetricsMessages(
     const h = metrics.histograms[key];
     return (
       `  \`${truncateMetricLabel(key)}\`  n=${h.count} ` +
-      `p50=${fmt(h.p50)}  p95=${fmt(h.p95)} ` +
-      `p99=${fmt(h.p99)}  avg=${fmt(h.avg)}`
+      `avg=${fmt(h.avg)}  min=${fmt(h.min)} ` +
+      `max=${fmt(h.max)}`
     );
   };
   if (durationKeys.length > 0) {

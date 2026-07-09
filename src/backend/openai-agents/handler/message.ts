@@ -398,6 +398,7 @@ export async function handleMessage(
   const responseText = finalizeResponseText(streamState);
   const durationMs = Date.now() - t0;
   recordTurnMetrics({
+    chatId,
     backend: "openai-agents",
     durationMs,
     toolCalls: streamState.toolCalls,
@@ -443,7 +444,10 @@ export async function handleMessage(
       : ({ violated: false } as const);
 
   if (violation.violated) {
-    recordFlowViolation(violation.shouldRetry ? "retried" : "cap_exhausted");
+    recordFlowViolation(
+      chatId,
+      violation.shouldRetry ? "retried" : "cap_exhausted",
+    );
     log(
       "agent",
       `[${chatId}] flow violation: trailing prose (${violation.trailing.length} chars) without end_turn/send. ${

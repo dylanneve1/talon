@@ -63,6 +63,8 @@ export type ProcessEventOutcome =
 
 /** Common context passed to the per-event helper. */
 export interface EventProcessingContext {
+  /** Chat id for session-scoped metrics. */
+  chatId?: string;
   /** Session id we're scoped to — events for other sessions are dropped. */
   sessionId: string;
   /** Stream state accumulator (shared/). */
@@ -277,7 +279,11 @@ async function processPartUpdate(
   }
   // Count every tool the model calls — shared vocabulary across
   // backends (prefix-stripped name + backend dimension).
-  recordToolCall(toolName, ctx.backendLabel.toLowerCase());
+  recordToolCall(
+    ctx.chatId ?? "__unknown__",
+    toolName,
+    ctx.backendLabel.toLowerCase(),
+  );
   recordToolUse(ctx.state, toolName, input);
   if (ctx.onToolUse) {
     try {

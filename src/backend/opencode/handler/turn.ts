@@ -277,6 +277,7 @@ async function subscribeToTurnEvents(inputs: SubscribeInputs): Promise<void> {
       }
 
       const outcome = await processStreamEvent(event, {
+        chatId,
         sessionId,
         state,
         seenToolCallIds,

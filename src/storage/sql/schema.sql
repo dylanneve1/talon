@@ -70,7 +70,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   estimated_cost_usd  REAL    NOT NULL DEFAULT 0,
   total_response_ms   REAL    NOT NULL DEFAULT 0,
   last_response_ms    REAL    NOT NULL DEFAULT 0,
-  fastest_response_ms REAL
+  fastest_response_ms REAL,
+  metrics             TEXT    NOT NULL DEFAULT '{"lifetime":{"counters":{"queries":0,"toolCalls":0,"turnsWithTools":0,"apiCalls":0,"inputTokens":0,"outputTokens":0,"cacheReadTokens":0,"cacheWriteTokens":0,"failedTurns":0,"flowViolationRetries":0,"flowViolationCapExhausted":0,"trailingTextDropped":0},"latency":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsByName":{},"backend":{},"cacheHitPercent":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"toolCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0},"apiCallsPerTurn":{"count":0,"sumMs":0,"minMs":null,"maxMs":0}},"buckets":{}}'
 );
 
 -- Chat settings: one JSON document per chat. The access pattern is

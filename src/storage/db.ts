@@ -68,7 +68,7 @@ let db: SqlDatabase | null = null;
  *
  * Column reconciliation runs first: `ALTER TABLE … ADD COLUMN` has no
  * IF NOT EXISTS form, so columns added to already-shipped tables
- * (media_index.content_hash) are ensured by attempting the ALTER and
+ * (media_index.content_hash, sessions.metrics) are ensured by attempting the ALTER and
  * swallowing the two expected failures — "duplicate column name"
  * (column already there) and "no such table" (fresh database; the
  * CREATE TABLE in schema.sql includes the column).
@@ -81,6 +81,11 @@ function ensureSchema(database: SqlDatabase): void {
     .get() as { tables: number };
   try {
     database.exec(dbSql.addMediaContentHashColumn);
+  } catch {
+    /* duplicate column or no such table — both mean nothing to do */
+  }
+  try {
+    database.exec(dbSql.addSessionsMetricsColumn);
   } catch {
     /* duplicate column or no such table — both mean nothing to do */
   }

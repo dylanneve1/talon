@@ -103,7 +103,7 @@ function handleToolCalled(item: unknown, ctx: HandleRunItemContext): void {
     }
   }
 
-  recordToolCall(toolName, "openai-agents");
+  recordToolCall(ctx.chatId, toolName, "openai-agents");
   recordToolUse(ctx.state, toolName, input);
 
   if (ctx.onToolUse) {

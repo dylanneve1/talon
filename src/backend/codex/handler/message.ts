@@ -571,6 +571,7 @@ export async function handleMessage(
   const responseText = finalizeResponseText(streamState);
   const durationMs = Date.now() - t0;
   recordTurnMetrics({
+    chatId,
     backend: "codex",
     durationMs,
     toolCalls: codexToolMetrics.count,

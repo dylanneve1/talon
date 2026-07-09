@@ -159,18 +159,17 @@ describe("renderMetricsMessages", () => {
       histograms: {
         response_latency_ms: {
           count: 3,
-          p50: 250,
-          p95: 1_250,
-          p99: 2_000,
           avg: 900,
+          min: 250,
+          max: 2_000,
         },
       },
     });
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain("p50=250ms");
-    expect(messages[0]).toContain("p95=1s");
     expect(messages[0]).toContain("avg=900ms");
+    expect(messages[0]).toContain("min=250ms");
+    expect(messages[0]).toContain("max=2s");
   });
 
   it("renders count histograms as plain numbers under Distributions", () => {
@@ -179,23 +178,22 @@ describe("renderMetricsMessages", () => {
       histograms: {
         response_latency_ms: {
           count: 3,
-          p50: 250,
-          p95: 1_250,
-          p99: 2_000,
           avg: 900,
+          min: 250,
+          max: 2_000,
         },
-        tool_calls_per_turn: { count: 21, p50: 1, p95: 33, p99: 100, avg: 9 },
+        tool_calls_per_turn: { count: 21, avg: 9, min: 1, max: 100 },
       },
     });
 
     const out = messages.join("\n");
     // Duration histograms stay under Latency with time units…
     expect(out).toContain("<b>Latency</b>");
-    expect(out).toContain("p50=250ms");
+    expect(out).toContain("avg=900ms");
     // …while per-turn counts get their own section, unit-free.
     expect(out).toContain("<b>Distributions</b>");
-    expect(out).toContain("p50=1  p95=33 p99=100  avg=9");
-    expect(out).not.toContain("p50=1ms");
+    expect(out).toContain("avg=9  min=1 max=100");
+    expect(out).not.toContain("min=1ms");
   });
 
   it("sorts the tool_calls group by count, busiest first", () => {

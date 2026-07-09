@@ -18,6 +18,7 @@ afterEach(() => resetMetrics());
 describe("recordTurnMetrics usage piping", () => {
   it("aggregates token counters globally and per backend", () => {
     recordTurnMetrics({
+      chatId: "test",
       backend: "claude",
       durationMs: 100,
       usage: {
@@ -28,6 +29,7 @@ describe("recordTurnMetrics usage piping", () => {
       },
     });
     recordTurnMetrics({
+      chatId: "test",
       backend: "codex",
       durationMs: 200,
       usage: {
@@ -51,6 +53,7 @@ describe("recordTurnMetrics usage piping", () => {
 
   it("records cache_hit_percent histograms per turn", () => {
     recordTurnMetrics({
+      chatId: "test",
       backend: "claude",
       durationMs: 100,
       // 8000 / (8000 + 2000) → 80%
@@ -65,11 +68,11 @@ describe("recordTurnMetrics usage piping", () => {
     const { histograms } = getMetrics();
     expect(histograms["cache_hit_percent"].count).toBe(1);
     expect(histograms["cache_hit_percent"].avg).toBe(80);
-    expect(histograms["backend.claude.cache_hit_percent"].avg).toBe(80);
   });
 
   it("skips the cache histogram for zero-input turns, keeps counters", () => {
     recordTurnMetrics({
+      chatId: "test",
       backend: "kilo",
       durationMs: 100,
       usage: { inputTokens: 0, outputTokens: 5, cacheRead: 0, cacheWrite: 0 },
@@ -81,7 +84,7 @@ describe("recordTurnMetrics usage piping", () => {
   });
 
   it("is a no-op without a usage snapshot (usage-less backends)", () => {
-    recordTurnMetrics({ backend: "opencode", durationMs: 100 });
+    recordTurnMetrics({ chatId: "test", backend: "opencode", durationMs: 100 });
 
     const { counters } = getMetrics();
     expect(counters["tokens.input_total"]).toBeUndefined();

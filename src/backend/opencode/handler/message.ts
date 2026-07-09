@@ -232,6 +232,7 @@ export async function handleMessage(
   const responseText = finalizeResponseText(state);
   const durationMs = Date.now() - t0;
   recordTurnMetrics({
+    chatId,
     backend: "opencode",
     durationMs,
     toolCalls: state.toolCalls,

@@ -38,10 +38,14 @@
  * registry. Never interpolate chat ids, model ids, or user input.
  */
 
-import { incrementCounter, recordHistogram } from "../../util/metrics.js";
 import { stripMcpPrefix } from "../../core/tools/index.js";
-import { cacheHitPercent, type TokenUsageSnapshot } from "./usage.js";
-import { clearLiveTurn, recordUsage } from "../../storage/sessions.js";
+import type { TokenUsageSnapshot } from "./usage.js";
+import {
+  clearLiveTurn,
+  recordSessionMetricEvent,
+  recordSessionMetrics,
+  recordUsage,
+} from "../../storage/sessions.js";
 
 /**
  * Count one tool call. `toolName` may be raw from any backend —
@@ -49,13 +53,21 @@ import { clearLiveTurn, recordUsage } from "../../storage/sessions.js";
  * (`talon-tools-123_send`), or bare — it is normalised so every
  * backend lands on the same `tool_calls.<bare>` key.
  */
-export function recordToolCall(toolName: string, backend?: string): void {
-  incrementCounter(`tool_calls.${stripMcpPrefix(toolName)}`);
-  if (backend) incrementCounter(`backend.${backend}.tool_calls`);
+export function recordToolCall(
+  chatId: string,
+  toolName: string,
+  backend?: string,
+): void {
+  recordSessionMetricEvent(chatId, {
+    toolCalls: 1,
+    toolName: stripMcpPrefix(toolName),
+    backend,
+  });
 }
 
 /** Per-turn rollup recorded once at the end of every chat turn. */
 export type TurnMetricInputs = {
+  chatId: string;
   /** Backend id, e.g. "claude", "codex", "kilo", "openai-agents", "opencode". */
   backend: string;
   durationMs: number;
@@ -78,45 +90,7 @@ export type TurnMetricInputs = {
  * ("queries_total")` pairs (and codex's private `codex.*` family).
  */
 export function recordTurnMetrics(inputs: TurnMetricInputs): void {
-  recordHistogram("response_latency_ms", inputs.durationMs);
-  recordHistogram(
-    `backend.${inputs.backend}.response_latency_ms`,
-    inputs.durationMs,
-  );
-  incrementCounter("queries_total");
-  incrementCounter(`backend.${inputs.backend}.queries`);
-
-  if (inputs.failed) incrementCounter(`backend.${inputs.backend}.turn_failed`);
-
-  if (inputs.toolCalls !== undefined) {
-    recordHistogram("tool_calls_per_turn", inputs.toolCalls);
-    if (inputs.toolCalls > 0) incrementCounter("turns_with_tools_total");
-  }
-  if (inputs.apiCalls !== undefined && inputs.apiCalls > 0) {
-    incrementCounter("api_calls_total", inputs.apiCalls);
-    recordHistogram("api_calls_per_turn", inputs.apiCalls);
-  }
-
-  if (inputs.usage) {
-    const u = inputs.usage;
-    const b = `backend.${inputs.backend}`;
-    incrementCounter("tokens.input_total", u.inputTokens);
-    incrementCounter("tokens.output_total", u.outputTokens);
-    incrementCounter("tokens.cache_read_total", u.cacheRead);
-    incrementCounter("tokens.cache_write_total", u.cacheWrite);
-    incrementCounter(`${b}.tokens.input`, u.inputTokens);
-    incrementCounter(`${b}.tokens.output`, u.outputTokens);
-    incrementCounter(`${b}.tokens.cache_read`, u.cacheRead);
-    incrementCounter(`${b}.tokens.cache_write`, u.cacheWrite);
-    // Only meaningful when the turn actually consumed input — an
-    // all-zero snapshot (failed turn, usage-less backend) would skew
-    // the distribution with hard zeros.
-    if (u.inputTokens + u.cacheRead > 0) {
-      const pct = cacheHitPercent(u);
-      recordHistogram("cache_hit_percent", pct);
-      recordHistogram(`${b}.cache_hit_percent`, pct);
-    }
-  }
+  recordSessionMetrics(inputs.chatId, inputs);
 }
 
 /**
@@ -152,6 +126,7 @@ export function recordFailedTurnAccounting(inputs: {
   contextWindow?: number;
 }): void {
   recordTurnMetrics({
+    chatId: inputs.chatId,
     backend: inputs.backend,
     durationMs: inputs.durationMs,
     toolCalls: inputs.toolCalls,
@@ -188,12 +163,12 @@ export function recordFailedTurnAccounting(inputs: {
  * reminder" unanswerable for that backend.
  */
 export function recordFlowViolation(
+  chatId: string,
   outcome: "retried" | "cap_exhausted",
 ): void {
-  incrementCounter("scratchpad.trailing_text_dropped");
-  incrementCounter(
-    outcome === "retried"
-      ? "scratchpad.flow_violation_retried"
-      : "scratchpad.flow_violation_cap_exhausted",
-  );
+  recordSessionMetricEvent(chatId, {
+    trailingTextDropped: 1,
+    flowViolationRetries: outcome === "retried" ? 1 : 0,
+    flowViolationCapExhausted: outcome === "cap_exhausted" ? 1 : 0,
+  });
 }

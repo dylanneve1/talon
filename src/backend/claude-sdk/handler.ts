@@ -336,7 +336,7 @@ export async function* runChatTurn(
         }
 
         for (const tool of result.tools) {
-          recordToolCall(tool.name, "claude");
+          recordToolCall(chatId, tool.name, "claude");
           captureIntoState(tool.name, tool.input);
           if (isTurnTerminator(tool.name, tool.input)) {
             state.turnTerminated = true;
@@ -487,6 +487,7 @@ export async function* runChatTurn(
 
   const durationMs = Date.now() - t0;
   recordTurnMetrics({
+    chatId,
     backend: "claude",
     durationMs,
     toolCalls: state.toolCalls,
@@ -543,7 +544,10 @@ export async function* runChatTurn(
     : ({ violated: false } as const);
 
   if (violation.violated) {
-    recordFlowViolation(violation.shouldRetry ? "retried" : "cap_exhausted");
+    recordFlowViolation(
+      chatId,
+      violation.shouldRetry ? "retried" : "cap_exhausted",
+    );
     log(
       "agent",
       `[${chatId}] flow violation: ${violation.reason}. ${

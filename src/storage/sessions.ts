@@ -47,6 +47,43 @@ export type SessionUsage = {
   fastestResponseMs: number;
 };
 
+export type MetricsCounterSet = {
+  queries: number;
+  toolCalls: number;
+  turnsWithTools: number;
+  apiCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  failedTurns: number;
+  flowViolationRetries: number;
+  flowViolationCapExhausted: number;
+  trailingTextDropped: number;
+};
+
+export type MetricsLatencyAgg = {
+  count: number;
+  sumMs: number;
+  minMs: number;
+  maxMs: number;
+};
+
+export type MetricsGrain = {
+  counters: MetricsCounterSet;
+  latency: MetricsLatencyAgg;
+  toolCallsByName: Record<string, number>;
+  backend: Record<string, MetricsCounterSet & { latency: MetricsLatencyAgg }>;
+  cacheHitPercent: MetricsLatencyAgg;
+  toolCallsPerTurn: MetricsLatencyAgg;
+  apiCallsPerTurn: MetricsLatencyAgg;
+};
+
+export type SessionMetrics = {
+  lifetime: MetricsGrain;
+  buckets: Record<string, MetricsGrain>;
+};
+
 export type SessionState = {
   /** Backend server-side session ID. */
   sessionId: string | undefined;
@@ -58,6 +95,8 @@ export type SessionState = {
   createdAt: number;
   /** Cumulative usage stats. */
   usage: SessionUsage;
+  /** Persistent per-session metrics, bucketed by UTC day. */
+  metrics: SessionMetrics;
   /** ID of the last message sent by the bot in this chat. */
   lastBotMessageId?: number;
   /** Descriptive session name derived from first message. */
@@ -249,6 +288,147 @@ const emptyUsage = (): SessionUsage => ({
   fastestResponseMs: Infinity,
 });
 
+const emptyCounters = (): MetricsCounterSet => ({
+  queries: 0,
+  toolCalls: 0,
+  turnsWithTools: 0,
+  apiCalls: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  failedTurns: 0,
+  flowViolationRetries: 0,
+  flowViolationCapExhausted: 0,
+  trailingTextDropped: 0,
+});
+
+const emptyLatency = (): MetricsLatencyAgg => ({
+  count: 0,
+  sumMs: 0,
+  minMs: Infinity,
+  maxMs: 0,
+});
+
+const emptyGrain = (): MetricsGrain => ({
+  counters: emptyCounters(),
+  latency: emptyLatency(),
+  toolCallsByName: {},
+  backend: {},
+  cacheHitPercent: emptyLatency(),
+  toolCallsPerTurn: emptyLatency(),
+  apiCallsPerTurn: emptyLatency(),
+});
+
+export const emptyMetrics = (): SessionMetrics => ({
+  lifetime: emptyGrain(),
+  buckets: {},
+});
+
+function normaliseLatency(raw: unknown): MetricsLatencyAgg {
+  const r = raw as Partial<MetricsLatencyAgg> | undefined;
+  const count =
+    typeof r?.count === "number" && Number.isFinite(r.count) ? r.count : 0;
+  return {
+    count,
+    sumMs:
+      typeof r?.sumMs === "number" && Number.isFinite(r.sumMs) ? r.sumMs : 0,
+    minMs:
+      typeof r?.minMs === "number" && Number.isFinite(r.minMs)
+        ? r.minMs
+        : count > 0
+          ? 0
+          : Infinity,
+    maxMs:
+      typeof r?.maxMs === "number" && Number.isFinite(r.maxMs) ? r.maxMs : 0,
+  };
+}
+
+function normaliseCounters(raw: unknown): MetricsCounterSet {
+  const base = emptyCounters();
+  const r = raw as Partial<MetricsCounterSet> | undefined;
+  for (const key of Object.keys(base) as Array<keyof MetricsCounterSet>) {
+    const value = r?.[key];
+    if (typeof value === "number" && Number.isFinite(value)) base[key] = value;
+  }
+  return base;
+}
+
+function normaliseGrain(raw: unknown): MetricsGrain {
+  const r = raw as Partial<MetricsGrain> | undefined;
+  const grain = emptyGrain();
+  grain.counters = normaliseCounters(r?.counters);
+  grain.latency = normaliseLatency(r?.latency);
+  grain.cacheHitPercent = normaliseLatency(r?.cacheHitPercent);
+  grain.toolCallsPerTurn = normaliseLatency(r?.toolCallsPerTurn);
+  grain.apiCallsPerTurn = normaliseLatency(r?.apiCallsPerTurn);
+  if (r?.toolCallsByName && typeof r.toolCallsByName === "object") {
+    for (const [key, value] of Object.entries(r.toolCallsByName)) {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        grain.toolCallsByName[key] = value;
+      }
+    }
+  }
+  if (r?.backend && typeof r.backend === "object") {
+    for (const [key, value] of Object.entries(r.backend)) {
+      grain.backend[key] = {
+        ...normaliseCounters(value),
+        latency: normaliseLatency((value as { latency?: unknown }).latency),
+      };
+    }
+  }
+  return grain;
+}
+
+function normaliseMetrics(metrics: unknown): SessionMetrics {
+  const raw = metrics as Partial<SessionMetrics> | undefined;
+  const result: SessionMetrics = {
+    lifetime: normaliseGrain(raw?.lifetime),
+    buckets: {},
+  };
+  if (raw?.buckets && typeof raw.buckets === "object") {
+    for (const [day, grain] of Object.entries(raw.buckets)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day))
+        result.buckets[day] = normaliseGrain(grain);
+    }
+  }
+  return result;
+}
+
+function addLatency(agg: MetricsLatencyAgg, value: number): void {
+  if (!Number.isFinite(value)) return;
+  agg.count += 1;
+  agg.sumMs += value;
+  agg.minMs = Math.min(agg.minMs, value);
+  agg.maxMs = Math.max(agg.maxMs, value);
+}
+
+function addCounters(
+  target: MetricsCounterSet,
+  delta: Partial<MetricsCounterSet>,
+): void {
+  for (const [key, value] of Object.entries(delta) as Array<
+    [keyof MetricsCounterSet, number | undefined]
+  >) {
+    if (typeof value === "number" && Number.isFinite(value))
+      target[key] += value;
+  }
+}
+
+function todayUtc(now = Date.now()): string {
+  return new Date(now).toISOString().slice(0, 10);
+}
+
+function metricBucket(metrics: SessionMetrics, day: string): MetricsGrain {
+  metrics.buckets[day] ??= emptyGrain();
+  const days = Object.keys(metrics.buckets).sort();
+  while (days.length > 30) {
+    const oldest = days.shift();
+    if (oldest) delete metrics.buckets[oldest];
+  }
+  return metrics.buckets[day]!;
+}
+
 /**
  * Normalise a session state object in-place. Migrates fields that
  * pre-date later schema additions (response timing, context fill,
@@ -256,6 +436,7 @@ const emptyUsage = (): SessionUsage => ({
  */
 function normaliseSession(session: SessionState): SessionState {
   if (!session.usage) session.usage = emptyUsage();
+  session.metrics = normaliseMetrics(session.metrics);
   if (!session.createdAt) session.createdAt = session.lastActive;
   if (session.usage.totalResponseMs === undefined)
     session.usage.totalResponseMs = 0;
@@ -285,11 +466,113 @@ export function getSession(chatId: string): SessionState {
       lastActive: now,
       createdAt: now,
       usage: emptyUsage(),
+      metrics: emptyMetrics(),
     };
     cache.set(chatId, session);
     persist(chatId, session);
   }
   return normaliseSession(session);
+}
+
+export type SessionMetricTurn = {
+  backend: string;
+  durationMs: number;
+  toolCalls?: number;
+  toolCallsByName?: Record<string, number>;
+  apiCalls?: number;
+  failed?: boolean;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheRead: number;
+    cacheWrite: number;
+  };
+};
+
+function foldMetricTurn(grain: MetricsGrain, turn: SessionMetricTurn): void {
+  addCounters(grain.counters, {
+    queries: 1,
+    turnsWithTools: turn.toolCalls && turn.toolCalls > 0 ? 1 : 0,
+    apiCalls: turn.apiCalls ?? 0,
+    failedTurns: turn.failed ? 1 : 0,
+    inputTokens: turn.usage?.inputTokens ?? 0,
+    outputTokens: turn.usage?.outputTokens ?? 0,
+    cacheReadTokens: turn.usage?.cacheRead ?? 0,
+    cacheWriteTokens: turn.usage?.cacheWrite ?? 0,
+  });
+  addLatency(grain.latency, turn.durationMs);
+  if (turn.toolCalls !== undefined)
+    addLatency(grain.toolCallsPerTurn, turn.toolCalls);
+  if (turn.apiCalls !== undefined && turn.apiCalls > 0)
+    addLatency(grain.apiCallsPerTurn, turn.apiCalls);
+  if (turn.usage && turn.usage.inputTokens + turn.usage.cacheRead > 0) {
+    addLatency(
+      grain.cacheHitPercent,
+      Math.round(
+        (turn.usage.cacheRead /
+          (turn.usage.inputTokens + turn.usage.cacheRead)) *
+          100,
+      ),
+    );
+  }
+  for (const [name, count] of Object.entries(turn.toolCallsByName ?? {})) {
+    if (Number.isFinite(count))
+      grain.toolCallsByName[name] = (grain.toolCallsByName[name] ?? 0) + count;
+  }
+  const backend = (grain.backend[turn.backend] ??= {
+    ...emptyCounters(),
+    latency: emptyLatency(),
+  });
+  addCounters(backend, {
+    queries: 1,
+    apiCalls: turn.apiCalls ?? 0,
+    failedTurns: turn.failed ? 1 : 0,
+    inputTokens: turn.usage?.inputTokens ?? 0,
+    outputTokens: turn.usage?.outputTokens ?? 0,
+    cacheReadTokens: turn.usage?.cacheRead ?? 0,
+    cacheWriteTokens: turn.usage?.cacheWrite ?? 0,
+  });
+  addLatency(backend.latency, turn.durationMs);
+}
+
+export function recordSessionMetrics(
+  chatId: string,
+  turn: SessionMetricTurn,
+  day = todayUtc(),
+): void {
+  const session = getSession(chatId);
+  foldMetricTurn(session.metrics.lifetime, turn);
+  foldMetricTurn(metricBucket(session.metrics, day), turn);
+  persist(chatId, session);
+}
+
+export function recordSessionMetricEvent(
+  chatId: string,
+  event: Partial<MetricsCounterSet> & {
+    toolName?: string;
+    backend?: string;
+  },
+  day = todayUtc(),
+): void {
+  const session = getSession(chatId);
+  for (const grain of [
+    session.metrics.lifetime,
+    metricBucket(session.metrics, day),
+  ]) {
+    addCounters(grain.counters, event);
+    if (event.toolName && event.toolCalls) {
+      grain.toolCallsByName[event.toolName] =
+        (grain.toolCallsByName[event.toolName] ?? 0) + event.toolCalls;
+    }
+    if (event.backend) {
+      const backend = (grain.backend[event.backend] ??= {
+        ...emptyCounters(),
+        latency: emptyLatency(),
+      });
+      addCounters(backend, event);
+    }
+  }
+  persist(chatId, session);
 }
 
 export function setSessionId(chatId: string, sessionId: string): void {
@@ -401,6 +684,7 @@ export type SessionInfo = {
   lastActive: number;
   createdAt: number;
   usage: SessionUsage;
+  metrics: SessionMetrics;
   sessionName?: string;
   lastModel?: string;
   /** True when a turn is currently streaming and `usage` includes its live so-far counts. */
@@ -415,6 +699,7 @@ export function getSessionInfo(chatId: string): SessionInfo {
     lastActive: session?.lastActive ?? 0,
     createdAt: session?.createdAt ?? 0,
     usage: withLiveTurn(chatId, session?.usage ?? emptyUsage()),
+    metrics: session?.metrics ?? emptyMetrics(),
     sessionName: session?.sessionName,
     lastModel: session?.lastModel,
     turnInProgress: liveTurns.has(chatId),
@@ -435,6 +720,7 @@ export function getAllSessions(): Array<{ chatId: string; info: SessionInfo }> {
       lastActive: session.lastActive,
       createdAt: session.createdAt,
       usage: withLiveTurn(chatId, session.usage ?? emptyUsage()),
+      metrics: session.metrics ?? emptyMetrics(),
       sessionName: session.sessionName,
       lastModel: session.lastModel,
       turnInProgress: liveTurns.has(chatId),

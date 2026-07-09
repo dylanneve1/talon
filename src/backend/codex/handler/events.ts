@@ -182,7 +182,7 @@ function recordCodexToolMetric(
   // Shared vocabulary: `tool_calls.<bare>` (prefix-stripped, so codex
   // MCP calls land on the same keys as every other backend) plus the
   // `backend.codex.tool_calls` dimension.
-  recordToolCall(toolName, "codex");
+  recordToolCall(ctx.chatId, toolName, "codex");
   ctx.codexToolMetrics.count += 1;
 }
 
