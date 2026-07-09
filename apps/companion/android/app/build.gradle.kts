@@ -66,6 +66,15 @@ kotlin {
     }
 }
 
+dependencies {
+    // Shizuku (optional elevated privilege for the mesh exec channel). The
+    // client binds to the Shizuku app when it's installed and running; absent
+    // that, the Dart layer falls back to app-UID execution, so these deps are
+    // safe to ship unconditionally. See docs/companion-shizuku.md.
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+}
+
 flutter {
     source = "../.."
 }

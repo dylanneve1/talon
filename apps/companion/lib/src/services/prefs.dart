@@ -16,6 +16,7 @@ class Prefs {
   static const _kMeshSharing = 'mesh.sharing.v1';
   static const _kMeshPeriodic = 'mesh.periodic.v1';
   static const _kMeshInterval = 'mesh.intervalSeconds.v1';
+  static const _kMeshDeviceControl = 'mesh.deviceControl.v1';
 
   final SharedPreferences _sp;
   late final Map<String, int> _lastRead = _decodeLastRead();
@@ -62,6 +63,13 @@ class Prefs {
   int get meshIntervalSeconds => _sp.getInt(_kMeshInterval) ?? 300;
   Future<void> setMeshIntervalSeconds(int v) =>
       _sp.setInt(_kMeshInterval, v.clamp(60, 3600));
+
+  /// Whether this device answers remote shell/filesystem commands (the
+  /// "teleport" substrate). Default on — Dylan's own devices — but visible and
+  /// revocable in settings.
+  bool get meshDeviceControl => _sp.getBool(_kMeshDeviceControl) ?? true;
+  Future<void> setMeshDeviceControl(bool v) =>
+      _sp.setBool(_kMeshDeviceControl, v);
 
   // ── Read markers ──────────────────────────────────────────────────────────
 

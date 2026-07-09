@@ -378,6 +378,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onChange: (m) => widget.state.setMeshIntervalSeconds(m * 60),
             ),
           const Divider(height: 22),
+          _switchRow(
+            'Device control',
+            'Let Talon run shell + file commands on this device (teleport). '
+                'Uses app permissions, or Shizuku if available for elevated access.',
+            prefs.meshDeviceControl,
+            prefs.meshSharing
+                ? (v) => widget.state.setMeshDeviceControl(v)
+                : (_) {},
+          ),
+          const Divider(height: 22),
           Row(
             children: [
               Icon(Icons.hub_outlined, size: 18, color: TalonColors.textDim),

@@ -12,6 +12,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:uuid/uuid.dart';
 
 import 'bridge_client.dart';
+import 'device_exec.dart';
 import 'log.dart';
 import 'prefs.dart';
 
@@ -71,13 +72,22 @@ class _MeshForegroundTaskHandler extends TaskHandler {
 }
 
 class MeshService {
-  /// Commands this build can execute, advertised at registration so the
+  /// Base commands every build can execute, advertised at registration so the
   /// daemon can refuse unsupported commands with a clear message instead of
-  /// timing out.
+  /// timing out. Exec/filesystem commands are appended when device control is
+  /// enabled (see [capabilitiesFor]).
   static const List<String> capabilities = ['locate', 'ring', 'status'];
+
+  /// Advertised capabilities for the current prefs — adds the exec/fs surface
+  /// (DeviceExec) when the user has device control enabled.
+  static List<String> capabilitiesFor(Prefs prefs) => [
+        ...capabilities,
+        if (prefs.meshDeviceControl) ...DeviceExec.capabilities,
+      ];
 
   final Prefs prefs;
   final BridgeClient client;
+  final DeviceExec _exec;
   final MeshLocationProvider _locationProvider;
   final MeshBatteryProvider _batteryProvider;
   final MeshNameProvider _nameProvider;
@@ -101,13 +111,15 @@ class MeshService {
     ForegroundStarter? foregroundStarter,
     MeshRingHandler? ringHandler,
     MeshSystemInfoProvider? systemInfoProvider,
+    DeviceExec? deviceExec,
   })  : _locationProvider = locationProvider ?? _defaultLocation,
         _batteryProvider = batteryProvider ?? _defaultBattery,
         _nameProvider = nameProvider ?? _defaultName,
         _versionProvider = versionProvider ?? _defaultVersion,
         _foregroundStarter = foregroundStarter ?? _startForeground,
         _ringHandler = ringHandler ?? _defaultRing,
-        _systemInfoProvider = systemInfoProvider ?? _defaultSystemInfo;
+        _systemInfoProvider = systemInfoProvider ?? _defaultSystemInfo,
+        _exec = deviceExec ?? DeviceExec();
 
   bool get running => _running;
 
@@ -162,7 +174,7 @@ class MeshService {
       'appVersion': await _versionProvider(),
       if (battery.percent != null) 'battery': battery.percent,
       if (battery.charging != null) 'charging': battery.charging,
-      'capabilities': capabilities,
+      'capabilities': capabilitiesFor(prefs),
     });
   }
 
@@ -232,7 +244,20 @@ class MeshService {
           ok = true;
           break;
         default:
-          message = 'This app version does not support "$name".';
+          // Exec/filesystem commands (the teleport substrate) — only when the
+          // user has device control enabled.
+          if (prefs.meshDeviceControl) {
+            final outcome = await _exec.handle(name, params);
+            if (outcome != null) {
+              ok = outcome.ok;
+              message = outcome.message;
+              data = outcome.data;
+              break;
+            }
+          }
+          message = prefs.meshDeviceControl
+              ? 'This app version does not support "$name".'
+              : 'Device control is disabled on this device.';
       }
     } catch (e) {
       ok = false;

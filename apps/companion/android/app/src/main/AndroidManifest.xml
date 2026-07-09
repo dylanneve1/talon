@@ -18,6 +18,17 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <!-- Device control (teleport substrate): reach shared storage (Downloads,
+         DCIM, …) so remote exec/filesystem commands can operate on the user's
+         files. MANAGE_EXTERNAL_STORAGE (All files access) is granted manually
+         in system settings; the legacy READ/WRITE grants cover pre-Android-11. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"/>
+    <!-- Shizuku (optional elevated privilege): when the Shizuku app is running
+         and grants permission, exec commands run at shell (ADB) UID. -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
     <!-- Opt in to Android 13+ predictive back so the system back gesture
          animates properly and Flutter's PopScope (chat → chat list) can
          participate instead of the gesture killing the activity. -->
@@ -57,6 +68,15 @@
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="location"
             android:exported="false" />
+        <!-- Shizuku binder provider — required for the Shizuku client to bind.
+             Harmless when the Shizuku app is not installed. -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

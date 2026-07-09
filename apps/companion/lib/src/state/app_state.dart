@@ -661,6 +661,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setMeshDeviceControl(bool on) async {
+    await prefs.setMeshDeviceControl(on);
+    // Re-register so the daemon sees the exec/fs capabilities appear/disappear.
+    _mesh?.reconfigure();
+    notifyListeners();
+  }
+
   Future<void> refreshMeshDevices() async {
     final client = _client;
     if (client == null || conn != ConnState.connected) return;
