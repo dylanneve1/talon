@@ -18,7 +18,7 @@ Branch: `feat/native-tools-teleport`. One PR, all phases.
 **Phase 2 — exec/filesystem command channel:**
 - `MeshService`: `execOnDevice`, `readFileFromDevice`, `writeFileToDevice`,
   `listDirOnDevice`, `statOnDevice`, `pullFileFromDevice`, `pushFileToDevice`,
-  shared `dispatchCommand`. Chunked base64 (256KB), 50MB cap, per-command
+  shared `dispatchCommand`. Chunked base64 (256KB), no size cap (fails loudly on real limits), per-command
   timeout override.
 - Tools: `device_exec`, `device_list_dir`, `device_stat`, `device_read_file`,
   `device_write_file`, `device_pull_file`, `device_push_file`.

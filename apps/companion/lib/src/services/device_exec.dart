@@ -42,7 +42,6 @@ class DeviceExec {
   ];
 
   static const int _maxChunkBytes = 256 * 1024;
-  static const int _maxFileBytes = 50 * 1024 * 1024;
 
   /// True when Shizuku is available AND has granted permission right now.
   Future<bool> shizukuReady() async {
@@ -225,11 +224,8 @@ class DeviceExec {
       final file = File(path);
       await file.parent.create(recursive: true);
       final bytes = base64Decode(b64);
-      if (offset + bytes.length > _maxFileBytes) {
-        return CommandOutcome.fail(
-          'write_file would exceed the $_maxFileBytes-byte transfer cap.',
-        );
-      }
+      // No size cap — writes proceed until a real limit fails them (disk
+      // full, permissions), and that exception is surfaced verbatim below.
       // Write at the offset the daemon asked for — never blind-append. The
       // transfer protocol is truncate-first + sequential offsets, so a chunk
       // whose offset doesn't match the current size is out of order (or a

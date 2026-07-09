@@ -73,8 +73,13 @@ const MAX_EXEC_TIMEOUT_MS = 300_000;
 const FS_COMMAND_TIMEOUT_MS = 30_000;
 /** Bytes of file payload per transfer chunk (base64-encoded on the wire). */
 const FILE_CHUNK_BYTES = 256 * 1024;
-/** Refuse whole-file transfers larger than this (both directions). */
-const MAX_FILE_BYTES = 50 * 1024 * 1024;
+/**
+ * No policy size cap on transfers — a transfer is attempted whatever the
+ * size and fails with a concrete error when a real limit bites (device read
+ * error, chunk timeout, daemon memory). Transfers are held in memory, so the
+ * practical ceiling is Node's buffer limit / available RAM; big files are
+ * also slow (256KB per mesh round trip) — that's a tradeoff, not a gate.
+ */
 /**
  * Where pulled device files land on the daemon host when no dest is given.
  * Resolved lazily (not at module load) so a test that mocks `util/paths`
@@ -515,13 +520,12 @@ export class MeshService {
     let data: Buffer;
     try {
       data = await readFile(local);
-    } catch {
-      return { ok: false, text: `Cannot read local file ${local}.` };
-    }
-    if (data.length > MAX_FILE_BYTES) {
+    } catch (err) {
+      // Includes Node's buffer-size ceiling (ERR_FS_FILE_TOO_LARGE) for
+      // files too big to hold in memory — surface the real reason.
       return {
         ok: false,
-        text: `${local} is ${formatBytes(data.length)}, over the ${formatBytes(MAX_FILE_BYTES)} transfer cap.`,
+        text: `Cannot read local file ${local}: ${(err as Error).message}`,
       };
     }
     const written = await this.pushBytes(query, remote, data);
@@ -534,7 +538,7 @@ export class MeshService {
 
   /**
    * Chunked read of a remote file into a Buffer. Loops `read_file` with
-   * increasing offsets until the device reports EOF or the cap is hit.
+   * increasing offsets until the device reports EOF.
    */
   private async pullBytes(
     query: unknown,
@@ -550,26 +554,41 @@ export class MeshService {
         { path, offset, len: FILE_CHUNK_BYTES },
         FS_COMMAND_TIMEOUT_MS,
       );
-      if ("error" in dispatched) return { error: dispatched.error };
+      if ("error" in dispatched) {
+        return {
+          error:
+            offset > 0
+              ? `${dispatched.error} (transfer of ${path} aborted after ${formatBytes(offset)})`
+              : dispatched.error,
+        };
+      }
       deviceName = dispatched.target.name;
       const { result } = dispatched;
       if (!result.ok) {
-        return { error: result.message ?? `Could not read ${path}.` };
+        const reason = result.message ?? `Could not read ${path}.`;
+        return {
+          error:
+            offset > 0
+              ? `${reason} (transfer aborted after ${formatBytes(offset)})`
+              : reason,
+        };
       }
       const b64 =
         typeof result.data?.base64 === "string" ? result.data.base64 : "";
       const chunk = Buffer.from(b64, "base64");
       chunks.push(chunk);
       offset += chunk.length;
-      if (offset > MAX_FILE_BYTES) {
-        return {
-          error: `${path} exceeds the ${formatBytes(MAX_FILE_BYTES)} transfer cap.`,
-        };
-      }
       // EOF when the device says so, or when it returns a short/empty chunk.
       if (result.data?.eof === true || chunk.length < FILE_CHUNK_BYTES) break;
     }
-    return { data: Buffer.concat(chunks), deviceName };
+    try {
+      return { data: Buffer.concat(chunks), deviceName };
+    } catch (err) {
+      // Node buffer ceiling / out of memory — the one real size limit left.
+      return {
+        error: `${path} transferred ${formatBytes(offset)} but is too large to assemble in daemon memory: ${(err as Error).message}`,
+      };
+    }
   }
 
   /**
@@ -581,13 +600,16 @@ export class MeshService {
     path: string,
     data: Buffer,
   ): Promise<{ bytes: number; deviceName: string } | { error: string }> {
-    if (data.length > MAX_FILE_BYTES) {
-      return {
-        error: `Payload ${formatBytes(data.length)} over the ${formatBytes(MAX_FILE_BYTES)} transfer cap.`,
-      };
-    }
     let offset = 0;
     let deviceName = "device";
+    // On a mid-transfer failure the device is left with a partial file —
+    // say so, with how far the transfer got, so the state isn't a mystery.
+    const partial = (reason: string): { error: string } => ({
+      error:
+        offset > 0
+          ? `${reason} (upload aborted — ${path} on the device is a ${formatBytes(offset)} partial write of ${formatBytes(data.length)})`
+          : reason,
+    });
     // A zero-length write still needs one call to create/truncate the file.
     do {
       const chunk = data.subarray(offset, offset + FILE_CHUNK_BYTES);
@@ -602,12 +624,10 @@ export class MeshService {
         },
         FS_COMMAND_TIMEOUT_MS,
       );
-      if ("error" in dispatched) return { error: dispatched.error };
+      if ("error" in dispatched) return partial(dispatched.error);
       deviceName = dispatched.target.name;
       if (!dispatched.result.ok) {
-        return {
-          error: dispatched.result.message ?? `Could not write ${path}.`,
-        };
+        return partial(dispatched.result.message ?? `Could not write ${path}.`);
       }
       offset += chunk.length;
     } while (offset < data.length);
