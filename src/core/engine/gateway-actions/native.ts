@@ -2,11 +2,11 @@
  * Native tools — Talon's own shell/filesystem tools, replacing the SDK's
  * built-in Bash/Read/Write/Edit/Glob/Grep when `config.nativeTools` is on.
  *
- * Their defining feature: every one checks the active `teleport` target. With
- * no teleport, they run on the daemon host (local spawn / local fs / local
- * ripgrep). With a teleport engaged, they run ON the companion device via the
- * mesh exec/fs channel — so `bash`/`read`/`write`/… transparently operate on
- * the phone. Talon acts as if it were running on whichever node is active.
+ * Their defining feature: every one checks the current chat's active
+ * `teleport` target. With no teleport for that chat, they run on the daemon
+ * host (local spawn / local fs / local ripgrep). With a teleport engaged, they
+ * run ON the companion device via the mesh exec/fs channel — so
+ * `bash`/`read`/`write`/… transparently operate on the phone for that chat.
  *
  *   teleport(device)  → native tools target that device
  *   teleport_back()   → native tools run locally again
@@ -56,21 +56,23 @@ const CWD_OPEN = "__TALON_CWD__";
 const CWD_CLOSE = "__TALON_CWD_END__";
 
 export const nativeHandlers: SharedActionHandlers = {
-  teleport: (body) => teleport(body.device),
-  teleport_back: () => teleportBack(),
-  native_bash: (body) => bash(body.command, body.cwd, body.timeout_sec),
-  native_read: (body) => read(body.path, body.offset, body.limit),
-  native_write: (body) => write(body.path, body.content),
-  native_edit: (body) =>
-    edit(body.path, body.old_string, body.new_string, body.replace_all),
-  native_glob: (body) => glob(body.pattern, body.path),
-  native_search: (body) =>
-    search(body.pattern, body.path, body.glob, body.case_insensitive),
+  teleport: (body, chatId) => teleport(chatId, body.device),
+  teleport_back: (_body, chatId) => teleportBack(chatId),
+  native_bash: (body, chatId) =>
+    bash(chatId, body.command, body.cwd, body.timeout_sec),
+  native_read: (body, chatId) =>
+    read(chatId, body.path, body.offset, body.limit),
+  native_write: (body, chatId) => write(chatId, body.path, body.content),
+  native_edit: (body, chatId) =>
+    edit(chatId, body.path, body.old_string, body.new_string, body.replace_all),
+  native_glob: (body, chatId) => glob(chatId, body.pattern, body.path),
+  native_search: (body, chatId) =>
+    search(chatId, body.pattern, body.path, body.glob, body.case_insensitive),
 };
 
 // ── Teleport control ────────────────────────────────────────────────────────
 
-async function teleport(query: unknown): Promise<Result> {
+async function teleport(chatId: number, query: unknown): Promise<Result> {
   const svc = getMeshService();
   await svc.list();
   const target = svc.chooseDevice(query);
@@ -95,7 +97,7 @@ async function teleport(query: unknown): Promise<Result> {
       text: `${target.name} does not advertise the "exec" capability, so teleport can't run commands on it.`,
     };
   }
-  await setTeleport(target.id, target.name);
+  await setTeleport(chatId, target.id, target.name);
   return {
     ok: true,
     text: [
@@ -106,8 +108,8 @@ async function teleport(query: unknown): Promise<Result> {
   };
 }
 
-async function teleportBack(): Promise<Result> {
-  const prior = await clearTeleport();
+async function teleportBack(chatId: number): Promise<Result> {
+  const prior = await clearTeleport(chatId);
   return {
     ok: true,
     text: prior
@@ -119,6 +121,7 @@ async function teleportBack(): Promise<Result> {
 // ── bash ────────────────────────────────────────────────────────────────────
 
 async function bash(
+  chatId: number,
   command: unknown,
   cwd: unknown,
   timeoutSec: unknown,
@@ -126,8 +129,8 @@ async function bash(
   const cmd = typeof command === "string" ? command : "";
   if (!cmd.trim()) return { ok: false, text: "No command given." };
   const timeoutMs = clampTimeout(timeoutSec);
-  const active = await getTeleport();
-  if (active) return bashTeleported(active.deviceId, cmd, timeoutMs);
+  const active = await getTeleport(chatId);
+  if (active) return bashTeleported(chatId, active.deviceId, cmd, timeoutMs);
   return bashLocal(cmd, typeof cwd === "string" ? cwd : undefined, timeoutMs);
 }
 
@@ -180,11 +183,12 @@ function bashLocal(
 }
 
 async function bashTeleported(
+  chatId: number,
   deviceId: string,
   cmd: string,
   timeoutMs: number,
 ): Promise<Result> {
-  const active = await getTeleport();
+  const active = await getTeleport(chatId);
   const cwd = active?.cwd;
   // Wrap so the resulting working dir is reported back and persists across
   // calls (a `cd` in `cmd` carries forward), while the real exit code is
@@ -213,7 +217,7 @@ async function bashTeleported(
     if (close !== -1) {
       const newCwd = stdout.slice(open + CWD_OPEN.length, close).trim();
       stdout = stdout.slice(0, open);
-      if (newCwd) await setTeleportCwd(newCwd);
+      if (newCwd) await setTeleportCwd(chatId, newCwd);
     }
   }
   if (!result.ok && exitCode === undefined) {
@@ -231,6 +235,7 @@ async function bashTeleported(
 // ── read / write / edit ─────────────────────────────────────────────────────
 
 async function read(
+  chatId: number,
   path: unknown,
   offset: unknown,
   limit: unknown,
@@ -239,7 +244,7 @@ async function read(
   if (!p) return { ok: false, text: "A file path is required." };
   const start = num(offset) ?? 0;
   const max = Math.min(num(limit) ?? MAX_READ_LINES, MAX_READ_LINES);
-  const active = await getTeleport();
+  const active = await getTeleport(chatId);
   let content: string;
   let where: string;
   if (active) {
@@ -270,11 +275,15 @@ async function read(
   };
 }
 
-async function write(path: unknown, content: unknown): Promise<Result> {
+async function write(
+  chatId: number,
+  path: unknown,
+  content: unknown,
+): Promise<Result> {
   const p = str(path);
   if (!p) return { ok: false, text: "A file path is required." };
   const body = typeof content === "string" ? content : "";
-  const active = await getTeleport();
+  const active = await getTeleport(chatId);
   if (active) {
     return getMeshService().writeFileToDevice(active.deviceId, p, body);
   }
@@ -288,6 +297,7 @@ async function write(path: unknown, content: unknown): Promise<Result> {
 }
 
 async function edit(
+  chatId: number,
   path: unknown,
   oldString: unknown,
   newString: unknown,
@@ -299,7 +309,7 @@ async function edit(
   const to = typeof newString === "string" ? newString : "";
   if (from === to)
     return { ok: false, text: "old_string and new_string are identical." };
-  const active = await getTeleport();
+  const active = await getTeleport(chatId);
   const svc = getMeshService();
 
   let content: string;
@@ -350,11 +360,15 @@ async function edit(
 
 // ── glob / search ───────────────────────────────────────────────────────────
 
-async function glob(pattern: unknown, path: unknown): Promise<Result> {
+async function glob(
+  chatId: number,
+  pattern: unknown,
+  path: unknown,
+): Promise<Result> {
   const pat = str(pattern);
   if (!pat) return { ok: false, text: "A glob pattern is required." };
   const root = str(path) ?? ".";
-  const active = await getTeleport();
+  const active = await getTeleport(chatId);
   if (active) {
     // Prefer rg on the device; fall back to find (basename patterns via
     // -name, path patterns via -path). `command -v` gates the choice so a
@@ -366,7 +380,7 @@ async function glob(pattern: unknown, path: unknown): Promise<Result> {
       `if command -v rg >/dev/null 2>&1; ` +
       `then rg --files -g ${shellQuote(pat)} ${shellQuote(root)}; ` +
       `else find ${shellQuote(root)} ${findExpr} 2>/dev/null; fi`;
-    return bashTeleported(active.deviceId, cmd, 30_000);
+    return bashTeleported(chatId, active.deviceId, cmd, 30_000);
   }
   const res = await runLocal(rgBin(), ["--files", "-g", pat, root]);
   let files: string[];
@@ -392,6 +406,7 @@ async function glob(pattern: unknown, path: unknown): Promise<Result> {
 }
 
 async function search(
+  chatId: number,
   pattern: unknown,
   path: unknown,
   globPat: unknown,
@@ -410,7 +425,7 @@ async function search(
     ...(ci ? ["-i"] : []),
     ...(g ? ["-g", g] : []),
   ];
-  const active = await getTeleport();
+  const active = await getTeleport(chatId);
   if (active) {
     // Prefer rg on the device, fall back to grep (Android toybox has grep
     // but rarely rg). --include is grep's closest analogue of -g.
@@ -423,7 +438,7 @@ async function search(
       `if command -v rg >/dev/null 2>&1; ` +
       `then rg ${flags.map(shellQuote).join(" ")} -e ${shellQuote(pat)} ${shellQuote(root)}; ` +
       `else grep ${grepFlags.map(shellQuote).join(" ")} -e ${shellQuote(pat)} ${shellQuote(root)} 2>/dev/null; fi`;
-    return bashTeleported(active.deviceId, cmd, 30_000);
+    return bashTeleported(chatId, active.deviceId, cmd, 30_000);
   }
   const res = await runLocal(rgBin(), [...flags, "-e", pat, root]);
   let lines: string[];

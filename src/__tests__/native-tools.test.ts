@@ -273,6 +273,59 @@ describe("native tools — teleport routing", () => {
     expect(sentCmds[1]).toContain("cd '/sdcard/Download'");
   });
 
+  it("scopes teleport routing to the current chat", async () => {
+    const service = freshMesh();
+    setMeshService(service);
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["exec"],
+    });
+    const sentCmds: string[] = [];
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          sentCmds.push(String(cmd.params.cmd));
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: {
+              stdout: "remote\n__TALON_CWD__/sdcard__TALON_CWD_END__",
+              stderr: "",
+              exitCode: 0,
+            },
+          });
+        }),
+    });
+
+    const tp = await nativeHandlers.teleport(
+      { action: "teleport", device: "phone" },
+      1,
+    );
+    expect(tp.ok).toBe(true);
+
+    const local = await nativeHandlers.native_bash(
+      { action: "native_bash", command: "echo local-chat" },
+      2,
+    );
+    expect(local.ok).toBe(true);
+    expect(local.text).toContain("[local] exit 0");
+    expect(local.text).toContain("local-chat");
+    expect(sentCmds).toHaveLength(0);
+
+    const remote = await nativeHandlers.native_bash(
+      { action: "native_bash", command: "echo remote-chat" },
+      1,
+    );
+    expect(remote.ok).toBe(true);
+    expect(remote.text).toContain("[Pixel 9] exit 0");
+    expect(sentCmds).toHaveLength(1);
+  });
+
   it("refuses to teleport onto a device that lacks exec", async () => {
     const service = freshMesh();
     setMeshService(service);

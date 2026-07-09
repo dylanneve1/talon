@@ -1,15 +1,14 @@
 /**
- * Teleport state — the single "active node" the native tools route through.
+ * Teleport state — the active node each chat's native tools route through.
  *
  * When a node is active, Talon's native shell/file tools (bash/read/write/
  * edit/glob/search) execute ON that companion device via the mesh exec/fs
  * channel instead of on the daemon host — Talon acts as if it were running
  * on the phone. `teleport_back` clears it and everything runs locally again.
  *
- * State is a tiny JSON sidecar under the Talon root so it survives restarts
- * and is shared across the process (the native gateway actions read it on
- * every call). Deliberately global, not per-chat: teleport is an operator
- * mode for the whole daemon, matching how Dylan drives a single bot.
+ * State is a tiny JSON sidecar under the Talon root so it survives restarts.
+ * The sidecar is keyed by chat id: teleporting in one chat must not redirect
+ * native tools in another chat.
  */
 
 import { readFile } from "node:fs/promises";
@@ -32,6 +31,10 @@ export type TeleportState = {
   since: number;
 };
 
+type TeleportStore = {
+  chats: Record<string, TeleportState>;
+};
+
 /** Resolved lazily so a test can point it at a tmp file via env. */
 function stateFile(): string {
   return (
@@ -40,34 +43,73 @@ function stateFile(): string {
   );
 }
 
-let cache: TeleportState | null | undefined;
+let cache: TeleportStore | undefined;
 
-/** The active teleport target, or null when operating locally. */
-export async function getTeleport(): Promise<TeleportState | null> {
+function emptyStore(): TeleportStore {
+  return { chats: Object.create(null) as Record<string, TeleportState> };
+}
+
+function normalizeChatId(chatId: number | string): string {
+  return String(chatId);
+}
+
+function parseState(value: unknown): TeleportState | null {
+  const parsed = value as Partial<TeleportState> | null;
+  if (!parsed || typeof parsed.deviceId !== "string" || !parsed.deviceId) {
+    return null;
+  }
+  return {
+    deviceId: parsed.deviceId,
+    deviceName:
+      typeof parsed.deviceName === "string" && parsed.deviceName
+        ? parsed.deviceName
+        : parsed.deviceId,
+    ...(typeof parsed.cwd === "string" ? { cwd: parsed.cwd } : {}),
+    since: typeof parsed.since === "number" ? parsed.since : Date.now(),
+  };
+}
+
+async function readStore(): Promise<TeleportStore> {
   if (cache !== undefined) return cache;
   try {
     const raw = await readFile(stateFile(), "utf8");
-    const parsed = JSON.parse(raw) as Partial<TeleportState>;
-    cache =
-      parsed && typeof parsed.deviceId === "string" && parsed.deviceId
-        ? {
-            deviceId: parsed.deviceId,
-            deviceName:
-              typeof parsed.deviceName === "string" && parsed.deviceName
-                ? parsed.deviceName
-                : parsed.deviceId,
-            ...(typeof parsed.cwd === "string" ? { cwd: parsed.cwd } : {}),
-            since: typeof parsed.since === "number" ? parsed.since : Date.now(),
-          }
-        : null;
+    const parsed = JSON.parse(raw) as unknown;
+    const store = emptyStore();
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "chats" in parsed &&
+      parsed.chats &&
+      typeof parsed.chats === "object"
+    ) {
+      for (const [chatId, state] of Object.entries(
+        parsed.chats as Record<string, unknown>,
+      )) {
+        const normalized = parseState(state);
+        if (normalized) store.chats[chatId] = normalized;
+      }
+    } else {
+      // Legacy singleton file from pre-chat-scoped teleport. Keep reading it
+      // harmlessly, but do not bind it to any chat.
+    }
+    cache = store;
   } catch {
-    cache = null;
+    cache = emptyStore();
   }
   return cache;
 }
 
+/** The active teleport target, or null when operating locally. */
+export async function getTeleport(
+  chatId: number | string,
+): Promise<TeleportState | null> {
+  const store = await readStore();
+  return store.chats[normalizeChatId(chatId)] ?? null;
+}
+
 /** Engage teleport onto a device. */
 export async function setTeleport(
+  chatId: number | string,
   deviceId: string,
   deviceName: string,
 ): Promise<TeleportState> {
@@ -76,25 +118,37 @@ export async function setTeleport(
     deviceName,
     since: Date.now(),
   };
-  cache = state;
-  await writePrivateJson(stateFile(), state);
+  const store = await readStore();
+  store.chats[normalizeChatId(chatId)] = state;
+  cache = store;
+  await writePrivateJson(stateFile(), store);
   return state;
 }
 
 /** Persist an updated working directory for the active teleport. */
-export async function setTeleportCwd(cwd: string): Promise<void> {
-  const current = await getTeleport();
+export async function setTeleportCwd(
+  chatId: number | string,
+  cwd: string,
+): Promise<void> {
+  const current = await getTeleport(chatId);
   if (!current) return;
   const next: TeleportState = { ...current, cwd };
-  cache = next;
-  await writePrivateJson(stateFile(), next);
+  const store = await readStore();
+  store.chats[normalizeChatId(chatId)] = next;
+  cache = store;
+  await writePrivateJson(stateFile(), store);
 }
 
 /** Return to local operation. Returns the prior target (for the message). */
-export async function clearTeleport(): Promise<TeleportState | null> {
-  const prior = await getTeleport();
-  cache = null;
-  await writePrivateJson(stateFile(), null);
+export async function clearTeleport(
+  chatId: number | string,
+): Promise<TeleportState | null> {
+  const store = await readStore();
+  const key = normalizeChatId(chatId);
+  const prior = store.chats[key] ?? null;
+  delete store.chats[key];
+  cache = store;
+  await writePrivateJson(stateFile(), store);
   return prior;
 }
 
