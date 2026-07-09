@@ -44,11 +44,15 @@ export const nativeTools: ToolDefinition[] = [
       cwd: z
         .string()
         .optional()
-        .describe("Working directory (local runs only; teleport tracks its own cwd)."),
+        .describe(
+          "Working directory (local runs only; teleport tracks its own cwd).",
+        ),
       timeout_sec: z
         .number()
         .optional()
-        .describe("Max seconds before the command is killed (default 60, max 300)."),
+        .describe(
+          "Max seconds before the command is killed (default 60, max 300).",
+        ),
     },
     execute: (params, bridge) => bridge("native_bash", params),
     tag: "native",
@@ -59,10 +63,7 @@ export const nativeTools: ToolDefinition[] = [
       "Read a file (with line numbers). Runs on the daemon host or the active teleport device. Supports offset/limit for large files.",
     schema: {
       path: z.string().describe("Absolute file path."),
-      offset: z
-        .number()
-        .optional()
-        .describe("0-based line to start from."),
+      offset: z.number().optional().describe("0-based line to start from."),
       limit: z
         .number()
         .optional()
@@ -104,7 +105,10 @@ export const nativeTools: ToolDefinition[] = [
       "Find files matching a glob pattern (ripgrep-backed). Runs on the daemon host or the active teleport device.",
     schema: {
       pattern: z.string().describe('Glob pattern, e.g. "**/*.ts".'),
-      path: z.string().optional().describe("Root directory to search (default cwd)."),
+      path: z
+        .string()
+        .optional()
+        .describe("Root directory to search (default cwd)."),
     },
     execute: (params, bridge) => bridge("native_glob", params),
     tag: "native",
@@ -115,7 +119,10 @@ export const nativeTools: ToolDefinition[] = [
       "Search file contents with a regex (ripgrep-backed). Runs on the daemon host or the active teleport device.",
     schema: {
       pattern: z.string().describe("Regex pattern to search for."),
-      path: z.string().optional().describe("Root directory or file (default cwd)."),
+      path: z
+        .string()
+        .optional()
+        .describe("Root directory or file (default cwd)."),
       glob: z
         .string()
         .optional()

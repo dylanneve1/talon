@@ -443,7 +443,12 @@ describe("MeshService presence + clock-skew hardening", () => {
     });
     // lastSeen far past the 180s presence window → offline.
     await service.register(
-      { id: "phone", name: "Pixel 9", platform: "android", appVersion: "1.0.0" },
+      {
+        id: "phone",
+        name: "Pixel 9",
+        platform: "android",
+        appVersion: "1.0.0",
+      },
       Date.now() - 200_000,
     );
     service.registerTransport({ locate: () => {}, command: () => {} });
@@ -535,7 +540,11 @@ describe("MeshService exec + filesystem channel", () => {
         }),
     });
 
-    const res = await service.execOnDevice("phone", "echo hello world", "/sdcard");
+    const res = await service.execOnDevice(
+      "phone",
+      "echo hello world",
+      "/sdcard",
+    );
     expect(res.ok).toBe(true);
     expect(res.text).toContain("exit 0");
     expect(res.text).toContain("hello world");
@@ -586,7 +595,8 @@ describe("MeshService exec + filesystem channel", () => {
       appVersion: "1.0.0",
       capabilities: ["write_file"],
     });
-    const chunks: Array<{ offset: number; len: number; truncate: boolean }> = [];
+    const chunks: Array<{ offset: number; len: number; truncate: boolean }> =
+      [];
     service.registerTransport({
       locate: () => {},
       command: (cmd) =>

@@ -367,7 +367,10 @@ export class MeshService {
   }
 
   /** `device_list_dir`: list a directory on the device. */
-  async listDirOnDevice(query: unknown, path: unknown): Promise<MeshToolResult> {
+  async listDirOnDevice(
+    query: unknown,
+    path: unknown,
+  ): Promise<MeshToolResult> {
     const dir = requirePath(path);
     if (!dir) return { ok: false, text: "A directory path is required." };
     const dispatched = await this.dispatchCommand(
@@ -469,7 +472,10 @@ export class MeshService {
     const dest =
       typeof localPath === "string" && localPath.trim()
         ? resolve(dirs.workspace, localPath.trim())
-        : resolve(pullDir(), `${buf.deviceName.replace(/\W+/g, "_")}-${basename(remote)}`);
+        : resolve(
+            pullDir(),
+            `${buf.deviceName.replace(/\W+/g, "_")}-${basename(remote)}`,
+          );
     await mkdir(dirname(dest), { recursive: true });
     await writeFile(dest, buf.data);
     return {
@@ -485,7 +491,8 @@ export class MeshService {
     remotePath: unknown,
   ): Promise<MeshToolResult> {
     const remote = requirePath(remotePath);
-    if (!remote) return { ok: false, text: "A remote destination path is required." };
+    if (!remote)
+      return { ok: false, text: "A remote destination path is required." };
     const local =
       typeof localPath === "string" && localPath.trim()
         ? resolve(dirs.workspace, localPath.trim())
@@ -518,9 +525,7 @@ export class MeshService {
   private async pullBytes(
     query: unknown,
     path: string,
-  ): Promise<
-    { data: Buffer; deviceName: string } | { error: string }
-  > {
+  ): Promise<{ data: Buffer; deviceName: string } | { error: string }> {
     const chunks: Buffer[] = [];
     let offset = 0;
     let deviceName = "device";
@@ -537,7 +542,8 @@ export class MeshService {
       if (!result.ok) {
         return { error: result.message ?? `Could not read ${path}.` };
       }
-      const b64 = typeof result.data?.base64 === "string" ? result.data.base64 : "";
+      const b64 =
+        typeof result.data?.base64 === "string" ? result.data.base64 : "";
       const chunk = Buffer.from(b64, "base64");
       chunks.push(chunk);
       offset += chunk.length;
@@ -871,7 +877,10 @@ function age(ms: number): string {
 function clampExecTimeout(value: unknown): number {
   const sec = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(sec) || sec <= 0) return DEFAULT_EXEC_TIMEOUT_MS;
-  return Math.min(MAX_EXEC_TIMEOUT_MS, Math.max(1_000, Math.round(sec * 1_000)));
+  return Math.min(
+    MAX_EXEC_TIMEOUT_MS,
+    Math.max(1_000, Math.round(sec * 1_000)),
+  );
 }
 
 /** Trim a string path param, returning undefined when blank. */
@@ -892,8 +901,10 @@ function formatExecResult(
   const stdout = typeof d.stdout === "string" ? d.stdout : "";
   const stderr = typeof d.stderr === "string" ? d.stderr : "";
   const parts = [`[${device.name}] exit ${exit}`];
-  if (stdout.trim()) parts.push(`--- stdout ---\n${stdout.replace(/\s+$/, "")}`);
-  if (stderr.trim()) parts.push(`--- stderr ---\n${stderr.replace(/\s+$/, "")}`);
+  if (stdout.trim())
+    parts.push(`--- stdout ---\n${stdout.replace(/\s+$/, "")}`);
+  if (stderr.trim())
+    parts.push(`--- stderr ---\n${stderr.replace(/\s+$/, "")}`);
   if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
   return parts.join("\n");
 }
