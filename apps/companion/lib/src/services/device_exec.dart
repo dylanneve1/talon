@@ -195,9 +195,6 @@ class DeviceExec {
         return CommandOutcome.fail('No such file: $path');
       }
       final size = await file.length();
-      if (size > _maxFileBytes && offset == 0) {
-        // Not fatal — chunked reads still work; just a guard against runaway.
-      }
       final raf = await file.open();
       try {
         await raf.setPosition(offset);
@@ -228,18 +225,34 @@ class DeviceExec {
       final file = File(path);
       await file.parent.create(recursive: true);
       final bytes = base64Decode(b64);
-      final mode = truncate ? FileMode.write : FileMode.append;
-      if (truncate) {
-        final raf = await file.open(mode: FileMode.write);
-        try {
-          await raf.setPosition(0);
-          await raf.writeFrom(bytes);
-          await raf.truncate(bytes.length);
-        } finally {
-          await raf.close();
+      if (offset + bytes.length > _maxFileBytes) {
+        return CommandOutcome.fail(
+          'write_file would exceed the $_maxFileBytes-byte transfer cap.',
+        );
+      }
+      // Write at the offset the daemon asked for — never blind-append. The
+      // transfer protocol is truncate-first + sequential offsets, so a chunk
+      // whose offset doesn't match the current size is out of order (or a
+      // duplicate retry) and appending it would silently corrupt the file.
+      final raf = await file.open(
+        mode: truncate ? FileMode.write : FileMode.append,
+      );
+      try {
+        if (!truncate) {
+          final current = await raf.length();
+          if (offset != current) {
+            return CommandOutcome.fail(
+              'write_file chunk offset $offset does not match current size '
+              '$current for $path (out-of-order or duplicate chunk).',
+            );
+          }
         }
-      } else {
-        await file.writeAsBytes(bytes, mode: mode, flush: true);
+        await raf.setPosition(truncate ? 0 : offset);
+        await raf.writeFrom(bytes);
+        if (truncate) await raf.truncate(bytes.length);
+        await raf.flush();
+      } finally {
+        await raf.close();
       }
       return CommandOutcome.okData({'bytesWritten': bytes.length});
     } catch (e) {

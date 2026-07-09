@@ -1,5 +1,7 @@
 package org.talon.companion
 
+import android.os.Handler
+import android.os.Looper
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import rikka.shizuku.Shizuku
@@ -30,11 +32,26 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
 
     private var pendingPermission: MethodChannel.Result? = null
 
+    /**
+     * MethodChannel.Result is @UiThread-only — replying from a worker thread
+     * (the exec thread, or Shizuku's binder callback) throws on the modern
+     * Flutter embedding. Every reply funnels through this handler.
+     */
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private fun replySuccess(result: MethodChannel.Result, value: Any?) {
+        mainHandler.post { result.success(value) }
+    }
+
+    private fun replyError(result: MethodChannel.Result, code: String, message: String?) {
+        mainHandler.post { result.error(code, message, null) }
+    }
+
     private val permissionListener =
         Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
             if (requestCode == REQUEST_CODE) {
                 val granted = grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED
-                pendingPermission?.success(granted)
+                pendingPermission?.let { replySuccess(it, granted) }
                 pendingPermission = null
             }
         }
@@ -89,9 +106,12 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
                 result.success(false)
                 return
             }
+            // A second in-flight request replaces the first; answer the old
+            // one instead of leaving its Dart await hanging forever.
+            pendingPermission?.let { replySuccess(it, false) }
             pendingPermission = result
             Shizuku.requestPermission(REQUEST_CODE)
-        } catch (t: Throwable) {
+        } catch (_: Throwable) {
             result.success(false)
         }
     }
@@ -139,7 +159,8 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
                     process.destroy()
                     -1
                 }
-                result.success(
+                replySuccess(
+                    result,
                     mapOf(
                         "stdout" to out.toString(),
                         "stderr" to if (finished) err.toString()
@@ -148,7 +169,7 @@ class ShizukuBridge(channel: MethodChannel) : MethodChannel.MethodCallHandler {
                     ),
                 )
             } catch (t: Throwable) {
-                result.error("shizuku_exec_failed", t.message, null)
+                replyError(result, "shizuku_exec_failed", t.message)
             }
         }.start()
     }

@@ -52,6 +52,31 @@ void main() {
     expect(await File(f).length(), content.length);
   });
 
+  test('rejects an out-of-order or duplicate chunk instead of appending',
+      () async {
+    final f = '${tmp.path}/ordered.txt';
+    final w1 = await exec.writeFile(f, base64Encode(utf8.encode('hello ')),
+        offset: 0, truncate: true);
+    expect(w1.ok, isTrue);
+
+    // Duplicate retry of the first chunk (offset 0 again) must not append.
+    final dup = await exec.writeFile(f, base64Encode(utf8.encode('hello ')),
+        offset: 0, truncate: false);
+    expect(dup.ok, isFalse);
+    expect(dup.message, contains('out-of-order'));
+
+    // A gap (offset beyond current size) must be rejected too.
+    final gap = await exec.writeFile(f, base64Encode(utf8.encode('!')),
+        offset: 100, truncate: false);
+    expect(gap.ok, isFalse);
+
+    // The correctly-ordered chunk still lands.
+    final w2 = await exec.writeFile(f, base64Encode(utf8.encode('world')),
+        offset: 6, truncate: false);
+    expect(w2.ok, isTrue);
+    expect(await File(f).readAsString(), 'hello world');
+  });
+
   test('lists a directory and stats a file', () async {
     await File('${tmp.path}/a.txt').writeAsString('hi');
     await Directory('${tmp.path}/sub').create();

@@ -243,12 +243,9 @@ async function read(
   let content: string;
   let where: string;
   if (active) {
-    const res = await getMeshService().readFileFromDevice(active.deviceId, p);
-    if (!res.ok) return res;
-    // readFileFromDevice returns a "<path> on <name> (size):\n\n<content>"
-    // envelope; split off the body.
-    const sep = res.text.indexOf("\n\n");
-    content = sep === -1 ? res.text : res.text.slice(sep + 2);
+    const res = await getMeshService().readFileBytes(active.deviceId, p);
+    if ("error" in res) return { ok: false, text: res.error };
+    content = res.data.toString("utf8");
     where = active.deviceName;
   } else {
     try {
@@ -307,10 +304,9 @@ async function edit(
 
   let content: string;
   if (active) {
-    const res = await svc.readFileFromDevice(active.deviceId, p);
-    if (!res.ok) return res;
-    const sep = res.text.indexOf("\n\n");
-    content = sep === -1 ? "" : res.text.slice(sep + 2);
+    const res = await svc.readFileBytes(active.deviceId, p);
+    if ("error" in res) return { ok: false, text: res.error };
+    content = res.data.toString("utf8");
   } else {
     try {
       content = await readFile(p, "utf8");

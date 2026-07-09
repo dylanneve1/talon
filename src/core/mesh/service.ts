@@ -427,6 +427,20 @@ export class MeshService {
     return { ok: true, text: `${p} — ${fields.join(" · ")}` };
   }
 
+  /**
+   * Raw file bytes off a device — the structured primitive under both the
+   * human-readable tool below and the native read/edit path (which must not
+   * have to parse a display envelope to recover the content).
+   */
+  async readFileBytes(
+    query: unknown,
+    path: unknown,
+  ): Promise<{ data: Buffer; deviceName: string } | { error: string }> {
+    const p = requirePath(path);
+    if (!p) return { error: "A file path is required." };
+    return this.pullBytes(query, p);
+  }
+
   /** `device_read_file`: read a (text) file off the device, chunked. */
   async readFileFromDevice(
     query: unknown,
@@ -434,7 +448,7 @@ export class MeshService {
   ): Promise<MeshToolResult> {
     const p = requirePath(path);
     if (!p) return { ok: false, text: "A file path is required." };
-    const buf = await this.pullBytes(query, p);
+    const buf = await this.readFileBytes(query, p);
     if ("error" in buf) return { ok: false, text: buf.error };
     return {
       ok: true,
