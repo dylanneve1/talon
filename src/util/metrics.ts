@@ -2,7 +2,11 @@
 // storage/sessions.ts; this module keeps the public read shape used by
 // /metrics and a small compatibility sink for non-chat legacy counters.
 
-import { getAllSessions, type MetricsLatencyAgg } from "../storage/sessions.js";
+import {
+  getAllSessions,
+  resetAllSessionMetrics,
+  type MetricsLatencyAgg,
+} from "../storage/sessions.js";
 
 const legacyCounters = new Map<string, number>();
 
@@ -137,4 +141,5 @@ export function getMetrics(): MetricsSnapshot {
 
 export function resetMetrics(): void {
   legacyCounters.clear();
+  resetAllSessionMetrics();
 }

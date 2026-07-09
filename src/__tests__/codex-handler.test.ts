@@ -320,11 +320,15 @@ describe("codex / handleMessage — happy path", () => {
     expect(metrics.counters["backend.codex.queries"]).toBe(1);
     expect(metrics.histograms["api_calls_per_turn"]).toMatchObject({
       count: 1,
-      p50: 2,
+      avg: 2,
+      min: 2,
+      max: 2,
     });
     expect(metrics.histograms["tool_calls_per_turn"]).toMatchObject({
       count: 1,
-      p50: 0,
+      avg: 0,
+      min: 0,
+      max: 0,
     });
   });
 
@@ -906,7 +910,9 @@ describe("codex / handleMessage — tool use", () => {
     expect(metrics.counters["turns_with_tools_total"]).toBe(1);
     expect(metrics.histograms["tool_calls_per_turn"]).toMatchObject({
       count: 1,
-      p50: 1,
+      avg: 1,
+      min: 1,
+      max: 1,
     });
   });
 
@@ -1648,7 +1654,9 @@ describe("codex / handleMessage — non-MCP items", () => {
     expect(metrics.counters["turns_with_tools_total"]).toBe(1);
     expect(metrics.histograms["tool_calls_per_turn"]).toMatchObject({
       count: 1,
-      p50: 4,
+      avg: 4,
+      min: 4,
+      max: 4,
     });
   });
 

@@ -575,6 +575,13 @@ export function recordSessionMetricEvent(
   persist(chatId, session);
 }
 
+export function resetAllSessionMetrics(): void {
+  for (const [chatId, session] of cache.entries()) {
+    session.metrics = emptyMetrics();
+    persist(chatId, session);
+  }
+}
+
 export function setSessionId(chatId: string, sessionId: string): void {
   const session = getSession(chatId);
   session.sessionId = sessionId;
