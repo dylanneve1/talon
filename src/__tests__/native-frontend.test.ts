@@ -20,6 +20,8 @@ import {
 } from "../frontend/native/protocol.js";
 import { NativeChats, DEFAULT_CHAT_TITLE } from "../frontend/native/chats.js";
 import { MeshRegistry } from "../core/mesh/index.js";
+import { TransferStore } from "../core/mesh/transfers.js";
+import { writeFile as fsWriteFile } from "node:fs/promises";
 import {
   BridgeServer,
   type BridgeServerHandlers,
@@ -410,6 +412,7 @@ describe("native mesh bridge routes", () => {
       locations: join(dir, "locations.json"),
       history: join(dir, "history.json"),
     });
+    const transfers = new TransferStore();
     const handlers: BridgeServerHandlers = {
       status,
       listChats: () => [],
@@ -442,13 +445,15 @@ describe("native mesh bridge routes", () => {
       storeLocation: (body) => registry.storeLocation(body),
       listDevices: () => registry.list(),
       completeCommand: () => false,
+      acceptFileUpload: (t, body) => transfers.acceptUpload(t, body),
+      openFileDownload: (t) => transfers.openDownload(t),
     };
     const server = new BridgeServer(
       { host: "127.0.0.1", port: 0, token, startedAt: "now" },
       handlers,
     );
     const port = await server.start();
-    return { server, port };
+    return { server, port, transfers, dir };
   }
 
   it("advertises mesh in health and auth-protects mesh routes", async () => {
@@ -456,11 +461,68 @@ describe("native mesh bridge routes", () => {
     try {
       const health = await fetch(`http://127.0.0.1:${port}/health`);
       expect(await health.json()).toMatchObject({
-        capabilities: ["mesh", "mesh-commands"],
+        capabilities: ["mesh", "mesh-commands", "mesh-file-stream"],
       });
 
       const denied = await fetch(`http://127.0.0.1:${port}/devices`);
       expect(denied.status).toBe(401);
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it("streams a pull upload and a push download through /devices/file", async () => {
+    const { server, port, transfers, dir } = await startMeshServer();
+    try {
+      const auth = { Authorization: "Bearer secret" };
+
+      // Pull: daemon arranges a token, "device" streams the body up.
+      const dest = join(dir, "pulled.bin");
+      const pull = transfers.createPull("dev1", dest);
+      const payload = Buffer.alloc(3 * 1024 * 1024, 7); // 3MB, no chunking
+      const up = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=${pull.token}`,
+        { method: "POST", headers: auth, body: payload },
+      );
+      expect(up.status).toBe(200);
+      expect(await up.json()).toMatchObject({
+        ok: true,
+        bytes: payload.length,
+      });
+      await expect(pull.done).resolves.toBe(payload.length);
+      const onDisk = await readFile(dest);
+      expect(onDisk.equals(payload)).toBe(true);
+
+      // Token is single-use: a replay is rejected.
+      const replay = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=${pull.token}`,
+        { method: "POST", headers: auth, body: payload },
+      );
+      expect(replay.status).toBe(409);
+
+      // Push: daemon binds a source file, "device" streams it down.
+      const src = join(dir, "source.bin");
+      await fsWriteFile(src, payload);
+      const push = transfers.createPush("dev1", src);
+      const down = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=${push.token}`,
+        { headers: auth },
+      );
+      expect(down.status).toBe(200);
+      expect(down.headers.get("content-length")).toBe(String(payload.length));
+      const body = Buffer.from(await down.arrayBuffer());
+      expect(body.equals(payload)).toBe(true);
+
+      // Unknown token 404s; unauthenticated request is rejected first.
+      const unknown = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=nope`,
+        { headers: auth },
+      );
+      expect(unknown.status).toBe(404);
+      const unauthed = await fetch(
+        `http://127.0.0.1:${port}/devices/file?transfer=nope`,
+      );
+      expect(unauthed.status).toBe(401);
     } finally {
       await server.stop();
     }

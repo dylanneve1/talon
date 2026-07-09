@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:talon_companion/src/models/connection.dart';
@@ -54,6 +56,87 @@ void main() {
     expect(bridge.locations.single, containsPair('deviceId', id));
     expect(bridge.locations.single, containsPair('lat', 53.35));
     expect(bridge.locations.single, containsPair('batteryPct', 82));
+  });
+
+  test('streams upload_file and download_file via /devices/file', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await Prefs.load();
+    final bridge = await MockBridge.start();
+    addTearDown(bridge.close);
+    final client = BridgeClient(configFor(bridge));
+    addTearDown(client.dispose);
+
+    await client.connect();
+    final service = MeshService(
+      prefs,
+      client,
+      locationProvider: () async => const MeshFix(lat: 1, lon: 2, ts: 99),
+      batteryProvider: () async => const MeshBattery(),
+      nameProvider: () async => 'Test phone',
+      versionProvider: () async => '1.0.0+1',
+      foregroundStarter: () async {},
+    );
+    addTearDown(service.stop);
+
+    await service.start();
+    await _waitFor(() => bridge.devices.length == 1);
+    final id = bridge.devices.single['id'] as String;
+    expect(
+      bridge.devices.single['capabilities'],
+      containsAll(['upload_file', 'download_file']),
+    );
+
+    final dir = await Directory.systemTemp.createTemp('talon-mesh-transfer-');
+    addTearDown(() => dir.delete(recursive: true));
+
+    // upload_file: the device streams a local file up in one HTTP request.
+    final src = File('${dir.path}/src.bin');
+    final payload = List<int>.generate(512 * 1024, (i) => i % 256);
+    await src.writeAsBytes(payload);
+    bridge.uploadTokens.add('tok-up');
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-up',
+      'deviceId': id,
+      'name': 'upload_file',
+      'params': {'token': 'tok-up', 'path': src.path},
+    });
+    await _waitFor(() => bridge.commandResults.length == 1);
+    expect(bridge.commandResults.last, containsPair('ok', true));
+    expect(
+      bridge.commandResults.last['data'],
+      containsPair('bytes', payload.length),
+    );
+    expect(bridge.uploadedFiles['tok-up'], payload);
+
+    // download_file: the device streams the body down and writes atomically.
+    bridge.downloadFiles['tok-down'] = payload;
+    final dest = '${dir.path}/nested/dest.bin';
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-down',
+      'deviceId': id,
+      'name': 'download_file',
+      'params': {'token': 'tok-down', 'path': dest},
+    });
+    await _waitFor(() => bridge.commandResults.length == 2);
+    expect(bridge.commandResults.last, containsPair('ok', true));
+    expect(
+      bridge.commandResults.last['data'],
+      containsPair('bytesWritten', payload.length),
+    );
+    expect(await File(dest).readAsBytes(), payload);
+
+    // A bad token comes back as a clean failure, not a hang.
+    await bridge.emit({
+      'kind': 'device_command',
+      'id': 'cmd-bad',
+      'deviceId': id,
+      'name': 'download_file',
+      'params': {'token': 'nope', 'path': '${dir.path}/x.bin'},
+    });
+    await _waitFor(() => bridge.commandResults.length == 3);
+    expect(bridge.commandResults.last, containsPair('ok', false));
   });
 
   test('advertises capabilities and answers device commands', () async {

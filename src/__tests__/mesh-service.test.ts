@@ -9,7 +9,12 @@
  */
 
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtemp } from "node:fs/promises";
+import {
+  mkdtemp,
+  readFile as fsReadFile,
+  writeFile as fsWriteFile,
+} from "node:fs/promises";
+import { Readable } from "node:stream";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -619,15 +624,128 @@ describe("MeshService exec + filesystem channel", () => {
     const res = await service.writeFileToDevice(
       "phone",
       "/sdcard/out.txt",
-      "Z".repeat(300 * 1024),
+      "Z".repeat(1200 * 1024),
     );
     expect(res.ok).toBe(true);
-    expect(chunks.length).toBe(2); // 256KB + 44KB
+    expect(chunks.length).toBe(2); // 1MB + 176KB
     expect(chunks[0].truncate).toBe(true);
     expect(chunks[1].truncate).toBe(false);
     expect(chunks[0].offset).toBe(0);
-    expect(chunks[1].offset).toBe(256 * 1024);
+    expect(chunks[1].offset).toBe(1024 * 1024);
   });
+
+  it("pulls a file via the streamed path (one command, one HTTP body)", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["upload_file"],
+    });
+    const payload = Buffer.alloc(2 * 1024 * 1024, 3);
+    let commands = 0;
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(async () => {
+          commands += 1;
+          expect(cmd.name).toBe("upload_file");
+          // Emulate the device: stream the body up, THEN answer the command.
+          const up = await service.acceptFileUpload(
+            String(cmd.params.token),
+            Readable.from(payload),
+          );
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: up.ok,
+            data: up.ok ? { bytes: up.bytes } : {},
+          });
+        }),
+    });
+
+    const dir = await mkdtemp(join(tmpdir(), "talon-stream-pull-"));
+    const dest = join(dir, "pulled.bin");
+    const res = await service.pullFileFromDevice(
+      "phone",
+      "/sdcard/big.bin",
+      dest,
+    );
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("streamed");
+    expect(commands).toBe(1); // the whole 2MB moved in ONE command round trip
+    expect((await fsReadFile(dest)).equals(payload)).toBe(true);
+  });
+
+  it("pushes a file via the streamed path without buffering it in memory", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["download_file"],
+    });
+    const dir = await mkdtemp(join(tmpdir(), "talon-stream-push-"));
+    const src = join(dir, "src.bin");
+    const payload = Buffer.alloc(1536 * 1024, 9);
+    await fsWriteFile(src, payload);
+
+    let downloaded: Buffer | undefined;
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(async () => {
+          expect(cmd.name).toBe("download_file");
+          const file = await service.openFileDownload(String(cmd.params.token));
+          expect(file).not.toBeNull();
+          downloaded = await fsReadFile(file!.path);
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: { bytesWritten: downloaded.length },
+          });
+        }),
+    });
+
+    const res = await service.pushFileToDevice("phone", src, "/sdcard/in.bin");
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("streamed");
+    expect(downloaded?.equals(payload)).toBe(true);
+  });
+
+  it("streamed pull fails loudly when the device claims success without uploading", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["upload_file"],
+    });
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          // Lying device: ok without ever streaming the body.
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+          });
+        }),
+    });
+    const dir = await mkdtemp(join(tmpdir(), "talon-stream-liar-"));
+    const res = await service.pullFileFromDevice(
+      "phone",
+      "/sdcard/x.bin",
+      join(dir, "x.bin"),
+    );
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("no upload arrived");
+  }, 20_000);
 
   it("refuses exec to an offline device without waiting", async () => {
     const service = await tempService({ commandTimeoutMs: 5_000 });

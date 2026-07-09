@@ -176,6 +176,75 @@ class BridgeClient {
   Future<void> postCommandResult(Map<String, dynamic> result) =>
       _postJson('/devices/command-result', result);
 
+  /// Stream a file's bytes up as ONE raw HTTP request — the `upload_file`
+  /// half of a streamed pull transfer. No base64, no per-chunk round trips;
+  /// runs at TCP throughput. Returns bytes sent.
+  Future<int> uploadFile(
+    String token,
+    Stream<List<int>> bytes,
+    int length,
+  ) async {
+    final req = http.StreamedRequest(
+      'POST',
+      _u('/devices/file', {'transfer': token}),
+    )
+      ..headers.addAll(config.authHeaders())
+      ..headers['Content-Type'] = 'application/octet-stream'
+      ..contentLength = length;
+    var sent = 0;
+    unawaited(() async {
+      try {
+        await for (final chunk in bytes) {
+          req.sink.add(chunk);
+          sent += chunk.length;
+        }
+        await req.sink.close();
+      } catch (e) {
+        req.sink.addError(e);
+      }
+    }());
+    final res = await _http.send(req);
+    final body = await res.stream.bytesToString();
+    if (res.statusCode != 200) {
+      throw BridgeException(
+        'Upload rejected (${res.statusCode}): '
+        '${body.isEmpty ? 'no detail' : body}',
+      );
+    }
+    return sent;
+  }
+
+  /// Stream a push transfer's file body down as ONE raw HTTP response —
+  /// the `download_file` half. Feeds chunks to [onChunk]; returns bytes
+  /// received (validated against Content-Length when present).
+  Future<int> downloadFile(
+    String token,
+    Future<void> Function(List<int> chunk) onChunk,
+  ) async {
+    final req = http.Request('GET', _u('/devices/file', {'transfer': token}))
+      ..headers.addAll(config.authHeaders());
+    final res = await _http.send(req);
+    if (res.statusCode != 200) {
+      final body = await res.stream.bytesToString();
+      throw BridgeException(
+        'Download rejected (${res.statusCode}): '
+        '${body.isEmpty ? 'no detail' : body}',
+      );
+    }
+    var received = 0;
+    await for (final chunk in res.stream) {
+      received += chunk.length;
+      await onChunk(chunk);
+    }
+    final expected = res.contentLength;
+    if (expected != null && expected != received) {
+      throw BridgeException(
+        'Download truncated: got $received of $expected bytes.',
+      );
+    }
+    return received;
+  }
+
   Future<(List<DeviceInfo> devices, List<DeviceLocation> locations)>
       devices() async {
     final j = await _getJson('/devices');

@@ -27,10 +27,13 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, dirname, resolve } from "node:path";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import type { Readable } from "node:stream";
 import { dirs } from "../../util/paths.js";
 import { MeshRegistry } from "./registry.js";
+import { TransferStore } from "./transfers.js";
 import type {
   DeviceCommand,
   DeviceCommandResult,
@@ -71,14 +74,25 @@ const DEFAULT_EXEC_TIMEOUT_MS = 60_000;
 const MAX_EXEC_TIMEOUT_MS = 300_000;
 /** Timeout for a single filesystem command (list/stat/one chunk/etc.). */
 const FS_COMMAND_TIMEOUT_MS = 30_000;
-/** Bytes of file payload per transfer chunk (base64-encoded on the wire). */
-const FILE_CHUNK_BYTES = 256 * 1024;
+/**
+ * Bytes of file payload per FALLBACK transfer chunk (base64 on the wire).
+ * The chunked command channel costs one full mesh round trip per chunk, so
+ * it's only used for app builds that don't advertise the streaming commands
+ * (`upload_file`/`download_file`) — modern builds move file bodies as a
+ * single raw HTTP stream instead (see TransferStore). 1MB keeps even the
+ * fallback tolerable without bloating a single SSE frame too far.
+ */
+const FILE_CHUNK_BYTES = 1024 * 1024;
+/** Wall-clock budget for one streamed transfer (command dispatch → done). */
+const STREAM_TRANSFER_TIMEOUT_MS = 60 * 60 * 1000;
+/** readFileBytes switches to the streaming path above this size. */
+const STREAM_READ_THRESHOLD_BYTES = 4 * 1024 * 1024;
 /**
  * No policy size cap on transfers — a transfer is attempted whatever the
  * size and fails with a concrete error when a real limit bites (device read
- * error, chunk timeout, daemon memory). Transfers are held in memory, so the
- * practical ceiling is Node's buffer limit / available RAM; big files are
- * also slow (256KB per mesh round trip) — that's a tradeoff, not a gate.
+ * error, stream timeout, disk). The streamed paths are disk-to-disk and
+ * never hold the file in daemon memory; only the chunked FALLBACK and
+ * readFileBytes (whose callers need a Buffer) are memory-bound.
  */
 /**
  * Where pulled device files land on the daemon host when no dest is given.
@@ -104,6 +118,8 @@ export class MeshService {
    * and one running ahead would have stale fixes accepted as fresh.
    */
   private readonly receivedAt = new Map<string, number>();
+  /** One-time tokens arranging streamed (single-HTTP-request) transfers. */
+  private readonly transfers = new TransferStore();
   private readonly freshFixTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly commandTimeoutMs: number;
@@ -432,10 +448,96 @@ export class MeshService {
     return { ok: true, text: `${p} — ${fields.join(" · ")}` };
   }
 
+  // ── Streaming transfer bridge surface ─────────────────────────────────────
+  // The HTTP routes on the native bridge delegate here; the token is the
+  // entire authorization (single-use, device- and path-bound).
+
+  /** POST /devices/file — a device streams a pull's file body up. */
+  acceptFileUpload(
+    token: string,
+    body: Readable,
+  ): Promise<{ ok: true; bytes: number } | { ok: false; error: string }> {
+    return this.transfers.acceptUpload(token, body);
+  }
+
+  /** GET /devices/file — a device asks for a push's file body. */
+  openFileDownload(
+    token: string,
+  ): Promise<{ path: string; size: number } | null> {
+    return this.transfers.openDownload(token);
+  }
+
+  /** Streaming is per-command capability — old app builds fall back. */
+  private canStream(
+    target: DeviceInfo,
+    command: "upload_file" | "download_file",
+  ): boolean {
+    return target.capabilities?.includes(command) ?? false;
+  }
+
+  /**
+   * Streamed device→daemon transfer: one command round trip to arrange it,
+   * then the file body arrives as a single raw HTTP request, written
+   * atomically to `dest`. Resolves with the byte count.
+   */
+  private async pullViaStream(
+    target: DeviceInfo,
+    remote: string,
+    dest: string,
+  ): Promise<{ bytes: number } | { error: string }> {
+    const { token, done } = this.transfers.createPull(target.id, dest);
+    const dispatched = await this.dispatchCommand(
+      target.id,
+      "upload_file",
+      { token, path: remote },
+      STREAM_TRANSFER_TIMEOUT_MS,
+    );
+    if ("error" in dispatched) {
+      this.transfers.cancel(token);
+      return { error: dispatched.error };
+    }
+    if (!dispatched.result.ok) {
+      this.transfers.cancel(token);
+      return {
+        error:
+          dispatched.result.message ??
+          `${target.name} could not upload ${remote}.`,
+      };
+    }
+    // The device answers the command AFTER its upload completes, so `done`
+    // is normally already resolved — the grace window only catches a device
+    // that claims success without having streamed anything.
+    try {
+      const bytes = await Promise.race([
+        done,
+        new Promise<never>((_, rej) =>
+          setTimeout(
+            () =>
+              rej(
+                new Error(
+                  `${target.name} reported success but no upload arrived.`,
+                ),
+              ),
+            15_000,
+          ).unref?.(),
+        ),
+      ]);
+      return { bytes };
+    } catch (err) {
+      this.transfers.cancel(token);
+      return { error: (err as Error).message };
+    }
+  }
+
   /**
    * Raw file bytes off a device — the structured primitive under both the
    * human-readable tool below and the native read/edit path (which must not
    * have to parse a display envelope to recover the content).
+   *
+   * Small files ride the chunked command channel (one round trip). Files
+   * over the streaming threshold are pulled via the streaming path into a
+   * temp file first — the chunked channel pays a full mesh round trip per
+   * chunk and is far too slow for big payloads.
    */
   async readFileBytes(
     query: unknown,
@@ -443,7 +545,43 @@ export class MeshService {
   ): Promise<{ data: Buffer; deviceName: string } | { error: string }> {
     const p = requirePath(path);
     if (!p) return { error: "A file path is required." };
+    await this.load();
+    const target = this.chooseDevice(query);
+    if (target && this.canStream(target, "upload_file")) {
+      const size = await this.statSize(target.id, p);
+      if (size !== undefined && size > STREAM_READ_THRESHOLD_BYTES) {
+        const tmp = join(tmpdir(), `talon-pull-${randomUUID()}-${basename(p)}`);
+        const pulled = await this.pullViaStream(target, p, tmp);
+        if ("error" in pulled) return { error: pulled.error };
+        try {
+          const data = await readFile(tmp);
+          return { data, deviceName: target.name };
+        } catch (err) {
+          return {
+            error: `Pulled ${p} but could not read the temp copy: ${(err as Error).message}`,
+          };
+        } finally {
+          await rm(tmp, { force: true }).catch(() => {});
+        }
+      }
+    }
     return this.pullBytes(query, p);
+  }
+
+  /** Size of a device path via the `stat` command, if the device can. */
+  private async statSize(
+    deviceId: string,
+    path: string,
+  ): Promise<number | undefined> {
+    const dispatched = await this.dispatchCommand(
+      deviceId,
+      "stat",
+      { path },
+      FS_COMMAND_TIMEOUT_MS,
+    );
+    if ("error" in dispatched || !dispatched.result.ok) return undefined;
+    const size = dispatched.result.data?.size;
+    return typeof size === "number" ? size : undefined;
   }
 
   /** `device_read_file`: read a (text) file off the device, chunked. */
@@ -478,7 +616,9 @@ export class MeshService {
     };
   }
 
-  /** `device_pull_file`: copy a device file to the daemon host, chunked. */
+  /** `device_pull_file`: copy a device file to the daemon host — streamed
+   *  (single HTTP request, disk-to-disk) when the app supports it, chunked
+   *  command-channel fallback otherwise. */
   async pullFileFromDevice(
     query: unknown,
     remotePath: unknown,
@@ -486,24 +626,38 @@ export class MeshService {
   ): Promise<MeshToolResult> {
     const remote = requirePath(remotePath);
     if (!remote) return { ok: false, text: "A remote file path is required." };
-    const buf = await this.pullBytes(query, remote);
-    if ("error" in buf) return { ok: false, text: buf.error };
+    await this.load();
+    const target = this.chooseDevice(query);
+    if (!target) return this.noSuchDevice(query);
     const dest =
       typeof localPath === "string" && localPath.trim()
         ? resolve(dirs.workspace, localPath.trim())
         : resolve(
             pullDir(),
-            `${buf.deviceName.replace(/\W+/g, "_")}-${basename(remote)}`,
+            `${target.name.replace(/\W+/g, "_")}-${basename(remote)}`,
           );
+    if (this.canStream(target, "upload_file")) {
+      const started = Date.now();
+      const pulled = await this.pullViaStream(target, remote, dest);
+      if ("error" in pulled) return { ok: false, text: pulled.error };
+      return {
+        ok: true,
+        text: `Pulled ${formatBytes(pulled.bytes)} from ${remote} on ${target.name} → ${dest} (streamed, ${transferRate(pulled.bytes, started)})`,
+      };
+    }
+    const buf = await this.pullBytes(target.id, remote);
+    if ("error" in buf) return { ok: false, text: buf.error };
     await mkdir(dirname(dest), { recursive: true });
     await writeFile(dest, buf.data);
     return {
       ok: true,
-      text: `Pulled ${formatBytes(buf.data.length)} from ${remote} on ${buf.deviceName} → ${dest}`,
+      text: `Pulled ${formatBytes(buf.data.length)} from ${remote} on ${buf.deviceName} → ${dest} (chunked fallback — update the companion app for streamed transfers)`,
     };
   }
 
-  /** `device_push_file`: copy a daemon-host file to the device, chunked. */
+  /** `device_push_file`: copy a daemon-host file to the device — streamed
+   *  when the app supports it (never buffers the file in daemon memory),
+   *  chunked command-channel fallback otherwise. */
   async pushFileToDevice(
     query: unknown,
     localPath: unknown,
@@ -517,6 +671,38 @@ export class MeshService {
         ? resolve(dirs.workspace, localPath.trim())
         : "";
     if (!local) return { ok: false, text: "A local source path is required." };
+    await this.load();
+    const target = this.chooseDevice(query);
+    if (!target) return this.noSuchDevice(query);
+    if (this.canStream(target, "download_file")) {
+      const started = Date.now();
+      const { token } = this.transfers.createPush(target.id, local);
+      const dispatched = await this.dispatchCommand(
+        target.id,
+        "download_file",
+        { token, path: remote },
+        STREAM_TRANSFER_TIMEOUT_MS,
+      );
+      if ("error" in dispatched) {
+        this.transfers.cancel(token);
+        return { ok: false, text: dispatched.error };
+      }
+      if (!dispatched.result.ok) {
+        this.transfers.cancel(token);
+        return {
+          ok: false,
+          text:
+            dispatched.result.message ??
+            `${target.name} could not download ${local}.`,
+        };
+      }
+      const bytes = dispatched.result.data?.bytesWritten;
+      const size = typeof bytes === "number" ? bytes : 0;
+      return {
+        ok: true,
+        text: `Pushed ${formatBytes(size)} to ${remote} on ${target.name} (streamed, ${transferRate(size, started)})`,
+      };
+    }
     let data: Buffer;
     try {
       data = await readFile(local);
@@ -528,11 +714,11 @@ export class MeshService {
         text: `Cannot read local file ${local}: ${(err as Error).message}`,
       };
     }
-    const written = await this.pushBytes(query, remote, data);
+    const written = await this.pushBytes(target.id, remote, data);
     if ("error" in written) return { ok: false, text: written.error };
     return {
       ok: true,
-      text: `Pushed ${formatBytes(written.bytes)} to ${remote} on ${written.deviceName}.`,
+      text: `Pushed ${formatBytes(written.bytes)} to ${remote} on ${written.deviceName} (chunked fallback — update the companion app for streamed transfers).`,
     };
   }
 
@@ -941,6 +1127,12 @@ function formatExecResult(
     parts.push(`--- stderr ---\n${stderr.replace(/\s+$/, "")}`);
   if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
   return parts.join("\n");
+}
+
+/** "12.4 MB/s in 3.2s" — observability for streamed transfers. */
+function transferRate(bytes: number, startedAtMs: number): string {
+  const seconds = Math.max((Date.now() - startedAtMs) / 1000, 0.001);
+  return `${formatBytes(bytes / seconds)}/s over ${seconds < 10 ? seconds.toFixed(1) : Math.round(seconds)}s`;
 }
 
 function formatBytes(bytes: number): string {

@@ -101,7 +101,7 @@ export const meshTools: ToolDefinition[] = [
   {
     name: "device_read_file",
     description:
-      "Read a (text) file off a Talon companion device and return its contents. Chunked; no size cap — huge files are slow and fail with a clear error if memory runs out.",
+      "Read a (text) file off a Talon companion device and return its contents. Small files ride the command channel; big files stream over HTTP automatically. No size cap.",
     schema: {
       device: deviceParam,
       path: z.string().describe("Absolute file path on the device."),
@@ -124,7 +124,7 @@ export const meshTools: ToolDefinition[] = [
   {
     name: "device_pull_file",
     description:
-      "Copy a file FROM a Talon companion device to the daemon host (workspace). Chunked; no size cap (large transfers are slow — 256KB per round trip). Lands in workspace/mesh-pull/ unless a local path is given.",
+      "Copy a file FROM a Talon companion device to the daemon host (workspace). Streams disk-to-disk in a single HTTP request at full throughput (no size cap; chunked fallback for old app builds). Lands in workspace/mesh-pull/ unless a local path is given.",
     schema: {
       device: deviceParam,
       remote_path: z.string().describe("Absolute source path on the device."),
@@ -139,7 +139,7 @@ export const meshTools: ToolDefinition[] = [
   {
     name: "device_push_file",
     description:
-      "Copy a file FROM the daemon host (workspace) TO a Talon companion device. Chunked; no size cap (large transfers are slow — 256KB per round trip).",
+      "Copy a file FROM the daemon host (workspace) TO a Talon companion device. Streams disk-to-disk in a single HTTP request at full throughput (no size cap; chunked fallback for old app builds).",
     schema: {
       device: deviceParam,
       local_path: z.string().describe("Source path under the workspace."),

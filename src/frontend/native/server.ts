@@ -117,6 +117,15 @@ export type BridgeServerHandlers = {
     | Promise<{ devices: DeviceInfo[]; locations: DeviceLocation[] }>;
   /** A device answered a device_command; true when a call was waiting. */
   completeCommand(body: Record<string, unknown>): boolean;
+  /** A device streams a pull-transfer's file body up (raw request body). */
+  acceptFileUpload(
+    token: string,
+    body: IncomingMessage,
+  ): Promise<{ ok: true; bytes: number } | { ok: false; error: string }>;
+  /** Resolve a push-transfer token to the file to stream down, or null. */
+  openFileDownload(
+    token: string,
+  ): Promise<{ path: string; size: number } | null>;
 };
 
 const SSE_PING_MS = 25_000;
@@ -268,7 +277,7 @@ export class BridgeServer {
         backend: s.backend,
         model: s.model,
         activeChats: s.activeChats,
-        capabilities: ["mesh", "mesh-commands"],
+        capabilities: ["mesh", "mesh-commands", "mesh-file-stream"],
       });
     }
 
@@ -392,6 +401,36 @@ export class BridgeServer {
         return this.json(res, 200, {
           ok: this.handlers.completeCommand(body),
         });
+      }
+
+      // Streamed device file transfers (see core/mesh/transfers.ts). The
+      // one-time `transfer` token authorizes exactly one direction+path;
+      // these sit behind the bridge bearer auth like every device route.
+      if (path === "/devices/file") {
+        const token = url.searchParams.get("transfer") ?? "";
+        if (!token)
+          return this.json(res, 400, { ok: false, error: "transfer required" });
+        if (method === "POST") {
+          const result = await this.handlers.acceptFileUpload(token, req);
+          return this.json(res, result.ok ? 200 : 409, result);
+        }
+        if (method === "GET") {
+          const file = await this.handlers.openFileDownload(token);
+          if (!file)
+            return this.json(res, 404, {
+              ok: false,
+              error: "Unknown or already-used transfer token",
+            });
+          res.writeHead(200, {
+            "Content-Type": "application/octet-stream",
+            "Content-Length": String(file.size),
+            ...this.corsHeaders(),
+          });
+          const stream = createReadStream(file.path);
+          stream.on("error", () => res.destroy());
+          stream.pipe(res);
+          return;
+        }
       }
 
       if (method === "POST" && path === "/upload") {

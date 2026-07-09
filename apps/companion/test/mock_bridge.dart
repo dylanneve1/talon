@@ -61,6 +61,11 @@ class MockBridge {
   final List<Map<String, dynamic>> devices = [];
   final List<Map<String, dynamic>> locations = [];
   final List<Map<String, dynamic>> commandResults = [];
+  /// Streamed-transfer state: tokens accepted for upload, captured upload
+  /// bodies (keyed by token), and bodies to serve for download tokens.
+  final Set<String> uploadTokens = {};
+  final Map<String, List<int>> uploadedFiles = {};
+  final Map<String, List<int>> downloadFiles = {};
 
   int get port => _port;
   String get host => '127.0.0.1';
@@ -229,6 +234,38 @@ class MockBridge {
     if (req.method == 'POST' && path == '/devices/command-result') {
       commandResults.add(await _readJson(req));
       return _json(req.response, 200, {'ok': true});
+    }
+    // Streamed transfer routes — mirror the daemon's /devices/file contract.
+    if (path == '/devices/file') {
+      final t = req.uri.queryParameters['transfer'] ?? '';
+      if (req.method == 'POST') {
+        if (!uploadTokens.contains(t)) {
+          return _json(
+              req.response, 409, {'ok': false, 'error': 'bad token'});
+        }
+        uploadTokens.remove(t);
+        final chunks = <int>[];
+        await for (final chunk in req) {
+          chunks.addAll(chunk);
+        }
+        uploadedFiles[t] = chunks;
+        return _json(req.response, 200, {'ok': true, 'bytes': chunks.length});
+      }
+      if (req.method == 'GET') {
+        final body = downloadFiles[t];
+        if (body == null) {
+          return _json(
+              req.response, 404, {'ok': false, 'error': 'bad token'});
+        }
+        downloadFiles.remove(t);
+        final res = req.response;
+        res.statusCode = 200;
+        res.headers.contentType = ContentType.binary;
+        res.headers.contentLength = body.length;
+        res.add(body);
+        unawaited(res.close());
+        return;
+      }
     }
     if (req.method == 'GET' && path == '/config') {
       return _json(req.response, 200, config);

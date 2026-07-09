@@ -1176,6 +1176,8 @@ export function createNativeFrontend(
     storeLocation: (body) => mesh.storeLocation(body),
     listDevices: () => mesh.list(),
     completeCommand: (body) => mesh.completeCommand(body),
+    acceptFileUpload: (token, body) => mesh.acceptFileUpload(token, body),
+    openFileDownload: (token) => mesh.openFileDownload(token),
   };
 
   const nativeCfg = config.native ?? { port: 19880, host: "127.0.0.1" };

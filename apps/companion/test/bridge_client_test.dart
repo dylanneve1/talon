@@ -224,6 +224,73 @@ void main() {
       );
     });
   });
+
+  group('BridgeClient streamed transfers', () {
+    test('uploadFile streams raw bytes in one request', () async {
+      final bridge = await MockBridge.start(token: 'tok');
+      addTearDown(bridge.close);
+      final client = BridgeClient(configFor(bridge, token: 'tok'));
+      addTearDown(client.dispose);
+
+      bridge.uploadTokens.add('t-up');
+      final payload = List<int>.generate(3 * 1024 * 1024, (i) => i % 251);
+      final sent = await client.uploadFile(
+        't-up',
+        Stream.fromIterable([payload]),
+        payload.length,
+      );
+      expect(sent, payload.length);
+      expect(bridge.uploadedFiles['t-up'], payload);
+    });
+
+    test('uploadFile surfaces a rejected token as an error', () async {
+      final bridge = await MockBridge.start(token: 'tok');
+      addTearDown(bridge.close);
+      final client = BridgeClient(configFor(bridge, token: 'tok'));
+      addTearDown(client.dispose);
+
+      expect(
+        () => client.uploadFile('bogus', Stream.fromIterable([<int>[1]]), 1),
+        throwsA(isA<BridgeException>().having(
+          (e) => e.message,
+          'message',
+          contains('409'),
+        )),
+      );
+    });
+
+    test('downloadFile streams the body and validates length', () async {
+      final bridge = await MockBridge.start(token: 'tok');
+      addTearDown(bridge.close);
+      final client = BridgeClient(configFor(bridge, token: 'tok'));
+      addTearDown(client.dispose);
+
+      final payload = List<int>.generate(2 * 1024 * 1024, (i) => (i * 7) % 256);
+      bridge.downloadFiles['t-down'] = payload;
+      final received = <int>[];
+      final n = await client.downloadFile('t-down', (chunk) async {
+        received.addAll(chunk);
+      });
+      expect(n, payload.length);
+      expect(received, payload);
+    });
+
+    test('downloadFile surfaces an unknown token as an error', () async {
+      final bridge = await MockBridge.start(token: 'tok');
+      addTearDown(bridge.close);
+      final client = BridgeClient(configFor(bridge, token: 'tok'));
+      addTearDown(client.dispose);
+
+      expect(
+        () => client.downloadFile('bogus', (_) async {}),
+        throwsA(isA<BridgeException>().having(
+          (e) => e.message,
+          'message',
+          contains('404'),
+        )),
+      );
+    });
+  });
 }
 
 Future<void> _waitFor(
