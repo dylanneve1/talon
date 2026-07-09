@@ -363,7 +363,9 @@ describe("native mesh registry", () => {
     expect(registry.list(2_500).devices).toMatchObject([
       { id: "phone", name: "Pixel 9", online: true, battery: 77 },
     ]);
-    expect(registry.list(93_001).devices[0].online).toBe(false);
+    // Still online just under the 180s presence window, offline just past it.
+    expect(registry.list(180_000).devices[0].online).toBe(true);
+    expect(registry.list(183_001).devices[0].online).toBe(false);
 
     const reloaded = new MeshRegistry({
       devices: join(dir, "mesh-devices.json"),

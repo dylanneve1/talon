@@ -68,4 +68,86 @@ export const meshTools: ToolDefinition[] = [
     execute: (params, bridge) => bridge("get_device_status", params),
     tag: "mesh",
   },
+  {
+    name: "device_exec",
+    description:
+      "Run a shell command ON a Talon companion device (e.g. the phone) and return its stdout/stderr/exit code. The device executes it in its own sandbox (Android: app UID, or elevated via Shizuku if available). Use for on-device tasks like tidying a folder. Prefer `teleport` for a sustained session.",
+    schema: {
+      device: deviceParam,
+      cmd: z.string().describe("The shell command to run on the device."),
+      cwd: z
+        .string()
+        .optional()
+        .describe("Working directory on the device to run in."),
+      timeout_sec: z
+        .number()
+        .optional()
+        .describe("Max seconds to allow (default 60, max 300)."),
+    },
+    execute: (params, bridge) => bridge("device_exec", params),
+    tag: "mesh",
+  },
+  {
+    name: "device_list_dir",
+    description:
+      "List a directory on a Talon companion device (name, type, size per entry).",
+    schema: {
+      device: deviceParam,
+      path: z.string().describe("Absolute directory path on the device."),
+    },
+    execute: (params, bridge) => bridge("device_list_dir", params),
+    tag: "mesh",
+  },
+  {
+    name: "device_read_file",
+    description:
+      "Read a (text) file off a Talon companion device and return its contents. Chunked; capped at 50MB.",
+    schema: {
+      device: deviceParam,
+      path: z.string().describe("Absolute file path on the device."),
+    },
+    execute: (params, bridge) => bridge("device_read_file", params),
+    tag: "mesh",
+  },
+  {
+    name: "device_write_file",
+    description:
+      "Write text content to a file on a Talon companion device (creates/overwrites).",
+    schema: {
+      device: deviceParam,
+      path: z.string().describe("Absolute file path on the device."),
+      content: z.string().describe("Text content to write."),
+    },
+    execute: (params, bridge) => bridge("device_write_file", params),
+    tag: "mesh",
+  },
+  {
+    name: "device_pull_file",
+    description:
+      "Copy a file FROM a Talon companion device to the daemon host (workspace). Chunked; capped at 50MB. Lands in workspace/mesh-pull/ unless a local path is given.",
+    schema: {
+      device: deviceParam,
+      remote_path: z.string().describe("Absolute source path on the device."),
+      local_path: z
+        .string()
+        .optional()
+        .describe("Destination under the workspace (optional)."),
+    },
+    execute: (params, bridge) => bridge("device_pull_file", params),
+    tag: "mesh",
+  },
+  {
+    name: "device_push_file",
+    description:
+      "Copy a file FROM the daemon host (workspace) TO a Talon companion device. Chunked; capped at 50MB.",
+    schema: {
+      device: deviceParam,
+      local_path: z.string().describe("Source path under the workspace."),
+      remote_path: z
+        .string()
+        .describe("Absolute destination path on the device."),
+    },
+    execute: (params, bridge) => bridge("device_push_file", params),
+    tag: "mesh",
+  },
 ];

@@ -56,6 +56,12 @@ describe("mesh tool availability", () => {
         "get_device_history",
         "ring_device",
         "get_device_status",
+        "device_exec",
+        "device_list_dir",
+        "device_read_file",
+        "device_write_file",
+        "device_pull_file",
+        "device_push_file",
       ]) {
         expect(names).toContain(tool);
       }
@@ -396,5 +402,238 @@ describe("MeshService locate flow", () => {
     expect(status.ok).toBe(true);
     expect(status.text).toContain("battery: 93%");
     expect(status.text).toContain("os: macOS 15");
+  });
+});
+
+describe("MeshService presence + clock-skew hardening", () => {
+  it("treats a fix that arrives after the request as fresh, whatever the device clock says", async () => {
+    const service = await tempService({
+      freshFixTimeoutMs: 2_000,
+      pollIntervalMs: 25,
+    });
+    await registerPhone(service);
+    service.registerTransport({
+      locate: () => {
+        // Device clock runs ~1h behind: the fix's `ts` is in the past, yet it
+        // physically arrives now (after the locate request). The old code
+        // compared loc.ts >= requestedAt and would reject this as stale,
+        // burning the full timeout; server-receipt time gets it right.
+        void service.storeLocation({
+          deviceId: "phone",
+          lat: 53.5,
+          lon: -6.5,
+          ts: Date.now() - 3_600_000,
+        });
+      },
+      command: () => {},
+    });
+
+    const started = Date.now();
+    const res = await service.locateDevice("phone");
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("53.500000, -6.500000");
+    // Resolved on arrival — not timed out.
+    expect(Date.now() - started).toBeLessThan(1_500);
+  });
+
+  it("does not wait out the fresh-fix window for an offline device", async () => {
+    const service = await tempService({
+      freshFixTimeoutMs: 5_000,
+      pollIntervalMs: 50,
+    });
+    // lastSeen far past the 180s presence window → offline.
+    await service.register(
+      { id: "phone", name: "Pixel 9", platform: "android", appVersion: "1.0.0" },
+      Date.now() - 200_000,
+    );
+    service.registerTransport({ locate: () => {}, command: () => {} });
+
+    const started = Date.now();
+    const res = await service.locateDevice("phone");
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("appears offline");
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("short-circuits a command to an offline device instead of timing out", async () => {
+    const service = await tempService({ commandTimeoutMs: 5_000 });
+    await service.register(
+      {
+        id: "phone",
+        name: "Pixel 9",
+        platform: "android",
+        appVersion: "1.0.0",
+        capabilities: ["ring"],
+      },
+      Date.now() - 200_000,
+    );
+    service.registerTransport({ locate: () => {}, command: () => {} });
+
+    const started = Date.now();
+    const res = await service.ringDevice("phone");
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("appears offline");
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it("persists concurrent location reports without corrupting the sidecar", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "talon-mesh-atomic-"));
+    const files = {
+      devices: join(dir, "devices.json"),
+      locations: join(dir, "locations.json"),
+      history: join(dir, "history.json"),
+    };
+    const service = new MeshService(new MeshRegistry(files));
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+    });
+    // Fire many reports at once — atomic tmp+rename + the per-path write queue
+    // must leave every sidecar as valid JSON.
+    await Promise.all(
+      Array.from({ length: 25 }, (_, i) =>
+        service.storeLocation({
+          deviceId: "phone",
+          lat: 53 + i * 0.0001,
+          lon: -6,
+          ts: Date.now() + i,
+        }),
+      ),
+    );
+
+    const reloaded = new MeshRegistry(files);
+    await reloaded.load();
+    expect(reloaded.getLocation("phone")).toBeTruthy();
+    expect(reloaded.getHistory("phone").length).toBeGreaterThan(0);
+  });
+});
+
+describe("MeshService exec + filesystem channel", () => {
+  it("runs a shell command and formats exit code + stdout/stderr", async () => {
+    const service = await tempService({ commandTimeoutMs: 2_000 });
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["exec"],
+    });
+    const seen: Array<Record<string, unknown>> = [];
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          seen.push(cmd.params);
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: { stdout: "hello world\n", stderr: "", exitCode: 0 },
+          });
+        }),
+    });
+
+    const res = await service.execOnDevice("phone", "echo hello world", "/sdcard");
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("exit 0");
+    expect(res.text).toContain("hello world");
+    expect(seen[0]).toMatchObject({ cmd: "echo hello world", cwd: "/sdcard" });
+  });
+
+  it("reassembles a chunked file read off the device", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["read_file"],
+    });
+    const content = "A".repeat(600 * 1024); // spans 3 × 256KB chunks
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          const offset = Number(cmd.params.offset) || 0;
+          const len = Number(cmd.params.len) || 0;
+          const slice = Buffer.from(content).subarray(offset, offset + len);
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: {
+              base64: slice.toString("base64"),
+              eof: offset + slice.length >= content.length,
+            },
+          });
+        }),
+    });
+
+    const res = await service.readFileFromDevice("phone", "/sdcard/big.txt");
+    expect(res.ok).toBe(true);
+    expect(res.text).toContain("600.0 KB");
+    expect(res.text).toContain("AAAA");
+  });
+
+  it("writes a file to the device in truncate-then-append chunks", async () => {
+    const service = await tempService();
+    await service.register({
+      id: "phone",
+      name: "Pixel 9",
+      platform: "android",
+      appVersion: "1.0.0",
+      capabilities: ["write_file"],
+    });
+    const chunks: Array<{ offset: number; len: number; truncate: boolean }> = [];
+    service.registerTransport({
+      locate: () => {},
+      command: (cmd) =>
+        queueMicrotask(() => {
+          const buf = Buffer.from(String(cmd.params.base64), "base64");
+          chunks.push({
+            offset: Number(cmd.params.offset),
+            len: buf.length,
+            truncate: cmd.params.truncate === true,
+          });
+          service.completeCommand({
+            commandId: cmd.id,
+            deviceId: cmd.deviceId,
+            ok: true,
+            data: { bytesWritten: buf.length },
+          });
+        }),
+    });
+
+    const res = await service.writeFileToDevice(
+      "phone",
+      "/sdcard/out.txt",
+      "Z".repeat(300 * 1024),
+    );
+    expect(res.ok).toBe(true);
+    expect(chunks.length).toBe(2); // 256KB + 44KB
+    expect(chunks[0].truncate).toBe(true);
+    expect(chunks[1].truncate).toBe(false);
+    expect(chunks[0].offset).toBe(0);
+    expect(chunks[1].offset).toBe(256 * 1024);
+  });
+
+  it("refuses exec to an offline device without waiting", async () => {
+    const service = await tempService({ commandTimeoutMs: 5_000 });
+    await service.register(
+      {
+        id: "phone",
+        name: "Pixel 9",
+        platform: "android",
+        appVersion: "1.0.0",
+        capabilities: ["exec"],
+      },
+      Date.now() - 200_000,
+    );
+    service.registerTransport({ locate: () => {}, command: () => {} });
+    const res = await service.execOnDevice("phone", "echo hi");
+    expect(res.ok).toBe(false);
+    expect(res.text).toContain("appears offline");
   });
 });

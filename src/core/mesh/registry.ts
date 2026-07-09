@@ -7,7 +7,8 @@
  * MeshService, so the registry stays trivially testable.
  */
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { dirs } from "../../util/paths.js";
 import {
@@ -19,7 +20,14 @@ import {
   type DevicePlatform,
 } from "./types.js";
 
-const PRESENCE_TIMEOUT_MS = 90_000;
+/**
+ * A device is offline once it misses several heartbeats. The companion
+ * re-registers every ~60s, so 180s tolerates two dropped beats (transient
+ * radio/network hiccups) before flipping a device offline — wide enough that
+ * a single late beat never flaps presence, tight enough that a genuinely
+ * gone device is marked offline within ~3 minutes.
+ */
+const PRESENCE_TIMEOUT_MS = 180_000;
 const DEVICE_FILE = resolve(dirs.root, "mesh-devices.json");
 const LOCATION_FILE = resolve(dirs.root, "mesh-locations.json");
 const HISTORY_FILE = resolve(dirs.root, "mesh-history.json");
@@ -184,9 +192,39 @@ async function readArray<T>(path: string): Promise<T[]> {
   }
 }
 
+/**
+ * Serialize writes per path so concurrent reports (multiple devices posting
+ * at once) never interleave, and never race the tmp file. Each path keeps a
+ * tail promise; new writes chain onto it.
+ */
+const writeQueues = new Map<string, Promise<void>>();
+
+/**
+ * Persist JSON atomically with 0600 perms. Writes to a unique temp file, then
+ * renames over the target — a rename on the same filesystem is atomic, so a
+ * crash mid-write can never leave a truncated file that `readArray` would
+ * silently drop as `[]`. Serialized per path via `writeQueues`.
+ */
 async function writePrivateJson(path: string, value: unknown): Promise<void> {
+  const prior = writeQueues.get(path) ?? Promise.resolve();
+  const next = prior
+    .catch(() => {})
+    .then(() => atomicWriteJson(path, value));
+  // Keep the chain alive but self-prune when this is the tail.
+  writeQueues.set(
+    path,
+    next.finally(() => {
+      if (writeQueues.get(path) === next) writeQueues.delete(path);
+    }),
+  );
+  return next;
+}
+
+async function atomicWriteJson(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  const tmp = `${path}.tmp-${process.pid}-${randomBytes(4).toString("hex")}`;
+  await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await rename(tmp, path);
 }
 
 function sanitizeDevice(

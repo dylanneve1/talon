@@ -27,6 +27,9 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { basename, dirname, resolve } from "node:path";
+import { dirs } from "../../util/paths.js";
 import { MeshRegistry } from "./registry.js";
 import type {
   DeviceCommand,
@@ -61,6 +64,20 @@ const MOBILE_PLATFORMS = new Set(["android", "ios"]);
 const DEFAULT_HISTORY_HOURS = 24;
 const MAX_HISTORY_LINES = 24;
 
+// ── Exec / filesystem channel ───────────────────────────────────────────────
+/** Default wall-clock budget for a remote shell command. */
+const DEFAULT_EXEC_TIMEOUT_MS = 60_000;
+/** Hard ceiling on a caller-requested exec timeout. */
+const MAX_EXEC_TIMEOUT_MS = 300_000;
+/** Timeout for a single filesystem command (list/stat/one chunk/etc.). */
+const FS_COMMAND_TIMEOUT_MS = 30_000;
+/** Bytes of file payload per transfer chunk (base64-encoded on the wire). */
+const FILE_CHUNK_BYTES = 256 * 1024;
+/** Refuse whole-file transfers larger than this (both directions). */
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
+/** Where pulled device files land on the daemon host when no dest is given. */
+const PULL_DIR = resolve(dirs.workspace, "mesh-pull");
+
 export class MeshService {
   private readonly waiters = new Set<() => void>();
   private readonly transports = new Set<MeshTransport>();
@@ -68,6 +85,14 @@ export class MeshService {
     string,
     (result: DeviceCommandResult) => void
   >();
+  /**
+   * Server-side receipt time (this process's clock) of the last fix per
+   * device. Freshness is judged against THIS, never the device-supplied
+   * `loc.ts` — a companion whose clock runs behind would otherwise have
+   * genuinely fresh fixes rejected (every locate burning the full timeout),
+   * and one running ahead would have stale fixes accepted as fresh.
+   */
+  private readonly receivedAt = new Map<string, number>();
   private readonly freshFixTimeoutMs: number;
   private readonly pollIntervalMs: number;
   private readonly commandTimeoutMs: number;
@@ -113,15 +138,21 @@ export class MeshService {
     return this.transports.size > 0;
   }
 
-  async register(body: Record<string, unknown>): Promise<DeviceInfo> {
+  async register(
+    body: Record<string, unknown>,
+    now?: number,
+  ): Promise<DeviceInfo> {
     await this.load();
-    return this.registry.register(body);
+    return this.registry.register(body, now);
   }
 
   /** Store a reported fix and wake anyone waiting on a fresh location. */
   async storeLocation(body: Record<string, unknown>): Promise<DeviceLocation> {
     await this.load();
     const loc = await this.registry.storeLocation(body);
+    // Stamp arrival against our own clock so waitForFreshLocation is immune
+    // to device clock skew.
+    this.receivedAt.set(loc.deviceId, Date.now());
     for (const notify of [...this.waiters]) notify();
     return loc;
   }
@@ -176,6 +207,7 @@ export class MeshService {
     device: DeviceInfo,
     name: string,
     params: Record<string, unknown> = {},
+    timeoutMs = this.commandTimeoutMs,
   ): Promise<DeviceCommandResult> {
     const command: DeviceCommand = {
       id: randomUUID(),
@@ -190,9 +222,9 @@ export class MeshService {
           commandId: command.id,
           deviceId: device.id,
           ok: false,
-          message: `${device.name} did not answer within ${Math.round(this.commandTimeoutMs / 1000)}s (device ${device.online ? "was online" : "appears offline"}).`,
+          message: `${device.name} did not answer within ${Math.round(timeoutMs / 1000)}s (device ${device.online ? "was online" : "appears offline"}).`,
         });
-      }, this.commandTimeoutMs);
+      }, timeoutMs);
       timer.unref?.();
       this.pendingCommands.set(command.id, (result) => {
         clearTimeout(timer);
@@ -234,18 +266,23 @@ export class MeshService {
     if (!target) return this.noSuchDevice(query);
     const requestedAt = Date.now();
     // Only wait out the fresh-fix window when a transport can actually
-    // deliver the locate — otherwise answer from persistence immediately.
+    // deliver the locate AND the device is currently present — pinging an
+    // offline device just burns the whole timeout for a fix that won't come,
+    // so answer from persistence immediately in that case.
     const dispatched = this.requestLocate(target.id);
-    const fresh = dispatched
-      ? await this.waitForFreshLocation(target.id, requestedAt)
-      : undefined;
+    const fresh =
+      dispatched && target.online
+        ? await this.waitForFreshLocation(target.id, requestedAt)
+        : undefined;
     const loc = fresh ?? this.registry.getLocation(target.id);
     if (!loc) {
       return {
         ok: false,
-        text: dispatched
-          ? `No location is known for ${target.name}. A locate request was sent, but no fix arrived within ${Math.round(this.freshFixTimeoutMs / 1000)}s.`
-          : `No location is known for ${target.name}, and no companion transport is connected to request one.`,
+        text: !dispatched
+          ? `No location is known for ${target.name}, and no companion transport is connected to request one.`
+          : target.online
+            ? `No location is known for ${target.name}. A locate request was sent, but no fix arrived within ${Math.round(this.freshFixTimeoutMs / 1000)}s.`
+            : `No location is known for ${target.name}, and it appears offline (last seen ${age(Date.now() - target.lastSeen)}).`,
       };
     }
     return { ok: true, text: this.locationSummary(target, loc) };
@@ -289,6 +326,268 @@ export class MeshService {
     return this.commandTool(query, "status", {});
   }
 
+  // ── Exec + filesystem tools (teleport substrate) ───────────────────────────
+
+  /**
+   * Run a shell command on a device and return its stdout/stderr/exit code.
+   * The primitive under `device_exec` and the teleported native `bash` tool.
+   */
+  async execOnDevice(
+    query: unknown,
+    cmd: unknown,
+    cwd?: unknown,
+    timeoutSec?: unknown,
+  ): Promise<MeshToolResult> {
+    const command = typeof cmd === "string" ? cmd : "";
+    if (!command.trim()) {
+      return { ok: false, text: "No command given to run on the device." };
+    }
+    const budgetMs = clampExecTimeout(timeoutSec);
+    const dispatched = await this.dispatchCommand(
+      query,
+      "exec",
+      {
+        cmd: command,
+        ...(typeof cwd === "string" && cwd.trim() ? { cwd: cwd.trim() } : {}),
+        timeoutMs: budgetMs,
+      },
+      budgetMs + 5_000, // let the device's own timeout fire first
+    );
+    if ("error" in dispatched) return { ok: false, text: dispatched.error };
+    return {
+      ok: dispatched.result.ok,
+      text: formatExecResult(dispatched.target, dispatched.result),
+    };
+  }
+
+  /** `device_list_dir`: list a directory on the device. */
+  async listDirOnDevice(query: unknown, path: unknown): Promise<MeshToolResult> {
+    const dir = requirePath(path);
+    if (!dir) return { ok: false, text: "A directory path is required." };
+    const dispatched = await this.dispatchCommand(
+      query,
+      "list_dir",
+      { path: dir },
+      FS_COMMAND_TIMEOUT_MS,
+    );
+    if ("error" in dispatched) return { ok: false, text: dispatched.error };
+    const { target, result } = dispatched;
+    if (!result.ok) {
+      return { ok: false, text: result.message ?? `Could not list ${dir}.` };
+    }
+    const entries = Array.isArray(result.data?.entries)
+      ? (result.data!.entries as Array<Record<string, unknown>>)
+      : [];
+    if (entries.length === 0) {
+      return { ok: true, text: `${dir} on ${target.name} is empty.` };
+    }
+    const lines = entries.map((e) => {
+      const name = String(e.name ?? "?");
+      const type = e.type === "dir" ? "/" : "";
+      const size =
+        typeof e.size === "number" && e.type !== "dir"
+          ? ` (${formatBytes(e.size)})`
+          : "";
+      return `- ${name}${type}${size}`;
+    });
+    return {
+      ok: true,
+      text: `${dir} on ${target.name} — ${entries.length} item(s):\n${lines.join("\n")}`,
+    };
+  }
+
+  /** `device_stat`: metadata for one path on the device. */
+  async statOnDevice(query: unknown, path: unknown): Promise<MeshToolResult> {
+    const p = requirePath(path);
+    if (!p) return { ok: false, text: "A path is required." };
+    const dispatched = await this.dispatchCommand(
+      query,
+      "stat",
+      { path: p },
+      FS_COMMAND_TIMEOUT_MS,
+    );
+    if ("error" in dispatched) return { ok: false, text: dispatched.error };
+    const { result } = dispatched;
+    if (!result.ok) {
+      return { ok: false, text: result.message ?? `Cannot stat ${p}.` };
+    }
+    const d = result.data ?? {};
+    const fields = Object.entries(d)
+      .filter(([, v]) => v !== null && v !== undefined && v !== "")
+      .map(([k, v]) => `${k}: ${String(v)}`);
+    return { ok: true, text: `${p} — ${fields.join(" · ")}` };
+  }
+
+  /** `device_read_file`: read a (text) file off the device, chunked. */
+  async readFileFromDevice(
+    query: unknown,
+    path: unknown,
+  ): Promise<MeshToolResult> {
+    const p = requirePath(path);
+    if (!p) return { ok: false, text: "A file path is required." };
+    const buf = await this.pullBytes(query, p);
+    if ("error" in buf) return { ok: false, text: buf.error };
+    return {
+      ok: true,
+      text: `${p} on ${buf.deviceName} (${formatBytes(buf.data.length)}):\n\n${buf.data.toString("utf8")}`,
+    };
+  }
+
+  /** `device_write_file`: write text content to a file on the device. */
+  async writeFileToDevice(
+    query: unknown,
+    path: unknown,
+    content: unknown,
+  ): Promise<MeshToolResult> {
+    const p = requirePath(path);
+    if (!p) return { ok: false, text: "A file path is required." };
+    const text = typeof content === "string" ? content : "";
+    const written = await this.pushBytes(query, p, Buffer.from(text, "utf8"));
+    if ("error" in written) return { ok: false, text: written.error };
+    return {
+      ok: true,
+      text: `Wrote ${formatBytes(written.bytes)} to ${p} on ${written.deviceName}.`,
+    };
+  }
+
+  /** `device_pull_file`: copy a device file to the daemon host, chunked. */
+  async pullFileFromDevice(
+    query: unknown,
+    remotePath: unknown,
+    localPath?: unknown,
+  ): Promise<MeshToolResult> {
+    const remote = requirePath(remotePath);
+    if (!remote) return { ok: false, text: "A remote file path is required." };
+    const buf = await this.pullBytes(query, remote);
+    if ("error" in buf) return { ok: false, text: buf.error };
+    const dest =
+      typeof localPath === "string" && localPath.trim()
+        ? resolve(dirs.workspace, localPath.trim())
+        : resolve(PULL_DIR, `${buf.deviceName.replace(/\W+/g, "_")}-${basename(remote)}`);
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFile(dest, buf.data);
+    return {
+      ok: true,
+      text: `Pulled ${formatBytes(buf.data.length)} from ${remote} on ${buf.deviceName} → ${dest}`,
+    };
+  }
+
+  /** `device_push_file`: copy a daemon-host file to the device, chunked. */
+  async pushFileToDevice(
+    query: unknown,
+    localPath: unknown,
+    remotePath: unknown,
+  ): Promise<MeshToolResult> {
+    const remote = requirePath(remotePath);
+    if (!remote) return { ok: false, text: "A remote destination path is required." };
+    const local =
+      typeof localPath === "string" && localPath.trim()
+        ? resolve(dirs.workspace, localPath.trim())
+        : "";
+    if (!local) return { ok: false, text: "A local source path is required." };
+    let data: Buffer;
+    try {
+      data = await readFile(local);
+    } catch {
+      return { ok: false, text: `Cannot read local file ${local}.` };
+    }
+    if (data.length > MAX_FILE_BYTES) {
+      return {
+        ok: false,
+        text: `${local} is ${formatBytes(data.length)}, over the ${formatBytes(MAX_FILE_BYTES)} transfer cap.`,
+      };
+    }
+    const written = await this.pushBytes(query, remote, data);
+    if ("error" in written) return { ok: false, text: written.error };
+    return {
+      ok: true,
+      text: `Pushed ${formatBytes(written.bytes)} to ${remote} on ${written.deviceName}.`,
+    };
+  }
+
+  /**
+   * Chunked read of a remote file into a Buffer. Loops `read_file` with
+   * increasing offsets until the device reports EOF or the cap is hit.
+   */
+  private async pullBytes(
+    query: unknown,
+    path: string,
+  ): Promise<
+    { data: Buffer; deviceName: string } | { error: string }
+  > {
+    const chunks: Buffer[] = [];
+    let offset = 0;
+    let deviceName = "device";
+    for (;;) {
+      const dispatched = await this.dispatchCommand(
+        query,
+        "read_file",
+        { path, offset, len: FILE_CHUNK_BYTES },
+        FS_COMMAND_TIMEOUT_MS,
+      );
+      if ("error" in dispatched) return { error: dispatched.error };
+      deviceName = dispatched.target.name;
+      const { result } = dispatched;
+      if (!result.ok) {
+        return { error: result.message ?? `Could not read ${path}.` };
+      }
+      const b64 = typeof result.data?.base64 === "string" ? result.data.base64 : "";
+      const chunk = Buffer.from(b64, "base64");
+      chunks.push(chunk);
+      offset += chunk.length;
+      if (offset > MAX_FILE_BYTES) {
+        return {
+          error: `${path} exceeds the ${formatBytes(MAX_FILE_BYTES)} transfer cap.`,
+        };
+      }
+      // EOF when the device says so, or when it returns a short/empty chunk.
+      if (result.data?.eof === true || chunk.length < FILE_CHUNK_BYTES) break;
+    }
+    return { data: Buffer.concat(chunks), deviceName };
+  }
+
+  /**
+   * Chunked write of a Buffer to a remote file. The first chunk truncates the
+   * target; subsequent chunks append at their offset.
+   */
+  private async pushBytes(
+    query: unknown,
+    path: string,
+    data: Buffer,
+  ): Promise<{ bytes: number; deviceName: string } | { error: string }> {
+    if (data.length > MAX_FILE_BYTES) {
+      return {
+        error: `Payload ${formatBytes(data.length)} over the ${formatBytes(MAX_FILE_BYTES)} transfer cap.`,
+      };
+    }
+    let offset = 0;
+    let deviceName = "device";
+    // A zero-length write still needs one call to create/truncate the file.
+    do {
+      const chunk = data.subarray(offset, offset + FILE_CHUNK_BYTES);
+      const dispatched = await this.dispatchCommand(
+        query,
+        "write_file",
+        {
+          path,
+          base64: chunk.toString("base64"),
+          offset,
+          truncate: offset === 0,
+        },
+        FS_COMMAND_TIMEOUT_MS,
+      );
+      if ("error" in dispatched) return { error: dispatched.error };
+      deviceName = dispatched.target.name;
+      if (!dispatched.result.ok) {
+        return {
+          error: dispatched.result.message ?? `Could not write ${path}.`,
+        };
+      }
+      offset += chunk.length;
+    } while (offset < data.length);
+    return { bytes: data.length, deviceName };
+  }
+
   /**
    * Shared command-tool flow: resolve the target, check its advertised
    * capabilities, require a transport, send, and render the device's answer.
@@ -298,29 +597,53 @@ export class MeshService {
     name: string,
     params: Record<string, unknown>,
   ): Promise<MeshToolResult> {
+    const dispatched = await this.dispatchCommand(query, name, params);
+    if ("error" in dispatched) return { ok: false, text: dispatched.error };
+    return {
+      ok: dispatched.result.ok,
+      text: this.commandSummary(dispatched.target, name, dispatched.result),
+    };
+  }
+
+  /**
+   * Resolve a target, validate capability + reachability, then send the
+   * command and return the raw result — the shared primitive under both the
+   * human-summary command tools (ring/status) and the structured exec/fs
+   * tools that format the payload themselves. Returns `{ error }` for the
+   * pre-flight failures (no device, unsupported, offline, no transport).
+   */
+  async dispatchCommand(
+    query: unknown,
+    name: string,
+    params: Record<string, unknown>,
+    timeoutMs?: number,
+  ): Promise<
+    { target: DeviceInfo; result: DeviceCommandResult } | { error: string }
+  > {
     await this.load();
     const target = this.chooseDevice(query);
-    if (!target) return this.noSuchDevice(query);
+    if (!target) return { error: this.noSuchDevice(query).text };
     // Devices advertise what they can do; an explicit list that lacks the
     // command is a clean "can't" — absent list means an older app build, so
     // attempt it and let the timeout speak.
     if (target.capabilities && !target.capabilities.includes(name)) {
       return {
-        ok: false,
-        text: `${target.name} does not support "${name}" (supports: ${target.capabilities.join(", ")}).`,
+        error: `${target.name} does not support "${name}" (supports: ${target.capabilities.join(", ")}).`,
       };
     }
     if (this.transports.size === 0) {
       return {
-        ok: false,
-        text: `No companion transport is connected, so "${name}" cannot reach ${target.name}.`,
+        error: `No companion transport is connected, so "${name}" cannot reach ${target.name}.`,
       };
     }
-    const result = await this.sendCommand(target, name, params);
-    return {
-      ok: result.ok,
-      text: this.commandSummary(target, name, result),
-    };
+    // Don't wait out a full timeout for a device that's plainly gone.
+    if (!target.online) {
+      return {
+        error: `${target.name} appears offline (last seen ${age(Date.now() - target.lastSeen)}), so "${name}" was not sent.`,
+      };
+    }
+    const result = await this.sendCommand(target, name, params, timeoutMs);
+    return { target, result };
   }
 
   /** Resolve a device by exact id, name fragment, or default (most recently
@@ -460,8 +783,11 @@ export class MeshService {
     deviceId: string,
     requestedAt: number,
   ): Promise<DeviceLocation | undefined> {
-    const existing = this.registry.getLocation(deviceId);
-    if (existing && existing.ts >= requestedAt) return existing;
+    // Judge freshness by server-side arrival time, not the device-reported
+    // `loc.ts` (which is subject to the companion's clock skew).
+    if ((this.receivedAt.get(deviceId) ?? 0) >= requestedAt) {
+      return this.registry.getLocation(deviceId);
+    }
     const deadline = Date.now() + this.freshFixTimeoutMs;
     while (Date.now() < deadline) {
       const remaining = deadline - Date.now();
@@ -477,8 +803,9 @@ export class MeshService {
         );
         this.waiters.add(done);
       });
-      const loc = this.registry.getLocation(deviceId);
-      if (loc && loc.ts >= requestedAt) return loc;
+      if ((this.receivedAt.get(deviceId) ?? 0) >= requestedAt) {
+        return this.registry.getLocation(deviceId);
+      }
     }
     return undefined;
   }
@@ -532,6 +859,43 @@ function age(ms: number): string {
   if (min < 60) return `${min}m ago`;
   const hrs = Math.round(min / 60);
   return `${hrs}h ago`;
+}
+
+/** Clamp a caller-supplied exec timeout (seconds) to the allowed window. */
+function clampExecTimeout(value: unknown): number {
+  const sec = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(sec) || sec <= 0) return DEFAULT_EXEC_TIMEOUT_MS;
+  return Math.min(MAX_EXEC_TIMEOUT_MS, Math.max(1_000, Math.round(sec * 1_000)));
+}
+
+/** Trim a string path param, returning undefined when blank. */
+function requirePath(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** Render an exec result: exit code headline + stdout/stderr blocks. */
+function formatExecResult(
+  device: DeviceInfo,
+  result: DeviceCommandResult,
+): string {
+  if (!result.ok && !result.data) {
+    return result.message ?? `${device.name} could not run the command.`;
+  }
+  const d = result.data ?? {};
+  const exit = typeof d.exitCode === "number" ? d.exitCode : "?";
+  const stdout = typeof d.stdout === "string" ? d.stdout : "";
+  const stderr = typeof d.stderr === "string" ? d.stderr : "";
+  const parts = [`[${device.name}] exit ${exit}`];
+  if (stdout.trim()) parts.push(`--- stdout ---\n${stdout.replace(/\s+$/, "")}`);
+  if (stderr.trim()) parts.push(`--- stderr ---\n${stderr.replace(/\s+$/, "")}`);
+  if (!stdout.trim() && !stderr.trim()) parts.push("(no output)");
+  return parts.join("\n");
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 // ── Process-wide instance ─────────────────────────────────────────────────────
