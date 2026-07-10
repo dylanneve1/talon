@@ -354,15 +354,25 @@ private fun BufferedReader.useDrain(sb: StringBuilder) {
     }
 }
 
+/**
+ * Wait up to [timeoutMs] for the process to exit; true if it did.
+ *
+ * NOT a poll on exitValue(): a `ShizukuRemoteProcess` is a remote (binder)
+ * process whose `exitValue()` throws `IllegalArgumentException("process hasn't
+ * exited")` while still running — unlike a local `java.lang.Process`, which
+ * throws `IllegalThreadStateException`. Polling exitValue() therefore blew up
+ * with an uncaught IllegalArgumentException on the very first tick and failed
+ * every elevated command. `waitFor()` works for both process kinds, so run it
+ * on a helper thread and bound it with join().
+ */
 private fun Process.waitForTimeout(timeoutMs: Long): Boolean {
-    val deadline = System.currentTimeMillis() + timeoutMs
-    while (System.currentTimeMillis() < deadline) {
+    val waiter = Thread {
         try {
-            exitValue()
-            return true
-        } catch (_: IllegalThreadStateException) {
-            Thread.sleep(50)
+            waitFor()
+        } catch (_: InterruptedException) {
         }
     }
-    return false
+    waiter.start()
+    waiter.join(timeoutMs)
+    return !waiter.isAlive
 }
