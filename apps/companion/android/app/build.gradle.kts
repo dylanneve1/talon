@@ -56,6 +56,16 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            // AGP 9 shrinks release builds with R8. Shizuku's `newProcess` is
+            // reached only via reflection (a runtime string), which R8 can't
+            // see — so it strips/renames the method and elevated exec fails
+            // with NoSuchMethodException, silently downgrading to app UID.
+            // proguard-rules.pro keeps the Shizuku surface so that path works.
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }
