@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.39.0](https://github.com/dylanneve1/talon/compare/v1.38.1...v1.39.0) (2026-07-10)
+
+
+### Features
+
+* **mesh:** remote self-update for the Android companion (update_device) ([#506](https://github.com/dylanneve1/talon/issues/506)) ([1786675](https://github.com/dylanneve1/talon/commit/178667592fbde17faa3b33af013d378dc83bba4e))
+
 ## [1.38.1](https://github.com/dylanneve1/talon/compare/v1.38.0...v1.38.1) (2026-07-10)
 
 
